@@ -12,6 +12,7 @@ class UserCreate(BaseModel):
     last_name: str
     phone: str | None = None
     role: UserRole
+    club_id: int | None = None
 
 
 class UserUpdate(BaseModel):
@@ -33,3 +34,8 @@ class UserOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserListOut(BaseModel):
+    items: list[UserOut]
+    total: int

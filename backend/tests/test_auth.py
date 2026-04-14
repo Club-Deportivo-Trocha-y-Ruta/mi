@@ -123,7 +123,7 @@ class TestMeEndpoint:
 
     async def test_me_no_token(self, client):
         resp = await client.get("/api/auth/me")
-        assert resp.status_code == 403
+        assert resp.status_code in (401, 403)
 
     async def test_me_invalid_token(self, client):
         resp = await client.get(

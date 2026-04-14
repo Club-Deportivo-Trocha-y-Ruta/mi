@@ -304,7 +304,7 @@ httpx
 
 ---
 
-### Paso 4: CRUD de clubes y usuarios
+### Paso 4: CRUD de clubes y usuarios ✅
 **Tipo:** backend
 **Agentes:** `backend-architect` (endpoints, validaciones, reglas de negocio RBAC), `security-engineer` (validacion de permisos, proteccion de datos de menores)
 **Archivos:** `app/routers/clubs.py`, `app/routers/users.py`, `app/schemas/club.py`, `app/schemas/user.py`
@@ -328,6 +328,18 @@ httpx
 - Relacion parent-athlete via endpoint dedicado
 
 **Criterio de exito:** CRUD completo funcional, permisos validados por rol.
+
+**Completado 2026-04-14. Notas de implementacion:**
+- `ClubMemberOut` usa `@model_validator(mode="before")` para aplanar `member.user` en campos planos (first_name, last_name)
+- `ClubDetailOut` hereda `ClubOut` + `members: list[ClubMemberOut]` con `selectinload` en 2 niveles
+- `await db.refresh(member, attribute_names=["user"])` necesario post-flush para evitar `MissingGreenlet` en async
+- Usuarios router: `_ALLOWED_CREATIONS` dict define qué roles puede crear cada actor
+- Coach scope: `_coach_club_ids()` extrae club_ids donde el usuario tiene `role_in_club=coach`
+- `UserCreate` extendido con `club_id` opcional; si se provee, se crea `ClubMember` en la misma transacción
+- `GET /api/users` excluye atletas (se gestionan por `/api/athletes`); coach solo ve usuarios de sus clubes
+- `IntegrityError` capturado para duplicados de email (409) y membresías duplicadas (409)
+- `asyncio_default_test_loop_scope = "session"` agregado a pyproject.toml para evitar `Future attached to different loop` en tests async
+- 28 tests de integración: 12 para clubes, 16 para usuarios (43 total en suite)
 
 ---
 

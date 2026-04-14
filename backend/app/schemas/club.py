@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from app.models.club import ClubRole
 
@@ -31,3 +32,33 @@ class ClubOut(BaseModel):
 class ClubMemberAdd(BaseModel):
     user_id: int
     role_in_club: ClubRole
+
+
+class ClubMemberOut(BaseModel):
+    id: int
+    user_id: int
+    first_name: str
+    last_name: str
+    role_in_club: ClubRole
+    joined_at: datetime
+
+    model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def flatten_user(cls, data: Any) -> Any:
+        # Cuando el objeto viene del ORM, extraemos los campos del usuario relacionado
+        if hasattr(data, "user") and data.user is not None:
+            return {
+                "id": data.id,
+                "user_id": data.user_id,
+                "first_name": data.user.first_name,
+                "last_name": data.user.last_name,
+                "role_in_club": data.role_in_club,
+                "joined_at": data.joined_at,
+            }
+        return data
+
+
+class ClubDetailOut(ClubOut):
+    members: list[ClubMemberOut] = []
