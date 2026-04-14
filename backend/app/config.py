@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -17,8 +18,20 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    app_debug: bool = True
+    app_debug: bool = False
     cors_origins: str = "http://localhost:5173"
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def validate_jwt_secret(cls, v: str, info) -> str:
+        if v == "cambiar-en-produccion":
+            import warnings
+            warnings.warn(
+                "JWT_SECRET_KEY usa valor por defecto. "
+                "Generar con: python -c \"import secrets; print(secrets.token_hex(32))\"",
+                stacklevel=2,
+            )
+        return v
 
     @property
     def database_url(self) -> str:

@@ -19,7 +19,7 @@ Eres el asistente de entrenamiento del **Club Deportivo Trocha y Ruta**, especia
 | **FastAPI** | API REST monolito modular |
 | **SQLAlchemy 2 + aiomysql** | ORM async |
 | **Alembic** | Migraciones |
-| **PyJWT + passlib** | Auth JWT + bcrypt |
+| **PyJWT + bcrypt** | Auth JWT + bcrypt |
 | **MySQL 8.4** | Base de datos (Hostinger en prod) |
 
 ### Frontend (Fase 1 — próximo)
@@ -80,7 +80,7 @@ Tablas gestionadas por SQLAlchemy / Alembic:
 |---|---|---|
 | 1 | Scaffolding FastAPI monolito | ✅ Completo |
 | 2 | Modelos SQLAlchemy + migración Alembic + seed | ✅ Completo |
-| 3 | Autenticación JWT | ⏳ Pendiente |
+| 3 | Autenticación JWT | ✅ Completo |
 | 4 | CRUD clubes y usuarios | ⏳ Pendiente |
 | 5 | CRUD atletas + PHV Mirwald | ⏳ Pendiente |
 | 6-8 | Frontend React | ⏳ Pendiente |
@@ -98,7 +98,7 @@ Tablas gestionadas por SQLAlchemy / Alembic:
 
 ## Notas técnicas de implementación
 
-- `passlib[bcrypt]` requiere `bcrypt<4.0.0` (bcrypt 4.x rompió la detección interna de passlib)
+- Se usa `bcrypt` directamente (no passlib) — passlib es incompatible con bcrypt ≥4.x y Python 3.14
 - `pymysql[rsa]` + `cryptography` requeridos para Alembic sync con MySQL 8 (`caching_sha2_password`)
 - `ParentAthlete.relationship_type` — el atributo Python se llama `relationship_type` (alias de columna `relationship`) para evitar colisión con `sqlalchemy.orm.relationship`
 - `MaturationStatus` usa `values_callable` para almacenar `Pre-PHV`/`Circa-PHV`/`Post-PHV` en vez de nombres de enum

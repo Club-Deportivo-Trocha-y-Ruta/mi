@@ -274,7 +274,7 @@ httpx
 
 ---
 
-### Paso 3: Autenticacion JWT
+### Paso 3: Autenticacion JWT ✅
 **Tipo:** backend
 **Agentes:** `backend-architect` (diseño de endpoints y flujo auth), `security-engineer` (auditoria JWT, hashing, OWASP auth best practices)
 **Archivos:** `app/services/auth.py`, `app/routers/auth.py`, `app/dependencies.py`
@@ -292,6 +292,15 @@ httpx
 - Dependency `require_role(roles: list[str])` para RBAC
 
 **Criterio de exito:** Login retorna tokens, endpoints protegidos rechazan sin token (401), role incorrecto (403).
+
+**Completado 2026-04-14. Notas de implementacion:**
+- `passlib` eliminado — incompatible con bcrypt ≥4.x y Python 3.14. Se usa `bcrypt` directamente
+- JWT `sub` claim es string (RFC 7519), se convierte a/desde int en el flujo
+- `get_current_user` valida: token válido, type=access, usuario existe, is_active, can_login
+- `require_role(allowed_roles)` es un dependency factory que retorna el usuario si su rol está permitido
+- `MeResponse` incluye `club_ids` extraidos de `club_memberships` (eager loaded)
+- HTTPBearer scheme usado para extraer token del header Authorization
+- Tests unitarios: hashing, JWT roundtrip, token inválido (5/5 passing)
 
 ---
 
@@ -529,6 +538,56 @@ Paso 1 (scaffolding)
 Paso 9 (docker) ←── puede empezar en paralelo desde Paso 1
 Paso 10 (tests) ←── incremental, se agrega en cada paso
 ```
+
+---
+
+## Deuda de seguridad pre-produccion
+
+Hallazgos de auditoría OWASP (2026-04-14) que **deben resolverse antes del deploy a producción**. Los que aplican a datos de menores tienen prioridad máxima.
+
+### CRIT-02: Refresh token sin revocación
+**CWE:** CWE-613 / CWE-384
+**Riesgo:** Un refresh token robado es válido 7 días completos. No hay forma de invalidarlo server-side. Datos biométricos de menores quedan expuestos sin posibilidad de corte inmediato.
+**Solución:** Agregar claim `jti` (UUID) a cada refresh token + tabla `refresh_tokens(jti, user_id, expires_at, revoked_at)`. En `/refresh`: verificar que `jti` no esté revocado, luego revocar el anterior.
+**Esfuerzo estimado:** 4-6h
+**Bloquea:** LOW-02 (logout)
+
+### HIGH-01: Sin rate limiting en /login
+**CWE:** CWE-307
+**Riesgo:** Brute force ilimitado sobre cuentas de coaches y admin con acceso a datos de menores.
+**Solución A (app):** `pip install slowapi` + `@limiter.limit("5/minute")` en el endpoint.
+**Solución B (infra, preferida en prod):** Rate limiting en nginx/Traefik/proxy inverso.
+**Esfuerzo estimado:** 1h
+
+### HIGH-03: `club_ids` embebidos en JWT payload
+**CWE:** CWE-602
+**Riesgo:** Si un usuario es removido de un club, el token sigue presentando los `club_ids` antiguos hasta 30 min (tiempo de expiración del access token). Cualquier router que confíe en el payload del token en lugar de la DB tendrá autorización incorrecta.
+**Nota:** `get_current_user` ya consulta la DB en cada request — el riesgo aplica solo si futuros routers leen `club_ids` del token directamente.
+**Solución:** Eliminar `club_ids` del payload. Usar `current_user.club_memberships` (ya cargado vía `selectinload`).
+```python
+# routers/auth.py — en login y refresh
+token_data = {"sub": str(user.id), "role": user.role.value}  # sin club_ids
+```
+**Esfuerzo estimado:** 20 min
+
+### MED-02: `MeResponse` expone campos internos
+**CWE:** CWE-359
+**Riesgo:** `can_login` (flag de control interno), `phone` y `created_at` expuestos innecesariamente. Principio de minimización de datos — relevante para GDPR/privacidad de datos de menores.
+**Solución:** Quitar `can_login`, `phone` y `created_at` de `MeResponse`.
+**Esfuerzo estimado:** 15 min
+
+### MED-04: Misma clave para access y refresh tokens
+**CWE:** CWE-330
+**Riesgo:** Si la clave se compromete, ambos tipos de tokens quedan expuestos simultáneamente.
+**Solución:** Configurar `JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET` como variables de entorno separadas.
+**Esfuerzo estimado:** 30 min
+
+### LOW-02: Sin endpoint `/logout`
+**CWE:** CWE-613
+**Riesgo:** Cerrar sesión es solo una acción cliente (borrar token local). Sin invalidación server-side.
+**Nota:** Depende de CRIT-02 para ser efectivo — sin blocklist, el logout es simbólico.
+**Solución:** `POST /api/auth/logout` que inserta el `jti` del refresh token en la tabla de revocados.
+**Esfuerzo estimado:** 2h (depende de CRIT-02)
 
 ---
 
