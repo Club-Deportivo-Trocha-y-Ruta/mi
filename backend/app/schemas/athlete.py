@@ -3,6 +3,7 @@ from datetime import date, datetime
 from pydantic import BaseModel
 
 from app.models.athlete import Sex
+from app.schemas.anthropometry import AnthropometryOut
 
 
 class AthleteCreate(BaseModel):
@@ -34,3 +35,12 @@ class AthleteOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AthleteDetailOut(AthleteOut):
+    latest_anthropometry: AnthropometryOut | None = None
+
+
+class AthleteListOut(BaseModel):
+    items: list[AthleteOut]
+    total: int

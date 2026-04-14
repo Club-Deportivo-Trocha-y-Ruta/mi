@@ -343,7 +343,7 @@ httpx
 
 ---
 
-### Paso 5: CRUD de atletas con auto-calculos
+### Paso 5: CRUD de atletas con auto-calculos ✅
 **Tipo:** backend
 **Agentes:** `backend-architect` (endpoints, logica de auto-calculo, servicio PHV), `quality-engineer` (validacion de formulas Mirwald contra Excel)
 **Archivos:** `app/routers/athletes.py`, `app/schemas/athlete.py`, `app/services/phv.py`
@@ -411,6 +411,18 @@ def calculate_mirwald_offset(sex: str, age: float, weight: float,
 ```
 
 **Criterio de exito:** Crear atleta + registrar antropometria retorna todos los campos calculados correctamente. Valores coinciden con el Excel.
+
+**Completado 2026-04-14. Notas de implementacion:**
+- `services/category.py` nuevo: `compute_age_decimal()` y `get_category()` con tabla FCC 2026 completa
+- `age_decimal` y `category` se calculan en app (no almacenados en DB), enriquecidos al construir respuesta
+- `AthleteDetailOut` extiende `AthleteOut` con `latest_anthropometry` (registro más reciente)
+- `AthleteListOut` wrapper con `items` + `total` para paginación futura
+- Al crear atleta: se crea `User(role=athlete, can_login=false)` + `Athlete` + `ClubMember` en una transacción
+- Al actualizar atleta: sincroniza `first_name`/`last_name` con el `User` vinculado
+- Antropometría: `age_decimal` se calcula a la `evaluation_date` (no a hoy), lo que permite registros retroactivos correctos
+- PHV Mirwald validado: masculino Pre-PHV, femenino Circa-PHV, Post-PHV — fórmulas coinciden con el Excel
+- 49 tests nuevos: 17 integración (CRUD + permisos), 32 unitarios (PHV, categorías FCC, edad decimal)
+- Suite total: 92 tests passing
 
 ---
 

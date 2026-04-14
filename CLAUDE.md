@@ -82,7 +82,7 @@ Tablas gestionadas por SQLAlchemy / Alembic:
 | 2 | Modelos SQLAlchemy + migración Alembic + seed | ✅ Completo |
 | 3 | Autenticación JWT | ✅ Completo |
 | 4 | CRUD clubes y usuarios | ✅ Completo |
-| 5 | CRUD atletas + PHV Mirwald | ⏳ Pendiente |
+| 5 | CRUD atletas + PHV Mirwald | ✅ Completo |
 | 6-8 | Frontend React | ⏳ Pendiente |
 | 9 | Docker Compose | ✅ Completo (junto con Paso 2) |
 | 10 | Tests | ⏳ Pendiente |
