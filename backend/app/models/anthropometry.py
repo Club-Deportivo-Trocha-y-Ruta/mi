@@ -30,6 +30,20 @@ class MaturationStatus(str, enum.Enum):
     post_phv = "Post-PHV"
 
 
+class NutritionalStatus(str, enum.Enum):
+    # Talla para la Edad (T/E) — Resolución 2465/2016 MinSalud Colombia
+    retraso_talla = "retraso_talla"
+    riesgo_retraso_talla = "riesgo_retraso_talla"
+    talla_adecuada = "talla_adecuada"
+    talla_alta = "talla_alta"
+    # IMC para la Edad — Resolución 2465/2016 MinSalud Colombia
+    delgadez_severa = "delgadez_severa"
+    delgadez = "delgadez"
+    adecuado = "adecuado"
+    sobrepeso = "sobrepeso"
+    obesidad = "obesidad"
+
+
 class AnthropometricRecord(Base):
     __tablename__ = "anthropometric_records"
     __table_args__ = (
@@ -57,6 +71,19 @@ class AnthropometricRecord(Base):
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Campos de percentiles y estado nutricional (WHO/CDC) — nullable para compatibilidad backward
+    height_z_score: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    height_percentile: Mapped[Decimal | None] = mapped_column(Numeric(5, 1), nullable=True)
+    bmi: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    bmi_z_score: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    bmi_percentile: Mapped[Decimal | None] = mapped_column(Numeric(5, 1), nullable=True)
+    weight_z_score: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    weight_percentile: Mapped[Decimal | None] = mapped_column(Numeric(5, 1), nullable=True)
+    nutritional_status: Mapped[NutritionalStatus | None] = mapped_column(
+        Enum(NutritionalStatus, values_callable=lambda e: [x.value for x in e]),
+        nullable=True,
+    )
 
     # Atleta al que pertenece la medición
     athlete: Mapped[Athlete] = relationship(

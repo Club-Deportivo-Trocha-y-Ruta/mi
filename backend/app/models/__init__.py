@@ -2,7 +2,8 @@ from app.models.base import Base
 from app.models.user import User, UserRole
 from app.models.club import Club, ClubMember, ClubRole
 from app.models.athlete import Athlete, ParentAthlete, Sex, FamilyRelationship
-from app.models.anthropometry import AnthropometricRecord, MaturationStatus
+from app.models.anthropometry import AnthropometricRecord, MaturationStatus, NutritionalStatus
+from app.models.growth import GrowthReferenceLms, GrowthIndicator, GrowthSource
 
 __all__ = [
     "Base",
@@ -17,4 +18,8 @@ __all__ = [
     "FamilyRelationship",
     "AnthropometricRecord",
     "MaturationStatus",
+    "NutritionalStatus",
+    "GrowthReferenceLms",
+    "GrowthIndicator",
+    "GrowthSource",
 ]

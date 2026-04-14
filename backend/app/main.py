@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, users, clubs, athletes, anthropometry
+from app.routers import auth, users, clubs, athletes, anthropometry, growth
 
 app = FastAPI(
     title="Trocha y Ruta API",
@@ -23,6 +23,7 @@ app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(clubs.router, prefix="/api/clubs", tags=["clubs"])
 app.include_router(athletes.router, prefix="/api/athletes", tags=["athletes"])
 app.include_router(anthropometry.router, prefix="/api/athletes", tags=["anthropometry"])
+app.include_router(growth.router, prefix="/api", tags=["growth"])
 
 
 @app.get("/health")
