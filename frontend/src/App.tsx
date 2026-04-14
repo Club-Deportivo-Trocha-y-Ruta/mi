@@ -10,7 +10,14 @@ import { AthleteFormPage } from "@/routes/athletes/AthleteFormPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
 import { UserRole } from "@/types/enums";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+    },
+  },
+});
 
 export default function App() {
   return (
