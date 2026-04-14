@@ -426,68 +426,487 @@ def calculate_mirwald_offset(sex: str, age: float, weight: float,
 
 ---
 
-### Paso 6: Frontend — Auth y layout base
-**Tipo:** frontend
-**Agentes:** `general-purpose` (scaffolding Vite + React, componentes UI, stores Zustand, routing)
-**Archivos:** `frontend/src/`
+### Paso 6: Frontend — Scaffolding, API client y Auth store
+
+> Antes era un solo paso. Se divide en 5 sub-pasos secuenciales para reducir el alcance de cada PR y facilitar la revisión.
+
+---
+
+#### Paso 6.1: Scaffolding base y configuracion del proyecto
+**Tipo:** setup
+**Agentes:** `devops-architect` (Dockerfile dev, configuracion Vite, estructura de carpetas)
+**Archivos:** `frontend/`
+
 **Scaffolding:**
 ```bash
 pnpm create vite@latest frontend -- --template react-ts
 cd frontend
-pnpm add @tanstack/react-query zustand react-router react-hook-form zod axios
+pnpm add @tanstack/react-query @tanstack/react-query-devtools
+pnpm add zustand
+pnpm add react-router-dom
+pnpm add react-hook-form @hookform/resolvers zod
+pnpm add axios
+pnpm add recharts
 pnpm dlx shadcn@latest init
+pnpm dlx shadcn@latest add button input label card badge table form select tabs dialog alert separator skeleton
 ```
 
-**Implementar:**
-- Login page con formulario (email + password)
-- Layout con sidebar (navegacion por rol)
-- Auth store (Zustand): token, user, login/logout
-- API client (axios) con interceptor JWT
-- Protected routes por rol
-- Pagina de dashboard vacia (placeholder)
+**Estructura de carpetas a crear:**
+```
+frontend/src/
+├── api/              # axios instance + funciones de llamada por dominio
+├── components/
+│   ├── ui/           # shadcn (auto-generado)
+│   ├── layout/       # Sidebar, TopBar, AppShell
+│   └── shared/       # LoadingSpinner, ErrorBoundary, ConfirmDialog
+├── hooks/            # hooks reutilizables (useDebounce, etc.)
+├── lib/              # utils.ts (cn), constants.ts, phv.ts (calculo cliente)
+├── routes/           # paginas por dominio: auth/, athletes/, dashboard/
+├── store/            # auth.store.ts
+└── types/            # tipos TypeScript por dominio
+```
 
-**Criterio de exito:** Login funcional, redireccion por rol, rutas protegidas.
+**Configuracion Vite:**
+- `vite.config.ts`: alias `@/` → `src/`, proxy `/api` → `http://localhost:8000` en dev
+- `tsconfig.json`: `paths` con `@/*`
+- `.env.example`: `VITE_API_BASE_URL=http://localhost:8000`
+
+**Criterio de exito:** `pnpm dev` arranca sin errores. Pagina en blanco visible en `http://localhost:5173`. Alias `@/` funciona.
+
+---
+
+#### Paso 6.2: API client y tipos TypeScript compartidos
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/api/`, `src/types/`
+
+**`src/api/client.ts`** — axios instance central:
+```ts
+// interceptor request: agrega Authorization: Bearer <token>
+// interceptor response: si 401 → limpia store y redirige a /login
+// baseURL desde import.meta.env.VITE_API_BASE_URL
+```
+
+**`src/api/auth.ts`** — funciones de auth:
+```ts
+export const login(email, password) → Promise<{ access_token, refresh_token, token_type }>
+export const refreshToken(refresh_token) → Promise<{ access_token, ... }>
+export const getMe() → Promise<MeResponse>
+```
+
+**`src/api/athletes.ts`** — funciones de atletas:
+```ts
+export const getAthletes(params?) → Promise<AthleteListOut>
+export const getAthlete(id) → Promise<AthleteDetailOut>
+export const createAthlete(data) → Promise<AthleteOut>
+export const updateAthlete(id, data) → Promise<AthleteOut>
+export const getAnthropometry(athleteId) → Promise<AnthropometricRecord[]>
+export const createAnthropometry(athleteId, data) → Promise<AnthropometricRecord>
+```
+
+**`src/types/`** — interfaces TypeScript que reflejan los schemas del backend:
+- `auth.types.ts`: `LoginRequest`, `TokenResponse`, `MeResponse`
+- `athlete.types.ts`: `AthleteOut`, `AthleteDetailOut`, `AthleteCreate`, `AthleteUpdate`, `AthleteListOut`
+- `anthropometry.types.ts`: `AnthropometricRecord`, `AnthropometryCreate`
+- `enums.ts`: `Sex`, `MaturationStatus`, `UserRole`
+
+**Criterio de exito:** `tsc --noEmit` pasa. El cliente hace un `GET /health` al backend y recibe 200 (verificable en devtools).
+
+---
+
+#### Paso 6.3: Auth store con Zustand y persistencia
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/store/auth.store.ts`
+
+**Estado del store:**
+```ts
+interface AuthState {
+  accessToken: string | null
+  refreshToken: string | null
+  user: MeResponse | null
+  isAuthenticated: boolean
+  isLoading: boolean
+
+  login(email: string, password: string): Promise<void>
+  logout(): void
+  refreshSession(): Promise<void>   // llamado por interceptor 401
+  fetchMe(): Promise<void>
+}
+```
+
+**Detalles de implementacion:**
+- `persist` middleware de Zustand con `sessionStorage` (no localStorage — dato sensible de menores)
+- `accessToken` guardado en memoria del store (no en cookie ni localStorage)
+- `refreshToken` guardado en `sessionStorage` via persist
+- `login()`: llama `api/auth.login()` → guarda tokens → llama `fetchMe()`
+- `logout()`: limpia store + `sessionStorage` + redirige a `/login`
+- `refreshSession()`: llama `api/auth.refreshToken()` → actualiza `accessToken`; si falla → `logout()`
+
+**Criterio de exito:** Login guarda tokens. Recarga de pagina restaura sesion desde sessionStorage. Logout limpia completamente.
+
+---
+
+#### Paso 6.4: Login page con formulario validado
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/routes/auth/LoginPage.tsx`
+
+**Implementar:**
+- Formulario con `react-hook-form` + schema `zod`:
+  ```ts
+  z.object({ email: z.string().email(), password: z.string().min(6) })
+  ```
+- Estado de carga: boton deshabilitado con spinner durante el login
+- Manejo de error: mensaje claro si credenciales incorrectas (401) o servidor caido (500+)
+- Redireccion post-login: a `/dashboard` si rol=coach o admin; a `/` si otro
+- Responsive: centrado en pantalla, logo del club arriba
+
+**NO implementar en este paso:** registro de usuario (flujo de admin, Fase 2).
+
+**Criterio de exito:** Login funcional contra el backend real. Errores muestran mensaje legible. Token visible en store.
+
+---
+
+#### Paso 6.5: Layout, sidebar y rutas protegidas
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/components/layout/`, `src/routes/`, `src/App.tsx`
+
+**Estructura de rutas (`react-router-dom` v6):**
+```
+/login                  → LoginPage (publica)
+/                       → redirect a /dashboard (protegida)
+/dashboard              → DashboardPage (coach, admin)
+/athletes               → AthletesListPage (coach)
+/athletes/:id           → AthleteDetailPage (coach)
+/athletes/new           → AthleteFormPage (coach)
+/athletes/:id/edit      → AthleteFormPage (coach)
+*                       → NotFoundPage
+```
+
+**`ProtectedRoute` component:**
+```tsx
+// Si no autenticado → redirect /login
+// Si rol no permitido → redirect /dashboard con toast de error
+// Acepta prop allowedRoles: UserRole[]
+```
+
+**`AppShell` component:**
+- Sidebar colapsable con navegacion: Dashboard, Atletas, (Perfil)
+- Links activos resaltados (`NavLink`)
+- TopBar: nombre del usuario, boton logout
+- Sidebar muestra items segun rol del usuario en store
+
+**DashboardPage:** placeholder con cards de metricas vacias (total atletas, ultima evaluacion, etc.)
+
+**Criterio de exito:** Navegar a `/athletes` sin token redirige a `/login`. Con token de coach, sidebar visible y navegacion funcional. URL directa a ruta inexistente muestra 404.
 
 ---
 
 ### Paso 7: Frontend — CRUD de atletas
-**Tipo:** frontend
-**Agentes:** `general-purpose` (componentes React, DataTable, formularios, integracion API)
-**Archivos:** `frontend/src/components/athletes/`, `frontend/src/routes/athletes/`
-**Implementar:**
-- Lista de atletas (tabla con shadcn DataTable)
-  - Columnas: nombre, edad, sexo, categoria, estado maduracion, acciones
-  - Filtros: por categoria, estado PHV
-- Formulario crear/editar atleta
-  - Datos basicos: nombres, apellidos, fecha nacimiento, sexo, anos en club
-  - Edad y categoria se muestran auto-calculados al seleccionar fecha nacimiento
-- Detalle de atleta con pestanas:
-  - Info general
-  - Antropometria (historial + nuevo registro)
 
-**Criterio de exito:** CRUD completo de atletas desde el frontend.
+> Dividido en 4 sub-pasos. Los pasos 7.3 y 7.4 pueden ejecutarse en paralelo.
+
+---
+
+#### Paso 7.1: Hooks TanStack Query para atletas
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/hooks/athletes/`
+
+**Hooks a crear:**
+```ts
+// src/hooks/athletes/useAthletes.ts
+export function useAthletes(filters?: AthleteFilters)
+// → useQuery(['athletes', filters], () => api.getAthletes(filters))
+
+// src/hooks/athletes/useAthlete.ts
+export function useAthlete(id: number)
+// → useQuery(['athlete', id], () => api.getAthlete(id))
+
+// src/hooks/athletes/useCreateAthlete.ts
+export function useCreateAthlete()
+// → useMutation(api.createAthlete, { onSuccess: invalidate ['athletes'] })
+
+// src/hooks/athletes/useUpdateAthlete.ts
+export function useUpdateAthlete(id: number)
+// → useMutation(api.updateAthlete, { onSuccess: invalidate ['athlete', id] + ['athletes'] })
+```
+
+**Configuracion QueryClient** en `src/main.tsx`:
+- `staleTime: 30_000` (30s) — datos de atletas no cambian frecuentemente
+- `retry: 1` — un solo reintento en error de red
+- `QueryClientProvider` wrapping toda la app
+
+**Criterio de exito:** `useAthletes()` retorna la lista del backend. `tsc --noEmit` pasa.
+
+---
+
+#### Paso 7.2: Lista de atletas con DataTable y filtros
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/routes/athletes/AthletesListPage.tsx`, `src/components/athletes/AthletesTable.tsx`
+
+**Columnas de la tabla (TanStack Table v8 via shadcn DataTable):**
+| Columna | Campo | Formato |
+|---------|-------|---------|
+| Nombre | first_name + last_name | link a detalle |
+| Edad | age_decimal | `X.X anos` |
+| Sexo | sex | `M` / `F` |
+| Categoria | category | badge |
+| Estado PHV | maturation_status del ultimo registro | badge coloreado (ver Paso 8.4) |
+| Acciones | — | boton editar, boton ver detalle |
+
+**Filtros (toolbar sobre la tabla):**
+- Input de busqueda por nombre (debounced 300ms)
+- Select de categoria (opciones de la tabla FCC)
+- Select de estado PHV (Pre-PHV / Circa-PHV / Post-PHV / Todos)
+
+**Estados de la UI:**
+- Skeleton de 5 filas mientras carga
+- Mensaje "No hay atletas registrados" con boton "+ Agregar atleta" si lista vacia
+- Toast de error si falla la peticion
+
+**Boton "Nuevo atleta":** visible solo para coach, navega a `/athletes/new`.
+
+**Criterio de exito:** Lista muestra atletas del seed. Filtros reducen la tabla en tiempo real. Esqueleto visible durante carga.
+
+---
+
+#### Paso 7.3: Formulario crear / editar atleta
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/routes/athletes/AthleteFormPage.tsx`, `src/components/athletes/AthleteForm.tsx`
+
+**Campos del formulario:**
+| Campo | Tipo input | Validacion |
+|-------|-----------|-----------|
+| Nombres | text | requerido, min 2 |
+| Apellidos | text | requerido, min 2 |
+| Fecha de nacimiento | date | requerido, max hoy, min 1990-01-01 |
+| Sexo | select (M / F) | requerido |
+| Anos en el club | number | requerido, min 0, max 20 |
+
+**Auto-calculos en tiempo real** (usando `watch` de RHF):
+- Al cambiar `birth_date`: calcular y mostrar `age_decimal` y `category` debajo del campo, en texto informativo gris. Logica replicada del backend en `src/lib/category.ts`.
+- Estos campos son solo de visualizacion, no se envian en el body (el backend los calcula).
+
+**`src/lib/category.ts`** — replica de la logica Python del backend:
+```ts
+export function computeAgeDecimal(birthDate: Date, referenceDate = new Date()): number
+export function getCategory(birthYear: number, sex: Sex): string
+```
+
+**Modo edicion:** el componente detecta si tiene `id` en la ruta → carga datos con `useAthlete(id)` → pre-rellena el formulario.
+
+**Submit:**
+- Crear: `useCreateAthlete()` → navega a `/athletes/:id` con toast de exito
+- Editar: `useUpdateAthlete(id)` → invalida cache → toast de exito
+
+**Criterio de exito:** Crear atleta desde el formulario y verlo en la lista. Editar actualiza los datos. Edad y categoria se muestran correctamente al seleccionar fecha.
+
+---
+
+#### Paso 7.4: Vista detalle de atleta
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/routes/athletes/AthleteDetailPage.tsx`, `src/components/athletes/AthleteInfoCard.tsx`
+
+**Layout de la pagina:**
+```
+[← Volver a lista]    [boton Editar atleta]
+
+┌─────────────────────────────────────────────┐
+│  Nombre Apellido          Categoria: [badge]│
+│  Edad: X.X anos  |  Sexo: M/F  |  En club: X anos  │
+└─────────────────────────────────────────────┘
+
+[Tabs]
+├── Info general         → AthleteInfoCard (datos basicos)
+└── Antropometria        → placeholder "Proximamente" (se completa en Paso 8)
+```
+
+**`AthleteInfoCard`:** muestra todos los campos del atleta en formato legible. Si tiene `latest_anthropometry`, muestra el estado PHV con badge coloreado y la fecha de la ultima evaluacion.
+
+**Skeleton:** mientras carga `useAthlete(id)`, mostrar skeleton del layout.
+
+**Error 404:** si el atleta no existe (404 del backend), mostrar mensaje con boton volver.
+
+**Criterio de exito:** Navegar a `/athletes/:id` muestra los datos correctos. Tab de Antropometria visible (aunque muestre placeholder). Boton editar lleva al formulario pre-rellenado.
 
 ---
 
 ### Paso 8: Frontend — Seccion antropometria y PHV
-**Tipo:** frontend
-**Agentes:** `general-purpose` (formulario antropometria, calculo PHV en tiempo real, graficas Recharts, badges de estado)
-**Archivos:** `frontend/src/components/athletes/AnthropometryForm.tsx`, `AnthropometryHistory.tsx`
-**Implementar:**
-- Formulario de registro antropometrico:
-  - Campos de entrada: peso, talla, envergadura, talla sentado
-  - Campos auto-calculados (en tiempo real, antes de guardar):
-    - Longitud pierna, ratio, maturity offset, edad al PHV, estado, implicaciones
-  - Fecha evaluacion y mesociclo
-- Historial de mediciones (tabla cronologica)
-- Grafica de crecimiento longitudinal (Recharts):
-  - Talla vs tiempo
-  - Peso vs tiempo
-  - Maturity offset vs tiempo
-- Indicador visual de estado PHV (badge con color: verde=Pre, amarillo=Circa, azul=Post)
-- Notas de implicaciones de entrenamiento visibles
 
-**Criterio de exito:** Formulario calcula PHV en tiempo real, guarda correctamente, historial visible con graficas.
+> Dividido en 4 sub-pasos. 8.2 y 8.3 pueden ejecutarse en paralelo despues de 8.1.
+
+---
+
+#### Paso 8.1: Formulario antropometrico con calculo PHV en tiempo real
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/components/athletes/AnthropometryForm.tsx`, `src/lib/phv.ts`, `src/hooks/athletes/useAnthropometry.ts`
+
+**`src/lib/phv.ts`** — replica exacta de la formula Mirwald del backend:
+```ts
+interface PHVInput {
+  sex: Sex
+  ageDecimal: number
+  weightKg: number
+  standingHeightCm: number
+  sittingHeightCm: number
+}
+
+interface PHVResult {
+  legLengthCm: number
+  legSittingRatio: number
+  maturityOffset: number
+  ageAtPhv: number
+  maturationStatus: MaturationStatus
+  trainingImplications: string
+}
+
+export function calculatePHV(input: PHVInput): PHVResult | null
+// Retorna null si algun campo es 0 o invalido (formulario incompleto)
+```
+
+**Hooks:**
+```ts
+// src/hooks/athletes/useAnthropometry.ts
+export function useAnthropometry(athleteId: number)
+// → useQuery(['anthropometry', athleteId], ...)
+
+export function useCreateAnthropometry(athleteId: number)
+// → useMutation → invalidate ['anthropometry', athleteId] + ['athlete', athleteId]
+```
+
+**Campos del formulario:**
+| Campo | Tipo | Validacion |
+|-------|------|-----------|
+| Fecha de evaluacion | date | requerido, max hoy |
+| Mesociclo | text | requerido (ej: "Prep Gral 1") |
+| Peso (kg) | number | requerido, 20-150 |
+| Talla de pie (cm) | number | requerido, 100-220 |
+| Envergadura (cm) | number | requerido, 100-220 |
+| Talla sentado (cm) | number | requerido, 50-120 |
+| Notas | textarea | opcional, max 500 chars |
+
+**Panel de resultados PHV en tiempo real** (se actualiza con cada cambio via `watch`):
+```
+┌──────────────────────────────────────────┐
+│  CALCULO PHV (en tiempo real)            │
+│  Longitud pierna: XX.X cm               │
+│  Ratio pierna/sentado: X.XXXX           │
+│  Maturity Offset: +X.XX / -X.XX         │
+│  Edad al PHV: XX.XX anos                │
+│  Estado: [badge coloreado]              │
+│  Implicaciones: [texto]                 │
+└──────────────────────────────────────────┘
+```
+- Si algun campo esta vacio → panel muestra "Completa los campos para ver el calculo"
+- La edad decimal se calcula a la `evaluation_date` (no a hoy) — importante para registros retroactivos
+
+**Submit:** `useCreateAnthropometry()` → toast de exito → invalida cache → panel se oculta/resetea.
+
+**Criterio de exito:** Ingresar los datos del Excel y verificar que los valores calculados en frontend coincidan exactamente con los del backend. El formulario guarda y la tabla se actualiza.
+
+---
+
+#### Paso 8.2: Historial de mediciones antropometricas
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/components/athletes/AnthropometryHistory.tsx`
+
+**Tabla de historial (orden cronologico descendente):**
+| Columna | Campo | Formato |
+|---------|-------|---------|
+| Fecha | evaluation_date | DD/MM/YYYY |
+| Mesociclo | mesocycle | texto |
+| Peso | weight_kg | X.X kg |
+| Talla | standing_height_cm | XXX.X cm |
+| Talla sentado | sitting_height_cm | XX.X cm |
+| Offset | maturity_offset | +X.XX / -X.XX |
+| Estado PHV | maturation_status | badge coloreado |
+| Edad al PHV | age_at_phv | XX.XX anos |
+
+**Interacciones:**
+- Click en una fila → abre modal con todos los campos incluyendo `training_implications` y `notes`
+- Boton "+ Nueva medicion" sobre la tabla → muestra el `AnthropometryForm` (8.1) en un `Dialog` o seccion expandible
+
+**Estados:**
+- Skeleton de 3 filas durante carga
+- Mensaje "No hay mediciones registradas aun" si historial vacio
+
+**Criterio de exito:** Historial muestra los registros del seed. Click en fila abre modal con detalles completos.
+
+---
+
+#### Paso 8.3: Graficas de crecimiento (Recharts)
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/components/athletes/GrowthCharts.tsx`
+
+**Tres graficas (LineChart de Recharts):**
+
+1. **Talla vs Tiempo**
+   - X: `evaluation_date` (formato mes/año)
+   - Y: `standing_height_cm`
+   - Tooltip: fecha exacta + valor
+   - Color: azul
+
+2. **Peso vs Tiempo**
+   - X: `evaluation_date`
+   - Y: `weight_kg`
+   - Tooltip: fecha exacta + valor
+   - Color: verde
+
+3. **Maturity Offset vs Tiempo**
+   - X: `evaluation_date`
+   - Y: `maturity_offset`
+   - Linea horizontal de referencia en Y=0, Y=-1 y Y=+1 (limites Pre/Circa/Post PHV)
+   - Puntos coloreados segun `maturation_status` (verde/amarillo/azul)
+   - Color de linea: purpura
+
+**Layout:** 3 graficas apiladas verticalmente o en grid 2+1. Responsive (100% de ancho del contenedor).
+
+**Si menos de 2 mediciones:** mostrar mensaje "Se necesitan al menos 2 mediciones para generar la grafica" en lugar del chart.
+
+**Criterio de exito:** Con ≥2 registros del seed, las 3 graficas se renderizan. Tooltip muestra datos correctos al hover.
+
+---
+
+#### Paso 8.4: Integracion completa en vista de detalle
+**Tipo:** frontend
+**Agentes:** `general-purpose`
+**Archivos:** `src/routes/athletes/AthleteDetailPage.tsx`, `src/components/shared/PHVBadge.tsx`
+
+**`PHVBadge` component reutilizable:**
+```tsx
+// Props: status: MaturationStatus | null
+// Pre-PHV  → badge verde    (#22c55e) + texto "Pre-PHV"
+// Circa-PHV → badge amarillo (#eab308) + texto "Circa-PHV"  
+// Post-PHV → badge azul     (#3b82f6) + texto "Post-PHV"
+// null      → badge gris "Sin evaluar"
+```
+
+**Tab "Antropometria" (completo):**
+```
+[+ Nueva medicion]    (boton — abre Dialog con AnthropometryForm)
+
+GrowthCharts          (3 graficas de evolucion)
+
+AnthropometryHistory  (tabla de historial)
+```
+
+**Tab "Info general" (actualizar):**
+- Si `latest_anthropometry` existe → mostrar `PHVBadge` + fecha ultima evaluacion + `training_implications` en un card resaltado
+- Implicaciones de entrenamiento: destacado con icono de advertencia para Circa-PHV (estiron activo)
+
+**Criterio de exito:**
+- Tab Antropometria muestra formulario en dialog, graficas e historial integrados
+- `PHVBadge` aparece en Info general y en la lista de atletas
+- Flujo completo: login → lista atletas → detalle → nueva medicion → grafica actualizada
 
 ---
 
@@ -556,10 +975,20 @@ Paso 1 (scaffolding)
        └→ Paso 3 (auth JWT)
             └→ Paso 4 (CRUD clubes/usuarios)
                  └→ Paso 5 (CRUD atletas + PHV)
-                      └→ Paso 6 (frontend auth) ←── puede empezar en paralelo desde Paso 3
-                           └→ Paso 7 (frontend atletas)
-                                └→ Paso 8 (frontend antropometria)
-Paso 9 (docker) ←── puede empezar en paralelo desde Paso 1
+                      └→ 6.1 (scaffolding Vite + estructura)
+                           └→ 6.2 (API client + tipos TS)
+                                └→ 6.3 (auth store Zustand)
+                                     └→ 6.4 (login page)
+                                          └→ 6.5 (layout + rutas protegidas)
+                                               └→ 7.1 (hooks TanStack Query)
+                                                    ├→ 7.2 (lista atletas + DataTable)
+                                                    └→ 7.3 (formulario crear/editar)
+                                                         └→ 7.4 (vista detalle atleta)
+                                                              └→ 8.1 (form antropometria + lib/phv.ts)
+                                                                   ├→ 8.2 (historial mediciones)  ─┐
+                                                                   └→ 8.3 (graficas Recharts)     ─┤
+                                                                                                   └→ 8.4 (integracion completa)
+Paso 9 (docker) ←── completado junto con Paso 2
 Paso 10 (tests) ←── incremental, se agrega en cada paso
 ```
 
