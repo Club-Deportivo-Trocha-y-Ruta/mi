@@ -238,6 +238,29 @@ class TestCreateUser:
         assert second.status_code == 409
 
 
+class TestCreateUserEdgeCases:
+    async def test_weak_password_returns_422(self, client):
+        """USERS-INTG-010: crear usuario con contraseña débil (<8 chars) retorna 422."""
+        login = await client.post(
+            "/api/auth/login",
+            json={"email": "admin@trochyruta.com", "password": "Admin2026!"},
+        )
+        token = login.json()["access_token"]
+
+        resp = await client.post(
+            "/api/users",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "email": f"weak-pass-{uuid4().hex[:8]}@test.com",
+                "password": "123",
+                "first_name": "Pass",
+                "last_name": "Debil",
+                "role": "coach",
+            },
+        )
+        assert resp.status_code == 422
+
+
 class TestListUsers:
     async def test_admin_lists_all_users(self, client):
         login = await client.post(

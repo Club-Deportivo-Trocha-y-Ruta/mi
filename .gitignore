@@ -1,9 +1,10 @@
-# Entorno
+# ─── Entorno ──────────────────────────────────────────────────────────────────
 .env
 .env.local
 .env.*.local
+*.env
 
-# Python
+# ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -11,29 +12,43 @@ dist/
 build/
 .venv/
 venv/
+*.pyo
 
-# Node / Frontend
+# ─── Node / Frontend ──────────────────────────────────────────────────────────
 node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/coverage/
+*.tsbuildinfo
+pnpm-debug.log*
+.pnpm-store/
 
-# IDE
+# ─── IDE ──────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
-.DS_Store
+**/.DS_Store
+Thumbs.db
 
-# Docker
+# ─── Docker ───────────────────────────────────────────────────────────────────
 mysql_data/
 
-# Alembic
+# ─── Alembic ──────────────────────────────────────────────────────────────────
 backend/alembic/versions/__pycache__/
 
-# Tests
+# ─── Tests ────────────────────────────────────────────────────────────────────
 .pytest_cache/
 htmlcov/
 .coverage
+.coverage.*
+coverage.xml
+.playwright-cli
+.playwright
 
-# Backups
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Backups ──────────────────────────────────────────────────────────────────
 data/backups/*.sql

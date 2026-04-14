@@ -131,3 +131,59 @@ class TestMeEndpoint:
             headers={"Authorization": "Bearer token-falso"},
         )
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Casos de borde — AUTH-INTG-009 a AUTH-INTG-012
+# ---------------------------------------------------------------------------
+class TestLoginEdgeCases:
+    async def test_login_empty_email(self, client):
+        """AUTH-INTG-009: email vacío retorna 422."""
+        resp = await client.post(
+            "/api/auth/login",
+            json={"email": "", "password": "Admin2026!"},
+        )
+        assert resp.status_code == 422
+
+    async def test_login_empty_body(self, client):
+        """AUTH-INTG-010: body vacío retorna 422."""
+        resp = await client.post("/api/auth/login", json={})
+        assert resp.status_code == 422
+
+    async def test_expired_token_returns_401(self, client):
+        """AUTH-INTG-011: token con exp en el pasado retorna 401."""
+        import jwt as pyjwt
+        from datetime import datetime, timedelta, timezone
+        from app.config import settings
+
+        payload = {
+            "sub": "1",
+            "role": "admin",
+            "club_ids": [],
+            "type": "access",
+            "exp": datetime.now(timezone.utc) - timedelta(seconds=1),
+        }
+        expired_token = pyjwt.encode(
+            payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
+        )
+        resp = await client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
+        assert resp.status_code == 401
+
+    async def test_me_coach_has_club_ids(self, client):
+        """AUTH-INTG-012: /me con coach retorna club_ids con al menos un club."""
+        login = await client.post(
+            "/api/auth/login",
+            json={"email": "entrenador@trochyruta.com", "password": "Coach2026!"},
+        )
+        token = login.json()["access_token"]
+        resp = await client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body["club_ids"], list)
+        assert len(body["club_ids"]) >= 1

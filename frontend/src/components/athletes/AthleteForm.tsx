@@ -16,7 +16,13 @@ const athleteFormSchema = z.object({
     .refine((value) => new Date(value).getTime() <= Date.now(), "No puede ser futura")
     .refine((value) => value >= "1990-01-01", "Fecha minima 1990-01-01"),
   sex: z.nativeEnum(Sex),
-  years_in_club: z.number().min(0).max(20),
+  club_join_date: z
+    .string()
+    .optional()
+    .refine(
+      (v) => !v || new Date(v).getTime() <= Date.now(),
+      "No puede ser futura",
+    ),
 });
 
 export type AthleteFormValues = z.output<typeof athleteFormSchema>;
@@ -43,7 +49,7 @@ export function AthleteForm({
       last_name: initialValues?.last_name ?? "",
       birth_date: initialValues?.birth_date ?? "",
       sex: initialValues?.sex ?? Sex.M,
-      years_in_club: initialValues?.years_in_club ?? 0,
+      club_join_date: initialValues?.club_join_date ?? "",
     },
   });
 
@@ -57,7 +63,7 @@ export function AthleteForm({
       last_name: initialValues.last_name,
       birth_date: initialValues.birth_date,
       sex: initialValues.sex,
-      years_in_club: initialValues.years_in_club ?? 0,
+      club_join_date: initialValues.club_join_date ?? "",
     });
   }, [form, initialValues]);
 
@@ -118,14 +124,14 @@ export function AthleteForm({
           </select>
         </label>
         <label className="text-sm text-slate-700">
-          Anos en el club
+          Fecha ingreso al club
           <input
-            type="number"
+            type="date"
             className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-            {...form.register("years_in_club", { valueAsNumber: true })}
+            {...form.register("club_join_date")}
           />
           <span className="text-xs text-rose-600">
-            {form.formState.errors.years_in_club?.message}
+            {form.formState.errors.club_join_date?.message}
           </span>
         </label>
       </div>

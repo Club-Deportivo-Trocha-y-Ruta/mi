@@ -28,7 +28,9 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     }
   }, [accessToken, refreshSession, refreshToken]);
 
-  if (isLoading) {
+  // Bloquea el render de hijos mientras el accessToken aún no está disponible
+  // pero hay un refreshToken → evita que las queries se disparen sin token.
+  if (isLoading || (!accessToken && !!refreshToken)) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-slate-600">
         Cargando sesión...

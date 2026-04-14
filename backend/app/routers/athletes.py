@@ -16,7 +16,7 @@ from app.schemas.athlete import (
     AthleteUpdate,
 )
 from app.schemas.anthropometry import AnthropometryOut
-from app.services.category import compute_age_decimal, get_category
+from app.services.category import compute_age_decimal, compute_years_in_club, get_category
 
 router = APIRouter()
 
@@ -30,10 +30,12 @@ def _coach_club_ids(user: User) -> set[int]:
 
 
 def _enrich_athlete(athlete: Athlete) -> AthleteOut:
-    """Agrega campos calculados (age_decimal, category) al response."""
+    """Agrega campos calculados (age_decimal, category, years_in_club) al response."""
     out = AthleteOut.model_validate(athlete)
     out.age_decimal = compute_age_decimal(athlete.birth_date)
     out.category = get_category(athlete.birth_date.year, athlete.sex.value)
+    if athlete.club_join_date is not None:
+        out.years_in_club = compute_years_in_club(athlete.club_join_date)
     return out
 
 
@@ -72,7 +74,7 @@ async def create_athlete(
         last_name=body.last_name,
         birth_date=body.birth_date,
         sex=body.sex,
-        years_in_club=body.years_in_club,
+        club_join_date=body.club_join_date,
         club_id=body.club_id,
         created_by=current_user.id,
     )
@@ -176,6 +178,8 @@ async def get_athlete(
     out = AthleteDetailOut.model_validate(athlete)
     out.age_decimal = compute_age_decimal(athlete.birth_date)
     out.category = get_category(athlete.birth_date.year, athlete.sex.value)
+    if athlete.club_join_date is not None:
+        out.years_in_club = compute_years_in_club(athlete.club_join_date)
     out.latest_anthropometry = latest
     return out
 

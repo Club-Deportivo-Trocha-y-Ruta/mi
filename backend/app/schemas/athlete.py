@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.models.athlete import Sex
 from app.schemas.anthropometry import AnthropometryOut
@@ -11,14 +11,35 @@ class AthleteCreate(BaseModel):
     last_name: str
     birth_date: date
     sex: Sex
-    years_in_club: int | None = None
+    club_join_date: date | None = None
     club_id: int
+
+    @field_validator("birth_date")
+    @classmethod
+    def birth_date_must_be_past(cls, v: date) -> date:
+        if v >= date.today():
+            raise ValueError("La fecha de nacimiento debe ser en el pasado")
+        return v
+
+    @field_validator("club_join_date")
+    @classmethod
+    def club_join_date_must_be_past(cls, v: date | None) -> date | None:
+        if v is not None and v > date.today():
+            raise ValueError("La fecha de ingreso al club debe ser en el pasado o hoy")
+        return v
 
 
 class AthleteUpdate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
-    years_in_club: int | None = None
+    club_join_date: date | None = None
+
+    @field_validator("club_join_date")
+    @classmethod
+    def club_join_date_must_be_past(cls, v: date | None) -> date | None:
+        if v is not None and v > date.today():
+            raise ValueError("La fecha de ingreso al club debe ser en el pasado o hoy")
+        return v
 
 
 class AthleteOut(BaseModel):
@@ -28,7 +49,8 @@ class AthleteOut(BaseModel):
     last_name: str
     birth_date: date
     sex: Sex
-    years_in_club: int | None
+    club_join_date: date | None
+    years_in_club: float | None = None
     age_decimal: float | None = None
     category: str | None = None
     club_id: int

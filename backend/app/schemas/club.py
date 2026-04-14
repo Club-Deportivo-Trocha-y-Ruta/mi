@@ -1,14 +1,14 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.club import ClubRole
 
 
 class ClubCreate(BaseModel):
-    name: str
-    code: str
+    name: str = Field(min_length=1)
+    code: str = Field(min_length=1)
     location: str | None = None
 
 

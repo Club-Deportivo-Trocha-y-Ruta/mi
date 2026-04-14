@@ -11,6 +11,14 @@ def compute_age_decimal(birth_date: date, reference_date: date | None = None) ->
     return round(delta.days / 365.25, 2)
 
 
+def compute_years_in_club(club_join_date: date, reference_date: date | None = None) -> float:
+    """Calcula los años en el club: (referencia - ingreso) / 365.25."""
+    if reference_date is None:
+        reference_date = date.today()
+    delta = reference_date - club_join_date
+    return round(delta.days / 365.25, 2)
+
+
 def get_category(birth_year: int, sex: str) -> str:
     """Determina la categoría FCC 2026 según año de nacimiento y sexo.
 

@@ -38,7 +38,7 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
           payload: {
             first_name: values.first_name,
             last_name: values.last_name,
-            years_in_club: values.years_in_club,
+            club_join_date: values.club_join_date || null,
           },
         });
         navigate(`/athletes/${athleteId}`);
@@ -56,7 +56,7 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
         last_name: values.last_name,
         birth_date: values.birth_date,
         sex: values.sex,
-        years_in_club: values.years_in_club,
+        club_join_date: values.club_join_date || null,
         club_id: clubId,
       });
       navigate(`/athletes/${created.id}`);

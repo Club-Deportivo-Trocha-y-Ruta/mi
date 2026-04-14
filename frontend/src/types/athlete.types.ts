@@ -6,14 +6,14 @@ export interface AthleteCreate {
   last_name: string;
   birth_date: string;
   sex: Sex;
-  years_in_club?: number | null;
+  club_join_date?: string | null;
   club_id: number;
 }
 
 export interface AthleteUpdate {
   first_name?: string;
   last_name?: string;
-  years_in_club?: number | null;
+  club_join_date?: string | null;
 }
 
 export interface AthleteOut {
@@ -23,6 +23,7 @@ export interface AthleteOut {
   last_name: string;
   birth_date: string;
   sex: Sex;
+  club_join_date: string | null;
   years_in_club: number | null;
   age_decimal: number | null;
   category: string | null;

@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { PHVBadge } from "@/components/shared/PHVBadge";
 import { MaturationStatus } from "@/types/enums";
 import type { AthleteOut } from "@/types/athlete.types";
 
@@ -9,13 +10,6 @@ export interface AthleteRow extends AthleteOut {
 
 interface AthletesTableProps {
   items: AthleteRow[];
-}
-
-function phvBadgeClass(status: MaturationStatus | null): string {
-  if (status === MaturationStatus.PrePHV) return "bg-emerald-100 text-emerald-800";
-  if (status === MaturationStatus.CircaPHV) return "bg-amber-100 text-amber-800";
-  if (status === MaturationStatus.PostPHV) return "bg-blue-100 text-blue-800";
-  return "bg-slate-100 text-slate-700";
 }
 
 export function AthletesTable({ items }: AthletesTableProps) {
@@ -48,11 +42,7 @@ export function AthletesTable({ items }: AthletesTableProps) {
                 </span>
               </td>
               <td className="px-4 py-3">
-                <span
-                  className={`rounded-full px-2 py-1 text-xs font-medium ${phvBadgeClass(athlete.latest_maturation_status)}`}
-                >
-                  {athlete.latest_maturation_status ?? "Sin evaluar"}
-                </span>
+                <PHVBadge status={athlete.latest_maturation_status} />
               </td>
               <td className="px-4 py-3">
                 <div className="flex gap-2">

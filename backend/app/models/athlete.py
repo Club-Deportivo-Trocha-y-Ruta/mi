@@ -10,7 +10,6 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
-    SmallInteger,
     String,
     UniqueConstraint,
 )
@@ -48,7 +47,7 @@ class Athlete(Base):
     last_name: Mapped[str] = mapped_column(String(100))
     birth_date: Mapped[date] = mapped_column(Date)
     sex: Mapped[Sex] = mapped_column(Enum(Sex))
-    years_in_club: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    club_join_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(

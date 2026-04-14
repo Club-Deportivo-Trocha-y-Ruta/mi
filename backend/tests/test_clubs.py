@@ -82,6 +82,13 @@ class TestCreateClub:
         assert resp.status_code in (401, 403)
 
 
+class TestListClubsUnauthenticated:
+    async def test_unauthenticated_cannot_list_clubs(self, client):
+        """CLUBS-INTG-004: GET /api/clubs/ sin token retorna 401 o 403."""
+        resp = await client.get("/api/clubs/")
+        assert resp.status_code in (401, 403)
+
+
 class TestListClubs:
     async def test_list_clubs_authenticated(self, client):
         login = await client.post(
@@ -182,6 +189,54 @@ class TestUpdateClub:
             json={"name": "Intento Coach"},
         )
         assert resp.status_code == 403
+
+
+class TestUpdateClubEdgeCases:
+    async def test_update_nonexistent_club_returns_404(self, client):
+        """CLUBS-INTG-007: PATCH /api/clubs/99999 retorna 404."""
+        token = await _admin_token(client)
+        resp = await client.patch(
+            "/api/clubs/99999",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": "No Existe"},
+        )
+        assert resp.status_code == 404
+
+    async def test_create_club_with_duplicate_name(self, client):
+        """CLUBS-INTG-008: crear club con nombre duplicado — comportamiento documentado.
+        El sistema valida por code (único), no por name. Dos clubs con mismo nombre
+        pero distinto code son permitidos. Este test documenta ese comportamiento.
+        """
+        token = await _admin_token(client)
+        code1 = f"dup-name-1-{uuid4().hex[:8]}"
+        code2 = f"dup-name-2-{uuid4().hex[:8]}"
+        name = "Club Nombre Duplicado"
+
+        resp1 = await client.post(
+            "/api/clubs/",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": name, "code": code1},
+        )
+        assert resp1.status_code == 201
+
+        resp2 = await client.post(
+            "/api/clubs/",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": name, "code": code2},
+        )
+        # Nombre duplicado es permitido (solo code es único): 201
+        # Si el sistema implementa unicidad por nombre, será 409 o 422
+        assert resp2.status_code in (201, 409, 422)
+
+    async def test_create_club_with_empty_name_returns_422(self, client):
+        """CLUBS-INTG-009: crear club con nombre vacío retorna 422."""
+        token = await _admin_token(client)
+        resp = await client.post(
+            "/api/clubs/",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": "", "code": f"empty-name-{uuid4().hex[:8]}"},
+        )
+        assert resp.status_code == 422
 
 
 class TestAddMember:

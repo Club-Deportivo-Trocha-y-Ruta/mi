@@ -92,35 +92,35 @@ async def seed(session: AsyncSession) -> None:
             "last_name": "Lopez",
             "birth_date": date(2014, 3, 15),
             "sex": Sex.M,
-            "years_in_club": 2,
+            "club_join_date": date(2024, 3, 15),  # ~2 años en el club
         },
         {
             "first_name": "Valentina",
             "last_name": "Martinez",
             "birth_date": date(2013, 7, 22),
             "sex": Sex.F,
-            "years_in_club": 3,
+            "club_join_date": date(2023, 4, 1),  # ~3 años en el club
         },
         {
             "first_name": "Miguel",
             "last_name": "Ramirez",
             "birth_date": date(2012, 11, 5),
             "sex": Sex.M,
-            "years_in_club": 1,
+            "club_join_date": date(2025, 4, 1),  # ~1 año en el club
         },
         {
             "first_name": "Isabella",
             "last_name": "Garcia",
             "birth_date": date(2015, 1, 30),
             "sex": Sex.F,
-            "years_in_club": 1,
+            "club_join_date": date(2025, 4, 1),  # ~1 año en el club
         },
         {
             "first_name": "Andres",
             "last_name": "Caicedo",
             "birth_date": date(2011, 9, 12),
             "sex": Sex.M,
-            "years_in_club": 4,
+            "club_join_date": date(2022, 4, 1),  # ~4 años en el club
         },
     ]
 
@@ -143,7 +143,7 @@ async def seed(session: AsyncSession) -> None:
             last_name=data["last_name"],
             birth_date=data["birth_date"],
             sex=data["sex"],
-            years_in_club=data["years_in_club"],
+            club_join_date=data["club_join_date"],
             club_id=club.id,
             created_by=coach.id,
         )

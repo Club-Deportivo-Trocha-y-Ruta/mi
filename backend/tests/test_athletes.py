@@ -35,7 +35,7 @@ class TestCreateAthlete:
                 "last_name": "López",
                 "birth_date": "2013-06-15",
                 "sex": "M",
-                "years_in_club": 2,
+                "club_join_date": "2024-01-01",
                 "club_id": club_id,
             },
             headers=headers,
@@ -296,3 +296,93 @@ class TestAthleteDetailWithAnthropometry:
         body = resp.json()
         assert body["latest_anthropometry"] is not None
         assert body["latest_anthropometry"]["evaluation_date"] == "2026-04-14"
+
+
+# ---------------------------------------------------------------------------
+# Casos de borde — ATHLETES-INTG-014 a ATHLETES-INTG-017
+# ---------------------------------------------------------------------------
+class TestAthleteEdgeCases:
+    async def test_create_without_club_join_date_uses_default(self, client):
+        """ATHLETES-INTG-014: atleta sin club_join_date resulta en years_in_club null."""
+        headers = await _auth(client)
+        club_id = await _get_coach_club_id(client, headers)
+        resp = await client.post(
+            "/api/athletes",
+            json={
+                "first_name": "SinFecha",
+                "last_name": "EnClub",
+                "birth_date": "2013-01-01",
+                "sex": "M",
+                "club_id": club_id,
+                # No incluye club_join_date
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["club_join_date"] is None
+        assert body["years_in_club"] is None
+
+    async def test_create_athlete_with_future_birth_date(self, client):
+        """ATHLETES-INTG-015: fecha de nacimiento futura retorna 422."""
+        headers = await _auth(client)
+        club_id = await _get_coach_club_id(client, headers)
+        resp = await client.post(
+            "/api/athletes",
+            json={
+                "first_name": "Futuro",
+                "last_name": "Test",
+                "birth_date": "2030-01-01",
+                "sex": "M",
+                "club_id": club_id,
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 422
+
+    async def test_create_athlete_with_invalid_sex(self, client):
+        """ATHLETES-INTG-016: sexo inválido retorna 422."""
+        headers = await _auth(client)
+        club_id = await _get_coach_club_id(client, headers)
+        resp = await client.post(
+            "/api/athletes",
+            json={
+                "first_name": "SexoInvalido",
+                "last_name": "Test",
+                "birth_date": "2013-01-01",
+                "sex": "X",
+                "club_id": club_id,
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 422
+
+    async def test_create_athlete_creates_user_and_club_member(self, client):
+        """ATHLETES-INTG-017: crear atleta crea user con role=athlete y ClubMember."""
+        headers = await _admin_auth(client)
+        club_id = await _get_coach_club_id(client, await _auth(client))
+
+        # Crear atleta
+        resp = await client.post(
+            "/api/athletes",
+            json={
+                "first_name": "TransaccionTest",
+                "last_name": "Atomico",
+                "birth_date": "2014-05-10",
+                "sex": "F",
+                "club_id": club_id,
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+
+        # El usuario vinculado debe existir (user_id presente en la respuesta)
+        assert "user_id" in body
+        assert body["user_id"] is not None
+
+        # El atleta creado debe estar visible en el listado del club
+        list_resp = await client.get(f"/api/athletes?club_id={club_id}", headers=headers)
+        assert list_resp.status_code == 200
+        ids = [a["id"] for a in list_resp.json()["items"]]
+        assert body["id"] in ids

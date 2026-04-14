@@ -9,6 +9,13 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+    @field_validator("email")
+    @classmethod
+    def validate_email_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("El email no puede estar vacío")
+        return v
+
     @field_validator("password")
     @classmethod
     def validate_password_length(cls, v: str) -> str:
