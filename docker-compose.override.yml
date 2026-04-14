@@ -1,0 +1,15 @@
+# Dev overrides — cargado automaticamente por docker compose
+services:
+  backend:
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m scripts.seed &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      - APP_DEBUG=true
+
+  mysql:
+    ports:
+      - "3306:3306"
