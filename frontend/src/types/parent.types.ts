@@ -70,8 +70,18 @@ export interface ParentInviteTokenValidation {
   email: string;
   expires_at: string;
   valid: boolean;
+  /** Nombre del club al que pertenece el atleta. Presente en el wizard de onboarding. */
+  club_name?: string;
+  /** Rol del usuario invitado (ej: "parent"). Presente en el wizard de onboarding. */
+  role?: string;
 }
 
+/**
+ * Shape base para registro de padre via API directa.
+ * El wizard de onboarding usa ParentOnboardingPayload en
+ * hooks/onboarding/index.ts que extiende este shape con
+ * relationship_type y consent.
+ */
 export interface ParentRegisterRequest {
   token: string;
   first_name: string;

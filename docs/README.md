@@ -1,20 +1,18 @@
-# Documentos de referencia
+# docs/ — Índice de Documentación
 
-Este directorio debe contener los dos documentos fundamentales del club:
+Carpetas numeradas por feature en orden cronológico. Archivos internos por tipo: `workflow.md`, `research.md`, `design.md`, `qa.md`, `reference.md`.
 
-1. **`marco-teorico.md`** — Marco Teórico-Metodológico para el Entrenamiento de Ciclistas Juveniles XCO (10-15 años). Copiar aquí el contenido de `investigacion.md`.
+| # | Carpeta / Archivo | Contenido |
+|---|---|---|
+| — | [01-marco-teorico.md](01-marco-teorico.md) | Fundamento científico: LTAD, PHV, fisiología, nutrición, normativa (referencia inviolable) |
+| 02 | [02-scaffolding/](02-scaffolding/) | Decisiones de arquitectura y stack del proyecto |
+| 03 | [03-fase1/](03-fase1/) | Auth, roles, CRUD atletas, antropometría PHV — workflow + plan QA |
+| 04 | [04-percentiles/](04-percentiles/) | Percentiles OMS/CDC: investigación + implementación curvas de crecimiento |
+| 05 | [05-design-system/](05-design-system/) | Sistema visual: paleta, tipografía, componentes, tokens |
+| 06 | [06-parents/](06-parents/) | Módulo padres/acudientes: backend + portal frontend |
+| 07 | [07-notifications/](07-notifications/) | Módulo de notificaciones: email, PDF, DOCX |
+| 08 | [08-onboarding/](08-onboarding/) | Onboarding por invitación: investigación + diseño + implementación |
 
-2. **`plan-entrenamiento-2026.md`** — Plan de Entrenamiento XCO Copa Valle 2026 (20 abril – 31 diciembre). Exportar el contenido del .docx a markdown y colocarlo aquí.
+## Archivo de entrenamiento
 
-Estos documentos son referenciados por el `CLAUDE.md` principal y por los skills y agentes del proyecto. Claude Code los lee automáticamente cuando necesita fundamentar una decisión de entrenamiento.
-
-## Cómo agregar los documentos
-
-```bash
-# Opción 1: Copiar directamente los archivos markdown
-cp /ruta/a/investigacion.md docs/marco-teorico.md
-cp /ruta/a/plan-entrenamiento.md docs/plan-entrenamiento-2026.md
-
-# Opción 2: Si tienes el .docx, convertir con pandoc
-pandoc Plan_Entrenamiento_XCO_Copa_Valle_2026.docx -o docs/plan-entrenamiento-2026.md
-```
+- `Plan_Entrenamiento_XCO_Copa_Valle_2026.docx` — Plan macrociclo 2026

@@ -168,7 +168,7 @@ export function MyAthleteDetailPage() {
       </Link>
 
       {/* Hero Card */}
-      <AthleteInfoCard athlete={athlete} />
+      <AthleteInfoCard athlete={athlete} backUrl={null} editUrl={null} />
 
       {/* Stat Cards Row — 3 cards: Edad, Talla, Ultima medicion */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

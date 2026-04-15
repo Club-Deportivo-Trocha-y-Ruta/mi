@@ -1,5 +1,5 @@
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -139,7 +139,7 @@ async def validate_invite_token(
     Retorna valid=False (sin lanzar excepción) en los demás casos, para que
     el frontend pueda mostrar un mensaje apropiado al usuario.
     """
-    from datetime import timezone
+    from datetime import datetime, timezone
 
     stmt = select(ParentInvite).where(ParentInvite.token == token)
     invite = (await db.execute(stmt)).scalar_one_or_none()
@@ -150,16 +150,18 @@ async def validate_invite_token(
             detail="Token de invitación no encontrado",
         )
 
-    # Cargar nombre del atleta para la respuesta
+    # Cargar atleta junto con su club en una sola query
     athlete_result = await db.execute(
-        select(Athlete).where(Athlete.id == invite.athlete_id)
+        select(Athlete)
+        .options(selectinload(Athlete.club))
+        .where(Athlete.id == invite.athlete_id)
     )
     athlete = athlete_result.scalar_one_or_none()
+
     athlete_name = (
         f"{athlete.first_name} {athlete.last_name}" if athlete else "Atleta desconocido"
     )
-
-    from datetime import datetime
+    club_name = athlete.club.name if athlete and athlete.club else ""
 
     is_expired = invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
     is_valid = not invite.used and not is_expired
@@ -170,12 +172,15 @@ async def validate_invite_token(
         email=invite.email,
         expires_at=invite.expires_at,
         valid=is_valid,
+        role="parent",
+        club_name=club_name,
     )
 
 
 @router.post("/parent-register", response_model=ParentRegisterOut, status_code=status.HTTP_201_CREATED)
 async def parent_register(
     body: ParentRegisterRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ParentRegisterOut:
     """Registra un padre/acudiente a partir de un token de invitación (endpoint público).
@@ -183,9 +188,16 @@ async def parent_register(
     Flujo:
     1. Valida el token (lanza excepción si inválido/expirado/usado).
     2. Crea el usuario, la membresía al club y la vinculación con el atleta.
-    3. Marca el token como usado.
+    3. Registra el consentimiento parental digital (si fue enviado).
+    4. Marca el token como usado.
     """
     invite = await get_valid_invite(body.token, db)
+
+    # Extraer IP del cliente para trazabilidad del consentimiento
+    client_ip: str | None = None
+    if request.client:
+        client_ip = request.client.host
+
     new_user = await consume_invite(
         invite=invite,
         first_name=body.first_name,
@@ -193,6 +205,9 @@ async def parent_register(
         password=body.password,
         phone=body.phone,
         db=db,
+        relationship_type=body.relationship_type,
+        consent=body.consent,
+        ip_address=client_ip,
     )
     return ParentRegisterOut(
         id=new_user.id,

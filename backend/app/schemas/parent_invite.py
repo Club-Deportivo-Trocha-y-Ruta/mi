@@ -2,6 +2,18 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
+_RELATIONSHIP_TYPES_VALIDOS = {"padre", "madre", "acudiente"}
+
+
+class ParentalConsentData(BaseModel):
+    """Datos de consentimiento parental aceptados durante onboarding."""
+
+    accept_data_collection: bool
+    accept_training_tracking: bool
+    accept_anthropometry: bool
+    accept_third_party: bool = False
+    privacy_policy_version: str = "v1.0"
+
 
 class ParentInviteCreate(BaseModel):
     athlete_id: int
@@ -23,6 +35,8 @@ class ParentInviteTokenValidation(BaseModel):
     email: str
     expires_at: datetime
     valid: bool
+    role: str = "parent"
+    club_name: str = ""
 
 
 class ParentRegisterRequest(BaseModel):
@@ -34,6 +48,12 @@ class ParentRegisterRequest(BaseModel):
     last_name: str
     password: str
     phone: str | None = None
+    relationship_type: str = "acudiente"
+    consent: ParentalConsentData = ParentalConsentData(
+        accept_data_collection=False,
+        accept_training_tracking=False,
+        accept_anthropometry=False,
+    )
 
     @field_validator("password")
     @classmethod
@@ -48,6 +68,16 @@ class ParentRegisterRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("El nombre no puede estar vacío")
         return v.strip()
+
+    @field_validator("relationship_type")
+    @classmethod
+    def relationship_type_valido(cls, v: str) -> str:
+        normalizado = v.strip().lower()
+        if normalizado not in _RELATIONSHIP_TYPES_VALIDOS:
+            raise ValueError(
+                f"El tipo de parentesco debe ser uno de: {', '.join(sorted(_RELATIONSHIP_TYPES_VALIDOS))}"
+            )
+        return normalizado
 
 
 class ParentRegisterOut(BaseModel):
@@ -77,3 +107,20 @@ class ParentInviteCreatedOut(ParentInviteOut):
     """Respuesta al CREAR una invitación — incluye el token (exposición única)."""
 
     token: str
+
+
+class ParentalConsentOut(BaseModel):
+    """Representación pública de un registro de consentimiento parental (uso futuro)."""
+
+    id: int
+    athlete_id: int
+    consent_version: str
+    consented_at: datetime
+    consent_method: str
+    data_collection: bool
+    training_tracking: bool
+    anthropometry: bool
+    third_party_sharing: bool
+    withdrawn_at: datetime | None
+
+    model_config = {"from_attributes": True}

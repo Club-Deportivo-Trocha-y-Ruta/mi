@@ -728,7 +728,7 @@ Los siguientes ítems son riesgos conocidos que deben documentarse en el registr
 
 ## 8. Matriz de trazabilidad
 
-Mapeo entre los pasos del workflow de Fase 1 (`docs/workflow-fase1.md`) y los casos de prueba:
+Mapeo entre los pasos del workflow de Fase 1 (`docs/03-fase1/workflow.md`) y los casos de prueba:
 
 | Paso Workflow | Descripción | Casos de Prueba Relacionados |
 |---|---|---|

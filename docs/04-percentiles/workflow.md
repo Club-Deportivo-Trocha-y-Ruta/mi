@@ -3,7 +3,7 @@
 **Fecha:** 2026-04-14
 **Contexto:** Integrar indicadores de crecimiento (percentiles OMS/CDC) al sistema antropometrico existente, para evaluar si un atleta esta dentro de los rangos optimos y tomar decisiones sobre trabajos especificos segun edad y maduracion.
 **Prerequisitos:** Fase 1 completa (auth + atletas + antropometria PHV operativo)
-**Fuente cientifica:** `docs/research_percentiles_crecimiento.md`
+**Fuente cientifica:** `docs/04-percentiles/research.md`
 
 ## Estado de Implementacion — 2026-04-14
 
@@ -566,7 +566,7 @@ interface PercentileCurvesProps {
 **Agente:** `react-ui-engineer`
 **Entregable:** Panel que integra PHV + percentiles + edad para recomendaciones
 
-**Logica de decision (basada en `docs/marco-teorico.md` y CLAUDE.md):**
+**Logica de decision (basada en `docs/01-marco-teorico.md` y CLAUDE.md):**
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -620,7 +620,7 @@ interface PercentileCurvesProps {
 - Panel genera recomendaciones correctas segun grupo de edad Y estado PHV
 - Circa-PHV override: reduce permisos de entrenamiento independientemente de edad
 - Alertas visibles y claras
-- Todas las reglas provienen de `docs/marco-teorico.md` (fuente inviolable)
+- Todas las reglas provienen de `docs/01-marco-teorico.md` (fuente inviolable)
 
 ---
 

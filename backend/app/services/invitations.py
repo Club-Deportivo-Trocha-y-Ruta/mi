@@ -11,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.athlete import Athlete, FamilyRelationship, ParentAthlete
 from app.models.club import ClubMember, ClubRole
 from app.models.parent_invite import ParentInvite
+from app.models.parental_consent import ParentalConsent
 from app.models.user import User, UserRole
+from app.schemas.parent_invite import ParentalConsentData
 from app.services.auth import hash_password
 
 INVITE_EXPIRY_HOURS = 72
@@ -88,10 +90,25 @@ async def consume_invite(
     password: str,
     phone: str | None,
     db: AsyncSession,
+    relationship_type: str = "acudiente",
+    consent: ParentalConsentData | None = None,
+    ip_address: str | None = None,
 ) -> User:
     """Crea el usuario padre, lo vincula con el atleta y marca el token como usado.
 
-    Operación atómica: si cualquier paso falla, el caller (get_db) hace rollback.
+    Opcionalmente registra el consentimiento parental digital y actualiza el
+    campo parental_consent_obtained del atleta en la misma transacción atómica.
+
+    Args:
+        invite: Invitación válida (no usada, no expirada).
+        first_name: Nombre del padre/acudiente.
+        last_name: Apellido del padre/acudiente.
+        password: Contraseña en texto plano (se hashea internamente).
+        phone: Teléfono de contacto (opcional).
+        db: Sesión async de SQLAlchemy.
+        relationship_type: Parentesco declarado ('padre', 'madre', 'acudiente').
+        consent: Datos de consentimiento parental aceptados en el wizard.
+        ip_address: IP del cliente para trazabilidad del consentimiento.
     """
     # Verificar que el email no esté ya registrado
     existing_user = (
@@ -104,16 +121,21 @@ async def consume_invite(
             detail="Ya existe una cuenta con este correo electrónico",
         )
 
-    # Cargar el atleta para obtener club_id
-    athlete = (
-        await db.execute(select(Athlete).where(Athlete.id == invite.athlete_id))
-    ).scalar_one_or_none()
+    # Cargar el atleta para obtener club_id y actualizar consentimiento
+    athlete = await db.get(Athlete, invite.athlete_id)
 
     if athlete is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Atleta no encontrado",
         )
+
+    # Mapear string → FamilyRelationship enum (el validator del schema ya
+    # garantiza que el valor es uno de los tres permitidos)
+    try:
+        family_rel = FamilyRelationship(relationship_type)
+    except ValueError:
+        family_rel = FamilyRelationship.acudiente
 
     # Crear usuario padre
     new_user = User(
@@ -145,13 +167,35 @@ async def consume_invite(
     )
     db.add(membership)
 
-    # Vincular parent-athlete (relación "acudiente" por defecto al usar token)
+    # Vincular parent-athlete con el tipo de parentesco recibido
     pa = ParentAthlete(
         parent_id=new_user.id,
         athlete_id=invite.athlete_id,
-        relationship_type=FamilyRelationship.acudiente,
+        relationship_type=family_rel,
     )
     db.add(pa)
+
+    # Registrar consentimiento parental si fue proporcionado
+    if consent is not None:
+        now_utc = datetime.now(timezone.utc)
+
+        parental_consent = ParentalConsent(
+            parent_user_id=new_user.id,
+            athlete_id=invite.athlete_id,
+            consent_version=consent.privacy_policy_version,
+            consented_at=now_utc,
+            consent_method="digital_wizard",
+            ip_address=ip_address,
+            data_collection=consent.accept_data_collection,
+            training_tracking=consent.accept_training_tracking,
+            anthropometry=consent.accept_anthropometry,
+            third_party_sharing=consent.accept_third_party,
+        )
+        db.add(parental_consent)
+
+        # Actualizar estado de consentimiento en el atleta
+        athlete.parental_consent_obtained = True
+        athlete.parental_consent_date = now_utc
 
     # Marcar invite como usado
     invite.used = True

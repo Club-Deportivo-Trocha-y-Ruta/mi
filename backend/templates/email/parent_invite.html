@@ -3,31 +3,68 @@
 {% block title %}Invitación para seguir a {{ athlete_first_name }} — {{ club_name }}{% endblock %}
 
 {% block content %}
-<h1>Te invitamos a unirte a {{ club_name }}</h1>
+<h1>Te invitamos a unirte al seguimiento de {{ athlete_first_name }}</h1>
 
 <p>Hola,</p>
 
 <p>
-  El entrenador del <strong>{{ club_name }}</strong> te ha invitado a crear tu cuenta
-  para hacer seguimiento al progreso deportivo de <strong>{{ athlete_first_name }}</strong>.
+  El equipo técnico del <strong>{{ club_name }}</strong> te ha invitado a crear tu cuenta
+  como padre o acudiente para acompañar de cerca el desarrollo deportivo de
+  <strong>{{ athlete_first_name }}</strong>.
 </p>
 
 <div class="highlight-box">
-  <strong>Acepta tu invitación</strong><br>
-  Haz clic en el enlace a continuación para completar tu registro.<br>
-  Este enlace es válido por <strong>72 horas</strong>.
+  <strong>¿Qué podrás hacer desde tu cuenta?</strong>
 </div>
 
-<p style="text-align: center; margin: 32px 0;">
-  <a href="{{ invite_url }}"
-     style="background-color: #2d5016; color: #ffffff; padding: 14px 28px;
+<!-- Listado de beneficios -->
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 0 0 20px 0;">
+  <tr>
+    <td style="padding: 8px 0; vertical-align: top; width: 28px;">
+      <span style="color: #2d5016; font-size: 18px; font-weight: bold;">&#10003;</span>
+    </td>
+    <td style="padding: 8px 0; font-size: 14px; color: #555555; line-height: 1.5;">
+      <strong>Ver el desarrollo deportivo</strong> de {{ athlete_first_name }} en cada etapa de la temporada.
+    </td>
+  </tr>
+  <tr>
+    <td style="padding: 8px 0; vertical-align: top; width: 28px;">
+      <span style="color: #2d5016; font-size: 18px; font-weight: bold;">&#10003;</span>
+    </td>
+    <td style="padding: 8px 0; font-size: 14px; color: #555555; line-height: 1.5;">
+      <strong>Consultar las mediciones antropométricas</strong> y el seguimiento del crecimiento
+      según el modelo PHV (Pico de Velocidad de Crecimiento).
+    </td>
+  </tr>
+  <tr>
+    <td style="padding: 8px 0; vertical-align: top; width: 28px;">
+      <span style="color: #2d5016; font-size: 18px; font-weight: bold;">&#10003;</span>
+    </td>
+    <td style="padding: 8px 0; font-size: 14px; color: #555555; line-height: 1.5;">
+      <strong>Recibir informes de progreso</strong> mensuales con el avance técnico y físico
+      de {{ athlete_first_name }}.
+    </td>
+  </tr>
+</table>
+
+<!-- Botón CTA -->
+<div class="btn-wrapper">
+  <a href="{{ invite_url }}" class="btn"
+     style="background-color: #2d5016; color: #ffffff; padding: 14px 32px;
             text-decoration: none; border-radius: 4px; font-size: 15px;
             font-weight: bold; display: inline-block;">
     Crear mi cuenta
   </a>
+</div>
+
+<!-- Nota de expiración -->
+<p style="font-size: 13px; color: #666666; text-align: center; margin: 8px 0 24px 0;">
+  Este enlace de invitacion es válido por <strong>72 horas</strong>.
+  Pasado ese tiempo deberás solicitar una nueva invitación al entrenador.
 </p>
 
-<p style="font-size: 13px; color: #888888; word-break: break-all;">
+<!-- URL de respaldo para clientes que bloquean botones -->
+<p style="font-size: 12px; color: #888888; word-break: break-all;">
   Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
   {{ invite_url }}
 </p>
@@ -35,8 +72,8 @@
 <hr class="divider">
 
 <p style="font-size: 13px; color: #999999;">
-  Si no esperabas esta invitación, puedes ignorar este mensaje. El enlace expirará
-  automáticamente en 72 horas sin ninguna acción de tu parte.
+  Si no esperabas esta invitación, puedes ignorar este mensaje con tranquilidad.
+  El enlace expirará automáticamente en 72 horas sin ninguna acción de tu parte.
 </p>
 
 <p>

@@ -12,7 +12,8 @@ import { ParentsListPage } from "@/routes/parents/ParentsListPage";
 import { ParentDetailPage } from "@/routes/parents/ParentDetailPage";
 import { ParentDashboardPage } from "@/routes/parents/ParentDashboardPage";
 import { MyAthleteDetailPage } from "@/routes/parents/MyAthleteDetailPage";
-import { ParentRegisterPage } from "@/routes/auth/ParentRegisterPage";
+import { OnboardingPage } from "@/routes/auth/OnboardingPage";
+import { PrivacyPage } from "@/routes/PrivacyPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
 import { UserRole } from "@/types/enums";
 
@@ -116,7 +117,12 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/registro-padre" element={<ParentRegisterPage />} />
+        <Route path="/onboarding" element={<OnboardingPage />} />
+        <Route path="/privacidad" element={<PrivacyPage />} />
+        <Route
+          path="/registro-padre"
+          element={<Navigate to="/onboarding" replace />}
+        />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </QueryClientProvider>

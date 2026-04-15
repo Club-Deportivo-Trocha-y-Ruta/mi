@@ -56,6 +56,8 @@ class AthleteOut(BaseModel):
     category: str | None = None
     club_id: int
     created_at: datetime
+    parental_consent_obtained: bool = False
+    parental_consent_date: datetime | None = None
 
     model_config = {"from_attributes": True}
 

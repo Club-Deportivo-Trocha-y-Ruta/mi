@@ -7,6 +7,10 @@ import type { AthleteDetailOut } from "@/types/athlete.types";
 
 interface AthleteInfoCardProps {
   athlete: AthleteDetailOut;
+  /** Ruta del botón "Volver a lista". null = ocultar. Default: "/athletes" */
+  backUrl?: string | null;
+  /** Ruta del botón "Editar". null = ocultar. Default: "/athletes/:id/edit" */
+  editUrl?: string | null;
 }
 
 function StatPill({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
@@ -21,7 +25,12 @@ function StatPill({ icon: Icon, label, value }: { icon: LucideIcon; label: strin
   );
 }
 
-export function AthleteInfoCard({ athlete }: AthleteInfoCardProps) {
+export function AthleteInfoCard({
+  athlete,
+  backUrl = "/athletes",
+  editUrl,
+}: AthleteInfoCardProps) {
+  const resolvedEditUrl = editUrl === undefined ? `/athletes/${athlete.id}/edit` : editUrl;
   const latest = athlete.latest_anthropometry;
   const initials = `${athlete.first_name.charAt(0)}${athlete.last_name.charAt(0)}`.toUpperCase();
 
@@ -34,26 +43,34 @@ export function AthleteInfoCard({ athlete }: AthleteInfoCardProps) {
       }}
     >
       {/* Top bar: navigation */}
-      <div
-        className="flex items-center justify-between px-5 pt-4 pb-3"
-        style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.06)" }}
-      >
-        <Link
-          to="/athletes"
-          className="flex items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
+      {(backUrl !== null || resolvedEditUrl !== null) && (
+        <div
+          className="flex items-center justify-between px-5 pt-4 pb-3"
+          style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.06)" }}
         >
-          <ArrowLeft size={16} />
-          Volver a lista
-        </Link>
-        <Link
-          to={`/athletes/${athlete.id}/edit`}
-          className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-        >
-          <Pencil size={14} />
-          Editar
-        </Link>
-      </div>
+          {backUrl !== null ? (
+            <Link
+              to={backUrl}
+              className="flex items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
+            >
+              <ArrowLeft size={16} />
+              Volver a lista
+            </Link>
+          ) : (
+            <span />
+          )}
+          {resolvedEditUrl !== null && (
+            <Link
+              to={resolvedEditUrl}
+              className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            >
+              <Pencil size={14} />
+              Editar
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Hero content */}
       <div className="px-5 py-4">
