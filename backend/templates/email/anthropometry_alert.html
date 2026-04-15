@@ -1,0 +1,72 @@
+{% extends "email/base/layout.html" %}
+
+{#
+  AVISO DE PRIVACIDAD: Este template NO debe contener el nombre del atleta.
+  Solo se usa athlete_id (opaco) para identificación interna.
+  El coach verifica la identidad en el dashboard mediante dicho ID.
+  Variables requeridas: athlete_id, club_name, coach_name, evaluation_date, maturation_status
+#}
+
+{% block title %}[Alerta] Nueva medición registrada — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1 style="color: #b45309;">Alerta: Nueva medición antropométrica</h1>
+
+<p>Hola {{ coach_name }},</p>
+
+<p>
+  Se ha registrado una nueva medición antropométrica en el sistema del
+  <strong>{{ club_name }}</strong> que requiere tu revisión.
+</p>
+
+<div class="highlight-box" style="border-left-color: #b45309; background-color: #fef9f0;">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      <td style="font-size: 13px; color: #555555; padding: 4px 0; width: 160px;"><strong>ID de registro:</strong></td>
+      <td style="font-size: 13px; color: #333333; padding: 4px 0;">{{ athlete_id }}</td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #555555; padding: 4px 0;"><strong>Fecha de evaluación:</strong></td>
+      <td style="font-size: 13px; color: #333333; padding: 4px 0;">{{ evaluation_date }}</td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #555555; padding: 4px 0;"><strong>Estado de maduración:</strong></td>
+      <td style="font-size: 13px; padding: 4px 0;">
+        {% if maturation_status == 'Pre-PHV' %}
+          <span style="color: #1d4ed8; font-weight: bold;">Pre-PHV</span>
+        {% elif maturation_status == 'Circa-PHV' %}
+          <span style="color: #d97706; font-weight: bold;">Circa-PHV (ventana crítica)</span>
+        {% elif maturation_status == 'Post-PHV' %}
+          <span style="color: #16a34a; font-weight: bold;">Post-PHV</span>
+        {% else %}
+          <span style="color: #555555;">{{ maturation_status }}</span>
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>
+  Para ver el detalle completo de la medición y el nombre del atleta asociado, accede
+  al panel de control del club con tu cuenta de entrenador.
+</p>
+
+{% if maturation_status == 'Circa-PHV' %}
+<div class="highlight-box" style="border-left-color: #d97706; background-color: #fffbf0;">
+  <strong style="color: #b45309;">Atención — Ventana Circa-PHV</strong><br>
+  El atleta se encuentra en la ventana de Pico de Velocidad de Crecimiento (PHV).
+  Revisa la carga de entrenamiento y asegura que las prescripciones de fuerza e intensidad
+  sean acordes con esta etapa de desarrollo biológico.
+</div>
+{% endif %}
+
+<p style="margin-top: 24px;">
+  Este mensaje es confidencial. La identidad del atleta no se incluye por protección
+  de datos de menores de edad.
+</p>
+
+<p>
+  Atentamente,<br>
+  <strong>Sistema de gestión — {{ club_name }}</strong>
+</p>
+{% endblock %}

@@ -1,0 +1,181 @@
+{% extends "documents/pdf/base/layout.html" %}
+
+{#
+  Variables requeridas:
+    athlete_first_name, athlete_last_name, club_name, month_label,
+    season_year, measurements, generated_at
+
+  measurements: lista de dicts. Cada elemento puede tener cualquier
+  subconjunto de: date, weight_kg, standing_height_cm, sitting_height_cm,
+  maturation_status, maturity_offset, notes.
+#}
+
+{% block title %}Progreso Mensual {{ month_label }} {{ season_year }} — {{ athlete_first_name }} {{ athlete_last_name }}{% endblock %}
+{% block header_right %}Progreso Mensual · {{ month_label }} {{ season_year }}{% endblock %}
+{% block doc_title %}Reporte de Progreso Mensual{% endblock %}
+{% block generated_at %}{{ generated_at }}{% endblock %}
+
+{% block body %}
+
+<!-- Encabezado del reporte -->
+<h2>Información general</h2>
+<table class="meta-table">
+  <tr>
+    <td>Atleta</td>
+    <td>{{ athlete_first_name }} {{ athlete_last_name }}</td>
+  </tr>
+  <tr>
+    <td>Club</td>
+    <td>{{ club_name }}</td>
+  </tr>
+  <tr>
+    <td>Período</td>
+    <td>{{ month_label }} {{ season_year }}</td>
+  </tr>
+  <tr>
+    <td>Total de mediciones</td>
+    <td>{{ measurements | length }}</td>
+  </tr>
+</table>
+
+<!-- Tabla de mediciones del mes -->
+<h2>Mediciones del período</h2>
+
+{% if measurements %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Fecha</th>
+      <th>Peso (kg)</th>
+      <th>Estatura (cm)</th>
+      <th>Estatura sentado (cm)</th>
+      <th>Estado maduración</th>
+      <th>Offset PHV</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in measurements %}
+    <tr>
+      <td>{{ m.date | default('—') }}</td>
+      <td>
+        {% if m.weight_kg is defined and m.weight_kg is not none %}
+          {{ "%.1f"|format(m.weight_kg) }}
+        {% else %}—{% endif %}
+      </td>
+      <td>
+        {% if m.standing_height_cm is defined and m.standing_height_cm is not none %}
+          {{ "%.1f"|format(m.standing_height_cm) }}
+        {% else %}—{% endif %}
+      </td>
+      <td>
+        {% if m.sitting_height_cm is defined and m.sitting_height_cm is not none %}
+          {{ "%.1f"|format(m.sitting_height_cm) }}
+        {% else %}—{% endif %}
+      </td>
+      <td>
+        {% if m.maturation_status is defined and m.maturation_status %}
+          {% if m.maturation_status == 'Pre-PHV' %}
+            <span class="badge badge-pre">Pre-PHV</span>
+          {% elif m.maturation_status == 'Circa-PHV' %}
+            <span class="badge badge-circa">Circa-PHV</span>
+          {% elif m.maturation_status == 'Post-PHV' %}
+            <span class="badge badge-post">Post-PHV</span>
+          {% else %}
+            {{ m.maturation_status }}
+          {% endif %}
+        {% else %}—{% endif %}
+      </td>
+      <td>
+        {% if m.maturity_offset is defined and m.maturity_offset is not none %}
+          {{ "%.2f"|format(m.maturity_offset) }} años
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Tendencias -->
+{% if measurements | length > 1 %}
+<h2>Tendencias del período</h2>
+
+{% set first = measurements[0] %}
+{% set last  = measurements[-1] %}
+
+<table class="meta-table">
+  {% if first.weight_kg is defined and last.weight_kg is defined
+        and first.weight_kg is not none and last.weight_kg is not none %}
+  <tr>
+    <td>Variación de peso</td>
+    <td>
+      {% set delta_w = last.weight_kg - first.weight_kg %}
+      {% if delta_w > 0 %}+{% endif %}{{ "%.1f"|format(delta_w) }} kg
+    </td>
+  </tr>
+  {% endif %}
+
+  {% if first.standing_height_cm is defined and last.standing_height_cm is defined
+        and first.standing_height_cm is not none and last.standing_height_cm is not none %}
+  <tr>
+    <td>Variación de estatura</td>
+    <td>
+      {% set delta_h = last.standing_height_cm - first.standing_height_cm %}
+      {% if delta_h > 0 %}+{% endif %}{{ "%.1f"|format(delta_h) }} cm
+    </td>
+  </tr>
+  {% endif %}
+
+  {% if last.maturation_status is defined and last.maturation_status %}
+  <tr>
+    <td>Estado de maduración actual</td>
+    <td>
+      {% if last.maturation_status == 'Pre-PHV' %}
+        <span class="badge badge-pre">Pre-PHV</span>
+      {% elif last.maturation_status == 'Circa-PHV' %}
+        <span class="badge badge-circa">Circa-PHV</span>
+      {% elif last.maturation_status == 'Post-PHV' %}
+        <span class="badge badge-post">Post-PHV</span>
+      {% else %}
+        {{ last.maturation_status }}
+      {% endif %}
+    </td>
+  </tr>
+  {% endif %}
+</table>
+{% endif %}
+
+{% else %}
+<div class="obs-box">
+  No se registraron mediciones para el período seleccionado.
+</div>
+{% endif %}
+
+<!-- Notas adicionales -->
+{% set has_notes = measurements | selectattr('notes', 'defined') | list %}
+{% if has_notes %}
+<h2>Notas de sesiones</h2>
+{% for m in measurements %}
+  {% if m.notes is defined and m.notes %}
+  <p><strong>{{ m.date | default('Sin fecha') }}:</strong> {{ m.notes }}</p>
+  {% endif %}
+{% endfor %}
+{% endif %}
+
+<!-- Firma -->
+<h2>Validación del entrenador</h2>
+<table class="meta-table">
+  <tr>
+    <td>Club</td>
+    <td>{{ club_name }}</td>
+  </tr>
+  <tr>
+    <td>Período evaluado</td>
+    <td>{{ month_label }} {{ season_year }}</td>
+  </tr>
+  <tr>
+    <td>Firma del entrenador</td>
+    <td style="height: 36pt;">&nbsp;</td>
+  </tr>
+</table>
+
+{% endblock %}

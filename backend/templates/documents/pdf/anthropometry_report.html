@@ -1,0 +1,141 @@
+{% extends "documents/pdf/base/layout.html" %}
+
+{#
+  Variables requeridas:
+    athlete_first_name, athlete_last_name, birth_date, sex, club_name,
+    evaluation_date, weight_kg, standing_height_cm, sitting_height_cm,
+    maturation_status, maturity_offset, age_at_phv, generated_at
+#}
+
+{% block title %}Reporte Antropométrico — {{ athlete_first_name }} {{ athlete_last_name }}{% endblock %}
+{% block header_right %}Reporte Antropométrico{% endblock %}
+{% block doc_title %}Reporte Antropométrico{% endblock %}
+{% block generated_at %}{{ generated_at }}{% endblock %}
+
+{% block body %}
+
+<!-- Datos del atleta -->
+<h2>Datos del atleta</h2>
+<table class="meta-table">
+  <tr>
+    <td>Nombre completo</td>
+    <td>{{ athlete_first_name }} {{ athlete_last_name }}</td>
+  </tr>
+  <tr>
+    <td>Fecha de nacimiento</td>
+    <td>{{ birth_date }}</td>
+  </tr>
+  <tr>
+    <td>Sexo</td>
+    <td>{{ sex }}</td>
+  </tr>
+  <tr>
+    <td>Club</td>
+    <td>{{ club_name }}</td>
+  </tr>
+  <tr>
+    <td>Fecha de evaluación</td>
+    <td>{{ evaluation_date }}</td>
+  </tr>
+</table>
+
+<!-- Mediciones -->
+<h2>Mediciones antropométricas</h2>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Parámetro</th>
+      <th>Valor</th>
+      <th>Unidad</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Masa corporal</td>
+      <td>{{ "%.1f"|format(weight_kg) }}</td>
+      <td>kg</td>
+    </tr>
+    <tr>
+      <td>Estatura de pie</td>
+      <td>{{ "%.1f"|format(standing_height_cm) }}</td>
+      <td>cm</td>
+    </tr>
+    <tr>
+      <td>Estatura sentado</td>
+      <td>{{ "%.1f"|format(sitting_height_cm) }}</td>
+      <td>cm</td>
+    </tr>
+    <tr>
+      <td>Longitud de pierna</td>
+      <td>{{ "%.1f"|format(standing_height_cm - sitting_height_cm) }}</td>
+      <td>cm</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- Estimación de maduración (PHV Mirwald) -->
+<h2>Estimación de maduración biológica (Mirwald et al.)</h2>
+
+<table class="meta-table">
+  <tr>
+    <td>Estado de maduración</td>
+    <td>
+      {% if maturation_status == 'Pre-PHV' %}
+        <span class="badge badge-pre">Pre-PHV</span>
+      {% elif maturation_status == 'Circa-PHV' %}
+        <span class="badge badge-circa">Circa-PHV</span>
+      {% elif maturation_status == 'Post-PHV' %}
+        <span class="badge badge-post">Post-PHV</span>
+      {% else %}
+        {{ maturation_status }}
+      {% endif %}
+    </td>
+  </tr>
+  <tr>
+    <td>Offset de madurez (años)</td>
+    <td>{{ "%.2f"|format(maturity_offset) }}</td>
+  </tr>
+  <tr>
+    <td>Edad estimada en PHV (años)</td>
+    <td>{{ "%.1f"|format(age_at_phv) }}</td>
+  </tr>
+</table>
+
+{% if maturation_status == 'Circa-PHV' %}
+<div class="obs-box">
+  <strong>Ventana Circa-PHV activa.</strong> El atleta se encuentra en o cerca del Pico de
+  Velocidad de Crecimiento (PHV). Revisar la carga de entrenamiento: evitar cargas de alto
+  impacto sin progresión, monitorear la recuperación y prestar atención especial al desarrollo
+  técnico sobre la condición física.
+</div>
+{% elif maturation_status == 'Pre-PHV' %}
+<div class="obs-box">
+  <strong>Fase Pre-PHV.</strong> Priorizar el desarrollo multilateral de habilidades motoras
+  y fundamentos técnicos. Las cargas de alta intensidad no son apropiadas en esta etapa.
+</div>
+{% elif maturation_status == 'Post-PHV' %}
+<div class="obs-box">
+  <strong>Fase Post-PHV.</strong> El atleta ha superado el pico de crecimiento. Se puede
+  introducir progresivamente entrenamiento de fuerza y cargas de mayor intensidad según
+  el protocolo establecido para el grupo de edad.
+</div>
+{% endif %}
+
+<!-- Firma -->
+<h2>Responsable de evaluación</h2>
+<table class="meta-table">
+  <tr>
+    <td>Club</td>
+    <td>{{ club_name }}</td>
+  </tr>
+  <tr>
+    <td>Fecha</td>
+    <td>{{ evaluation_date }}</td>
+  </tr>
+  <tr>
+    <td>Firma del entrenador</td>
+    <td style="height: 36pt;">&nbsp;</td>
+  </tr>
+</table>
+
+{% endblock %}

@@ -19,6 +19,15 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173}
     networks: [backend]
 
+  mailhog:
+    # Servidor SMTP de desarrollo — captura emails sin enviarlos realmente
+    # UI disponible en http://localhost:8025
+    image: mailhog/mailhog:latest
+    ports:
+      - "8025:8025"   # Web UI
+      # Puerto SMTP 1025 solo interno; el backend lo alcanza por nombre de servicio
+    networks: [backend]
+
   mysql:
     image: mysql:8.4
     environment:

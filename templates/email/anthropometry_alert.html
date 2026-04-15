@@ -1,0 +1,53 @@
+{% extends "email/base/layout.html" %}
+{% block title %}Alerta de medición — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h2>📊 Nueva medición antropométrica registrada</h2>
+
+<p>Estimado/a <strong>{{ coach_name }}</strong>,</p>
+
+<p>
+  Se ha registrado una nueva medición antropométrica en la plataforma de
+  <strong>{{ club_name }}</strong> que requiere su atención.
+</p>
+
+<div class="info-box">
+  <strong>Detalles de la medición:</strong>
+  <table style="width:100%; margin-top:10px; font-size:14px;" cellpadding="6" cellspacing="0">
+    <tr>
+      <td style="color:#555; width:50%;">ID de evaluación:</td>
+      <td><strong>ATL-{{ athlete_id }}</strong></td>
+    </tr>
+    <tr>
+      <td style="color:#555;">Fecha de evaluación:</td>
+      <td><strong>{{ evaluation_date }}</strong></td>
+    </tr>
+    <tr>
+      <td style="color:#555;">Estado de maduración:</td>
+      <td>
+        <span style="
+          display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:bold;
+          background-color:{% if maturation_status == 'Circa-PHV' %}#fff3cd{% elif maturation_status == 'Post-PHV' %}#d4edda{% else %}#cce5ff{% endif %};
+          color:{% if maturation_status == 'Circa-PHV' %}#856404{% elif maturation_status == 'Post-PHV' %}#155724{% else %}#004085{% endif %};">
+          {{ maturation_status }}
+        </span>
+      </td>
+    </tr>
+  </table>
+</div>
+
+{# REGLA DE PRIVACIDAD: NO incluir nombre del atleta en este email.
+   El coach verifica la identidad directamente en el dashboard usando athlete_id. #}
+<p>
+  Para consultar el perfil completo, acceda al dashboard de la plataforma
+  y busque el ID <strong>ATL-{{ athlete_id }}</strong>.
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #666;">
+  Este aviso es generado automáticamente por el sistema de monitoreo de
+  {{ club_name }}. Por razones de privacidad, los datos de identificación
+  del atleta están disponibles únicamente en la plataforma segura.
+</p>
+{% endblock %}

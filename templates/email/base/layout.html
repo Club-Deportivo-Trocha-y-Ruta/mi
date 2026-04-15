@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Trocha y Ruta{% endblock %}</title>
+  <style>
+    /* Reset & base */
+    body { margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, Helvetica, sans-serif; }
+    table { border-collapse: collapse; }
+    img { border: 0; display: block; }
+    a { color: #2d5016; text-decoration: none; }
+
+    /* Wrapper */
+    .wrapper { width: 100%; background-color: #f4f4f4; padding: 24px 0; }
+
+    /* Container */
+    .container { max-width: 600px; margin: 0 auto; background-color: #ffffff;
+      border-radius: 8px; overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+
+    /* Header */
+    .header { background-color: #2d5016; padding: 28px 40px; text-align: center; }
+    .header h1 { margin: 0; color: #ffffff; font-size: 22px; font-weight: 700;
+      letter-spacing: 0.5px; }
+    .header .tagline { margin: 6px 0 0; color: #a8c57a; font-size: 13px; }
+
+    /* Body */
+    .body { padding: 36px 40px; color: #333333; font-size: 15px; line-height: 1.7; }
+    .body h2 { color: #2d5016; font-size: 18px; margin-top: 0; }
+
+    /* Button */
+    .btn { display: inline-block; background-color: #2d5016; color: #ffffff !important;
+      padding: 12px 28px; border-radius: 6px; font-weight: bold; font-size: 14px;
+      margin: 20px 0; text-decoration: none; }
+
+    /* Info box */
+    .info-box { background-color: #f0f7e6; border-left: 4px solid #2d5016;
+      padding: 14px 18px; border-radius: 4px; margin: 20px 0; }
+
+    /* Divider */
+    .divider { border: none; border-top: 1px solid #eeeeee; margin: 24px 0; }
+
+    /* Footer */
+    .footer { background-color: #f9f9f9; border-top: 1px solid #eeeeee;
+      padding: 20px 40px; text-align: center; font-size: 12px; color: #888888; }
+    .footer .confidential { color: #cc0000; font-weight: bold; margin-top: 8px; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <table class="container" role="presentation" width="600" align="center" cellpadding="0" cellspacing="0">
+
+      <!-- Header -->
+      <tr>
+        <td class="header">
+          <h1>🌿 Trocha y Ruta</h1>
+          <p class="tagline">Club Deportivo · Formación integral</p>
+        </td>
+      </tr>
+
+      <!-- Content block -->
+      <tr>
+        <td class="body">
+          {% block content %}{% endblock %}
+        </td>
+      </tr>
+
+      <!-- Footer -->
+      <tr>
+        <td class="footer">
+          <p>{{ club_name }} · {{ season_year | default('2026') }}</p>
+          <p>Este correo es de uso exclusivo del destinatario.</p>
+          <p class="confidential">
+            ⚠ Documento confidencial — contiene datos de menores de edad protegidos por ley.
+            Si recibió este mensaje por error, elimínelo y notifique al remitente.
+          </p>
+        </td>
+      </tr>
+
+    </table>
+  </div>
+</body>
+</html>

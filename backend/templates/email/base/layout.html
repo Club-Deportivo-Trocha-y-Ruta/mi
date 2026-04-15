@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>{% block title %}Club Deportivo Trocha y Ruta{% endblock %}</title>
+  <style type="text/css">
+    /* Reset básico compatible con clientes de email */
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0; padding: 0; width: 100% !important; }
+
+    /* Estilos generales */
+    body { background-color: #f4f4f4; font-family: Arial, Helvetica, sans-serif; }
+    .wrapper { width: 100%; background-color: #f4f4f4; }
+    .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+
+    /* Header */
+    .header { background-color: #2d5016; padding: 24px 32px; }
+    .header-logo { font-size: 20px; font-weight: bold; color: #ffffff; text-decoration: none; }
+    .header-tagline { font-size: 12px; color: #a8c77e; margin-top: 4px; }
+
+    /* Contenido */
+    .content { padding: 32px; color: #333333; font-size: 15px; line-height: 1.6; }
+    .content h1 { color: #2d5016; font-size: 22px; margin: 0 0 16px 0; }
+    .content h2 { color: #2d5016; font-size: 18px; margin: 24px 0 12px 0; }
+    .content p { margin: 0 0 16px 0; }
+    .content a { color: #2d5016; text-decoration: underline; }
+
+    /* Separador */
+    .divider { border: none; border-top: 1px solid #e8e8e8; margin: 24px 0; }
+
+    /* Caja destacada */
+    .highlight-box { background-color: #f0f5ea; border-left: 4px solid #2d5016; padding: 16px; margin: 20px 0; }
+
+    /* Botón de acción */
+    .btn-wrapper { text-align: center; margin: 24px 0; }
+    .btn { display: inline-block; background-color: #2d5016; color: #ffffff; font-size: 15px;
+           font-weight: bold; padding: 12px 28px; text-decoration: none; border-radius: 4px; }
+
+    /* Footer */
+    .footer { background-color: #f9f9f9; border-top: 1px solid #e0e0e0; padding: 20px 32px; }
+    .footer p { margin: 0 0 6px 0; font-size: 11px; color: #888888; line-height: 1.5; }
+    .footer .confidential { font-size: 10px; color: #aaaaaa; font-style: italic; }
+
+    /* Responsive */
+    @media only screen and (max-width: 600px) {
+      .container { width: 100% !important; }
+      .content { padding: 20px !important; }
+      .header { padding: 16px 20px !important; }
+    }
+  </style>
+</head>
+<body>
+<table class="wrapper" cellpadding="0" cellspacing="0" border="0" width="100%">
+  <tr>
+    <td align="center" valign="top">
+      <table class="container" cellpadding="0" cellspacing="0" border="0" width="600">
+
+        <!-- Header -->
+        <tr>
+          <td class="header">
+            <table cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td>
+                  <span class="header-logo">Club Deportivo Trocha y Ruta</span>
+                  <div class="header-tagline">Ciclismo de Montaña XCO · Valle del Cauca</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Contenido principal -->
+        <tr>
+          <td class="content">
+            {% block content %}{% endblock %}
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td class="footer">
+            <p>Este mensaje fue generado automáticamente por el sistema del club. No responder directamente a este correo.</p>
+            <p>© {{ now().year if now is defined else '2026' }} Club Deportivo Trocha y Ruta — Valle del Cauca, Colombia.</p>
+            <p class="confidential">Documento confidencial — datos de menor de edad protegidos.</p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

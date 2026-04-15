@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}Club Deportivo Trocha y Ruta{% endblock %}</title>
+  <style>
+    /* -----------------------------------------------------------------------
+       CSS Paged Media — WeasyPrint
+    ----------------------------------------------------------------------- */
+    @page {
+      size: A4;
+      margin: 22mm 18mm 28mm 18mm;
+
+      @top-left {
+        content: "Club Deportivo Trocha y Ruta";
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 9pt;
+        color: #ffffff;
+        background-color: #2d5016;
+        padding: 6pt 12pt;
+      }
+
+      @top-right {
+        content: "{% block header_right %}Documento oficial{% endblock %}";
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 9pt;
+        color: #ffffff;
+        background-color: #2d5016;
+        padding: 6pt 12pt;
+      }
+
+      @bottom-left {
+        content: "Documento confidencial — datos de menor de edad protegidos.";
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 8pt;
+        color: #888888;
+      }
+
+      @bottom-right {
+        content: "Página " counter(page) " de " counter(pages);
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 8pt;
+        color: #888888;
+      }
+    }
+
+    /* -----------------------------------------------------------------------
+       Tipografía y estilos base
+    ----------------------------------------------------------------------- */
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10pt;
+      color: #333333;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Cabecera del documento (visual, dentro del cuerpo) */
+    .doc-header {
+      background-color: #2d5016;
+      color: #ffffff;
+      padding: 16pt 20pt;
+      margin-bottom: 20pt;
+    }
+    .doc-header h1 {
+      margin: 0;
+      font-size: 16pt;
+      font-weight: bold;
+      color: #ffffff;
+    }
+    .doc-header .doc-subtitle {
+      font-size: 9pt;
+      color: #a8c77e;
+      margin-top: 4pt;
+    }
+
+    /* Sección */
+    h2 {
+      color: #2d5016;
+      font-size: 12pt;
+      border-bottom: 2pt solid #2d5016;
+      padding-bottom: 4pt;
+      margin: 20pt 0 10pt 0;
+    }
+    h3 {
+      color: #2d5016;
+      font-size: 10pt;
+      margin: 14pt 0 6pt 0;
+    }
+
+    p { margin: 0 0 8pt 0; line-height: 1.5; }
+
+    /* Tabla de datos */
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9pt;
+      margin: 10pt 0;
+    }
+    table.data-table thead tr {
+      background-color: #2d5016;
+      color: #ffffff;
+    }
+    table.data-table thead th {
+      padding: 7pt 10pt;
+      text-align: left;
+      font-weight: bold;
+    }
+    table.data-table tbody tr:nth-child(even) {
+      background-color: #f4f8ef;
+    }
+    table.data-table tbody tr:nth-child(odd) {
+      background-color: #ffffff;
+    }
+    table.data-table tbody td {
+      padding: 6pt 10pt;
+      border-bottom: 0.5pt solid #dde9d0;
+    }
+
+    /* Tabla de metadatos (clave-valor) */
+    table.meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+      margin: 10pt 0;
+    }
+    table.meta-table td {
+      padding: 5pt 10pt;
+      border: 0.5pt solid #dde9d0;
+    }
+    table.meta-table td:first-child {
+      background-color: #f0f5ea;
+      font-weight: bold;
+      color: #2d5016;
+      width: 40%;
+    }
+
+    /* Badge PHV */
+    .badge {
+      display: inline-block;
+      padding: 3pt 8pt;
+      border-radius: 3pt;
+      font-size: 8.5pt;
+      font-weight: bold;
+      color: #ffffff;
+    }
+    .badge-pre   { background-color: #1d4ed8; }
+    .badge-circa { background-color: #d97706; }
+    .badge-post  { background-color: #16a34a; }
+
+    /* Caja de observación */
+    .obs-box {
+      border-left: 3pt solid #2d5016;
+      background-color: #f0f5ea;
+      padding: 8pt 12pt;
+      margin: 10pt 0;
+      font-size: 9pt;
+    }
+
+    /* Salto de página */
+    .page-break { page-break-before: always; }
+
+    /* Pie de documento (visual, dentro del cuerpo) */
+    .doc-footer {
+      margin-top: 24pt;
+      padding-top: 8pt;
+      border-top: 0.5pt solid #cccccc;
+      font-size: 8pt;
+      color: #888888;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="doc-header">
+    <h1>{% block doc_title %}Documento{% endblock %}</h1>
+    <div class="doc-subtitle">Club Deportivo Trocha y Ruta · Valle del Cauca, Colombia</div>
+  </div>
+
+  {% block body %}{% endblock %}
+
+  <div class="doc-footer">
+    Generado el {% block generated_at %}{{ generated_at }}{% endblock %} &mdash;
+    Documento confidencial — datos de menor de edad protegidos.
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,59 @@
+{% extends "email/base/layout.html" %}
+
+{% block title %}Bienvenido/a a {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1>Bienvenido/a, {{ athlete_first_name }}!</h1>
+
+<p>Hola {{ parent_name }},</p>
+
+<p>
+  Nos alegra informarte que <strong>{{ athlete_first_name }}</strong> ha sido registrado/a
+  exitosamente en el <strong>{{ club_name }}</strong> para la temporada <strong>{{ season_year }}</strong>.
+</p>
+
+<div class="highlight-box">
+  <strong>Resumen del registro</strong><br>
+  Atleta: {{ athlete_first_name }}<br>
+  Club: {{ club_name }}<br>
+  Temporada: {{ season_year }}
+</div>
+
+<p>
+  A partir de ahora recibirás reportes de progreso, alertas de entrenamiento y comunicados
+  importantes del entrenador directamente en este correo.
+</p>
+
+<hr class="divider">
+
+<h2>Primeros pasos</h2>
+<p>Para que la experiencia de {{ athlete_first_name }} sea la mejor posible, te pedimos:</p>
+
+<table cellpadding="0" cellspacing="0" border="0" width="100%">
+  <tr>
+    <td style="padding: 8px 0; vertical-align: top; color: #2d5016; font-size: 18px; width: 28px;">&#10003;</td>
+    <td style="padding: 8px 0; font-size: 14px; color: #555555;">Completar el formulario de bienestar inicial cuando el entrenador lo solicite.</td>
+  </tr>
+  <tr>
+    <td style="padding: 8px 0; vertical-align: top; color: #2d5016; font-size: 18px; width: 28px;">&#10003;</td>
+    <td style="padding: 8px 0; font-size: 14px; color: #555555;">Revisar el calendario de competencias y entrenamientos de la temporada {{ season_year }}.</td>
+  </tr>
+  <tr>
+    <td style="padding: 8px 0; vertical-align: top; color: #2d5016; font-size: 18px; width: 28px;">&#10003;</td>
+    <td style="padding: 8px 0; font-size: 14px; color: #555555;">Asegurarte de que el equipo de {{ athlete_first_name }} esté en buen estado antes del primer entrenamiento.</td>
+  </tr>
+</table>
+
+<p style="margin-top: 24px;">
+  Si tienes preguntas, no dudes en contactar al entrenador del club.
+</p>
+
+<p>
+  Bienvenidos a la familia <strong>{{ club_name }}</strong>. Pedaleamos juntos.
+</p>
+
+<p style="margin-top: 24px;">
+  Con entusiasmo,<br>
+  <strong>Equipo técnico — {{ club_name }}</strong>
+</p>
+{% endblock %}

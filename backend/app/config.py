@@ -21,6 +21,39 @@ class Settings(BaseSettings):
     app_debug: bool = False
     cors_origins: str = "http://localhost:5173"
 
+    # -----------------------------------------------------------------------
+    # Email / Notificaciones
+    # -----------------------------------------------------------------------
+    # Proveedor: "smtp" (dev/MailHog) | "resend" (producción)
+    email_provider: str = "smtp"
+
+    # SMTP (MailHog en dev, relay real en staging)
+    smtp_host: str = "mailhog"
+    smtp_port: int = 1025
+    smtp_user: str | None = None
+    smtp_pass: str | None = None
+    smtp_use_tls: bool = False
+    smtp_start_tls: bool = False
+
+    # Resend (producción) — nunca en repositorio
+    resend_api_key: str = ""
+
+    # Remitente
+    email_from_address: str = "noreply@trochayruta.co"
+    email_from_name: str = "Trocha y Ruta"
+
+    # Nombre del club (para contexto de templates)
+    club_name: str = "Club Deportivo Trocha y Ruta"
+
+    # URL del frontend (para construir enlaces en emails)
+    frontend_base_url: str = "http://localhost:5173"
+
+    # Flags de control
+    # False → cortocircuita sin enviar (CI, tests end-to-end)
+    notification_send_emails: bool = True
+    # True → loguea cuerpo del email (NUNCA activar en producción)
+    notification_log_bodies: bool = False
+
     @field_validator("jwt_secret_key")
     @classmethod
     def validate_jwt_secret(cls, v: str, info) -> str:

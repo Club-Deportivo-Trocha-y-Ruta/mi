@@ -1,0 +1,46 @@
+{% extends "email/base/layout.html" %}
+
+{% block title %}Invitación para seguir a {{ athlete_first_name }} — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1>Te invitamos a unirte a {{ club_name }}</h1>
+
+<p>Hola,</p>
+
+<p>
+  El entrenador del <strong>{{ club_name }}</strong> te ha invitado a crear tu cuenta
+  para hacer seguimiento al progreso deportivo de <strong>{{ athlete_first_name }}</strong>.
+</p>
+
+<div class="highlight-box">
+  <strong>Acepta tu invitación</strong><br>
+  Haz clic en el enlace a continuación para completar tu registro.<br>
+  Este enlace es válido por <strong>72 horas</strong>.
+</div>
+
+<p style="text-align: center; margin: 32px 0;">
+  <a href="{{ invite_url }}"
+     style="background-color: #2d5016; color: #ffffff; padding: 14px 28px;
+            text-decoration: none; border-radius: 4px; font-size: 15px;
+            font-weight: bold; display: inline-block;">
+    Crear mi cuenta
+  </a>
+</p>
+
+<p style="font-size: 13px; color: #888888; word-break: break-all;">
+  Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
+  {{ invite_url }}
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #999999;">
+  Si no esperabas esta invitación, puedes ignorar este mensaje. El enlace expirará
+  automáticamente en 72 horas sin ninguna acción de tu parte.
+</p>
+
+<p>
+  Saludos,<br>
+  <strong>Equipo técnico — {{ club_name }}</strong>
+</p>
+{% endblock %}

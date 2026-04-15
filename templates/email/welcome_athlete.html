@@ -1,0 +1,36 @@
+{% extends "email/base/layout.html" %}
+{% block title %}¡Bienvenido/a a {{ club_name }}!{% endblock %}
+
+{% block content %}
+<h2>¡Hola, {{ parent_name }}! 👋</h2>
+
+<p>
+  Nos alegra mucho darle la bienvenida a <strong>{{ club_name }}</strong>.
+  El/la atleta <strong>{{ athlete_first_name }}</strong> ha sido registrado/a exitosamente en nuestra plataforma
+  para la temporada <strong>{{ season_year }}</strong>.
+</p>
+
+<div class="info-box">
+  <strong>📋 Para la primera sesión, asegúrese de traer:</strong>
+  <ul style="margin: 10px 0 0; padding-left: 20px; line-height: 2;">
+    <li>Documento de identidad del/la atleta (original y copia)</li>
+    <li>Carné de vacunación actualizado</li>
+    <li>Autorización médica firmada por el pediatra</li>
+    <li>Tenis deportivos (no de calle) y ropa cómoda</li>
+    <li>Botella de agua y refrigerio ligero</li>
+    <li>Formulario de consentimiento parental (si no fue firmado digitalmente)</li>
+  </ul>
+</div>
+
+<p>
+  Nuestro equipo de coaches estará atento a cualquier pregunta que tenga.
+  Puede comunicarse directamente a través de la plataforma.
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #666;">
+  Si tiene alguna alergia o condición médica relevante que debamos conocer, por favor
+  infórmenos antes de la primera sesión a través de su perfil en la plataforma.
+</p>
+{% endblock %}

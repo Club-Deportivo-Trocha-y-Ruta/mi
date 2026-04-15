@@ -1,0 +1,71 @@
+{% extends "email/base/layout.html" %}
+
+{#
+  Variables requeridas: athlete_first_name, parent_name, club_name,
+                        month_label, season_year
+#}
+
+{% block title %}Informe mensual {{ month_label }} — {{ athlete_first_name }}{% endblock %}
+
+{% block content %}
+<h1>Informe mensual: {{ month_label }} {{ season_year }}</h1>
+
+<p>Hola {{ parent_name }},</p>
+
+<p>
+  Te compartimos el resumen del mes de <strong>{{ month_label }}</strong> para
+  <strong>{{ athlete_first_name }}</strong> en el <strong>{{ club_name }}</strong>.
+</p>
+
+<hr class="divider">
+
+<h2 style="color: #2d5016; font-size: 16px; margin-bottom: 12px;">Resumen del mes</h2>
+
+<table cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="border-collapse: collapse; font-size: 14px;">
+  <thead>
+    <tr style="background-color: #2d5016;">
+      <th style="padding: 10px 14px; text-align: left; color: #ffffff; font-weight: bold;">Indicador</th>
+      <th style="padding: 10px 14px; text-align: left; color: #ffffff; font-weight: bold;">Valor</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background-color: #f9f9f9;">
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e8e8e8; color: #555555;">Atleta</td>
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e8e8e8; color: #333333;"><strong>{{ athlete_first_name }}</strong></td>
+    </tr>
+    <tr>
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e8e8e8; color: #555555;">Club</td>
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e8e8e8; color: #333333;">{{ club_name }}</td>
+    </tr>
+    <tr style="background-color: #f9f9f9;">
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e8e8e8; color: #555555;">Período</td>
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e8e8e8; color: #333333;">{{ month_label }} {{ season_year }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr class="divider">
+
+<h2 style="color: #2d5016; font-size: 16px; margin-bottom: 12px;">Notas del entrenador</h2>
+
+<p style="color: #555555; font-style: italic;">
+  Para ver el reporte completo con datos de entrenamiento, mediciones y observaciones
+  detalladas, descarga el PDF adjunto o accede al portal del club.
+</p>
+
+<div class="highlight-box">
+  <strong>Recuerda:</strong> Si tienes dudas sobre el progreso de {{ athlete_first_name }},
+  contacta directamente al entrenador del club. Tu participación como familia es fundamental
+  en el desarrollo deportivo.
+</div>
+
+<p style="margin-top: 24px;">
+  Gracias por confiar en el <strong>{{ club_name }}</strong>.
+</p>
+
+<p>
+  Con respeto,<br>
+  <strong>Equipo técnico — {{ club_name }}</strong>
+</p>
+{% endblock %}

@@ -3,11 +3,19 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_db, get_current_user, require_role, verify_athlete_access
+from app.dependencies import (
+    get_current_user,
+    get_db,
+    get_notification_service,
+    get_task_dispatcher,
+    require_role,
+    verify_athlete_access,
+)
 from app.models.athlete import Athlete
 from app.models.anthropometry import AnthropometricRecord
-from app.models.club import ClubMember, ClubRole
+from app.models.club import Club, ClubMember, ClubRole
 from app.models.user import User, UserRole
+from app.models.athlete import ParentAthlete
 from app.schemas.athlete import (
     AthleteCreate,
     AthleteDetailOut,
@@ -18,7 +26,10 @@ from app.schemas.athlete import (
     AnthropometryParentView,
 )
 from app.schemas.anthropometry import AnthropometryOut
+from app.schemas.notification import NotificationRecipient, NotificationRequest, NotificationTemplate
 from app.services.category import compute_age_decimal, compute_years_in_club, get_category
+from app.services.notification.service import NotificationService
+from app.services.notification.task_dispatcher import TaskDispatcher
 
 router = APIRouter()
 
@@ -49,6 +60,8 @@ async def create_athlete(
     body: AthleteCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    notification_service: NotificationService = Depends(get_notification_service),
+    dispatcher: TaskDispatcher = Depends(get_task_dispatcher),
 ) -> AthleteOut:
     # Coach solo puede crear en sus clubes
     if current_user.role == UserRole.coach:
@@ -91,6 +104,44 @@ async def create_athlete(
     )
     db.add(member)
     await db.flush()
+
+    # -----------------------------------------------------------------------
+    # Email de bienvenida (Paso 11)
+    # Busca si hay un padre vinculado (ej: si se crearon a la vez o se hizo attach auto)
+    # -----------------------------------------------------------------------
+    p_result = await db.execute(
+        select(ParentAthlete).where(ParentAthlete.athlete_id == athlete.id)
+    )
+    parents = p_result.scalars().all()
+    
+    parent_user = None
+    for link in parents:
+        u_res = await db.execute(select(User).where(User.id == link.parent_id))
+        u = u_res.scalar_one_or_none()
+        if u and u.email:
+            parent_user = u
+            break
+            
+    if parent_user:
+        club_res = await db.execute(select(Club).where(Club.id == body.club_id))
+        club = club_res.scalar_one()
+        from datetime import date
+        
+        notification_req = NotificationRequest(
+            recipient=NotificationRecipient(
+                email=parent_user.email,
+                name=f"{parent_user.first_name} {parent_user.last_name}",
+            ),
+            template=NotificationTemplate.WELCOME_ATHLETE,
+            send_async=True,
+            context={
+                "athlete_first_name": body.first_name,
+                "club_name": club.name,
+                "parent_name": f"{parent_user.first_name} {parent_user.last_name}",
+                "season_year": date.today().year,
+            },
+        )
+        await notification_service.send(notification_req, dispatcher=dispatcher)
 
     return _enrich_athlete(athlete)
 

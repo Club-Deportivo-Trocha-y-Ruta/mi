@@ -2,18 +2,30 @@
 
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_current_user, get_db, require_role
+from app.dependencies import (
+    get_current_user,
+    get_db,
+    get_notification_service,
+    get_task_dispatcher,
+    require_role,
+)
 from app.models.anthropometry import AnthropometricRecord
 from app.models.athlete import Athlete, ParentAthlete
 from app.models.club import ClubMember, ClubRole
 from app.models.parent_invite import ParentInvite
 from app.models.user import User, UserRole
+from app.config import settings
+from app.schemas.notification import (
+    NotificationRecipient,
+    NotificationRequest,
+    NotificationTemplate,
+)
 from app.schemas.parent_athlete import (
     MyAthleteOut,
     ParentAthleteCreate,
@@ -216,8 +228,10 @@ async def my_athletes(
 @router.post("/invite", response_model=ParentInviteCreatedOut, status_code=status.HTTP_201_CREATED)
 async def generate_invite(
     body: ParentInviteCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    notification_service=Depends(get_notification_service),
 ) -> ParentInviteCreatedOut:
     # Verificar que el atleta existe
     athlete_result = await db.execute(
@@ -245,6 +259,24 @@ async def generate_invite(
         created_by_user_id=current_user.id,
         db=db,
     )
+
+    # Enviar email de invitación en background
+    invite_url = f"{settings.frontend_base_url}/onboarding?token={invite.token}"
+    dispatcher = get_task_dispatcher(background_tasks)
+    await notification_service.send(
+        NotificationRequest(
+            recipient=NotificationRecipient(email=body.email, name="Padre/Acudiente"),
+            template=NotificationTemplate.PARENT_INVITE,
+            context={
+                "athlete_first_name": athlete.first_name,
+                "club_name": settings.club_name,
+                "invite_url": invite_url,
+            },
+            send_async=True,
+        ),
+        dispatcher=dispatcher,
+    )
+
     return ParentInviteCreatedOut.model_validate(invite)
 
 

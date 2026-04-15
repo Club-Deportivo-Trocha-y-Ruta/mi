@@ -147,3 +147,60 @@ async def verify_athlete_access(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="No tienes permisos para esta acción",
     )
+
+
+# ===========================================================================
+# Paso 7 — Dependency Injection para el módulo de notificaciones
+# ===========================================================================
+
+from functools import lru_cache
+
+from fastapi import BackgroundTasks
+
+
+@lru_cache(maxsize=1)
+def get_email_settings():
+    """Retorna el objeto settings global (singleton vía lru_cache).
+
+    Tip: en tests, sobrescribir con app.dependency_overrides[get_email_settings].
+    """
+    return settings
+
+
+@lru_cache(maxsize=1)
+def get_template_registry():
+    """Retorna una instancia singleton de TemplateRegistry."""
+    from app.services.notification.template_registry import TemplateRegistry
+    return TemplateRegistry()
+
+
+def get_document_generator(
+    registry=Depends(get_template_registry),
+    s=Depends(get_email_settings),
+):
+    """Construye DocumentGenerator con el registry y settings actuales."""
+    from app.services.notification.document_generator import DocumentGenerator
+    return DocumentGenerator(registry=registry, settings=s)
+
+
+def get_notification_service(
+    s=Depends(get_email_settings),
+    registry=Depends(get_template_registry),
+    generator=Depends(get_document_generator),
+):
+    """Construye NotificationService listo para inyectar en endpoints."""
+    from app.services.notification import NotificationService, create_email_client
+    email_client = create_email_client(s)
+    return NotificationService(
+        email_client=email_client,
+        registry=registry,
+        document_generator=generator,
+        settings=s,
+    )
+
+
+def get_task_dispatcher(background_tasks: BackgroundTasks) -> "TaskDispatcher":
+    """Construye TaskDispatcher con las BackgroundTasks del request actual."""
+    from app.services.notification.task_dispatcher import TaskDispatcher
+    return TaskDispatcher(background_tasks)
+
