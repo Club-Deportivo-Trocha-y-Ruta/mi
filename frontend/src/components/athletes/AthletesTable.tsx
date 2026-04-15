@@ -14,31 +14,43 @@ interface AthletesTableProps {
 
 export function AthletesTable({ items }: AthletesTableProps) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <div
+      className="overflow-x-auto rounded-xl bg-white"
+      style={{
+        boxShadow:
+          "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
+      }}
+    >
       <table className="min-w-full text-sm">
-        <thead className="bg-slate-50 text-left text-slate-600">
+        <thead className="text-left" style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
           <tr>
-            <th className="px-4 py-3 font-medium">Nombre</th>
-            <th className="px-4 py-3 font-medium">Edad</th>
-            <th className="px-4 py-3 font-medium">Sexo</th>
-            <th className="px-4 py-3 font-medium">Categoria</th>
-            <th className="px-4 py-3 font-medium">Estado PHV</th>
-            <th className="px-4 py-3 font-medium">Acciones</th>
+            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">Nombre</th>
+            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">Edad</th>
+            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">Sexo</th>
+            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">Categoría</th>
+            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">Estado PHV</th>
+            <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">Acciones</th>
           </tr>
         </thead>
         <tbody>
           {items.map((athlete) => (
-            <tr key={athlete.id} className="border-t border-slate-100">
-              <td className="px-4 py-3 font-medium text-slate-900">
-                <Link to={`/athletes/${athlete.id}`} className="hover:underline">
+            <tr
+              key={athlete.id}
+              className="transition-colors hover:bg-light-gray"
+              style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
+            >
+              <td className="px-4 py-3 font-medium text-charcoal">
+                <Link to={`/athletes/${athlete.id}`} className="transition-opacity hover:opacity-70">
                   {athlete.first_name} {athlete.last_name}
                 </Link>
               </td>
-              <td className="px-4 py-3">{athlete.age_decimal?.toFixed(1) ?? "-"} anos</td>
-              <td className="px-4 py-3">{athlete.sex}</td>
+              <td className="px-4 py-3 text-mid-gray">{athlete.age_decimal?.toFixed(1) ?? "-"} años</td>
+              <td className="px-4 py-3 text-mid-gray">{athlete.sex}</td>
               <td className="px-4 py-3">
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs">
-                  {athlete.category ?? "Sin categoria"}
+                <span
+                  className="rounded-full bg-light-gray px-2.5 py-1 text-xs font-medium text-charcoal"
+                >
+                  {athlete.category ?? "Sin categoría"}
                 </span>
               </td>
               <td className="px-4 py-3">
@@ -48,13 +60,15 @@ export function AthletesTable({ items }: AthletesTableProps) {
                 <div className="flex gap-2">
                   <Link
                     to={`/athletes/${athlete.id}`}
-                    className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+                    className="rounded-lg bg-white px-3 py-1 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
+                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   >
                     Ver
                   </Link>
                   <Link
                     to={`/athletes/${athlete.id}/edit`}
-                    className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+                    className="rounded-lg bg-white px-3 py-1 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
+                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   >
                     Editar
                   </Link>

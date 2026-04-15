@@ -130,6 +130,39 @@ function approximatePercentile(value: number, row: ReferenceRow): number {
   return 50;
 }
 
+function interpolateReference(
+  referenceRows: ReferenceRow[],
+  ageMonths: number,
+): Pick<ChartRow, "P3" | "P10" | "P25" | "P50" | "P75" | "P90" | "P97"> | null {
+  if (referenceRows.length === 0) return null;
+  if (ageMonths <= referenceRows[0].age) {
+    const r = referenceRows[0];
+    return { P3: r.P3, P10: r.P10, P25: r.P25, P50: r.P50, P75: r.P75, P90: r.P90, P97: r.P97 };
+  }
+  if (ageMonths >= referenceRows[referenceRows.length - 1].age) {
+    const r = referenceRows[referenceRows.length - 1];
+    return { P3: r.P3, P10: r.P10, P25: r.P25, P50: r.P50, P75: r.P75, P90: r.P90, P97: r.P97 };
+  }
+  for (let i = 0; i < referenceRows.length - 1; i++) {
+    const lo = referenceRows[i];
+    const hi = referenceRows[i + 1];
+    if (ageMonths >= lo.age && ageMonths <= hi.age) {
+      const t = (ageMonths - lo.age) / (hi.age - lo.age);
+      const lerp = (a: number, b: number) => a + t * (b - a);
+      return {
+        P3: lerp(lo.P3, hi.P3),
+        P10: lerp(lo.P10, hi.P10),
+        P25: lerp(lo.P25, hi.P25),
+        P50: lerp(lo.P50, hi.P50),
+        P75: lerp(lo.P75, hi.P75),
+        P90: lerp(lo.P90, hi.P90),
+        P97: lerp(lo.P97, hi.P97),
+      };
+    }
+  }
+  return null;
+}
+
 function buildChartData(
   referenceRows: ReferenceRow[],
   records: AnthropometricRecord[],
@@ -175,18 +208,15 @@ function buildChartData(
       (row) => Math.abs(row.age - ageMonths) < 0.3,
     );
     if (!existsInRef) {
-      chartData.push({
-        age_months: ageMonths,
-        P3: 0,
-        P10: 0,
-        P25: 0,
-        P50: 0,
-        P75: 0,
-        P90: 0,
-        P97: 0,
-        athleteValue: value,
-        evaluationDate: record.evaluation_date,
-      });
+      const interpolated = interpolateReference(referenceRows, ageMonths);
+      if (interpolated) {
+        chartData.push({
+          age_months: ageMonths,
+          ...interpolated,
+          athleteValue: value,
+          evaluationDate: record.evaluation_date,
+        });
+      }
     }
   }
 
@@ -241,18 +271,24 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
     : null;
 
   return (
-    <div className="rounded border border-slate-200 bg-white p-2 text-xs shadow">
+    <div
+      className="rounded-lg bg-white p-2.5 text-xs"
+      style={{
+        boxShadow:
+          "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
+      }}
+    >
       {row.evaluationDate && (
-        <p className="font-medium text-slate-700">
-          Medicion: {row.evaluationDate}
+        <p className="font-medium text-charcoal">
+          Medición: {row.evaluationDate}
         </p>
       )}
-      <p className="text-slate-600">Edad: {ageYears.toFixed(1)} anos</p>
-      <p className="text-blue-700 font-medium">
+      <p className="text-mid-gray">Edad: {ageYears.toFixed(1)} años</p>
+      <p className="font-medium text-charcoal">
         Valor: {athleteEntry.value.toFixed(1)}
       </p>
       {approxPercentile !== null && (
-        <p className="text-slate-600">
+        <p className="text-mid-gray">
           Percentil aprox.: P{approxPercentile}
         </p>
       )}
@@ -271,7 +307,7 @@ export function PercentileCurves({
 
   if (referenceRows.length === 0) {
     return (
-      <p className="py-4 text-center text-sm text-slate-500">
+      <p className="py-4 text-center text-sm text-mid-gray">
         No hay datos de referencia disponibles para este indicador.
       </p>
     );
@@ -283,31 +319,31 @@ export function PercentileCurves({
 
   return (
     <div>
-      <p className="mb-1 text-xs text-slate-500 text-right">{yLabel}</p>
+      <p className="mb-1 text-xs text-mid-gray text-right">{yLabel}</p>
       <ResponsiveContainer width="100%" height={480}>
         <ComposedChart
           data={chartData}
-          margin={{ top: 8, right: 56, left: 8, bottom: 8 }}
+          margin={{ top: 24, right: 56, left: 8, bottom: 8 }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(34,42,53,0.08)" />
           <XAxis
             dataKey="age_months"
             type="number"
             scale="linear"
             domain={["dataMin", "dataMax"]}
             tickFormatter={formatAgeAxis}
-            tick={{ fontSize: 11 }}
-            label={{ value: "Edad", position: "insideBottom", offset: -4, fontSize: 11 }}
+            tick={{ fontSize: 11, fill: "#898989" }}
+            label={{ value: "Edad", position: "insideBottom", offset: -4, fontSize: 11, fill: "#898989" }}
           />
           <YAxis
-            tick={{ fontSize: 11 }}
+            tick={{ fontSize: 11, fill: "#898989" }}
             domain={["auto", "auto"]}
             unit={unit}
             width={52}
           />
           <Tooltip content={<CustomTooltip />} />
 
-          {/* SD -3 y +3 (P3 y P97) — rojo sólido */}
+          {/* SD -3 y +3 (P3 y P97) */}
           <Line
             type="monotone"
             dataKey="P3"
@@ -327,7 +363,7 @@ export function PercentileCurves({
             name="SD+3 (P97)"
           />
 
-          {/* SD -2 y +2 (P10 y P90) — rojo punteado */}
+          {/* SD -2 y +2 (P10 y P90) */}
           <Line
             type="monotone"
             dataKey="P10"
@@ -349,7 +385,7 @@ export function PercentileCurves({
             name="SD+2 (P90)"
           />
 
-          {/* SD -1 y +1 (P25 y P75) — amarillo sólido */}
+          {/* SD -1 y +1 (P25 y P75) */}
           <Line
             type="monotone"
             dataKey="P25"
@@ -369,7 +405,7 @@ export function PercentileCurves({
             name="SD+1 (P75)"
           />
 
-          {/* Mediana P50 — verde sólido */}
+          {/* Mediana P50 */}
           <Line
             type="monotone"
             dataKey="P50"
@@ -380,13 +416,13 @@ export function PercentileCurves({
             name="Mediana (P50)"
           />
 
-          {/* Línea/puntos del atleta — azul */}
+          {/* Linea del atleta — charcoal */}
           <Line
             type="monotone"
             dataKey="athleteValue"
-            stroke="#2563eb"
+            stroke="#242424"
             strokeWidth={2.5}
-            dot={{ r: 4, fill: "#2563eb", stroke: "#1d4ed8" }}
+            dot={{ r: 4, fill: "#242424", stroke: "#111111" }}
             connectNulls={false}
             isAnimationActive={false}
             name="Atleta"
@@ -396,14 +432,14 @@ export function PercentileCurves({
           {phvAgeMonths !== undefined && (
             <ReferenceLine
               x={phvAgeMonths}
-              stroke="#7c3aed"
+              stroke="#898989"
               strokeDasharray="5 3"
               strokeWidth={1.5}
               label={{
                 value: "PHV",
                 position: "top",
                 fontSize: 11,
-                fill: "#7c3aed",
+                fill: "#898989",
               }}
             />
           )}

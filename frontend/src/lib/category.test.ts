@@ -195,7 +195,7 @@ describe("getCategory", () => {
       expect(getCategory(2017, Sex.M)).toBe("Infantil A");
     });
 
-    it("debería retornar 'Categoria no definida' para año sin regla (no debería ocurrir con < 2022)", () => {
+    it("debería retornar 'Categoría no definida' para año sin regla (no debería ocurrir con < 2022)", () => {
       // Actualmente todos los años <= 2022 tienen cobertura
       // Probamos un año muy futuro que aún no tiene regla
       // El año 2030 supera minYear=2022, pero la regla Teteros no tiene maxYear → cubre todo

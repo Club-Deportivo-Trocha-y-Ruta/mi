@@ -95,6 +95,7 @@ Tablas gestionadas por SQLAlchemy / Alembic:
 |---|---|---|
 | Admin | `admin@trochyruta.com` | `Admin2026!` |
 | Coach | `entrenador@trochyruta.com` | `Coach2026!` |
+| Parent | `padre@trochyruta.com` | `Parent2026!` |
 
 ## Notas técnicas de implementación
 

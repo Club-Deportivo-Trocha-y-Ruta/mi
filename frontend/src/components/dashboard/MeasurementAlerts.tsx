@@ -3,15 +3,15 @@ import { Link } from "react-router-dom";
 import { useAlerts } from "@/hooks/athletes/useAlerts";
 import type { AthleteAlert, MeasurementStatus } from "@/types/alerts.types";
 
-const STATUS_CONFIG: Record<MeasurementStatus, { color: string; bg: string; label: string }> = {
-  overdue: { color: "bg-red-500", bg: "bg-red-50 text-red-700", label: "vencidas" },
-  due_soon: { color: "bg-amber-400", bg: "bg-amber-50 text-amber-700", label: "proximas" },
-  ok: { color: "bg-green-500", bg: "bg-green-50 text-green-700", label: "al dia" },
-  never: { color: "bg-slate-300", bg: "bg-slate-50 text-slate-600", label: "sin medir" },
+const STATUS_CONFIG: Record<MeasurementStatus, { dot: string; bg: string; label: string }> = {
+  overdue: { dot: "bg-red-500", bg: "bg-red-50 text-red-700", label: "vencidas" },
+  due_soon: { dot: "bg-amber-400", bg: "bg-amber-50 text-amber-700", label: "próximas" },
+  ok: { dot: "bg-green-500", bg: "bg-green-50 text-green-700", label: "al día" },
+  never: { dot: "bg-mid-gray", bg: "bg-light-gray text-mid-gray", label: "sin medir" },
 };
 
 function formatDaysText(alert: AthleteAlert): string {
-  if (alert.measurement_status === "never") return "Sin medicion";
+  if (alert.measurement_status === "never") return "Sin medición";
   if (alert.days_overdue === null) return "";
   if (alert.days_overdue > 0) {
     return `${alert.days_overdue}d de atraso`;
@@ -25,8 +25,10 @@ export function MeasurementAlerts() {
   if (isPending) {
     return (
       <section className="mt-6">
-        <h2 className="mb-3 text-lg font-semibold">Mediciones pendientes</h2>
-        <p className="text-sm text-slate-400">Cargando alertas...</p>
+        <h2 className="mb-3 text-lg text-charcoal" style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}>
+          Mediciones pendientes
+        </h2>
+        <p className="text-sm text-mid-gray">Cargando alertas...</p>
       </section>
     );
   }
@@ -34,8 +36,10 @@ export function MeasurementAlerts() {
   if (isError) {
     return (
       <section className="mt-6">
-        <h2 className="mb-3 text-lg font-semibold">Mediciones pendientes</h2>
-        <p className="text-sm text-red-500">Error al cargar alertas</p>
+        <h2 className="mb-3 text-lg text-charcoal" style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}>
+          Mediciones pendientes
+        </h2>
+        <p className="text-sm text-red-600">Error al cargar alertas</p>
       </section>
     );
   }
@@ -51,30 +55,35 @@ export function MeasurementAlerts() {
   );
 
   return (
-    <section className="mt-6">
-      <h2 className="mb-3 text-lg font-semibold">Mediciones pendientes</h2>
+    <section className="mt-6 space-y-4">
+      <h2
+        className="text-lg text-charcoal"
+        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+      >
+        Mediciones pendientes
+      </h2>
 
       {/* Barra de resumen */}
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         {data.overdue > 0 && (
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ${STATUS_CONFIG.overdue.bg}`}>
-            <span className={`h-2 w-2 rounded-full ${STATUS_CONFIG.overdue.color}`} />
+            <span className={`h-2 w-2 rounded-full ${STATUS_CONFIG.overdue.dot}`} />
             {data.overdue} vencidas
           </span>
         )}
         {data.due_soon > 0 && (
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ${STATUS_CONFIG.due_soon.bg}`}>
-            <span className={`h-2 w-2 rounded-full ${STATUS_CONFIG.due_soon.color}`} />
-            {data.due_soon} proximas
+            <span className={`h-2 w-2 rounded-full ${STATUS_CONFIG.due_soon.dot}`} />
+            {data.due_soon} próximas
           </span>
         )}
         <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ${STATUS_CONFIG.ok.bg}`}>
-          <span className={`h-2 w-2 rounded-full ${STATUS_CONFIG.ok.color}`} />
-          {data.ok} al dia
+          <span className={`h-2 w-2 rounded-full ${STATUS_CONFIG.ok.dot}`} />
+          {data.ok} al día
         </span>
         {data.never_measured > 0 && (
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ${STATUS_CONFIG.never.bg}`}>
-            <span className={`h-2 w-2 rounded-full ${STATUS_CONFIG.never.color}`} />
+            <span className={`h-2 w-2 rounded-full ${STATUS_CONFIG.never.dot}`} />
             {data.never_measured} sin medir
           </span>
         )}
@@ -82,8 +91,8 @@ export function MeasurementAlerts() {
 
       {/* Alertas de crecimiento acelerado */}
       {rapidGrowth.length > 0 && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <p className="mb-1 text-sm font-medium text-amber-800">Crecimiento acelerado detectado</p>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="mb-2 text-sm font-medium text-amber-800">Crecimiento acelerado detectado</p>
           {rapidGrowth.map((a) => (
             <p key={a.athlete_id} className="text-sm text-amber-700">
               <Link to={`/athletes/${a.athlete_id}`} className="font-medium underline">
@@ -97,27 +106,34 @@ export function MeasurementAlerts() {
 
       {/* Lista de atletas que requieren accion */}
       {actionable.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white">
-          <ul className="divide-y divide-slate-100">
-            {actionable.map((a) => {
+        <div
+          className="rounded-xl bg-white"
+          style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+        >
+          <ul>
+            {actionable.map((a, idx) => {
               const config = STATUS_CONFIG[a.measurement_status];
               return (
-                <li key={a.athlete_id} className="flex items-center gap-3 px-4 py-2.5">
-                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.color}`} />
+                <li
+                  key={a.athlete_id}
+                  className="flex items-center gap-3 px-4 py-3"
+                  style={idx > 0 ? { borderTop: "1px solid rgba(34, 42, 53, 0.06)" } : undefined}
+                >
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.dot}`} />
                   <Link
                     to={`/athletes/${a.athlete_id}`}
-                    className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900 hover:text-blue-600"
+                    className="min-w-0 flex-1 truncate text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
                   >
                     {a.athlete_name}
                   </Link>
                   {a.current_phv_status ? (
-                    <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                    <span className="shrink-0 rounded-full bg-light-gray px-2.5 py-0.5 text-xs text-charcoal">
                       {a.current_phv_status}
                     </span>
                   ) : (
-                    <span className="text-xs text-slate-400">—</span>
+                    <span className="text-xs text-mid-gray">—</span>
                   )}
-                  <span className="shrink-0 text-xs text-slate-500">
+                  <span className="shrink-0 text-xs text-mid-gray">
                     {formatDaysText(a)}
                   </span>
                 </li>

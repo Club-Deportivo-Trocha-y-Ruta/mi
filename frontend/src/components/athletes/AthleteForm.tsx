@@ -8,13 +8,13 @@ import type { AthleteDetailOut } from "@/types/athlete.types";
 import { Sex } from "@/types/enums";
 
 const athleteFormSchema = z.object({
-  first_name: z.string().trim().min(2, "Minimo 2 caracteres"),
-  last_name: z.string().trim().min(2, "Minimo 2 caracteres"),
+  first_name: z.string().trim().min(2, "Mínimo 2 caracteres"),
+  last_name: z.string().trim().min(2, "Mínimo 2 caracteres"),
   birth_date: z
     .string()
     .min(1, "Fecha requerida")
     .refine((value) => new Date(value).getTime() <= Date.now(), "No puede ser futura")
-    .refine((value) => value >= "1990-01-01", "Fecha minima 1990-01-01"),
+    .refine((value) => value >= "1990-01-01", "Fecha mínima 1990-01-01"),
   sex: z.nativeEnum(Sex),
   club_join_date: z
     .string()
@@ -34,6 +34,10 @@ interface AthleteFormProps {
   submitError: string | null;
   onSubmit: (values: AthleteFormValues) => void;
 }
+
+const inputClass =
+  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray";
+const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 
 export function AthleteForm({
   initialValues,
@@ -80,43 +84,48 @@ export function AthleteForm({
   return (
     <form
       onSubmit={form.handleSubmit(onSubmit)}
-      className="space-y-4 rounded-lg border border-slate-200 bg-white p-5"
+      className="space-y-5 rounded-xl bg-white p-5"
+      style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
     >
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="text-sm text-slate-700">
+        <label className="text-sm font-medium text-charcoal">
           Nombres
           <input
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+            className={inputClass}
+            style={inputStyle}
             {...form.register("first_name")}
           />
-          <span className="text-xs text-rose-600">{form.formState.errors.first_name?.message}</span>
+          <span className="text-xs text-red-600">{form.formState.errors.first_name?.message}</span>
         </label>
-        <label className="text-sm text-slate-700">
+        <label className="text-sm font-medium text-charcoal">
           Apellidos
           <input
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+            className={inputClass}
+            style={inputStyle}
             {...form.register("last_name")}
           />
-          <span className="text-xs text-rose-600">{form.formState.errors.last_name?.message}</span>
+          <span className="text-xs text-red-600">{form.formState.errors.last_name?.message}</span>
         </label>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <label className="text-sm text-slate-700">
+        <label className="text-sm font-medium text-charcoal">
           Fecha de nacimiento
           <input
             type="date"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+            className={inputClass}
+            style={inputStyle}
             autoComplete="off"
             {...form.register("birth_date")}
             disabled={mode === "edit"}
           />
-          <span className="text-xs text-rose-600">{form.formState.errors.birth_date?.message}</span>
+          <span className="text-xs text-red-600">{form.formState.errors.birth_date?.message}</span>
         </label>
-        <label className="text-sm text-slate-700">
+        <label className="text-sm font-medium text-charcoal">
           Sexo
           <select
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+            className={inputClass}
+            style={inputStyle}
             {...form.register("sex")}
             disabled={mode === "edit"}
           >
@@ -124,31 +133,37 @@ export function AthleteForm({
             <option value={Sex.F}>F</option>
           </select>
         </label>
-        <label className="text-sm text-slate-700">
+        <label className="text-sm font-medium text-charcoal">
           Fecha ingreso al club
           <input
             type="date"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+            className={inputClass}
+            style={inputStyle}
             {...form.register("club_join_date")}
           />
-          <span className="text-xs text-rose-600">
+          <span className="text-xs text-red-600">
             {form.formState.errors.club_join_date?.message}
           </span>
         </label>
       </div>
 
       {computed && (
-        <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          Edad estimada: {computed.age_decimal.toFixed(1)} anos | Categoria: {computed.category}
+        <p className="rounded-lg bg-light-gray px-3 py-2.5 text-sm text-mid-gray">
+          Edad estimada: <span className="font-medium text-charcoal">{computed.age_decimal.toFixed(1)} años</span>
+          {" | "}
+          Categoría: <span className="font-medium text-charcoal">{computed.category}</span>
         </p>
       )}
 
-      {submitError && <p className="text-sm text-rose-600">{submitError}</p>}
+      {submitError && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>
+      )}
 
       <button
         type="submit"
         disabled={isSubmitting}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+        className="rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
+        style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
       >
         {isSubmitting ? "Guardando..." : mode === "create" ? "Crear atleta" : "Guardar cambios"}
       </button>

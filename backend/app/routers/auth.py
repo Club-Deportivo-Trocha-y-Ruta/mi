@@ -5,14 +5,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_current_user, get_db
+from app.models.athlete import Athlete
+from app.models.parent_invite import ParentInvite
 from app.models.user import User
 from app.schemas.auth import LoginRequest, MeResponse, RefreshRequest, TokenResponse
+from app.schemas.parent_invite import (
+    ParentInviteTokenValidation,
+    ParentRegisterOut,
+    ParentRegisterRequest,
+)
 from app.services.auth import (
     create_access_token,
     create_refresh_token,
     decode_token,
     verify_password,
 )
+from app.services.invitations import consume_invite, get_valid_invite
 
 router = APIRouter()
 
@@ -117,4 +125,78 @@ async def me(current_user: User = Depends(get_current_user)):
         can_login=current_user.can_login,
         club_ids=[m.club_id for m in current_user.club_memberships],
         created_at=current_user.created_at,
+    )
+
+
+@router.get("/invite/{token}", response_model=ParentInviteTokenValidation)
+async def validate_invite_token(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+) -> ParentInviteTokenValidation:
+    """Valida un token de invitación de padre (endpoint público).
+
+    Retorna valid=True si el token existe, no fue usado y no expiró.
+    Retorna valid=False (sin lanzar excepción) en los demás casos, para que
+    el frontend pueda mostrar un mensaje apropiado al usuario.
+    """
+    from datetime import timezone
+
+    stmt = select(ParentInvite).where(ParentInvite.token == token)
+    invite = (await db.execute(stmt)).scalar_one_or_none()
+
+    if invite is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Token de invitación no encontrado",
+        )
+
+    # Cargar nombre del atleta para la respuesta
+    athlete_result = await db.execute(
+        select(Athlete).where(Athlete.id == invite.athlete_id)
+    )
+    athlete = athlete_result.scalar_one_or_none()
+    athlete_name = (
+        f"{athlete.first_name} {athlete.last_name}" if athlete else "Atleta desconocido"
+    )
+
+    from datetime import datetime
+
+    is_expired = invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
+    is_valid = not invite.used and not is_expired
+
+    return ParentInviteTokenValidation(
+        athlete_id=invite.athlete_id,
+        athlete_name=athlete_name,
+        email=invite.email,
+        expires_at=invite.expires_at,
+        valid=is_valid,
+    )
+
+
+@router.post("/parent-register", response_model=ParentRegisterOut, status_code=status.HTTP_201_CREATED)
+async def parent_register(
+    body: ParentRegisterRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ParentRegisterOut:
+    """Registra un padre/acudiente a partir de un token de invitación (endpoint público).
+
+    Flujo:
+    1. Valida el token (lanza excepción si inválido/expirado/usado).
+    2. Crea el usuario, la membresía al club y la vinculación con el atleta.
+    3. Marca el token como usado.
+    """
+    invite = await get_valid_invite(body.token, db)
+    new_user = await consume_invite(
+        invite=invite,
+        first_name=body.first_name,
+        last_name=body.last_name,
+        password=body.password,
+        phone=body.phone,
+        db=db,
+    )
+    return ParentRegisterOut(
+        id=new_user.id,
+        email=new_user.email or "",
+        first_name=new_user.first_name,
+        last_name=new_user.last_name,
     )

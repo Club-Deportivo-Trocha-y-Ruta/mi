@@ -155,24 +155,24 @@ interface ClassificationRowProps {
 function ClassificationRow({ indicatorLabel, result }: ClassificationRowProps) {
   if (!result) {
     return (
-      <div className="flex items-center gap-3 py-1.5">
-        <span className="w-28 text-slate-500 text-sm">{indicatorLabel}:</span>
-        <span className="text-slate-400 text-sm">Sin datos</span>
+      <div className="flex items-center gap-3 py-2">
+        <span className="w-28 shrink-0 text-sm text-mid-gray">{indicatorLabel}:</span>
+        <span className="text-sm text-mid-gray">Sin datos</span>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-3 py-1.5">
-      <span className="w-28 text-slate-500 text-sm shrink-0">{indicatorLabel}:</span>
+    <div className="flex items-center gap-3 py-2">
+      <span className="w-28 shrink-0 text-sm text-mid-gray">{indicatorLabel}:</span>
       <span
-        className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${COLOR_DOT[result.color]}`}
+        className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${COLOR_DOT[result.color]}`}
         aria-label={result.color}
       />
       <span className={`text-sm font-medium ${COLOR_TEXT[result.color]}`}>
         {result.label}
       </span>
-      <span className="text-xs text-slate-400 ml-auto tabular-nums">
+      <span className="ml-auto text-xs tabular-nums text-mid-gray">
         Z={result.zScore >= 0 ? "+" : ""}{result.zScore.toFixed(2)}{" "}
         (P{result.percentile})
       </span>
@@ -219,23 +219,39 @@ export function NutritionalClassification({
   );
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h4 className="text-sm font-semibold text-slate-700 mb-3">
-        Clasificacion Nutricional{" "}
-        <span className="font-normal text-slate-400">(Res. 2465/2016)</span>
+    <div
+      className="rounded-xl bg-white p-5"
+      style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+    >
+      <h4
+        className="mb-4 text-sm text-charcoal"
+        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+      >
+        Clasificación Nutricional{" "}
+        <span
+          className="font-normal text-mid-gray"
+          style={{ fontFamily: "Inter, system-ui, sans-serif" }}
+        >
+          (Res. 2465/2016)
+        </span>
       </h4>
 
-      <div className="divide-y divide-slate-100">
+      <div style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}>
         <ClassificationRow indicatorLabel="Talla/Edad" result={heightResult} />
-        <ClassificationRow indicatorLabel="IMC/Edad" result={bmiResult} />
+        <div style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}>
+          <ClassificationRow indicatorLabel="IMC/Edad" result={bmiResult} />
+        </div>
       </div>
 
-      <div className="mt-3 space-y-1 border-t border-slate-100 pt-3">
-        <p className="text-xs text-slate-400">
+      <div
+        className="mt-3 space-y-1 pt-3"
+        style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
+      >
+        <p className="text-xs text-mid-gray">
           Fuente: CDC 2000 / Res. 2465/2016 — MinSalud Colombia
         </p>
-        <p className="text-xs text-slate-500">
-          El IMC puede subestimar adiposidad en atletas. Usese como referencia.
+        <p className="text-xs text-mid-gray">
+          El IMC puede subestimar adiposidad en atletas. Úsese como referencia.
         </p>
       </div>
     </div>

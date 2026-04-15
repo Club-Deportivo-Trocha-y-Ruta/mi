@@ -43,7 +43,14 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/dashboard" replace />;
+    const ROLE_FALLBACKS: Record<UserRole, string> = {
+      [UserRole.admin]: "/dashboard",
+      [UserRole.coach]: "/dashboard",
+      [UserRole.parent]: "/my-athletes",
+      [UserRole.athlete]: "/login",
+    };
+    const fallback = ROLE_FALLBACKS[user.role] ?? "/login";
+    return <Navigate to={fallback} replace />;
   }
 
   return <AppShell>{children}</AppShell>;

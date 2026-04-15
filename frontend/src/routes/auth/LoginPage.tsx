@@ -37,6 +37,8 @@ export function LoginPage() {
       const role = useAuthStore.getState().user?.role ?? user?.role;
       if (role === UserRole.admin || role === UserRole.coach) {
         navigate("/dashboard", { replace: true });
+      } else if (role === UserRole.parent) {
+        navigate("/my-athletes", { replace: true });
       } else {
         navigate("/", { replace: true });
       }
@@ -50,24 +52,46 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-6 text-center">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <div className="flex min-h-screen items-center justify-center bg-white p-4">
+      {/* Login card — shadow Level 2 (ring + soft), 12px radius */}
+      <div
+        className="w-full max-w-md rounded-xl bg-white p-8"
+        style={{
+          boxShadow:
+            "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
+        }}
+      >
+        {/* Header */}
+        <div className="mb-8 text-center">
+          <p className="text-xs font-medium uppercase tracking-widest text-mid-gray">
             Club Deportivo
           </p>
-          <h1 className="text-2xl font-bold text-slate-900">Trocha y Ruta</h1>
+          <h1
+            className="mt-1 text-2xl text-charcoal"
+            style={{
+              fontFamily: "'Cal Sans', system-ui, sans-serif",
+              fontWeight: 600,
+              letterSpacing: "0.2px",
+            }}
+          >
+            Trocha y Ruta
+          </h1>
         </div>
 
-        <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <form className="space-y-5" onSubmit={form.handleSubmit(onSubmit)}>
+          {/* Email field */}
           <div>
-            <label htmlFor="email" className="mb-1 block text-sm font-medium">
+            <label
+              htmlFor="email"
+              className="mb-1.5 block text-sm font-medium text-charcoal"
+            >
               Correo
             </label>
             <input
               id="email"
               type="email"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50"
+              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
               {...form.register("email")}
             />
             {form.formState.errors.email && (
@@ -77,14 +101,19 @@ export function LoginPage() {
             )}
           </div>
 
+          {/* Password field */}
           <div>
-            <label htmlFor="password" className="mb-1 block text-sm font-medium">
+            <label
+              htmlFor="password"
+              className="mb-1.5 block text-sm font-medium text-charcoal"
+            >
               Contraseña
             </label>
             <input
               id="password"
               type="password"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50"
+              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
               {...form.register("password")}
             />
             {form.formState.errors.password && (
@@ -94,12 +123,18 @@ export function LoginPage() {
             )}
           </div>
 
-          {serverError && <p className="text-sm text-red-600">{serverError}</p>}
+          {serverError && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              {serverError}
+            </p>
+          )}
 
+          {/* Primary CTA button — charcoal bg, white text, 8px radius */}
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-70"
+            className="w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
+            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
           >
             {isLoading ? "Ingresando..." : "Ingresar"}
           </button>

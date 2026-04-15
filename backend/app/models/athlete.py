@@ -20,6 +20,7 @@ from app.models.base import Base
 if TYPE_CHECKING:
     from app.models.anthropometry import AnthropometricRecord
     from app.models.club import Club
+    from app.models.parent_invite import ParentInvite
     from app.models.user import User
 
 
@@ -57,6 +58,10 @@ class Athlete(Base):
         DateTime,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+    )
+    parental_consent_obtained: Mapped[bool] = mapped_column(default=False)
+    parental_consent_date: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
     )
 
     # Usuario vinculado al atleta (1-a-1)

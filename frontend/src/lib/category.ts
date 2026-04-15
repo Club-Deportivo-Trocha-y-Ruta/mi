@@ -33,13 +33,13 @@ export function getCategory(birthYear: number, sex: Sex): string {
   });
 
   if (!category) {
-    return "Categoria no definida";
+    return "Categoría no definida";
   }
 
   if (category.unisex) {
     return category.unisex;
   }
 
-  const fallback = category.male ?? category.unisex ?? "Categoria no definida";
+  const fallback = category.male ?? category.unisex ?? "Categoría no definida";
   return sex === "F" ? (category.female ?? fallback) : fallback;
 }

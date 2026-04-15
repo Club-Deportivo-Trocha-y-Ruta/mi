@@ -10,7 +10,7 @@ function badgeClasses(status: MaturationStatus | null): string {
   if (status === MaturationStatus.PrePHV) return "bg-blue-100 text-blue-700";
   if (status === MaturationStatus.CircaPHV) return "bg-amber-100 text-amber-700";
   if (status === MaturationStatus.PostPHV) return "bg-green-100 text-green-700";
-  return "bg-slate-100 text-slate-600";
+  return "bg-light-gray text-mid-gray";
 }
 
 export function PHVBadge({ status, size = "sm" }: PHVBadgeProps) {

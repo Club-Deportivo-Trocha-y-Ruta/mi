@@ -61,7 +61,6 @@ function buildRules(
   isCircaPHV: boolean,
 ): TrainingRule[] {
   const rules: TrainingRule[] = [
-    // Intervalos de alta intensidad
     isCircaPHV
       ? {
           id: "high-intensity",
@@ -74,7 +73,7 @@ function buildRules(
           id: "high-intensity",
           label: "Intervalos alta intensidad",
           status: "forbidden",
-          detail: "Prohibido en 10-12 anos — solo juego libre",
+          detail: "Prohibido en 10-12 años — solo juego libre",
         }
       : {
           id: "high-intensity",
@@ -83,7 +82,6 @@ function buildRules(
           detail: "Max 2 sesiones/semana",
         },
 
-    // Fuerza peso corporal
     isCircaPHV
       ? {
           id: "bodyweight",
@@ -98,7 +96,6 @@ function buildRules(
           detail: "Permitido en todos los grupos",
         },
 
-    // Fuerza con peso externo
     isCircaPHV
       ? {
           id: "external-load",
@@ -111,16 +108,15 @@ function buildRules(
           id: "external-load",
           label: "Fuerza peso externo",
           status: "forbidden",
-          detail: "Prohibido en 10-12 anos",
+          detail: "Prohibido en 10-12 años",
         }
       : {
           id: "external-load",
           label: "Fuerza peso externo",
           status: "caution",
-          detail: "Progresion: bandas → mancuernas",
+          detail: "Progresión: bandas → mancuernas",
         },
 
-    // Horas semanales maximas
     isCircaPHV
       ? {
           id: "weekly-hours",
@@ -133,7 +129,7 @@ function buildRules(
           id: "weekly-hours",
           label: "Horas/semana",
           status: "allowed",
-          detail: "3-5 h/semana (edad minima regla)",
+          detail: "3-5 h/semana (edad mínima regla)",
         }
       : {
           id: "weekly-hours",
@@ -142,10 +138,9 @@ function buildRules(
           detail: "5-10 h/semana",
         },
 
-    // Cadencia minima
     {
       id: "cadence",
-      label: "Cadencia minima",
+      label: "Cadencia mínima",
       status: "allowed",
       detail:
         isCircaPHV || ageGroup === "13-15"
@@ -153,60 +148,56 @@ function buildRules(
           : "70 rpm — nunca < 60 rpm",
     },
 
-    // Test FC maxima
     isCircaPHV
       ? {
           id: "max-hr",
-          label: "Test FC maxima",
+          label: "Test FC máxima",
           status: "forbidden",
           detail: "Prohibido en Circa-PHV — estimada: 197 lpm",
         }
       : ageGroup === "10-12"
       ? {
           id: "max-hr",
-          label: "Test FC maxima",
+          label: "Test FC máxima",
           status: "forbidden",
           detail: "Estimada: 197 lpm — sin test",
         }
       : {
           id: "max-hr",
-          label: "Test FC maxima",
+          label: "Test FC máxima",
           status: "allowed",
-          detail: "Permitido con supervision",
+          detail: "Permitido con supervisión",
         },
 
-    // Potenciometro
     isCircaPHV
       ? {
           id: "powermeter",
-          label: "Potenciometro",
+          label: "Potenciómetro",
           status: "forbidden",
           detail: "Prohibido en Circa-PHV",
         }
       : ageGroup === "10-12"
       ? {
           id: "powermeter",
-          label: "Potenciometro",
+          label: "Potenciómetro",
           status: "forbidden",
-          detail: "Prohibido en menores de 13 anos",
+          detail: "Prohibido en menores de 13 años",
         }
       : {
           id: "powermeter",
-          label: "Potenciometro",
+          label: "Potenciómetro",
           status: "allowed",
-          detail: "Permitido (solo > 13 anos)",
+          detail: "Permitido (solo > 13 años)",
         },
 
-    // Distribucion de intensidad
     {
       id: "intensity",
-      label: "Distribucion Z1-Z2 / Z3-Z5",
+      label: "Distribución Z1-Z2 / Z3-Z5",
       status: "allowed",
       detail:
         isCircaPHV || ageGroup === "10-12" ? "90% / 10%" : "80% / 20%",
     },
 
-    // Ratio entreno:competencia
     {
       id: "ratio",
       label: "Ratio entreno:competencia",
@@ -229,7 +220,7 @@ function buildAlerts(
     alerts.push({
       level: "warning",
       message:
-        "Fase de maxima vulnerabilidad osea. Vigilar Osgood-Schlatter. Priorizar tecnica sobre condicion.",
+        "Fase de máxima vulnerabilidad ósea. Vigilar Osgood-Schlatter. Priorizar técnica sobre condición.",
     });
   }
 
@@ -272,16 +263,14 @@ interface RuleCardProps {
 function RuleCard({ rule }: RuleCardProps) {
   const colors = STATUS_COLORS[rule.status];
   return (
-    <div
-      className={`rounded-md border p-3 ${colors.bg} ${colors.border}`}
-    >
+    <div className={`rounded-lg border p-3 ${colors.bg} ${colors.border}`}>
       <div className="flex items-start gap-2">
         <span className={`text-base font-bold leading-tight ${colors.icon}`}>
           {STATUS_ICON[rule.status]}
         </span>
         <div className="min-w-0">
           <p className={`text-sm font-medium ${colors.text}`}>{rule.label}</p>
-          <p className={`text-xs mt-0.5 ${colors.text} opacity-80`}>{rule.detail}</p>
+          <p className={`mt-0.5 text-xs opacity-80 ${colors.text}`}>{rule.detail}</p>
         </div>
       </div>
     </div>
@@ -295,12 +284,18 @@ export function TrainingReadiness({ athlete, latestRecord }: TrainingReadinessPr
 
   if (ageGroup === null) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h4 className="text-sm font-semibold text-slate-700 mb-2">
+      <div
+        className="rounded-xl bg-white p-5"
+        style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+      >
+        <h4
+          className="mb-2 text-sm text-charcoal"
+          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+        >
           Recomendaciones de entrenamiento
         </h4>
-        <p className="text-sm text-slate-500">
-          Rango de edad fuera del modelo (10-15 anos).
+        <p className="text-sm text-mid-gray">
+          Rango de edad fuera del modelo (10-15 años).
         </p>
       </div>
     );
@@ -310,29 +305,35 @@ export function TrainingReadiness({ athlete, latestRecord }: TrainingReadinessPr
   const alerts = buildAlerts(latestRecord, isCircaPHV);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
+    <div
+      className="rounded-xl bg-white p-5 space-y-4"
+      style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+    >
       {/* Header */}
       <div>
-        <h4 className="text-sm font-semibold text-slate-700">
+        <h4
+          className="text-sm text-charcoal"
+          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+        >
           Recomendaciones de entrenamiento
         </h4>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
+          <span className="rounded-full bg-light-gray px-2.5 py-1 text-charcoal">
             {athlete.first_name} {athlete.last_name}
           </span>
-          <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
-            {athlete.age_decimal?.toFixed(1) ?? "—"} anos
+          <span className="rounded-full bg-light-gray px-2.5 py-1 text-charcoal">
+            {athlete.age_decimal?.toFixed(1) ?? "—"} años
           </span>
-          <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
-            {athlete.category ?? "Sin categoria"}
+          <span className="rounded-full bg-light-gray px-2.5 py-1 text-charcoal">
+            {athlete.category ?? "Sin categoría"}
           </span>
           {matStatus && (
-            <span className={`rounded px-2 py-1 font-medium ${PHV_BADGE_COLORS[matStatus]}`}>
+            <span className={`rounded-full px-2.5 py-1 font-medium ${PHV_BADGE_COLORS[matStatus]}`}>
               {PHV_LABELS[matStatus]}
             </span>
           )}
-          <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
-            Grupo: {ageGroup} anos
+          <span className="rounded-full bg-light-gray px-2.5 py-1 text-charcoal">
+            Grupo: {ageGroup} años
           </span>
         </div>
       </div>
@@ -343,13 +344,13 @@ export function TrainingReadiness({ athlete, latestRecord }: TrainingReadinessPr
           {alerts.map((alert, idx) => (
             <div
               key={idx}
-              className={`rounded-md border p-3 text-sm ${
+              className={`rounded-lg border p-3 text-sm ${
                 alert.level === "danger"
-                  ? "border-red-300 bg-red-50 text-red-800"
-                  : "border-amber-300 bg-amber-50 text-amber-800"
+                  ? "border-red-200 bg-red-50 text-red-800"
+                  : "border-amber-200 bg-amber-50 text-amber-800"
               }`}
             >
-              {alert.level === "danger" ? "🔴 " : "⚠ "}
+              {alert.level === "danger" ? "⬤ " : "⚠ "}
               {alert.message}
             </div>
           ))}
@@ -364,9 +365,12 @@ export function TrainingReadiness({ athlete, latestRecord }: TrainingReadinessPr
       </div>
 
       {/* Nota al pie */}
-      <p className="text-xs text-slate-400 border-t border-slate-100 pt-3">
-        Decisiones basadas en edad biologica (PHV), no cronologica. Marco LTAD /
-        CLAUDE.md principios no negociables.
+      <p
+        className="text-xs text-mid-gray pt-3"
+        style={{ borderTop: "1px solid rgba(34, 42, 53, 0.08)" }}
+      >
+        Decisiones basadas en edad biológica (PHV), no cronológica. Marco LTAD /
+        principios no negociables.
       </p>
     </div>
   );

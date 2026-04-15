@@ -258,40 +258,33 @@ describe("calculatePHV", () => {
   // Post-PHV: mo > 1.0
   // -------------------------------------------------------------------------
   describe("boundary values del maturityOffset", () => {
-    it("debería clasificar Circa-PHV cuando offset está exactamente en -1.0 (límite inferior)", () => {
-      // Buscamos valores que produzcan offset cercano a -1 (varón en transición)
-      // M, 12.8y, 42kg, 148cm, 74cm — estimado cerca del límite Circa
+    it("debería clasificar Circa-PHV con valores que producen offset ~0.49", () => {
+      // M, 14.0y, 55kg, 162cm, 80cm → maturityOffset ≈ +0.49 → Circa-PHV
       const result = calculatePHV({
         sex: Sex.M,
-        ageDecimal: 12.8,
-        weightKg: 42.0,
-        standingHeightCm: 148.0,
-        sittingHeightCm: 74.0,
+        ageDecimal: 14.0,
+        weightKg: 55.0,
+        standingHeightCm: 162.0,
+        sittingHeightCm: 80.0,
       });
       expect(result).not.toBeNull();
-      // Verificar que la clasificación es coherente con el offset
-      if (result!.maturityOffset < -1.0) {
-        expect(result!.maturationStatus).toBe(MaturationStatus.PrePHV);
-      } else if (result!.maturityOffset > 1.0) {
-        expect(result!.maturationStatus).toBe(MaturationStatus.PostPHV);
-      } else {
-        expect(result!.maturationStatus).toBe(MaturationStatus.CircaPHV);
-      }
+      expect(result!.maturityOffset).toBeGreaterThanOrEqual(-1.0);
+      expect(result!.maturityOffset).toBeLessThanOrEqual(1.0);
+      expect(result!.maturationStatus).toBe(MaturationStatus.CircaPHV);
     });
 
     it("debería incluir implicaciones de entrenamiento para Circa-PHV", () => {
-      // Buscamos un caso que produzca Circa-PHV
+      // M, 14.0y, 55kg, 162cm, 80cm → maturityOffset ≈ +0.49 → Circa-PHV garantizado
       const result = calculatePHV({
         sex: Sex.M,
-        ageDecimal: 13.5,
-        weightKg: 48.0,
-        standingHeightCm: 155.0,
-        sittingHeightCm: 76.0,
+        ageDecimal: 14.0,
+        weightKg: 55.0,
+        standingHeightCm: 162.0,
+        sittingHeightCm: 80.0,
       });
       expect(result).not.toBeNull();
-      if (result!.maturationStatus === MaturationStatus.CircaPHV) {
-        expect(result!.trainingImplications).toContain("ESTIRON");
-      }
+      expect(result!.maturationStatus).toBe(MaturationStatus.CircaPHV);
+      expect(result!.trainingImplications).toContain("ESTIRON");
     });
   });
 

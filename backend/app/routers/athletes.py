@@ -3,7 +3,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_db, require_role
+from app.dependencies import get_db, get_current_user, require_role, verify_athlete_access
 from app.models.athlete import Athlete
 from app.models.anthropometry import AnthropometricRecord
 from app.models.club import ClubMember, ClubRole
@@ -14,6 +14,8 @@ from app.schemas.athlete import (
     AthleteListOut,
     AthleteOut,
     AthleteUpdate,
+    AthleteParentView,
+    AnthropometryParentView,
 )
 from app.schemas.anthropometry import AnthropometryOut
 from app.services.category import compute_age_decimal, compute_years_in_club, get_category
@@ -140,46 +142,52 @@ async def list_athletes(
 # ---------------------------------------------------------------------------
 # GET /api/athletes/{athlete_id}
 # ---------------------------------------------------------------------------
-@router.get("/{athlete_id}", response_model=AthleteDetailOut)
+@router.get("/{athlete_id}", response_model=None)
 async def get_athlete(
-    athlete_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
-) -> AthleteDetailOut:
+    current_user: User = Depends(get_current_user),
+    athlete: Athlete = Depends(verify_athlete_access),
+) -> AthleteDetailOut | AthleteParentView:
+    # Parent: vista reducida sin campos internos del coach
+    if current_user.role == UserRole.parent:
+        # Cargar registros para obtener el más reciente
+        result = await db.execute(
+            select(AnthropometricRecord)
+            .where(AnthropometricRecord.athlete_id == athlete.id)
+            .order_by(AnthropometricRecord.evaluation_date.desc())
+        )
+        records = result.scalars().all()
+
+        latest_record: AnthropometryParentView | None = None
+        if records:
+            latest_record = AnthropometryParentView.model_validate(records[0])
+
+        out_parent = AthleteParentView.model_validate(athlete)
+        out_parent.age_decimal = compute_age_decimal(athlete.birth_date)
+        out_parent.category = get_category(athlete.birth_date.year, athlete.sex.value)
+        out_parent.latest_anthropometry = latest_record
+        return out_parent
+
+    # Coach / Admin: vista completa con selectinload para eager loading
     result = await db.execute(
         select(Athlete)
         .options(selectinload(Athlete.anthropometric_records))
-        .where(Athlete.id == athlete_id)
+        .where(Athlete.id == athlete.id)
     )
-    athlete = result.scalar_one_or_none()
+    athlete_full = result.scalar_one()
 
-    if athlete is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Atleta no encontrado",
+    latest: AnthropometryOut | None = None
+    if athlete_full.anthropometric_records:
+        latest_orm = max(
+            athlete_full.anthropometric_records, key=lambda r: r.evaluation_date
         )
+        latest = AnthropometryOut.model_validate(latest_orm)
 
-    # Coach solo ve atletas de sus clubes
-    if current_user.role == UserRole.coach:
-        if athlete.club_id not in _coach_club_ids(current_user):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes acceso a este atleta",
-            )
-
-    # Último registro antropométrico (más reciente por fecha)
-    latest = None
-    if athlete.anthropometric_records:
-        latest_record = max(
-            athlete.anthropometric_records, key=lambda r: r.evaluation_date
-        )
-        latest = AnthropometryOut.model_validate(latest_record)
-
-    out = AthleteDetailOut.model_validate(athlete)
-    out.age_decimal = compute_age_decimal(athlete.birth_date)
-    out.category = get_category(athlete.birth_date.year, athlete.sex.value)
-    if athlete.club_join_date is not None:
-        out.years_in_club = compute_years_in_club(athlete.club_join_date)
+    out = AthleteDetailOut.model_validate(athlete_full)
+    out.age_decimal = compute_age_decimal(athlete_full.birth_date)
+    out.category = get_category(athlete_full.birth_date.year, athlete_full.sex.value)
+    if athlete_full.club_join_date is not None:
+        out.years_in_club = compute_years_in_club(athlete_full.club_join_date)
     out.latest_anthropometry = latest
     return out
 

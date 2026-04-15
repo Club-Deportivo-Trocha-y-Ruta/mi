@@ -25,6 +25,10 @@ const CATEGORY_OPTIONS = [
   "Pre-juvenil B femenino",
 ];
 
+const inputSelectClass =
+  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
+const inputSelectStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+
 export function AthletesListPage() {
   const user = useAuthStore((state) => state.user);
   const [search, setSearch] = useState("");
@@ -63,33 +67,46 @@ export function AthletesListPage() {
   const isCoach = user?.role === UserRole.coach;
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-5">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Atletas</h1>
-          <p className="text-sm text-slate-600">Gestion de atletas del club.</p>
+          <h1
+            className="text-2xl text-charcoal"
+            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          >
+            Atletas
+          </h1>
+          <p className="mt-0.5 text-sm text-mid-gray">Gestion de atletas del club.</p>
         </div>
         {isCoach && (
           <Link
             to="/athletes/new"
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
+            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
           >
             + Agregar atleta
           </Link>
         )}
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-3">
+      {/* Filtros */}
+      <div
+        className="grid gap-3 rounded-xl bg-white p-4 md:grid-cols-3"
+        style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+      >
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Buscar por nombre..."
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className={inputSelectClass}
+          style={inputSelectStyle}
         />
         <select
           value={category}
           onChange={(event) => setCategory(event.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className={inputSelectClass}
+          style={inputSelectStyle}
         >
           {CATEGORY_OPTIONS.map((option) => (
             <option key={option} value={option}>
@@ -100,7 +117,8 @@ export function AthletesListPage() {
         <select
           value={phv}
           onChange={(event) => setPhv(event.target.value as "Todos" | MaturationStatus)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className={inputSelectClass}
+          style={inputSelectStyle}
         >
           <option value="Todos">Todos los estados PHV</option>
           <option value={MaturationStatus.PrePHV}>Pre-PHV</option>
@@ -109,31 +127,44 @@ export function AthletesListPage() {
         </select>
       </div>
 
+      {/* Skeleton */}
       {athletesQuery.isLoading ? (
-        <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
+        <div
+          className="space-y-2 rounded-xl bg-white p-4"
+          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+        >
           {Array.from({ length: 5 }).map((_, idx) => (
-            <div key={idx} className="h-9 animate-pulse rounded bg-slate-100" />
+            <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
           ))}
         </div>
       ) : null}
 
+      {/* Error */}
       {athletesQuery.isError ? (
-        <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           No se pudo cargar la lista de atletas.
         </p>
       ) : null}
 
+      {/* Empty state */}
       {!athletesQuery.isLoading && !athletesQuery.isError && filteredRows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center">
-          <p className="text-sm text-slate-600">No hay atletas registrados.</p>
+        <div
+          className="rounded-xl bg-white p-10 text-center"
+          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px", borderStyle: "dashed" }}
+        >
+          <p className="text-sm text-mid-gray">No hay atletas registrados.</p>
           {isCoach ? (
-            <Link to="/athletes/new" className="mt-3 inline-block text-sm font-medium text-slate-900">
+            <Link
+              to="/athletes/new"
+              className="mt-3 inline-block text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+            >
               + Agregar atleta
             </Link>
           ) : null}
         </div>
       ) : null}
 
+      {/* Table */}
       {!athletesQuery.isLoading && !athletesQuery.isError && filteredRows.length > 0 ? (
         <AthletesTable items={filteredRows} />
       ) : null}

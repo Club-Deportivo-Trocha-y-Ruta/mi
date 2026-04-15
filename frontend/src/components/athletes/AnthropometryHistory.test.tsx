@@ -92,7 +92,7 @@ describe("AnthropometryHistory", () => {
     it("debería mostrar mensaje de 'No hay mediciones registradas'", () => {
       render(<AnthropometryHistory records={[]} isLoading={false} />);
       expect(
-        screen.getByText(/No hay mediciones registradas aun/i)
+        screen.getByText(/No hay mediciones registradas aún/i)
       ).toBeInTheDocument();
     });
 
@@ -195,7 +195,7 @@ describe("AnthropometryHistory", () => {
   describe("modal de detalle", () => {
     it("no debería mostrar modal al inicio", () => {
       render(<AnthropometryHistory records={[record1]} isLoading={false} />);
-      expect(screen.queryByText(/Medicion del/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Medición del/i)).not.toBeInTheDocument();
     });
 
     it("debería mostrar el modal al hacer clic en una fila", async () => {
@@ -203,7 +203,7 @@ describe("AnthropometryHistory", () => {
       render(<AnthropometryHistory records={[record1]} isLoading={false} />);
       const rows = screen.getAllByRole("row");
       await user.click(rows[1]); // primera fila de datos
-      expect(screen.getByText(/Medicion del 01\/06\/2025/i)).toBeInTheDocument();
+      expect(screen.getByText(/Medición del 01\/06\/2025/i)).toBeInTheDocument();
     });
 
     it("debería mostrar el peso del registro en el modal", async () => {
@@ -246,10 +246,10 @@ describe("AnthropometryHistory", () => {
       const rows = screen.getAllByRole("row");
       await user.click(rows[1]);
       // Confirmar que el modal está abierto
-      expect(screen.getByText(/Medicion del/i)).toBeInTheDocument();
+      expect(screen.getByText(/Medición del/i)).toBeInTheDocument();
       // Cerrar con el botón x
-      await user.click(screen.getByRole("button", { name: "x" }));
-      expect(screen.queryByText(/Medicion del/i)).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "✕" }));
+      expect(screen.queryByText(/Medición del/i)).not.toBeInTheDocument();
     });
 
     it("debería cerrar el modal al hacer clic en el backdrop", async () => {
@@ -259,13 +259,12 @@ describe("AnthropometryHistory", () => {
       );
       const rows = screen.getAllByRole("row");
       await user.click(rows[1]);
-      expect(screen.getByText(/Medicion del/i)).toBeInTheDocument();
+      expect(screen.getByText(/Medición del/i)).toBeInTheDocument();
       // El backdrop es el div fixed con bg-black/40
       const backdrop = container.querySelector(".fixed.inset-0");
-      if (backdrop) {
-        await user.click(backdrop);
-        expect(screen.queryByText(/Medicion del/i)).not.toBeInTheDocument();
-      }
+      expect(backdrop).not.toBeNull();
+      await user.click(backdrop!);
+      expect(screen.queryByText(/Medición del/i)).not.toBeInTheDocument();
     });
 
     it("debería mostrar la envergadura cuando existe", async () => {

@@ -32,6 +32,10 @@ interface AnthropometryFormProps {
   onSuccess: () => void;
 }
 
+const inputClass =
+  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
+const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+
 export function AnthropometryForm({
   athleteId,
   athleteSex,
@@ -89,97 +93,113 @@ export function AnthropometryForm({
       form.reset();
       onSuccess();
     } catch {
-      setSubmitError("No se pudo guardar la medicion. Intenta de nuevo.");
+      setSubmitError("No se pudo guardar la medición. Intenta de nuevo.");
     }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <form
         onSubmit={form.handleSubmit((v) => void handleSubmit(v))}
-        className="space-y-4"
+        className="space-y-5"
       >
+        {/* Fecha */}
         <div>
-          <label className="text-sm text-slate-700">
-            Fecha de evaluacion
+          <label className="text-sm font-medium text-charcoal">
+            Fecha de evaluación
             <input
               type="date"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 md:w-64"
+              className={`${inputClass} md:w-64`}
+              style={inputStyle}
               {...form.register("evaluation_date")}
             />
-            <span className="text-xs text-rose-600">
+            <span className="text-xs text-red-600">
               {form.formState.errors.evaluation_date?.message}
             </span>
           </label>
         </div>
 
+        {/* Grid de medidas */}
         <div className="grid gap-4 md:grid-cols-4">
-          <label className="text-sm text-slate-700">
+          <label className="text-sm font-medium text-charcoal">
             Peso (kg)
             <input
               type="number"
               step="0.1"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+              className={inputClass}
+              style={inputStyle}
               {...form.register("weight_kg", { valueAsNumber: true })}
             />
-            <span className="text-xs text-rose-600">
+            <span className="text-xs text-red-600">
               {form.formState.errors.weight_kg?.message}
             </span>
           </label>
-          <label className="text-sm text-slate-700">
+          <label className="text-sm font-medium text-charcoal">
             Talla de pie (cm)
             <input
               type="number"
               step="0.1"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+              className={inputClass}
+              style={inputStyle}
               {...form.register("standing_height_cm", { valueAsNumber: true })}
             />
-            <span className="text-xs text-rose-600">
+            <span className="text-xs text-red-600">
               {form.formState.errors.standing_height_cm?.message}
             </span>
           </label>
-          <label className="text-sm text-slate-700">
+          <label className="text-sm font-medium text-charcoal">
             Envergadura (cm)
             <input
               type="number"
               step="0.1"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+              className={inputClass}
+              style={inputStyle}
               {...form.register("arm_span_cm", { valueAsNumber: true })}
               placeholder="Opcional"
             />
           </label>
-          <label className="text-sm text-slate-700">
+          <label className="text-sm font-medium text-charcoal">
             Talla sentado (cm)
             <input
               type="number"
               step="0.1"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+              className={inputClass}
+              style={inputStyle}
               {...form.register("sitting_height_cm", { valueAsNumber: true })}
             />
-            <span className="text-xs text-rose-600">
+            <span className="text-xs text-red-600">
               {form.formState.errors.sitting_height_cm?.message}
             </span>
           </label>
         </div>
 
-        {submitError && <p className="text-sm text-rose-600">{submitError}</p>}
+        {submitError && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>
+        )}
 
         <button
           type="submit"
           disabled={createMutation.isPending}
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
+          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
         >
-          {createMutation.isPending ? "Guardando..." : "Guardar medicion"}
+          {createMutation.isPending ? "Guardando..." : "Guardar medición"}
         </button>
       </form>
 
       {/* Panel PHV en tiempo real */}
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="phv-preview">
-        <h3 className="mb-2 text-sm font-semibold text-slate-700">
-          Calculo PHV (en tiempo real)
+      <div
+        className="rounded-xl bg-light-gray p-4"
+        data-testid="phv-preview"
+      >
+        <h3
+          className="mb-3 text-sm text-charcoal"
+          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+        >
+          Cálculo PHV (en tiempo real)
         </h3>
         {phvResult ? (
-          <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
+          <div className="grid gap-2 text-sm text-charcoal md:grid-cols-2">
             <p data-testid="leg-length">Longitud pierna: {phvResult.legLengthCm} cm</p>
             <p>Ratio pierna/sentado: {phvResult.legSittingRatio}</p>
             <p data-testid="maturity-offset">
@@ -188,18 +208,18 @@ export function AnthropometryForm({
                 ? `+${phvResult.maturityOffset}`
                 : phvResult.maturityOffset}
             </p>
-            <p data-testid="age-at-phv">Edad al PHV: {phvResult.ageAtPhv} anos</p>
+            <p data-testid="age-at-phv">Edad al PHV: {phvResult.ageAtPhv} años</p>
             <div className="flex items-center gap-2" data-testid="maturation-status">
               <span>Estado:</span>
               <PHVBadge status={phvResult.maturationStatus} />
             </div>
-            <p className="md:col-span-2 rounded-md bg-white p-2 text-xs text-slate-600">
+            <p className="md:col-span-2 rounded-lg bg-white p-2.5 text-xs text-mid-gray">
               {phvResult.trainingImplications}
             </p>
           </div>
         ) : (
-          <p className="text-sm text-slate-500">
-            Completa los campos para ver el calculo.
+          <p className="text-sm text-mid-gray">
+            Completa los campos para ver el cálculo.
           </p>
         )}
       </div>

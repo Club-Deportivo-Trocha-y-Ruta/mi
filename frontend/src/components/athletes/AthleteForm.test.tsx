@@ -52,7 +52,7 @@ describe("AthleteForm", () => {
       expect(screen.getByText("Apellidos")).toBeInTheDocument();
       expect(screen.getByText("Fecha de nacimiento")).toBeInTheDocument();
       expect(screen.getByText("Sexo")).toBeInTheDocument();
-      expect(screen.getByText("Anos en el club")).toBeInTheDocument();
+      expect(screen.getByText("Fecha ingreso al club")).toBeInTheDocument();
     });
 
     it("debería tener el selector de sexo con opciones M y F", () => {
@@ -131,7 +131,7 @@ describe("AthleteForm", () => {
       await user.click(screen.getByRole("button", { name: /Crear atleta/i }));
 
       await waitFor(() => {
-        expect(screen.getAllByText(/Minimo 2 caracteres/i).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/Mínimo 2 caracteres/i).length).toBeGreaterThan(0);
       });
     });
 
@@ -145,7 +145,7 @@ describe("AthleteForm", () => {
 
       await waitFor(() => {
         // Puede haber más de un campo con el mismo error (first_name y last_name)
-        expect(screen.getAllByText(/Minimo 2 caracteres/i).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/Mínimo 2 caracteres/i).length).toBeGreaterThan(0);
       });
     });
 
@@ -213,12 +213,11 @@ describe("AthleteForm", () => {
       await user.click(screen.getByRole("button", { name: /Crear atleta/i }));
 
       await waitFor(() => {
-        if (onSubmit.mock.calls.length > 0) {
-          const submittedValues = onSubmit.mock.calls[0][0];
-          expect(submittedValues.first_name).toBe("Sebastián");
-          expect(submittedValues.last_name).toBe("García");
-        }
+        expect(onSubmit).toHaveBeenCalledOnce();
       });
+      const submittedValues = onSubmit.mock.calls[0][0];
+      expect(submittedValues.first_name).toBe("Sebastián");
+      expect(submittedValues.last_name).toBe("García");
     });
   });
 
@@ -264,7 +263,7 @@ describe("AthleteForm", () => {
       await user.click(screen.getByRole("button", { name: /Crear atleta/i }));
 
       await waitFor(() => {
-        expect(screen.getByText(/Fecha minima 1990-01-01/i)).toBeInTheDocument();
+        expect(screen.getByText(/Fecha mínima 1990-01-01/i)).toBeInTheDocument();
       });
     });
   });

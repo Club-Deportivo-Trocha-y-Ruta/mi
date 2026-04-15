@@ -124,9 +124,9 @@ const recordSinPercentiles = makeRecord({
 
 describe("NutritionalClassification", () => {
   // 1. Renderiza el título con la referencia normativa
-  it("renderiza el título 'Clasificacion Nutricional'", () => {
+  it("renderiza el título 'Clasificación Nutricional'", () => {
     render(<NutritionalClassification record={recordNormal} sex="M" birthDate={BIRTH_DATE} />);
-    expect(screen.getByText(/Clasificacion Nutricional/i)).toBeInTheDocument();
+    expect(screen.getByText(/Clasificación Nutricional/i)).toBeInTheDocument();
   });
 
   // 2. El h4 del título contiene "(Res. 2465/2016)" como texto anidado
@@ -134,7 +134,7 @@ describe("NutritionalClassification", () => {
     const { container } = render(
       <NutritionalClassification record={recordNormal} sex="M" birthDate={BIRTH_DATE} />,
     );
-    // El h4 contiene el texto completo "Clasificacion Nutricional (Res. 2465/2016)"
+    // El h4 contiene el texto completo "Clasificación Nutricional (Res. 2465/2016)"
     const h4 = container.querySelector("h4");
     expect(h4).not.toBeNull();
     expect(h4!.textContent).toMatch(/2465/);
@@ -199,7 +199,7 @@ describe("NutritionalClassification", () => {
         <NutritionalClassification record={recordNormal} sex="F" birthDate={BIRTH_DATE} />,
       ),
     ).not.toThrow();
-    expect(screen.getByText(/Clasificacion Nutricional/i)).toBeInTheDocument();
+    expect(screen.getByText(/Clasificación Nutricional/i)).toBeInTheDocument();
   });
 
   // 11. Sin datos de percentiles (undefined) calcula Z-score desde la tabla de referencia

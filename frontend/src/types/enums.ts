@@ -15,3 +15,9 @@ export enum UserRole {
   parent = "parent",
   athlete = "athlete",
 }
+
+export enum FamilyRelationship {
+  padre = "padre",
+  madre = "madre",
+  acudiente = "acudiente",
+}

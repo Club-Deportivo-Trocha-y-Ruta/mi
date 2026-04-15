@@ -125,7 +125,7 @@ describe("TrainingReadiness", () => {
       />,
     );
     expect(
-      screen.getByText(/maxima vulnerabilidad osea/i),
+      screen.getByText(/máxima vulnerabilidad ósea/i),
     ).toBeInTheDocument();
   });
 
@@ -172,7 +172,7 @@ describe("TrainingReadiness", () => {
       />,
     );
     expect(
-      screen.queryByText(/maxima vulnerabilidad osea/i),
+      screen.queryByText(/máxima vulnerabilidad ósea/i),
     ).not.toBeInTheDocument();
   });
 
@@ -214,6 +214,6 @@ describe("TrainingReadiness", () => {
       />,
     );
     expect(screen.getByText(/LTAD/)).toBeInTheDocument();
-    expect(screen.getByText(/edad biologica/i)).toBeInTheDocument();
+    expect(screen.getByText(/edad biológica/i)).toBeInTheDocument();
   });
 });

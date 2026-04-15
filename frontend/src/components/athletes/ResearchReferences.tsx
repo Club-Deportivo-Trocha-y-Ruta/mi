@@ -15,17 +15,17 @@ const REFERENCES: ReferenceItem[] = [
   {
     title: "CDC — Growth Charts Data Files",
     url: "https://www.cdc.gov/growthcharts/cdc-data-files.htm",
-    desc: "Datos LMS con percentiles calculados (2-20 anos)",
+    desc: "Datos LMS con percentiles calculados (2-20 años)",
   },
   {
-    title: "Resolucion 2465 de 2016 — MinSalud Colombia",
+    title: "Resolución 2465 de 2016 — MinSalud Colombia",
     url: "https://www.icbf.gov.co/sites/default/files/resolucion_no._2465_del_14_de_junio_de_2016.pdf",
-    desc: "Normativa colombiana de clasificacion nutricional",
+    desc: "Normativa colombiana de clasificación nutricional",
   },
   {
     title: "Duran et al. 2016 — Curvas colombianas",
     url: "https://onlinelibrary.wiley.com/doi/10.1111/apa.13269",
-    desc: "Acta Paediatrica — n=27.209 ninos colombianos",
+    desc: "Acta Paediatrica — n=27.209 niños colombianos",
   },
   {
     title: "IMC vs grasa corporal en atletas adolescentes",
@@ -33,9 +33,9 @@ const REFERENCES: ReferenceItem[] = [
     desc: "Evidencia de falsos positivos de IMC en deportistas",
   },
   {
-    title: "Talla en Colombia — Revision 60 anos",
+    title: "Talla en Colombia — Revisión 60 años",
     url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC8392461/",
-    desc: "Datos historicos incluyendo Valle del Cauca",
+    desc: "Datos históricos incluyendo Valle del Cauca",
   },
   {
     title: "WHO AnthroPlus — Paquete R oficial",
@@ -48,35 +48,45 @@ export function ResearchReferences() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
+    <div
+      className="rounded-xl bg-white"
+      style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+    >
       <button
         type="button"
-        className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+        className="flex w-full items-center justify-between px-5 py-3.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
       >
-        <span>Fuentes bibliograficas ({REFERENCES.length})</span>
-        <span className="text-slate-400 text-xs">{open ? "▲" : "▼"}</span>
+        <span>Fuentes bibliográficas ({REFERENCES.length})</span>
+        <span className="text-xs text-mid-gray">{open ? "▲" : "▼"}</span>
       </button>
 
       {open && (
-        <ul className="divide-y divide-slate-100 px-4 pb-4">
+        <ul
+          className="px-5 pb-5"
+          style={{ borderTop: "1px solid rgba(34, 42, 53, 0.08)" }}
+        >
           {REFERENCES.map((ref) => (
-            <li key={ref.url} className="py-3">
+            <li
+              key={ref.url}
+              className="py-3"
+              style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.06)" }}
+            >
               <a
                 href={ref.url}
                 target="_blank"
                 rel="noreferrer"
                 className="group flex items-start gap-2"
               >
-                <span className="mt-0.5 shrink-0 text-slate-400 group-hover:text-blue-500 transition-colors">
+                <span className="mt-0.5 shrink-0 text-mid-gray transition-colors group-hover:text-link-blue">
                   ↗
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-700 group-hover:text-blue-700 transition-colors">
+                  <p className="text-sm font-medium text-charcoal transition-opacity group-hover:opacity-70">
                     {ref.title}
                   </p>
-                  <p className="text-xs text-slate-500 mt-0.5">{ref.desc}</p>
+                  <p className="mt-0.5 text-xs text-mid-gray">{ref.desc}</p>
                 </div>
               </a>
             </li>

@@ -23,6 +23,7 @@ from app.models import (
     Athlete,
     Sex,
 )
+from app.models.athlete import ParentAthlete, FamilyRelationship
 from app.services.auth import hash_password
 
 
@@ -124,7 +125,8 @@ async def seed(session: AsyncSession) -> None:
         },
     ]
 
-    for data in athletes_data:
+    first_athlete = None
+    for i, data in enumerate(athletes_data):
         # Crear user con role=athlete, can_login=false
         athlete_user = User(
             first_name=data["first_name"],
@@ -150,6 +152,9 @@ async def seed(session: AsyncSession) -> None:
         session.add(athlete)
         await session.flush()
 
+        if i == 0:
+            first_athlete = athlete  # guardar referencia al primero
+
         # Registrar como miembro del club
         session.add(
             ClubMember(
@@ -159,12 +164,47 @@ async def seed(session: AsyncSession) -> None:
             )
         )
 
+    # --- Padre de prueba ---
+    parent = User(
+        email="padre@trochyruta.com",
+        hashed_password=hash_password("Parent2026!"),
+        first_name="Carlos",
+        last_name="Garcia",
+        phone="3009876543",
+        role=UserRole.parent,
+        can_login=True,
+        created_by=coach.id,
+    )
+    session.add(parent)
+    await session.flush()
+
+    session.add(
+        ClubMember(
+            club_id=club.id,
+            user_id=parent.id,
+            role_in_club=ClubRole.parent,
+        )
+    )
+    await session.flush()
+
+    # Vincular padre con Santiago Lopez (primer atleta del seed)
+    if first_athlete is not None:
+        session.add(
+            ParentAthlete(
+                parent_id=parent.id,
+                athlete_id=first_athlete.id,
+                relationship_type=FamilyRelationship.padre,
+            )
+        )
+        await session.flush()
+
     await session.commit()
     print("Seed completado:")
     print(f"  Club: {club.name} ({club.code})")
     print(f"  Admin: {admin.email} / Admin2026!")
     print(f"  Coach: {coach.email} / Coach2026!")
     print(f"  Atletas: {len(athletes_data)} creados")
+    print(f"  Padre: {parent.email} / Parent2026!")
 
 
 async def main() -> None:

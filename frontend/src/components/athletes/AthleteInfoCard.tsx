@@ -11,10 +11,12 @@ interface AthleteInfoCardProps {
 
 function StatPill({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-1.5 text-sm">
-      <Icon size={14} className="text-slate-400" />
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-800">{value}</span>
+    <div
+      className="flex items-center gap-1.5 rounded-lg bg-light-gray px-3 py-1.5 text-sm"
+    >
+      <Icon size={14} className="text-mid-gray" />
+      <span className="text-mid-gray">{label}</span>
+      <span className="font-semibold text-charcoal">{value}</span>
     </div>
   );
 }
@@ -24,19 +26,29 @@ export function AthleteInfoCard({ athlete }: AthleteInfoCardProps) {
   const initials = `${athlete.first_name.charAt(0)}${athlete.last_name.charAt(0)}`.toUpperCase();
 
   return (
-    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <article
+      className="overflow-hidden rounded-xl bg-white"
+      style={{
+        boxShadow:
+          "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
+      }}
+    >
       {/* Top bar: navigation */}
-      <div className="flex items-center justify-between px-5 pt-4">
+      <div
+        className="flex items-center justify-between px-5 pt-4 pb-3"
+        style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.06)" }}
+      >
         <Link
           to="/athletes"
-          className="flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
+          className="flex items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
         >
           <ArrowLeft size={16} />
           Volver a lista
         </Link>
         <Link
           to={`/athletes/${athlete.id}/edit`}
-          className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition-colors hover:bg-slate-50"
+          className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         >
           <Pencil size={14} />
           Editar
@@ -44,22 +56,29 @@ export function AthleteInfoCard({ athlete }: AthleteInfoCardProps) {
       </div>
 
       {/* Hero content */}
-      <div className="px-5 pb-5 pt-4">
+      <div className="px-5 py-4">
         <div className="flex items-start gap-4">
           {/* Avatar */}
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-slate-100 text-lg font-bold text-slate-600">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-light-gray text-lg font-bold text-charcoal">
             {initials}
           </div>
 
           {/* Name + subtitle */}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="truncate text-xl font-bold text-slate-900">
+              <h2
+                className="truncate text-xl text-charcoal"
+                style={{
+                  fontFamily: "'Cal Sans', system-ui, sans-serif",
+                  fontWeight: 600,
+                  letterSpacing: "0.2px",
+                }}
+              >
                 {athlete.first_name} {athlete.last_name}
               </h2>
               <PHVBadge status={latest?.maturation_status ?? null} size="md" />
             </div>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-mid-gray">
               {athlete.age_decimal?.toFixed(1) ?? "—"} años
               {" · "}
               {athlete.category ?? "Sin categoría"}

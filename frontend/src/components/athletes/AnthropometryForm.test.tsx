@@ -93,7 +93,7 @@ describe("AnthropometryForm", () => {
   describe("renderizado inicial", () => {
     it("debería mostrar el campo 'Fecha de evaluacion'", () => {
       renderForm();
-      expect(screen.getByText(/Fecha de evaluacion/i)).toBeInTheDocument();
+      expect(screen.getByText(/Fecha de evaluación/i)).toBeInTheDocument();
     });
 
     it("debería mostrar el campo 'Peso (kg)'", () => {
@@ -119,19 +119,19 @@ describe("AnthropometryForm", () => {
     it("debería mostrar el botón 'Guardar medicion'", () => {
       renderForm();
       expect(
-        screen.getByRole("button", { name: /Guardar medicion/i }),
+        screen.getByRole("button", { name: /Guardar medición/i }),
       ).toBeInTheDocument();
     });
 
     it("debería mostrar el panel 'Calculo PHV (en tiempo real)'", () => {
       renderForm();
-      expect(screen.getByText(/Calculo PHV/i)).toBeInTheDocument();
+      expect(screen.getByText(/Cálculo PHV/i)).toBeInTheDocument();
     });
 
     it("debería mostrar el mensaje de placeholder del PHV cuando faltan datos", () => {
       renderForm();
       expect(
-        screen.getByText(/Completa los campos para ver el calculo/i),
+        screen.getByText(/Completa los campos para ver el cálculo/i),
       ).toBeInTheDocument();
     });
   });
@@ -142,7 +142,7 @@ describe("AnthropometryForm", () => {
   describe("estado de envío", () => {
     it("el botón debería estar habilitado inicialmente", () => {
       renderForm();
-      const btn = screen.getByRole("button", { name: /Guardar medicion/i });
+      const btn = screen.getByRole("button", { name: /Guardar medición/i });
       expect(btn).not.toBeDisabled();
     });
   });
@@ -154,12 +154,12 @@ describe("AnthropometryForm", () => {
     it("debería mostrar error si peso es menor a 20 kg", async () => {
       renderForm();
       const inputs = document.querySelectorAll("input[type='number']");
-      // índice 1 = peso (0 = mesocycle)
-      const weightInput = inputs[1] as HTMLInputElement;
+      // índice 0 = peso
+      const weightInput = inputs[0] as HTMLInputElement;
       fireEvent.change(weightInput, { target: { valueAsNumber: 10 } });
 
       await userEvent.click(
-        screen.getByRole("button", { name: /Guardar medicion/i }),
+        screen.getByRole("button", { name: /Guardar medición/i }),
       );
 
       await waitFor(() => {
@@ -170,12 +170,12 @@ describe("AnthropometryForm", () => {
     it("debería mostrar error si talla de pie es menor a 100 cm", async () => {
       renderForm();
       const inputs = document.querySelectorAll("input[type='number']");
-      // índice 2 = standing_height
-      const heightInput = inputs[2] as HTMLInputElement;
+      // índice 1 = standing_height
+      const heightInput = inputs[1] as HTMLInputElement;
       fireEvent.change(heightInput, { target: { valueAsNumber: 50 } });
 
       await userEvent.click(
-        screen.getByRole("button", { name: /Guardar medicion/i }),
+        screen.getByRole("button", { name: /Guardar medición/i }),
       );
 
       await waitFor(() => {
@@ -186,12 +186,12 @@ describe("AnthropometryForm", () => {
     it("debería mostrar error si talla sentado es menor a 50 cm", async () => {
       renderForm();
       const inputs = document.querySelectorAll("input[type='number']");
-      // índice 4 = sitting_height
-      const sittingInput = inputs[4] as HTMLInputElement;
+      // índice 3 = sitting_height
+      const sittingInput = inputs[3] as HTMLInputElement;
       fireEvent.change(sittingInput, { target: { valueAsNumber: 30 } });
 
       await userEvent.click(
-        screen.getByRole("button", { name: /Guardar medicion/i }),
+        screen.getByRole("button", { name: /Guardar medición/i }),
       );
 
       await waitFor(() => {
@@ -213,11 +213,11 @@ describe("AnthropometryForm", () => {
       ) as HTMLInputElement;
       fireEvent.change(dateInput, { target: { value: "2026-01-15" } });
 
-      // Rellenar campos numéricos: mesocycle (idx 0), peso (1), standing (2), arm_span (3), sitting (4)
+      // Rellenar campos numéricos: peso (0), standing (1), arm_span (2), sitting (3)
       const numInputs = document.querySelectorAll("input[type='number']");
-      fireEvent.change(numInputs[1], { target: { valueAsNumber: 45 } }); // peso
-      fireEvent.change(numInputs[2], { target: { valueAsNumber: 155 } }); // standing
-      fireEvent.change(numInputs[4], { target: { valueAsNumber: 73 } }); // sitting
+      fireEvent.change(numInputs[0], { target: { valueAsNumber: 45 } }); // peso
+      fireEvent.change(numInputs[1], { target: { valueAsNumber: 155 } }); // standing
+      fireEvent.change(numInputs[3], { target: { valueAsNumber: 73 } }); // sitting
 
       await waitFor(() => {
         expect(screen.getByText(/Longitud pierna:/i)).toBeInTheDocument();
@@ -233,9 +233,9 @@ describe("AnthropometryForm", () => {
       fireEvent.change(dateInput, { target: { value: "2026-01-15" } });
 
       const numInputs = document.querySelectorAll("input[type='number']");
-      fireEvent.change(numInputs[1], { target: { valueAsNumber: 45 } });
-      fireEvent.change(numInputs[2], { target: { valueAsNumber: 155 } });
-      fireEvent.change(numInputs[4], { target: { valueAsNumber: 73 } });
+      fireEvent.change(numInputs[0], { target: { valueAsNumber: 45 } });
+      fireEvent.change(numInputs[1], { target: { valueAsNumber: 155 } });
+      fireEvent.change(numInputs[3], { target: { valueAsNumber: 73 } });
 
       await waitFor(() => {
         expect(screen.getByText(/Longitud pierna:/i)).toBeInTheDocument();
@@ -268,12 +268,12 @@ describe("AnthropometryForm", () => {
       fireEvent.change(dateInput, { target: { value: "2026-01-15" } });
 
       const numInputs = document.querySelectorAll("input[type='number']");
-      fireEvent.change(numInputs[1], { target: { valueAsNumber: 45 } });
-      fireEvent.change(numInputs[2], { target: { valueAsNumber: 155 } });
-      fireEvent.change(numInputs[4], { target: { valueAsNumber: 73 } });
+      fireEvent.change(numInputs[0], { target: { valueAsNumber: 45 } });
+      fireEvent.change(numInputs[1], { target: { valueAsNumber: 155 } });
+      fireEvent.change(numInputs[3], { target: { valueAsNumber: 73 } });
 
       await userEvent.click(
-        screen.getByRole("button", { name: /Guardar medicion/i }),
+        screen.getByRole("button", { name: /Guardar medición/i }),
       );
 
       await waitFor(() => {
@@ -307,12 +307,12 @@ describe("AnthropometryForm", () => {
       fireEvent.change(dateInput, { target: { value: "2026-01-15" } });
 
       const numInputs = document.querySelectorAll("input[type='number']");
-      fireEvent.change(numInputs[1], { target: { valueAsNumber: 45 } });
-      fireEvent.change(numInputs[2], { target: { valueAsNumber: 155 } });
-      fireEvent.change(numInputs[4], { target: { valueAsNumber: 73 } });
+      fireEvent.change(numInputs[0], { target: { valueAsNumber: 45 } });
+      fireEvent.change(numInputs[1], { target: { valueAsNumber: 155 } });
+      fireEvent.change(numInputs[3], { target: { valueAsNumber: 73 } });
 
       await userEvent.click(
-        screen.getByRole("button", { name: /Guardar medicion/i }),
+        screen.getByRole("button", { name: /Guardar medición/i }),
       );
 
       await waitFor(() => {
@@ -337,17 +337,17 @@ describe("AnthropometryForm", () => {
       fireEvent.change(dateInput, { target: { value: "2026-01-15" } });
 
       const numInputs = document.querySelectorAll("input[type='number']");
-      fireEvent.change(numInputs[1], { target: { valueAsNumber: 45 } });
-      fireEvent.change(numInputs[2], { target: { valueAsNumber: 155 } });
-      fireEvent.change(numInputs[4], { target: { valueAsNumber: 73 } });
+      fireEvent.change(numInputs[0], { target: { valueAsNumber: 45 } });
+      fireEvent.change(numInputs[1], { target: { valueAsNumber: 155 } });
+      fireEvent.change(numInputs[3], { target: { valueAsNumber: 73 } });
 
       await userEvent.click(
-        screen.getByRole("button", { name: /Guardar medicion/i }),
+        screen.getByRole("button", { name: /Guardar medición/i }),
       );
 
       await waitFor(() => {
         expect(
-          screen.getByText(/No se pudo guardar la medicion/i),
+          screen.getByText(/No se pudo guardar la medición/i),
         ).toBeInTheDocument();
       });
     });

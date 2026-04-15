@@ -72,9 +72,9 @@ describe("AthletesTable", () => {
       expect(screen.getByText("Sexo")).toBeInTheDocument();
     });
 
-    it("debería renderizar el encabezado 'Categoria'", () => {
+    it("debería renderizar el encabezado 'Categoría'", () => {
       renderTable([rowA]);
-      expect(screen.getByText("Categoria")).toBeInTheDocument();
+      expect(screen.getByText("Categoría")).toBeInTheDocument();
     });
 
     it("debería renderizar el encabezado 'Estado PHV'", () => {
@@ -106,8 +106,8 @@ describe("AthletesTable", () => {
 
     it("debería mostrar '-' cuando age_decimal es null", () => {
       renderTable([rowB]);
-      // La celda renderiza "- anos"
-      expect(screen.getByText(/- anos/)).toBeInTheDocument();
+      // La celda renderiza "- años"
+      expect(screen.getByText(/- años/)).toBeInTheDocument();
     });
 
     it("debería mostrar el sexo del atleta", () => {
@@ -120,9 +120,9 @@ describe("AthletesTable", () => {
       expect(screen.getByText("Pre-juvenil A")).toBeInTheDocument();
     });
 
-    it("debería mostrar 'Sin categoria' cuando category es null", () => {
+    it("debería mostrar 'Sin categoría' cuando category es null", () => {
       renderTable([rowB]);
-      expect(screen.getByText("Sin categoria")).toBeInTheDocument();
+      expect(screen.getByText("Sin categoría")).toBeInTheDocument();
     });
 
     it("debería mostrar el badge del estado PHV", () => {

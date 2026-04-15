@@ -57,8 +57,8 @@ describe("PHVBadge", () => {
     it("debería aplicar clases slate para estado null (Sin evaluar)", () => {
       render(<PHVBadge status={null} />);
       const badge = screen.getByText("Sin evaluar");
-      expect(badge.className).toContain("bg-slate-100");
-      expect(badge.className).toContain("text-slate-600");
+      expect(badge.className).toContain("bg-light-gray");
+      expect(badge.className).toContain("text-mid-gray");
     });
   });
 

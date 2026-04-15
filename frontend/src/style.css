@@ -1,17 +1,101 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────
+   Design system tokens — Cal.com inspired
+   ───────────────────────────────────────────── */
 :root {
-  font-family:
-    Inter,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  color: #0f172a;
-  background-color: #f8fafc;
+  /* Colors */
+  --color-charcoal: #242424;
+  --color-midnight: #111111;
+  --color-mid-gray: #898989;
+  --color-white: #ffffff;
+  --color-light-gray: #f5f5f5;
+  --color-link-blue: #0099ff;
+  --color-border-gray: rgba(34, 42, 53, 0.08);
+
+  /* Shadows — multi-layer system (no CSS borders for cards) */
+  --shadow-flat: none;
+  --shadow-inset: rgba(0, 0, 0, 0.16) 0px 1px 1.9px 0px inset;
+  --shadow-ring-soft:
+    rgba(19, 19, 22, 0.7) 0px 1px 5px -4px,
+    rgba(34, 42, 53, 0.08) 0px 0px 0px 1px,
+    rgba(34, 42, 53, 0.05) 0px 4px 8px 0px;
+  --shadow-ring-soft-alt:
+    rgba(36, 36, 36, 0.7) 0px 1px 5px -4px,
+    rgba(36, 36, 36, 0.05) 0px 4px 8px 0px;
+  --shadow-inset-highlight: rgba(255, 255, 255, 0.15) 0px 2px 0px inset;
+  --shadow-soft-only: rgba(34, 42, 53, 0.05) 0px 4px 8px 0px;
+  --shadow-ring-only: rgba(34, 42, 53, 0.08) 0px 0px 0px 1px;
+
+  /* Border radius scale */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-base: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 29px;
+  --radius-3xl: 100px;
+  --radius-pill: 9999px;
+
+  /* Spacing scale (8px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* Typography */
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--color-charcoal);
+  background-color: var(--color-white);
 }
 
+/* ─────────────────────────────────────────────
+   Tailwind v4 — register custom tokens
+   ───────────────────────────────────────────── */
+@theme {
+  /* Colors */
+  --color-charcoal: #242424;
+  --color-midnight: #111111;
+  --color-mid-gray: #898989;
+  --color-light-gray: #f5f5f5;
+  --color-link-blue: #0099ff;
+
+  /* Shadows */
+  --shadow-flat: none;
+  --shadow-inset: rgba(0, 0, 0, 0.16) 0px 1px 1.9px 0px inset;
+  --shadow-card:
+    rgba(19, 19, 22, 0.7) 0px 1px 5px -4px,
+    rgba(34, 42, 53, 0.08) 0px 0px 0px 1px,
+    rgba(34, 42, 53, 0.05) 0px 4px 8px 0px;
+  --shadow-card-alt:
+    rgba(36, 36, 36, 0.7) 0px 1px 5px -4px,
+    rgba(36, 36, 36, 0.05) 0px 4px 8px 0px;
+  --shadow-button-highlight: rgba(255, 255, 255, 0.15) 0px 2px 0px inset;
+  --shadow-ambient: rgba(34, 42, 53, 0.05) 0px 4px 8px 0px;
+  --shadow-ring: rgba(34, 42, 53, 0.08) 0px 0px 0px 1px;
+
+  /* Border radius */
+  --radius-base: 8px;
+  --radius-card: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  /* Font families */
+  --font-display: "Cal Sans", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+}
+
+/* ─────────────────────────────────────────────
+   Base styles
+   ───────────────────────────────────────────── */
 * {
   box-sizing: border-box;
 }
@@ -19,12 +103,35 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f8fafc;
+  background: var(--color-white);
+  color: var(--color-charcoal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Cal Sans headings — apply to h1-h3 by default */
+h1,
+h2,
+h3 {
+  font-family: "Cal Sans", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0px;
+  color: var(--color-charcoal);
+}
+
+/* Positive tracking at smaller heading sizes */
+h3 {
+  letter-spacing: 0.2px;
 }
 
 @layer base {
   a {
     color: inherit;
     text-decoration: none;
+  }
+
+  a[href]:not([class]) {
+    color: var(--color-link-blue);
+    text-decoration: underline;
   }
 }

@@ -68,8 +68,8 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
   if (isEdit && athleteQuery.isLoading) {
     return (
       <section className="space-y-3">
-        <div className="h-6 w-52 animate-pulse rounded bg-slate-200" />
-        <div className="h-56 animate-pulse rounded-lg bg-slate-100" />
+        <div className="h-6 w-52 animate-pulse rounded bg-light-gray" />
+        <div className="h-56 animate-pulse rounded-xl bg-light-gray" />
       </section>
     );
   }
@@ -77,9 +77,17 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
   if (isEdit && athleteQuery.isError) {
     return (
       <section className="space-y-3">
-        <h1 className="text-2xl font-bold">Editar atleta</h1>
-        <p className="text-sm text-rose-700">No se pudo cargar el atleta.</p>
-        <Link to="/athletes" className="text-sm font-medium text-slate-900 hover:underline">
+        <h1
+          className="text-2xl text-charcoal"
+          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+        >
+          Editar atleta
+        </h1>
+        <p className="text-sm text-red-700">No se pudo cargar el atleta.</p>
+        <Link
+          to="/athletes"
+          className="text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+        >
           Volver a la lista
         </Link>
       </section>
@@ -87,11 +95,16 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold">{isEdit ? "Editar atleta" : "Nuevo atleta"}</h1>
-        <p className="text-sm text-slate-600">
-          {isEdit ? "Actualiza la informacion basica del atleta." : "Registra un nuevo atleta en el club."}
+        <h1
+          className="text-2xl text-charcoal"
+          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+        >
+          {isEdit ? "Editar atleta" : "Nuevo atleta"}
+        </h1>
+        <p className="mt-0.5 text-sm text-mid-gray">
+          {isEdit ? "Actualiza la información básica del atleta." : "Registra un nuevo atleta en el club."}
         </p>
       </div>
 

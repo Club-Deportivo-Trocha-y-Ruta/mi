@@ -1,0 +1,167 @@
+import { Link, useParams } from "react-router-dom";
+import { Users } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
+import { ParentContactInfo } from "@/components/parents/ParentContactInfo";
+import { ParentAthleteAssignment } from "@/components/parents/ParentAthleteAssignment";
+import { ParentInviteManager } from "@/components/parents/ParentInviteManager";
+import { useParentAthletes } from "@/hooks/parents/useParentAthletes";
+import { useParentUsers } from "@/hooks/parents/useParentUsers";
+import { useAuthStore } from "@/store/auth.store";
+
+const cardShadow =
+  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  subtitle,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-white p-4" style={{ boxShadow: cardShadow }}>
+      <div className="flex items-center gap-2 text-mid-gray">
+        <Icon size={16} />
+        <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
+      </div>
+      <p className="mt-1.5 text-2xl font-bold text-charcoal">{value}</p>
+      {subtitle && <p className="mt-0.5 text-xs text-mid-gray">{subtitle}</p>}
+    </div>
+  );
+}
+
+export function ParentDetailPage() {
+  const { id } = useParams();
+  const parentId = Number(id);
+
+  const user = useAuthStore((state) => state.user);
+  const clubId = user?.club_ids?.[0] ?? 0;
+
+  const parentsQuery = useParentUsers();
+  const parent = parentsQuery.data?.items.find((p) => p.id === parentId) ?? null;
+
+  const relationsQuery = useParentAthletes({ parent_id: parentId });
+  const linkedCount = relationsQuery.data?.items.length ?? 0;
+  const linkedRelations = relationsQuery.data?.items ?? [];
+
+  // Loading skeleton
+  if (parentsQuery.isLoading) {
+    return (
+      <section className="space-y-4">
+        <div className="h-6 w-48 animate-pulse rounded-lg bg-light-gray" />
+        <div className="h-28 animate-pulse rounded-xl bg-light-gray" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="h-48 animate-pulse rounded-xl bg-light-gray" />
+          <div className="h-48 animate-pulse rounded-xl bg-light-gray" />
+        </div>
+      </section>
+    );
+  }
+
+  // Not found
+  if (parentsQuery.isError || (!parentsQuery.isLoading && !parent)) {
+    return (
+      <section className="space-y-3">
+        <h1
+          className="text-2xl text-charcoal"
+          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+        >
+          Padre / acudiente no encontrado
+        </h1>
+        <p className="text-sm text-mid-gray">
+          No existe un padre con ese ID o no tienes permisos para verlo.
+        </p>
+        <Link
+          to="/parents"
+          className="text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+        >
+          Volver a la lista
+        </Link>
+      </section>
+    );
+  }
+
+  if (!parent) return null;
+
+  return (
+    <section className="space-y-5">
+      {/* Breadcrumb + title */}
+      <div>
+        <Link
+          to="/parents"
+          className="text-sm text-mid-gray transition-opacity hover:opacity-70"
+        >
+          &larr; Padres
+        </Link>
+        <h1
+          className="mt-1 text-2xl text-charcoal"
+          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+        >
+          {parent.first_name} {parent.last_name}
+        </h1>
+      </div>
+
+      {/* Stat card row */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          icon={Users}
+          label="Atletas vinculados"
+          value={relationsQuery.isLoading ? "—" : String(linkedCount)}
+          subtitle={
+            linkedCount === 1
+              ? "1 atleta en el club"
+              : `${linkedCount} atletas en el club`
+          }
+        />
+        {/* Placeholder cols so the stat card doesn't stretch to full width on desktop */}
+        <div className="col-span-1 hidden lg:col-span-3 lg:block" />
+      </div>
+
+      {/* Two-column layout: contact info + assignment */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ParentContactInfo parent={parent} />
+        <ParentAthleteAssignment parentId={parentId} clubId={clubId} />
+      </div>
+
+      {/* Invite managers — one per linked athlete */}
+      {linkedRelations.length > 0 && (
+        <div className="space-y-3">
+          <h2
+            className="text-base text-charcoal"
+            style={{
+              fontFamily: "'Cal Sans', system-ui, sans-serif",
+              fontWeight: 600,
+              letterSpacing: "0.2px",
+            }}
+          >
+            Invitaciones al portal
+          </h2>
+          {linkedRelations.map((relation) => (
+            <ParentInviteManager
+              key={relation.athlete_id}
+              athleteId={relation.athlete_id}
+              athleteName={relation.athlete_name}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Empty invite section when no athletes linked */}
+      {!relationsQuery.isLoading && linkedRelations.length === 0 && (
+        <div
+          className="rounded-xl bg-white px-5 py-8 text-center"
+          style={{ boxShadow: cardShadow }}
+        >
+          <p className="text-sm text-mid-gray">
+            Vincula al menos un atleta para poder generar invitaciones al portal.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}

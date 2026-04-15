@@ -17,13 +17,13 @@ class AnthropometryCreate(BaseModel):
 
 
 class GrowthPercentiles(BaseModel):
-    bmi: Decimal | None = None
-    height_z_score: Decimal | None = None
-    height_percentile: Decimal | None = None
-    bmi_z_score: Decimal | None = None
-    bmi_percentile: Decimal | None = None
-    weight_z_score: Decimal | None = None
-    weight_percentile: Decimal | None = None
+    bmi: float | None = None
+    height_z_score: float | None = None
+    height_percentile: float | None = None
+    bmi_z_score: float | None = None
+    bmi_percentile: float | None = None
+    weight_z_score: float | None = None
+    weight_percentile: float | None = None
     nutritional_status_height: str | None = None
     nutritional_status_bmi: str | None = None
 
@@ -33,27 +33,27 @@ class AnthropometryOut(BaseModel):
     athlete_id: int
     evaluation_date: date
     mesocycle: int | None
-    weight_kg: Decimal
-    standing_height_cm: Decimal
-    arm_span_cm: Decimal | None
-    sitting_height_cm: Decimal
-    leg_length_cm: Decimal
-    leg_sitting_ratio: Decimal
-    maturity_offset: Decimal
-    age_at_phv: Decimal
+    weight_kg: float
+    standing_height_cm: float
+    arm_span_cm: float | None
+    sitting_height_cm: float
+    leg_length_cm: float
+    leg_sitting_ratio: float
+    maturity_offset: float
+    age_at_phv: float
     maturation_status: MaturationStatus
     training_implications: str | None
     evaluated_by: int
     created_at: datetime
     notes: str | None
     # Campos individuales de percentiles (nullable — compatibilidad backward)
-    height_z_score: Decimal | None = None
-    height_percentile: Decimal | None = None
-    bmi: Decimal | None = None
-    bmi_z_score: Decimal | None = None
-    bmi_percentile: Decimal | None = None
-    weight_z_score: Decimal | None = None
-    weight_percentile: Decimal | None = None
+    height_z_score: float | None = None
+    height_percentile: float | None = None
+    bmi: float | None = None
+    bmi_z_score: float | None = None
+    bmi_percentile: float | None = None
+    weight_z_score: float | None = None
+    weight_percentile: float | None = None
     nutritional_status: str | None = None
     # Objeto compuesto (se construye desde el router; no proviene del ORM directamente)
     growth_percentiles: GrowthPercentiles | None = None

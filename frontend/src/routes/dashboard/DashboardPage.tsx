@@ -14,24 +14,42 @@ export function DashboardPage() {
     useDashboardStats();
 
   return (
-    <section>
-      <h1 className="mb-4 text-2xl font-bold">Dashboard</h1>
+    <section className="space-y-6">
+      <h1
+        className="text-2xl text-charcoal"
+        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+      >
+        Dashboard
+      </h1>
+
       <div className="grid gap-4 md:grid-cols-3">
-        <article className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-sm text-slate-500">Total atletas</p>
-          <p className="mt-1 text-xl font-semibold">
+        {/* Stat card */}
+        <article
+          className="rounded-xl bg-white p-5"
+          style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Total atletas</p>
+          <p className="mt-2 text-2xl font-bold text-charcoal">
             {isLoading ? "…" : (total ?? "--")}
           </p>
         </article>
-        <article className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-sm text-slate-500">Última evaluación</p>
-          <p className="mt-1 text-xl font-semibold">
+
+        <article
+          className="rounded-xl bg-white p-5"
+          style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Última evaluación</p>
+          <p className="mt-2 text-2xl font-bold text-charcoal">
             {isDetailLoading ? "…" : lastEvaluation ? formatDate(lastEvaluation) : "--"}
           </p>
         </article>
-        <article className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-sm text-slate-500">Estado PHV</p>
-          <p className="mt-1 text-xl font-semibold">
+
+        <article
+          className="rounded-xl bg-white p-5"
+          style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Estado PHV</p>
+          <p className="mt-2 text-2xl font-bold text-charcoal">
             {isDetailLoading
               ? "…"
               : totalCount > 0
@@ -40,6 +58,7 @@ export function DashboardPage() {
           </p>
         </article>
       </div>
+
       <MeasurementAlerts />
     </section>
   );

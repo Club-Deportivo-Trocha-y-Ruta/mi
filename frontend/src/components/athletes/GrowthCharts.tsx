@@ -53,18 +53,6 @@ export function GrowthCharts({
 
   const canShowPercentiles = sex !== undefined && birthDate !== undefined;
 
-  const viewBtnBase =
-    "px-3 py-1.5 text-sm font-medium rounded-md transition-colors";
-  const viewBtnActive = "bg-slate-900 text-white";
-  const viewBtnInactive =
-    "border border-slate-300 text-slate-600 hover:bg-slate-100";
-
-  const indicatorBtnBase =
-    "px-3 py-1 text-xs font-medium rounded-full border transition-colors";
-  const indicatorBtnActive = "bg-slate-900 text-white border-slate-900";
-  const indicatorBtnInactive =
-    "border-slate-300 text-slate-600 hover:bg-slate-100";
-
   const INDICATORS: { key: GrowthIndicator; label: string }[] = [
     { key: "height_for_age", label: "Talla" },
     { key: "bmi_for_age", label: "IMC" },
@@ -77,7 +65,12 @@ export function GrowthCharts({
       <div className="flex gap-2">
         <button
           type="button"
-          className={`${viewBtnBase} ${view === "longitudinal" ? viewBtnActive : viewBtnInactive}`}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            view === "longitudinal"
+              ? "bg-charcoal text-white"
+              : "bg-white text-mid-gray hover:text-charcoal"
+          }`}
+          style={view !== "longitudinal" ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
           onClick={() => setView("longitudinal")}
         >
           Longitudinal
@@ -85,7 +78,12 @@ export function GrowthCharts({
         {canShowPercentiles && (
           <button
             type="button"
-            className={`${viewBtnBase} ${view === "percentiles" ? viewBtnActive : viewBtnInactive}`}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              view === "percentiles"
+                ? "bg-charcoal text-white"
+                : "bg-white text-mid-gray hover:text-charcoal"
+            }`}
+            style={view !== "percentiles" ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
             onClick={() => setView("percentiles")}
           >
             Curvas de percentiles
@@ -93,19 +91,24 @@ export function GrowthCharts({
         )}
       </div>
 
-      {/* Vista longitudinal — sin cambios */}
+      {/* Vista longitudinal */}
       {view === "longitudinal" && <LongitudinalCharts records={records} />}
 
       {/* Vista percentiles */}
       {view === "percentiles" && canShowPercentiles && (
         <div className="space-y-4">
-          {/* Selector de indicador */}
-          <div className="flex gap-2 flex-wrap">
+          {/* Selector de indicador — pill buttons */}
+          <div className="flex flex-wrap gap-2">
             {INDICATORS.map(({ key, label }) => (
               <button
                 key={key}
                 type="button"
-                className={`${indicatorBtnBase} ${activeIndicator === key ? indicatorBtnActive : indicatorBtnInactive}`}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  activeIndicator === key
+                    ? "bg-charcoal text-white"
+                    : "bg-white text-mid-gray hover:text-charcoal"
+                }`}
+                style={activeIndicator !== key ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
                 onClick={() => setActiveIndicator(key)}
               >
                 {label}
@@ -125,7 +128,7 @@ export function GrowthCharts({
   );
 }
 
-// Componente interno para la vista longitudinal — lógica original sin cambios
+// Componente interno para la vista longitudinal
 interface LongitudinalChartsProps {
   records: AnthropometricRecord[];
 }
@@ -133,8 +136,8 @@ interface LongitudinalChartsProps {
 function LongitudinalCharts({ records }: LongitudinalChartsProps) {
   if (records.length < 2) {
     return (
-      <p className="py-6 text-center text-sm text-slate-500">
-        Se necesitan al menos 2 mediciones para generar la grafica.
+      <p className="py-6 text-center text-sm text-mid-gray">
+        Se necesitan al menos 2 mediciones para generar la gráfica.
       </p>
     );
   }
@@ -157,15 +160,15 @@ function LongitudinalCharts({ records }: LongitudinalChartsProps) {
     <div className="space-y-6">
       {/* Talla vs Tiempo */}
       <div>
-        <h4 className="mb-2 text-sm font-medium text-slate-700">
+        <h4 className="mb-2 text-sm font-medium text-mid-gray">
           Talla vs Tiempo
         </h4>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(34,42,53,0.08)" />
+            <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#898989" }} />
             <YAxis
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 12, fill: "#898989" }}
               domain={["dataMin - 2", "dataMax + 2"]}
               unit=" cm"
             />
@@ -174,13 +177,19 @@ function LongitudinalCharts({ records }: LongitudinalChartsProps) {
               labelFormatter={(_, payload) =>
                 payload[0] ? formatDateTooltip(payload[0].payload.date) : ""
               }
+              contentStyle={{
+                borderRadius: "8px",
+                border: "none",
+                boxShadow:
+                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
+              }}
             />
             <Line
               type="monotone"
               dataKey="standingHeight"
-              stroke="#3b82f6"
+              stroke="#242424"
               strokeWidth={2}
-              dot={{ r: 4 }}
+              dot={{ r: 4, fill: "#242424" }}
               name="Talla"
             />
           </LineChart>
@@ -189,15 +198,15 @@ function LongitudinalCharts({ records }: LongitudinalChartsProps) {
 
       {/* Peso vs Tiempo */}
       <div>
-        <h4 className="mb-2 text-sm font-medium text-slate-700">
+        <h4 className="mb-2 text-sm font-medium text-mid-gray">
           Peso vs Tiempo
         </h4>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(34,42,53,0.08)" />
+            <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#898989" }} />
             <YAxis
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 12, fill: "#898989" }}
               domain={["dataMin - 2", "dataMax + 2"]}
               unit=" kg"
             />
@@ -206,13 +215,19 @@ function LongitudinalCharts({ records }: LongitudinalChartsProps) {
               labelFormatter={(_, payload) =>
                 payload[0] ? formatDateTooltip(payload[0].payload.date) : ""
               }
+              contentStyle={{
+                borderRadius: "8px",
+                border: "none",
+                boxShadow:
+                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
+              }}
             />
             <Line
               type="monotone"
               dataKey="weight"
-              stroke="#22c55e"
+              stroke="#898989"
               strokeWidth={2}
-              dot={{ r: 4 }}
+              dot={{ r: 4, fill: "#898989" }}
               name="Peso"
             />
           </LineChart>
@@ -221,14 +236,14 @@ function LongitudinalCharts({ records }: LongitudinalChartsProps) {
 
       {/* Maturity Offset vs Tiempo */}
       <div>
-        <h4 className="mb-2 text-sm font-medium text-slate-700">
+        <h4 className="mb-2 text-sm font-medium text-mid-gray">
           Maturity Offset vs Tiempo
         </h4>
         <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} domain={["auto", "auto"]} />
+          <LineChart data={data} margin={{ top: 5, right: 64, left: 5, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(34,42,53,0.08)" />
+            <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#898989" }} />
+            <YAxis tick={{ fontSize: 12, fill: "#898989" }} domain={["auto", "auto"]} />
             <Tooltip
               formatter={(value) => [
                 Number(value) > 0 ? `+${value}` : `${value}`,
@@ -237,31 +252,37 @@ function LongitudinalCharts({ records }: LongitudinalChartsProps) {
               labelFormatter={(_, payload) =>
                 payload[0] ? formatDateTooltip(payload[0].payload.date) : ""
               }
+              contentStyle={{
+                borderRadius: "8px",
+                border: "none",
+                boxShadow:
+                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
+              }}
             />
             <ReferenceLine
               y={0}
-              stroke="#94a3b8"
+              stroke="rgba(34,42,53,0.3)"
               strokeDasharray="4 4"
-              label={{ value: "PHV", position: "right", fontSize: 11 }}
+              label={{ value: "PHV", position: "right", fontSize: 11, fill: "#898989" }}
             />
             <ReferenceLine
               y={-1}
-              stroke="#22c55e"
+              stroke="rgba(34,42,53,0.2)"
               strokeDasharray="4 4"
-              label={{ value: "Pre-PHV", position: "right", fontSize: 10 }}
+              label={{ value: "Pre-PHV", position: "right", fontSize: 10, fill: "#898989" }}
             />
             <ReferenceLine
               y={1}
-              stroke="#3b82f6"
+              stroke="rgba(34,42,53,0.2)"
               strokeDasharray="4 4"
-              label={{ value: "Post-PHV", position: "right", fontSize: 10 }}
+              label={{ value: "Post-PHV", position: "right", fontSize: 10, fill: "#898989" }}
             />
             <Line
               type="monotone"
               dataKey="maturityOffset"
-              stroke="#8b5cf6"
+              stroke="#242424"
               strokeWidth={2}
-              dot={{ r: 4 }}
+              dot={{ r: 4, fill: "#242424" }}
               name="Offset"
             />
           </LineChart>

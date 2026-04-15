@@ -11,13 +11,13 @@ describe("ResearchReferences", () => {
     render(<ResearchReferences />);
     const button = screen.getByRole("button");
     expect(button).toBeInTheDocument();
-    expect(button).toHaveTextContent(/Fuentes bibliograficas/i);
+    expect(button).toHaveTextContent(/Fuentes bibliográficas/i);
   });
 
   // 2. El botón indica cuántas referencias hay (número entre paréntesis)
   it("el botón muestra la cantidad de referencias", () => {
     render(<ResearchReferences />);
-    // El texto del botón es "Fuentes bibliograficas (7)"
+    // El texto del botón es "Fuentes bibliográficas (7)"
     expect(screen.getByRole("button")).toHaveTextContent(/\(\d+\)/);
   });
 
@@ -119,6 +119,6 @@ describe("ResearchReferences", () => {
     const user = userEvent.setup();
     render(<ResearchReferences />);
     await user.click(screen.getByRole("button"));
-    expect(screen.getByText(/Resolucion 2465/i)).toBeInTheDocument();
+    expect(screen.getByText(/Resolución 2465/i)).toBeInTheDocument();
   });
 });
