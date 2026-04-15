@@ -1,3 +1,4 @@
+import { MeasurementAlerts } from "@/components/dashboard/MeasurementAlerts";
 import { useDashboardStats } from "@/hooks/athletes/useDashboardStats";
 
 function formatDate(isoDate: string): string {
@@ -39,6 +40,7 @@ export function DashboardPage() {
           </p>
         </article>
       </div>
+      <MeasurementAlerts />
     </section>
   );
 }

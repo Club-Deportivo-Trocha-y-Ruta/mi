@@ -41,8 +41,3 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   },
 );
-
-export async function pingHealth(): Promise<{ status: string }> {
-  const response = await apiClient.get<{ status: string }>("/health");
-  return response.data;
-}
