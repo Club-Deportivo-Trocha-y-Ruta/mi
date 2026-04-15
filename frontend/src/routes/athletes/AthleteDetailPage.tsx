@@ -5,10 +5,14 @@ import { AnthropometryForm } from "@/components/athletes/AnthropometryForm";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
 import { GrowthCharts } from "@/components/athletes/GrowthCharts";
+import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
+import { PercentileCurves } from "@/components/athletes/PercentileCurves";
+import { ResearchReferences } from "@/components/athletes/ResearchReferences";
+import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
 
-type Tab = "info" | "anthropometry";
+type Tab = "info" | "anthropometry" | "growth";
 
 export function AthleteDetailPage() {
   const { id } = useParams();
@@ -47,6 +51,16 @@ export function AthleteDetailPage() {
   const athlete = athleteQuery.data;
   const records = anthropometryQuery.data ?? [];
 
+  // Edad en meses cuando ocurrio/ocurrira el PHV
+  const phvAgeMonths =
+    records.length > 0
+      ? (() => {
+          const lastRecord = records[records.length - 1];
+          if (!lastRecord.age_at_phv) return undefined;
+          return lastRecord.age_at_phv * 12;
+        })()
+      : undefined;
+
   const tabClasses = (tab: Tab) =>
     `px-4 py-2 text-sm font-medium border-b-2 ${
       activeTab === tab
@@ -82,9 +96,18 @@ export function AthleteDetailPage() {
         >
           Antropometria
         </button>
+        {records.length > 0 && (
+          <button
+            type="button"
+            className={tabClasses("growth")}
+            onClick={() => setActiveTab("growth")}
+          >
+            Crecimiento y Decision
+          </button>
+        )}
       </div>
 
-      {/* Tab content */}
+      {/* Tab content — Info general */}
       {activeTab === "info" && (
         <div className="space-y-4">
           <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
@@ -95,7 +118,7 @@ export function AthleteDetailPage() {
               <p>Categoria: {athlete.category ?? "Sin categoria"}</p>
               <p>En club: {athlete.years_in_club != null ? `${athlete.years_in_club.toFixed(1)} años` : "—"}</p>
               <p>Ingreso al club: {athlete.club_join_date ?? "—"}</p>
-              <p>Fecha nacimiento: {athlete.birth_date}</p>
+              {/* birth_date no se expone — solo se muestra la edad calculada */}
             </div>
           </div>
 
@@ -123,6 +146,7 @@ export function AthleteDetailPage() {
         </div>
       )}
 
+      {/* Tab content — Antropometria */}
       {activeTab === "anthropometry" && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -148,7 +172,12 @@ export function AthleteDetailPage() {
           )}
 
           <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <GrowthCharts records={records} />
+            <GrowthCharts
+              records={records}
+              sex={athlete.sex}
+              birthDate={athlete.birth_date}
+              phvAgeMonths={phvAgeMonths}
+            />
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -157,6 +186,34 @@ export function AthleteDetailPage() {
               isLoading={anthropometryQuery.isLoading}
             />
           </div>
+        </div>
+      )}
+
+      {/* Tab content — Crecimiento y Decision */}
+      {activeTab === "growth" && records.length > 0 && (
+        <div className="space-y-6">
+          <NutritionalClassification
+            record={records[records.length - 1]}
+            sex={athlete.sex}
+            birthDate={athlete.birth_date}
+          />
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <h4 className="mb-3 text-sm font-semibold text-slate-700">
+              Curvas de crecimiento — Talla/Edad
+            </h4>
+            <PercentileCurves
+              sex={athlete.sex}
+              birthDate={athlete.birth_date}
+              records={records}
+              indicator="height_for_age"
+              phvAgeMonths={phvAgeMonths}
+            />
+          </div>
+          <TrainingReadiness
+            athlete={athlete}
+            latestRecord={records[records.length - 1]}
+          />
+          <ResearchReferences />
         </div>
       )}
     </section>

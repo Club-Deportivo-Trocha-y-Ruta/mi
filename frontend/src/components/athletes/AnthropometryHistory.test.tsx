@@ -11,23 +11,22 @@ import type { AnthropometricRecord } from "@/types/anthropometry.types";
 
 function makeRecord(overrides: Partial<AnthropometricRecord> & { id: number }): AnthropometricRecord {
   return {
-    id: overrides.id,
     athlete_id: 1,
-    evaluation_date: overrides.evaluation_date ?? "2026-01-15",
-    mesocycle: overrides.mesocycle ?? null,
-    weight_kg: overrides.weight_kg ?? 46.0,
-    standing_height_cm: overrides.standing_height_cm ?? 157.0,
-    arm_span_cm: overrides.arm_span_cm ?? null,
-    sitting_height_cm: overrides.sitting_height_cm ?? 74.0,
+    evaluation_date: "2026-01-15",
+    mesocycle: null,
+    weight_kg: 46.0,
+    standing_height_cm: 157.0,
+    arm_span_cm: null,
+    sitting_height_cm: 74.0,
     leg_length_cm: 83.0,
     leg_sitting_ratio: 1.1216,
-    maturity_offset: overrides.maturity_offset ?? -0.3,
+    maturity_offset: -0.3,
     age_at_phv: 13.0,
-    maturation_status: overrides.maturation_status ?? MaturationStatus.CircaPHV,
-    training_implications: overrides.training_implications ?? null,
+    maturation_status: MaturationStatus.CircaPHV,
+    training_implications: null,
     evaluated_by: 1,
     created_at: "2026-01-15T00:00:00Z",
-    notes: overrides.notes ?? null,
+    notes: null,
     ...overrides,
   };
 }

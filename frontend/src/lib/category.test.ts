@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { computeAgeDecimal, getCategory } from "./category";
 import { Sex } from "@/types/enums";
 
@@ -73,7 +73,6 @@ describe("computeAgeDecimal", () => {
       const ref = new Date(2026, 3, 14);
       const age = computeAgeDecimal(birth, ref);
       // toFixed(1) → máximo 1 decimal
-      const asString = age.toFixed(10);
       // Verificamos que el valor es exactamente representable con 1 decimal
       expect(Number(age.toFixed(1))).toBe(age);
     });

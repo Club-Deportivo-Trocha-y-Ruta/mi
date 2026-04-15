@@ -36,8 +36,44 @@ backend/tests/test_growth_service.py            (nuevo)
 - ✅ Precisión Z-score: ±0.05 vs referencia CDC
 - ✅ Interpolación lineal entre meses funcionando
 
-### ⏳ Fase B+C+D: Frontend y Cierre — PENDIENTE
-Pasos 7-16 están listos para implementación. Las dependencias de backend están todas satisfechas.
+### ✅ Fase B: Frontend — Graficas y Curvas — COMPLETADA
+- **Paso 7:** JSON estático CDC generado (`frontend/src/data/growth-reference-cdc.json`, 87.9 KB, 654 puntos) ✅
+- **Paso 8:** `PercentileCurves.tsx` — ComposedChart Recharts, colores Res. 2465/2016, marcador PHV ✅
+- **Paso 9:** `GrowthCharts.tsx` extendido — toggle longitudinal/percentiles, tabs Talla|IMC|Peso ✅
+- **Paso 10:** `NutritionalClassification.tsx` — semáforo T/E e IMC/E, cálculo local desde JSON si backend null ✅
+
+### ✅ Fase C: Soporte de Decisión + Referencias — COMPLETADA
+- **Paso 11:** `TrainingReadiness.tsx` — 9 reglas LTAD, override Circa-PHV, alertas percentiles críticos ✅
+- **Paso 12:** `ResearchReferences.tsx` — 7 fuentes colapsables con links CDC/OMS/Res.2465 ✅
+- **Paso 13:** `AthleteDetailPage.tsx` — tab "Crecimiento y Decisión" (visible solo con ≥1 medición) ✅
+
+### ✅ Fase D: Validación y Cierre — COMPLETADA
+- **Paso 14:** 43 tests nuevos en verde (267 totales, 258 pasan, 9 preexistentes fallando) ✅
+- **Paso 15:** Auditoría privacidad — 2 hallazgos corregidos (DOB en UI eliminada, autocomplete="off") ✅
+- **Paso 16:** E2E pendiente (no hay servidor levantado en CI aún)
+
+**Archivos nuevos:**
+```
+frontend/src/data/growth-reference-cdc.json                    (nuevo, generado)
+frontend/src/components/athletes/PercentileCurves.tsx          (nuevo)
+frontend/src/components/athletes/NutritionalClassification.tsx (nuevo)
+frontend/src/components/athletes/TrainingReadiness.tsx         (nuevo)
+frontend/src/components/athletes/ResearchReferences.tsx        (nuevo)
+frontend/src/components/athletes/PercentileCurves.test.tsx     (nuevo)
+frontend/src/components/athletes/NutritionalClassification.test.tsx (nuevo)
+frontend/src/components/athletes/TrainingReadiness.test.tsx    (nuevo)
+frontend/src/components/athletes/ResearchReferences.test.tsx   (nuevo)
+backend/generate_frontend_json.py                              (nuevo, utilidad)
+```
+
+**Archivos modificados:**
+```
+frontend/src/types/anthropometry.types.ts    (8 campos de percentiles agregados)
+frontend/src/components/athletes/GrowthCharts.tsx  (toggle + props sex/birthDate/phvAgeMonths)
+frontend/src/routes/athletes/AthleteDetailPage.tsx (tab Crecimiento, DOB removida de UI)
+frontend/src/components/athletes/AthleteForm.tsx   (autocomplete="off" en fecha nacimiento)
+frontend/tsconfig.json                             (resolveJsonModule: true)
+```
 
 ---
 

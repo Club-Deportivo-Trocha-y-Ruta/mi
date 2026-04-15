@@ -107,6 +107,7 @@ export function AthleteForm({
           <input
             type="date"
             className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+            autoComplete="off"
             {...form.register("birth_date")}
             disabled={mode === "edit"}
           />

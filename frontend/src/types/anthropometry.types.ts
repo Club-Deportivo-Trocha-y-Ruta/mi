@@ -28,4 +28,13 @@ export interface AnthropometricRecord {
   evaluated_by: number;
   created_at: string;
   notes: string | null;
+  // Campos de percentiles de crecimiento (calculados por el backend, opcionales en records historicos)
+  height_z_score?: number | null;
+  height_percentile?: number | null;
+  bmi?: number | null;
+  bmi_z_score?: number | null;
+  bmi_percentile?: number | null;
+  weight_z_score?: number | null;
+  weight_percentile?: number | null;
+  nutritional_status?: string | null;
 }
