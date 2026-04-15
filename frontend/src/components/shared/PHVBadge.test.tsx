@@ -33,32 +33,49 @@ describe("PHVBadge", () => {
   // Clases de color correctas
   // -------------------------------------------------------------------------
   describe("cuando se aplican clases de color", () => {
-    it("debería aplicar clases verde (emerald) para Pre-PHV", () => {
+    it("debería aplicar clases azul (blue) para Pre-PHV", () => {
       render(<PHVBadge status={MaturationStatus.PrePHV} />);
       const badge = screen.getByText("Pre-PHV");
-      expect(badge.className).toContain("bg-emerald-100");
-      expect(badge.className).toContain("text-emerald-800");
+      expect(badge.className).toContain("bg-blue-100");
+      expect(badge.className).toContain("text-blue-700");
     });
 
     it("debería aplicar clases ámbar (amber) para Circa-PHV", () => {
       render(<PHVBadge status={MaturationStatus.CircaPHV} />);
       const badge = screen.getByText("Circa-PHV");
       expect(badge.className).toContain("bg-amber-100");
-      expect(badge.className).toContain("text-amber-800");
+      expect(badge.className).toContain("text-amber-700");
     });
 
-    it("debería aplicar clases azul (blue) para Post-PHV", () => {
+    it("debería aplicar clases verde (green) para Post-PHV", () => {
       render(<PHVBadge status={MaturationStatus.PostPHV} />);
       const badge = screen.getByText("Post-PHV");
-      expect(badge.className).toContain("bg-blue-100");
-      expect(badge.className).toContain("text-blue-800");
+      expect(badge.className).toContain("bg-green-100");
+      expect(badge.className).toContain("text-green-700");
     });
 
     it("debería aplicar clases slate para estado null (Sin evaluar)", () => {
       render(<PHVBadge status={null} />);
       const badge = screen.getByText("Sin evaluar");
       expect(badge.className).toContain("bg-slate-100");
-      expect(badge.className).toContain("text-slate-700");
+      expect(badge.className).toContain("text-slate-600");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Tamaños
+  // -------------------------------------------------------------------------
+  describe("cuando se aplica el prop size", () => {
+    it("debería usar clases sm por defecto", () => {
+      render(<PHVBadge status={MaturationStatus.PrePHV} />);
+      const badge = screen.getByText("Pre-PHV");
+      expect(badge.className).toContain("text-xs");
+    });
+
+    it("debería usar clases md cuando size='md'", () => {
+      render(<PHVBadge status={MaturationStatus.PrePHV} size="md" />);
+      const badge = screen.getByText("Pre-PHV");
+      expect(badge.className).toContain("text-sm");
     });
   });
 
@@ -74,7 +91,7 @@ describe("PHVBadge", () => {
 
     it("debería incluir las clases base de estilo en todos los estados", () => {
       const { rerender } = render(<PHVBadge status={MaturationStatus.PrePHV} />);
-      const baseClasses = ["inline-block", "rounded-full", "text-xs", "font-medium"];
+      const baseClasses = ["inline-block", "rounded-full", "font-medium"];
 
       for (const status of [MaturationStatus.PrePHV, MaturationStatus.CircaPHV, MaturationStatus.PostPHV, null]) {
         rerender(<PHVBadge status={status} />);

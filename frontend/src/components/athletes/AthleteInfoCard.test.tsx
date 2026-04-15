@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { AthleteInfoCard } from "./AthleteInfoCard";
 import { MaturationStatus, Sex } from "@/types/enums";
 import type { AthleteDetailOut } from "@/types/athlete.types";
@@ -57,6 +58,10 @@ const athleteWithNullDecimalAge: AthleteDetailOut = {
   age_decimal: null,
 };
 
+function renderWithRouter(ui: React.ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -67,44 +72,49 @@ describe("AthleteInfoCard", () => {
   // -------------------------------------------------------------------------
   describe("datos básicos del atleta", () => {
     it("debería mostrar el nombre y apellido del atleta", () => {
-      render(<AthleteInfoCard athlete={baseAthlete} />);
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
       expect(screen.getByText("Sebastián García")).toBeInTheDocument();
     });
 
-    it("debería mostrar la edad decimal con 1 decimal", () => {
-      render(<AthleteInfoCard athlete={baseAthlete} />);
-      expect(screen.getByText(/12\.8/)).toBeInTheDocument();
+    it("debería mostrar las iniciales en el avatar", () => {
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
+      expect(screen.getByText("SG")).toBeInTheDocument();
     });
 
-    it("debería mostrar '-' cuando age_decimal es null", () => {
-      render(<AthleteInfoCard athlete={athleteWithNullDecimalAge} />);
-      expect(screen.getByText(/Edad:.*-/)).toBeInTheDocument();
+    it("debería mostrar la edad decimal en el subtítulo", () => {
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
+      expect(screen.getByText(/12\.8 años/)).toBeInTheDocument();
     });
 
-    it("debería mostrar el sexo del atleta", () => {
-      render(<AthleteInfoCard athlete={baseAthlete} />);
-      expect(screen.getByText(/Sexo:.*M/)).toBeInTheDocument();
+    it("debería mostrar '—' cuando age_decimal es null", () => {
+      renderWithRouter(<AthleteInfoCard athlete={athleteWithNullDecimalAge} />);
+      expect(screen.getByText(/— años/)).toBeInTheDocument();
+    });
+
+    it("debería mostrar 'Masculino' para sexo M", () => {
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
+      expect(screen.getByText(/Masculino/)).toBeInTheDocument();
     });
 
     it("debería mostrar la categoría del atleta", () => {
-      render(<AthleteInfoCard athlete={baseAthlete} />);
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
       expect(screen.getByText(/Pre-juvenil A/)).toBeInTheDocument();
     });
 
-    it("debería mostrar 'Sin categoria' cuando category es null", () => {
-      render(<AthleteInfoCard athlete={athleteWithoutCategory} />);
-      expect(screen.getByText(/Sin categoria/)).toBeInTheDocument();
+    it("debería mostrar 'Sin categoría' cuando category es null", () => {
+      renderWithRouter(<AthleteInfoCard athlete={athleteWithoutCategory} />);
+      expect(screen.getByText(/Sin categoría/)).toBeInTheDocument();
     });
 
-    it("debería mostrar los años en el club", () => {
-      render(<AthleteInfoCard athlete={baseAthlete} />);
-      expect(screen.getByText(/En club:.*2/)).toBeInTheDocument();
+    it("debería mostrar los años en el club como stat pill", () => {
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
+      expect(screen.getByText("2.3 años")).toBeInTheDocument();
     });
 
-    it("debería mostrar — cuando years_in_club es null", () => {
+    it("no debería mostrar pill de club cuando years_in_club es null", () => {
       const athlete = { ...baseAthlete, years_in_club: null, club_join_date: null };
-      render(<AthleteInfoCard athlete={athlete} />);
-      expect(screen.getByText(/En club:.*—/)).toBeInTheDocument();
+      renderWithRouter(<AthleteInfoCard athlete={athlete} />);
+      expect(screen.queryByText("En club")).not.toBeInTheDocument();
     });
   });
 
@@ -112,18 +122,15 @@ describe("AthleteInfoCard", () => {
   // Sin evaluación antropométrica
   // -------------------------------------------------------------------------
   describe("cuando no hay evaluación antropométrica", () => {
-    it("debería mostrar el mensaje 'Sin evaluacion antropometrica registrada.'", () => {
-      render(<AthleteInfoCard athlete={baseAthlete} />);
-      expect(
-        screen.getByText("Sin evaluacion antropometrica registrada."),
-      ).toBeInTheDocument();
+    it("debería mostrar badge 'Sin evaluar'", () => {
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
+      expect(screen.getByText("Sin evaluar")).toBeInTheDocument();
     });
 
-    it("no debería mostrar el panel de última evaluación", () => {
-      render(<AthleteInfoCard athlete={baseAthlete} />);
-      expect(
-        screen.queryByText(/Ultima evaluacion/i),
-      ).not.toBeInTheDocument();
+    it("no debería mostrar stat pills de talla ni peso", () => {
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
+      expect(screen.queryByText("Talla")).not.toBeInTheDocument();
+      expect(screen.queryByText("Peso")).not.toBeInTheDocument();
     });
   });
 
@@ -131,21 +138,30 @@ describe("AthleteInfoCard", () => {
   // Con evaluación antropométrica
   // -------------------------------------------------------------------------
   describe("cuando hay evaluación antropométrica", () => {
-    it("debería mostrar la fecha de la última evaluación", () => {
-      render(<AthleteInfoCard athlete={athleteWithAnthropometry} />);
-      expect(screen.getByText(/Ultima evaluacion:.*2026-01-15/)).toBeInTheDocument();
-    });
-
     it("debería mostrar el badge del estado de maduración", () => {
-      render(<AthleteInfoCard athlete={athleteWithAnthropometry} />);
+      renderWithRouter(<AthleteInfoCard athlete={athleteWithAnthropometry} />);
       expect(screen.getByText(MaturationStatus.CircaPHV)).toBeInTheDocument();
     });
 
-    it("no debería mostrar el mensaje de sin evaluación", () => {
-      render(<AthleteInfoCard athlete={athleteWithAnthropometry} />);
-      expect(
-        screen.queryByText("Sin evaluacion antropometrica registrada."),
-      ).not.toBeInTheDocument();
+    it("debería mostrar stat pills de talla y peso", () => {
+      renderWithRouter(<AthleteInfoCard athlete={athleteWithAnthropometry} />);
+      expect(screen.getByText("155 cm")).toBeInTheDocument();
+      expect(screen.getByText("45 kg")).toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Navegación
+  // -------------------------------------------------------------------------
+  describe("navegación", () => {
+    it("debería tener link para volver a la lista", () => {
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
+      expect(screen.getByText("Volver a lista")).toBeInTheDocument();
+    });
+
+    it("debería tener link para editar", () => {
+      renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
+      expect(screen.getByText("Editar")).toBeInTheDocument();
     });
   });
 });
