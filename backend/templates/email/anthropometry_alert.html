@@ -8,7 +8,7 @@
 {% block title %}Nueva medición registrada — {{ athlete_first_name }} — {{ club_name }}{% endblock %}
 
 {% block content %}
-<h1 style="color: #2d5016;">Nueva medición antropométrica</h1>
+<h1>Nueva medición antropométrica</h1>
 
 <p>Hola {{ parent_name }},</p>
 
@@ -17,14 +17,14 @@
   <strong>{{ athlete_first_name }}</strong> en el <strong>{{ club_name }}</strong>.
 </p>
 
-<div class="highlight-box" style="border-left-color: #2d5016; background-color: #f0f5ea;">
+<div class="highlight-box">
   <table cellpadding="0" cellspacing="0" border="0" width="100%">
     <tr>
-      <td style="font-size: 13px; color: #555555; padding: 4px 0; width: 180px;"><strong>Fecha de evaluación:</strong></td>
+      <td style="font-size: 13px; color: #898989; padding: 4px 0; width: 180px;"><strong style="color: #242424;">Fecha de evaluación:</strong></td>
       <td style="font-size: 13px; color: #333333; padding: 4px 0;">{{ evaluation_date }}</td>
     </tr>
     <tr>
-      <td style="font-size: 13px; color: #555555; padding: 4px 0;"><strong>Estado de maduración:</strong></td>
+      <td style="font-size: 13px; color: #898989; padding: 4px 0;"><strong style="color: #242424;">Estado de maduración:</strong></td>
       <td style="font-size: 13px; padding: 4px 0;">
         {% if maturation_status == 'Pre-PHV' %}
           <span style="color: #1d4ed8; font-weight: bold;">Pre-PHV</span>
@@ -47,7 +47,7 @@
 </p>
 
 {% if maturation_status == 'Circa-PHV' %}
-<div class="highlight-box" style="border-left-color: #d97706; background-color: #fffbf0;">
+<div style="border-left: 4px solid #d97706; background-color: #fffbf0; padding: 16px; margin: 20px 0;">
   <strong style="color: #b45309;">Etapa Circa-PHV — Pico de crecimiento</strong><br>
   {{ athlete_first_name }} se encuentra en la ventana del Pico de Velocidad de Crecimiento (PHV).
   Esta es una etapa natural del desarrollo donde el cuerpo crece rápidamente. El equipo técnico

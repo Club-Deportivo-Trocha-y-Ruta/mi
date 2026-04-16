@@ -2,7 +2,7 @@
 {% block title %}Informe mensual {{ month_label }} — {{ athlete_first_name }}{% endblock %}
 
 {% block content %}
-<h2>📈 Informe mensual de progreso — {{ month_label }}</h2>
+<h2>Informe mensual de progreso — {{ month_label }}</h2>
 
 <p>Estimado/a <strong>{{ parent_name }}</strong>,</p>
 
@@ -15,19 +15,19 @@
 
 {% if measurements is defined and measurements %}
 <div class="info-box">
-  <strong>📊 Resumen de métricas:</strong>
+  <strong>Resumen de métricas:</strong>
   <table style="width:100%; margin-top:12px; border-collapse:collapse; font-size:14px;">
     <thead>
-      <tr style="background-color:#2d5016; color:#fff;">
+      <tr style="background-color:#242424; color:#fff;">
         <th style="padding:8px 12px; text-align:left;">Métrica</th>
         <th style="padding:8px 12px; text-align:right;">Valor</th>
       </tr>
     </thead>
     <tbody>
       {% for m in measurements %}
-      <tr style="border-bottom:1px solid #eee; {% if loop.index is even %}background-color:#f9f9f9;{% endif %}">
-        <td style="padding:8px 12px; color:#555;">{{ m.label }}</td>
-        <td style="padding:8px 12px; text-align:right; font-weight:bold;">{{ m.value }}</td>
+      <tr style="border-bottom:1px solid #e8e8e8; {% if loop.index is even %}background-color:#f5f5f5;{% endif %}">
+        <td style="padding:8px 12px; color:#898989;">{{ m.label }}</td>
+        <td style="padding:8px 12px; text-align:right; font-weight:bold; color:#242424;">{{ m.value }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -36,8 +36,8 @@
 {% endif %}
 
 {% if notes is defined and notes %}
-<p><strong>📝 Observaciones del entrenador:</strong></p>
-<p style="background:#f9f9f9; padding:14px 18px; border-radius:4px; font-style:italic; color:#555;">
+<p><strong>Observaciones del entrenador:</strong></p>
+<p style="background:#f5f5f5; padding:14px 18px; border-radius:4px; font-style:italic; color:#555;">
   {{ notes }}
 </p>
 {% endif %}
@@ -49,7 +49,7 @@
 
 <hr class="divider">
 
-<p style="font-size: 13px; color: #666;">
+<p style="font-size: 13px; color: #898989;">
   Si tiene preguntas sobre este informe, puede comunicarse directamente
   con el equipo de entrenadores a través de la plataforma.
 </p>

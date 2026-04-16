@@ -1,15 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
   CalendarDays,
   Info,
+  Loader2,
+  Mail,
   Ruler,
   TrendingUp,
   User,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
 
 import { AnthropometryForm } from "@/components/athletes/AnthropometryForm";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
@@ -20,6 +23,7 @@ import { NutritionalClassification } from "@/components/athletes/NutritionalClas
 import { PercentileCurves } from "@/components/athletes/PercentileCurves";
 import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
+import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
@@ -84,6 +88,21 @@ export function AthleteDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>("info");
   const [showForm, setShowForm] = useState(false);
   const [hasSetInitialTab, setHasSetInitialTab] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
+  const reportSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // TODO: Este botón será eliminado cuando se implemente el cron job mensual automático.
+  //       Ver: backend/app/routers/reports.py - POST /athletes/{id}/report/email
+  const sendReportMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post<{ queued: boolean; template: string }>(
+        `/api/athletes/${athleteId}/report/email`,
+      ),
+    onSuccess: () => {
+      setReportSent(true);
+      reportSentTimerRef.current = setTimeout(() => setReportSent(false), 3000);
+    },
+  });
 
   const records = anthropometryQuery.data ?? [];
 
@@ -93,6 +112,12 @@ export function AthleteDetailPage() {
       setHasSetInitialTab(true);
     }
   }, [records.length, hasSetInitialTab]);
+
+  useEffect(() => {
+    return () => {
+      if (reportSentTimerRef.current) clearTimeout(reportSentTimerRef.current);
+    };
+  }, []);
 
   if (athleteQuery.isLoading) {
     return (
@@ -241,6 +266,46 @@ export function AthleteDetailPage() {
             Crecimiento
           </button>
         )}
+
+        {/* TODO: Este botón será eliminado cuando se implemente el cron job mensual automático.
+            Ver: backend/app/routers/reports.py - POST /athletes/{id}/report/email */}
+        <div className="ml-auto flex flex-col items-end gap-1">
+          <button
+            type="button"
+            disabled={sendReportMutation.isPending || reportSent}
+            onClick={() => sendReportMutation.mutate()}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-opacity",
+              reportSent
+                ? "bg-green-600 text-white"
+                : "bg-charcoal text-white hover:opacity-70",
+              (sendReportMutation.isPending || reportSent) && "cursor-not-allowed opacity-70",
+            )}
+            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+          >
+            {sendReportMutation.isPending ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Enviando...
+              </>
+            ) : reportSent ? (
+              <>
+                <Mail size={14} />
+                ¡Enviado!
+              </>
+            ) : (
+              <>
+                <Mail size={14} />
+                Enviar informe
+              </>
+            )}
+          </button>
+          {sendReportMutation.isError && !sendReportMutation.isPending && (
+            <p className="text-xs text-red-600">
+              Error al enviar. Intenta de nuevo.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Tab content — Info general */}

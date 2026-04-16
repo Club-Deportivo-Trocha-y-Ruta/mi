@@ -262,6 +262,21 @@ async def send_monthly_report_email(
             "season_year": season_year,
             "measurements": [],  # Se puede ampliar con datos reales en iteraciones futuras
         },
+        attachments=[
+            DocumentRequest(
+                template=DocumentTemplate.MONTHLY_PROGRESS,
+                format=DocumentFormat.PDF,
+                filename_hint=athlete.last_name,
+                context={
+                    "athlete_first_name": athlete.first_name,
+                    "athlete_last_name": athlete.last_name,
+                    "club_name": club.name,
+                    "month_label": month_label,
+                    "season_year": season_year,
+                    "measurements": [],
+                },
+            )
+        ],
     )
 
     await notification_service.send(notification_request, dispatcher=dispatcher)

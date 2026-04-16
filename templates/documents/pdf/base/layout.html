@@ -16,61 +16,62 @@
       @bottom-left {
         content: "Documento confidencial — datos de menor de edad protegidos";
         font-size: 9pt;
-        color: #cc0000;
+        color: #898989;
         font-style: italic;
       }
 
       @bottom-right {
         content: "Página " counter(page) " de " counter(pages);
         font-size: 9pt;
-        color: #777777;
+        color: #898989;
       }
     }
 
     /* Reset */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 10pt;
-      color: #222222; line-height: 1.5; }
+      color: #333333; line-height: 1.5; }
 
     /* Elemento corriendo en @top-center */
     #header { position: running(header); display: flex; align-items: center;
-      justify-content: space-between; padding: 8px 0; border-bottom: 2px solid #2d5016; }
-    #header .club-name { color: #2d5016; font-weight: bold; font-size: 12pt; }
-    #header .doc-ref { color: #777; font-size: 9pt; }
+      justify-content: space-between; padding: 8px 0; border-bottom: 2px solid #242424; }
+    #header .club-name { color: #242424; font-weight: bold; font-size: 12pt; }
+    #header .doc-ref { color: #898989; font-size: 9pt; }
 
     /* Page content */
     .page-content { padding-top: 20px; }
 
     /* Title */
-    h1 { color: #2d5016; font-size: 18pt; margin-bottom: 4px; }
-    h2 { color: #2d5016; font-size: 13pt; margin: 20px 0 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
-    h3 { color: #444; font-size: 11pt; margin: 14px 0 6px; }
+    h1 { color: #242424; font-size: 18pt; margin-bottom: 4px; }
+    h2 { color: #242424; font-size: 13pt; margin: 20px 0 8px;
+         border-bottom: 1px solid #e8e8e8; padding-bottom: 4px; }
+    h3 { color: #242424; font-size: 11pt; margin: 14px 0 6px; }
 
     /* Subtitle */
-    .subtitle { color: #666; font-size: 10pt; margin-bottom: 24px; }
+    .subtitle { color: #898989; font-size: 10pt; margin-bottom: 24px; }
 
     /* Tables */
     table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9.5pt; }
-    th { background-color: #2d5016; color: #ffffff; padding: 7px 10px; text-align: left; }
-    td { padding: 6px 10px; border-bottom: 1px solid #eeeeee; }
-    tr:nth-child(even) td { background-color: #f7f7f7; }
+    th { background-color: #242424; color: #ffffff; padding: 7px 10px; text-align: left; }
+    td { padding: 6px 10px; border-bottom: 1px solid #e8e8e8; }
+    tr:nth-child(even) td { background-color: #f5f5f5; }
 
-    /* PHV Badges */
+    /* PHV Badges — colores semánticos */
     .badge { display: inline-block; padding: 3px 12px; border-radius: 12px;
-      font-size: 9pt; font-weight: bold; }
-    .badge-pre { background: #cce5ff; color: #004085; }
-    .badge-circa { background: #fff3cd; color: #856404; }
-    .badge-post { background: #d4edda; color: #155724; }
+      font-size: 9pt; font-weight: bold; color: #ffffff; }
+    .badge-pre   { background-color: #1d4ed8; }
+    .badge-circa { background-color: #d97706; }
+    .badge-post  { background-color: #16a34a; }
 
     /* Info grid */
     .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
-    .info-item { background: #f9f9f9; border: 1px solid #eee; padding: 10px 14px; border-radius: 4px; }
-    .info-item .label { font-size: 8.5pt; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-    .info-item .value { font-size: 11pt; font-weight: bold; color: #222; margin-top: 2px; }
+    .info-item { background: #f5f5f5; border: 1px solid #e8e8e8; padding: 10px 14px; border-radius: 4px; }
+    .info-item .label { font-size: 8.5pt; color: #898989; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-item .value { font-size: 11pt; font-weight: bold; color: #242424; margin-top: 2px; }
 
     /* Footer note (visible en contenido, además del @page) */
-    .doc-footer { margin-top: 30px; padding-top: 12px; border-top: 1px solid #ddd;
-      font-size: 8.5pt; color: #888; }
+    .doc-footer { margin-top: 30px; padding-top: 12px; border-top: 1px solid #e8e8e8;
+      font-size: 8.5pt; color: #898989; }
 
     /* Page break */
     .page-break { page-break-after: always; }
@@ -79,7 +80,7 @@
 <body>
   <!-- Header corriendo en cada página vía CSS Running Elements -->
   <div id="header">
-    <span class="club-name">🌿 {{ club_name }}</span>
+    <span class="club-name">{{ club_name }}</span>
     <span class="doc-ref">Generado: {{ generated_at }}</span>
   </div>
 
@@ -88,7 +89,7 @@
   </div>
 
   <div class="doc-footer">
-    ⚠ Documento confidencial — contiene datos de menores de edad protegidos por ley.
+    Documento confidencial — contiene datos de menores de edad protegidos por ley.
     Uso exclusivo del personal autorizado de {{ club_name }}.
   </div>
 </body>

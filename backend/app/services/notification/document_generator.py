@@ -24,7 +24,7 @@ from app.services.notification.template_registry import TemplateRegistry
 
 logger = logging.getLogger(__name__)
 
-_TEMPLATES_ROOT = Path(__file__).parents[4] / "templates"
+_TEMPLATES_ROOT = Path(__file__).parents[3] / "templates"
 
 # MIME types por formato
 _CONTENT_TYPES: dict[DocumentFormat, str] = {
