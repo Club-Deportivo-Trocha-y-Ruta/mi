@@ -11,7 +11,7 @@ from app.dependencies import (
     verify_athlete_access,
 )
 from app.models.anthropometry import AnthropometricRecord
-from app.models.athlete import Athlete
+from app.models.athlete import Athlete, ParentAthlete
 from app.models.growth import GrowthSource
 from app.models.user import User, UserRole
 from app.schemas.anthropometry import AnthropometryOut, AnthropometryCreate, GrowthPercentiles
@@ -153,29 +153,46 @@ async def create_anthropometry(
     await db.flush()
 
     # -----------------------------------------------------------------------
-    # Alerta antropométrica (Paso 11)
+    # Notificación a padres sobre nueva medición (Paso 11)
     # -----------------------------------------------------------------------
     if detect_approaching_circa(phv["maturity_offset"]):
         from app.models.club import Club
         club_result = await db.execute(select(Club).where(Club.id == athlete.club_id))
         club = club_result.scalar_one()
 
-        notification_req = NotificationRequest(
-            recipient=NotificationRecipient(
-                email=current_user.email or "coach@example.com",
-                name=f"{current_user.first_name} {current_user.last_name}",
-            ),
-            template=NotificationTemplate.ANTHROPOMETRY_ALERT,
-            send_async=True,
-            context={
-                "athlete_id": athlete.id,
-                "club_name": club.name,
-                "coach_name": f"{current_user.first_name} {current_user.last_name}",
-                "evaluation_date": body.evaluation_date.isoformat(),
-                "maturation_status": phv["maturation_status"],
-            },
+        # Buscar padres/acudientes vinculados al atleta
+        parents_result = await db.execute(
+            select(User)
+            .join(ParentAthlete, ParentAthlete.parent_id == User.id)
+            .where(ParentAthlete.athlete_id == athlete.id)
         )
-        await notification_service.send(notification_req, dispatcher=dispatcher)
+        parents = parents_result.scalars().all()
+
+        # CC al atleta si tiene email registrado
+        athlete_user_result = await db.execute(
+            select(User).where(User.id == athlete.user_id)
+        )
+        athlete_user = athlete_user_result.scalar_one_or_none()
+        cc_emails = [athlete_user.email] if athlete_user and athlete_user.email else []
+
+        for parent in parents:
+            notification_req = NotificationRequest(
+                recipient=NotificationRecipient(
+                    email=parent.email,
+                    name=f"{parent.first_name} {parent.last_name}",
+                ),
+                template=NotificationTemplate.ANTHROPOMETRY_ALERT,
+                send_async=True,
+                cc_emails=cc_emails,
+                context={
+                    "parent_name": parent.first_name,
+                    "athlete_first_name": athlete.first_name,
+                    "club_name": club.name,
+                    "evaluation_date": body.evaluation_date.isoformat(),
+                    "maturation_status": phv["maturation_status"],
+                },
+            )
+            await notification_service.send(notification_req, dispatcher=dispatcher)
 
     out = AnthropometryOut.model_validate(record)
     out.growth_percentiles = _build_growth_percentiles(

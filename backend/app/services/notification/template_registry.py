@@ -86,22 +86,20 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
     ),
     NotificationTemplate.ANTHROPOMETRY_ALERT: EmailTemplateSpec(
         template_id=NotificationTemplate.ANTHROPOMETRY_ALERT,
-        subject_template="[Alerta] Nueva medición registrada — {{ club_name }}",
+        subject_template="Nueva medición de {{ athlete_first_name }} — {{ club_name }}",
         body_path="email/anthropometry_alert.html",
         required_context_keys=frozenset(
             {
-                # No incluye nombre del atleta — privacidad PHI de menores.
-                # El coach verifica identidad en el dashboard mediante athlete_id.
-                "athlete_id",
+                "parent_name",
+                "athlete_first_name",
                 "club_name",
-                "coach_name",
                 "evaluation_date",
                 "maturation_status",
             }
         ),
         description=(
-            "Alerta al coach sobre una nueva medición. "
-            "NO incluye nombre del atleta (solo athlete_id opaco)."
+            "Notificación a padres/acudientes sobre nueva medición antropométrica. "
+            "Incluye nombre del atleta (destinatario es el padre vinculado)."
         ),
     ),
     NotificationTemplate.MONTHLY_REPORT: EmailTemplateSpec(

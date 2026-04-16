@@ -48,6 +48,7 @@ class OutboundEmail:
     subject: str           # puede contener nombre del atleta — nunca loguear
     html_body: str         # PII — nunca loguear
     template_ref: str      # identificador del template — seguro para logging
+    cc_emails: list[str] = field(default_factory=list)  # PII — nunca loguear
     attachments: list[Attachment] = field(default_factory=list)
 
 
@@ -111,6 +112,9 @@ class SmtpEmailClient(BaseEmailClient):
             # formataddr() entrecomilla correctamente nombres con caracteres especiales.
             msg["To"] = formataddr((message.to_name, message.to_email))
 
+            if message.cc_emails:
+                msg["Cc"] = ", ".join(message.cc_emails)
+
             msg.attach(MIMEText(message.html_body, "html", "utf-8"))
 
             for attachment in message.attachments:
@@ -138,7 +142,8 @@ class SmtpEmailClient(BaseEmailClient):
             if self._password:
                 smtp_kwargs["password"] = self._password
 
-            await aiosmtplib.send(msg, **smtp_kwargs)
+            recipients = [message.to_email] + message.cc_emails
+            await aiosmtplib.send(msg, recipients=recipients, **smtp_kwargs)
 
             # Solo loguear referencia segura del template, nunca PII
             # (subject excluido — puede contener nombre del atleta o datos del padre)
@@ -210,6 +215,9 @@ class ResendEmailClient(BaseEmailClient):
                 "subject": message.subject,
                 "html": message.html_body,
             }
+
+            if message.cc_emails:
+                params["cc"] = message.cc_emails
 
             if message.attachments:
                 params["attachments"] = [

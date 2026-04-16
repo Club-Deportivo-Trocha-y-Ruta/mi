@@ -143,6 +143,7 @@ class NotificationService:
             subject=subject,
             html_body=html_body,
             template_ref=request.template.value,
+            cc_emails=request.cc_emails,
             attachments=attachments,
         )
         return await self._client.send(outbound)

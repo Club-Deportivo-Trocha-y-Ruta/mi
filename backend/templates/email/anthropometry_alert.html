@@ -1,32 +1,26 @@
 {% extends "email/base/layout.html" %}
 
 {#
-  AVISO DE PRIVACIDAD: Este template NO debe contener el nombre del atleta.
-  Solo se usa athlete_id (opaco) para identificación interna.
-  El coach verifica la identidad en el dashboard mediante dicho ID.
-  Variables requeridas: athlete_id, club_name, coach_name, evaluation_date, maturation_status
+  Notificación a padres/acudientes sobre nueva medición antropométrica.
+  Variables requeridas: parent_name, athlete_first_name, club_name, evaluation_date, maturation_status
 #}
 
-{% block title %}[Alerta] Nueva medición registrada — {{ club_name }}{% endblock %}
+{% block title %}Nueva medición registrada — {{ athlete_first_name }} — {{ club_name }}{% endblock %}
 
 {% block content %}
-<h1 style="color: #b45309;">Alerta: Nueva medición antropométrica</h1>
+<h1 style="color: #2d5016;">Nueva medición antropométrica</h1>
 
-<p>Hola {{ coach_name }},</p>
+<p>Hola {{ parent_name }},</p>
 
 <p>
-  Se ha registrado una nueva medición antropométrica en el sistema del
-  <strong>{{ club_name }}</strong> que requiere tu revisión.
+  Te informamos que se ha registrado una nueva medición antropométrica de
+  <strong>{{ athlete_first_name }}</strong> en el <strong>{{ club_name }}</strong>.
 </p>
 
-<div class="highlight-box" style="border-left-color: #b45309; background-color: #fef9f0;">
+<div class="highlight-box" style="border-left-color: #2d5016; background-color: #f0f5ea;">
   <table cellpadding="0" cellspacing="0" border="0" width="100%">
     <tr>
-      <td style="font-size: 13px; color: #555555; padding: 4px 0; width: 160px;"><strong>ID de registro:</strong></td>
-      <td style="font-size: 13px; color: #333333; padding: 4px 0;">{{ athlete_id }}</td>
-    </tr>
-    <tr>
-      <td style="font-size: 13px; color: #555555; padding: 4px 0;"><strong>Fecha de evaluación:</strong></td>
+      <td style="font-size: 13px; color: #555555; padding: 4px 0; width: 180px;"><strong>Fecha de evaluación:</strong></td>
       <td style="font-size: 13px; color: #333333; padding: 4px 0;">{{ evaluation_date }}</td>
     </tr>
     <tr>
@@ -35,7 +29,7 @@
         {% if maturation_status == 'Pre-PHV' %}
           <span style="color: #1d4ed8; font-weight: bold;">Pre-PHV</span>
         {% elif maturation_status == 'Circa-PHV' %}
-          <span style="color: #d97706; font-weight: bold;">Circa-PHV (ventana crítica)</span>
+          <span style="color: #d97706; font-weight: bold;">Circa-PHV</span>
         {% elif maturation_status == 'Post-PHV' %}
           <span style="color: #16a34a; font-weight: bold;">Post-PHV</span>
         {% else %}
@@ -47,26 +41,27 @@
 </div>
 
 <p>
-  Para ver el detalle completo de la medición y el nombre del atleta asociado, accede
-  al panel de control del club con tu cuenta de entrenador.
+  El estado de maduración refleja la etapa de crecimiento en la que se encuentra
+  {{ athlete_first_name }}. El entrenador utiliza esta información para adaptar
+  el plan de entrenamiento a su desarrollo biológico.
 </p>
 
 {% if maturation_status == 'Circa-PHV' %}
 <div class="highlight-box" style="border-left-color: #d97706; background-color: #fffbf0;">
-  <strong style="color: #b45309;">Atención — Ventana Circa-PHV</strong><br>
-  El atleta se encuentra en la ventana de Pico de Velocidad de Crecimiento (PHV).
-  Revisa la carga de entrenamiento y asegura que las prescripciones de fuerza e intensidad
-  sean acordes con esta etapa de desarrollo biológico.
+  <strong style="color: #b45309;">Etapa Circa-PHV — Pico de crecimiento</strong><br>
+  {{ athlete_first_name }} se encuentra en la ventana del Pico de Velocidad de Crecimiento (PHV).
+  Esta es una etapa natural del desarrollo donde el cuerpo crece rápidamente. El equipo técnico
+  ya está adaptando las cargas de entrenamiento para acompañar esta fase de forma segura.
+  Si notas molestias articulares o cambios de ánimo, no dudes en comentarlo con el entrenador.
 </div>
 {% endif %}
 
-<p style="margin-top: 24px;">
-  Este mensaje es confidencial. La identidad del atleta no se incluye por protección
-  de datos de menores de edad.
+<p>
+  Para ver el detalle completo de la medición, accede al panel del club con tu cuenta de padre/acudiente.
 </p>
 
 <p>
   Atentamente,<br>
-  <strong>Sistema de gestión — {{ club_name }}</strong>
+  <strong>{{ club_name }}</strong>
 </p>
 {% endblock %}

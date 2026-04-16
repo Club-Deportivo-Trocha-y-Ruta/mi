@@ -89,6 +89,10 @@ class NotificationRequest(BaseModel):
         default_factory=dict,
         description="Variables de contexto Jinja2 para el template (validadas por TemplateRegistry)",
     )
+    cc_emails: list[EmailStr] = Field(
+        default_factory=list,
+        description="Direcciones en copia (CC). PII — nunca loguear.",
+    )
     attachments: list[DocumentRequest] = Field(
         default_factory=list,
         description="Documentos a generar y adjuntar al email",

@@ -1,53 +1,67 @@
 {% extends "email/base/layout.html" %}
-{% block title %}Alerta de medición — {{ club_name }}{% endblock %}
+
+{#
+  Notificación a padres/acudientes sobre nueva medición antropométrica.
+  Variables requeridas: parent_name, athlete_first_name, club_name, evaluation_date, maturation_status
+#}
+
+{% block title %}Nueva medición registrada — {{ athlete_first_name }} — {{ club_name }}{% endblock %}
 
 {% block content %}
-<h2>📊 Nueva medición antropométrica registrada</h2>
+<h1 style="color: #2d5016;">Nueva medición antropométrica</h1>
 
-<p>Estimado/a <strong>{{ coach_name }}</strong>,</p>
+<p>Hola {{ parent_name }},</p>
 
 <p>
-  Se ha registrado una nueva medición antropométrica en la plataforma de
-  <strong>{{ club_name }}</strong> que requiere su atención.
+  Te informamos que se ha registrado una nueva medición antropométrica de
+  <strong>{{ athlete_first_name }}</strong> en el <strong>{{ club_name }}</strong>.
 </p>
 
-<div class="info-box">
-  <strong>Detalles de la medición:</strong>
-  <table style="width:100%; margin-top:10px; font-size:14px;" cellpadding="6" cellspacing="0">
+<div class="highlight-box" style="border-left-color: #2d5016; background-color: #f0f5ea;">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%">
     <tr>
-      <td style="color:#555; width:50%;">ID de evaluación:</td>
-      <td><strong>ATL-{{ athlete_id }}</strong></td>
+      <td style="font-size: 13px; color: #555555; padding: 4px 0; width: 180px;"><strong>Fecha de evaluación:</strong></td>
+      <td style="font-size: 13px; color: #333333; padding: 4px 0;">{{ evaluation_date }}</td>
     </tr>
     <tr>
-      <td style="color:#555;">Fecha de evaluación:</td>
-      <td><strong>{{ evaluation_date }}</strong></td>
-    </tr>
-    <tr>
-      <td style="color:#555;">Estado de maduración:</td>
-      <td>
-        <span style="
-          display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:bold;
-          background-color:{% if maturation_status == 'Circa-PHV' %}#fff3cd{% elif maturation_status == 'Post-PHV' %}#d4edda{% else %}#cce5ff{% endif %};
-          color:{% if maturation_status == 'Circa-PHV' %}#856404{% elif maturation_status == 'Post-PHV' %}#155724{% else %}#004085{% endif %};">
-          {{ maturation_status }}
-        </span>
+      <td style="font-size: 13px; color: #555555; padding: 4px 0;"><strong>Estado de maduración:</strong></td>
+      <td style="font-size: 13px; padding: 4px 0;">
+        {% if maturation_status == 'Pre-PHV' %}
+          <span style="color: #1d4ed8; font-weight: bold;">Pre-PHV</span>
+        {% elif maturation_status == 'Circa-PHV' %}
+          <span style="color: #d97706; font-weight: bold;">Circa-PHV</span>
+        {% elif maturation_status == 'Post-PHV' %}
+          <span style="color: #16a34a; font-weight: bold;">Post-PHV</span>
+        {% else %}
+          <span style="color: #555555;">{{ maturation_status }}</span>
+        {% endif %}
       </td>
     </tr>
   </table>
 </div>
 
-{# REGLA DE PRIVACIDAD: NO incluir nombre del atleta en este email.
-   El coach verifica la identidad directamente en el dashboard usando athlete_id. #}
 <p>
-  Para consultar el perfil completo, acceda al dashboard de la plataforma
-  y busque el ID <strong>ATL-{{ athlete_id }}</strong>.
+  El estado de maduración refleja la etapa de crecimiento en la que se encuentra
+  {{ athlete_first_name }}. El entrenador utiliza esta información para adaptar
+  el plan de entrenamiento a su desarrollo biológico.
 </p>
 
-<hr class="divider">
+{% if maturation_status == 'Circa-PHV' %}
+<div class="highlight-box" style="border-left-color: #d97706; background-color: #fffbf0;">
+  <strong style="color: #b45309;">Etapa Circa-PHV — Pico de crecimiento</strong><br>
+  {{ athlete_first_name }} se encuentra en la ventana del Pico de Velocidad de Crecimiento (PHV).
+  Esta es una etapa natural del desarrollo donde el cuerpo crece rápidamente. El equipo técnico
+  ya está adaptando las cargas de entrenamiento para acompañar esta fase de forma segura.
+  Si notas molestias articulares o cambios de ánimo, no dudes en comentarlo con el entrenador.
+</div>
+{% endif %}
 
-<p style="font-size: 13px; color: #666;">
-  Este aviso es generado automáticamente por el sistema de monitoreo de
-  {{ club_name }}. Por razones de privacidad, los datos de identificación
-  del atleta están disponibles únicamente en la plataforma segura.
+<p>
+  Para ver el detalle completo de la medición, accede al panel del club con tu cuenta de padre/acudiente.
+</p>
+
+<p>
+  Atentamente,<br>
+  <strong>{{ club_name }}</strong>
 </p>
 {% endblock %}
