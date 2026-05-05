@@ -6,6 +6,7 @@ from app.models.anthropometry import AnthropometricRecord, MaturationStatus, Nut
 from app.models.growth import GrowthReferenceLms, GrowthIndicator, GrowthSource
 from app.models.parent_invite import ParentInvite
 from app.models.parental_consent import ParentalConsent
+from app.models.ai_explanation import AthleteAIExplanation
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "GrowthSource",
     "ParentInvite",
     "ParentalConsent",
+    "AthleteAIExplanation",
 ]

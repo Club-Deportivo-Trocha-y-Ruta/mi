@@ -29,6 +29,28 @@ export async function getPHVExplanation(
   return phvExplanationResponseSchema.parse(response.data);
 }
 
+/** Llama GET /api/ai/athletes/{id}/phv-explanation — lee la explicación
+ * cacheada para la última medición. Devuelve `null` cuando el backend
+ * responde 204 (no hay caché o el atleta no tiene mediciones).
+ *
+ * No requiere `AI_ENABLED` activo en el backend: la lectura sobrevive a
+ * outages del LLM.
+ */
+export async function getPHVExplanationCached(
+  athleteId: number,
+  options?: { signal?: AbortSignal },
+): Promise<PHVExplanationResponse | null> {
+  const response = await apiClient.get<unknown>(
+    `/api/ai/athletes/${athleteId}/phv-explanation`,
+    {
+      signal: options?.signal,
+      validateStatus: (status) => status === 200 || status === 204,
+    },
+  );
+  if (response.status === 204) return null;
+  return phvExplanationResponseSchema.parse(response.data);
+}
+
 /** Llama GET /api/ai/health. Solo admin. */
 export async function getAIHealth(): Promise<AIHealthResponse> {
   const response = await apiClient.get<unknown>("/api/ai/health");

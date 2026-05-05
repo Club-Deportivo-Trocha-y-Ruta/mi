@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { mapAIError } from "@/api/ai";
 import { AIGeneratedContent } from "@/components/ai/AIGeneratedContent";
-import { usePHVExplanation } from "@/hooks/ai/usePHVExplanation";
+import {
+  usePHVExplanation,
+  usePHVExplanationCached,
+} from "@/hooks/ai/usePHVExplanation";
 import { cn } from "@/lib/utils";
 
 interface PHVExplanationCardProps {
@@ -28,18 +31,22 @@ function pendingMessage(elapsedSeconds: number): string {
   return "Generando explicación…";
 }
 
-/** Card que orquesta la generación de explicación PHV.
+/** Card que orquesta la generación de explicación PHV con caché backend.
  *
- * Tres fases: idle (botón), pending (skeleton + mensaje + cancelar),
- * success (AIGeneratedContent) o error (alert con copy en español).
+ * Cinco estados: loading-cache (GET inicial), pending (POST al LLM con
+ * hints de cold-start), success (AIGeneratedContent + Regenerar), error
+ * (alerta), idle (botón Generar). El caché vive en backend (MySQL) y se
+ * invalida implícitamente cuando se crea una medición nueva (cambia el
+ * cache key), o explícitamente desde `useCreateAnthropometry`.
  *
  * Diseño:
+ *  - Mismo handler para "Generar" y "Regenerar" — el backend hace upsert.
+ *  - El error de regenerar NO borra el contenido cacheado: el coach sigue
+ *    viendo el texto previo + alerta inline de error.
  *  - El botón principal está deshabilitado si `hasRecords=false` para que
  *    el coach vea el CTA pero entienda que falta una medición.
  *  - Cancelar usa AbortController; al cancelar `mutation.reset()` limpia
- *    el estado.
- *  - El `text` nunca se persiste fuera del estado de la mutación (vida
- *    del componente). Al desmontar se descarta.
+ *    el estado de la mutación pero conserva el `cachedQuery.data` previo.
  */
 export function PHVExplanationCard({
   athleteId,
@@ -47,9 +54,16 @@ export function PHVExplanationCard({
   onMeasurementCTA,
   className,
 }: PHVExplanationCardProps) {
+  const cachedQuery = usePHVExplanationCached(athleteId, hasRecords);
   const mutation = usePHVExplanation(athleteId);
   const abortRef = useRef<AbortController | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Preferir el resultado más reciente de la mutación; si no hay,
+  // caer a la caché del backend. Importante: un error en mutation NO
+  // borra `cachedQuery.data`, así que tras un Regenerar fallido el
+  // usuario sigue viendo el texto previamente cacheado + alerta error.
+  const displayed = mutation.data ?? cachedQuery.data ?? null;
 
   useEffect(() => {
     if (!mutation.isPending) {
@@ -77,6 +91,39 @@ export function PHVExplanationCard({
   // -------------------------------------------------------------------------
   // States
   // -------------------------------------------------------------------------
+
+  // Cache loading: GET es rápido (<500ms), evitamos los hints de cold-start
+  // del estado pending de mutation. Solo mostramos este estado si NO hay
+  // contenido displayable todavía y no hay una mutación en curso.
+  if (cachedQuery.isLoading && !displayed && !mutation.isPending) {
+    return (
+      <section
+        className={cn(
+          "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+          className,
+        )}
+        data-testid="phv-explanation-loading-cache"
+        aria-busy="true"
+      >
+        <h4
+          className="text-sm text-charcoal"
+          style={{
+            fontFamily: "'Cal Sans', system-ui, sans-serif",
+            fontWeight: 600,
+            letterSpacing: "0.2px",
+          }}
+        >
+          Explicación PHV
+        </h4>
+        <p className="text-xs text-mid-gray">Cargando…</p>
+        <div className="space-y-2" aria-hidden="true">
+          <div className="h-3 w-full animate-pulse rounded bg-light-gray" />
+          <div className="h-3 w-5/6 animate-pulse rounded bg-light-gray" />
+          <div className="h-3 w-2/3 animate-pulse rounded bg-light-gray" />
+        </div>
+      </section>
+    );
+  }
 
   if (mutation.isPending) {
     return (
@@ -119,10 +166,31 @@ export function PHVExplanationCard({
     );
   }
 
-  if (mutation.isSuccess && mutation.data) {
+  if (displayed) {
+    const mutationErrorInfo = mutation.isError
+      ? mapAIError(mutation.error)
+      : null;
     return (
       <div className={className}>
-        <AIGeneratedContent data={mutation.data} />
+        <AIGeneratedContent data={displayed} />
+        {mutationErrorInfo && (
+          <div
+            role="alert"
+            data-testid="phv-explanation-regenerate-error"
+            className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+          >
+            {mutationErrorInfo.message}
+            {mutationErrorInfo.retryable && (
+              <button
+                type="button"
+                onClick={handleGenerate}
+                className="ml-2 font-medium underline underline-offset-2 hover:text-red-900"
+              >
+                Reintentar
+              </button>
+            )}
+          </div>
+        )}
         <div className="mt-2 flex justify-end">
           <button
             type="button"

@@ -31,7 +31,21 @@ def _prod_kwargs(**overrides):
 # ---------------------------------------------------------------------------
 
 
-def test_ai_defaults_disabled():
+def test_ai_defaults_disabled(monkeypatch):
+    # Limpia env vars `AI_*` para que el test sea hermético — en Docker compose
+    # se inyectan AI_ENABLED, AI_PROVIDER, etc. y enmascararían los defaults.
+    for key in [
+        "AI_ENABLED",
+        "AI_PROVIDER",
+        "AI_MODEL",
+        "AI_API_KEY",
+        "AI_BASE_URL",
+        "AI_MAX_TOKENS",
+        "AI_TIMEOUT_SECONDS",
+        "AI_TEMPERATURE",
+        "AI_LOG_PROMPTS",
+    ]:
+        monkeypatch.delenv(key, raising=False)
     s = Settings(_env_file=None)
     assert s.ai_enabled is False
     assert s.ai_provider == "anthropic"

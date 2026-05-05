@@ -1,18 +1,44 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getPHVExplanation, mapAIError } from "@/api/ai";
+import {
+  getPHVExplanation,
+  getPHVExplanationCached,
+  mapAIError,
+} from "@/api/ai";
 import type { PHVExplanationResponse } from "@/types/ai.types";
 
 interface UsePHVExplanationVariables {
   signal?: AbortSignal;
 }
 
+const PHV_QUERY_KEY = (athleteId: number) =>
+  ["ai", "phv", athleteId] as const;
+
+/** Query GET /api/ai/athletes/{id}/phv-explanation — caché backend.
+ *
+ * Devuelve `null` cuando no hay caché para la última medición (status 204).
+ * El cache vive en backend (MySQL); el frontend solo lee una vez por mount
+ * (`staleTime: Infinity`). Se invalida desde `useCreateAnthropometry` cuando
+ * se registra una medición nueva o desde `usePHVExplanation` tras regenerar.
+ */
+export function usePHVExplanationCached(
+  athleteId: number,
+  enabled: boolean,
+) {
+  return useQuery<PHVExplanationResponse | null>({
+    queryKey: PHV_QUERY_KEY(athleteId),
+    queryFn: () => getPHVExplanationCached(athleteId),
+    enabled: enabled && athleteId > 0,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 /** Mutation para POST /api/ai/athletes/{id}/phv-explanation.
  *
- * Decisión de diseño: useMutation (no useQuery) porque la generación es
- * **bajo demanda** del coach, no carga al montar. El backend no persiste el
- * texto, así que no hay nada que invalidar tras éxito. El estado vive en la
- * mutación y se descarta al desmontar.
+ * Sirve tanto para "Generar" la primera vez como para "Regenerar". El
+ * backend hace upsert idempotente. Tras éxito sincroniza el query del
+ * caché vía `setQueryData` para evitar un GET extra.
  *
  * Política de retry:
  *   - 422/403/401/502 → no reintentar (errores definitivos del cliente o
@@ -22,14 +48,19 @@ interface UsePHVExplanationVariables {
  *   - cancelled → no reintentar.
  */
 export function usePHVExplanation(athleteId: number) {
+  const queryClient = useQueryClient();
+
   return useMutation<
     PHVExplanationResponse,
     unknown,
     UsePHVExplanationVariables | void
   >({
-    mutationKey: ["ai", "phv", athleteId],
+    mutationKey: ["ai", "phv", "generate", athleteId],
     mutationFn: (vars) =>
       getPHVExplanation(athleteId, { signal: vars?.signal }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(PHV_QUERY_KEY(athleteId), data);
+    },
     retry: (failureCount, error) => {
       const info = mapAIError(error);
       if (!info.retryable) return false;

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 import { PHVBadge } from "@/components/shared/PHVBadge";
 import { cn } from "@/lib/utils";
@@ -90,8 +91,43 @@ export function AIGeneratedContent({
         entrenador antes de tomar decisiones.
       </div>
 
-      <div className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
-        {data.text}
+      <div className="text-sm leading-relaxed text-charcoal">
+        <ReactMarkdown
+          components={{
+            p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+            strong: ({ children }) => (
+              <strong className="font-semibold text-charcoal">{children}</strong>
+            ),
+            em: ({ children }) => <em className="italic">{children}</em>,
+            ul: ({ children }) => (
+              <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">
+                {children}
+              </ul>
+            ),
+            ol: ({ children }) => (
+              <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">
+                {children}
+              </ol>
+            ),
+            li: ({ children }) => <li>{children}</li>,
+            h1: ({ children }) => (
+              <h1 className="mb-2 text-base font-semibold">{children}</h1>
+            ),
+            h2: ({ children }) => (
+              <h2 className="mb-2 text-base font-semibold">{children}</h2>
+            ),
+            h3: ({ children }) => (
+              <h3 className="mb-2 text-sm font-semibold">{children}</h3>
+            ),
+            code: ({ children }) => (
+              <code className="rounded bg-light-gray px-1 py-0.5 text-xs">
+                {children}
+              </code>
+            ),
+          }}
+        >
+          {data.text}
+        </ReactMarkdown>
       </div>
 
       <div className="flex justify-end">

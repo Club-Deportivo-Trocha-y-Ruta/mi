@@ -173,6 +173,33 @@ describe("useCreateAnthropometry", () => {
         ),
       );
     });
+
+    it("invalida el caché de explicación PHV (`['ai','phv',athleteId]`) tras éxito", async () => {
+      // Una nueva medición cambia el `anthropometric_record_id` más reciente,
+      // así que el caché backend queda invalidado implícitamente. El frontend
+      // debe refetch para que el GET devuelva 204 y el card vuelva a idle.
+      vi.mocked(athletesApi.createAnthropometry).mockResolvedValue(mockRecord);
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+          mutations: { retry: false },
+        },
+      });
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        createElement(QueryClientProvider, { client: queryClient }, children);
+      const { result } = renderHook(() => useCreateAnthropometry(7), {
+        wrapper,
+      });
+
+      result.current.mutate(mockCreate);
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["ai", "phv", 7],
+      });
+    });
   });
 
   describe("cuando la creación falla", () => {

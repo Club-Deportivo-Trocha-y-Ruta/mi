@@ -65,10 +65,31 @@ def test_factory_openai_not_implemented():
         create_llm_provider(s)
 
 
-def test_factory_google_not_implemented():
-    s = _settings(ai_enabled=True, ai_provider="google", ai_api_key="x")
-    with pytest.raises(LLMConfigError, match="Google"):
-        create_llm_provider(s)
+def test_factory_google(monkeypatch):
+    """`AI_PROVIDER=google` instancia GoogleProvider con google-genai mockeado."""
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    fake_genai = MagicMock()
+    fake_genai.Client = FakeClient
+    fake_types = MagicMock()
+    monkeypatch.setitem(sys.modules, "google", MagicMock(genai=fake_genai))
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+
+    s = _settings(
+        ai_enabled=True,
+        ai_provider="google",
+        ai_api_key="key",
+        ai_model="gemini-2.5-flash-lite",
+    )
+    p = create_llm_provider(s)
+    from app.services.ai.providers.google_provider import GoogleProvider
+
+    assert isinstance(p, GoogleProvider)
+    assert p.model == "gemini-2.5-flash-lite"
 
 
 def test_factory_unknown_provider_caught_by_config_validator():
