@@ -160,3 +160,40 @@ class TestParentInviteFlow:
             json={"token": "tokeninvalido123", "first_name": "X", "last_name": "Y", "password": "Abc12345!"},
         )
         assert resp.status_code == 404
+
+    async def test_invite_rejected_when_email_already_linked(self, client):
+        """Si el email ya pertenece a un padre vinculado al atleta → 409 al intentar invitar de nuevo."""
+        headers = await _auth_coach(client)
+        club_id = await _get_club_id(client, headers)
+        athlete_id = await _create_athlete(client, headers, club_id)
+        email = f"parent-link-{uuid4().hex[:8]}@test.com"
+
+        # 1. Coach genera invitación
+        invite = await client.post(
+            "/api/parent-athletes/invite",
+            headers=headers,
+            json={"athlete_id": athlete_id, "email": email},
+        )
+        assert invite.status_code == 201
+        token = invite.json()["token"]
+
+        # 2. Padre se registra (crea user + parent_athlete)
+        register = await client.post(
+            "/api/auth/parent-register",
+            json={
+                "token": token,
+                "first_name": "Luis",
+                "last_name": "Mora",
+                "password": "Parent2026!",
+            },
+        )
+        assert register.status_code == 201
+
+        # 3. Coach intenta invitar nuevamente al mismo email para el mismo atleta
+        retry = await client.post(
+            "/api/parent-athletes/invite",
+            headers=headers,
+            json={"athlete_id": athlete_id, "email": email},
+        )
+        assert retry.status_code == 409
+        assert "vinculado" in retry.json()["detail"].lower()

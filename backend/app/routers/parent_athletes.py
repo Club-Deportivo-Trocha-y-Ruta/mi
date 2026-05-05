@@ -253,6 +253,24 @@ async def generate_invite(
                 detail="El atleta no pertenece a ninguno de tus clubes",
             )
 
+    # Si el email ya corresponde a un padre registrado y vinculado al atleta,
+    # rechazar antes de generar otra invitación huérfana (consume_invite
+    # también lo bloquearía con 409, pero el coach lo descubriría hasta que el
+    # padre intente registrarse).
+    existing_link_stmt = (
+        select(User.id)
+        .join(ParentAthlete, ParentAthlete.parent_id == User.id)
+        .where(
+            User.email == body.email,
+            ParentAthlete.athlete_id == body.athlete_id,
+        )
+    )
+    if (await db.execute(existing_link_stmt)).scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este correo ya está vinculado al atleta como padre/acudiente",
+        )
+
     invite = await create_invite(
         athlete_id=body.athlete_id,
         email=body.email,

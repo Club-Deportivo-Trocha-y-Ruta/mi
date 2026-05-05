@@ -72,9 +72,16 @@ export function ParentInviteManager({
   const sortedInvites = [...invites].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
-  const latestInvite = sortedInvites[0] ?? null;
-  const latestStatus = latestInvite ? getInviteStatus(latestInvite) : null;
-  const hasActiveInvite = latestStatus === "pending";
+  // "used" represents an invite that the parent already consumed (account
+  // created). Prefer it over a stale "pending" because once any invite is
+  // consumed, the parent is registered and no further invitations are needed
+  // for this athlete relationship.
+  const usedInvite = sortedInvites.find((i) => i.used) ?? null;
+  const pendingInvite =
+    sortedInvites.find((i) => getInviteStatus(i) === "pending") ?? null;
+  const showAccountActivated = usedInvite !== null;
+  const showPendingPanel = !showAccountActivated && pendingInvite !== null;
+  const showSendForm = !showAccountActivated && !showPendingPanel;
 
   function handleSend(resendEmail?: string) {
     const targetEmail = resendEmail ?? email.trim();
@@ -103,12 +110,35 @@ export function ParentInviteManager({
         <Mail size={15} />
         Invitacion — {athleteName}
       </h4>
-      <p className="mb-4 text-xs text-mid-gray">
-        Invita al padre/madre/acudiente de este atleta a crear su cuenta en el portal.
-      </p>
+      {!showAccountActivated && (
+        <p className="mb-4 text-xs text-mid-gray">
+          Invita al padre/madre/acudiente de este atleta a crear su cuenta en el portal.
+        </p>
+      )}
 
-      {/* Active invite info */}
-      {hasActiveInvite && latestInvite && (
+      {/* Account already activated — parent consumed the invite */}
+      {showAccountActivated && usedInvite && (
+        <div
+          className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm"
+          style={{ boxShadow: "rgba(34, 197, 94, 0.25) 0px 0px 0px 1px" }}
+        >
+          <div className="flex items-start gap-2">
+            <CheckCircle size={14} className="mt-0.5 shrink-0 text-green-700" />
+            <div className="space-y-0.5">
+              <p className="text-xs font-medium text-green-800">
+                Cuenta activada
+              </p>
+              <p className="text-xs text-green-700">
+                <span className="font-medium">{usedInvite.email}</span> ya
+                completó el registro y tiene acceso al portal.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending invite — show resend action */}
+      {showPendingPanel && pendingInvite && (
         <div
           className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm"
           style={{ boxShadow: "rgba(251, 191, 36, 0.25) 0px 0px 0px 1px" }}
@@ -118,15 +148,15 @@ export function ParentInviteManager({
               <p className="text-xs font-medium text-amber-800">Invitacion activa</p>
               <p className="text-xs text-amber-700">
                 Enviada a:{" "}
-                <span className="font-medium">{latestInvite.email}</span>
+                <span className="font-medium">{pendingInvite.email}</span>
               </p>
               <p className="text-xs text-amber-700">
-                Vence: {formatDate(latestInvite.expires_at)}
+                Vence: {formatDate(pendingInvite.expires_at)}
               </p>
             </div>
             <button
               type="button"
-              onClick={() => handleSend(latestInvite.email)}
+              onClick={() => handleSend(pendingInvite.email)}
               disabled={createInviteMutation.isPending}
               className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-40"
             >
@@ -136,8 +166,8 @@ export function ParentInviteManager({
         </div>
       )}
 
-      {/* Send invite form — shown when no active invite */}
-      {!hasActiveInvite && (
+      {/* Send invite form — only when no active invite and no activated account */}
+      {showSendForm && (
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
             type="email"
