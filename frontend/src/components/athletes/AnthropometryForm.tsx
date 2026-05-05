@@ -13,7 +13,7 @@ const anthropometrySchema = z.object({
   evaluation_date: z
     .string()
     .min(1, "Fecha requerida")
-    .refine((v) => new Date(v).getTime() <= Date.now(), "No puede ser futura"),
+    .refine((v) => v <= new Date().toISOString().slice(0, 10), "No puede ser futura"),
   weight_kg: z.number().min(20, "Min 20 kg").max(150, "Max 150 kg"),
   standing_height_cm: z.number().min(100, "Min 100 cm").max(220, "Max 220 cm"),
   arm_span_cm: z
@@ -111,6 +111,7 @@ export function AnthropometryForm({
               type="date"
               className={`${inputClass} md:w-64`}
               style={inputStyle}
+              max={new Date().toISOString().slice(0, 10)}
               {...form.register("evaluation_date")}
             />
             <span className="text-xs text-red-600">

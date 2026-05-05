@@ -159,7 +159,14 @@ export function useValidateToken(token: string | null) {
     queryKey: ["invite-token", token],
     queryFn: () => validateInviteToken(token!),
     enabled: !!token,
-    retry: false,
+    // Reintentar solo en errores de red/500 (pool DB frío en Render).
+    // No reintentar en 404/410 — token genuinamente inválido no mejora.
+    retry: (failureCount, error) => {
+      if (failureCount >= 2) return false;
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      return status === undefined || status >= 500;
+    },
+    retryDelay: 1500,
     staleTime: 60_000,
     select: (data) => data,
   });

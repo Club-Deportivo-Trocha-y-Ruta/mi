@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from app.models.anthropometry import MaturationStatus
 
@@ -14,6 +14,13 @@ class AnthropometryCreate(BaseModel):
     arm_span_cm: Decimal | None = None
     sitting_height_cm: Decimal
     notes: str | None = None
+
+    @field_validator("evaluation_date")
+    @classmethod
+    def evaluation_date_must_not_be_future(cls, v: date) -> date:
+        if v > date.today():
+            raise ValueError("La fecha de evaluación no puede ser futura")
+        return v
 
 
 class GrowthPercentiles(BaseModel):

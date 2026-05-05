@@ -8,18 +8,6 @@ import { useCreateParentUser } from "@/hooks/parents/useCreateParentUser";
 const parentFormSchema = z.object({
   first_name: z.string().trim().min(2, "Mínimo 2 caracteres"),
   last_name: z.string().trim().min(2, "Mínimo 2 caracteres"),
-  email: z
-    .string()
-    .trim()
-    .email("Email inválido")
-    .optional()
-    .or(z.literal("")),
-  phone: z.string().trim().optional().or(z.literal("")),
-  password: z
-    .string()
-    .min(8, "Mínimo 8 caracteres")
-    .optional()
-    .or(z.literal("")),
 });
 
 type ParentFormValues = z.infer<typeof parentFormSchema>;
@@ -42,9 +30,6 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
     defaultValues: {
       first_name: "",
       last_name: "",
-      email: "",
-      phone: "",
-      password: "",
     },
   });
 
@@ -63,9 +48,9 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
       {
         first_name: values.first_name,
         last_name: values.last_name,
-        email: values.email || null,
-        phone: values.phone || null,
-        password: values.password || null,
+        email: null,
+        phone: null,
+        password: null,
         club_id: clubId,
       },
       {
@@ -158,50 +143,10 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
               </label>
             </div>
 
-            <label className="text-sm font-medium text-charcoal">
-              Email{" "}
-              <span className="font-normal text-mid-gray">(opcional)</span>
-              <input
-                type="email"
-                className={inputClass}
-                style={inputStyle}
-                placeholder="juan@ejemplo.com"
-                autoComplete="off"
-                {...form.register("email")}
-              />
-              <span className="text-xs text-red-600">
-                {form.formState.errors.email?.message}
-              </span>
-            </label>
-
-            <label className="text-sm font-medium text-charcoal">
-              Teléfono{" "}
-              <span className="font-normal text-mid-gray">(opcional)</span>
-              <input
-                type="tel"
-                className={inputClass}
-                style={inputStyle}
-                placeholder="+57 300 123 4567"
-                autoComplete="off"
-                {...form.register("phone")}
-              />
-            </label>
-
-            <label className="text-sm font-medium text-charcoal">
-              Contraseña{" "}
-              <span className="font-normal text-mid-gray">(opcional)</span>
-              <input
-                type="password"
-                className={inputClass}
-                style={inputStyle}
-                placeholder="Min. 8 caracteres"
-                autoComplete="new-password"
-                {...form.register("password")}
-              />
-              <span className="text-xs text-red-600">
-                {form.formState.errors.password?.message}
-              </span>
-            </label>
+            <p className="rounded-lg bg-light-gray px-3 py-2 text-xs text-mid-gray">
+              El padre/acudiente recibirá una invitación por email para completar
+              sus datos de acceso (correo, teléfono y contraseña).
+            </p>
 
             {submitError && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

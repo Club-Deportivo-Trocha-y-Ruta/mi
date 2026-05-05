@@ -236,6 +236,8 @@ describe("AthleteForm", () => {
 
       const dateInputs = document.querySelectorAll("input[type='date']");
       if (dateInputs.length > 0) {
+        // Remove max attribute so jsdom doesn't sanitize the future date value
+        (dateInputs[0] as HTMLInputElement).removeAttribute("max");
         fireEvent.change(dateInputs[0], { target: { value: "2099-01-01" } });
       }
 

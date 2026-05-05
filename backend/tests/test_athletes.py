@@ -215,7 +215,7 @@ class TestCreateAnthropometry:
         assert resp.status_code == 201
         body = resp.json()
         assert body["athlete_id"] == athlete_id
-        assert body["leg_length_cm"] == "82.0"
+        assert body["leg_length_cm"] == 82.0
         assert body["maturation_status"] in ("Pre-PHV", "Circa-PHV", "Post-PHV")
         assert body["maturity_offset"] is not None
         assert body["age_at_phv"] is not None

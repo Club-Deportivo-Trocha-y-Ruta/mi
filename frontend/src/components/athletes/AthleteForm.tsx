@@ -13,14 +13,14 @@ const athleteFormSchema = z.object({
   birth_date: z
     .string()
     .min(1, "Fecha requerida")
-    .refine((value) => new Date(value).getTime() <= Date.now(), "No puede ser futura")
+    .refine((value) => value < new Date().toISOString().slice(0, 10), "No puede ser futura ni hoy")
     .refine((value) => value >= "1990-01-01", "Fecha mínima 1990-01-01"),
   sex: z.nativeEnum(Sex),
   club_join_date: z
     .string()
     .optional()
     .refine(
-      (v) => !v || new Date(v).getTime() <= Date.now(),
+      (v) => !v || v <= new Date().toISOString().slice(0, 10),
       "No puede ser futura",
     ),
 });
@@ -116,6 +116,7 @@ export function AthleteForm({
             className={inputClass}
             style={inputStyle}
             autoComplete="off"
+            max={new Date(Date.now() - 86400000).toISOString().slice(0, 10)}
             {...form.register("birth_date")}
             disabled={mode === "edit"}
           />
@@ -139,6 +140,7 @@ export function AthleteForm({
             type="date"
             className={inputClass}
             style={inputStyle}
+            max={new Date().toISOString().slice(0, 10)}
             {...form.register("club_join_date")}
           />
           <span className="text-xs text-red-600">

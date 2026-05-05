@@ -104,6 +104,53 @@ class TestCreateUser:
         body = resp.json()
         assert body["role"] == "parent"
 
+    async def test_coach_creates_parent_without_contact_data(self, client):
+        """Nuevo flujo: coach crea padre solo con nombres; email/phone/password
+        los completará el padre vía onboarding tras invitación."""
+        admin_token = await _login(client, "admin@trochyruta.com", "Admin2026!")
+        club_id = await _seed_club_id(client, admin_token)
+
+        token = await _login(client, "entrenador@trochyruta.com", "Coach2026!")
+
+        resp = await client.post(
+            "/api/users",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "first_name": "Maria",
+                "last_name": "Lopez",
+                "role": "parent",
+                "club_id": club_id,
+                "email": None,
+                "phone": None,
+                "password": None,
+            },
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["role"] == "parent"
+        assert body["email"] is None
+        assert body["phone"] is None
+
+    async def test_coach_creates_two_parents_without_email(self, client):
+        """UNIQUE en users.email permite múltiples NULL en MySQL."""
+        admin_token = await _login(client, "admin@trochyruta.com", "Admin2026!")
+        club_id = await _seed_club_id(client, admin_token)
+
+        token = await _login(client, "entrenador@trochyruta.com", "Coach2026!")
+
+        for suffix in ("a", "b"):
+            resp = await client.post(
+                "/api/users",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "first_name": f"Padre{suffix}",
+                    "last_name": "SinMail",
+                    "role": "parent",
+                    "club_id": club_id,
+                },
+            )
+            assert resp.status_code == 201, resp.text
+
     async def test_coach_cannot_create_coach(self, client):
         admin_token = await _login(client, "admin@trochyruta.com", "Admin2026!")
         seed_club_id = await _seed_club_id(client, admin_token)

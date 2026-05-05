@@ -16,15 +16,22 @@ import { OnboardingPage } from "@/routes/auth/OnboardingPage";
 import { PrivacyPage } from "@/routes/PrivacyPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
 import { UserRole } from "@/types/enums";
+import { useServerWarmup } from "@/hooks/useServerWarmup";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
-      retry: 1,
+      staleTime: 5 * 60 * 1000,
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000),
     },
   },
 });
+
+function AppWarmup() {
+  useServerWarmup();
+  return null;
+}
 
 function RootRedirect() {
   const user = useAuthStore((s) => s.user);
@@ -35,6 +42,7 @@ function RootRedirect() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <AppWarmup />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route

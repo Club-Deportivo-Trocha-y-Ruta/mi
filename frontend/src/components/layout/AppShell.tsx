@@ -66,7 +66,7 @@ export function AppShell({ children }: AppShellProps) {
   );
 
   return (
-    <div className="flex min-h-screen bg-white text-charcoal">
+    <div className="flex min-h-screen overflow-x-hidden bg-white text-charcoal">
       {/* ── Mobile drawer overlay ── */}
       {sidebarOpen && (
         <div
