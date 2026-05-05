@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { ChevronDown, Mail, Phone, UserRound } from "lucide-react";
 
 import { useParentAthletes } from "@/hooks/parents/useParentAthletes";
+import { useParentInvites } from "@/hooks/parents/useParentInvites";
 import { cn, maskPhone } from "@/lib/utils";
-import type { ParentAthleteOut } from "@/types/parent.types";
+import type { ParentAthleteOut, ParentInviteOut } from "@/types/parent.types";
 import type { FamilyRelationship } from "@/types/enums";
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -102,7 +103,29 @@ function ParentRow({
   );
 }
 
-function InviteFooter({ athleteId }: { athleteId: number }) {
+function isInvitePending(invite: ParentInviteOut): boolean {
+  return !invite.used && new Date(invite.expires_at) >= new Date();
+}
+
+function InviteFooter({
+  athleteId,
+  pendingInviteEmail,
+}: {
+  athleteId: number;
+  pendingInviteEmail: string | null;
+}) {
+  if (pendingInviteEmail) {
+    return (
+      <div className="flex flex-col items-end gap-1 pt-1">
+        <span className="cursor-not-allowed text-sm font-medium text-mid-gray">
+          Invitación pendiente
+        </span>
+        <span className="text-xs text-mid-gray">
+          Enviada a <span className="font-medium">{pendingInviteEmail}</span>
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="flex justify-end pt-1">
       <Link
@@ -148,9 +171,13 @@ export function LinkedParentsCard({
   const { data, isLoading, isError, refetch } = useParentAthletes(
     isExpanded ? { athlete_id: athleteId } : undefined,
   );
+  const invitesQuery = useParentInvites(isExpanded ? athleteId : undefined);
 
   const parents = data?.items ?? [];
   const count: number | null = data?.total ?? null;
+  const pendingInvite =
+    invitesQuery.data?.find(isInvitePending) ?? null;
+  const pendingInviteEmail = pendingInvite?.email ?? null;
 
   return (
     <div className="overflow-hidden rounded-xl bg-white" style={{ boxShadow: cardShadow }}>
@@ -224,7 +251,10 @@ export function LinkedParentsCard({
               </p>
               {canInvite && (
                 <div className="flex justify-end pt-1">
-                  <InviteFooter athleteId={athleteId} />
+                  <InviteFooter
+                    athleteId={athleteId}
+                    pendingInviteEmail={pendingInviteEmail}
+                  />
                 </div>
               )}
             </div>
@@ -251,7 +281,10 @@ export function LinkedParentsCard({
                 <div
                   className="border-t border-[rgba(34,42,53,0.06)] pt-3"
                 >
-                  <InviteFooter athleteId={athleteId} />
+                  <InviteFooter
+                    athleteId={athleteId}
+                    pendingInviteEmail={pendingInviteEmail}
+                  />
                 </div>
               )}
             </div>
