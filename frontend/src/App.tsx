@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
 import { useAuthStore } from "@/store/auth.store";
+import { AIHealthPage } from "@/routes/admin/AIHealthPage";
 import { LoginPage } from "@/routes/auth/LoginPage";
 import { DashboardPage } from "@/routes/dashboard/DashboardPage";
 import { AthletesListPage } from "@/routes/athletes/AthletesListPage";
@@ -122,6 +123,14 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
               <MyAthleteDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/ai"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.admin]}>
+              <AIHealthPage />
             </ProtectedRoute>
           }
         />

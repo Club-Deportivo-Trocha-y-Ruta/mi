@@ -14,6 +14,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 
+import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { AnthropometryForm } from "@/components/athletes/AnthropometryForm";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
@@ -454,6 +455,11 @@ export function AthleteDetailPage() {
           <TrainingReadiness
             athlete={athlete}
             latestRecord={records[records.length - 1]}
+          />
+          <PHVExplanationCard
+            athleteId={athlete.id}
+            hasRecords={records.length > 0}
+            onMeasurementCTA={() => setActiveTab("anthropometry")}
           />
           <ResearchReferences />
         </div>
