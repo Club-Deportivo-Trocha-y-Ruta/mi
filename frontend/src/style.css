@@ -1,16 +1,51 @@
 @import "tailwindcss";
 
 /* ─────────────────────────────────────────────
-   Design system tokens — Cal.com inspired
+   Fuentes locales (alineadas con landing Astro)
+   ───────────────────────────────────────────── */
+@font-face {
+  font-family: "Inter Variable";
+  src: url("/fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/fonts/PlusJakartaSans-Variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+/* ─────────────────────────────────────────────
+   Design system tokens — Trocha y Ruta brand
+   (alineado con page/src/styles/global.css)
+   + Cal.com shadows preservados para cards
    ───────────────────────────────────────────── */
 :root {
-  /* Colors */
-  --color-charcoal: #242424;
+  /* Brand — Trocha y Ruta Cycling Kit */
+  --color-primary: #20b7c9;
+  --color-primary-dark: #1a96a4;
+  --color-primary-light: #4dc9d7;
+
+  --color-accent: #8be000;
+  --color-accent-dark: #6fb300;
+  --color-accent-light: #a3e63d;
+
+  --color-surface: #ffffff;
+  --color-surface-dark: #2f2f2f;
+  --color-surface-muted: #d8d8d8;
+
+  --color-text-primary: #2f2f2f;
+  --color-text-secondary: #5a5a5a;
+
+  /* Aliases legacy (Cal.com tokens) — mapeados a paleta de marca */
+  --color-charcoal: #2f2f2f;
   --color-midnight: #111111;
   --color-mid-gray: #898989;
   --color-white: #ffffff;
   --color-light-gray: #f5f5f5;
-  --color-link-blue: #0099ff;
+  --color-link-blue: #20b7c9;
   --color-border-gray: rgba(34, 42, 53, 0.08);
 
   /* Shadows — multi-layer system (no CSS borders for cards) */
@@ -52,21 +87,36 @@
   --space-24: 96px;
 
   /* Typography */
-  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: var(--color-charcoal);
-  background-color: var(--color-white);
+  font-family: "Inter Variable", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--color-text-primary);
+  background-color: var(--color-surface);
 }
 
 /* ─────────────────────────────────────────────
    Tailwind v4 — register custom tokens
    ───────────────────────────────────────────── */
 @theme {
-  /* Colors */
-  --color-charcoal: #242424;
+  /* Brand colors */
+  --color-primary: #20b7c9;
+  --color-primary-dark: #1a96a4;
+  --color-primary-light: #4dc9d7;
+  --color-accent: #8be000;
+  --color-accent-dark: #6fb300;
+  --color-accent-light: #a3e63d;
+
+  --color-surface: #ffffff;
+  --color-surface-dark: #2f2f2f;
+  --color-surface-muted: #d8d8d8;
+
+  --color-text-primary: #2f2f2f;
+  --color-text-secondary: #5a5a5a;
+
+  /* Legacy aliases (mapeados a marca) */
+  --color-charcoal: #2f2f2f;
   --color-midnight: #111111;
   --color-mid-gray: #898989;
   --color-light-gray: #f5f5f5;
-  --color-link-blue: #0099ff;
+  --color-link-blue: #20b7c9;
 
   /* Shadows */
   --shadow-flat: none;
@@ -88,9 +138,10 @@
   --radius-lg: 16px;
   --radius-pill: 9999px;
 
-  /* Font families */
-  --font-display: "Cal Sans", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
+  /* Font families — alineadas con landing */
+  --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-body: "Inter Variable", "Inter", system-ui, sans-serif;
 }
 
 /* ─────────────────────────────────────────────
@@ -103,23 +154,23 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--color-white);
-  color: var(--color-charcoal);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: "Inter Variable", "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Cal Sans headings — apply to h1-h3 by default */
 h1,
 h2,
-h3 {
-  font-family: "Cal Sans", system-ui, sans-serif;
-  font-weight: 600;
-  letter-spacing: 0px;
-  color: var(--color-charcoal);
+h3,
+h4 {
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--color-text-primary);
 }
 
-/* Positive tracking at smaller heading sizes */
 h3 {
   letter-spacing: 0.2px;
 }
@@ -131,7 +182,12 @@ h3 {
   }
 
   a[href]:not([class]) {
-    color: var(--color-link-blue);
+    color: var(--color-primary);
     text-decoration: underline;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 }

@@ -52,7 +52,7 @@ export function AnthropometryHistory({
   return (
     <>
       <div className="overflow-x-auto" data-testid="anthropometry-history">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full min-w-[640px] text-sm">
           <thead
             className="text-left"
             style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
@@ -103,8 +103,9 @@ export function AnthropometryHistory({
           onClick={() => setSelectedRecord(null)}
         >
           <div
-            className="mx-4 w-full max-w-lg rounded-xl bg-white p-6"
+            className="mx-4 w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6"
             style={{
+              maxHeight: "85dvh",
               boxShadow:
                 "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
             }}

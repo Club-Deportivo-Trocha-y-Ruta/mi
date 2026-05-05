@@ -240,8 +240,8 @@ class ResendEmailClient(BaseEmailClient):
 
         except Exception as exc:
             logger.error(
-                "Resend SDK error | template=%s error_type=%s",
-                message.template_ref, type(exc).__name__,
+                "Resend SDK error | template=%s error_type=%s detail=%s",
+                message.template_ref, type(exc).__name__, str(exc),
             )
             return NotificationResult(
                 success=False,

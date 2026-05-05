@@ -20,8 +20,8 @@ const CARD_SHADOW =
 
 type PageState = "loading" | "invalid" | "expired" | "wizard" | "success";
 
-// Role type aceptado por OnboardingWizard (coincide con el store)
-type OnboardingRole = "parent" | "coach" | "athlete";
+// Role type aceptado por OnboardingWizard — atletas no tienen flujo de onboarding
+type OnboardingRole = "parent" | "coach";
 
 // ---------------------------------------------------------------------------
 // AuthCard — wrapper de branding reutilizable para los estados de error

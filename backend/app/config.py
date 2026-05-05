@@ -66,6 +66,28 @@ class Settings(BaseSettings):
             )
         return v
 
+    @field_validator("email_provider")
+    @classmethod
+    def validate_email_provider_in_prod(cls, v: str, info) -> str:
+        env = info.data.get("app_env", "development")
+        if env == "production" and v.lower() != "resend":
+            raise ValueError(
+                f"EMAIL_PROVIDER='{v}' inválido en producción. "
+                "Debe ser 'resend' (SMTP/MailHog solo en dev)."
+            )
+        return v
+
+    @field_validator("resend_api_key")
+    @classmethod
+    def validate_resend_key_in_prod(cls, v: str, info) -> str:
+        env = info.data.get("app_env", "development")
+        provider = info.data.get("email_provider", "smtp").lower()
+        if env == "production" and provider == "resend" and not v:
+            raise ValueError(
+                "RESEND_API_KEY requerida cuando EMAIL_PROVIDER=resend en producción."
+            )
+        return v
+
     @property
     def database_url(self) -> str:
         return (

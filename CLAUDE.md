@@ -74,6 +74,48 @@ Tablas gestionadas por SQLAlchemy / Alembic:
 | `parent_athlete` | Relación padre/madre↔atleta |
 | `anthropometric_records` | Mediciones con cálculo PHV Mirwald completo |
 
+## Producción
+
+| Componente | URL / Servicio |
+|---|---|
+| **Backend API** | https://mi-2yzi.onrender.com |
+| **Docs (Swagger)** | https://mi-2yzi.onrender.com/docs |
+| **Frontend** | Pendiente (Cloudflare Pages) |
+| **Base de datos** | MySQL en Hostinger (remote) |
+| **Plataforma backend** | Render — Free tier — Docker — Oregon |
+| **Repo GitHub** | Club-Deportivo-Trocha-y-Ruta / mi — branch main |
+
+> Free tier de Render duerme tras ~15 min de inactividad. Primer request tras inactividad tarda ~50s.
+
+### Variables de entorno en producción (Render → Environment)
+
+```
+MYSQL_HOST        = <host Hostinger>
+MYSQL_PORT        = 3306
+MYSQL_USER        = <usuario>
+MYSQL_PASS        = <contraseña>
+MYSQL_DB          = <nombre db>
+JWT_SECRET_KEY    = <openssl rand -hex 32>
+JWT_ALGORITHM     = HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 30
+JWT_REFRESH_TOKEN_EXPIRE_DAYS   = 7
+APP_ENV           = production
+APP_DEBUG         = false
+CORS_ORIGINS      = *   # actualizar cuando frontend esté en Cloudflare Pages
+EMAIL_PROVIDER       = resend
+EMAIL_FROM_ADDRESS   = noreply@trochyruta.com
+EMAIL_FROM_NAME      = Club Trocha y Ruta
+RESEND_API_KEY    = <ver Resend dashboard>
+NOTIFICATION_SEND_EMAILS = true
+NOTIFICATION_LOG_BODIES  = false
+```
+
+### Deploy
+
+Auto-deploy activado en cada push a `main`. Para deploy manual: Render Dashboard → **Manual Deploy**.
+
+Migraciones corren automáticamente via `entrypoint.sh` (`alembic upgrade head`) al arrancar. Seed **no corre** en producción (`APP_ENV != development`).
+
 ## Estado de implementación (Fase 1)
 
 | Paso | Descripción | Estado |

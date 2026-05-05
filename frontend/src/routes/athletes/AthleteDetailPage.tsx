@@ -236,7 +236,7 @@ export function AthleteDetailPage() {
       <LinkedParentsCard athleteId={athlete.id} />
 
       {/* Tabs */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
           className={tabClasses("info")}

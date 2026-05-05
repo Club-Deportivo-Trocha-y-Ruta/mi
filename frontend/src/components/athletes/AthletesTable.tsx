@@ -21,7 +21,7 @@ export function AthletesTable({ items }: AthletesTableProps) {
           "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
       }}
     >
-      <table className="min-w-full text-sm">
+      <table className="min-w-full min-w-[600px] text-sm">
         <thead className="text-left" style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
           <tr>
             <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">Nombre</th>
@@ -60,14 +60,14 @@ export function AthletesTable({ items }: AthletesTableProps) {
                 <div className="flex gap-2">
                   <Link
                     to={`/athletes/${athlete.id}`}
-                    className="rounded-lg bg-white px-3 py-1 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
+                    className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
                     style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   >
                     Ver
                   </Link>
                   <Link
                     to={`/athletes/${athlete.id}/edit`}
-                    className="rounded-lg bg-white px-3 py-1 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
+                    className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
                     style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   >
                     Editar
