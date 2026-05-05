@@ -54,6 +54,29 @@ class Settings(BaseSettings):
     # True → loguea cuerpo del email (NUNCA activar en producción)
     notification_log_bodies: bool = False
 
+    # -----------------------------------------------------------------------
+    # IA / LLMs
+    # -----------------------------------------------------------------------
+    # False → la factoría devuelve FakeLLMProvider (sin red, sin API key).
+    ai_enabled: bool = False
+    # Proveedor: "anthropic" | "openai" | "google" | "fake".
+    # Strategy + Factory: agregar uno nuevo no toca a los use cases.
+    ai_provider: str = "anthropic"
+    # ID de modelo del proveedor.
+    ai_model: str = "claude-sonnet-4-5"
+    # API key del proveedor — vacío en repo, validator exige valor en producción.
+    ai_api_key: str = ""
+    # Override opcional del endpoint (proxies, gateways corporativos).
+    ai_base_url: str | None = None
+    # Tope de tokens de salida — control de costos.
+    ai_max_tokens: int = 1024
+    # Timeout por request (segundos).
+    ai_timeout_seconds: float = 30.0
+    # Temperatura para generación.
+    ai_temperature: float = 0.4
+    # True → loguea prompts y respuestas (NUNCA activar en producción).
+    ai_log_prompts: bool = False
+
     @field_validator("jwt_secret_key")
     @classmethod
     def validate_jwt_secret(cls, v: str, info) -> str:
@@ -85,6 +108,41 @@ class Settings(BaseSettings):
         if env == "production" and provider == "resend" and not v:
             raise ValueError(
                 "RESEND_API_KEY requerida cuando EMAIL_PROVIDER=resend en producción."
+            )
+        return v
+
+    @field_validator("ai_provider")
+    @classmethod
+    def validate_ai_provider(cls, v: str, info) -> str:
+        allowed = {"anthropic", "openai", "google", "fake"}
+        normalized = v.lower().strip()
+        if normalized not in allowed:
+            raise ValueError(
+                f"AI_PROVIDER='{v}' inválido. Permitidos: {sorted(allowed)}."
+            )
+        return normalized
+
+    @field_validator("ai_api_key")
+    @classmethod
+    def validate_ai_api_key_in_prod(cls, v: str, info) -> str:
+        env = info.data.get("app_env", "development")
+        enabled = info.data.get("ai_enabled", False)
+        provider = info.data.get("ai_provider", "anthropic")
+        if env == "production" and enabled and provider != "fake" and not v:
+            raise ValueError(
+                "AI_API_KEY requerida cuando AI_ENABLED=true en producción "
+                f"(AI_PROVIDER={provider})."
+            )
+        return v
+
+    @field_validator("ai_log_prompts")
+    @classmethod
+    def forbid_ai_log_prompts_in_prod(cls, v: bool, info) -> bool:
+        env = info.data.get("app_env", "development")
+        if env == "production" and v:
+            raise ValueError(
+                "AI_LOG_PROMPTS=true PROHIBIDO en producción "
+                "(privacidad de menores)."
             )
         return v
 

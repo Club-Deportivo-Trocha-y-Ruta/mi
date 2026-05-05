@@ -204,3 +204,41 @@ def get_task_dispatcher(background_tasks: BackgroundTasks) -> "TaskDispatcher":
     from app.services.notification.task_dispatcher import TaskDispatcher
     return TaskDispatcher(background_tasks)
 
+
+# ===========================================================================
+# Capa de IA — providers, prompts y use cases
+# ===========================================================================
+
+
+@lru_cache(maxsize=1)
+def get_llm_provider():
+    """Singleton del proveedor LLM elegido vía `AI_PROVIDER`.
+
+    En tests sobrescribir con `app.dependency_overrides[get_llm_provider]`
+    apuntando a una instancia de `FakeLLMProvider`.
+    """
+    from app.services.ai.factory import create_llm_provider
+    return create_llm_provider(settings)
+
+
+@lru_cache(maxsize=1)
+def get_prompt_registry():
+    """Singleton del PromptRegistry."""
+    from app.services.ai.prompts.registry import PromptRegistry
+    return PromptRegistry()
+
+
+def get_phv_explainer_use_case(
+    provider=Depends(get_llm_provider),
+    registry=Depends(get_prompt_registry),
+):
+    """Construye el use case con sus colaboradores."""
+    from app.services.ai.context_builders import AthleteAIContextBuilder
+    from app.services.ai.use_cases.phv_explainer import PHVExplainerUseCase
+
+    return PHVExplainerUseCase(
+        provider=provider,
+        registry=registry,
+        context_builder=AthleteAIContextBuilder(),
+    )
+
