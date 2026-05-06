@@ -24,6 +24,12 @@ export function useCreateAnthropometry(athleteId: number) {
       void queryClient.invalidateQueries({
         queryKey: ["athlete", athleteId],
       });
+      // Caché de explicación PHV se identifica por la última medición:
+      // una nueva medición invalida la caché para que el coach vea el
+      // botón "Generar" otra vez.
+      void queryClient.invalidateQueries({
+        queryKey: ["ai", "phv", athleteId],
+      });
     },
   });
 }
