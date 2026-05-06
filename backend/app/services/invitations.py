@@ -93,6 +93,7 @@ async def consume_invite(
     relationship_type: str = "acudiente",
     consent: ParentalConsentData | None = None,
     ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> User:
     """Crea el usuario padre, lo vincula con el atleta y marca el token como usado.
 
@@ -177,7 +178,23 @@ async def consume_invite(
 
     # Registrar consentimiento parental si fue proporcionado
     if consent is not None:
+        from app.models.privacy_policy import PrivacyPolicy
+
         now_utc = datetime.now(timezone.utc)
+
+        # Resolver policy_id desde la versión de política indicada
+        policy_stmt = select(PrivacyPolicy).where(
+            PrivacyPolicy.version == consent.privacy_policy_version
+        )
+        policy = (await db.execute(policy_stmt)).scalar_one_or_none()
+        if policy is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"La versión de política '{consent.privacy_policy_version}' no existe. "
+                    "Actualiza la aplicación y vuelve a intentarlo."
+                ),
+            )
 
         # Política v1.1: tracking y terceros no son finalidades activas; se
         # persisten siempre como False aunque el cliente envíe True. Cuando se
@@ -187,9 +204,11 @@ async def consume_invite(
             parent_user_id=new_user.id,
             athlete_id=invite.athlete_id,
             consent_version=consent.privacy_policy_version,
+            policy_id=policy.id,
             consented_at=now_utc,
             consent_method="digital_wizard",
             ip_address=ip_address,
+            user_agent=user_agent,
             data_collection=consent.accept_data_collection,
             training_tracking=False,
             anthropometry=consent.accept_anthropometry,

@@ -1,0 +1,321 @@
+/**
+ * ConsentStatusPanel — Sección expandible que muestra el estado de consentimiento
+ * de cada atleta vinculado al padre autenticado.
+ *
+ * Permite al padre:
+ *   - Ver versión de política aceptada, fecha y estado (vigente/desactualizado/revocado)
+ *   - Revocar consentimiento activo
+ *   - Renovar consentimiento desactualizado
+ *
+ * Se renderiza en ParentDashboardPage como sección secundaria, por debajo de las cards
+ * de atletas. La renovación urgente la maneja el ConsentRenewalModal bloqueante.
+ */
+
+import { useState } from "react";
+import { ChevronDown, ChevronUp, CheckCircle2, AlertCircle, XCircle } from "lucide-react";
+
+import { cn } from "@/lib/utils";
+import type { AthleteConsentStatus, PrivacyPolicySummary } from "@/types/consent";
+import { ConsentRenewalModal } from "./ConsentRenewalModal";
+import { RevokeConsentDialog } from "./RevokeConsentDialog";
+
+// ---------------------------------------------------------------------------
+// Estilos del design system (Cal.com)
+// ---------------------------------------------------------------------------
+
+const CARD_SHADOW =
+  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
+
+const btnSecondaryStyle: React.CSSProperties = {
+  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
+};
+
+const btnDestructiveStyle: React.CSSProperties = {
+  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
+};
+
+// ---------------------------------------------------------------------------
+// Helpers de estado
+// ---------------------------------------------------------------------------
+
+type ConsentState = "current" | "outdated" | "revoked" | "never";
+
+function getConsentState(athlete: AthleteConsentStatus): ConsentState {
+  if (!athlete.current_consent) return "never";
+  if (athlete.current_consent.withdrawn_at) return "revoked";
+  if (!athlete.current_consent.is_current_policy) return "outdated";
+  return "current";
+}
+
+const STATE_CONFIG: Record<
+  ConsentState,
+  { label: string; icon: React.ReactNode; badgeClass: string }
+> = {
+  current: {
+    label: "Vigente",
+    icon: <CheckCircle2 size={14} aria-hidden="true" />,
+    badgeClass: "bg-green-50 text-green-700",
+  },
+  outdated: {
+    label: "Desactualizado",
+    icon: <AlertCircle size={14} aria-hidden="true" />,
+    badgeClass: "bg-amber-50 text-amber-700",
+  },
+  revoked: {
+    label: "Revocado",
+    icon: <XCircle size={14} aria-hidden="true" />,
+    badgeClass: "bg-red-50 text-red-700",
+  },
+  never: {
+    label: "Sin consentimiento",
+    icon: <XCircle size={14} aria-hidden="true" />,
+    badgeClass: "bg-mid-gray/10 text-mid-gray",
+  },
+};
+
+function formatDate(isoString: string): string {
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(isoString));
+}
+
+// ---------------------------------------------------------------------------
+// Sub-componente: fila de atleta
+// ---------------------------------------------------------------------------
+
+interface AthleteConsentRowProps {
+  athlete: AthleteConsentStatus;
+  activePolicy: PrivacyPolicySummary;
+  onRenew: (athlete: AthleteConsentStatus) => void;
+  onRevoke: (athlete: AthleteConsentStatus) => void;
+}
+
+function AthleteConsentRow({
+  athlete,
+  activePolicy,
+  onRenew,
+  onRevoke,
+}: AthleteConsentRowProps) {
+  const state = getConsentState(athlete);
+  const config = STATE_CONFIG[state];
+  const consent = athlete.current_consent;
+
+  const isRevocable = state === "current" || state === "outdated";
+  const isRenewable = state === "outdated" || state === "never" || state === "revoked";
+
+  return (
+    <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Info del atleta */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium text-charcoal">{athlete.athlete_name}</p>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+              config.badgeClass,
+            )}
+          >
+            {config.icon}
+            {config.label}
+          </span>
+        </div>
+
+        {/* Detalle de la versión aceptada */}
+        {consent && !consent.withdrawn_at && (
+          <p className="mt-0.5 text-xs text-mid-gray">
+            Política {consent.policy_version} —{" "}
+            {formatDate(consent.consented_at)}
+            {!consent.is_current_policy && (
+              <span className="ml-1 text-amber-600">
+                (política actual: {activePolicy.version})
+              </span>
+            )}
+          </p>
+        )}
+        {consent?.withdrawn_at && (
+          <p className="mt-0.5 text-xs text-mid-gray">
+            Revocado el {formatDate(consent.withdrawn_at)}
+          </p>
+        )}
+        {!consent && (
+          <p className="mt-0.5 text-xs text-mid-gray">
+            Nunca se registró consentimiento
+          </p>
+        )}
+      </div>
+
+      {/* Acciones */}
+      <div className="flex shrink-0 gap-2">
+        {isRenewable && (
+          <button
+            type="button"
+            onClick={() => onRenew(athlete)}
+            className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+            style={btnSecondaryStyle}
+          >
+            {state === "revoked" ? "Dar consentimiento" : "Renovar"}
+          </button>
+        )}
+
+        {isRevocable && (
+          <button
+            type="button"
+            onClick={() => onRevoke(athlete)}
+            className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-80"
+            style={btnDestructiveStyle}
+          >
+            Revocar
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Props del panel principal
+// ---------------------------------------------------------------------------
+
+interface ConsentStatusPanelProps {
+  consentsPerAthlete: AthleteConsentStatus[];
+  activePolicy: PrivacyPolicySummary;
+}
+
+// ---------------------------------------------------------------------------
+// Componente principal
+// ---------------------------------------------------------------------------
+
+export function ConsentStatusPanel({
+  consentsPerAthlete,
+  activePolicy,
+}: ConsentStatusPanelProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Atleta para el que se está renovando o revocando desde el panel manual
+  const [renewTarget, setRenewTarget] = useState<AthleteConsentStatus | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<AthleteConsentStatus | null>(null);
+
+  // Estado de toast simple (sin librería externa)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const showSuccess = (msg: string) => {
+    setSuccessMessage(msg);
+    setTimeout(() => setSuccessMessage(null), 4000);
+  };
+
+  const pendingCount = consentsPerAthlete.filter(
+    (a) =>
+      a.current_consent === null ||
+      !a.current_consent.is_current_policy ||
+      !!a.current_consent.withdrawn_at,
+  ).length;
+
+  return (
+    <>
+      <div
+        className="rounded-xl bg-white"
+        style={{ boxShadow: CARD_SHADOW }}
+      >
+        {/* Header con toggle */}
+        <button
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="flex w-full items-center justify-between px-5 py-4 text-left"
+          aria-expanded={isExpanded}
+          aria-controls="consent-panel-body"
+        >
+          <div className="flex items-center gap-3">
+            <div>
+              <p
+                className="text-sm font-medium text-charcoal"
+                style={{ fontFamily: "'Cal Sans', system-ui, sans-serif" }}
+              >
+                Gestionar consentimiento
+              </p>
+              <p className="text-xs text-mid-gray">
+                {pendingCount > 0
+                  ? `${pendingCount} atleta${pendingCount > 1 ? "s" : ""} con consentimiento pendiente`
+                  : "Todos los consentimientos al día"}
+              </p>
+            </div>
+            {pendingCount > 0 && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                {pendingCount}
+              </span>
+            )}
+          </div>
+
+          {isExpanded ? (
+            <ChevronUp size={16} className="text-mid-gray" aria-hidden="true" />
+          ) : (
+            <ChevronDown size={16} className="text-mid-gray" aria-hidden="true" />
+          )}
+        </button>
+
+        {/* Contenido expandible */}
+        {isExpanded && (
+          <div
+            id="consent-panel-body"
+            className="border-t border-[rgba(34,42,53,0.08)]"
+          >
+            <div className="divide-y divide-[rgba(34,42,53,0.06)] px-5">
+              {consentsPerAthlete.map((athlete) => (
+                <AthleteConsentRow
+                  key={athlete.athlete_id}
+                  athlete={athlete}
+                  activePolicy={activePolicy}
+                  onRenew={(a) => setRenewTarget(a)}
+                  onRevoke={(a) => setRevokeTarget(a)}
+                />
+              ))}
+            </div>
+
+            {/* Nota legal */}
+            <div className="px-5 pb-4 pt-2">
+              <p className="text-xs text-mid-gray">
+                El consentimiento se rige por la Ley 1581 de 2012 (Colombia). Puedes
+                ejercer tus derechos de acceso, rectificación y supresión contactando
+                al entrenador del club.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Toast de éxito */}
+      {successMessage && (
+        <div
+          className="fixed bottom-6 right-6 z-50 rounded-xl bg-charcoal px-5 py-3 text-sm font-medium text-white"
+          style={{ boxShadow: CARD_SHADOW }}
+          role="status"
+          aria-live="polite"
+        >
+          {successMessage}
+        </div>
+      )}
+
+      {/* Modal de renovación desde el panel manual */}
+      {renewTarget && (
+        <ConsentRenewalModal
+          athlete={renewTarget}
+          activePolicy={activePolicy}
+          onRenewed={() => {
+            setRenewTarget(null);
+            showSuccess("Consentimiento actualizado correctamente.");
+          }}
+        />
+      )}
+
+      {/* Diálogo de revocación desde el panel manual */}
+      {revokeTarget && (
+        <RevokeConsentDialog
+          athlete={revokeTarget}
+          onClose={() => setRevokeTarget(null)}
+          onSuccess={() => showSuccess("Consentimiento revocado correctamente.")}
+        />
+      )}
+    </>
+  );
+}

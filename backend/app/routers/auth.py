@@ -208,6 +208,7 @@ async def parent_register(
         relationship_type=body.relationship_type,
         consent=body.consent,
         ip_address=client_ip,
+        user_agent=request.headers.get("user-agent"),
     )
     return ParentRegisterOut(
         id=new_user.id,

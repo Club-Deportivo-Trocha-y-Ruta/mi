@@ -20,6 +20,7 @@ import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
 import { GrowthCharts } from "@/components/athletes/GrowthCharts";
 import { LinkedParentsCard } from "@/components/athletes/LinkedParentsCard";
+import { MorphologyCard } from "@/components/athletes/MorphologyCard";
 import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
 import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
@@ -105,6 +106,8 @@ export function AthleteDetailPage() {
   });
 
   const records = anthropometryQuery.data ?? [];
+  // API devuelve registros ordenados desc (más reciente primero).
+  const latestRecord = records[0];
 
   useEffect(() => {
     if (!hasSetInitialTab && records.length > 0) {
@@ -161,14 +164,9 @@ export function AthleteDetailPage() {
   const athlete = athleteQuery.data;
   const latest = athlete.latest_anthropometry;
 
-  const phvAgeMonths =
-    records.length > 0
-      ? (() => {
-          const lastRecord = records[records.length - 1];
-          if (!lastRecord.age_at_phv) return undefined;
-          return lastRecord.age_at_phv * 12;
-        })()
-      : undefined;
+  const phvAgeMonths = latestRecord?.age_at_phv
+    ? latestRecord.age_at_phv * 12
+    : undefined;
 
   const tabClasses = (tab: Tab) =>
     cn(
@@ -423,7 +421,7 @@ export function AthleteDetailPage() {
       {activeTab === "growth" && records.length > 0 && (
         <div className="space-y-5">
           <NutritionalClassification
-            record={records[records.length - 1]}
+            record={latestRecord}
             sex={athlete.sex}
             birthDate={athlete.birth_date}
           />
@@ -438,8 +436,9 @@ export function AthleteDetailPage() {
           </div>
           <TrainingReadiness
             athlete={athlete}
-            latestRecord={records[records.length - 1]}
+            latestRecord={latestRecord}
           />
+          <MorphologyCard latestRecord={latestRecord} />
           <PHVExplanationCard
             athleteId={athlete.id}
             hasRecords={records.length > 0}

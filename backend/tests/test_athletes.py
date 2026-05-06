@@ -220,6 +220,14 @@ class TestCreateAnthropometry:
         assert body["maturity_offset"] is not None
         assert body["age_at_phv"] is not None
         assert body["training_implications"] is not None
+        # Métricas morfológicas (envergadura) — arm_span_cm presente
+        assert body["morphology"] is not None
+        morph = body["morphology"]
+        assert morph["ape_index"] == round(157.0 / 155.0, 3)
+        assert morph["arm_span_height_delta_cm"] == 2.0
+        assert morph["posture_screening_flag"] is False
+        assert morph["bike_fit_category"] in ("short_reach", "standard", "long_reach")
+        assert morph["bike_fit_guidance"]
 
     async def test_create_record_for_nonexistent_athlete(self, client):
         headers = await _auth(client)

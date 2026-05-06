@@ -14,11 +14,17 @@ from app.models.anthropometry import AnthropometricRecord
 from app.models.athlete import Athlete, ParentAthlete
 from app.models.growth import GrowthSource
 from app.models.user import User, UserRole
-from app.schemas.anthropometry import AnthropometryOut, AnthropometryCreate, GrowthPercentiles
+from app.schemas.anthropometry import (
+    AnthropometryCreate,
+    AnthropometryOut,
+    GrowthPercentiles,
+    MorphologyMetrics,
+)
 from app.schemas.notification import NotificationRecipient, NotificationRequest, NotificationTemplate
 from app.services.category import compute_age_decimal
 from app.services.growth import calculate_growth_percentiles, classify_nutritional_status_height
 from app.services.measurement_alerts import detect_approaching_circa
+from app.services.morphology import calculate_arm_span_metrics
 from app.services.notification.service import NotificationService
 from app.services.notification.task_dispatcher import TaskDispatcher
 from app.services.phv import calculate_mirwald_offset
@@ -63,6 +69,24 @@ def _build_growth_percentiles(
         nutritional_status_height=nutritional_status_height,
         nutritional_status_bmi=nutritional_status_bmi,
     )
+
+
+def _build_morphology(record: AnthropometricRecord) -> MorphologyMetrics | None:
+    """Calcula métricas de envergadura si el registro tiene arm_span_cm."""
+    if record.arm_span_cm is None:
+        return None
+    metrics = calculate_arm_span_metrics(
+        arm_span_cm=float(record.arm_span_cm),
+        standing_height_cm=float(record.standing_height_cm),
+        maturation_status=(
+            record.maturation_status.value
+            if hasattr(record.maturation_status, "value")
+            else record.maturation_status
+        ),
+    )
+    if metrics is None:
+        return None
+    return MorphologyMetrics(**metrics)
 
 
 def _infer_nutritional_status_height(record: AnthropometricRecord) -> str | None:
@@ -199,6 +223,7 @@ async def create_anthropometry(
         record=record,
         nutritional_status_height=growth.nutritional_status_height if growth else None,
     )
+    out.morphology = _build_morphology(record)
     return out
 
 
@@ -227,9 +252,11 @@ async def list_anthropometry(
             record=record,
             nutritional_status_height=ns_height,
         )
-        # Filtrar notas del coach para padres (privacidad del entrenamiento)
+        out.morphology = _build_morphology(record)
+        # Filtrar datos sensibles para padres (privacidad del entrenamiento)
         if current_user.role == UserRole.parent:
             out.notes = None
+            out.morphology = None
         output.append(out)
 
     return output

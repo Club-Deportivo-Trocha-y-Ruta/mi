@@ -35,6 +35,16 @@ class GrowthPercentiles(BaseModel):
     nutritional_status_bmi: str | None = None
 
 
+class MorphologyMetrics(BaseModel):
+    ape_index: float
+    arm_span_height_delta_cm: float
+    posture_screening_flag: bool
+    posture_screening_message: str | None = None
+    bike_fit_category: str
+    bike_fit_guidance: str
+    ape_index_advisory: str | None = None
+
+
 class AnthropometryOut(BaseModel):
     id: int
     athlete_id: int
@@ -64,5 +74,6 @@ class AnthropometryOut(BaseModel):
     nutritional_status: str | None = None
     # Objeto compuesto (se construye desde el router; no proviene del ORM directamente)
     growth_percentiles: GrowthPercentiles | None = None
+    morphology: MorphologyMetrics | None = None
 
     model_config = {"from_attributes": True}

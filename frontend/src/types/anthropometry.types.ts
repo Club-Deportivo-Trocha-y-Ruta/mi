@@ -10,6 +10,18 @@ export interface AnthropometryCreate {
   notes?: string | null;
 }
 
+export type BikeFitCategory = "short_reach" | "standard" | "long_reach";
+
+export interface MorphologyMetrics {
+  ape_index: number;
+  arm_span_height_delta_cm: number;
+  posture_screening_flag: boolean;
+  posture_screening_message: string | null;
+  bike_fit_category: BikeFitCategory;
+  bike_fit_guidance: string;
+  ape_index_advisory: string | null;
+}
+
 export interface AnthropometricRecord {
   id: number;
   athlete_id: number;
@@ -37,4 +49,5 @@ export interface AnthropometricRecord {
   weight_z_score?: number | null;
   weight_percentile?: number | null;
   nutritional_status?: string | null;
+  morphology?: MorphologyMetrics | null;
 }
