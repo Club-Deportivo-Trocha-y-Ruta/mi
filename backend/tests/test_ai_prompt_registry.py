@@ -16,7 +16,7 @@ def _phv_context() -> dict:
         "maturation_status": "Pre-PHV",
         "phv_offset": -1.5,
         "age_at_phv": 13.3,
-        "mesocycle": 2,
+        "arm_span_cm": 152.0,
     }
 
 

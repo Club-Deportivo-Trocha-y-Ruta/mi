@@ -24,11 +24,14 @@ async def create_invite(
     email: str,
     created_by_user_id: int,
     db: AsyncSession,
+    parent_user_id: int | None = None,
 ) -> ParentInvite:
     """Genera un token de invitación para un padre.
 
     Si ya existe uno no-usado y no-expirado para el mismo atleta+email,
-    lo retorna directamente sin crear un duplicado.
+    lo retorna directamente sin crear un duplicado. Si se reutiliza y trae un
+    parent_user_id distinto al almacenado, se actualiza para apuntar al usuario
+    pre-creado correcto.
     """
     existing_stmt = select(ParentInvite).where(
         ParentInvite.athlete_id == athlete_id,
@@ -38,6 +41,9 @@ async def create_invite(
     )
     existing = (await db.execute(existing_stmt)).scalar_one_or_none()
     if existing:
+        if parent_user_id is not None and existing.parent_user_id != parent_user_id:
+            existing.parent_user_id = parent_user_id
+            await db.flush()
         return existing
 
     token = secrets.token_urlsafe(32)
@@ -50,6 +56,7 @@ async def create_invite(
         expires_at=expires_at,
         used=False,
         created_by=created_by_user_id,
+        parent_user_id=parent_user_id,
     )
     db.add(invite)
     await db.flush()
@@ -111,17 +118,6 @@ async def consume_invite(
         consent: Datos de consentimiento parental aceptados en el wizard.
         ip_address: IP del cliente para trazabilidad del consentimiento.
     """
-    # Verificar que el email no esté ya registrado
-    existing_user = (
-        await db.execute(select(User).where(User.email == invite.email))
-    ).scalar_one_or_none()
-
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Ya existe una cuenta con este correo electrónico",
-        )
-
     # Cargar el atleta para obtener club_id y actualizar consentimiento
     athlete = await db.get(Athlete, invite.athlete_id)
 
@@ -138,43 +134,126 @@ async def consume_invite(
     except ValueError:
         family_rel = FamilyRelationship.acudiente
 
-    # Crear usuario padre
-    new_user = User(
-        email=invite.email,
-        hashed_password=hash_password(password),
-        first_name=first_name,
-        last_name=last_name,
-        phone=phone,
-        role=UserRole.parent,
-        can_login=True,
-        created_by=invite.created_by,
-    )
-    db.add(new_user)
+    # Si la invitación tiene parent_user_id, hacer UPDATE del usuario existente
+    # en lugar de INSERT — evita duplicados cuando el coach pre-creó al padre.
+    if invite.parent_user_id is not None:
+        target_user = await db.get(User, invite.parent_user_id)
+        if target_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="El usuario padre referenciado por la invitación no existe",
+            )
 
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Ya existe una cuenta con este correo electrónico",
+        # Validar que el email destino no choque con otra cuenta distinta
+        email_owner_stmt = select(User).where(
+            User.email == invite.email, User.id != target_user.id
         )
+        email_owner = (await db.execute(email_owner_stmt)).scalar_one_or_none()
+        if email_owner is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ya existe una cuenta con este correo electrónico",
+            )
 
-    # Crear membresía al club del atleta
-    membership = ClubMember(
-        club_id=athlete.club_id,
-        user_id=new_user.id,
-        role_in_club=ClubRole.parent,
-    )
-    db.add(membership)
+        target_user.email = invite.email
+        target_user.hashed_password = hash_password(password)
+        target_user.first_name = first_name
+        target_user.last_name = last_name
+        target_user.phone = phone
+        target_user.role = UserRole.parent
+        target_user.can_login = True
+        target_user.is_active = True
 
-    # Vincular parent-athlete con el tipo de parentesco recibido
-    pa = ParentAthlete(
-        parent_id=new_user.id,
-        athlete_id=invite.athlete_id,
-        relationship_type=family_rel,
-    )
-    db.add(pa)
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ya existe una cuenta con este correo electrónico",
+            )
+
+        new_user = target_user
+
+        # Asegurar membresía en el club (idempotente)
+        membership_stmt = select(ClubMember).where(
+            ClubMember.user_id == new_user.id,
+            ClubMember.club_id == athlete.club_id,
+        )
+        existing_membership = (await db.execute(membership_stmt)).scalar_one_or_none()
+        if existing_membership is None:
+            db.add(
+                ClubMember(
+                    club_id=athlete.club_id,
+                    user_id=new_user.id,
+                    role_in_club=ClubRole.parent,
+                )
+            )
+
+        # Actualizar (o crear) ParentAthlete con el parentesco final del wizard
+        pa_stmt = select(ParentAthlete).where(
+            ParentAthlete.parent_id == new_user.id,
+            ParentAthlete.athlete_id == invite.athlete_id,
+        )
+        pa_existing = (await db.execute(pa_stmt)).scalar_one_or_none()
+        if pa_existing is not None:
+            pa_existing.relationship_type = family_rel
+        else:
+            db.add(
+                ParentAthlete(
+                    parent_id=new_user.id,
+                    athlete_id=invite.athlete_id,
+                    relationship_type=family_rel,
+                )
+            )
+    else:
+        # Camino legacy: invitación sin pre-creación. Verificar email libre y
+        # crear todo desde cero.
+        existing_user = (
+            await db.execute(select(User).where(User.email == invite.email))
+        ).scalar_one_or_none()
+
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ya existe una cuenta con este correo electrónico",
+            )
+
+        new_user = User(
+            email=invite.email,
+            hashed_password=hash_password(password),
+            first_name=first_name,
+            last_name=last_name,
+            phone=phone,
+            role=UserRole.parent,
+            can_login=True,
+            created_by=invite.created_by,
+        )
+        db.add(new_user)
+
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ya existe una cuenta con este correo electrónico",
+            )
+
+        db.add(
+            ClubMember(
+                club_id=athlete.club_id,
+                user_id=new_user.id,
+                role_in_club=ClubRole.parent,
+            )
+        )
+        db.add(
+            ParentAthlete(
+                parent_id=new_user.id,
+                athlete_id=invite.athlete_id,
+                relationship_type=family_rel,
+            )
+        )
 
     # Registrar consentimiento parental si fue proporcionado
     if consent is not None:

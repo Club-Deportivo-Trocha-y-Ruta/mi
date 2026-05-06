@@ -94,7 +94,14 @@ export function OnboardingPage() {
           token: token!,
           email: data.email,
           athleteName: data.athlete_name,
-          clubName: data.club_name,
+          clubName: data.club_name ?? "",
+          prefill: {
+            parentUserId: data.parent_user_id ?? null,
+            firstName: data.first_name ?? null,
+            lastName: data.last_name ?? null,
+            phone: data.phone ?? null,
+            relationshipType: data.relationship_type ?? null,
+          },
         });
         setPageState("wizard");
       } else {

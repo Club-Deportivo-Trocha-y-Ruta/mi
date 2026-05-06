@@ -157,10 +157,22 @@ export function OnboardingWizard({
   // -- Mutation de registro --
   const { mutate, isPending, error: mutationError } = useCompleteOnboarding();
 
+  // -- Defaults: pre-llenar con datos cargados por el coach (si existen),
+  //    luego sobrescribir con lo que el usuario haya tipeado en pasos previos.
+  const prefillDefaults: Partial<OnboardingFormData> = {
+    first_name: store.prefill.firstName ?? undefined,
+    last_name: store.prefill.lastName ?? undefined,
+    phone: store.prefill.phone ?? undefined,
+    relationship_type: store.prefill.relationshipType ?? undefined,
+  };
+
   // -- Formulario: validación granular por paso --
   const methods = useForm<OnboardingFormData>({
     resolver: zodResolver(onboardingFormSchema),
-    defaultValues: { ...store.formData } as Partial<OnboardingFormData>,
+    defaultValues: {
+      ...prefillDefaults,
+      ...store.formData,
+    } as Partial<OnboardingFormData>,
     mode: "onTouched",
   });
 

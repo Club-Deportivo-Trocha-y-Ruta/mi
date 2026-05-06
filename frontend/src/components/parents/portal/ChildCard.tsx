@@ -50,9 +50,11 @@ export function ChildCard({ athlete }: ChildCardProps) {
     : null;
 
   return (
-    <article
-      className="flex flex-col rounded-xl bg-white"
+    <Link
+      to={`/my-athletes/${athlete.athlete_id}`}
+      className="flex flex-col rounded-xl bg-white transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
       style={{ boxShadow: CARD_SHADOW }}
+      aria-label={`Ver detalle de ${athlete.athlete_first_name} ${athlete.athlete_last_name}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between px-5 pt-5 pb-4">
@@ -123,19 +125,14 @@ export function ChildCard({ athlete }: ChildCardProps) {
         )}
       </div>
 
-      {/* Footer */}
+      {/* Footer — indicador visual de navegación */}
       <div
-        className="px-5 py-3"
+        className="flex items-center justify-between px-5 py-3"
         style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
       >
-        <Link
-          to={`/my-athletes/${athlete.athlete_id}`}
-          className="flex items-center gap-1.5 text-sm font-medium text-link-blue transition-opacity hover:opacity-70"
-        >
-          Ver detalle
-          <ArrowRight size={14} />
-        </Link>
+        <span className="text-sm font-medium text-link-blue">Ver detalle</span>
+        <ArrowRight size={14} className="text-link-blue" />
       </div>
-    </article>
+    </Link>
   );
 }

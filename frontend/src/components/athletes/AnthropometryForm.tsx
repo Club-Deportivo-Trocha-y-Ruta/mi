@@ -33,7 +33,7 @@ interface AnthropometryFormProps {
 }
 
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
+  "mt-1 w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
 const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 
 export function AnthropometryForm({
@@ -126,6 +126,7 @@ export function AnthropometryForm({
             Peso (kg)
             <input
               type="number"
+              inputMode="decimal"
               step="0.1"
               className={inputClass}
               style={inputStyle}
@@ -139,6 +140,7 @@ export function AnthropometryForm({
             Talla de pie (cm)
             <input
               type="number"
+              inputMode="decimal"
               step="0.1"
               className={inputClass}
               style={inputStyle}
@@ -152,6 +154,7 @@ export function AnthropometryForm({
             Envergadura (cm)
             <input
               type="number"
+              inputMode="decimal"
               step="0.1"
               className={inputClass}
               style={inputStyle}
@@ -163,6 +166,7 @@ export function AnthropometryForm({
             Talla sentado (cm)
             <input
               type="number"
+              inputMode="decimal"
               step="0.1"
               className={inputClass}
               style={inputStyle}

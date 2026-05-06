@@ -13,7 +13,6 @@ Datos disponibles (sin información personal):
 - Estado de maduración: **{{ maturation_status }}**
 - Maturity offset (años desde el PHV): {{ phv_offset }}
 - Edad estimada del PHV: {{ age_at_phv }} años
-{% if mesocycle is not none %}- Mesociclo actual: {{ mesocycle }}{% endif %}
 {% if height_z_score is defined %}- Z-score talla: {{ height_z_score }}{% endif %}
 {% if bmi is defined %}- IMC: {{ bmi }} (z-score {{ bmi_z_score }}){% endif %}
 {% if nutritional_status is defined %}- Estado nutricional: {{ nutritional_status }}{% endif %}

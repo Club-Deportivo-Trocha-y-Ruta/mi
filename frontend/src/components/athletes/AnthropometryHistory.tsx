@@ -51,15 +51,50 @@ export function AnthropometryHistory({
 
   return (
     <>
-      <div className="overflow-x-auto" data-testid="anthropometry-history">
-        <table className="min-w-full min-w-[640px] text-sm">
+      {/* Vista mobile: lista de cards (<md) */}
+      <ul role="list" className="flex flex-col gap-2 md:hidden" data-testid="anthropometry-history">
+        {sorted.map((record) => (
+          <li key={record.id}>
+            <button
+              type="button"
+              className="w-full cursor-pointer rounded-xl bg-white p-4 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
+              style={{
+                boxShadow:
+                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
+              }}
+              onClick={() => setSelectedRecord(record)}
+              aria-label={`Ver detalle de medición del ${formatDate(record.evaluation_date)}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-charcoal" data-testid="record-date">
+                  {formatDate(record.evaluation_date)}
+                </span>
+                <PHVBadge status={record.maturation_status} />
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <span className="text-mid-gray">Peso: <span className="text-charcoal">{record.weight_kg} kg</span></span>
+                <span className="text-mid-gray">Talla: <span className="text-charcoal">{record.standing_height_cm} cm</span></span>
+                <span className="text-mid-gray">Sentado: <span className="text-charcoal">{record.sitting_height_cm} cm</span></span>
+                <span className="text-mid-gray">Offset: <span className="font-medium text-charcoal">{formatOffset(record.maturity_offset)}</span></span>
+                {record.arm_span_cm != null && (
+                  <span className="text-mid-gray">Enverg.: <span className="text-charcoal">{record.arm_span_cm} cm</span></span>
+                )}
+              </div>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {/* Vista desktop: tabla (md+) */}
+      <div className="hidden overflow-x-auto md:block" data-testid="anthropometry-history-desktop">
+        <table className="min-w-full text-sm">
           <thead
             className="text-left"
             style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
           >
             <tr>
               <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Fecha</th>
-              <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Mesociclo</th>
+              <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Envergadura</th>
               <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Peso</th>
               <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Talla</th>
               <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Talla sentado</th>
@@ -79,7 +114,9 @@ export function AnthropometryHistory({
                 <td className="px-3 py-2.5 text-charcoal" data-testid="record-date">
                   {formatDate(record.evaluation_date)}
                 </td>
-                <td className="px-3 py-2.5 text-mid-gray">{record.mesocycle ?? "-"}</td>
+                <td className="px-3 py-2.5 text-mid-gray">
+                  {record.arm_span_cm != null ? `${record.arm_span_cm} cm` : "-"}
+                </td>
                 <td className="px-3 py-2.5 text-charcoal">{record.weight_kg} kg</td>
                 <td className="px-3 py-2.5 text-charcoal">{record.standing_height_cm} cm</td>
                 <td className="px-3 py-2.5 text-charcoal">{record.sitting_height_cm} cm</td>
@@ -142,7 +179,6 @@ export function AnthropometryHistory({
               <p>Ratio pierna/sentado: {selectedRecord.leg_sitting_ratio}</p>
               <p>Maturity Offset: {formatOffset(selectedRecord.maturity_offset)}</p>
               <p>Edad al PHV: {selectedRecord.age_at_phv} años</p>
-              <p>Mesociclo: {selectedRecord.mesocycle ?? "-"}</p>
               <div className="flex items-center gap-2">
                 <span>Estado:</span>
                 <PHVBadge status={selectedRecord.maturation_status} />

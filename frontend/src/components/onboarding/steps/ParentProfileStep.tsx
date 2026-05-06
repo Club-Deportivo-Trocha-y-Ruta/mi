@@ -114,7 +114,6 @@ export function ParentProfileStep() {
             id="relationship_type"
             className={selectClass}
             style={inputStyle}
-            defaultValue=""
             {...register("relationship_type")}
           >
             <option value="" disabled>

@@ -3,6 +3,7 @@ import { CheckCircle, Clock, Mail, XCircle } from "lucide-react";
 
 import { useCreateParentInvite, useParentInvites } from "@/hooks/parents/useParentInvites";
 import type { ParentInviteOut } from "@/types/parent.types";
+import type { FamilyRelationship } from "@/types/enums";
 import { cn } from "@/lib/utils";
 
 const cardShadow =
@@ -56,13 +57,26 @@ function InviteStatusBadge({ status }: { status: InviteStatus }) {
 interface ParentInviteManagerProps {
   athleteId: number;
   athleteName: string;
+  /**
+   * ID del usuario padre pre-creado por el coach. Cuando está presente, el
+   * backend ata la invitación a ese usuario y consume_invite hace UPDATE en
+   * lugar de INSERT — evita duplicados.
+   */
+  parentUserId?: number;
+  /** Tipo de parentesco registrado en el vínculo. Se persiste en el invite. */
+  relationshipType?: FamilyRelationship;
+  /** Email pre-cargado (si el coach ya lo capturó al crear el padre). */
+  defaultEmail?: string;
 }
 
 export function ParentInviteManager({
   athleteId,
   athleteName,
+  parentUserId,
+  relationshipType,
+  defaultEmail = "",
 }: ParentInviteManagerProps) {
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(defaultEmail);
 
   const invitesQuery = useParentInvites(athleteId);
   const createInviteMutation = useCreateParentInvite();
@@ -88,7 +102,12 @@ export function ParentInviteManager({
     if (!targetEmail) return;
 
     createInviteMutation.mutate(
-      { athlete_id: athleteId, email: targetEmail },
+      {
+        athlete_id: athleteId,
+        email: targetEmail,
+        parent_user_id: parentUserId ?? null,
+        relationship_type: relationshipType ?? null,
+      },
       {
         onSuccess: () => {
           if (!resendEmail) setEmail("");

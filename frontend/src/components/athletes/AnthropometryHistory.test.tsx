@@ -13,7 +13,6 @@ function makeRecord(overrides: Partial<AnthropometricRecord> & { id: number }): 
   return {
     athlete_id: 1,
     evaluation_date: "2026-01-15",
-    mesocycle: null,
     weight_kg: 46.0,
     standing_height_cm: 157.0,
     arm_span_cm: null,
@@ -49,7 +48,7 @@ const record2 = makeRecord({
   standing_height_cm: 157.0,
   maturity_offset: -0.3,
   maturation_status: MaturationStatus.CircaPHV,
-  mesocycle: 2,
+  arm_span_cm: 158.0,
 });
 
 const record3 = makeRecord({
@@ -126,42 +125,51 @@ describe("AnthropometryHistory", () => {
 
     it("debería formatear la fecha como DD/MM/YYYY", () => {
       render(<AnthropometryHistory records={[record1]} isLoading={false} />);
-      // record1.evaluation_date = "2025-06-01" → "01/06/2025"
-      expect(screen.getByText("01/06/2025")).toBeInTheDocument();
+      // record1.evaluation_date = "2025-06-01" → "01/06/2025" (aparece en mobile y desktop)
+      const matches = screen.getAllByText("01/06/2025");
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
     it("debería mostrar el peso con unidad 'kg'", () => {
       render(<AnthropometryHistory records={[record1]} isLoading={false} />);
-      expect(screen.getByText("43 kg")).toBeInTheDocument();
+      // Aparece en card mobile y tabla desktop
+      const matches = screen.getAllByText("43 kg");
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
     it("debería mostrar la talla con unidad 'cm'", () => {
       render(<AnthropometryHistory records={[record1]} isLoading={false} />);
-      expect(screen.getByText("152 cm")).toBeInTheDocument();
+      // Aparece en card mobile y tabla desktop
+      const matches = screen.getAllByText("152 cm");
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("debería mostrar el mesociclo cuando existe", () => {
+    it("debería mostrar la envergadura en la columna cuando existe", () => {
       render(<AnthropometryHistory records={[record2]} isLoading={false} />);
-      expect(screen.getByText("2")).toBeInTheDocument();
+      // Aparece en card mobile y tabla desktop
+      const matches = screen.getAllByText("158 cm");
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("debería mostrar '-' cuando mesociclo es null", () => {
+    it("debería mostrar '-' cuando arm_span_cm es null", () => {
       render(<AnthropometryHistory records={[record1]} isLoading={false} />);
-      // Al menos un '-' en la tabla
+      // Al menos un '-' en la tabla desktop
       const dashes = screen.getAllByText("-");
       expect(dashes.length).toBeGreaterThanOrEqual(1);
     });
 
     it("debería formatear maturity_offset negativo sin signo extra", () => {
       render(<AnthropometryHistory records={[record1]} isLoading={false} />);
-      // record1.maturity_offset = -1.5 → "-1.50"
-      expect(screen.getByText("-1.50")).toBeInTheDocument();
+      // record1.maturity_offset = -1.5 → "-1.50" (aparece en card mobile y desktop)
+      const matches = screen.getAllByText("-1.50");
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
     it("debería formatear maturity_offset positivo con signo '+'", () => {
       render(<AnthropometryHistory records={[record3]} isLoading={false} />);
-      // record3.maturity_offset = 1.2 → "+1.20"
-      expect(screen.getByText("+1.20")).toBeInTheDocument();
+      // record3.maturity_offset = 1.2 → "+1.20" (aparece en card mobile y desktop)
+      const matches = screen.getAllByText("+1.20");
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -272,8 +280,8 @@ describe("AnthropometryHistory", () => {
       render(<AnthropometryHistory records={[record3]} isLoading={false} />);
       const rows = screen.getAllByRole("row");
       await user.click(rows[1]);
-      // record3.arm_span_cm = 162.0
-      expect(screen.getByText(/162/)).toBeInTheDocument();
+      // record3.arm_span_cm = 162.0 — aparece en la columna de la tabla y dentro del modal
+      expect(screen.getByText(/Envergadura: 162/)).toBeInTheDocument();
     });
   });
 });

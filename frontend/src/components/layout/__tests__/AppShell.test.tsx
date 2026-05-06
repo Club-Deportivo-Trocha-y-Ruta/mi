@@ -133,5 +133,16 @@ describe("AppShell", () => {
         screen.queryByRole("link", { name: "Mis Atletas" }),
       ).not.toBeInTheDocument();
     });
+
+    it("debería mostrar el NavLink 'Salud IA'", () => {
+      renderShell(UserRole.admin);
+      expect(screen.getByRole("link", { name: "Salud IA" })).toBeInTheDocument();
+    });
+
+    it("'Salud IA' debería apuntar a /admin/ai", () => {
+      renderShell(UserRole.admin);
+      const link = screen.getByRole("link", { name: "Salud IA" });
+      expect(link).toHaveAttribute("href", "/admin/ai");
+    });
   });
 });

@@ -31,7 +31,6 @@ const athleteWithAnthropometry: AthleteDetailOut = {
     id: 1,
     athlete_id: 1,
     evaluation_date: "2026-01-15",
-    mesocycle: 1,
     weight_kg: 45.0,
     standing_height_cm: 155.0,
     arm_span_cm: null,

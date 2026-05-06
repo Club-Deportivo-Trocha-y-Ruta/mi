@@ -149,7 +149,6 @@ async def create_anthropometry(
     record = AnthropometricRecord(
         athlete_id=athlete.id,
         evaluation_date=body.evaluation_date,
-        mesocycle=body.mesocycle,
         weight_kg=body.weight_kg,
         standing_height_cm=body.standing_height_cm,
         arm_span_cm=body.arm_span_cm,

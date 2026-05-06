@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_current_user, get_db
-from app.models.athlete import Athlete
+from app.models.athlete import Athlete, ParentAthlete
 from app.models.parent_invite import ParentInvite
 from app.models.user import User
 from app.schemas.auth import LoginRequest, MeResponse, RefreshRequest, TokenResponse
@@ -166,6 +166,27 @@ async def validate_invite_token(
     is_expired = invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
     is_valid = not invite.used and not is_expired
 
+    # Pre-llenar datos del padre cuando el coach pre-creó al usuario
+    parent_first_name: str | None = None
+    parent_last_name: str | None = None
+    parent_phone: str | None = None
+    parent_relationship: str | None = None
+
+    if invite.parent_user_id is not None:
+        parent_user = await db.get(User, invite.parent_user_id)
+        if parent_user is not None:
+            parent_first_name = parent_user.first_name
+            parent_last_name = parent_user.last_name
+            parent_phone = parent_user.phone
+
+        pa_stmt = select(ParentAthlete).where(
+            ParentAthlete.parent_id == invite.parent_user_id,
+            ParentAthlete.athlete_id == invite.athlete_id,
+        )
+        pa = (await db.execute(pa_stmt)).scalar_one_or_none()
+        if pa is not None:
+            parent_relationship = pa.relationship_type.value
+
     return ParentInviteTokenValidation(
         athlete_id=invite.athlete_id,
         athlete_name=athlete_name,
@@ -174,6 +195,11 @@ async def validate_invite_token(
         valid=is_valid,
         role="parent",
         club_name=club_name,
+        parent_user_id=invite.parent_user_id,
+        first_name=parent_first_name,
+        last_name=parent_last_name,
+        phone=parent_phone,
+        relationship_type=parent_relationship,
     )
 
 

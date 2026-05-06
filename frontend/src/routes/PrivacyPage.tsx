@@ -23,7 +23,7 @@
 
 const POLICY_VERSION = "1.1";
 const POLICY_DATE = "6 de mayo de 2026";
-const CONTACT_EMAIL = "datos@trochyruta.com";
+const CONTACT_EMAIL = "clubtrochayruta@hotmail.com";
 const CLUB_NAME = "Club Deportivo Trocha y Ruta";
 const CITY = "Valle del Cauca, Colombia";
 

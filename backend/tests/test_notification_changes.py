@@ -529,7 +529,6 @@ class TestAnthropometryNotificationLogic:
             id=1,
             athlete_id=1,
             evaluation_date=date(2026, 4, 15),
-            mesocycle=None,
             weight_kg=45.0,
             standing_height_cm=155.0,
             arm_span_cm=None,

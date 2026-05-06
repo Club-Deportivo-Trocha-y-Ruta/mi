@@ -180,6 +180,9 @@ export function ParentDetailPage() {
               key={relation.athlete_id}
               athleteId={relation.athlete_id}
               athleteName={relation.athlete_name}
+              parentUserId={parentId}
+              relationshipType={relation.relationship}
+              defaultEmail={parent?.email ?? ""}
             />
           ))}
         </div>

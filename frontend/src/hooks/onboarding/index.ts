@@ -35,6 +35,12 @@ export interface InviteTokenData {
   club_name: string;
   role: UserRole | string;
   expires_at: string;
+  /** Pre-fill cuando el coach pre-creó al padre antes de invitar. */
+  parent_user_id?: number | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+  relationship_type?: FamilyRelationship | null;
 }
 
 /**

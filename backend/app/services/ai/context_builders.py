@@ -39,7 +39,7 @@ ATHLETE_CONTEXT_ALLOWED_KEYS: frozenset[str] = frozenset(
         "evaluation_age_decimal",
         "trend",              # dict con deltas de últimas mediciones
         "training_implications",
-        "mesocycle",
+        "arm_span_cm",
     }
 )
 
@@ -134,7 +134,6 @@ class AthleteAIContextBuilder:
                     "evaluation_age_decimal": compute_age_decimal(
                         athlete.birth_date, latest_record.evaluation_date
                     ),
-                    "mesocycle": latest_record.mesocycle,
                     "training_implications": latest_record.training_implications,
                 }
             )

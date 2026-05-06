@@ -16,7 +16,7 @@ from app.dependencies import (
     require_role,
 )
 from app.models.anthropometry import AnthropometricRecord
-from app.models.athlete import Athlete, ParentAthlete
+from app.models.athlete import Athlete, FamilyRelationship, ParentAthlete
 from app.models.club import ClubMember, ClubRole
 from app.models.parent_invite import ParentInvite
 from app.models.user import User, UserRole
@@ -253,29 +253,58 @@ async def generate_invite(
                 detail="El atleta no pertenece a ninguno de tus clubes",
             )
 
-    # Si el email ya corresponde a un padre registrado y vinculado al atleta,
-    # rechazar antes de generar otra invitación huérfana (consume_invite
-    # también lo bloquearía con 409, pero el coach lo descubriría hasta que el
-    # padre intente registrarse).
-    existing_link_stmt = (
-        select(User.id)
-        .join(ParentAthlete, ParentAthlete.parent_id == User.id)
-        .where(
-            User.email == body.email,
+    # Resolver parent_user_id: si el body lo provee, usar ese. Si no, intentar
+    # auto-detectar buscando un padre ya vinculado al atleta cuyo email coincida
+    # (caso típico: el coach pre-creó al padre con email NULL pero registró el
+    # vínculo, o creó al padre con email igual al de la invitación).
+    parent_user_id = body.parent_user_id
+
+    if parent_user_id is None:
+        link_stmt = (
+            select(ParentAthlete)
+            .join(User, User.id == ParentAthlete.parent_id)
+            .where(
+                ParentAthlete.athlete_id == body.athlete_id,
+                User.email == body.email,
+            )
+        )
+        existing_link = (await db.execute(link_stmt)).scalar_one_or_none()
+        if existing_link is not None:
+            # Bloquear: el padre ya tiene cuenta activa con email y vínculo.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Este correo ya está vinculado al atleta como padre/acudiente",
+            )
+
+    # Si se pasó parent_user_id (o existen vínculos sin email), validar que exista
+    # un ParentAthlete entre ese usuario y el atleta. Actualizar relationship_type
+    # si el body lo provee y difiere del registrado.
+    if parent_user_id is not None:
+        pa_stmt = select(ParentAthlete).where(
+            ParentAthlete.parent_id == parent_user_id,
             ParentAthlete.athlete_id == body.athlete_id,
         )
-    )
-    if (await db.execute(existing_link_stmt)).scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Este correo ya está vinculado al atleta como padre/acudiente",
-        )
+        pa_existing = (await db.execute(pa_stmt)).scalar_one_or_none()
+        if pa_existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No existe vínculo entre el padre indicado y este atleta",
+            )
+        if body.relationship_type is not None:
+            try:
+                desired_rel = FamilyRelationship(body.relationship_type)
+            except ValueError:
+                desired_rel = FamilyRelationship.acudiente
+            if pa_existing.relationship_type != desired_rel:
+                pa_existing.relationship_type = desired_rel
+                await db.flush()
 
     invite = await create_invite(
         athlete_id=body.athlete_id,
         email=body.email,
         created_by_user_id=current_user.id,
         db=db,
+        parent_user_id=parent_user_id,
     )
 
     # Enviar email de invitación en background

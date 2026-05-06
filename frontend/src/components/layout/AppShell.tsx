@@ -21,6 +21,7 @@ export function AppShell({ children }: AppShellProps) {
   const logout = useAuthStore((state) => state.logout);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const isAdmin = user?.role === UserRole.admin;
   const isCoach = user?.role === UserRole.coach;
   const isParent = user?.role === UserRole.parent;
 
@@ -60,6 +61,15 @@ export function AppShell({ children }: AppShellProps) {
           onClick={() => setSidebarOpen(false)}
         >
           Mis Atletas
+        </NavLink>
+      )}
+      {isAdmin && (
+        <NavLink
+          to="/admin/ai"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Salud IA
         </NavLink>
       )}
     </nav>
@@ -102,7 +112,7 @@ export function AppShell({ children }: AppShellProps) {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Header */}
         <header
-          className="flex items-center justify-between bg-white px-4 py-3 md:px-6"
+          className="sticky top-0 z-50 flex items-center justify-between bg-white px-4 py-3 md:px-6"
           style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 1px 0px 0px" }}
         >
           {/* Left: hamburger (mobile) + user name */}
@@ -113,7 +123,7 @@ export function AppShell({ children }: AppShellProps) {
               aria-label="Abrir menú"
               aria-expanded={sidebarOpen}
               onClick={() => setSidebarOpen(true)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-charcoal transition-colors hover:bg-light-gray md:hidden"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-charcoal transition-colors hover:bg-light-gray md:hidden"
             >
               <svg
                 width="18"

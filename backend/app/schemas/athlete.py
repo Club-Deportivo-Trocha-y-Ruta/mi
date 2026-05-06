@@ -72,7 +72,7 @@ class AthleteListOut(BaseModel):
 
 
 class AnthropometryParentView(BaseModel):
-    """Vista reducida de antropometría para padres — sin notas del coach ni mesociclo."""
+    """Vista reducida de antropometría para padres — sin notas del coach."""
 
     id: int
     athlete_id: int
@@ -80,6 +80,7 @@ class AnthropometryParentView(BaseModel):
     weight_kg: float
     standing_height_cm: float
     sitting_height_cm: float
+    arm_span_cm: float | None = None
     maturation_status: MaturationStatus
     age_at_phv: float
     maturity_offset: float
@@ -88,7 +89,7 @@ class AnthropometryParentView(BaseModel):
     height_percentile: float | None = None
     bmi: float | None = None
     growth_percentiles: GrowthPercentiles | None = None
-    # Excluidos: notes, training_implications, evaluated_by, mesocycle, arm_span_cm
+    # Excluidos: notes, training_implications, evaluated_by
 
     model_config = {"from_attributes": True}
 

@@ -49,6 +49,17 @@ export interface MyAthleteOut {
 export interface ParentInviteCreate {
   athlete_id: number;
   email: string;
+  /**
+   * Si el coach pre-creó al padre antes de invitar, su user.id va aquí para
+   * que el backend ate la invitación a ese registro y el onboarding actualice
+   * en lugar de duplicar.
+   */
+  parent_user_id?: number | null;
+  /**
+   * Tipo de parentesco que el coach asoció al crear el vínculo. Si difiere
+   * del actual en parent_athlete, el backend lo actualiza al generar el invite.
+   */
+  relationship_type?: FamilyRelationship | null;
 }
 
 export interface ParentInviteOut {
@@ -74,6 +85,13 @@ export interface ParentInviteTokenValidation {
   club_name?: string;
   /** Rol del usuario invitado (ej: "parent"). Presente en el wizard de onboarding. */
   role?: string;
+  /** ID del usuario padre pre-creado por el coach (None si flujo legacy). */
+  parent_user_id?: number | null;
+  /** Datos pre-cargados por el coach para pre-llenar el wizard. */
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+  relationship_type?: FamilyRelationship | null;
 }
 
 /**

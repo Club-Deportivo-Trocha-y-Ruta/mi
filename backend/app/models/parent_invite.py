@@ -29,6 +29,9 @@ class ParentInvite(Base):
     used_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
+    parent_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
@@ -48,4 +51,9 @@ class ParentInvite(Base):
     used_by_user: Mapped[User | None] = relationship(
         "User",
         foreign_keys="[ParentInvite.used_by]",
+    )
+    # Usuario padre pre-creado por el coach al que se debe vincular la invitación
+    parent_user: Mapped[User | None] = relationship(
+        "User",
+        foreign_keys="[ParentInvite.parent_user_id]",
     )

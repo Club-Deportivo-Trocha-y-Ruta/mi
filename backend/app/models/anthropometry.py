@@ -12,7 +12,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Numeric,
-    SmallInteger,
     Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -53,7 +52,6 @@ class AnthropometricRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"))
     evaluation_date: Mapped[date] = mapped_column(Date)
-    mesocycle: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     weight_kg: Mapped[Decimal] = mapped_column(Numeric(5, 2))
     standing_height_cm: Mapped[Decimal] = mapped_column(Numeric(5, 1))
     arm_span_cm: Mapped[Decimal | None] = mapped_column(Numeric(5, 1), nullable=True)

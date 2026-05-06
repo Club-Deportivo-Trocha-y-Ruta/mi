@@ -26,6 +26,14 @@ class ParentalConsentData(BaseModel):
 class ParentInviteCreate(BaseModel):
     athlete_id: int
     email: str
+    # Si se provee, la invitación se ata a este usuario padre pre-existente y
+    # consume_invite hará UPDATE en lugar de INSERT (evita duplicados cuando el
+    # coach crea el padre antes de enviar la invitación).
+    parent_user_id: int | None = None
+    # Tipo de parentesco que el coach asoció al crear el vínculo. Si se provee
+    # y difiere del actual en parent_athlete, se actualiza al generar la
+    # invitación. El padre podrá modificarlo en el wizard.
+    relationship_type: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -33,6 +41,18 @@ class ParentInviteCreate(BaseModel):
         if not v or not v.strip():
             raise ValueError("El email no puede estar vacío")
         return v.strip().lower()
+
+    @field_validator("relationship_type")
+    @classmethod
+    def relationship_type_valido(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        normalizado = v.strip().lower()
+        if normalizado not in _RELATIONSHIP_TYPES_VALIDOS:
+            raise ValueError(
+                f"El tipo de parentesco debe ser uno de: {', '.join(sorted(_RELATIONSHIP_TYPES_VALIDOS))}"
+            )
+        return normalizado
 
 
 class ParentInviteTokenValidation(BaseModel):
@@ -45,6 +65,12 @@ class ParentInviteTokenValidation(BaseModel):
     valid: bool
     role: str = "parent"
     club_name: str = ""
+    # Pre-llenan el wizard cuando el coach ya creó al padre con datos previos
+    parent_user_id: int | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    phone: str | None = None
+    relationship_type: str | None = None
 
 
 class ParentRegisterRequest(BaseModel):

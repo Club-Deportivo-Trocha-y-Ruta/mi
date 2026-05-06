@@ -8,7 +8,6 @@ from app.models.anthropometry import MaturationStatus
 
 class AnthropometryCreate(BaseModel):
     evaluation_date: date
-    mesocycle: int | None = None
     weight_kg: Decimal
     standing_height_cm: Decimal
     arm_span_cm: Decimal | None = None
@@ -49,7 +48,6 @@ class AnthropometryOut(BaseModel):
     id: int
     athlete_id: int
     evaluation_date: date
-    mesocycle: int | None
     weight_kg: float
     standing_height_cm: float
     arm_span_cm: float | None

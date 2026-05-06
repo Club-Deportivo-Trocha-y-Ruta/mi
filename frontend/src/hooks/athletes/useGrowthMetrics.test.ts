@@ -31,7 +31,6 @@ const BASE_RECORD: AnthropometricRecord = {
   id: 1,
   athlete_id: 10,
   evaluation_date: "2026-01-15",
-  mesocycle: 1,
   weight_kg: 35.0,
   standing_height_cm: 140.0,
   arm_span_cm: null,

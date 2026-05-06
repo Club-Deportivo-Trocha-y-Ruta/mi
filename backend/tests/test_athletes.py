@@ -203,12 +203,11 @@ class TestCreateAnthropometry:
             f"/api/athletes/{athlete_id}/anthropometry",
             json={
                 "evaluation_date": "2026-04-14",
-                "mesocycle": 3,
                 "weight_kg": "45.5",
                 "standing_height_cm": "155.0",
                 "arm_span_cm": "157.0",
                 "sitting_height_cm": "73.0",
-                "notes": "Primera evaluación del mesociclo 3",
+                "notes": "Primera evaluación del cuatrimestre",
             },
             headers=headers,
         )

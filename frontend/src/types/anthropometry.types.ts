@@ -2,7 +2,6 @@ import type { MaturationStatus } from "@/types/enums";
 
 export interface AnthropometryCreate {
   evaluation_date: string;
-  mesocycle?: number | null;
   weight_kg: number;
   standing_height_cm: number;
   arm_span_cm?: number | null;
@@ -26,7 +25,6 @@ export interface AnthropometricRecord {
   id: number;
   athlete_id: number;
   evaluation_date: string;
-  mesocycle: number | null;
   weight_kg: number;
   standing_height_cm: number;
   arm_span_cm: number | null;
