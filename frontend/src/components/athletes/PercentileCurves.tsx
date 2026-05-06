@@ -76,6 +76,41 @@ const INDICATOR_UNITS: Record<GrowthIndicator, string> = {
   weight_for_age: " kg",
 };
 
+// Notas pie de gráfica por indicador. Aclaran el significado clínico de la línea
+// vertical de maduración para evitar lecturas erróneas (p. ej. interpretar subida
+// de IMC peri-PHV como adiposidad cuando refleja masa magra).
+const INDICATOR_PHV_NOTES: Record<GrowthIndicator, string> = {
+  height_for_age: "Línea PHV: edad estimada del pico de velocidad de talla (Mirwald).",
+  bmi_for_age:
+    "Subida del IMC alrededor del PHV refleja aumento de masa magra, no adiposidad.",
+  weight_for_age:
+    "Pico de velocidad de peso (PWV) coincide con PHV en hombres y se retrasa ~6 meses en mujeres.",
+};
+
+interface MaturationMarker {
+  ageMonths: number;
+  label: string;
+}
+
+// Dada la edad PHV en meses, indicador y sexo, calcula la línea vertical apropiada:
+// — Talla / IMC: línea en PHV.
+// — Peso ♂: PWV coincide con PHV → línea en PHV con etiqueta "PHV/PWV".
+// — Peso ♀: PWV ~6 meses post-PHV → línea desplazada con etiqueta "PWV".
+function getMaturationMarker(
+  indicator: GrowthIndicator,
+  sex: "M" | "F",
+  phvAgeMonths: number | undefined,
+): MaturationMarker | null {
+  if (phvAgeMonths === undefined) return null;
+  if (indicator === "weight_for_age") {
+    if (sex === "F") {
+      return { ageMonths: phvAgeMonths + 6, label: "PWV" };
+    }
+    return { ageMonths: phvAgeMonths, label: "PHV/PWV" };
+  }
+  return { ageMonths: phvAgeMonths, label: "PHV" };
+}
+
 function getReferenceData(sex: "M" | "F", indicator: GrowthIndicator): ReferenceRow[] {
   const indicatorData = growthData.indicators[indicator] as Record<string, ReferenceRow[]>;
   return indicatorData[sex] ?? [];
@@ -316,6 +351,8 @@ export function PercentileCurves({
   const chartData = buildChartData(referenceRows, records, birthDate, indicator);
   const unit = INDICATOR_UNITS[indicator];
   const yLabel = INDICATOR_LABELS[indicator];
+  const marker = getMaturationMarker(indicator, sex, phvAgeMonths);
+  const phvNote = INDICATOR_PHV_NOTES[indicator];
 
   return (
     <div>
@@ -428,15 +465,15 @@ export function PercentileCurves({
             name="Atleta"
           />
 
-          {/* Marcador vertical PHV */}
-          {phvAgeMonths !== undefined && (
+          {/* Marcador vertical de maduración (PHV o PWV según indicador y sexo) */}
+          {marker !== null && (
             <ReferenceLine
-              x={phvAgeMonths}
+              x={marker.ageMonths}
               stroke="#898989"
               strokeDasharray="5 3"
               strokeWidth={1.5}
               label={{
-                value: "PHV",
+                value: marker.label,
                 position: "top",
                 fontSize: 11,
                 fill: "#898989",
@@ -445,6 +482,9 @@ export function PercentileCurves({
           )}
         </ComposedChart>
       </ResponsiveContainer>
+      {marker !== null && (
+        <p className="mt-2 text-[11px] text-mid-gray italic">{phvNote}</p>
+      )}
     </div>
   );
 }
