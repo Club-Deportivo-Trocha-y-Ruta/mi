@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "react-router-dom";
@@ -21,8 +21,6 @@ export function LoginPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [showSlowBanner, setShowSlowBanner] = useState(false);
-  const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -31,18 +29,6 @@ export function LoginPage() {
       password: "",
     },
   });
-
-  useEffect(() => {
-    if (isLoading) {
-      slowTimerRef.current = setTimeout(() => setShowSlowBanner(true), 3000);
-    } else {
-      if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
-      setShowSlowBanner(false);
-    }
-    return () => {
-      if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
-    };
-  }, [isLoading]);
 
   const onSubmit = async (values: LoginForm) => {
     setServerError(null);
@@ -152,13 +138,6 @@ export function LoginPage() {
           >
             {isLoading ? "Ingresando..." : "Ingresar"}
           </button>
-
-          {showSlowBanner && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Despertando el servidor... esto puede tardar hasta 1 minuto en la
-              primera carga del día.
-            </p>
-          )}
         </form>
       </div>
     </div>
