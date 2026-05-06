@@ -336,6 +336,10 @@ async def delete_user(
     await db.execute(
         update(ParentInvite).where(ParentInvite.used_by == user_id).values(used_by=None)
     )
+    # parent_user_id apunta al padre pre-creado que aún no aceptó la invitación
+    await db.execute(
+        update(ParentInvite).where(ParentInvite.parent_user_id == user_id).values(parent_user_id=None)
+    )
     await db.execute(
         update(User).where(User.created_by == user_id).values(created_by=None)
     )
