@@ -21,7 +21,7 @@ import { FamilyRelationship } from "@/types/enums";
 // Constantes
 // ---------------------------------------------------------------------------
 
-export const PRIVACY_POLICY_VERSION = "v1.0";
+export const PRIVACY_POLICY_VERSION = "v1.1";
 
 /**
  * Regex de teléfono colombiano.
@@ -96,28 +96,22 @@ export const parentProfileSchema = z.object({
 // Paso 3 — Consentimiento parental
 // ---------------------------------------------------------------------------
 
+/**
+ * Política v1.1 (2026-05-06): solo se solicitan los dos consentimientos
+ * correspondientes a tratamientos activos en Fase 1 — datos básicos del
+ * atleta y mediciones antropométricas. Cuando se implemente seguimiento
+ * de entrenamiento o integración con terceros se bumpeará la política y
+ * se solicitará un consentimiento nuevo (Ley 1581/2012, Art. 4 finalidad).
+ */
 export const consentSchema = z.object({
-  /**
-   * Consentimientos obligatorios: deben ser `true` explícitamente.
-   * z.literal(true) rechaza `false`, `undefined` y cualquier otro valor.
-   */
   accept_data_collection: z.literal(true, {
     error:
-      "Debes aceptar el tratamiento de datos personales para continuar",
-  }),
-  accept_training_tracking: z.literal(true, {
-    error:
-      "Debes aceptar el seguimiento del entrenamiento para continuar",
+      "Debes aceptar el tratamiento de datos básicos del atleta para continuar",
   }),
   accept_anthropometry: z.literal(true, {
     error:
       "Debes aceptar el registro de medidas antropométricas para continuar",
   }),
-  /**
-   * Consentimiento opcional: compartir datos con terceros (Intervals.icu,
-   * Strava, etc.). Por defecto `false`; el padre puede activarlo.
-   */
-  accept_third_party: z.boolean().default(false),
 });
 
 // ---------------------------------------------------------------------------

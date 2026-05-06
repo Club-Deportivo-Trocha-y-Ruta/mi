@@ -11,10 +11,12 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
 import { GrowthCharts } from "@/components/athletes/GrowthCharts";
 import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
+import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { cn } from "@/lib/utils";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
@@ -355,6 +357,12 @@ export function MyAthleteDetailPage() {
               ageDecimal={athlete.age_decimal ?? undefined}
             />
           </div>
+          <PHVExplanationCard
+            athleteId={athleteId}
+            hasRecords={records.length > 0}
+            readOnly
+          />
+          <ResearchReferences />
         </div>
       )}
     </section>

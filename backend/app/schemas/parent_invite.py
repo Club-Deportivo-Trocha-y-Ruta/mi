@@ -6,13 +6,21 @@ _RELATIONSHIP_TYPES_VALIDOS = {"padre", "madre", "acudiente"}
 
 
 class ParentalConsentData(BaseModel):
-    """Datos de consentimiento parental aceptados durante onboarding."""
+    """Datos de consentimiento parental aceptados durante onboarding.
+
+    Política v1.1 (2026-05-06): solo se solicitan los dos consentimientos
+    correspondientes a tratamientos efectivamente implementados — datos
+    básicos del atleta y antropometría. Los campos `accept_training_tracking`
+    y `accept_third_party` quedan como opcionales por compatibilidad con
+    clientes antiguos pero el servicio fuerza su persistencia a False
+    (Ley 1581/2012, principio de finalidad y consentimiento informado).
+    """
 
     accept_data_collection: bool
-    accept_training_tracking: bool
     accept_anthropometry: bool
+    accept_training_tracking: bool = False
     accept_third_party: bool = False
-    privacy_policy_version: str = "v1.0"
+    privacy_policy_version: str = "v1.1"
 
 
 class ParentInviteCreate(BaseModel):
@@ -51,7 +59,6 @@ class ParentRegisterRequest(BaseModel):
     relationship_type: str = "acudiente"
     consent: ParentalConsentData = ParentalConsentData(
         accept_data_collection=False,
-        accept_training_tracking=False,
         accept_anthropometry=False,
     )
 

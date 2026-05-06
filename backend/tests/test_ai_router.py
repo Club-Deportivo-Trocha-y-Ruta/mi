@@ -414,11 +414,64 @@ class TestGetPHVExplanationCached:
             "GET cache debe servir aunque AI_ENABLED=false"
         )
 
-    async def test_parent_forbidden(self, http_client, monkeypatch):
+    async def test_parent_cache_hit_returns_200(self, http_client, monkeypatch):
+        """Padre con ownership válido + caché existente → 200 con payload."""
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        # verify_athlete_access ya validó el vínculo; aquí simulamos ownership OK.
+        app.dependency_overrides[get_current_user] = _parent_user
+        app.dependency_overrides[verify_athlete_access] = _athlete
+        session = _QueueSession([
+            _ScalarResult(scalar=_record()),
+            _ScalarResult(scalar=_cached_explanation(text="texto para padres")),
+        ])
+        app.dependency_overrides[get_db] = lambda: session
+
+        resp = await http_client.get("/api/ai/athletes/42/phv-explanation")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["text"] == "texto para padres"
+        assert body["provider"] == "anthropic"
+        assert body["model"] == "cached-model"
+        assert body["age_group"] == "10-12"
+        assert body["maturation_status"] == "Pre-PHV"
+        # El schema no expone generated_by_user_id — no debe filtrarse.
+        assert "generated_by_user_id" not in body
+
+    async def test_parent_no_cache_returns_204(self, http_client, monkeypatch):
+        """Padre con ownership válido + sin caché → 204 (sin contenido)."""
         monkeypatch.setattr(settings, "ai_enabled", True)
         app.dependency_overrides[get_current_user] = _parent_user
         app.dependency_overrides[verify_athlete_access] = _athlete
-        # No debería llegar a tocar la DB, pero proveemos session por si acaso.
+        session = _QueueSession([
+            _ScalarResult(scalar=_record()),   # latest_record existe
+            _ScalarResult(scalar=None),        # pero no hay caché
+        ])
+        app.dependency_overrides[get_db] = lambda: session
+
+        resp = await http_client.get("/api/ai/athletes/42/phv-explanation")
+        assert resp.status_code == 204
+        assert resp.content == b""
+
+    async def test_parent_without_ownership_returns_403(
+        self, http_client, monkeypatch
+    ):
+        """Padre sin ownership (atleta de otra familia) → 403.
+
+        El guard lo aplica `verify_athlete_access` — este test es regresión
+        para asegurar que remover `_forbid_parents` del GET no eliminó la
+        barrera real de ownership.
+        """
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        app.dependency_overrides[get_current_user] = _parent_user
+
+        def _deny_access():
+            from fastapi import HTTPException, status
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tiene acceso a este atleta.",
+            )
+
+        app.dependency_overrides[verify_athlete_access] = _deny_access
         app.dependency_overrides[get_db] = lambda: _QueueSession([])
 
         resp = await http_client.get("/api/ai/athletes/42/phv-explanation")

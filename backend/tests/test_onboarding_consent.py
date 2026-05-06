@@ -18,20 +18,20 @@ import pytest
 # Constantes de consentimiento de prueba
 # ---------------------------------------------------------------------------
 
+# Política v1.1 (2026-05-06): solo se solicitan dos consentimientos activos —
+# datos básicos del atleta y antropometría. Los campos legacy
+# (accept_training_tracking, accept_third_party) se aceptan por
+# compatibilidad pero el servicio los persiste como False.
 _CONSENT_COMPLETO = {
     "accept_data_collection": True,
-    "accept_training_tracking": True,
     "accept_anthropometry": True,
-    "accept_third_party": False,
-    "privacy_policy_version": "v1.0",
+    "privacy_policy_version": "v1.1",
 }
 
 _CONSENT_MINIMO = {
     "accept_data_collection": True,
-    "accept_training_tracking": False,
     "accept_anthropometry": False,
-    "accept_third_party": False,
-    "privacy_policy_version": "v1.0",
+    "privacy_policy_version": "v1.1",
 }
 
 
@@ -205,7 +205,7 @@ class TestConsumeInviteConConsent:
         por lo que crea el registro ParentalConsent con todos los flags en False y
         setea parental_consent_obtained=True (el padre aceptó el formulario explícitamente,
         aunque rechazó todos los usos opcionales).
-        El frontend debe validar los 3 accepts obligatorios antes de hacer submit."""
+        El frontend debe validar los accepts obligatorios antes de hacer submit."""
         headers, athlete_id, token, _ = await _full_setup(client)
 
         resp = await client.post(
@@ -217,10 +217,8 @@ class TestConsumeInviteConConsent:
                 "password": "Secure2026!",
                 "consent": {
                     "accept_data_collection": False,
-                    "accept_training_tracking": False,
                     "accept_anthropometry": False,
-                    "accept_third_party": False,
-                    "privacy_policy_version": "v1.0",
+                    "privacy_policy_version": "v1.1",
                 },
             },
         )
@@ -234,46 +232,44 @@ class TestConsumeInviteConConsent:
         assert atleta["parental_consent_obtained"] is True
         assert atleta["parental_consent_date"] is not None
 
-    async def test_crea_registro_parental_consent_con_valores_correctos(self, client):
-        """Los campos booleanos del consent se persisten con los valores exactos del payload.
+    async def test_consent_legacy_fields_se_persisten_como_false(self, client):
+        """Política v1.1: aunque el cliente envíe accept_training_tracking=True o
+        accept_third_party=True, el servicio fuerza ambos campos a False en la
+        base de datos. Esto evita registrar consentimiento por finalidades aún no
+        implementadas (Ley 1581/2012, principio de finalidad).
 
-        Verifica que data_collection/training_tracking/anthropometry/third_party_sharing
-        se guardaron correctamente. Se comprueba indirectamente: accept_third_party=True
-        en el payload → parental_consent_obtained=True + el registro existe (comprobado
-        vía GET /athletes). El test critico es que third_party=True se mapea distinto a False.
+        Verificación indirecta: el endpoint acepta el payload (201) y la
+        creación es atómica — el padre queda vinculado y el atleta tiene
+        parental_consent_obtained=True.
         """
         headers, athlete_id, token, _ = await _full_setup(client)
 
-        # Registrar con third_party=True (valor no-default) para distinguir entre
-        # "se guardó el objeto" vs "se guardó con los valores correctos"
-        consent_con_terceros = {
+        consent_con_legacy = {
             "accept_data_collection": True,
-            "accept_training_tracking": True,
             "accept_anthropometry": True,
-            "accept_third_party": True,  # ← valor distinto al default False
-            "privacy_policy_version": "v1.0",
+            "accept_training_tracking": True,  # campo legacy → forzado a False
+            "accept_third_party": True,  # campo legacy → forzado a False
+            "privacy_policy_version": "v1.1",
         }
 
         resp = await client.post(
             "/api/auth/parent-register",
             json={
                 "token": token,
-                "first_name": "Booleana",
-                "last_name": "Prueba",
+                "first_name": "Legacy",
+                "last_name": "Cliente",
                 "password": "Secure2026!",
                 "relationship_type": "madre",
-                "consent": consent_con_terceros,
+                "consent": consent_con_legacy,
             },
         )
         assert resp.status_code == 201
         parent_id = resp.json()["id"]
 
-        # Verificar que el atleta tiene consent obtenido
         atleta = (await client.get(f"/api/athletes/{athlete_id}", headers=headers)).json()
         assert atleta["parental_consent_obtained"] is True
         assert atleta["parental_consent_date"] is not None
 
-        # Verificar que el padre fue vinculado correctamente (prueba indirecta de atomicidad)
         vinculaciones = (await client.get(
             f"/api/parent-athletes?athlete_id={athlete_id}", headers=headers
         )).json()["items"]

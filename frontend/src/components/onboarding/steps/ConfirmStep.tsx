@@ -28,17 +28,12 @@ const RELATIONSHIP_LABELS: Record<FamilyRelationship, string> = {
 const CONSENT_LABELS: Record<
   keyof Pick<
     OnboardingFormData,
-    | "accept_data_collection"
-    | "accept_training_tracking"
-    | "accept_anthropometry"
-    | "accept_third_party"
+    "accept_data_collection" | "accept_anthropometry"
   >,
   string
 > = {
-  accept_data_collection: "Datos personales del atleta",
-  accept_training_tracking: "Seguimiento deportivo",
+  accept_data_collection: "Datos básicos del atleta",
   accept_anthropometry: "Mediciones antropométricas (PHV)",
-  accept_third_party: "Análisis con herramientas externas",
 };
 
 // ---------------------------------------------------------------------------

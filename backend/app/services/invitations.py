@@ -179,6 +179,10 @@ async def consume_invite(
     if consent is not None:
         now_utc = datetime.now(timezone.utc)
 
+        # Política v1.1: tracking y terceros no son finalidades activas; se
+        # persisten siempre como False aunque el cliente envíe True. Cuando se
+        # implementen estas funciones se bumpeará la política y se solicitará
+        # un consentimiento nuevo (Ley 1581/2012, principio de finalidad).
         parental_consent = ParentalConsent(
             parent_user_id=new_user.id,
             athlete_id=invite.athlete_id,
@@ -187,9 +191,9 @@ async def consume_invite(
             consent_method="digital_wizard",
             ip_address=ip_address,
             data_collection=consent.accept_data_collection,
-            training_tracking=consent.accept_training_tracking,
+            training_tracking=False,
             anthropometry=consent.accept_anthropometry,
-            third_party_sharing=consent.accept_third_party,
+            third_party_sharing=False,
         )
         db.add(parental_consent)
 

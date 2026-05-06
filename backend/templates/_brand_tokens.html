@@ -1,0 +1,28 @@
+{#
+  _brand_tokens.html — Fuente única de tokens de marca del Club Deportivo Trocha y Ruta.
+  Origen: page/src/styles/global.css
+
+  Uso (en cualquier template que necesite los tokens):
+    {% include "_brand_tokens.html" %}
+    Luego acceder como: {{ B.primary }}, {{ B.accent }}, etc.
+
+  Restricción email: los clientes de correo no soportan CSS custom properties (var(--...))
+  ni @font-face woff2. Usar siempre los hex de B.* como valores inline o en bloques <style>.
+
+  Restricción PDF (WeasyPrint): sí soporta @font-face woff2. Las fonts están copiadas en
+  backend/templates/static/fonts/ (Inter Variable y Plus Jakarta Sans Variable).
+  Con base_url apuntando al directorio templates, la ruta relativa funciona sin file://.
+#}
+{% set B = namespace(
+  primary        = "#20b7c9",
+  primary_dark   = "#1a96a4",
+  primary_light  = "#4dc9d7",
+  accent         = "#8be000",
+  accent_dark    = "#6fb300",
+  accent_light   = "#a3e63d",
+  surface        = "#ffffff",
+  surface_dark   = "#2f2f2f",
+  surface_muted  = "#d8d8d8",
+  text_primary   = "#2f2f2f",
+  text_secondary = "#5a5a5a"
+) %}

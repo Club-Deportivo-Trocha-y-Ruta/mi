@@ -1,9 +1,31 @@
+{% include "_brand_tokens.html" %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <title>{% block title %}Club Deportivo Trocha y Ruta{% endblock %}</title>
   <style>
+    /* -----------------------------------------------------------------------
+       Fuentes de marca — WeasyPrint soporta @font-face con woff2.
+       Las fonts están copiadas en backend/templates/static/fonts/.
+       WeasyPrint recibe la ruta absoluta al directorio de templates via
+       base_url al invocar HTML.write_pdf(). Con ese base_url configurado,
+       la ruta relativa "../static/fonts/..." funciona sin file://.
+       Si el generador no configura base_url, usar ruta absoluta file:///...
+    ----------------------------------------------------------------------- */
+    @font-face {
+      font-family: 'Inter Variable';
+      src: url('../static/fonts/InterVariable.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Plus Jakarta Sans';
+      src: url('../static/fonts/PlusJakartaSans-Variable.woff2') format('woff2');
+      font-weight: 200 800;
+      font-style: normal;
+    }
+
     /* -----------------------------------------------------------------------
        CSS Paged Media — WeasyPrint
     ----------------------------------------------------------------------- */
@@ -13,34 +35,36 @@
 
       @top-left {
         content: "Club Deportivo Trocha y Ruta";
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: 'Inter Variable', Arial, Helvetica, sans-serif;
         font-size: 9pt;
         color: #ffffff;
-        background-color: #242424;
+        background-color: #2f2f2f;
         padding: 6pt 12pt;
+        border-bottom: 3pt solid #8be000;
       }
 
       @top-right {
         content: "{% block header_right %}Documento oficial{% endblock %}";
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: 'Inter Variable', Arial, Helvetica, sans-serif;
         font-size: 9pt;
         color: #ffffff;
-        background-color: #242424;
+        background-color: #2f2f2f;
         padding: 6pt 12pt;
+        border-bottom: 3pt solid #8be000;
       }
 
       @bottom-left {
         content: "Documento confidencial — datos de menor de edad protegidos.";
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: 'Inter Variable', Arial, Helvetica, sans-serif;
         font-size: 8pt;
-        color: #898989;
+        color: #5a5a5a;
       }
 
       @bottom-right {
         content: "Página " counter(page) " de " counter(pages);
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: 'Inter Variable', Arial, Helvetica, sans-serif;
         font-size: 8pt;
-        color: #898989;
+        color: #5a5a5a;
       }
     }
 
@@ -50,42 +74,45 @@
     * { box-sizing: border-box; }
 
     body {
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: 'Inter Variable', Arial, Helvetica, sans-serif;
       font-size: 10pt;
-      color: #333333;
+      color: #2f2f2f;
       margin: 0;
       padding: 0;
     }
 
     /* Cabecera del documento (visual, dentro del cuerpo) */
     .doc-header {
-      background-color: #242424;
+      background-color: #2f2f2f;
       color: #ffffff;
       padding: 16pt 20pt;
       margin-bottom: 20pt;
+      border-bottom: 5pt solid #8be000;
     }
     .doc-header h1 {
+      font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif;
       margin: 0;
       font-size: 16pt;
-      font-weight: bold;
+      font-weight: 700;
       color: #ffffff;
     }
     .doc-header .doc-subtitle {
       font-size: 9pt;
-      color: #898989;
+      color: #d8d8d8;
       margin-top: 4pt;
     }
 
     /* Sección */
     h2 {
-      color: #242424;
+      font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif;
+      color: #2f2f2f;
       font-size: 12pt;
-      border-bottom: 2pt solid #242424;
+      border-bottom: 2pt solid #20b7c9;
       padding-bottom: 4pt;
       margin: 20pt 0 10pt 0;
     }
     h3 {
-      color: #242424;
+      color: #2f2f2f;
       font-size: 10pt;
       margin: 14pt 0 6pt 0;
     }
@@ -100,7 +127,7 @@
       margin: 10pt 0;
     }
     table.data-table thead tr {
-      background-color: #242424;
+      background-color: #2f2f2f;
       color: #ffffff;
     }
     table.data-table thead th {
@@ -133,7 +160,7 @@
     table.meta-table td:first-child {
       background-color: #f5f5f5;
       font-weight: bold;
-      color: #242424;
+      color: #2f2f2f;
       width: 40%;
     }
 
@@ -152,7 +179,7 @@
 
     /* Caja de observación */
     .obs-box {
-      border-left: 3pt solid #242424;
+      border-left: 3pt solid #20b7c9;
       background-color: #f5f5f5;
       padding: 8pt 12pt;
       margin: 10pt 0;
@@ -166,9 +193,9 @@
     .doc-footer {
       margin-top: 24pt;
       padding-top: 8pt;
-      border-top: 0.5pt solid #e8e8e8;
+      border-top: 2pt solid #20b7c9;
       font-size: 8pt;
-      color: #898989;
+      color: #5a5a5a;
     }
   </style>
 </head>

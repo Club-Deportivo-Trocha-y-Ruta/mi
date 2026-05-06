@@ -15,6 +15,9 @@ interface PHVExplanationCardProps {
   /** Callback opcional para llevar al usuario al formulario de medición
    *  cuando el backend devuelve 422. */
   onMeasurementCTA?: () => void;
+  /** Modo solo lectura para padres: muestra el contenido cacheado pero
+   *  no instancia la mutación ni ofrece acciones de generación/regeneración. */
+  readOnly?: boolean;
   className?: string;
 }
 
@@ -31,15 +34,107 @@ function pendingMessage(elapsedSeconds: number): string {
   return "Generando explicación…";
 }
 
-/** Card que orquesta la generación de explicación PHV con caché backend.
+// ---------------------------------------------------------------------------
+// PHVExplanationReadOnly — Usado cuando readOnly=true (padres).
+// Solo instancia la query GET. No instancia la mutation.
+// ---------------------------------------------------------------------------
+
+/** Vista solo lectura para padres. Muestra el texto si existe en caché, o
+ *  un mensaje pasivo si el entrenador aún no ha generado la explicación. */
+function PHVExplanationReadOnly({
+  athleteId,
+  hasRecords,
+  className,
+}: {
+  athleteId: number;
+  hasRecords: boolean;
+  className?: string;
+}) {
+  const cachedQuery = usePHVExplanationCached(athleteId, hasRecords);
+
+  // Loading de caché
+  if (cachedQuery.isLoading) {
+    return (
+      <section
+        className={cn(
+          "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+          className,
+        )}
+        data-testid="phv-explanation-loading-cache"
+        aria-busy="true"
+      >
+        <h4
+          className="text-sm text-charcoal"
+          style={{
+            fontFamily: "'Cal Sans', system-ui, sans-serif",
+            fontWeight: 600,
+            letterSpacing: "0.2px",
+          }}
+        >
+          Explicación PHV
+        </h4>
+        <p className="text-xs text-mid-gray">Cargando…</p>
+        <div className="space-y-2" aria-hidden="true">
+          <div className="h-3 w-full animate-pulse rounded bg-light-gray" />
+          <div className="h-3 w-5/6 animate-pulse rounded bg-light-gray" />
+          <div className="h-3 w-2/3 animate-pulse rounded bg-light-gray" />
+        </div>
+      </section>
+    );
+  }
+
+  // Con texto cacheado: mostrar contenido sin acciones
+  if (cachedQuery.data) {
+    return (
+      <div className={className} data-testid="phv-explanation-readonly">
+        <AIGeneratedContent data={cachedQuery.data} />
+      </div>
+    );
+  }
+
+  // Sin caché (204 o sin mediciones): mensaje pasivo para el padre
+  return (
+    <section
+      className={cn(
+        "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+        className,
+      )}
+      data-testid="phv-explanation-idle"
+    >
+      <h4
+        className="text-sm text-charcoal"
+        style={{
+          fontFamily: "'Cal Sans', system-ui, sans-serif",
+          fontWeight: 600,
+          letterSpacing: "0.2px",
+        }}
+      >
+        Explicación PHV
+      </h4>
+      <p className="text-xs text-mid-gray">
+        Aún no hay explicación disponible. El entrenador la generará pronto.
+      </p>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PHVExplanationCard — Componente público.
+// Despacha a dos implementaciones según `readOnly`.
+// ---------------------------------------------------------------------------
+
+/** Card que orquesta la visualización y (en modo coach) generación de la
+ *  explicación PHV con caché backend.
  *
- * Cinco estados: loading-cache (GET inicial), pending (POST al LLM con
- * hints de cold-start), success (AIGeneratedContent + Regenerar), error
- * (alerta), idle (botón Generar). El caché vive en backend (MySQL) y se
- * invalida implícitamente cuando se crea una medición nueva (cambia el
- * cache key), o explícitamente desde `useCreateAnthropometry`.
+ * Dos modos:
+ *  - Coach (`readOnly` omitido o `false`): cinco estados completos (loading-
+ *    cache, pending, success, error, idle) con botones Generar / Regenerar /
+ *    Cancelar / Reintentar. Idéntico al comportamiento original.
+ *  - Padre (`readOnly=true`): solo lectura. Instancia únicamente la query
+ *    GET (caché). No instancia la mutation. Muestra el texto si existe, o
+ *    un mensaje pasivo invitando a esperar al entrenador.
  *
- * Diseño:
+ * Diseño (modo coach):
  *  - Mismo handler para "Generar" y "Regenerar" — el backend hace upsert.
  *  - El error de regenerar NO borra el contenido cacheado: el coach sigue
  *    viendo el texto previo + alerta inline de error.
@@ -52,8 +147,48 @@ export function PHVExplanationCard({
   athleteId,
   hasRecords,
   onMeasurementCTA,
+  readOnly = false,
   className,
 }: PHVExplanationCardProps) {
+  // Modo solo lectura: despacha al componente dedicado que no instancia mutation
+  if (readOnly) {
+    return (
+      <PHVExplanationReadOnly
+        athleteId={athleteId}
+        hasRecords={hasRecords}
+        className={className}
+      />
+    );
+  }
+
+  // Modo coach: componente original inalterado
+  return (
+    <PHVExplanationCoach
+      athleteId={athleteId}
+      hasRecords={hasRecords}
+      onMeasurementCTA={onMeasurementCTA}
+      className={className}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PHVExplanationCoach — Lógica completa del coach (original, sin cambios).
+// Extraída a un componente propio para que el conditional dispatch de
+// PHVExplanationCard sea válido en React (hooks no condicionales).
+// ---------------------------------------------------------------------------
+
+function PHVExplanationCoach({
+  athleteId,
+  hasRecords,
+  onMeasurementCTA,
+  className,
+}: {
+  athleteId: number;
+  hasRecords: boolean;
+  onMeasurementCTA?: () => void;
+  className?: string;
+}) {
   const cachedQuery = usePHVExplanationCached(athleteId, hasRecords);
   const mutation = usePHVExplanation(athleteId);
   const abortRef = useRef<AbortController | null>(null);

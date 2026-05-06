@@ -356,4 +356,82 @@ describe("PHVExplanationCard", () => {
       resolveFn(mockResponse);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Modo readOnly — vista de padres
+  // -------------------------------------------------------------------------
+
+  describe("modo readOnly", () => {
+    it("muestra el texto cacheado pero NO el botón Regenerar", async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(cachedResponse);
+
+      render(
+        <PHVExplanationCard athleteId={42} hasRecords={true} readOnly />,
+        { wrapper: withQuery() },
+      );
+
+      // El contenido cacheado debe aparecer
+      expect(
+        await screen.findByText(/Texto cacheado de la última generación/i),
+      ).toBeInTheDocument();
+
+      // NO debe haber botón Regenerar
+      expect(
+        screen.queryByRole("button", { name: /Regenerar/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("muestra mensaje pasivo y NO el botón Generar cuando no hay caché (204)", async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(null);
+
+      render(
+        <PHVExplanationCard athleteId={1} hasRecords={true} readOnly />,
+        { wrapper: withQuery() },
+      );
+
+      // Mensaje pasivo para el padre
+      expect(
+        await screen.findByText(/El entrenador la generará pronto/i),
+      ).toBeInTheDocument();
+
+      // NO debe haber botón Generar
+      expect(
+        screen.queryByRole("button", { name: /Generar explicación/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("no llama a getPHVExplanation (mutation) en ningún momento", async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(cachedResponse);
+
+      render(
+        <PHVExplanationCard athleteId={42} hasRecords={true} readOnly />,
+        { wrapper: withQuery() },
+      );
+
+      // Esperamos a que resuelva el GET
+      await screen.findByText(/Texto cacheado de la última generación/i);
+
+      // La mutation POST no debe haberse invocado en ningún momento
+      expect(aiApi.getPHVExplanation).not.toHaveBeenCalled();
+    });
+
+    it("sin caché y sin records: muestra mensaje pasivo (no bloquea la query)", async () => {
+      // hasRecords=false deshabilita la query GET en el hook
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(null);
+
+      render(
+        <PHVExplanationCard athleteId={1} hasRecords={false} readOnly />,
+        { wrapper: withQuery() },
+      );
+
+      // El idle de readOnly debe aparecer (la query no corre pero el estado
+      // es el mismo: sin contenido → mensaje pasivo)
+      expect(
+        await screen.findByText(/El entrenador la generará pronto/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Generar explicación/i }),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

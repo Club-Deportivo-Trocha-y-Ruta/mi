@@ -73,19 +73,23 @@ vi.mock("@/components/athletes/LinkedParentsCard", () => ({
   LinkedParentsCard: () => <div data-testid="linked-parents-card">LinkedParentsCard</div>,
 }));
 
-// PHVExplanationCard mock con CTA funcional para el test de navegación
+// PHVExplanationCard mock con CTA funcional y soporte de readOnly para tests de padres
 vi.mock("@/components/ai/PHVExplanationCard", () => ({
   PHVExplanationCard: ({
     onMeasurementCTA,
+    readOnly,
   }: {
     athleteId: number;
     hasRecords: boolean;
     onMeasurementCTA?: () => void;
+    readOnly?: boolean;
   }) => (
-    <div data-testid="phv-explanation-card">
-      <button type="button" onClick={onMeasurementCTA}>
-        Agregar medicion
-      </button>
+    <div data-testid="phv-explanation-card" data-readonly={readOnly ?? false}>
+      {!readOnly && (
+        <button type="button" onClick={onMeasurementCTA}>
+          Agregar medicion
+        </button>
+      )}
     </div>
   ),
 }));
@@ -591,5 +595,46 @@ describe("MyAthleteDetailPage — vista padres (coach es AthleteDetailPage)", ()
     expect(
       await screen.findByText(/No se pudo cargar la información del atleta/i),
     ).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Tab Crecimiento — PHVExplanationCard readOnly + ResearchReferences
+  // -------------------------------------------------------------------------
+
+  describe("tab Crecimiento — PHV y referencias para padres", () => {
+    beforeEach(() => {
+      vi.mocked(athletesApi.getAthlete).mockResolvedValue(mockAthleteWithLatest);
+      vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([recordA, recordB]);
+    });
+
+    it("renderiza PHVExplanationCard en modo readOnly al cambiar al tab Crecimiento", async () => {
+      renderParentPage();
+      await act(async () => {
+        await userEvent.click(await screen.findByRole("button", { name: /Crecimiento/i }));
+      });
+      const card = screen.getByTestId("phv-explanation-card");
+      expect(card).toBeInTheDocument();
+      // Confirmar que se pasa readOnly=true al componente
+      expect(card).toHaveAttribute("data-readonly", "true");
+    });
+
+    it("renderiza ResearchReferences al cambiar al tab Crecimiento", async () => {
+      renderParentPage();
+      await act(async () => {
+        await userEvent.click(await screen.findByRole("button", { name: /Crecimiento/i }));
+      });
+      expect(screen.getByTestId("research-references")).toBeInTheDocument();
+    });
+
+    it("NO muestra el botón Generar ni Regenerar en el tab Crecimiento del padre", async () => {
+      renderParentPage();
+      await act(async () => {
+        await userEvent.click(await screen.findByRole("button", { name: /Crecimiento/i }));
+      });
+      // El mock de PHVExplanationCard en modo readOnly no renderiza el botón
+      expect(
+        screen.queryByRole("button", { name: /Agregar medicion/i }),
+      ).not.toBeInTheDocument();
+    });
   });
 });

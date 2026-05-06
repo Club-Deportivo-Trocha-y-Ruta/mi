@@ -84,12 +84,7 @@ export interface OnboardingWizardProps {
 const STEP_FIELDS: Record<string, Array<keyof OnboardingFormData>> = {
   account: ["password", "password_confirm"],
   "parent-profile": ["first_name", "last_name", "phone", "relationship_type"],
-  consent: [
-    "accept_data_collection",
-    "accept_training_tracking",
-    "accept_anthropometry",
-    "accept_third_party",
-  ],
+  consent: ["accept_data_collection", "accept_anthropometry"],
   confirm: [],
 };
 
@@ -163,13 +158,8 @@ export function OnboardingWizard({
   const { mutate, isPending, error: mutationError } = useCompleteOnboarding();
 
   // -- Formulario: validación granular por paso --
-  // Se usa `as any` en el resolver porque zodResolver infiere accept_third_party
-  // como `boolean` (por .default(false)) mientras OnboardingFormData lo tipifica
-  // como `boolean | undefined`. El runtime es correcto; el mismatch es solo de tipos.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const methods = useForm<OnboardingFormData>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(onboardingFormSchema) as any,
+    resolver: zodResolver(onboardingFormSchema),
     defaultValues: { ...store.formData } as Partial<OnboardingFormData>,
     mode: "onTouched",
   });
@@ -222,9 +212,7 @@ export function OnboardingWizard({
       relationship_type: mergedData.relationship_type as FamilyRelationship,
       consent: {
         accept_data_collection: mergedData.accept_data_collection,
-        accept_training_tracking: mergedData.accept_training_tracking,
         accept_anthropometry: mergedData.accept_anthropometry,
-        accept_third_party: mergedData.accept_third_party ?? false,
       },
     };
 

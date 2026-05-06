@@ -94,16 +94,18 @@ async def ai_health(
 async def get_phv_explanation_cached(
     db: AsyncSession = Depends(get_db),
     athlete: Athlete = Depends(verify_athlete_access),
-    current_user: User = Depends(get_current_user),
 ) -> Response:
     """Devuelve la explicación cacheada para la última medición del atleta.
 
     Importante: este endpoint NO chequea `ai_enabled`. La idea es que las
     explicaciones generadas previamente sigan disponibles aunque el LLM
     esté caído ahora.
-    """
-    _forbid_parents(current_user)
 
+    Padres pueden leer el caché de sus atletas — `verify_athlete_access`
+    (barrera real) ya valida el vínculo padre↔atleta. No se expone
+    `generated_by_user_id` en el schema, así que no hay fuga de identidad
+    del coach.
+    """
     latest = await _latest_record(db, athlete.id)
     if latest is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)

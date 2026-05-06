@@ -3,7 +3,17 @@
  *
  * Ruta pública: /privacidad (sin autenticación)
  * Cumplimiento: Ley 1581 de 2012 + Decreto 1377 de 2013 (Colombia)
- * Versión: 1.0 | 2026-04-15
+ * Versión: 1.1 | 2026-05-06
+ *
+ * Cambios v1.0 → v1.1:
+ *   - Recortadas finalidades a las efectivamente implementadas en Fase 1
+ *     (datos básicos del atleta + antropometría/PHV).
+ *   - Eliminadas menciones a inscripción en competencias, contacto de
+ *     emergencia, documento de identidad, seguimiento de entrenamiento
+ *     y transferencia a terceros (Intervals.icu, Google Sheets) — se
+ *     reincorporarán cuando se implementen, con re-consentimiento.
+ *   - Texto de antropometría: "control del crecimiento" en vez de
+ *     "personalizar carga de entrenamiento" (no hay prescripción activa).
  */
 
 
@@ -11,8 +21,8 @@
 // Constantes
 // ---------------------------------------------------------------------------
 
-const POLICY_VERSION = "1.0";
-const POLICY_DATE = "15 de abril de 2026";
+const POLICY_VERSION = "1.1";
+const POLICY_DATE = "6 de mayo de 2026";
 const CONTACT_EMAIL = "datos@trochyruta.com";
 const CLUB_NAME = "Club Deportivo Trocha y Ruta";
 const CITY = "Valle del Cauca, Colombia";
@@ -180,17 +190,9 @@ export function PrivacyPage() {
               <li className="flex gap-2">
                 <span className="shrink-0 text-link-blue">·</span>
                 <span>
-                  <strong className="text-charcoal font-medium">Identificación:</strong> nombre
-                  completo, fecha de nacimiento, documento de identidad (o tarjeta de identidad para
-                  menores), información de contacto de emergencia.
-                </span>
-              </li>
-              <li className="flex gap-2">
-                <span className="shrink-0 text-link-blue">·</span>
-                <span>
-                  <strong className="text-charcoal font-medium">Seguimiento deportivo:</strong>{" "}
-                  sesiones de entrenamiento, resultados en competencias, carga de entrenamiento,
-                  frecuencia cardíaca y observaciones del entrenador.
+                  <strong className="text-charcoal font-medium">Datos básicos del atleta:</strong>{" "}
+                  nombre, apellido, fecha de nacimiento y sexo, necesarios para gestionar la
+                  membresía del atleta en el club.
                 </span>
               </li>
               <li className="flex gap-2">
@@ -216,7 +218,10 @@ export function PrivacyPage() {
             </ul>
             <p className="mt-2 text-xs text-mid-gray/80 italic">
               Principio de mínima recolección: no solicitamos datos que excedan lo necesario para
-              las finalidades declaradas (Art. 4, Ley 1581/2012).
+              las finalidades declaradas (Art. 4, Ley 1581/2012). En esta versión de la plataforma
+              no recolectamos documentos de identidad, contactos de emergencia, sesiones de
+              entrenamiento ni resultados de competencias. Cuando se incorporen estas
+              funcionalidades solicitaremos un consentimiento nuevo.
             </p>
           </Section>
 
@@ -224,25 +229,17 @@ export function PrivacyPage() {
             <ul className="space-y-2">
               <li className="flex gap-2">
                 <span className="shrink-0 text-link-blue">·</span>
-                Gestionar la inscripción y participación del atleta en el club y competencias.
+                Gestionar la membresía del atleta en el club.
               </li>
               <li className="flex gap-2">
                 <span className="shrink-0 text-link-blue">·</span>
-                Planificar y monitorear el entrenamiento según el modelo LTAD y el cálculo PHV.
+                Llevar control del crecimiento y la maduración biológica (PHV) del atleta y
+                detectar señales de alerta nutricional o de desarrollo.
               </li>
               <li className="flex gap-2">
                 <span className="shrink-0 text-link-blue">·</span>
-                Comunicarse con los representantes legales sobre novedades, competencias y
-                bienestar del atleta.
-              </li>
-              <li className="flex gap-2">
-                <span className="shrink-0 text-link-blue">·</span>
-                Garantizar la seguridad del atleta durante actividades deportivas.
-              </li>
-              <li className="flex gap-2">
-                <span className="shrink-0 text-link-blue">·</span>
-                (Opcional) Análisis deportivo avanzado con herramientas externas si el
-                representante otorgó consentimiento específico.
+                Comunicarse con los representantes legales sobre novedades del club y bienestar
+                del atleta.
               </li>
             </ul>
           </Section>
@@ -281,9 +278,9 @@ export function PrivacyPage() {
             </div>
             <p className="mt-3">
               Estos datos se utilizan exclusivamente para calcular el estadio de maduración
-              biológica (Pre-PHV, Circa-PHV, Post-PHV) y ajustar la carga de entrenamiento de
-              acuerdo con el modelo LTAD. No se comparten con terceros salvo autorización
-              explícita.
+              biológica (Pre-PHV, Circa-PHV, Post-PHV), llevar control del crecimiento del
+              atleta a lo largo del tiempo y detectar señales de alerta (brote de crecimiento,
+              riesgo nutricional). No se comparten con terceros.
             </p>
           </Section>
 
@@ -324,26 +321,16 @@ export function PrivacyPage() {
 
           <Section title="6. Transferencia a terceros">
             <p>
-              Solo transferimos datos a terceros cuando el representante ha otorgado consentimiento
-              específico para ello (consentimiento opcional durante el registro):
+              En esta versión de la plataforma{" "}
+              <strong className="text-charcoal font-medium">no transferimos datos a terceros</strong>.
+              Tampoco usamos los datos del atleta para entrenar modelos de inteligencia artificial
+              ni para publicidad.
             </p>
-            <ul className="space-y-2 mt-2">
-              <li className="flex gap-2">
-                <span className="shrink-0 text-link-blue">·</span>
-                <strong className="text-charcoal font-medium">Intervals.icu:</strong> plataforma de
-                análisis deportivo. Solo datos de rendimiento (potencia, FC, carga) — nunca datos
-                de identificación personal.
-              </li>
-              <li className="flex gap-2">
-                <span className="shrink-0 text-link-blue">·</span>
-                <strong className="text-charcoal font-medium">Google Sheets:</strong> hojas de
-                cálculo para seguimiento de equipo. Solo datos de rendimiento agregados.
-              </li>
-            </ul>
             <p className="mt-2">
-              Si no otorgas este consentimiento opcional, el servicio del club no se ve afectado.
-              Los terceros actúan como encargados del tratamiento con obligaciones contractuales
-              de confidencialidad y seguridad (Decreto 1377/2013, Art. 5).
+              Cuando integremos plataformas externas de análisis deportivo (por ejemplo,
+              Intervals.icu) o herramientas de seguimiento de equipo, te lo informaremos y
+              solicitaremos un consentimiento específico antes de compartir cualquier dato. Hasta
+              entonces, los datos permanecen únicamente en nuestros sistemas.
             </p>
           </Section>
 
@@ -394,10 +381,6 @@ export function PrivacyPage() {
               <li className="flex gap-2">
                 <span className="shrink-0 text-link-blue">·</span>
                 Acceso restringido por roles (entrenador, padre, administrador).
-              </li>
-              <li className="flex gap-2">
-                <span className="shrink-0 text-link-blue">·</span>
-                Registro de auditoría de accesos a datos sensibles.
               </li>
               <li className="flex gap-2">
                 <span className="shrink-0 text-link-blue">·</span>
