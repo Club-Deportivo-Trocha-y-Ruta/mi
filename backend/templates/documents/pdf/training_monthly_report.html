@@ -1,0 +1,137 @@
+{% extends "documents/pdf/base/layout.html" %}
+
+{#
+  Reporte mensual de entrenamiento — PDF para admins del club.
+  Variables requeridas: club_name, month_label, season_year, ai_summary,
+                        metrics_snapshot, coach_observations, generated_at
+  Privacidad: usa pseudónimos de atletas (A1, A2...) — sin nombres reales.
+#}
+
+{% block title %}Reporte mensual {{ month_label }} — {{ club_name }}{% endblock %}
+{% block header_right %}Reporte de Entrenamiento{% endblock %}
+{% block doc_title %}Reporte Mensual de Entrenamiento{% endblock %}
+{% block generated_at %}{{ generated_at }}{% endblock %}
+
+{% block body %}
+
+<!-- Encabezado del período -->
+<h2>{{ club_name }}</h2>
+<h3 style="color: #666666; font-weight: normal; margin-top: 0;">
+  Período: {{ month_label }} {{ season_year }}
+</h3>
+
+<!-- Métricas de sesiones -->
+{% if metrics_snapshot %}
+{% set ms = metrics_snapshot %}
+<h2>Resumen de sesiones</h2>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Indicador</th>
+      <th>Valor</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Sesiones planificadas</td>
+      <td>{{ ms.get('total_sessions_planned', 0) }}</td>
+    </tr>
+    <tr>
+      <td>Sesiones ejecutadas</td>
+      <td>{{ ms.get('total_sessions_executed', 0) }}</td>
+    </tr>
+    <tr>
+      <td>Sesiones canceladas</td>
+      <td>{{ ms.get('total_sessions_cancelled', 0) }}</td>
+    </tr>
+    {% if ms.get('avg_rpe') is not none %}
+    <tr>
+      <td>RPE promedio (escala 0-10)</td>
+      <td>{{ "%.1f"|format(ms.avg_rpe) }}</td>
+    </tr>
+    {% endif %}
+    {% if ms.get('avg_rubric_effort') is not none %}
+    <tr>
+      <td>Esfuerzo promedio (1-5)</td>
+      <td>{{ "%.1f"|format(ms.avg_rubric_effort) }}</td>
+    </tr>
+    {% endif %}
+    {% if ms.get('avg_rubric_attitude') is not none %}
+    <tr>
+      <td>Actitud promedio (1-5)</td>
+      <td>{{ "%.1f"|format(ms.avg_rubric_attitude) }}</td>
+    </tr>
+    {% endif %}
+    {% if ms.get('avg_rubric_technique') is not none %}
+    <tr>
+      <td>Técnica promedio (1-5)</td>
+      <td>{{ "%.1f"|format(ms.avg_rubric_technique) }}</td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+
+<!-- Focos técnicos cubiertos -->
+{% if ms.get('technical_focus_list') %}
+<h2>Focos técnicos cubiertos</h2>
+<ul>
+  {% for foco in ms.technical_focus_list %}
+  <li>{{ foco }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<!-- Tabla de asistencia — con pseudónimos -->
+{% if ms.get('attendance_by_athlete') %}
+<h2>Asistencia por atleta</h2>
+<p style="font-size: 10px; color: #888888; margin-bottom: 8px;">
+  Los atletas se identifican con pseudónimos (A1, A2...) para proteger su privacidad.
+</p>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Atleta</th>
+      <th>Presencias</th>
+      <th>Total sesiones</th>
+      <th>% Asistencia</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% set attendance_items = ms.attendance_by_athlete.items() | list %}
+    {% for athlete_id, stats in attendance_items %}
+    {% set pseudonym = "A" ~ loop.index %}
+    <tr>
+      <td>{{ pseudonym }}</td>
+      <td>{{ stats.count_present }}</td>
+      <td>{{ stats.total_sessions }}</td>
+      <td>{{ "%.1f"|format(stats.attendance_pct) }}%</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+<!-- Narrativa IA -->
+{% if ai_summary %}
+<h2>Resumen narrativo (generado por IA)</h2>
+<div style="background: #f9f9f9; padding: 12px; border-left: 4px solid #cccccc;
+            font-size: 12px; line-height: 1.6; color: #333333;">
+  {{ ai_summary }}
+</div>
+<p style="font-size: 9px; color: #aaaaaa; margin-top: 6px;">
+  Resumen generado automáticamente. El entrenador es responsable de validar la
+  información antes de distribuir externamente.
+</p>
+{% endif %}
+
+<!-- Observaciones del entrenador -->
+{% if coach_observations %}
+<h2>Observaciones del entrenador</h2>
+<div style="background: #f0f7ff; padding: 12px; border-left: 4px solid #4a90d9;
+            font-size: 12px; line-height: 1.6; color: #333333;">
+  {{ coach_observations }}
+</div>
+{% endif %}
+
+{% endblock %}

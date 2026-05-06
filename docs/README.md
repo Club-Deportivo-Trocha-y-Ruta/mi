@@ -12,6 +12,7 @@ Carpetas numeradas por feature en orden cronológico. Archivos internos por tipo
 | 06 | [06-parents/](06-parents/) | Módulo padres/acudientes: backend + portal frontend |
 | 07 | [07-notifications/](07-notifications/) | Módulo de notificaciones: email, PDF, DOCX |
 | 08 | [08-onboarding/](08-onboarding/) | Onboarding por invitación: investigación + diseño + implementación |
+| 09 | [09-training-planning/](09-training-planning/) | Sesiones de entrenamiento: planificación, asistencia, rúbrica, reporte mensual con IA |
 
 ## Archivo de entrenamiento
 

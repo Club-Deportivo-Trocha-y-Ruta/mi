@@ -54,6 +54,24 @@ export function AppShell({ children }: AppShellProps) {
           Padres
         </NavLink>
       )}
+      {(isCoach || isAdmin) && (
+        <NavLink
+          to="/training/sessions"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Entrenamientos
+        </NavLink>
+      )}
+      {(isCoach || isAdmin) && (
+        <NavLink
+          to="/training/reports"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Reportes mensuales
+        </NavLink>
+      )}
       {isParent && (
         <NavLink
           to="/my-athletes"
@@ -61,6 +79,24 @@ export function AppShell({ children }: AppShellProps) {
           onClick={() => setSidebarOpen(false)}
         >
           Mis Atletas
+        </NavLink>
+      )}
+      {isParent && (
+        <NavLink
+          to="/parents/training/sessions"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Entrenamientos
+        </NavLink>
+      )}
+      {isParent && (
+        <NavLink
+          to="/parents/training/overview"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Resumen mensual
         </NavLink>
       )}
       {isAdmin && (

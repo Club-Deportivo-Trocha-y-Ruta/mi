@@ -16,6 +16,14 @@ import { MyAthleteDetailPage } from "@/routes/parents/MyAthleteDetailPage";
 import { OnboardingPage } from "@/routes/auth/OnboardingPage";
 import { PrivacyPage } from "@/routes/PrivacyPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
+import { SessionsListPage } from "@/routes/training/SessionsListPage";
+import { SessionFormPage } from "@/routes/training/SessionFormPage";
+import { SessionDetailPage } from "@/routes/training/SessionDetailPage";
+import { ReportsListPage } from "@/routes/training/ReportsListPage";
+import { ReportDetailPage } from "@/routes/training/ReportDetailPage";
+import { ParentSessionsPage } from "@/routes/parents/training/ParentSessionsPage";
+import { ParentSessionDetailPage } from "@/routes/parents/training/ParentSessionDetailPage";
+import { ParentMonthlyOverviewPage } from "@/routes/parents/training/ParentMonthlyOverviewPage";
 import { UserRole } from "@/types/enums";
 
 const queryClient = new QueryClient({
@@ -124,6 +132,78 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.admin]}>
               <AIHealthPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/sessions"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <SessionsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/sessions/new"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <SessionFormPage mode="create" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/sessions/:id"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <SessionDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/sessions/:id/edit"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <SessionFormPage mode="edit" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/reports"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <ReportsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/reports/:year/:month"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <ReportDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/parents/training/sessions"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.parent]}>
+              <ParentSessionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/parents/training/sessions/:id"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.parent]}>
+              <ParentSessionDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/parents/training/overview"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.parent]}>
+              <ParentMonthlyOverviewPage />
             </ProtectedRoute>
           }
         />

@@ -129,6 +129,28 @@ Migraciones corren automáticamente via `entrypoint.sh` (`alembic upgrade head`)
 | 9 | Docker Compose | ✅ Completo (junto con Paso 2) |
 | 10 | Tests | ⏳ Pendiente |
 
+## Estado de implementación — Módulo Sesiones de Entrenamiento (Fase 1.5)
+
+> Backend + Frontend + Tests + IA: completo. Deploy pendiente de aprobación del usuario.
+
+| Paso | Descripción | Estado |
+|---|---|---|
+| 1 | Modelos SQLAlchemy: TrainingSession, SessionAttendance, MonthlyReport + 3 enums | ✅ Completo 2026-05-06 |
+| 2 | Schemas Pydantic + permisos RBAC (can_view_session, can_edit_session, etc.) | ✅ Completo 2026-05-06 |
+| 3 | Service layer: sessions, attendance, metrics, reports, route_files | ✅ Completo 2026-05-06 |
+| 4 | Routers CRUD sesión (7 endpoints /training-sessions/*) | ✅ Completo 2026-05-06 |
+| 5 | Endpoints asistencia + upload .gpx (gpxpy + defusedxml anti-XXE) | ✅ Completo 2026-05-06 |
+| 6 | Tests backend: models, service, router, privacy, notifications (669 colectados) | ✅ Completo 2026-05-06 |
+| 7 | Notificación padres al planificar sesión (template training_session_invite) | ✅ Completo 2026-05-06 |
+| 8 | IA monthly report use case (guardrails: sin nombres, max 500 palabras, sin juicio individual) | ✅ Completo 2026-05-06 |
+| 9 | Endpoint reporte mensual + envío email al club (4 endpoints /clubs/{id}/monthly-reports) | ✅ Completo 2026-05-06 |
+| 10 | Frontend coach: lista + form sesión (SessionsListPage, SessionFormPage) | ✅ Completo 2026-05-06 |
+| 11 | Frontend coach: detalle + asistencia + rúbrica (AttendanceTable, RubricSliders, RouteViewer) | ✅ Completo 2026-05-06 |
+| 12 | Frontend coach: reporte mensual UI (ReportsListPage, ReportDetailPage, banner IA) | ✅ Completo 2026-05-06 |
+| 13 | Frontend parent: lectura filtrada sesiones + resumen mensual propio (sin datos ajenos) | ✅ Completo 2026-05-06 |
+| 14 | Tests frontend: 717 tests vitest (58 archivos, 0 violaciones a11y) | ✅ Completo 2026-05-06 |
+| 15 | E2E checklist + deploy artifacts + docs + corrección fork Alembic | ✅ Completo 2026-05-06 |
+
 ## Credenciales de desarrollo (seed data)
 
 > Solo para entorno local / Docker dev. Nunca usar en producción.

@@ -1,0 +1,218 @@
+from __future__ import annotations
+
+import enum
+from datetime import date, datetime, time, timezone
+from typing import TYPE_CHECKING
+
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    Time,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.athlete import Athlete
+    from app.models.club import Club
+    from app.models.user import User
+
+
+class AgeGroup(str, enum.Enum):
+    U12 = "u12"  # 10-12 años
+    U15 = "u15"  # 13-15 años
+
+
+class SessionStatus(str, enum.Enum):
+    PLANNED = "planned"
+    EXECUTED = "executed"
+    CANCELLED = "cancelled"
+
+
+class AttendanceStatus(str, enum.Enum):
+    PRESENTE = "presente"
+    AUSENTE = "ausente"
+    JUSTIFICADO = "justificado"
+    TARDE = "tarde"
+    LESIONADO = "lesionado"
+
+
+class TrainingSession(Base):
+    """Sesión de entrenamiento planificada o ejecutada por el club."""
+
+    __tablename__ = "training_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "duration_min BETWEEN 15 AND 240",
+            name="ck_session_duration_range",
+        ),
+        Index("idx_training_session_club_date", "club_id", "scheduled_date"),
+        Index(
+            "idx_training_session_club_age_date",
+            "club_id",
+            "age_group",
+            "scheduled_date",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    club_id: Mapped[int] = mapped_column(
+        ForeignKey("clubs.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    age_group: Mapped[AgeGroup] = mapped_column(
+        Enum(AgeGroup, values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+    )
+    status: Mapped[SessionStatus] = mapped_column(
+        Enum(SessionStatus, values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+        default=SessionStatus.PLANNED,
+    )
+    scheduled_date: Mapped[date] = mapped_column(nullable=False)
+    scheduled_start_time: Mapped[time] = mapped_column(Time, nullable=False)
+    duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    location: Mapped[str] = mapped_column(String(200), nullable=False)
+    technical_focus: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    route_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    strava_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    route_file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    coach_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Relaciones
+    club: Mapped[Club] = relationship(
+        "Club",
+        foreign_keys="[TrainingSession.club_id]",
+    )
+    creator: Mapped[User] = relationship(
+        "User",
+        foreign_keys="[TrainingSession.created_by_user_id]",
+    )
+    attendances: Mapped[list[SessionAttendance]] = relationship(
+        "SessionAttendance",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+
+
+class SessionAttendance(Base):
+    """Asistencia y rúbrica de un atleta en una sesión de entrenamiento."""
+
+    __tablename__ = "session_attendance"
+    __table_args__ = (
+        CheckConstraint(
+            "rpe_omni BETWEEN 0 AND 10 OR rpe_omni IS NULL",
+            name="ck_attendance_rpe_range",
+        ),
+        CheckConstraint(
+            "rubric_effort BETWEEN 1 AND 5 OR rubric_effort IS NULL",
+            name="ck_attendance_rubric_effort_range",
+        ),
+        CheckConstraint(
+            "rubric_attitude BETWEEN 1 AND 5 OR rubric_attitude IS NULL",
+            name="ck_attendance_rubric_attitude_range",
+        ),
+        CheckConstraint(
+            "rubric_technique BETWEEN 1 AND 5 OR rubric_technique IS NULL",
+            name="ck_attendance_rubric_technique_range",
+        ),
+        UniqueConstraint("session_id", "athlete_id", name="uq_session_attendance"),
+        Index("idx_session_attendance_athlete_created", "athlete_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    athlete_id: Mapped[int] = mapped_column(
+        ForeignKey("athletes.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[AttendanceStatus] = mapped_column(
+        Enum(AttendanceStatus, values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+        default=AttendanceStatus.AUSENTE,
+    )
+    excuse_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    rpe_omni: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rubric_effort: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rubric_attitude: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rubric_technique: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    individual_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relaciones
+    session: Mapped[TrainingSession] = relationship(
+        "TrainingSession",
+        back_populates="attendances",
+        foreign_keys="[SessionAttendance.session_id]",
+    )
+    athlete: Mapped[Athlete] = relationship(
+        "Athlete",
+        foreign_keys="[SessionAttendance.athlete_id]",
+    )
+
+
+class MonthlyReport(Base):
+    """Reporte mensual generado por IA con métricas agregadas del club."""
+
+    __tablename__ = "monthly_reports"
+    __table_args__ = (
+        UniqueConstraint("club_id", "year", "month", name="uq_monthly_report_period"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    club_id: Mapped[int] = mapped_column(
+        ForeignKey("clubs.id", ondelete="RESTRICT"), nullable=False
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metrics_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    generated_by_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    coach_observations: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Relaciones
+    club: Mapped[Club] = relationship(
+        "Club",
+        foreign_keys="[MonthlyReport.club_id]",
+    )
+    generator: Mapped[User] = relationship(
+        "User",
+        foreign_keys="[MonthlyReport.generated_by_user_id]",
+    )

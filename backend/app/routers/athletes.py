@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,9 +32,12 @@ from app.schemas.athlete import (
 )
 from app.schemas.anthropometry import AnthropometryOut
 from app.schemas.notification import NotificationRecipient, NotificationRequest, NotificationTemplate
+from app.schemas.training_session import AttendanceRead
+from app.services import training as training_svc
 from app.services.category import compute_age_decimal, compute_years_in_club, get_category
 from app.services.notification.service import NotificationService
 from app.services.notification.task_dispatcher import TaskDispatcher
+from app.services.permissions import can_view_athlete_feedback, parent_athlete_ids
 
 router = APIRouter()
 
@@ -332,3 +337,61 @@ async def delete_athlete(
     await db.execute(delete(Athlete).where(Athlete.id == athlete_id))
     await db.execute(delete(User).where(User.id == user_id, User.role == UserRole.athlete))
     await db.flush()
+
+
+# ---------------------------------------------------------------------------
+# GET /api/athletes/{athlete_id}/attendance — Historial de asistencia
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{athlete_id}/attendance", response_model=list[AttendanceRead])
+async def get_athlete_attendance(
+    athlete_id: int,
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AttendanceRead]:
+    """
+    Historial de asistencia de un atleta.
+
+    - Admin/coach: cualquier atleta de su club.
+    - Padre: solo sus propios atletas.
+    """
+    # Verificar permiso de feedback sobre el atleta (usa misma lógica RBAC)
+    allowed = await can_view_athlete_feedback(db, current_user, athlete_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para ver la asistencia de este atleta",
+        )
+
+    # Coach: verificar que el atleta pertenece a su club
+    if current_user.role == UserRole.coach:
+        result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+        athlete = result.scalar_one_or_none()
+        if athlete is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Atleta no encontrado",
+            )
+        coach_clubs = {m.club_id for m in current_user.club_memberships}
+        if athlete.club_id not in coach_clubs:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Este atleta no pertenece a ninguno de tus clubes",
+            )
+
+    records = await training_svc.attendance.athlete_attendance_history(
+        db=db,
+        athlete_id=athlete_id,
+        date_from=from_date,
+        date_to=to_date,
+    )
+
+    # Aplicar limit/offset manualmente (el service no lo recibe aún)
+    records = records[offset : offset + limit]
+
+    return [AttendanceRead.model_validate(r) for r in records]

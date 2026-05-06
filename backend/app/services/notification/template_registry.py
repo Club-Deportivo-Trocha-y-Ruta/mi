@@ -133,6 +133,46 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
             "Incluye enlace de onboarding con token de 72 h."
         ),
     ),
+    NotificationTemplate.TRAINING_SESSION_INVITE: EmailTemplateSpec(
+        template_id=NotificationTemplate.TRAINING_SESSION_INVITE,
+        subject_template="[Trocha y Ruta] Entrenamiento {{ session_date }} - {{ athlete_name }}",
+        body_path="email/training_session_invite.html",
+        required_context_keys=frozenset(
+            {
+                "parent_name",
+                "athlete_name",
+                "session_date",
+                "session_time",
+                "location",
+                "technical_focus",
+                "duration_min",
+                "coach_name",
+                "club_name",
+            }
+        ),
+        description=(
+            "Notificación a padres/acudientes cuando el coach planifica una sesión "
+            "de entrenamiento en la que su atleta está convocado."
+        ),
+    ),
+    NotificationTemplate.TRAINING_MONTHLY_REPORT: EmailTemplateSpec(
+        template_id=NotificationTemplate.TRAINING_MONTHLY_REPORT,
+        subject_template="Reporte mensual de entrenamiento {{ month_label }} — {{ club_name }}",
+        body_path="email/training_monthly_report.html",
+        required_context_keys=frozenset(
+            {
+                "admin_name",
+                "club_name",
+                "month_label",
+                "season_year",
+                "ai_summary_excerpt",
+            }
+        ),
+        description=(
+            "Email con resumen de reporte mensual de entrenamiento, enviado a admins del club. "
+            "Incluye extracto de narrativa IA y PDF adjunto con métricas completas."
+        ),
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -194,6 +234,25 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
             }
         ),
         description="Autorización médica editable en DOCX (docxtpl).",
+    ),
+    DocumentTemplate.TRAINING_MONTHLY_REPORT: DocumentTemplateSpec(
+        template_id=DocumentTemplate.TRAINING_MONTHLY_REPORT,
+        format=DocumentFormat.PDF,
+        template_path="documents/pdf/training_monthly_report.html",
+        required_context_keys=frozenset(
+            {
+                "club_name",
+                "month_label",
+                "season_year",
+                "ai_summary",
+                "metrics_snapshot",
+                "coach_observations",
+            }
+        ),
+        description=(
+            "Reporte mensual de entrenamiento en PDF. "
+            "Usa pseudónimos de atletas (A1, A2...) — sin nombres reales."
+        ),
     ),
 }
 

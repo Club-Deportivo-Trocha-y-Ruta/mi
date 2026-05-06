@@ -1,0 +1,83 @@
+{% extends "email/base/layout.html" %}
+
+{#
+  Notificación a padres/acudientes sobre sesión de entrenamiento planificada.
+  Variables requeridas: parent_name, athlete_name, session_date, session_time,
+                        location, technical_focus, duration_min, coach_name, club_name
+#}
+
+{% block title %}Entrenamiento {{ session_date }} — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1>Sesión de entrenamiento planificada</h1>
+
+<p>Hola {{ parent_name }},</p>
+
+<p>
+  El entrenador <strong>{{ coach_name }}</strong> del <strong>{{ club_name }}</strong>
+  ha planificado una sesión de entrenamiento para <strong>{{ athlete_name }}</strong>.
+</p>
+
+<div class="highlight-box">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0; width: 160px;">
+        <strong style="color: #2f2f2f;">Fecha:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ session_date }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Hora de inicio:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ session_time }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Duración estimada:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ duration_min }} minutos
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Lugar:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ location }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Foco técnico:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ technical_focus }}
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>
+  Asegúrate de que <strong>{{ athlete_name }}</strong> llegue con la hidratación y el
+  equipo de protección completo. Ante cualquier duda, puedes comunicarte directamente
+  con el entrenador.
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #aaaaaa;">
+  Esta notificación fue generada automáticamente porque {{ athlete_name }} fue convocado/a
+  a esta sesión. Si la información cambia, recibirás una actualización.
+</p>
+
+<p>
+  Saludos,<br>
+  <strong>{{ coach_name }} — {{ club_name }}</strong>
+</p>
+{% endblock %}
