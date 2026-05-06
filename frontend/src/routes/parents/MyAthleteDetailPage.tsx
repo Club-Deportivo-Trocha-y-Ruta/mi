@@ -352,6 +352,7 @@ export function MyAthleteDetailPage() {
               sex={athlete.sex}
               birthDate={athlete.birth_date}
               phvAgeMonths={phvAgeMonths}
+              ageDecimal={athlete.age_decimal ?? undefined}
             />
           </div>
         </div>

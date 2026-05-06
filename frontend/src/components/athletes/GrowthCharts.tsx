@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   CartesianGrid,
   Line,
@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Download } from "lucide-react";
 
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 import { PercentileCurves } from "@/components/athletes/PercentileCurves";
@@ -19,6 +20,7 @@ interface GrowthChartsProps {
   sex?: "M" | "F";
   birthDate?: string;
   phvAgeMonths?: number;
+  ageDecimal?: number;
 }
 
 type ViewMode = "longitudinal" | "percentiles";
@@ -46,23 +48,60 @@ export function GrowthCharts({
   sex,
   birthDate,
   phvAgeMonths,
+  ageDecimal,
 }: GrowthChartsProps) {
-  const [view, setView] = useState<ViewMode>("longitudinal");
-  const [activeIndicator, setActiveIndicator] =
-    useState<GrowthIndicator>("height_for_age");
-
-  const canShowPercentiles = sex !== undefined && birthDate !== undefined;
+  // OMS no publica weight_for_age para mayores de 10 años
+  const showWeight = ageDecimal === undefined || ageDecimal <= 10;
 
   const INDICATORS: { key: GrowthIndicator; label: string }[] = [
     { key: "height_for_age", label: "Talla" },
     { key: "bmi_for_age", label: "IMC" },
-    { key: "weight_for_age", label: "Peso" },
+    ...(showWeight ? [{ key: "weight_for_age" as GrowthIndicator, label: "Peso" }] : []),
   ];
+
+  const [view, setView] = useState<ViewMode>("longitudinal");
+  // Si weight_for_age queda oculto por edad, hacemos fallback a height_for_age
+  const [activeIndicator, setActiveIndicator] = useState<GrowthIndicator>(
+    () => (!showWeight ? "height_for_age" : "height_for_age"),
+  );
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Cuando showWeight cambia (ej: prop actualizada), corregir indicador activo
+  const safeIndicator: GrowthIndicator =
+    !showWeight && activeIndicator === "weight_for_age"
+      ? "height_for_age"
+      : activeIndicator;
+
+  const canShowPercentiles = sex !== undefined && birthDate !== undefined;
+
+  // Ref al wrapper de PercentileCurves para capturar la grafica como PNG
+  const percentileChartRef = useRef<HTMLDivElement>(null);
+
+  async function handleExportPng() {
+    if (!percentileChartRef.current || isExporting) return;
+    setIsExporting(true);
+    try {
+      const { toPng } = await import("html-to-image");
+      const dataUrl = await toPng(percentileChartRef.current, {
+        cacheBust: true,
+        backgroundColor: "#ffffff",
+        pixelRatio: 2,
+      });
+      const link = document.createElement("a");
+      link.download = `crecimiento-${safeIndicator}-${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("Error exportando grafica:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   return (
     <div className="space-y-4" data-testid="growth-charts">
-      {/* Toggle de vista */}
-      <div className="flex gap-2">
+      {/* Toggle de vista + boton exportar */}
+      <div className="flex items-center gap-2">
         <button
           type="button"
           className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -89,6 +128,20 @@ export function GrowthCharts({
             Curvas de percentiles
           </button>
         )}
+        {/* Boton exportar — solo visible en vista percentiles con registros */}
+        {view === "percentiles" && records.length > 0 && (
+          <button
+            type="button"
+            data-testid="export-png-button"
+            disabled={isExporting}
+            onClick={handleExportPng}
+            className="ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-mid-gray transition-colors hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          >
+            <Download className="size-4" aria-hidden="true" />
+            {isExporting ? "Exportando..." : "Descargar PNG"}
+          </button>
+        )}
       </div>
 
       {/* Vista longitudinal */}
@@ -104,24 +157,27 @@ export function GrowthCharts({
                 key={key}
                 type="button"
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  activeIndicator === key
+                  safeIndicator === key
                     ? "bg-charcoal text-white"
                     : "bg-white text-mid-gray hover:text-charcoal"
                 }`}
-                style={activeIndicator !== key ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
+                style={safeIndicator !== key ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
                 onClick={() => setActiveIndicator(key)}
               >
                 {label}
               </button>
             ))}
           </div>
-          <PercentileCurves
-            sex={sex}
-            birthDate={birthDate}
-            records={records}
-            indicator={activeIndicator}
-            phvAgeMonths={phvAgeMonths}
-          />
+          {/* Wrapper con ref para captura PNG */}
+          <div ref={percentileChartRef}>
+            <PercentileCurves
+              sex={sex}
+              birthDate={birthDate}
+              records={records}
+              indicator={safeIndicator}
+              phvAgeMonths={phvAgeMonths}
+            />
+          </div>
         </div>
       )}
     </div>

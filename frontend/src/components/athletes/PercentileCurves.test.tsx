@@ -4,6 +4,19 @@ import { PercentileCurves } from "./PercentileCurves";
 import { MaturationStatus } from "@/types/enums";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 
+// Mock de useGrowthMetrics para que PercentileInterpretationBlock reciba
+// métricas estables sin depender del JSON OMS real.
+vi.mock("@/hooks/athletes/useGrowthMetrics", () => ({
+  useGrowthMetrics: () => ({
+    value: 155.0,
+    ageMonths: 148,
+    zScore: 0.3,
+    percentile: 62,
+    band: "ok",
+    reference: { L: 1, M: 142.9, S: 0.047 },
+  }),
+}));
+
 // Recharts no renderiza SVG real en jsdom — mockeamos igual que GrowthCharts.test.tsx.
 // ComposedChart sustituye a LineChart en PercentileCurves, así que lo incluimos.
 vi.mock("recharts", async () => {
@@ -21,15 +34,17 @@ vi.mock("recharts", async () => {
     CartesianGrid: () => null,
     XAxis: () => null,
     YAxis: () => null,
+    Area: () => null,
     Line: () => null,
     ReferenceLine: () => null,
     Tooltip: () => null,
+    Legend: () => null,
   };
 });
 
-// Mock del JSON de referencia CDC con datos mínimos por indicador y sexo.
+// Mock del JSON de referencia OMS con datos mínimos por indicador y sexo.
 // Las curvas de referencia necesitan al menos 1 fila para no mostrar el mensaje de "sin datos".
-vi.mock("@/data/growth-reference-cdc.json", () => ({
+vi.mock("@/data/growth-reference-who.json", () => ({
   default: {
     indicators: {
       height_for_age: {
@@ -218,7 +233,9 @@ describe("PercentileCurves", () => {
         indicator="height_for_age"
       />,
     );
-    expect(screen.getByText("Talla (cm)")).toBeInTheDocument();
+    // La tabla sr-only también contiene "Talla (cm)" como encabezado de columna,
+    // por lo que usamos getAllByText y verificamos que al menos uno está en el DOM.
+    expect(screen.getAllByText("Talla (cm)").length).toBeGreaterThanOrEqual(1);
   });
 
   // 8. El label del eje Y correcto para bmi_for_age
@@ -231,6 +248,38 @@ describe("PercentileCurves", () => {
         indicator="bmi_for_age"
       />,
     );
-    expect(screen.getByText(/IMC/)).toBeInTheDocument();
+    // La tabla sr-only también contiene "IMC (kg/m²)" como encabezado de columna,
+    // por lo que usamos getAllByText y verificamos que al menos uno está en el DOM.
+    expect(screen.getAllByText("IMC (kg/m²)").length).toBeGreaterThanOrEqual(1);
+  });
+
+  // 9. Con 0 registros no renderiza PercentileInterpretationBlock
+  it("con 0 registros no muestra el bloque de interpretacion", () => {
+    render(
+      <PercentileCurves
+        sex="M"
+        birthDate={BASE_BIRTH_DATE}
+        records={[]}
+        indicator="height_for_age"
+      />,
+    );
+    // El bloque tiene role="region" — no debe aparecer ninguno
+    expect(screen.queryByRole("region")).not.toBeInTheDocument();
+  });
+
+  // 10. Con un registro valido renderiza el bloque de interpretacion
+  it("con un registro valido muestra el bloque de interpretacion", () => {
+    render(
+      <PercentileCurves
+        sex="M"
+        birthDate={BASE_BIRTH_DATE}
+        records={[singleRecord]}
+        indicator="height_for_age"
+      />,
+    );
+    // El bloque tiene role="region" con aria-label que incluye el indicador
+    expect(
+      screen.getByRole("region", { name: /height_for_age/i }),
+    ).toBeInTheDocument();
   });
 });

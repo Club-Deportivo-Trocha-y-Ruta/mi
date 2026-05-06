@@ -164,7 +164,13 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # MYSQL_ROOT_PASS lo consume docker-compose para inicializar el contenedor MySQL,
+    # no Settings. extra="ignore" evita que pydantic falle por esa clave compartida.
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()

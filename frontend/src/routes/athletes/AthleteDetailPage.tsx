@@ -21,7 +21,6 @@ import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
 import { GrowthCharts } from "@/components/athletes/GrowthCharts";
 import { LinkedParentsCard } from "@/components/athletes/LinkedParentsCard";
 import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
-import { PercentileCurves } from "@/components/athletes/PercentileCurves";
 import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
 import { apiClient } from "@/api/client";
@@ -388,7 +387,7 @@ export function AthleteDetailPage() {
               className="text-lg text-charcoal"
               style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
             >
-              Mediciones antropométricas
+              Registro de mediciones
             </h3>
             <button
               type="button"
@@ -412,15 +411,6 @@ export function AthleteDetailPage() {
           )}
 
           <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
-            <GrowthCharts
-              records={records}
-              sex={athlete.sex}
-              birthDate={athlete.birth_date}
-              phvAgeMonths={phvAgeMonths}
-            />
-          </div>
-
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
             <AnthropometryHistory
               records={records}
               isLoading={anthropometryQuery.isLoading}
@@ -438,18 +428,12 @@ export function AthleteDetailPage() {
             birthDate={athlete.birth_date}
           />
           <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
-            <h4
-              className="mb-4 text-sm text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
-            >
-              Curvas de crecimiento — Talla/Edad
-            </h4>
-            <PercentileCurves
+            <GrowthCharts
+              records={records}
               sex={athlete.sex}
               birthDate={athlete.birth_date}
-              records={records}
-              indicator="height_for_age"
               phvAgeMonths={phvAgeMonths}
+              ageDecimal={athlete.age_decimal ?? undefined}
             />
           </div>
           <TrainingReadiness
