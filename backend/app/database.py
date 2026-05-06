@@ -1,14 +1,15 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
+# NullPool: evita RuntimeError de uvloop en TCPTransport cerrado tras sleep
+# de Render free tier. pool_pre_ping no detecta el error como disconnect
+# porque es RuntimeError nativo, no OperationalError.
 engine = create_async_engine(
     settings.database_url,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,
-    pool_recycle=280,  # Hostinger cierra conexiones idle ~300s; reciclar antes
+    poolclass=NullPool,
 )
 
 AsyncSessionLocal = sessionmaker(
