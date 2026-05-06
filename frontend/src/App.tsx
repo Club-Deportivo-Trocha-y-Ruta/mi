@@ -17,7 +17,6 @@ import { OnboardingPage } from "@/routes/auth/OnboardingPage";
 import { PrivacyPage } from "@/routes/PrivacyPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
 import { UserRole } from "@/types/enums";
-import { useServerWarmup } from "@/hooks/useServerWarmup";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,11 +28,6 @@ const queryClient = new QueryClient({
   },
 });
 
-function AppWarmup() {
-  useServerWarmup();
-  return null;
-}
-
 function RootRedirect() {
   const user = useAuthStore((s) => s.user);
   const to = user?.role === UserRole.parent ? "/my-athletes" : "/dashboard";
@@ -43,7 +37,6 @@ function RootRedirect() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppWarmup />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
