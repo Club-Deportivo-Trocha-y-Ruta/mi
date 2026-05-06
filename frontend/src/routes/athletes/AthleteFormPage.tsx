@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { Trash2 } from "lucide-react";
 
 import { AthleteForm, type AthleteFormValues } from "@/components/athletes/AthleteForm";
+import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useCreateAthlete } from "@/hooks/athletes/useCreateAthlete";
+import { useDeleteAthlete } from "@/hooks/athletes/useDeleteAthlete";
 import { useUpdateAthlete } from "@/hooks/athletes/useUpdateAthlete";
 import { useAuthStore } from "@/store/auth.store";
 
@@ -16,14 +19,30 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
   const { id } = useParams();
   const user = useAuthStore((state) => state.user);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const athleteId = Number(id);
   const isEdit = mode === "edit";
   const athleteQuery = useAthlete(athleteId, isEdit);
   const createMutation = useCreateAthlete();
   const updateMutation = useUpdateAthlete();
+  const deleteMutation = useDeleteAthlete();
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
+
+  const handleDelete = () => {
+    setDeleteError(null);
+    deleteMutation.mutate(athleteId, {
+      onSuccess: () => {
+        setDeleteOpen(false);
+        navigate("/athletes");
+      },
+      onError: () => {
+        setDeleteError("No se pudo eliminar el atleta. Intenta de nuevo.");
+      },
+    });
+  };
 
   const initialValues = useMemo(() => {
     return athleteQuery.data;
@@ -94,18 +113,37 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
     );
   }
 
+  const athleteFullName = initialValues
+    ? `${initialValues.first_name} ${initialValues.last_name}`
+    : "";
+
   return (
     <section className="space-y-5">
-      <div>
-        <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-        >
-          {isEdit ? "Editar atleta" : "Nuevo atleta"}
-        </h1>
-        <p className="mt-0.5 text-sm text-mid-gray">
-          {isEdit ? "Actualiza la información básica del atleta." : "Registra un nuevo atleta en el club."}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1
+            className="text-2xl text-charcoal"
+            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          >
+            {isEdit ? "Editar atleta" : "Nuevo atleta"}
+          </h1>
+          <p className="mt-0.5 text-sm text-mid-gray">
+            {isEdit ? "Actualiza la información básica del atleta." : "Registra un nuevo atleta en el club."}
+          </p>
+        </div>
+        {isEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteError(null);
+              setDeleteOpen(true);
+            }}
+            className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+          >
+            <Trash2 size={14} />
+            Eliminar atleta
+          </button>
+        )}
       </div>
 
       <AthleteForm
@@ -117,6 +155,20 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
           void handleSubmit(values);
         }}
       />
+
+      {isEdit && (
+        <ConfirmDeleteDialog
+          open={deleteOpen}
+          title="Eliminar atleta"
+          subject={athleteFullName}
+          description="Se eliminarán de forma permanente el perfil del atleta, sus mediciones antropométricas, vínculos con padres/acudientes, invitaciones y consentimientos. Esta acción no se puede deshacer."
+          confirmLabel="Sí, eliminar atleta"
+          isPending={deleteMutation.isPending}
+          errorMessage={deleteError}
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={handleDelete}
+        />
+      )}
     </section>
   );
 }

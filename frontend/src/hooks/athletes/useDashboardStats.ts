@@ -1,11 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getAthlete, getAthletes } from "@/api/athletes";
+import { useAuthStore } from "@/store/auth.store";
 
 export function useDashboardStats() {
+  const accessToken = useAuthStore((s) => s.accessToken);
+
   const athletesQuery = useQuery({
     queryKey: ["athletes"],
     queryFn: () => getAthletes(),
+    enabled: !!accessToken,
   });
 
   const athleteIds = athletesQuery.data?.items.map((a) => a.id) ?? [];

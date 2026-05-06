@@ -10,6 +10,11 @@ vi.mock("@/api/athletes", () => ({
   updateAthlete: vi.fn(),
 }));
 
+vi.mock("@/store/auth.store", () => ({
+  useAuthStore: (selector: (s: { accessToken: string }) => unknown) =>
+    selector({ accessToken: "test-token" }),
+}));
+
 import { useAthletes } from "./useAthletes";
 import { useAthlete } from "./useAthlete";
 import { useCreateAthlete } from "./useCreateAthlete";

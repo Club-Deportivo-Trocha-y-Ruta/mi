@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func
+from sqlalchemy import delete, select, update, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_current_user, get_db, require_role
+from app.models.athlete import ParentAthlete
 from app.models.club import ClubMember, ClubRole
+from app.models.parent_invite import ParentInvite
+from app.models.parental_consent import ParentalConsent
 from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserListOut, UserOut, UserUpdate
 from app.services.auth import hash_password
@@ -269,3 +272,72 @@ async def update_user(
     await db.flush()
 
     return target
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/users/{user_id} — eliminar padre/acudiente
+# ---------------------------------------------------------------------------
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> None:
+    """Elimina un padre/acudiente y limpia sus vínculos.
+
+    Coach: solo puede borrar padres de sus clubes.
+    No se permite borrar admin/coach por este endpoint, ni autoborrado.
+    Atletas se gestionan vía DELETE /api/athletes/{id}.
+    """
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No puedes eliminarte a ti mismo",
+        )
+
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.club_memberships))
+        .where(User.id == user_id)
+    )
+    target = result.scalar_one_or_none()
+
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario no encontrado",
+        )
+
+    if target.role == UserRole.athlete:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Los atletas se eliminan vía DELETE /api/athletes/{id}",
+        )
+
+    if target.role in (UserRole.admin, UserRole.coach):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No puedes eliminar usuarios con rol admin o coach",
+        )
+
+    if current_user.role == UserRole.coach:
+        coach_clubs = _coach_club_ids(current_user)
+        target_clubs = {m.club_id for m in target.club_memberships}
+        if not coach_clubs.intersection(target_clubs):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Este usuario no pertenece a ninguno de tus clubes",
+            )
+
+    # Cascada manual: limpiar referencias antes de eliminar el user.
+    await db.execute(delete(ParentalConsent).where(ParentalConsent.parent_user_id == user_id))
+    await db.execute(delete(ParentAthlete).where(ParentAthlete.parent_id == user_id))
+    await db.execute(delete(ClubMember).where(ClubMember.user_id == user_id))
+    await db.execute(
+        update(ParentInvite).where(ParentInvite.used_by == user_id).values(used_by=None)
+    )
+    await db.execute(
+        update(User).where(User.created_by == user_id).values(created_by=None)
+    )
+    await db.execute(delete(User).where(User.id == user_id))
+    await db.flush()

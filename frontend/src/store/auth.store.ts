@@ -35,7 +35,12 @@ export const useAuthStore = create<AuthState>()(
             refreshToken: tokens.refresh_token,
             isAuthenticated: true,
           });
-          await get().fetchMe();
+          try {
+            await get().fetchMe();
+          } catch (error) {
+            get().logout();
+            throw error;
+          }
         } finally {
           set({ isLoading: false });
         }
@@ -85,6 +90,7 @@ export const useAuthStore = create<AuthState>()(
       name: "auth-session",
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
+        accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         user: state.user,
         isAuthenticated: state.isAuthenticated,

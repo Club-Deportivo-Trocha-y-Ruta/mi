@@ -70,6 +70,12 @@ export async function getParentInvites(
   return response.data;
 }
 
+// --- Delete parent user (coach) ---
+
+export async function deleteParentUser(id: number): Promise<void> {
+  await apiClient.delete(`/api/users/${id}`);
+}
+
 // --- Create parent user (coach) ---
 
 export async function createParentUser(payload: {

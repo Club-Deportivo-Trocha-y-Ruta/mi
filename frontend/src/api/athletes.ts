@@ -36,6 +36,10 @@ export async function updateAthlete(
   return response.data;
 }
 
+export async function deleteAthlete(id: number): Promise<void> {
+  await apiClient.delete(`/api/athletes/${id}`);
+}
+
 export async function getAnthropometry(
   athleteId: number,
 ): Promise<AnthropometricRecord[]> {

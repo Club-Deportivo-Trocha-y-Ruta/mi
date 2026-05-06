@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func
+from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,8 +12,11 @@ from app.dependencies import (
     verify_athlete_access,
 )
 from app.models.athlete import Athlete
+from app.models.ai_explanation import AthleteAIExplanation
 from app.models.anthropometry import AnthropometricRecord
 from app.models.club import Club, ClubMember, ClubRole
+from app.models.parent_invite import ParentInvite
+from app.models.parental_consent import ParentalConsent
 from app.models.user import User, UserRole
 from app.models.athlete import ParentAthlete
 from app.schemas.athlete import (
@@ -285,3 +288,47 @@ async def update_athlete(
     await db.flush()
 
     return _enrich_athlete(athlete)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/athletes/{athlete_id}
+# ---------------------------------------------------------------------------
+@router.delete("/{athlete_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_athlete(
+    athlete_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> None:
+    """Elimina un atleta y toda su información asociada.
+
+    Cascada manual: consents, AI explanations, parent invites, anthropometric
+    records, parent_athlete links, club_members del user stub, athlete row,
+    user stub (role=athlete).
+    """
+    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    athlete = result.scalar_one_or_none()
+
+    if athlete is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Atleta no encontrado",
+        )
+
+    if current_user.role == UserRole.coach:
+        if athlete.club_id not in _coach_club_ids(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes acceso a este atleta",
+            )
+
+    user_id = athlete.user_id
+
+    await db.execute(delete(ParentalConsent).where(ParentalConsent.athlete_id == athlete_id))
+    await db.execute(delete(AthleteAIExplanation).where(AthleteAIExplanation.athlete_id == athlete_id))
+    await db.execute(delete(ParentInvite).where(ParentInvite.athlete_id == athlete_id))
+    await db.execute(delete(AnthropometricRecord).where(AnthropometricRecord.athlete_id == athlete_id))
+    await db.execute(delete(ParentAthlete).where(ParentAthlete.athlete_id == athlete_id))
+    await db.execute(delete(ClubMember).where(ClubMember.user_id == user_id))
+    await db.execute(delete(Athlete).where(Athlete.id == athlete_id))
+    await db.execute(delete(User).where(User.id == user_id, User.role == UserRole.athlete))
+    await db.flush()

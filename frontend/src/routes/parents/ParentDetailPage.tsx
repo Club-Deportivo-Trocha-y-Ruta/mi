@@ -1,10 +1,13 @@
-import { Link, useParams } from "react-router-dom";
-import { Users } from "lucide-react";
+import { useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { Trash2, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
 import { ParentContactInfo } from "@/components/parents/ParentContactInfo";
 import { ParentAthleteAssignment } from "@/components/parents/ParentAthleteAssignment";
 import { ParentInviteManager } from "@/components/parents/ParentInviteManager";
+import { useDeleteParentUser } from "@/hooks/parents/useDeleteParentUser";
 import { useParentAthletes } from "@/hooks/parents/useParentAthletes";
 import { useParentUsers } from "@/hooks/parents/useParentUsers";
 import { useAuthStore } from "@/store/auth.store";
@@ -37,6 +40,7 @@ function StatCard({
 
 export function ParentDetailPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const parentId = Number(id);
 
   const user = useAuthStore((state) => state.user);
@@ -48,6 +52,23 @@ export function ParentDetailPage() {
   const relationsQuery = useParentAthletes({ parent_id: parentId });
   const linkedCount = relationsQuery.data?.items.length ?? 0;
   const linkedRelations = relationsQuery.data?.items ?? [];
+
+  const deleteMutation = useDeleteParentUser();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = () => {
+    setDeleteError(null);
+    deleteMutation.mutate(parentId, {
+      onSuccess: () => {
+        setDeleteOpen(false);
+        navigate("/parents");
+      },
+      onError: () => {
+        setDeleteError("No se pudo eliminar el padre/acudiente. Intenta de nuevo.");
+      },
+    });
+  };
 
   // Loading skeleton
   if (parentsQuery.isLoading) {
@@ -91,19 +112,32 @@ export function ParentDetailPage() {
   return (
     <section className="space-y-5">
       {/* Breadcrumb + title */}
-      <div>
-        <Link
-          to="/parents"
-          className="text-sm text-mid-gray transition-opacity hover:opacity-70"
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Link
+            to="/parents"
+            className="text-sm text-mid-gray transition-opacity hover:opacity-70"
+          >
+            &larr; Padres
+          </Link>
+          <h1
+            className="mt-1 text-2xl text-charcoal"
+            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          >
+            {parent.first_name} {parent.last_name}
+          </h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setDeleteError(null);
+            setDeleteOpen(true);
+          }}
+          className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
         >
-          &larr; Padres
-        </Link>
-        <h1
-          className="mt-1 text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-        >
-          {parent.first_name} {parent.last_name}
-        </h1>
+          <Trash2 size={14} />
+          Eliminar
+        </button>
       </div>
 
       {/* Stat card row */}
@@ -162,6 +196,18 @@ export function ParentDetailPage() {
           </p>
         </div>
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteOpen}
+        title="Eliminar padre/acudiente"
+        subject={`${parent.first_name} ${parent.last_name}`}
+        description="Se eliminarán de forma permanente el padre/acudiente, sus vínculos con atletas, su membresía al club y sus consentimientos otorgados. Las invitaciones que haya consumido quedarán como anónimas. Esta acción no se puede deshacer."
+        confirmLabel="Sí, eliminar"
+        isPending={deleteMutation.isPending}
+        errorMessage={deleteError}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={handleDelete}
+      />
     </section>
   );
 }
