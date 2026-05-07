@@ -1,0 +1,88 @@
+- generic [ref=e3]:
+  - complementary "Menú de navegación" [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Trocha y Ruta" [level=2] [ref=e6]
+      - paragraph [ref=e7]: Club Ciclismo XCO
+    - navigation [ref=e8]:
+      - link "Dashboard" [ref=e9] [cursor=pointer]:
+        - /url: /dashboard
+      - link "Atletas" [ref=e10] [cursor=pointer]:
+        - /url: /athletes
+      - link "Padres" [ref=e11] [cursor=pointer]:
+        - /url: /parents
+      - link "Entrenamientos" [ref=e12] [cursor=pointer]:
+        - /url: /training/sessions
+      - link "Reportes mensuales" [ref=e13] [cursor=pointer]:
+        - /url: /training/reports
+  - generic [ref=e14]:
+    - banner [ref=e15]:
+      - paragraph [ref=e17]: Juan Diaz
+      - button "Cerrar sesión" [ref=e18]
+    - main [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - generic [ref=e22]:
+            - heading "Sesiones de Entrenamiento" [level=1] [ref=e23]
+            - paragraph [ref=e24]: Planifica y gestiona las sesiones del club.
+          - link "+ Nueva sesión" [ref=e25] [cursor=pointer]:
+            - /url: /training/sessions/new
+        - generic [ref=e26]:
+          - generic [ref=e27]:
+            - generic [ref=e28]: Desde
+            - textbox [ref=e29]: 2026-05-01
+          - generic [ref=e30]:
+            - generic [ref=e31]: Hasta
+            - textbox [ref=e32]: 2026-05-31
+          - generic [ref=e33]:
+            - generic [ref=e34]: Grupo
+            - combobox [ref=e35]:
+              - option "Todos" [selected]
+              - option "U12 (10-12 años)"
+              - option "U15 (13-15 años)"
+          - generic [ref=e36]:
+            - generic [ref=e37]: Estado
+            - combobox [ref=e38]:
+              - option "Todos" [selected]
+              - option "Planificada"
+              - option "Ejecutada"
+              - option "Cancelada"
+          - button "Mes actual" [ref=e39]
+        - table [ref=e41]:
+          - rowgroup [ref=e42]:
+            - row "Fecha Hora Grupo Foco técnico Lugar Estado Asistencia Acciones" [ref=e43]:
+              - columnheader "Fecha" [ref=e44]
+              - columnheader "Hora" [ref=e45]
+              - columnheader "Grupo" [ref=e46]
+              - columnheader "Foco técnico" [ref=e47]
+              - columnheader "Lugar" [ref=e48]
+              - columnheader "Estado" [ref=e49]
+              - columnheader "Asistencia" [ref=e50]
+              - columnheader "Acciones" [ref=e51]
+          - rowgroup [ref=e52]:
+            - row "15/05/2026 08:00 U12 Cornering Cerro de las Tres Cruces Cancelada — Ver" [ref=e53]:
+              - cell "15/05/2026" [ref=e54]
+              - cell "08:00" [ref=e55]
+              - cell "U12" [ref=e56]
+              - cell "Cornering" [ref=e57]
+              - cell "Cerro de las Tres Cruces" [ref=e58]
+              - cell "Cancelada" [ref=e59]:
+                - generic [ref=e60]: Cancelada
+              - cell "—" [ref=e61]
+              - cell "Ver" [ref=e62]:
+                - link "Ver" [ref=e64] [cursor=pointer]:
+                  - /url: /training/sessions/2
+            - row "15/05/2026 08:00 U12 Cornering Cerro de las Tres Cruces Ejecutada — Ver Editar" [ref=e65]:
+              - cell "15/05/2026" [ref=e66]
+              - cell "08:00" [ref=e67]
+              - cell "U12" [ref=e68]
+              - cell "Cornering" [ref=e69]
+              - cell "Cerro de las Tres Cruces" [ref=e70]
+              - cell "Ejecutada" [ref=e71]:
+                - generic [ref=e72]: Ejecutada
+              - cell "—" [ref=e73]
+              - cell "Ver Editar" [ref=e74]:
+                - generic [ref=e75]:
+                  - link "Ver" [ref=e76] [cursor=pointer]:
+                    - /url: /training/sessions/1
+                  - link "Editar" [ref=e77] [cursor=pointer]:
+                    - /url: /training/sessions/1/edit

@@ -1,0 +1,49 @@
+- generic [ref=e3]:
+  - complementary "Menú de navegación" [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Trocha y Ruta" [level=2] [ref=e6]
+      - paragraph [ref=e7]: Club Ciclismo XCO
+    - navigation [ref=e8]:
+      - link "Mis Atletas" [ref=e9] [cursor=pointer]:
+        - /url: /my-athletes
+      - link "Entrenamientos" [ref=e10] [cursor=pointer]:
+        - /url: /parents/training/sessions
+      - link "Resumen mensual" [ref=e11] [cursor=pointer]:
+        - /url: /parents/training/overview
+  - generic [ref=e12]:
+    - banner [ref=e13]:
+      - paragraph [ref=e15]: Carlos Garcia
+      - button "Cerrar sesión" [ref=e16]
+    - main [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - heading "Mis Atletas" [level=1] [ref=e20]
+          - paragraph [ref=e21]: Seguimiento de tus deportistas
+        - link "Ver detalle de Santiago Lopez" [ref=e23] [cursor=pointer]:
+          - /url: /my-athletes/1
+          - generic [ref=e24]:
+            - generic [ref=e25]:
+              - heading "Santiago Lopez" [level=2] [ref=e26]
+              - paragraph [ref=e27]: "Edad: 12.1 años • Cat: Infantil B"
+            - generic [ref=e28]: Al día
+          - generic [ref=e31]:
+            - generic [ref=e32]:
+              - paragraph [ref=e33]: Talla
+              - paragraph [ref=e34]: 153.0 cm
+            - generic [ref=e35]:
+              - paragraph [ref=e36]: Estado de crecimiento
+              - paragraph [ref=e37]: En etapa de desarrollo temprano
+            - generic [ref=e38]:
+              - paragraph [ref=e39]: Peso
+              - paragraph [ref=e40]: 43.0 kg
+            - generic [ref=e41]:
+              - paragraph [ref=e42]: Última medición
+              - paragraph [ref=e43]: 6 de may
+          - generic [ref=e44]:
+            - generic [ref=e45]: Ver detalle
+            - img [ref=e46]
+        - button "Gestionar consentimiento Todos los consentimientos al día" [ref=e49]:
+          - generic [ref=e51]:
+            - paragraph [ref=e52]: Gestionar consentimiento
+            - paragraph [ref=e53]: Todos los consentimientos al día
+          - img [ref=e54]

@@ -370,6 +370,58 @@ async def cancel_training_session(
 
 
 # ---------------------------------------------------------------------------
+# GET /training-sessions/{session_id}/attendance — Lista asistencias
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{session_id}/attendance",
+    response_model=list[AttendanceRead],
+)
+async def list_session_attendance(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AttendanceRead]:
+    """
+    Retorna las asistencias de la sesión.
+
+    - admin/coach (mismo club): todas las filas.
+    - parent: solo las filas de SUS atletas convocados.
+    - otros: 403.
+    """
+    session = await _get_session_or_404(db, session_id)
+
+    if current_user.role == UserRole.admin:
+        attendances = list(session.attendances or [])
+    elif current_user.role == UserRole.coach:
+        role = await user_club_role(db, current_user.id, session.club_id)
+        if role is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No perteneces al club de esta sesión",
+            )
+        attendances = list(session.attendances or [])
+    elif current_user.role == UserRole.parent:
+        my_athlete_ids = await parent_athlete_ids(db, current_user.id)
+        attendances = [
+            a for a in (session.attendances or []) if a.athlete_id in my_athlete_ids
+        ]
+        if not attendances:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes atletas convocados en esta sesión",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Rol no autorizado",
+        )
+
+    return [AttendanceRead.model_validate(a) for a in attendances]
+
+
+# ---------------------------------------------------------------------------
 # PUT /training-sessions/{session_id}/attendance — Bulk convocatoria
 # ---------------------------------------------------------------------------
 

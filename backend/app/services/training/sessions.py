@@ -116,13 +116,17 @@ async def create_session(
         )
 
     await db.commit()
-    await db.refresh(session)
+
+    # Recargar con selectinload para que el router pueda acceder a session.attendances
+    # sin disparar lazy loading en contexto async (que provoca MissingGreenlet).
+    refreshed = await get_session(db, session.id)
+    assert refreshed is not None  # acabamos de crearla
 
     # Notificar a padres solo si la sesión quedó planificada
-    if notification_service is not None and session.status == SessionStatus.PLANNED:
+    if notification_service is not None and refreshed.status == SessionStatus.PLANNED:
         await _notify_parents(
             db=db,
-            session=session,
+            session=refreshed,
             coach=coach,
             club_id=club_id,
             convocados_athlete_ids=payload.convocados_athlete_ids,
@@ -130,7 +134,7 @@ async def create_session(
             dispatcher=dispatcher,
         )
 
-    return session
+    return refreshed
 
 
 async def _notify_parents(
@@ -281,8 +285,9 @@ async def update_session(
         setattr(session, field, value)
 
     await db.commit()
-    await db.refresh(session)
-    return session
+    refreshed = await get_session(db, session.id)
+    assert refreshed is not None
+    return refreshed
 
 
 async def execute_session(db: AsyncSession, session_id: int) -> TrainingSession:
@@ -301,8 +306,9 @@ async def execute_session(db: AsyncSession, session_id: int) -> TrainingSession:
     session.executed_at = datetime.now(timezone.utc)
 
     await db.commit()
-    await db.refresh(session)
-    return session
+    refreshed = await get_session(db, session.id)
+    assert refreshed is not None
+    return refreshed
 
 
 async def cancel_session(db: AsyncSession, session_id: int) -> TrainingSession:
@@ -314,8 +320,9 @@ async def cancel_session(db: AsyncSession, session_id: int) -> TrainingSession:
 
     session.status = SessionStatus.CANCELLED
     await db.commit()
-    await db.refresh(session)
-    return session
+    refreshed = await get_session(db, session.id)
+    assert refreshed is not None
+    return refreshed
 
 
 async def list_sessions(
