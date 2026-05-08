@@ -360,3 +360,60 @@ def test_monthly_report_registered_in_registry():
     assert "club_name" in spec.required_keys
     assert "attendance_stats" in spec.required_keys
     assert "focos_técnicos" in spec.required_keys
+
+
+# ---------------------------------------------------------------------------
+# H5 — _redact_names insensible a acentos (NFKD fold)
+# ---------------------------------------------------------------------------
+
+
+def test_redact_accent_insensitive_match_accent_in_forbidden():
+    """Nombre forbid con tilde → redacta variante sin tilde en texto."""
+    from app.services.ai.use_cases.monthly_report import _redact_names
+    result = _redact_names("Perez destacó este mes.", frozenset({"Pérez"}))
+    assert "[REDACTADO]" in result, "Debe redactar 'Perez' cuando forbidden es 'Pérez'"
+
+
+def test_redact_accent_insensitive_match_no_accent_in_forbidden():
+    """Nombre forbidden sin tilde → redacta variante con tilde en texto."""
+    from app.services.ai.use_cases.monthly_report import _redact_names
+    result = _redact_names("Pérez destacó este mes.", frozenset({"Perez"}))
+    assert "[REDACTADO]" in result, "Debe redactar 'Pérez' cuando forbidden es 'Perez'"
+
+
+def test_redact_accent_insensitive_case_insensitive():
+    """Coincidencia es insensible a mayúsculas Y a acentos."""
+    from app.services.ai.use_cases.monthly_report import _redact_names
+    result = _redact_names("perez destacó este mes.", frozenset({"PÉREZ"}))
+    assert "[REDACTADO]" in result, "Debe redactar 'perez' cuando forbidden es 'PÉREZ'"
+
+
+def test_redact_empty_forbidden_names_no_op():
+    """frozenset vacío → texto sin modificar."""
+    from app.services.ai.use_cases.monthly_report import _redact_names
+    texto = "texto cualquiera"
+    assert _redact_names(texto, frozenset()) == texto
+
+
+def test_redact_blank_entries_in_forbidden_ignored():
+    """Entradas en blanco dentro de forbidden no producen sustituciones vacías."""
+    from app.services.ai.use_cases.monthly_report import _redact_names
+    texto = "texto"
+    result = _redact_names(texto, frozenset({"", "  "}))
+    assert result == texto
+
+
+def test_guardrails_detect_accent_variant_in_output():
+    """MonthlyReportGuardrails.scrub detecta nombre sin acento cuando forbidden tiene acento."""
+    from app.services.ai.use_cases.monthly_report import MonthlyReportGuardrails
+    from app.services.ai.errors import LLMSchemaError
+
+    # Texto suficientemente largo para no fallar por longitud (>50 palabras)
+    base = (
+        "El atleta Perez tuvo un mes destacado con buena asistencia durante las sesiones "
+        "del club. La participación grupal fue positiva y los objetivos técnicos se "
+        "cumplieron satisfactoriamente. El grupo mostró compromiso con los focos planificados."
+    )
+    g = MonthlyReportGuardrails(forbidden_names=frozenset({"Pérez"}))
+    with pytest.raises(LLMSchemaError):
+        g.scrub(base)

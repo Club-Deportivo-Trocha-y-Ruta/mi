@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.dependencies import (
     get_current_user,
@@ -69,6 +73,8 @@ async def create_monthly_report(
             detail="No tienes acceso a este club.",
         )
 
+    from app.services.ai.use_cases.monthly_report import MonthlyReportLLMTimeout
+
     try:
         report = await generate_monthly_report(
             db=db,
@@ -80,11 +86,30 @@ async def create_monthly_report(
             force_regenerate=body.force_regenerate,
             ai_use_case=ai_use_case,
         )
-    except ValueError as exc:
-        msg = str(exc)
-        if "Ya existe" in msg:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+    except MonthlyReportLLMTimeout as exc:
+        logger.exception("Timeout en proveedor LLM al generar reporte mensual: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El servicio de IA no está disponible. Intenta de nuevo en unos minutos.",
+        )
+    except Exception as exc:
+        # Captura errores de proveedor LLM (httpx, Anthropic SDK, etc.)
+        exc_module = type(exc).__module__ or ""
+        if any(
+            mod in exc_module
+            for mod in ("httpx", "anthropic", "openai")
+        ) or "API" in type(exc).__name__:
+            logger.exception("Error de proveedor LLM al generar reporte mensual: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="El servicio de IA no está disponible. Intenta de nuevo en unos minutos.",
+            )
+        if isinstance(exc, ValueError):
+            msg = str(exc)
+            if "Ya existe" in msg:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+        raise
 
     return MonthlyReportRead.model_validate(report)
 

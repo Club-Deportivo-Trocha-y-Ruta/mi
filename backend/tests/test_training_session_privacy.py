@@ -424,3 +424,61 @@ class TestSessionResponseDoesNotLeakIndividualFeedback:
                       "excuse_reason", "athlete_name"}
         leaked = fields & pii_fields
         assert not leaked, f"AttendanceSummary expone campos PII: {leaked}"
+
+
+# ---------------------------------------------------------------------------
+# INVARIANTE nueva: TrainingSessionReadParent omite coach_notes y route_file_path
+# AttendanceReadParent omite individual_feedback
+# ---------------------------------------------------------------------------
+
+
+class TestParentSchemaOmitsSensitiveFields:
+    def test_parent_session_schema_excludes_coach_notes(self):
+        """TrainingSessionReadParent NO debe tener coach_notes."""
+        from app.schemas.training_session import TrainingSessionReadParent
+        fields = set(TrainingSessionReadParent.model_fields.keys())
+        assert "coach_notes" not in fields, (
+            "TrainingSessionReadParent expone coach_notes — viola privacidad del entrenador"
+        )
+
+    def test_parent_session_schema_excludes_route_file_path(self):
+        """TrainingSessionReadParent NO debe tener route_file_path."""
+        from app.schemas.training_session import TrainingSessionReadParent
+        fields = set(TrainingSessionReadParent.model_fields.keys())
+        assert "route_file_path" not in fields, (
+            "TrainingSessionReadParent expone route_file_path — acceso indebido al archivo de ruta"
+        )
+
+    def test_parent_session_schema_has_required_public_fields(self):
+        """TrainingSessionReadParent sí incluye los campos públicos."""
+        from app.schemas.training_session import TrainingSessionReadParent
+        fields = set(TrainingSessionReadParent.model_fields.keys())
+        required_public = {
+            "id", "club_id", "status", "scheduled_date", "scheduled_start_time",
+            "duration_min", "location", "technical_focus", "attendance_summary",
+        }
+        missing = required_public - fields
+        assert not missing, f"TrainingSessionReadParent le faltan campos públicos: {missing}"
+
+    def test_parent_attendance_schema_excludes_individual_feedback(self):
+        """AttendanceReadParent NO debe tener individual_feedback."""
+        from app.schemas.training_session import AttendanceReadParent
+        fields = set(AttendanceReadParent.model_fields.keys())
+        assert "individual_feedback" not in fields, (
+            "AttendanceReadParent expone individual_feedback — viola privacidad del feedback individual"
+        )
+
+    def test_coach_session_schema_includes_sensitive_fields(self):
+        """TrainingSessionRead (coach/admin) SÍ incluye coach_notes y route_file_path."""
+        from app.schemas.training_session import TrainingSessionRead
+        fields = set(TrainingSessionRead.model_fields.keys())
+        assert "coach_notes" in fields, "TrainingSessionRead debe tener coach_notes"
+        assert "route_file_path" in fields, "TrainingSessionRead debe tener route_file_path"
+
+    def test_full_attendance_schema_includes_individual_feedback(self):
+        """AttendanceRead (coach/admin) SÍ incluye individual_feedback."""
+        from app.schemas.training_session import AttendanceRead
+        fields = set(AttendanceRead.model_fields.keys())
+        assert "individual_feedback" in fields, (
+            "AttendanceRead debe exponer individual_feedback para coaches"
+        )

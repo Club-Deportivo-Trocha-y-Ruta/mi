@@ -6,16 +6,23 @@ nombres reales de atletas — solo pseudónimos (A1, A2, …).
 
 from __future__ import annotations
 
+import asyncio
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import BaseModel
 
+
 from app.services.ai.guardrails import Guardrails
 from app.services.ai.prompts.registry import PromptRegistry
 from app.services.ai.protocols import LLMProvider
 from app.services.ai.use_cases.base import BaseUseCase
+
+
+class MonthlyReportLLMTimeout(Exception):
+    """Se lanza cuando el proveedor LLM no responde dentro del tiempo límite."""
 
 
 class AnonymizedAthleteStats(BaseModel):
@@ -58,16 +65,64 @@ class MonthlyReportResult:
     period_month: int
 
 
+def _ascii_fold(text: str) -> str:
+    """Normaliza NFKD y elimina caracteres de combinación (acentos, diacríticos)."""
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
 def _redact_names(text: str, forbidden: frozenset[str]) -> str:
-    """Reemplaza nombres reales con '[REDACTADO]' en texto libre del entrenador."""
+    """Reemplaza nombres reales con '[REDACTADO]' en texto libre del entrenador.
+
+    Detección accent-insensitive: 'Pérez' y 'Perez' se redactan en ambas direcciones
+    (forbidden con/sin acento ↔ texto con/sin acento). Match se realiza sobre la forma
+    NFKD-folded del texto y se mapea a los índices del original cuando las longitudes
+    coinciden (típico en español con caracteres precompuestos).
+    """
     if not text or not forbidden:
         return text
+
+    folded_text = _ascii_fold(text)
+    if len(folded_text) != len(text):
+        # Compatibilidad NFKD alteró longitud; fallback a sustitución doble (puede no
+        # cubrir todos los casos pero preserva el texto original).
+        out = text
+        for name in forbidden:
+            original = name.strip()
+            if not original:
+                continue
+            folded = _ascii_fold(original)
+            for variant in {original, folded}:
+                out = re.sub(re.escape(variant), "[REDACTADO]", out, flags=re.IGNORECASE)
+        return out
+
+    spans: list[tuple[int, int]] = []
     for name in forbidden:
-        if not name.strip():
+        n = _ascii_fold(name).strip()
+        if not n:
             continue
-        pattern = re.compile(re.escape(name.strip()), re.IGNORECASE)
-        text = pattern.sub("[REDACTADO]", text)
-    return text
+        for m in re.finditer(re.escape(n), folded_text, re.IGNORECASE):
+            spans.append((m.start(), m.end()))
+
+    if not spans:
+        return text
+
+    spans.sort()
+    merged: list[tuple[int, int]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+
+    out_parts: list[str] = []
+    cursor = 0
+    for start, end in merged:
+        out_parts.append(text[cursor:start])
+        out_parts.append("[REDACTADO]")
+        cursor = end
+    out_parts.append(text[cursor:])
+    return "".join(out_parts)
 
 
 class MonthlyReportUseCase(BaseUseCase):
@@ -136,6 +191,8 @@ class MonthlyReportUseCase(BaseUseCase):
             forbidden_names=forbidden,
         )
 
+    _LLM_TIMEOUT_SECONDS = 25.0
+
     async def run(self, ctx: MonthlyReportContext) -> MonthlyReportResult:
         self._guardrails = MonthlyReportGuardrails(
             forbidden_names=ctx.forbidden_names,
@@ -146,7 +203,16 @@ class MonthlyReportUseCase(BaseUseCase):
             s.model_dump() for s in ctx.attendance_stats
         ]
 
-        response = await self._ask(context_dict)
+        try:
+            response = await asyncio.wait_for(
+                self._ask(context_dict),
+                timeout=self._LLM_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise MonthlyReportLLMTimeout(
+                f"El proveedor LLM no respondió en {self._LLM_TIMEOUT_SECONDS:.0f}s."
+            ) from exc
+
         sanitized = self._scrub(response.text)
 
         return MonthlyReportResult(
@@ -195,13 +261,17 @@ class MonthlyReportGuardrails(Guardrails):
                 "Reporte rechazado: contiene términos médicos/nutricionales no permitidos."
             )
 
+        folded_text = _ascii_fold(text)
         for name in self._forbidden_names:
             name_stripped = name.strip()
             if not name_stripped:
                 continue
-            if re.search(re.escape(name_stripped), text, re.IGNORECASE):
-                raise LLMSchemaError(
-                    f"Reporte rechazado: contiene nombre real de atleta (violación de privacidad)."
-                )
+            # Verificar tanto la forma original como la ASCII-folded del nombre
+            folded_name = _ascii_fold(name_stripped)
+            for variant in {name_stripped, folded_name}:
+                if re.search(re.escape(_ascii_fold(variant)), folded_text, re.IGNORECASE):
+                    raise LLMSchemaError(
+                        "Reporte rechazado: contiene nombre real de atleta (violación de privacidad)."
+                    )
 
         return super().scrub(text)

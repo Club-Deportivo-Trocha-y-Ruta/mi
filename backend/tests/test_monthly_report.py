@@ -10,6 +10,7 @@ Cubre:
 6. send: actualiza sent_at, llama send() por cada admin
 7. Listado devuelve reportes del club
 8. Variante padre: resumen mensual solo de sus atletas
+H8. LLM timeout → propagación de MonthlyReportLLMTimeout al router → 503
 """
 
 from __future__ import annotations
@@ -471,3 +472,102 @@ class TestParentMonthlySummary:
         assert summary.count_total == 2
         assert summary.percentage == 50.0
         assert set(summary.focos_técnicos) == {"Frenado", "Pedaleo"}
+
+
+# ---------------------------------------------------------------------------
+# H8 — LLM timeout se propaga desde generate_monthly_report → 503 en router
+# ---------------------------------------------------------------------------
+
+
+class TestLLMTimeoutPropagation:
+    """Verifica que MonthlyReportLLMTimeout escala hasta el router como 503.
+
+    Usa dos niveles de cobertura:
+    1. Servicio: generate_monthly_report re-lanza MonthlyReportLLMTimeout cuando
+       el use case lo lanza.
+    2. Router: create_monthly_report captura MonthlyReportLLMTimeout y responde 503.
+    """
+
+    @pytest.mark.asyncio
+    async def test_generate_monthly_report_propagates_llm_timeout(self):
+        """generate_monthly_report no captura MonthlyReportLLMTimeout — lo deja burbujear."""
+        from app.services.ai.use_cases.monthly_report import MonthlyReportLLMTimeout
+
+        db = AsyncMock()
+        coach = _make_user(1)
+        club = _make_club(1)
+        metrics = _make_empty_metrics()
+
+        async def mock_execute(stmt):
+            call_n[0] += 1
+            result = MagicMock()
+            if call_n[0] == 1:
+                result.scalar_one_or_none.return_value = None  # no existing report
+            elif call_n[0] == 2:
+                result.scalar_one_or_none.return_value = club
+            else:
+                result.scalars.return_value.all.return_value = []
+            return result
+
+        call_n = [0]
+        db.execute = mock_execute
+        db.add = MagicMock()
+        db.flush = AsyncMock()
+
+        ai_use_case = MagicMock()
+        ai_use_case.build_context_from_metrics.return_value = MagicMock()
+        ai_use_case.run = AsyncMock(side_effect=MonthlyReportLLMTimeout("timeout simulado"))
+
+        with patch(
+            "app.services.training.reports.compute_monthly_metrics",
+            AsyncMock(return_value=metrics),
+        ), patch("app.services.training.reports._validate_period"):
+            with pytest.raises(MonthlyReportLLMTimeout):
+                await generate_monthly_report(
+                    db=db,
+                    club_id=1,
+                    year=2026,
+                    month=3,
+                    generator_user=coach,
+                    ai_use_case=ai_use_case,
+                )
+
+    @pytest.mark.asyncio
+    async def test_router_returns_503_on_llm_timeout(self):
+        """El router convierte MonthlyReportLLMTimeout en HTTPException 503."""
+        from fastapi import HTTPException
+        from app.models.user import UserRole
+        from app.routers.monthly_reports import create_monthly_report
+        from app.schemas.training_session import MonthlyReportCreate
+        from app.services.ai.use_cases.monthly_report import MonthlyReportLLMTimeout
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(
+            scalar_one_or_none=MagicMock(return_value=None)
+        ))
+
+        coach = _make_user(1)
+        coach.role = UserRole.coach
+
+        ai_use_case = MagicMock()
+
+        with patch(
+            "app.routers.monthly_reports.user_club_role",
+            AsyncMock(return_value=MagicMock()),  # coach pertenece al club
+        ), patch(
+            "app.routers.monthly_reports.generate_monthly_report",
+            AsyncMock(side_effect=MonthlyReportLLMTimeout("timeout simulado")),
+        ):
+            body = MonthlyReportCreate(year=2025, month=3)
+            with pytest.raises(HTTPException) as exc_info:
+                await create_monthly_report(
+                    club_id=1,
+                    body=body,
+                    db=db,
+                    current_user=coach,
+                    ai_use_case=ai_use_case,
+                )
+
+        assert exc_info.value.status_code == 503
+        detail = exc_info.value.detail.lower()
+        assert "ia" in detail or "disponible" in detail or "intenta" in detail

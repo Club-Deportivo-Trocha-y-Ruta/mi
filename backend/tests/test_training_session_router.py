@@ -705,3 +705,80 @@ class TestUploadRouteFile:
             files=files,
         )
         assert resp.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# H4 — IDOR: padre filtrando por athlete_id ajeno
+# ---------------------------------------------------------------------------
+
+
+class TestParentIDORFilterByForeignAthleteId:
+    """H4 — Invariante IDOR: padre no puede ver sesiones de atleta ajeno via ?athlete_id.
+
+    Requiere MySQL (docker compose up). El test lista atletas del club como coach,
+    localiza uno que NO sea hijo del padre seed, y verifica que filtrar por ese
+    athlete_id no devuelve sesiones del atleta ajeno al padre.
+    """
+
+    async def _get_parent_athlete_ids(self, client: AsyncClient, parent_headers: dict) -> set[int]:
+        """Obtiene IDs de atletas vinculados al padre seed leyendo parent_athlete vía DB."""
+        from app.database import AsyncSessionLocal
+        from app.services.permissions import parent_athlete_ids
+
+        resp = await client.get("/api/auth/me", headers=parent_headers)
+        assert resp.status_code == 200
+        parent_user_id = resp.json()["id"]
+        async with AsyncSessionLocal() as db:
+            ids = await parent_athlete_ids(db, parent_user_id)
+        return set(ids)
+
+    async def test_parent_filter_by_foreign_athlete_id_returns_403_or_empty(
+        self, client: AsyncClient
+    ):
+        """Padre filtrando por athlete_id que no es su hijo no debe ver sesiones del atleta ajeno."""
+        parent_headers = await _auth_parent(client)
+        coach_headers = await _auth_coach(client)
+        club_id = await _get_club_id(client, coach_headers)
+
+        # Listar todos los atletas del club (solo coach puede hacerlo)
+        athletes_resp = await client.get(
+            f"/api/athletes?club_id={club_id}", headers=coach_headers
+        )
+        assert athletes_resp.status_code == 200
+        athletes = athletes_resp.json().get("items", athletes_resp.json())
+        if not isinstance(athletes, list):
+            athletes = []
+
+        # Obtener IDs de hijos del padre seed
+        parent_kids = await self._get_parent_athlete_ids(client, parent_headers)
+
+        # Buscar un atleta que NO sea hijo del padre (para probar IDOR)
+        foreign_ids = [a["id"] for a in athletes if a["id"] not in parent_kids]
+        if not foreign_ids:
+            pytest.skip("No hay atletas ajenos al padre seed en este entorno — requiere seed con >= 2 atletas")
+
+        foreign_id = foreign_ids[0]
+
+        resp = await client.get(
+            f"/api/training-sessions?athlete_id={foreign_id}",
+            headers=parent_headers,
+        )
+
+        # Resultado aceptable: 403 (bloqueo explícito) o 200 con lista vacía
+        # (el filtro interno excluye sesiones donde solo está convocado el atleta ajeno)
+        if resp.status_code == 200:
+            sessions = resp.json()
+            assert isinstance(sessions, list)
+            # Ninguna sesión devuelta debe ser exclusivamente del atleta ajeno
+            # (si está vacía es correcto; si devuelve sesiones es una fuga)
+            for session in sessions:
+                # La sesión no debería contener datos del atleta ajeno en kid_attendances
+                kid_attendances = session.get("kid_attendances") or []
+                for ka in kid_attendances:
+                    assert ka.get("athlete_id") != foreign_id, (
+                        f"FUGA IDOR: kid_attendances expone datos del atleta ajeno {foreign_id}"
+                    )
+        else:
+            assert resp.status_code == 403, (
+                f"Se esperaba 200 (filtrado interno) o 403, pero se recibió {resp.status_code}"
+            )

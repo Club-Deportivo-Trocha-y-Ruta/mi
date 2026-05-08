@@ -119,6 +119,11 @@ async def generate_monthly_report(
         existing.generated_at = now
         existing.sent_at = None
         await db.flush()
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
         return existing
 
     report = MonthlyReport(
@@ -133,6 +138,11 @@ async def generate_monthly_report(
     )
     db.add(report)
     await db.flush()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     return report
 
 

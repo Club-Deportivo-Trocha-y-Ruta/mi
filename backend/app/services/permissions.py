@@ -82,12 +82,21 @@ async def can_view_session(
     return False
 
 
-def can_edit_session(user: User, session: TrainingSession) -> bool:
-    """Admin o el coach que creó la sesión (asumido mismo club — verificar en router)."""
+async def can_edit_session(
+    db: AsyncSession,
+    user: User,
+    session: TrainingSession,
+) -> bool:
+    """
+    Admin: siempre.
+    Coach: solo si pertenece al club de la sesión.
+    Otros: False.
+    """
     if user.role == UserRole.admin:
         return True
     if user.role == UserRole.coach:
-        return True
+        role = await user_club_role(db, user.id, session.club_id)
+        return role is not None
     return False
 
 

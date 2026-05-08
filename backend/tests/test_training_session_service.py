@@ -874,8 +874,11 @@ class TestSaveRouteFile:
         original_base = route_files._UPLOAD_BASE
         route_files._UPLOAD_BASE = tmp_path / "routes"
 
+        # Contenido mínimo válido para FIT: magic byte 0x0e + 13 bytes de relleno
+        _valid_fit = bytes([0x0E]) + b"\x00" * 13
+
         try:
-            f = self._make_upload_file("ruta.fit", b"binary_fit_data")
+            f = self._make_upload_file("ruta.fit", _valid_fit)
             path = await route_files.save_route_file(f, session_id=1)
             assert path.endswith(".fit")
         finally:

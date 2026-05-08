@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useCallback, useRef } from "react";
 import { AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 
-import { useUpdateAttendance } from "@/api/trainingSessions";
 import type { Attendance, AttendanceStatus } from "@/types/trainingSession.types";
 import { RubricSliders } from "./RubricSliders";
+import { useAttendanceForm, ALLOWS_RUBRIC } from "./useAttendanceForm";
 
 export interface AttendanceFormValues {
   status: AttendanceStatus;
@@ -32,9 +31,6 @@ const STATUS_KEY_MAP: Record<string, AttendanceStatus> = {
   l: "lesionado",
 };
 
-const REQUIRES_REASON: AttendanceStatus[] = ["ausente", "justificado", "lesionado"];
-const ALLOWS_RUBRIC: AttendanceStatus[] = ["presente", "tarde"];
-
 interface AttendanceRowProps {
   attendance: Attendance;
   sessionId: number;
@@ -42,73 +38,22 @@ interface AttendanceRowProps {
 }
 
 function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) {
-  const [savedIndicator, setSavedIndicator] = useState<"saved" | "error" | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowRef = useRef<HTMLTableRowElement>(null);
 
-  const mutation = useUpdateAttendance(sessionId);
+  const {
+    control,
+    register,
+    setValue,
+    formValues,
+    savedIndicator,
+    doSave,
+    requiresReason,
+    allowsRubric,
+  } = useAttendanceForm(attendance, sessionId, disabled);
 
-  const { control, register, setValue } = useForm<AttendanceFormValues>({
-    defaultValues: {
-      status: attendance.status,
-      excuse_reason: attendance.excuse_reason ?? null,
-      rpe_omni: attendance.rpe_omni ?? 5,
-      rubric_effort: attendance.rubric_effort ?? 3,
-      rubric_attitude: attendance.rubric_attitude ?? 3,
-      rubric_technique: attendance.rubric_technique ?? 3,
-      individual_feedback: attendance.individual_feedback ?? null,
-    },
-  });
-
-  const formValues = useWatch({ control });
-  const currentStatus = formValues.status ?? attendance.status;
-  const needsReason = REQUIRES_REASON.includes(currentStatus);
-  const rubricEnabled = ALLOWS_RUBRIC.includes(currentStatus) && !disabled;
+  const currentStatus = (formValues.status ?? attendance.status) as AttendanceStatus;
+  const rubricEnabled = allowsRubric && !disabled;
   const feedbackVal = formValues.individual_feedback ?? "";
-
-  const doSave = useCallback(
-    (values: AttendanceFormValues) => {
-      const payload: AttendanceFormValues = { ...values };
-      if (!ALLOWS_RUBRIC.includes(values.status)) {
-        payload.rpe_omni = null;
-        payload.rubric_effort = null;
-        payload.rubric_attitude = null;
-        payload.rubric_technique = null;
-        payload.individual_feedback = null;
-      }
-      if (!REQUIRES_REASON.includes(values.status)) {
-        payload.excuse_reason = null;
-      }
-      mutation.mutate(
-        { athleteId: attendance.athlete_id, payload },
-        {
-          onSuccess: () => {
-            setSavedIndicator("saved");
-            setTimeout(() => setSavedIndicator(null), 1500);
-          },
-          onError: () => {
-            setSavedIndicator("error");
-          },
-        },
-      );
-    },
-    [attendance.athlete_id, mutation],
-  );
-
-  const initialSnapshotRef = useRef<string>(JSON.stringify(formValues));
-  useEffect(() => {
-    if (disabled) return;
-    const snap = JSON.stringify(formValues);
-    if (snap === initialSnapshotRef.current) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      doSave(formValues as AttendanceFormValues);
-    }, 500);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(formValues), disabled]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTableRowElement>) => {
@@ -186,7 +131,7 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
 
       {/* Razón */}
       <td className="px-3 py-2">
-        {needsReason ? (
+        {requiresReason ? (
           <input
             {...register("excuse_reason")}
             type="text"
@@ -226,70 +171,19 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
 }
 
 function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps) {
-  const [savedIndicator, setSavedIndicator] = useState<"saved" | "error" | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {
+    control,
+    register,
+    formValues,
+    savedIndicator,
+    doSave,
+    requiresReason,
+    allowsRubric,
+  } = useAttendanceForm(attendance, sessionId, disabled);
 
-  const mutation = useUpdateAttendance(sessionId);
-
-  const { control, register } = useForm<AttendanceFormValues>({
-    defaultValues: {
-      status: attendance.status,
-      excuse_reason: attendance.excuse_reason ?? null,
-      rpe_omni: attendance.rpe_omni ?? 5,
-      rubric_effort: attendance.rubric_effort ?? 3,
-      rubric_attitude: attendance.rubric_attitude ?? 3,
-      rubric_technique: attendance.rubric_technique ?? 3,
-      individual_feedback: attendance.individual_feedback ?? null,
-    },
-  });
-
-  const formValues = useWatch({ control });
-  const currentStatus = formValues.status ?? attendance.status;
-  const needsReason = REQUIRES_REASON.includes(currentStatus);
-  const rubricEnabled = ALLOWS_RUBRIC.includes(currentStatus) && !disabled;
+  const rubricEnabled = allowsRubric && !disabled;
   const feedbackVal = formValues.individual_feedback ?? "";
-
-  const doSave = useCallback(
-    (values: AttendanceFormValues) => {
-      const payload: AttendanceFormValues = { ...values };
-      if (!ALLOWS_RUBRIC.includes(values.status)) {
-        payload.rpe_omni = null;
-        payload.rubric_effort = null;
-        payload.rubric_attitude = null;
-        payload.rubric_technique = null;
-        payload.individual_feedback = null;
-      }
-      if (!REQUIRES_REASON.includes(values.status)) {
-        payload.excuse_reason = null;
-      }
-      mutation.mutate(
-        { athleteId: attendance.athlete_id, payload },
-        {
-          onSuccess: () => {
-            setSavedIndicator("saved");
-            setTimeout(() => setSavedIndicator(null), 1500);
-          },
-          onError: () => setSavedIndicator("error"),
-        },
-      );
-    },
-    [attendance.athlete_id, mutation],
-  );
-
-  const initialSnapshotRef = useRef<string>(JSON.stringify(formValues));
-  useEffect(() => {
-    if (disabled) return;
-    const snap = JSON.stringify(formValues);
-    if (snap === initialSnapshotRef.current) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      doSave(formValues as AttendanceFormValues);
-    }, 500);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(formValues), disabled]);
+  const currentStatus = (formValues.status ?? attendance.status) as AttendanceStatus;
 
   const athleteName = attendance.athlete_name ?? `Atleta #${attendance.athlete_id}`;
 
@@ -329,7 +223,7 @@ function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps)
         </div>
       </div>
 
-      {needsReason && (
+      {requiresReason && (
         <input
           {...register("excuse_reason")}
           type="text"

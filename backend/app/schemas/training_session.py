@@ -112,6 +112,31 @@ class TrainingSessionRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TrainingSessionReadParent(BaseModel):
+    """Respuesta de sesión para padres — omite coach_notes y route_file_path."""
+
+    id: int
+    club_id: int
+    created_by_user_id: int
+    status: SessionStatus
+    scheduled_date: date
+    scheduled_start_time: time
+    duration_min: int
+    location: str
+    technical_focus: str
+    description: str | None
+    route_text: str | None
+    strava_url: str | None
+    created_at: datetime
+    updated_at: datetime
+    executed_at: datetime | None
+    # Solo asistencias de los propios hijos; resumen recalculado con esos datos
+    attendance_summary: AttendanceSummary | None = None
+    kid_attendances: list[KidAttendance] | None = None
+
+    model_config = {"from_attributes": True}
+
+
 # ---------------------------------------------------------------------------
 # Asistencia
 # ---------------------------------------------------------------------------
@@ -178,6 +203,25 @@ class AttendanceRead(BaseModel):
     rubric_attitude: int | None
     rubric_technique: int | None
     individual_feedback: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AttendanceReadParent(BaseModel):
+    """Respuesta de asistencia para padres — omite individual_feedback."""
+
+    id: int
+    session_id: int
+    athlete_id: int
+    athlete_name: str | None = None
+    status: AttendanceStatus
+    excuse_reason: str | None
+    rpe_omni: int | None
+    rubric_effort: int | None
+    rubric_attitude: int | None
+    rubric_technique: int | None
     created_at: datetime
     updated_at: datetime
 

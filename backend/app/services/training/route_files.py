@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -10,6 +11,23 @@ from fastapi import UploadFile
 _MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 _ALLOWED_EXTENSIONS = {".gpx", ".fit"}
 _UPLOAD_BASE = Path("static/uploads/routes")
+
+
+def _validate_fit_content(content: bytes) -> None:
+    """Valida magic byte del formato FIT (.fit).
+
+    El primer byte de un archivo FIT válido debe ser 0x0e (longitud del header)
+    y la longitud mínima del header es 14 bytes.
+
+    Raises:
+        ValueError: si el archivo no es un FIT válido.
+    """
+    if len(content) < 14:
+        raise ValueError("El archivo .fit es demasiado pequeño para ser un FIT válido.")
+    if content[0] != 0x0E:
+        raise ValueError(
+            "El archivo .fit no tiene la firma de cabecera FIT esperada (magic byte 0x0e)."
+        )
 
 
 def _validate_gpx_content(content: bytes) -> None:
@@ -71,14 +89,16 @@ async def save_route_file(
 
     if ext == ".gpx":
         _validate_gpx_content(content)
+    elif ext == ".fit":
+        _validate_fit_content(content)
 
     # Generar ruta de destino
     dest_dir = _UPLOAD_BASE / str(session_id)
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(dest_dir.mkdir, parents=True, exist_ok=True)
 
     unique_name = f"{uuid.uuid4()}{ext}"
     dest_path = dest_dir / unique_name
 
-    dest_path.write_bytes(content)
+    await asyncio.to_thread(dest_path.write_bytes, content)
 
     return str(dest_dir / unique_name)
