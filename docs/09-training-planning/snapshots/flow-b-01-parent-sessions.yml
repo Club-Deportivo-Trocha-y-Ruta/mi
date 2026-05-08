@@ -1,0 +1,22 @@
+- generic [ref=e3]:
+  - complementary "Menú de navegación" [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Trocha y Ruta" [level=2] [ref=e6]
+      - paragraph [ref=e7]: Club Ciclismo XCO
+    - navigation [ref=e8]:
+      - link "Mis Atletas" [ref=e9] [cursor=pointer]:
+        - /url: /my-athletes
+      - link "Entrenamientos" [ref=e10] [cursor=pointer]:
+        - /url: /parents/training/sessions
+      - link "Resumen mensual" [ref=e11] [cursor=pointer]:
+        - /url: /parents/training/overview
+  - generic [ref=e12]:
+    - banner [ref=e13]:
+      - paragraph [ref=e15]: Carlos Garcia
+      - button "Cerrar sesión" [ref=e16]
+    - main [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - heading "Entrenamientos" [level=1] [ref=e20]
+          - paragraph [ref=e21]: Vista de lectura — solo tus atletas.
+        - paragraph [ref=e27]: Aún no hay entrenamientos registrados para tu atleta.

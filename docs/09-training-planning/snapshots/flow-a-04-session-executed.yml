@@ -1,0 +1,50 @@
+- generic [ref=e3]:
+  - complementary "Menú de navegación" [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Trocha y Ruta" [level=2] [ref=e6]
+      - paragraph [ref=e7]: Club Ciclismo XCO
+    - navigation [ref=e8]:
+      - link "Dashboard" [ref=e9] [cursor=pointer]:
+        - /url: /dashboard
+      - link "Atletas" [ref=e10] [cursor=pointer]:
+        - /url: /athletes
+      - link "Padres" [ref=e11] [cursor=pointer]:
+        - /url: /parents
+      - link "Entrenamientos" [ref=e12] [cursor=pointer]:
+        - /url: /training/sessions
+      - link "Reportes mensuales" [ref=e13] [cursor=pointer]:
+        - /url: /training/reports
+  - generic [ref=e14]:
+    - banner [ref=e15]:
+      - paragraph [ref=e17]: Juan Diaz
+      - button "Cerrar sesión" [ref=e18]
+    - main [ref=e19]:
+      - generic [ref=e93]:
+        - generic [ref=e96]:
+          - generic [ref=e97]:
+            - heading "Cornering" [level=1] [ref=e98]
+            - generic [ref=e99]: U15 (13-15 años)
+            - generic [ref=e100]: Ejecutada
+          - paragraph [ref=e101]: 07/05/2026 · 08:00 · 60 min · Cerro de las Tres Cruces
+        - generic [ref=e106]:
+          - heading "Detalles" [level=2] [ref=e107]
+          - generic [ref=e108]:
+            - generic [ref=e109]:
+              - term [ref=e110]: Descripción
+              - definition [ref=e111]: Sesion de practica de curvas en descenso
+            - generic [ref=e112]:
+              - term [ref=e113]: Notas del entrenador
+              - definition [ref=e114]:
+                - textbox "Notas del entrenador" [ref=e116]:
+                  - /placeholder: Notas post-sesión…
+        - generic [ref=e117]:
+          - heading "Recorrido" [level=2] [ref=e118]
+          - generic [ref=e119]:
+            - img [ref=e120]
+            - paragraph [ref=e123]:
+              - text: Arrastra un archivo .gpx o .fit aquí, o
+              - button "selecciónalo" [ref=e124]
+            - paragraph [ref=e125]: Máx. 5 MB
+        - generic [ref=e126]:
+          - heading "Asistencia (0)" [level=2] [ref=e128]
+          - alert [ref=e131]: No se pudo cargar la lista de asistencia.

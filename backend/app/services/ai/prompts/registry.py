@@ -55,6 +55,29 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
         version=1,
         description="Explicación del resultado PHV para padres.",
     ),
+    "monthly_report": PromptSpec(
+        template_id="monthly_report",
+        template_path="monthly_report.j2",
+        required_keys=frozenset(
+            {
+                "club_name",
+                "period_year",
+                "period_month",
+                "total_sessions_planned",
+                "total_sessions_executed",
+                "total_sessions_cancelled",
+                "attendance_stats",
+                "focos_técnicos",
+                "avg_rpe",
+                "avg_rubric_effort",
+                "avg_rubric_attitude",
+                "avg_rubric_technique",
+                "coach_observations",
+            }
+        ),
+        version=1,
+        description="Resumen mensual agregado del club para el comité.",
+    ),
 }
 
 

@@ -1,0 +1,24 @@
+Sesión de entrenamiento planificada — {{ club_name }}
+
+Hola {{ parent_name }},
+
+El entrenador {{ coach_name }} del {{ club_name }} ha planificado una sesión de
+entrenamiento para {{ athlete_name }}.
+
+DETALLES DE LA SESIÓN
+---------------------
+Fecha:             {{ session_date }}
+Hora de inicio:    {{ session_time }}
+Duración estimada: {{ duration_min }} minutos
+Lugar:             {{ location }}
+Foco técnico:      {{ technical_focus }}
+
+Asegúrate de que {{ athlete_name }} llegue con la hidratación y el equipo de
+protección completo.
+
+---
+Esta notificación fue generada automáticamente porque {{ athlete_name }} fue
+convocado/a a esta sesión.
+
+Saludos,
+{{ coach_name }} — {{ club_name }}

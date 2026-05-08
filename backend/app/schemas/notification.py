@@ -21,6 +21,8 @@ class NotificationTemplate(str, Enum):
     ANTHROPOMETRY_ALERT = "anthropometry_alert"
     MONTHLY_REPORT = "monthly_report"
     PARENT_INVITE = "parent_invite"
+    TRAINING_SESSION_INVITE = "training_session_invite"
+    TRAINING_MONTHLY_REPORT = "training_monthly_report"
 
 
 class DocumentTemplate(str, Enum):
@@ -29,6 +31,7 @@ class DocumentTemplate(str, Enum):
     ANTHROPOMETRY_REPORT = "anthropometry_report"
     MONTHLY_PROGRESS = "monthly_progress"
     MEDICAL_CLEARANCE = "medical_clearance"
+    TRAINING_MONTHLY_REPORT = "training_monthly_report"
 
 
 class DocumentFormat(str, Enum):
