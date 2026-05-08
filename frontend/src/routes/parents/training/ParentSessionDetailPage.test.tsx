@@ -42,7 +42,6 @@ function makeSession(): TrainingSession {
     id: 1,
     club_id: 1,
     created_by_user_id: 2,
-    age_group: "u15",
     status: "executed",
     scheduled_date: "2026-05-10",
     scheduled_start_time: "08:00:00",

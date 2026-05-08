@@ -36,7 +36,6 @@ function makeSession(id: number, focus: string, athleteId?: number): TrainingSes
     id,
     club_id: 1,
     created_by_user_id: 2,
-    age_group: "u15",
     status: "executed",
     scheduled_date: "2026-05-10",
     scheduled_start_time: "08:00:00",
@@ -47,7 +46,7 @@ function makeSession(id: number, focus: string, athleteId?: number): TrainingSes
     created_at: "2026-05-01T00:00:00Z",
     updated_at: "2026-05-01T00:00:00Z",
     ...(athleteId
-      ? { attendance_summary: [{ athlete_id: athleteId, status: "presente" }] }
+      ? { kid_attendances: [{ athlete_id: athleteId, status: "presente" as const }] }
       : {}),
   };
 }

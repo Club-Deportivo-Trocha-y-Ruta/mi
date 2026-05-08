@@ -13,12 +13,11 @@ import { useTrainingFiltersStore } from "@/store/trainingFiltersStore";
 import type { TrainingSession } from "@/types/trainingSession.types";
 
 export function SessionsListPage() {
-  const { from_date, to_date, age_group, status } = useTrainingFiltersStore();
+  const { from_date, to_date, status } = useTrainingFiltersStore();
 
   const filters = {
     from_date,
     to_date,
-    ...(age_group ? { age_group } : {}),
     ...(status ? { status } : {}),
   };
 

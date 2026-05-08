@@ -11,11 +11,6 @@ const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
 );
 
-const AGE_GROUP_LABEL: Record<string, string> = {
-  u12: "U12 (10-12 años)",
-  u15: "U15 (13-15 años)",
-};
-
 const cardStyle: React.CSSProperties = {
   boxShadow:
     "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
@@ -112,9 +107,6 @@ export function ParentSessionDetailPage() {
           >
             {session.technical_focus}
           </h1>
-          <span className="rounded-full bg-light-gray px-2.5 py-0.5 text-xs font-medium text-charcoal">
-            {AGE_GROUP_LABEL[session.age_group] ?? session.age_group}
-          </span>
           <SessionStatusBadge status={session.status} />
         </div>
         <p className="text-sm text-mid-gray">

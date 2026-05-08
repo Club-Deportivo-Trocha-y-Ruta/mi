@@ -91,7 +91,7 @@ function makeSession(id = 1, overrides?: Partial<TrainingSession>): TrainingSess
     description: "Sesión técnica",
     created_at: "2026-05-01T00:00:00Z",
     updated_at: "2026-05-01T00:00:00Z",
-    attendance_summary: [{ athlete_id: MY_ATHLETE_ID, status: "presente" }],
+    kid_attendances: [{ athlete_id: MY_ATHLETE_ID, status: "presente" as const }],
     ...overrides,
   };
 }
@@ -300,8 +300,8 @@ describe("Parent flow — padre con múltiples hijos", () => {
 
     vi.mocked(useParentSessions).mockReturnValue({
       data: [
-        makeSession(1, { attendance_summary: [{ athlete_id: 42, status: "presente" }] }),
-        makeSession(2, { attendance_summary: [{ athlete_id: 43, status: "presente" }] }),
+        makeSession(1, { kid_attendances: [{ athlete_id: 42, status: "presente" as const }] }),
+        makeSession(2, { kid_attendances: [{ athlete_id: 43, status: "presente" as const }] }),
       ],
       isLoading: false,
       isError: false,
