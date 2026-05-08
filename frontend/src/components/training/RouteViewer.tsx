@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 
 interface RouteViewerProps {
@@ -9,6 +9,8 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 export function RouteViewer({ routeFilePath }: RouteViewerProps) {
   const mapRef = useRef<HTMLDivElement>(null);
+  const [gpxLoaded, setGpxLoaded] = useState(false);
+  const [gpxError, setGpxError] = useState(false);
   const isGpx = routeFilePath.toLowerCase().endsWith(".gpx");
 
   const absoluteUrl = routeFilePath.startsWith("http")
@@ -48,6 +50,10 @@ export function RouteViewer({ routeFilePath }: RouteViewerProps) {
       })
         .on("loaded", (e: { target: { getBounds: () => import("leaflet").LatLngBounds } }) => {
           mapInstance?.fitBounds(e.target.getBounds());
+          setGpxLoaded(true);
+        })
+        .on("error", () => {
+          setGpxError(true);
         })
         .addTo(mapInstance);
     }
@@ -81,13 +87,25 @@ export function RouteViewer({ routeFilePath }: RouteViewerProps) {
   }
 
   return (
-    <div
-      ref={mapRef}
-      className="h-64 w-full rounded-xl overflow-hidden"
-      role="img"
-      aria-label="Mapa del recorrido GPX"
-      data-testid="route-viewer-map"
-      style={{ zIndex: 0 }}
-    />
+    <div>
+      <div
+        ref={mapRef}
+        className="h-72 sm:h-80 md:h-96 w-full rounded-xl overflow-hidden"
+        role="img"
+        aria-label="Mapa del recorrido GPX"
+        data-testid="route-viewer-map"
+        style={{ zIndex: 0 }}
+      />
+      {gpxError && (
+        <p className="text-xs text-red-600 text-center mt-2">
+          No se pudo cargar el recorrido
+        </p>
+      )}
+      {gpxLoaded && !gpxError && (
+        <p className="text-xs text-mid-gray mt-2 text-center">
+          Pellizca para hacer zoom
+        </p>
+      )}
+    </div>
   );
 }

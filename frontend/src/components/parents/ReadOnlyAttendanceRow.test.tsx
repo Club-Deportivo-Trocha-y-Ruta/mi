@@ -24,13 +24,24 @@ function makeAttendance(overrides?: Partial<Attendance>): Attendance {
 
 describe("ReadOnlyAttendanceRow", () => {
   it("muestra el nombre y estado del atleta", () => {
-    render(<ReadOnlyAttendanceRow attendance={makeAttendance()} />);
+    render(<ReadOnlyAttendanceRow attendance={makeAttendance()} athleteName="Sofía López" />);
     expect(screen.getByText("Sofía López")).toBeInTheDocument();
     expect(screen.getByText("Presente")).toBeInTheDocument();
   });
 
+  it("usa el prop athleteName y NO attendance.athlete_name para la visualización", () => {
+    render(
+      <ReadOnlyAttendanceRow
+        attendance={makeAttendance({ athlete_name: "Nombre del Backend" })}
+        athleteName="Nombre Verificado"
+      />,
+    );
+    expect(screen.getByText("Nombre Verificado")).toBeInTheDocument();
+    expect(screen.queryByText("Nombre del Backend")).not.toBeInTheDocument();
+  });
+
   it("muestra la rúbrica cuando hay datos", () => {
-    render(<ReadOnlyAttendanceRow attendance={makeAttendance()} />);
+    render(<ReadOnlyAttendanceRow attendance={makeAttendance()} athleteName="Sofía López" />);
     expect(screen.getByText("7/10")).toBeInTheDocument();
     expect(screen.getByText("4/5")).toBeInTheDocument();
     expect(screen.getByText("5/5")).toBeInTheDocument();
@@ -38,7 +49,7 @@ describe("ReadOnlyAttendanceRow", () => {
   });
 
   it("muestra el comentario cuando existe", () => {
-    render(<ReadOnlyAttendanceRow attendance={makeAttendance()} />);
+    render(<ReadOnlyAttendanceRow attendance={makeAttendance()} athleteName="Sofía López" />);
     expect(screen.getByText("Buen trabajo hoy")).toBeInTheDocument();
   });
 
@@ -46,6 +57,7 @@ describe("ReadOnlyAttendanceRow", () => {
     render(
       <ReadOnlyAttendanceRow
         attendance={makeAttendance({ individual_feedback: null })}
+        athleteName="Sofía López"
       />,
     );
     expect(screen.getByText("Sin comentario aún.")).toBeInTheDocument();
@@ -61,6 +73,7 @@ describe("ReadOnlyAttendanceRow", () => {
           rubric_attitude: null,
           rubric_technique: null,
         })}
+        athleteName="Sofía López"
       />,
     );
     expect(
@@ -79,19 +92,20 @@ describe("ReadOnlyAttendanceRow", () => {
           rubric_attitude: null,
           rubric_technique: null,
         })}
+        athleteName="Sofía López"
       />,
     );
     expect(screen.getByText("Enfermedad")).toBeInTheDocument();
   });
 
   it("expone data-athlete-id para uso en tests de privacidad", () => {
-    const { container } = render(<ReadOnlyAttendanceRow attendance={makeAttendance()} />);
+    const { container } = render(<ReadOnlyAttendanceRow attendance={makeAttendance()} athleteName="Sofía López" />);
     const row = container.querySelector("[data-athlete-id='42']");
     expect(row).toBeInTheDocument();
   });
 
   it("no tiene inputs editables", () => {
-    const { container } = render(<ReadOnlyAttendanceRow attendance={makeAttendance()} />);
+    const { container } = render(<ReadOnlyAttendanceRow attendance={makeAttendance()} athleteName="Sofía López" />);
     expect(container.querySelectorAll("input")).toHaveLength(0);
     expect(container.querySelectorAll("textarea")).toHaveLength(0);
     expect(container.querySelectorAll("select")).toHaveLength(0);

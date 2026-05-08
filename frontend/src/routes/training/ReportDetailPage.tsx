@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
 import { useMonthlyReport, useSendMonthlyReport } from "@/api/trainingSessions";
@@ -121,31 +122,47 @@ export function ReportDetailPage() {
               Reporte mensual — {monthLabel} {report.year}
             </h1>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowSendModal(true)}
-            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            data-testid="resend-button"
-          >
-            Re-enviar al club
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <button
+              type="button"
+              onClick={() => setShowSendModal(true)}
+              className={
+                report.sent_at
+                  ? "flex items-center gap-1.5 rounded-lg border border-charcoal/20 bg-white px-4 py-2 text-sm font-semibold text-charcoal transition-opacity hover:opacity-70"
+                  : "rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              }
+              data-testid="resend-button"
+            >
+              {report.sent_at && (
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
+              )}
+              {report.sent_at ? "Volver a enviar" : "Re-enviar al club"}
+            </button>
+            {report.sent_at && (
+              <span className="text-xs text-mid-gray">
+                Enviado el {formatDateTime(report.sent_at)}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Banner IA */}
-      <div
-        className="flex items-start gap-3 rounded-xl border border-yellow-300 bg-yellow-50 px-5 py-4"
-        role="note"
-        data-testid="ai-banner"
-      >
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="mt-0.5 shrink-0 text-yellow-600" aria-hidden="true">
-          <path d="M10 2L2 17h16L10 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-          <path d="M10 8v4M10 14h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-        <p className="text-sm text-yellow-800">
-          Resumen generado por IA — revisalo antes de enviar.
-        </p>
-      </div>
+      {/* Banner IA — solo cuando existe ai_summary real */}
+      {report.ai_summary && (
+        <div
+          className="flex items-start gap-3 rounded-xl border border-yellow-300 bg-yellow-50 px-5 py-4"
+          role="note"
+          data-testid="ai-banner"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="mt-0.5 shrink-0 text-yellow-600" aria-hidden="true">
+            <path d="M10 2L2 17h16L10 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M10 8v4M10 14h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <p className="text-sm text-yellow-800">
+            Resumen generado por IA — revisalo antes de enviar.
+          </p>
+        </div>
+      )}
 
       {sendSuccess && (
         <div

@@ -17,7 +17,6 @@ export function makeSession(overrides?: Partial<TrainingSession>): TrainingSessi
     id: 1,
     club_id: 1,
     created_by_user_id: 10,
-    age_group: "u15",
     status: "planned",
     scheduled_date: "2026-05-15",
     scheduled_start_time: "08:00:00",

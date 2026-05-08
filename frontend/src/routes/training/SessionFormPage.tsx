@@ -5,16 +5,17 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { AthletesMultiSelect } from "@/components/training/AthletesMultiSelect";
 import {
+  bulkSetConvocatoria,
   useCreateTrainingSession,
+  useSessionAttendance,
   useTrainingSession,
   useUpdateTrainingSession,
 } from "@/api/trainingSessions";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   trainingSessionCreateSchema,
   type TrainingSessionFormValues,
 } from "@/schemas/trainingSession.schema";
-import type { AgeGroup } from "@/types/trainingSession.types";
-
 interface SessionFormPageProps {
   mode: "create" | "edit";
 }
@@ -32,20 +33,20 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
   const isEdit = mode === "edit";
 
   const sessionQuery = useTrainingSession(sessionId, isEdit);
+  const attendanceQuery = useSessionAttendance(sessionId, isEdit);
   const createMutation = useCreateTrainingSession();
   const updateMutation = useUpdateTrainingSession();
+  const queryClient = useQueryClient();
 
   const {
     register,
     handleSubmit,
     control,
-    watch,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<TrainingSessionFormValues>({
     resolver: zodResolver(trainingSessionCreateSchema),
     defaultValues: {
-      age_group: "u12",
       scheduled_date: "",
       scheduled_start_time: "",
       duration_min: 60,
@@ -58,13 +59,10 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
     },
   });
 
-  const selectedAgeGroup = watch("age_group") as AgeGroup;
-
   useEffect(() => {
-    if (isEdit && sessionQuery.data) {
+    if (isEdit && sessionQuery.data && attendanceQuery.data) {
       const s = sessionQuery.data;
       reset({
-        age_group: s.age_group,
         scheduled_date: s.scheduled_date,
         scheduled_start_time: s.scheduled_start_time.slice(0, 5),
         duration_min: s.duration_min,
@@ -73,10 +71,10 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
         description: s.description,
         route_text: s.route_text ?? "",
         strava_url: s.strava_url ?? "",
-        convocados_athlete_ids: [],
+        convocados_athlete_ids: attendanceQuery.data.map((a) => a.athlete_id),
       });
     }
-  }, [isEdit, sessionQuery.data, reset]);
+  }, [isEdit, sessionQuery.data, attendanceQuery.data, reset]);
 
   async function onSubmit(values: TrainingSessionFormValues) {
     const payload = {
@@ -87,6 +85,25 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
 
     if (isEdit) {
       await updateMutation.mutateAsync({ id: sessionId, payload });
+
+      const originalIds = (attendanceQuery.data ?? [])
+        .map((a) => a.athlete_id)
+        .sort();
+      const nextIds = [...values.convocados_athlete_ids].sort();
+      const changed =
+        originalIds.length !== nextIds.length ||
+        originalIds.some((id, i) => id !== nextIds[i]);
+
+      if (changed) {
+        await bulkSetConvocatoria(sessionId, values.convocados_athlete_ids);
+        await queryClient.invalidateQueries({
+          queryKey: ["training-session-attendance", sessionId],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ["training-session", sessionId],
+        });
+      }
+
       navigate(`/training/sessions/${sessionId}`);
     } else {
       const created = await createMutation.mutateAsync(payload);
@@ -94,7 +111,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
     }
   }
 
-  if (isEdit && sessionQuery.isLoading) {
+  if (isEdit && (sessionQuery.isLoading || attendanceQuery.isLoading)) {
     return (
       <section className="space-y-3">
         <div className="h-6 w-52 animate-pulse rounded bg-light-gray" />
@@ -170,55 +187,36 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
         >
           <h2 className="text-base font-semibold text-charcoal">Información general</h2>
 
-          {/* Grupo de edad */}
-          <div>
-            <span className={labelClass}>Grupo de edad</span>
-            <div className="mt-2 flex gap-4">
-              {(["u12", "u15"] as const).map((g) => (
-                <label key={g} className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="radio"
-                    value={g}
-                    {...register("age_group")}
-                    className="h-4 w-4 text-charcoal"
-                  />
-                  <span className="text-sm font-medium text-charcoal">
-                    {g === "u12" ? "U12 — 10 a 12 años" : "U15 — 13 a 15 años"}
-                  </span>
-                </label>
-              ))}
-            </div>
-            {errors.age_group && (
-              <p className={errorClass}>{errors.age_group.message}</p>
-            )}
-          </div>
-
           {/* Fecha y hora */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="scheduled_date" className={labelClass}>Fecha</label>
+              <label htmlFor="scheduled_date-input" className={labelClass}>Fecha</label>
               <input
-                id="scheduled_date"
+                id="scheduled_date-input"
                 type="date"
                 {...register("scheduled_date")}
                 className={inputClass}
                 style={inputStyle}
+                aria-describedby={errors.scheduled_date ? "scheduled_date-error" : undefined}
+                aria-invalid={!!errors.scheduled_date}
               />
               {errors.scheduled_date && (
-                <p className={errorClass}>{errors.scheduled_date.message}</p>
+                <p id="scheduled_date-error" className={errorClass}>{errors.scheduled_date.message}</p>
               )}
             </div>
             <div>
-              <label htmlFor="scheduled_start_time" className={labelClass}>Hora de inicio</label>
+              <label htmlFor="scheduled_start_time-input" className={labelClass}>Hora de inicio</label>
               <input
-                id="scheduled_start_time"
+                id="scheduled_start_time-input"
                 type="time"
                 {...register("scheduled_start_time")}
                 className={inputClass}
                 style={inputStyle}
+                aria-describedby={errors.scheduled_start_time ? "scheduled_start_time-error" : undefined}
+                aria-invalid={!!errors.scheduled_start_time}
               />
               {errors.scheduled_start_time && (
-                <p className={errorClass}>{errors.scheduled_start_time.message}</p>
+                <p id="scheduled_start_time-error" className={errorClass}>{errors.scheduled_start_time.message}</p>
               )}
             </div>
           </div>
@@ -226,65 +224,73 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
           {/* Duración y lugar */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="duration_min" className={labelClass}>Duración (minutos)</label>
+              <label htmlFor="duration_min-input" className={labelClass}>Duración (minutos)</label>
               <input
-                id="duration_min"
+                id="duration_min-input"
                 type="number"
                 min={15}
                 max={240}
                 {...register("duration_min", { valueAsNumber: true })}
                 className={inputClass}
                 style={inputStyle}
+                aria-describedby={errors.duration_min ? "duration_min-error" : undefined}
+                aria-invalid={!!errors.duration_min}
               />
               {errors.duration_min && (
-                <p className={errorClass}>{errors.duration_min.message}</p>
+                <p id="duration_min-error" className={errorClass}>{errors.duration_min.message}</p>
               )}
             </div>
             <div>
-              <label htmlFor="location" className={labelClass}>Lugar</label>
+              <label htmlFor="location-input" className={labelClass}>Lugar</label>
               <input
-                id="location"
+                id="location-input"
                 type="text"
                 placeholder="Ej: Pista XCO La Buitrera"
                 {...register("location")}
                 className={inputClass}
                 style={inputStyle}
+                aria-describedby={errors.location ? "location-error" : undefined}
+                aria-invalid={!!errors.location}
               />
               {errors.location && (
-                <p className={errorClass}>{errors.location.message}</p>
+                <p id="location-error" className={errorClass}>{errors.location.message}</p>
               )}
             </div>
           </div>
 
           {/* Foco técnico */}
           <div>
-            <label htmlFor="technical_focus" className={labelClass}>Foco técnico</label>
+            <label htmlFor="technical_focus-input" className={labelClass}>Foco técnico</label>
             <input
-              id="technical_focus"
+              id="technical_focus-input"
               type="text"
               placeholder="Ej: Técnica de frenada en descenso"
               {...register("technical_focus")}
               className={inputClass}
               style={inputStyle}
+              aria-describedby={errors.technical_focus ? "technical_focus-error" : undefined}
+              aria-invalid={!!errors.technical_focus}
             />
             {errors.technical_focus && (
-              <p className={errorClass}>{errors.technical_focus.message}</p>
+              <p id="technical_focus-error" className={errorClass}>{errors.technical_focus.message}</p>
             )}
           </div>
 
           {/* Descripción */}
           <div>
-            <label htmlFor="description" className={labelClass}>Descripción</label>
+            <label htmlFor="description-input" className={labelClass}>Descripción</label>
             <textarea
-              id="description"
+              id="description-input"
               rows={4}
               placeholder="Describe el plan de la sesión, objetivos, metodología..."
               {...register("description")}
               className={`${inputClass} resize-none`}
               style={inputStyle}
+              aria-describedby={errors.description ? "description-error" : undefined}
+              aria-invalid={!!errors.description}
             />
             {errors.description && (
-              <p className={errorClass}>{errors.description.message}</p>
+              <p id="description-error" className={errorClass}>{errors.description.message}</p>
             )}
           </div>
         </div>
@@ -305,30 +311,36 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
           </div>
 
           <div>
-            <label className={labelClass}>Descripción del recorrido</label>
+            <label htmlFor="route-description" className={labelClass}>Descripción del recorrido</label>
             <textarea
+              id="route-description"
               rows={3}
               placeholder="Describe el recorrido en texto libre (máx. 500 caracteres)..."
               {...register("route_text")}
               className={`${inputClass} resize-none`}
               style={inputStyle}
+              aria-describedby={errors.route_text ? "route_text-error" : undefined}
+              aria-invalid={!!errors.route_text}
             />
             {errors.route_text && (
-              <p className={errorClass}>{errors.route_text.message}</p>
+              <p id="route_text-error" className={errorClass}>{errors.route_text.message}</p>
             )}
           </div>
 
           <div>
-            <label className={labelClass}>Link Strava (actividad del entrenador)</label>
+            <label htmlFor="strava-url" className={labelClass}>Link Strava (actividad del entrenador)</label>
             <input
+              id="strava-url"
               type="url"
               placeholder="https://www.strava.com/activities/..."
               {...register("strava_url")}
               className={inputClass}
               style={inputStyle}
+              aria-describedby={errors.strava_url ? "strava_url-error" : undefined}
+              aria-invalid={!!errors.strava_url}
             />
             {errors.strava_url && (
-              <p className={errorClass}>{errors.strava_url.message}</p>
+              <p id="strava_url-error" className={errorClass}>{errors.strava_url.message}</p>
             )}
           </div>
         </div>
@@ -347,7 +359,6 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
             control={control}
             render={({ field }) => (
               <AthletesMultiSelect
-                ageGroup={selectedAgeGroup}
                 value={field.value}
                 onChange={field.onChange}
                 error={errors.convocados_athlete_ids?.message}

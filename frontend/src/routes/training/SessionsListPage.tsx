@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { SessionFiltersBar } from "@/components/training/SessionFiltersBar";
 import { SessionsTable } from "@/components/training/SessionsTable";
 import {
@@ -8,6 +10,7 @@ import {
   useTrainingSessions,
 } from "@/api/trainingSessions";
 import { useTrainingFiltersStore } from "@/store/trainingFiltersStore";
+import type { TrainingSession } from "@/types/trainingSession.types";
 
 export function SessionsListPage() {
   const { from_date, to_date, age_group, status } = useTrainingFiltersStore();
@@ -22,6 +25,9 @@ export function SessionsListPage() {
   const sessionsQuery = useTrainingSessions(filters);
   const executeMutation = useExecuteTrainingSession();
   const cancelMutation = useCancelTrainingSession();
+
+  const [executeTarget, setExecuteTarget] = useState<TrainingSession | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<TrainingSession | null>(null);
 
   const items = sessionsQuery.data ?? [];
 
@@ -90,10 +96,54 @@ export function SessionsListPage() {
       {!sessionsQuery.isLoading && !sessionsQuery.isError && items.length > 0 && (
         <SessionsTable
           items={items}
-          onExecute={(id) => executeMutation.mutate(id)}
-          onCancel={(id) => cancelMutation.mutate(id)}
+          onExecute={(id) => {
+            const session = items.find((s) => s.id === id) ?? null;
+            setExecuteTarget(session);
+          }}
+          onCancel={(id) => {
+            const session = items.find((s) => s.id === id) ?? null;
+            setCancelTarget(session);
+          }}
+          executePendingId={executeMutation.isPending ? executeTarget?.id : null}
+          cancelPendingId={cancelMutation.isPending ? cancelTarget?.id : null}
         />
       )}
+
+      <ConfirmModal
+        open={executeTarget !== null}
+        title="Marcar sesión como ejecutada"
+        body="La sesión pasará al estado 'ejecutada'. Quedará registrada como realizada en el historial del club."
+        confirmLabel="Marcar ejecutada"
+        cancelLabel="No"
+        confirmDanger={false}
+        isPending={executeMutation.isPending}
+        onCancel={() => setExecuteTarget(null)}
+        onConfirm={() => {
+          if (executeTarget) {
+            executeMutation.mutate(executeTarget.id, {
+              onSettled: () => setExecuteTarget(null),
+            });
+          }
+        }}
+      />
+
+      <ConfirmModal
+        open={cancelTarget !== null}
+        title="Cancelar sesión"
+        body="Esta acción es irreversible. La sesión pasará al estado 'cancelada' y no podrá volver a planificarse."
+        confirmLabel="Cancelar sesión"
+        cancelLabel="No"
+        confirmDanger={true}
+        isPending={cancelMutation.isPending}
+        onCancel={() => setCancelTarget(null)}
+        onConfirm={() => {
+          if (cancelTarget) {
+            cancelMutation.mutate(cancelTarget.id, {
+              onSettled: () => setCancelTarget(null),
+            });
+          }
+        }}
+      />
     </section>
   );
 }

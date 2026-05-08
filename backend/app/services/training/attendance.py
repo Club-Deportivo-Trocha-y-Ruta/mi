@@ -6,6 +6,7 @@ from datetime import date
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.training_session import AttendanceStatus, SessionAttendance
 from app.schemas.training_session import AttendanceUpdate
@@ -57,9 +58,9 @@ async def bulk_upsert_convocatoria(
     await db.commit()
 
     result = await db.execute(
-        select(SessionAttendance).where(
-            SessionAttendance.session_id == session_id
-        )
+        select(SessionAttendance)
+        .where(SessionAttendance.session_id == session_id)
+        .options(selectinload(SessionAttendance.athlete))
     )
     return list(result.scalars().all())
 
@@ -75,10 +76,12 @@ async def update_attendance(
     Lanza ValueError si el registro no existe.
     """
     result = await db.execute(
-        select(SessionAttendance).where(
+        select(SessionAttendance)
+        .where(
             SessionAttendance.session_id == session_id,
             SessionAttendance.athlete_id == athlete_id,
         )
+        .options(selectinload(SessionAttendance.athlete))
     )
     attendance = result.scalar_one_or_none()
 
@@ -92,7 +95,7 @@ async def update_attendance(
         setattr(attendance, field, value)
 
     await db.commit()
-    await db.refresh(attendance)
+    await db.refresh(attendance, attribute_names=["athlete"])
     return attendance
 
 

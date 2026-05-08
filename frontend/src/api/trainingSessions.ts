@@ -22,7 +22,6 @@ export async function fetchTrainingSessions(
   const params: Record<string, string> = {};
   if (filters?.from_date) params.from = filters.from_date;
   if (filters?.to_date) params.to = filters.to_date;
-  if (filters?.age_group) params.age_group = filters.age_group;
   if (filters?.status) params.status = filters.status;
   if (filters?.athlete_id) params.athlete_id = String(filters.athlete_id);
   const response = await apiClient.get<TrainingSession[]>(BASE, { params });
@@ -148,7 +147,7 @@ export async function bulkSetConvocatoria(
 ): Promise<Attendance[]> {
   const response = await apiClient.put<Attendance[]>(
     `${BASE}/${sessionId}/attendance`,
-    { athlete_ids: athleteIds },
+    athleteIds,
   );
   return response.data;
 }
@@ -341,12 +340,10 @@ export async function fetchParentSessions(
   if (filters?.status) params.status = filters.status;
   if (filters?.athlete_id) params.athlete_id = String(filters.athlete_id);
   const response = await apiClient.get<TrainingSession[]>(BASE, { params });
-  // Frontend defensive filter: only sessions where at least one of parent's athletes is convocado.
-  // The backend already enforces this, but we apply client-side safety in case of API leaks.
   if (parentAthleteIds && parentAthleteIds.length > 0) {
     return response.data.filter(
       (s) =>
-        s.attendance_summary?.some((a) => parentAthleteIds.includes(a.athlete_id)) ?? true,
+        s.kid_attendances?.some((a) => parentAthleteIds.includes(a.athlete_id)) ?? false,
     );
   }
   return response.data;

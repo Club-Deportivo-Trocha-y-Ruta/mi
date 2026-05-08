@@ -3,15 +3,7 @@ import { z } from "zod";
 const STRAVA_URL_RE = /^https?:\/\/(www\.)?strava\.com\/activities\/\d+/;
 
 export const trainingSessionCreateSchema = z.object({
-  age_group: z.enum(["u12", "u15"]),
-  scheduled_date: z
-    .string()
-    .min(1, "La fecha es requerida")
-    .refine((val) => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return new Date(val) >= today;
-    }, "La fecha no puede ser en el pasado"),
+  scheduled_date: z.string().min(1, "La fecha es requerida"),
   scheduled_start_time: z
     .string()
     .regex(/^\d{2}:\d{2}$/, "La hora debe estar en formato HH:MM"),

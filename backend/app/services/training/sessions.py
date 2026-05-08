@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -90,7 +90,6 @@ async def create_session(
     session = TrainingSession(
         club_id=club_id,
         created_by_user_id=coach.id,
-        age_group=payload.age_group,
         status=SessionStatus.PLANNED,
         scheduled_date=payload.scheduled_date,
         scheduled_start_time=payload.scheduled_start_time,
@@ -122,8 +121,13 @@ async def create_session(
     refreshed = await get_session(db, session.id)
     assert refreshed is not None  # acabamos de crearla
 
-    # Notificar a padres solo si la sesión quedó planificada
-    if notification_service is not None and refreshed.status == SessionStatus.PLANNED:
+    # Notificar a padres solo si la sesión quedó planificada y es a futuro
+    is_future = refreshed.scheduled_date >= date.today()
+    if (
+        notification_service is not None
+        and refreshed.status == SessionStatus.PLANNED
+        and is_future
+    ):
         await _notify_parents(
             db=db,
             session=refreshed,
@@ -329,7 +333,6 @@ async def list_sessions(
     db: AsyncSession,
     *,
     club_id: int,
-    age_group: str | None = None,
     status: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -342,8 +345,6 @@ async def list_sessions(
 
     stmt = select(TrainingSession).where(TrainingSession.club_id == club_id)
 
-    if age_group:
-        stmt = stmt.where(TrainingSession.age_group == age_group)
     if status:
         stmt = stmt.where(TrainingSession.status == status)
     if date_from:
@@ -364,7 +365,11 @@ async def list_sessions(
         )
 
     stmt = (
-        stmt.order_by(TrainingSession.scheduled_date.desc())
+        stmt.order_by(
+            TrainingSession.scheduled_date.desc(),
+            TrainingSession.scheduled_start_time.desc(),
+            TrainingSession.id.desc(),
+        )
         .limit(limit)
         .offset(offset)
         .options(selectinload(TrainingSession.attendances))
@@ -379,7 +384,11 @@ async def get_session(db: AsyncSession, session_id: int) -> TrainingSession | No
     result = await db.execute(
         select(TrainingSession)
         .where(TrainingSession.id == session_id)
-        .options(selectinload(TrainingSession.attendances))
+        .options(
+            selectinload(TrainingSession.attendances).selectinload(
+                SessionAttendance.athlete
+            )
+        )
     )
     return result.scalar_one_or_none()
 

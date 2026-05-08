@@ -18,11 +18,6 @@ const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
 );
 
-const AGE_GROUP_LABEL: Record<string, string> = {
-  u12: "U12 (10-12 años)",
-  u15: "U15 (13-15 años)",
-};
-
 function formatDate(dateStr: string): string {
   const [year, month, day] = dateStr.split("-");
   return `${day}/${month}/${year}`;
@@ -163,9 +158,6 @@ export function SessionDetailPage() {
               >
                 {session.technical_focus}
               </h1>
-              <span className="rounded-full bg-light-gray px-2.5 py-0.5 text-xs font-medium text-charcoal">
-                {AGE_GROUP_LABEL[session.age_group]}
-              </span>
               <SessionStatusBadge status={session.status} />
             </div>
             <p className="mt-1 text-sm text-mid-gray">
@@ -233,11 +225,14 @@ export function SessionDetailPage() {
                   className="w-full resize-none rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
                   style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 />
-                {notesSaving && (
-                  <span className="absolute right-2 bottom-2 text-xs text-mid-gray">
-                    Guardando…
-                  </span>
-                )}
+                <span
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className={`absolute right-2 bottom-2 text-xs text-mid-gray${notesSaving ? "" : " invisible"}`}
+                >
+                  Guardando…
+                </span>
               </div>
             </dd>
           </div>
@@ -279,8 +274,17 @@ export function SessionDetailPage() {
 
         {!isCancelled && (
           <div
+            role="button"
+            tabIndex={0}
             onDrop={handleDrop}
             onDragOver={(e) => e.preventDefault()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            aria-label="Soltar archivo .gpx aquí o presionar Enter para seleccionar"
             className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-light-gray px-4 py-8 transition-colors hover:border-mid-gray"
             data-testid="route-upload-dropzone"
           >

@@ -9,7 +9,6 @@ function makeSession(overrides?: Partial<TrainingSession>): TrainingSession {
     id: 1,
     club_id: 1,
     created_by_user_id: 10,
-    age_group: "u12",
     status: "planned",
     scheduled_date: "2026-06-15",
     scheduled_start_time: "08:00:00",
@@ -19,7 +18,14 @@ function makeSession(overrides?: Partial<TrainingSession>): TrainingSession {
     description: "Sesión de técnica básica",
     created_at: "2026-05-01T00:00:00Z",
     updated_at: "2026-05-01T00:00:00Z",
-    attendance_count: 8,
+    attendance_summary: {
+      total: 10,
+      presentes: 8,
+      ausentes: 1,
+      justificados: 1,
+      tardes: 0,
+      lesionados: 0,
+    },
     ...overrides,
   };
 }
@@ -42,7 +48,6 @@ describe("SessionsTable", () => {
       renderTable([makeSession()]);
       expect(screen.getByText("Fecha")).toBeInTheDocument();
       expect(screen.getByText("Hora")).toBeInTheDocument();
-      expect(screen.getByText("Grupo")).toBeInTheDocument();
       expect(screen.getByText("Foco técnico")).toBeInTheDocument();
       expect(screen.getByText("Lugar")).toBeInTheDocument();
       expect(screen.getByText("Estado")).toBeInTheDocument();
@@ -72,13 +77,13 @@ describe("SessionsTable", () => {
       expect(screen.getAllByText("Cancelada").length).toBeGreaterThanOrEqual(1);
     });
 
-    it("muestra la asistencia cuando está disponible", () => {
-      renderTable([makeSession({ attendance_count: 8 })]);
-      expect(screen.getAllByText("8").length).toBeGreaterThanOrEqual(1);
+    it("muestra presentes/total cuando hay summary disponible", () => {
+      renderTable([makeSession()]);
+      expect(screen.getAllByText("8/10").length).toBeGreaterThanOrEqual(1);
     });
 
-    it("muestra '—' cuando no hay datos de asistencia", () => {
-      renderTable([makeSession({ attendance_count: null })]);
+    it("muestra '—' cuando no hay summary de asistencia", () => {
+      renderTable([makeSession({ attendance_summary: null })]);
       expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(1);
     });
   });

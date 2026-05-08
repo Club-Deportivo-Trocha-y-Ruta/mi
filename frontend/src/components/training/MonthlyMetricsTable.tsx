@@ -30,7 +30,7 @@ export function MonthlyMetricsTable({ metrics }: MonthlyMetricsTableProps) {
   return (
     <div className="space-y-6" data-testid="monthly-metrics-table">
       {/* KPIs */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
         <StatCard label="Planificadas" value={metrics.total_sessions_planned} />
         <StatCard label="Ejecutadas" value={metrics.total_sessions_executed} />
         <StatCard label="Canceladas" value={metrics.total_sessions_cancelled} />
@@ -44,15 +44,16 @@ export function MonthlyMetricsTable({ metrics }: MonthlyMetricsTableProps) {
           </h3>
           <div className="overflow-x-auto rounded-xl bg-white" style={cardStyle}>
             <table className="min-w-full text-sm" data-testid="attendance-table">
+              <caption className="sr-only">Métricas mensuales del club</caption>
               <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                     Atleta
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                     Presencias
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                     Asistencia
                   </th>
                 </tr>

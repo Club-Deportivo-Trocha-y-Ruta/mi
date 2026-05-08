@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.training_session import (
-    AgeGroup,
     AttendanceStatus,
     MonthlyReport,
     SessionAttendance,
@@ -116,7 +115,6 @@ def _make_db(session_obj=None, attendances: list | None = None) -> AsyncMock:
 
 def _make_session_payload(**kwargs) -> TrainingSessionCreate:
     defaults = dict(
-        age_group=AgeGroup.U15,
         scheduled_date=date(2030, 6, 15),
         scheduled_start_time=time(17, 0),
         duration_min=90,
@@ -152,6 +150,10 @@ class TestCreateSession:
         db.refresh = _refresh
         member_result = MagicMock()
         member_result.first = MagicMock(return_value=MagicMock())
+        member_result.scalar_one_or_none = MagicMock(return_value=session_obj)
+        scalars_mock = MagicMock()
+        scalars_mock.all = MagicMock(return_value=[])
+        member_result.scalars = MagicMock(return_value=scalars_mock)
         db.execute = AsyncMock(return_value=member_result)
 
         payload = _make_session_payload(convocados_athlete_ids=[100, 101])
@@ -179,6 +181,7 @@ class TestCreateSession:
         sessions_svc._recent_dispatches.clear()
         coach = _make_user(1)
         add_calls: list = []
+        session_obj = _make_session(session_id=1)
 
         db = AsyncMock()
         db.add = MagicMock(side_effect=add_calls.append)
@@ -191,6 +194,10 @@ class TestCreateSession:
         db.refresh = _refresh
         member_result = MagicMock()
         member_result.first = MagicMock(return_value=MagicMock())
+        member_result.scalar_one_or_none = MagicMock(return_value=session_obj)
+        scalars_mock = MagicMock()
+        scalars_mock.all = MagicMock(return_value=[])
+        member_result.scalars = MagicMock(return_value=scalars_mock)
         db.execute = AsyncMock(return_value=member_result)
 
         payload = _make_session_payload(convocados_athlete_ids=[200])
@@ -207,6 +214,7 @@ class TestCreateSession:
         sessions_svc._recent_dispatches.clear()
         coach = _make_user(1)
         add_calls: list = []
+        session_obj = _make_session(session_id=1)
 
         db = AsyncMock()
         db.add = MagicMock(side_effect=add_calls.append)
@@ -219,6 +227,10 @@ class TestCreateSession:
         db.refresh = _refresh
         member_result = MagicMock()
         member_result.first = MagicMock(return_value=MagicMock())
+        member_result.scalar_one_or_none = MagicMock(return_value=session_obj)
+        scalars_mock = MagicMock()
+        scalars_mock.all = MagicMock(return_value=[])
+        member_result.scalars = MagicMock(return_value=scalars_mock)
         db.execute = AsyncMock(return_value=member_result)
 
         payload = _make_session_payload()
@@ -549,7 +561,7 @@ class TestUpdateAttendance:
         result_mock.scalar_one_or_none = MagicMock(return_value=att)
         db.execute = AsyncMock(return_value=result_mock)
 
-        async def _refresh(obj):
+        async def _refresh(obj, **kwargs):
             pass
         db.refresh = _refresh
 

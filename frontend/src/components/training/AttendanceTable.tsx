@@ -95,8 +95,11 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
     [attendance.athlete_id, mutation],
   );
 
+  const initialSnapshotRef = useRef<string>(JSON.stringify(formValues));
   useEffect(() => {
     if (disabled) return;
+    const snap = JSON.stringify(formValues);
+    if (snap === initialSnapshotRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       doSave(formValues as AttendanceFormValues);
@@ -125,6 +128,7 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
       ref={rowRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
+      aria-keyshortcuts="p a j t l"
       className="group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
       style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
       data-testid={`attendance-row-${attendance.athlete_id}`}
@@ -133,31 +137,33 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
       <td className="px-3 py-2 text-sm font-medium text-charcoal">
         <div className="flex items-center gap-2">
           {athleteName}
-          {savedIndicator === "saved" && (
-            <CheckCircle2
-              size={14}
-              className="animate-fade-in text-green-600"
-              aria-label="Guardado"
-              data-testid="saved-indicator"
-            />
-          )}
-          {savedIndicator === "error" && (
-            <span
-              className="flex items-center gap-1 text-xs text-red-600"
-              title="Error al guardar"
-            >
-              <AlertCircle size={14} aria-hidden="true" />
-              Error
-              <button
-                type="button"
-                onClick={() => doSave(formValues as AttendanceFormValues)}
-                className="ml-1 underline hover:opacity-70"
-                data-testid="retry-button"
+          <span role="status" aria-live="polite" aria-atomic="true">
+            {savedIndicator === "saved" && (
+              <CheckCircle2
+                size={14}
+                className="animate-fade-in text-green-600"
+                aria-label="Guardado"
+                data-testid="saved-indicator"
+              />
+            )}
+            {savedIndicator === "error" && (
+              <span
+                className="flex items-center gap-1 text-xs text-red-600"
+                title="Error al guardar"
               >
-                <RefreshCw size={12} aria-label="Reintentar" />
-              </button>
-            </span>
-          )}
+                <AlertCircle size={14} aria-hidden="true" />
+                Error
+                <button
+                  type="button"
+                  onClick={() => doSave(formValues as AttendanceFormValues)}
+                  className="ml-1 underline hover:opacity-70"
+                  data-testid="retry-button"
+                >
+                  <RefreshCw size={12} aria-label="Reintentar" />
+                </button>
+              </span>
+            )}
+          </span>
         </div>
       </td>
 
@@ -270,8 +276,11 @@ function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps)
     [attendance.athlete_id, mutation],
   );
 
+  const initialSnapshotRef = useRef<string>(JSON.stringify(formValues));
   useEffect(() => {
     if (disabled) return;
+    const snap = JSON.stringify(formValues);
+    if (snap === initialSnapshotRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       doSave(formValues as AttendanceFormValues);
@@ -385,18 +394,20 @@ export function AttendanceTable({ sessionId, attendances, disabled }: Attendance
       {/* Desktop: tabla */}
       <div className="hidden overflow-x-auto md:block">
         <table className="min-w-full text-sm">
+          <caption className="sr-only">Asistencia de atletas convocados</caption>
           <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
             <tr>
-              <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Atleta
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Estado
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Razón
               </th>
               <th
+                scope="col"
                 className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray"
                 colSpan={5}
               >
@@ -415,6 +426,16 @@ export function AttendanceTable({ sessionId, attendances, disabled }: Attendance
             ))}
           </tbody>
         </table>
+        <details className="px-3 py-1">
+          <summary className="text-xs text-mid-gray cursor-pointer">Atajos de teclado</summary>
+          <ul className="text-xs text-mid-gray mt-1 space-y-0.5">
+            <li>P — Presente</li>
+            <li>A — Ausente</li>
+            <li>J — Justificado</li>
+            <li>T — Tarde</li>
+            <li>L — Lesionado</li>
+          </ul>
+        </details>
         <p className="mt-1 px-3 pb-2 text-[10px] text-mid-gray">
           Atajo: P=Presente A=Ausente J=Justificado T=Tarde L=Lesionado
         </p>

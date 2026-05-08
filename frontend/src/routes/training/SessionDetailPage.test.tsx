@@ -83,7 +83,6 @@ function makeSession(overrides?: Partial<TrainingSession>): TrainingSession {
     id: 1,
     club_id: 1,
     created_by_user_id: 10,
-    age_group: "u12",
     status: "planned",
     scheduled_date: "2026-06-15",
     scheduled_start_time: "08:00:00",

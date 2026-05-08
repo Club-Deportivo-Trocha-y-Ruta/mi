@@ -1,36 +1,14 @@
 import { useState } from "react";
 
 import { useAthletes } from "@/hooks/athletes/useAthletes";
-import type { AgeGroup } from "@/types/trainingSession.types";
 
 interface AthletesMultiSelectProps {
-  ageGroup: AgeGroup | "";
   value: number[];
   onChange: (ids: number[]) => void;
   error?: string;
 }
 
-const AGE_GROUP_CATEGORY_MAP: Record<AgeGroup, string[]> = {
-  u12: [
-    "Pre-Infantil A",
-    "Pre-Infantil A femenino",
-    "Pre-Infantil B",
-    "Pre-Infantil B femenino",
-    "Infantil A",
-    "Infantil A femenino",
-    "Infantil B",
-    "Infantil B femenino",
-  ],
-  u15: [
-    "Pre-juvenil A",
-    "Pre-juvenil A femenino",
-    "Pre-juvenil B",
-    "Pre-juvenil B femenino",
-  ],
-};
-
 export function AthletesMultiSelect({
-  ageGroup,
   value,
   onChange,
   error,
@@ -42,11 +20,14 @@ export function AthletesMultiSelect({
 
   const filtered = allAthletes.filter((a) => {
     const fullName = `${a.first_name} ${a.last_name}`.toLowerCase();
-    const matchesSearch = fullName.includes(search.toLowerCase().trim());
-    if (!ageGroup) return matchesSearch;
-    const categories = AGE_GROUP_CATEGORY_MAP[ageGroup] ?? [];
-    return matchesSearch && categories.includes(a.category ?? "");
+    return fullName.includes(search.toLowerCase().trim());
   });
+
+  // Selected athletes first, then unselected — both groups sorted by name
+  const sortedFiltered = [
+    ...filtered.filter((a) => value.includes(a.id)),
+    ...filtered.filter((a) => !value.includes(a.id)),
+  ];
 
   function toggle(id: number) {
     if (value.includes(id)) {
@@ -75,7 +56,8 @@ export function AthletesMultiSelect({
   }
 
   return (
-    <div className="space-y-2">
+    <fieldset className="space-y-2">
+      <legend className="sr-only">Atletas convocados</legend>
       <div className="flex items-center gap-2">
         <input
           type="text"
@@ -103,23 +85,15 @@ export function AthletesMultiSelect({
         </button>
       </div>
 
-      {!ageGroup && (
-        <p className="text-xs text-mid-gray">
-          Selecciona un grupo de edad para filtrar los atletas.
-        </p>
-      )}
-
       <div
-        className="max-h-48 overflow-y-auto rounded-lg bg-white"
+        className="max-h-72 overflow-y-auto rounded-lg bg-white"
         style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
       >
-        {filtered.length === 0 ? (
-          <p className="px-4 py-3 text-sm text-mid-gray">
-            {ageGroup ? "No hay atletas en este grupo de edad." : "No hay atletas."}
-          </p>
+        {sortedFiltered.length === 0 ? (
+          <p className="px-4 py-3 text-sm text-mid-gray">No hay atletas.</p>
         ) : (
           <ul role="list">
-            {filtered.map((athlete) => {
+            {sortedFiltered.map((athlete) => {
               const checked = value.includes(athlete.id);
               return (
                 <li key={athlete.id}>
@@ -133,6 +107,11 @@ export function AthletesMultiSelect({
                     />
                     <span className="flex-1 text-sm text-charcoal">
                       {athlete.first_name} {athlete.last_name}
+                      {athlete.age_decimal != null && (
+                        <span className="ml-2 text-xs text-mid-gray">
+                          {athlete.age_decimal.toFixed(1)} años
+                        </span>
+                      )}
                     </span>
                     {athlete.category && (
                       <span className="text-xs text-mid-gray">{athlete.category}</span>
@@ -152,6 +131,6 @@ export function AthletesMultiSelect({
       )}
 
       {error && <p className="text-xs text-red-600">{error}</p>}
-    </div>
+    </fieldset>
   );
 }

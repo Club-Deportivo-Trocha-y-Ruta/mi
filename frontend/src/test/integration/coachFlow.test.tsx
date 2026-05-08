@@ -125,7 +125,6 @@ function makeSession(overrides?: Partial<TrainingSession>): TrainingSession {
     id: 1,
     club_id: 1,
     created_by_user_id: 10,
-    age_group: "u15",
     status: "planned",
     scheduled_date: "2026-05-15",
     scheduled_start_time: "08:00:00",
@@ -178,11 +177,9 @@ const mutationStub = {
 const defaultFilters = {
   from_date: "2026-05-01",
   to_date: "2026-05-31",
-  age_group: "" as const,
   status: "" as const,
   setFromDate: vi.fn(),
   setToDate: vi.fn(),
-  setAgeGroup: vi.fn(),
   setStatus: vi.fn(),
   resetToCurrentMonth: vi.fn(),
 };

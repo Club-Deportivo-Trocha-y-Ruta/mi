@@ -9,7 +9,6 @@ from app.models.privacy_policy import PrivacyPolicy
 from app.models.parental_consent import ParentalConsent
 from app.models.ai_explanation import AthleteAIExplanation
 from app.models.training_session import (
-    AgeGroup,
     AttendanceStatus,
     MonthlyReport,
     SessionAttendance,
@@ -38,7 +37,6 @@ __all__ = [
     "PrivacyPolicy",
     "ParentalConsent",
     "AthleteAIExplanation",
-    "AgeGroup",
     "SessionStatus",
     "AttendanceStatus",
     "TrainingSession",

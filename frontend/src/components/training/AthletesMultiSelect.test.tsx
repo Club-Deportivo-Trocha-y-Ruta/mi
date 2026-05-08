@@ -49,35 +49,15 @@ beforeEach(() => {
 });
 
 describe("AthletesMultiSelect", () => {
-  it("filtra atletas por age_group u12", () => {
-    render(
-      <AthletesMultiSelect ageGroup="u12" value={[]} onChange={vi.fn()} />,
-    );
-    expect(screen.getByText(/Sebastián García/)).toBeInTheDocument();
-    expect(screen.queryByText(/Laura Martínez/)).not.toBeInTheDocument();
-  });
-
-  it("filtra atletas por age_group u15", () => {
-    render(
-      <AthletesMultiSelect ageGroup="u15" value={[]} onChange={vi.fn()} />,
-    );
-    expect(screen.queryByText(/Sebastián García/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Laura Martínez/)).toBeInTheDocument();
-  });
-
-  it("muestra todos los atletas cuando no hay age_group", () => {
-    render(
-      <AthletesMultiSelect ageGroup="" value={[]} onChange={vi.fn()} />,
-    );
+  it("muestra todos los atletas", () => {
+    render(<AthletesMultiSelect value={[]} onChange={vi.fn()} />);
     expect(screen.getByText(/Sebastián García/)).toBeInTheDocument();
     expect(screen.getByText(/Laura Martínez/)).toBeInTheDocument();
   });
 
   it("toggle añade atleta al hacer click en checkbox", () => {
     const onChange = vi.fn();
-    render(
-      <AthletesMultiSelect ageGroup="" value={[]} onChange={onChange} />,
-    );
+    render(<AthletesMultiSelect value={[]} onChange={onChange} />);
     const checkbox = screen.getByRole("checkbox", {
       name: /Convocar a Sebastián García/i,
     });
@@ -87,9 +67,7 @@ describe("AthletesMultiSelect", () => {
 
   it("toggle elimina atleta ya seleccionado", () => {
     const onChange = vi.fn();
-    render(
-      <AthletesMultiSelect ageGroup="" value={[1]} onChange={onChange} />,
-    );
+    render(<AthletesMultiSelect value={[1]} onChange={onChange} />);
     const checkbox = screen.getByRole("checkbox", {
       name: /Convocar a Sebastián García/i,
     });
@@ -99,26 +77,20 @@ describe("AthletesMultiSelect", () => {
 
   it("botón Todos selecciona todos los filtrados", () => {
     const onChange = vi.fn();
-    render(
-      <AthletesMultiSelect ageGroup="" value={[]} onChange={onChange} />,
-    );
+    render(<AthletesMultiSelect value={[]} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: /Todos/i }));
     expect(onChange).toHaveBeenCalledWith([1, 2]);
   });
 
   it("botón Limpiar vacía la selección", () => {
     const onChange = vi.fn();
-    render(
-      <AthletesMultiSelect ageGroup="" value={[1, 2]} onChange={onChange} />,
-    );
+    render(<AthletesMultiSelect value={[1, 2]} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: /Limpiar/i }));
     expect(onChange).toHaveBeenCalledWith([]);
   });
 
   it("filtra por búsqueda de texto", () => {
-    render(
-      <AthletesMultiSelect ageGroup="" value={[]} onChange={vi.fn()} />,
-    );
+    render(<AthletesMultiSelect value={[]} onChange={vi.fn()} />);
     const input = screen.getByPlaceholderText(/Buscar atleta/i);
     fireEvent.change(input, { target: { value: "laura" } });
     expect(screen.getByText(/Laura Martínez/)).toBeInTheDocument();
@@ -126,16 +98,13 @@ describe("AthletesMultiSelect", () => {
   });
 
   it("muestra contador de seleccionados", () => {
-    render(
-      <AthletesMultiSelect ageGroup="" value={[1, 2]} onChange={vi.fn()} />,
-    );
+    render(<AthletesMultiSelect value={[1, 2]} onChange={vi.fn()} />);
     expect(screen.getByText(/2 atletas seleccionados/i)).toBeInTheDocument();
   });
 
   it("muestra mensaje de error cuando se pasa", () => {
     render(
       <AthletesMultiSelect
-        ageGroup=""
         value={[]}
         onChange={vi.fn()}
         error="Debes convocar al menos un atleta"
@@ -150,9 +119,7 @@ describe("AthletesMultiSelect", () => {
       isLoading: true,
       isError: false,
     } as ReturnType<typeof useAthletes>);
-    const { container } = render(
-      <AthletesMultiSelect ageGroup="" value={[]} onChange={vi.fn()} />,
-    );
+    const { container } = render(<AthletesMultiSelect value={[]} onChange={vi.fn()} />);
     expect(container.querySelector(".animate-pulse")).toBeInTheDocument();
   });
 });

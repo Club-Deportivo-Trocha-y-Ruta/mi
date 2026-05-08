@@ -10,6 +10,14 @@ import {
   useSendMonthlyReport,
 } from "@/api/trainingSessions";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogBody,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/auth.store";
 import {
   monthlyReportCreateSchema,
@@ -64,116 +72,91 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
     onClose();
   }
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(19, 19, 22, 0.65)", backdropFilter: "blur(2px)" }}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="generate-report-title"
-    >
-      <div
-        className="w-full max-w-md rounded-2xl bg-white"
-        style={cardStyle}
-      >
-        <div className="flex items-center justify-between border-b border-[rgba(34,42,53,0.08)] px-6 py-4">
-          <h2
-            id="generate-report-title"
-            className="text-base text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-          >
-            Generar reporte mensual
-          </h2>
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={isPending}
-            className="rounded-lg p-1.5 text-mid-gray transition-colors hover:bg-light-gray disabled:opacity-50"
-            aria-label="Cerrar"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(next) => !next && handleClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Generar reporte mensual</DialogTitle>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="px-6 py-5 space-y-4" data-testid="generate-report-form">
-          <div className="grid grid-cols-2 gap-3">
+        <form onSubmit={handleSubmit(onSubmit)} data-testid="generate-report-form">
+          <DialogBody className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="report-year" className="mb-1 block text-xs font-medium text-charcoal">
+                  Año
+                </label>
+                <select
+                  id="report-year"
+                  {...register("year", { valueAsNumber: true })}
+                  className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
+                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                {errors.year && (
+                  <p className="mt-1 text-xs text-red-600">{errors.year.message}</p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="report-month" className="mb-1 block text-xs font-medium text-charcoal">
+                  Mes
+                </label>
+                <select
+                  id="report-month"
+                  {...register("month", { valueAsNumber: true })}
+                  className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
+                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                >
+                  {months.map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+                {errors.month && (
+                  <p className="mt-1 text-xs text-red-600">{errors.month.message}</p>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-mid-gray mt-1">Período que será analizado en el reporte.</p>
+
             <div>
-              <label htmlFor="report-year" className="mb-1 block text-xs font-medium text-charcoal">
-                Año
+              <label htmlFor="coach-observations" className="mb-1 block text-xs font-medium text-charcoal">
+                Observaciones del entrenador{" "}
+                <span className="font-normal text-mid-gray">(opcional)</span>
               </label>
-              <select
-                id="report-year"
-                {...register("year", { valueAsNumber: true })}
-                className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
+              <textarea
+                id="coach-observations"
+                {...register("coach_observations")}
+                rows={4}
+                maxLength={2000}
+                placeholder="Notas del entrenador para incluir en el reporte…"
+                className="w-full resize-none rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
                 style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-              >
-                {years.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              {errors.year && (
-                <p className="mt-1 text-xs text-red-600">{errors.year.message}</p>
+              />
+              {errors.coach_observations && (
+                <p className="mt-1 text-xs text-red-600">{errors.coach_observations.message}</p>
               )}
             </div>
-            <div>
-              <label htmlFor="report-month" className="mb-1 block text-xs font-medium text-charcoal">
-                Mes
-              </label>
-              <select
-                id="report-month"
-                {...register("month", { valueAsNumber: true })}
-                className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-              >
-                {months.map(({ value, label }) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-              {errors.month && (
-                <p className="mt-1 text-xs text-red-600">{errors.month.message}</p>
-              )}
-            </div>
-          </div>
 
-          <div>
-            <label htmlFor="coach-observations" className="mb-1 block text-xs font-medium text-charcoal">
-              Observaciones del entrenador{" "}
-              <span className="font-normal text-mid-gray">(opcional)</span>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-charcoal">
+              <input
+                type="checkbox"
+                {...register("force_regenerate")}
+                className="h-4 w-4 rounded border-mid-gray accent-charcoal"
+              />
+              Forzar regeneración si ya existe
             </label>
-            <textarea
-              id="coach-observations"
-              {...register("coach_observations")}
-              rows={4}
-              maxLength={2000}
-              placeholder="Contexto adicional para el resumen de IA…"
-              className="w-full resize-none rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-            />
-            {errors.coach_observations && (
-              <p className="mt-1 text-xs text-red-600">{errors.coach_observations.message}</p>
+
+            {error && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                {error}
+              </p>
             )}
-          </div>
+          </DialogBody>
 
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-charcoal">
-            <input
-              type="checkbox"
-              {...register("force_regenerate")}
-              className="h-4 w-4 rounded border-mid-gray accent-charcoal"
-            />
-            Forzar regeneración si ya existe
-          </label>
-
-          {error && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-              {error}
-            </p>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
+          <DialogFooter>
             <button
               type="button"
               onClick={handleClose}
@@ -196,10 +179,10 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
               )}
               Generar reporte
             </button>
-          </div>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -255,6 +238,7 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
         style={cardStyle}
       >
         <table className="min-w-full text-sm">
+          <caption className="sr-only">Lista de reportes mensuales del club</caption>
           <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
@@ -383,7 +367,7 @@ export function ReportsListPage() {
             Reportes Mensuales
           </h1>
           <p className="mt-0.5 text-sm text-mid-gray">
-            Resúmenes de actividad del club generados con IA.
+            Resúmenes mensuales de actividad del club.
           </p>
         </div>
         <button

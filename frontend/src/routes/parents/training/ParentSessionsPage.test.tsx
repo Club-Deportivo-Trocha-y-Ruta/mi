@@ -163,4 +163,42 @@ describe("ParentSessionsPage — privacidad", () => {
 
     expect(screen.getByText(/No fue posible cargar las sesiones/)).toBeInTheDocument();
   });
+
+  it("muestra estado vacío de no-atletas cuando el padre no está vinculado", () => {
+    (useMyAthletes as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+
+    renderPage();
+
+    expect(screen.getByTestId("no-athletes-state")).toBeInTheDocument();
+    expect(screen.getByText(/Aún no estás vinculado a un atleta/)).toBeInTheDocument();
+    expect(screen.getByText(/Contacta al entrenador/)).toBeInTheDocument();
+  });
+
+  it("muestra selector de mes cuando hay atletas", () => {
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián")],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+
+    renderPage();
+
+    expect(screen.getByRole("button", { name: /Mes anterior/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Mes siguiente/i })).toBeInTheDocument();
+  });
+
+  it("el botón Mes siguiente está deshabilitado en el mes actual", () => {
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián")],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+
+    renderPage();
+
+    expect(screen.getByRole("button", { name: /Mes siguiente/i })).toBeDisabled();
+  });
 });

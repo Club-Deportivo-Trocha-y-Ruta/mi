@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
-from app.models.training_session import AgeGroup, AttendanceStatus, SessionStatus
+from app.models.training_session import AttendanceStatus, SessionStatus
 
 
 # ---------------------------------------------------------------------------
@@ -16,7 +16,6 @@ from app.models.training_session import AgeGroup, AttendanceStatus, SessionStatu
 class TrainingSessionCreate(BaseModel):
     """Payload para crear una sesión planificada."""
 
-    age_group: AgeGroup
     scheduled_date: date
     scheduled_start_time: time
     duration_min: int = Field(ge=15, le=240)
@@ -27,13 +26,6 @@ class TrainingSessionCreate(BaseModel):
     strava_url: HttpUrl | None = None
     coach_notes: str | None = Field(default=None, max_length=2000)
     convocados_athlete_ids: list[int] = Field(min_length=1)
-
-    @field_validator("scheduled_date")
-    @classmethod
-    def date_must_not_be_in_the_past(cls, v: date) -> date:
-        if v < date.today():
-            raise ValueError("La fecha de la sesión no puede ser pasada al crear")
-        return v
 
     @field_validator("strava_url", mode="before")
     @classmethod
@@ -87,13 +79,19 @@ class AttendanceSummary(BaseModel):
     lesionados: int
 
 
+class KidAttendance(BaseModel):
+    """Asistencia mínima de un atleta del padre, para vista padre."""
+
+    athlete_id: int
+    status: AttendanceStatus
+
+
 class TrainingSessionRead(BaseModel):
     """Respuesta completa de una sesión de entrenamiento."""
 
     id: int
     club_id: int
     created_by_user_id: int
-    age_group: AgeGroup
     status: SessionStatus
     scheduled_date: date
     scheduled_start_time: time
@@ -109,6 +107,7 @@ class TrainingSessionRead(BaseModel):
     updated_at: datetime
     executed_at: datetime | None
     attendance_summary: AttendanceSummary | None = None
+    kid_attendances: list[KidAttendance] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -171,6 +170,7 @@ class AttendanceRead(BaseModel):
     id: int
     session_id: int
     athlete_id: int
+    athlete_name: str | None = None
     status: AttendanceStatus
     excuse_reason: str | None
     rpe_omni: int | None

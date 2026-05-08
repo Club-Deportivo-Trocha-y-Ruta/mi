@@ -13,7 +13,6 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.training_session import (
-    AgeGroup,
     AttendanceStatus,
     MonthlyReport,
     SessionAttendance,
@@ -37,7 +36,6 @@ from app.schemas.training_session import (
 
 def _make_session_create(**kwargs) -> TrainingSessionCreate:
     defaults = dict(
-        age_group=AgeGroup.U15,
         scheduled_date=date(2030, 6, 15),
         scheduled_start_time=time(17, 0),
         duration_min=90,
@@ -55,10 +53,6 @@ def _make_session_create(**kwargs) -> TrainingSessionCreate:
 
 
 class TestEnums:
-    def test_age_group_values(self):
-        assert AgeGroup.U12.value == "u12"
-        assert AgeGroup.U15.value == "u15"
-
     def test_session_status_values(self):
         assert SessionStatus.PLANNED.value == "planned"
         assert SessionStatus.EXECUTED.value == "executed"
@@ -80,7 +74,6 @@ class TestEnums:
 class TestTrainingSessionCreate:
     def test_valid_create(self):
         s = _make_session_create()
-        assert s.age_group == AgeGroup.U15
         assert s.duration_min == 90
 
     def test_duration_min_lower_bound(self):
@@ -100,11 +93,6 @@ class TestTrainingSessionCreate:
         with pytest.raises(ValidationError) as exc:
             _make_session_create(duration_min=241)
         assert "duration_min" in str(exc.value)
-
-    def test_past_date_raises(self):
-        with pytest.raises(ValidationError) as exc:
-            _make_session_create(scheduled_date=date(2000, 1, 1))
-        assert "pasada" in str(exc.value)
 
     def test_today_date_accepted(self):
         s = _make_session_create(scheduled_date=date.today())
@@ -372,7 +360,7 @@ class TestModelAttributes:
     def test_training_session_has_required_columns(self):
         cols = {c.name for c in TrainingSession.__table__.columns}
         required = {
-            "id", "club_id", "created_by_user_id", "age_group", "status",
+            "id", "club_id", "created_by_user_id", "status",
             "scheduled_date", "scheduled_start_time", "duration_min",
             "location", "technical_focus", "description", "route_text",
             "strava_url", "route_file_path", "coach_notes",
@@ -400,7 +388,6 @@ class TestModelAttributes:
     def test_training_session_has_indexes(self):
         index_names = {idx.name for idx in TrainingSession.__table__.indexes}
         assert "idx_training_session_club_date" in index_names
-        assert "idx_training_session_club_age_date" in index_names
 
     def test_session_attendance_has_unique_constraint(self):
         constraint_names = {
@@ -477,7 +464,6 @@ class TestTrainingSessionRead:
             id=1,
             club_id=1,
             created_by_user_id=1,
-            age_group=AgeGroup.U15,
             status=SessionStatus.PLANNED,
             scheduled_date=date(2026, 6, 1),
             scheduled_start_time=time(8, 0),

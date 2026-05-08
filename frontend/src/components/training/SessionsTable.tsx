@@ -7,12 +7,9 @@ interface SessionsTableProps {
   items: TrainingSession[];
   onExecute?: (id: number) => void;
   onCancel?: (id: number) => void;
+  executePendingId?: number | null;
+  cancelPendingId?: number | null;
 }
-
-const AGE_GROUP_LABEL: Record<string, string> = {
-  u12: "U12",
-  u15: "U15",
-};
 
 function formatDate(dateStr: string): string {
   const [year, month, day] = dateStr.split("-");
@@ -23,7 +20,13 @@ function formatTime(timeStr: string): string {
   return timeStr.slice(0, 5);
 }
 
-export function SessionsTable({ items, onExecute, onCancel }: SessionsTableProps) {
+export function SessionsTable({
+  items,
+  onExecute,
+  onCancel,
+  executePendingId = null,
+  cancelPendingId = null,
+}: SessionsTableProps) {
   return (
     <>
       {/* Vista mobile: cards */}
@@ -43,15 +46,15 @@ export function SessionsTable({ items, onExecute, onCancel }: SessionsTableProps
                     {session.technical_focus}
                   </p>
                   <p className="mt-0.5 text-sm text-mid-gray">
-                    {formatDate(session.scheduled_date)} · {formatTime(session.scheduled_start_time)} · {AGE_GROUP_LABEL[session.age_group]}
+                    {formatDate(session.scheduled_date)} · {formatTime(session.scheduled_start_time)}
                   </p>
                   <p className="mt-0.5 truncate text-sm text-mid-gray">{session.location}</p>
                 </div>
                 <SessionStatusBadge status={session.status} />
               </div>
-              {session.attendance_count != null && (
+              {session.attendance_summary && (
                 <p className="mt-2 text-xs text-mid-gray">
-                  Asistencia: {session.attendance_count}
+                  Asistencia: {session.attendance_summary.presentes}/{session.attendance_summary.total}
                 </p>
               )}
               <div className="mt-3 flex flex-wrap gap-2">
@@ -75,7 +78,8 @@ export function SessionsTable({ items, onExecute, onCancel }: SessionsTableProps
                   <button
                     type="button"
                     onClick={() => onExecute(session.id)}
-                    className="rounded-lg bg-green-50 px-3 py-2 text-xs font-medium text-green-700 transition-opacity hover:opacity-70"
+                    disabled={executePendingId === session.id}
+                    className="rounded-lg bg-green-50 px-3 py-2 text-xs font-medium text-green-700 transition-opacity hover:opacity-70 disabled:opacity-40"
                     style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   >
                     Ejecutar
@@ -85,7 +89,8 @@ export function SessionsTable({ items, onExecute, onCancel }: SessionsTableProps
                   <button
                     type="button"
                     onClick={() => onCancel(session.id)}
-                    className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600 transition-opacity hover:opacity-70"
+                    disabled={cancelPendingId === session.id}
+                    className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600 transition-opacity hover:opacity-70 disabled:opacity-40"
                     style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   >
                     Cancelar
@@ -106,33 +111,31 @@ export function SessionsTable({ items, onExecute, onCancel }: SessionsTableProps
         }}
       >
         <table className="min-w-full text-sm">
+          <caption className="sr-only">Lista de sesiones de entrenamiento</caption>
           <thead
             className="text-left"
             style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
           >
             <tr>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Fecha
               </th>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Hora
               </th>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
-                Grupo
-              </th>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Foco técnico
               </th>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Lugar
               </th>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Estado
               </th>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Asistencia
               </th>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Acciones
               </th>
             </tr>
@@ -150,11 +153,6 @@ export function SessionsTable({ items, onExecute, onCancel }: SessionsTableProps
                 <td className="px-4 py-3 text-mid-gray">
                   {formatTime(session.scheduled_start_time)}
                 </td>
-                <td className="px-4 py-3">
-                  <span className="rounded-full bg-light-gray px-2.5 py-1 text-xs font-medium text-charcoal">
-                    {AGE_GROUP_LABEL[session.age_group]}
-                  </span>
-                </td>
                 <td className="max-w-[200px] truncate px-4 py-3 font-medium text-charcoal">
                   {session.technical_focus}
                 </td>
@@ -165,7 +163,9 @@ export function SessionsTable({ items, onExecute, onCancel }: SessionsTableProps
                   <SessionStatusBadge status={session.status as SessionStatus} />
                 </td>
                 <td className="px-4 py-3 text-mid-gray">
-                  {session.attendance_count != null ? session.attendance_count : "—"}
+                  {session.attendance_summary
+                    ? `${session.attendance_summary.presentes}/${session.attendance_summary.total}`
+                    : "—"}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
@@ -189,7 +189,8 @@ export function SessionsTable({ items, onExecute, onCancel }: SessionsTableProps
                       <button
                         type="button"
                         onClick={() => onExecute(session.id)}
-                        className="rounded-lg bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 transition-opacity hover:opacity-70"
+                        disabled={executePendingId === session.id}
+                        className="rounded-lg bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 transition-opacity hover:opacity-70 disabled:opacity-40"
                         style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                       >
                         Ejecutar
@@ -199,7 +200,8 @@ export function SessionsTable({ items, onExecute, onCancel }: SessionsTableProps
                       <button
                         type="button"
                         onClick={() => onCancel(session.id)}
-                        className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-70"
+                        disabled={cancelPendingId === session.id}
+                        className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-70 disabled:opacity-40"
                         style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                       >
                         Cancelar

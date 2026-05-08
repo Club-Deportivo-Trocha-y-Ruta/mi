@@ -69,7 +69,7 @@ function RubricSlider({
               aria-valuemin={1}
               aria-valuemax={5}
               onChange={(e) => field.onChange(Number(e.target.value))}
-              className="h-1.5 w-full cursor-pointer accent-charcoal disabled:cursor-not-allowed disabled:opacity-40"
+              className="h-1.5 w-full cursor-pointer accent-charcoal disabled:cursor-not-allowed disabled:opacity-40 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-light-gray-dark">
               <span>1</span>
@@ -124,7 +124,7 @@ export function RubricSliders({ control, disabled, feedbackLength }: RubricSlide
                 aria-valuemin={0}
                 aria-valuemax={10}
                 onChange={(e) => field.onChange(Number(e.target.value))}
-                className="h-1.5 w-full cursor-pointer accent-charcoal disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-1.5 w-full cursor-pointer accent-charcoal disabled:cursor-not-allowed disabled:opacity-40 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-mid-gray">
                 <span>0</span>

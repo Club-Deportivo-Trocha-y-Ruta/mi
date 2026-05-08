@@ -15,9 +15,7 @@ const MONTHS = [
 
 function defaultPeriod(): { year: number; month: number } {
   const now = new Date();
-  // Default to last closed month
-  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
 function AttendanceBar({ percentage }: { percentage: number }) {

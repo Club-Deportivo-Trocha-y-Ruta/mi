@@ -12,11 +12,6 @@ interface ParentSessionCardProps {
 const CARD_SHADOW =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
 
-const AGE_GROUP_LABEL: Record<string, string> = {
-  u12: "U12 (10-12 años)",
-  u15: "U15 (13-15 años)",
-};
-
 const ATTENDANCE_CONFIG: Record<
   AttendanceStatus,
   { label: string; className: string }
@@ -30,7 +25,12 @@ const ATTENDANCE_CONFIG: Record<
 
 function formatDate(dateStr: string): string {
   const [year, month, day] = dateStr.split("-");
-  return `${day}/${month}/${year}`;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return new Intl.DateTimeFormat("es-CO", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(date);
 }
 
 function formatTime(timeStr: string): string {
@@ -64,24 +64,18 @@ export function ParentSessionCard({ session, kidAttendanceStatus }: ParentSessio
       </div>
 
       <div
-        className="flex items-center justify-between px-4 py-2.5 gap-2 flex-wrap"
+        className="flex items-center justify-end px-4 py-2.5 gap-2"
         style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
       >
-        <span className="rounded-full bg-light-gray px-2.5 py-0.5 text-xs font-medium text-charcoal">
-          {AGE_GROUP_LABEL[session.age_group] ?? session.age_group}
-        </span>
-
-        <div className="flex items-center gap-2">
-          {attendanceBadge && (
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${attendanceBadge.className}`}
-              aria-label={`Asistencia de tu atleta: ${attendanceBadge.label}`}
-            >
-              {attendanceBadge.label}
-            </span>
-          )}
-          <ArrowRight size={14} className="text-mid-gray" aria-hidden="true" />
-        </div>
+        {attendanceBadge && (
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${attendanceBadge.className}`}
+            aria-label={`Asistencia de tu atleta: ${attendanceBadge.label}`}
+          >
+            {attendanceBadge.label}
+          </span>
+        )}
+        <ArrowRight size={14} className="text-mid-gray" aria-hidden="true" />
       </div>
     </Link>
   );

@@ -76,7 +76,6 @@ function createWrapper() {
 }
 
 const SESSION_CREATE_PAYLOAD: TrainingSessionCreate = {
-  age_group: "u15",
   scheduled_date: "2026-05-20",
   scheduled_start_time: "08:00:00",
   duration_min: 90,
@@ -107,7 +106,6 @@ describe("fetchTrainingSessions", () => {
     await fetchTrainingSessions({
       from_date: "2026-05-01",
       to_date: "2026-05-31",
-      age_group: "u15",
       status: "planned",
       athlete_id: 42,
     });
@@ -116,7 +114,6 @@ describe("fetchTrainingSessions", () => {
       params: {
         from: "2026-05-01",
         to: "2026-05-31",
-        age_group: "u15",
         status: "planned",
         athlete_id: "42",
       },
@@ -125,7 +122,7 @@ describe("fetchTrainingSessions", () => {
 
   it("omite filtros vacíos del querystring", async () => {
     mockApi.get.mockResolvedValueOnce({ data: [] });
-    await fetchTrainingSessions({ from_date: "", to_date: "", age_group: "", status: "" });
+    await fetchTrainingSessions({ from_date: "", to_date: "", status: "" });
     expect(mockApi.get).toHaveBeenCalledWith("/api/training-sessions", { params: {} });
   });
 });

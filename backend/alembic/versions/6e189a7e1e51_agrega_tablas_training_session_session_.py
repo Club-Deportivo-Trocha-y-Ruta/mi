@@ -39,7 +39,6 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('club_id', sa.Integer(), nullable=False),
     sa.Column('created_by_user_id', sa.Integer(), nullable=False),
-    sa.Column('age_group', sa.Enum('u12', 'u15', name='agegroup'), nullable=False),
     sa.Column('status', sa.Enum('planned', 'executed', 'cancelled', name='sessionstatus'), nullable=False),
     sa.Column('scheduled_date', sa.Date(), nullable=False),
     sa.Column('scheduled_start_time', sa.Time(), nullable=False),
@@ -59,7 +58,6 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['created_by_user_id'], ['users.id'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_training_session_club_age_date', 'training_sessions', ['club_id', 'age_group', 'scheduled_date'], unique=False)
     op.create_index('idx_training_session_club_date', 'training_sessions', ['club_id', 'scheduled_date'], unique=False)
     op.create_table('session_attendance',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
@@ -92,7 +90,6 @@ def downgrade() -> None:
     op.drop_index('idx_session_attendance_athlete_created', table_name='session_attendance')
     op.drop_table('session_attendance')
     op.drop_index('idx_training_session_club_date', table_name='training_sessions')
-    op.drop_index('idx_training_session_club_age_date', table_name='training_sessions')
     op.drop_table('training_sessions')
     op.drop_table('monthly_reports')
     # ### end Alembic commands ###

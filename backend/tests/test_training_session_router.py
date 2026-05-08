@@ -57,7 +57,6 @@ async def _get_first_athlete_id(client: AsyncClient, headers: dict, club_id: int
 
 def _session_payload(athlete_ids: list[int], **kwargs) -> dict:
     defaults = {
-        "age_group": "u15",
         "scheduled_date": "2030-08-15",
         "scheduled_start_time": "17:00:00",
         "duration_min": 90,
@@ -88,7 +87,6 @@ class TestCreateTrainingSession:
         assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body["status"] == "planned"
-        assert body["age_group"] == "u15"
         assert body["club_id"] == club_id
 
     async def test_admin_creates_session_201(self, client: AsyncClient):

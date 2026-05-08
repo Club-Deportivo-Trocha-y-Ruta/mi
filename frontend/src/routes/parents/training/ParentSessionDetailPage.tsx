@@ -21,7 +21,7 @@ const cardStyle: React.CSSProperties = {
     "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
 };
 
-const sectionHeading = "text-sm font-semibold uppercase tracking-wide text-mid-gray mb-3";
+const sectionHeading = "text-sm font-semibold text-mid-gray mb-3";
 
 function formatDate(dateStr: string): string {
   const [year, month, day] = dateStr.split("-");
@@ -51,7 +51,11 @@ export function ParentSessionDetailPage() {
   const athletesQuery = useMyAthletes();
 
   const session = sessionQuery.data;
-  const myAthleteIds = (athletesQuery.data ?? []).map((a) => a.athlete_id);
+  const myAthletes = athletesQuery.data ?? [];
+  const myAthleteIds = myAthletes.map((a) => a.athlete_id);
+  const athleteNameById = new Map(
+    myAthletes.map((a) => [a.athlete_id, `${a.athlete_first_name} ${a.athlete_last_name}`]),
+  );
 
   // Defensive filter: only attendance rows belonging to parent's own athletes.
   // Even if the backend leaks other rows, we never render them.
@@ -171,7 +175,7 @@ export function ParentSessionDetailPage() {
 
       {/* Asistencia de mi atleta */}
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-mid-gray px-1">
+        <h2 className="text-sm font-semibold text-mid-gray px-1">
           Asistencia de tu atleta
         </h2>
 
@@ -196,7 +200,11 @@ export function ParentSessionDetailPage() {
         {!attendanceQuery.isLoading &&
           !attendanceQuery.isError &&
           myAttendance.map((attendance) => (
-            <ReadOnlyAttendanceRow key={attendance.id} attendance={attendance} />
+            <ReadOnlyAttendanceRow
+              key={attendance.id}
+              attendance={attendance}
+              athleteName={athleteNameById.get(attendance.athlete_id) ?? "Atleta"}
+            />
           ))}
       </div>
     </section>

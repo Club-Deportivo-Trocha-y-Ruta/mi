@@ -2,6 +2,7 @@ import type { Attendance, AttendanceStatus } from "@/types/trainingSession.types
 
 interface ReadOnlyAttendanceRowProps {
   attendance: Attendance;
+  athleteName: string;
 }
 
 const STATUS_LABELS: Record<AttendanceStatus, string> = {
@@ -36,7 +37,7 @@ function StatMini({ label, value }: { label: string; value: string | number | nu
   );
 }
 
-export function ReadOnlyAttendanceRow({ attendance }: ReadOnlyAttendanceRowProps) {
+export function ReadOnlyAttendanceRow({ attendance, athleteName }: ReadOnlyAttendanceRowProps) {
   const statusLabel = STATUS_LABELS[attendance.status] ?? attendance.status;
   const statusClass = STATUS_COLORS[attendance.status] ?? "bg-light-gray text-charcoal";
 
@@ -51,7 +52,7 @@ export function ReadOnlyAttendanceRow({ attendance }: ReadOnlyAttendanceRowProps
       className="rounded-xl bg-white px-5 py-4 space-y-4"
       style={cardStyle}
       data-athlete-id={attendance.athlete_id}
-      aria-label={`Registro de asistencia de ${attendance.athlete_name ?? "atleta"}`}
+      aria-label={`Registro de asistencia de ${athleteName}`}
     >
       {/* Status row */}
       <div className="flex flex-wrap items-center gap-3">
@@ -62,8 +63,8 @@ export function ReadOnlyAttendanceRow({ attendance }: ReadOnlyAttendanceRowProps
           {statusLabel}
         </span>
 
-        {attendance.athlete_name && (
-          <span className="text-sm font-medium text-charcoal">{attendance.athlete_name}</span>
+        {athleteName && (
+          <span className="text-sm font-medium text-charcoal">{athleteName}</span>
         )}
       </div>
 

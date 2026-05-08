@@ -77,7 +77,6 @@ def _make_club(club_id: int = 1, name: str = "Club Trocha y Ruta") -> MagicMock:
 
 def _make_payload(athlete_ids: list[int]) -> TrainingSessionCreate:
     return TrainingSessionCreate(
-        age_group="u15",
         scheduled_date=date(2026, 5, 20),
         scheduled_start_time=time(17, 0),
         duration_min=90,
@@ -93,6 +92,21 @@ def _make_notification_service(success: bool = True) -> MagicMock:
     return svc
 
 
+def _make_session_mock(session_id: int) -> MagicMock:
+    """Crea un mock de TrainingSession con scheduled_date real para evitar errores de comparación."""
+    from app.models.training_session import TrainingSession
+    s = MagicMock(spec=TrainingSession)
+    s.id = session_id
+    s.status = SessionStatus.PLANNED
+    s.scheduled_date = date(2026, 5, 20)
+    s.scheduled_start_time = time(17, 0)
+    s.duration_min = 90
+    s.location = "Bosque Municipal"
+    s.technical_focus = "Descenso técnico"
+    s.attendances = []
+    return s
+
+
 def _make_db(
     club: MagicMock | None,
     parent_athlete_pairs: list[tuple[MagicMock, MagicMock]],
@@ -102,7 +116,7 @@ def _make_db(
     db = AsyncMock()
     db.add = MagicMock()
 
-    async def _refresh(obj):
+    async def _refresh(obj, **kwargs):
         obj.id = session_id
         obj.status = SessionStatus.PLANNED
         obj.scheduled_date = date(2026, 5, 20)
@@ -115,16 +129,23 @@ def _make_db(
     db.refresh = _refresh
 
     # db.execute se llama en este orden:
-    # 1. ClubMember check (en _assert_coach_in_club — patcheado, skip)
-    # 2. Club select
-    # 3. ParentAthlete join
+    # 1. get_session (por selectinload tras flush+commit)
+    # 2. Club select (para notificación)
+    # 3. ParentAthlete join (para notificación)
+    session_mock = _make_session_mock(session_id)
+    get_session_result = MagicMock()
+    get_session_result.scalar_one_or_none = MagicMock(return_value=session_mock)
+    scalars_mock = MagicMock()
+    scalars_mock.all = MagicMock(return_value=[])
+    get_session_result.scalars = MagicMock(return_value=scalars_mock)
+
     club_result = MagicMock()
     club_result.scalar_one_or_none = MagicMock(return_value=club)
 
     pa_result = MagicMock()
     pa_result.all = MagicMock(return_value=parent_athlete_pairs)
 
-    db.execute = AsyncMock(side_effect=[club_result, pa_result])
+    db.execute = AsyncMock(side_effect=[get_session_result, club_result, pa_result])
     return db
 
 
@@ -333,11 +354,12 @@ async def test_pii_not_in_logs(caplog):
 @pytest.mark.asyncio
 async def test_no_notification_service_no_emails():
     coach = _make_user(1, "coach@test.com")
+    session_mock = _make_session_mock(session_id=1)
 
     db = AsyncMock()
     db.add = MagicMock()
 
-    async def _refresh(obj):
+    async def _refresh(obj, **kwargs):
         obj.id = 1
         obj.status = SessionStatus.PLANNED
         obj.attendances = []
@@ -346,6 +368,10 @@ async def test_no_notification_service_no_emails():
 
     member_result = MagicMock()
     member_result.first = MagicMock(return_value=MagicMock())
+    member_result.scalar_one_or_none = MagicMock(return_value=session_mock)
+    scalars_mock = MagicMock()
+    scalars_mock.all = MagicMock(return_value=[])
+    member_result.scalars = MagicMock(return_value=scalars_mock)
     db.execute = AsyncMock(return_value=member_result)
 
     with patch.object(sessions_svc, "_assert_coach_in_club", new=AsyncMock()):
@@ -360,7 +386,6 @@ async def test_no_notification_service_no_emails():
         )
 
     assert result is not None
-    # Sin notificación → solo el execute de ClubMember (que está patcheado a no-op)
-    # Como _assert_coach_in_club está patcheado, execute no se llama para membresía
-    # Solo verificamos que NO se llamó execute para Club ni ParentAthlete
-    assert db.execute.call_count == 0
+    # Sin notificación → execute solo se llama una vez (get_session para reload)
+    # No se consultan Club ni ParentAthlete
+    assert db.execute.call_count == 1

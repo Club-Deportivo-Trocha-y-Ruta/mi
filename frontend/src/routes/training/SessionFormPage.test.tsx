@@ -15,8 +15,10 @@ vi.mock("@/api/client", () => ({
 
 vi.mock("@/api/trainingSessions", () => ({
   useTrainingSession: vi.fn(),
+  useSessionAttendance: vi.fn(),
   useCreateTrainingSession: vi.fn(),
   useUpdateTrainingSession: vi.fn(),
+  bulkSetConvocatoria: vi.fn(),
 }));
 
 vi.mock("@/components/training/AthletesMultiSelect", () => ({
@@ -24,7 +26,6 @@ vi.mock("@/components/training/AthletesMultiSelect", () => ({
     onChange,
     error,
   }: {
-    ageGroup: string;
     value: number[];
     onChange: (ids: number[]) => void;
     error?: string;
@@ -54,6 +55,7 @@ vi.mock("@/store/auth.store", () => ({
 
 import {
   useTrainingSession,
+  useSessionAttendance,
   useCreateTrainingSession,
   useUpdateTrainingSession,
 } from "@/api/trainingSessions";
@@ -90,6 +92,11 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
   } as ReturnType<typeof useTrainingSession>);
+  vi.mocked(useSessionAttendance).mockReturnValue({
+    data: [],
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useSessionAttendance>);
   vi.mocked(useCreateTrainingSession).mockReturnValue({
     mutateAsync: mutateAsyncStub,
     isPending: false,
@@ -111,7 +118,7 @@ describe("SessionFormPage — modo crear", () => {
     expect(screen.getByLabelText(/Duración/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Lugar/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Foco técnico/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Descripción/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Descripción")).toBeInTheDocument();
   });
 
   it("muestra errores de validación al hacer submit sin datos", async () => {
@@ -120,17 +127,6 @@ describe("SessionFormPage — modo crear", () => {
     fireEvent.click(submitBtn);
     await waitFor(() => {
       expect(screen.getByText(/La fecha es requerida/i)).toBeInTheDocument();
-    });
-  });
-
-  it("rechaza fecha en el pasado", async () => {
-    renderCreate();
-    const dateInput = screen.getByLabelText(/Fecha/i);
-    fireEvent.change(dateInput, { target: { value: "2020-01-01" } });
-    const submitBtn = screen.getByRole("button", { name: /Crear sesión/i });
-    fireEvent.click(submitBtn);
-    await waitFor(() => {
-      expect(screen.getByText(/no puede ser en el pasado/i)).toBeInTheDocument();
     });
   });
 
@@ -144,7 +140,7 @@ describe("SessionFormPage — modo crear", () => {
     fireEvent.change(locationInput, { target: { value: "Pista XCO" } });
     const focusInput = screen.getByLabelText(/Foco técnico/i);
     fireEvent.change(focusInput, { target: { value: "Técnica" } });
-    const descInput = screen.getByLabelText(/Descripción/i);
+    const descInput = screen.getByLabelText("Descripción");
     fireEvent.change(descInput, { target: { value: "Descripción de prueba" } });
     const submitBtn = screen.getByRole("button", { name: /Crear sesión/i });
     fireEvent.click(submitBtn);
@@ -161,7 +157,7 @@ describe("SessionFormPage — modo crear", () => {
     fireEvent.change(screen.getByLabelText(/Hora de inicio/i), { target: { value: "08:00" } });
     fireEvent.change(screen.getByLabelText(/Lugar/i), { target: { value: "Pista XCO" } });
     fireEvent.change(screen.getByLabelText(/Foco técnico/i), { target: { value: "Técnica de frenada" } });
-    fireEvent.change(screen.getByLabelText(/Descripción/i), { target: { value: "Descripción completa para la sesión" } });
+    fireEvent.change(screen.getByLabelText("Descripción"), { target: { value: "Descripción completa para la sesión" } });
     fireEvent.click(screen.getByTestId("select-athlete"));
 
     fireEvent.click(screen.getByRole("button", { name: /Crear sesión/i }));

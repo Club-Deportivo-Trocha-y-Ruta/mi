@@ -27,11 +27,6 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
-class AgeGroup(str, enum.Enum):
-    U12 = "u12"  # 10-12 años
-    U15 = "u15"  # 13-15 años
-
-
 class SessionStatus(str, enum.Enum):
     PLANNED = "planned"
     EXECUTED = "executed"
@@ -56,12 +51,6 @@ class TrainingSession(Base):
             name="ck_session_duration_range",
         ),
         Index("idx_training_session_club_date", "club_id", "scheduled_date"),
-        Index(
-            "idx_training_session_club_age_date",
-            "club_id",
-            "age_group",
-            "scheduled_date",
-        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -70,10 +59,6 @@ class TrainingSession(Base):
     )
     created_by_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
-    )
-    age_group: Mapped[AgeGroup] = mapped_column(
-        Enum(AgeGroup, values_callable=lambda e: [x.value for x in e]),
-        nullable=False,
     )
     status: Mapped[SessionStatus] = mapped_column(
         Enum(SessionStatus, values_callable=lambda e: [x.value for x in e]),

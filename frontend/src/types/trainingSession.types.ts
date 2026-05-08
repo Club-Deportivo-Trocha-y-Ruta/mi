@@ -1,5 +1,3 @@
-export type AgeGroup = "u12" | "u15";
-
 export type SessionStatus = "planned" | "executed" | "cancelled";
 
 export type AttendanceStatus =
@@ -13,7 +11,6 @@ export interface TrainingSession {
   id: number;
   club_id: number;
   created_by_user_id: number;
-  age_group: AgeGroup;
   status: SessionStatus;
   scheduled_date: string;
   scheduled_start_time: string;
@@ -29,11 +26,20 @@ export interface TrainingSession {
   updated_at: string;
   executed_at?: string | null;
   attendance_count?: number | null;
-  attendance_summary?: { athlete_id: number; status: AttendanceStatus }[] | null;
+  attendance_summary?: AttendanceSummaryCounts | null;
+  kid_attendances?: { athlete_id: number; status: AttendanceStatus }[] | null;
+}
+
+export interface AttendanceSummaryCounts {
+  total: number;
+  presentes: number;
+  ausentes: number;
+  justificados: number;
+  tardes: number;
+  lesionados: number;
 }
 
 export interface TrainingSessionCreate {
-  age_group: AgeGroup;
   scheduled_date: string;
   scheduled_start_time: string;
   duration_min: number;
@@ -46,7 +52,6 @@ export interface TrainingSessionCreate {
 }
 
 export interface TrainingSessionUpdate {
-  age_group?: AgeGroup;
   scheduled_date?: string;
   scheduled_start_time?: string;
   duration_min?: number;
@@ -90,8 +95,6 @@ export interface MonthlyMetrics {
   executed_sessions: number;
   cancelled_sessions: number;
   planned_sessions: number;
-  sessions_u12: number;
-  sessions_u15: number;
   technical_focuses: string[];
   avg_attendance_rate?: number | null;
 }
@@ -154,7 +157,6 @@ export interface MonthlyReportCreatePayload {
 export interface SessionFilters {
   from_date?: string;
   to_date?: string;
-  age_group?: AgeGroup | "";
   status?: SessionStatus | "";
   athlete_id?: number;
 }

@@ -17,7 +17,7 @@ from app.dependencies import (
     get_task_dispatcher,
     require_role,
 )
-from app.models.training_session import AgeGroup, SessionStatus
+from app.models.training_session import SessionStatus
 from app.models.user import User, UserRole
 from app.schemas.training_session import (
     AttendanceRead,
@@ -41,6 +41,17 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _attendance_to_read(attendance) -> AttendanceRead:
+    """Mapea SessionAttendance a AttendanceRead, incluyendo nombre del atleta."""
+    name: str | None = None
+    athlete = getattr(attendance, "athlete", None)
+    if athlete is not None:
+        name = f"{athlete.first_name} {athlete.last_name}".strip() or None
+    data = AttendanceRead.model_validate(attendance).model_dump()
+    data["athlete_name"] = name
+    return AttendanceRead.model_validate(data)
 
 
 def _build_attendance_summary(session) -> AttendanceSummary:
@@ -145,7 +156,6 @@ async def create_training_session(
 async def list_training_sessions(
     from_date: date | None = Query(default=None, alias="from"),
     to_date: date | None = Query(default=None, alias="to"),
-    age_group: AgeGroup | None = Query(default=None),
     session_status: SessionStatus | None = Query(default=None, alias="status"),
     athlete_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
@@ -187,7 +197,6 @@ async def list_training_sessions(
             sessions = await training_svc.sessions.list_sessions(
                 db=db,
                 club_id=ath.club_id,
-                age_group=age_group.value if age_group else None,
                 status=session_status.value if session_status else None,
                 date_from=from_date.isoformat() if from_date else None,
                 date_to=to_date.isoformat() if to_date else None,
@@ -198,7 +207,13 @@ async def list_training_sessions(
             for s in sessions:
                 if s.id not in seen_ids:
                     seen_ids.add(s.id)
-                    all_sessions.append(_session_to_read(s))
+                    read = _session_to_read(s)
+                    read.kid_attendances = [
+                        {"athlete_id": a.athlete_id, "status": a.status}
+                        for a in (s.attendances or [])
+                        if a.athlete_id in children_ids
+                    ]
+                    all_sessions.append(read)
         return all_sessions
     else:
         raise HTTPException(
@@ -216,7 +231,6 @@ async def list_training_sessions(
         sessions = await training_svc.sessions.list_sessions(
             db=db,
             club_id=cid,
-            age_group=age_group.value if age_group else None,
             status=session_status.value if session_status else None,
             date_from=from_date.isoformat() if from_date else None,
             date_to=to_date.isoformat() if to_date else None,
@@ -418,7 +432,7 @@ async def list_session_attendance(
             detail="Rol no autorizado",
         )
 
-    return [AttendanceRead.model_validate(a) for a in attendances]
+    return [_attendance_to_read(a) for a in attendances]
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +480,7 @@ async def bulk_set_convocatoria(
         session_id=session_id,
         athlete_ids=athlete_ids,
     )
-    return [AttendanceRead.model_validate(a) for a in attendances]
+    return [_attendance_to_read(a) for a in attendances]
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +522,7 @@ async def update_attendance(
             detail=str(exc),
         )
 
-    return AttendanceRead.model_validate(attendance)
+    return _attendance_to_read(attendance)
 
 
 # ---------------------------------------------------------------------------
