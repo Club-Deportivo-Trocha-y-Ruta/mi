@@ -157,8 +157,8 @@ describe("ParentEventDrawer", () => {
       data: makeCalendarEventRead({
         event_type: "club_event",
         status: "scheduled",
-        start: futureDate.toISOString(),
-        end: new Date(futureDate.getTime() + 3600_000).toISOString(),
+        start_at: futureDate.toISOString(),
+        end_at: new Date(futureDate.getTime() + 3600_000).toISOString(),
       }),
       isLoading: false,
       isError: false,
@@ -283,11 +283,9 @@ describe("ParentEventDrawer", () => {
         isError: false,
       });
       vi.mocked(useCalendarEvent).mockReturnValue({
-        data: makeCalendarEventRead({
-          event_type: "club_event",
-          // extended_props podría contener coach_notes — no debe renderizarse
-          extended_props: { coach_notes: "Notas privadas del entrenador" },
-        }),
+        // EventRead del backend NO contiene extended_props (eso es de EventListItem).
+        // Aún así verificamos que el drawer no muestra ningún campo privado.
+        data: makeCalendarEventRead({ event_type: "club_event" }),
         isLoading: false,
         isError: false,
       } as ReturnType<typeof useCalendarEvent>);
@@ -350,8 +348,8 @@ describe("ParentEventDrawer", () => {
       data: makeCalendarEventRead({
         event_type: "club_event",
         status: "completed",
-        start: pastDate.toISOString(),
-        end: new Date(pastDate.getTime() + 3600_000).toISOString(),
+        start_at: pastDate.toISOString(),
+        end_at: new Date(pastDate.getTime() + 3600_000).toISOString(),
       }),
       isLoading: false,
       isError: false,

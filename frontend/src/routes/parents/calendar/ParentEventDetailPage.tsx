@@ -170,7 +170,7 @@ export function ParentEventDetailPage() {
   const now = new Date();
   const isCancelledOrPast =
     event?.status === "cancelled" ||
-    (event != null && new Date(event.start) < now);
+    (event != null && new Date(event.start_at) < now);
 
   if (isLoading) {
     return (
@@ -249,19 +249,19 @@ export function ParentEventDetailPage() {
 
         <div className="flex items-start gap-2">
           <CalendarDays size={14} className="mt-0.5 shrink-0 text-mid-gray" aria-hidden="true" />
-          <p className="font-medium capitalize text-charcoal">{formatFullDate(event.start)}</p>
+          <p className="font-medium capitalize text-charcoal">{formatFullDate(event.start_at)}</p>
         </div>
 
-        {!event.allDay && (
+        {!event.all_day && (
           <div className="flex items-center gap-2 pl-5">
             <Clock size={13} className="shrink-0 text-mid-gray" aria-hidden="true" />
             <span className="text-mid-gray">
-              {formatTime(event.start)} — {formatTime(event.end)} ({durationLabel(event.start, event.end)})
+              {formatTime(event.start_at)} — {formatTime(event.end_at)} ({durationLabel(event.start_at, event.end_at)})
             </span>
           </div>
         )}
 
-        {event.allDay && (
+        {event.all_day && (
           <p className="pl-5 text-mid-gray">Todo el día</p>
         )}
 

@@ -117,9 +117,9 @@ export interface CalendarEventRead {
   title: string;
   description: string | null;
   location: string | null;
-  start: string;
-  end: string;
-  allDay: boolean;
+  start_at: string;
+  end_at: string;
+  all_day: boolean;
   timezone: string;
   event_data: EventData | null;
   color_hex: string | null;
@@ -127,7 +127,6 @@ export interface CalendarEventRead {
   created_at: string;
   updated_at: string;
   audiences: Audience[];
-  extended_props: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------

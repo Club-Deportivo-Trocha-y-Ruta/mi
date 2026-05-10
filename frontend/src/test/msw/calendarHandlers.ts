@@ -35,9 +35,9 @@ export function makeCalendarEventRead(
     title: "Entrenamiento técnico XCO",
     description: "Foco en técnica de frenada en descenso",
     location: "Pista XCO La Buitrera",
-    start: "2026-05-15T08:00:00",
-    end: "2026-05-15T09:30:00",
-    allDay: false,
+    start_at: "2026-05-15T08:00:00",
+    end_at: "2026-05-15T09:30:00",
+    all_day: false,
     timezone: "America/Bogota",
     event_data: {},
     color_hex: null,
@@ -45,7 +45,6 @@ export function makeCalendarEventRead(
     created_at: "2026-05-01T00:00:00Z",
     updated_at: "2026-05-01T00:00:00Z",
     audiences: [{ audience_type: "all_club", audience_value: {} as Record<string, never> }],
-    extended_props: {},
     ...overrides,
   };
 }

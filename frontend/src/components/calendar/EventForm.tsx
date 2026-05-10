@@ -64,8 +64,8 @@ function buildDefaultValues(
   prefillDate?: string,
 ): CalendarEventFormValues {
   if (initialData) {
-    const start = new Date(initialData.start);
-    const end = new Date(initialData.end);
+    const start = new Date(initialData.start_at);
+    const end = new Date(initialData.end_at);
     const durationMin = Math.round((end.getTime() - start.getTime()) / 60_000);
     const startDate = start.toISOString().slice(0, 10);
     const startTime = start.toISOString().slice(11, 16);
@@ -78,7 +78,7 @@ function buildDefaultValues(
       start_date: startDate,
       start_time: startTime,
       duration_min: durationMin,
-      all_day: initialData.allDay,
+      all_day: initialData.all_day,
       color_hex: initialData.color_hex ?? "",
       audiences: initialData.audiences ?? [],
     };

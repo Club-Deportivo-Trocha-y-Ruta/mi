@@ -176,7 +176,7 @@ export function ParentEventDrawer({
   const now = new Date();
   const isCancelledOrPast =
     event?.status === "cancelled" ||
-    (event != null && new Date(event.start) < now);
+    (event != null && new Date(event.start_at) < now);
 
   // Filter attendances to ONLY those belonging to this parent's athletes.
   // This is a defensive client-side guard — the backend already scopes data,
@@ -244,20 +244,20 @@ export function ParentEventDrawer({
                   />
                   <div>
                     <p className="font-medium capitalize text-charcoal">
-                      {formatFullDate(event.start)}
+                      {formatFullDate(event.start_at)}
                     </p>
-                    {!event.allDay && (
+                    {!event.all_day && (
                       <p className="text-mid-gray">
-                        {formatTime(event.start)} — {formatTime(event.end)}
+                        {formatTime(event.start_at)} — {formatTime(event.end_at)}
                       </p>
                     )}
-                    {event.allDay && (
+                    {event.all_day && (
                       <p className="text-mid-gray">Todo el día</p>
                     )}
                   </div>
                 </div>
 
-                {!event.allDay && (
+                {!event.all_day && (
                   <div className="flex items-center gap-2 pl-5">
                     <Clock
                       size={13}
@@ -265,7 +265,7 @@ export function ParentEventDrawer({
                       aria-hidden="true"
                     />
                     <span className="text-mid-gray">
-                      Duración: {durationLabel(event.start, event.end)}
+                      Duración: {durationLabel(event.start_at, event.end_at)}
                     </span>
                   </div>
                 )}

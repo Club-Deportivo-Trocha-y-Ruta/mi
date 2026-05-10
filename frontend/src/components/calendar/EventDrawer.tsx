@@ -152,15 +152,15 @@ export function EventDrawer({ eventId, open, onOpenChange }: EventDrawerProps) {
                     Fecha y hora
                   </dt>
                   <dd className="mt-1 text-charcoal">
-                    {formatDateTime(event.start, event.allDay)}
+                    {formatDateTime(event.start_at, event.all_day)}
                     {" — "}
-                    {event.allDay
+                    {event.all_day
                       ? "Todo el día"
                       : new Intl.DateTimeFormat("es-CO", {
                           hour: "2-digit",
                           minute: "2-digit",
                           timeZone: "America/Bogota",
-                        }).format(new Date(event.end))}
+                        }).format(new Date(event.end_at))}
                   </dd>
                 </div>
 

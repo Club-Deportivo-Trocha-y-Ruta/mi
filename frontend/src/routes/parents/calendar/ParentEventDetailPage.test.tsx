@@ -214,11 +214,7 @@ describe("ParentEventDetailPage", () => {
         isError: false,
       });
       vi.mocked(useCalendarEvent).mockReturnValue({
-        data: makeCalendarEventRead({
-          id: 5,
-          event_type: "club_event",
-          extended_props: { coach_notes: "Notas confidenciales del coach" },
-        }),
+        data: makeCalendarEventRead({ id: 5, event_type: "club_event" }),
         isLoading: false,
         isError: false,
       } as ReturnType<typeof useCalendarEvent>);
