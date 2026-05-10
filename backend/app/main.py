@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, growth, parent_athletes, reports, training_sessions
+from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, calendar, growth, parent_athletes, reports, training_sessions
 from app.routers.consent import consent_router, public_router as consent_public_router
 from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
 
@@ -32,6 +32,7 @@ app.include_router(parent_athletes.router, prefix="/api/parent-athletes", tags=[
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(consent_public_router, prefix="/api/auth", tags=["consent"])
 app.include_router(consent_router, prefix="/api/me/consent", tags=["consent"])
+app.include_router(calendar.router, prefix="/api/calendar/events", tags=["calendar"])
 app.include_router(training_sessions.router, prefix="/api/training-sessions", tags=["training-sessions"])
 app.include_router(monthly_reports_router, prefix="/api/clubs", tags=["monthly-reports"])
 app.include_router(parent_monthly_router, prefix="/api/parents", tags=["monthly-reports"])

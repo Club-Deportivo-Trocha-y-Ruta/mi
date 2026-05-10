@@ -56,6 +56,15 @@ export function AppShell({ children }: AppShellProps) {
       )}
       {(isCoach || isAdmin) && (
         <NavLink
+          to="/calendar"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Calendario
+        </NavLink>
+      )}
+      {(isCoach || isAdmin) && (
+        <NavLink
           to="/training/sessions"
           className={navLinkClass}
           onClick={() => setSidebarOpen(false)}
@@ -79,6 +88,15 @@ export function AppShell({ children }: AppShellProps) {
           onClick={() => setSidebarOpen(false)}
         >
           Mis Atletas
+        </NavLink>
+      )}
+      {isParent && (
+        <NavLink
+          to="/parents/calendar"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Calendario
         </NavLink>
       )}
       {isParent && (

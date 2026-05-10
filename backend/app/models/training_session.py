@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     Enum,
@@ -23,6 +24,7 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.athlete import Athlete
+    from app.models.calendar_event import CalendarEvent
     from app.models.club import Club
     from app.models.user import User
 
@@ -85,6 +87,12 @@ class TrainingSession(Base):
         nullable=False,
     )
     executed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    calendar_event_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("calendar_events.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+    )
 
     # Relaciones
     club: Mapped[Club] = relationship(
@@ -99,6 +107,11 @@ class TrainingSession(Base):
         "SessionAttendance",
         back_populates="session",
         cascade="all, delete-orphan",
+    )
+    calendar_event: Mapped[CalendarEvent | None] = relationship(
+        "CalendarEvent",
+        back_populates="training_session",
+        foreign_keys="[TrainingSession.calendar_event_id]",
     )
 
 
