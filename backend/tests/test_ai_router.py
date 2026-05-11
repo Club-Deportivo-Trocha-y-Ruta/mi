@@ -161,6 +161,23 @@ def fastapi_app():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _grant_ai_consent_by_default(monkeypatch):
+    """Por defecto los tests no testean el gate de consentimiento.
+
+    Sobrescribimos `athlete_has_ai_processing_consent` en el módulo del router
+    para que devuelva True. Los tests que valida el gate explícitamente lo
+    re-sobrescriben con False.
+    """
+
+    async def _allow(_athlete_id, _db):  # type: ignore[unused-argument]
+        return True
+
+    monkeypatch.setattr(
+        "app.routers.ai.athlete_has_ai_processing_consent", _allow
+    )
+
+
 @pytest.fixture
 async def http_client(fastapi_app):
     transport = ASGITransport(app=fastapi_app)

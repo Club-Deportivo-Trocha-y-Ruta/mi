@@ -1,0 +1,58 @@
+{# version: 1
+   Audiencia: padres / acudientes.
+   Objetivo: explicar el resultado de UNA medición específica vs el historial
+   del atleta (delta talla/peso, cambio de fase PHV, velocidad de crecimiento).
+
+   Privacidad: nada de IMC numérico, ni z-scores exactos, ni fechas.
+   Solo se usa el delta cualitativo cuando es significativo (umbral
+   suficiente para distinguir señal de ruido instrumental).
+   Sin diagnóstico médico ni etiquetas clínicas.
+#}
+Por favor genera una explicación para los padres sobre el resultado de una
+**medición antropométrica concreta** de su hijo/a, comparada con su historial.
+
+Datos disponibles (sin información personal):
+- Grupo de edad: {{ age_group }} años
+- Edad decimal: {{ age_decimal }} años
+- Sexo: {{ sex }}
+- Estado de maduración actual: **{{ maturation_status }}**
+- Maturity offset (años desde el PHV): {{ phv_offset }}
+- Mediciones previas en el historial: {{ num_previous_measurements }}
+{% if nutritional_status is defined %}- Estado nutricional (clasificación MinSalud): {{ nutritional_status }}{% endif %}
+{% if weeks_since_prev_measurement is defined %}- Semanas desde la medición anterior: {{ weeks_since_prev_measurement }}{% endif %}
+{% if delta_height_cm is defined and delta_height_significant %}- Cambio de talla desde la medición anterior: {{ delta_height_cm }} cm{% endif %}
+{% if delta_weight_kg is defined and delta_weight_significant %}- Cambio de peso desde la medición anterior: {{ delta_weight_kg }} kg{% endif %}
+{% if growth_velocity_cm_per_year is defined %}- Velocidad estimada de crecimiento: {{ growth_velocity_cm_per_year }} cm/año{% endif %}
+{% if crossed_phv_phase is defined and crossed_phv_phase %}- En esta medición el atleta CAMBIÓ de fase de maduración (antes: {{ prev_maturation_status }}, ahora: {{ maturation_status }}){% endif %}
+
+Estructura de tu respuesta (texto plano, sin Markdown, máx 200 palabras):
+{% if num_previous_measurements == 0 %}
+1. **Es la primera medición registrada** — explica que no hay comparativa aún.
+2. **Qué dice esta medición sobre la fase de crecimiento** (referencia el estado de maduración).
+3. **Qué hace el club** en esta etapa (entrenamiento, técnica, descanso).
+4. **Cuándo deben avisarnos** (señales de alerta concretas).
+{% else %}
+1. **Qué cambió desde la última medición** en lenguaje natural normalizador.
+   {% if not delta_height_significant and not delta_weight_significant %}
+   Si no hubo cambios significativos, dilo explícitamente: variaciones tan
+   pequeñas son normales y forman parte del rango de error de medición.
+   {% endif %}
+2. **Qué dice esto de la fase de crecimiento** (referencia maduración;
+   {% if crossed_phv_phase is defined and crossed_phv_phase %}menciona explícitamente que pasó de {{ prev_maturation_status }} a {{ maturation_status }} y qué implica esa transición{% endif %}).
+3. **Qué ajustes hace el club** en las próximas semanas según la fase.
+4. **Cuándo deben avisarnos** (fatiga persistente, molestias en rodillas,
+   pérdida de apetito sostenida). No menciones términos médicos diagnósticos.
+{% endif %}
+
+Reglas inviolables:
+- No uses el nombre del atleta — usa "su hijo" o "su hija".
+- Nunca uses términos médicos diagnósticos: RED-S, síndrome de deficiencia
+  energética, patología, déficit energético, desnutrición, anemia,
+  retraso puberal. Si detectas un cambio que requiere atención, indica
+  solo que el entrenador lo revisará y eventualmente sugerirá consulta
+  con el pediatra del club.
+- Cero suplementos, máx 5 días/semana, cadencia ≥60 rpm, RPE primario.
+- Lenguaje deliberadamente normalizador: la variación entre mediciones
+  es esperada y forma parte del crecimiento normal.
+- Cierra con una frase recordando que el entrenador es el intérprete
+  autorizado de estos datos.

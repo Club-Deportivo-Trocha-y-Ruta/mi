@@ -242,3 +242,20 @@ def get_phv_explainer_use_case(
         context_builder=AthleteAIContextBuilder(),
     )
 
+
+def get_anthropometric_record_explainer_use_case(
+    provider=Depends(get_llm_provider),
+    registry=Depends(get_prompt_registry),
+):
+    """Construye el use case de análisis particular por medición."""
+    from app.services.ai.context_builders import AthleteAIContextBuilder
+    from app.services.ai.use_cases.anthropometric_record_explainer import (
+        AnthropometricRecordExplainerUseCase,
+    )
+
+    return AnthropometricRecordExplainerUseCase(
+        provider=provider,
+        registry=registry,
+        context_builder=AthleteAIContextBuilder(),
+    )
+

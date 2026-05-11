@@ -8,7 +8,7 @@ Requiere que las tablas ya existan (alembic upgrade head).
 """
 
 import asyncio
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,8 @@ from app.models import (
     Sex,
 )
 from app.models.athlete import ParentAthlete, FamilyRelationship
+from app.models.parental_consent import ParentalConsent
+from app.models.privacy_policy import PrivacyPolicy
 from app.services.auth import hash_password
 
 
@@ -169,6 +171,33 @@ async def seed(session: AsyncSession) -> None:
             )
         )
         await session.flush()
+
+        # Consentimiento parental para entorno dev: incluye third_party_sharing=True
+        # para que las pruebas E2E del módulo de IA puedan ejecutarse sin que
+        # el gate de Ley 1581/2012 las bloquee.
+        active_policy_stmt = (
+            select(PrivacyPolicy)
+            .where(PrivacyPolicy.deprecated_at.is_(None))
+            .order_by(PrivacyPolicy.effective_date.desc())
+            .limit(1)
+        )
+        active_policy = (await session.execute(active_policy_stmt)).scalar_one_or_none()
+        if active_policy is not None:
+            session.add(
+                ParentalConsent(
+                    parent_user_id=parent.id,
+                    athlete_id=first_athlete.id,
+                    consent_version=active_policy.version,
+                    policy_id=active_policy.id,
+                    consented_at=datetime.now(timezone.utc),
+                    consent_method="dev_seed",
+                    data_collection=True,
+                    training_tracking=True,
+                    anthropometry=True,
+                    third_party_sharing=True,
+                )
+            )
+            await session.flush()
 
     await session.commit()
     print("Seed completado:")

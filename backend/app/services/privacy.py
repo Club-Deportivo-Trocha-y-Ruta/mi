@@ -83,6 +83,42 @@ async def get_current_consent_for_athlete(
     return result.scalar_one_or_none()
 
 
+async def athlete_has_ai_processing_consent(
+    athlete_id: int, db: AsyncSession
+) -> bool:
+    """Indica si el atleta tiene autorización vigente para procesamiento con IA.
+
+    Bajo Ley 1581/2012 Art. 9, enviar datos de menores a un tercero (Anthropic/Google)
+    requiere autorización expresa para esa finalidad. El campo
+    `third_party_sharing` actúa como compuerta para el procesamiento con LLM.
+
+    Regla:
+      - Si el atleta NO tiene padres vinculados (caso degenerado dev/admin):
+        se autoriza por defecto.
+      - Si tiene padres vinculados y existe AL MENOS un consentimiento vigente
+        con `third_party_sharing=True`: se autoriza.
+      - En cualquier otro caso (sin consentimiento o todos `False`): se deniega.
+    """
+    pa_stmt = select(ParentAthlete.parent_id).where(
+        ParentAthlete.athlete_id == athlete_id
+    )
+    parent_ids = [row for row in (await db.execute(pa_stmt)).scalars().all()]
+    if not parent_ids:
+        return True
+
+    stmt = (
+        select(ParentalConsent.id)
+        .where(
+            ParentalConsent.athlete_id == athlete_id,
+            ParentalConsent.parent_user_id.in_(parent_ids),
+            ParentalConsent.withdrawn_at.is_(None),
+            ParentalConsent.third_party_sharing.is_(True),
+        )
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none() is not None
+
+
 def _build_consent_event_out(consent: ParentalConsent) -> ConsentEventOut:
     """Construye un ConsentEventOut desde un registro ORM."""
     policy_version = (

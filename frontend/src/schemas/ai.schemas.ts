@@ -30,6 +30,24 @@ export const aiHealthResponseSchema = z
   })
   .strip();
 
+export const anthropometricRecordExplanationResponseSchema = z
+  .object({
+    text: z.string().min(1),
+    model: z.string(),
+    provider: z.string(),
+    generated_at: z.string(),
+    age_group: z.enum(["10-12", "13-15", "16+"]),
+    maturation_status: z.union([
+      z.nativeEnum(MaturationStatus),
+      z.literal(""),
+    ]),
+    record_id: z.number().int(),
+    num_previous_measurements: z.number().int().nonnegative(),
+    delta_height_cm: z.number().nullable(),
+    delta_weight_kg: z.number().nullable(),
+  })
+  .strip();
+
 export type PHVExplanationResponseValidated = z.infer<
   typeof phvExplanationResponseSchema
 >;

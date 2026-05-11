@@ -52,8 +52,26 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
                 "age_at_phv",
             }
         ),
-        version=1,
+        version=2,
         description="Explicación del resultado PHV para padres.",
+    ),
+    "anthropometric_record_analysis": PromptSpec(
+        template_id="anthropometric_record_analysis",
+        template_path="anthropometric_record_explainer.j2",
+        required_keys=frozenset(
+            {
+                "age_group",
+                "age_decimal",
+                "sex",
+                "maturation_status",
+                "phv_offset",
+                "num_previous_measurements",
+            }
+        ),
+        version=1,
+        description=(
+            "Análisis particular de una medición antropométrica vs historial."
+        ),
     ),
     "monthly_report": PromptSpec(
         template_id="monthly_report",

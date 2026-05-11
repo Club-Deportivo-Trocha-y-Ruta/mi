@@ -23,3 +23,24 @@ export interface AIHealthResponse {
   provider: string;
   model: string;
 }
+
+/** Respuesta de POST/GET
+ *  /api/ai/athletes/{id}/measurements/{record_id}/explanation
+ *
+ *  Análisis particular de una medición vs el historial. A diferencia del
+ *  PHV global, incluye los deltas calculados respecto a la medición
+ *  inmediata anterior para que el frontend pueda renderizar un resumen
+ *  visual antes del texto IA.
+ */
+export interface AnthropometricRecordExplanationResponse {
+  text: string;
+  model: string;
+  provider: string;
+  generated_at: string;
+  age_group: AgeGroup;
+  maturation_status: MaturationStatus | "";
+  record_id: number;
+  num_previous_measurements: number;
+  delta_height_cm: number | null;
+  delta_weight_kg: number | null;
+}

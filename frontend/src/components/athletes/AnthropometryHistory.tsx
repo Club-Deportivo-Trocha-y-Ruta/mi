@@ -1,11 +1,17 @@
 import { useState } from "react";
 
+import { AnthropometricRecordExplanationCard } from "@/components/ai/AnthropometricRecordExplanationCard";
 import { PHVBadge } from "@/components/shared/PHVBadge";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 
 interface AnthropometryHistoryProps {
   records: AnthropometricRecord[];
   isLoading: boolean;
+  /** ID del atleta — necesario para invocar la IA particular por medición.
+   *  Cuando se omite, la sección de análisis IA no se renderiza. */
+  athleteId?: number;
+  /** Modo de usuario: 'coach' permite generar/regenerar, 'parent' solo lee. */
+  mode?: "coach" | "parent";
 }
 
 function formatDate(dateStr: string): string {
@@ -21,6 +27,8 @@ function formatOffset(offset: number | string): string {
 export function AnthropometryHistory({
   records,
   isLoading,
+  athleteId,
+  mode = "coach",
 }: AnthropometryHistoryProps) {
   const [selectedRecord, setSelectedRecord] =
     useState<AnthropometricRecord | null>(null);
@@ -196,6 +204,20 @@ export function AnthropometryHistory({
               <div className="mt-3 rounded-lg bg-light-gray p-3 text-sm text-mid-gray">
                 <p className="mb-1 font-medium text-charcoal">Notas:</p>
                 <p>{selectedRecord.notes}</p>
+              </div>
+            )}
+
+            {athleteId !== undefined && athleteId > 0 && (
+              <div
+                className="mt-5 pt-4"
+                style={{ borderTop: "1px solid rgba(34, 42, 53, 0.08)" }}
+                data-testid="anthropometry-record-explanation-section"
+              >
+                <AnthropometricRecordExplanationCard
+                  athleteId={athleteId}
+                  recordId={selectedRecord.id}
+                  readOnly={mode === "parent"}
+                />
               </div>
             )}
           </div>

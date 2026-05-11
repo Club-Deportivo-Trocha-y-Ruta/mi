@@ -1,7 +1,12 @@
-{# version: 1
+{# version: 2
    Audiencia: padres / acudientes.
    Objetivo: explicar el resultado PHV en lenguaje sencillo y con
-   implicaciones prácticas para el día a día del atleta. #}
+   implicaciones prácticas para el día a día del atleta.
+
+   Privacidad (v2): se eliminan IMC numérico y z-scores exactos para
+   reducir riesgo de re-identificación en bases pequeñas. Se conserva
+   `nutritional_status` como categoría cualitativa MinSalud.
+#}
 Por favor genera una explicación para los padres del atleta sobre el resultado
 de su evaluación de **Pico de Velocidad de Crecimiento (PHV, Mirwald)**.
 
@@ -13,9 +18,7 @@ Datos disponibles (sin información personal):
 - Estado de maduración: **{{ maturation_status }}**
 - Maturity offset (años desde el PHV): {{ phv_offset }}
 - Edad estimada del PHV: {{ age_at_phv }} años
-{% if height_z_score is defined %}- Z-score talla: {{ height_z_score }}{% endif %}
-{% if bmi is defined %}- IMC: {{ bmi }} (z-score {{ bmi_z_score }}){% endif %}
-{% if nutritional_status is defined %}- Estado nutricional: {{ nutritional_status }}{% endif %}
+{% if nutritional_status is defined %}- Estado nutricional (clasificación MinSalud): {{ nutritional_status }}{% endif %}
 {% if trend is defined and trend %}- Tendencia (últimas mediciones):
 {% for point in trend %}  · hace {{ point.weeks_ago }} semanas: Δ talla {{ point.delta_height_cm }} cm, Δ peso {{ point.delta_weight_kg }} kg
 {% endfor %}{% endif %}
@@ -28,3 +31,7 @@ Estructura de tu respuesta (texto plano, sin Markdown, máx 250 palabras):
 
 Recuerda: cero suplementos, máx 5 días/semana, cadencia ≥60 rpm,
 RPE primario. No uses el nombre del atleta — usa "su hijo" o "su hija".
+Nunca uses términos médicos diagnósticos como RED-S, déficit energético,
+patología, retraso puberal: si detectas señales preocupantes solo indica
+que el entrenador lo revisará y, si lo cree necesario, sugerirá consulta
+con el pediatra.

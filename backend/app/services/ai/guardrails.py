@@ -82,6 +82,55 @@ _AGE_DEPENDENT_RULES: tuple[_Rule, ...] = (
     ),
 )
 
+# Patrones anti-diagnóstico médico: aplican al análisis particular por medición
+# para evitar sugerencias clínicas implícitas (RED-S, patología, retraso puberal).
+# Bajo el Código de Infancia y Adolescencia (Ley 1098/2006 Art. 27) solo personal
+# de salud autorizado puede emitir diagnósticos sobre menores.
+_RECORD_ANALYSIS_RULES: tuple[_Rule, ...] = (
+    _Rule(
+        name="diagnostic_language",
+        pattern=re.compile(r"\bdiagn[óo]stic[oa]s?\b", re.IGNORECASE),
+        replacement="observación",
+        description="Evitar lenguaje diagnóstico sobre menores.",
+    ),
+    _Rule(
+        name="pathology_language",
+        pattern=re.compile(r"\bpatolog[ií]a(s|o|os|cas?)?\b", re.IGNORECASE),
+        replacement="situación a revisar",
+        description="Evitar etiqueta de patología.",
+    ),
+    _Rule(
+        name="abnormal_language",
+        pattern=re.compile(r"\banormal(idad(es)?)?\b", re.IGNORECASE),
+        replacement="fuera del rango esperado",
+        description="Evitar etiqueta clínica de anormalidad.",
+    ),
+    _Rule(
+        name="reds_term",
+        pattern=re.compile(
+            r"\b(RED-?S|s[íi]ndrome de deficiencia energ[ée]tica( relativa)?)\b",
+            re.IGNORECASE,
+        ),
+        replacement="",
+        description="Sin etiquetas de RED-S/SDE en outputs a padres.",
+    ),
+    _Rule(
+        name="energy_deficit",
+        pattern=re.compile(
+            r"\b(d[ée]ficit energ[ée]tico|desnutrici[óo]n|anemia)\b",
+            re.IGNORECASE,
+        ),
+        replacement="",
+        description="Sin sugerencias diagnósticas nutricionales.",
+    ),
+    _Rule(
+        name="puberty_delay",
+        pattern=re.compile(r"\bretraso pub(eral|ertal)\b", re.IGNORECASE),
+        replacement="",
+        description="Sin diagnóstico de retraso puberal.",
+    ),
+)
+
 
 @dataclass(frozen=True)
 class GuardrailReport:
@@ -98,10 +147,19 @@ class Guardrails:
     Args:
         age_group: Grupo de edad del destinatario (`"10-12"` activa reglas
             extra como bloqueo de potenciómetro).
+        use_case: Identificador del use case. Cuando vale
+            `"anthropometric_record_analysis"` se aplican reglas anti-diagnóstico
+            además de las globales.
     """
 
-    def __init__(self, *, age_group: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        age_group: str | None = None,
+        use_case: str | None = None,
+    ) -> None:
         self._age_group = age_group
+        self._use_case = use_case
 
     def scrub(self, text: str) -> str:
         """Devuelve `text` saneado. Si hubo demasiadas violaciones, lanza."""
@@ -121,6 +179,8 @@ class Guardrails:
         rules = list(_RULES)
         if self._age_group == "10-12":
             rules.extend(_AGE_DEPENDENT_RULES)
+        if self._use_case == "anthropometric_record_analysis":
+            rules.extend(_RECORD_ANALYSIS_RULES)
 
         for rule in rules:
             new_text, count = rule.pattern.subn(
