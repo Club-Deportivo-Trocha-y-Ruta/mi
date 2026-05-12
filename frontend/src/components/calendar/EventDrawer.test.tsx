@@ -212,4 +212,24 @@ describe("EventDrawer", () => {
       ).toBeInTheDocument();
     });
   });
+
+  it("oculta los botones Editar y Cancelar cuando el evento es un cumpleaños", async () => {
+    vi.mocked(useCalendarEvent).mockReturnValue({
+      data: makeCalendarEventRead({
+        id: -1000042,
+        event_type: "birthday",
+        title: "🎂 Cumpleaños de Santiago",
+      }),
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useCalendarEvent>);
+
+    renderDrawer(-1000042, true);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Cumpleaños de Santiago/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: /^Editar$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Cancelar evento/i })).not.toBeInTheDocument();
+  });
 });

@@ -36,6 +36,7 @@ class EventType(str, enum.Enum):
     PERSONAL_TRAINING = "personal_training"
     GROUP_TRAINING = "group_training"
     REST_DAY = "rest_day"
+    BIRTHDAY = "birthday"
 
 
 class EventStatus(str, enum.Enum):

@@ -47,8 +47,21 @@ async def get_event(
     db: AsyncSession,
     event_id: int,
     eager: bool = True,
-) -> CalendarEvent | None:
-    """Retorna un evento por ID, con eager loading de audiences y attendances."""
+):
+    """Retorna un evento por ID, con eager loading de audiences y attendances.
+
+    Si `event_id` es negativo, intenta reconstruir un cumpleaños virtual
+    desde `athlete.birth_date` (ver `services/calendar/birthdays.py`).
+    """
+    if event_id < 0:
+        from app.services.calendar.birthdays import (
+            decode_birthday_id,
+            get_birthday_event,
+        )
+        if decode_birthday_id(event_id) is not None:
+            return await get_birthday_event(db, event_id)
+        return None
+
     stmt = select(CalendarEvent).where(CalendarEvent.id == event_id)
     if eager:
         for opt in _eager_options():
@@ -286,7 +299,27 @@ async def list_events_in_range(
         for ev in events:
             if await event_visible_to_athlete(db, ev, filters.athlete_id):
                 filtered.append(ev)
-        return filtered
+        events = filtered
+
+    # Cumpleaños virtuales: todos los miembros del club ven todos los cumples.
+    # Si el filtro de event_types se pasó y no incluye birthday, omitir.
+    include_birthdays = (
+        not filters.event_types
+        or EventType.BIRTHDAY in filters.event_types
+    )
+    if include_birthdays:
+        from app.services.calendar.birthdays import list_birthday_events_in_range
+
+        birthday_athlete_ids = [filters.athlete_id] if filters.athlete_id else None
+        birthdays = await list_birthday_events_in_range(
+            db=db,
+            club_id=club_id,
+            from_date=from_date,
+            to_date=to_date,
+            athlete_ids=birthday_athlete_ids,
+        )
+        # Mezclar y ordenar por start_at ascendente
+        events = sorted([*events, *birthdays], key=lambda e: e.start_at)
 
     return events
 

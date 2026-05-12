@@ -207,7 +207,7 @@ export function EventDrawer({ eventId, open, onOpenChange }: EventDrawerProps) {
             )}
           </SheetBody>
 
-          {event && (
+          {event && event.event_type !== "birthday" && (
             <SheetFooter>
               <button
                 type="button"

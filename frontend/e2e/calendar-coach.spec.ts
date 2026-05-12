@@ -196,6 +196,28 @@ test.describe('Calendar coach E2E', () => {
     await expect(titleInput).toHaveValue(/asamblea anual del club/i, { timeout: 5_000 });
   });
 
+  test('E2E-CAL-C-05: cumpleaños virtual aparece automaticamente en el calendario', async ({ page }) => {
+    await setupAuth(page);
+
+    const birthdayDate = `${Y}-${M}-25`;
+    const birthdayEvent = {
+      id: -(parseInt(Y) * 1_000_000 + 7),
+      title: '🎂 Cumpleaños de Valentina',
+      start: `${birthdayDate}T00:00:00`,
+      end: `${birthdayDate}T23:59:59`,
+      allDay: true,
+      event_type: 'birthday',
+      color_hex: null,
+      status: 'scheduled',
+      extended_props: { location: null, description: null },
+    };
+    await mockBackendForCoach(page, { events: [...EVENTS_FIXTURE, birthdayEvent] });
+
+    await page.goto('/calendar');
+    await expect(page.getByText(/Cumpleaños de Valentina/i).first())
+      .toBeVisible({ timeout: 10_000 });
+  });
+
   test('E2E-CAL-C-04: la entrada "Calendario" está en la navegación del coach', async ({ page }) => {
     await setupAuth(page);
     await mockBackendForCoach(page);

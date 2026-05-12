@@ -8,7 +8,8 @@ export type EventType =
   | "club_event"
   | "personal_training"
   | "group_training"
-  | "rest_day";
+  | "rest_day"
+  | "birthday";
 
 export type EventStatus = "scheduled" | "confirmed" | "cancelled" | "completed";
 

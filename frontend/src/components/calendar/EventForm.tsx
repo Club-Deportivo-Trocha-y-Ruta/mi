@@ -70,8 +70,15 @@ function buildDefaultValues(
     const startDate = start.toISOString().slice(0, 10);
     const startTime = start.toISOString().slice(11, 16);
 
+    // Birthdays son virtuales y no se editan; el router bloquea PATCH, pero
+    // como guarda defensiva caemos a "club_event" si llegara a invocarse.
+    const editableType =
+      initialData.event_type === "birthday"
+        ? "club_event"
+        : initialData.event_type;
+
     return {
-      event_type: initialData.event_type,
+      event_type: editableType,
       title: initialData.title,
       description: initialData.description ?? "",
       location: initialData.location ?? "",

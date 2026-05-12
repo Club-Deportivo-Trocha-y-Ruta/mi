@@ -166,10 +166,23 @@ async def can_view_calendar_event(
         return role is not None
 
     if user.role == UserRole.parent:
+        from app.models.calendar_event import EventType  # late import evita circular
         from app.services.calendar.audiences import any_athlete_in_audience  # late import
+
         athlete_ids = await parent_athlete_ids(db, user.id)
         if not athlete_ids:
             return False
+        # Cumpleaños: visibles a todos los miembros del club (decisión de producto).
+        # El padre los ve si tiene al menos un atleta en el club del evento.
+        if event.event_type == EventType.BIRTHDAY:  # type: ignore[attr-defined]
+            from app.models.athlete import Athlete  # late import
+            result = await db.execute(
+                select(Athlete.id).where(
+                    Athlete.id.in_(athlete_ids),
+                    Athlete.club_id == event.club_id,  # type: ignore[attr-defined]
+                )
+            )
+            return result.first() is not None
         return await any_athlete_in_audience(db, event, athlete_ids)  # type: ignore[arg-type]
 
     return False

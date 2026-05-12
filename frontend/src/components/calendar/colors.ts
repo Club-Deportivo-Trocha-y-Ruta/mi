@@ -44,6 +44,12 @@ export const EVENT_TYPE_COLORS: Record<EventType, EventTypeColor> = {
     badge: "bg-gray-200 text-gray-700",
     label: "Día de descanso",
   },
+  birthday: {
+    bg: "#ec4899",
+    text: "#ffffff",
+    badge: "bg-pink-500 text-white",
+    label: "Cumpleaños",
+  },
 };
 
 export function colorForEventType(eventType: EventType): EventTypeColor {

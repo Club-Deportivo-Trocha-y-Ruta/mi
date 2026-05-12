@@ -249,6 +249,38 @@ test.describe('Calendar parent E2E', () => {
     await expect(page.getByText(/sin eventos este mes/i)).toBeVisible();
   });
 
+  test('E2E-CAL-P-08: padre ve cumpleaños virtual en el calendario (auto-sync)', async ({ page }) => {
+    await setupAuth(page);
+
+    // Mock: lista de eventos contiene un cumpleaños virtual (ID negativo)
+    const birthdayDate = `${Y}-${M}-25`;
+    const birthdayEvent = {
+      id: -(parseInt(Y) * 1_000_000 + 42),
+      title: '🎂 Cumpleaños de Mateo',
+      start: `${birthdayDate}T00:00:00`,
+      end: `${birthdayDate}T23:59:59`,
+      allDay: true,
+      event_type: 'birthday',
+      color_hex: null,
+      status: 'scheduled',
+      extended_props: { location: null },
+    };
+
+    await page.route('**/api/auth/me', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(PARENT_USER) }),
+    );
+    await page.route('**/api/parent-athletes/my-athletes', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MY_ATHLETES) }),
+    );
+    await page.route('**/api/calendar/events?*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([birthdayEvent]) }),
+    );
+
+    await page.goto('/parents/calendar');
+
+    await expect(page.getByText(/Cumpleaños de Mateo/i).first()).toBeVisible({ timeout: 10_000 });
+  });
+
   test('E2E-CAL-P-07: padre sin atletas vinculados ve mensaje informativo', async ({ page }) => {
     await setupAuth(page);
 

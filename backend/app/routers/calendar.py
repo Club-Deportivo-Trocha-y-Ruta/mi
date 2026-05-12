@@ -209,6 +209,12 @@ async def create_calendar_event(
 ) -> EventRead:
     from app.services.notification.task_dispatcher import TaskDispatcher
 
+    if body.event_type == EventType.BIRTHDAY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Los cumpleaños se generan automáticamente y no se pueden crear.",
+        )
+
     club_id = await _get_club_id_for_user(db, current_user)
     dispatcher = TaskDispatcher(background_tasks)
 
@@ -268,6 +274,12 @@ async def update_calendar_event(
 ) -> EventRead:
     event = await _get_event_or_404(db, event_id)
 
+    if event.event_type == EventType.BIRTHDAY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Los cumpleaños son automáticos y no se pueden editar.",
+        )
+
     if not await can_edit_calendar_event(db, current_user, event):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -312,6 +324,12 @@ async def cancel_calendar_event(
 ) -> None:
     event = await _get_event_or_404(db, event_id)
 
+    if event.event_type == EventType.BIRTHDAY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Los cumpleaños son automáticos y no se pueden cancelar.",
+        )
+
     if not await can_edit_calendar_event(db, current_user, event):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -351,6 +369,12 @@ async def rsvp_calendar_event(
     current_user: User = Depends(get_current_user),
 ) -> EventAttendanceRead:
     event = await _get_event_or_404(db, event_id)
+
+    if event.event_type == EventType.BIRTHDAY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede hacer RSVP a un cumpleaños.",
+        )
 
     if not await can_rsvp_event(db, current_user, event, body.athlete_id):
         raise HTTPException(
