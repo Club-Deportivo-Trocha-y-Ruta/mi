@@ -12,6 +12,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
+    Integer,
     JSON,
     String,
     Text,
@@ -81,7 +82,7 @@ class CalendarEvent(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     club_id: Mapped[int] = mapped_column(
-        BigInteger,
+        Integer,
         ForeignKey("clubs.id", ondelete="RESTRICT"),
         nullable=False,
     )
@@ -106,7 +107,7 @@ class CalendarEvent(Base):
     event_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
     created_by_user_id: Mapped[int] = mapped_column(
-        BigInteger,
+        Integer,
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
     )
@@ -190,7 +191,7 @@ class EventAttendance(Base):
         nullable=False,
     )
     athlete_id: Mapped[int] = mapped_column(
-        BigInteger,
+        Integer,
         ForeignKey("athletes.id", ondelete="RESTRICT"),
         nullable=False,
     )
@@ -201,7 +202,7 @@ class EventAttendance(Base):
     )
     rsvp_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     rsvp_by_user_id: Mapped[int | None] = mapped_column(
-        BigInteger,
+        Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )

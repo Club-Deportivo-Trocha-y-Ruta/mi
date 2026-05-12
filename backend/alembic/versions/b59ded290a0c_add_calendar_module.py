@@ -38,7 +38,7 @@ def upgrade() -> None:
     op.create_table(
         "calendar_events",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
-        sa.Column("club_id", sa.BigInteger(), nullable=False),
+        sa.Column("club_id", sa.Integer(), nullable=False),
         sa.Column(
             "event_type",
             sa.Enum(
@@ -78,7 +78,7 @@ def upgrade() -> None:
         ),
         sa.Column("event_data", sa.JSON(), nullable=True),
         sa.Column("color_hex", sa.String(7), nullable=True),
-        sa.Column("created_by_user_id", sa.BigInteger(), nullable=False),
+        sa.Column("created_by_user_id", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint("end_at >= start_at", name="ck_calendar_event_range"),
@@ -129,7 +129,7 @@ def upgrade() -> None:
         "event_attendances",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column("event_id", sa.BigInteger(), nullable=False),
-        sa.Column("athlete_id", sa.BigInteger(), nullable=False),
+        sa.Column("athlete_id", sa.Integer(), nullable=False),
         sa.Column(
             "rsvp_status",
             sa.Enum(
@@ -143,7 +143,7 @@ def upgrade() -> None:
             server_default="pending",
         ),
         sa.Column("rsvp_at", sa.DateTime(), nullable=True),
-        sa.Column("rsvp_by_user_id", sa.BigInteger(), nullable=True),
+        sa.Column("rsvp_by_user_id", sa.Integer(), nullable=True),
         sa.Column(
             "actual_status",
             sa.Enum(

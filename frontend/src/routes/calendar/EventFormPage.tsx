@@ -1,6 +1,5 @@
 import { useNavigate, useParams, useSearchParams, Link } from "react-router-dom";
 
-import { AppShell } from "@/components/layout/AppShell";
 import { EventForm } from "@/components/calendar/EventForm";
 import { useCalendarEvent } from "@/api/calendar";
 
@@ -28,43 +27,38 @@ export function EventFormPage({ mode }: EventFormPageProps) {
 
   if (isEdit && eventQuery.isLoading) {
     return (
-      <AppShell>
-        <section className="space-y-3">
-          <div className="h-6 w-52 animate-pulse rounded bg-light-gray" />
-          <div className="h-80 animate-pulse rounded-xl bg-light-gray" />
-        </section>
-      </AppShell>
+      <section className="space-y-3">
+        <div className="h-6 w-52 animate-pulse rounded bg-light-gray" />
+        <div className="h-80 animate-pulse rounded-xl bg-light-gray" />
+      </section>
     );
   }
 
   if (isEdit && eventQuery.isError) {
     return (
-      <AppShell>
-        <section className="space-y-3">
-          <h1
-            className="text-2xl text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-            }}
-          >
-            Editar evento
-          </h1>
-          <p className="text-sm text-red-700">No se pudo cargar el evento.</p>
-          <Link
-            to="/calendar"
-            className="text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-          >
-            Volver al calendario
-          </Link>
-        </section>
-      </AppShell>
+      <section className="space-y-3">
+        <h1
+          className="text-2xl text-charcoal"
+          style={{
+            fontFamily: "'Cal Sans', system-ui, sans-serif",
+            fontWeight: 600,
+          }}
+        >
+          Editar evento
+        </h1>
+        <p className="text-sm text-red-700">No se pudo cargar el evento.</p>
+        <Link
+          to="/calendar"
+          className="text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+        >
+          Volver al calendario
+        </Link>
+      </section>
     );
   }
 
   return (
-    <AppShell>
-      <section className="space-y-5">
+    <section className="space-y-5">
         {/* Breadcrumb header */}
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -116,6 +110,5 @@ export function EventFormPage({ mode }: EventFormPageProps) {
           onCancel={handleCancel}
         />
       </section>
-    </AppShell>
   );
 }

@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 
-import { AppShell } from "@/components/layout/AppShell";
 import { CalendarShell, type CalendarView } from "@/components/calendar/CalendarShell";
 import { CalendarFiltersBar } from "@/components/calendar/FiltersBar";
 import { EventDrawer } from "@/components/calendar/EventDrawer";
@@ -60,7 +59,7 @@ export function CalendarPage() {
   }, []);
 
   return (
-    <AppShell>
+    <>
       <section className="space-y-5">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -151,6 +150,6 @@ export function CalendarPage() {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
       />
-    </AppShell>
+    </>
   );
 }
