@@ -27,6 +27,7 @@ export interface UseAttendanceFormReturn {
   doSave: (values: AttendanceFormValues) => void;
   requiresReason: boolean;
   allowsRubric: boolean;
+  needsReasonAlert: boolean;
 }
 
 export function useAttendanceForm(
@@ -56,6 +57,8 @@ export function useAttendanceForm(
   const currentStatus = (formValues.status ?? attendance.status) as AttendanceStatus;
   const requiresReason = REQUIRES_REASON.includes(currentStatus);
   const allowsRubric = ALLOWS_RUBRIC.includes(currentStatus);
+  const needsReasonAlert =
+    requiresReason && !(formValues.excuse_reason ?? "").trim();
 
   const doSave = useCallback(
     (values: AttendanceFormValues) => {
@@ -88,6 +91,8 @@ export function useAttendanceForm(
   const lastSyncedRef = useRef<string>(JSON.stringify(formValues));
   useEffect(() => {
     if (disabled) return;
+    // Gate: si requiere razón pero está vacía, no auto-guardar (evita 422 garantizado)
+    if (needsReasonAlert) return;
     const current = JSON.stringify(formValues);
     if (current === lastSyncedRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -100,7 +105,7 @@ export function useAttendanceForm(
     };
     // formValues reference from useWatch changes each render; stringify runs only inside effect
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formValues, disabled]);
+  }, [formValues, disabled, needsReasonAlert]);
 
   return {
     control,
@@ -111,5 +116,6 @@ export function useAttendanceForm(
     doSave,
     requiresReason,
     allowsRubric,
+    needsReasonAlert,
   };
 }
