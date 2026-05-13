@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { CalendarShell } from "@/components/calendar/CalendarShell";
 import { ParentEventDrawer } from "@/components/parents/ParentEventDrawer";
@@ -90,6 +90,13 @@ export function ParentCalendarPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
 
+  // Rango real de la query — se actualiza tanto por los botones custom como
+  // por la navegación interna de FullCalendar (onDatesSet), de modo que siempre
+  // coincidan los eventos mostrados con los cargados.
+  const defaultRange = computeMonthRange(0);
+  const [queryFrom, setQueryFrom] = useState(defaultRange.from);
+  const [queryTo, setQueryTo] = useState(defaultRange.to);
+
   // Sync view when viewport changes
   useEffect(() => {
     setCalendarView(desktop ? "dayGridMonth" : "listMonth");
@@ -98,11 +105,17 @@ export function ParentCalendarPage() {
   const athletesQuery = useMyAthletes();
   const athletes: MyAthleteOut[] = athletesQuery.data ?? [];
 
-  const { from, to, label: monthLabel } = computeMonthRange(monthOffset);
+  const { from: offsetFrom, to: offsetTo, label: monthLabel } = computeMonthRange(monthOffset);
+
+  // Cuando el usuario navega con los botones custom, sincronizamos la query range.
+  useEffect(() => {
+    setQueryFrom(offsetFrom);
+    setQueryTo(offsetTo);
+  }, [offsetFrom, offsetTo]);
 
   const eventsQuery = useCalendarEvents({
-    from,
-    to,
+    from: queryFrom,
+    to: queryTo,
     ...(selectedAthleteId != null ? { athlete_id: selectedAthleteId } : {}),
   });
 
@@ -115,6 +128,12 @@ export function ParentCalendarPage() {
 
   // CalendarShell requires onDateClick; no-op for parent (read-only)
   function handleDateClick(_dateStr: string) {}
+
+  // Sincroniza el rango de la query cuando FullCalendar navega internamente
+  const handleDatesSet = useCallback((start: string, end: string) => {
+    setQueryFrom(start);
+    setQueryTo(end);
+  }, []);
 
   const hasAthletes = athletes.length > 0;
 
@@ -179,7 +198,7 @@ export function ParentCalendarPage() {
             <button
               type="button"
               onClick={() => setMonthOffset((o) => o + 1)}
-              disabled={monthOffset >= 0}
+              disabled={monthOffset >= 12}
               className="min-h-11 rounded-lg px-3 py-2.5 text-sm text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Mes siguiente"
             >
@@ -253,6 +272,7 @@ export function ParentCalendarPage() {
                 onDateClick={handleDateClick}
                 view={calendarView}
                 onViewChange={setCalendarView}
+                onDatesSet={handleDatesSet}
               />
             </div>
           )}

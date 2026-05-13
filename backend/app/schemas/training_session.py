@@ -80,10 +80,22 @@ class AttendanceSummary(BaseModel):
 
 
 class KidAttendance(BaseModel):
-    """Asistencia mínima de un atleta del padre, para vista padre."""
+    """Asistencia de un atleta del padre, para vista padre.
+
+    Incluye rúbrica y comentario individual del entrenador para permitir
+    al padre ver la información de la sesión sin entrar al detalle.
+    Se asume que el frontend mostrará disclaimers contextuales adecuados
+    (ver `frontend/src/components/parents/ParentSessionCard.tsx`).
+    """
 
     athlete_id: int
     status: AttendanceStatus
+    excuse_reason: str | None = None
+    rpe_omni: int | None = None
+    rubric_effort: int | None = None
+    rubric_attitude: int | None = None
+    rubric_technique: int | None = None
+    individual_feedback: str | None = None
 
 
 class TrainingSessionRead(BaseModel):
@@ -210,7 +222,12 @@ class AttendanceRead(BaseModel):
 
 
 class AttendanceReadParent(BaseModel):
-    """Respuesta de asistencia para padres — omite individual_feedback."""
+    """Respuesta de asistencia para padres.
+
+    Incluye `individual_feedback` para que el padre lo vea inline en la lista
+    de sesiones; el frontend muestra disclaimers contextuales (ver
+    `frontend/src/components/parents/ParentSessionCard.tsx`).
+    """
 
     id: int
     session_id: int
@@ -222,6 +239,7 @@ class AttendanceReadParent(BaseModel):
     rubric_effort: int | None
     rubric_attitude: int | None
     rubric_technique: int | None
+    individual_feedback: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -272,7 +290,12 @@ class MonthlyReportRead(BaseModel):
 
 
 class ParentMonthlySummary(BaseModel):
-    """Resumen mensual personalizado para el padre — solo datos de SU atleta."""
+    """Resumen mensual personalizado para el padre — solo datos de SU atleta.
+
+    Incluye promedios de rúbrica y RPE para mostrar en el banner de la
+    página de sesiones. Los valores son `None` si no hubo registros de rúbrica
+    en el mes (sesiones canceladas, sin ejecutar, o sin rúbrica registrada).
+    """
 
     athlete_id: int
     athlete_name: str
@@ -280,6 +303,10 @@ class ParentMonthlySummary(BaseModel):
     count_total: int
     percentage: float
     focos_técnicos: list[str]
+    avg_rpe: float | None = None
+    avg_rubric_effort: float | None = None
+    avg_rubric_attitude: float | None = None
+    avg_rubric_technique: float | None = None
 
 
 # ---------------------------------------------------------------------------

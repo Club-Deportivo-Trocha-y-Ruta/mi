@@ -104,7 +104,9 @@ export const calendarEventSchema = z
     start_date: z.string().min(1, "La fecha de inicio es requerida"),
     start_time: z
       .string()
-      .regex(/^\d{2}:\d{2}$/, "Formato HH:MM requerido"),
+      .regex(/^\d{2}:\d{2}$/, "Formato HH:MM requerido")
+      .optional()
+      .default("00:00"),
     duration_min: z
       .number()
       .int()
@@ -129,9 +131,22 @@ export const calendarEventSchema = z
     data_rest_day: eventDataRestDaySchema.optional(),
   })
   .superRefine((val, ctx) => {
+    // start_time is required and must match HH:MM when all_day is false
+    if (!val.all_day) {
+      if (!val.start_time || !/^\d{2}:\d{2}$/.test(val.start_time)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Formato HH:MM requerido",
+          path: ["start_time"],
+        });
+        return;
+      }
+    }
+
     // Cross-field: end > start (derived from start_date + start_time + duration_min)
-    if (val.start_date && val.start_time) {
-      const start = new Date(`${val.start_date}T${val.start_time}:00`);
+    const timeToUse = val.all_day ? "00:00" : (val.start_time ?? "00:00");
+    if (val.start_date && timeToUse) {
+      const start = new Date(`${val.start_date}T${timeToUse}:00`);
       if (isNaN(start.getTime())) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -140,12 +155,36 @@ export const calendarEventSchema = z
         });
         return;
       }
-      const end = new Date(start.getTime() + val.duration_min * 60_000);
+      const end = val.all_day
+        ? new Date(`${val.start_date}T23:59:59`)
+        : new Date(start.getTime() + val.duration_min * 60_000);
       if (end <= start) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "La hora de fin debe ser posterior al inicio",
           path: ["duration_min"],
+        });
+      }
+    }
+
+    // Cuando event_type es "competition", city es requerido
+    if (val.event_type === "competition") {
+      if (!val.data_competition?.city || val.data_competition.city.trim() === "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "La ciudad es requerida para una competencia",
+          path: ["data_competition", "city"],
+        });
+      }
+    }
+
+    // Si hay personal_training type, athlete_id requerido
+    if (val.event_type === "personal_training") {
+      if (!val.data_personal_training?.athlete_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Selecciona el atleta para entrenamiento personal",
+          path: ["data_personal_training", "athlete_id"],
         });
       }
     }
@@ -156,8 +195,13 @@ export type CalendarEventFormValues = z.output<typeof calendarEventSchema>;
 // ─── Helpers to build API payload from form values ───────────────────────────
 
 export function buildEventPayload(values: CalendarEventFormValues) {
-  const start = new Date(`${values.start_date}T${values.start_time}:00`);
-  const end = new Date(start.getTime() + values.duration_min * 60_000);
+  // When all_day=true, normalize time to midnight so the backend receives
+  // a clean date boundary regardless of what the time input held.
+  const timeToUse = values.all_day ? "00:00" : (values.start_time ?? "00:00");
+  const start = new Date(`${values.start_date}T${timeToUse}:00`);
+  const end = values.all_day
+    ? new Date(`${values.start_date}T23:59:59`)
+    : new Date(start.getTime() + values.duration_min * 60_000);
 
   const eventDataMap: Record<string, unknown> = {
     training_session: values.data_training_session ?? {},

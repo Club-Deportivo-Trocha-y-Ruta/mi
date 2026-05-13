@@ -1,3 +1,4 @@
+import { useRef, useEffect } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -53,6 +54,15 @@ export function CalendarShell({
   onViewChange,
   onDatesSet,
 }: CalendarShellProps) {
+  const calendarRef = useRef<FullCalendar>(null);
+
+  useEffect(() => {
+    const api = calendarRef.current?.getApi();
+    if (api && api.view.type !== view) {
+      api.changeView(view);
+    }
+  }, [view]);
+
   function handleEventClick(arg: EventClickArg) {
     const id = Number(arg.event.id);
     if (id) onEventClick(id);
@@ -74,6 +84,7 @@ export function CalendarShell({
   return (
     <div className={styles.wrapper} data-testid="calendar-shell">
       <FullCalendar
+        ref={calendarRef}
         plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
         initialView={view}
         locale={esLocale}

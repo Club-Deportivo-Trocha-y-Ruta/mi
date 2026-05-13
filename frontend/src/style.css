@@ -10,12 +10,8 @@
   font-display: swap;
 }
 
-@font-face {
-  font-family: "Plus Jakarta Sans";
-  src: url("/fonts/PlusJakartaSans-Variable.woff2") format("woff2");
-  font-weight: 200 800;
-  font-display: swap;
-}
+/* PlusJakartaSans-Variable.woff2 archivo corrupto — fuente removida temporalmente.
+   El stack cae a system-ui. Reemplazar con el .woff2 correcto cuando esté disponible. */
 
 /* ─────────────────────────────────────────────
    Design system tokens — Trocha y Ruta brand
@@ -140,7 +136,7 @@
 
   /* Font families — alineadas con landing */
   --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
-  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-display: system-ui, sans-serif;
   --font-body: "Inter Variable", "Inter", system-ui, sans-serif;
 }
 
@@ -170,7 +166,7 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-family: system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: 0;
   color: var(--color-text-primary);

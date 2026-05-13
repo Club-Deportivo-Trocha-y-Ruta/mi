@@ -139,7 +139,7 @@ async def create_event(
     assert refreshed is not None
 
     # Notificar (no para TRAINING_SESSION — usa TRAINING_SESSION_INVITE)
-    is_future = refreshed.start_at > datetime.now(timezone.utc)
+    is_future = refreshed.start_at.replace(tzinfo=None) > datetime.now(timezone.utc).replace(tzinfo=None)
     if (
         notification_service is not None
         and dispatcher is not None
@@ -493,6 +493,35 @@ async def reschedule_event(
         notification_service=notification_service,
         dispatcher=dispatcher,
     )
+
+
+# ---------------------------------------------------------------------------
+# HARD DELETE
+# ---------------------------------------------------------------------------
+
+
+async def delete_event_permanent(
+    db: AsyncSession,
+    event: CalendarEvent,
+) -> None:
+    """Borra permanentemente un CalendarEvent de la base de datos.
+
+    Si el evento es de tipo TRAINING_SESSION y tiene una sesión enlazada
+    via event_data.training_session_id, la elimina también antes de borrar
+    el evento. Las tablas event_audiences y event_attendances se limpian
+    automáticamente via FK ON DELETE CASCADE.
+    """
+    if event.event_type == EventType.TRAINING_SESSION:
+        from app.models.training_session import TrainingSession
+
+        ts_id = (event.event_data or {}).get("training_session_id")
+        if ts_id:
+            ts = await db.get(TrainingSession, ts_id)
+            if ts:
+                await db.delete(ts)
+
+    await db.delete(event)
+    await db.commit()
 
 
 # ---------------------------------------------------------------------------

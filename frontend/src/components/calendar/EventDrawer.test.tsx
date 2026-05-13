@@ -9,9 +9,14 @@ import { MemoryRouter } from "react-router-dom";
 vi.mock("@/api/calendar", () => ({
   useCalendarEvent: vi.fn(),
   useCancelCalendarEvent: vi.fn(),
+  useDeleteCalendarEventPermanent: vi.fn(),
 }));
 
-import { useCalendarEvent, useCancelCalendarEvent } from "@/api/calendar";
+import {
+  useCalendarEvent,
+  useCancelCalendarEvent,
+  useDeleteCalendarEventPermanent,
+} from "@/api/calendar";
 import { EventDrawer } from "./EventDrawer";
 import { makeCalendarEventRead } from "@/test/msw/calendarHandlers";
 
@@ -19,6 +24,25 @@ const cancelMutateAsync = vi.fn();
 const cancelMutationStub = {
   mutate: vi.fn(),
   mutateAsync: cancelMutateAsync,
+  isPending: false,
+  isError: false,
+  isSuccess: false,
+  isIdle: true,
+  reset: vi.fn(),
+  data: undefined,
+  error: null,
+  variables: undefined,
+  context: undefined,
+  status: "idle" as const,
+  failureCount: 0,
+  failureReason: null,
+  submittedAt: 0,
+};
+
+const deletePermanentMutate = vi.fn();
+const deletePermanentMutationStub = {
+  mutate: deletePermanentMutate,
+  mutateAsync: vi.fn(),
   isPending: false,
   isError: false,
   isSuccess: false,
@@ -52,8 +76,14 @@ function renderDrawer(
 describe("EventDrawer", () => {
   beforeEach(() => {
     cancelMutateAsync.mockClear();
+    deletePermanentMutate.mockClear();
     vi.mocked(useCancelCalendarEvent).mockReturnValue(
       cancelMutationStub as unknown as ReturnType<typeof useCancelCalendarEvent>,
+    );
+    vi.mocked(useDeleteCalendarEventPermanent).mockReturnValue(
+      deletePermanentMutationStub as unknown as ReturnType<
+        typeof useDeleteCalendarEventPermanent
+      >,
     );
   });
 
@@ -219,6 +249,11 @@ describe("EventDrawer", () => {
         id: -1000042,
         event_type: "birthday",
         title: "🎂 Cumpleaños de Santiago",
+        event_data: {
+          athlete_id: 42,
+          athlete_first_name: "Santiago",
+          age_turning: 13,
+        },
       }),
       isLoading: false,
       isError: false,
@@ -231,5 +266,162 @@ describe("EventDrawer", () => {
     });
     expect(screen.queryByRole("button", { name: /^Editar$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Cancelar evento/i })).not.toBeInTheDocument();
+  });
+
+  it("muestra detalle de cumpleaños con nombre, edad y fecha", async () => {
+    vi.mocked(useCalendarEvent).mockReturnValue({
+      data: makeCalendarEventRead({
+        id: -2026000042,
+        event_type: "birthday",
+        title: "🎂 Cumpleaños de Santiago",
+        all_day: true,
+        start_at: "2026-05-15T00:00:00",
+        end_at: "2026-05-15T23:59:59",
+        event_data: {
+          athlete_id: 42,
+          athlete_first_name: "Santiago",
+          age_turning: 13,
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useCalendarEvent>);
+
+    renderDrawer(-2026000042, true);
+
+    await waitFor(() => {
+      expect(screen.getByText("Santiago")).toBeInTheDocument();
+    });
+    expect(screen.getByText("13 años")).toBeInTheDocument();
+    // "Cumpleaños" aparece en el chip del header y en el campo Tipo del body
+    expect(screen.getAllByText("Cumpleaños").length).toBeGreaterThanOrEqual(2);
+    // Botones de acción no deben aparecer
+    expect(screen.queryByRole("button", { name: /^Editar$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Cancelar evento/i })).not.toBeInTheDocument();
+  });
+
+  it("shows delete confirmation modal when delete button is clicked", async () => {
+    const user = userEvent.setup();
+    const event = makeCalendarEventRead({ status: "scheduled" });
+
+    vi.mocked(useCalendarEvent).mockReturnValue({
+      data: event,
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useCalendarEvent>);
+
+    renderDrawer(1, true);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Eliminar permanentemente/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Eliminar permanentemente/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(/Esta acción NO se puede deshacer/i),
+    ).toBeInTheDocument();
+  });
+
+  it("calls delete mutation with event id on confirm", async () => {
+    const user = userEvent.setup();
+    const event = makeCalendarEventRead({ id: 7, status: "scheduled" });
+
+    vi.mocked(useCalendarEvent).mockReturnValue({
+      data: event,
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useCalendarEvent>);
+
+    renderDrawer(7, true);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Eliminar permanentemente/i }),
+      ).toBeInTheDocument();
+    });
+
+    // Abrir modal
+    await user.click(screen.getByRole("button", { name: /Eliminar permanentemente/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    });
+
+    // Confirmar borrado
+    await user.click(screen.getByRole("button", { name: /Sí, eliminar/i }));
+
+    expect(deletePermanentMutate).toHaveBeenCalledWith(
+      { id: 7 },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+  });
+
+  it("hides delete button for birthday events", async () => {
+    vi.mocked(useCalendarEvent).mockReturnValue({
+      data: makeCalendarEventRead({
+        id: -1000001,
+        event_type: "birthday",
+        title: "Cumpleaños de Camilo",
+        event_data: {
+          athlete_id: 1,
+          athlete_first_name: "Camilo",
+          age_turning: 12,
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useCalendarEvent>);
+
+    renderDrawer(-1000001, true);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Cumpleaños de Camilo/i)).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /Eliminar permanentemente/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides delete button for parent users", async () => {
+    const event = makeCalendarEventRead({ status: "scheduled" });
+
+    vi.mocked(useCalendarEvent).mockReturnValue({
+      data: event,
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useCalendarEvent>);
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>
+          <EventDrawer
+            eventId={1}
+            open={true}
+            onOpenChange={vi.fn()}
+            userRole="parent"
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(event.title)).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /Eliminar permanentemente/i }),
+    ).not.toBeInTheDocument();
+    // El botón Cancelar evento también debe estar oculto para parent
+    expect(
+      screen.queryByRole("button", { name: /Cancelar evento/i }),
+    ).not.toBeInTheDocument();
   });
 });

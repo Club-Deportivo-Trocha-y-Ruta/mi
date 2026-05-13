@@ -114,13 +114,11 @@ export function AudienceSelector({ value, onChange, error }: AudienceSelectorPro
             key={opt.value}
             value={opt.value}
             id={`audience-type-${opt.value}`}
-            className="flex cursor-pointer items-center justify-center rounded-lg px-2 py-2 text-xs font-medium text-charcoal transition-colors data-[state=checked]:bg-charcoal data-[state=checked]:text-white data-[state=unchecked]:bg-white data-[state=unchecked]:hover:bg-light-gray"
+            aria-label={opt.label}
+            className="flex cursor-pointer items-center justify-center rounded-lg px-2 py-2 text-xs font-medium text-charcoal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-1 data-[state=checked]:bg-charcoal data-[state=checked]:text-white data-[state=unchecked]:bg-white data-[state=unchecked]:hover:bg-light-gray"
             style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           >
-            <RadioGroupPrimitive.Indicator className="hidden" />
-            <label htmlFor={`audience-type-${opt.value}`} className="cursor-pointer">
-              {opt.label}
-            </label>
+            {opt.label}
           </RadioGroupPrimitive.Item>
         ))}
       </RadioGroupPrimitive.Root>

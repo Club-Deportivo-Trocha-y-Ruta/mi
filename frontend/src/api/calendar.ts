@@ -80,6 +80,10 @@ export async function cancelCalendarEvent(
   return response.data;
 }
 
+export async function deleteCalendarEventPermanent(id: number): Promise<void> {
+  await apiClient.delete(`${BASE}/${id}/permanent`);
+}
+
 export async function rsvpEvent(
   id: number,
   payload: RSVPPayload,
@@ -118,7 +122,7 @@ export function useCalendarEvent(id: number | null) {
   return useQuery({
     queryKey: ["calendar", "event", id],
     queryFn: () => fetchCalendarEvent(id!),
-    enabled: !!accessToken && id != null && id > 0,
+    enabled: !!accessToken && id != null,
     staleTime: 30_000,
   });
 }
@@ -152,6 +156,19 @@ export function useCancelCalendarEvent() {
   return useMutation({
     mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
       cancelCalendarEvent(id, reason),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["calendar", "event", variables.id],
+      });
+    },
+  });
+}
+
+export function useDeleteCalendarEventPermanent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: number }) => deleteCalendarEventPermanent(id),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
       void queryClient.invalidateQueries({

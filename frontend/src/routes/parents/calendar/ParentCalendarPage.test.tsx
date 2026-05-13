@@ -175,7 +175,7 @@ describe("ParentCalendarPage", () => {
     expect(screen.getByRole("button", { name: /Mes siguiente/i })).toBeInTheDocument();
   });
 
-  it("el botón 'Mes siguiente' está deshabilitado en el mes actual", () => {
+  it("el botón 'Mes siguiente' está habilitado para navegar hasta 12 meses futuro", () => {
     (useMyAthletes as any).mockReturnValue({
       data: [makeAthlete(42, "Sebastián")],
       isLoading: false,
@@ -188,7 +188,8 @@ describe("ParentCalendarPage", () => {
     } as unknown as ReturnType<typeof useCalendarEvents>);
 
     renderPage();
-    expect(screen.getByRole("button", { name: /Mes siguiente/i })).toBeDisabled();
+    // En el mes actual (offset=0) el botón debe estar habilitado para avanzar
+    expect(screen.getByRole("button", { name: /Mes siguiente/i })).not.toBeDisabled();
   });
 
   it("muestra selector de atleta cuando el padre tiene múltiples hijos", () => {

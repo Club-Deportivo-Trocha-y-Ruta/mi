@@ -19,6 +19,7 @@ vi.mock("@/api/calendar", () => ({
   useCalendarEvents: vi.fn(),
   useCalendarEvent: vi.fn(),
   useCancelCalendarEvent: vi.fn(),
+  useDeleteCalendarEventPermanent: vi.fn(),
 }));
 
 vi.mock("@/store/auth.store", () => ({
@@ -28,7 +29,7 @@ vi.mock("@/store/auth.store", () => ({
     }),
 }));
 
-import { useCalendarEvents, useCalendarEvent, useCancelCalendarEvent } from "@/api/calendar";
+import { useCalendarEvents, useCalendarEvent, useCancelCalendarEvent, useDeleteCalendarEventPermanent } from "@/api/calendar";
 import { CalendarPage } from "./CalendarPage";
 import { makeCalendarListItem } from "@/test/msw/calendarHandlers";
 
@@ -65,6 +66,9 @@ describe("CalendarPage", () => {
   beforeEach(() => {
     vi.mocked(useCancelCalendarEvent).mockReturnValue(
       noopMutation as unknown as ReturnType<typeof useCancelCalendarEvent>,
+    );
+    vi.mocked(useDeleteCalendarEventPermanent).mockReturnValue(
+      noopMutation as unknown as ReturnType<typeof useDeleteCalendarEventPermanent>,
     );
     vi.mocked(useCalendarEvent).mockReturnValue({
       data: undefined,

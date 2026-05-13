@@ -161,10 +161,10 @@ export function ParentEventDetailPage() {
     myAthleteIds.has(a.athlete_id),
   );
   const trainingSessionId =
-    isTrainingSession &&
-    event?.event_data != null &&
-    "training_session_id" in event.event_data
-      ? (event.event_data as { training_session_id?: number }).training_session_id
+    isTrainingSession && event?.event_data != null
+      ? ("training_session_id" in event.event_data
+          ? (event.event_data as { training_session_id?: number }).training_session_id
+          : undefined)
       : undefined;
 
   const now = new Date();

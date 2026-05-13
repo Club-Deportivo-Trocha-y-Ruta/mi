@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.athlete import Athlete
@@ -29,10 +29,8 @@ async def set_audiences(
     Ejecutar dentro de la misma transacción que el evento.
     No hace commit — el llamador es responsable.
     """
-    # Borrar audiencias existentes (CASCADE haría lo mismo, pero lo hacemos
-    # explícito para garantizar el comportamiento en update).
-    for existing in list(event.audiences):
-        await db.delete(existing)
+    # Borrar audiencias existentes con DELETE directo (evita lazy load en async SQLAlchemy).
+    await db.execute(delete(EventAudience).where(EventAudience.event_id == event.id))
 
     for spec in audience_specs:
         db.add(

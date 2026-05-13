@@ -357,6 +357,34 @@ async def cancel_calendar_event(
 
 
 # ---------------------------------------------------------------------------
+# DELETE /calendar/events/{id}/permanent — Hard delete
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/{event_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_calendar_event_permanent(
+    event_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    event = await _get_event_or_404(db, event_id)
+
+    if event.event_type == EventType.BIRTHDAY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Los cumpleaños son virtuales y no se pueden borrar permanentemente.",
+        )
+
+    if not await can_edit_calendar_event(db, current_user, event):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para borrar este evento permanentemente",
+        )
+
+    await events_svc.delete_event_permanent(db, event)
+
+
+# ---------------------------------------------------------------------------
 # POST /calendar/events/{id}/rsvp — RSVP de atleta
 # ---------------------------------------------------------------------------
 

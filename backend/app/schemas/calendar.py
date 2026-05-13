@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.models.calendar_event import (
     ActualAttendanceStatus,
@@ -177,23 +177,76 @@ class EventCreate(EventBase):
 
     @model_validator(mode="after")
     def _validate_event_data_shape(self) -> "EventCreate":
-        """Valida que event_data tenga la forma correcta para el event_type indicado."""
+        """Valida que event_data tenga la forma correcta para el event_type indicado.
+
+        Cada instanciación se envuelve en try/except para convertir ValidationError
+        (y cualquier excepción inesperada) en ValueError con mensaje legible en español.
+        Los errores de Pydantic se aplanan para mostrar solo el campo y el mensaje,
+        sin exponer el stack trace interno.
+        """
         if self.event_data is None:
             return self
         et = self.event_type
-        ed = self.event_data
+        ed = {k: v for k, v in self.event_data.items() if k != "event_type"}
+
+        def _format_pydantic_errors(exc: ValidationError) -> str:
+            parts = [f"{' → '.join(str(l) for l in e['loc'])}: {e['msg']}" for e in exc.errors()]
+            return "; ".join(parts)
+
         if et == EventType.TRAINING_SESSION:
-            EventDataTrainingSession(event_type="training_session", **{k: v for k, v in ed.items() if k != "event_type"})
+            try:
+                EventDataTrainingSession(event_type="training_session", **ed)
+            except ValidationError as exc:
+                raise ValueError(
+                    f"Datos de sesión de entrenamiento incompletos o inválidos: {_format_pydantic_errors(exc)}"
+                ) from exc
+            except Exception as exc:
+                raise ValueError(f"Datos de sesión de entrenamiento inválidos: {exc}") from exc
         elif et == EventType.COMPETITION:
-            EventDataCompetition(event_type="competition", **{k: v for k, v in ed.items() if k != "event_type"})
+            try:
+                EventDataCompetition(event_type="competition", **ed)
+            except ValidationError as exc:
+                raise ValueError(
+                    f"Datos de competencia incompletos o inválidos: {_format_pydantic_errors(exc)}"
+                ) from exc
+            except Exception as exc:
+                raise ValueError(f"Datos de competencia inválidos: {exc}") from exc
         elif et == EventType.CLUB_EVENT:
-            EventDataClubEvent(event_type="club_event", **{k: v for k, v in ed.items() if k != "event_type"})
+            try:
+                EventDataClubEvent(event_type="club_event", **ed)
+            except ValidationError as exc:
+                raise ValueError(
+                    f"Datos de evento de club incompletos o inválidos: {_format_pydantic_errors(exc)}"
+                ) from exc
+            except Exception as exc:
+                raise ValueError(f"Datos de evento de club inválidos: {exc}") from exc
         elif et == EventType.PERSONAL_TRAINING:
-            EventDataPersonalTraining(event_type="personal_training", **{k: v for k, v in ed.items() if k != "event_type"})
+            try:
+                EventDataPersonalTraining(event_type="personal_training", **ed)
+            except ValidationError as exc:
+                raise ValueError(
+                    f"Datos de entrenamiento personal incompletos o inválidos: {_format_pydantic_errors(exc)}"
+                ) from exc
+            except Exception as exc:
+                raise ValueError(f"Datos de entrenamiento personal inválidos: {exc}") from exc
         elif et == EventType.GROUP_TRAINING:
-            EventDataGroupTraining(event_type="group_training", **{k: v for k, v in ed.items() if k != "event_type"})
+            try:
+                EventDataGroupTraining(event_type="group_training", **ed)
+            except ValidationError as exc:
+                raise ValueError(
+                    f"Datos de entrenamiento grupal incompletos o inválidos: {_format_pydantic_errors(exc)}"
+                ) from exc
+            except Exception as exc:
+                raise ValueError(f"Datos de entrenamiento grupal inválidos: {exc}") from exc
         elif et == EventType.REST_DAY:
-            EventDataRestDay(event_type="rest_day", **{k: v for k, v in ed.items() if k != "event_type"})
+            try:
+                EventDataRestDay(event_type="rest_day", **ed)
+            except ValidationError as exc:
+                raise ValueError(
+                    f"Datos de día de descanso incompletos o inválidos: {_format_pydantic_errors(exc)}"
+                ) from exc
+            except Exception as exc:
+                raise ValueError(f"Datos de día de descanso inválidos: {exc}") from exc
         return self
 
 

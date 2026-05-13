@@ -191,10 +191,16 @@ export function ParentEventDrawer({
         {/* ── Header ── */}
         <SheetHeader>
           {isLoading ? (
-            <div className="space-y-2">
-              <div className="h-4 w-3/4 animate-pulse rounded bg-light-gray" />
-              <div className="h-3 w-1/2 animate-pulse rounded bg-light-gray" />
-            </div>
+            <>
+              <SheetTitle className="sr-only">Cargando evento</SheetTitle>
+              <SheetDescription className="sr-only">
+                Cargando los detalles del evento.
+              </SheetDescription>
+              <div className="space-y-2" aria-hidden="true">
+                <div className="h-4 w-3/4 animate-pulse rounded bg-light-gray" />
+                <div className="h-3 w-1/2 animate-pulse rounded bg-light-gray" />
+              </div>
+            </>
           ) : event ? (
             <>
               <SheetTitle data-testid="drawer-title">{event.title}</SheetTitle>
@@ -208,7 +214,12 @@ export function ParentEventDrawer({
               </SheetDescription>
             </>
           ) : (
-            <SheetTitle>Evento</SheetTitle>
+            <>
+              <SheetTitle>Evento</SheetTitle>
+              <SheetDescription className="sr-only">
+                Detalle del evento del calendario.
+              </SheetDescription>
+            </>
           )}
         </SheetHeader>
 

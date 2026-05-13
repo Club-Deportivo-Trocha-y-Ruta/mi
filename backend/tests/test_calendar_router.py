@@ -705,3 +705,77 @@ class TestAttendancesPrivacy:
         body = resp.json()
         athlete_ids = {row["athlete_id"] for row in body}
         assert athlete_ids == {10, 99}, "Coach debe ver TODAS las attendances"
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/calendar/events/{id}/permanent — Hard delete
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteEventPermanent:
+    async def test_delete_event_permanent_as_coach_returns_204(self, client: AsyncClient):
+        """Coach con permiso borra permanentemente un evento → 204."""
+        app.dependency_overrides[get_current_user] = _coach_user
+        app.dependency_overrides[get_db] = _override_db()
+
+        event_mock = _make_event_mock()
+
+        with patch(
+            "app.services.calendar.events.get_event",
+            AsyncMock(return_value=event_mock),
+        ):
+            with patch(
+                "app.routers.calendar.can_edit_calendar_event",
+                AsyncMock(return_value=True),
+            ):
+                with patch(
+                    "app.services.calendar.events.delete_event_permanent",
+                    AsyncMock(return_value=None),
+                ):
+                    resp = await client.delete(
+                        "/api/calendar/events/1/permanent",
+                        headers={"Authorization": "Bearer fake"},
+                    )
+
+        assert resp.status_code == 204
+
+    async def test_delete_event_permanent_birthday_returns_400(self, client: AsyncClient):
+        """Intentar borrar un cumpleaños (virtual) → 400."""
+        app.dependency_overrides[get_current_user] = _coach_user
+        app.dependency_overrides[get_db] = _override_db()
+
+        birthday_mock = _make_event_mock()
+        birthday_mock.event_type = EventType.BIRTHDAY
+
+        with patch(
+            "app.services.calendar.events.get_event",
+            AsyncMock(return_value=birthday_mock),
+        ):
+            resp = await client.delete(
+                "/api/calendar/events/1/permanent",
+                headers={"Authorization": "Bearer fake"},
+            )
+
+        assert resp.status_code == 400
+
+    async def test_delete_event_permanent_unauthorized_role_returns_403(self, client: AsyncClient):
+        """Usuario sin permiso de edición → 403."""
+        app.dependency_overrides[get_current_user] = _parent_user
+        app.dependency_overrides[get_db] = _override_db()
+
+        event_mock = _make_event_mock()
+
+        with patch(
+            "app.services.calendar.events.get_event",
+            AsyncMock(return_value=event_mock),
+        ):
+            with patch(
+                "app.routers.calendar.can_edit_calendar_event",
+                AsyncMock(return_value=False),
+            ):
+                resp = await client.delete(
+                    "/api/calendar/events/1/permanent",
+                    headers={"Authorization": "Bearer fake"},
+                )
+
+        assert resp.status_code == 403

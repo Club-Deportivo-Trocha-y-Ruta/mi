@@ -27,16 +27,19 @@ function currentMonthRange() {
 
 export function CalendarPage() {
   const [view, setView] = useState<CalendarView>("dayGridMonth");
-  const [rangeFrom, setRangeFrom] = useState(currentMonthRange().from);
-  const [rangeTo, setRangeTo] = useState(currentMonthRange().to);
+  // Inicializar con null y esperar el primer onDatesSet de FullCalendar evita
+  // una segunda llamada a la API cuando el grid reporta un rango distinto al
+  // mes calendario puro (FullCalendar incluye días de meses adyacentes).
+  const [rangeFrom, setRangeFrom] = useState<string | null>(null);
+  const [rangeTo, setRangeTo] = useState<string | null>(null);
   const [drawerEventId, setDrawerEventId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const { eventTypes, athleteId, category } = useCalendarFiltersStore();
 
   const eventsQuery = useCalendarEvents({
-    from: rangeFrom,
-    to: rangeTo,
+    from: rangeFrom ?? currentMonthRange().from,
+    to: rangeTo ?? currentMonthRange().to,
     event_types: eventTypes.length > 0 ? eventTypes : undefined,
     athlete_id: athleteId,
     category: category,

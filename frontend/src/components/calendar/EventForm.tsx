@@ -13,7 +13,16 @@ import {
   useCreateCalendarEvent,
   useUpdateCalendarEvent,
 } from "@/api/calendar";
-import type { CalendarEventRead, EventType } from "@/types/calendar.types";
+import type {
+  CalendarEventRead,
+  EventDataCompetition,
+  EventDataClubEvent,
+  EventDataPersonalTraining,
+  EventDataGroupTraining,
+  EventDataRestDay,
+  EventDataTrainingSession,
+  EventType,
+} from "@/types/calendar.types";
 import { labelForEventType } from "./colors";
 
 import * as TabsPrimitive from "@radix-ui/react-tabs";
@@ -59,6 +68,68 @@ const sectionStyle = {
     "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildSpecificFields(
+  eventType: CalendarEventRead["event_type"],
+  eventData: CalendarEventRead["event_data"],
+): Record<string, any> {
+  if (!eventData) return {};
+  switch (eventType) {
+    case "training_session": {
+      const d = eventData as EventDataTrainingSession;
+      return { data_training_session: { training_session_id: d.training_session_id } };
+    }
+    case "competition": {
+      const d = eventData as EventDataCompetition;
+      return {
+        data_competition: {
+          city: d.city ?? "",
+          race_category: d.race_category ?? "A",
+          is_departmental: d.is_departmental ?? false,
+        },
+      };
+    }
+    case "club_event": {
+      const d = eventData as EventDataClubEvent;
+      return {
+        data_club_event: {
+          kind: d.kind ?? "social",
+          registration_url: d.registration_url ?? "",
+        },
+      };
+    }
+    case "personal_training": {
+      const d = eventData as EventDataPersonalTraining;
+      return {
+        data_personal_training: {
+          athlete_id: d.athlete_id,
+          intensity: d.intensity ?? "medium",
+        },
+      };
+    }
+    case "group_training": {
+      const d = eventData as EventDataGroupTraining;
+      return {
+        data_group_training: {
+          intensity: d.intensity ?? "medium",
+          group_size_max: d.group_size_max,
+        },
+      };
+    }
+    case "rest_day": {
+      const d = eventData as EventDataRestDay;
+      return {
+        data_rest_day: {
+          scope: d.scope ?? "club",
+          reason: d.reason ?? "",
+        },
+      };
+    }
+    default:
+      return {};
+  }
+}
+
 function buildDefaultValues(
   initialData?: CalendarEventRead,
   prefillDate?: string,
@@ -77,6 +148,11 @@ function buildDefaultValues(
         ? "club_event"
         : initialData.event_type;
 
+    const specificFields = buildSpecificFields(
+      editableType,
+      initialData.event_data,
+    );
+
     return {
       event_type: editableType,
       title: initialData.title,
@@ -87,7 +163,9 @@ function buildDefaultValues(
       duration_min: durationMin,
       all_day: initialData.all_day,
       color_hex: initialData.color_hex ?? "",
-      audiences: initialData.audiences ?? [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      audiences: (initialData.audiences ?? []) as any,
+      ...specificFields,
     };
   }
 
@@ -138,6 +216,7 @@ export function EventForm({
   });
 
   const selectedType = useWatch({ control, name: "event_type" });
+  const isAllDay = useWatch({ control, name: "all_day" });
 
   useEffect(() => {
     if (initialData) {
@@ -163,6 +242,15 @@ export function EventForm({
     createMutation.isError || updateMutation.isError
       ? "No se pudo guardar el evento. Verifica los datos e intenta de nuevo."
       : null;
+
+  const hasSpecificErrors = !!(
+    errors.data_competition ||
+    errors.data_personal_training ||
+    errors.data_group_training ||
+    errors.data_training_session ||
+    errors.data_club_event ||
+    errors.data_rest_day
+  );
 
   return (
     <form
@@ -215,9 +303,15 @@ export function EventForm({
             <TabsPrimitive.Trigger
               key={tab.value}
               value={tab.value}
-              className="flex-1 rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-white data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
+              className="relative flex-1 rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-white data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
             >
               {tab.label}
+              {tab.value === "specific" && hasSpecificErrors && (
+                <span
+                  aria-label="Esta sección tiene errores"
+                  className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500"
+                />
+              )}
             </TabsPrimitive.Trigger>
           ))}
         </TabsPrimitive.List>
@@ -300,22 +394,24 @@ export function EventForm({
                   <p className={errorClass}>{errors.start_date.message}</p>
                 )}
               </div>
-              <div>
-                <label htmlFor="event-start-time" className={labelClass}>
-                  Hora inicio
-                </label>
-                <input
-                  id="event-start-time"
-                  type="time"
-                  {...register("start_time")}
-                  className={inputClass}
-                  style={inputStyle}
-                  aria-invalid={!!errors.start_time}
-                />
-                {errors.start_time && (
-                  <p className={errorClass}>{errors.start_time.message}</p>
-                )}
-              </div>
+              {!isAllDay && (
+                <div>
+                  <label htmlFor="event-start-time" className={labelClass}>
+                    Hora inicio
+                  </label>
+                  <input
+                    id="event-start-time"
+                    type="time"
+                    {...register("start_time")}
+                    className={inputClass}
+                    style={inputStyle}
+                    aria-invalid={!!errors.start_time}
+                  />
+                  {errors.start_time && (
+                    <p className={errorClass}>{errors.start_time.message}</p>
+                  )}
+                </div>
+              )}
               <div>
                 <label htmlFor="event-duration" className={labelClass}>
                   Duración (min)
@@ -348,22 +444,48 @@ export function EventForm({
 
             {/* Color */}
             <div>
-              <label htmlFor="event-color" className={labelClass}>
-                Color personalizado{" "}
-                <span className="font-normal text-mid-gray">(opcional)</span>
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id="event-color"
-                  type="color"
-                  {...register("color_hex")}
-                  className="h-9 w-16 cursor-pointer rounded-lg border-none bg-transparent p-1"
-                  style={inputStyle}
-                />
-                <span className="text-xs text-mid-gray">
-                  Deja vacío para usar el color por defecto del tipo
-                </span>
-              </div>
+              <Controller
+                name="color_hex"
+                control={control}
+                render={({ field }) => {
+                  const hasColor =
+                    typeof field.value === "string" &&
+                    /^#[0-9a-fA-F]{6}$/.test(field.value) &&
+                    field.value !== "#000000";
+                  return (
+                    <div className="space-y-2">
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-charcoal">
+                        <input
+                          type="checkbox"
+                          checked={hasColor}
+                          onChange={(e) => {
+                            field.onChange(e.target.checked ? "#3b82f6" : "");
+                          }}
+                          className="h-4 w-4 rounded border-mid-gray"
+                        />
+                        Color personalizado{" "}
+                        <span className="font-normal text-mid-gray">(opcional)</span>
+                      </label>
+                      {hasColor && (
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="event-color"
+                            type="color"
+                            value={field.value as string}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            className="h-9 w-16 cursor-pointer rounded-lg border-none bg-transparent p-1"
+                            style={inputStyle}
+                            aria-label="Seleccionar color del evento"
+                          />
+                          <span className="font-mono text-xs text-mid-gray">
+                            {field.value as string}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }}
+              />
               {errors.color_hex && (
                 <p className={errorClass}>{errors.color_hex.message}</p>
               )}
@@ -394,7 +516,7 @@ export function EventForm({
         </TabsPrimitive.Content>
 
         {/* ── Tab 3: Específico ─────────────────────────────────── */}
-        <TabsPrimitive.Content value="specific" className="mt-4">
+        <TabsPrimitive.Content value="specific" className="mt-4" aria-label="Datos específicos">
           <div className={sectionClass} style={sectionStyle}>
             <h2 className="text-base font-semibold text-charcoal">
               Datos de {labelForEventType(selectedType as EventType)}

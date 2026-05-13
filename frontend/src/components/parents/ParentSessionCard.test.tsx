@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 import { ParentSessionCard } from "./ParentSessionCard";
-import type { TrainingSession } from "@/types/trainingSession.types";
+import type { KidAttendance, TrainingSession } from "@/types/trainingSession.types";
 
 function makeSession(overrides?: Partial<TrainingSession>): TrainingSession {
   return {
@@ -23,45 +24,190 @@ function makeSession(overrides?: Partial<TrainingSession>): TrainingSession {
   };
 }
 
-function renderCard(session: TrainingSession, kidAttendanceStatus = undefined) {
+function makeAttendance(overrides?: Partial<KidAttendance>): KidAttendance {
+  return {
+    athlete_id: 10,
+    status: "presente",
+    ...overrides,
+  };
+}
+
+interface RenderProps {
+  session?: TrainingSession;
+  kidAttendance?: KidAttendance | null;
+  athleteAgeDecimal?: number | null;
+}
+
+function renderCard({ session, kidAttendance, athleteAgeDecimal }: RenderProps = {}) {
   return render(
     <MemoryRouter>
-      <ParentSessionCard session={session} kidAttendanceStatus={kidAttendanceStatus} />
+      <ParentSessionCard
+        session={session ?? makeSession()}
+        kidAttendance={kidAttendance ?? null}
+        athleteAgeDecimal={athleteAgeDecimal ?? null}
+      />
     </MemoryRouter>,
   );
 }
 
 describe("ParentSessionCard", () => {
-  it("muestra el foco técnico", () => {
-    renderCard(makeSession());
-    expect(screen.getByText("Frenada controlada")).toBeInTheDocument();
+  describe("estructura básica", () => {
+    it("muestra el foco técnico", () => {
+      renderCard();
+      expect(screen.getByText("Frenada controlada")).toBeInTheDocument();
+    });
+
+    it("muestra la fecha formateada", () => {
+      renderCard();
+      expect(screen.getByText(/10/)).toBeInTheDocument();
+    });
+
+    it("muestra el estado de sesión", () => {
+      renderCard();
+      expect(screen.getByText("Planificada")).toBeInTheDocument();
+    });
+
+    it("expone link al detalle", () => {
+      const { container } = renderCard();
+      const links = container.querySelectorAll("a");
+      expect(Array.from(links).some((l) => l.getAttribute("href") === "/parents/training/sessions/1")).toBe(true);
+    });
   });
 
-  it("muestra la fecha formateada", () => {
-    renderCard(makeSession());
-    // Intl.DateTimeFormat es-CO: "dom. 10 may." or similar short form
-    expect(screen.getByText(/10/)).toBeInTheDocument();
+  describe("badge de asistencia", () => {
+    it("muestra el estado si se provee", () => {
+      renderCard({ kidAttendance: makeAttendance({ status: "presente" }) });
+      expect(screen.getByText("Presente")).toBeInTheDocument();
+    });
+
+    it("no muestra badge si no se provee", () => {
+      renderCard();
+      expect(screen.queryByText("Presente")).not.toBeInTheDocument();
+      expect(screen.queryByText("Ausente")).not.toBeInTheDocument();
+    });
   });
 
-  it("muestra el estado de sesión", () => {
-    renderCard(makeSession());
-    expect(screen.getByText("Planificada")).toBeInTheDocument();
+  describe("sesión planificada (planned)", () => {
+    it("no muestra zona inline ni rúbrica ni comentario", () => {
+      renderCard({
+        kidAttendance: makeAttendance({
+          rubric_effort: 4,
+          rpe_omni: 6,
+          individual_feedback: "Buen trabajo",
+        }),
+        athleteAgeDecimal: 14,
+      });
+      expect(screen.queryByTestId("parent-session-inline")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("inline-rubric")).not.toBeInTheDocument();
+      expect(screen.queryByText(/Buen trabajo/)).not.toBeInTheDocument();
+    });
   });
 
-  it("muestra el estado de asistencia del atleta si se provee", () => {
-    renderCard(makeSession(), "presente" as any);
-    expect(screen.getByText("Presente")).toBeInTheDocument();
+  describe("rúbrica inline (diferenciación por edad)", () => {
+    const executed = makeSession({ status: "executed" });
+    const fullAttendance = makeAttendance({
+      status: "presente",
+      rubric_effort: 4,
+      rubric_attitude: 5,
+      rubric_technique: 3,
+      rpe_omni: 7,
+    });
+
+    it("oculta la rúbrica numérica para atletas <13 años", () => {
+      renderCard({
+        session: executed,
+        kidAttendance: fullAttendance,
+        athleteAgeDecimal: 11.5,
+      });
+      expect(screen.queryByTestId("inline-rubric")).not.toBeInTheDocument();
+    });
+
+    it("oculta la rúbrica si age_decimal es null (fallback conservador)", () => {
+      renderCard({
+        session: executed,
+        kidAttendance: fullAttendance,
+        athleteAgeDecimal: null,
+      });
+      expect(screen.queryByTestId("inline-rubric")).not.toBeInTheDocument();
+    });
+
+    it("muestra la rúbrica con etiquetas cualitativas para ≥13", () => {
+      renderCard({
+        session: executed,
+        kidAttendance: fullAttendance,
+        athleteAgeDecimal: 14,
+      });
+      const rubric = screen.getByTestId("inline-rubric");
+      expect(within(rubric).getByText(/Esfuerzo: Consolidando/)).toBeInTheDocument();
+      expect(within(rubric).getByText(/Actitud: Dominando/)).toBeInTheDocument();
+      expect(within(rubric).getByText(/Técnica: Avanzando/)).toBeInTheDocument();
+      expect(within(rubric).getByText(/RPE 7\/10/)).toBeInTheDocument();
+    });
+
+    it("no muestra rúbrica si todos los valores son null aunque atleta sea ≥13", () => {
+      renderCard({
+        session: executed,
+        kidAttendance: makeAttendance({ status: "presente" }),
+        athleteAgeDecimal: 14,
+      });
+      expect(screen.queryByTestId("inline-rubric")).not.toBeInTheDocument();
+    });
   });
 
-  it("no muestra badge de asistencia si no se provee", () => {
-    renderCard(makeSession());
-    expect(screen.queryByText("Presente")).not.toBeInTheDocument();
-    expect(screen.queryByText("Ausente")).not.toBeInTheDocument();
+  describe("comentario del entrenador", () => {
+    const executed = makeSession({ status: "executed" });
+
+    it("muestra comentario corto completo y sin botón expandir", () => {
+      renderCard({
+        session: executed,
+        kidAttendance: makeAttendance({ individual_feedback: "Excelente actitud hoy." }),
+      });
+      expect(screen.getByText(/Excelente actitud hoy/)).toBeInTheDocument();
+      expect(screen.queryByTestId("comment-expand-button")).not.toBeInTheDocument();
+    });
+
+    it("muestra preview y botón expandir si comentario es largo", async () => {
+      const long = "a".repeat(200);
+      renderCard({
+        session: executed,
+        kidAttendance: makeAttendance({ individual_feedback: long }),
+      });
+      const button = screen.getByTestId("comment-expand-button");
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(screen.getByTestId("inline-comment-preview")).toBeInTheDocument();
+
+      await userEvent.click(button);
+      expect(button).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByTestId("inline-comment-full")).toBeInTheDocument();
+    });
+
+    it("no muestra bloque de comentario si está vacío o es solo espacios", () => {
+      renderCard({
+        session: executed,
+        kidAttendance: makeAttendance({ individual_feedback: "   " }),
+      });
+      expect(screen.queryByText(/Nota del entrenador/)).not.toBeInTheDocument();
+    });
+
+    it("muestra disclaimer 'para ti, no para tu atleta'", () => {
+      renderCard({
+        session: executed,
+        kidAttendance: makeAttendance({ individual_feedback: "Atento a su frenada." }),
+      });
+      expect(screen.getByText(/para ti, no para tu atleta/i)).toBeInTheDocument();
+    });
   });
 
-  it("el link apunta a la ruta correcta", () => {
-    const { container } = renderCard(makeSession());
-    const link = container.querySelector("a");
-    expect(link?.getAttribute("href")).toBe("/parents/training/sessions/1");
+  describe("motivo de ausencia", () => {
+    it("muestra excuse_reason cuando hay motivo", () => {
+      renderCard({
+        session: makeSession({ status: "executed" }),
+        kidAttendance: makeAttendance({
+          status: "lesionado",
+          excuse_reason: "Tendinitis rodilla izquierda",
+        }),
+      });
+      expect(screen.getByTestId("inline-excuse")).toHaveTextContent("Tendinitis rodilla");
+    });
   });
 });

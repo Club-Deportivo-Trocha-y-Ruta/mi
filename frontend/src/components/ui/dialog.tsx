@@ -100,7 +100,7 @@ const DialogTitle = React.forwardRef<
     ref={ref}
     className={cn("text-base text-charcoal", className)}
     style={{
-      fontFamily: "'Plus Jakarta Sans', 'Cal Sans', system-ui, sans-serif",
+      fontFamily: "'Cal Sans', system-ui, sans-serif",
       fontWeight: 600,
     }}
     {...props}

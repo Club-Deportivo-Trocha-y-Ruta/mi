@@ -9,9 +9,10 @@ expect.extend(toHaveNoViolations);
 vi.mock("@/api/calendar", () => ({
   useCalendarEvent: vi.fn(),
   useCancelCalendarEvent: vi.fn(),
+  useDeleteCalendarEventPermanent: vi.fn(),
 }));
 
-import { useCalendarEvent, useCancelCalendarEvent } from "@/api/calendar";
+import { useCalendarEvent, useCancelCalendarEvent, useDeleteCalendarEventPermanent } from "@/api/calendar";
 import { EventDrawer } from "./EventDrawer";
 import { makeCalendarEventRead } from "@/test/msw/calendarHandlers";
 
@@ -48,6 +49,9 @@ describe("EventDrawer — accesibilidad", () => {
   beforeEach(() => {
     vi.mocked(useCancelCalendarEvent).mockReturnValue(
       cancelMutationStub as unknown as ReturnType<typeof useCancelCalendarEvent>,
+    );
+    vi.mocked(useDeleteCalendarEventPermanent).mockReturnValue(
+      cancelMutationStub as unknown as ReturnType<typeof useDeleteCalendarEventPermanent>,
     );
   });
 

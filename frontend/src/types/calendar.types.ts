@@ -53,13 +53,20 @@ export interface EventDataRestDay {
   reason?: string;
 }
 
+export interface EventDataBirthday {
+  athlete_id: number;
+  athlete_first_name: string;
+  age_turning: number;
+}
+
 export type EventData =
   | EventDataTrainingSession
   | EventDataCompetition
   | EventDataClubEvent
   | EventDataPersonalTraining
   | EventDataGroupTraining
-  | EventDataRestDay;
+  | EventDataRestDay
+  | EventDataBirthday;
 
 // ---------------------------------------------------------------------------
 // Audience — discriminated union by audience_type
