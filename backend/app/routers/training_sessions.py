@@ -59,12 +59,12 @@ def _attendance_to_read(attendance) -> AttendanceRead:
 
 
 def _attendance_to_read_parent(attendance) -> AttendanceReadParent:
-    """Mapea SessionAttendance a AttendanceReadParent (sin individual_feedback)."""
+    """Mapea SessionAttendance a AttendanceReadParent (incluye individual_feedback)."""
     name: str | None = None
     athlete = getattr(attendance, "athlete", None)
     if athlete is not None:
         name = f"{athlete.first_name} {athlete.last_name}".strip() or None
-    data = AttendanceRead.model_validate(attendance).model_dump(exclude={"individual_feedback"})
+    data = AttendanceRead.model_validate(attendance).model_dump()
     data["athlete_name"] = name
     return AttendanceReadParent.model_validate(data)
 
@@ -98,7 +98,16 @@ def _session_to_read_parent(session, children_ids: set[int]) -> TrainingSessionR
     ]
     summary = _build_attendance_summary(kid_attendances_raw)
     kid_att = [
-        KidAttendance(athlete_id=a.athlete_id, status=a.status)
+        KidAttendance(
+            athlete_id=a.athlete_id,
+            status=a.status,
+            excuse_reason=a.excuse_reason,
+            rpe_omni=a.rpe_omni,
+            rubric_effort=a.rubric_effort,
+            rubric_attitude=a.rubric_attitude,
+            rubric_technique=a.rubric_technique,
+            individual_feedback=a.individual_feedback,
+        )
         for a in kid_attendances_raw
     ]
     data = TrainingSessionRead.model_validate(session).model_dump(

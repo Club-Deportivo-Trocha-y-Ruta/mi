@@ -159,7 +159,7 @@ Migraciones corren automáticamente via `entrypoint.sh` (`alembic upgrade head`)
 |---|---|---|
 | Admin | `admin@trochyruta.com` | `Admin2026!` |
 | Coach | `entrenador@trochyruta.com` | `Coach2026!` |
-| Parent | `padre@trochyruta.com` | `Parent2026!` |
+| Parent | `padre@trochayruta.com` | `Parent2026!` |
 
 ## Notas técnicas de implementación
 

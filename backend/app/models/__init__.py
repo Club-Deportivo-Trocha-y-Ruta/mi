@@ -15,6 +15,16 @@ from app.models.training_session import (
     SessionStatus,
     TrainingSession,
 )
+from app.models.calendar_event import (
+    ActualAttendanceStatus,
+    AudienceType,
+    CalendarEvent,
+    EventAttendance,
+    EventAudience,
+    EventStatus,
+    EventType,
+    RSVPStatus,
+)
 
 __all__ = [
     "Base",
@@ -42,4 +52,12 @@ __all__ = [
     "TrainingSession",
     "SessionAttendance",
     "MonthlyReport",
+    "CalendarEvent",
+    "EventAudience",
+    "EventAttendance",
+    "EventType",
+    "EventStatus",
+    "AudienceType",
+    "RSVPStatus",
+    "ActualAttendanceStatus",
 ]

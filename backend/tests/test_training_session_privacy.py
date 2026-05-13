@@ -460,12 +460,18 @@ class TestParentSchemaOmitsSensitiveFields:
         missing = required_public - fields
         assert not missing, f"TrainingSessionReadParent le faltan campos públicos: {missing}"
 
-    def test_parent_attendance_schema_excludes_individual_feedback(self):
-        """AttendanceReadParent NO debe tener individual_feedback."""
+    def test_parent_attendance_schema_includes_individual_feedback(self):
+        """AttendanceReadParent SÍ debe tener individual_feedback.
+
+        El feedback se muestra al padre con disclaimers UI (ver
+        ParentSessionCard) — la decisión de producto fue exponerlo para
+        evitar saltos al detalle. La protección antagonista se realiza en
+        frontend con guías contextuales para padres.
+        """
         from app.schemas.training_session import AttendanceReadParent
         fields = set(AttendanceReadParent.model_fields.keys())
-        assert "individual_feedback" not in fields, (
-            "AttendanceReadParent expone individual_feedback — viola privacidad del feedback individual"
+        assert "individual_feedback" in fields, (
+            "AttendanceReadParent debe exponer individual_feedback para mostrarlo inline en la lista de sesiones del padre"
         )
 
     def test_coach_session_schema_includes_sensitive_fields(self):

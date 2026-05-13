@@ -27,7 +27,18 @@ export interface TrainingSession {
   executed_at?: string | null;
   attendance_count?: number | null;
   attendance_summary?: AttendanceSummaryCounts | null;
-  kid_attendances?: { athlete_id: number; status: AttendanceStatus }[] | null;
+  kid_attendances?: KidAttendance[] | null;
+}
+
+export interface KidAttendance {
+  athlete_id: number;
+  status: AttendanceStatus;
+  excuse_reason?: string | null;
+  rpe_omni?: number | null;
+  rubric_effort?: number | null;
+  rubric_attitude?: number | null;
+  rubric_technique?: number | null;
+  individual_feedback?: string | null;
 }
 
 export interface AttendanceSummaryCounts {
@@ -170,4 +181,8 @@ export interface ParentMonthlySummary {
   count_total: number;
   percentage: number;
   focos_técnicos: string[];
+  avg_rpe?: number | null;
+  avg_rubric_effort?: number | null;
+  avg_rubric_attitude?: number | null;
+  avg_rubric_technique?: number | null;
 }

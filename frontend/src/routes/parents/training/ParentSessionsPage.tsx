@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import { MonthlyAveragesBanner } from "@/components/parents/MonthlyAveragesBanner";
 import { ParentSessionCard } from "@/components/parents/ParentSessionCard";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
-import { useParentSessions } from "@/api/trainingSessions";
-import type { AttendanceStatus, SessionFilters } from "@/types/trainingSession.types";
+import { useParentMonthlySummary, useParentSessions } from "@/api/trainingSessions";
+import type { KidAttendance, SessionFilters } from "@/types/trainingSession.types";
 import type { MyAthleteOut } from "@/types/parent.types";
 
 const CARD_SHADOW =
@@ -44,31 +45,55 @@ export function ParentSessionsPage() {
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current month, -1 = previous, etc.
 
   const allAthleteIds = athletes.map((a) => a.athlete_id);
+  const effectiveAthleteId =
+    selectedAthleteId ?? (athletes.length === 1 ? athletes[0]?.athlete_id ?? null : null);
+  const focusedAthlete = useMemo<MyAthleteOut | null>(
+    () => athletes.find((a) => a.athlete_id === effectiveAthleteId) ?? null,
+    [athletes, effectiveAthleteId],
+  );
 
   // Compute month range from offset (0 = current month)
-  const monthRange = (() => {
+  const monthMeta = useMemo(() => {
     const now = new Date();
     const y = now.getFullYear();
     const m = now.getMonth() + monthOffset;
     const target = new Date(y, m, 1);
     const ty = target.getFullYear();
-    const tm = String(target.getMonth() + 1).padStart(2, "0");
-    const lastDay = new Date(ty, target.getMonth() + 1, 0).getDate();
-    return { from_date: `${ty}-${tm}-01`, to_date: `${ty}-${tm}-${lastDay}` };
-  })();
+    const tm0 = target.getMonth();
+    const tmIso = String(tm0 + 1).padStart(2, "0");
+    const lastDay = new Date(ty, tm0 + 1, 0).getDate();
+    return {
+      year: ty,
+      month: tm0 + 1, // 1-12
+      from_date: `${ty}-${tmIso}-01`,
+      to_date: `${ty}-${tmIso}-${lastDay}`,
+    };
+  }, [monthOffset]);
 
   const monthLabel = new Intl.DateTimeFormat("es-CO", {
     month: "long",
     year: "numeric",
-  }).format(new Date(monthRange.from_date + "T12:00:00"));
+  }).format(new Date(monthMeta.from_date + "T12:00:00"));
 
   const filters: SessionFilters = {
-    ...monthRange,
+    from_date: monthMeta.from_date,
+    to_date: monthMeta.to_date,
     ...(selectedAthleteId ? { athlete_id: selectedAthleteId } : {}),
   };
 
   const sessionsQuery = useParentSessions(filters, allAthleteIds);
   const sessions = sessionsQuery.data ?? [];
+
+  // Summary del banner: requiere un atleta concreto. Si el padre no ha elegido
+  // y tiene varios atletas, NO mostramos el banner (no podemos agregar entre
+  // atletas sin riesgo de exponer datos cruzados).
+  const summaryQuery = useParentMonthlySummary(
+    monthMeta.year,
+    monthMeta.month,
+    effectiveAthleteId ?? undefined,
+  );
+  const summaryList = summaryQuery.data ?? [];
+  const focusedSummary = summaryList.find((s) => s.athlete_id === effectiveAthleteId);
 
   // Only show planned + executed (hide cancelled unless none visible)
   const visibleSessions = sessions.filter(
@@ -77,16 +102,14 @@ export function ParentSessionsPage() {
   const showCancelled = visibleSessions.length === 0 && sessions.length > 0;
   const displaySessions = showCancelled ? sessions : visibleSessions;
 
-  // Map athlete_id → attendance status for badge display
-  const getKidStatus = (sessionId: number): AttendanceStatus | null => {
-    const athleteId = selectedAthleteId ?? allAthleteIds[0] ?? null;
+  const getKidAttendance = (sessionId: number): KidAttendance | null => {
+    const athleteId = effectiveAthleteId;
     if (!athleteId) return null;
     const session = sessions.find((s) => s.id === sessionId);
-    return (
-      session?.kid_attendances?.find((a) => a.athlete_id === athleteId)
-        ?.status ?? null
-    );
+    return session?.kid_attendances?.find((a) => a.athlete_id === athleteId) ?? null;
   };
+
+  const showBanner = !!effectiveAthleteId && !!focusedAthlete;
 
   return (
     <section className="space-y-5">
@@ -162,6 +185,35 @@ export function ParentSessionsPage() {
         </div>
       )}
 
+      {/* Aviso multi-atleta: el banner solo aparece con atleta seleccionado */}
+      {athletes.length > 1 && selectedAthleteId === null && (
+        <div
+          className="rounded-xl bg-white px-5 py-4"
+          style={{ boxShadow: CARD_SHADOW }}
+          data-testid="multi-athlete-hint"
+        >
+          <p className="text-sm text-mid-gray">
+            Selecciona un atleta arriba para ver los promedios del mes.
+          </p>
+        </div>
+      )}
+
+      {/* Banner promedios mensuales */}
+      {showBanner && (
+        <MonthlyAveragesBanner
+          summary={focusedSummary}
+          athleteAgeDecimal={focusedAthlete?.age_decimal ?? null}
+          isLoading={summaryQuery.isLoading}
+          isError={summaryQuery.isError}
+          monthLabel={monthLabel}
+          athleteName={
+            focusedAthlete
+              ? `${focusedAthlete.athlete_first_name} ${focusedAthlete.athlete_last_name}`
+              : ""
+          }
+        />
+      )}
+
       {/* Loading */}
       {(sessionsQuery.isLoading || athletesQuery.isLoading) && (
         <div className="space-y-3">
@@ -200,7 +252,8 @@ export function ParentSessionsPage() {
             <li key={session.id}>
               <ParentSessionCard
                 session={session}
-                kidAttendanceStatus={getKidStatus(session.id)}
+                kidAttendance={getKidAttendance(session.id)}
+                athleteAgeDecimal={focusedAthlete?.age_decimal ?? null}
               />
             </li>
           ))}

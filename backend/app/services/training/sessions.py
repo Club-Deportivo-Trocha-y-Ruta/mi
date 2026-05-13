@@ -114,6 +114,9 @@ async def create_session(
             )
         )
 
+    # Crear CalendarEvent paralelo en la misma transacción
+    await _create_parallel_calendar_event(db, session, payload, coach, club_id)
+
     await db.commit()
 
     # Recargar con selectinload para que el router pueda acceder a session.attendances
@@ -271,6 +274,79 @@ async def _dispatch_invitation(
         session.id,
         kind,
     )
+
+
+async def _create_parallel_calendar_event(
+    db: AsyncSession,
+    session: TrainingSession,
+    payload: "TrainingSessionCreate",
+    coach: User,
+    club_id: int,
+) -> None:
+    """Crea el CalendarEvent paralelo a una TrainingSession recién creada.
+
+    Operación silenciosa: si falla (ej. datos inconsistentes), loguea y continúa
+    para no bloquear la creación de la sesión.
+    NO dispara notificaciones CALENDAR_EVENT_INVITE — la sesión ya usa TRAINING_SESSION_INVITE.
+    """
+    try:
+        from datetime import datetime, timezone as tz, timedelta
+
+        from app.models.calendar_event import (
+            AudienceType,
+            CalendarEvent,
+            EventAudience,
+            EventStatus,
+            EventType,
+        )
+
+        # Construir start_at y end_at desde la sesión
+        scheduled_dt = datetime.combine(
+            session.scheduled_date, session.scheduled_start_time
+        ).replace(tzinfo=tz.utc)
+        end_dt = scheduled_dt + timedelta(minutes=session.duration_min)
+
+        event = CalendarEvent(
+            club_id=club_id,
+            event_type=EventType.TRAINING_SESSION,
+            status=EventStatus.SCHEDULED,
+            title=session.technical_focus,
+            description=session.description,
+            location=session.location,
+            start_at=scheduled_dt,
+            end_at=end_dt,
+            all_day=False,
+            timezone="America/Bogota",
+            event_data={"training_session_id": session.id},
+            created_by_user_id=coach.id,
+        )
+        db.add(event)
+        await db.flush()
+
+        # Crear audiencia ATHLETE_LIST con los convocados
+        if payload.convocados_athlete_ids:
+            db.add(
+                EventAudience(
+                    event_id=event.id,
+                    audience_type=AudienceType.ATHLETE_LIST,
+                    audience_value={"athlete_ids": list(payload.convocados_athlete_ids)},
+                )
+            )
+
+        # Enlazar la sesión al evento
+        session.calendar_event_id = event.id
+
+        logger.debug(
+            "CalendarEvent paralelo creado | session_id=%s event_id=%s",
+            session.id,
+            event.id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "No se pudo crear CalendarEvent paralelo para session_id=%s error=%s",
+            session.id,
+            type(exc).__name__,
+        )
 
 
 async def update_session(

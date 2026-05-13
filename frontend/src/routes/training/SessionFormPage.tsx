@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { AthletesMultiSelect } from "@/components/training/AthletesMultiSelect";
+import { DurationPicker } from "@/components/training/DurationPicker";
 import {
   bulkSetConvocatoria,
   useCreateTrainingSession,
@@ -43,9 +44,10 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
     handleSubmit,
     control,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<TrainingSessionFormValues>({
     resolver: zodResolver(trainingSessionCreateSchema),
+    shouldFocusError: true,
     defaultValues: {
       scheduled_date: "",
       scheduled_start_time: "",
@@ -111,6 +113,20 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
     }
   }
 
+  function handleCancel() {
+    if (isDirty) {
+      const ok = window.confirm("Tienes cambios sin guardar. ¿Salir sin guardar?");
+      if (!ok) return;
+    }
+    navigate("/training/sessions");
+  }
+
+  function onError() {
+    document
+      .querySelector('[aria-invalid="true"]')
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   if (isEdit && (sessionQuery.isLoading || attendanceQuery.isLoading)) {
     return (
       <section className="space-y-3">
@@ -146,7 +162,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
       : null;
 
   return (
-    <section className="space-y-5">
+    <section className="max-w-3xl mx-auto space-y-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1
@@ -161,18 +177,19 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
               : "Planifica una nueva sesión de entrenamiento."}
           </p>
         </div>
-        <Link
-          to="/training/sessions"
+        <button
+          type="button"
+          onClick={handleCancel}
           className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70"
           style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         >
           Cancelar
-        </Link>
+        </button>
       </div>
 
       <form
         onSubmit={(e) => {
-          void handleSubmit(onSubmit)(e);
+          void handleSubmit(onSubmit, onError)(e);
         }}
         className="space-y-6"
         noValidate
@@ -188,7 +205,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
           <h2 className="text-base font-semibold text-charcoal">Información general</h2>
 
           {/* Fecha y hora */}
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-[180px_180px] justify-start">
             <div>
               <label htmlFor="scheduled_date-input" className={labelClass}>Fecha</label>
               <input
@@ -222,23 +239,19 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
           </div>
 
           {/* Duración y lugar */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="duration_min-input" className={labelClass}>Duración (minutos)</label>
-              <input
-                id="duration_min-input"
-                type="number"
-                min={15}
-                max={240}
-                {...register("duration_min", { valueAsNumber: true })}
-                className={inputClass}
-                style={inputStyle}
-                aria-describedby={errors.duration_min ? "duration_min-error" : undefined}
-                aria-invalid={!!errors.duration_min}
+          <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-start">
+            <div className="sm:max-w-[260px]">
+              <Controller
+                name="duration_min"
+                control={control}
+                render={({ field }) => (
+                  <DurationPicker
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={errors.duration_min?.message}
+                  />
+                )}
               />
-              {errors.duration_min && (
-                <p id="duration_min-error" className={errorClass}>{errors.duration_min.message}</p>
-              )}
             </div>
             <div>
               <label htmlFor="location-input" className={labelClass}>Lugar</label>
@@ -374,13 +387,14 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
         )}
 
         <div className="flex justify-end gap-3">
-          <Link
-            to="/training/sessions"
+          <button
+            type="button"
+            onClick={handleCancel}
             className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
             style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           >
             Cancelar
-          </Link>
+          </button>
           <button
             type="submit"
             disabled={isSubmitting}
