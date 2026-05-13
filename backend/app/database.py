@@ -1,15 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
+# NullPool: abre una conexión por request y la cierra al finalizar.
+# Requerido en Render free tier: el container duerme tras ~15 min, cerrando
+# los sockets TCP. pool_pre_ping no ayuda porque uvloop lanza RuntimeError
+# (no OperationalError) en conexiones muertas, evitando que SQLAlchemy las
+# recicle. NullPool elimina esta clase de error completamente.
 engine = create_async_engine(
     settings.database_url,
-    pool_size=2,
-    max_overflow=3,
-    pool_recycle=55,
-    pool_pre_ping=True,
-    pool_timeout=10,
+    poolclass=NullPool,
     connect_args={
         "connect_timeout": 10,
     },
