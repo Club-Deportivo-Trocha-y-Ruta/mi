@@ -60,6 +60,7 @@ export interface TrainingSessionCreate {
   route_text?: string | null;
   strava_url?: string | null;
   convocados_athlete_ids: number[];
+  send_notification?: boolean;
 }
 
 export interface TrainingSessionUpdate {
@@ -73,6 +74,7 @@ export interface TrainingSessionUpdate {
   strava_url?: string | null;
   coach_notes?: string | null;
   convocados_athlete_ids?: number[];
+  send_notification?: boolean;
 }
 
 export interface Attendance {

@@ -26,6 +26,10 @@ class TrainingSessionCreate(BaseModel):
     strava_url: HttpUrl | None = None
     coach_notes: str | None = Field(default=None, max_length=2000)
     convocados_athlete_ids: list[int] = Field(min_length=1)
+    send_notification: bool = Field(
+        default=False,
+        description="Si True, envía email a los padres de los convocados.",
+    )
 
     @field_validator("strava_url", mode="before")
     @classmethod
@@ -53,6 +57,10 @@ class TrainingSessionUpdate(BaseModel):
     route_text: str | None = Field(default=None, max_length=500)
     strava_url: HttpUrl | None = None
     coach_notes: str | None = Field(default=None, max_length=2000)
+    send_notification: bool = Field(
+        default=False,
+        description="Si True, envía email a los padres avisando del cambio.",
+    )
 
     @field_validator("strava_url", mode="before")
     @classmethod
@@ -159,6 +167,16 @@ _ABSENT_STATUSES = {
     AttendanceStatus.JUSTIFICADO,
     AttendanceStatus.LESIONADO,
 }
+
+
+class AttendanceBulkSet(BaseModel):
+    """Payload para bulk set de la convocatoria de una sesión."""
+
+    athlete_ids: list[int] = Field(default_factory=list)
+    send_notification: bool = Field(
+        default=False,
+        description="Si True, envía email a padres de atletas recién añadidos.",
+    )
 
 
 class AttendanceUpdate(BaseModel):

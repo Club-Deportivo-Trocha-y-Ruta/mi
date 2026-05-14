@@ -1,0 +1,30 @@
+Sesión de entrenamiento actualizada — {{ club_name }}
+
+Hola {{ parent_name }},
+
+El entrenador {{ coach_name }} del {{ club_name }} ha modificado la sesión a la
+que {{ athlete_name }} está convocado/a.
+
+CAMBIOS APLICADOS
+-----------------
+{% for change in changes -%}
+- {{ change.field_label }}: {{ change.old }} -> {{ change.new }}
+{% endfor %}
+
+DETALLES ACTUALES
+-----------------
+Fecha:             {{ session_date }}
+Hora de inicio:    {{ session_time }}
+Duración:          {{ duration_min }} minutos
+Lugar:             {{ location }}
+Foco técnico:      {{ technical_focus }}
+
+Por favor, actualiza tu agenda. Si la nueva fecha u horario no te funciona,
+comunícate con el entrenador.
+
+---
+Esta notificación fue generada automáticamente porque {{ athlete_name }} está
+convocado/a a esta sesión.
+
+Saludos,
+{{ coach_name }} — {{ club_name }}

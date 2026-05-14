@@ -73,6 +73,28 @@ vi.mock("@/components/common/ConfirmModal", () => ({
     ) : null,
 }));
 
+vi.mock("@/components/training/NotifyParentsDialog", () => ({
+  NotifyParentsDialog: ({
+    open,
+    onSend,
+    onSkip,
+    onCancel,
+  }: {
+    open: boolean;
+    onSend: (reason?: string) => void;
+    onSkip: () => void;
+    onCancel: () => void;
+  }) =>
+    open ? (
+      <div data-testid="confirm-modal">
+        <span>Cancelar sesión</span>
+        <button onClick={() => onSend()}>confirm-ok</button>
+        <button onClick={onSkip}>confirm-skip</button>
+        <button onClick={onCancel}>confirm-cancel</button>
+      </div>
+    ) : null,
+}));
+
 import {
   useTrainingSessions,
   useExecuteTrainingSession,
@@ -256,7 +278,10 @@ describe("SessionsListPage", () => {
       renderPage();
       fireEvent.click(screen.getByRole("button", { name: /Cancelar-3/i }));
       fireEvent.click(screen.getByRole("button", { name: /confirm-ok/i }));
-      expect(cancelMock.mutate).toHaveBeenCalledWith(3, expect.any(Object));
+      expect(cancelMock.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 3, notify: true }),
+        expect.any(Object),
+      );
     });
   });
 });

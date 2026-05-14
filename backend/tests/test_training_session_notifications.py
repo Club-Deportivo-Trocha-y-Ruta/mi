@@ -8,6 +8,9 @@ Cubre:
 4. Failure isolation: send() lanza excepción → create_session igual retorna sesión
 5. PII en logs: logs no contienen email del padre ni nombre del atleta
 6. Sin notification_service → no emails (back-compat)
+7. send_notification=False → no emails (opt-in explícito)
+8. update_session con cambios + flag → despacha training_session_updated
+9. cancel_session con flag → despacha training_session_cancelled
 """
 
 from __future__ import annotations
@@ -19,7 +22,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.schemas.notification import NotificationResult, NotificationTemplate
-from app.schemas.training_session import TrainingSessionCreate
+from app.schemas.training_session import (
+    TrainingSessionCreate,
+    TrainingSessionUpdate,
+)
 from app.services.notification.task_dispatcher import TaskDispatcher
 from app.services.training import sessions as sessions_svc
 from app.models.training_session import SessionStatus
@@ -75,7 +81,9 @@ def _make_club(club_id: int = 1, name: str = "Club Trocha y Ruta") -> MagicMock:
     return c
 
 
-def _make_payload(athlete_ids: list[int]) -> TrainingSessionCreate:
+def _make_payload(
+    athlete_ids: list[int], send_notification: bool = True
+) -> TrainingSessionCreate:
     return TrainingSessionCreate(
         scheduled_date=date(2026, 5, 20),
         scheduled_start_time=time(17, 0),
@@ -83,6 +91,7 @@ def _make_payload(athlete_ids: list[int]) -> TrainingSessionCreate:
         location="Bosque Municipal",
         technical_focus="Descenso técnico",
         convocados_athlete_ids=athlete_ids,
+        send_notification=send_notification,
     )
 
 
@@ -352,6 +361,35 @@ async def test_pii_not_in_logs(caplog):
 
 
 @pytest.mark.asyncio
+async def test_send_notification_false_no_emails():
+    """Cuando el coach elige 'No enviar' (send_notification=False), no se despacha email."""
+    sessions_svc._recent_dispatches.clear()
+
+    coach = _make_user(1, "coach@test.com")
+    parent = _make_user(10, "padre@test.com", "Carlos", "Lopez")
+    athlete = _make_athlete(100, club_id=1)
+    pa = _make_parent_athlete(1, parent, athlete)
+    club = _make_club(1)
+    notification_service = _make_notification_service()
+    dispatcher = TaskDispatcher()
+
+    db = _make_db(club, [(pa, athlete)])
+
+    with patch.object(sessions_svc, "_assert_coach_in_club", new=AsyncMock()):
+        payload = _make_payload([100], send_notification=False)
+        await sessions_svc.create_session(
+            db=db,
+            payload=payload,
+            coach=coach,
+            club_id=1,
+            notification_service=notification_service,
+            dispatcher=dispatcher,
+        )
+
+    notification_service.send.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_no_notification_service_no_emails():
     coach = _make_user(1, "coach@test.com")
     session_mock = _make_session_mock(session_id=1)
@@ -389,3 +427,195 @@ async def test_no_notification_service_no_emails():
     # Sin notificación → execute solo se llama una vez (get_session para reload)
     # No se consultan Club ni ParentAthlete
     assert db.execute.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# 8. update_session — flag + cambios reales → despacha TRAINING_SESSION_UPDATED
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_update_session_with_changes_dispatches_updated_template():
+    sessions_svc._recent_dispatches.clear()
+
+    coach = _make_user(1, "coach@test.com", "Entrenador", "Bueno")
+    parent = _make_user(10, "padre@test.com", "Carlos", "Lopez")
+    athlete = _make_athlete(100, club_id=1, first_name="Miguel", last_name="Ramirez")
+    pa = _make_parent_athlete(1, parent, athlete)
+    club = _make_club(1)
+    notification_service = _make_notification_service()
+    dispatcher = TaskDispatcher()
+
+    # Sesión existente con asistencia del atleta 100
+    session = _make_session_mock(session_id=42)
+    session.club_id = 1
+    session.created_by_user_id = coach.id
+    attendance = MagicMock()
+    attendance.athlete_id = 100
+    session.attendances = [attendance]
+    session.location = "Lugar Antiguo"
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    get_session_result = MagicMock()
+    get_session_result.scalar_one_or_none = MagicMock(return_value=session)
+
+    club_result = MagicMock()
+    club_result.scalar_one_or_none = MagicMock(return_value=club)
+
+    pa_result = MagicMock()
+    pa_result.all = MagicMock(return_value=[(pa, athlete)])
+
+    coach_result = MagicMock()
+    coach_result.scalar_one_or_none = MagicMock(return_value=coach)
+
+    # _get_session_or_raise → get_session(refreshed) → User(coach) → Club → ParentAthlete
+    db.execute = AsyncMock(
+        side_effect=[get_session_result, get_session_result, coach_result, club_result, pa_result]
+    )
+
+    payload = TrainingSessionUpdate(location="Pista Nueva", send_notification=True)
+    await sessions_svc.update_session(
+        db=db,
+        session_id=42,
+        payload=payload,
+        notification_service=notification_service,
+        dispatcher=dispatcher,
+    )
+
+    notification_service.send.assert_called_once()
+    request = notification_service.send.call_args.args[0]
+    assert request.template == NotificationTemplate.TRAINING_SESSION_UPDATED
+    assert request.context["changes"]
+    assert request.context["changes"][0]["field_label"] == "Lugar"
+    assert request.context["changes"][0]["new"] == "Pista Nueva"
+
+
+@pytest.mark.asyncio
+async def test_update_session_without_flag_no_emails():
+    sessions_svc._recent_dispatches.clear()
+
+    coach = _make_user(1, "coach@test.com")
+    parent = _make_user(10, "padre@test.com", "Carlos", "Lopez")
+    athlete = _make_athlete(100, club_id=1)
+    pa = _make_parent_athlete(1, parent, athlete)
+    club = _make_club(1)
+    notification_service = _make_notification_service()
+    dispatcher = TaskDispatcher()
+
+    session = _make_session_mock(session_id=42)
+    session.club_id = 1
+    session.created_by_user_id = coach.id
+    attendance = MagicMock()
+    attendance.athlete_id = 100
+    session.attendances = [attendance]
+    session.location = "Lugar Antiguo"
+
+    db = AsyncMock()
+    db.commit = AsyncMock()
+    db.add = MagicMock()
+
+    get_session_result = MagicMock()
+    get_session_result.scalar_one_or_none = MagicMock(return_value=session)
+    db.execute = AsyncMock(return_value=get_session_result)
+
+    payload = TrainingSessionUpdate(location="Otra", send_notification=False)
+    await sessions_svc.update_session(
+        db=db,
+        session_id=42,
+        payload=payload,
+        notification_service=notification_service,
+        dispatcher=dispatcher,
+    )
+
+    notification_service.send.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 9. cancel_session — flag → despacha TRAINING_SESSION_CANCELLED con reason
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cancel_session_with_flag_dispatches_cancelled_template():
+    sessions_svc._recent_dispatches.clear()
+
+    coach = _make_user(1, "coach@test.com", "Entrenador", "Bueno")
+    parent = _make_user(10, "padre@test.com", "Carlos", "Lopez")
+    athlete = _make_athlete(100, club_id=1, first_name="Miguel", last_name="Ramirez")
+    pa = _make_parent_athlete(1, parent, athlete)
+    club = _make_club(1)
+    notification_service = _make_notification_service()
+    dispatcher = TaskDispatcher()
+
+    session = _make_session_mock(session_id=42)
+    session.club_id = 1
+    session.created_by_user_id = coach.id
+    attendance = MagicMock()
+    attendance.athlete_id = 100
+    session.attendances = [attendance]
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    get_session_result = MagicMock()
+    get_session_result.scalar_one_or_none = MagicMock(return_value=session)
+
+    coach_result = MagicMock()
+    coach_result.scalar_one_or_none = MagicMock(return_value=coach)
+
+    club_result = MagicMock()
+    club_result.scalar_one_or_none = MagicMock(return_value=club)
+
+    pa_result = MagicMock()
+    pa_result.all = MagicMock(return_value=[(pa, athlete)])
+
+    db.execute = AsyncMock(
+        side_effect=[get_session_result, get_session_result, coach_result, club_result, pa_result]
+    )
+
+    await sessions_svc.cancel_session(
+        db=db,
+        session_id=42,
+        send_notification=True,
+        reason="Lluvia intensa",
+        notification_service=notification_service,
+        dispatcher=dispatcher,
+    )
+
+    notification_service.send.assert_called_once()
+    request = notification_service.send.call_args.args[0]
+    assert request.template == NotificationTemplate.TRAINING_SESSION_CANCELLED
+    assert request.context["reason"] == "Lluvia intensa"
+
+
+@pytest.mark.asyncio
+async def test_cancel_session_without_flag_no_emails():
+    sessions_svc._recent_dispatches.clear()
+
+    coach = _make_user(1, "coach@test.com")
+    notification_service = _make_notification_service()
+
+    session = _make_session_mock(session_id=42)
+    session.club_id = 1
+    session.created_by_user_id = coach.id
+    session.attendances = []
+
+    db = AsyncMock()
+    db.commit = AsyncMock()
+
+    get_session_result = MagicMock()
+    get_session_result.scalar_one_or_none = MagicMock(return_value=session)
+    db.execute = AsyncMock(return_value=get_session_result)
+
+    await sessions_svc.cancel_session(
+        db=db,
+        session_id=42,
+        send_notification=False,
+        notification_service=notification_service,
+    )
+
+    notification_service.send.assert_not_called()

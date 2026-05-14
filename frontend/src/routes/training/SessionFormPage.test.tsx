@@ -175,7 +175,7 @@ describe("SessionFormPage — modo crear", () => {
     });
   });
 
-  it("llama a createMutation con el payload correcto al submit válido", async () => {
+  it("llama a createMutation con el payload correcto y send_notification=true al confirmar 'Enviar notificación'", async () => {
     mutateAsyncStub.mockResolvedValueOnce({ id: 99 });
     renderCreate();
 
@@ -190,6 +190,9 @@ describe("SessionFormPage — modo crear", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Crear sesión/i }));
 
+    // Abre el diálogo de notificación; confirmamos enviar.
+    fireEvent.click(await screen.findByRole("button", { name: /Enviar notificación/i }));
+
     await waitFor(() => {
       expect(mutateAsyncStub).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -198,13 +201,14 @@ describe("SessionFormPage — modo crear", () => {
           location: "Pista XCO",
           technical_focus: "Técnica de frenada",
           convocados_athlete_ids: [1],
+          send_notification: true,
         }),
       );
     });
     expect(mockNavigate).toHaveBeenCalledWith("/training/sessions/99");
   });
 
-  it("llama a createMutation con duration_min=60 cuando no se modifica la duración", async () => {
+  it("llama a createMutation con duration_min=60 y send_notification=false al confirmar 'No enviar'", async () => {
     mutateAsyncStub.mockResolvedValueOnce({ id: 88 });
     renderCreate();
 
@@ -217,9 +221,11 @@ describe("SessionFormPage — modo crear", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Crear sesión/i }));
 
+    fireEvent.click(await screen.findByRole("button", { name: /No enviar/i }));
+
     await waitFor(() => {
       expect(mutateAsyncStub).toHaveBeenCalledWith(
-        expect.objectContaining({ duration_min: 60 }),
+        expect.objectContaining({ duration_min: 60, send_notification: false }),
       );
     });
   });

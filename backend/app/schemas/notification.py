@@ -22,6 +22,8 @@ class NotificationTemplate(str, Enum):
     MONTHLY_REPORT = "monthly_report"
     PARENT_INVITE = "parent_invite"
     TRAINING_SESSION_INVITE = "training_session_invite"
+    TRAINING_SESSION_UPDATED = "training_session_updated"
+    TRAINING_SESSION_CANCELLED = "training_session_cancelled"
     TRAINING_MONTHLY_REPORT = "training_monthly_report"
     CALENDAR_EVENT_INVITE = "calendar_event_invite"
     CALENDAR_EVENT_RESCHEDULED = "calendar_event_rescheduled"

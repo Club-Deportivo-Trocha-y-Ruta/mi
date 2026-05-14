@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
 import { SessionFiltersBar } from "@/components/training/SessionFiltersBar";
 import { SessionsTable } from "@/components/training/SessionsTable";
 import {
@@ -126,22 +127,33 @@ export function SessionsListPage() {
         }}
       />
 
-      <ConfirmModal
+      <NotifyParentsDialog
         open={cancelTarget !== null}
-        title="Cancelar sesión"
-        body="Esta acción es irreversible. La sesión pasará al estado 'cancelada' y no podrá volver a planificarse."
-        confirmLabel="Cancelar sesión"
-        cancelLabel="No"
-        confirmDanger={true}
+        variant="cancel"
+        parentCount={cancelTarget?.attendance_summary?.total ?? 0}
         isPending={cancelMutation.isPending}
-        onCancel={() => setCancelTarget(null)}
-        onConfirm={() => {
+        errorMessage={
+          cancelMutation.isError
+            ? "No se pudo cancelar la sesión. Intenta de nuevo."
+            : null
+        }
+        onSend={(reason) => {
           if (cancelTarget) {
-            cancelMutation.mutate(cancelTarget.id, {
-              onSettled: () => setCancelTarget(null),
-            });
+            cancelMutation.mutate(
+              { id: cancelTarget.id, notify: true, reason },
+              { onSettled: () => setCancelTarget(null) },
+            );
           }
         }}
+        onSkip={() => {
+          if (cancelTarget) {
+            cancelMutation.mutate(
+              { id: cancelTarget.id, notify: false },
+              { onSettled: () => setCancelTarget(null) },
+            );
+          }
+        }}
+        onCancel={() => setCancelTarget(null)}
       />
     </section>
   );

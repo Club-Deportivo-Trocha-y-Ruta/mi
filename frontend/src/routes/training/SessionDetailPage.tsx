@@ -12,7 +12,7 @@ import {
 } from "@/api/trainingSessions";
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
 import { AttendanceTable } from "@/components/training/AttendanceTable";
-import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
 
 const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
@@ -98,14 +98,20 @@ export function SessionDetailPage() {
     [uploadMutation],
   );
 
-  const handleCancelConfirm = useCallback(() => {
-    cancelMutation.mutate(sessionId, {
-      onSuccess: () => {
-        setShowCancelModal(false);
-        navigate("/training/sessions");
-      },
-    });
-  }, [cancelMutation, sessionId, navigate]);
+  const handleCancelConfirm = useCallback(
+    (notify: boolean, reason?: string) => {
+      cancelMutation.mutate(
+        { id: sessionId, notify, reason },
+        {
+          onSuccess: () => {
+            setShowCancelModal(false);
+            navigate("/training/sessions");
+          },
+        },
+      );
+    },
+    [cancelMutation, sessionId, navigate],
+  );
 
   if (sessionQuery.isLoading) {
     return (
@@ -351,16 +357,19 @@ export function SessionDetailPage() {
         )}
       </div>
 
-      <ConfirmModal
+      <NotifyParentsDialog
         open={showCancelModal}
-        title="Cancelar sesión"
-        body="Esta acción marcará la sesión como cancelada. No podrás revertirla. ¿Deseas continuar?"
-        confirmLabel="Sí, cancelar sesión"
-        cancelLabel="Volver"
-        confirmDanger
+        variant="cancel"
+        parentCount={attendances.length}
         isPending={cancelMutation.isPending}
+        errorMessage={
+          cancelMutation.isError
+            ? "No se pudo cancelar la sesión. Intenta de nuevo."
+            : null
+        }
+        onSend={(reason) => handleCancelConfirm(true, reason)}
+        onSkip={() => handleCancelConfirm(false)}
         onCancel={() => setShowCancelModal(false)}
-        onConfirm={handleCancelConfirm}
       />
     </section>
   );

@@ -53,8 +53,19 @@ export async function executeTrainingSession(id: number): Promise<TrainingSessio
   return response.data;
 }
 
-export async function cancelTrainingSession(id: number): Promise<TrainingSession> {
-  const response = await apiClient.delete<TrainingSession>(`${BASE}/${id}`);
+export interface CancelTrainingSessionOptions {
+  notify?: boolean;
+  reason?: string;
+}
+
+export async function cancelTrainingSession(
+  id: number,
+  opts?: CancelTrainingSessionOptions,
+): Promise<TrainingSession> {
+  const params: Record<string, string> = {};
+  if (opts?.notify !== undefined) params.notify = String(opts.notify);
+  if (opts?.reason) params.reason = opts.reason;
+  const response = await apiClient.delete<TrainingSession>(`${BASE}/${id}`, { params });
   return response.data;
 }
 
@@ -111,13 +122,20 @@ export function useExecuteTrainingSession() {
   });
 }
 
+export interface CancelTrainingSessionVars {
+  id: number;
+  notify?: boolean;
+  reason?: string;
+}
+
 export function useCancelTrainingSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: cancelTrainingSession,
-    onSuccess: (_data, id) => {
+    mutationFn: ({ id, notify, reason }: CancelTrainingSessionVars) =>
+      cancelTrainingSession(id, { notify, reason }),
+    onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["training-sessions"] });
-      void queryClient.invalidateQueries({ queryKey: ["training-session", id] });
+      void queryClient.invalidateQueries({ queryKey: ["training-session", vars.id] });
     },
   });
 }
@@ -144,10 +162,11 @@ export async function updateAttendance(
 export async function bulkSetConvocatoria(
   sessionId: number,
   athleteIds: number[],
+  sendNotification = false,
 ): Promise<Attendance[]> {
   const response = await apiClient.put<Attendance[]>(
     `${BASE}/${sessionId}/attendance`,
-    athleteIds,
+    { athlete_ids: athleteIds, send_notification: sendNotification },
   );
   return response.data;
 }
@@ -213,10 +232,16 @@ export function useUpdateAttendance(sessionId: number) {
   });
 }
 
+export interface BulkSetConvocatoriaVars {
+  athleteIds: number[];
+  sendNotification?: boolean;
+}
+
 export function useBulkSetConvocatoria(sessionId: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (athleteIds: number[]) => bulkSetConvocatoria(sessionId, athleteIds),
+    mutationFn: ({ athleteIds, sendNotification }: BulkSetConvocatoriaVars) =>
+      bulkSetConvocatoria(sessionId, athleteIds, sendNotification ?? false),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["training-session-attendance", sessionId],

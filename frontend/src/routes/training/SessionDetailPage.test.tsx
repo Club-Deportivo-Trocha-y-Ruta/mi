@@ -207,10 +207,11 @@ describe("SessionDetailPage", () => {
       renderPage();
       fireEvent.click(screen.getByTestId("cancel-session-button"));
       expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-      expect(screen.getByRole("alertdialog")).toHaveTextContent(/Cancelar sesión/i);
+      // El nuevo diálogo pregunta si avisar a los padres de la cancelación.
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/cancelación/i);
     });
 
-    it("confirmar cancelación llama la mutación", () => {
+    it("confirmar cancelación con 'Enviar notificación' llama la mutación con notify=true", () => {
       const mutate = vi.fn();
       vi.mocked(useCancelTrainingSession).mockReturnValue({
         ...mutationStub,
@@ -218,8 +219,26 @@ describe("SessionDetailPage", () => {
       } as unknown as ReturnType<typeof useCancelTrainingSession>);
       renderPage();
       fireEvent.click(screen.getByTestId("cancel-session-button"));
-      fireEvent.click(screen.getByRole("button", { name: /Sí, cancelar sesión/i }));
-      expect(mutate).toHaveBeenCalledWith(1, expect.any(Object));
+      fireEvent.click(screen.getByRole("button", { name: /Enviar notificación/i }));
+      expect(mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, notify: true }),
+        expect.any(Object),
+      );
+    });
+
+    it("confirmar cancelación con 'No enviar' llama la mutación con notify=false", () => {
+      const mutate = vi.fn();
+      vi.mocked(useCancelTrainingSession).mockReturnValue({
+        ...mutationStub,
+        mutate,
+      } as unknown as ReturnType<typeof useCancelTrainingSession>);
+      renderPage();
+      fireEvent.click(screen.getByTestId("cancel-session-button"));
+      fireEvent.click(screen.getByRole("button", { name: /No enviar/i }));
+      expect(mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, notify: false }),
+        expect.any(Object),
+      );
     });
   });
 

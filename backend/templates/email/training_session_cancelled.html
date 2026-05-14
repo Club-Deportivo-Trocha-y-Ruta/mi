@@ -1,0 +1,76 @@
+{% extends "email/base/layout.html" %}
+
+{#
+  Notificación a padres/acudientes cuando una sesión convocada es cancelada.
+  Variables requeridas: parent_name, athlete_name, session_date, session_time,
+                        location, coach_name, club_name, reason.
+#}
+
+{% block title %}Cancelado: entrenamiento {{ session_date }} — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1>Sesión de entrenamiento cancelada</h1>
+
+<p>Hola {{ parent_name }},</p>
+
+<p>
+  El entrenador <strong>{{ coach_name }}</strong> del <strong>{{ club_name }}</strong>
+  ha <strong>cancelado</strong> la sesión a la que <strong>{{ athlete_name }}</strong>
+  estaba convocado/a.
+</p>
+
+<div class="highlight-box" style="border-left-color: #e05050;">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0; width: 160px;">
+        <strong style="color: #2f2f2f;">Fecha original:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0; text-decoration: line-through;">
+        {{ session_date }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Hora:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0; text-decoration: line-through;">
+        {{ session_time }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Lugar:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0; text-decoration: line-through;">
+        {{ location }}
+      </td>
+    </tr>
+    {% if reason %}
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Motivo:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ reason }}
+      </td>
+    </tr>
+    {% endif %}
+  </table>
+</div>
+
+<p>
+  Lamentamos cualquier inconveniente. Si tienes preguntas o necesitas más
+  información, comunícate directamente con el entrenador.
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #aaaaaa;">
+  Esta notificación fue generada automáticamente por el sistema del club.
+</p>
+
+<p>
+  Saludos,<br>
+  <strong>{{ coach_name }} — {{ club_name }}</strong>
+</p>
+{% endblock %}

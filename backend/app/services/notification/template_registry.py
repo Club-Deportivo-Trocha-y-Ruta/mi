@@ -155,6 +155,50 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
             "de entrenamiento en la que su atleta está convocado."
         ),
     ),
+    NotificationTemplate.TRAINING_SESSION_UPDATED: EmailTemplateSpec(
+        template_id=NotificationTemplate.TRAINING_SESSION_UPDATED,
+        subject_template="[Trocha y Ruta] Cambios en entrenamiento {{ session_date }} - {{ athlete_name }}",
+        body_path="email/training_session_updated.html",
+        required_context_keys=frozenset(
+            {
+                "parent_name",
+                "athlete_name",
+                "session_date",
+                "session_time",
+                "location",
+                "technical_focus",
+                "duration_min",
+                "coach_name",
+                "club_name",
+                "changes",
+            }
+        ),
+        description=(
+            "Notificación a padres cuando el coach modifica una sesión convocada. "
+            "Incluye lista de cambios con valor anterior y nuevo."
+        ),
+    ),
+    NotificationTemplate.TRAINING_SESSION_CANCELLED: EmailTemplateSpec(
+        template_id=NotificationTemplate.TRAINING_SESSION_CANCELLED,
+        subject_template="[Trocha y Ruta] Cancelado: entrenamiento {{ session_date }} - {{ athlete_name }}",
+        body_path="email/training_session_cancelled.html",
+        required_context_keys=frozenset(
+            {
+                "parent_name",
+                "athlete_name",
+                "session_date",
+                "session_time",
+                "location",
+                "coach_name",
+                "club_name",
+                "reason",
+            }
+        ),
+        description=(
+            "Notificación a padres cuando una sesión convocada es cancelada. "
+            "El motivo (reason) puede venir vacío."
+        ),
+    ),
     NotificationTemplate.TRAINING_MONTHLY_REPORT: EmailTemplateSpec(
         template_id=NotificationTemplate.TRAINING_MONTHLY_REPORT,
         subject_template="Reporte mensual de entrenamiento {{ month_label }} — {{ club_name }}",

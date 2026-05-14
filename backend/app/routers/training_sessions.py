@@ -21,6 +21,7 @@ from app.models.club import ClubRole
 from app.models.training_session import AttendanceStatus, SessionStatus
 from app.models.user import User, UserRole
 from app.schemas.training_session import (
+    AttendanceBulkSet,
     AttendanceRead,
     AttendanceReadParent,
     AttendanceSummary,
@@ -356,8 +357,10 @@ async def get_training_session(
 async def update_training_session(
     session_id: int,
     body: TrainingSessionUpdate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    notification_service=Depends(get_notification_service),
 ) -> TrainingSessionRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -367,8 +370,18 @@ async def update_training_session(
             detail="No tienes permisos para editar esta sesión",
         )
 
+    from app.services.notification.task_dispatcher import TaskDispatcher
+
+    dispatcher = TaskDispatcher(background_tasks)
+
     try:
-        updated = await training_svc.sessions.update_session(db, session_id, body)
+        updated = await training_svc.sessions.update_session(
+            db,
+            session_id,
+            body,
+            notification_service=notification_service,
+            dispatcher=dispatcher,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -418,8 +431,12 @@ async def execute_training_session(
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_training_session(
     session_id: int,
+    background_tasks: BackgroundTasks,
+    notify: bool = Query(default=False, description="Si True, envía email de cancelación a padres."),
+    reason: str | None = Query(default=None, max_length=300, description="Motivo opcional para el email."),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    notification_service=Depends(get_notification_service),
 ) -> None:
     session = await _get_session_or_404(db, session_id)
 
@@ -437,8 +454,19 @@ async def cancel_training_session(
             detail="No se puede cancelar una sesión que ya fue ejecutada",
         )
 
+    from app.services.notification.task_dispatcher import TaskDispatcher
+
+    dispatcher = TaskDispatcher(background_tasks)
+
     try:
-        await training_svc.sessions.cancel_session(db, session_id)
+        await training_svc.sessions.cancel_session(
+            db,
+            session_id,
+            send_notification=notify,
+            reason=reason,
+            notification_service=notification_service,
+            dispatcher=dispatcher,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -514,10 +542,21 @@ async def list_session_attendance(
 @router.put("/{session_id}/attendance", response_model=list[AttendanceRead])
 async def bulk_set_convocatoria(
     session_id: int,
-    athlete_ids: list[int],
+    body: Union[AttendanceBulkSet, list[int]],
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    notification_service=Depends(get_notification_service),
 ) -> list[AttendanceRead]:
+    # Acepta tanto el formato nuevo (AttendanceBulkSet) como la lista plana
+    # legacy `[1, 2, 3]` para no romper consumidores existentes.
+    if isinstance(body, list):
+        athlete_ids = body
+        send_notification = False
+    else:
+        athlete_ids = body.athlete_ids
+        send_notification = body.send_notification
+
     session = await _get_session_or_404(db, session_id)
 
     if current_user.role == UserRole.coach:
@@ -544,10 +583,17 @@ async def bulk_set_convocatoria(
                 detail=f"Los siguientes atletas no pertenecen al club: {sorted(invalid_ids)}",
             )
 
-    attendances = await training_svc.attendance.bulk_upsert_convocatoria(
+    from app.services.notification.task_dispatcher import TaskDispatcher
+
+    dispatcher = TaskDispatcher(background_tasks)
+
+    attendances = await training_svc.sessions.update_convocatoria(
         db=db,
         session_id=session_id,
         athlete_ids=athlete_ids,
+        send_notification=send_notification,
+        notification_service=notification_service,
+        dispatcher=dispatcher,
     )
     return [_attendance_to_read(a) for a in attendances]
 

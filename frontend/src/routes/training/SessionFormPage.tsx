@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -6,17 +6,29 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { AthletesMultiSelect } from "@/components/training/AthletesMultiSelect";
 import { DurationPicker } from "@/components/training/DurationPicker";
 import {
+  NotifyParentsDialog,
+  type NotifyVariant,
+} from "@/components/training/NotifyParentsDialog";
+import {
   bulkSetConvocatoria,
   useCreateTrainingSession,
   useSessionAttendance,
   useTrainingSession,
   useUpdateTrainingSession,
 } from "@/api/trainingSessions";
+import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   trainingSessionCreateSchema,
   type TrainingSessionFormValues,
 } from "@/schemas/trainingSession.schema";
+import type { TrainingSessionCreate } from "@/types/trainingSession.types";
+import {
+  diffAthleteIds,
+  diffSessionValues,
+  type AthleteEntry,
+  type ChangeEntry,
+} from "@/lib/sessionDiff";
 interface SessionFormPageProps {
   mode: "create" | "edit";
 }
@@ -61,10 +73,13 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
     },
   });
 
+  const initialValuesRef = useRef<TrainingSessionFormValues | null>(null);
+  const athletesQuery = useAthletes();
+
   useEffect(() => {
     if (isEdit && sessionQuery.data && attendanceQuery.data) {
       const s = sessionQuery.data;
-      reset({
+      const snapshot: TrainingSessionFormValues = {
         scheduled_date: s.scheduled_date,
         scheduled_start_time: s.scheduled_start_time.slice(0, 5),
         duration_min: s.duration_min,
@@ -74,43 +89,138 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
         route_text: s.route_text ?? "",
         strava_url: s.strava_url ?? "",
         convocados_athlete_ids: attendanceQuery.data.map((a) => a.athlete_id),
-      });
+      };
+      reset(snapshot);
+      initialValuesRef.current = snapshot;
     }
   }, [isEdit, sessionQuery.data, attendanceQuery.data, reset]);
 
-  async function onSubmit(values: TrainingSessionFormValues) {
-    const payload = {
+  const allAthletes = athletesQuery.data?.items ?? [];
+  const athleteNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const a of allAthletes) {
+      map.set(a.id, `${a.first_name} ${a.last_name}`.trim());
+    }
+    return map;
+  }, [allAthletes]);
+
+  interface PendingSave {
+    payload: TrainingSessionCreate;
+    variant: NotifyVariant;
+    changes: ChangeEntry[];
+    addedAthletes: AthleteEntry[];
+    removedAthletes: AthleteEntry[];
+    convocadosChanged: boolean;
+  }
+
+  const [pending, setPending] = useState<PendingSave | null>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [dialogPending, setDialogPending] = useState(false);
+
+  function buildPayload(values: TrainingSessionFormValues): TrainingSessionCreate {
+    return {
       ...values,
       route_text: values.route_text || null,
       strava_url: values.strava_url || null,
     };
+  }
 
-    if (isEdit) {
-      await updateMutation.mutateAsync({ id: sessionId, payload });
+  function nameFor(id: number): AthleteEntry {
+    return { id, name: athleteNameById.get(id) ?? `Atleta #${id}` };
+  }
 
-      const originalIds = (attendanceQuery.data ?? [])
-        .map((a) => a.athlete_id)
-        .sort();
-      const nextIds = [...values.convocados_athlete_ids].sort();
-      const changed =
-        originalIds.length !== nextIds.length ||
-        originalIds.some((id, i) => id !== nextIds[i]);
+  async function onSubmit(values: TrainingSessionFormValues) {
+    const payload = buildPayload(values);
 
-      if (changed) {
-        await bulkSetConvocatoria(sessionId, values.convocados_athlete_ids);
-        await queryClient.invalidateQueries({
-          queryKey: ["training-session-attendance", sessionId],
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["training-session", sessionId],
-        });
-      }
-
-      navigate(`/training/sessions/${sessionId}`);
-    } else {
-      const created = await createMutation.mutateAsync(payload);
-      navigate(`/training/sessions/${created.id}`);
+    if (!isEdit) {
+      setPending({
+        payload,
+        variant: "create",
+        changes: [],
+        addedAthletes: values.convocados_athlete_ids.map(nameFor),
+        removedAthletes: [],
+        convocadosChanged: false,
+      });
+      return;
     }
+
+    const initial = initialValuesRef.current;
+    if (!initial) return; // datos aún no cargados
+
+    const changes = diffSessionValues(
+      initial as unknown as Record<string, unknown>,
+      values as unknown as Record<string, unknown>,
+    );
+    const attendanceDiff = diffAthleteIds(
+      initial.convocados_athlete_ids,
+      values.convocados_athlete_ids,
+    );
+
+    // Si no hay cambio alguno, atajo: salir sin diálogo ni mutaciones.
+    if (changes.length === 0 && !attendanceDiff.changed) {
+      navigate(`/training/sessions/${sessionId}`);
+      return;
+    }
+
+    const variant: NotifyVariant =
+      changes.length > 0 ? "update" : "attendance";
+
+    setPending({
+      payload,
+      variant,
+      changes,
+      addedAthletes: attendanceDiff.added.map(nameFor),
+      removedAthletes: attendanceDiff.removed.map(nameFor),
+      convocadosChanged: attendanceDiff.changed,
+    });
+  }
+
+  async function persistPending(sendNotification: boolean) {
+    if (!pending) return;
+    setDialogPending(true);
+    setDialogError(null);
+    try {
+      if (isEdit) {
+        await updateMutation.mutateAsync({
+          id: sessionId,
+          payload: { ...pending.payload, send_notification: sendNotification },
+        });
+
+        if (pending.convocadosChanged) {
+          await bulkSetConvocatoria(
+            sessionId,
+            pending.payload.convocados_athlete_ids,
+            sendNotification,
+          );
+          await queryClient.invalidateQueries({
+            queryKey: ["training-session-attendance", sessionId],
+          });
+          await queryClient.invalidateQueries({
+            queryKey: ["training-session", sessionId],
+          });
+        }
+
+        setPending(null);
+        navigate(`/training/sessions/${sessionId}`);
+      } else {
+        const created = await createMutation.mutateAsync({
+          ...pending.payload,
+          send_notification: sendNotification,
+        });
+        setPending(null);
+        navigate(`/training/sessions/${created.id}`);
+      }
+    } catch {
+      setDialogError("No se pudo guardar la sesión. Intenta de nuevo.");
+    } finally {
+      setDialogPending(false);
+    }
+  }
+
+  function handleDialogCancel() {
+    if (dialogPending) return;
+    setPending(null);
+    setDialogError(null);
   }
 
   function handleCancel() {
@@ -409,6 +519,24 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
           </button>
         </div>
       </form>
+
+      <NotifyParentsDialog
+        open={pending !== null}
+        variant={pending?.variant ?? "create"}
+        parentCount={
+          pending?.variant === "attendance"
+            ? pending.addedAthletes.length
+            : (pending?.payload.convocados_athlete_ids.length ?? 0)
+        }
+        changes={pending?.changes ?? []}
+        addedAthletes={pending?.addedAthletes ?? []}
+        removedAthletes={pending?.removedAthletes ?? []}
+        isPending={dialogPending}
+        errorMessage={dialogError}
+        onSend={() => void persistPending(true)}
+        onSkip={() => void persistPending(false)}
+        onCancel={handleDialogCancel}
+      />
     </section>
   );
 }

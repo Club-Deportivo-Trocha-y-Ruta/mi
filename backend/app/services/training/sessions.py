@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import date, datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from datetime import date, datetime, time, timedelta, timezone
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,6 +54,33 @@ def _should_throttle(parent_id: int, athlete_id: int, kind: str) -> bool:
 def _hash_id(value: int) -> str:
     """Hash corto de un ID para logs sin exponer el valor real."""
     return hashlib.sha256(str(value).encode()).hexdigest()[:8]
+
+
+# Etiquetas legibles en español para el diff de update_session
+_FIELD_LABELS: dict[str, str] = {
+    "scheduled_date": "Fecha",
+    "scheduled_start_time": "Hora de inicio",
+    "duration_min": "Duración (min)",
+    "location": "Lugar",
+    "technical_focus": "Foco técnico",
+    "description": "Descripción",
+    "route_text": "Recorrido",
+    "strava_url": "Link Strava",
+    "coach_notes": "Notas del entrenador",
+}
+
+
+def _humanize(value: Any) -> str:
+    """Convierte un valor del modelo a texto legible para el email."""
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, time):
+        return value.strftime("%H:%M")
+    if isinstance(value, datetime):
+        return value.strftime("%d/%m/%Y %H:%M")
+    return str(value)
 
 
 async def _assert_coach_in_club(
@@ -124,10 +151,12 @@ async def create_session(
     refreshed = await get_session(db, session.id)
     assert refreshed is not None  # acabamos de crearla
 
-    # Notificar a padres solo si la sesión quedó planificada y es a futuro
+    # Notificar a padres solo si el coach lo solicitó explícitamente,
+    # la sesión quedó planificada y es a futuro.
     is_future = refreshed.scheduled_date >= date.today()
     if (
-        notification_service is not None
+        payload.send_notification
+        and notification_service is not None
         and refreshed.status == SessionStatus.PLANNED
         and is_future
     ):
@@ -276,6 +305,276 @@ async def _dispatch_invitation(
     )
 
 
+async def _notify_parents_update(
+    db: AsyncSession,
+    session: TrainingSession,
+    coach: User,
+    club_id: int,
+    convocados_athlete_ids: list[int],
+    changes: list[dict[str, str]],
+    notification_service: "NotificationService",
+    dispatcher: "TaskDispatcher | None",
+) -> None:
+    """Despacha emails `training_session_updated` a los padres de los convocados."""
+    if not convocados_athlete_ids or not changes:
+        return
+
+    club_result = await db.execute(select(Club).where(Club.id == club_id))
+    club = club_result.scalar_one_or_none()
+    club_name = club.name if club else "Club Trocha y Ruta"
+
+    coach_name = f"{coach.first_name} {coach.last_name}".strip() or (
+        coach.email.split("@")[0] if coach.email else "Entrenador"
+    )
+
+    session_date = (
+        session.scheduled_date.strftime("%-d de %B de %Y")
+        if session.scheduled_date
+        else ""
+    )
+    session_time = (
+        session.scheduled_start_time.strftime("%H:%M")
+        if session.scheduled_start_time
+        else "Por definir"
+    )
+
+    from app.models.athlete import Athlete, ParentAthlete
+
+    stmt = (
+        select(ParentAthlete, Athlete)
+        .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
+        .join(User, User.id == ParentAthlete.parent_id)
+        .where(ParentAthlete.athlete_id.in_(convocados_athlete_ids))
+        .options(selectinload(ParentAthlete.parent))
+    )
+    rows = await db.execute(stmt)
+    pairs = rows.all()
+
+    for pa, athlete in pairs:
+        parent = pa.parent
+        if parent is None or not parent.email:
+            continue
+
+        athlete_name = f"{athlete.first_name} {athlete.last_name}".strip()
+        try:
+            await _dispatch_update(
+                notification_service=notification_service,
+                dispatcher=dispatcher,
+                parent=parent,
+                athlete_id=athlete.id,
+                athlete_name=athlete_name,
+                session=session,
+                session_date=session_date,
+                session_time=session_time,
+                coach_name=coach_name,
+                club_name=club_name,
+                changes=changes,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Error despachando notificación update | parent_hash=%s athlete_hash=%s kind=training_session_updated error_type=%s",
+                _hash_id(parent.id),
+                _hash_id(athlete.id),
+                type(exc).__name__,
+            )
+
+
+async def _dispatch_update(
+    notification_service: "NotificationService",
+    dispatcher: "TaskDispatcher | None",
+    parent: User,
+    athlete_id: int,
+    athlete_name: str,
+    session: TrainingSession,
+    session_date: str,
+    session_time: str,
+    coach_name: str,
+    club_name: str,
+    changes: list[dict[str, str]],
+) -> None:
+    from app.schemas.notification import (
+        NotificationRecipient,
+        NotificationRequest,
+        NotificationTemplate,
+    )
+
+    kind = "training_session_updated"
+
+    if _should_throttle(parent.id, athlete_id, kind):
+        logger.debug(
+            "Throttle activo — omitiendo notificación | parent_hash=%s athlete_hash=%s kind=%s",
+            _hash_id(parent.id),
+            _hash_id(athlete_id),
+            kind,
+        )
+        return
+
+    parent_name = (
+        f"{parent.first_name} {parent.last_name}".strip() or "Padre/Acudiente"
+    )
+
+    request = NotificationRequest(
+        recipient=NotificationRecipient(email=parent.email, name=parent_name),
+        template=NotificationTemplate.TRAINING_SESSION_UPDATED,
+        context={
+            "parent_name": parent_name,
+            "athlete_name": athlete_name,
+            "session_date": session_date,
+            "session_time": session_time,
+            "location": session.location or "Por definir",
+            "technical_focus": session.technical_focus or "General",
+            "duration_min": session.duration_min,
+            "coach_name": coach_name,
+            "club_name": club_name,
+            "changes": changes,
+        },
+        send_async=True,
+    )
+
+    await notification_service.send(request, dispatcher=dispatcher)
+    logger.info(
+        "Update despachado | parent_hash=%s athlete_hash=%s session_id=%s kind=%s",
+        _hash_id(parent.id),
+        _hash_id(athlete_id),
+        session.id,
+        kind,
+    )
+
+
+async def _notify_parents_cancel(
+    db: AsyncSession,
+    session: TrainingSession,
+    coach: User,
+    club_id: int,
+    convocados_athlete_ids: list[int],
+    reason: str | None,
+    notification_service: "NotificationService",
+    dispatcher: "TaskDispatcher | None",
+) -> None:
+    """Despacha emails `training_session_cancelled` a los padres de los convocados."""
+    if not convocados_athlete_ids:
+        return
+
+    club_result = await db.execute(select(Club).where(Club.id == club_id))
+    club = club_result.scalar_one_or_none()
+    club_name = club.name if club else "Club Trocha y Ruta"
+
+    coach_name = f"{coach.first_name} {coach.last_name}".strip() or (
+        coach.email.split("@")[0] if coach.email else "Entrenador"
+    )
+
+    session_date = (
+        session.scheduled_date.strftime("%-d de %B de %Y")
+        if session.scheduled_date
+        else ""
+    )
+    session_time = (
+        session.scheduled_start_time.strftime("%H:%M")
+        if session.scheduled_start_time
+        else "Por definir"
+    )
+
+    from app.models.athlete import Athlete, ParentAthlete
+
+    stmt = (
+        select(ParentAthlete, Athlete)
+        .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
+        .join(User, User.id == ParentAthlete.parent_id)
+        .where(ParentAthlete.athlete_id.in_(convocados_athlete_ids))
+        .options(selectinload(ParentAthlete.parent))
+    )
+    rows = await db.execute(stmt)
+    pairs = rows.all()
+
+    for pa, athlete in pairs:
+        parent = pa.parent
+        if parent is None or not parent.email:
+            continue
+
+        athlete_name = f"{athlete.first_name} {athlete.last_name}".strip()
+        try:
+            await _dispatch_cancel(
+                notification_service=notification_service,
+                dispatcher=dispatcher,
+                parent=parent,
+                athlete_id=athlete.id,
+                athlete_name=athlete_name,
+                session=session,
+                session_date=session_date,
+                session_time=session_time,
+                coach_name=coach_name,
+                club_name=club_name,
+                reason=reason or "",
+            )
+        except Exception as exc:
+            logger.warning(
+                "Error despachando notificación cancel | parent_hash=%s athlete_hash=%s kind=training_session_cancelled error_type=%s",
+                _hash_id(parent.id),
+                _hash_id(athlete.id),
+                type(exc).__name__,
+            )
+
+
+async def _dispatch_cancel(
+    notification_service: "NotificationService",
+    dispatcher: "TaskDispatcher | None",
+    parent: User,
+    athlete_id: int,
+    athlete_name: str,
+    session: TrainingSession,
+    session_date: str,
+    session_time: str,
+    coach_name: str,
+    club_name: str,
+    reason: str,
+) -> None:
+    from app.schemas.notification import (
+        NotificationRecipient,
+        NotificationRequest,
+        NotificationTemplate,
+    )
+
+    kind = "training_session_cancelled"
+
+    if _should_throttle(parent.id, athlete_id, kind):
+        logger.debug(
+            "Throttle activo — omitiendo notificación | parent_hash=%s athlete_hash=%s kind=%s",
+            _hash_id(parent.id),
+            _hash_id(athlete_id),
+            kind,
+        )
+        return
+
+    parent_name = (
+        f"{parent.first_name} {parent.last_name}".strip() or "Padre/Acudiente"
+    )
+
+    request = NotificationRequest(
+        recipient=NotificationRecipient(email=parent.email, name=parent_name),
+        template=NotificationTemplate.TRAINING_SESSION_CANCELLED,
+        context={
+            "parent_name": parent_name,
+            "athlete_name": athlete_name,
+            "session_date": session_date,
+            "session_time": session_time,
+            "location": session.location or "Por definir",
+            "coach_name": coach_name,
+            "club_name": club_name,
+            "reason": reason,
+        },
+        send_async=True,
+    )
+
+    await notification_service.send(request, dispatcher=dispatcher)
+    logger.info(
+        "Cancel despachado | parent_hash=%s athlete_hash=%s session_id=%s kind=%s",
+        _hash_id(parent.id),
+        _hash_id(athlete_id),
+        session.id,
+        kind,
+    )
+
+
 async def _create_parallel_calendar_event(
     db: AsyncSession,
     session: TrainingSession,
@@ -353,13 +652,26 @@ async def update_session(
     db: AsyncSession,
     session_id: int,
     payload: TrainingSessionUpdate,
+    *,
+    notification_service: "NotificationService | None" = None,
+    dispatcher: "TaskDispatcher | None" = None,
 ) -> TrainingSession:
-    """Actualiza campos editables de una sesión planificada."""
+    """Actualiza campos editables de una sesión planificada.
+
+    Si `payload.send_notification` y se provee `notification_service`, despacha
+    `training_session_updated` a los padres de los atletas convocados, incluyendo
+    la lista de campos modificados (old → new) en el contexto del template.
+    """
     session = await _get_session_or_raise(db, session_id)
 
-    update_data = payload.model_dump(exclude_unset=True)
+    update_data = payload.model_dump(exclude_unset=True, exclude={"send_notification"})
     if "strava_url" in update_data and update_data["strava_url"] is not None:
         update_data["strava_url"] = str(update_data["strava_url"])
+
+    # Capturar valores anteriores ANTES de mutar la sesión
+    previous_values: dict[str, Any] = {
+        field: getattr(session, field) for field in update_data
+    }
 
     for field, value in update_data.items():
         setattr(session, field, value)
@@ -367,6 +679,41 @@ async def update_session(
     await db.commit()
     refreshed = await get_session(db, session.id)
     assert refreshed is not None
+
+    # Computar diff legible (solo campos que cambiaron)
+    changes: list[dict[str, str]] = []
+    for field, new_val in update_data.items():
+        old_val = previous_values[field]
+        if old_val != new_val:
+            changes.append(
+                {
+                    "field_label": _FIELD_LABELS.get(field, field),
+                    "old": _humanize(old_val),
+                    "new": _humanize(new_val),
+                }
+            )
+
+    is_future = refreshed.scheduled_date >= date.today()
+    if (
+        payload.send_notification
+        and notification_service is not None
+        and changes
+        and refreshed.status == SessionStatus.PLANNED
+        and is_future
+    ):
+        convocados = [a.athlete_id for a in (refreshed.attendances or [])]
+        coach = await _load_session_coach(db, refreshed)
+        await _notify_parents_update(
+            db=db,
+            session=refreshed,
+            coach=coach,
+            club_id=refreshed.club_id,
+            convocados_athlete_ids=convocados,
+            changes=changes,
+            notification_service=notification_service,
+            dispatcher=dispatcher,
+        )
+
     return refreshed
 
 
@@ -391,18 +738,121 @@ async def execute_session(db: AsyncSession, session_id: int) -> TrainingSession:
     return refreshed
 
 
-async def cancel_session(db: AsyncSession, session_id: int) -> TrainingSession:
-    """Soft delete: cambia el estado a CANCELLED sin borrar registros."""
+async def cancel_session(
+    db: AsyncSession,
+    session_id: int,
+    *,
+    send_notification: bool = False,
+    reason: str | None = None,
+    notification_service: "NotificationService | None" = None,
+    dispatcher: "TaskDispatcher | None" = None,
+) -> TrainingSession:
+    """Soft delete: cambia el estado a CANCELLED sin borrar registros.
+
+    Si `send_notification` y la sesión era futura PLANNED, despacha
+    `training_session_cancelled` a los padres de los convocados.
+    """
     session = await _get_session_or_raise(db, session_id)
 
     if session.status == SessionStatus.CANCELLED:
         raise ValueError("La sesión ya está cancelada")
 
+    was_future_planned = (
+        session.status == SessionStatus.PLANNED
+        and session.scheduled_date >= date.today()
+    )
+    convocados_snapshot = [a.athlete_id for a in (session.attendances or [])]
+
     session.status = SessionStatus.CANCELLED
     await db.commit()
     refreshed = await get_session(db, session.id)
     assert refreshed is not None
+
+    if (
+        send_notification
+        and notification_service is not None
+        and was_future_planned
+        and convocados_snapshot
+    ):
+        coach = await _load_session_coach(db, refreshed)
+        await _notify_parents_cancel(
+            db=db,
+            session=refreshed,
+            coach=coach,
+            club_id=refreshed.club_id,
+            convocados_athlete_ids=convocados_snapshot,
+            reason=reason,
+            notification_service=notification_service,
+            dispatcher=dispatcher,
+        )
+
     return refreshed
+
+
+async def update_convocatoria(
+    db: AsyncSession,
+    session_id: int,
+    athlete_ids: list[int],
+    *,
+    send_notification: bool = False,
+    notification_service: "NotificationService | None" = None,
+    dispatcher: "TaskDispatcher | None" = None,
+) -> list[SessionAttendance]:
+    """Bulk-set de convocatoria; si `send_notification`, notifica a los nuevos
+    convocados con `training_session_invite`.
+
+    Delega la mutación a `attendance.bulk_upsert_convocatoria` y orquesta el
+    envío de emails comparando contra los convocados previos.
+    """
+    from app.services.training import attendance as attendance_svc
+
+    session = await _get_session_or_raise(db, session_id)
+    previous_ids = {a.athlete_id for a in (session.attendances or [])}
+
+    attendances = await attendance_svc.bulk_upsert_convocatoria(
+        db=db, session_id=session_id, athlete_ids=athlete_ids
+    )
+
+    added_ids = [aid for aid in athlete_ids if aid not in previous_ids]
+    is_future = session.scheduled_date >= date.today()
+
+    if (
+        send_notification
+        and notification_service is not None
+        and added_ids
+        and session.status == SessionStatus.PLANNED
+        and is_future
+    ):
+        # Recargar sesión con atletas para tener datos frescos en el email
+        refreshed = await get_session(db, session_id)
+        assert refreshed is not None
+        coach = await _load_session_coach(db, refreshed)
+        await _notify_parents(
+            db=db,
+            session=refreshed,
+            coach=coach,
+            club_id=refreshed.club_id,
+            convocados_athlete_ids=added_ids,
+            notification_service=notification_service,
+            dispatcher=dispatcher,
+        )
+
+    return attendances
+
+
+async def _load_session_coach(db: AsyncSession, session: TrainingSession) -> User:
+    """Carga el usuario creador de la sesión (coach) — se usa para el contexto
+    de los emails de update/cancel/update_convocatoria.
+    """
+    result = await db.execute(
+        select(User).where(User.id == session.created_by_user_id)
+    )
+    coach = result.scalar_one_or_none()
+    if coach is None:  # pragma: no cover — invariante de FK NOT NULL
+        raise ValueError(
+            f"Coach con id={session.created_by_user_id} no encontrado"
+        )
+    return coach
 
 
 async def list_sessions(
