@@ -1,0 +1,66 @@
+{% extends "email/base/layout.html" %}
+
+{#
+  Notificación a padres cuando un evento del calendario es cancelado.
+  Variables requeridas: parent_name, athlete_name, event_title,
+                        original_date, reason, club_name
+#}
+
+{% block title %}Cancelado: {{ event_title }} — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1>Evento cancelado</h1>
+
+<p>Hola {{ parent_name }},</p>
+
+<p>
+  Te informamos que el evento <strong>{{ event_title }}</strong>, programado para
+  <strong>{{ original_date }}</strong>, en el que participaría
+  <strong>{{ athlete_name }}</strong>, ha sido <strong>cancelado</strong>.
+</p>
+
+<div class="highlight-box" style="border-left-color: #e05050;">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0; width: 160px;">
+        <strong style="color: #2f2f2f;">Evento:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ event_title }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Fecha original:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ original_date }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Motivo:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ reason }}
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>
+  Lamentamos cualquier inconveniente. Si tienes preguntas o necesitas más información,
+  comunícate directamente con el club.
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #aaaaaa;">
+  Esta notificación fue generada automáticamente por el sistema del club.
+</p>
+
+<p>
+  Saludos,<br>
+  <strong>{{ club_name }}</strong>
+</p>
+{% endblock %}

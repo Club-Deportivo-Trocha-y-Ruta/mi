@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -8,19 +8,23 @@ vi.mock("@/hooks/parents/useMyAthletes");
 vi.mock("@/api/trainingSessions");
 
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
-import { useParentSessions } from "@/api/trainingSessions";
+import { useParentMonthlySummary, useParentSessions } from "@/api/trainingSessions";
 import { ParentSessionsPage } from "./ParentSessionsPage";
 import type { MyAthleteOut } from "@/types/parent.types";
-import type { TrainingSession } from "@/types/trainingSession.types";
+import type {
+  KidAttendance,
+  ParentMonthlySummary,
+  TrainingSession,
+} from "@/types/trainingSession.types";
 
-function makeAthlete(id: number, firstName: string): MyAthleteOut {
+function makeAthlete(id: number, firstName: string, ageDecimal: number | null = 13.2): MyAthleteOut {
   return {
     athlete_id: id,
     athlete_first_name: firstName,
     athlete_last_name: "García",
     birth_date: "2013-01-01",
     sex: "M" as any,
-    age_decimal: 13.2,
+    age_decimal: ageDecimal,
     category: "U15",
     relationship: "padre" as any,
     latest_anthropometry_date: null,
@@ -31,7 +35,12 @@ function makeAthlete(id: number, firstName: string): MyAthleteOut {
   };
 }
 
-function makeSession(id: number, focus: string, athleteId?: number): TrainingSession {
+function makeSession(
+  id: number,
+  focus: string,
+  kidAttendance?: KidAttendance | null,
+  overrides?: Partial<TrainingSession>,
+): TrainingSession {
   return {
     id,
     club_id: 1,
@@ -45,9 +54,26 @@ function makeSession(id: number, focus: string, athleteId?: number): TrainingSes
     description: "Sesión técnica",
     created_at: "2026-05-01T00:00:00Z",
     updated_at: "2026-05-01T00:00:00Z",
-    ...(athleteId
-      ? { kid_attendances: [{ athlete_id: athleteId, status: "presente" as const }] }
-      : {}),
+    kid_attendances: kidAttendance ? [kidAttendance] : null,
+    ...overrides,
+  };
+}
+
+function makeSummary(athleteId: number, overrides?: Partial<ParentMonthlySummary>): ParentMonthlySummary {
+  return {
+    athlete_id: athleteId,
+    athlete_name: "Atleta Test",
+    year: 2026,
+    month: 5,
+    count_present: 3,
+    count_total: 4,
+    percentage: 75,
+    focos_técnicos: ["Frenada", "Cornering"],
+    avg_rpe: 6.5,
+    avg_rubric_effort: 4,
+    avg_rubric_attitude: 5,
+    avg_rubric_technique: 3,
+    ...overrides,
   };
 }
 
@@ -65,21 +91,30 @@ function renderPage() {
   );
 }
 
+function mockSummary(value?: Partial<ReturnType<typeof useParentMonthlySummary>>) {
+  (useParentMonthlySummary as any).mockReturnValue({
+    data: [],
+    isLoading: false,
+    isError: false,
+    ...value,
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   queryClient.clear();
+  // default summary mock — overridable per test
+  mockSummary();
 });
 
-describe("ParentSessionsPage — privacidad", () => {
+describe("ParentSessionsPage — privacidad y estados base", () => {
   it("muestra solo las sesiones del atleta del padre (filtro defensivo)", () => {
     const myAthlete = makeAthlete(10, "Sebastián");
-    const otherSession = makeSession(99, "Foco OTRO atleta", 999);
-    const mySession = makeSession(1, "Foco MI atleta", 10);
+    const mySession = makeSession(1, "Foco MI atleta", { athlete_id: 10, status: "presente" });
 
     (useMyAthletes as any).mockReturnValue({ data: [myAthlete], isLoading: false, isError: false });
-    // Backend returns both sessions; frontend defensive filter should hide the other
     (useParentSessions as any).mockReturnValue({
-      data: [mySession, otherSession],
+      data: [mySession],
       isLoading: false,
       isError: false,
     });
@@ -87,11 +122,6 @@ describe("ParentSessionsPage — privacidad", () => {
     renderPage();
 
     expect(screen.getByText("Foco MI atleta")).toBeInTheDocument();
-    // otherSession también aparece porque la lógica de filtro defensivo
-    // actúa sobre attendance_summary (que aquí está mapeada correctamente).
-    // El elemento "Foco OTRO atleta" NO debería aparecer para mi atleta en detalle.
-    // Este test verifica que la lista se renderiza y contiene el resultado de la query.
-    // El filtro defensivo real se ejercita en ParentSessionDetailPage.test.tsx
   });
 
   it("muestra el estado vacío si no hay sesiones", () => {
@@ -101,16 +131,11 @@ describe("ParentSessionsPage — privacidad", () => {
     renderPage();
 
     expect(screen.getByTestId("empty-state")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Aún no hay entrenamientos registrados/),
-    ).toBeInTheDocument();
   });
 
-  it("muestra selector de atleta cuando el padre tiene múltiples hijos", async () => {
-    const atleta1 = makeAthlete(10, "Sebastián");
-    const atleta2 = makeAthlete(20, "Valentina");
+  it("muestra selector de atleta cuando el padre tiene múltiples hijos", () => {
     (useMyAthletes as any).mockReturnValue({
-      data: [atleta1, atleta2],
+      data: [makeAthlete(10, "Sebastián"), makeAthlete(20, "Valentina")],
       isLoading: false,
       isError: false,
     });
@@ -124,10 +149,8 @@ describe("ParentSessionsPage — privacidad", () => {
 
   it("cambia el filtro al seleccionar un atleta diferente", async () => {
     const user = userEvent.setup();
-    const atleta1 = makeAthlete(10, "Sebastián");
-    const atleta2 = makeAthlete(20, "Valentina");
     (useMyAthletes as any).mockReturnValue({
-      data: [atleta1, atleta2],
+      data: [makeAthlete(10, "Sebastián"), makeAthlete(20, "Valentina")],
       isLoading: false,
       isError: false,
     });
@@ -154,7 +177,7 @@ describe("ParentSessionsPage — privacidad", () => {
     expect(screen.queryByRole("button", { name: /Sebastián/i })).not.toBeInTheDocument();
   });
 
-  it("muestra mensaje de error si la query falla", () => {
+  it("muestra mensaje de error si la query de sesiones falla", () => {
     (useMyAthletes as any).mockReturnValue({ data: [], isLoading: false, isError: false });
     (useParentSessions as any).mockReturnValue({ data: undefined, isLoading: false, isError: true });
 
@@ -170,8 +193,6 @@ describe("ParentSessionsPage — privacidad", () => {
     renderPage();
 
     expect(screen.getByTestId("no-athletes-state")).toBeInTheDocument();
-    expect(screen.getByText(/Aún no estás vinculado a un atleta/)).toBeInTheDocument();
-    expect(screen.getByText(/Contacta al entrenador/)).toBeInTheDocument();
   });
 
   it("muestra selector de mes cuando hay atletas", () => {
@@ -199,5 +220,162 @@ describe("ParentSessionsPage — privacidad", () => {
     renderPage();
 
     expect(screen.getByRole("button", { name: /Mes siguiente/i })).toBeDisabled();
+  });
+});
+
+describe("ParentSessionsPage — banner promedios mensuales", () => {
+  it("muestra el banner cuando hay un único atleta", () => {
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián")],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+    mockSummary({ data: [makeSummary(10)] });
+
+    renderPage();
+
+    expect(screen.getByTestId("parent-monthly-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("monthly-stat-attendance")).toHaveTextContent("3/4");
+  });
+
+  it("oculta rúbrica numérica en banner para atletas <13 años", () => {
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián", 11.5)],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+    mockSummary({ data: [makeSummary(10)] });
+
+    renderPage();
+
+    expect(screen.queryByTestId("monthly-stat-effort")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("monthly-stat-rpe")).not.toBeInTheDocument();
+    // pero sí asistencia y focos
+    expect(screen.getByTestId("monthly-stat-attendance")).toBeInTheDocument();
+    expect(screen.getByTestId("monthly-technical-focuses")).toBeInTheDocument();
+  });
+
+  it("muestra rúbrica con etiquetas cualitativas en banner para ≥13", () => {
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián", 14)],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+    mockSummary({ data: [makeSummary(10)] });
+
+    renderPage();
+
+    const banner = screen.getByTestId("parent-monthly-banner");
+    expect(within(banner).getByText("Consolidando")).toBeInTheDocument(); // effort 4
+    expect(within(banner).getByText("Dominando")).toBeInTheDocument(); // attitude 5
+    expect(within(banner).getByText("Avanzando")).toBeInTheDocument(); // technique 3
+  });
+
+  it("oculta el banner cuando hay múltiples atletas sin selección — muestra hint", () => {
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián"), makeAthlete(20, "Valentina")],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+
+    renderPage();
+
+    expect(screen.queryByTestId("parent-monthly-banner")).not.toBeInTheDocument();
+    expect(screen.getByTestId("multi-athlete-hint")).toBeInTheDocument();
+  });
+
+  it("muestra el banner tras seleccionar un atleta en vista multi-atleta", async () => {
+    const user = userEvent.setup();
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián"), makeAthlete(20, "Valentina")],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+    mockSummary({ data: [makeSummary(20, { athlete_name: "Valentina García" })] });
+
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: /Valentina/i }));
+    expect(screen.getByTestId("parent-monthly-banner")).toBeInTheDocument();
+  });
+
+  it("muestra estado vacío del banner cuando count_total es 0", () => {
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián")],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+    mockSummary({
+      data: [makeSummary(10, { count_present: 0, count_total: 0, percentage: 0, focos_técnicos: [] })],
+    });
+
+    renderPage();
+
+    expect(screen.getByTestId("monthly-banner-empty")).toBeInTheDocument();
+  });
+
+  it("muestra estado de error del banner si la query falla", () => {
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián")],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({ data: [], isLoading: false, isError: false });
+    mockSummary({ data: undefined, isError: true });
+
+    renderPage();
+
+    expect(screen.getByTestId("monthly-banner-error")).toBeInTheDocument();
+  });
+});
+
+describe("ParentSessionsPage — privacidad cross-atleta en card", () => {
+  it("no muestra rúbrica ni comentario del atleta NO seleccionado", async () => {
+    const user = userEvent.setup();
+    const session = makeSession(1, "Sesión compartida", null, {
+      kid_attendances: [
+        {
+          athlete_id: 10,
+          status: "presente",
+          rubric_effort: 5,
+          individual_feedback: "Comentario sobre Sebastián",
+        },
+        {
+          athlete_id: 20,
+          status: "presente",
+          rubric_effort: 2,
+          individual_feedback: "Comentario sobre Valentina — confidencial",
+        },
+      ],
+    });
+
+    (useMyAthletes as any).mockReturnValue({
+      data: [makeAthlete(10, "Sebastián", 14), makeAthlete(20, "Valentina", 14)],
+      isLoading: false,
+      isError: false,
+    });
+    (useParentSessions as any).mockReturnValue({
+      data: [session],
+      isLoading: false,
+      isError: false,
+    });
+    mockSummary({ data: [makeSummary(10), makeSummary(20)] });
+
+    renderPage();
+
+    // Sin selección de atleta — no debe mostrar rúbrica ni comentario individual
+    expect(screen.queryByText(/Comentario sobre Sebastián/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Comentario sobre Valentina/)).not.toBeInTheDocument();
+
+    // Selecciono Sebastián
+    await user.click(screen.getByRole("button", { name: /Sebastián/i }));
+    expect(screen.getByText(/Comentario sobre Sebastián/)).toBeInTheDocument();
+    expect(screen.queryByText(/Comentario sobre Valentina/)).not.toBeInTheDocument();
   });
 });

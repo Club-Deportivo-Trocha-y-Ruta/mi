@@ -1,0 +1,97 @@
+{% extends "email/base/layout.html" %}
+
+{#
+  Notificación a padres cuando un evento del calendario es reagendado.
+  Variables requeridas: parent_name, athlete_name, event_title,
+                        old_date, old_time, new_date, new_time, new_location, club_name
+#}
+
+{% block title %}Cambio de fecha: {{ event_title }} — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1>Evento reagendado</h1>
+
+<p>Hola {{ parent_name }},</p>
+
+<p>
+  Te informamos que el evento <strong>{{ event_title }}</strong>, en el que participa
+  <strong>{{ athlete_name }}</strong>, ha sido reagendado.
+</p>
+
+<div class="highlight-box">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      <td colspan="2" style="font-size: 13px; font-weight: bold; color: #2f2f2f; padding: 4px 0 8px 0;">
+        Fecha y hora anterior
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 4px 0; width: 160px;">
+        <strong style="color: #2f2f2f;">Fecha:</strong>
+      </td>
+      <td style="font-size: 13px; color: #898989; padding: 4px 0; text-decoration: line-through;">
+        {{ old_date }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 4px 0;">
+        <strong style="color: #2f2f2f;">Hora:</strong>
+      </td>
+      <td style="font-size: 13px; color: #898989; padding: 4px 0; text-decoration: line-through;">
+        {{ old_time }}
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div class="highlight-box" style="border-left-color: #8be000;">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      <td colspan="2" style="font-size: 13px; font-weight: bold; color: #2f2f2f; padding: 4px 0 8px 0;">
+        Nueva fecha y hora
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 4px 0; width: 160px;">
+        <strong style="color: #2f2f2f;">Fecha:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 4px 0;">
+        {{ new_date }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 4px 0;">
+        <strong style="color: #2f2f2f;">Hora:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 4px 0;">
+        {{ new_time }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 4px 0;">
+        <strong style="color: #2f2f2f;">Lugar:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 4px 0;">
+        {{ new_location }}
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>
+  Por favor, actualiza tu agenda. Si tienes alguna duda o inconveniente con la nueva fecha,
+  comunícate con el club.
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #aaaaaa;">
+  Esta notificación fue generada automáticamente. Los datos del evento han sido actualizados
+  en el sistema del club.
+</p>
+
+<p>
+  Saludos,<br>
+  <strong>{{ club_name }}</strong>
+</p>
+{% endblock %}

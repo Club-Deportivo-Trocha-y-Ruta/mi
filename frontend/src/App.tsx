@@ -24,6 +24,10 @@ import { ReportDetailPage } from "@/routes/training/ReportDetailPage";
 import { ParentSessionsPage } from "@/routes/parents/training/ParentSessionsPage";
 import { ParentSessionDetailPage } from "@/routes/parents/training/ParentSessionDetailPage";
 import { ParentMonthlyOverviewPage } from "@/routes/parents/training/ParentMonthlyOverviewPage";
+import { CalendarPage } from "@/routes/calendar/CalendarPage";
+import { EventFormPage } from "@/routes/calendar/EventFormPage";
+import { ParentCalendarPage } from "@/routes/parents/calendar/ParentCalendarPage";
+import { ParentEventDetailPage } from "@/routes/parents/calendar/ParentEventDetailPage";
 import { UserRole } from "@/types/enums";
 
 const queryClient = new QueryClient({
@@ -207,6 +211,50 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        {/* ── Calendar routes (coach/admin) ── */}
+        <Route
+          path="/calendar"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <CalendarPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/calendar/events/new"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <EventFormPage mode="create" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/calendar/events/:id/edit"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <EventFormPage mode="edit" />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Calendar routes (parent) ── */}
+        <Route
+          path="/parents/calendar"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.parent]}>
+              <ParentCalendarPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/parents/calendar/events/:id"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.parent]}>
+              <ParentEventDetailPage />
+            </ProtectedRoute>
+          }
+        />
+
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/privacidad" element={<PrivacyPage />} />
         <Route

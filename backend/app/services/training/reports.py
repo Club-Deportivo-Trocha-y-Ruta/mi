@@ -265,6 +265,10 @@ async def parent_monthly_summary(
 
     count_present = 0
     count_total = len(session_ids)
+    avg_rpe: float | None = None
+    avg_effort: float | None = None
+    avg_attitude: float | None = None
+    avg_technique: float | None = None
 
     if session_ids:
         from app.models.training_session import AttendanceStatus
@@ -280,6 +284,15 @@ async def parent_monthly_summary(
             if a.status in {AttendanceStatus.PRESENTE, AttendanceStatus.TARDE}
         )
 
+        def _avg(values: list[int | None]) -> float | None:
+            clean = [v for v in values if v is not None]
+            return round(sum(clean) / len(clean), 1) if clean else None
+
+        avg_rpe = _avg([a.rpe_omni for a in attendances])
+        avg_effort = _avg([a.rubric_effort for a in attendances])
+        avg_attitude = _avg([a.rubric_attitude for a in attendances])
+        avg_technique = _avg([a.rubric_technique for a in attendances])
+
     pct = round(count_present / count_total * 100, 1) if count_total > 0 else 0.0
 
     return ParentMonthlySummary(
@@ -289,6 +302,10 @@ async def parent_monthly_summary(
         count_total=count_total,
         percentage=pct,
         focos_técnicos=focos,
+        avg_rpe=avg_rpe,
+        avg_rubric_effort=avg_effort,
+        avg_rubric_attitude=avg_attitude,
+        avg_rubric_technique=avg_technique,
     )
 
 

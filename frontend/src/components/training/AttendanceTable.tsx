@@ -1,5 +1,5 @@
-import { useCallback, useRef } from "react";
-import { AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
+import { AlertCircle, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 
 import type { Attendance, AttendanceStatus } from "@/types/trainingSession.types";
 import { RubricSliders } from "./RubricSliders";
@@ -39,6 +39,7 @@ interface AttendanceRowProps {
 
 function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) {
   const rowRef = useRef<HTMLTableRowElement>(null);
+  const reasonInputRef = useRef<HTMLInputElement | null>(null);
 
   const {
     control,
@@ -49,11 +50,18 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
     doSave,
     requiresReason,
     allowsRubric,
+    needsReasonAlert,
   } = useAttendanceForm(attendance, sessionId, disabled);
 
   const currentStatus = (formValues.status ?? attendance.status) as AttendanceStatus;
   const rubricEnabled = allowsRubric && !disabled;
   const feedbackVal = formValues.individual_feedback ?? "";
+
+  useEffect(() => {
+    if (needsReasonAlert) reasonInputRef.current?.focus();
+  }, [needsReasonAlert]);
+
+  const reasonField = register("excuse_reason");
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTableRowElement>) => {
@@ -91,7 +99,7 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
                 data-testid="saved-indicator"
               />
             )}
-            {savedIndicator === "error" && (
+            {savedIndicator === "error" && !needsReasonAlert && (
               <span
                 className="flex items-center gap-1 text-xs text-red-600"
                 title="Error al guardar"
@@ -106,6 +114,16 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
                 >
                   <RefreshCw size={12} aria-label="Reintentar" />
                 </button>
+              </span>
+            )}
+            {needsReasonAlert && (
+              <span
+                className="flex items-center gap-1 text-xs text-amber-600"
+                title="Falta razón"
+                data-testid="needs-reason-alert"
+              >
+                <AlertTriangle size={14} aria-hidden="true" />
+                Falta razón
               </span>
             )}
           </span>
@@ -132,17 +150,37 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
       {/* Razón */}
       <td className="px-3 py-2">
         {requiresReason ? (
-          <input
-            {...register("excuse_reason")}
-            type="text"
-            disabled={disabled}
-            placeholder="Razón (requerida)"
-            maxLength={300}
-            aria-label="Razón de ausencia"
-            aria-required="true"
-            className="w-full min-w-[140px] rounded-lg px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-          />
+          <div className="flex flex-col gap-1">
+            <input
+              {...reasonField}
+              ref={(el) => {
+                reasonField.ref(el);
+                reasonInputRef.current = el;
+              }}
+              type="text"
+              disabled={disabled}
+              placeholder="Razón (requerida)"
+              maxLength={300}
+              aria-label="Razón de ausencia"
+              aria-required="true"
+              aria-invalid={needsReasonAlert}
+              aria-describedby={needsReasonAlert ? `reason-help-${attendance.athlete_id}` : undefined}
+              className="w-full min-w-[140px] rounded-lg px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
+              style={{
+                boxShadow: needsReasonAlert
+                  ? "rgba(217, 119, 6, 0.5) 0px 0px 0px 2px"
+                  : "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
+              }}
+            />
+            {needsReasonAlert && (
+              <p
+                id={`reason-help-${attendance.athlete_id}`}
+                className="text-[10px] text-amber-700"
+              >
+                Escribe una razón para guardar este estado
+              </p>
+            )}
+          </div>
         ) : (
           <span className="text-xs text-mid-gray">—</span>
         )}
@@ -171,6 +209,7 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
 }
 
 function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps) {
+  const reasonInputRef = useRef<HTMLInputElement | null>(null);
   const {
     control,
     register,
@@ -179,11 +218,18 @@ function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps)
     doSave,
     requiresReason,
     allowsRubric,
+    needsReasonAlert,
   } = useAttendanceForm(attendance, sessionId, disabled);
 
   const rubricEnabled = allowsRubric && !disabled;
   const feedbackVal = formValues.individual_feedback ?? "";
   const currentStatus = (formValues.status ?? attendance.status) as AttendanceStatus;
+
+  useEffect(() => {
+    if (needsReasonAlert) reasonInputRef.current?.focus();
+  }, [needsReasonAlert]);
+
+  const reasonField = register("excuse_reason");
 
   const athleteName = attendance.athlete_name ?? `Atleta #${attendance.athlete_id}`;
 
@@ -198,7 +244,7 @@ function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps)
           {savedIndicator === "saved" && (
             <CheckCircle2 size={14} className="text-green-600" aria-label="Guardado" />
           )}
-          {savedIndicator === "error" && (
+          {savedIndicator === "error" && !needsReasonAlert && (
             <button
               type="button"
               onClick={() => doSave(formValues as AttendanceFormValues)}
@@ -206,6 +252,15 @@ function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps)
             >
               Error — reintentar
             </button>
+          )}
+          {needsReasonAlert && (
+            <span
+              className="flex items-center gap-1 text-xs text-amber-600"
+              data-testid="needs-reason-alert"
+            >
+              <AlertTriangle size={12} aria-hidden="true" />
+              Falta razón
+            </span>
           )}
           <select
             {...register("status")}
@@ -224,17 +279,37 @@ function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps)
       </div>
 
       {requiresReason && (
-        <input
-          {...register("excuse_reason")}
-          type="text"
-          disabled={disabled}
-          placeholder="Razón (requerida)"
-          maxLength={300}
-          aria-label="Razón de ausencia"
-          aria-required="true"
-          className="w-full rounded-lg px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid-gray outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-        />
+        <div className="flex flex-col gap-1">
+          <input
+            {...reasonField}
+            ref={(el) => {
+              reasonField.ref(el);
+              reasonInputRef.current = el;
+            }}
+            type="text"
+            disabled={disabled}
+            placeholder="Razón (requerida)"
+            maxLength={300}
+            aria-label="Razón de ausencia"
+            aria-required="true"
+            aria-invalid={needsReasonAlert}
+            aria-describedby={needsReasonAlert ? `reason-help-card-${attendance.athlete_id}` : undefined}
+            className="w-full rounded-lg px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid-gray outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
+            style={{
+              boxShadow: needsReasonAlert
+                ? "rgba(217, 119, 6, 0.5) 0px 0px 0px 2px"
+                : "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
+            }}
+          />
+          {needsReasonAlert && (
+            <p
+              id={`reason-help-card-${attendance.athlete_id}`}
+              className="text-[10px] text-amber-700"
+            >
+              Escribe una razón para guardar este estado
+            </p>
+          )}
+        </div>
       )}
 
       {rubricEnabled && (

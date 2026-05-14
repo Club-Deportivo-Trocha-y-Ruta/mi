@@ -141,3 +141,103 @@ async def can_view_monthly_report(
         return not individual
 
     return False
+
+
+# ---------------------------------------------------------------------------
+# Permisos del calendario de eventos
+# ---------------------------------------------------------------------------
+
+
+async def can_view_calendar_event(
+    db: AsyncSession,
+    user: User,
+    event: object,
+) -> bool:
+    """
+    Admin: siempre.
+    Coach: si pertenece al club del evento.
+    Parent: si alguno de sus atletas está en la audiencia del evento.
+    """
+    if user.role == UserRole.admin:
+        return True
+
+    if user.role == UserRole.coach:
+        role = await user_club_role(db, user.id, event.club_id)  # type: ignore[attr-defined]
+        return role is not None
+
+    if user.role == UserRole.parent:
+        from app.models.calendar_event import EventType  # late import evita circular
+        from app.services.calendar.audiences import any_athlete_in_audience  # late import
+
+        athlete_ids = await parent_athlete_ids(db, user.id)
+        if not athlete_ids:
+            return False
+        # Cumpleaños: visibles a todos los miembros del club (decisión de producto).
+        # El padre los ve si tiene al menos un atleta en el club del evento.
+        if event.event_type == EventType.BIRTHDAY:  # type: ignore[attr-defined]
+            from app.models.athlete import Athlete  # late import
+            result = await db.execute(
+                select(Athlete.id).where(
+                    Athlete.id.in_(athlete_ids),
+                    Athlete.club_id == event.club_id,  # type: ignore[attr-defined]
+                )
+            )
+            return result.first() is not None
+        return await any_athlete_in_audience(db, event, athlete_ids)  # type: ignore[arg-type]
+
+    return False
+
+
+async def can_edit_calendar_event(
+    db: AsyncSession,
+    user: User,
+    event: object,
+) -> bool:
+    """
+    Admin: siempre.
+    Coach del club: siempre.
+    Otros: False.
+    """
+    if user.role == UserRole.admin:
+        return True
+
+    if user.role == UserRole.coach:
+        role = await user_club_role(db, user.id, event.club_id)  # type: ignore[attr-defined]
+        return role is not None
+
+    return False
+
+
+async def can_rsvp_event(
+    db: AsyncSession,
+    user: User,
+    event: object,
+    athlete_id: int,
+) -> bool:
+    """
+    Parent: el atleta debe ser hijo suyo + estar en audiencia + evento no es training_session.
+    Coach del club: siempre.
+    Admin: siempre.
+    """
+    from app.models.calendar_event import EventType  # late import evita circular
+
+    if user.role == UserRole.admin:
+        return True
+
+    if user.role == UserRole.coach:
+        role = await user_club_role(db, user.id, event.club_id)  # type: ignore[attr-defined]
+        return role is not None
+
+    if user.role == UserRole.parent:
+        # No permitir RSVP en training_sessions
+        if event.event_type == EventType.TRAINING_SESSION:  # type: ignore[attr-defined]
+            return False
+
+        my_ids = await parent_athlete_ids(db, user.id)
+        if athlete_id not in my_ids:
+            return False
+
+        from app.services.calendar.audiences import event_visible_to_athlete  # late import
+        return await event_visible_to_athlete(db, event, athlete_id)  # type: ignore[arg-type]
+
+    return False

@@ -173,6 +173,59 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
             "Incluye extracto de narrativa IA y PDF adjunto con métricas completas."
         ),
     ),
+    NotificationTemplate.CALENDAR_EVENT_INVITE: EmailTemplateSpec(
+        template_id="calendar_event_invite",
+        subject_template="[Trocha y Ruta] {{ event_type_label }} {{ event_date }} - {{ athlete_name }}",
+        body_path="email/calendar_event_invite.html",
+        required_context_keys=frozenset(
+            {
+                "parent_name",
+                "athlete_name",
+                "event_title",
+                "event_type_label",
+                "event_date",
+                "event_time",
+                "location",
+                "club_name",
+            }
+        ),
+        description="Notificación a padres cuando un atleta es incluido en un evento del calendario.",
+    ),
+    NotificationTemplate.CALENDAR_EVENT_RESCHEDULED: EmailTemplateSpec(
+        template_id="calendar_event_rescheduled",
+        subject_template="[Trocha y Ruta] Cambio de fecha: {{ event_title }} - {{ athlete_name }}",
+        body_path="email/calendar_event_rescheduled.html",
+        required_context_keys=frozenset(
+            {
+                "parent_name",
+                "athlete_name",
+                "event_title",
+                "old_date",
+                "old_time",
+                "new_date",
+                "new_time",
+                "new_location",
+                "club_name",
+            }
+        ),
+        description="Notificación a padres cuando un evento del calendario es reagendado.",
+    ),
+    NotificationTemplate.CALENDAR_EVENT_CANCELLED: EmailTemplateSpec(
+        template_id="calendar_event_cancelled",
+        subject_template="[Trocha y Ruta] Cancelado: {{ event_title }} - {{ athlete_name }}",
+        body_path="email/calendar_event_cancelled.html",
+        required_context_keys=frozenset(
+            {
+                "parent_name",
+                "athlete_name",
+                "event_title",
+                "original_date",
+                "reason",
+                "club_name",
+            }
+        ),
+        description="Notificación a padres cuando un evento del calendario es cancelado.",
+    ),
 }
 
 # ---------------------------------------------------------------------------

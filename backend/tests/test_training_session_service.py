@@ -168,11 +168,11 @@ class TestCreateSession:
             )
 
         assert result is not None
-        # debe haber añadido 1 TrainingSession + 2 SessionAttendance
-        assert len(add_calls) == 3
+        # debe haber añadido 1 TrainingSession + 2 SessionAttendance + CalendarEvent + EventAudience
+        # (create_session crea siempre el CalendarEvent paralelo)
         session_added = add_calls[0]
         assert isinstance(session_added, TrainingSession)
-        attendances_added = [a for a in add_calls[1:] if isinstance(a, SessionAttendance)]
+        attendances_added = [a for a in add_calls if isinstance(a, SessionAttendance)]
         assert len(attendances_added) == 2
         athlete_ids_added = {a.athlete_id for a in attendances_added}
         assert athlete_ids_added == {100, 101}

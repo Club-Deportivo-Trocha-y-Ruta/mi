@@ -115,10 +115,36 @@ describe("SessionFormPage — modo crear", () => {
     expect(screen.getByText("Nueva sesión")).toBeInTheDocument();
     expect(screen.getByLabelText(/Fecha/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Hora de inicio/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Duración/i)).toBeInTheDocument();
+    // DurationPicker: grupo accesible con etiqueta "Duración"
+    expect(screen.getByRole("group", { name: /Duración/i })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: /Horas/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /Minutos/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/Lugar/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Foco técnico/i)).toBeInTheDocument();
     expect(screen.getByLabelText("Descripción")).toBeInTheDocument();
+  });
+
+  it("DurationPicker inicia con default 1h 0min (60 minutos)", () => {
+    renderCreate();
+    expect(screen.getByRole("spinbutton", { name: /Horas/i })).toHaveValue(1);
+    expect(screen.getByRole("combobox", { name: /Minutos/i })).toHaveValue("0");
+    expect(screen.getByText("Total: 60 minutos")).toBeInTheDocument();
+  });
+
+  it("chips de preset están disponibles", () => {
+    renderCreate();
+    expect(screen.getByRole("button", { name: "1 h" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1 h 30 min" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2 h" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2 h 30 min" })).toBeInTheDocument();
+  });
+
+  it("chip '2 h' actualiza el DurationPicker a 120 minutos", () => {
+    renderCreate();
+    fireEvent.click(screen.getByRole("button", { name: "2 h" }));
+    expect(screen.getByRole("spinbutton", { name: /Horas/i })).toHaveValue(2);
+    expect(screen.getByRole("combobox", { name: /Minutos/i })).toHaveValue("0");
+    expect(screen.getByText("Total: 120 minutos")).toBeInTheDocument();
   });
 
   it("muestra errores de validación al hacer submit sin datos", async () => {
@@ -155,6 +181,8 @@ describe("SessionFormPage — modo crear", () => {
 
     fireEvent.change(screen.getByLabelText(/Fecha/i), { target: { value: "2026-12-01" } });
     fireEvent.change(screen.getByLabelText(/Hora de inicio/i), { target: { value: "08:00" } });
+    // Establece duración: 2h 30min = 150 minutos usando el chip
+    fireEvent.click(screen.getByRole("button", { name: "2 h 30 min" }));
     fireEvent.change(screen.getByLabelText(/Lugar/i), { target: { value: "Pista XCO" } });
     fireEvent.change(screen.getByLabelText(/Foco técnico/i), { target: { value: "Técnica de frenada" } });
     fireEvent.change(screen.getByLabelText("Descripción"), { target: { value: "Descripción completa para la sesión" } });
@@ -166,6 +194,7 @@ describe("SessionFormPage — modo crear", () => {
       expect(mutateAsyncStub).toHaveBeenCalledWith(
         expect.objectContaining({
           scheduled_date: "2026-12-01",
+          duration_min: 150,
           location: "Pista XCO",
           technical_focus: "Técnica de frenada",
           convocados_athlete_ids: [1],
@@ -173,5 +202,25 @@ describe("SessionFormPage — modo crear", () => {
       );
     });
     expect(mockNavigate).toHaveBeenCalledWith("/training/sessions/99");
+  });
+
+  it("llama a createMutation con duration_min=60 cuando no se modifica la duración", async () => {
+    mutateAsyncStub.mockResolvedValueOnce({ id: 88 });
+    renderCreate();
+
+    fireEvent.change(screen.getByLabelText(/Fecha/i), { target: { value: "2026-12-01" } });
+    fireEvent.change(screen.getByLabelText(/Hora de inicio/i), { target: { value: "09:00" } });
+    fireEvent.change(screen.getByLabelText(/Lugar/i), { target: { value: "Pista XCO" } });
+    fireEvent.change(screen.getByLabelText(/Foco técnico/i), { target: { value: "Técnica" } });
+    fireEvent.change(screen.getByLabelText("Descripción"), { target: { value: "Sesión estándar de una hora" } });
+    fireEvent.click(screen.getByTestId("select-athlete"));
+
+    fireEvent.click(screen.getByRole("button", { name: /Crear sesión/i }));
+
+    await waitFor(() => {
+      expect(mutateAsyncStub).toHaveBeenCalledWith(
+        expect.objectContaining({ duration_min: 60 }),
+      );
+    });
   });
 });
