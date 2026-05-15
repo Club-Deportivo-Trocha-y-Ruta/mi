@@ -83,6 +83,42 @@ async def get_current_consent_for_athlete(
     return result.scalar_one_or_none()
 
 
+async def athlete_has_ai_processing_consent(
+    athlete_id: int, db: AsyncSession
+) -> bool:
+    """Indica si el atleta tiene autorización vigente para procesamiento con IA.
+
+    Bajo Ley 1581/2012 Art. 9, enviar datos de menores a un tercero (Anthropic/Google)
+    requiere autorización expresa para esa finalidad. El campo
+    `third_party_sharing` actúa como compuerta para el procesamiento con LLM.
+
+    Regla:
+      - Si el atleta NO tiene padres vinculados (caso degenerado dev/admin):
+        se autoriza por defecto.
+      - Si tiene padres vinculados y existe AL MENOS un consentimiento vigente
+        con `third_party_sharing=True`: se autoriza.
+      - En cualquier otro caso (sin consentimiento o todos `False`): se deniega.
+    """
+    pa_stmt = select(ParentAthlete.parent_id).where(
+        ParentAthlete.athlete_id == athlete_id
+    )
+    parent_ids = [row for row in (await db.execute(pa_stmt)).scalars().all()]
+    if not parent_ids:
+        return True
+
+    stmt = (
+        select(ParentalConsent.id)
+        .where(
+            ParentalConsent.athlete_id == athlete_id,
+            ParentalConsent.parent_user_id.in_(parent_ids),
+            ParentalConsent.withdrawn_at.is_(None),
+            ParentalConsent.third_party_sharing.is_(True),
+        )
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none() is not None
+
+
 def _build_consent_event_out(consent: ParentalConsent) -> ConsentEventOut:
     """Construye un ConsentEventOut desde un registro ORM."""
     policy_version = (
@@ -174,12 +210,19 @@ async def renew_consent(
     ip_address: str | None,
     user_agent: str | None,
     db: AsyncSession,
+    accept_third_party_sharing: bool = False,
 ) -> ParentalConsent:
     """Registra un nuevo consentimiento (INSERT).
 
     Si existe un consentimiento vigente previo para el mismo padre+atleta,
     lo marca como supersedido antes de insertar el nuevo. Garantiza append-only:
     no hace UPDATE del consentimiento previo salvo withdrawn_at y withdrawal_reason.
+
+    `accept_third_party_sharing` habilita el procesamiento con IA (Anthropic/Google
+    Gemini) para generar explicaciones PHV legibles para padres. Es opcional y
+    separable: si se omite o se envía False, el servicio principal no se ve afectado
+    pero POST /api/ai/athletes/{id}/phv-explanation retornará 451.
+    `training_tracking` se mantiene como False — esa finalidad aún no está activa.
     """
     # Validar que la versión de política existe
     policy = await get_policy_by_version(policy_version, db)
@@ -221,10 +264,11 @@ async def renew_consent(
         ip_address=ip_address,
         user_agent=user_agent,
         data_collection=accept_data_collection,
-        # Política v1.1: tracking y terceros no son finalidades activas
+        # training_tracking aún no está activo como finalidad — siempre False
         training_tracking=False,
         anthropometry=accept_anthropometry,
-        third_party_sharing=False,
+        # third_party_sharing: habilitado desde política v1.2 para procesamiento IA
+        third_party_sharing=accept_third_party_sharing,
     )
     db.add(new_consent)
     await db.flush()

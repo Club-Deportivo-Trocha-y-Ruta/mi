@@ -138,3 +138,194 @@ def test_report_lists_violations():
     report = g.scrub_with_report("Toma creatina hoy.")
     assert "suplements" in report.violations
     assert not report.rejected
+
+
+# ---------------------------------------------------------------------------
+# Entrenamiento diario (regla `daily_training`)
+# ---------------------------------------------------------------------------
+#
+# Bypass del LLM al límite "máx 5 días/semana": formulaciones que no usan
+# el patrón "6/7 días por semana" pero implican entrenamiento diario.
+# La regla exige co-ocurrencia con vocabulario de entrenamiento para evitar
+# falsos positivos como "recordar todos los días tomar agua".
+
+
+@pytest.mark.parametrize(
+    "frase",
+    [
+        # "todos los días" + verbo/sustantivo de entrenamiento (ambos órdenes)
+        "Entrenar todos los días para mejorar.",
+        "Todos los días subir a la bicicleta es ideal.",
+        # variante sin tilde
+        "Entrenar todos los dias para progresar.",
+        # "diariamente"
+        "Diariamente con la bicicleta para mejorar la técnica.",
+        "Pedalear diariamente al ritmo del grupo.",
+        # "cada día" / "cada dia"
+        "Rodar cada día con el club.",
+        "Cada dia montar bicicleta a buen ritmo.",
+        # Rama numérica/palabra explícita (no requiere contexto adicional)
+        # NOTA: se omiten frases con "7 días por semana" porque las captura
+        # primero la regla `days_per_week_excess`, dejando un texto que ya no
+        # contiene "7"/"siete" para que `daily_training` enganche.
+        "Le sugiero siete sesiones por semana.",
+        "Plan: 7 sesiones a la semana sostenidas.",
+        "Siete días semanales en bicicleta.",
+    ],
+)
+def test_daily_training_detected(frase):
+    g = Guardrails()
+    report = g.scrub_with_report(frase)
+    assert "daily_training" in report.violations, (
+        f"La frase debería disparar daily_training: {frase!r}"
+    )
+    # El reemplazo aporta el mensaje correctivo
+    assert "máximo 5 días por semana" in report.text.lower()
+
+
+@pytest.mark.parametrize(
+    "frase",
+    [
+        # Sin contexto de entrenamiento — no debe disparar
+        "Recordar todos los días tomar agua.",
+        "Diariamente leer un libro ayuda al desarrollo.",
+        "Cada día es una nueva oportunidad.",
+        "Cepillarse los dientes todos los días.",
+    ],
+)
+def test_daily_training_not_triggered_in_non_training_context(frase):
+    g = Guardrails()
+    report = g.scrub_with_report(frase)
+    assert "daily_training" not in report.violations, (
+        f"La frase NO debería disparar daily_training: {frase!r}"
+    )
+    # El texto se mantiene esencialmente igual (puede haber strip pero sin cambios)
+    assert report.text.lower().rstrip(".") in frase.lower().rstrip(".") or \
+        frase.lower().rstrip(".").replace(".", "") in report.text.lower()
+
+
+def test_daily_training_replacement_message():
+    """Cuando dispara, reemplaza por el mensaje correctivo del club."""
+    g = Guardrails()
+    out = g.scrub("Entrenar diariamente con la bicicleta acelera el progreso.")
+    assert "máximo 5 días por semana" in out.lower()
+    assert "diariamente" not in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# Comparativas poblacionales / cuasi-diagnósticas (`comparative_norm`)
+# ---------------------------------------------------------------------------
+#
+# Regla GLOBAL: aplica a todos los use cases que escriban a padres. Bajo la
+# Ley 1098/2006 Art. 27 solo personal de salud autorizado puede emitir
+# afirmaciones comparativas poblacionales sobre menores.
+
+
+@pytest.mark.parametrize(
+    "frase",
+    [
+        # Variante A: por encima/debajo del promedio
+        "Su hijo está por encima del promedio para su edad.",
+        "Su talla está por debajo de lo esperado.",
+        "Se encuentra sobre la media de su grupo.",
+        "Bajo el promedio para su edad en estatura.",
+        # Variante B: más alto/bajo que la mayoría/otros niños
+        "Es más alto que la mayoría de su edad.",
+        "Está más bajo que otros niños del club.",
+        # Variante C: percentiles
+        "Está en el percentil 75 de peso.",
+        "Se ubica en el percentil 25.",
+        # Variante D: comparado con
+        "Comparado con otros niños, su crecimiento es bueno.",
+        # Variante E: respecto a la norma
+        "Respecto a la norma poblacional, va bien.",
+    ],
+)
+def test_comparative_norm_detected(frase):
+    g = Guardrails()
+    report = g.scrub_with_report(frase)
+    assert "comparative_norm" in report.violations, (
+        f"La frase debería disparar comparative_norm: {frase!r}"
+    )
+    # El replacement es vacío: ninguno de los términos comparativos debe quedar.
+    assert "promedio" not in report.text.lower()
+    assert "percentil" not in report.text.lower()
+    assert "mayoría" not in report.text.lower()
+    assert "norma poblacional" not in report.text.lower()
+
+
+@pytest.mark.parametrize(
+    "frase",
+    [
+        # No comparación poblacional — uso geográfico/genérico de "por encima"
+        "El club queda por encima del nivel del mar a 1000 m.",
+        # Frase clínica permitida (cualitativa, no comparativa con población)
+        "Su estado nutricional es adecuado y su maduración es Pre-PHV.",
+        # Frase deportiva sin referencia poblacional
+        "Mantén una cadencia de 80 rpm en zonas Z1-Z2.",
+    ],
+)
+def test_comparative_norm_not_triggered(frase):
+    g = Guardrails()
+    report = g.scrub_with_report(frase)
+    assert "comparative_norm" not in report.violations, (
+        f"La frase NO debería disparar comparative_norm: {frase!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Métricas clínicas numéricas inventadas (`numeric_clinical_metrics`)
+# ---------------------------------------------------------------------------
+#
+# Regla GLOBAL: el context_builder no entrega valores numéricos clínicos al
+# LLM, así que cualquier número con término clínico es una alucinación.
+
+
+@pytest.mark.parametrize(
+    "frase",
+    [
+        "Su IMC ronda los 22.",
+        "El índice de masa corporal alrededor de 18,5 indica algo.",
+        "El z-score de talla cerca de +1 sugiere progresión.",
+        "Sus z scores son cercanos a 0.",
+        "Puntaje z de -0.5 en peso.",
+        "Percentiles cercanos a 50.",
+    ],
+)
+def test_numeric_clinical_metrics_detected(frase):
+    g = Guardrails()
+    report = g.scrub_with_report(frase)
+    assert "numeric_clinical_metrics" in report.violations, (
+        f"La frase debería disparar numeric_clinical_metrics: {frase!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "frase",
+    [
+        # Número sin término clínico → no toca
+        "Mantén una cadencia de 80 rpm.",
+        # Término clínico sin número adyacente → no toca
+        "Su estado nutricional es adecuado.",
+        # Mención de IMC en abstracto (sin número en ventana) → no toca
+        "Conversen con su pediatra sobre el IMC y otros indicadores.",
+    ],
+)
+def test_numeric_clinical_metrics_not_triggered(frase):
+    g = Guardrails()
+    report = g.scrub_with_report(frase)
+    assert "numeric_clinical_metrics" not in report.violations, (
+        f"La frase NO debería disparar numeric_clinical_metrics: {frase!r}"
+    )
+
+
+def test_comparative_norm_report_violation_name():
+    g = Guardrails()
+    report = g.scrub_with_report("Su hijo está sobre la media del grupo.")
+    assert "comparative_norm" in report.violations
+
+
+def test_numeric_clinical_metrics_report_violation_name():
+    g = Guardrails()
+    report = g.scrub_with_report("Su IMC ronda 22.")
+    assert "numeric_clinical_metrics" in report.violations

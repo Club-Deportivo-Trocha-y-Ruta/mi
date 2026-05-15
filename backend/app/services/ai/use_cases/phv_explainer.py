@@ -63,11 +63,13 @@ class PHVExplainerUseCase(BaseUseCase):
             athlete, latest_record, history=history
         )
         # Guardrails específicos al grupo de edad para cubrir reglas como
-        # "sin potenciómetro para 10-12".
-        self._guardrails = Guardrails(age_group=context.get("age_group"))
+        # "sin potenciómetro para 10-12". Se construyen como variable local
+        # (no como atributo de instancia) para evitar que dos requests
+        # concurrentes compartiendo el mismo use case se pisen las reglas.
+        guardrails = Guardrails(age_group=context.get("age_group"))
 
         response = await self._ask(context)
-        sanitized = self._scrub(response.text)
+        sanitized = self._scrub(response.text, guardrails=guardrails)
 
         return PHVExplanation(
             text=sanitized,

@@ -346,6 +346,8 @@ export function MyAthleteDetailPage() {
             <AnthropometryHistory
               records={records}
               isLoading={anthropometryQuery.isLoading}
+              athleteId={athleteId}
+              mode="parent"
             />
           </div>
           <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>

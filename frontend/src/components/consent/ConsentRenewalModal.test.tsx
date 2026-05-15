@@ -273,6 +273,7 @@ describe("ConsentRenewalModal", () => {
             policy_version: "v1.1",
             accept_data_collection: true,
             accept_anthropometry: true,
+            accept_third_party_sharing: false,
           },
           expect.objectContaining({ onSuccess: expect.any(Function) }),
         );
@@ -312,6 +313,80 @@ describe("ConsentRenewalModal", () => {
           screen.getByText(/No fue posible guardar tu consentimiento/i),
         ).toBeInTheDocument();
       });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Tercer checkbox (accept_third_party_sharing)
+  // -------------------------------------------------------------------------
+
+  describe("checkbox de procesamiento con IA", () => {
+    it("debería renderizar el tercer checkbox con name accept_third_party_sharing", () => {
+      renderModal(athleteWithOutdatedConsent);
+      const checkbox = document.querySelector(
+        'input[name="accept_third_party_sharing"]',
+      ) as HTMLInputElement | null;
+      expect(checkbox).not.toBeNull();
+      expect(checkbox?.type).toBe("checkbox");
+    });
+
+    it("submit con los dos obligatorios marcados y IA SIN marcar → mutation con accept_third_party_sharing: false", async () => {
+      mockRenewMutate.mockImplementation((_payload, { onSuccess } = {}) => {
+        onSuccess?.({});
+      });
+
+      renderModal(athleteWithOutdatedConsent, activePolicy);
+
+      fireEvent.click(screen.getByLabelText(/Recolectar datos básicos del atleta/i));
+      fireEvent.click(screen.getByLabelText(/Registrar mediciones antropométricas/i));
+      // No marcamos el checkbox de IA
+      fireEvent.click(screen.getByRole("button", { name: /Aceptar nueva política/i }));
+
+      await waitFor(() => {
+        expect(mockRenewMutate).toHaveBeenCalledWith(
+          expect.objectContaining({ accept_third_party_sharing: false }),
+          expect.anything(),
+        );
+      });
+    });
+
+    it("submit con los tres checkboxes marcados → mutation con accept_third_party_sharing: true", async () => {
+      mockRenewMutate.mockImplementation((_payload, { onSuccess } = {}) => {
+        onSuccess?.({});
+      });
+
+      renderModal(athleteWithOutdatedConsent, activePolicy);
+
+      fireEvent.click(screen.getByLabelText(/Recolectar datos básicos del atleta/i));
+      fireEvent.click(screen.getByLabelText(/Registrar mediciones antropométricas/i));
+      fireEvent.click(screen.getByLabelText(/Procesamiento con IA/i));
+      fireEvent.click(screen.getByRole("button", { name: /Aceptar nueva política/i }));
+
+      await waitFor(() => {
+        expect(mockRenewMutate).toHaveBeenCalledWith(
+          expect.objectContaining({ accept_third_party_sharing: true }),
+          expect.anything(),
+        );
+      });
+    });
+
+    it("submit con IA marcado pero sin los obligatorios → muestra errores, NO llama mutation", async () => {
+      renderModal(athleteWithOutdatedConsent, activePolicy);
+
+      // Solo marcamos IA, no los dos obligatorios
+      fireEvent.click(screen.getByLabelText(/Procesamiento con IA/i));
+      fireEvent.click(screen.getByRole("button", { name: /Aceptar nueva política/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Debes aceptar el tratamiento de datos básicos/i),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText(/Debes aceptar el registro de medidas antropométricas/i),
+        ).toBeInTheDocument();
+      });
+
+      expect(mockRenewMutate).not.toHaveBeenCalled();
     });
   });
 });

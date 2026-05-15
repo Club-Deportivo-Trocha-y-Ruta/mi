@@ -155,6 +155,7 @@ def test_build_context_no_pii_in_prompt():
 
     metrics = _make_metrics_with_real_names()
     ctx = uc.build_context_from_metrics(
+        club_id=1,
         club_name="Trocha y Ruta",
         year=2026,
         month=4,
@@ -182,6 +183,7 @@ def test_build_context_redacts_names_in_coach_observations():
 
     metrics = _make_metrics_with_real_names()
     ctx = uc.build_context_from_metrics(
+        club_id=1,
         club_name="Trocha y Ruta",
         year=2026,
         month=4,
@@ -287,6 +289,47 @@ async def test_guardrails_reject_too_short_output():
 
 
 # ---------------------------------------------------------------------------
+# 6b. Límite unificado con el prompt (500 palabras)
+# ---------------------------------------------------------------------------
+
+
+def test_guardrails_max_words_aligned_with_prompt_500():
+    """El guardrail debe alinearse con la instrucción del prompt: 500 palabras."""
+    from app.services.ai.use_cases.monthly_report import MonthlyReportGuardrails
+
+    assert MonthlyReportGuardrails.MAX_WORDS == 500
+    assert MonthlyReportGuardrails.MIN_WORDS == 50
+
+
+def test_guardrails_reject_600_words_after_lowering_limit():
+    """600 palabras antes pasaba (≤700); ahora debe rechazarse (>500)."""
+    from app.services.ai.use_cases.monthly_report import MonthlyReportGuardrails
+
+    text_600 = " ".join(["palabra"] * 600)
+    g = MonthlyReportGuardrails()
+
+    with pytest.raises(LLMSchemaError) as exc_info:
+        g.scrub(text_600)
+
+    # Mensaje refleja el nuevo límite 500
+    assert "500" in str(exc_info.value)
+    assert "largo" in str(exc_info.value)
+
+
+def test_guardrails_accept_450_words_under_new_limit():
+    """450 palabras está bajo el nuevo límite de 500 → debe pasar."""
+    from app.services.ai.use_cases.monthly_report import MonthlyReportGuardrails
+
+    text_450 = " ".join(["palabra"] * 450)
+    g = MonthlyReportGuardrails()
+    # No debe levantar excepción
+    out = g.scrub(text_450)
+    assert out
+    # Conteo de palabras se mantiene dentro del rango esperado
+    assert 50 <= len(out.split()) <= 500
+
+
+# ---------------------------------------------------------------------------
 # 7. Periodo vacío — sin sesiones
 # ---------------------------------------------------------------------------
 
@@ -339,6 +382,7 @@ async def test_empty_period_build_context_from_empty_metrics():
         avg_rubric_technique=None,
     )
     ctx = uc.build_context_from_metrics(
+        club_id=1,
         club_name="Trocha y Ruta",
         year=2026,
         month=3,

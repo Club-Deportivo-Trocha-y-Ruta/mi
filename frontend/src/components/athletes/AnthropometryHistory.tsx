@@ -1,11 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { AnthropometricRecordExplanationCard } from "@/components/ai/AnthropometricRecordExplanationCard";
 import { PHVBadge } from "@/components/shared/PHVBadge";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 
 interface AnthropometryHistoryProps {
   records: AnthropometricRecord[];
   isLoading: boolean;
+  /** ID del atleta — necesario para invocar la IA particular por medición.
+   *  Cuando se omite, la sección de análisis IA no se renderiza. */
+  athleteId?: number;
+  /** Modo de usuario: 'coach' permite generar/regenerar, 'parent' solo lee. */
+  mode?: "coach" | "parent";
 }
 
 function formatDate(dateStr: string): string {
@@ -21,9 +27,23 @@ function formatOffset(offset: number | string): string {
 export function AnthropometryHistory({
   records,
   isLoading,
+  athleteId,
+  mode = "coach",
 }: AnthropometryHistoryProps) {
   const [selectedRecord, setSelectedRecord] =
     useState<AnthropometricRecord | null>(null);
+
+  // Cierra el modal al presionar Escape para accesibilidad por teclado.
+  useEffect(() => {
+    if (!selectedRecord) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedRecord(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedRecord]);
 
   const sorted = [...records].sort(
     (a, b) =>
@@ -140,7 +160,10 @@ export function AnthropometryHistory({
           onClick={() => setSelectedRecord(null)}
         >
           <div
-            className="mx-4 w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="anthropometry-record-modal-title"
+            className="mx-4 w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 sm:p-8"
             style={{
               maxHeight: "85dvh",
               boxShadow:
@@ -153,6 +176,7 @@ export function AnthropometryHistory({
               style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
             >
               <h3
+                id="anthropometry-record-modal-title"
                 className="text-base text-charcoal"
                 style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
               >
@@ -161,13 +185,14 @@ export function AnthropometryHistory({
               <button
                 type="button"
                 onClick={() => setSelectedRecord(null)}
+                aria-label="Cerrar"
                 className="text-mid-gray transition-colors hover:text-charcoal"
               >
                 ✕
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-sm text-charcoal">
+            <div className="grid grid-cols-2 gap-3 text-sm text-charcoal sm:grid-cols-3">
               <p>Peso: {selectedRecord.weight_kg} kg</p>
               <p>Talla: {selectedRecord.standing_height_cm} cm</p>
               <p>Talla sentado: {selectedRecord.sitting_height_cm} cm</p>
@@ -196,6 +221,20 @@ export function AnthropometryHistory({
               <div className="mt-3 rounded-lg bg-light-gray p-3 text-sm text-mid-gray">
                 <p className="mb-1 font-medium text-charcoal">Notas:</p>
                 <p>{selectedRecord.notes}</p>
+              </div>
+            )}
+
+            {athleteId !== undefined && athleteId > 0 && (
+              <div
+                className="mt-5 pt-4"
+                style={{ borderTop: "1px solid rgba(34, 42, 53, 0.08)" }}
+                data-testid="anthropometry-record-explanation-section"
+              >
+                <AnthropometricRecordExplanationCard
+                  athleteId={athleteId}
+                  recordId={selectedRecord.id}
+                  readOnly={mode === "parent"}
+                />
               </div>
             )}
           </div>

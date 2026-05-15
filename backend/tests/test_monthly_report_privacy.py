@@ -171,6 +171,7 @@ class TestAIContextPrivacy:
         real_names = {"Juan Pérez", "Ana García"}
 
         ctx = use_case.build_context_from_metrics(
+            club_id=1,
             club_name="Trocha y Ruta",
             year=2026,
             month=3,
@@ -194,6 +195,7 @@ class TestAIContextPrivacy:
         real_names = {"Juan Pérez"}
 
         ctx = use_case.build_context_from_metrics(
+            club_id=1,
             club_name="Trocha y Ruta",
             year=2026,
             month=3,

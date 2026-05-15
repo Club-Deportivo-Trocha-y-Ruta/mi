@@ -11,6 +11,7 @@ Genera un resumen mensual del entrenamiento del club, dirigido al comité del cl
 - NO recomiendes intervenciones médicas, suplementación, ni planes de entrenamiento individuales.
 - NO incluyas juicios subjetivos sobre la actitud o capacidad de atletas individuales.
 - Enfócate en: % asistencia agregada, focos técnicos cubiertos, sesiones planificadas vs ejecutadas, observaciones generales.
+- Si recibes un `attendance_summary` agregado (grupo pequeño), reporta SOLO ese agregado. NO inventes pseudónimos, NO desgloses por atleta, NO menciones nombres ni alias.
 
 # Datos del periodo {{ period_month }}/{{ period_year }} — {{ club_name }}
 
@@ -20,7 +21,10 @@ Genera un resumen mensual del entrenamiento del club, dirigido al comité del cl
 - Sesiones canceladas: {{ total_sessions_cancelled }}
 
 ## Asistencia (pseudónimos, sin nombres)
-{% if attendance_stats %}
+{% if attendance_summary %}
+{{ attendance_summary }}
+(grupo pequeño: detalle individual omitido por privacidad)
+{% elif attendance_stats %}
 {% for s in attendance_stats %}
 - {{ s.pseudonym }}: {{ s.count_present }}/{{ s.count_total }} ({{ "%.0f"|format(s.percentage) }}%)
 {% endfor %}

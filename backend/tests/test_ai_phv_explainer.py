@@ -73,14 +73,18 @@ async def test_run_produces_text_with_fake_provider():
     assert result.maturation_status == "Pre-PHV"
 
 
-async def test_system_prompt_includes_principles():
+async def test_system_prompt_includes_operational_rules():
+    """Tras el rediseño de Ola 2, el system prompt declara al LLM como
+    función analítica y se centra en restricciones operativas. Los
+    principios pedagógicos viven en `tone_guide.md` y guardrails."""
     fake = FakeLLMProvider(canned="ok")
     uc = PHVExplainerUseCase(fake, PromptRegistry())
     await uc.run(_athlete(), _record())
     sent = fake.last_request
     assert sent is not None
-    assert "Diversión primero" in sent.system
-    assert "Cero suplementos" in sent.system or "suplementos" in sent.system
+    assert "función analítica" in sent.system.lower()
+    assert "diagnóstico" in sent.system.lower()
+    assert "comparaciones" in sent.system.lower()
 
 
 async def test_user_message_has_no_pii():

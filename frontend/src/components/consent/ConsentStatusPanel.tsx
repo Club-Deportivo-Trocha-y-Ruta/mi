@@ -12,10 +12,11 @@
  */
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, CheckCircle2, AlertCircle, XCircle } from "lucide-react";
+import { ChevronDown, ChevronUp, CheckCircle2, AlertCircle, XCircle, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { AthleteConsentStatus, PrivacyPolicySummary } from "@/types/consent";
+import { useRenewConsent } from "@/hooks/consent";
 import { ConsentRenewalModal } from "./ConsentRenewalModal";
 import { RevokeConsentDialog } from "./RevokeConsentDialog";
 
@@ -106,70 +107,151 @@ function AthleteConsentRow({
   const isRenewable = state === "outdated" || state === "never" || state === "revoked";
 
   return (
-    <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-      {/* Info del atleta */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-sm font-medium text-charcoal">{athlete.athlete_name}</p>
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
-              config.badgeClass,
-            )}
-          >
-            {config.icon}
-            {config.label}
-          </span>
+    <div className="flex flex-col gap-2 py-4">
+      {/* Fila principal: info + acciones */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {/* Info del atleta */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-medium text-charcoal">{athlete.athlete_name}</p>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+                config.badgeClass,
+              )}
+            >
+              {config.icon}
+              {config.label}
+            </span>
+          </div>
+
+          {/* Detalle de la versión aceptada */}
+          {consent && !consent.withdrawn_at && (
+            <p className="mt-0.5 text-xs text-mid-gray">
+              Política {consent.policy_version} —{" "}
+              {formatDate(consent.consented_at)}
+              {!consent.is_current_policy && (
+                <span className="ml-1 text-amber-600">
+                  (política actual: {activePolicy.version})
+                </span>
+              )}
+            </p>
+          )}
+          {consent?.withdrawn_at && (
+            <p className="mt-0.5 text-xs text-mid-gray">
+              Revocado el {formatDate(consent.withdrawn_at)}
+            </p>
+          )}
+          {!consent && (
+            <p className="mt-0.5 text-xs text-mid-gray">
+              Nunca se registró consentimiento
+            </p>
+          )}
         </div>
 
-        {/* Detalle de la versión aceptada */}
-        {consent && !consent.withdrawn_at && (
-          <p className="mt-0.5 text-xs text-mid-gray">
-            Política {consent.policy_version} —{" "}
-            {formatDate(consent.consented_at)}
-            {!consent.is_current_policy && (
-              <span className="ml-1 text-amber-600">
-                (política actual: {activePolicy.version})
-              </span>
-            )}
-          </p>
+        {/* Acciones */}
+        <div className="flex shrink-0 gap-2">
+          {isRenewable && (
+            <button
+              type="button"
+              onClick={() => onRenew(athlete)}
+              className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+              style={btnSecondaryStyle}
+            >
+              {state === "revoked" ? "Dar consentimiento" : "Renovar"}
+            </button>
+          )}
+
+          {isRevocable && (
+            <button
+              type="button"
+              onClick={() => onRevoke(athlete)}
+              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-80"
+              style={btnDestructiveStyle}
+            >
+              Revocar
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Fila IA: solo visible cuando hay consentimiento vigente */}
+      <AiConsentRow athlete={athlete} activePolicy={activePolicy} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-componente: fila de estado IA (third_party_sharing)
+// ---------------------------------------------------------------------------
+
+interface AiConsentRowProps {
+  athlete: AthleteConsentStatus;
+  activePolicy: PrivacyPolicySummary;
+}
+
+function AiConsentRow({ athlete, activePolicy }: AiConsentRowProps) {
+  const { mutate: renew, isPending, isError } = useRenewConsent();
+  const consent = athlete.current_consent;
+
+  // Solo se muestra si hay consentimiento vigente (no revocado)
+  if (!consent || consent.withdrawn_at) return null;
+
+  const isAiActive = consent.grants.third_party_sharing === true;
+
+  const handleToggleAi = () => {
+    renew({
+      athlete_id: athlete.athlete_id,
+      policy_version: activePolicy.version,
+      accept_data_collection: consent.grants.data_collection,
+      accept_anthropometry: consent.grants.anthropometry,
+      accept_third_party_sharing: !isAiActive,
+    });
+  };
+
+  return (
+    <div
+      className="flex items-center justify-between gap-3 py-2"
+      aria-live="polite"
+    >
+      <div className="flex items-center gap-2">
+        {isAiActive ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+            <CheckCircle2 size={12} aria-hidden="true" />
+            IA: activa
+          </span>
+        ) : (
+          <span className="text-xs text-mid-gray">IA: no autorizada</span>
         )}
-        {consent?.withdrawn_at && (
-          <p className="mt-0.5 text-xs text-mid-gray">
-            Revocado el {formatDate(consent.withdrawn_at)}
-          </p>
-        )}
-        {!consent && (
-          <p className="mt-0.5 text-xs text-mid-gray">
-            Nunca se registró consentimiento
-          </p>
+        {isError && (
+          <span className="text-xs text-red-600" role="alert">
+            Error al actualizar. Intenta de nuevo.
+          </span>
         )}
       </div>
 
-      {/* Acciones */}
-      <div className="flex shrink-0 gap-2">
-        {isRenewable && (
-          <button
-            type="button"
-            onClick={() => onRenew(athlete)}
-            className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
-            style={btnSecondaryStyle}
-          >
-            {state === "revoked" ? "Dar consentimiento" : "Renovar"}
-          </button>
+      <button
+        type="button"
+        onClick={handleToggleAi}
+        disabled={isPending}
+        className={cn(
+          "flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium transition-opacity disabled:opacity-50",
+          isAiActive
+            ? "bg-white text-red-600"
+            : "bg-charcoal text-white hover:opacity-90",
         )}
-
-        {isRevocable && (
-          <button
-            type="button"
-            onClick={() => onRevoke(athlete)}
-            className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-80"
-            style={btnDestructiveStyle}
-          >
-            Revocar
-          </button>
+        style={isAiActive ? btnDestructiveStyle : btnSecondaryStyle}
+        aria-label={
+          isAiActive
+            ? `Revocar autorización de IA para ${athlete.athlete_name}`
+            : `Activar autorización de IA para ${athlete.athlete_name}`
+        }
+      >
+        {isPending && (
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
         )}
-      </div>
+        {isAiActive ? "Revocar IA" : "Activar IA"}
+      </button>
     </div>
   );
 }

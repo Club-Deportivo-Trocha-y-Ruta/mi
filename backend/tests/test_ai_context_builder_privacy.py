@@ -133,6 +133,39 @@ def test_context_includes_phv_data_when_record_present():
     assert ctx["nutritional_status"] == "adecuado"
 
 
+def test_context_omits_z_scores_for_privacy():
+    """Defense in depth: z-scores nunca deben fluir al contexto del LLM.
+
+    Aunque el registro tenga valores válidos para height_z_score y
+    weight_z_score (cargados desde DB), el builder los descarta. En bases
+    pequeñas un par (z-altura, z-peso, edad, sexo) puede re-identificar a un
+    menor. La plantilla `phv_explainer.j2` v2 ya no los renderiza; este test
+    garantiza que tampoco lleguen por la vía del context builder.
+    """
+    builder = AthleteAIContextBuilder()
+    record = _record()
+    # Confirma que el fixture sí trae los z-scores cargados (input válido)
+    assert record.height_z_score == Decimal("0.4")
+    assert record.weight_z_score == Decimal("0.2")
+
+    ctx = builder.build(_athlete(), record, reference_date=date(2026, 4, 1))
+
+    # El contexto que se entrega al LLM no debe contener ninguno
+    assert "height_z_score" not in ctx
+    assert "weight_z_score" not in ctx
+
+    # Sí debe mantenerse el estado nutricional cualitativo (categoría MinSalud)
+    assert ctx["nutritional_status"] == "adecuado"
+
+
+def test_allowlist_excludes_z_scores():
+    """La allowlist tampoco debe permitir z-scores como claves válidas."""
+    from app.services.ai.context_builders import ATHLETE_CONTEXT_ALLOWED_KEYS
+
+    assert "height_z_score" not in ATHLETE_CONTEXT_ALLOWED_KEYS
+    assert "weight_z_score" not in ATHLETE_CONTEXT_ALLOWED_KEYS
+
+
 def test_age_group_buckets():
     builder = AthleteAIContextBuilder()
     ref = date(2026, 4, 1)
@@ -180,3 +213,127 @@ def test_trend_present_with_multiple_records():
     assert len(ctx["trend"]) == 2
     assert ctx["trend"][0]["delta_height_cm"] == 2.0
     assert ctx["trend"][0]["weeks_ago"] >= 12
+
+
+# ---------------------------------------------------------------------------
+# 4. Redondeo defensivo de phv_offset / age_at_phv (GAP-3)
+# ---------------------------------------------------------------------------
+#
+# La precisión de 2-3 decimales en clubes pequeños (n<10) combinada con
+# (sexo, age_group) permite re-identificación. El builder redondea a 1
+# decimal antes de inyectar, preservando utilidad clínica (Mirwald ±1 año).
+
+
+def test_phv_offset_rounded_to_one_decimal():
+    builder = AthleteAIContextBuilder()
+    rec = _record(maturity_offset=0.8473)
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    assert ctx["phv_offset"] == 0.8
+
+
+def test_phv_offset_negative_value_rounded():
+    builder = AthleteAIContextBuilder()
+    rec = _record(maturity_offset=-1.2649)
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    assert ctx["phv_offset"] == -1.3
+
+
+def test_age_at_phv_rounded_to_one_decimal():
+    """`age_at_phv` también se redondea (mismo patrón que phv_offset)."""
+    builder = AthleteAIContextBuilder()
+    # Construyo manualmente para forzar valor con más decimales
+    rec = _record()
+    rec.age_at_phv = Decimal("13.5817")
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    assert ctx["age_at_phv"] == 13.6
+
+
+def test_phv_offset_none_remains_none():
+    """Si el dato falta, `None` debe propagarse sin error de redondeo."""
+    builder = AthleteAIContextBuilder()
+    rec = _record()
+    rec.maturity_offset = None
+    rec.age_at_phv = None
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    assert ctx["phv_offset"] is None
+    assert ctx["age_at_phv"] is None
+
+
+# ---------------------------------------------------------------------------
+# 5. Sanitización de training_implications (GAP-4)
+# ---------------------------------------------------------------------------
+#
+# Texto libre escrito por el coach en la BD. El builder lo sanea antes de
+# inyectarlo al LLM: trunca a 300 caracteres, elimina nombres propios y
+# patrones diagnósticos. Si tras saneo queda vacío, omite la clave.
+
+
+def test_training_implications_strips_proper_names():
+    """Nombre propio (dos palabras capitalizadas) debe eliminarse."""
+    builder = AthleteAIContextBuilder()
+    rec = _record()
+    rec.training_implications = "Conversar con Juan Pérez sobre la sesión."
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    val = ctx["training_implications"]
+    assert "Juan Pérez" not in val
+    assert "Juan" not in val and "Pérez" not in val
+
+
+def test_training_implications_strips_diagnostic_terms():
+    """Términos diagnósticos (RED-S, déficit) deben eliminarse."""
+    builder = AthleteAIContextBuilder()
+    rec = _record()
+    rec.training_implications = "Sospecha de diagnóstico de RED-S, observar."
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    val = ctx["training_implications"]
+    assert "RED-S" not in val
+    assert "diagnóstico" not in val.lower()
+    # Lo no-clínico se mantiene
+    assert "observar" in val.lower()
+
+
+def test_training_implications_truncates_long_text():
+    """Texto >300 chars debe truncarse con elipsis."""
+    builder = AthleteAIContextBuilder()
+    rec = _record()
+    rec.training_implications = "habilidades técnicas y juego dirigido. " * 20
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    val = ctx["training_implications"]
+    # Con elipsis, longitud máxima 301 (300 + "…")
+    assert len(val) <= 301
+    assert val.endswith("…")
+
+
+def test_training_implications_omitted_when_empty_after_sanitize():
+    """Si tras saneo queda vacío, la clave se omite del ctx."""
+    builder = AthleteAIContextBuilder()
+    rec = _record()
+    # Texto que se elimina por completo: solo nombre propio + diagnóstico.
+    rec.training_implications = "Juan Pérez patología."
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    assert "training_implications" not in ctx
+
+
+def test_training_implications_omitted_when_none():
+    builder = AthleteAIContextBuilder()
+    rec = _record()
+    rec.training_implications = None
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    assert "training_implications" not in ctx
+
+
+def test_training_implications_omitted_when_blank():
+    builder = AthleteAIContextBuilder()
+    rec = _record()
+    rec.training_implications = "   "
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    assert "training_implications" not in ctx
+
+
+def test_training_implications_clean_text_passes_through():
+    """Texto legítimo (sin nombres ni términos clínicos) debe llegar igual."""
+    builder = AthleteAIContextBuilder()
+    rec = _record()
+    rec.training_implications = "Habilidades técnicas y juego dirigido."
+    ctx = builder.build(_athlete(), rec, reference_date=date(2026, 4, 1))
+    assert ctx["training_implications"] == "Habilidades técnicas y juego dirigido."

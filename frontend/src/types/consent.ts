@@ -89,6 +89,8 @@ export interface RenewConsentPayload {
   policy_version: string;
   accept_data_collection: boolean;
   accept_anthropometry: boolean;
+  /** Consentimiento opcional para procesamiento con IA de terceros (Anthropic/Google). */
+  accept_third_party_sharing: boolean;
 }
 
 /** Body de POST /api/me/consent/withdraw. */

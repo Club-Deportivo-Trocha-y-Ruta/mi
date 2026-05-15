@@ -8,19 +8,22 @@ _RELATIONSHIP_TYPES_VALIDOS = {"padre", "madre", "acudiente"}
 class ParentalConsentData(BaseModel):
     """Datos de consentimiento parental aceptados durante onboarding.
 
-    Política v1.1 (2026-05-06): solo se solicitan los dos consentimientos
-    correspondientes a tratamientos efectivamente implementados — datos
-    básicos del atleta y antropometría. Los campos `accept_training_tracking`
-    y `accept_third_party` quedan como opcionales por compatibilidad con
-    clientes antiguos pero el servicio fuerza su persistencia a False
-    (Ley 1581/2012, principio de finalidad y consentimiento informado).
+    Política v1.2 (2026-05-15): se habilita la finalidad opcional de
+    procesamiento con IA a través del campo `accept_third_party_sharing`.
+    El campo `accept_training_tracking` se mantiene opcional por compatibilidad
+    pero el servicio lo persiste siempre como False hasta que esa funcionalidad
+    sea implementada (Ley 1581/2012, principio de finalidad).
+
+    Compatibilidad: clientes que enviaban el campo `accept_third_party` (nombre
+    anterior) seguirán funcionando — Pydantic ignorará el campo desconocido y
+    usará el default False para `accept_third_party_sharing`.
     """
 
     accept_data_collection: bool
     accept_anthropometry: bool
     accept_training_tracking: bool = False
-    accept_third_party: bool = False
-    privacy_policy_version: str = "v1.1"
+    accept_third_party_sharing: bool = False
+    privacy_policy_version: str = "v1.2"
 
 
 class ParentInviteCreate(BaseModel):

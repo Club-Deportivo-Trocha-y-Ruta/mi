@@ -412,6 +412,8 @@ export function AthleteDetailPage() {
             <AnthropometryHistory
               records={records}
               isLoading={anthropometryQuery.isLoading}
+              athleteId={athleteId}
+              mode="coach"
             />
           </div>
         </div>
