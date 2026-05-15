@@ -82,6 +82,7 @@ class ConsentRenewIn(BaseModel):
     policy_version: str
     accept_data_collection: bool
     accept_anthropometry: bool
+    accept_third_party_sharing: bool = False
 
 
 class ConsentWithdrawIn(BaseModel):

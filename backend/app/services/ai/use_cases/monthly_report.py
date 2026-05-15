@@ -7,6 +7,8 @@ nombres reales de atletas — solo pseudónimos (A1, A2, …).
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import random
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -19,6 +21,14 @@ from app.services.ai.guardrails import Guardrails
 from app.services.ai.prompts.registry import PromptRegistry
 from app.services.ai.protocols import LLMProvider
 from app.services.ai.use_cases.base import BaseUseCase
+
+
+# Umbral mínimo de atletas para emitir filas individuales de asistencia.
+# Por debajo de este valor (grupo pequeño), las filas A1/A2/... son trivialmente
+# re-identificables aun con pseudónimos: el comité del club sabe quiénes son
+# los 3-4 atletas y puede triangular por porcentajes. Por debajo del umbral
+# se emite SOLO un agregado (n, promedio, rango), sin filas por atleta.
+MIN_ATHLETES_FOR_INDIVIDUAL_ROWS = 5
 
 
 class MonthlyReportLLMTimeout(Exception):
@@ -35,7 +45,13 @@ class AnonymizedAthleteStats(BaseModel):
 
 
 class MonthlyReportContext(BaseModel):
-    """Contexto de privacidad segura para el prompt de reporte mensual."""
+    """Contexto de privacidad segura para el prompt de reporte mensual.
+
+    Cuando el club tiene menos de `MIN_ATHLETES_FOR_INDIVIDUAL_ROWS` atletas,
+    `attendance_stats` queda vacío y `attendance_summary` contiene un string
+    agregado (n, promedio, rango). En caso contrario, `attendance_summary` es
+    None y `attendance_stats` lleva las filas por pseudónimo.
+    """
 
     club_name: str
     period_year: int
@@ -44,6 +60,7 @@ class MonthlyReportContext(BaseModel):
     total_sessions_executed: int
     total_sessions_cancelled: int
     attendance_stats: list[AnonymizedAthleteStats]
+    attendance_summary: str | None = None
     focos_técnicos: list[str]
     avg_rpe: float | None
     avg_rubric_effort: float | None
@@ -140,6 +157,7 @@ class MonthlyReportUseCase(BaseUseCase):
     def build_context_from_metrics(
         self,
         *,
+        club_id: int,
         club_name: str,
         year: int,
         month: int,
@@ -149,25 +167,56 @@ class MonthlyReportUseCase(BaseUseCase):
     ) -> MonthlyReportContext:
         """Construye el contexto a partir de un objeto MonthlyMetrics.
 
-        Anonimiza athlete_id -> pseudónimo. Redacta observaciones del entrenador.
+        Anonimiza athlete_id -> pseudónimo con shuffle determinista por
+        (club_id, year, month). Redacta observaciones del entrenador.
         Nunca incluye nombres reales en el contexto devuelto.
+
+        Si `len(attendance_by_athlete) < MIN_ATHLETES_FOR_INDIVIDUAL_ROWS`,
+        suprime filas individuales y deja solo un agregado en
+        `attendance_summary` para evitar re-identificación trivial.
         """
         forbidden: frozenset[str] = frozenset(real_names or set())
 
+        # Shuffle determinista: misma (club_id, year, month) -> mismo mapping;
+        # mes/club distintos -> permutación distinta. SHA-256 estable entre
+        # procesos (a diferencia de hash() builtin que cambia con PYTHONHASHSEED).
         sorted_ids = sorted(metrics.attendance_by_athlete.keys())
-        pseudonym_map = {aid: f"A{i + 1}" for i, aid in enumerate(sorted_ids)}
+        seed_material = f"{club_id}|{year}|{month}".encode("utf-8")
+        seed = int(hashlib.sha256(seed_material).hexdigest()[:16], 16)
+        shuffled_ids = list(sorted_ids)
+        random.Random(seed).shuffle(shuffled_ids)
+        pseudonym_map = {aid: f"A{i + 1}" for i, aid in enumerate(shuffled_ids)}
+
+        num_athletes = len(metrics.attendance_by_athlete)
+        suppress_individual_rows = (
+            0 < num_athletes < MIN_ATHLETES_FOR_INDIVIDUAL_ROWS
+        )
 
         attendance_stats: list[AnonymizedAthleteStats] = []
-        for aid, stats in metrics.attendance_by_athlete.items():
-            pseudonym = pseudonym_map[aid]
-            count_present = stats.count_present + stats.count_late
-            attendance_stats.append(
-                AnonymizedAthleteStats(
-                    pseudonym=pseudonym,
-                    count_present=count_present,
-                    count_total=stats.total_sessions,
-                    percentage=stats.attendance_pct,
+        if not suppress_individual_rows:
+            for aid, stats in metrics.attendance_by_athlete.items():
+                pseudonym = pseudonym_map[aid]
+                count_present = stats.count_present + stats.count_late
+                attendance_stats.append(
+                    AnonymizedAthleteStats(
+                        pseudonym=pseudonym,
+                        count_present=count_present,
+                        count_total=stats.total_sessions,
+                        percentage=stats.attendance_pct,
+                    )
                 )
+
+        attendance_summary: str | None = None
+        if suppress_individual_rows:
+            percentages = [
+                s.attendance_pct for s in metrics.attendance_by_athlete.values()
+            ]
+            avg_pct = sum(percentages) / len(percentages)
+            min_pct = min(percentages)
+            max_pct = max(percentages)
+            attendance_summary = (
+                f"{num_athletes} atletas con asistencia promedio "
+                f"{avg_pct:.0f}% (rango {min_pct:.0f}-{max_pct:.0f}%)."
             )
 
         redacted_obs = None
@@ -182,6 +231,7 @@ class MonthlyReportUseCase(BaseUseCase):
             total_sessions_executed=metrics.total_sessions_executed,
             total_sessions_cancelled=metrics.total_sessions_cancelled,
             attendance_stats=attendance_stats,
+            attendance_summary=attendance_summary,
             focos_técnicos=metrics.technical_focus_list,
             avg_rpe=metrics.avg_rpe,
             avg_rubric_effort=metrics.avg_rubric_effort,
@@ -194,7 +244,11 @@ class MonthlyReportUseCase(BaseUseCase):
     _LLM_TIMEOUT_SECONDS = 25.0
 
     async def run(self, ctx: MonthlyReportContext) -> MonthlyReportResult:
-        self._guardrails = MonthlyReportGuardrails(
+        # Guardrails específicos por request: dependen de los nombres
+        # prohibidos de este reporte concreto. Se construyen como variable
+        # local para que dos requests concurrentes (clubes distintos, con
+        # listas de nombres distintas) no se pisen mutuamente las reglas.
+        guardrails = MonthlyReportGuardrails(
             forbidden_names=ctx.forbidden_names,
         )
 
@@ -213,7 +267,7 @@ class MonthlyReportUseCase(BaseUseCase):
                 f"El proveedor LLM no respondió en {self._LLM_TIMEOUT_SECONDS:.0f}s."
             ) from exc
 
-        sanitized = self._scrub(response.text)
+        sanitized = self._scrub(response.text, guardrails=guardrails)
 
         return MonthlyReportResult(
             text=sanitized,
@@ -228,7 +282,10 @@ class MonthlyReportUseCase(BaseUseCase):
 class MonthlyReportGuardrails(Guardrails):
     """Guardrails extendidos para el reporte mensual del club."""
 
-    MAX_WORDS = 700
+    # Alineado con `prompts/monthly_report.j2` v1, que pide "Máximo 500 palabras".
+    # Tolerar 700 sin avisar añadiría ruido al comité sin valor; el contrato del
+    # prompt es de 500 y el guardrail lo enforce.
+    MAX_WORDS = 500
     MIN_WORDS = 50
 
     _MEDICAL_PATTERN = re.compile(

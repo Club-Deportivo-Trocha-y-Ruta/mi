@@ -72,14 +72,16 @@ class AnthropometricRecordExplainerUseCase(BaseUseCase):
         context = self._context_builder.build_record_delta(
             athlete, target_record, priors
         )
-        # Guardrails con reglas anti-diagnóstico activadas.
-        self._guardrails = Guardrails(
+        # Guardrails con reglas anti-diagnóstico activadas. Variable local
+        # (no atributo de instancia) para garantizar aislamiento entre
+        # requests concurrentes que compartan la misma instancia del use case.
+        guardrails = Guardrails(
             age_group=context.get("age_group"),
             use_case=USE_CASE_KEY,
         )
 
         response = await self._ask(context)
-        sanitized = self._scrub(response.text)
+        sanitized = self._scrub(response.text, guardrails=guardrails)
 
         return AnthropometricRecordExplanation(
             text=sanitized,

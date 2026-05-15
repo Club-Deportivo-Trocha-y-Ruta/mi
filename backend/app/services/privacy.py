@@ -210,12 +210,19 @@ async def renew_consent(
     ip_address: str | None,
     user_agent: str | None,
     db: AsyncSession,
+    accept_third_party_sharing: bool = False,
 ) -> ParentalConsent:
     """Registra un nuevo consentimiento (INSERT).
 
     Si existe un consentimiento vigente previo para el mismo padre+atleta,
     lo marca como supersedido antes de insertar el nuevo. Garantiza append-only:
     no hace UPDATE del consentimiento previo salvo withdrawn_at y withdrawal_reason.
+
+    `accept_third_party_sharing` habilita el procesamiento con IA (Anthropic/Google
+    Gemini) para generar explicaciones PHV legibles para padres. Es opcional y
+    separable: si se omite o se envía False, el servicio principal no se ve afectado
+    pero POST /api/ai/athletes/{id}/phv-explanation retornará 451.
+    `training_tracking` se mantiene como False — esa finalidad aún no está activa.
     """
     # Validar que la versión de política existe
     policy = await get_policy_by_version(policy_version, db)
@@ -257,10 +264,11 @@ async def renew_consent(
         ip_address=ip_address,
         user_agent=user_agent,
         data_collection=accept_data_collection,
-        # Política v1.1: tracking y terceros no son finalidades activas
+        # training_tracking aún no está activo como finalidad — siempre False
         training_tracking=False,
         anthropometry=accept_anthropometry,
-        third_party_sharing=False,
+        # third_party_sharing: habilitado desde política v1.2 para procesamiento IA
+        third_party_sharing=accept_third_party_sharing,
     )
     db.add(new_consent)
     await db.flush()

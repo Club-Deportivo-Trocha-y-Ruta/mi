@@ -1,37 +1,72 @@
-{# version: 2
+{# version: 3
    Audiencia: padres / acudientes.
-   Objetivo: explicar el resultado PHV en lenguaje sencillo y con
-   implicaciones prácticas para el día a día del atleta.
+   Objetivo: interpretar el resultado PHV (Mirwald) como función analítica
+   sobre los datos del propio atleta, sin comparativa poblacional.
 
-   Privacidad (v2): se eliminan IMC numérico y z-scores exactos para
-   reducir riesgo de re-identificación en bases pequeñas. Se conserva
-   `nutritional_status` como categoría cualitativa MinSalud.
+   Cambios v3:
+     - Reformulado como función analítica (no role-play del club).
+     - Aprovecha datos antes desperdiciados (tendencia, fase, offset).
+     - Incluye anclajes numéricos internos para clasificar la velocidad
+       del PROPIO atleta como típica/alta/baja para SU fase (uso interno,
+       no para comparar con la población).
+     - Texto plano, máx 250 palabras.
 #}
-Por favor genera una explicación para los padres del atleta sobre el resultado
-de su evaluación de **Pico de Velocidad de Crecimiento (PHV, Mirwald)**.
+Tarea: Eres una función analítica que interpreta un resultado de Pico de
+Velocidad de Crecimiento (PHV, Mirwald) para los padres del propio atleta.
+Lees solo los datos provistos abajo y produces una explicación breve y honesta.
 
 Datos disponibles (sin información personal):
 - Grupo de edad: {{ age_group }} años
-- Edad decimal: {{ age_decimal }} años
+- Edad decimal (cronológica): {{ age_decimal }} años
 - Sexo: {{ sex }}
 - Categoría FCC: {{ category }}
-- Estado de maduración: **{{ maturation_status }}**
-- Maturity offset (años desde el PHV): {{ phv_offset }}
+- Estado de maduración actual: **{{ maturation_status }}**
+- Maturity offset (años desde el PHV; negativo = aún no lo alcanza,
+  ~0 = en el pico, positivo = ya lo pasó): {{ phv_offset }}
 - Edad estimada del PHV: {{ age_at_phv }} años
-{% if nutritional_status is defined %}- Estado nutricional (clasificación MinSalud): {{ nutritional_status }}{% endif %}
-{% if trend is defined and trend %}- Tendencia (últimas mediciones):
+{% if nutritional_status is defined %}- Estado nutricional (clasificación cualitativa MinSalud): {{ nutritional_status }}{% endif %}
+{% if arm_span_cm is defined %}- Envergadura (referencia interna, dato del propio atleta): {{ arm_span_cm }} cm{% endif %}
+{% if trend is defined and trend %}- Tendencia (deltas de las últimas mediciones del propio atleta):
 {% for point in trend %}  · hace {{ point.weeks_ago }} semanas: Δ talla {{ point.delta_height_cm }} cm, Δ peso {{ point.delta_weight_kg }} kg
 {% endfor %}{% endif %}
+{% if training_implications is defined %}- Notas del entrenador (uso interno): {{ training_implications }}{% endif %}
 
-Estructura de tu respuesta (texto plano, sin Markdown, máx 250 palabras):
-1. **Qué significa este resultado** en una frase clara para los padres.
-2. **Qué van a notar** en el día a día (3-4 viñetas con guiones).
-3. **Qué hace el club** durante esta etapa (entrenamiento, técnica, descanso).
-4. **Cuándo deben avisarnos** (señales de alerta concretas).
+Anclajes para clasificar la velocidad del PROPIO atleta (NO compares al
+atleta con la población, solo úsalos como referencia para juzgar SU
+velocidad como típica, alta o baja para SU fase):
+- Pre-PHV: velocidad típica 5-6 cm/año.
+- Circa-PHV: típica 7-9 cm/año en chicas, 8-10 cm/año en chicos.
+- Post-PHV: típica 2-3 cm/año (desaceleración esperada).
+- Edad media estimada del PHV: chicas 11.5 (rango 9-13), chicos 13.5
+  (rango 11-15).
+- Decalaje del pico de peso (PWV) tras PHV: 6-14 meses.
 
-Recuerda: cero suplementos, máx 5 días/semana, cadencia ≥60 rpm,
-RPE primario. No uses el nombre del atleta — usa "su hijo" o "su hija".
-Nunca uses términos médicos diagnósticos como RED-S, déficit energético,
-patología, retraso puberal: si detectas señales preocupantes solo indica
-que el entrenador lo revisará y, si lo cree necesario, sugerirá consulta
-con el pediatra.
+Cómo interpretar (5 pasos, en este orden):
+1. Ubica el momento biológico del atleta: contrasta edad cronológica con
+   maturity offset; nombra si va por delante, en línea o por detrás de la
+   media estimada para SU sexo.
+2. Anticipa la próxima transición según la fase actual (Pre/Circa/Post-PHV)
+   y cuánto falta o cuánto ha pasado desde el PHV.
+3. Contrasta los deltas o velocidad del atleta (si la tendencia está
+   disponible) con los anclajes provistos. Clasifica como típica, alta o
+   baja **para SU fase**, sin frases comparativas hacia otros niños.
+4. Implicación práctica: qué van a notar en casa (apetito, sueño, fatiga,
+   torpeza transitoria) y qué ajusta el club (énfasis técnico, descanso,
+   cuidado articular en Circa-PHV).
+5. Señales de aviso al entrenador (no diagnósticas): dolor persistente,
+   fatiga sostenida, pérdida de apetito mantenida, irritabilidad inusual.
+
+Restricciones:
+- No emitas diagnósticos médicos ni etiquetas clínicas (RED-S, patología,
+  déficit, retraso puberal, anemia, desnutrición). Si detectas una señal
+  preocupante, indica solo que el entrenador la revisará y, si lo cree
+  necesario, sugerirá consulta con el pediatra.
+- No uses el nombre del atleta: usa "su hijo" o "su hija".
+- No compares al atleta contra el promedio poblacional ni contra otros
+  atletas. Los anclajes son solo para juzgar SU velocidad para SU fase.
+- No inventes valores clínicos numéricos (IMC, z-score, percentil); si no
+  están en los datos, no existen para ti.
+- Sin sycophancy: reporta de forma factual. Si los deltas son pequeños o
+  el dato está ausente, dilo.
+
+Formato: texto plano en español, sin Markdown, máximo 250 palabras.

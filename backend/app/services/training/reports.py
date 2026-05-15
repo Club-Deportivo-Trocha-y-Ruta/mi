@@ -97,6 +97,7 @@ async def generate_monthly_report(
         }
 
         ctx = ai_use_case.build_context_from_metrics(
+            club_id=club.id,
             club_name=club.name,
             year=year,
             month=month,

@@ -113,6 +113,7 @@ async def renew_my_consent(
         ip_address=ip_address,
         user_agent=user_agent,
         db=db,
+        accept_third_party_sharing=body.accept_third_party_sharing,
     )
     return _to_consent_event_out(new_consent)
 

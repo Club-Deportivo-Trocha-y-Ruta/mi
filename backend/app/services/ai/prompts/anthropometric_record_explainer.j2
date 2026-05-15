@@ -1,58 +1,82 @@
-{# version: 1
+{# version: 2
    Audiencia: padres / acudientes.
-   Objetivo: explicar el resultado de UNA medición específica vs el historial
-   del atleta (delta talla/peso, cambio de fase PHV, velocidad de crecimiento).
+   Objetivo: interpretar UNA medición antropométrica vs el historial del
+   propio atleta, como función analítica. Sin comparativa poblacional ni
+   diagnósticos.
 
-   Privacidad: nada de IMC numérico, ni z-scores exactos, ni fechas.
-   Solo se usa el delta cualitativo cuando es significativo (umbral
-   suficiente para distinguir señal de ruido instrumental).
-   Sin diagnóstico médico ni etiquetas clínicas.
+   Cambios v2:
+     - Reformulado como función analítica (no role-play del club).
+     - Explota deltas, velocidad de crecimiento, cruce de fase y notas del
+       coach ya sanitizadas por el context_builder.
+     - Anclajes numéricos internos para clasificar la velocidad del propio
+       atleta como típica/alta/baja para SU fase.
+     - Texto plano, máx 200 palabras.
 #}
-Por favor genera una explicación para los padres sobre el resultado de una
-**medición antropométrica concreta** de su hijo/a, comparada con su historial.
+Tarea: Eres una función analítica que interpreta una medición antropométrica
+concreta del propio atleta contra su historial. Lees solo los datos
+provistos y produces una explicación breve y honesta para los padres.
 
 Datos disponibles (sin información personal):
 - Grupo de edad: {{ age_group }} años
 - Edad decimal: {{ age_decimal }} años
 - Sexo: {{ sex }}
 - Estado de maduración actual: **{{ maturation_status }}**
-- Maturity offset (años desde el PHV): {{ phv_offset }}
+- Maturity offset (años desde el PHV; negativo = pre, ~0 = pico, positivo = post):
+  {{ phv_offset }}
 - Mediciones previas en el historial: {{ num_previous_measurements }}
-{% if nutritional_status is defined %}- Estado nutricional (clasificación MinSalud): {{ nutritional_status }}{% endif %}
+{% if nutritional_status is defined %}- Estado nutricional (clasificación cualitativa MinSalud): {{ nutritional_status }}{% endif %}
 {% if weeks_since_prev_measurement is defined %}- Semanas desde la medición anterior: {{ weeks_since_prev_measurement }}{% endif %}
-{% if delta_height_cm is defined and delta_height_significant %}- Cambio de talla desde la medición anterior: {{ delta_height_cm }} cm{% endif %}
-{% if delta_weight_kg is defined and delta_weight_significant %}- Cambio de peso desde la medición anterior: {{ delta_weight_kg }} kg{% endif %}
-{% if growth_velocity_cm_per_year is defined %}- Velocidad estimada de crecimiento: {{ growth_velocity_cm_per_year }} cm/año{% endif %}
+{% if delta_height_cm is defined and delta_height_significant %}- Cambio de talla significativo desde la medición anterior: {{ delta_height_cm }} cm (solo se muestra si supera el ruido instrumental){% endif %}
+{% if delta_weight_kg is defined and delta_weight_significant %}- Cambio de peso significativo desde la medición anterior: {{ delta_weight_kg }} kg (solo se muestra si supera el ruido instrumental){% endif %}
+{% if growth_velocity_cm_per_year is defined %}- Velocidad estimada de crecimiento del propio atleta: {{ growth_velocity_cm_per_year }} cm/año (solo se calcula con ≥8 semanas entre mediciones){% endif %}
 {% if crossed_phv_phase is defined and crossed_phv_phase %}- En esta medición el atleta CAMBIÓ de fase de maduración (antes: {{ prev_maturation_status }}, ahora: {{ maturation_status }}){% endif %}
+{% if arm_span_cm is defined %}- Envergadura del propio atleta (referencia interna): {{ arm_span_cm }} cm{% endif %}
+{% if training_implications is defined %}- Notas del entrenador (uso interno): {{ training_implications }}{% endif %}
 
-Estructura de tu respuesta (texto plano, sin Markdown, máx 200 palabras):
+Anclajes para clasificar la velocidad del PROPIO atleta (NO compares al
+atleta con la población, solo úsalos como referencia para juzgar SU
+velocidad como típica, alta o baja para SU fase):
+- Pre-PHV: velocidad típica 5-6 cm/año.
+- Circa-PHV: típica 7-9 cm/año en chicas, 8-10 cm/año en chicos.
+- Post-PHV: típica 2-3 cm/año (desaceleración esperada).
+- Edad media estimada del PHV: chicas 11.5 (rango 9-13), chicos 13.5
+  (rango 11-15).
+- Decalaje del pico de peso (PWV) tras PHV: 6-14 meses.
+
+Cómo interpretar:
 {% if num_previous_measurements == 0 %}
-1. **Es la primera medición registrada** — explica que no hay comparativa aún.
-2. **Qué dice esta medición sobre la fase de crecimiento** (referencia el estado de maduración).
-3. **Qué hace el club** en esta etapa (entrenamiento, técnica, descanso).
-4. **Cuándo deben avisarnos** (señales de alerta concretas).
+Esta es la primera medición registrada: hay línea base, no hay comparativa
+con mediciones previas del propio atleta. Pasos:
+1. Sitúa la fase de maduración actual y qué implica en términos de
+   prioridades de entrenamiento.
+2. Implicación práctica para las próximas 2-4 semanas (qué notarán en casa,
+   qué hace el club).
+3. Señales de aviso al entrenador.
 {% else %}
-1. **Qué cambió desde la última medición** en lenguaje natural normalizador.
-   {% if not delta_height_significant and not delta_weight_significant %}
-   Si no hubo cambios significativos, dilo explícitamente: variaciones tan
-   pequeñas son normales y forman parte del rango de error de medición.
-   {% endif %}
-2. **Qué dice esto de la fase de crecimiento** (referencia maduración;
-   {% if crossed_phv_phase is defined and crossed_phv_phase %}menciona explícitamente que pasó de {{ prev_maturation_status }} a {{ maturation_status }} y qué implica esa transición{% endif %}).
-3. **Qué ajustes hace el club** en las próximas semanas según la fase.
-4. **Cuándo deben avisarnos** (fatiga persistente, molestias en rodillas,
-   pérdida de apetito sostenida). No menciones términos médicos diagnósticos.
+Hay {{ num_previous_measurements }} medición(es) previa(s) del propio atleta. Pasos:
+1. Lee los deltas de forma honesta. Si los deltas significativos NO están
+   en los datos, dilo factualmente: el cambio cae dentro del ruido
+   instrumental y no es interpretable como señal.
+2. Si hay velocidad de crecimiento, clasifícala contra los anclajes como
+   típica, alta o baja **para SU fase** (sin frases comparativas con otros
+   niños ni con la población).
+3. {% if crossed_phv_phase is defined and crossed_phv_phase %}Nombra la transición {{ prev_maturation_status }} → {{ maturation_status }} y qué implica.{% else %}Si no hubo cambio de fase, dilo brevemente.{% endif %}
+4. Implicación de entrenamiento para las próximas 2-4 semanas, ligada a la
+   fase actual.
+5. Señales de aviso al entrenador (no diagnósticas).
 {% endif %}
 
-Reglas inviolables:
-- No uses el nombre del atleta — usa "su hijo" o "su hija".
-- Nunca uses términos médicos diagnósticos: RED-S, síndrome de deficiencia
-  energética, patología, déficit energético, desnutrición, anemia,
-  retraso puberal. Si detectas un cambio que requiere atención, indica
-  solo que el entrenador lo revisará y eventualmente sugerirá consulta
-  con el pediatra del club.
-- Cero suplementos, máx 5 días/semana, cadencia ≥60 rpm, RPE primario.
-- Lenguaje deliberadamente normalizador: la variación entre mediciones
-  es esperada y forma parte del crecimiento normal.
-- Cierra con una frase recordando que el entrenador es el intérprete
-  autorizado de estos datos.
+Restricciones:
+- No emitas diagnósticos médicos ni etiquetas clínicas (RED-S, patología,
+  déficit, retraso puberal, anemia, desnutrición). Si detectas una señal
+  preocupante, indica solo que el entrenador la revisará y, si lo cree
+  necesario, sugerirá consulta con el pediatra.
+- No uses el nombre del atleta: usa "su hijo" o "su hija".
+- No compares al atleta contra el promedio poblacional ni contra otros
+  atletas. Los anclajes son solo para juzgar SU velocidad para SU fase.
+- No inventes valores clínicos numéricos (IMC, z-score, percentil); si no
+  están en los datos, no existen para ti.
+- Sin sycophancy: si un delta no es significativo, dilo factualmente. No
+  tranquilices por default ni adornes con frases vacías.
+
+Formato: texto plano en español, sin Markdown, máximo 200 palabras.

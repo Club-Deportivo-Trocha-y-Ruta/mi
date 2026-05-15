@@ -56,7 +56,7 @@ async def _create_athlete(client, headers: dict, club_id: int) -> int:
 
 
 async def _register_parent(
-    client, athlete_id: int, consent_version: str = "v1.1"
+    client, athlete_id: int, consent_version: str = "v1.2"
 ) -> tuple[str, str]:
     """Crea una invitación, registra al padre con consent y retorna (email, token_jwt)."""
     headers = await _coach_headers(client)
@@ -108,11 +108,11 @@ class TestActivePolicyEndpoint:
     """Verifica el endpoint público de política activa."""
 
     async def test_retorna_politica_activa_sin_autenticacion(self, client):
-        """GET /api/auth/active-policy no requiere token y retorna v1.1."""
+        """GET /api/auth/active-policy no requiere token y retorna la política vigente (v1.2)."""
         resp = await client.get("/api/auth/active-policy")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["version"] == "v1.1"
+        assert body["version"] == "v1.2"
         assert body["deprecated_at"] is None
 
     async def test_respuesta_incluye_content_html(self, client):
@@ -181,7 +181,7 @@ class TestGetConsentStatus:
         assert athlete_id in athlete_ids
 
     async def test_consentimiento_actual_marcado_como_vigente(self, client):
-        """El consentimiento dado con v1.1 debe tener is_current_policy=True."""
+        """El consentimiento dado con la política vigente debe tener is_current_policy=True."""
         athlete_id, parent_jwt = await _full_setup(client)
         headers = {"Authorization": f"Bearer {parent_jwt}"}
 

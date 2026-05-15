@@ -255,8 +255,8 @@ describe("AnthropometryHistory", () => {
       await user.click(rows[1]);
       // Confirmar que el modal está abierto
       expect(screen.getByText(/Medición del/i)).toBeInTheDocument();
-      // Cerrar con el botón x
-      await user.click(screen.getByRole("button", { name: "✕" }));
+      // Cerrar con el botón x (aria-label="Cerrar")
+      await user.click(screen.getByRole("button", { name: "Cerrar" }));
       expect(screen.queryByText(/Medición del/i)).not.toBeInTheDocument();
     });
 

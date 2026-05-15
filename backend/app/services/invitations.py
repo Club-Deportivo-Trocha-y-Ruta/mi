@@ -275,10 +275,10 @@ async def consume_invite(
                 ),
             )
 
-        # Política v1.1: tracking y terceros no son finalidades activas; se
-        # persisten siempre como False aunque el cliente envíe True. Cuando se
-        # implementen estas funciones se bumpeará la política y se solicitará
-        # un consentimiento nuevo (Ley 1581/2012, principio de finalidad).
+        # training_tracking aún no está activo como finalidad — siempre False.
+        # third_party_sharing: habilitado desde política v1.2; se propaga desde
+        # el campo accept_third_party_sharing del wizard de onboarding.
+        # (Ley 1581/2012, principio de finalidad y consentimiento informado)
         parental_consent = ParentalConsent(
             parent_user_id=new_user.id,
             athlete_id=invite.athlete_id,
@@ -291,7 +291,7 @@ async def consume_invite(
             data_collection=consent.accept_data_collection,
             training_tracking=False,
             anthropometry=consent.accept_anthropometry,
-            third_party_sharing=False,
+            third_party_sharing=consent.accept_third_party_sharing,
         )
         db.add(parental_consent)
 

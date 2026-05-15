@@ -52,7 +52,7 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
                 "age_at_phv",
             }
         ),
-        version=2,
+        version=3,
         description="Explicación del resultado PHV para padres.",
     ),
     "anthropometric_record_analysis": PromptSpec(
@@ -68,7 +68,7 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
                 "num_previous_measurements",
             }
         ),
-        version=1,
+        version=2,
         description=(
             "Análisis particular de una medición antropométrica vs historial."
         ),
@@ -85,6 +85,7 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
                 "total_sessions_executed",
                 "total_sessions_cancelled",
                 "attendance_stats",
+                "attendance_summary",
                 "focos_técnicos",
                 "avg_rpe",
                 "avg_rubric_effort",

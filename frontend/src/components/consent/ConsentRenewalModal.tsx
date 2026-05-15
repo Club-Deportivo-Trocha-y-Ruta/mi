@@ -56,8 +56,8 @@ const changelogStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 
 /**
- * Ambos checkboxes deben ser true. Se usa z.literal(true) igual que en
- * consentSchema del onboarding para mantener consistencia semántica.
+ * Los dos primeros checkboxes son obligatorios (z.literal(true)).
+ * El tercero (IA) es opcional — z.boolean() con default false.
  */
 const renewalSchema = z.object({
   accept_data_collection: z.literal(true, {
@@ -66,6 +66,7 @@ const renewalSchema = z.object({
   accept_anthropometry: z.literal(true, {
     error: "Debes aceptar el registro de medidas antropométricas para continuar",
   }),
+  accept_third_party_sharing: z.boolean(),
 });
 
 type RenewalFormData = z.infer<typeof renewalSchema>;
@@ -79,10 +80,18 @@ interface ConsentItemProps {
   label: string;
   description: string;
   error?: string;
+  required?: boolean;
   register: ReturnType<typeof useForm<RenewalFormData>>["register"];
 }
 
-function ConsentItem({ id, label, description, error, register }: ConsentItemProps) {
+function ConsentItem({
+  id,
+  label,
+  description,
+  error,
+  required = true,
+  register,
+}: ConsentItemProps) {
   return (
     <div className="flex gap-3">
       <div className="mt-0.5 shrink-0">
@@ -92,7 +101,7 @@ function ConsentItem({ id, label, description, error, register }: ConsentItemPro
           className="h-4 w-4 cursor-pointer rounded accent-charcoal"
           style={checkboxStyle}
           {...register(id)}
-          aria-required="true"
+          aria-required={required}
           aria-describedby={error ? `renewal-${id}-error` : undefined}
         />
       </div>
@@ -152,6 +161,7 @@ export function ConsentRenewalModal({
     defaultValues: {
       accept_data_collection: false as unknown as true,
       accept_anthropometry: false as unknown as true,
+      accept_third_party_sharing: false,
     },
     mode: "onSubmit",
   });
@@ -165,6 +175,7 @@ export function ConsentRenewalModal({
         policy_version: activePolicy.version,
         accept_data_collection: data.accept_data_collection,
         accept_anthropometry: data.accept_anthropometry,
+        accept_third_party_sharing: data.accept_third_party_sharing ?? false,
       },
       {
         onSuccess: () => {
@@ -259,10 +270,11 @@ export function ConsentRenewalModal({
               {/* Checkboxes de consentimiento */}
               <fieldset
                 className="space-y-4"
-                aria-label="Consentimientos parentales requeridos"
+                aria-label="Consentimientos parentales: dos obligatorios y uno opcional"
               >
                 <legend className="sr-only">
-                  Consentimientos parentales requeridos para {athlete.athlete_name}
+                  Consentimientos parentales para {athlete.athlete_name}: dos
+                  obligatorios y uno opcional de procesamiento con IA
                 </legend>
 
                 <ConsentItem
@@ -280,6 +292,17 @@ export function ConsentRenewalModal({
                   label="Registrar mediciones antropométricas"
                   description="Talla de pie, talla sentado, peso, envergadura y cálculo de maduración biológica (PHV — Pico de Velocidad de Crecimiento) para llevar control del crecimiento del atleta y detectar señales de alerta nutricional o de desarrollo."
                   error={errors.accept_anthropometry?.message}
+                  register={register}
+                />
+
+                <div className="border-t border-border/50" aria-hidden="true" />
+
+                <ConsentItem
+                  id="accept_third_party_sharing"
+                  label="Procesamiento con IA (opcional)"
+                  description="Autorizar al club a enviar la antropometría del atleta a Anthropic Claude o Google Gemini para generar explicaciones legibles sobre su desarrollo (estado PHV, crecimiento). Los datos no se usan para entrenar modelos. Puedes revocar en cualquier momento."
+                  error={errors.accept_third_party_sharing?.message}
+                  required={false}
                   register={register}
                 />
               </fieldset>
@@ -305,8 +328,9 @@ export function ConsentRenewalModal({
                   />
                 </svg>
                 <p className="text-xs text-mid-gray leading-relaxed">
-                  Ambos consentimientos son obligatorios para la participación en el club.
-                  Puedes revocar en cualquier momento desde tu panel.
+                  Los dos primeros consentimientos son obligatorios para la participación
+                  en el club. El de procesamiento con IA es opcional. Puedes revocar en
+                  cualquier momento desde tu panel.
                 </p>
               </div>
 
