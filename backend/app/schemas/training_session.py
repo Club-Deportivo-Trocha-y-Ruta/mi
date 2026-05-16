@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 from app.models.training_session import AttendanceStatus, SessionStatus
+from app.schemas.session_media import SessionMediaRead, SessionMediaReadParent
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +129,7 @@ class TrainingSessionRead(BaseModel):
     executed_at: datetime | None
     attendance_summary: AttendanceSummary | None = None
     kid_attendances: list[KidAttendance] | None = None
+    media: list[SessionMediaRead] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -153,6 +155,8 @@ class TrainingSessionReadParent(BaseModel):
     # Solo asistencias de los propios hijos; resumen recalculado con esos datos
     attendance_summary: AttendanceSummary | None = None
     kid_attendances: list[KidAttendance] | None = None
+    # Media filtradas por intersección con los atletas del padre
+    media: list[SessionMediaReadParent] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 

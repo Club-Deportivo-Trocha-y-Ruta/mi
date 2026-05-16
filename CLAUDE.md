@@ -151,6 +151,22 @@ Migraciones corren automáticamente via `entrypoint.sh` (`alembic upgrade head`)
 | 14 | Tests frontend: 717 tests vitest (58 archivos, 0 violaciones a11y) | ✅ Completo 2026-05-06 |
 | 15 | E2E checklist + deploy artifacts + docs + corrección fork Alembic | ✅ Completo 2026-05-06 |
 
+## Estado de implementación — Módulo Media de Sesiones (Fase 1.6)
+
+> Subida de fotos y videos a sesiones. Storage en Hostinger SFTP (fallback local en dev). Filtrado de privacidad para padres por intersección con atletas etiquetados.
+
+| Paso | Descripción | Estado |
+|---|---|---|
+| 1 | Modelo `SessionMedia` + M:N `session_media_athlete` + enum `MediaType` | ✅ Completo 2026-05-16 |
+| 2 | Schemas Pydantic con `consent_ack` obligatorio + vista parent restringida | ✅ Completo 2026-05-16 |
+| 3 | Servicio `media_files.py`: magic bytes, strip EXIF (Pillow), thumbnails; `storage_sftp.py` wrapper paramiko + fallback local | ✅ Completo 2026-05-16 |
+| 4 | 4 endpoints CRUD media con RBAC + validación de atletas convocados | ✅ Completo 2026-05-16 |
+| 5 | Permisos: `can_view_session_media` + `filter_media_for_parent` | ✅ Completo 2026-05-16 |
+| 6 | Migración Alembic `d7f1a2b3c4e5` (2 tablas + enum + índices) | ✅ Completo 2026-05-16 |
+| 7 | Frontend: `MediaGallery` + `MediaUploadZone` con banner Ley 1581 + integración detail pages coach/parent | ✅ Completo 2026-05-16 |
+| 8 | Tests: 21 backend (magic bytes, EXIF strip, schemas, filtrado) + 10 frontend (API + UploadZone) | ✅ Completo 2026-05-16 |
+| 9 | Deploy: configurar `HOSTINGER_SFTP_*` y `HOSTINGER_PUBLIC_BASE_URL` en Render | ⏳ Pendiente |
+
 ## Credenciales de desarrollo (seed data)
 
 > Solo para entorno local / Docker dev. Nunca usar en producción.

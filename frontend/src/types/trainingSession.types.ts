@@ -28,6 +28,55 @@ export interface TrainingSession {
   attendance_count?: number | null;
   attendance_summary?: AttendanceSummaryCounts | null;
   kid_attendances?: KidAttendance[] | null;
+  media?: SessionMedia[] | SessionMediaParent[];
+}
+
+export type MediaType = "photo" | "video";
+
+export interface SessionMedia {
+  id: number;
+  session_id: number;
+  media_type: MediaType;
+  storage_url: string;
+  thumbnail_url?: string | null;
+  filename_original: string;
+  mime_type: string;
+  size_bytes: number;
+  width?: number | null;
+  height?: number | null;
+  duration_sec?: number | null;
+  caption?: string | null;
+  consent_ack: boolean;
+  uploaded_by_user_id: number;
+  uploaded_at: string;
+  athlete_ids: number[];
+}
+
+export interface SessionMediaParent {
+  id: number;
+  session_id: number;
+  media_type: MediaType;
+  storage_url: string;
+  thumbnail_url?: string | null;
+  mime_type: string;
+  width?: number | null;
+  height?: number | null;
+  duration_sec?: number | null;
+  caption?: string | null;
+  uploaded_at: string;
+}
+
+export interface SessionMediaUploadPayload {
+  file: File;
+  media_type: MediaType;
+  athlete_ids: number[];
+  consent_ack: boolean;
+  caption?: string;
+}
+
+export interface SessionMediaUpdatePayload {
+  caption?: string | null;
+  athlete_ids?: number[];
 }
 
 export interface KidAttendance {

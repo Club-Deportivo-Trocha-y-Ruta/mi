@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, calendar, growth, parent_athletes, reports, training_sessions
@@ -36,6 +39,11 @@ app.include_router(calendar.router, prefix="/api/calendar/events", tags=["calend
 app.include_router(training_sessions.router, prefix="/api/training-sessions", tags=["training-sessions"])
 app.include_router(monthly_reports_router, prefix="/api/clubs", tags=["monthly-reports"])
 app.include_router(parent_monthly_router, prefix="/api/parents", tags=["monthly-reports"])
+
+
+_local_media_dir = Path("static/uploads/media")
+_local_media_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/health")

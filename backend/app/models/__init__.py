@@ -15,6 +15,11 @@ from app.models.training_session import (
     SessionStatus,
     TrainingSession,
 )
+from app.models.session_media import (
+    MediaType,
+    SessionMedia,
+    SessionMediaAthlete,
+)
 from app.models.calendar_event import (
     ActualAttendanceStatus,
     AudienceType,
@@ -52,6 +57,9 @@ __all__ = [
     "TrainingSession",
     "SessionAttendance",
     "MonthlyReport",
+    "MediaType",
+    "SessionMedia",
+    "SessionMediaAthlete",
     "CalendarEvent",
     "EventAudience",
     "EventAttendance",

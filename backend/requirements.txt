@@ -22,3 +22,5 @@ anthropic>=0.40
 google-genai>=1.0
 gpxpy>=1.6
 defusedxml>=0.7
+pillow>=10.4
+paramiko>=3.4

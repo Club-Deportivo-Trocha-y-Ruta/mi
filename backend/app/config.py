@@ -77,6 +77,30 @@ class Settings(BaseSettings):
     # True → loguea prompts y respuestas (NUNCA activar en producción).
     ai_log_prompts: bool = False
 
+    # -----------------------------------------------------------------------
+    # Media de sesiones (fotos/videos vía SFTP a Hostinger)
+    # -----------------------------------------------------------------------
+    # SFTP de destino (Hostinger web hosting). En tests/local queda vacío y
+    # el storage backend usa un fallback local en static/uploads/media.
+    hostinger_sftp_host: str = ""
+    hostinger_sftp_port: int = 22
+    hostinger_sftp_user: str = ""
+    hostinger_sftp_pass: str = ""
+    # Directorio absoluto remoto donde se escriben los archivos.
+    hostinger_sftp_remote_dir: str = ""
+    # Base URL pública desde donde se servirán las media (HTTPS).
+    # Debe terminar SIN slash; el servicio agrega la ruta relativa.
+    hostinger_public_base_url: str = ""
+
+    # Límites
+    media_max_photo_mb: int = 10
+    media_max_video_mb: int = 50
+
+    @field_validator("hostinger_public_base_url")
+    @classmethod
+    def _strip_trailing_slash(cls, v: str) -> str:
+        return v.rstrip("/")
+
     @field_validator("jwt_secret_key")
     @classmethod
     def validate_jwt_secret(cls, v: str, info) -> str:
