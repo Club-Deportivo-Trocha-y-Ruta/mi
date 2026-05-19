@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from app.models.athlete import Athlete
     from app.models.calendar_event import CalendarEvent
     from app.models.club import Club
+    from app.models.session_media import SessionMedia
     from app.models.user import User
 
 
@@ -107,6 +108,12 @@ class TrainingSession(Base):
         "SessionAttendance",
         back_populates="session",
         cascade="all, delete-orphan",
+    )
+    media: Mapped[list[SessionMedia]] = relationship(
+        "SessionMedia",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="SessionMedia.uploaded_at.desc()",
     )
     calendar_event: Mapped[CalendarEvent | None] = relationship(
         "CalendarEvent",

@@ -10,9 +10,17 @@ import {
   useUploadRouteFile,
   useUpdateTrainingSession,
 } from "@/api/trainingSessions";
+import {
+  useDeleteSessionMedia,
+  useSessionMedia,
+  useUploadSessionMedia,
+} from "@/api/sessionMedia";
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
 import { AttendanceTable } from "@/components/training/AttendanceTable";
+import { MediaGallery } from "@/components/training/MediaGallery";
+import { MediaUploadZone } from "@/components/training/MediaUploadZone";
 import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
+import type { SessionMedia } from "@/types/trainingSession.types";
 
 const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
@@ -61,6 +69,9 @@ export function SessionDetailPage() {
   const cancelMutation = useCancelTrainingSession();
   const uploadMutation = useUploadRouteFile(sessionId);
   const updateMutation = useUpdateTrainingSession();
+  const mediaQuery = useSessionMedia(sessionId, !!sessionId);
+  const mediaUploadMutation = useUploadSessionMedia(sessionId);
+  const mediaDeleteMutation = useDeleteSessionMedia(sessionId);
 
   const session = sessionQuery.data;
 
@@ -353,6 +364,37 @@ export function SessionDetailPage() {
             sessionId={sessionId}
             attendances={attendances}
             disabled={isCancelled}
+          />
+        )}
+      </div>
+
+      {/* Fotos y videos */}
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+        <h2 className={sectionHeading}>Fotos y videos</h2>
+
+        {!isCancelled && (
+          <MediaUploadZone
+            athletes={attendances.map((a) => ({
+              id: a.athlete_id,
+              label: a.athlete_name ?? `Atleta #${a.athlete_id}`,
+            }))}
+            onUpload={(payload) => mediaUploadMutation.mutateAsync(payload)}
+            isUploading={mediaUploadMutation.isPending}
+            uploadError={
+              mediaUploadMutation.isError
+                ? "No se pudo subir la media. Verifica el formato, tamaño y permisos."
+                : null
+            }
+          />
+        )}
+
+        {mediaQuery.isLoading ? (
+          <div className="h-24 animate-pulse rounded-lg bg-light-gray" />
+        ) : (
+          <MediaGallery
+            media={(mediaQuery.data ?? []) as SessionMedia[]}
+            onDelete={(mediaId) => mediaDeleteMutation.mutate(mediaId)}
+            isDeleting={mediaDeleteMutation.isPending}
           />
         )}
       </div>

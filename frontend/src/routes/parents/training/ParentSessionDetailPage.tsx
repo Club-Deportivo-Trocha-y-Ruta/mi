@@ -4,8 +4,11 @@ import { ExternalLink } from "lucide-react";
 
 import { ReadOnlyAttendanceRow } from "@/components/parents/ReadOnlyAttendanceRow";
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
+import { MediaGallery } from "@/components/training/MediaGallery";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useSessionAttendance, useTrainingSession } from "@/api/trainingSessions";
+import { useSessionMedia } from "@/api/sessionMedia";
+import type { SessionMediaParent } from "@/types/trainingSession.types";
 
 const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
@@ -44,6 +47,7 @@ export function ParentSessionDetailPage() {
   const sessionQuery = useTrainingSession(sessionId);
   const attendanceQuery = useSessionAttendance(sessionId, !!sessionId);
   const athletesQuery = useMyAthletes();
+  const mediaQuery = useSessionMedia(sessionId, !!sessionId);
 
   const session = sessionQuery.data;
   const myAthletes = athletesQuery.data ?? [];
@@ -164,6 +168,19 @@ export function ParentSessionDetailPage() {
           )}
         </div>
       )}
+
+      {/* Fotos y videos donde aparece tu atleta */}
+      <div className="rounded-xl bg-white px-5 py-4 space-y-3" style={cardStyle}>
+        <h2 className={sectionHeading}>Fotos y videos</h2>
+        {mediaQuery.isLoading ? (
+          <div className="h-24 animate-pulse rounded-lg bg-light-gray" />
+        ) : (
+          <MediaGallery
+            media={(mediaQuery.data ?? []) as SessionMediaParent[]}
+            readOnly
+          />
+        )}
+      </div>
 
       {/* Asistencia de mi atleta */}
       <div className="space-y-3">

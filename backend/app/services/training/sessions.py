@@ -890,6 +890,8 @@ async def list_sessions(
             )
         )
 
+    from app.models.session_media import SessionMedia
+
     stmt = (
         stmt.order_by(
             TrainingSession.scheduled_date.desc(),
@@ -898,7 +900,10 @@ async def list_sessions(
         )
         .limit(limit)
         .offset(offset)
-        .options(selectinload(TrainingSession.attendances))
+        .options(
+            selectinload(TrainingSession.attendances),
+            selectinload(TrainingSession.media).selectinload(SessionMedia.athletes),
+        )
     )
 
     result = await db.execute(stmt)
@@ -907,13 +912,16 @@ async def list_sessions(
 
 async def get_session(db: AsyncSession, session_id: int) -> TrainingSession | None:
     """Retorna la sesión por ID, o None si no existe."""
+    from app.models.session_media import SessionMedia
+
     result = await db.execute(
         select(TrainingSession)
         .where(TrainingSession.id == session_id)
         .options(
             selectinload(TrainingSession.attendances).selectinload(
                 SessionAttendance.athlete
-            )
+            ),
+            selectinload(TrainingSession.media).selectinload(SessionMedia.athletes),
         )
     )
     return result.scalar_one_or_none()

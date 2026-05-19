@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.athlete import ParentAthlete
 from app.models.club import ClubMember, ClubRole
+from app.models.session_media import SessionMedia
 from app.models.training_session import SessionAttendance, TrainingSession
 from app.models.user import User, UserRole
 
@@ -98,6 +99,47 @@ async def can_edit_session(
         role = await user_club_role(db, user.id, session.club_id)
         return role is not None
     return False
+
+
+async def can_view_session_media(
+    db: AsyncSession,
+    user: User,
+    session: TrainingSession,
+    media: SessionMedia,
+) -> bool:
+    """
+    Admin: siempre.
+    Coach: si pertenece al club de la sesión.
+    Parent: sólo si la media etiqueta a alguno de sus hijos.
+    """
+    if user.role == UserRole.admin:
+        return True
+    if user.role == UserRole.coach:
+        role = await user_club_role(db, user.id, session.club_id)
+        return role is not None
+    if user.role == UserRole.parent:
+        athlete_ids = set(await parent_athlete_ids(db, user.id))
+        if not athlete_ids:
+            return False
+        tagged = {a.id for a in (media.athletes or [])}
+        return bool(athlete_ids & tagged)
+    return False
+
+
+def filter_media_for_parent(
+    media_list: list[SessionMedia],
+    children_ids: set[int],
+) -> list[SessionMedia]:
+    """Filtra la lista de media para una vista parent: sólo aquellas donde
+    al menos un hijo aparece etiquetado y la media no fue soft-deleted."""
+    result: list[SessionMedia] = []
+    for m in media_list:
+        if m.deleted_at is not None:
+            continue
+        tagged = {a.id for a in (m.athletes or [])}
+        if children_ids & tagged:
+            result.append(m)
+    return result
 
 
 async def can_view_athlete_feedback(

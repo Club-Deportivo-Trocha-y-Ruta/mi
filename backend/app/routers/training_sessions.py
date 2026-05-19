@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Union
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.dependencies import (
     get_current_user,
@@ -18,8 +19,14 @@ from app.dependencies import (
 )
 from app.models.athlete import Athlete
 from app.models.club import ClubRole
+from app.models.session_media import MediaType, SessionMedia
 from app.models.training_session import AttendanceStatus, SessionStatus
 from app.models.user import User, UserRole
+from app.schemas.session_media import (
+    SessionMediaRead,
+    SessionMediaReadParent,
+    SessionMediaUpdate,
+)
 from app.schemas.training_session import (
     AttendanceBulkSet,
     AttendanceRead,
@@ -36,6 +43,7 @@ from app.services import training as training_svc
 from app.services.permissions import (
     can_edit_session,
     can_view_session,
+    filter_media_for_parent,
     parent_athlete_ids,
     user_club_role,
 )
@@ -81,9 +89,21 @@ def _build_attendance_summary(attendances: list) -> AttendanceSummary:
     )
 
 
+def _media_to_read(media: SessionMedia) -> SessionMediaRead:
+    data = SessionMediaRead.model_validate(media).model_dump()
+    data["athlete_ids"] = [a.id for a in (media.athletes or [])]
+    return SessionMediaRead.model_validate(data)
+
+
+def _media_to_read_parent(media: SessionMedia) -> SessionMediaReadParent:
+    return SessionMediaReadParent.model_validate(media)
+
+
 def _session_to_read(session) -> TrainingSessionRead:
     out = TrainingSessionRead.model_validate(session)
     out.attendance_summary = _build_attendance_summary(session.attendances or [])
+    active_media = [m for m in (session.media or []) if m.deleted_at is None]
+    out.media = [_media_to_read(m) for m in active_media]
     return out
 
 
@@ -112,10 +132,20 @@ def _session_to_read_parent(session, children_ids: set[int]) -> TrainingSessionR
         for a in kid_attendances_raw
     ]
     data = TrainingSessionRead.model_validate(session).model_dump(
-        exclude={"coach_notes", "route_file_path", "attendance_summary", "kid_attendances"}
+        exclude={
+            "coach_notes",
+            "route_file_path",
+            "attendance_summary",
+            "kid_attendances",
+            "media",
+        }
     )
     data["attendance_summary"] = summary
     data["kid_attendances"] = kid_att
+    visible_media = filter_media_for_parent(session.media or [], children_ids)
+    data["media"] = [
+        _media_to_read_parent(m).model_dump() for m in visible_media
+    ]
     return TrainingSessionReadParent.model_validate(data)
 
 
@@ -753,3 +783,262 @@ async def upload_route_file(
     # Recargar con asistencias
     reloaded = await _get_session_or_404(db, session_id)
     return _session_to_read(reloaded)
+
+
+# ---------------------------------------------------------------------------
+# Endpoints media (fotos y videos)
+# ---------------------------------------------------------------------------
+
+
+async def _validate_athlete_ids_for_session(
+    db: AsyncSession,
+    session_id: int,
+    athlete_ids: list[int],
+) -> list[Athlete]:
+    """Verifica que todos los athlete_ids estén convocados a la sesión.
+
+    Los atletas que se etiquetan en una media deben haber sido convocados
+    (es decir, tener un registro en session_attendance). Esto bloquea
+    etiquetar atletas ajenos a la sesión.
+    """
+    if not athlete_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debe etiquetar al menos un atleta convocado.",
+        )
+
+    from app.models.training_session import SessionAttendance
+
+    result = await db.execute(
+        select(SessionAttendance.athlete_id).where(
+            SessionAttendance.session_id == session_id,
+            SessionAttendance.athlete_id.in_(athlete_ids),
+        )
+    )
+    convocados = set(result.scalars().all())
+    invalid = set(athlete_ids) - convocados
+    if invalid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Los siguientes atletas no están convocados a la sesión: "
+                f"{sorted(invalid)}."
+            ),
+        )
+
+    ath_result = await db.execute(
+        select(Athlete).where(Athlete.id.in_(athlete_ids))
+    )
+    return list(ath_result.scalars().all())
+
+
+@router.post("/{session_id}/media", response_model=SessionMediaRead, status_code=status.HTTP_201_CREATED)
+async def upload_session_media(
+    session_id: int,
+    file: Annotated[UploadFile, File(description="Foto (.jpg/.png/.webp) o video (.mp4/.mov)")],
+    media_type: Annotated[MediaType, Form(description="photo | video")],
+    athlete_ids: Annotated[str, Form(description="IDs separados por coma de atletas etiquetados")],
+    consent_ack: Annotated[bool, Form(description="Confirmación de consentimiento parental")],
+    caption: Annotated[str | None, Form(max_length=280)] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> SessionMediaRead:
+    session = await _get_session_or_404(db, session_id)
+
+    if current_user.role == UserRole.coach:
+        role = await user_club_role(db, current_user.id, session.club_id)
+        if role is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No perteneces al club de esta sesión",
+            )
+
+    if not consent_ack:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Debe marcar la casilla de consentimiento parental (Ley 1581) "
+                "antes de subir media de menores."
+            ),
+        )
+
+    try:
+        ids = [int(x.strip()) for x in athlete_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="athlete_ids debe ser una lista de enteros separados por coma.",
+        )
+
+    athletes = await _validate_athlete_ids_for_session(db, session_id, ids)
+
+    try:
+        stored = await training_svc.media_files.save_session_media(
+            file=file, session_id=session_id
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+    if stored.media_type != media_type:
+        # El campo `media_type` declarado debe coincidir con lo detectado.
+        try:
+            await training_svc.media_files.delete_session_media(stored.storage_path)
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"El tipo declarado '{media_type.value}' no coincide con el "
+                f"archivo detectado '{stored.media_type.value}'."
+            ),
+        )
+
+    media = SessionMedia(
+        session_id=session_id,
+        media_type=stored.media_type,
+        storage_url=stored.storage_url,
+        storage_path=stored.storage_path,
+        thumbnail_url=stored.thumbnail_url,
+        filename_original=(file.filename or "")[:255],
+        mime_type=stored.mime_type,
+        size_bytes=stored.size_bytes,
+        width=stored.width,
+        height=stored.height,
+        duration_sec=stored.duration_sec,
+        caption=caption,
+        consent_ack=True,
+        uploaded_by_user_id=current_user.id,
+    )
+    media.athletes = athletes
+    db.add(media)
+    await db.commit()
+    await db.refresh(media)
+    # Recargar la relación athletes
+    result = await db.execute(
+        select(SessionMedia)
+        .where(SessionMedia.id == media.id)
+        .options(selectinload(SessionMedia.athletes))
+    )
+    media_loaded = result.scalar_one()
+    return _media_to_read(media_loaded)
+
+
+@router.get("/{session_id}/media")
+async def list_session_media(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[SessionMediaRead] | list[SessionMediaReadParent]:
+    session = await _get_session_or_404(db, session_id)
+    allowed = await can_view_session(db, current_user, session)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes acceso a esta sesión.",
+        )
+
+    active = [m for m in (session.media or []) if m.deleted_at is None]
+
+    if current_user.role == UserRole.parent:
+        children = set(await parent_athlete_ids(db, current_user.id))
+        visible = filter_media_for_parent(active, children)
+        return [_media_to_read_parent(m) for m in visible]
+
+    return [_media_to_read(m) for m in active]
+
+
+@router.delete("/{session_id}/media/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session_media(
+    session_id: int,
+    media_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> None:
+    session = await _get_session_or_404(db, session_id)
+    if current_user.role == UserRole.coach:
+        role = await user_club_role(db, current_user.id, session.club_id)
+        if role is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No perteneces al club de esta sesión",
+            )
+
+    result = await db.execute(
+        select(SessionMedia).where(
+            SessionMedia.id == media_id,
+            SessionMedia.session_id == session_id,
+        )
+    )
+    media = result.scalar_one_or_none()
+    if media is None or media.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Media no encontrada.",
+        )
+
+    from datetime import datetime, timezone
+
+    media.deleted_at = datetime.now(timezone.utc)
+    storage_path = media.storage_path
+    await db.commit()
+
+    try:
+        await training_svc.media_files.delete_session_media(storage_path)
+    except Exception:
+        pass
+
+    return None
+
+
+@router.patch("/{session_id}/media/{media_id}", response_model=SessionMediaRead)
+async def update_session_media(
+    session_id: int,
+    media_id: int,
+    payload: SessionMediaUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> SessionMediaRead:
+    session = await _get_session_or_404(db, session_id)
+    if current_user.role == UserRole.coach:
+        role = await user_club_role(db, current_user.id, session.club_id)
+        if role is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No perteneces al club de esta sesión",
+            )
+
+    result = await db.execute(
+        select(SessionMedia)
+        .where(
+            SessionMedia.id == media_id,
+            SessionMedia.session_id == session_id,
+        )
+        .options(selectinload(SessionMedia.athletes))
+    )
+    media = result.scalar_one_or_none()
+    if media is None or media.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Media no encontrada.",
+        )
+
+    if payload.caption is not None:
+        media.caption = payload.caption
+
+    if payload.athlete_ids is not None:
+        athletes = await _validate_athlete_ids_for_session(
+            db, session_id, payload.athlete_ids
+        )
+        media.athletes = athletes
+
+    await db.commit()
+    await db.refresh(media)
+    result2 = await db.execute(
+        select(SessionMedia)
+        .where(SessionMedia.id == media.id)
+        .options(selectinload(SessionMedia.athletes))
+    )
+    return _media_to_read(result2.scalar_one())
