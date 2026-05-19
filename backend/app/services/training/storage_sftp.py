@@ -98,15 +98,20 @@ def _ftp_client() -> Iterator[FTP]:
                 pass
 
 
-def _cwd_into(ftp: FTP, parts: list[str]) -> None:
-    """Entra a cada subdirectorio en `parts`, creándolo si no existe.
+def _cwd_into(ftp: FTP, abs_dir: PurePosixPath) -> None:
+    """Navega a `abs_dir` (path absoluto), creando subdirectorios si faltan.
 
-    Usa nombres simples relativos al cwd actual — nunca paths acumulados,
-    porque `ftp.cwd('a/b')` desde dentro de `a` busca `a/a/b`.
+    Arranca siempre desde `/` para no depender del PWD post-login (Hostinger
+    deja al usuario en `/public_html` por defecto, lo que duplicaría el path si
+    `REMOTE_DIR` también incluye `public_html`).
     """
-    for part in parts:
-        if not part or part == "/":
-            continue
+    try:
+        ftp.cwd("/")
+    except error_perm:
+        # Si el servidor jaílea al usuario y rechaza `/`, navegar relativo.
+        pass
+
+    for part in _split_path(abs_dir):
         try:
             ftp.cwd(part)
         except error_perm:
@@ -119,16 +124,28 @@ def _split_path(p: PurePosixPath) -> list[str]:
     return [part for part in p.parts if part and part != "/"]
 
 
+def _absolute_remote_dir() -> PurePosixPath:
+    """`HOSTINGER_SFTP_REMOTE_DIR` interpretado como path absoluto.
+
+    Acepta valores con o sin `/` inicial — siempre devuelve un path absoluto
+    para evitar ambigüedad con el PWD post-login.
+    """
+    raw = settings.hostinger_sftp_remote_dir or ""
+    if not raw.startswith("/"):
+        raw = "/" + raw
+    return PurePosixPath(raw)
+
+
 def _upload_sftp_sync(content: bytes, relative_path: str) -> tuple[str, str]:
     """Sube `content` a Hostinger por FTPS y retorna (storage_path, storage_url).
 
-    `storage_path` es el path completo (base + relativo) para uso al borrar.
+    `storage_path` es el path absoluto (base + relativo) para uso al borrar.
     """
-    remote_base = PurePosixPath(settings.hostinger_sftp_remote_dir)
+    remote_base = _absolute_remote_dir()
     remote_path = remote_base / relative_path
 
     with _ftp_client() as ftp:
-        _cwd_into(ftp, _split_path(remote_path.parent))
+        _cwd_into(ftp, remote_path.parent)
         buf = io.BytesIO(content)
         ftp.storbinary(f"STOR {remote_path.name}", buf)
 
@@ -141,8 +158,7 @@ def _delete_sftp_sync(storage_path: str) -> None:
     try:
         path = PurePosixPath(storage_path)
         with _ftp_client() as ftp:
-            for part in _split_path(path.parent):
-                ftp.cwd(part)
+            _cwd_into(ftp, path.parent)
             ftp.delete(path.name)
     except Exception:  # noqa: BLE001
         logger.warning("No se pudo borrar archivo FTPS (best-effort).")
