@@ -890,6 +890,8 @@ async def list_sessions(
             )
         )
 
+    from app.models.session_media import SessionMedia
+
     stmt = (
         stmt.order_by(
             TrainingSession.scheduled_date.desc(),
@@ -898,7 +900,10 @@ async def list_sessions(
         )
         .limit(limit)
         .offset(offset)
-        .options(selectinload(TrainingSession.attendances))
+        .options(
+            selectinload(TrainingSession.attendances),
+            selectinload(TrainingSession.media).selectinload(SessionMedia.athletes),
+        )
     )
 
     result = await db.execute(stmt)
