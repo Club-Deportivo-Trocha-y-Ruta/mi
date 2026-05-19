@@ -1,4 +1,8 @@
-"""Wrapper SFTP para subir/borrar media en Hostinger.
+"""Wrapper FTPS para subir/borrar media en Hostinger (Shared Hosting).
+
+Hostinger Shared expone FTP/FTPS en el puerto 21 (no SFTP/SSH en el 22). Usa
+`ftplib.FTP_TLS` para subir cifrado sobre TLS (AUTH TLS + PROT P). Las variables
+de entorno conservan el prefijo `HOSTINGER_SFTP_*` por compatibilidad.
 
 Si las credenciales no están configuradas (entorno local/tests), se usa un
 fallback de filesystem local en `static/uploads/media` y se construye una URL
@@ -9,8 +13,11 @@ servida por el propio backend mediante el mount estático (configurado en
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
+import ssl
 from contextlib import contextmanager
+from ftplib import FTP, FTP_TLS, error_perm, error_temp
 from pathlib import Path, PurePosixPath
 from typing import Iterator
 
@@ -21,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 _LOCAL_FALLBACK_BASE = Path("static/uploads/media")
 _LOCAL_FALLBACK_URL_PREFIX = "/static/uploads/media"
+
+_FTP_TIMEOUT_SEC = 30
 
 
 def _is_sftp_configured() -> bool:
@@ -34,30 +43,48 @@ def _is_sftp_configured() -> bool:
 
 
 @contextmanager
-def _sftp_client() -> Iterator["paramiko.SFTPClient"]:  # type: ignore[name-defined]
-    """Context manager que abre y cierra una conexión SFTP a Hostinger."""
-    import paramiko
+def _ftp_client() -> Iterator[FTP]:
+    """Abre una conexión FTPS (preferida) o FTP plano (fallback) a Hostinger.
 
-    transport = paramiko.Transport(
-        (settings.hostinger_sftp_host, settings.hostinger_sftp_port)
-    )
+    Hostinger Shared soporta FTPS explícito (AUTH TLS sobre el puerto 21). Si el
+    servidor no acepta TLS, se cae a FTP plano emitiendo un warning.
+    """
+    host = settings.hostinger_sftp_host
+    port = settings.hostinger_sftp_port or 21
+    user = settings.hostinger_sftp_user
+    password = settings.hostinger_sftp_pass
+
+    ctx = ssl.create_default_context()
+    ftp: FTP
     try:
-        transport.connect(
-            username=settings.hostinger_sftp_user,
-            password=settings.hostinger_sftp_pass,
+        ftps = FTP_TLS(context=ctx, timeout=_FTP_TIMEOUT_SEC)
+        ftps.connect(host, port)
+        ftps.auth()
+        ftps.login(user=user, passwd=password)
+        ftps.prot_p()
+        ftp = ftps
+    except (ssl.SSLError, error_perm, error_temp, OSError) as exc:
+        logger.warning(
+            "FTPS no disponible (%s). Cayendo a FTP plano para Hostinger.",
+            type(exc).__name__,
         )
-        sftp = paramiko.SFTPClient.from_transport(transport)
-        if sftp is None:
-            raise RuntimeError("No se pudo abrir el cliente SFTP.")
-        try:
-            yield sftp
-        finally:
-            sftp.close()
+        ftp = FTP(timeout=_FTP_TIMEOUT_SEC)
+        ftp.connect(host, port)
+        ftp.login(user=user, passwd=password)
+
+    try:
+        yield ftp
     finally:
-        transport.close()
+        try:
+            ftp.quit()
+        except Exception:  # noqa: BLE001
+            try:
+                ftp.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
-def _ensure_remote_dirs(sftp, remote_dir: PurePosixPath) -> None:
+def _ensure_remote_dirs(ftp: FTP, remote_dir: PurePosixPath) -> None:
     """Crea recursivamente directorios remotos si no existen."""
     parts = remote_dir.parts
     current = PurePosixPath("/") if remote_dir.is_absolute() else PurePosixPath()
@@ -66,32 +93,39 @@ def _ensure_remote_dirs(sftp, remote_dir: PurePosixPath) -> None:
             continue
         current = current / part
         try:
-            sftp.stat(str(current))
-        except IOError:
-            sftp.mkdir(str(current))
+            ftp.cwd(str(current))
+        except error_perm:
+            try:
+                ftp.mkd(str(current))
+            except error_perm as exc:
+                # 550 puede aparecer si el directorio existe pero `cwd` falló por
+                # permisos; intenta `cwd` de nuevo. Si vuelve a fallar, propaga.
+                if not str(exc).startswith("550"):
+                    raise
+                ftp.cwd(str(current))
 
 
 def _upload_sftp_sync(content: bytes, relative_path: str) -> tuple[str, str]:
-    """Sube `content` a Hostinger y retorna (storage_path, storage_url)."""
+    """Sube `content` a Hostinger por FTPS y retorna (storage_path, storage_url)."""
     remote_base = PurePosixPath(settings.hostinger_sftp_remote_dir)
     remote_path = remote_base / relative_path
 
-    with _sftp_client() as sftp:
-        _ensure_remote_dirs(sftp, remote_path.parent)
-        with sftp.open(str(remote_path), "wb") as fh:
-            fh.write(content)
+    with _ftp_client() as ftp:
+        _ensure_remote_dirs(ftp, remote_path.parent)
+        buf = io.BytesIO(content)
+        ftp.storbinary(f"STOR {remote_path}", buf)
 
     storage_url = f"{settings.hostinger_public_base_url}/{relative_path}"
     return str(remote_path), storage_url
 
 
 def _delete_sftp_sync(storage_path: str) -> None:
-    """Borra un archivo SFTP. Errores se loguean (best-effort)."""
+    """Borra un archivo remoto por FTPS. Errores se loguean (best-effort)."""
     try:
-        with _sftp_client() as sftp:
-            sftp.remove(storage_path)
+        with _ftp_client() as ftp:
+            ftp.delete(storage_path)
     except Exception:  # noqa: BLE001
-        logger.warning("No se pudo borrar archivo SFTP (best-effort).")
+        logger.warning("No se pudo borrar archivo FTPS (best-effort).")
 
 
 def _upload_local_sync(content: bytes, relative_path: str) -> tuple[str, str]:
