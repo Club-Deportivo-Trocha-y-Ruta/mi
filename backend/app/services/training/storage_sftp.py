@@ -4,6 +4,11 @@ Hostinger Shared expone FTP/FTPS en el puerto 21 (no SFTP/SSH en el 22). Usa
 `ftplib.FTP_TLS` para subir cifrado sobre TLS (AUTH TLS + PROT P). Las variables
 de entorno conservan el prefijo `HOSTINGER_SFTP_*` por compatibilidad.
 
+El servidor FTP de Hostinger Shared usa un certificado auto-firmado/genérico
+sin SAN que matchee el dominio del usuario. Por eso `check_hostname` y
+`verify_mode` están deshabilitados — TLS sigue cifrando la sesión y las
+credenciales, pero no se valida la identidad del peer.
+
 Si las credenciales no están configuradas (entorno local/tests), se usa un
 fallback de filesystem local en `static/uploads/media` y se construye una URL
 servida por el propio backend mediante el mount estático (configurado en
@@ -42,22 +47,31 @@ def _is_sftp_configured() -> bool:
     )
 
 
+def _build_ssl_context() -> ssl.SSLContext:
+    """Contexto TLS que cifra pero no verifica identidad del peer.
+
+    Hostinger Shared presenta un certificado genérico/auto-firmado que no
+    coincide con el dominio del usuario, por lo que verify falla siempre. Aun
+    así, la sesión queda cifrada — usable para datos no extremadamente
+    sensibles. Si se necesita verificación estricta, migrar a Cloudflare R2.
+    """
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
 @contextmanager
 def _ftp_client() -> Iterator[FTP]:
-    """Abre una conexión FTPS (preferida) o FTP plano (fallback) a Hostinger.
-
-    Hostinger Shared soporta FTPS explícito (AUTH TLS sobre el puerto 21). Si el
-    servidor no acepta TLS, se cae a FTP plano emitiendo un warning.
-    """
+    """Abre una conexión FTPS (preferida) o FTP plano (fallback) a Hostinger."""
     host = settings.hostinger_sftp_host
     port = settings.hostinger_sftp_port or 21
     user = settings.hostinger_sftp_user
     password = settings.hostinger_sftp_pass
 
-    ctx = ssl.create_default_context()
     ftp: FTP
     try:
-        ftps = FTP_TLS(context=ctx, timeout=_FTP_TIMEOUT_SEC)
+        ftps = FTP_TLS(context=_build_ssl_context(), timeout=_FTP_TIMEOUT_SEC)
         ftps.connect(host, port)
         ftps.auth()
         ftps.login(user=user, passwd=password)
@@ -84,36 +98,39 @@ def _ftp_client() -> Iterator[FTP]:
                 pass
 
 
-def _ensure_remote_dirs(ftp: FTP, remote_dir: PurePosixPath) -> None:
-    """Crea recursivamente directorios remotos si no existen."""
-    parts = remote_dir.parts
-    current = PurePosixPath("/") if remote_dir.is_absolute() else PurePosixPath()
+def _cwd_into(ftp: FTP, parts: list[str]) -> None:
+    """Entra a cada subdirectorio en `parts`, creándolo si no existe.
+
+    Usa nombres simples relativos al cwd actual — nunca paths acumulados,
+    porque `ftp.cwd('a/b')` desde dentro de `a` busca `a/a/b`.
+    """
     for part in parts:
-        if part in ("", "/"):
+        if not part or part == "/":
             continue
-        current = current / part
         try:
-            ftp.cwd(str(current))
+            ftp.cwd(part)
         except error_perm:
-            try:
-                ftp.mkd(str(current))
-            except error_perm as exc:
-                # 550 puede aparecer si el directorio existe pero `cwd` falló por
-                # permisos; intenta `cwd` de nuevo. Si vuelve a fallar, propaga.
-                if not str(exc).startswith("550"):
-                    raise
-                ftp.cwd(str(current))
+            ftp.mkd(part)
+            ftp.cwd(part)
+
+
+def _split_path(p: PurePosixPath) -> list[str]:
+    """Componentes no vacíos del path (sin `/` raíz)."""
+    return [part for part in p.parts if part and part != "/"]
 
 
 def _upload_sftp_sync(content: bytes, relative_path: str) -> tuple[str, str]:
-    """Sube `content` a Hostinger por FTPS y retorna (storage_path, storage_url)."""
+    """Sube `content` a Hostinger por FTPS y retorna (storage_path, storage_url).
+
+    `storage_path` es el path completo (base + relativo) para uso al borrar.
+    """
     remote_base = PurePosixPath(settings.hostinger_sftp_remote_dir)
     remote_path = remote_base / relative_path
 
     with _ftp_client() as ftp:
-        _ensure_remote_dirs(ftp, remote_path.parent)
+        _cwd_into(ftp, _split_path(remote_path.parent))
         buf = io.BytesIO(content)
-        ftp.storbinary(f"STOR {remote_path}", buf)
+        ftp.storbinary(f"STOR {remote_path.name}", buf)
 
     storage_url = f"{settings.hostinger_public_base_url}/{relative_path}"
     return str(remote_path), storage_url
@@ -122,8 +139,11 @@ def _upload_sftp_sync(content: bytes, relative_path: str) -> tuple[str, str]:
 def _delete_sftp_sync(storage_path: str) -> None:
     """Borra un archivo remoto por FTPS. Errores se loguean (best-effort)."""
     try:
+        path = PurePosixPath(storage_path)
         with _ftp_client() as ftp:
-            ftp.delete(storage_path)
+            for part in _split_path(path.parent):
+                ftp.cwd(part)
+            ftp.delete(path.name)
     except Exception:  # noqa: BLE001
         logger.warning("No se pudo borrar archivo FTPS (best-effort).")
 
