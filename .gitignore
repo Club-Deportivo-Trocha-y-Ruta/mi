@@ -56,3 +56,6 @@ data/backups/*.sql
 
 # ─── Outputs Claude Code efímeros ─────────────────────────────────────────────
 claudedocs/
+
+# ─── Langfuse self-hosted (secretos dev) ──────────────────────────────────────
+docker-compose.langfuse.env

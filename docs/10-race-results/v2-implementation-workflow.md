@@ -98,7 +98,7 @@ gantt
 
 ```mermaid
 graph TD
-    F0[Fase 0: Infra base<br/>deps + migration + Langfuse] --> F1[Fase 1: queries.py<br/>extract sin cambio funcional]
+    F0[Fase 0: Infra base<br/>deps + migration] --> F1[Fase 1: queries.py<br/>extract sin cambio funcional]
     F0 --> F2[Fase 2: RAG<br/>ChromaDB + embeddings]
     F1 --> F3[Fase 3: Agentes core<br/>analyst + critic + chat]
     F2 --> F3
@@ -107,7 +107,7 @@ graph TD
     F5 --> F6[Fase 6: Frontend<br/>SPA componentes]
     F4 --> F7[Fase 7: Eval<br/>golden + LLM judge]
     F5 --> F7
-    F7 --> F8[Fase 8: Producción<br/>Langfuse prod + CI]
+    F7 --> F8[Fase 8: Producción<br/>CI + Langfuse opcional]
     F6 --> F8
 
     style F0 fill:#e1f5fe
@@ -140,9 +140,9 @@ graph TD
 
 | # | Tarea | Agente | Comando | Deliverable |
 |---|---|---|---|---|
-| 0.1 | Agregar deps a `backend/requirements.txt` | devops-architect | `/sc:implement` | langgraph>=1.2.0, langchain-google-genai>=2.0.0, langgraph-checkpoint-sqlite>=2.0.5, chromadb>=0.5.20, langfuse>=3.0.0, jinja2 (ya), hypothesis (test) |
-| 0.2 | Crear migración Alembic `7a8b9c0d1e2f` con 4 tablas nuevas | backend-architect | `/sc:implement` | `backend/alembic/versions/7a8b9c0d1e2f_*.py` con athlete_ai_insights, agent_runs, agent_run_events, anonymization_mappings |
-| 0.3 | docker-compose.langfuse.yml (PostgreSQL + ClickHouse + Langfuse server) | devops-architect | `/sc:implement` | Levanta Langfuse en :3001 sin tocar stack principal |
+| 0.1 | Agregar deps a `backend/requirements.txt` | devops-architect | `/sc:implement` | langgraph>=1.2.0, langchain-google-genai>=2.0.0, langgraph-checkpoint-sqlite>=2.0.5, chromadb>=0.5.20, langfuse>=3.0.0 (presente pero stack apagado hasta F8B), jinja2 (ya), hypothesis (test). |
+| 0.2 | Crear migración Alembic `7a8b9c0d1e2f` con 4 tablas nuevas | backend-architect | `/sc:implement` | `backend/alembic/versions/7a8b9c0d1e2f_*.py` con athlete_ai_insights, agent_runs, agent_run_events, anonymization_mappings. Columna `langfuse_trace_id` permanece NULL hasta F8. |
+| 0.3 | `docker-compose.langfuse.yml` + `docker-compose.langfuse.env.example` creados (NO levantados en F0) | devops-architect | `/sc:implement` | YAML + 6 servicios listos para F8B startup. Stack apagado en F0–F7. Audit primario vía columnas `athlete_ai_insights.cost_usd`, `latency_ms`, `tokens_in/out`. |
 | 0.4 | Crear estructura carpetas `services/race/{ai,agents,rag,prompts}` | backend-architect | manual | árbol vacío con `__init__.py` |
 | 0.5 | Actualizar AI_MAX_TOKENS=8192 en .env y .env.example | devops-architect | manual | + documentar en CLAUDE.md sección variables |
 | 0.6 | Suite race actual sigue verde post-cambios | quality-engineer | `pytest tests/services/race/` | 339/339 |
@@ -152,8 +152,6 @@ graph TD
 ```bash
 # Verificación end-to-end Fase 0:
 docker compose up -d
-docker compose -f docker-compose.langfuse.yml up -d
-curl http://localhost:3001          # Langfuse UI responde
 docker compose exec mysql mysql -e "SHOW TABLES LIKE 'athlete_ai_insights'" # tabla existe
 pytest tests/services/race/         # 339 verdes
 ```
@@ -162,7 +160,6 @@ pytest tests/services/race/         # 339 verdes
 
 ```bash
 alembic downgrade 64c263edd07f
-docker compose -f docker-compose.langfuse.yml down -v
 git revert <commit-fase-0>
 ```
 
@@ -448,40 +445,66 @@ pytest tests/evals/test_race_analyst_eval.py --golden
 
 ---
 
-## Fase 8 — Producción Langfuse + observability
+## Fase 8 — Producción + observability
 
-**Tiempo:** 1 día | **Riesgo:** Bajo | **Depende de:** F6 + F7
+**Tiempo:** 0.5–1.5 día (según opción) | **Riesgo:** Bajo | **Depende de:** F6 + F7
 
-### Prerequisitos
+### Decisión clave — observability
 
-- Toda implementación MVP funcional (F6)
-- Eval pasando (F7)
+Dos rutas:
 
-### Tareas atómicas
+| Opción | Costo infra | Setup | Cuándo |
+|---|---|---|---|
+| **8A — Audit-only DB (default MVP)** | 0 | 0.5 día | Por defecto. Suficiente con <10 análisis/semana, 1 coach. |
+| **8B — Langfuse self-hosted (opcional)** | ~$5/mes VPS + ~2 GB RAM | +1 día | Solo si: costo Gemini >$10/mes real, o coach pide dashboard visual, o se planea A/B prompts en serio. |
+
+**Recomendación:** arrancar con 8A. Migrar a 8B solo cuando una de las condiciones arriba se cumpla.
+
+### Tareas atómicas — Opción 8A (default)
 
 | # | Tarea | Agente | Comando | Deliverable |
 |---|---|---|---|---|
-| 8.1 | Decorators `@observe` en cada nodo | backend-architect | `/sc:implement` | Tag: athlete_id, season, prompt_version, coach_id |
-| 8.2 | Variables Langfuse en .env producción Render | devops-architect | manual | LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY |
-| 8.3 | Cost tracking automático | devops-architect | `/sc:implement` | Langfuse SDK lo hace nativo si modelos registrados |
-| 8.4 | Budget alert Langfuse $5/mes inicialmente | devops-architect | manual | Alerta email coach + admin si excede |
-| 8.5 | Dashboard Langfuse compartido coach + admin | devops-architect | manual | URL + auth básica |
-| 8.6 | Runbook ops básico | devops-architect | `/sc:document` | `docs/10-race-results/runbook-ops.md` — qué hacer si: LLM cae, eval falla, run colgado, costo dispara |
-| 8.7 | Smoke test producción | quality-engineer | manual | 1 run end-to-end en prod, verificar Langfuse captura |
+| 8A.1 | Asegurar columnas `cost_usd`, `tokens_in/out`, `latency_ms`, `prompt_version` poblándose en `athlete_ai_insights` | backend-architect | `/sc:implement` | Tras cada run, fila insertada con métricas |
+| 8A.2 | Endpoint admin `GET /admin/ai-usage?days=30` agrega métricas | backend-architect | `/sc:implement` | Total cost USD, p50/p95 latencia, run count, fail rate |
+| 8A.3 | Budget guard en runtime: si `SUM(cost_usd) últimos 30d > $20` → bloquea nuevos runs + email coach | backend-architect | `/sc:implement` | Circuit breaker simple en `agents/runner.py` |
+| 8A.4 | Runbook ops básico | devops-architect | `/sc:document` | `docs/10-race-results/runbook-ops.md` — qué hacer si: LLM cae, eval falla, run colgado, costo dispara |
+| 8A.5 | Smoke test producción | quality-engineer | manual | 1 run end-to-end en prod, verificar fila en `athlete_ai_insights` con métricas |
 
-### Criterio de éxito
-
-- Langfuse UI muestra traces de todos los runs
-- Cost por análisis visible y <$0.01
-- Budget alert configurado
+**Criterio éxito 8A:**
+- `SELECT cost_usd, latency_ms FROM athlete_ai_insights WHERE generated_at > NOW() - INTERVAL 7 DAY` devuelve filas pobladas
+- Endpoint admin retorna agregados consistentes
+- Budget guard testeado (mock fila >$20)
 - Runbook documentado
+
+### Tareas atómicas — Opción 8B (opcional, solo si activado)
+
+| # | Tarea | Agente | Comando | Deliverable |
+|---|---|---|---|---|
+| 8B.1 | Confirmar `langfuse>=3.0.0` ya está en requirements.txt (agregado en F0.1) | devops-architect | manual | Verificar |
+| 8B.2 | Generar 3 secretos openssl + levantar `docker-compose.langfuse.yml` (creado en F0.3) | devops-architect | `cp env.example env && openssl rand` × 3 + `docker compose -f docker-compose.langfuse.yml --env-file docker-compose.langfuse.env up -d` | Levanta en :3001. NEXTAUTH_SECRET, SALT, ENCRYPTION_KEY. |
+| 8B.3 | Implementar `app/observability/langfuse.py` con FakeLangfuse fallback | backend-architect | `/sc:implement` | Si `LANGFUSE_ENABLED=false` → no-op total |
+| 8B.4 | Decorators `@observe` condicionales en nodos | backend-architect | `/sc:implement` | Tag: athlete_id, season, prompt_version, coach_id |
+| 8B.5 | Deploy Langfuse server (VPS Hetzner ~$5/mes o máquina coach) | devops-architect | manual | LANGFUSE_HOST apuntando ahí |
+| 8B.6 | Variables Langfuse en .env producción Render | devops-architect | manual | `LANGFUSE_ENABLED=true` + HOST + keys |
+| 8B.7 | Budget alert UI Langfuse $5/mes | devops-architect | manual | Email coach + admin |
+| 8B.8 | Backfill `langfuse_trace_id` en `athlete_ai_insights` going forward | — | automático | Set via SDK |
+
+**Criterio éxito 8B (si se activa):**
+- Langfuse UI muestra traces de todos los runs nuevos
+- Apagar Langfuse (`LANGFUSE_ENABLED=false`) → agente sigue funcionando, audit DB sigue completo
 
 ### Rollback
 
-- Desactivar `@observe` decorators (flag env)
-- Apagar Langfuse self-hosted
+- **8A:** revert commits, no migración necesaria (columnas DB ya existen desde F0).
+- **8B:** `LANGFUSE_ENABLED=false`, `docker compose -f docker-compose.langfuse.yml down -v`, revert commits.
 
-### Agente principal: **devops-architect**
+### Default `.env`
+
+```
+LANGFUSE_ENABLED=false   # default — activar solo en opción 8B
+```
+
+### Agente principal: **devops-architect** + backend-architect (8A.3 budget guard)
 
 ---
 
@@ -497,7 +520,7 @@ pytest tests/evals/test_race_analyst_eval.py --golden
 | LangGraph state corruption tras crash | F4 | Baja | Alto | Checkpointing SQLite + tests retry; estados >1h auto-cancelar |
 | Polling overhead bajo carga | F5, F6 | Baja | Bajo | ~15 req/30s por run × N concurrentes. Mitigación: límite 10 runs; ETag/304 si state no cambió |
 | RAG retrieval irrelevante | F2, F3 | Media | Medio | Tests específicos retrieval; ajuste chunking + top_k |
-| Costo LLM dispara | F8 | Baja | Medio | Budget alert Langfuse $5/mes; circuit breaker si >$X/día |
+| Costo LLM dispara | F8 | Baja | Medio | Budget guard DB (8A) bloquea si `SUM(cost_usd) 30d > $20`; Langfuse alert opcional (8B) |
 | Eval golden dataset insuficiente | F7 | Media | Alto | Iterar: empezar con 5 casos, crecer a 20 en primeras 2 semanas prod |
 
 ---
@@ -525,7 +548,7 @@ pytest tests/evals/test_race_analyst_eval.py --golden
 | Ej2 — Agregar HITL gate (interrupt) | Durante F1 | `interrupt()` + Command(resume) | 1h | F1 |
 | Ej3 — Memory in-memory (MemorySaver) | Durante F2 | Checkpointing patterns | 1.5h | F2 |
 | Ej4 — RAG con ChromaDB | Durante F2 (refuerza) | Embeddings + retrieval | 2h | F2 |
-| Ej5 — Langfuse tracing (decorator @observe) | Durante F3 | Observability | 1.5h | F3 |
+| Ej5 — Langfuse tracing (decorator @observe) | **OPCIONAL** — solo si se activa opción 8B | Observability | 1.5h | F8B |
 | Ej6 — Multi-agent supervisor | Durante F4 | Coordination patterns | 2-3h | F4 |
 | Ej7 — Eval framework | Durante F7 (refuerza) | LLM-as-judge | 2h | F7 |
 | Ej8 — TanStack Query polling pattern | Durante F5 | refetchInterval + eventos incrementales | 1h | F5 |
@@ -590,16 +613,22 @@ graph LR
 ### Performance
 
 - [ ] p50 latencia análisis <30s
-- [ ] Cost por análisis <$0.01 (verificado Langfuse)
+- [ ] Cost por análisis <$0.01 (verificado vía `athlete_ai_insights.cost_usd`; Langfuse si 8B activo)
 - [ ] Máx 10 runs concurrentes (backpressure activo)
 - [ ] Polling estable durante 10 runs concurrentes sin degradación >500ms p95
 
-### Observability
+### Observability (default 8A)
+
+- [ ] Columnas métricas (`cost_usd`, `tokens_in/out`, `latency_ms`, `prompt_version`) pobladas en `athlete_ai_insights`
+- [ ] Endpoint `/admin/ai-usage` retorna agregados
+- [ ] Budget guard DB activo (bloquea si >$20/30d)
+- [ ] Runbook ops escrito
+
+### Observability (opcional 8B — solo si activado)
 
 - [ ] Langfuse self-hosted UP en :3001
 - [ ] Traces de todos runs visibles
-- [ ] Budget alert configurado
-- [ ] Runbook ops escrito
+- [ ] Budget alert UI configurado
 
 ### Documentación
 
@@ -651,11 +680,11 @@ Día 14:   F8 + smoke prod
 **Arrancar Fase 0** con un solo commit:
 
 ```
-/sc:implement Fase 0 race-results-v2: agregar deps requirements.txt,
-crear migración Alembic 7a8b9c0d1e2f con 4 tablas (athlete_ai_insights,
-agent_runs, agent_run_events, anonymization_mappings) según
-docs/10-race-results/v2-agentic-design.md §3, levantar docker-compose
-Langfuse en puerto 3001 sin tocar stack principal. Verificar que los
+/sc:implement Fase 0 race-results-v2: agregar deps requirements.txt
+(sin langfuse, diferido a F8 opcional), crear migración Alembic
+7a8b9c0d1e2f con 4 tablas (athlete_ai_insights, agent_runs,
+agent_run_events, anonymization_mappings) según
+docs/10-race-results/v2-agentic-design.md §3. Verificar que los
 339 tests existentes siguen verdes post cambios.
 ```
 
@@ -671,7 +700,7 @@ En paralelo: arrancar Ej1 (hello-world LangGraph) en `backend/sandbox/learning/e
 | Coverage nuevo código | `pytest --cov=app.services.race.ai --cov=app.services.race.agents` | Cada fase end |
 | Tiempo implementación real vs estimado | Track manual por fase | End of fase |
 | Eval score | `pytest --golden` | Cada cambio prompts |
-| Cost LLM acumulado | Langfuse dashboard | Diario post F8 |
+| Cost LLM acumulado | `SUM(cost_usd) FROM athlete_ai_insights` (default) o Langfuse dashboard si 8B | Diario post F8 |
 
 ---
 
@@ -680,7 +709,7 @@ En paralelo: arrancar Ej1 (hello-world LangGraph) en `backend/sandbox/learning/e
 | # | Asunción | Validar con | Riesgo si falla |
 |---|---|---|---|
 | A1 | Subir AI_MAX_TOKENS a 8192 acepta Gemini Flash Lite | Test integración F3 | Adjust prompts longitud |
-| A2 | Langfuse self-hosted no satura recursos (RAM/CPU) | Smoke test F0 | Considerar Langfuse cloud free tier |
+| A2 | ~~Langfuse self-hosted no satura recursos~~ — **Decisión 2026-05-20:** Langfuse diferido a F8 opcional. Audit primario en DB. | n/a default; smoke F8B si se activa | n/a default |
 | A3 | Coach acepta UX HITL inline (cards) vs modal | UX test F6 con coach | Re-diseñar flujo |
 | A4 | gemini-embedding-001 multilingual español calidad suficiente | Tests F2 con docs/01 | Fallback sentence-transformers local |
 | A5 | 10 casos golden suficientes para baseline | F7 eval | Expandir a 20 |

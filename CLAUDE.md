@@ -108,6 +108,14 @@ EMAIL_FROM_NAME      = Club Trocha y Ruta
 RESEND_API_KEY    = <ver Resend dashboard>
 NOTIFICATION_SEND_EMAILS = true
 NOTIFICATION_LOG_BODIES  = false
+AI_ENABLED           = true
+AI_PROVIDER          = google
+AI_MODEL             = gemini-2.5-flash-lite
+AI_API_KEY           = <Google AI Studio key>
+AI_MAX_TOKENS        = 8192   # subido de 1024 para race-results v2 agentico
+AI_TIMEOUT_SECONDS   = 30
+AI_TEMPERATURE       = 0.4
+AI_LOG_PROMPTS       = false  # OBLIGATORIO false en prod (privacidad menores)
 ```
 
 ### Deploy

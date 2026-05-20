@@ -1,0 +1,250 @@
+# =============================================================================
+# Langfuse v3 self-hosted - SOLO DESARROLLO LOCAL
+# =============================================================================
+# Stack de observabilidad para LLM (race-analyst dev) aislado del stack principal.
+#
+# Levantar:   docker compose -f docker-compose.langfuse.yml --env-file docker-compose.langfuse.env up -d
+# Apagar:     docker compose -f docker-compose.langfuse.yml down
+# Reset:      docker compose -f docker-compose.langfuse.yml down -v   (borra volúmenes)
+# Logs:       docker compose -f docker-compose.langfuse.yml logs -f langfuse-web
+#
+# UI:         http://localhost:3001
+# MinIO UI:   http://localhost:9091  (user/pass desde MINIO_ROOT_USER/PASSWORD)
+#
+# NOTA: este compose NO comparte network ni volúmenes con docker-compose.yml
+# del backend. Si el backend FastAPI corre en su propio compose, debe acceder
+# a Langfuse vía http://host.docker.internal:3001 (Mac) o http://localhost:3001
+# si corre fuera de Docker.
+# =============================================================================
+
+name: langfuse
+
+# Red dedicada (bridge) - aislada del stack principal del backend.
+networks:
+  langfuse_network:
+    driver: bridge
+    name: langfuse_network
+
+# Volúmenes nombrados con prefijo langfuse_ para no colisionar con el stack principal.
+volumes:
+  langfuse_postgres_data:
+    name: langfuse_postgres_data
+  langfuse_clickhouse_data:
+    name: langfuse_clickhouse_data
+  langfuse_clickhouse_logs:
+    name: langfuse_clickhouse_logs
+  langfuse_redis_data:
+    name: langfuse_redis_data
+  langfuse_minio_data:
+    name: langfuse_minio_data
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 15 - metadata de Langfuse (orgs, proyectos, usuarios, prompts).
+  # ---------------------------------------------------------------------------
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: langfuse-db
+    restart: unless-stopped
+    networks:
+      - langfuse_network
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-langfuse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-langfuse_dev_pwd}
+      POSTGRES_DB: ${POSTGRES_DB:-langfuse}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    # Solo expuesto a localhost para evitar conflicto con MySQL (3306) del backend
+    # y otros postgres locales. Cambia el host port si tienes 5433 ocupado.
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-langfuse} -d ${POSTGRES_DB:-langfuse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ---------------------------------------------------------------------------
+  # ClickHouse 24 - storage de eventos/traces de alta volumetría.
+  # ---------------------------------------------------------------------------
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: langfuse-clickhouse
+    restart: unless-stopped
+    networks:
+      - langfuse_network
+    # ClickHouse exige correr como UID:GID 101:101 según docs oficiales.
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse_dev_pwd}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    # Puertos bind a localhost; rara vez necesarios desde el host en dev.
+    ports:
+      - "127.0.0.1:8123:8123"   # HTTP
+      - "127.0.0.1:9100:9000"   # Native TCP (9100 para no chocar con MinIO)
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 - cola entre langfuse-web y langfuse-worker.
+  # ---------------------------------------------------------------------------
+  langfuse-redis:
+    image: redis:7-alpine
+    container_name: langfuse-redis
+    restart: unless-stopped
+    networks:
+      - langfuse_network
+    # noeviction es requerido por BullMQ (cola de Langfuse).
+    command: >
+      --requirepass ${REDIS_AUTH:-redis_dev_pwd}
+      --maxmemory-policy noeviction
+    volumes:
+      - langfuse_redis_data:/data
+    ports:
+      - "127.0.0.1:6380:6379"   # 6380 host para no chocar con redis local del dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_AUTH:-redis_dev_pwd}", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # MinIO - storage S3-compatible para blobs (events, media, batch exports).
+  # ---------------------------------------------------------------------------
+  langfuse-minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    container_name: langfuse-minio
+    restart: unless-stopped
+    networks:
+      - langfuse_network
+    entrypoint: sh
+    # Crea el bucket "langfuse" antes de arrancar el servidor.
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_dev_pwd}
+    volumes:
+      - langfuse_minio_data:/data
+    ports:
+      - "127.0.0.1:9090:9000"   # API S3
+      - "127.0.0.1:9091:9001"   # Consola web
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ---------------------------------------------------------------------------
+  # Langfuse Worker - background jobs (ingesta async, evals, batch exports).
+  # ---------------------------------------------------------------------------
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: langfuse-worker
+    restart: unless-stopped
+    networks:
+      - langfuse_network
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    # Anchor de env compartido entre worker y web.
+    environment: &langfuse-common-env
+      # ----- Núcleo -----
+      NODE_ENV: production
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      # ----- Auth / cripto (CHANGEME en .env) -----
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
+      SALT: "${SALT:?Falta SALT - generar con openssl rand -base64 32}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY:?Falta ENCRYPTION_KEY - generar con openssl rand -hex 32}"
+      # ----- PostgreSQL -----
+      DATABASE_URL: postgresql://${POSTGRES_USER:-langfuse}:${POSTGRES_PASSWORD:-langfuse_dev_pwd}@langfuse-db:5432/${POSTGRES_DB:-langfuse}
+      # ----- ClickHouse -----
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse_dev_pwd}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      # ----- Redis -----
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_AUTH:-redis_dev_pwd}
+      REDIS_TLS_ENABLED: "false"
+      # ----- S3 / MinIO: event uploads -----
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_dev_pwd}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      # ----- S3 / MinIO: media uploads -----
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_dev_pwd}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      # ----- Azure / OCI: explícitamente desactivados -----
+      LANGFUSE_USE_AZURE_BLOB: "false"
+      LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: "false"
+
+  # ---------------------------------------------------------------------------
+  # Langfuse Web - UI + API REST + OpenTelemetry receiver.
+  # ---------------------------------------------------------------------------
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: langfuse-web
+    restart: unless-stopped
+    networks:
+      - langfuse_network
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-worker:
+        condition: service_started
+    ports:
+      # 3001 host -> 3000 contenedor. El 3000 lo usa otra cosa local.
+      - "3001:3000"
+    environment:
+      # Hereda todo del worker (auth, DB, ClickHouse, Redis, S3).
+      <<: *langfuse-common-env
+      # NextAuth secret específico de la UI.
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET:?Falta NEXTAUTH_SECRET - generar con openssl rand -base64 32}"
+      # ----- Bootstrap inicial (solo aplica si la DB está vacía) -----
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-Trocha y Ruta}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-race-analyst-dev}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-coach@trochayruta.local}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Coach Dev}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-ChangeMe2026!}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/public/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
