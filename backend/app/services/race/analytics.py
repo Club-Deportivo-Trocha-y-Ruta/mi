@@ -33,13 +33,23 @@ from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.race_category import CategoryTier, RaceCategory
-from app.models.race_competitor import RaceCompetitor
-from app.models.race_event import RaceEvent
-from app.models.race_result import RaceResult, ResultStatus
+from app.models.race_category import CategoryTier
+from app.models.race_result import ResultStatus
+
+# Primitivas extraídas a queries.py en F1 (race-results v2). Re-exportamos con
+# nombres legacy ``_load_*`` / ``_*_df`` para preservar compatibilidad de
+# imports en tests y otros módulos.
+from app.services.race.queries import (
+    categories_to_df as _categories_df,
+    events_to_df as _events_df,
+    load_categories as _load_categories,
+    load_competitors as _load_competitors,
+    load_events as _load_events,
+    load_results as _load_results,
+    results_to_df as _results_df,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,99 +61,6 @@ logger = logging.getLogger(__name__)
 #: Confidence thresholds para la proyección (CLAUDE.md + workflow §5.2).
 _CONFIDENCE_LOW_MAX_N: int = 4   # n<5 → low
 _CONFIDENCE_MED_MAX_N: int = 8   # 5..8 → medium ; >8 → high
-
-
-# ---------------------------------------------------------------------------
-# Helpers internos de carga
-# ---------------------------------------------------------------------------
-
-
-async def _load_results(db: AsyncSession) -> list[RaceResult]:
-    """Carga ``race_results`` no eliminados (filtrado in-memory de ``deleted_at``).
-
-    Razón del filtrado in-memory: el ``FakeAsyncSession`` no soporta
-    ``IS NULL`` en su mini-router. Coste irrelevante por tamaño de dataset.
-    """
-    res = await db.execute(select(RaceResult))
-    rows = list(res.scalars().all())
-    return [r for r in rows if getattr(r, "deleted_at", None) is None]
-
-
-async def _load_events(db: AsyncSession) -> list[RaceEvent]:
-    res = await db.execute(select(RaceEvent))
-    return list(res.scalars().all())
-
-
-async def _load_categories(db: AsyncSession) -> list[RaceCategory]:
-    res = await db.execute(select(RaceCategory))
-    return list(res.scalars().all())
-
-
-async def _load_competitors(db: AsyncSession) -> list[RaceCompetitor]:
-    res = await db.execute(select(RaceCompetitor))
-    return list(res.scalars().all())
-
-
-def _events_df(events: list[RaceEvent]) -> pd.DataFrame:
-    """Construye un DataFrame ``events`` con columnas mínimas requeridas.
-
-    ``event_date`` se serializa como ISO string para garantizar
-    JSON-serializability del output downstream.
-    """
-    rows = [
-        {
-            "event_id": e.id,
-            "series_id": e.series_id,
-            "valida_num": e.sequence_number,
-            "event_date": e.event_date.isoformat() if e.event_date else None,
-        }
-        for e in events
-    ]
-    return pd.DataFrame(rows, columns=["event_id", "series_id", "valida_num", "event_date"])
-
-
-def _categories_df(categories: list[RaceCategory]) -> pd.DataFrame:
-    rows = [
-        {
-            "category_id": c.id,
-            "category_code": c.code,
-            "tier": c.tier.value if c.tier else None,
-        }
-        for c in categories
-    ]
-    return pd.DataFrame(rows, columns=["category_id", "category_code", "tier"])
-
-
-def _results_df(results: list[RaceResult]) -> pd.DataFrame:
-    """DataFrame plano de ``race_results``. ``race_time_ms`` es nullable."""
-    rows = [
-        {
-            "result_id": r.id,
-            "event_id": r.event_id,
-            "category_id": r.category_id,
-            "competitor_id": r.competitor_id,
-            "athlete_id": r.athlete_id,
-            "position": r.position,
-            "race_time_ms": r.race_time_ms,
-            "points_awarded": r.points_awarded,
-            "status": r.status.value if r.status else None,
-        }
-        for r in results
-    ]
-    return pd.DataFrame(
-        rows,
-        columns=[
-            "result_id",
-            "event_id",
-            "category_id",
-            "competitor_id",
-            "athlete_id",
-            "position",
-            "race_time_ms",
-            "points_awarded",
-            "status",
-        ],
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -300,10 +217,9 @@ async def podium_gap(
 
     # Filtrar eventos por season vía RaceSeries → series_year.
     # Para no asumir join SQL, cruzamos in-memory: cargamos series.
-    from app.models.race_series import RaceSeries
+    from app.services.race.queries import load_series
 
-    series_res = await db.execute(select(RaceSeries))
-    series_list = list(series_res.scalars().all())
+    series_list = await load_series(db)
     series_ids_in_season = {s.id for s in series_list if s.season_year == season}
     events_in_season = [e for e in events if e.series_id in series_ids_in_season]
     if not events_in_season:
@@ -459,10 +375,9 @@ async def club_ranking(db: AsyncSession, season: int) -> dict[str, Any]:
     events = await _load_events(db)
     categories = await _load_categories(db)
 
-    from app.models.race_series import RaceSeries
+    from app.services.race.queries import load_series
 
-    series_res = await db.execute(select(RaceSeries))
-    series_list = list(series_res.scalars().all())
+    series_list = await load_series(db)
     series_ids_in_season = {s.id for s in series_list if s.season_year == season}
     events_in_season = [e for e in events if e.series_id in series_ids_in_season]
 
