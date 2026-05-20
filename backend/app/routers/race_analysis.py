@@ -269,9 +269,6 @@ async def _last_node(db: AsyncSession, run_db_id: int) -> Optional[str]:
     )
     first = getattr(result, "first", lambda: None)()
     if first is None:
-        rows = result.fetchall() if hasattr(result, "fetchall") else []
-        first = rows[0] if rows else None
-    if first is None:
         return None
     if hasattr(first, "_mapping"):
         return first._mapping.get("node_name")

@@ -42,6 +42,14 @@ app.include_router(parent_monthly_router, prefix="/api/parents", tags=["monthly-
 app.include_router(race_analysis.router, prefix="/api/race-analysis", tags=["race-analysis"])
 
 
+# Boot: configurar db_factory del grafo race-AI (F4) para que los nodos
+# puedan abrir AsyncSession en runtime fuera del Depends(get_db) de FastAPI.
+from app.database import AsyncSessionLocal  # noqa: E402
+from app.services.race.ai.db import set_db_factory  # noqa: E402
+
+set_db_factory(AsyncSessionLocal)
+
+
 _local_media_dir = Path("static/uploads/media")
 _local_media_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
