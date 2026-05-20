@@ -22,7 +22,7 @@ Rediseño **híbrido determinista + agéntico**:
 - **Capa determinista (intacta):** parsing, normalización, matching, ingest, queries analíticas. Los 339 tests verdes se preservan.
 - **Capa agéntica (nueva):** un workflow **LangGraph** orquesta los pasos cualitativos — anonimización, retrieval del marco teórico, llamada LLM con memoria por atleta, gates HITL para revisión del coach, persistencia de insights y notificación. La salida es un dashboard markdown renderizado + PDF descargable + chat consultivo.
 - **UI nueva:** ruta `/coach/race-analysis` en el SPA React 19 existente. Polling cada 2 segundos vía **TanStack Query**.
-- **Observability:** **Langfuse self-hosted** (Postgres + ClickHouse + server) capturando cada trace, costo, latencia y prompt version.
+- **Observability:** Audit primario en MySQL — columnas `cost_usd`, `tokens_in/out`, `latency_ms`, `prompt_version` en `athlete_ai_insights`. **Langfuse self-hosted opcional, diferido a Fase 8** (activar solo si costo Gemini >$10/mes real, o coach pide dashboard visual).
 - **Eval:** golden dataset versionado + LLM-as-judge, bloqueante en CI antes de promover cambios de prompt.
 
 ### 1.3 Decisiones cerradas (resumen)
@@ -30,7 +30,7 @@ Rediseño **híbrido determinista + agéntico**:
 | # | Decisión | Valor |
 |---|---|---|
 | 1 | Modo | Híbrido: determinista para ETL, agéntico para análisis |
-| 2 | Framework agente | LangGraph 1.2.x + Langfuse self-hosted |
+| 2 | Framework agente | LangGraph 1.2.x. Langfuse self-hosted **opcional**, diferido a F8 |
 | 3 | LLM | Google Gemini 2.5 Flash Lite via `langchain-google-genai` |
 | 4 | UI | React 19 + shadcn dentro del SPA actual, ruta `/coach/race-analysis` |
 | 5 | Streaming | Polling HTTP cada 2s → TanStack Query con refetchInterval |
@@ -53,7 +53,7 @@ Asunción: el coach hoy invierte ~45-60 min por válida (4-5 atletas × 10 min d
 |---|---|---|---|
 | Tiempo por atleta análisis cualitativo | 10-12 min | 1-2 min (review HITL) | -85 % |
 | Tiempo por válida (5 atletas) | 50-60 min | 8-12 min | -80 % |
-| Trazabilidad decisiones | ninguna | Langfuse + `athlete_ai_insights` | +∞ |
+| Trazabilidad decisiones | ninguna | `athlete_ai_insights` (cost, tokens, prompt_version, output completo). Langfuse opcional F8 | +∞ |
 | Reutilización contexto entre válidas | manual | automática (memoria) | +∞ |
 | Calidad pedagógica para el coach | depende | modo `explain` integrado | nuevo |
 | Riesgo violación principios LTAD | medio (mente del coach) | bajo (guardrails + RAG) | ↓ |
@@ -78,8 +78,9 @@ flowchart LR
     subgraph "LLM Provider"
         LLM["Gemini 2.5 Flash Lite<br/>via langchain-google-genai"]
     end
-    subgraph "Observability"
-        LF["Langfuse self-hosted<br/>(Postgres + ClickHouse)"]
+    subgraph "Observability (default DB)"
+        AUDIT["athlete_ai_insights<br/>cost_usd, tokens, latency_ms"]
+        LF["Langfuse self-hosted<br/>(opcional, F8)"]
     end
     subgraph "Storage"
         DB[(MySQL Hostinger)]
@@ -95,8 +96,9 @@ flowchart LR
     MEM --> DB
     GRAPH --> ANON
     GRAPH -->|prompts + datos anonimizados| LLM
-    GRAPH -.tracing.-> LF
-    LLM -.cost + latency.-> LF
+    GRAPH -->|métricas| AUDIT
+    GRAPH -.tracing opcional.-> LF
+    LLM -.cost si LF activo.-> LF
     GRAPH -->|email Resend| UI
 ```
 
@@ -219,8 +221,9 @@ flowchart TB
 | **Checkpointer** | `langgraph-checkpoint-sqlite` | `>=2.0.5` | Para state machine entre HITL gates; SQLite local en `./data/langgraph/checkpoints.sqlite` |
 | **LLM client** | `langchain-google-genai` | `>=2.0.0` | Soporta `gemini-2.5-flash-lite`, `thinking_budget`, structured output. Asunción: ya en deps tras esta PR |
 | **LangChain core** | `langchain-core` | `>=0.3.40` | Requerido por langgraph 1.x; ya transitivo |
-| **Observability** | `langfuse` | `>=3.0.0` | SDK 3.x (2026) cambió a `@observe` y `CallbackHandler` separado |
-| **Langfuse server** | `langfuse/langfuse:3` | Docker image tag `3` | Self-hosted compose: server + Postgres 16 + ClickHouse 24 (~2 GB RAM) |
+| **Observability (default)** | nativo MySQL | — | Columnas en `athlete_ai_insights` cubren cost, tokens, latencia, prompt_version |
+| **Observability (opcional F8B)** | `langfuse` | `>=3.0.0` | Solo si se activa F8B. SDK 3.x usa `@observe` y `CallbackHandler` separado |
+| **Langfuse server (opcional F8B)** | `langfuse/langfuse:3` | Docker image tag `3` | Self-hosted compose: server + Postgres 16 + ClickHouse 24 (~2 GB RAM) |
 | **Vector store** | `chromadb` | `>=0.5.20` | `PersistentClient` estable; volumen `./data/chroma/` |
 | **Embeddings** | `sentence-transformers` | `>=3.0.0` | Modelo `paraphrase-multilingual-MiniLM-L12-v2` (español, 384 dims, ~120 MB) — Asunción ver §6 |
 | **PDF render** | `weasyprint` | `>=62.3` | ya en deps |
@@ -1158,9 +1161,35 @@ function useRunStatus(runId: string) {
 
 ---
 
-## 11. Observability (Langfuse self-hosted)
+## 11. Observability — default DB + Langfuse opcional (F8)
 
-### 11.1 Setup docker-compose
+### 11.0 Default — Audit en MySQL (sin infra extra)
+
+Para MVP (F0–F7 y F8 opción 8A) el audit completo vive en columnas de `athlete_ai_insights` y `agent_runs`:
+
+| Métrica | Columna | Origen |
+|---|---|---|
+| Costo USD por run | `athlete_ai_insights.cost_usd` | calculado en código tras cada `LLM.ainvoke` con tabla pricing local |
+| Tokens in/out | `athlete_ai_insights.tokens_in`, `tokens_out` | `usage_metadata` de `langchain-google-genai` |
+| Latencia ms | `agent_runs.latency_ms` | `time.perf_counter()` wrap por nodo |
+| Prompt version | `athlete_ai_insights.prompt_version` | tag en config del grafo |
+| Output completo | `athlete_ai_insights.markdown_output` | persistido |
+| Trace LangGraph nodos | `agent_run_events` | eventos por nodo para drill-down |
+
+**Endpoint admin `GET /admin/ai-usage?days=30`** agrega cost total, p50/p95 latencia, run count, fail rate. Coach ve dashboard básico vía frontend admin.
+
+**Budget guard:** función `_check_budget()` antes de cada run consulta `SUM(cost_usd) últimos 30d`; si >$20 bloquea + email coach.
+
+`langfuse_trace_id` queda NULL hasta que F8B se active.
+
+### 11.1 Setup docker-compose — **OPCIONAL (F8B)**
+
+Activar solo si una de estas condiciones se cumple post-MVP:
+- Costo Gemini real >$10/mes (justifica VPS Hetzner ~$5/mes)
+- Coach pide dashboard visual de traces
+- Se planea A/B testing serio de prompts
+
+Servicios nuevos en `docker-compose.langfuse.yml` (perfil opcional):
 
 Servicios nuevos en `docker-compose.langfuse.yml` (perfil opcional):
 
@@ -1213,8 +1242,8 @@ volumes:
 `app/observability/langfuse.py`:
 - `init_langfuse()` lazy singleton.
 - Lee env vars: `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
-- Si `LANGFUSE_ENABLED=false` → no-op (FakeLangfuse).
-- Hook FastAPI lifespan: `flush()` al shutdown.
+- **Default `LANGFUSE_ENABLED=false`** → no-op (FakeLangfuse). Stack agéntico funciona idéntico sin Langfuse.
+- Hook FastAPI lifespan: `flush()` al shutdown (no-op si disabled).
 
 ### 11.3 Instrumentación
 
@@ -1443,14 +1472,23 @@ Workflow:
 
 **Criterio éxito:** runner ejecuta, scores baseline registrados. Threshold inicial 0.75.
 
-### Fase 8 — Producción Langfuse + observability (1 día)
+### Fase 8 — Producción + observability (0.5–1.5 día)
 
-**Cambios:**
+> Opción **8A default** (audit DB, 0.5 día) vs opción **8B opcional** (Langfuse self-hosted, +1 día). Ver `v2-implementation-workflow.md` §"Fase 8" tabla de decisión.
+
+**Cambios opción 8A (default):**
+- Endpoint `/admin/ai-usage` agregando métricas desde `athlete_ai_insights`.
+- Budget guard runtime: bloquea si `SUM(cost_usd) 30d > $20`.
+- Runbook ops básico.
+
+**Cambios opción 8B (opcional, solo si activado):**
 - Deploy Langfuse server (VPS coach o Hetzner droplet).
-- Configurar `LANGFUSE_HOST` apuntando al server.
+- Configurar `LANGFUSE_HOST` apuntando al server, flip `LANGFUSE_ENABLED=true`.
 - Alertas configuradas en UI Langfuse.
 
-**Criterio éxito:** primer run en staging genera trace visible en Langfuse, costo reportado correctamente.
+**Criterio éxito 8A:** primer run en staging genera fila en `athlete_ai_insights` con cost_usd, tokens, latency_ms. Endpoint admin retorna agregados.
+
+**Criterio éxito 8B (si activado):** primer run en staging genera trace visible en Langfuse, costo reportado correctamente.
 
 ### Resumen timeline
 
@@ -1464,7 +1502,7 @@ Workflow:
 | 5 — Endpoints + polling | 0.5 días | 7 |
 | 6 — Frontend | 3.5 días | 10.5 |
 | 7 — Eval | 2 días | 12.5 |
-| 8 — Langfuse prod | 1 día | 13.5 |
+| 8 — Prod (8A default DB / 8B Langfuse opcional) | 0.5–1.5 día | 13–14 |
 | **Total** | **~14 días-dev** (3 semanas a tiempo parcial) | |
 
 Asunción: dev solitario, ~5h/día. Coach revisa al final de cada fase.
@@ -1565,8 +1603,8 @@ Asunción: dev solitario, ~5h/día. Coach revisa al final de cada fase.
 
 | Métrica | Target | Verificación |
 |---|---|---|
-| p50 latencia análisis 1 atleta (1 use_case) | <30 s | Langfuse dashboard, query p50 |
-| p95 latencia | <60 s | Langfuse |
+| p50 latencia análisis 1 atleta (1 use_case) | <30 s | `agent_runs.latency_ms` query p50 (Langfuse si 8B) |
+| p95 latencia | <60 s | `agent_runs.latency_ms` query p95 (Langfuse si 8B) |
 | Coverage tests código nuevo (`services/race/ai/`, `services/race/rag/`, `routers/race_analysis.py`) | >=90 % | `pytest --cov` |
 | Eval golden dataset avg score | >=0.80 | `scripts/eval_race_analyst.py` |
 | 0 PII leaks | 100 % | `test_anonymizer_zero_leak` 1000 inputs verdes |
@@ -1582,7 +1620,7 @@ Asunción: dev solitario, ~5h/día. Coach revisa al final de cada fase.
 | % runs `completed` (vs `rejected/failed`) | >=80 % | `agent_runs.status` |
 | Avg `coach_edits_count` por insight | <=1.5 | media de `athlete_ai_insights.coach_edits_count` |
 | Tiempo medio coach por análisis | <12 min | tracking UI o self-report |
-| Costo total LLM | <$5/mes | Langfuse cost dashboard |
+| Costo total LLM | <$5/mes | `SUM(athlete_ai_insights.cost_usd) últimos 30d` (Langfuse dashboard si 8B) |
 
 ### 17.3 Validación funcional (end-to-end)
 
@@ -1689,7 +1727,7 @@ AI_MAX_TOKENS=8192       # ↑ desde 1024 para narrativa
 AI_TEMPERATURE=0.3       # ↓ desde 0.4 para reproducibilidad
 
 # === Langfuse ===
-LANGFUSE_ENABLED=true
+LANGFUSE_ENABLED=false   # default — flip a true solo si se activa F8B (Langfuse opcional)
 LANGFUSE_HOST=http://localhost:3001
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
