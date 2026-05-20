@@ -13,17 +13,19 @@
  *
  * Acceso: coach + admin (configurado en App.tsx).
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { History, ListChecks, Plus } from "lucide-react";
 
 import { AnalysisRunTimeline } from "@/components/ai/AnalysisRunTimeline";
+import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import { ChatConsole } from "@/components/ai/ChatConsole";
 import { ExplainModeBanner } from "@/components/ai/ExplainModeBanner";
 import { HITLApprovalCard } from "@/components/ai/HITLApprovalCard";
 import { MarkdownReportViewer } from "@/components/ai/MarkdownReportViewer";
 import { PdfDownloadButton } from "@/components/ai/PdfDownloadButton";
 import { StartRunForm } from "@/components/ai/StartRunForm";
+import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { useRunResult, useRunStatus } from "@/hooks/ai/useRaceRun";
 
 function TabTrigger({
@@ -49,6 +51,16 @@ function TabTrigger({
 export function RaceAnalysisPage() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [hitlStepId, setHitlStepId] = useState<string | null>(null);
+  const [chatAthleteId, setChatAthleteId] = useState<number | null>(null);
+
+  // Resolvemos el nombre del atleta seleccionado en el chat — para
+  // mostrar contexto visual sin tocar el body POST /chat.
+  const athletesQuery = useAthletes();
+  const chatAthleteName = useMemo(() => {
+    if (chatAthleteId == null) return null;
+    const a = athletesQuery.data?.items.find((x) => x.id === chatAthleteId);
+    return a ? `${a.first_name} ${a.last_name}` : null;
+  }, [chatAthleteId, athletesQuery.data]);
 
   // Sólo polleamos si hay un run activo.
   const statusQuery = useRunStatus(activeRunId);
@@ -149,7 +161,23 @@ export function RaceAnalysisPage() {
             </>
           )}
 
-          <ChatConsole />
+          <div
+            className="space-y-2 rounded-xl bg-white p-3 ring-1 ring-light-gray"
+            data-testid="chat-context-picker"
+          >
+            <AthleteCombobox
+              label="Conversar sobre"
+              value={chatAthleteId}
+              onChange={setChatAthleteId}
+              allowAny
+              placeholder="Cualquier deportista"
+              data-testid="chat-athlete-combobox"
+            />
+          </div>
+          <ChatConsole
+            athleteId={chatAthleteId}
+            athleteName={chatAthleteName}
+          />
         </TabsPrimitive.Content>
 
         {/* ── Tab: Runs activos ──────────────────────────────── */}

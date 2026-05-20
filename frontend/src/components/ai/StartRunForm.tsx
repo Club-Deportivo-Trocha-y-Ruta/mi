@@ -1,32 +1,33 @@
 /**
  * Formulario para iniciar un análisis race-results (race-analysis §10.2).
  *
- * Inputs: athlete_id, season, valida_nums (CSV), explain_mode toggle.
+ * Inputs: athlete (combobox), season, valida_nums (CSV), explain_mode toggle.
  * use_case se diferirá a futuro — el backend lo decide vía heurística.
  *
  * Submit dispara `useStartRun` y el padre (RaceAnalysisPage) navega o
  * actualiza la pestaña "Runs activos" con el run_id devuelto.
  *
- * Validación liviana con Zod inline (sin schemas file para no
- * proliferar archivos para un solo form).
+ * UX: el coach no maneja IDs numéricos — selecciona deportistas por nombre
+ * vía AthleteCombobox. El form sigue enviando `athlete_id` al backend.
  */
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Play } from "lucide-react";
+import { HelpCircle, Loader2, Play } from "lucide-react";
 import { z } from "zod";
 
+import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import { useStartRun } from "@/hooks/ai/useRaceRun";
 import { useExplainModeStore } from "@/store/explainMode.store";
 import { cn } from "@/lib/utils";
 
-/** Schema string-based: react-hook-form maneja inputs como strings y
- * Zod los valida + transforma a números. */
+/** Schema: athlete_id es number (lo setea el combobox), season y valida son
+ * strings que se transforman en submit. */
 const startRunSchema = z.object({
   athlete_id: z
-    .string()
-    .min(1, "Athlete ID requerido")
-    .refine((v) => /^\d+$/.test(v) && Number(v) >= 1, "Athlete ID inválido"),
+    .number({ message: "Selecciona un deportista del listado" })
+    .int()
+    .positive("Selecciona un deportista del listado"),
   season: z
     .string()
     .min(1, "Temporada requerida")
@@ -58,6 +59,7 @@ export function StartRunForm({ onStarted, className }: StartRunFormProps) {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const {
+    control,
     register,
     handleSubmit,
     reset,
@@ -65,7 +67,8 @@ export function StartRunForm({ onStarted, className }: StartRunFormProps) {
   } = useForm<StartRunFormValues>({
     resolver: zodResolver(startRunSchema),
     defaultValues: {
-      athlete_id: "",
+      // undefined fuerza al usuario a seleccionar antes de poder enviar.
+      athlete_id: undefined as unknown as number,
       season: String(new Date().getFullYear()),
       valida_nums_csv: "",
     },
@@ -110,44 +113,43 @@ export function StartRunForm({ onStarted, className }: StartRunFormProps) {
       data-testid="start-run-form"
       aria-label="Iniciar análisis de carrera"
     >
-      <div>
+      <div className="flex items-start justify-between gap-2">
         <h2 className="text-base font-semibold text-charcoal">
           Iniciar análisis
         </h2>
-        <p className="mt-0.5 text-xs text-mid-gray">
-          El agente combinará datos de carrera con principios LTAD del marco
-          teórico.
-        </p>
+        <span
+          role="img"
+          className="inline-flex items-center text-mid-gray"
+          title="El agente combinará datos de carrera con principios LTAD del marco teórico."
+          aria-label="El agente combinará datos de carrera con principios LTAD del marco teórico"
+          data-testid="start-run-help"
+        >
+          <HelpCircle size={14} aria-hidden="true" />
+        </span>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label
-            htmlFor="athlete_id"
-            className="block text-xs font-medium uppercase tracking-wide text-mid-gray"
-          >
-            Athlete ID
-          </label>
-          <input
-            id="athlete_id"
-            type="number"
-            min={1}
-            {...register("athlete_id")}
-            className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-            data-testid="start-run-athlete-id"
+        <div className="sm:col-span-2">
+          <Controller
+            control={control}
+            name="athlete_id"
+            render={({ field }) => (
+              <AthleteCombobox
+                id="athlete_id"
+                label="Deportista"
+                value={field.value ?? null}
+                onChange={(id) => field.onChange(id ?? undefined)}
+                error={errors.athlete_id?.message}
+                data-testid="start-run-athlete-combobox"
+              />
+            )}
           />
-          {errors.athlete_id && (
-            <p className="mt-1 text-xs text-red-600" role="alert">
-              {errors.athlete_id.message}
-            </p>
-          )}
         </div>
 
         <div>
           <label
             htmlFor="season"
-            className="block text-xs font-medium uppercase tracking-wide text-mid-gray"
+            className="block text-xs font-medium text-mid-gray"
           >
             Temporada
           </label>
@@ -168,17 +170,17 @@ export function StartRunForm({ onStarted, className }: StartRunFormProps) {
           )}
         </div>
 
-        <div className="sm:col-span-2">
+        <div>
           <label
             htmlFor="valida_nums_csv"
-            className="block text-xs font-medium uppercase tracking-wide text-mid-gray"
+            className="block text-xs font-medium text-mid-gray"
           >
             Válidas (CSV, opcional)
           </label>
           <input
             id="valida_nums_csv"
             type="text"
-            placeholder="ej: 1,2,3,4 — vacío = todas las de la temporada"
+            placeholder="ej: 1,2,3,4 — vacío = todas"
             {...register("valida_nums_csv")}
             className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
             style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
@@ -216,7 +218,7 @@ export function StartRunForm({ onStarted, className }: StartRunFormProps) {
         ) : (
           <Play size={16} aria-hidden="true" />
         )}
-        Iniciar análisis
+        Analizar deportista
       </button>
     </form>
   );

@@ -81,6 +81,15 @@ export function AppShell({ children }: AppShellProps) {
           Reportes mensuales
         </NavLink>
       )}
+      {(isCoach || isAdmin) && (
+        <NavLink
+          to="/coach/race-analysis"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Análisis IA carreras
+        </NavLink>
+      )}
       {isParent && (
         <NavLink
           to="/my-athletes"

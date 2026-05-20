@@ -21,10 +21,17 @@ import type { ChatMessage } from "@/types/raceAnalysis.types";
 interface ChatConsoleProps {
   /** Si presente, todas las consultas atan al atleta indicado. */
   athleteId?: number | null;
+  /** Nombre del atleta — mejora el placeholder y el header del chat.
+   *  Sólo afecta la UI; el body al backend sigue siendo athlete_id. */
+  athleteName?: string | null;
   className?: string;
 }
 
-export function ChatConsole({ athleteId = null, className }: ChatConsoleProps) {
+export function ChatConsole({
+  athleteId = null,
+  athleteName = null,
+  className,
+}: ChatConsoleProps) {
   const sessionId = useMemo(() => generateSessionId(), []);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -98,8 +105,12 @@ export function ChatConsole({ athleteId = null, className }: ChatConsoleProps) {
           Pregunta al agente
         </h3>
         <p className="mt-0.5 text-xs text-mid-gray">
-          Resultados Copa Valle, principios LTAD, atletas{" "}
-          {athleteId ? `(contexto: atleta #${athleteId})` : ""}.
+          Resultados Copa Valle, principios LTAD, atletas
+          {athleteName
+            ? ` (contexto: ${athleteName}).`
+            : athleteId
+              ? ` (contexto: atleta #${athleteId}).`
+              : "."}
         </p>
       </div>
 
@@ -185,7 +196,11 @@ export function ChatConsole({ athleteId = null, className }: ChatConsoleProps) {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="¿Cuál es el progreso de Sofía en las últimas 3 válidas?"
+            placeholder={
+              athleteName
+                ? `¿Cuál es el progreso de ${athleteName} en las últimas 3 válidas?`
+                : "Pregunta libre — o selecciona un deportista arriba"
+            }
             maxLength={2000}
             disabled={mutation.isPending}
             data-testid="chat-input"
