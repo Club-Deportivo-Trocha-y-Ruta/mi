@@ -1,0 +1,74 @@
+name: Race Analyst Golden Eval
+
+# Trigger: cualquier PR que toque agents, prompts o eval del race analyst.
+# Eval bloqueante: promedio compuesto debe ser >= RACE_EVAL_THRESHOLD (0.75).
+# Fuente: workflow §7.7, decisiones cerradas v2-implementation-workflow.md.
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/services/race/agents/**"
+      - "backend/app/services/race/prompts/**"
+      - "backend/app/services/race/eval/**"
+      - "backend/evals/race_analyst/golden/**"
+      - "backend/tests/evals/**"
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: "Threshold mínimo composite_score (default 0.75)"
+        required: false
+        default: "0.75"
+
+jobs:
+  golden-eval:
+    name: Run race analyst golden eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install -e ".[dev]"
+          # Deps adicionales necesarias para la stack race v2 (no en pyproject base).
+          pip install langchain-google-genai chromadb jinja2
+
+      - name: Run golden eval (bloqueante)
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_PROVIDER: google
+          AI_MODEL: gemini-2.5-flash-lite
+          AI_TEMPERATURE: "0.4"
+          AI_MAX_TOKENS: "8192"
+          AI_TIMEOUT_SECONDS: "30"
+          AI_LOG_PROMPTS: "false"
+          RACE_EVAL_THRESHOLD: ${{ github.event.inputs.threshold || '0.75' }}
+        run: |
+          if [ -z "$AI_API_KEY" ]; then
+            echo "::error::AI_API_KEY no configurado en secrets de GitHub."
+            exit 1
+          fi
+          pytest tests/evals/test_race_analyst_eval.py -m golden -v --tb=short
+
+      - name: Upload scoreboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: race-eval-scoreboard-${{ github.run_id }}
+          path: backend/evals/race_analyst/results/last_run.md
+          if-no-files-found: warn
+          retention-days: 30

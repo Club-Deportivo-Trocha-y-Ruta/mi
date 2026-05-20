@@ -1,0 +1,41 @@
+{
+  "case_id": "006",
+  "description": "Atleta 15 años (juvenil) en tapering pre-Campeonato Departamental (carrera A). Recomendaciones de carga descendente y descanso.",
+  "input": {
+    "athlete_id": 9006,
+    "season": 2026,
+    "athlete_pseudonym": "Atleta-JUV-A-M-006",
+    "age": 15,
+    "ltad_group": "juvenil",
+    "progression_df_records": [
+      {"valida_num": 1, "event_date": "2026-01-31", "position": 2, "race_time_ms": 3500000, "points_awarded": 95, "gap_to_winner_ms": 18000},
+      {"valida_num": 2, "event_date": "2026-02-28", "position": 1, "race_time_ms": 3470000, "points_awarded": 110, "gap_to_winner_ms": 0},
+      {"valida_num": 3, "event_date": "2026-04-19", "position": 2, "race_time_ms": 3480000, "points_awarded": 95, "gap_to_winner_ms": 12000},
+      {"valida_num": 4, "event_date": "2026-05-17", "position": 1, "race_time_ms": 3445000, "points_awarded": 110, "gap_to_winner_ms": 0}
+    ],
+    "podium_context": {
+      "category_id": 8,
+      "event_id": 4,
+      "podium": [
+        {"position": 1, "competitor_id": 9006, "race_time_ms": 3445000},
+        {"position": 2, "competitor_id": 4050, "race_time_ms": 3458000},
+        {"position": 3, "competitor_id": 4051, "race_time_ms": 3478000}
+      ],
+      "finishers_count": 18
+    },
+    "memory_recent_insights": [
+      "CD 26-jun: carrera A — tapering completo 7 días",
+      "Pico forma en V-IV: ganó con +13s"
+    ],
+    "principles_citations": [
+      {"chunk_id": "rag_taper01", "source": "docs/01-marco-teorico.md", "content": "Tapering carrera A juvenil: -50% volumen últimos 7 días, mantener intensidad, +1 día descanso completo.", "score": 0.96, "metadata": {"h1": "Periodización"}},
+      {"chunk_id": "rag_recovery01", "source": "docs/01-marco-teorico.md", "content": "Recuperación post-tapering: foco sueño 9h, hidratación, sin entrenamientos sorpresa.", "score": 0.91, "metadata": {"h1": "Recuperación"}}
+    ],
+    "explain_mode": false
+  },
+  "expected_themes": ["tapering", "carrera A", "volumen", "descanso", "pico"],
+  "forbidden_terms": ["suplementos", "creatina", "cafeína", "Mariana", "Thiago"],
+  "must_cite": true,
+  "max_words": 600,
+  "ideal_output_excerpt": "## Evolución\n\nAtleta-JUV-A-M-006 lidera la categoría: 2-1-2-1 en 4 válidas, ganó V-IV con +13s [1]. Pico de forma claro entrando al CD.\n\n## Análisis Técnico\n\nConsolidación técnica completa. Listo para tapering completo de 7 días [1].\n\n## Recomendaciones LTAD\n\n- Reducir volumen 50% últimos 7 días, mantener 2 micro-HIIT (categoría=volume, prioridad=high) [1]\n- Priorizar sueño 9h y hidratación pre-CD (categoría=recovery, prioridad=high) [2]\n\n## Riesgos\n\n- Sobre-entrenamiento si introduce sesión sorpresa (flag=load_excess, severity=med) [2]\n\n## Próximos Pasos\n\nPlan tapering 7 días + chequeo bici + briefing carrera 24h antes."
+}

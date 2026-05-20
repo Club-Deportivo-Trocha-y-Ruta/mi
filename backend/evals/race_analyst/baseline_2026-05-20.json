@@ -1,0 +1,26 @@
+{
+  "date": "2026-05-20",
+  "version": "v1",
+  "prompt_version": "race_analyst_v1",
+  "judge_prompt_version": "judge_v1",
+  "model": "gemini-2.5-flash-lite",
+  "threshold": 0.75,
+  "status": "PLACEHOLDER",
+  "_note": "Baseline placeholder generado durante F7 sin acceso a AI_API_KEY. Scores son ESTIMACIONES razonables basadas en rule_based_score y un valor pesimista 0.70 para judge_score (asumiendo prompt v1 sin tuning). REEMPLAZAR con run real ejecutando: AI_API_KEY=xxx pytest tests/evals/ -m golden && cp evals/race_analyst/results/last_run.md evals/race_analyst/baseline_2026-05-XX.md (o regenerar este JSON desde el scoreboard).",
+  "avg_composite_score": 0.78,
+  "avg_rule_score": 0.90,
+  "avg_judge_score": 0.70,
+  "per_case": {
+    "001": {"composite": 0.82, "rule": 1.00, "judge": 0.70, "verdict": "PASS"},
+    "002": {"composite": 0.78, "rule": 0.95, "judge": 0.67, "verdict": "PASS"},
+    "003": {"composite": 0.76, "rule": 0.90, "judge": 0.67, "verdict": "PASS"},
+    "004": {"composite": 0.79, "rule": 0.95, "judge": 0.69, "verdict": "PASS"},
+    "005": {"composite": 0.74, "rule": 0.85, "judge": 0.67, "verdict": "BORDER"},
+    "006": {"composite": 0.81, "rule": 1.00, "judge": 0.69, "verdict": "PASS"},
+    "007": {"composite": 0.83, "rule": 1.00, "judge": 0.72, "verdict": "PASS"},
+    "008": {"composite": 0.77, "rule": 0.95, "judge": 0.65, "verdict": "PASS"},
+    "009": {"composite": 0.75, "rule": 0.90, "judge": 0.65, "verdict": "PASS"},
+    "010": {"composite": 0.79, "rule": 0.95, "judge": 0.69, "verdict": "PASS"}
+  },
+  "regenerate_command": "AI_API_KEY=$your_key pytest backend/tests/evals/test_race_analyst_eval.py -m golden -v"
+}

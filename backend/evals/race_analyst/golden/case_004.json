@@ -1,0 +1,41 @@
+{
+  "case_id": "004",
+  "description": "Atleta 14 años (juvenil) en transición PJUV → JUV, mostrar diferencias de carga y enfoque LTAD para el cambio categórico.",
+  "input": {
+    "athlete_id": 9004,
+    "season": 2026,
+    "athlete_pseudonym": "Atleta-JUV-M-M-004",
+    "age": 14,
+    "ltad_group": "juvenil",
+    "progression_df_records": [
+      {"valida_num": 1, "event_date": "2026-01-31", "position": 5, "race_time_ms": 3300000, "points_awarded": 40, "gap_to_winner_ms": 95000},
+      {"valida_num": 2, "event_date": "2026-02-28", "position": 4, "race_time_ms": 3250000, "points_awarded": 60, "gap_to_winner_ms": 80000},
+      {"valida_num": 3, "event_date": "2026-04-19", "position": 4, "race_time_ms": 3220000, "points_awarded": 60, "gap_to_winner_ms": 75000},
+      {"valida_num": 4, "event_date": "2026-05-17", "position": 3, "race_time_ms": 3195000, "points_awarded": 80, "gap_to_winner_ms": 60000}
+    ],
+    "podium_context": {
+      "category_id": 7,
+      "event_id": 4,
+      "podium": [
+        {"position": 1, "competitor_id": 4030, "race_time_ms": 3135000},
+        {"position": 2, "competitor_id": 4031, "race_time_ms": 3158000},
+        {"position": 3, "competitor_id": 9004, "race_time_ms": 3195000}
+      ],
+      "finishers_count": 16
+    },
+    "memory_recent_insights": [
+      "Cambio categoría: el atleta pasa de PJUV a JUV el próximo año",
+      "Test FC max realizado con supervisión: 198 lpm"
+    ],
+    "principles_citations": [
+      {"chunk_id": "rag_juv02", "source": "docs/01-marco-teorico.md", "content": "Juvenil 13-15 años: fuerza progresiva bandas → mancuernas → pesos libres supervisados.", "score": 0.94, "metadata": {"h1": "LTAD"}},
+      {"chunk_id": "rag_trans01", "source": "docs/01-marco-teorico.md", "content": "Transición categorial: incrementar carga ≤10% mensual; priorizar volumen Z1-Z2 80%.", "score": 0.89, "metadata": {"h1": "Periodización"}}
+    ],
+    "explain_mode": false
+  },
+  "expected_themes": ["transici", "juvenil", "fuerza", "volumen", "primer podio"],
+  "forbidden_terms": ["suplementos", "creatina", "potenciómetro <13", "Mariana", "Thiago", "Sofia"],
+  "must_cite": true,
+  "max_words": 600,
+  "ideal_output_excerpt": "## Evolución\n\nAtleta-JUV-M-M-004 mostró progresión lineal: 5→4→4→3, su primer podio en V-IV [1]. Gap al ganador bajó 35s en 4 meses.\n\n## Análisis Técnico\n\nFC max 198 dentro de rango LTAD juvenil. Listo para introducir fuerza progresiva con bandas y mancuernas supervisada [1].\n\n## Recomendaciones LTAD\n\n- Sumar 2 sesiones fuerza/sem con bandas (categoría=technique, prioridad=med) [1]\n- Mantener 80% Z1-Z2 + 2 HIIT controlados (categoría=volume, prioridad=high) [2]\n\n## Riesgos\n\n- Salto categoría próximo año: evitar aumentar carga >10% mensual (flag=load_excess, severity=med) [2]\n\n## Próximos Pasos\n\nPlan transición 4 semanas. Tapering completo para CD."
+}
