@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, calendar, growth, parent_athletes, reports, training_sessions
+from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, calendar, growth, parent_athletes, race_analysis, reports, training_sessions
 from app.routers.consent import consent_router, public_router as consent_public_router
 from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
 
@@ -39,6 +39,7 @@ app.include_router(calendar.router, prefix="/api/calendar/events", tags=["calend
 app.include_router(training_sessions.router, prefix="/api/training-sessions", tags=["training-sessions"])
 app.include_router(monthly_reports_router, prefix="/api/clubs", tags=["monthly-reports"])
 app.include_router(parent_monthly_router, prefix="/api/parents", tags=["monthly-reports"])
+app.include_router(race_analysis.router, prefix="/api/race-analysis", tags=["race-analysis"])
 
 
 _local_media_dir = Path("static/uploads/media")
