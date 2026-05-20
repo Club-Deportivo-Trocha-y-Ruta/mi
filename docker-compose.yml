@@ -26,6 +26,13 @@ services:
       - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-30}
       - AI_TEMPERATURE=${AI_TEMPERATURE:-0.4}
       - AI_LOG_PROMPTS=${AI_LOG_PROMPTS:-false}
+      # Race-results v2 (Fase 2 — RAG sobre marco teórico)
+      - CHROMA_PATH=${CHROMA_PATH:-/app/data/chroma}
+    volumes:
+      # Persiste el índice ChromaDB del marco teórico entre restarts.
+      # Gitignored en el host (./data/chroma/). Si el dir no existe lo crea
+      # ChromaDB en el primer `python -m app.services.race.rag.indexer reindex`.
+      - ./data/chroma:/app/data/chroma
     networks: [backend]
 
   mailhog:

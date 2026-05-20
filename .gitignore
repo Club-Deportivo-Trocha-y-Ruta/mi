@@ -54,6 +54,9 @@ logs/
 # ─── Backups ──────────────────────────────────────────────────────────────────
 data/backups/*.sql
 
+# ─── Race-results v2 — ChromaDB store (Fase 2) ────────────────────────────────
+data/chroma/
+
 # ─── Outputs Claude Code efímeros ─────────────────────────────────────────────
 claudedocs/
 
