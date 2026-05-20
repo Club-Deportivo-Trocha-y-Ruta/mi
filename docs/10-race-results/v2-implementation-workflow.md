@@ -4,7 +4,7 @@
 **Strategy:** Systematic
 **Depth:** Deep
 **Generated:** 2026-05-20
-**Estimated total:** 14-17 días-dev + 12-14h aprendizaje paralelo
+**Estimated total:** 14 días-dev + 12-13h aprendizaje paralelo
 **Status:** Listo para ejecutar (19 decisiones cerradas)
 
 ---
@@ -70,7 +70,7 @@ gantt
     Grafo + checkpointing       :f4, after f3, 1d
 
     section Fase 5
-    Endpoints + SSE             :f5, after f4, 2d
+    Endpoints + polling         :f5, after f4, 0.5d
 
     section Fase 6
     Frontend UI                 :f6, after f5, 4d
@@ -89,7 +89,7 @@ gantt
     Ej5 langfuse                :ex5, after ex4, 1d
     Ej6 multi-agent             :ex6, after ex5, 1d
     Ej7 eval                    :ex7, after ex6, 1d
-    Ej8 SSE                     :ex8, after ex7, 1d
+    Ej8 polling                 :ex8, after ex7, 0.5d
 ```
 
 ---
@@ -103,7 +103,7 @@ graph TD
     F1 --> F3[Fase 3: Agentes core<br/>analyst + critic + chat]
     F2 --> F3
     F3 --> F4[Fase 4: Grafo<br/>13 nodos + checkpointing]
-    F4 --> F5[Fase 5: API + SSE<br/>FastAPI endpoints]
+    F4 --> F5[Fase 5: API + polling<br/>FastAPI endpoints]
     F5 --> F6[Fase 6: Frontend<br/>SPA componentes]
     F4 --> F7[Fase 7: Eval<br/>golden + LLM judge]
     F5 --> F7
@@ -117,7 +117,7 @@ graph TD
     style F8 fill:#c8e6c9
 ```
 
-**Camino crítico:** F0 → F1 → F3 → F4 → F5 → F6 → F8 (~13.5 días)
+**Camino crítico:** F0 → F1 → F3 → F4 → F5 → F6 → F8 (~12 días)
 
 **Oportunidades paralelización:**
 - Fase 2 (RAG) puede correr en paralelo con Fase 1 (queries.py) — diferentes archivos
@@ -140,7 +140,7 @@ graph TD
 
 | # | Tarea | Agente | Comando | Deliverable |
 |---|---|---|---|---|
-| 0.1 | Agregar deps a `backend/requirements.txt` | devops-architect | `/sc:implement` | langgraph>=1.2.0, langchain-google-genai>=2.0.0, langgraph-checkpoint-sqlite>=2.0.5, chromadb>=0.5.20, langfuse>=3.0.0, sse-starlette>=2.1.0, jinja2 (ya), hypothesis (test) |
+| 0.1 | Agregar deps a `backend/requirements.txt` | devops-architect | `/sc:implement` | langgraph>=1.2.0, langchain-google-genai>=2.0.0, langgraph-checkpoint-sqlite>=2.0.5, chromadb>=0.5.20, langfuse>=3.0.0, jinja2 (ya), hypothesis (test) |
 | 0.2 | Crear migración Alembic `7a8b9c0d1e2f` con 4 tablas nuevas | backend-architect | `/sc:implement` | `backend/alembic/versions/7a8b9c0d1e2f_*.py` con athlete_ai_insights, agent_runs, agent_run_events, anonymization_mappings |
 | 0.3 | docker-compose.langfuse.yml (PostgreSQL + ClickHouse + Langfuse server) | devops-architect | `/sc:implement` | Levanta Langfuse en :3001 sin tocar stack principal |
 | 0.4 | Crear estructura carpetas `services/race/{ai,agents,rag,prompts}` | backend-architect | manual | árbol vacío con `__init__.py` |
@@ -319,14 +319,13 @@ assert "Mariana" not in str(state["events"])  # privacy check (pseudónimo)
 
 ---
 
-## Fase 5 — Endpoints FastAPI + SSE
+## Fase 5 — Endpoints FastAPI + polling
 
-**Tiempo:** 2 días | **Riesgo:** Medio (SSE backpressure, RBAC) | **Depende de:** F4
+**Tiempo:** 0.5 días (3-4h) | **Riesgo:** Bajo (polling trivial vs streamer SSE complejo, RBAC) | **Depende de:** F4
 
 ### Prerequisitos
 
 - Grafo invocable (F4)
-- `sse-starlette` instalado (F0)
 
 ### Tareas atómicas
 
@@ -335,13 +334,13 @@ assert "Mariana" not in str(state["events"])  # privacy check (pseudónimo)
 | 5.1 | Router `backend/app/routers/race_analysis.py` | backend-architect | `/sc:implement` | 6 endpoints según design §9.1-9.7 |
 | 5.2 | Schemas request/response Pydantic | backend-architect | `/sc:implement` | `backend/app/schemas/race_ai.py` |
 | 5.3 | RBAC dep: solo coach + admin | security-engineer | `/sc:implement` | `require_role([coach, admin])` |
-| 5.4 | SSE endpoint `/runs/{run_id}/events` con `sse_starlette.EventSourceResponse` | backend-architect | `/sc:implement` | Cliente lee con EventSource, query param `?after_seq=N` para replay |
+| 5.4 | Endpoint polling `GET /runs/{run_id}/status?since=<seq>` | backend-architect | `/sc:implement` | Retorna `{state, progress_pct, current_node, estimated_seconds_remaining, new_events}` |
 | 5.5 | Endpoint HITL response `/runs/{run_id}/hitl/{step_id}` | backend-architect | `/sc:implement` | Coach POST decisión, grafo continúa con `Command(resume=...)` |
 | 5.6 | Endpoint PDF descarga (weasyprint) | backend-architect | `/sc:implement` | Renderiza markdown a PDF con branding TyR (logo, colores) |
-| 5.7 | Endpoint chat consultivo | backend-architect | `/sc:implement` | POST query + session_id, retorna chunk streaming SSE |
+| 5.7 | Endpoint chat consultivo | backend-architect | `/sc:implement` | POST query + session_id, retorna respuesta completa JSON (sin streaming) |
 | 5.8 | Backpressure máx 10 runs concurrentes | backend-architect | `/sc:implement` | Semaphore async + 429 si excede |
-| 5.9 | Tests integración endpoints (TestClient) | quality-engineer | `/sc:test` | ≥15 tests cubriendo auth, happy path, error, SSE streaming |
-| 5.10 | Test sentinela: 0 PII en stream | security-engineer | `/sc:test` | Property test con hypothesis: 100 runs, ninguno emite nombre real en SSE events |
+| 5.9 | Tests integración endpoints (TestClient) | quality-engineer | `/sc:test` | ≥15 tests cubriendo auth, happy path, error, polling |
+| 5.10 | Test sentinela: 0 PII en polling responses | security-engineer | `/sc:test` | Property test con hypothesis: 100 runs, ninguno retorna nombre real en `new_events` |
 
 ### Criterio de éxito
 
@@ -349,10 +348,10 @@ assert "Mariana" not in str(state["events"])  # privacy check (pseudónimo)
 curl -X POST http://localhost:8000/api/race-analysis/runs \
   -H "Authorization: Bearer $COACH_TOKEN" \
   -d '{"athlete_id": 179, "season": 2026}'
-# → {"run_id": "uuid"}
+# → {"run_id": "uuid", "status_url": "/api/race-analysis/runs/uuid/status"}
 
-curl -N http://localhost:8000/api/race-analysis/runs/uuid/events
-# → SSE stream con eventos por nodo
+watch -n 2 curl -s http://localhost:8000/api/race-analysis/runs/uuid/status
+# → JSON con state actualizándose cada 2s hasta state="done"
 ```
 
 ### Rollback
@@ -365,7 +364,7 @@ curl -N http://localhost:8000/api/race-analysis/runs/uuid/events
 
 ## Fase 6 — Frontend UI React
 
-**Tiempo:** 3-4 días | **Riesgo:** Medio (SSE en React, UX HITL) | **Depende de:** F5
+**Tiempo:** 3-3.5 días | **Riesgo:** Medio (polling en React, UX HITL) | **Depende de:** F5
 
 ### Prerequisitos
 
@@ -376,15 +375,15 @@ curl -N http://localhost:8000/api/race-analysis/runs/uuid/events
 
 | # | Tarea | Agente | Comando | Deliverable |
 |---|---|---|---|---|
-| 6.1 | Custom hook `useSSE(url, options)` | react-ui-engineer | `/sc:implement` | `frontend/src/hooks/useSSE.ts` — wrapper EventSource con reconexión + replay |
+| 6.1 | Hook `useRunStatus(runId)` (TanStack Query polling) | react-ui-engineer | `/sc:implement` | `useQuery` con `refetchInterval: 2000`, se detiene cuando `state ∈ {done, error}`, acumula `new_events` |
 | 6.2 | Hook `useStartRun()` (TanStack Query mutation) | react-ui-engineer | `/sc:implement` | POST /runs, retorna run_id |
 | 6.3 | Hook `useApproveStep(runId)` | react-ui-engineer | `/sc:implement` | POST /hitl con decisión coach |
 | 6.4 | `RaceAnalysisPage` (ruta `/coach/race-analysis`) | react-ui-engineer | `/sc:implement` | Layout con tabs: Upload, Runs activos, Insights históricos |
 | 6.5 | `UploadZone` (drag-drop PDF/CSV) | react-ui-engineer | `/sc:implement` | shadcn dropzone + validación tipo + tamaño |
-| 6.6 | `AnalysisRunTimeline` (consume SSE) | react-ui-engineer | `/sc:implement` | Timeline visual con nodos del grafo + status + duration |
+| 6.6 | `AnalysisRunTimeline` (consume polling) | react-ui-engineer | `/sc:implement` | Timeline visual con nodos del grafo + status + duration, actualiza cada 2s |
 | 6.7 | `HITLApprovalCard` (aprobación inline) | react-ui-engineer | `/sc:implement` | Cuando llega evento `hitl_required`, render card con opciones aprobar/editar/rechazar |
 | 6.8 | `MarkdownReportViewer` (react-markdown) | react-ui-engineer | `/sc:implement` | Render análisis final con syntax highlighting + tablas |
-| 6.9 | `ChatConsole` (input + history + streaming) | react-ui-engineer | `/sc:implement` | SSE-based streaming respuestas chat |
+| 6.9 | `ChatConsole` (input + history) | react-ui-engineer | `/sc:implement` | Mutation POST `/chat`, spinner mientras `isPending`, respuesta JSON completa |
 | 6.10 | `ExplainModeBanner` (toggle + tooltip) | react-ui-engineer | `/sc:implement` | localStorage `race-explain-mode`, banner persistente en page |
 | 6.11 | PDF download button | react-ui-engineer | `/sc:implement` | GET /pdf con `<a download>` |
 | 6.12 | Estados: loading, error, empty | react-ui-engineer | `/sc:implement` | UX en cada componente |
@@ -496,10 +495,9 @@ pytest tests/evals/test_race_analyst_eval.py --golden
 | HITL gates UX confusa coach | F5, F6 | Media | Medio | Tour interactivo (propuesta) + modo aprendizaje toggle |
 | PII leak a Gemini | F3, F4, F5 | Baja | **Crítico** | Test sentinela hypothesis 1000 inputs, bloqueante CI; security-engineer review obligatorio |
 | LangGraph state corruption tras crash | F4 | Baja | Alto | Checkpointing SQLite + tests retry; estados >1h auto-cancelar |
-| SSE bloqueado por proxy/firewall | F5, F6 | Baja | Medio | Fallback polling cada 2s si EventSource falla 3x |
+| Polling overhead bajo carga | F5, F6 | Baja | Bajo | ~15 req/30s por run × N concurrentes. Mitigación: límite 10 runs; ETag/304 si state no cambió |
 | RAG retrieval irrelevante | F2, F3 | Media | Medio | Tests específicos retrieval; ajuste chunking + top_k |
 | Costo LLM dispara | F8 | Baja | Medio | Budget alert Langfuse $5/mes; circuit breaker si >$X/día |
-| Frontend SSE memory leak | F6 | Media | Bajo | Cleanup en useEffect, abort signal |
 | Eval golden dataset insuficiente | F7 | Media | Alto | Iterar: empezar con 5 casos, crecer a 20 en primeras 2 semanas prod |
 
 ---
@@ -512,7 +510,7 @@ pytest tests/evals/test_race_analyst_eval.py --golden
 | QG2 | Fase 2 → 3 | RAG retrieval test cases verdes | quality-engineer |
 | QG3 | Fase 3 → 4 | Smoke test integración Gemini OK | quality-engineer |
 | QG4 | Fase 4 → 5 | Test PII leak property (1000 inputs) verde | security-engineer |
-| QG5 | Fase 5 → 6 | RBAC tests + SSE backpressure verdes | security-engineer |
+| QG5 | Fase 5 → 6 | RBAC tests + polling performance test verde (10 runs concurrentes <500ms p95) | security-engineer |
 | QG6 | Fase 6 → 8 | UI funciona 3 browsers + accesibilidad | react-ui-engineer |
 | QG7 | Fase 7 → 8 | Eval baseline ≥0.75 | quality-engineer |
 | QG8 | Fase 8 → MVP | Smoke test producción OK + runbook listo | devops-architect |
@@ -530,9 +528,9 @@ pytest tests/evals/test_race_analyst_eval.py --golden
 | Ej5 — Langfuse tracing (decorator @observe) | Durante F3 | Observability | 1.5h | F3 |
 | Ej6 — Multi-agent supervisor | Durante F4 | Coordination patterns | 2-3h | F4 |
 | Ej7 — Eval framework | Durante F7 (refuerza) | LLM-as-judge | 2h | F7 |
-| Ej8 — SSE streaming React | Durante F5 | EventSource patterns | 1.5h | F5 |
+| Ej8 — TanStack Query polling pattern | Durante F5 | refetchInterval + eventos incrementales | 1h | F5 |
 
-**Total tiempo aprendizaje:** ~12-14h | **Agente guía:** `learning-guide` con `/sc:explain`
+**Total tiempo aprendizaje:** ~12-13h | **Agente guía:** `learning-guide` con `/sc:explain`
 
 Cada ejercicio en sandbox aislado (`backend/sandbox/learning/ej_N/`) — NO toca código prod.
 
@@ -549,7 +547,7 @@ graph LR
     P1 --> F3[F3: Agentes]
     P2 --> F3
 
-    F4 --> P4[F5: API SSE<br/>backend-architect]
+    F4 --> P4[F5: API polling<br/>backend-architect]
     F4 --> P5[F7: Eval<br/>quality-engineer]
 
     P4 --> F6[F6: UI<br/>react-ui-engineer]
@@ -594,7 +592,7 @@ graph LR
 - [ ] p50 latencia análisis <30s
 - [ ] Cost por análisis <$0.01 (verificado Langfuse)
 - [ ] Máx 10 runs concurrentes (backpressure activo)
-- [ ] SSE estable >10 minutos sin reconexión
+- [ ] Polling estable durante 10 runs concurrentes sin degradación >500ms p95
 
 ### Observability
 
@@ -622,11 +620,10 @@ Día 2:    F1 + Ej2
 Día 3:    F2 (paralelo con resto F1) + Ej3/4
 Día 4-6:  F3 + Ej5
 Día 7:    F4 + Ej6
-Día 8-9:  F5 + Ej8 (paralelo)
-Día 10-13: F6
-Día 14-15: F7 + Ej7 (paralelo con F6)
-Día 16:   F8 + smoke prod
-Día 17:   buffer + ajustes finales
+Día 8:    F5 + Ej8 (paralelo, F5 tarda solo 3-4h)
+Día 9-11: F6
+Día 12-13: F7 + Ej7 (paralelo con F6)
+Día 14:   F8 + smoke prod
 ```
 
 ### Comandos `/sc:` por fase
@@ -688,7 +685,7 @@ En paralelo: arrancar Ej1 (hello-world LangGraph) en `backend/sandbox/learning/e
 | A4 | gemini-embedding-001 multilingual español calidad suficiente | Tests F2 con docs/01 | Fallback sentence-transformers local |
 | A5 | 10 casos golden suficientes para baseline | F7 eval | Expandir a 20 |
 | A6 | weasyprint renderiza markdown TyR-branded OK | Test F5 | Investigar alt (Gotenberg) |
-| A7 | SSE estable detrás de Render free tier | Smoke F8 | Considerar plan paid |
+| A7 | ~~SSE estable detrás de Render free tier~~ — **Decisión 2026-05-20:** polling elimina esta preocupación. HTTP GET estándar funciona en cualquier provider | n/a | n/a |
 
 ---
 

@@ -21,7 +21,7 @@ Rediseño **híbrido determinista + agéntico**:
 
 - **Capa determinista (intacta):** parsing, normalización, matching, ingest, queries analíticas. Los 339 tests verdes se preservan.
 - **Capa agéntica (nueva):** un workflow **LangGraph** orquesta los pasos cualitativos — anonimización, retrieval del marco teórico, llamada LLM con memoria por atleta, gates HITL para revisión del coach, persistencia de insights y notificación. La salida es un dashboard markdown renderizado + PDF descargable + chat consultivo.
-- **UI nueva:** ruta `/coach/race-analysis` en el SPA React 19 existente. Streaming de eventos LangGraph vía **SSE**.
+- **UI nueva:** ruta `/coach/race-analysis` en el SPA React 19 existente. Polling cada 2 segundos vía **TanStack Query**.
 - **Observability:** **Langfuse self-hosted** (Postgres + ClickHouse + server) capturando cada trace, costo, latencia y prompt version.
 - **Eval:** golden dataset versionado + LLM-as-judge, bloqueante en CI antes de promover cambios de prompt.
 
@@ -33,7 +33,7 @@ Rediseño **híbrido determinista + agéntico**:
 | 2 | Framework agente | LangGraph 1.2.x + Langfuse self-hosted |
 | 3 | LLM | Google Gemini 2.5 Flash Lite via `langchain-google-genai` |
 | 4 | UI | React 19 + shadcn dentro del SPA actual, ruta `/coach/race-analysis` |
-| 5 | Streaming | SSE FastAPI → EventSource cliente |
+| 5 | Streaming | Polling HTTP cada 2s → TanStack Query con refetchInterval |
 | 6 | Memoria | Tabla `athlete_ai_insights` (recall N=3) |
 | 7 | Privacy | Anonimización determinista antes del LLM, re-hidratación en frontend |
 | 8 | HITL | Gates en parse-quality, match TyR <85, antes de email |
@@ -68,7 +68,7 @@ flowchart LR
         UI["React 19 SPA<br/>/coach/race-analysis"]
     end
     subgraph "Backend FastAPI"
-        ROUTER["routers/race_analysis.py<br/>(SSE stream)"]
+        ROUTER["routers/race_analysis.py<br/>(polling endpoints)"]
         GRAPH["LangGraph<br/>(state machine)"]
         DET["Capa v1 determinista<br/>(pdf_parser, ingestor, analytics)"]
         RAG["ChromaDB<br/>marco-teorico"]
@@ -85,7 +85,7 @@ flowchart LR
         DB[(MySQL Hostinger)]
     end
 
-    UI -->|SSE EventSource| ROUTER
+    UI -->|HTTP polling cada 2s| ROUTER
     UI -->|HITL approvals POST| ROUTER
     ROUTER --> GRAPH
     GRAPH --> DET
@@ -117,7 +117,7 @@ flowchart TB
 
     subgraph BROWSER ["Browser — React 19 + shadcn"]
         DASH["RaceAnalysisDashboard"]:::ui
-        TIMELINE["AnalysisRunTimeline<br/>(consume SSE)"]:::ui
+        TIMELINE["AnalysisRunTimeline<br/>(consume polling)"]:::ui
         HITL_UI["HITLApprovalCard"]:::ui
         REPORT["MarkdownReportViewer"]:::ui
         CHAT["ChatConsole"]:::ui
@@ -126,7 +126,7 @@ flowchart TB
 
     subgraph FASTAPI ["FastAPI — routers/race_analysis.py"]
         EP_POST["POST /runs"]:::api
-        EP_SSE["GET /runs/{id}/events (SSE)"]:::api
+        EP_STATUS["GET /runs/{id}/status (polling)"]:::api
         EP_HITL["POST /runs/{id}/hitl/{step}"]:::api
         EP_CHAT["POST /chat"]:::api
         EP_PDF["GET /runs/{id}/pdf"]:::api
@@ -172,8 +172,8 @@ flowchart TB
     end
 
     DASH --> EP_POST
-    DASH --> EP_SSE
-    TIMELINE -.SSE events.-> EP_SSE
+    DASH --> EP_STATUS
+    TIMELINE -.polling 2s.-> EP_STATUS
     HITL_UI --> EP_HITL
     CHAT --> EP_CHAT
     REPORT --> EP_PDF
@@ -215,7 +215,7 @@ flowchart TB
 
 | Capa | Tech | Versión mínima | Justificación |
 |---|---|---|---|
-| **Orquestación** | `langgraph` | `>=1.2.0,<2.0` | 1.0 estabilizó la API en oct/2025; 1.2 (mayo 2026) trae mejoras en streaming y `interrupt()` v2 |
+| **Orquestación** | `langgraph` | `>=1.2.0,<2.0` | 1.0 estabilizó la API en oct/2025; 1.2 (mayo 2026) trae `interrupt()` v2 |
 | **Checkpointer** | `langgraph-checkpoint-sqlite` | `>=2.0.5` | Para state machine entre HITL gates; SQLite local en `./data/langgraph/checkpoints.sqlite` |
 | **LLM client** | `langchain-google-genai` | `>=2.0.0` | Soporta `gemini-2.5-flash-lite`, `thinking_budget`, structured output. Asunción: ya en deps tras esta PR |
 | **LangChain core** | `langchain-core` | `>=0.3.40` | Requerido por langgraph 1.x; ya transitivo |
@@ -225,8 +225,7 @@ flowchart TB
 | **Embeddings** | `sentence-transformers` | `>=3.0.0` | Modelo `paraphrase-multilingual-MiniLM-L12-v2` (español, 384 dims, ~120 MB) — Asunción ver §6 |
 | **PDF render** | `weasyprint` | `>=62.3` | ya en deps |
 | **Template** | `jinja2` | `>=3.1` | ya en deps; prompts y reportes |
-| **API streaming** | `sse-starlette` | `>=2.1.0` | Wrapper SSE para FastAPI con keep-alive, retry |
-| **Frontend SSE** | nativo `EventSource` | n/a | Browser API, sin librería |
+| **Frontend polling** | `@tanstack/react-query` | `^5.0` | ya en deps; `refetchInterval: 2000` para polling, se detiene cuando `state ∈ {done, error}` |
 | **Frontend markdown** | `react-markdown` | `^10.1.0` | ya en deps; render del reporte |
 | **Frontend charts** | `recharts` | `^3.8.1` | ya en deps; visualización gap-podio y proyección |
 
@@ -263,7 +262,7 @@ backend/
 │   │   ├── ai_explanation.py           # (existente)
 │   │   ├── athlete_ai_insight.py       # NUEVO — memoria agente por atleta
 │   │   ├── agent_run.py                # NUEVO — un registro por ejecución de grafo
-│   │   ├── agent_run_event.py          # NUEVO — un registro por evento SSE emitido
+│   │   ├── agent_run_event.py          # NUEVO — un registro por evento de polling emitido
 │   │   ├── anonymization_mapping.py    # NUEVO — auditoría pseudonym ↔ real
 │   │   ├── race_*.py                   # (existente, sin cambios)
 │   │   └── __init__.py                 # MODIFICADO — exportar nuevos
@@ -271,7 +270,7 @@ backend/
 │   │   ├── race.py                     # (existente)
 │   │   └── race_ai.py                  # NUEVO — schemas Pydantic agéntico
 │   ├── routers/
-│   │   ├── race_analysis.py            # NUEVO — endpoints REST + SSE
+│   │   ├── race_analysis.py            # NUEVO — endpoints REST + polling
 │   │   └── ...
 │   ├── services/
 │   │   ├── ai/                         # (existente, no se toca)
@@ -315,8 +314,7 @@ backend/
 │   │       │   │   │   └── ...
 │   │       │   │   └── eval/
 │   │       │   │       └── judge_v1.md
-│   │       │   ├── pdf_renderer.py     # weasyprint + template Jinja2
-│   │       │   └── sse_emitter.py      # asyncio.Queue → SSE
+│   │       │   └── pdf_renderer.py     # weasyprint + template Jinja2
 │   │       └── rag/
 │   │           ├── __init__.py
 │   │           ├── ingest.py           # chunking + indexado marco-teorico
@@ -365,9 +363,7 @@ backend/
 frontend/
 ├── src/
 │   ├── api/
-│   │   └── raceAnalysis.ts             # NUEVO — fetch + SSE wrapper
-│   ├── hooks/
-│   │   └── useSSE.ts                   # NUEVO — custom hook EventSource
+│   │   └── raceAnalysis.ts             # NUEVO — fetch + polling con TanStack Query
 │   ├── routes/
 │   │   └── coach/
 │   │       └── race-analysis/
@@ -446,7 +442,7 @@ docs/10-race-results/
 | Columna | Tipo | Notas |
 |---|---|---|
 | `id` | bigint PK | |
-| `external_run_id` | varchar(64) UNIQUE | UUID expuesto al cliente para SSE/HITL — nunca el PK interno |
+| `external_run_id` | varchar(64) UNIQUE | UUID expuesto al cliente para polling/HITL — nunca el PK interno |
 | `graph_name` | varchar(64) | `race_analyst_v1` (permite múltiples grafos coexistiendo) |
 | `prompt_version` | varchar(32) | `analyst_v1` activo en el momento |
 | `started_at` | datetime | |
@@ -469,7 +465,7 @@ docs/10-race-results/
 
 **Justificación:** `agent_runs` es el "header" de cada análisis. `external_run_id` evita exponer el autoincrement (mejor práctica seguridad URL). `checkpoint_thread_id` es la clave para resumir desde HITL.
 
-### 3.3 Tabla `agent_run_events` (NUEVA — log de eventos SSE)
+### 3.3 Tabla `agent_run_events` (NUEVA — log de eventos de polling)
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -485,7 +481,7 @@ docs/10-race-results/
 - `ix_run_events_run_seq (run_id, seq)`
 - `ix_run_events_type (event_type)`
 
-**Justificación:** persistimos eventos por dos razones — (1) un cliente que se reconecta puede solicitar `?after_seq=42` y replay; (2) auditoría retrospectiva y debugging sin abrir Langfuse.
+**Justificación:** persistimos eventos por dos razones — (1) el cliente que pollinguea puede solicitar `?since=42` y recibir solo eventos nuevos sin replay completo; (2) auditoría retrospectiva y debugging sin abrir Langfuse.
 
 ### 3.4 Tabla `anonymization_mappings` (NUEVA — auditoría privacy)
 
@@ -938,7 +934,7 @@ class StartRunResponse(BaseModel):
     run_id: str             # external_run_id (UUID)
     status: Literal["running"]
     started_at: datetime
-    events_url: str         # ej "/api/race-analysis/runs/{run_id}/events"
+    status_url: str         # ej "/api/race-analysis/runs/{run_id}/status"
     estimated_seconds: int  # heurística: 15 + 5*len(valida_nums)
 ```
 
@@ -951,40 +947,39 @@ class StartRunResponse(BaseModel):
 
 **Side effects:** crea fila `agent_runs`, dispara LangGraph en background task (`asyncio.create_task` + tracking en in-memory registry), retorna inmediatamente.
 
-### 9.2 `GET /api/race-analysis/runs/{run_id}/events` — SSE stream
+### 9.2 `GET /api/race-analysis/runs/{run_id}/status` — polling
 
-**Headers response:**
-```
-Content-Type: text/event-stream
-Cache-Control: no-cache
-Connection: keep-alive
-X-Accel-Buffering: no
-```
+> **Decisión 2026-05-20:** descartado SSE en favor de polling — más simple, funciona en cualquier provider (Render free tier, proxies), sin validar timeouts. Trade-off aceptado: ~2s de lag en UI vs realtime. Aceptable para análisis de ~30s.
 
 **Query params:**
-- `after_seq` (opcional): replay desde un seq dado (para reconexión)
+- `since` (opcional, int): retorna solo eventos con `seq > since` (evita replay completo en cada poll)
 
-**Eventos SSE (formato):**
+**Auth:** requerido (coach owner del run o admin)
+
+**Response 200:**
+```json
+{
+  "run_id": "uuid",
+  "state": "parsing|matching|analyzing|critic|hitl_pending|done|error",
+  "progress_pct": 45,
+  "current_node": "agent_analyst",
+  "started_at": "2026-05-20T10:30:00Z",
+  "estimated_seconds_remaining": 12,
+  "new_events": [
+    {"seq": 23, "node": "parser", "type": "node_complete", "data": {}, "ts": "..."},
+    {"seq": 24, "node": "anonymize", "type": "explain", "data": {"message": "Reemplazo nombres..."}, "ts": "..."}
+  ]
+}
 ```
-event: node_start
-data: {"seq": 1, "node": "validate_input", "ts": "..."}
 
-event: node_end
-data: {"seq": 2, "node": "validate_input", "ts": "...", "duration_ms": 35}
+**Comportamiento cliente:**
+- Pollinguea cada 2 segundos con `?since=<last_seq_visto>`.
+- Para de pollinguear cuando `state ∈ {done, error}`.
+- Pattern TanStack Query: `refetchInterval: state === 'done' || state === 'error' ? false : 2000`.
 
-event: explain
-data: {"seq": 3, "node": "anonymize", "message": "Reemplazo nombres por pseudónimos..."}
+**RBAC:** sólo el `requested_by_user_id` puede leer. Admin puede leer cualquiera.
 
-event: hitl_request
-data: {"seq": 12, "node": "hitl_gate_review", "step_id": "review_analyst_draft", "draft": {...}}
-
-event: done
-data: {"seq": 42, "status": "completed", "insight_id": 137, "report_url": "..."}
-```
-
-**RBAC:** sólo el `requested_by_user_id` puede leer (auth check al inicio). Admin puede leer cualquiera.
-
-**Backpressure:** server enmuda eventos si cliente no consume durante >5s (asyncio.Queue maxsize=100, drop oldest).
+**Optimización:** si el state no cambió desde el último poll, el servidor puede retornar `304 Not Modified` con ETag basado en el último `seq` emitido.
 
 ### 9.3 `POST /api/race-analysis/runs/{run_id}/hitl/{step_id}` — HITL response
 
@@ -1010,7 +1005,7 @@ class HITLResponseAck(BaseModel):
 - `409` run no está en estado `awaiting_hitl`
 - `422` edits no validan contra schema del draft
 
-**Side effects:** invoca `graph.update_state(...)` + `graph.invoke(Command(resume=...))`. Emite evento SSE `hitl_response`.
+**Side effects:** invoca `graph.update_state(...)` + `graph.invoke(Command(resume=...))`. Persiste evento `hitl_response` en `agent_run_events` (visible en próximo poll).
 
 ### 9.4 `GET /api/race-analysis/runs/{run_id}/result` — JSON final
 
@@ -1044,7 +1039,7 @@ class ChatRequest(BaseModel):
     context_athlete_id: int | None = None  # opcional, ata sesión a un atleta
 ```
 
-**Response:** stream SSE de tokens (event `token`) + evento final `done` con `{full_text, citations, session_id}`.
+**Response 200:** respuesta completa cuando el LLM termina (no streaming). `{full_text, citations, session_id}`. El cliente usa `useQuery` con `refetchInterval` mientras `state === 'pending'`.
 
 **RBAC:** coach/admin.
 
@@ -1089,7 +1084,7 @@ class InsightsList(BaseModel):
 
 #### `AnalysisRunTimeline` (componente reutilizable)
 - Props: `runId: string`
-- Hook: `useSSE(/api/race-analysis/runs/${runId}/events)` retorna `{events, status, connected}`.
+- Hook: `useQuery` con `refetchInterval: 2000` apuntando a `/api/race-analysis/runs/${runId}/status?since=<last_seq>`. Se detiene al llegar `state ∈ {done, error}`.
 - Renderiza vertical timeline (shadcn `Stepper` o custom):
   - Cada `node_end` → step ✅
   - `node_start` sin `node_end` aún → step ⏳ (spinner)
@@ -1117,7 +1112,7 @@ class InsightsList(BaseModel):
 #### `ChatConsole`
 - Layout split: chat history (scroll virtualizado) + input bottom.
 - Persistencia sesión: localStorage por `coach_id`, máximo última conversación.
-- Streaming response: hook `useChatStream` que abre POST SSE y appendea tokens.
+- Respuesta completa: hook `useChatSend` (mutation TanStack Query) que hace POST y espera respuesta JSON completa. Muestra spinner mientras `isPending`.
 - Cada mensaje del bot muestra "citations" (chunks RAG usados) en footer expandible.
 - Si pregunta nombra atleta, captura `context_athlete_id` y se mantiene en próximos turns.
 
@@ -1131,29 +1126,35 @@ class InsightsList(BaseModel):
 ```typescript
 // frontend/src/api/raceAnalysis.ts
 useStartRun()                          // mutation POST /runs
+useRunStatus(runId)                    // query polling GET /runs/:id/status
 useRunResult(runId)                    // query GET /runs/:id/result
 useRunPdfUrl(runId)                    // memoized URL
 useApproveStep(runId, stepId)          // mutation POST /hitl
-useChatSend(sessionId)                 // mutation con SSE
+useChatSend(sessionId)                 // mutation POST /chat (respuesta completa)
 useAthleteInsights(athleteId, opts)    // query con paginación
 ```
 
-### 10.4 SSE pattern (`useSSE`)
+### 10.4 Polling pattern (`useRunStatus`)
 
 ```typescript
-// frontend/src/hooks/useSSE.ts
-function useSSE<T>(url: string, opts?: { afterSeq?: number }) {
-  // Custom hook:
-  //  - useEffect crea EventSource(url + ?after_seq=...)
-  //  - parsea events por tipo (node_start, hitl_request, done...)
-  //  - acumula en useState<T[]>
-  //  - cleanup on unmount: close()
-  //  - reconexión automática con backoff si onerror y status !== 'completed'
-  //  - returns { events, status, lastSeq, connected, reconnect }
+// frontend/src/api/raceAnalysis.ts
+function useRunStatus(runId: string) {
+  const [lastSeq, setLastSeq] = useState(0)
+  return useQuery({
+    queryKey: ['run-status', runId, lastSeq],
+    queryFn: () => fetchRunStatus(runId, lastSeq),
+    refetchInterval: (query) => {
+      const state = query.state.data?.state
+      if (state === 'done' || state === 'error') return false
+      return 2000
+    },
+    onSuccess: (data) => {
+      if (data.new_events.length > 0) {
+        setLastSeq(data.new_events.at(-1)!.seq)
+      }
+    },
+  })
 }
-```
-
-Asunción: TanStack Query no se usa para SSE (TanStack Query 5 tiene experimental streaming, pero EventSource directo es más simple).
 
 ---
 
@@ -1335,11 +1336,11 @@ Workflow:
 - Cuando coach inicia run con toggle ON → frontend envía `explain_mode: true` en `POST /runs`.
 - Backend: `RaceAnalystState.explain_mode = true`.
 - Cada nodo del grafo tiene atributo `pedagogical_message` opcional (lista de mensajes en español, ej. tabla en §4.3).
-- Cuando un nodo se ejecuta y `state.explain_mode=true`, antes/después de su lógica core emite evento SSE:
+- Cuando un nodo se ejecuta y `state.explain_mode=true`, antes/después de su lógica core persiste un evento en `agent_run_events`:
+  ```json
+  {"seq": N, "node": "...", "type": "explain", "data": {"phase": "before|after", "message": "..."}}
   ```
-  event: explain
-  data: {"seq": N, "node": "...", "phase": "before|after", "message": "..."}
-  ```
+  El cliente lo recibe en el próximo poll vía `new_events`.
 - Frontend renderiza en panel lateral colapsable (no interrumpe el flujo principal).
 
 ### 13.2 Generación de mensajes
@@ -1358,7 +1359,7 @@ Workflow:
 ### Fase 0 — Infra base (0.5 día, paralelizable)
 
 **Cambios:**
-- `requirements.txt` += `langgraph`, `langgraph-checkpoint-sqlite`, `langchain-google-genai`, `chromadb`, `sentence-transformers` (si fallback), `langfuse`, `sse-starlette`.
+- `requirements.txt` += `langgraph`, `langgraph-checkpoint-sqlite`, `langchain-google-genai`, `chromadb`, `sentence-transformers` (si fallback), `langfuse`.
 - `alembic/versions/7a8b9c0d1e2f_add_agentic_race_tables.py` con las 4 tablas (§3).
 - `docker-compose.langfuse.yml` + `data/chroma`, `data/langgraph` añadidos a `.gitignore`.
 - `.env.example` añadidas vars Langfuse + Chroma + AI_MAX_TOKENS=8192.
@@ -1396,7 +1397,7 @@ Workflow:
 - `services/race/ai/{state.py, anonymizer.py, memory.py}`.
 - `services/race/ai/nodes/*` (13 nodos).
 - `services/race/ai/prompts/{analyst_v1.md, critic_v1.md, system_principles.md}`.
-- `services/race/ai/sse_emitter.py`.
+- Tests smoke grafo con mock LLM.
 - Test smoke: `tests/services/race/ai/test_graph_smoke.py` invoca el grafo end-to-end con fixtures, sin LLM real (mock `FakeLLMProvider`).
 
 **Criterio éxito:** grafo compila, smoke test verde, `test_anonymizer_zero_leak.py` verde con 1000 inputs.
@@ -1412,22 +1413,22 @@ Workflow:
 
 **Criterio éxito:** interrupt funciona, resume reanuda desde checkpoint.
 
-### Fase 5 — Endpoints FastAPI + SSE (2 días)
+### Fase 5 — Endpoints FastAPI + polling (0.5 días)
 
 **Cambios:**
-- `app/routers/race_analysis.py` con 7 endpoints.
+- `app/routers/race_analysis.py` con 7 endpoints (incluyendo `GET /runs/{id}/status` para polling).
 - `app/schemas/race_ai.py` con Pydantic.
 - Background task launcher + tracking registry.
 - Tests `tests/routers/test_race_analysis_router.py`.
 
-**Criterio éxito:** `curl -N http://localhost:8000/api/race-analysis/runs/<id>/events` muestra stream SSE. POST/GET retornan códigos correctos. RBAC funciona (parent recibe 403).
+**Criterio éxito:** `curl http://localhost:8000/api/race-analysis/runs/<id>/status` retorna JSON con estado actualizado. POST/GET retornan códigos correctos. RBAC funciona (parent recibe 403).
 
 ### Fase 6 — Frontend UI (3-4 días)
 
 **Cambios:**
 - Componentes `frontend/src/components/race-analysis/*`.
 - Rutas `frontend/src/routes/coach/race-analysis/*`.
-- `useSSE` hook + `raceAnalysis.ts` API client.
+- `useRunStatus` hook (TanStack Query + polling) + `raceAnalysis.ts` API client.
 - Tests vitest + accessibility (jest-axe).
 
 **Criterio éxito:** coach puede iniciar run, ver timeline, aprobar HITL, descargar PDF, usar chat — todo desde UI. Tests vitest >= 90 % coverage en código nuevo.
@@ -1460,11 +1461,11 @@ Workflow:
 | 2 — RAG | 1 día | 2.5 |
 | 3 — Agentes core | 3 días | 5.5 |
 | 4 — Grafo + checkpoint | 1 día | 6.5 |
-| 5 — Endpoints + SSE | 2 días | 8.5 |
-| 6 — Frontend | 4 días | 12.5 |
-| 7 — Eval | 2 días | 14.5 |
-| 8 — Langfuse prod | 1 día | 15.5 |
-| **Total** | **~15.5 días-dev** (3 semanas a tiempo parcial) | |
+| 5 — Endpoints + polling | 0.5 días | 7 |
+| 6 — Frontend | 3.5 días | 10.5 |
+| 7 — Eval | 2 días | 12.5 |
+| 8 — Langfuse prod | 1 día | 13.5 |
+| **Total** | **~14 días-dev** (3 semanas a tiempo parcial) | |
 
 Asunción: dev solitario, ~5h/día. Coach revisa al final de cada fase.
 
@@ -1523,12 +1524,12 @@ Asunción: dev solitario, ~5h/día. Coach revisa al final de cada fase.
 
 **Criterio:** entender eval, golden dataset, judge prompt.
 
-### Ej8 — SSE streaming (1.5h, fuera del agente pero útil para fase 5)
+### Ej8 — TanStack Query polling pattern (1h, útil para fase 5+6)
 
 **Prompt:**
-> Crea endpoint FastAPI `/stream` que use `sse-starlette` para emitir 10 eventos con 500ms delay. Crea HTML+JS minimal con `EventSource` que renderiza cada evento. Demuestra reconexión cerrando server y volviendo.
+> Crea endpoint FastAPI `/status/{job_id}` que retorna `{state, progress_pct, new_events}`. Crea componente React con `useQuery` + `refetchInterval: 2000` que muestra progreso en tiempo real y se detiene cuando `state === 'done'`. Simula un job que tarda 10 pasos × 1s.
 
-**Criterio:** entender SSE end-to-end.
+**Criterio:** entender polling con TanStack Query, manejo de `refetchInterval` dinámico, acumulación de eventos incrementales.
 
 ### Total tiempo estimado
 
@@ -1546,14 +1547,14 @@ Asunción: dev solitario, ~5h/día. Coach revisa al final de cada fase.
 | R4 | Privacy leak (nombre real en log Gemini) | Baja | Crítico | Test sentinela en CI (`test_anonymizer_zero_leak`); middleware intercept request body; Langfuse self-hosted |
 | R5 | Coach no entiende output del agente | Media | Alto | Modo aprendizaje + onboarding; primer run guiado; UI con citation tooltips |
 | R6 | Vendor lock-in Gemini | Media | Medio | Capa abstracción LangChain → cambio provider 1 línea; misma API `ChatModel` para Anthropic/OpenAI |
-| R7 | Performance SSE bajo carga | Baja | Medio | Max 10 runs concurrentes; backpressure asyncio.Queue maxsize=100; keep-alive 15s |
+| R7 | Polling overhead bajo carga | Baja | Bajo | ~15 requests/30s por run × N runs concurrentes. Mitigación: límite 10 runs concurrentes; ETag/304 si state no cambió |
 | R8 | Marco teórico cambia, RAG desactualizado | Media | Bajo | Reindex automático en CI hook + manual CLI; chunk_id por hash invalida changes |
 | R9 | LLM alucina números | Media | Alto | `analyst_agent` recibe métricas pre-calculadas determinísticamente; `critic_agent` revisa que no haya números inventados |
 | R10 | Coach corrige drásticamente cada vez | Media | Medio | `coach_edits_count` métrica; si >2 promedio → reevaluar prompt; eval mejora prompt antes de redeploy |
 | R11 | ChromaDB index corrupt | Baja | Bajo | `scripts/rag_reindex.py` reconstruye en <30s; backup volumen en docker |
 | R12 | Langfuse server cae | Baja | Bajo (no bloqueante) | SDK Langfuse falla silently si server unreachable; el grafo sigue ejecutando |
 | R13 | Migración Alembic FK violation con datos existentes | Baja | Alto | Migración solo crea tablas nuevas (no toca existentes); test de migración up/down en CI |
-| R14 | Coach espera demasiado el resultado (>60s) | Media | Medio | SSE timeline da feedback continuo; estimated_seconds en respuesta inicial; fallback "te aviso por email" |
+| R14 | Coach espera demasiado el resultado (>60s) | Media | Medio | Polling timeline da feedback cada 2s; `estimated_seconds_remaining` en cada respuesta; fallback "te aviso por email" |
 | R15 | Gemini cambia precios | Alta | Medio | Cost monitoring Langfuse; budget alert; abstracción permite swap |
 
 ---
@@ -1589,7 +1590,7 @@ Checklist coach completa sin tocar terminal:
 - [ ] Login → llega a `/coach/race-analysis`
 - [ ] Click "Nuevo análisis" → form aparece
 - [ ] Selecciona atleta + season + valida(s) + use_case → submit
-- [ ] Timeline aparece, eventos SSE llegan en tiempo real
+- [ ] Timeline aparece, se actualiza cada 2s vía polling
 - [ ] HITL gate dispara → ve draft, edita opcional, aprueba
 - [ ] Reporte markdown se renderiza
 - [ ] Botón "Descargar PDF" produce PDF abrible
@@ -1619,7 +1620,7 @@ Checklist coach completa sin tocar terminal:
    - §13.3 — tour interactivo onboarding (propuesta: fase 2)
 3. **Reservar API key Gemini** con cuota adecuada (Tier 1 free → 15 RPM Flash Lite es suficiente para MVP).
 4. **Decidir host Langfuse:** VPS Hetzner (~$5/mes) o máquina coach.
-5. **Aprobar timeline 15.5 días** o ajustar prioridades (ej. saltar critic_agent → -2 días).
+5. **Aprobar timeline 14 días** o ajustar prioridades (ej. saltar critic_agent → -2 días adicionales).
 
 ### 18.2 Kickoff de implementación
 
@@ -1636,7 +1637,7 @@ Esto generará el plan estructurado paso a paso, dispará agentes especializados
 |---|---|---|
 | H1: Infra + RAG funcionando | Fin Fase 2 | demo CLI `consultar_marco_teorico("...")` |
 | H2: Grafo end-to-end con fake LLM | Fin Fase 4 | demo CLI invoca grafo, llega a `notify_coach` |
-| H3: SSE funcionando con Gemini real | Fin Fase 5 | demo `curl` ve timeline en stream |
+| H3: Polling funcionando con Gemini real | Fin Fase 5 | demo `watch -n 2 curl http://localhost:8000/api/race-analysis/runs/<id>/status` ve estado actualizarse cada 2s |
 | H4: UI completa | Fin Fase 6 | demo coach hace análisis full sin terminal |
 | H5: Eval baseline establecido | Fin Fase 7 | tabla scores golden, threshold 0.75 acordado |
 | H6: Producción lista | Fin Fase 8 | trace en Langfuse cloud/self-hosted, dashboard activo |
@@ -1661,7 +1662,6 @@ langchain-google-genai>=2.0.0
 chromadb>=0.5.20
 sentence-transformers>=3.0.0   # opcional, sólo si embeddings local
 langfuse>=3.0.0
-sse-starlette>=2.1.0
 
 # Existentes (no cambian)
 fastapi>=0.115
@@ -1719,8 +1719,8 @@ RAG_TOP_K=3
 - **A6** SqliteSaver es suficiente para <100 runs/mes (no requiere Postgres).
 - **A7** Coach no necesita acceso shell — toda interacción vía UI web.
 - **A8** Langfuse self-hosted en VPS pequeño (~$5/mes) o máquina coach es viable.
-- **A9** 1 docente-dev solitario, 5h/día → 15.5 días = 3 semanas calendario.
-- **A10** TanStack Query no necesario para SSE; EventSource nativo es suficiente.
+- **A9** 1 docente-dev solitario, 5h/día → 14 días = ~3 semanas calendario.
+- **A10** ~~TanStack Query no necesario para SSE~~ — **Decisión 2026-05-20:** se usa TanStack Query `refetchInterval` para polling. No se usa EventSource. Trade-off: ~2s lag vs complejidad SSE eliminada.
 - **A11** Marco teórico cambia <1 vez/mes (no requiere reindex automático periódico).
 - **A12** Padres NO acceden a este módulo. Sus datos van filtrados vía módulos existentes.
 - **A13** Critic agent activado desde MVP (eval decide si mantener).
