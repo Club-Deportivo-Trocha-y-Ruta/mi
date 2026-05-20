@@ -167,6 +167,26 @@ Migraciones corren automáticamente via `entrypoint.sh` (`alembic upgrade head`)
 | 8 | Tests: 21 backend (magic bytes, EXIF strip, schemas, filtrado) + 10 frontend (API + UploadZone) | ✅ Completo 2026-05-16 |
 | 9 | Deploy: configurar `HOSTINGER_SFTP_*` y `HOSTINGER_PUBLIC_BASE_URL` en Render | ⏳ Pendiente |
 
+## Estado de implementación — Módulo Resultados Copa Valle (Fase 1.7)
+
+> Pipeline de ingesta y análisis de PDFs oficiales (RESULTADOS + GENERAL) de la Copa Valle XCO. Normalización fuzzy de nombres/clubes, persistencia transaccional en MySQL, analíticas longitudinales (evolución, gap podio, ranking club, proyección). Operación CLI vía `scripts/ingest_race.py` orquestada por agente `results-analyst` (Opus).
+
+| Paso | Descripción | Estado |
+|---|---|---|
+| 0 | Bootstrap: agente `data-analyst`, carpetas `services/race/` y `docs/10-race-results/snapshots/`, deps (`pdfplumber`, `rapidfuzz`, `pandas`, `Unidecode`, `typer`) | ✅ Completo 2026-05-19 |
+| 1 | Diseño técnico cerrado: 26 categorías mapeadas, edge cases documentados, oracle TyR Válida IV | ✅ Completo 2026-05-19 |
+| 2 | Modelos SQLAlchemy: `race_event` (+clima), `race_category`, `rider`, `race_result`, `race_series`, `race_points_scheme`, `race_import`, `race_result_revision` + 8 enums + migración delta `64c263edd07f` + view `season_standings` + seed 26 categorías | ✅ Completo 2026-05-19 |
+| 3 | `pdf_parser.py` + `normalizer.py` (`is_trocha_y_ruta` con guard de longitud para `partial_ratio`, `parse_time` retorna ms, no segundos) | ✅ Completo 2026-05-19 |
+| 4 | `matcher.py` (rapidfuzz top-3 con boost categoría) + `ingestor.py` (transaccional, idempotente vía SHA256 en `RaceImport`) + `FakeAsyncSession` para tests | ✅ Completo 2026-05-19 |
+| 5 | `analytics.py`: 4 funciones (`athlete_progression`, `podium_gap`, `club_ranking`, `projection`) — queries planas + pandas, confidence:low si n<5 | ✅ Completo 2026-05-19 |
+| 6 | CLI Typer `scripts/ingest_race.py`: 3 subapps (`ingest`, `analyze`, `riders`), 7 subcomandos, privacy mask por default, `_open_session` centralizado para monkeypatch | ✅ Completo 2026-05-19 |
+| 7 | Test plan + fixtures PDF Válida IV: 305 tests verdes en 25.25s, cobertura 98% en `services/race/` | ✅ Completo 2026-05-19 |
+| 8 | Auditoría privacidad menores: 0 hallazgos críticos/altos, política de fixtures documentada, CLI default conservador | ✅ Completo 2026-05-19 |
+| 9 | Backfill dry-run Válida IV (V-I/II/III pendiente PDFs coach) + agente operativo `results-analyst.md` | ✅ Completo 2026-05-19 |
+| 10 | Docs + completion report + actualización CLAUDE.md/README docs | ✅ Completo 2026-05-19 |
+
+> Backfill V-I/II/III pendiente de PDFs oficiales; ingest real contra MySQL Hostinger pendiente de aprobación coach.
+
 ## Credenciales de desarrollo (seed data)
 
 > Solo para entorno local / Docker dev. Nunca usar en producción.

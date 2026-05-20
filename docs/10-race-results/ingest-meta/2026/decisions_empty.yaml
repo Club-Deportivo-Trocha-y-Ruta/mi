@@ -1,0 +1,4 @@
+# Match-decisions vacío — ningún competitor TyR se vincula a athlete_id
+# durante ingest. Vinculación manual posterior via:
+#   python scripts/ingest_race.py riders link --bib <N> --athlete-id <ID>
+[]

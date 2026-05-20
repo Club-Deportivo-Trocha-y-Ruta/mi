@@ -13,6 +13,7 @@ Carpetas numeradas por feature en orden cronológico. Archivos internos por tipo
 | 07 | [07-notifications/](07-notifications/) | Módulo de notificaciones: email, PDF, DOCX |
 | 08 | [08-onboarding/](08-onboarding/) | Onboarding por invitación: investigación + diseño + implementación |
 | 09 | [09-training-planning/](09-training-planning/) | Sesiones de entrenamiento: planificación, asistencia, rúbrica, reporte mensual con IA |
+| 10 | [10-race-results/](10-race-results/) | Resultados Copa Valle XCO: ingesta de PDFs, normalización fuzzy, analíticas longitudinales (evolución, gap podio, ranking club, proyección) |
 
 ## Archivo de entrenamiento
 

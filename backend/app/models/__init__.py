@@ -30,6 +30,14 @@ from app.models.calendar_event import (
     EventType,
     RSVPStatus,
 )
+from app.models.race_category import CategoryGender, CategoryTier, RaceCategory
+from app.models.race_competitor import CompetitorSex, RaceCompetitor
+from app.models.race_event import RaceEvent, RaceEventStatus, SurfaceCondition
+from app.models.race_import import RaceImport, RaceImportStatus
+from app.models.race_points_scheme import RacePointsScheme
+from app.models.race_result import RaceResult, ResultStatus
+from app.models.race_result_revision import RaceResultRevision, RaceResultRevisionAction
+from app.models.race_series import RaceSeries
 
 __all__ = [
     "Base",
@@ -68,4 +76,21 @@ __all__ = [
     "AudienceType",
     "RSVPStatus",
     "ActualAttendanceStatus",
+    # Race results module (Fase 1.7)
+    "RaceCategory",
+    "CategoryGender",
+    "CategoryTier",
+    "RaceSeries",
+    "RacePointsScheme",
+    "RaceEvent",
+    "RaceEventStatus",
+    "SurfaceCondition",
+    "RaceCompetitor",
+    "CompetitorSex",
+    "RaceResult",
+    "ResultStatus",
+    "RaceResultRevision",
+    "RaceResultRevisionAction",
+    "RaceImport",
+    "RaceImportStatus",
 ]
