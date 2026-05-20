@@ -57,6 +57,10 @@ from app.schemas.race_ai import (
     StartRunRequest,
     StartRunResponse,
 )
+from app.services.race.ai.budget_guard import (
+    BudgetExceededError,
+    check_budget,
+)
 from app.services.race.ai.runner import (
     RunBackpressureError,
     resume_run,
@@ -343,6 +347,21 @@ async def start_run(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Servicio de IA no disponible (AI_ENABLED=false)",
+        )
+
+    # F8A: Budget guard — chequea ANTES de insertar agent_runs y adquirir
+    # el semáforo. Si el gasto de los últimos 30d excede el presupuesto,
+    # respondemos 503 con mensaje claro. Runs en curso completan.
+    try:
+        await check_budget(db)
+    except BudgetExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"Presupuesto mensual de IA excedido: "
+                f"${exc.current_usd:.4f} de ${exc.budget_usd:.2f}. "
+                "Reintenta más tarde o contacta al administrador."
+            ),
         )
 
     run_id = uuid.uuid4().hex

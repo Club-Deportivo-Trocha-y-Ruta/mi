@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     ai_log_prompts: bool = False
 
     # -----------------------------------------------------------------------
+    # Race AI — budget guard (F8A)
+    # -----------------------------------------------------------------------
+    # Presupuesto mensual (USD) para todos los runs del módulo race-analyst.
+    # Cuando la suma de cost_usd en los últimos 30 días lo excede, el
+    # endpoint POST /api/race-analysis/runs responde 503 y se envía alerta
+    # por email al coach + admin. Runs en curso completan.
+    # Ver: app/services/race/ai/budget_guard.py + docs/10-race-results/runbook-ops.md
+    race_ai_budget_usd_30d: float = 20.0
+
+    # -----------------------------------------------------------------------
     # Media de sesiones (fotos/videos vía SFTP a Hostinger)
     # -----------------------------------------------------------------------
     # SFTP de destino (Hostinger web hosting). En tests/local queda vacío y

@@ -25,9 +25,10 @@ async def test_analyst_agent_node_invokes_and_accumulates_metrics():
     update = await analyst_agent(state)
     assert update["draft_analysis"].pseudonym == "AzulZorro"
     aggregate = update["aggregate_metrics"]
-    assert aggregate["tokens_in"] == 10
-    assert aggregate["tokens_out"] == 20
-    assert aggregate["cost_usd"] > 0
+    assert aggregate["tokens_in_total"] == 10
+    assert aggregate["tokens_out_total"] == 20
+    assert aggregate["cost_usd_total"] > 0
+    assert aggregate["latency_ms_total"] >= 0
 
 
 @pytest.mark.asyncio

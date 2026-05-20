@@ -444,3 +444,82 @@ class TestAdminMetrics:
         body = resp.json()
         # 2 failed de 3 terminales → 0.6667
         assert abs(body["fail_rate"] - 0.6667) < 0.01
+
+    async def test_admin_shape_completo(self, admin_client, fake_db):
+        """Verifica TODAS las keys del response shape (F8A regression guard)."""
+        fake_db.seed_insight(cost_total=0.005, latency_total=1500)
+        resp = await admin_client.get("/api/race-analysis/admin/ai-usage")
+        assert resp.status_code == 200
+        body = resp.json()
+        expected_keys = {
+            "window_days",
+            "run_count",
+            "cost_usd_total",
+            "latency_ms_p50",
+            "latency_ms_p95",
+            "fail_rate",
+            "by_prompt_version",
+        }
+        assert set(body.keys()) == expected_keys
+        for entry in body["by_prompt_version"]:
+            assert {"prompt_version", "run_count", "cost_usd_total"} == set(entry.keys())
+
+    async def test_admin_zero_insights(self, admin_client):
+        """Sin insights, los totales son 0 y fail_rate=0 (no division by zero)."""
+        resp = await admin_client.get("/api/race-analysis/admin/ai-usage?days=7")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["run_count"] == 0
+        assert body["cost_usd_total"] == 0.0
+        assert body["fail_rate"] == 0.0
+        assert body["window_days"] == 7
+
+
+# ===========================================================================
+# Budget guard (F8A)
+# ===========================================================================
+
+
+class TestBudgetGuard:
+    """Integración del budget guard en POST /runs."""
+
+    async def test_503_si_excede_presupuesto(
+        self, coach_client, fake_db, ai_enabled, monkeypatch
+    ):
+        """Si el gasto últimos 30d >= settings.race_ai_budget_usd_30d → 503."""
+        from app.config import settings
+        from app.services.race.ai import budget_guard
+
+        # Reset cooldown para que el log se emita limpio si hace falta debug.
+        await budget_guard._reset_cooldown_for_tests()
+
+        # Threshold bajo para forzar el bloqueo con seed mínimo.
+        monkeypatch.setattr(settings, "race_ai_budget_usd_30d", 0.001)
+        fake_db.seed_insight(cost_total=0.005, latency_total=1000)
+
+        resp = await coach_client.post(
+            "/api/race-analysis/runs",
+            json={"athlete_id": 1, "season": 2026},
+        )
+        assert resp.status_code == 503
+        detail = resp.json()["detail"]
+        assert "Presupuesto" in detail
+        assert "0.005" in detail or "0.0050" in detail
+
+    async def test_201_si_bajo_presupuesto(
+        self, coach_client, fake_db, ai_enabled, monkeypatch
+    ):
+        """Bajo el límite, el run procede normalmente (201)."""
+        from app.config import settings
+        from app.services.race.ai import budget_guard
+
+        await budget_guard._reset_cooldown_for_tests()
+
+        monkeypatch.setattr(settings, "race_ai_budget_usd_30d", 100.0)
+        fake_db.seed_insight(cost_total=0.005, latency_total=1000)
+
+        resp = await coach_client.post(
+            "/api/race-analysis/runs",
+            json={"athlete_id": 1, "season": 2026},
+        )
+        assert resp.status_code == 201

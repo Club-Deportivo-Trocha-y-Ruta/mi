@@ -285,6 +285,28 @@ class FakeSession:
                 ]
             )
 
+        # Budget guard (F8A): SELECT SUM(...cost_usd_total) AS total FROM athlete_ai_insights
+        # No tiene COUNT, no tiene GROUP BY, no tiene latency_ms_total → es la del guard.
+        if (
+            "FROM athlete_ai_insights" in sql
+            and "cost_usd_total" in sql
+            and " AS total" in sql
+            and "COUNT" not in sql.upper()
+            and "GROUP BY" not in sql
+        ):
+            cutoff = params.get("cutoff")
+            filtered = [i for i in self.insights if not cutoff or i["generated_at"] >= cutoff]
+            total = 0.0
+            for ins in filtered:
+                try:
+                    total += float(
+                        json.loads(ins["metrics_snapshot_json"])
+                        ["aggregate"]["cost_usd_total"]
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            return FakeResult([FakeRow(total=total)])
+
         # SELECT COUNT/SUM FROM athlete_ai_insights
         if "FROM athlete_ai_insights" in sql and "COUNT" in sql.upper():
             cutoff = params.get("cutoff")

@@ -34,14 +34,16 @@ async def critic_agent(state: dict) -> dict[str, Any]:
     feedback, run_metrics = await agent.invoke(draft)
 
     aggregate = dict(state.get("aggregate_metrics") or {})
-    aggregate.setdefault("tokens_in", 0)
-    aggregate.setdefault("tokens_out", 0)
-    aggregate.setdefault("latency_ms", 0)
-    aggregate.setdefault("cost_usd", 0.0)
-    aggregate["tokens_in"] += run_metrics.tokens_in
-    aggregate["tokens_out"] += run_metrics.tokens_out
-    aggregate["latency_ms"] += run_metrics.latency_ms
-    aggregate["cost_usd"] = round(aggregate["cost_usd"] + run_metrics.cost_usd, 6)
+    aggregate.setdefault("tokens_in_total", 0)
+    aggregate.setdefault("tokens_out_total", 0)
+    aggregate.setdefault("latency_ms_total", 0)
+    aggregate.setdefault("cost_usd_total", 0.0)
+    aggregate["tokens_in_total"] += run_metrics.tokens_in
+    aggregate["tokens_out_total"] += run_metrics.tokens_out
+    aggregate["latency_ms_total"] += run_metrics.latency_ms
+    aggregate["cost_usd_total"] = round(
+        aggregate["cost_usd_total"] + run_metrics.cost_usd, 6
+    )
     aggregate["prompt_version_critic"] = run_metrics.prompt_version
 
     return {
