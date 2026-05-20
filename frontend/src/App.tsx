@@ -1,7 +1,12 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
+
+// Lazy load: race-analysis bundle es pesado (react-markdown + AI hooks)
+// y sólo coach/admin lo abren ocasionalmente.
+const RaceAnalysisPage = lazy(() => import("@/routes/results/RaceAnalysisPage"));
 import { useAuthStore } from "@/store/auth.store";
 import { AIHealthPage } from "@/routes/admin/AIHealthPage";
 import { LoginPage } from "@/routes/auth/LoginPage";
@@ -251,6 +256,24 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
               <ParentEventDetailPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Race analysis v2 (coach/admin) ── */}
+        <Route
+          path="/coach/race-analysis"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando módulo de análisis...
+                  </div>
+                }
+              >
+                <RaceAnalysisPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
