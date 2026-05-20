@@ -30,3 +30,6 @@ dev = [
 asyncio_mode = "auto"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
+markers = [
+    "integration: integration tests que llaman APIs externas (Gemini real). Excluidos por default; correr con `-m integration`.",
+]
