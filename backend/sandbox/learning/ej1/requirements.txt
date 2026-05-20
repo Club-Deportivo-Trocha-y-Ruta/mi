@@ -1,0 +1,8 @@
+# Dependencias del sandbox Ej1 — Hello-world LangGraph
+# Instalar SOLO en el entorno virtual que desees para aprender.
+# NO modifica backend/requirements.txt ni el stack de producción.
+#
+# Instalar con:
+#   pip install -r backend/sandbox/learning/ej1/requirements.txt
+
+langgraph>=1.2,<2.0
