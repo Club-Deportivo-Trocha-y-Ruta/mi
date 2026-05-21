@@ -113,7 +113,9 @@ async def _get_graph() -> Any:
 async def submit_run(
     run_id: str,
     initial_state: dict[str, Any],
-    on_complete: Optional[Callable[[str, Optional[BaseException]], Awaitable[None]]] = None,
+    on_complete: Optional[
+        Callable[[str, Optional[BaseException], Optional[dict[str, Any]]], Awaitable[None]]
+    ] = None,
 ) -> asyncio.Task:
     """Lanza el grafo en background con backpressure.
 
@@ -165,14 +167,17 @@ async def submit_run(
 async def _run_graph(
     run_id: str,
     initial_state: dict[str, Any],
-    on_complete: Optional[Callable[[str, Optional[BaseException]], Awaitable[None]]],
+    on_complete: Optional[
+        Callable[[str, Optional[BaseException], Optional[dict[str, Any]]], Awaitable[None]]
+    ],
 ) -> None:
     """Worker async que ejecuta el grafo. Idempotente en cleanup."""
     exc: Optional[BaseException] = None
+    result_state: Optional[dict[str, Any]] = None
     try:
         graph = await _get_graph()
         config = {"configurable": {"thread_id": run_id}}
-        await graph.ainvoke(initial_state, config=config)
+        result_state = await graph.ainvoke(initial_state, config=config)
     except BaseException as e:  # noqa: BLE001
         exc = e
         logger.exception("race run %s falló: %s", run_id, type(e).__name__)
@@ -185,7 +190,7 @@ async def _run_graph(
                 logger.warning("race run %s: release spurio", run_id)
         if on_complete is not None:
             try:
-                await on_complete(run_id, exc)
+                await on_complete(run_id, exc, result_state)
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "race run %s: on_complete callback falló", run_id
@@ -195,7 +200,9 @@ async def _run_graph(
 async def resume_run(
     run_id: str,
     resume_value: Any,
-    on_complete: Optional[Callable[[str, Optional[BaseException]], Awaitable[None]]] = None,
+    on_complete: Optional[
+        Callable[[str, Optional[BaseException], Optional[dict[str, Any]]], Awaitable[None]]
+    ] = None,
 ) -> asyncio.Task:
     """Reanuda un run pausado en HITL.
 
@@ -239,13 +246,16 @@ async def resume_run(
 async def _resume_graph(
     run_id: str,
     command: Any,
-    on_complete: Optional[Callable[[str, Optional[BaseException]], Awaitable[None]]],
+    on_complete: Optional[
+        Callable[[str, Optional[BaseException], Optional[dict[str, Any]]], Awaitable[None]]
+    ],
 ) -> None:
     exc: Optional[BaseException] = None
+    result_state: Optional[dict[str, Any]] = None
     try:
         graph = await _get_graph()
         config = {"configurable": {"thread_id": run_id}}
-        await graph.ainvoke(command, config=config)
+        result_state = await graph.ainvoke(command, config=config)
     except BaseException as e:  # noqa: BLE001
         exc = e
         logger.exception("race resume %s falló: %s", run_id, type(e).__name__)
@@ -258,7 +268,7 @@ async def _resume_graph(
                 logger.warning("race resume %s: release spurio", run_id)
         if on_complete is not None:
             try:
-                await on_complete(run_id, exc)
+                await on_complete(run_id, exc, result_state)
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "race resume %s: on_complete callback falló", run_id

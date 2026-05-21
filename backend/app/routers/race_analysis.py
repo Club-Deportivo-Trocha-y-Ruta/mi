@@ -306,6 +306,34 @@ async def _update_run_status(
     )
 
 
+def _extract_final_output(result_state: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    if not result_state:
+        return None
+
+    payload: dict[str, Any] = {}
+
+    final_analysis = result_state.get("final_analysis")
+    if final_analysis is not None:
+        if hasattr(final_analysis, "model_dump"):
+            try:
+                payload.update(final_analysis.model_dump())
+            except Exception:  # noqa: BLE001
+                logger.exception("_extract_final_output: model_dump falló")
+        elif isinstance(final_analysis, dict):
+            payload.update(final_analysis)
+
+    rendered = result_state.get("rendered_markdown")
+    if isinstance(rendered, str) and rendered.strip():
+        existing_md = payload.get("raw_markdown")
+        if not isinstance(existing_md, str) or not existing_md.strip():
+            payload["raw_markdown"] = rendered
+
+    if "raw_markdown" not in payload or not str(payload.get("raw_markdown") or "").strip():
+        return None
+
+    return payload
+
+
 def _ensure_run_owner(run: dict[str, Any], user: User) -> None:
     """Solo el owner o admin pueden acceder al run."""
     if user.role == UserRole.admin:
@@ -415,17 +443,40 @@ async def start_run(
         "run_id": run_id,
     }
 
-    async def _on_complete(rid: str, exc: Optional[BaseException]) -> None:
-        # Callback tras terminar el grafo. Actualizamos status en la DB.
-        # Importante: usamos una nueva sesión async porque el request HTTP
-        # ya retornó antes de que esto corra.
+    async def _on_complete(
+        rid: str,
+        exc: Optional[BaseException],
+        result_state: Optional[dict[str, Any]],
+    ) -> None:
         from app.database import AsyncSessionLocal
 
-        new_status = "failed" if exc is not None else "completed"
-        err = f"{type(exc).__name__}: {str(exc)[:500]}" if exc else None
+        final_payload = _extract_final_output(result_state) if exc is None else None
+        graph_status = (result_state or {}).get("status") if exc is None else None
+
+        if exc is not None:
+            new_status = "failed"
+            err: Optional[str] = f"{type(exc).__name__}: {str(exc)[:500]}"
+        elif graph_status == "failed":
+            new_status = "failed"
+            errors_list = (result_state or {}).get("errors") or []
+            first_err = errors_list[0] if errors_list else {}
+            err = first_err.get("message") or "Grafo terminó con status=failed"
+        elif not final_payload:
+            new_status = "failed"
+            err = "Grafo completó sin output"
+        else:
+            new_status = "completed"
+            err = None
+
         async with AsyncSessionLocal() as session:
             try:
-                await _update_run_status(session, rid, new_status, error_message=err)
+                await _update_run_status(
+                    session,
+                    rid,
+                    new_status,
+                    error_message=err,
+                    final_output=final_payload,
+                )
                 await session.commit()
             except Exception:  # noqa: BLE001
                 logger.exception("_on_complete: update agent_runs falló para %s", rid)
@@ -641,16 +692,43 @@ async def submit_hitl_decision(
         logger.exception("submit_hitl_decision: insert evento hitl_response falló")
 
     # Reanudar grafo en background.
-    async def _on_complete(rid: str, exc: Optional[BaseException]) -> None:
+    async def _on_complete(
+        rid: str,
+        exc: Optional[BaseException],
+        result_state: Optional[dict[str, Any]],
+    ) -> None:
         from app.database import AsyncSessionLocal
 
-        new_status = "failed" if exc is not None else (
-            "rejected" if body.decision == HITLDecision.REJECT else "completed"
-        )
-        err = f"{type(exc).__name__}: {str(exc)[:500]}" if exc else None
+        final_payload = _extract_final_output(result_state) if exc is None else None
+        graph_status = (result_state or {}).get("status") if exc is None else None
+
+        if exc is not None:
+            new_status = "failed"
+            err: Optional[str] = f"{type(exc).__name__}: {str(exc)[:500]}"
+        elif body.decision == HITLDecision.REJECT:
+            new_status = "rejected"
+            err = None
+        elif graph_status == "failed":
+            new_status = "failed"
+            errors_list = (result_state or {}).get("errors") or []
+            first_err = errors_list[0] if errors_list else {}
+            err = first_err.get("message") or "Grafo terminó con status=failed"
+        elif not final_payload:
+            new_status = "failed"
+            err = "Grafo completó sin output"
+        else:
+            new_status = "completed"
+            err = None
+
         async with AsyncSessionLocal() as session:
             try:
-                await _update_run_status(session, rid, new_status, error_message=err)
+                await _update_run_status(
+                    session,
+                    rid,
+                    new_status,
+                    error_message=err,
+                    final_output=final_payload,
+                )
                 await session.commit()
             except Exception:  # noqa: BLE001
                 logger.exception("_on_complete hitl: update falló para %s", rid)
@@ -873,17 +951,39 @@ async def chat(
             detail="Servicio de IA no disponible (AI_ENABLED=false)",
         )
 
+    import asyncio as _asyncio
+
     try:
         response = await chat_agent.chat(
             session_id=body.session_id,
             query=body.query,
             athlete_id=body.athlete_id,
         )
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("chat: agente falló")
+    except (TimeoutError, _asyncio.TimeoutError) as exc:
+        logger.exception("chat endpoint failed (timeout) for session=%s", body.session_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="LLM timeout: el agente tardó demasiado en responder.",
+        )
+    except ValueError as exc:
+        logger.exception("chat endpoint failed (value error) for session=%s", body.session_id)
+        msg = str(exc).lower()
+        if "ai_api_key" in msg or "api_key" in msg or "config" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="AI provider no configurado.",
+            )
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Error en agente de chat: {type(exc).__name__}",
+            detail=f"Error en agente de chat ({type(exc).__name__}): {first_line[:200]}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("chat endpoint failed for session=%s", body.session_id)
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Error en agente de chat ({type(exc).__name__}): {first_line[:200]}",
         )
     return response
 

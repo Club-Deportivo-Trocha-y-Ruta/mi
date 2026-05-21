@@ -2,11 +2,14 @@
 
 Para MVP, el ``raw_markdown`` ya está listo (el analyst lo genera en
 formato markdown nativo y ``rehydrate_names`` reemplazó pseudónimos).
-Este nodo solo:
+Este nodo:
 
-1. Toma ``final_analysis.raw_markdown`` (o fallback si no hay final).
-2. Asegura un header con metadata (atleta, temporada, fecha).
-3. Lo guarda en ``state["rendered_markdown"]``.
+1. Toma ``final_analysis.raw_markdown`` (o fallback ``draft_analysis``).
+2. Si ``no_data_for_season=True`` y ya hay ``rendered_markdown`` (poblado
+   por ``validate_input``), lo respeta tal cual.
+3. Si no hay análisis y NO viene de ``no_data_for_season`` → marca el run
+   como ``failed`` y agrega un error explícito. Sin contenido es bug.
+4. En caso normal, asegura un header con metadata y guarda el markdown.
 
 PDF / export se generan en F5 al request del endpoint, no aquí.
 """
@@ -29,21 +32,58 @@ def _now_str() -> str:
 @with_events(NODE_NAME)
 @with_retry(max_attempts=1, backoff=0)
 async def render_outputs(state: dict) -> dict[str, Any]:
+    if state.get("no_data_for_season"):
+        existing = state.get("rendered_markdown")
+        if existing:
+            return {"rendered_markdown": existing}
+        season = state.get("season", "")
+        md = (
+            f"# Análisis de carrera — temporada {season}\n\n"
+            f"_Sin carreras registradas para temporada {season}._\n"
+        )
+        return {"rendered_markdown": md, "status": "no_data"}
+
     final = state.get("final_analysis") or state.get("draft_analysis")
     if final is None:
-        md = "_(sin análisis disponible)_"
-    else:
-        body = (final.raw_markdown or "").strip()
-        season = state.get("season", "")
-        header = (
-            f"# Análisis de carrera — temporada {season}\n"
-            f"_Generado: {_now_str()}_\n\n"
+        prior_errors = list(state.get("errors") or [])
+        prior_errors.append(
+            {
+                "node": NODE_NAME,
+                "error": "EmptyRender",
+                "message": "Render sin contenido — analista no produjo output",
+            }
         )
-        # Si el body ya empieza con un H1, no duplicamos.
-        if body.startswith("# "):
-            md = body
-        else:
-            md = header + body
+        return {
+            "status": "failed",
+            "errors": prior_errors,
+            "rendered_markdown": "_(sin análisis disponible)_",
+        }
+
+    body = (final.raw_markdown or "").strip()
+    if not body:
+        prior_errors = list(state.get("errors") or [])
+        prior_errors.append(
+            {
+                "node": NODE_NAME,
+                "error": "EmptyRender",
+                "message": "Render sin contenido — analista no produjo output",
+            }
+        )
+        return {
+            "status": "failed",
+            "errors": prior_errors,
+            "rendered_markdown": "_(sin análisis disponible)_",
+        }
+
+    season = state.get("season", "")
+    header = (
+        f"# Análisis de carrera — temporada {season}\n"
+        f"_Generado: {_now_str()}_\n\n"
+    )
+    if body.startswith("# "):
+        md = body
+    else:
+        md = header + body
 
     return {"rendered_markdown": md}
 

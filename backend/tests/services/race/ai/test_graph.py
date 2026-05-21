@@ -35,9 +35,6 @@ from tests.services.race.ai.conftest import (
 def patched_pipeline(monkeypatch):
     """Patchea TODA la pipeline para evitar DB y LLM real."""
 
-    async def _athlete_exists(db, aid):
-        return True
-
     async def _fetch_results(db, aid, season, valida_nums=None):
         class R:
             id = 1
@@ -65,7 +62,7 @@ def patched_pipeline(monkeypatch):
     def _rag(query, top_k):
         return []
 
-    monkeypatch.setattr(validate_node_mod, "athlete_exists", _athlete_exists)
+    monkeypatch.setattr(validate_node_mod, "fetch_results_for_athlete", _fetch_results)
     monkeypatch.setattr(load_node_mod, "fetch_results_for_athlete", _fetch_results)
     monkeypatch.setattr(load_node_mod, "fetch_podium_context", _fetch_podium)
     monkeypatch.setattr(metrics_node_mod, "athlete_progression", _athlete_progression)
@@ -113,30 +110,47 @@ async def test_graph_happy_path(
 
 
 @pytest.mark.asyncio
-async def test_graph_validation_error_short_circuits(
+async def test_graph_invalid_input_short_circuits(
     memory_checkpointer, configure_db_factory, fake_session, patched_pipeline, monkeypatch
 ):
     monkeypatch.setenv("NOTIFICATION_SEND_EMAILS", "false")
-    monkeypatch.setattr(
-        validate_node_mod, "athlete_exists", lambda db, aid: _async_false()
-    )
     configure_db_factory(fake_session)
     g = build_graph(checkpointer=memory_checkpointer)
 
     config = {"configurable": {"thread_id": "err-1"}}
     state = await g.ainvoke(
-        {"athlete_id": 999, "season": 2026, "coach_id": 1, "run_id": "err-1"},
+        {"athlete_id": -1, "season": 2026, "coach_id": 1, "run_id": "err-1"},
         config=config,
     )
     assert state.get("errors")
-    assert any(e["error"] == "AthleteNotFound" for e in state["errors"])
-    # Pipeline NO ejecutó nodos downstream.
+    assert any(e["error"] == "InvalidAthleteId" for e in state["errors"])
     assert state.get("draft_analysis") is None
     assert state.get("rendered_markdown") is None
 
 
-async def _async_false():
-    return False
+@pytest.mark.asyncio
+async def test_graph_no_data_for_season_short_circuits(
+    memory_checkpointer, configure_db_factory, fake_session, patched_pipeline, monkeypatch
+):
+    monkeypatch.setenv("NOTIFICATION_SEND_EMAILS", "false")
+
+    async def _no_results(db, aid, season, valida_nums=None):
+        return []
+
+    monkeypatch.setattr(validate_node_mod, "fetch_results_for_athlete", _no_results)
+    configure_db_factory(fake_session)
+    g = build_graph(checkpointer=memory_checkpointer)
+
+    config = {"configurable": {"thread_id": "nodata-1"}}
+    state = await g.ainvoke(
+        {"athlete_id": 7, "season": 2026, "coach_id": 1, "run_id": "nodata-1"},
+        config=config,
+    )
+    assert state.get("no_data_for_season") is True
+    assert "Sin carreras registradas para temporada 2026" in state["rendered_markdown"]
+    assert state.get("status") == "no_data"
+    assert state.get("draft_analysis") is None
+    assert state.get("final_analysis") is None
 
 
 @pytest.mark.asyncio

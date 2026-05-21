@@ -96,8 +96,10 @@ async def _analyst_agent_with_fallback(state: dict) -> dict[str, Any]:
 
 
 def _after_validate(state: dict) -> str:
-    """Si hay errors → END. Si no → load_race_data."""
+    """Si hay errors o no hay datos en la temporada → END. Si no → load_race_data."""
     if state.get("errors"):
+        return END
+    if state.get("no_data_for_season"):
         return END
     return "load_race_data"
 

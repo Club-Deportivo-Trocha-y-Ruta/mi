@@ -68,6 +68,8 @@ class RaceAnalystState(TypedDict, total=False):
     # ---- Outputs ----
     rendered_markdown: str
     notified: bool
+    no_data_for_season: bool
+    status: str
 
 
 __all__ = ["RaceAnalystState"]
