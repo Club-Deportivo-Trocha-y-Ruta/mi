@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, calendar, growth, parent_athletes, race_analysis, reports, training_sessions
+from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, calendar, growth, parent_athletes, race_analysis, race_imports, reports, training_sessions
 from app.routers.consent import consent_router, public_router as consent_public_router
 from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
 
@@ -40,6 +40,7 @@ app.include_router(training_sessions.router, prefix="/api/training-sessions", ta
 app.include_router(monthly_reports_router, prefix="/api/clubs", tags=["monthly-reports"])
 app.include_router(parent_monthly_router, prefix="/api/parents", tags=["monthly-reports"])
 app.include_router(race_analysis.router, prefix="/api/race-analysis", tags=["race-analysis"])
+app.include_router(race_imports.router, prefix="/api/race-analysis/imports", tags=["race-imports"])
 
 
 # Boot: configurar db_factory del grafo race-AI (F4) para que los nodos

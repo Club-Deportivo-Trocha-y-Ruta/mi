@@ -106,6 +106,19 @@ class Settings(BaseSettings):
     media_max_photo_mb: int = 10
     media_max_video_mb: int = 50
 
+    # -----------------------------------------------------------------------
+    # Race results upload UI (F-UP* — docs/10-race-results/upload-design.md)
+    # -----------------------------------------------------------------------
+    # Tamaño máximo por PDF subido vía wizard upload (RESULTADOS o GENERAL).
+    # PDFs Federación reales ≈ 250 KB; 8 MB deja 32x margen.
+    race_max_pdf_mb: int = 8
+    # Timeout asyncio.wait_for(...) alrededor de pdfplumber. Si un PDF requiere
+    # más, se rechaza con HTTP 422 ("PDF demasiado complejo").
+    race_parse_timeout_seconds: int = 30
+    # TTL para RaceImport.status=pending creados por /parse pero nunca commited
+    # (wizard abandonado). Cleanup nocturno descrito en upload-design.md §8.3.
+    race_pending_ttl_hours: int = 24
+
     @field_validator("hostinger_public_base_url")
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:

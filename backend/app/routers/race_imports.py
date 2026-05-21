@@ -1,0 +1,848 @@
+"""Router ``/api/race-analysis/imports/*`` — wizard upload UI race PDFs (F-UP3).
+
+Endpoints (docs/10-race-results/upload-design.md §4):
+
+- ``POST /parse``              — multipart upload (RESULTADOS + GENERAL opcional).
+                                   Valida magic bytes / tamaño / sanitiza filename,
+                                   sube PDFs a SFTP path
+                                   ``race-imports/pending/{uuid}/...``, parsea
+                                   con pdfplumber (timeout ``RACE_PARSE_TIMEOUT_SECONDS``),
+                                   crea ``RaceImport`` status=pending, retorna
+                                   ``parse_id`` + header detectado + conteos.
+- ``POST /{parse_id}/dry-run`` — ejecuta ``RaceIngestor.ingest_event(dry_run=True)``
+                                   con los datos del parse persistido. Devuelve
+                                   ``matches`` con resolución HITL pendiente.
+- ``POST /{parse_id}/commit``  — ejecuta ``RaceIngestor.ingest_event(dry_run=False)``
+                                   con ``resolved_matches`` del coach. Promueve
+                                   pending → committed. Mueve PDFs SFTP a
+                                   ``race-imports/committed/{uuid}/``.
+- ``GET /``                    — histórico paginado. RBAC: coach + admin.
+
+Convenciones:
+- RBAC ``require_role([coach, admin])`` — padres bloqueados.
+- Magic bytes obligatorios: ``%PDF-`` para PDF, primera línea con delimitador
+  CSV-like para .csv.
+- Cap tamaño desde ``settings.race_max_pdf_mb`` (default 8 MB).
+- Path en storage: ``race-imports/{pending|committed}/{uuid}/{resultados|general}.{ext}``
+  — UUID server-side evita path traversal en filename original.
+
+Privacidad (CLAUDE.md):
+- Logs nunca incluyen nombres de menores — usan ``bib`` + ``cat_code`` + sha256.
+- ``MatchPreview.competitor_name`` contiene nombre del PDF público Federación
+  (no datos privados).
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import logging
+import re
+import tempfile
+import uuid
+from asyncio import wait_for
+from pathlib import Path as PathLib
+from typing import Annotated, Optional
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.dependencies import get_db, require_role
+from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
+from app.models.race_series import RaceSeries
+from app.models.user import User, UserRole
+from app.schemas.race import EventMeta
+from app.schemas.race_imports import (
+    DryRunCounts,
+    EventHeaderPreview,
+    ImportCommitRequest,
+    ImportCommitResponse,
+    ImportDryRunResponse,
+    ImportListItem,
+    ImportListResponse,
+    ImportParseResponse,
+    MatchPreview,
+    ParseHeaderInfo,
+    ParseWarning,
+    UploadUserRef,
+)
+from app.services.race.ingestor import RaceIngestor
+from app.services.training import storage_sftp
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Constantes y helpers de validación
+# ---------------------------------------------------------------------------
+
+_PDF_MAGIC = b"%PDF-"
+
+#: Sanitización filename: keep alnum, dash, underscore, dot. Strip path-traversal.
+_FILENAME_SAFE_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
+
+#: Cabecera CSV Copa Valle. Heurística: cualquier línea con coma/punto-coma/tab
+#: que contenga las palabras clave esperadas. Si no matchea, 415.
+_CSV_DELIMITERS = (",", ";", "\t")
+
+_SERIES_NAME = "Copa Valle de Ciclomontañismo"
+
+
+def _sanitize_filename(raw: Optional[str]) -> str:
+    """Devuelve un filename seguro para preservar en BD. Cero path traversal."""
+    if not raw:
+        return "upload.pdf"
+    # Nos quedamos solo con el basename (Windows + Unix)
+    base = PathLib(raw.replace("\\", "/")).name
+    safe = _FILENAME_SAFE_RE.sub("_", base)
+    # Cap a 200 chars (columna filename) y prevenir empty
+    safe = safe[:200] or "upload.pdf"
+    return safe
+
+
+def _is_pdf(content: bytes) -> bool:
+    return len(content) >= 5 and content[:5] == _PDF_MAGIC
+
+
+def _is_csv_like(content: bytes) -> bool:
+    """Acepta CSV si decodifica UTF-8 y la primera línea contiene delimitador."""
+    try:
+        head = content[:4096].decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return False
+    first_line = head.splitlines()[0] if head else ""
+    return any(d in first_line for d in _CSV_DELIMITERS)
+
+
+def _compute_sha256(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+async def _read_with_cap(file: UploadFile, max_mb: int) -> bytes:
+    """Lee el archivo subido con cap defensivo (max_mb + 1 byte para detectar exceso)."""
+    max_bytes = max_mb * 1024 * 1024
+    raw = await file.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"Archivo '{file.filename}' supera el límite ({max_mb} MB). "
+                f"PDFs Federación típicos = 250 KB."
+            ),
+        )
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Archivo '{file.filename}' está vacío.",
+        )
+    return raw
+
+
+def _validate_results_magic(content: bytes, filename: str) -> str:
+    """Valida que el RESULTADOS sea PDF o CSV reconocible. Retorna extensión normalizada."""
+    fname_lower = (filename or "").lower()
+    if fname_lower.endswith(".pdf"):
+        if not _is_pdf(content):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El archivo no es un PDF válido (magic bytes '%PDF-' ausentes).",
+            )
+        return "pdf"
+    if fname_lower.endswith((".csv", ".tsv", ".txt")):
+        if not _is_csv_like(content):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El archivo no es un CSV válido (UTF-8 + delimitador requerido).",
+            )
+        return "csv"
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=(
+            "Formato no soportado. RESULTADOS acepta .pdf, .csv, .tsv, .txt."
+        ),
+    )
+
+
+def _validate_general_magic(content: bytes, filename: str) -> None:
+    """GENERAL solo acepta PDF (Federación nunca publica GENERAL en CSV)."""
+    if not (filename or "").lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="GENERAL solo acepta .pdf.",
+        )
+    if not _is_pdf(content):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="GENERAL no es un PDF válido (magic bytes '%PDF-' ausentes).",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Helpers internos — series + parsing
+# ---------------------------------------------------------------------------
+
+
+async def _get_or_create_series(db: AsyncSession, season: int) -> RaceSeries:
+    """Asegura que exista la serie Copa Valle para la temporada dada."""
+    result = await db.execute(
+        select(RaceSeries).where(
+            RaceSeries.name == _SERIES_NAME,
+            RaceSeries.season_year == season,
+        )
+    )
+    series = result.scalar_one_or_none()
+    if series is not None:
+        return series
+    series = RaceSeries(
+        name=_SERIES_NAME,
+        season_year=season,
+        organizer="Liga Vallecaucana de Ciclismo",
+        points_scheme_code="copa_valle_2026",
+    )
+    db.add(series)
+    await db.flush()
+    return series
+
+
+async def _parse_results_with_timeout(
+    path: PathLib, ext: str
+) -> dict[str, list]:
+    """Parsea con asyncio.wait_for + asyncio.to_thread; mapea TimeoutError a 422."""
+    import asyncio
+
+    from app.services.race.csv_parser import parse_results_csv
+    from app.services.race.pdf_parser import parse_results_pdf
+
+    parser = parse_results_pdf if ext == "pdf" else parse_results_csv
+    try:
+        return await wait_for(
+            asyncio.to_thread(parser, path),
+            timeout=settings.race_parse_timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"PDF demasiado complejo (parse > "
+                f"{settings.race_parse_timeout_seconds}s). Verifique formato oficial."
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Error parseando RESULTADOS: {type(exc).__name__}: {exc}",
+        )
+
+
+async def _parse_general_with_timeout(path: PathLib) -> dict[str, list]:
+    import asyncio
+
+    from app.services.race.pdf_parser import parse_general_pdf
+
+    try:
+        return await wait_for(
+            asyncio.to_thread(parse_general_pdf, path),
+            timeout=settings.race_parse_timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="GENERAL demasiado complejo (parse > timeout).",
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Error parseando GENERAL: {type(exc).__name__}: {exc}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 1: POST /parse
+# ---------------------------------------------------------------------------
+
+
+@router.post("/parse", response_model=ImportParseResponse)
+async def parse_import(
+    resultados_pdf: Annotated[
+        UploadFile, File(description="PDF/CSV RESULTADOS (requerido)")
+    ],
+    series_name: Annotated[str, Form(min_length=1, max_length=100)],
+    season: Annotated[int, Form(ge=2020, le=2100)],
+    valida_num: Annotated[int, Form(ge=1, le=99)],
+    event_name: Annotated[str, Form(min_length=1, max_length=200)],
+    event_date: Annotated[str, Form(description="ISO date YYYY-MM-DD")],
+    location: Annotated[str, Form(min_length=1, max_length=150)],
+    general_pdf: Annotated[
+        Optional[UploadFile], File(description="PDF GENERAL (opcional)")
+    ] = None,
+    kind: Annotated[Optional[str], Form()] = None,  # 'resultados'|'general'|'both'
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> ImportParseResponse:
+    """Endpoint 1 wizard (parse) — sube PDFs, valida, parsea, crea pending."""
+    # 1. Leer + validar magic bytes RESULTADOS
+    resultados_bytes = await _read_with_cap(resultados_pdf, settings.race_max_pdf_mb)
+    results_ext = _validate_results_magic(
+        resultados_bytes, resultados_pdf.filename or "upload.pdf"
+    )
+    results_sha = _compute_sha256(resultados_bytes)
+
+    # 2. (Opcional) GENERAL — solo PDF
+    general_bytes: Optional[bytes] = None
+    general_sha: Optional[str] = None
+    if general_pdf is not None and (general_pdf.filename or ""):
+        general_bytes = await _read_with_cap(general_pdf, settings.race_max_pdf_mb)
+        _validate_general_magic(general_bytes, general_pdf.filename or "general.pdf")
+        general_sha = _compute_sha256(general_bytes)
+        if general_sha == results_sha:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="RESULTADOS y GENERAL no pueden ser el mismo archivo.",
+            )
+
+    # 3. Detectar duplicado SHA committed (409)
+    duplicate = await db.execute(
+        select(RaceImport).where(
+            RaceImport.sha256 == results_sha,
+            RaceImport.status == RaceImportStatus.committed,
+        )
+    )
+    if duplicate.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"PDF RESULTADOS con sha256={results_sha[:8]}... ya fue commiteado. "
+                "Use force_reingest=True (admin only) si necesita re-procesar."
+            ),
+        )
+
+    # 4. Determinar kind (override del cliente sobre auto-detection)
+    if kind is None:
+        kind_value = (
+            RaceImportKind.both if general_bytes else RaceImportKind.resultados
+        )
+    else:
+        try:
+            kind_value = RaceImportKind(kind)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"kind inválido: {kind}. Permitidos: resultados, general, both.",
+            )
+
+    # 5. Subir PDFs a storage pending/{uuid}/...
+    parse_uuid = uuid.uuid4().hex
+    safe_results_name = _sanitize_filename(resultados_pdf.filename)
+    results_rel = (
+        f"race-imports/pending/{parse_uuid}/resultados.{results_ext}"
+    )
+    results_storage_path, results_storage_url = await storage_sftp.upload_bytes(
+        resultados_bytes, results_rel
+    )
+    general_storage_path: Optional[str] = None
+    general_storage_url: Optional[str] = None
+    safe_general_name: Optional[str] = None
+    if general_bytes:
+        safe_general_name = _sanitize_filename(general_pdf.filename)  # type: ignore[union-attr]
+        general_rel = f"race-imports/pending/{parse_uuid}/general.pdf"
+        general_storage_path, general_storage_url = await storage_sftp.upload_bytes(
+            general_bytes, general_rel
+        )
+
+    # 6. Parsear con timeout — escribimos a tmp para Path-only API
+    warnings_collected: list[ParseWarning] = []
+    with tempfile.NamedTemporaryFile(
+        suffix=f".{results_ext}", delete=False
+    ) as tmp_results:
+        tmp_results.write(resultados_bytes)
+        tmp_results.flush()
+        results_path = PathLib(tmp_results.name)
+    try:
+        parsed_results = await _parse_results_with_timeout(results_path, results_ext)
+    finally:
+        try:
+            results_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    n_rows_resultados = sum(len(v) for v in parsed_results.values())
+    if n_rows_resultados == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Parser no extrajo ninguna fila válida. PDF/CSV no oficial?",
+        )
+
+    n_rows_general: Optional[int] = None
+    if general_bytes:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_g:
+            tmp_g.write(general_bytes)
+            tmp_g.flush()
+            general_path = PathLib(tmp_g.name)
+        try:
+            parsed_general = await _parse_general_with_timeout(general_path)
+            n_rows_general = sum(len(v) for v in parsed_general.values())
+        finally:
+            try:
+                general_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    # 7. Crear RaceImport status=pending con parse_meta_json
+    series = await _get_or_create_series(db, season)
+    parse_meta = {
+        "header": {
+            "series_name": series_name,
+            "season": season,
+            "valida_num": valida_num,
+            "event_name": event_name,
+            "event_date": event_date,
+            "location": location,
+        },
+        "results_ext": results_ext,
+        "results_storage_path": results_storage_path,
+        "general_storage_path": general_storage_path,
+        "categories_found": sorted(parsed_results.keys()),
+        "n_rows_resultados": n_rows_resultados,
+        "n_rows_general": n_rows_general,
+        "parse_uuid": parse_uuid,
+    }
+    race_import = RaceImport(
+        filename=safe_results_name,
+        original_filename=resultados_pdf.filename,
+        sha256=results_sha,
+        series_id=series.id,
+        status=RaceImportStatus.pending,
+        stats_json={},
+        imported_by_user_id=current_user.id,
+        kind=kind_value,
+        storage_path=results_storage_path,
+        storage_url=results_storage_url,
+        general_storage_path=general_storage_path,
+        general_storage_url=general_storage_url,
+        general_sha256=general_sha,
+        parse_meta_json=parse_meta,
+    )
+    db.add(race_import)
+    await db.flush()
+
+    logger.info(
+        "race_import_parse parse_id=%s sha=%s user_id=%s kind=%s rows=%d",
+        race_import.id,
+        results_sha[:12],
+        current_user.id,
+        kind_value.value,
+        n_rows_resultados,
+    )
+
+    return ImportParseResponse(
+        parse_id=race_import.id,
+        sha256=results_sha,
+        header=ParseHeaderInfo(
+            series_name=series_name,
+            season=season,
+            valida_num=valida_num,
+            event_name=event_name,
+        ),
+        n_rows_resultados=n_rows_resultados,
+        n_rows_general=n_rows_general,
+        warnings=warnings_collected,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 2: POST /{parse_id}/dry-run
+# ---------------------------------------------------------------------------
+
+
+async def _load_pending_import(
+    db: AsyncSession, parse_id: int, current_user: User
+) -> RaceImport:
+    """Carga un RaceImport pending por id + verifica ownership (admin bypass)."""
+    result = await db.execute(
+        select(RaceImport).where(RaceImport.id == parse_id)
+    )
+    imp = result.scalar_one_or_none()
+    if imp is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"parse_id={parse_id} no existe.",
+        )
+    if imp.status != RaceImportStatus.pending:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"parse_id={parse_id} no está en estado pending "
+                f"(actual: {imp.status.value}). No se puede dry-run/commit."
+            ),
+        )
+    # Ownership: admin bypass; coach solo sobre sus propios parses.
+    if (
+        current_user.role != UserRole.admin
+        and imp.imported_by_user_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes acceso a este parse_id (ownership cross-coach).",
+        )
+    return imp
+
+
+async def _reload_parsed_from_storage(
+    imp: RaceImport,
+) -> tuple[dict[str, list], Optional[dict[str, list]], str]:
+    """Re-carga RESULTADOS (+ GENERAL opcional) desde el storage path persistido
+    durante /parse. Retorna ``(results, general, results_ext)``.
+
+    Necesario para dry-run/commit: el bytes original ya está en SFTP/local; lo
+    descargamos a tmp, parseamos, descartamos.
+    """
+    import asyncio
+
+    meta = imp.parse_meta_json or {}
+    results_ext = meta.get("results_ext", "pdf")
+    results_path = PathLib(imp.storage_path or "")
+    if not results_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail=(
+                f"PDF RESULTADOS no encontrado en storage "
+                f"(path={imp.storage_path}). Re-suba el archivo."
+            ),
+        )
+    parsed_results = await _parse_results_with_timeout(results_path, results_ext)
+
+    parsed_general: Optional[dict[str, list]] = None
+    if imp.general_storage_path:
+        general_path = PathLib(imp.general_storage_path)
+        if general_path.exists():
+            parsed_general = await _parse_general_with_timeout(general_path)
+
+    return parsed_results, parsed_general, results_ext
+
+
+@router.post("/{parse_id}/dry-run", response_model=ImportDryRunResponse)
+async def dry_run_import(
+    parse_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> ImportDryRunResponse:
+    """Endpoint 2 wizard (dry-run) — ejecuta ingest sin commit + retorna matches."""
+    imp = await _load_pending_import(db, parse_id, current_user)
+    parse_meta = imp.parse_meta_json or {}
+    header = parse_meta.get("header", {})
+
+    parsed_results, parsed_general, _ = await _reload_parsed_from_storage(imp)
+
+    # Construir EventMeta desde parse_meta + valores del cliente persistidos
+    try:
+        from datetime import date as _date
+
+        event_date_str = header.get("event_date", "")
+        event_date_obj = (
+            _date.fromisoformat(event_date_str) if event_date_str else _date.today()
+        )
+        meta_obj = EventMeta(
+            season=int(header.get("season", 2026)),
+            copa_code="copa_valle",
+            valida_num=int(header.get("valida_num", 1)),
+            name=str(header.get("event_name", "Sin nombre")),
+            event_date=event_date_obj,
+            location=str(header.get("location", "Sin ubicación")),
+            pdf_results_filename=imp.filename,
+            pdf_general_filename=None,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"parse_meta inválido: {exc}",
+        )
+
+    # Ejecutar dry-run real
+    ingestor = RaceIngestor(db)
+    report = await ingestor.ingest_event(
+        meta=meta_obj,
+        results_by_category=parsed_results,
+        general_by_category=parsed_general,
+        pdf_results_sha256=imp.sha256,
+        pdf_general_sha256=imp.general_sha256,
+        ingested_by_user_id=current_user.id,
+        dry_run=True,
+    )
+
+    # Construir matches preview desde RESULTADOS — basado en is_trocha_y_ruta
+    from app.services.race.normalizer import is_trocha_y_ruta, normalize_name
+
+    matches: list[MatchPreview] = []
+    for code, rows in parsed_results.items():
+        for row in rows:
+            if not is_trocha_y_ruta(getattr(row, "club", None)):
+                continue
+            normalized = normalize_name(row.name) or ""
+            matches.append(
+                MatchPreview(
+                    competitor_name=row.name,
+                    competitor_normalized_name=normalized,
+                    tyr_athlete=None,  # MVP: no fuzzy contra Athlete pre-cargado
+                    confidence=0.0,
+                    is_ambiguous=True,
+                )
+            )
+
+    counts = DryRunCounts(
+        confirmed=0,
+        ambiguous=len(matches),
+        no_match=0,
+        total=len(matches),
+    )
+    warnings = [
+        ParseWarning(code="ingestor_warning", message=w)
+        for w in report.warnings
+    ]
+
+    return ImportDryRunResponse(
+        parse_id=imp.id,
+        matches=matches,
+        counts=counts,
+        warnings=warnings,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 3: POST /{parse_id}/commit
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{parse_id}/commit", response_model=ImportCommitResponse)
+async def commit_import(
+    parse_id: int,
+    body: ImportCommitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> ImportCommitResponse:
+    """Endpoint 3 wizard (commit) — promueve pending → committed con resolved matches."""
+    imp = await _load_pending_import(db, parse_id, current_user)
+    parse_meta = imp.parse_meta_json or {}
+    header = parse_meta.get("header", {})
+
+    parsed_results, parsed_general, _ = await _reload_parsed_from_storage(imp)
+
+    # Construir EventMeta
+    try:
+        from datetime import date as _date
+
+        event_date_str = header.get("event_date", "")
+        event_date_obj = (
+            _date.fromisoformat(event_date_str) if event_date_str else _date.today()
+        )
+        meta_obj = EventMeta(
+            season=int(header.get("season", 2026)),
+            copa_code="copa_valle",
+            valida_num=int(header.get("valida_num", 1)),
+            name=str(header.get("event_name", "Sin nombre")),
+            event_date=event_date_obj,
+            location=str(header.get("location", "Sin ubicación")),
+            pdf_results_filename=imp.filename,
+            pdf_general_filename=None,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"parse_meta inválido: {exc}",
+        )
+
+    # Validar que resolved_matches cubra todos los matches ambiguos (TyR detectados)
+    from app.services.race.normalizer import is_trocha_y_ruta, normalize_name
+
+    tyr_normalized: set[str] = set()
+    bib_by_normalized: dict[str, str] = {}
+    for code, rows in parsed_results.items():
+        for row in rows:
+            if is_trocha_y_ruta(getattr(row, "club", None)):
+                norm = normalize_name(row.name) or ""
+                if norm:
+                    tyr_normalized.add(norm)
+                    bib_by_normalized.setdefault(norm, str(row.bib))
+
+    resolved_normalized = {rm.competitor_normalized_name for rm in body.resolved_matches}
+    missing = tyr_normalized - resolved_normalized
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Faltan resolved_matches para {len(missing)} atleta(s) TyR. "
+                f"Ejemplos: {sorted(missing)[:3]}"
+            ),
+        )
+
+    # Construir match_decisions {bib: athlete_id|None} para el ingestor
+    match_decisions: dict[str, Optional[int]] = {}
+    for rm in body.resolved_matches:
+        bib = bib_by_normalized.get(rm.competitor_normalized_name)
+        if bib is not None:
+            match_decisions[bib] = rm.athlete_id
+
+    # Ejecutar commit (dry_run=False) — promueve pending → committed
+    ingestor = RaceIngestor(db)
+    try:
+        report = await ingestor.ingest_event(
+            meta=meta_obj,
+            results_by_category=parsed_results,
+            general_by_category=parsed_general,
+            match_decisions=match_decisions,
+            pdf_results_sha256=imp.sha256,
+            pdf_general_sha256=imp.general_sha256,
+            ingested_by_user_id=current_user.id,
+            dry_run=False,
+        )
+    except ValueError as exc:
+        # Categoría desconocida u otro error transactional
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    # Mover PDFs en SFTP: pending/{uuid}/ → committed/{uuid}/
+    parse_uuid = parse_meta.get("parse_uuid", "unknown")
+    new_path: Optional[str] = None
+    new_url: Optional[str] = None
+    if imp.storage_path:
+        ext = parse_meta.get("results_ext", "pdf")
+        dst_rel = f"race-imports/committed/{parse_uuid}/resultados.{ext}"
+        try:
+            new_path, new_url = await storage_sftp.move_object(
+                imp.storage_path, dst_rel
+            )
+            imp.storage_path = new_path
+            imp.storage_url = new_url
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "race_import_commit move_object failed parse_id=%s err=%s",
+                parse_id,
+                exc,
+            )
+
+    new_g_path: Optional[str] = None
+    new_g_url: Optional[str] = None
+    if imp.general_storage_path:
+        dst_g_rel = f"race-imports/committed/{parse_uuid}/general.pdf"
+        try:
+            new_g_path, new_g_url = await storage_sftp.move_object(
+                imp.general_storage_path, dst_g_rel
+            )
+            imp.general_storage_path = new_g_path
+            imp.general_storage_url = new_g_url
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "race_import_commit move_object_general failed parse_id=%s err=%s",
+                parse_id,
+                exc,
+            )
+
+    # Limpiar parse_meta_json y enlazar event_id en RaceImport
+    imp.event_id = report.event_id
+    imp.parse_meta_json = None
+    await db.flush()
+
+    logger.info(
+        "race_import_commit parse_id=%s event_id=%s results_inserted=%d "
+        "competitors_created=%d tyr_count=%d",
+        parse_id,
+        report.event_id,
+        report.results_inserted,
+        report.competitors_created,
+        report.tyr_count,
+    )
+
+    return ImportCommitResponse(
+        parse_id=parse_id,
+        race_event_id=report.event_id,
+        n_results_inserted=report.results_inserted,
+        n_competitors_created=report.competitors_created,
+        n_competitors_linked=report.tyr_count,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 4: GET / — histórico
+# ---------------------------------------------------------------------------
+
+
+@router.get("/", response_model=ImportListResponse)
+async def list_imports(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> ImportListResponse:
+    """Endpoint 4 wizard (histórico) — lista paginada de imports."""
+    stmt = select(RaceImport)
+    count_stmt = select(RaceImport)
+    if status_filter:
+        try:
+            status_enum = RaceImportStatus(status_filter)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"status inválido: {status_filter}",
+            )
+        stmt = stmt.where(RaceImport.status == status_enum)
+        count_stmt = count_stmt.where(RaceImport.status == status_enum)
+
+    # Total para paginación
+    total_result = await db.execute(count_stmt)
+    total = len(list(total_result.scalars().all()))
+
+    # Página solicitada
+    page_result = await db.execute(
+        stmt.order_by(RaceImport.imported_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    imports = list(page_result.scalars().all())
+
+    # Cargar uploaders de manera batched
+    user_ids = list({i.imported_by_user_id for i in imports})
+    users_by_id: dict[int, User] = {}
+    if user_ids:
+        users_result = await db.execute(
+            select(User).where(User.id.in_(user_ids))
+        )
+        users_by_id = {u.id: u for u in users_result.scalars().all()}
+
+    items: list[ImportListItem] = []
+    for imp in imports:
+        u = users_by_id.get(imp.imported_by_user_id)
+        uploader = UploadUserRef(
+            id=imp.imported_by_user_id,
+            full_name=(
+                f"{u.first_name} {u.last_name}".strip() if u else f"user#{imp.imported_by_user_id}"
+            ),
+        )
+        n_results = (imp.stats_json or {}).get("results_inserted", 0)
+        items.append(
+            ImportListItem(
+                id=imp.id,
+                kind=imp.kind.value,
+                status=imp.status.value,
+                created_at=imp.imported_at,
+                event_id=imp.event_id,
+                original_filename=imp.original_filename or imp.filename,
+                uploaded_by=uploader,
+                n_results=n_results,
+            )
+        )
+
+    return ImportListResponse(items=items, total=total)

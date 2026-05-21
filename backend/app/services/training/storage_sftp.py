@@ -197,3 +197,83 @@ async def delete_object(storage_path: str) -> None:
         await asyncio.to_thread(_delete_sftp_sync, storage_path)
     else:
         await asyncio.to_thread(_delete_local_sync, storage_path)
+
+
+# ---------------------------------------------------------------------------
+# F-UP4: move_object — promueve archivos pending → committed sin re-upload
+# ---------------------------------------------------------------------------
+
+
+def _move_sftp_sync(src_storage_path: str, dst_relative_path: str) -> tuple[str, str]:
+    """Renombra/mueve un archivo FTPS de ``src_storage_path`` a un path relativo
+    nuevo bajo el remote_dir base.
+
+    Estrategia: usar el comando RNFR/RNTO de FTP (soportado por Hostinger), que
+    es atómico server-side y evita re-upload. Si falla (ej. servidor sin
+    soporte), caemos a download+upload+delete como fallback robusto.
+
+    Returns:
+        Tupla `(new_storage_path, new_storage_url)`.
+    """
+    from ftplib import error_perm as _err
+
+    remote_base = _absolute_remote_dir()
+    dst_remote_path = remote_base / dst_relative_path
+
+    with _ftp_client() as ftp:
+        # Crear directorio destino si no existe (mkdir -p).
+        _cwd_into(ftp, dst_remote_path.parent)
+        try:
+            ftp.rename(src_storage_path, str(dst_remote_path))
+        except _err:
+            # Fallback: download src → upload dst → delete src
+            buf = io.BytesIO()
+            ftp.retrbinary(f"RETR {src_storage_path}", buf.write)
+            buf.seek(0)
+            ftp.storbinary(f"STOR {dst_remote_path.name}", buf)
+            try:
+                ftp.delete(src_storage_path)
+            except _err:
+                logger.warning(
+                    "move_object: STOR ok pero DELE de %s falló (huérfano).",
+                    src_storage_path,
+                )
+
+    storage_url = f"{settings.hostinger_public_base_url}/{dst_relative_path}"
+    return str(dst_remote_path), storage_url
+
+
+def _move_local_sync(
+    src_storage_path: str, dst_relative_path: str
+) -> tuple[str, str]:
+    src = Path(src_storage_path)
+    dst = _LOCAL_FALLBACK_BASE / dst_relative_path
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if src.exists():
+        src.replace(dst)  # rename atómico in-fs
+    else:
+        # Si no existe el origen, tratamos como no-op (best-effort).
+        logger.warning("move_object local: src %s no existe", src_storage_path)
+    return str(dst), f"{_LOCAL_FALLBACK_URL_PREFIX}/{dst_relative_path}"
+
+
+async def move_object(
+    src_storage_path: str, dst_relative_path: str
+) -> tuple[str, str]:
+    """Mueve un objeto a un nuevo path relativo en el storage configurado.
+
+    Caso de uso (F-UP4): tras `parse` los PDFs viven en
+    `race-imports/pending/{uuid}/...`; al `commit` se mueven a
+    `race-imports/committed/{uuid}/...` sin re-upload.
+
+    Returns:
+        Tupla `(new_storage_path, new_storage_url)` análoga a `upload_bytes`.
+    """
+    if not src_storage_path or not dst_relative_path:
+        raise ValueError("move_object: src_storage_path y dst_relative_path requeridos")
+    # Si el src es local (fallback) usamos move local; idem para SFTP.
+    if _is_sftp_configured() and not src_storage_path.startswith(
+        str(_LOCAL_FALLBACK_BASE)
+    ):
+        return await asyncio.to_thread(_move_sftp_sync, src_storage_path, dst_relative_path)
+    return await asyncio.to_thread(_move_local_sync, src_storage_path, dst_relative_path)

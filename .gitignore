@@ -62,3 +62,7 @@ claudedocs/
 
 # ─── Langfuse self-hosted (secretos dev) ──────────────────────────────────────
 docker-compose.langfuse.env
+
+# F4 LangGraph local state + ChromaDB
+backend/data/
+

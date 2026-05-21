@@ -174,6 +174,7 @@ class RaceIngestor:
         pdf_results_sha256: Optional[str] = None,
         pdf_general_sha256: Optional[str] = None,
         ingested_by_user_id: int,
+        dry_run: bool = False,
     ) -> IngestReport:
         """Ingest atómico de una válida completa.
 
@@ -192,9 +193,19 @@ class RaceIngestor:
                 no aborta porque GENERAL no genera ``race_results``).
             ingested_by_user_id: FK NOT NULL en ``RaceResult.created_by_user_id``
                 y ``RaceImport.imported_by_user_id``.
+            dry_run: (F-UP2) Si True, ejecuta todo el flujo en una transacción
+                que se hace **rollback al final** — no persiste resultados ni
+                competidores. El ``IngestReport`` retornado contiene los conteos
+                "como si" se hubiera ejecutado, con ``warnings`` enriquecido con
+                un prefijo ``"DRY_RUN: no se persistieron cambios"``. El
+                ``RaceImport`` previo se preserva en status ``pending`` (no
+                avanza a ``committed``) para que un ``ingest_event`` posterior
+                con ``dry_run=False`` y el mismo ``pdf_results_sha256`` pueda
+                promoverlo. Default ``False`` (backward compat con CLI F1.7).
 
         Returns:
             ``IngestReport`` con conteos y warnings (sin nombres completos).
+            En dry_run, los conteos reflejan lo que SE HABRÍA insertado.
 
         Raises:
             Cualquier excepción de DB se propaga tras rollback explícito.
@@ -225,7 +236,12 @@ class RaceIngestor:
                         f"sha256 ya commiteado import_id={existing.id} "
                         f"sequence_number={meta.valida_num}"
                     )
-                    await self.db.commit()  # mantener el upsert de series/event
+                    if dry_run:
+                        # En dry_run no commiteamos el upsert series/event tampoco.
+                        warnings.insert(0, "DRY_RUN: no se persistieron cambios")
+                        await self.db.rollback()
+                    else:
+                        await self.db.commit()  # mantener el upsert de series/event
                     return IngestReport(
                         event_id=event.id,
                         series_id=series.id,
@@ -236,17 +252,23 @@ class RaceIngestor:
                         tyr_count=0,
                         warnings=warnings,
                     )
-                # Crear RaceImport en estado pending; transicionará a committed al final
-                race_import = RaceImport(
-                    filename=meta.pdf_results_filename or f"valida_{meta.valida_num}_resultados.pdf",
-                    sha256=pdf_results_sha256,
-                    series_id=series.id,
-                    status=RaceImportStatus.pending,
-                    stats_json={},
-                    imported_by_user_id=ingested_by_user_id,
-                )
-                self.db.add(race_import)
-                await self.db.flush()
+
+                # F-UP2: en dry_run buscamos un RaceImport pending previo (creado
+                # por el endpoint /parse). Si existe, lo reusamos sin promoverlo.
+                # En commit (dry_run=False), también lo reusamos pero lo promovemos
+                # a committed al final. Si no existe, lo creamos (compat CLI F1.7).
+                race_import = await self._find_pending_import(pdf_results_sha256)
+                if race_import is None:
+                    race_import = RaceImport(
+                        filename=meta.pdf_results_filename or f"valida_{meta.valida_num}_resultados.pdf",
+                        sha256=pdf_results_sha256,
+                        series_id=series.id,
+                        status=RaceImportStatus.pending,
+                        stats_json={},
+                        imported_by_user_id=ingested_by_user_id,
+                    )
+                    self.db.add(race_import)
+                    await self.db.flush()
 
             # --- 4. Catálogo de categorías cacheado (un lookup por code) -
             category_cache: dict[str, RaceCategory] = await self._load_category_cache()
@@ -364,7 +386,10 @@ class RaceIngestor:
                     results_inserted += 1
 
             # --- 7. Cierre del RaceImport como committed ---------------
-            if race_import is not None:
+            # Solo promovemos a committed cuando NO es dry_run. En dry_run
+            # dejamos race_import.status en `pending` para que un commit
+            # posterior (mismo sha256) lo pueda promover (F-UP2/F-UP3 wizard).
+            if race_import is not None and not dry_run:
                 race_import.status = RaceImportStatus.committed
                 race_import.stats_json = {
                     "competitors_created": competitors_created,
@@ -375,17 +400,41 @@ class RaceIngestor:
                     "warnings": len(warnings),
                 }
 
-            await self.db.commit()
-            logger.info(
-                "race_ingest_ok event_id=%s series_id=%s results_inserted=%d "
-                "results_skipped=%d tyr_count=%d warnings=%d",
-                event.id,
-                series.id,
-                results_inserted,
-                results_skipped,
-                tyr_count,
-                len(warnings),
-            )
+            if dry_run:
+                # F-UP2: rollback al final para no persistir competitors,
+                # results, ni el avance de status del RaceImport. El upsert
+                # de series/event tampoco persiste — pero los IDs in-memory
+                # del IngestReport reflejan lo que SE HABRÍA insertado.
+                #
+                # FIX F-UP6 E2E: capturar IDs ANTES del rollback. Tras
+                # `await db.rollback()` los attrs ORM quedan expirados y
+                # acceder `event.id` dispara lazy-load sync sobre aiomysql
+                # → MissingGreenlet en contexto async.
+                event_id_preview = event.id
+                series_id_preview = series.id
+                warnings.insert(0, "DRY_RUN: no se persistieron cambios")
+                await self.db.rollback()
+                logger.info(
+                    "race_ingest_dry_run event_id_preview=%s series_id_preview=%s "
+                    "results_would_insert=%d tyr_count=%d warnings=%d",
+                    event_id_preview,
+                    series_id_preview,
+                    results_inserted,
+                    tyr_count,
+                    len(warnings),
+                )
+            else:
+                await self.db.commit()
+                logger.info(
+                    "race_ingest_ok event_id=%s series_id=%s results_inserted=%d "
+                    "results_skipped=%d tyr_count=%d warnings=%d",
+                    event.id,
+                    series.id,
+                    results_inserted,
+                    results_skipped,
+                    tyr_count,
+                    len(warnings),
+                )
             return IngestReport(
                 event_id=event.id,
                 series_id=series.id,
@@ -493,6 +542,23 @@ class RaceIngestor:
             select(RaceImport).where(
                 RaceImport.sha256 == sha256,
                 RaceImport.status == RaceImportStatus.committed,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def _find_pending_import(self, sha256: str) -> Optional[RaceImport]:
+        """Busca un ``RaceImport`` con ``status=pending`` y sha256 dado (F-UP2).
+
+        Usado por el flow upload UI: el endpoint ``/parse`` crea un pending row
+        en su propia transacción; luego ``/dry-run`` y ``/commit`` reusan el
+        mismo row (sin duplicar). Si el row existe pero está en otro estado
+        (dry_run / committed / failed), devolvemos None y el ingestor decidirá
+        crear uno nuevo o abortar idempotente.
+        """
+        result = await self.db.execute(
+            select(RaceImport).where(
+                RaceImport.sha256 == sha256,
+                RaceImport.status == RaceImportStatus.pending,
             )
         )
         return result.scalar_one_or_none()
