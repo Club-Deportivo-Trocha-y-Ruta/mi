@@ -12,11 +12,37 @@
  * para que el coach vea qué herramientas se usaron.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import axios from "axios";
 import { Bot, Loader2, Send, User as UserIcon } from "lucide-react";
 
 import { generateSessionId, useRaceChat } from "@/hooks/ai/useRaceChat";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/types/raceAnalysis.types";
+
+function extractChatErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as { detail?: unknown } | undefined;
+    const detail = data?.detail;
+    if (typeof detail === "string" && detail.trim().length > 0) {
+      return `Error: ${detail}`;
+    }
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0] as { msg?: unknown } | undefined;
+      if (first && typeof first.msg === "string") {
+        return `Error: ${first.msg}`;
+      }
+    }
+    const statusCode = err.response?.status;
+    if (statusCode) {
+      return `Error (${statusCode}): ${err.message}`;
+    }
+    return `Error: ${err.message}`;
+  }
+  if (err instanceof Error) {
+    return `Error: ${err.message}`;
+  }
+  return "Error inesperado consultando al agente.";
+}
 
 interface ChatConsoleProps {
   /** Si presente, todas las consultas atan al atleta indicado. */
@@ -81,10 +107,7 @@ export function ChatConsole({
       const errorMsg: ChatMessage = {
         id: `e-${Date.now()}`,
         role: "assistant",
-        content:
-          err instanceof Error
-            ? `Error: ${err.message}`
-            : "Error inesperado consultando al agente.",
+        content: extractChatErrorMessage(err),
         ts: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errorMsg]);

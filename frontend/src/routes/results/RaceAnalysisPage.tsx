@@ -13,9 +13,9 @@
  *
  * Acceso: coach + admin (configurado en App.tsx).
  */
-import { useMemo, useState } from "react";
+import { Suspense, lazy, useMemo, useState } from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
-import { History, ListChecks, Plus } from "lucide-react";
+import { History, ListChecks, Plus, Upload } from "lucide-react";
 
 import { AnalysisRunTimeline } from "@/components/ai/AnalysisRunTimeline";
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
@@ -27,6 +27,19 @@ import { PdfDownloadButton } from "@/components/ai/PdfDownloadButton";
 import { StartRunForm } from "@/components/ai/StartRunForm";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { useRunResult, useRunStatus } from "@/hooks/ai/useRaceRun";
+
+// Lazy: el wizard y el histórico sólo se cargan al abrir la tab de carga.
+// Esto mantiene el chunk principal de RaceAnalysisPage cerca del baseline.
+const ImportWizard = lazy(() =>
+  import("@/components/ai/ImportWizard").then((m) => ({
+    default: m.ImportWizard,
+  })),
+);
+const ImportsHistoryList = lazy(() =>
+  import("@/components/ai/ImportsHistoryList").then((m) => ({
+    default: m.ImportsHistoryList,
+  })),
+);
 
 function TabTrigger({
   value,
@@ -114,6 +127,7 @@ export function RaceAnalysisPage() {
           aria-label="Secciones de race-analysis"
         >
           <TabTrigger value="new" icon={Plus} label="Nuevo análisis" />
+          <TabTrigger value="upload" icon={Upload} label="Cargar resultados" />
           <TabTrigger value="active" icon={ListChecks} label="Runs activos" />
           <TabTrigger value="history" icon={History} label="Insights históricos" />
         </TabsPrimitive.List>
@@ -178,6 +192,24 @@ export function RaceAnalysisPage() {
             athleteId={chatAthleteId}
             athleteName={chatAthleteName}
           />
+        </TabsPrimitive.Content>
+
+        {/* ── Tab: Cargar resultados ─────────────────────────── */}
+        <TabsPrimitive.Content value="upload" className="mt-4 space-y-5">
+          <Suspense
+            fallback={
+              <div
+                className="rounded-xl bg-light-gray/40 p-6 text-center text-sm text-mid-gray"
+                role="status"
+                aria-live="polite"
+              >
+                Cargando módulo de importación…
+              </div>
+            }
+          >
+            <ImportWizard />
+            <ImportsHistoryList />
+          </Suspense>
         </TabsPrimitive.Content>
 
         {/* ── Tab: Runs activos ──────────────────────────────── */}
