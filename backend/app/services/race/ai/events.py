@@ -29,6 +29,8 @@ from datetime import datetime, timezone
 from functools import wraps
 from typing import Any, Awaitable, Callable, Optional
 
+from langgraph.errors import GraphInterrupt
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +78,12 @@ def with_events(node_name: str) -> Callable:
     1. Se emite ``node_error`` con ``{exc: ClassName, msg: first 200 chars}``.
     2. Se acumula en ``state["errors"]``.
     3. Se re-raise para que el wrapper de grafo decida (fallback / END).
+
+    Caso especial — ``GraphInterrupt`` (LangGraph HITL):
+    LangGraph implementa ``interrupt()`` lanzando ``GraphInterrupt`` para
+    pausar el grafo. NO es un error: es flujo de control. Se emite
+    ``hitl_request`` (no ``node_error``, no ``node_end``) y se re-raise
+    para que LangGraph procese la suspensión.
     """
 
     def decorator(fn: Callable[[dict], Awaitable[dict]]) -> Callable[[dict], Awaitable[dict]]:
@@ -84,6 +92,12 @@ def with_events(node_name: str) -> Callable:
             emit_event(state, "node_start", node=node_name)
             try:
                 update = await fn(state) or {}
+            except GraphInterrupt:
+                # interrupt() del nodo: flujo de control, no error.
+                # Emitimos hitl_request (sin payload de excepción) y
+                # re-raise para que LangGraph suspenda el grafo.
+                emit_event(state, "hitl_request", node=node_name)
+                raise
             except Exception as exc:
                 logger.exception("Nodo %s falló", node_name)
                 errors = state.setdefault("errors", [])

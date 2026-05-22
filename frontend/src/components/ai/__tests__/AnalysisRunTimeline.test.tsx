@@ -118,4 +118,164 @@ describe("AnalysisRunTimeline", () => {
     wrap(<AnalysisRunTimeline runId="" />);
     expect(screen.getByText(/Sin run activo/i)).toBeInTheDocument();
   });
+
+  // ------------------------------------------------------------------
+  // UX defensiva: HITL gate vs error real
+  // ------------------------------------------------------------------
+
+  it(
+    "state=hitl_waiting + evento error en hitl_gate_review → " +
+      "muestra 'esperando revisión' (no error)",
+    async () => {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state: "hitl_waiting",
+        progress_pct: 70,
+        current_node: "hitl_gate_review",
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 0,
+        last_seq: 3,
+        new_events: [
+          {
+            seq: 1,
+            ts: "2026-05-20T10:00:01.000Z",
+            type: "node_start",
+            node: "hitl_gate_review",
+            payload: {},
+          },
+          {
+            seq: 2,
+            ts: "2026-05-20T10:00:01.200Z",
+            type: "error",
+            node: "hitl_gate_review",
+            payload: { message: "GraphInterrupt: awaiting human input" },
+          },
+        ],
+      });
+      wrap(<AnalysisRunTimeline runId="r1" />);
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("timeline-node-hitl_gate_review"),
+        ).toHaveAttribute("data-status", "awaiting_review"),
+      );
+
+      // No debe haber badge "Error" (sr-only label) en el nodo del gate.
+      const gateNode = screen.getByTestId("timeline-node-hitl_gate_review");
+      expect(gateNode).not.toHaveTextContent(/^Error$/);
+
+      // ARIA label descriptivo en el <li>.
+      expect(gateNode).toHaveAttribute(
+        "aria-label",
+        expect.stringMatching(/esperando revisión/i),
+      );
+
+      // Header del wizard también refleja la pausa.
+      expect(
+        screen.getByText(/Esperando tu aprobación/i),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it(
+    "state=failed + evento error en hitl_gate_review → " +
+      "marca el nodo como error real",
+    async () => {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state: "failed",
+        progress_pct: 70,
+        current_node: "hitl_gate_review",
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 0,
+        last_seq: 2,
+        new_events: [
+          {
+            seq: 1,
+            ts: "2026-05-20T10:00:01.000Z",
+            type: "node_start",
+            node: "hitl_gate_review",
+            payload: {},
+          },
+          {
+            seq: 2,
+            ts: "2026-05-20T10:00:01.500Z",
+            type: "error",
+            node: "hitl_gate_review",
+            payload: { message: "real boom" },
+          },
+        ],
+      });
+      wrap(<AnalysisRunTimeline runId="r1" />);
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("timeline-node-hitl_gate_review"),
+        ).toHaveAttribute("data-status", "error"),
+      );
+      // Header marca el run como fallido.
+      expect(screen.getByText("Falló")).toBeInTheDocument();
+    },
+  );
+
+  it("state=done + todos los nodos con node_start+node_end → todos done", async () => {
+    const baseTs = Date.parse("2026-05-20T10:00:00Z");
+    // Generamos pares node_start/node_end para los 13 nodos canónicos.
+    const NODE_KEYS = [
+      "validate_input",
+      "load_race_data",
+      "anonymize",
+      "compute_metrics",
+      "retrieve_principles",
+      "recall_memory",
+      "analyst_agent",
+      "critic_agent",
+      "hitl_gate_review",
+      "persist_insight",
+      "rehydrate_names",
+      "render_outputs",
+      "notify_coach",
+    ];
+    const events = NODE_KEYS.flatMap((node, idx) => [
+      {
+        seq: idx * 2 + 1,
+        ts: new Date(baseTs + idx * 1000).toISOString(),
+        type: "node_start",
+        node,
+        payload: {},
+      },
+      {
+        seq: idx * 2 + 2,
+        ts: new Date(baseTs + idx * 1000 + 200).toISOString(),
+        type: "node_end",
+        node,
+        payload: {},
+      },
+    ]);
+    vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+      run_id: "r1",
+      state: "done",
+      progress_pct: 100,
+      current_node: null,
+      started_at: "2026-05-20T10:00:00Z",
+      estimated_seconds_remaining: 0,
+      last_seq: events.length,
+      new_events: events,
+    });
+    wrap(<AnalysisRunTimeline runId="r1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("timeline-node-notify_coach"),
+      ).toHaveAttribute("data-status", "done"),
+    );
+    for (const key of NODE_KEYS) {
+      expect(screen.getByTestId(`timeline-node-${key}`)).toHaveAttribute(
+        "data-status",
+        "done",
+      );
+    }
+    // Header del wizard: estado global "Completado".
+    expect(screen.getAllByText(/Completado/i).length).toBeGreaterThan(0);
+  });
 });

@@ -27,6 +27,7 @@ import {
   FileText,
   Loader2,
   Mail,
+  PauseCircle,
   Save,
   ScanText,
   Send,
@@ -69,7 +70,18 @@ const GRAPH_NODES: NodeDef[] = [
   { key: "notify_coach", label: "Notificar al coach", icon: Mail },
 ];
 
-type NodeStatus = "pending" | "running" | "done" | "error";
+type NodeStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "error"
+  | "awaiting_review";
+
+/** Nodo del grafo donde el flujo puede pausarse esperando aprobación coach
+ * (HITL gate). Cuando el state global del run es `hitl_waiting`, los
+ * eventos `error`/`node_error` emitidos en este nodo son la representación
+ * defensiva de una `GraphInterrupt` interna de LangGraph, NO un fallo. */
+const HITL_GATE_NODE = "hitl_gate_review";
 
 interface NodeView extends NodeDef {
   status: NodeStatus;
@@ -83,9 +95,17 @@ interface NodeView extends NodeDef {
  *  - `node_end`   → marca done con duración (now - start).
  *  - `node_error` o `type=error` → marca error.
  *  - sin eventos del nodo → pending.
+ *
+ * Override defensivo (HITL):
+ *  - Si `globalState === "hitl_waiting"` y el evento `error`/`node_error`
+ *    pertenece al nodo `hitl_gate_review`, se interpreta como pausa
+ *    esperando revisión (NodeStatus `awaiting_review`), no como fallo.
+ *    Esto cubre el caso en que LangGraph emite una `GraphInterrupt` que
+ *    el decorador `with_events` del backend serializa como `event_type=error`.
  */
 function reduceNodeStatuses(
   events: RunEvent[],
+  globalState: RunState,
 ): Map<string, { status: NodeStatus; durationMs: number | null }> {
   const map = new Map<
     string,
@@ -108,8 +128,15 @@ function reduceNodeStatuses(
         break;
       case "node_error":
       case "error":
-        entry.status = "error";
-        entry.endTs = tsMs;
+        // Override HITL: si el grafo está pausado esperando coach y el
+        // evento error pertenece al gate HITL, NO marcamos error.
+        // El gate queda en "awaiting_review" — pausa intencional.
+        if (node === HITL_GATE_NODE && globalState === "hitl_waiting") {
+          entry.status = "awaiting_review";
+        } else {
+          entry.status = "error";
+          entry.endTs = tsMs;
+        }
         break;
       default:
         // explain, hitl_request, hitl_response, etc → no cambian status,
@@ -159,6 +186,12 @@ function statusBadge(status: NodeStatus): {
         label: "Error",
         cls: "bg-red-100 text-red-800",
       };
+    case "awaiting_review":
+      return {
+        icon: <PauseCircle size={14} aria-hidden="true" />,
+        label: "Esperando revisión",
+        cls: "bg-purple-100 text-purple-800",
+      };
     case "pending":
     default:
       return {
@@ -178,7 +211,7 @@ export function AnalysisRunTimeline({
 
   const nodes: NodeView[] = useMemo(() => {
     if (!data) return GRAPH_NODES.map((n) => ({ ...n, status: "pending" as NodeStatus, durationMs: null }));
-    const reduced = reduceNodeStatuses(data.events);
+    const reduced = reduceNodeStatuses(data.events, data.latest.state);
     const knownKeys = new Set(GRAPH_NODES.map((n) => n.key));
     const enriched: NodeView[] = GRAPH_NODES.map((n) => {
       const s = reduced.get(n.key);
@@ -317,7 +350,9 @@ export function AnalysisRunTimeline({
       >
         {nodes.map((node) => {
           const isActive =
-            node.status === "running" || node.key === currentNode;
+            node.status === "running" ||
+            node.status === "awaiting_review" ||
+            node.key === currentNode;
           const badge = statusBadge(node.status);
           const Icon = node.icon;
           return (
@@ -328,10 +363,17 @@ export function AnalysisRunTimeline({
               data-status={node.status}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 transition-colors",
-                isActive
+                node.status === "awaiting_review"
+                  ? "bg-purple-50 ring-1 ring-purple-200"
+                  : isActive
                   ? "bg-blue-50 ring-1 ring-blue-200"
                   : "bg-white ring-1 ring-light-gray",
               )}
+              aria-label={
+                node.status === "awaiting_review"
+                  ? `${node.label}: esperando revisión del entrenador`
+                  : undefined
+              }
             >
               <Icon
                 size={18}
@@ -340,6 +382,8 @@ export function AnalysisRunTimeline({
                     ? "text-green-700"
                     : node.status === "error"
                     ? "text-red-700"
+                    : node.status === "awaiting_review"
+                    ? "text-purple-700"
                     : node.status === "running"
                     ? "text-blue-700"
                     : "text-mid-gray",
