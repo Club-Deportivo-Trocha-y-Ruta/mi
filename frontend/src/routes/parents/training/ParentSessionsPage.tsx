@@ -5,6 +5,7 @@ import { ParentSessionCard } from "@/components/parents/ParentSessionCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useParentMonthlySummary, useParentSessions } from "@/api/trainingSessions";
+import { useParentContextStore } from "@/store/parentContext.store";
 import type { KidAttendance, SessionFilters } from "@/types/trainingSession.types";
 import type { MyAthleteOut } from "@/types/parent.types";
 
@@ -42,7 +43,13 @@ export function ParentSessionsPage() {
   const athletesQuery = useMyAthletes();
   const athletes = athletesQuery.data ?? [];
 
-  const [selectedAthleteId, setSelectedAthleteId] = useState<number | null>(null);
+  // Wave 4: el "atleta activo" vive en `useParentContextStore` (persistido
+  // en localStorage). Para coherencia con el AthleteSwitcher del header,
+  // esta página lee y escribe directo al store en vez de mantener un
+  // selectedAthleteId local. Cuando el padre elige un hijo en el header,
+  // los chips de esta página se sincronizan; y viceversa.
+  const selectedAthleteId = useParentContextStore((s) => s.activeAthleteId);
+  const setSelectedAthleteId = useParentContextStore((s) => s.setActiveAthlete);
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current month, -1 = previous, etc.
 
   const allAthleteIds = athletes.map((a) => a.athlete_id);

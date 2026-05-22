@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 
+import { AthleteSwitcher } from "@/components/parents/AthleteSwitcher";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
 
@@ -217,15 +218,18 @@ export function AppShell({ children }: AppShellProps) {
             </p>
           </div>
 
-          {/* Right: logout */}
-          <button
-            type="button"
-            onClick={logout}
-            className="ml-3 shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-          >
-            Cerrar sesión
-          </button>
+          {/* Right: athlete switcher (parent only) + logout */}
+          <div className="flex items-center gap-2">
+            {isParent && <AthleteSwitcher />}
+            <button
+              type="button"
+              onClick={logout}
+              className="ml-1 shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            >
+              Cerrar sesión
+            </button>
+          </div>
         </header>
 
         {/* Page content */}

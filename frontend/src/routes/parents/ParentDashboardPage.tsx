@@ -1,10 +1,13 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
+import { AlertsCard } from "@/components/parents/home/AlertsCard";
+import { AthleteHomeBlock } from "@/components/parents/home/AthleteHomeBlock";
 import { ChildCard } from "@/components/parents/portal/ChildCard";
 import { ConsentRenewalModal } from "@/components/consent/ConsentRenewalModal";
 import { ConsentStatusPanel } from "@/components/consent/ConsentStatusPanel";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
+import { useActiveAthlete } from "@/hooks/parents/useActiveAthlete";
 import { useMyConsentStatus } from "@/hooks/consent";
 import type { AthleteConsentStatus } from "@/types/consent";
 
@@ -37,11 +40,31 @@ function buildRenewalQueue(
 }
 
 // ---------------------------------------------------------------------------
-// Componente principal
+// Componente principal — Wave 4: home feed reorganizado
 // ---------------------------------------------------------------------------
+//
+// Orden vertical:
+//   1. AlertsCard (consentimiento — solo si aplica)
+//   2. Bloque(s) home feed:
+//        - Si hay atleta activo (1 hijo, o multi-hijo con selección):
+//          un solo bloque sin encabezado.
+//        - Si multi-hijo sin selección: N bloques apilados, cada uno
+//          con encabezado de nombre + toggle "Ver todos los hijos" para
+//          confirmar/cambiar la elección.
+//   3. ChildCard grid (perfil de antropometría/PHV — acceso a detalle).
+//   4. ConsentStatusPanel (denso, último).
+//
+// Mantenemos URL /my-athletes intacta. El ConsentRenewalModal sigue siendo
+// bloqueante: no se toca su semántica.
 
 export function ParentDashboardPage() {
-  const { data: athletes, isLoading, isError } = useMyAthletes();
+  const {
+    athlete,
+    athletes,
+    isLoading,
+    activeAthleteId,
+    setActiveAthlete,
+  } = useActiveAthlete();
   const { data: consentStatus, isLoading: isConsentLoading } = useMyConsentStatus();
 
   // Cola de atletas pendientes de renovación. Se inicializa una sola vez cuando
@@ -63,10 +86,15 @@ export function ParentDashboardPage() {
   const pendingAthlete = renewalQueue[currentQueueIndex] ?? null;
 
   const handleAthleteRenewed = () => {
-    // Avanzar en la cola. Cuando currentQueueIndex >= renewalQueue.length,
-    // pendingAthlete queda null y el modal no se renderiza.
     setCurrentQueueIndex((prev) => prev + 1);
   };
+
+  const hasAthletes = athletes.length > 0;
+  // Multi-hijo sin selección activa explícita → apilamos un bloque por hijo.
+  const showStacked =
+    hasAthletes && athletes.length > 1 && activeAthleteId === null;
+  // Multi-hijo con selección → mostramos toggle "Ver todos".
+  const showToggleAll = athletes.length > 1 && activeAthleteId !== null;
 
   return (
     <section className="space-y-6">
@@ -80,6 +108,53 @@ export function ParentDashboardPage() {
         <p className="mt-1 text-sm text-mid-gray">Seguimiento de tus deportistas</p>
       </div>
 
+      {/* 1. Alertas críticas (consentimiento) */}
+      <AlertsCard
+        consentsPerAthlete={consentStatus?.consents_per_athlete}
+        isLoading={isConsentLoading}
+      />
+
+      {/* 2. Home feed por atleta */}
+      {isLoading && (
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Cargando tu resumen"
+          className="space-y-3"
+        >
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+        </div>
+      )}
+
+      {!isLoading && hasAthletes && athlete && !showStacked && (
+        <>
+          {showToggleAll && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setActiveAthlete(null)}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-link-blue transition-colors hover:bg-light-gray focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                data-testid="see-all-athletes"
+              >
+                Ver todos los hijos
+              </button>
+            </div>
+          )}
+          <AthleteHomeBlock athlete={athlete} />
+        </>
+      )}
+
+      {!isLoading && showStacked && (
+        <div className="space-y-6">
+          {athletes.map((a) => (
+            <AthleteHomeBlock key={a.athlete_id} athlete={a} showHeader />
+          ))}
+        </div>
+      )}
+
+      {/* 3. Grid de perfil deportivo (acceso a detalle de cada hijo) */}
       {isLoading && (
         <div
           role="status"
@@ -92,31 +167,31 @@ export function ParentDashboardPage() {
         </div>
       )}
 
-      {isError && !isLoading && (
-        <div className="rounded-xl bg-white px-5 py-6 shadow-ring-soft">
-          <p className="text-sm text-mid-gray">
-            No fue posible cargar tus atletas. Intenta de nuevo.
-          </p>
+      {!isLoading && hasAthletes && (
+        <div>
+          <h2
+            className="mb-3 text-base text-charcoal"
+            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          >
+            Perfil deportivo
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {athletes.map((a) => (
+              <ChildCard key={a.athlete_id} athlete={a} />
+            ))}
+          </div>
         </div>
       )}
 
-      {!isLoading && !isError && athletes !== undefined && athletes.length === 0 && (
-        <div className="rounded-xl bg-white px-5 py-6 shadow-ring-soft">
+      {!isLoading && athletes !== undefined && athletes.length === 0 && (
+        <Card className="px-5 py-6">
           <p className="text-sm text-mid-gray">
             No tienes atletas vinculados aún. Contacta a tu entrenador.
           </p>
-        </div>
+        </Card>
       )}
 
-      {!isLoading && !isError && athletes && athletes.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {athletes.map((athlete) => (
-            <ChildCard key={athlete.athlete_id} athlete={athlete} />
-          ))}
-        </div>
-      )}
-
-      {/* Panel de gestión de consentimiento — visible cuando hay datos */}
+      {/* 4. Panel denso de gestión de consentimiento — al final */}
       {!isConsentLoading && consentStatus && (
         <ConsentStatusPanel
           consentsPerAthlete={consentStatus.consents_per_athlete}

@@ -9,6 +9,7 @@ vi.mock("@/api/trainingSessions");
 
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useParentMonthlySummary, useParentSessions } from "@/api/trainingSessions";
+import { useParentContextStore } from "@/store/parentContext.store";
 import { ParentSessionsPage } from "./ParentSessionsPage";
 import type { MyAthleteOut } from "@/types/parent.types";
 import type {
@@ -103,6 +104,11 @@ function mockSummary(value?: Partial<ReturnType<typeof useParentMonthlySummary>>
 beforeEach(() => {
   vi.clearAllMocks();
   queryClient.clear();
+  // Wave 4: ParentSessionsPage ahora lee el atleta seleccionado desde
+  // useParentContextStore (singleton). Sin reset, el id elegido en un
+  // test previo se filtra al siguiente y rompe asserts de "sin selección".
+  useParentContextStore.setState({ activeAthleteId: null });
+  window.localStorage.removeItem("parent-context");
   // default summary mock — overridable per test
   mockSummary();
 });

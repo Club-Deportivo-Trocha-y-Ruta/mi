@@ -24,6 +24,7 @@ vi.mock("@/api/client", () => ({
 // ---------------------------------------------------------------------------
 
 import { useAuthStore } from "./auth.store";
+import { useParentContextStore } from "@/store/parentContext.store";
 import * as authApi from "@/api/auth";
 import * as apiClient from "@/api/client";
 import {
@@ -528,6 +529,39 @@ describe("useAuthStore", () => {
 
       // refreshSession llama logout() en catch → cache debe estar vacío
       expect(qc.getQueryCache().getAll()).toEqual([]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // logout — reset de parentContext (Wave 4 — R4 privacy)
+  //
+  // En tablets/compus compartidas en familias, si el padre A elige un
+  // hijo activo y luego cierra sesión, el padre B no debe heredar ese
+  // `activeAthleteId`. El header switcher y la home feed podrían quedar
+  // apuntando a un hijo que no es de B durante el primer frame (hasta
+  // que `useActiveAthlete` corra su efecto defensivo).
+  // -------------------------------------------------------------------------
+  describe("logout — reset de parentContext (privacy R4)", () => {
+    afterEach(() => {
+      useParentContextStore.setState({ activeAthleteId: null });
+      window.localStorage.removeItem("parent-context");
+    });
+
+    it("logout() resetea activeAthleteId del parentContext store", () => {
+      useParentContextStore.setState({ activeAthleteId: 42 });
+      expect(useParentContextStore.getState().activeAthleteId).toBe(42);
+
+      useAuthStore.setState({
+        accessToken: "tok",
+        refreshToken: "ref",
+        user: mockUser,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+
+      useAuthStore.getState().logout();
+
+      expect(useParentContextStore.getState().activeAthleteId).toBeNull();
     });
   });
 });

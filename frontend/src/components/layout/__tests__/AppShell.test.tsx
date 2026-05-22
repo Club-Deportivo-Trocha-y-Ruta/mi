@@ -1,8 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppShell } from "../AppShell";
 import { UserRole } from "@/types/enums";
+
+// Mock useMyAthletes para no disparar fetch real en tests del AppShell
+// (Wave 4 introdujo AthleteSwitcher que consume useMyAthletes para parent).
+vi.mock("@/hooks/parents/useMyAthletes", () => ({
+  useMyAthletes: vi.fn(() => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+  })),
+}));
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -45,12 +56,17 @@ function mockStoreWithRole(role: UserRole | "admin") {
 
 function renderShell(role: UserRole | "admin") {
   mockStoreWithRole(role as UserRole);
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   return render(
-    <MemoryRouter>
-      <AppShell>
-        <div>Contenido</div>
-      </AppShell>
-    </MemoryRouter>,
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <AppShell>
+          <div>Contenido</div>
+        </AppShell>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

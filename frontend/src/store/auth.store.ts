@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { getMe, login as loginRequest, refreshToken } from "@/api/auth";
 import { registerAuthHandlers } from "@/api/client";
 import { getQueryClient } from "@/lib/queryClientHandle";
+import { useParentContextStore } from "@/store/parentContext.store";
 import type { MeResponse } from "@/types/auth.types";
 
 interface AuthState {
@@ -63,6 +64,19 @@ export const useAuthStore = create<AuthState>()(
           console.warn(
             "[auth.store] logout() sin QueryClient registrado — cache no purgado",
           );
+        }
+        // Privacy R4 (Wave 4): además del cache, limpiamos el "athlete
+        // activo" persistido del padre. Sin esto, en tablets compartidas
+        // el padre B heredaría el activeAthleteId del padre A hasta que
+        // `useActiveAthlete` corra su efecto defensivo (ventana visual
+        // de al menos un frame con label/avatar del hijo equivocado).
+        // El `reset()` del parentContext store solo escribe state local —
+        // el middleware `persist` se encarga de actualizar localStorage.
+        try {
+          useParentContextStore.getState().reset();
+        } catch {
+          // Defensa: si el store aún no se inicializó (improbable —
+          // ambos viven en el mismo bundle), no debe romper el logout.
         }
         set({
           accessToken: null,
