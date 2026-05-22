@@ -256,10 +256,30 @@ async def detect_revision(
         .limit(1)
     )
     prior_import = prior_result.scalar_one_or_none()
+
+    # FIX F-UP-REV6 BUG-3: fallback para imports CLI legacy (F1.7) que
+    # tienen event_id=NULL. Resolvemos buscando results del event y
+    # subiendo via FK imported_from_id (results.imported_from_id →
+    # race_imports.id). Si todos los results del event apuntan al mismo
+    # RaceImport committed con event_id=NULL → es el legacy parent.
     if prior_import is None:
-        # Edge case D-1: event existe pero sin imports committed (F1.7 legacy
-        # con event_id NULL no matchearía nunca esta query; este caso solo
-        # ocurre si el event se creó manualmente vía CLI sin RaceImport linked).
+        legacy_q = await db.execute(
+            select(RaceImport)
+            .join(RaceResult, RaceResult.imported_from_id == RaceImport.id)
+            .where(
+                RaceResult.event_id == event.id,
+                RaceResult.deleted_at.is_(None),
+                RaceImport.status == RaceImportStatus.committed,
+                RaceImport.event_id.is_(None),
+            )
+            .order_by(RaceImport.imported_at.desc())
+            .limit(1)
+        )
+        prior_import = legacy_q.scalars().first()
+
+    if prior_import is None:
+        # Event existe pero sin imports committed (caso raro: event creado
+        # manualmente sin RaceImport linked). Tratar como primer import.
         return None
 
     # 4. Contar resultados activos del parent event para contexto del banner

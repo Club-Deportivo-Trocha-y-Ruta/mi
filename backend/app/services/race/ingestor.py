@@ -400,25 +400,24 @@ class RaceIngestor:
                     "warnings": len(warnings),
                 }
 
+            # FIX F-UP-REV6 BUG-1: capturar IDs SIEMPRE antes de rollback/commit
+            # para evitar MissingGreenlet en el return final (lazy-load sync
+            # sobre aiomysql post-rollback). El log usa los mismos locales.
+            event_id_snapshot = event.id
+            series_id_snapshot = series.id
+
             if dry_run:
                 # F-UP2: rollback al final para no persistir competitors,
                 # results, ni el avance de status del RaceImport. El upsert
                 # de series/event tampoco persiste — pero los IDs in-memory
                 # del IngestReport reflejan lo que SE HABRÍA insertado.
-                #
-                # FIX F-UP6 E2E: capturar IDs ANTES del rollback. Tras
-                # `await db.rollback()` los attrs ORM quedan expirados y
-                # acceder `event.id` dispara lazy-load sync sobre aiomysql
-                # → MissingGreenlet en contexto async.
-                event_id_preview = event.id
-                series_id_preview = series.id
                 warnings.insert(0, "DRY_RUN: no se persistieron cambios")
                 await self.db.rollback()
                 logger.info(
                     "race_ingest_dry_run event_id_preview=%s series_id_preview=%s "
                     "results_would_insert=%d tyr_count=%d warnings=%d",
-                    event_id_preview,
-                    series_id_preview,
+                    event_id_snapshot,
+                    series_id_snapshot,
                     results_inserted,
                     tyr_count,
                     len(warnings),
@@ -428,16 +427,16 @@ class RaceIngestor:
                 logger.info(
                     "race_ingest_ok event_id=%s series_id=%s results_inserted=%d "
                     "results_skipped=%d tyr_count=%d warnings=%d",
-                    event.id,
-                    series.id,
+                    event_id_snapshot,
+                    series_id_snapshot,
                     results_inserted,
                     results_skipped,
                     tyr_count,
                     len(warnings),
                 )
             return IngestReport(
-                event_id=event.id,
-                series_id=series.id,
+                event_id=event_id_snapshot,
+                series_id=series_id_snapshot,
                 competitors_created=competitors_created,
                 competitors_updated=competitors_updated,
                 results_inserted=results_inserted,
@@ -555,13 +554,19 @@ class RaceIngestor:
         (dry_run / committed / failed), devolvemos None y el ingestor decidirá
         crear uno nuevo o abortar idempotente.
         """
+        # FIX F-UP-REV6 BUG-2: order_by id DESC + limit 1 evita
+        # MultipleResultsFound si por race condition existen 2 pending
+        # con mismo SHA (no hay UNIQUE constraint sha256+status).
         result = await self.db.execute(
-            select(RaceImport).where(
+            select(RaceImport)
+            .where(
                 RaceImport.sha256 == sha256,
                 RaceImport.status == RaceImportStatus.pending,
             )
+            .order_by(RaceImport.id.desc())
+            .limit(1)
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     # -------------------------------------------------------------------
     # Helpers internos — categorías + competidores
