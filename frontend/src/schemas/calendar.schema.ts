@@ -122,6 +122,16 @@ export const calendarEventSchema = z
       .array(audienceSchema)
       .min(1, "Define al menos una audiencia"),
 
+    // FE-2: FK a race_events.id — obligatorio sólo si event_type=competition.
+    // El refine de abajo emite el error si se omite cuando aplica, y limpia
+    // el valor para los demás tipos.
+    race_event_id: z
+      .number()
+      .int()
+      .positive()
+      .nullable()
+      .optional(),
+
     // Specific data — only one is used at a time depending on event_type
     data_training_session: eventDataTrainingSessionSchema.optional(),
     data_competition: eventDataCompetitionSchema.optional(),
@@ -176,6 +186,15 @@ export const calendarEventSchema = z
           path: ["data_competition", "city"],
         });
       }
+      // FE-2: para competition, race_event_id apunta a la válida (mirror
+      // del validator Pydantic en `EventCreate._validate_competition_race_event`).
+      if (val.race_event_id == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Selecciona la válida asociada a esta competencia",
+          path: ["race_event_id"],
+        });
+      }
     }
 
     // Si hay personal_training type, athlete_id requerido
@@ -212,6 +231,14 @@ export function buildEventPayload(values: CalendarEventFormValues) {
     rest_day: values.data_rest_day,
   };
 
+  // FE-2: race_event_id sólo aplica a competition. Para los demás tipos
+  // forzamos null (no `undefined`) para que un edit que cambie de
+  // competition → otro tipo limpie la FK en el backend.
+  const raceEventId =
+    values.event_type === "competition"
+      ? (values.race_event_id ?? null)
+      : null;
+
   return {
     event_type: values.event_type,
     title: values.title,
@@ -222,6 +249,7 @@ export function buildEventPayload(values: CalendarEventFormValues) {
     all_day: values.all_day,
     color_hex: values.color_hex || undefined,
     event_data: eventDataMap[values.event_type] ?? {},
+    race_event_id: raceEventId,
     audiences: values.audiences,
   };
 }

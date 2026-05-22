@@ -43,6 +43,10 @@ from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_result_revision import RaceResultRevision, RaceResultRevisionAction
 from app.models.race_series import RaceSeries
 
+# Race-analysis v2 agentic module (BE-1)
+from app.models.agent_run import AgentRun, AgentRunStatus
+from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
+
 __all__ = [
     "Base",
     "User",
@@ -100,4 +104,9 @@ __all__ = [
     "RaceImport",
     "RaceImportKind",
     "RaceImportStatus",
+    # Race-analysis v2 agentic (BE-1)
+    "AgentRun",
+    "AgentRunStatus",
+    "AthleteAiInsight",
+    "InsightConfidence",
 ]

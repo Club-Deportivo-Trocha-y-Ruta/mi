@@ -131,6 +131,12 @@ export interface CalendarEventRead {
   timezone: string;
   event_data: EventData | null;
   color_hex: string | null;
+  /**
+   * FK a `race_events.id` (FE-2). Obligatorio cuando `event_type` es
+   * `competition` (constraint a nivel DB y validator Pydantic). Null
+   * para los demás tipos.
+   */
+  race_event_id: number | null;
   created_by_user_id: number;
   created_at: string;
   updated_at: string;
@@ -152,6 +158,8 @@ export interface EventCreatePayload {
   timezone?: string;
   event_data?: EventData;
   color_hex?: string;
+  /** Requerido cuando `event_type==="competition"`. Null para otros tipos. */
+  race_event_id?: number | null;
   audiences: Audience[];
 }
 
@@ -177,6 +185,20 @@ export interface EventAttendanceRead {
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Race events disponibles para asociar a un calendar_event de competition
+// (endpoint helper GET /api/race-events/available-for-calendar — BE-2).
+// ---------------------------------------------------------------------------
+
+export interface AvailableRaceEvent {
+  id: number;
+  name: string;
+  event_date: string; // ISO date (YYYY-MM-DD) — backend serializa `date`
+  sequence_number: number;
+  location: string | null;
+  series_id: number;
 }
 
 // ---------------------------------------------------------------------------

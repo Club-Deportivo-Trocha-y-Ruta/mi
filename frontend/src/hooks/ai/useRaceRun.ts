@@ -223,6 +223,27 @@ export function useApproveStep(runId: string) {
       void queryClient.invalidateQueries({
         queryKey: raceRunKeys.status(runId),
       });
+      // FE-1: cuando un HITL termina con approve/edit, el insight queda
+      // aprobado y publicado por el backend. Las queries del módulo
+      // /athletes/{id}/race-analysis/* deben invalidarse para que el
+      // perfil del atleta refleje el nuevo insight casi inmediato.
+      //
+      // Trade-off: aquí no conocemos el athlete_id del run (el hook
+      // recibe sólo runId). Optamos por invalidar todas las queries
+      // cuyas key comienzan con "athlete-" (insights, runs, evolution,
+      // distribution, insight-detail). El alcance es contenido (max ~5
+      // claves por atleta activo) y evita un round-trip extra para
+      // resolver el athlete_id del run.
+      void queryClient.invalidateQueries({
+        predicate: (q) => {
+          const k = q.queryKey;
+          return (
+            Array.isArray(k) &&
+            typeof k[0] === "string" &&
+            (k[0] as string).startsWith("athlete-")
+          );
+        },
+      });
     },
   });
 }

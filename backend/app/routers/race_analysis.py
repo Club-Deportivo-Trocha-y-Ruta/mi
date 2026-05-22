@@ -309,6 +309,7 @@ async def _persist_events(
 
     existing = await _last_seq(db, run_db_id)
     inserted = 0
+    fallback_ts = _utc_now()
     for ev in events:
         try:
             seq = int(ev.get("seq") or 0)
@@ -322,6 +323,24 @@ async def _persist_events(
         payload = ev.get("payload") or {}
         if not isinstance(payload, dict):
             payload = {"_value": payload}
+        # Preservar el ts original del evento (emitido por with_events al
+        # entrar/salir del nodo) para que la duración por nodo se calcule
+        # correctamente en el cliente. Si el evento no trae ts parseable,
+        # caemos al timestamp del bulk insert.
+        ev_ts = ev.get("ts")
+        ts_value = fallback_ts
+        if isinstance(ev_ts, str) and ev_ts:
+            try:
+                parsed = datetime.fromisoformat(ev_ts)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                ts_value = parsed
+            except ValueError:
+                ts_value = fallback_ts
+        elif isinstance(ev_ts, datetime):
+            ts_value = (
+                ev_ts if ev_ts.tzinfo is not None else ev_ts.replace(tzinfo=timezone.utc)
+            )
         await db.execute(
             text(
                 """
@@ -336,7 +355,7 @@ async def _persist_events(
                 "et": type_db,
                 "nn": node,
                 "pl": _json.dumps(payload, ensure_ascii=False, default=str),
-                "ts": _utc_now(),
+                "ts": ts_value,
             },
         )
         inserted += 1

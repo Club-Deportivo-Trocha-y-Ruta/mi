@@ -41,6 +41,7 @@ export function makeCalendarEventRead(
     timezone: "America/Bogota",
     event_data: {},
     color_hex: null,
+    race_event_id: null,
     created_by_user_id: 10,
     created_at: "2026-05-01T00:00:00Z",
     updated_at: "2026-05-01T00:00:00Z",

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/api/client";
 import { useAuthStore } from "@/store/auth.store";
 import type {
+  AvailableRaceEvent,
   CalendarEventListItem,
   CalendarEventRead,
   CalendarFilters,
@@ -101,6 +102,24 @@ export async function fetchEventAttendances(
 ): Promise<EventAttendanceRead[]> {
   const response = await apiClient.get<EventAttendanceRead[]>(
     `${BASE}/${id}/attendances`,
+  );
+  return response.data;
+}
+
+// ─── Race events helpers (BE-2) ──────────────────────────────────────────────
+
+/**
+ * Lista los race_events de la temporada que aún no están enlazados a
+ * un calendar_event (excluye los `cancelled`). Pueblan el dropdown de
+ * "asociar válida" cuando se crea/edita un evento de calendario tipo
+ * `competition` (FE-2).
+ */
+export async function getAvailableRaceEvents(
+  season: number,
+): Promise<AvailableRaceEvent[]> {
+  const response = await apiClient.get<AvailableRaceEvent[]>(
+    "/api/race-events/available-for-calendar",
+    { params: { season } },
   );
   return response.data;
 }

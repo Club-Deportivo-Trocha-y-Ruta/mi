@@ -1,0 +1,227 @@
+/**
+ * AthleteAIAnalysisTab — tab raíz "Análisis IA" del perfil del atleta.
+ *
+ * Estructura:
+ *   - Header con resumen ejecutivo (último análisis aprobado + badge
+ *     confidence + total de aprobados).
+ *   - Sub-tabs internas (shadcn Tabs, Radix):
+ *       · Histórico    → InsightsTimeline
+ *       · Evolución    → EvolutionChart
+ *       · Comparador   → ComparatorPanel
+ *       · Distribución → DistributionChart
+ *       · Lanzar       → LaunchAnalysisForm (solo coach/admin)
+ *
+ * Privacidad: en mode="parent" ocultamos completamente la pestaña
+ * "Lanzar" y el AnalysisRunTimeline (datos operativos del agente, costos
+ * LLM, prompts, etc).
+ */
+import { useState } from "react";
+import {
+  BarChart3,
+  Calendar,
+  History,
+  Play,
+  Scale,
+  Sparkles,
+} from "lucide-react";
+
+import { AnalysisRunTimeline } from "@/components/ai/AnalysisRunTimeline";
+import { ComparatorPanel } from "@/components/athletes/ai/ComparatorPanel";
+import { DistributionChart } from "@/components/athletes/ai/DistributionChart";
+import { EvolutionChart } from "@/components/athletes/ai/EvolutionChart";
+import { InsightsTimeline } from "@/components/athletes/ai/InsightsTimeline";
+import { LaunchAnalysisForm } from "@/components/athletes/ai/LaunchAnalysisForm";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
+import type { AthleteOut } from "@/types/athlete.types";
+import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
+
+const cardShadow =
+  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
+
+type SubTab = "history" | "evolution" | "compare" | "distribution" | "launch";
+
+function confidenceBadgeVariant(
+  c: InsightConfidence,
+): "success" | "warning" | "destructive" {
+  if (c === "high") return "success";
+  if (c === "medium") return "warning";
+  return "destructive";
+}
+
+function confidenceText(c: InsightConfidence): string {
+  if (c === "high") return "Confianza alta";
+  if (c === "medium") return "Confianza media";
+  return "Confianza baja";
+}
+
+function formatDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("es-CO", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function validaLabel(num: number | null | undefined): string {
+  if (num === null || num === undefined) return "agregado";
+  if (num === 0) return "resumen de temporada";
+  if (num === 99) return "Cto. Departamental";
+  return `Válida ${num}`;
+}
+
+interface AthleteAIAnalysisTabProps {
+  athlete: AthleteOut;
+  mode: "coach" | "parent";
+}
+
+export function AthleteAIAnalysisTab({
+  athlete,
+  mode,
+}: AthleteAIAnalysisTabProps) {
+  const [subTab, setSubTab] = useState<SubTab>("history");
+  // run_id devuelto por LaunchAnalysisForm — al setearse muestra el
+  // AnalysisRunTimeline encima del histórico para que el coach lo vea
+  // ejecutarse en vivo.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+
+  // Resumen del header: último análisis (latest_only=true, limit=1).
+  const headerQuery = useAthleteInsights(athlete.id, {
+    latest_only: true,
+    limit: 1,
+  });
+  const latest = headerQuery.data?.items[0];
+  const total = headerQuery.data?.total ?? 0;
+
+  const handleStarted = (runId: string) => {
+    setActiveRunId(runId);
+    setSubTab("history");
+  };
+
+  return (
+    <section className="space-y-4" data-testid="athlete-ai-analysis-tab">
+      {/* Header — resumen ejecutivo */}
+      <div
+        className="rounded-xl bg-white p-5"
+        style={{ boxShadow: cardShadow }}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2
+              className="flex items-center gap-2 text-base text-charcoal"
+              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            >
+              <Sparkles size={16} aria-hidden="true" />
+              Análisis IA del deportista
+            </h2>
+            <p className="mt-1 text-xs text-mid-gray">
+              {mode === "parent"
+                ? "Resúmenes aprobados por el entrenador, basados en resultados de carrera."
+                : "Pipeline agéntico: análisis, comparaciones y proyecciones a partir de resultados oficiales."}
+            </p>
+          </div>
+          {headerQuery.isLoading ? (
+            <Skeleton className="h-16 w-48 rounded-lg" />
+          ) : latest ? (
+            <div
+              className="flex flex-col items-end gap-1 rounded-lg bg-light-gray/40 px-3 py-2"
+              data-testid="ai-header-summary"
+            >
+              <span className="text-[10px] font-medium uppercase tracking-wide text-mid-gray">
+                Último análisis
+              </span>
+              <span className="text-sm font-semibold text-charcoal">
+                {formatDate(latest.generated_at)}
+              </span>
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                <Badge variant="secondary">{validaLabel(latest.valida_num)}</Badge>
+                <Badge variant={confidenceBadgeVariant(latest.confidence)}>
+                  {confidenceText(latest.confidence)}
+                </Badge>
+              </div>
+              <span className="text-[11px] text-mid-gray">
+                Total aprobados: {total}
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-mid-gray">Sin análisis aprobados aún.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Run timeline en vivo — solo coach, solo si acaba de lanzar */}
+      {mode === "coach" && activeRunId && (
+        <AnalysisRunTimeline runId={activeRunId} />
+      )}
+
+      {/* Sub-tabs (Radix) */}
+      <Tabs
+        value={subTab}
+        onValueChange={(v) => setSubTab(v as SubTab)}
+        className="w-full"
+      >
+        <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-white p-1">
+          <TabsTrigger value="history" data-testid="ai-subtab-history">
+            <History size={14} aria-hidden="true" />
+            Histórico
+          </TabsTrigger>
+          <TabsTrigger value="evolution" data-testid="ai-subtab-evolution">
+            <Calendar size={14} aria-hidden="true" />
+            Evolución
+          </TabsTrigger>
+          <TabsTrigger value="compare" data-testid="ai-subtab-compare">
+            <Scale size={14} aria-hidden="true" />
+            Comparador
+          </TabsTrigger>
+          <TabsTrigger
+            value="distribution"
+            data-testid="ai-subtab-distribution"
+          >
+            <BarChart3 size={14} aria-hidden="true" />
+            Distribución
+          </TabsTrigger>
+          {mode === "coach" && (
+            <TabsTrigger value="launch" data-testid="ai-subtab-launch">
+              <Play size={14} aria-hidden="true" />
+              Lanzar
+            </TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="history">
+          <InsightsTimeline athleteId={athlete.id} mode={mode} />
+        </TabsContent>
+        <TabsContent value="evolution">
+          <EvolutionChart athleteId={athlete.id} />
+        </TabsContent>
+        <TabsContent value="compare">
+          <ComparatorPanel athleteId={athlete.id} />
+        </TabsContent>
+        <TabsContent value="distribution">
+          <DistributionChart athleteId={athlete.id} />
+        </TabsContent>
+        {mode === "coach" && (
+          <TabsContent value="launch">
+            <LaunchAnalysisForm
+              athleteId={athlete.id}
+              athleteName={`${athlete.first_name} ${athlete.last_name}`.trim()}
+              onStarted={handleStarted}
+            />
+          </TabsContent>
+        )}
+      </Tabs>
+    </section>
+  );
+}

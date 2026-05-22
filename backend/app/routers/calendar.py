@@ -6,6 +6,8 @@ from datetime import date
 from typing import Annotated, Union
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
@@ -15,7 +17,9 @@ from app.dependencies import (
     get_task_dispatcher,
     require_role,
 )
-from app.models.calendar_event import EventType
+from app.models.calendar_event import CalendarEvent, EventType
+from app.models.race_event import RaceEvent
+from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
 from app.schemas.calendar import (
     AudienceCreate,
@@ -38,6 +42,85 @@ from app.services.permissions import (
 )
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Helper schema: race_events disponibles para asociar con un calendar_event
+# ---------------------------------------------------------------------------
+
+
+class AvailableRaceEvent(BaseModel):
+    """Versión liviana de :class:`RaceEvent` para popular dropdown del frontend.
+
+    Sólo expone campos públicos del evento (sin ``created_by_user_id`` ni
+    notas internas). Se devuelve a coach/admin durante la creación de un
+    calendar_event de tipo competition.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    name: str
+    event_date: date
+    sequence_number: int
+    location: str | None = None
+    series_id: int
+
+
+# ---------------------------------------------------------------------------
+# GET /api/race-events/available-for-calendar
+#
+# Endpoint helper para popular el dropdown de "asociar válida" al crear
+# un evento de calendario tipo competition. Devuelve los race_events de
+# la temporada que aún NO están enlazados a un calendar_event.
+# ---------------------------------------------------------------------------
+race_events_helper_router = APIRouter()
+
+
+@race_events_helper_router.get(
+    "/available-for-calendar",
+    response_model=list[AvailableRaceEvent],
+)
+async def list_race_events_available_for_calendar(
+    season: int = Query(..., ge=2020, le=2100),
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> list[AvailableRaceEvent]:
+    """Lista los ``race_events`` de la temporada sin ``calendar_event`` asociado.
+
+    "Sin asociación" se define como: no aparece como ``race_event_id``
+    en ninguna fila vigente de ``calendar_events`` (se excluyen los
+    cancelled). Esto evita que el coach asocie dos veces la misma válida.
+    """
+    # Subquery: race_event_ids ya tomados por calendar_events activos.
+    taken_subq = (
+        select(CalendarEvent.race_event_id)
+        .where(CalendarEvent.race_event_id.is_not(None))
+        .subquery()
+    )
+
+    stmt = (
+        select(RaceEvent)
+        .join(RaceSeries, RaceSeries.id == RaceEvent.series_id)
+        .where(
+            RaceSeries.season_year == season,
+            RaceEvent.id.not_in(select(taken_subq.c.race_event_id)),
+        )
+        .order_by(RaceEvent.event_date.asc(), RaceEvent.sequence_number.asc())
+    )
+    result = await db.execute(stmt)
+    rows = list(result.scalars().all())
+    return [
+        AvailableRaceEvent(
+            id=r.id,
+            name=r.name,
+            event_date=r.event_date,
+            sequence_number=r.sequence_number,
+            location=r.location,
+            series_id=r.series_id,
+        )
+        for r in rows
+    ]
 
 
 # ---------------------------------------------------------------------------

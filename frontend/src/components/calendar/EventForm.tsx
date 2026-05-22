@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -13,6 +14,7 @@ import {
   useCreateCalendarEvent,
   useUpdateCalendarEvent,
 } from "@/api/calendar";
+import { useAvailableRaceEvents } from "@/hooks/calendar/useAvailableRaceEvents";
 import type {
   CalendarEventRead,
   EventDataCompetition,
@@ -163,6 +165,9 @@ function buildDefaultValues(
       duration_min: durationMin,
       all_day: initialData.all_day,
       color_hex: initialData.color_hex ?? "",
+      // FE-2: hidrata el race_event_id existente para que el dropdown
+      // muestre la válida ya asociada cuando se edita una competition.
+      race_event_id: initialData.race_event_id ?? null,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       audiences: (initialData.audiences ?? []) as any,
       ...specificFields,
@@ -186,6 +191,7 @@ function buildDefaultValues(
     duration_min: 90,
     all_day: false,
     color_hex: "",
+    race_event_id: null,
     audiences: [{ audience_type: "all_club", audience_value: {} as Record<string, never> }],
   };
 }
@@ -205,6 +211,7 @@ export function EventForm({
     handleSubmit,
     control,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<
     z.input<typeof calendarEventSchema>,
@@ -217,12 +224,66 @@ export function EventForm({
 
   const selectedType = useWatch({ control, name: "event_type" });
   const isAllDay = useWatch({ control, name: "all_day" });
+  const raceEventIdValue = useWatch({ control, name: "race_event_id" });
 
   useEffect(() => {
     if (initialData) {
       reset(buildDefaultValues(initialData));
     }
   }, [initialData, reset]);
+
+  // FE-2: cuando el tipo deja de ser competition, descartamos la FK a
+  // race_events para no enviar un id "huérfano" al backend (Pydantic lo
+  // rechazaría con 422). En sentido inverso, el dropdown queda vacío
+  // hasta que el coach elija.
+  useEffect(() => {
+    if (selectedType !== "competition" && raceEventIdValue != null) {
+      setValue("race_event_id", null, { shouldDirty: true, shouldValidate: false });
+    }
+  }, [selectedType, raceEventIdValue, setValue]);
+
+  // FE-2: temporada activa según la fecha de inicio del evento. El backend
+  // exige `season` (year) y RaceSeries.season_year se alinea con el año
+  // calendario. Cae al año actual si la fecha es inválida.
+  const startDateValue = useWatch({ control, name: "start_date" });
+  const seasonForRaceEvents = useMemo<number>(() => {
+    if (typeof startDateValue === "string" && /^\d{4}-/.test(startDateValue)) {
+      const y = Number(startDateValue.slice(0, 4));
+      if (Number.isFinite(y)) return y;
+    }
+    return new Date().getFullYear();
+  }, [startDateValue]);
+
+  const isCompetition = selectedType === "competition";
+  const raceEventsQuery = useAvailableRaceEvents(
+    isCompetition ? seasonForRaceEvents : null,
+  );
+
+  // Si estamos editando un competition cuya válida YA está enlazada a este
+  // mismo evento, la lista del endpoint (`available-for-calendar`) la
+  // excluye. La añadimos manualmente para que el dropdown muestre el valor
+  // actual y no aparezca como "vacío".
+  const currentlyLinkedRaceEvent = useMemo(() => {
+    if (!isCompetition) return null;
+    const existingId = initialData?.race_event_id ?? null;
+    if (existingId == null) return null;
+    const inList = raceEventsQuery.data?.some((r) => r.id === existingId);
+    if (inList) return null;
+    return {
+      id: existingId,
+      name: `Válida #${existingId}`,
+      event_date: initialData?.start_at?.slice(0, 10) ?? "",
+      sequence_number: 0,
+      location: null,
+      series_id: 0,
+    };
+  }, [isCompetition, initialData, raceEventsQuery.data]);
+
+  const raceEventOptions = useMemo(() => {
+    const base = raceEventsQuery.data ?? [];
+    if (currentlyLinkedRaceEvent) return [currentlyLinkedRaceEvent, ...base];
+    return base;
+  }, [raceEventsQuery.data, currentlyLinkedRaceEvent]);
 
   async function onSubmit(values: CalendarEventFormValues) {
     const payload = buildEventPayload(values);
@@ -249,7 +310,10 @@ export function EventForm({
     errors.data_group_training ||
     errors.data_training_session ||
     errors.data_club_event ||
-    errors.data_rest_day
+    errors.data_rest_day ||
+    // FE-2: el race_event_id vive a nivel raíz pero el coach lo edita en
+    // la tab "Datos específicos" — su error debe marcar la pestaña.
+    errors.race_event_id
   );
 
   return (
@@ -533,6 +597,94 @@ export function EventForm({
             {/* competition */}
             {selectedType === "competition" && (
               <div className="space-y-4">
+                {/* FE-2: dropdown obligatorio que asocia este calendar_event
+                    a una válida concreta de race_events. La lista viene del
+                    endpoint /api/race-events/available-for-calendar y excluye
+                    las válidas ya enlazadas a otro evento del calendario. */}
+                <div>
+                  <label htmlFor="comp-race-event" className={labelClass}>
+                    Válida asociada
+                  </label>
+                  <Controller
+                    name="race_event_id"
+                    control={control}
+                    render={({ field }) => (
+                      <select
+                        id="comp-race-event"
+                        ref={field.ref}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        value={
+                          field.value == null
+                            ? ""
+                            : String(field.value)
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          field.onChange(v === "" ? null : Number(v));
+                        }}
+                        aria-invalid={!!errors.race_event_id}
+                        aria-describedby={
+                          errors.race_event_id
+                            ? "comp-race-event-error"
+                            : undefined
+                        }
+                        disabled={
+                          raceEventsQuery.isLoading ||
+                          (raceEventOptions.length === 0 &&
+                            !raceEventsQuery.isError)
+                        }
+                        className={inputClass}
+                        style={inputStyle}
+                        data-testid="event-race-event-id"
+                      >
+                        <option value="">
+                          {raceEventsQuery.isLoading
+                            ? "Cargando válidas…"
+                            : "Selecciona una válida…"}
+                        </option>
+                        {raceEventOptions.map((r) => (
+                          <option key={r.id} value={String(r.id)}>
+                            {r.sequence_number > 0
+                              ? `Válida ${r.sequence_number} — ${r.name} (${r.event_date})`
+                              : `${r.name}${r.event_date ? ` (${r.event_date})` : ""}`}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  />
+                  {raceEventsQuery.isError && (
+                    <p className={errorClass}>
+                      No se pudo cargar la lista de válidas. Intenta de nuevo
+                      en unos segundos.
+                    </p>
+                  )}
+                  {!raceEventsQuery.isLoading &&
+                    !raceEventsQuery.isError &&
+                    raceEventOptions.length === 0 && (
+                      <p
+                        className="mt-1 text-xs text-mid-gray"
+                        data-testid="event-race-event-empty"
+                      >
+                        No hay válidas disponibles para {seasonForRaceEvents}.
+                        Crea una desde el{" "}
+                        <RouterLink
+                          to="/coach/race-analysis"
+                          className="font-medium text-charcoal underline transition-opacity hover:opacity-70"
+                        >
+                          módulo de resultados
+                        </RouterLink>
+                        .
+                      </p>
+                    )}
+                  {errors.race_event_id && (
+                    <p id="comp-race-event-error" className={errorClass}>
+                      {errors.race_event_id.message}
+                    </p>
+                  )}
+                  {/* TODO(FE-3+): permitir crear una válida inline cuando el
+                      coach está agendando una competencia sin PDF aún. */}
+                </div>
                 <div>
                   <label htmlFor="comp-city" className={labelClass}>
                     Ciudad

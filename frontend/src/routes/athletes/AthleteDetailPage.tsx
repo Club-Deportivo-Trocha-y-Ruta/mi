@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   Loader2,
   Mail,
   Ruler,
+  Sparkles,
   TrendingUp,
   User,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import type { LucideIcon } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 
 import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
+import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import { AnthropometryForm } from "@/components/athletes/AnthropometryForm";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
@@ -28,9 +30,24 @@ import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
-import { MaturationStatus } from "@/types/enums";
+import { useAuthStore } from "@/store/auth.store";
+import { MaturationStatus, UserRole } from "@/types/enums";
 
-type Tab = "info" | "anthropometry" | "growth";
+type Tab = "info" | "anthropometry" | "growth" | "ai_analysis";
+
+const VALID_TABS: readonly Tab[] = [
+  "info",
+  "anthropometry",
+  "growth",
+  "ai_analysis",
+] as const;
+
+function parseTabParam(raw: string | null): Tab | null {
+  if (raw && (VALID_TABS as readonly string[]).includes(raw)) {
+    return raw as Tab;
+  }
+  return null;
+}
 
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
@@ -85,12 +102,45 @@ export function AthleteDetailPage() {
   const athleteId = Number(id);
   const athleteQuery = useAthlete(athleteId, Number.isFinite(athleteId));
   const anthropometryQuery = useAnthropometry(athleteId);
+  const role = useAuthStore((s) => s.user?.role);
+  const isParent = role === UserRole.parent;
 
-  const [activeTab, setActiveTab] = useState<Tab>("info");
+  // FE-2: el tab inicial puede venir del query string (?tab=ai_analysis).
+  // Permite que el combobox del tab "Insights históricos" en
+  // RaceAnalysisPage enrute directo al histórico del deportista.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = parseTabParam(searchParams.get("tab"));
+  const [activeTab, setActiveTab] = useState<Tab>(tabFromUrl ?? "info");
   const [showForm, setShowForm] = useState(false);
-  const [hasSetInitialTab, setHasSetInitialTab] = useState(false);
+  // Si el tab vino por URL, ya consideramos el "tab inicial" decidido —
+  // no queremos que el efecto de records lo sobrescriba a "growth".
+  const [hasSetInitialTab, setHasSetInitialTab] = useState(tabFromUrl !== null);
   const [reportSent, setReportSent] = useState(false);
   const reportSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Mantener el URL en sync con la pestaña activa para que recargar la
+  // página preserve el contexto del deportista + tab elegido.
+  const updateTab = (tab: Tab) => {
+    setActiveTab(tab);
+    const next = new URLSearchParams(searchParams);
+    if (tab === "info") {
+      next.delete("tab");
+    } else {
+      next.set("tab", tab);
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  // Reaccionar a cambios externos del query string (back/forward del navegador).
+  useEffect(() => {
+    const urlTab = parseTabParam(searchParams.get("tab"));
+    if (urlTab && urlTab !== activeTab) {
+      setActiveTab(urlTab);
+      setHasSetInitialTab(true);
+    }
+    // No incluimos activeTab para no entrar en loop al setear desde updateTab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // TODO: Este botón será eliminado cuando se implemente el cron job mensual automático.
   //       Ver: backend/app/routers/reports.py - POST /athletes/{id}/report/email
@@ -239,7 +289,7 @@ export function AthleteDetailPage() {
           type="button"
           className={tabClasses("info")}
           style={tabStyle("info")}
-          onClick={() => setActiveTab("info")}
+          onClick={() => updateTab("info")}
         >
           <User size={14} />
           Info general
@@ -248,7 +298,7 @@ export function AthleteDetailPage() {
           type="button"
           className={tabClasses("anthropometry")}
           style={tabStyle("anthropometry")}
-          onClick={() => setActiveTab("anthropometry")}
+          onClick={() => updateTab("anthropometry")}
         >
           <Ruler size={14} />
           Antropometría
@@ -258,12 +308,22 @@ export function AthleteDetailPage() {
             type="button"
             className={tabClasses("growth")}
             style={tabStyle("growth")}
-            onClick={() => setActiveTab("growth")}
+            onClick={() => updateTab("growth")}
           >
             <TrendingUp size={14} />
             Crecimiento
           </button>
         )}
+        <button
+          type="button"
+          className={tabClasses("ai_analysis")}
+          style={tabStyle("ai_analysis")}
+          onClick={() => updateTab("ai_analysis")}
+          data-testid="athlete-tab-ai-analysis"
+        >
+          <Sparkles size={14} />
+          Análisis IA
+        </button>
 
         {/* TODO: Este botón será eliminado cuando se implemente el cron job mensual automático.
             Ver: backend/app/routers/reports.py - POST /athletes/{id}/report/email */}
@@ -419,6 +479,14 @@ export function AthleteDetailPage() {
         </div>
       )}
 
+      {/* Tab content — Análisis IA */}
+      {activeTab === "ai_analysis" && (
+        <AthleteAIAnalysisTab
+          athlete={athlete}
+          mode={isParent ? "parent" : "coach"}
+        />
+      )}
+
       {/* Tab content — Crecimiento */}
       {activeTab === "growth" && records.length > 0 && (
         <div className="space-y-5">
@@ -444,7 +512,7 @@ export function AthleteDetailPage() {
           <PHVExplanationCard
             athleteId={athlete.id}
             hasRecords={records.length > 0}
-            onMeasurementCTA={() => setActiveTab("anthropometry")}
+            onMeasurementCTA={() => updateTab("anthropometry")}
           />
           <ResearchReferences />
         </div>

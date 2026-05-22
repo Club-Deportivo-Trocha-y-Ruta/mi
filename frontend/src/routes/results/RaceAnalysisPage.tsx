@@ -1,19 +1,25 @@
 /**
  * RaceAnalysisPage — landing del módulo race-analysis v2 (§10.2).
  *
- * 3 tabs:
+ * Tabs:
  *  - Nuevo análisis: StartRunForm + (cuando hay run activo) timeline +
  *    HITL card + viewer + chat + PDF download.
  *  - Runs activos: placeholder con info del run actual (lista real
  *    requiere endpoint GET /runs no expuesto aún — TODO F8+).
- *  - Insights históricos: placeholder (depende de GET
- *    /athletes/{id}/insights, ver §9.7 — pendiente UI).
+ *  - Insights históricos: selector de atleta que enruta al tab
+ *    "Análisis IA" dentro del perfil del deportista (FE-2). El histórico
+ *    en sí lo renderiza `AthleteAIAnalysisTab` con el endpoint
+ *    `GET /api/athletes/{id}/race-analysis/insights`.
  *
  * El ExplainModeBanner es global a la página.
  *
- * Acceso: coach + admin (configurado en App.tsx).
+ * Acceso: coach + admin (configurado en App.tsx). Como defensa en
+ * profundidad, si un padre con un único hijo llegara a entrar (uso
+ * compartido de tablet con el coach), el tab "Insights históricos"
+ * redirige sin obligarlo a usar el combobox.
  */
-import { Suspense, lazy, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { History, Link2, ListChecks, Plus, Upload } from "lucide-react";
 
@@ -27,6 +33,9 @@ import { PdfDownloadButton } from "@/components/ai/PdfDownloadButton";
 import { StartRunForm } from "@/components/ai/StartRunForm";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { useRunResult, useRunStatus } from "@/hooks/ai/useRaceRun";
+import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
+import { useAuthStore } from "@/store/auth.store";
+import { UserRole } from "@/types/enums";
 
 // Lazy: el wizard y el histórico sólo se cargan al abrir la tab de carga.
 // Esto mantiene el chunk principal de RaceAnalysisPage cerca del baseline.
@@ -78,10 +87,33 @@ function TabTrigger({
 }
 
 export function RaceAnalysisPage() {
+  const navigate = useNavigate();
+  const role = useAuthStore((s) => s.user?.role);
+  const isParent = role === UserRole.parent;
+
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [hitlStepId, setHitlStepId] = useState<string | null>(null);
   const [chatAthleteId, setChatAthleteId] = useState<number | null>(null);
   const [unlinkedCount, setUnlinkedCount] = useState<number>(0);
+  const [historyAthleteId, setHistoryAthleteId] = useState<number | null>(null);
+
+  // Hijos del padre — sólo se piden si rol=parent (defensa para uso
+  // compartido de tablet). El endpoint exige rol=parent así que para
+  // coach/admin la query queda deshabilitada (enabled internamente).
+  const myAthletesQuery = useMyAthletes();
+  const parentSingleChildId = useMemo<number | null>(() => {
+    if (!isParent) return null;
+    const items = myAthletesQuery.data ?? [];
+    return items.length === 1 ? items[0].athlete_id : null;
+  }, [isParent, myAthletesQuery.data]);
+
+  // Auto-redirect parent con un único hijo: salta directo al perfil del
+  // hijo con el tab IA abierto, sin pasar por el combobox.
+  useEffect(() => {
+    if (isParent && parentSingleChildId != null) {
+      navigate(`/my-athletes/${parentSingleChildId}`, { replace: true });
+    }
+  }, [isParent, parentSingleChildId, navigate]);
 
   // Resolvemos el nombre del atleta seleccionado en el chat — para
   // mostrar contexto visual sin tocar el body POST /chat.
@@ -91,6 +123,18 @@ export function RaceAnalysisPage() {
     const a = athletesQuery.data?.items.find((x) => x.id === chatAthleteId);
     return a ? `${a.first_name} ${a.last_name}` : null;
   }, [chatAthleteId, athletesQuery.data]);
+
+  // Navega al tab "Análisis IA" dentro del perfil del deportista — fuente
+  // canónica del histórico. Para coach/admin la ruta es /athletes/:id;
+  // los padres no llegan aquí (route guard) pero por defensa se enruta
+  // al portal del padre si por algún motivo el rol cambia.
+  const handleHistoryAthletePick = (athleteId: number | null) => {
+    setHistoryAthleteId(athleteId);
+    if (athleteId == null) return;
+    const base = isParent ? "/my-athletes" : "/athletes";
+    const suffix = isParent ? "" : "?tab=ai_analysis";
+    navigate(`${base}/${athleteId}${suffix}`);
+  };
 
   // Sólo polleamos si hay un run activo.
   const statusQuery = useRunStatus(activeRunId);
@@ -274,9 +318,25 @@ export function RaceAnalysisPage() {
 
         {/* ── Tab: Insights históricos ───────────────────────── */}
         <TabsPrimitive.Content value="history" className="mt-4">
-          <div className="rounded-xl bg-light-gray/40 p-6 text-center text-sm text-mid-gray">
-            Historial de insights por atleta — próximamente (depende del
-            endpoint GET /athletes/&#123;id&#125;/insights).
+          <div
+            className="space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray"
+            data-testid="history-tab-picker"
+          >
+            <p
+              id="history-picker-hint"
+              className="text-sm text-mid-gray"
+            >
+              Selecciona un deportista para ver su histórico de análisis IA
+              aprobados.
+            </p>
+            <AthleteCombobox
+              id="history-athlete-picker"
+              label="Deportista"
+              value={historyAthleteId}
+              onChange={handleHistoryAthletePick}
+              placeholder="Buscar por nombre o categoría..."
+              data-testid="history-athlete-combobox"
+            />
           </div>
         </TabsPrimitive.Content>
       </TabsPrimitive.Root>

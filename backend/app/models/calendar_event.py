@@ -25,6 +25,7 @@ from app.models.base import Base
 if TYPE_CHECKING:
     from app.models.athlete import Athlete
     from app.models.club import Club
+    from app.models.race_event import RaceEvent
     from app.models.training_session import TrainingSession
     from app.models.user import User
 
@@ -78,7 +79,15 @@ class CalendarEvent(Base):
             "end_at >= start_at",
             name="ck_calendar_event_range",
         ),
+        # Añadido en migración BE-1 ``8c1d2e3f4a5b``: si el evento es una
+        # competencia, debe estar enlazado a un race_event concreto.
+        # Eventos legacy quedan NULL (no se backfillea masivo).
+        CheckConstraint(
+            "event_type != 'competition' OR race_event_id IS NOT NULL",
+            name="ck_calendar_competition_race_event",
+        ),
         Index("idx_calendar_club_start", "club_id", "start_at"),
+        Index("ix_calendar_events_race_event_id", "race_event_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -107,6 +116,17 @@ class CalendarEvent(Base):
     )
     event_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    # BE-1: link explícito al race_event correspondiente cuando el evento
+    # es una competencia. NULL para no-competencias o legacy sin matchear.
+    # Coexiste con race_events.calendar_event_id (FK inversa, SET NULL).
+    # ondelete=RESTRICT obligado por MySQL: CHECK
+    # ck_calendar_competition_race_event no admite columna en FK con SET NULL
+    # (MySQL 8 error 3823). El coach debe desasociar antes de borrar race_event.
+    race_event_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("race_events.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     created_by_user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="RESTRICT"),
@@ -145,6 +165,14 @@ class CalendarEvent(Base):
         "TrainingSession",
         back_populates="calendar_event",
         uselist=False,
+    )
+    # BE-1: link directo a la válida de carrera correspondiente.
+    # No usa back_populates: race_events.calendar_event_id es la FK
+    # inversa preexistente (migración 04536432643f) y se modela como
+    # `RaceEvent.calendar_event` sin back_populates para evitar ciclo.
+    race_event: Mapped["RaceEvent | None"] = relationship(
+        "RaceEvent",
+        foreign_keys="[CalendarEvent.race_event_id]",
     )
 
 

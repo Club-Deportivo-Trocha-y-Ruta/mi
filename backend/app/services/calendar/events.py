@@ -77,6 +77,22 @@ async def _get_event_or_raise(db: AsyncSession, event_id: int) -> CalendarEvent:
     return event
 
 
+async def _ensure_race_event_exists(db: AsyncSession, race_event_id: int) -> None:
+    """Verifica que ``race_events.id=race_event_id`` exista; raise ValueError si no.
+
+    Mensaje en español para que el router lo convierta a HTTP 400 limpio.
+    """
+    from app.models.race_event import RaceEvent
+
+    result = await db.execute(
+        select(RaceEvent.id).where(RaceEvent.id == race_event_id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise ValueError(
+            f"race_event_id={race_event_id} no existe en race_events"
+        )
+
+
 # ---------------------------------------------------------------------------
 # CREATE
 # ---------------------------------------------------------------------------
@@ -100,6 +116,12 @@ async def create_event(
     # Construir event_data asegurando coherencia
     raw_event_data = payload.event_data or {}
 
+    # BE-2: si trae race_event_id (obligatorio para competition por
+    # validator), verificar que la fila exista. El CHECK DB ya impide
+    # NULL+competition, pero validar acá da un 400 limpio en español.
+    if payload.race_event_id is not None:
+        await _ensure_race_event_exists(db, payload.race_event_id)
+
     event = CalendarEvent(
         club_id=club_id,
         event_type=payload.event_type,
@@ -113,6 +135,7 @@ async def create_event(
         timezone=payload.timezone,
         event_data=raw_event_data,
         color_hex=payload.color_hex,
+        race_event_id=payload.race_event_id,
         created_by_user_id=user.id,
     )
     db.add(event)
@@ -347,6 +370,21 @@ async def update_event(
 
     update_data = payload.model_dump(exclude_unset=True)
     schedule_changed = any(k in update_data for k in ("start_at", "end_at", "location"))
+
+    # BE-2: validar reasignación de race_event_id.
+    if "race_event_id" in update_data:
+        new_rid = update_data["race_event_id"]
+        if event.event_type == EventType.COMPETITION and new_rid is None:
+            raise ValueError(
+                "No se puede desasociar race_event_id de un evento competition. "
+                "Cambia el tipo del evento primero o borra el evento."
+            )
+        if event.event_type != EventType.COMPETITION and new_rid is not None:
+            raise ValueError(
+                "race_event_id solo aplica para event_type=competition."
+            )
+        if new_rid is not None:
+            await _ensure_race_event_exists(db, new_rid)
 
     for field, value in update_data.items():
         setattr(event, field, value)

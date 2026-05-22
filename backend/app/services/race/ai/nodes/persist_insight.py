@@ -1,33 +1,41 @@
-"""Nodo 10: ``persist_insight`` — inserta fila en ``athlete_ai_insights``.
+"""Nodo 10: ``persist_insight`` — escribe la fila en ``athlete_ai_insights``.
 
-Tabla creada en F0 (migración 7a8b9c0d1e2f). Sin modelo SQLAlchemy aún
-→ usamos SQL crudo con ``text()`` (mismo patrón que chat.py F3 y
-recall_memory).
+Refactor BE-2
+=============
+El nodo ahora usa el modelo ORM ``AthleteAiInsight`` (introducido en BE-1)
+en vez de SQL crudo. Esto:
 
-Campos persistidos:
-- ``summary_text``: ``raw_markdown`` del draft (truncado a 5000 chars).
-- ``recommendations_json``: list[dict] de recomendaciones.
-- ``metrics_snapshot_json``: dict con ``progression``, ``podium_gap``.
-- ``principles_cited_json``: list[dict] de citations.
-- ``model`` / ``prompt_version``: del aggregate_metrics.
-- ``coach_approved``: ``True`` si ``hitl_decision.decision == "approve"``.
-- ``langfuse_trace_id``: ``NULL`` (Langfuse difería a F8B opcional).
+1. Centraliza la lógica de versionado en :mod:`app.services.race.insights_history`
+   (función :func:`deprecate_previous_active`).
+2. Garantiza que el campo ``is_active`` se asigne correctamente al
+   sentinel ``1`` (sólo cuando ``coach_approved=True``).
+3. Mantiene la cadena ``superseded_by_insight_id`` consistente: se hace
+   un UPDATE post-flush sobre la fila previa con la nueva PK.
 
-Si HITL fue rejected → marca ``archived_at`` y ``coach_approved=False``.
+Convenciones
+============
+- ``coach_approved=True`` ⇒ deprecar fila previa de la misma terna y
+  ``is_active=1`` para la nueva.
+- ``coach_approved=False`` (HITL rejected / draft pending) ⇒ insertar con
+  ``is_active=NULL`` y no tocar previos.
+- ``valida_num=None`` para use_cases agregados se mapea a ``0`` antes de
+  persistir (CHECK relax permite ``>=0``).
+
+Si la persistencia falla, registramos el error en ``state.errors`` pero
+no rompemos el grafo — ``notify_coach`` aún tiene valor.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
-from sqlalchemy import text
-
+from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
 from app.services.race.ai.db import get_session
 from app.services.race.ai.events import with_events
 from app.services.race.ai.retry import with_retry
+from app.services.race.insights_history import deprecate_previous_active
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +49,22 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _dumps(obj: Any) -> str:
-    return json.dumps(obj, ensure_ascii=False, default=str)
+def _serializable(obj: Any) -> Any:
+    """Convierte recursivamente Pydantic/dataclass/enum a dict/list JSON-safe."""
+    if obj is None:
+        return None
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump(mode="json")
+        except Exception:  # noqa: BLE001
+            return obj.model_dump()
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    if isinstance(obj, list):
+        return [_serializable(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _serializable(v) for k, v in obj.items()}
+    return obj
 
 
 @with_events(NODE_NAME)
@@ -60,16 +82,24 @@ async def persist_insight(state: dict) -> dict[str, Any]:
     season = state["season"]
     coach_id = state.get("coach_id") or 0
     competitor_id = state.get("competitor_id")
+    event_id = state.get("event_id")
+    # Para use_cases agregados (season_summary, projection) el grafo puede
+    # pasar valida_num=None — la columna tiene CHECK relax (>=0) que admite 0
+    # como sentinel para "agregado de temporada". Documentado en
+    # ``athlete_ai_insight.py`` y migración ``8c1d2e3f4a5b``.
+    raw_valida = state.get("valida_num")
+    use_case = state.get("use_case") or _USE_CASE
+    valida_num_db: int = (
+        int(raw_valida)
+        if raw_valida is not None
+        else (0 if use_case in {"season_summary", "projection"} else 0)
+    )
+
     aggregate = state.get("aggregate_metrics") or {}
 
-    recommendations = [
-        r.model_dump() if hasattr(r, "model_dump") else dict(r)
-        for r in (draft.recommendations or [])
-    ]
-    risks = [r.model_dump() if hasattr(r, "model_dump") else dict(r) for r in (draft.risk_flags or [])]
-    principles = [
-        c.to_dict() if hasattr(c, "to_dict") else dict(c) for c in (state.get("principles") or [])
-    ]
+    recommendations = _serializable(draft.recommendations or [])
+    risks = _serializable(draft.risk_flags or [])
+    principles = _serializable(state.get("principles") or [])
 
     metrics_snapshot = {
         "progression": state.get("metrics", {}).get("progression", []),
@@ -79,52 +109,95 @@ async def persist_insight(state: dict) -> dict[str, Any]:
         "risks": risks,
     }
 
-    params = {
-        "athlete_id": athlete_id,
-        "competitor_id": competitor_id,
-        "season": season,
-        "use_case": _USE_CASE,
-        "summary_text": (draft.raw_markdown or "")[:_SUMMARY_MAX_CHARS],
-        "recommendations_json": _dumps(recommendations),
-        "metrics_snapshot_json": _dumps(metrics_snapshot),
-        "principles_cited_json": _dumps(principles),
-        "confidence": "medium",
-        "model": "gemini-2.5-flash-lite",
-        "prompt_version": aggregate.get("prompt_version_analyst", "race_analyst_v1"),
-        "coach_approved": 1 if approved else 0,
-        "generated_at": _now(),
-        "approved_at": _now() if approved else None,
-        "generated_by_user_id": coach_id,
-        "archived_at": _now() if archived else None,
-    }
+    confidence_value = state.get("confidence") or InsightConfidence.medium
+    if isinstance(confidence_value, str):
+        try:
+            confidence_enum = InsightConfidence(confidence_value)
+        except ValueError:
+            confidence_enum = InsightConfidence.medium
+    else:
+        confidence_enum = confidence_value
+
+    now = _now()
+    summary_text = (getattr(draft, "raw_markdown", None) or "")[:_SUMMARY_MAX_CHARS]
+    prompt_version = aggregate.get("prompt_version_analyst", "race_analyst_v1")
 
     try:
         async with get_session() as db:
-            await db.execute(
-                text(
-                    """
-                    INSERT INTO athlete_ai_insights (
-                        athlete_id, competitor_id, season, use_case,
-                        summary_text, recommendations_json, metrics_snapshot_json,
-                        principles_cited_json, confidence, model, prompt_version,
-                        coach_approved, coach_edits_count, generated_at, approved_at,
-                        generated_by_user_id, archived_at
-                    ) VALUES (
-                        :athlete_id, :competitor_id, :season, :use_case,
-                        :summary_text, :recommendations_json, :metrics_snapshot_json,
-                        :principles_cited_json, :confidence, :model, :prompt_version,
-                        :coach_approved, 0, :generated_at, :approved_at,
-                        :generated_by_user_id, :archived_at
-                    )
-                    """
-                ),
-                params,
+            previous_id: Optional[int] = None
+            is_active_value: Optional[int] = None
+
+            if approved:
+                # Liberar slot UNIQUE antes del INSERT (clave para no chocar
+                # con uq_insights_active_terna). new_insight_id se enlaza
+                # después del flush con UPDATE puntual.
+                previous_id = await deprecate_previous_active(
+                    db,
+                    athlete_id=athlete_id,
+                    season=season,
+                    valida_num=valida_num_db,
+                    new_insight_id=None,
+                )
+                is_active_value = 1
+
+            new_row = AthleteAiInsight(
+                athlete_id=athlete_id,
+                competitor_id=competitor_id,
+                event_id=event_id,
+                agent_run_id=state.get("agent_run_id"),
+                generated_by_user_id=coach_id,
+                season=season,
+                valida_num=valida_num_db,
+                use_case=use_case,
+                summary_text=summary_text,
+                recommendations_json=recommendations,
+                metrics_snapshot_json=metrics_snapshot,
+                principles_cited_json=principles,
+                confidence=confidence_enum,
+                model="gemini-2.5-flash-lite",
+                prompt_version=prompt_version,
+                coach_approved=approved,
+                coach_edits_count=0,
+                generated_at=now,
+                approved_at=now if approved else None,
+                archived_at=now if archived else None,
+                deprecated_at=None,
+                is_active=is_active_value,
+                created_at=now,
+                updated_at=now,
             )
-    except Exception as exc:
+            db.add(new_row)
+            await db.flush()  # Asigna new_row.id sin commit aún.
+
+            # Enlazar la cadena: el insight previo ahora apunta al nuevo.
+            if approved and previous_id is not None:
+                from sqlalchemy import update as sa_update
+
+                await db.execute(
+                    sa_update(AthleteAiInsight)
+                    .where(AthleteAiInsight.id == previous_id)
+                    .values(
+                        superseded_by_insight_id=new_row.id,
+                        updated_at=now,
+                    )
+                )
+
+            await db.commit()
+
+    except Exception as exc:  # noqa: BLE001
         # Persistencia es importante pero no debe romper el grafo
         # (notify_coach aún tiene valor). Log + sigue.
         logger.error("persist_insight: insert falló: %s", type(exc).__name__)
-        return {"errors": list(state.get("errors") or []) + [{"node": NODE_NAME, "error": type(exc).__name__, "message": str(exc)[:200]}]}
+        return {
+            "errors": list(state.get("errors") or [])
+            + [
+                {
+                    "node": NODE_NAME,
+                    "error": type(exc).__name__,
+                    "message": str(exc)[:200],
+                }
+            ]
+        }
 
     return {}
 

@@ -1,10 +1,20 @@
 import "@testing-library/jest-dom";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll } from "vitest";
+import { afterAll, afterEach, beforeAll, expect } from "vitest";
+import { toHaveNoViolations } from "jest-axe";
 import { trainingHandlers } from "./msw/trainingHandlers";
 import { calendarHandlers } from "./msw/calendarHandlers";
+import { athleteRaceAnalysisHandlers } from "./msw/athleteRaceAnalysisHandlers";
 
-export const mswServer = setupServer(...trainingHandlers, ...calendarHandlers);
+// Extend Vitest's expect with jest-axe matchers (idempotente: extend
+// usa Object.assign internamente, así que múltiples llamadas son no-op).
+expect.extend(toHaveNoViolations);
+
+export const mswServer = setupServer(
+  ...trainingHandlers,
+  ...calendarHandlers,
+  ...athleteRaceAnalysisHandlers,
+);
 
 beforeAll(() => mswServer.listen({ onUnhandledRequest: "bypass" }));
 afterEach(() => mswServer.resetHandlers());

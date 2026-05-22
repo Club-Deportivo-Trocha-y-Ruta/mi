@@ -324,20 +324,28 @@ async def list_unlinked_competitors(
         )
         base_stmt = base_stmt.where(RaceCompetitor.id.in_(select(subq.c.competitor_id)))
 
-    # Para el total, contamos antes del slice
-    total_stmt = select(func.count()).select_from(base_stmt.subquery())
-    total_result = await db.execute(total_stmt)
-    total = int(total_result.scalar() or 0)
-
-    # Paginar
-    page_stmt = base_stmt.order_by(RaceCompetitor.id).offset(offset).limit(limit)
-    page_result = await db.execute(page_stmt)
-    competitors = list(page_result.scalars().all())
-
-    # club_filter post-query (el LIKE en MySQL es ASCII-only para `club_text`
-    # con tildes; fuzzy en Python es robusto y barato sobre la página).
     if club_filter and club_filter.strip().lower() == "trocha":
-        competitors = [c for c in competitors if is_trocha_y_ruta(c.club_text)]
+        # Prefiltro SQL grueso (LIKE '%trocha%') + refinamiento fuzzy en Python.
+        # El filtro fuzzy debe correr ANTES de paginar para que `total` cuente
+        # solo Trocha y Ruta y la paginación no quede limitada a los primeros
+        # `limit` ids globales (que pueden no incluir TyR).
+        rough_stmt = base_stmt.where(
+            func.lower(RaceCompetitor.club_text).like("%trocha%")
+        ).order_by(RaceCompetitor.id)
+        rough_result = await db.execute(rough_stmt)
+        rough_competitors = list(rough_result.scalars().all())
+        filtered = [c for c in rough_competitors if is_trocha_y_ruta(c.club_text)]
+        total = len(filtered)
+        competitors = filtered[offset : offset + limit]
+    else:
+        total_stmt = select(func.count()).select_from(base_stmt.subquery())
+        total_result = await db.execute(total_stmt)
+        total = int(total_result.scalar() or 0)
+        page_stmt = (
+            base_stmt.order_by(RaceCompetitor.id).offset(offset).limit(limit)
+        )
+        page_result = await db.execute(page_stmt)
+        competitors = list(page_result.scalars().all())
 
     if not competitors:
         return [], total

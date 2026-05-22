@@ -18,7 +18,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.agent_run import AgentRun
     from app.models.anthropometry import AnthropometricRecord
+    from app.models.athlete_ai_insight import AthleteAiInsight
     from app.models.club import Club
     from app.models.parent_invite import ParentInvite
     from app.models.user import User
@@ -92,6 +94,30 @@ class Athlete(Base):
         "ParentAthlete",
         back_populates="athlete",
         foreign_keys="[ParentAthlete.athlete_id]",
+    )
+    # --- Race-analysis v2 (BE-1) ------------------------------------------
+    # Insights vigentes (no deprecados ni archivados). viewonly porque el
+    # ciclo de vida lo maneja persist_insight (BE-2); el ORM solo lee.
+    ai_insights: Mapped[list["AthleteAiInsight"]] = relationship(
+        "AthleteAiInsight",
+        back_populates="athlete",
+        primaryjoin=(
+            "and_(Athlete.id==AthleteAiInsight.athlete_id, "
+            "AthleteAiInsight.deprecated_at.is_(None), "
+            "AthleteAiInsight.archived_at.is_(None))"
+        ),
+        order_by="desc(AthleteAiInsight.generated_at)",
+        viewonly=True,
+    )
+    # Runs del agente cuyo input.athlete_id corresponde a este atleta.
+    # No es delete-cascade: si se elimina el atleta, los runs históricos
+    # quedan con athlete_id=NULL (la migración define FK SET NULL).
+    agent_runs: Mapped[list["AgentRun"]] = relationship(
+        "AgentRun",
+        back_populates="athlete",
+        foreign_keys="[AgentRun.athlete_id]",
+        order_by="desc(AgentRun.started_at)",
+        viewonly=True,
     )
 
 

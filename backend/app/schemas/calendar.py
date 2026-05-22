@@ -174,6 +174,28 @@ class EventCreate(EventBase):
     status: EventStatus = EventStatus.SCHEDULED
     event_data: dict[str, Any] | None = None
     audiences: list[AudienceCreate] = Field(default_factory=list)
+    # BE-1 / BE-2: si event_type=competition, este campo es obligatorio y
+    # debe apuntar a una válida existente en ``race_events`` (CHECK
+    # ck_calendar_competition_race_event a nivel DB). Para otros tipos
+    # debe ser None.
+    race_event_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="FK a race_events.id (obligatorio si event_type=competition).",
+    )
+
+    @model_validator(mode="after")
+    def _validate_competition_race_event(self) -> "EventCreate":
+        if self.event_type == EventType.COMPETITION and self.race_event_id is None:
+            raise ValueError(
+                "Las competencias requieren 'race_event_id' apuntando a la "
+                "válida correspondiente en race_events."
+            )
+        if self.event_type != EventType.COMPETITION and self.race_event_id is not None:
+            raise ValueError(
+                "'race_event_id' solo aplica cuando event_type=competition."
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_event_data_shape(self) -> "EventCreate":
@@ -263,6 +285,9 @@ class EventUpdate(BaseModel):
     status: EventStatus | None = None
     event_data: dict[str, Any] | None = None
     color_hex: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    # BE-2: permite reasignar (o desasignar con NULL) la FK a race_events.
+    # El CHECK DB sigue siendo la barrera final si el evento es competition.
+    race_event_id: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _validate_range_if_both_present(self) -> "EventUpdate":
@@ -290,6 +315,7 @@ class EventRead(BaseModel):
     timezone: str
     event_data: dict[str, Any] | None
     color_hex: str | None
+    race_event_id: int | None = None
     created_by_user_id: int
     created_at: datetime
     updated_at: datetime
@@ -313,6 +339,7 @@ class EventReadParent(BaseModel):
     all_day: bool
     timezone: str
     color_hex: str | None
+    race_event_id: int | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -21,9 +21,9 @@ Diseño:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -39,6 +39,8 @@ __all__ = [
     "ChatRequest",
     "AIUsageResponse",
     "AIUsageByPromptVersion",
+    "MetricsSnapshotV1",
+    "MetricsSnapshotStatus",
 ]
 
 
@@ -250,3 +252,97 @@ class AIUsageResponse(BaseModel):
     latency_ms_p95: int = Field(..., ge=0)
     fail_rate: float = Field(..., ge=0.0, le=1.0)
     by_prompt_version: list[AIUsageByPromptVersion] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Persisted snapshot (athlete_ai_insights.metrics_snapshot_json)
+# ---------------------------------------------------------------------------
+
+
+MetricsSnapshotStatus = Literal["finished", "dnf", "dns", "dsq"]
+"""Estados aceptados para un resultado individual dentro de un snapshot.
+
+Subconjunto del enum DB ``raceresultstatus`` — ``minus_laps`` (agregado
+en migración ``64c263edd07f``) NO se acepta aquí porque el snapshot
+representa la métrica del atleta tal como aparece en el reporte
+publicable (un corredor con ``minus_laps`` se considera ``finished`` con
+gap explícito en ``podium_gap_ms`` para fines del insight).
+"""
+
+
+class MetricsSnapshotV1(BaseModel):
+    """Snapshot estructurado de las métricas que sustentan un insight.
+
+    Persiste en ``athlete_ai_insights.metrics_snapshot_json`` (JSON). El
+    versionado vive en el campo ``schema_version`` para que migraciones
+    futuras puedan evolucionar el contrato sin romper insights viejos.
+
+    Diseño:
+    - ``extra="forbid"``: el snapshot es contrato cerrado. Cualquier
+      campo nuevo agregar primero al schema (y subir ``schema_version``).
+      Campos custom de use_cases agregados van en ``extras``.
+    - Todos los campos numéricos son no-negativos (``ge=0``). Tiempos en
+      milisegundos (convención ``parse_time`` en ``services/race/normalizer.py``).
+    - ``category_*`` agregados se nullan cuando ``status != finished``
+      o cuando la categoría tiene n<2 (no hay distribución).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(
+        default=1,
+        description="Versión del contrato del snapshot. Subir si se cambia.",
+    )
+
+    # --- Contexto del evento ----------------------------------------------
+    event_id: int = Field(..., ge=1)
+    season: int = Field(..., ge=2020, le=2100)
+    valida_num: int = Field(
+        ...,
+        ge=0,
+        le=99,
+        description=(
+            "0 = use_case agregado de temporada (season_summary). "
+            "1..7 = válida regular. 99 = Cto. Departamental."
+        ),
+    )
+    event_date: date
+
+    # --- Resultado individual ---------------------------------------------
+    status: MetricsSnapshotStatus
+    race_time_ms: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Tiempo total del atleta en ms. NULL si status != finished.",
+    )
+    position: Optional[int] = Field(default=None, ge=1)
+    podium_gap_ms: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Diferencia en ms vs. P1 de su categoría. NULL si DNF/DNS/DSQ o si es P1.",
+    )
+    ranking_in_category: Optional[int] = Field(default=None, ge=1)
+
+    # --- Categoría ---------------------------------------------------------
+    category_id: int = Field(..., ge=1)
+    category_code: str = Field(..., min_length=1, max_length=32)
+    category_size: int = Field(..., ge=0, description="N de corredores en la categoría.")
+    category_time_mean_ms: Optional[int] = Field(default=None, ge=0)
+    category_time_stddev_ms: Optional[int] = Field(default=None, ge=0)
+    category_time_min_ms: Optional[int] = Field(default=None, ge=0)
+    category_time_max_ms: Optional[int] = Field(default=None, ge=0)
+
+    # --- Extensibilidad por use_case --------------------------------------
+    extras: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Campos específicos por use_case (progression, podium_gap, "
+            "projection, season_summary) que no son parte del contrato base."
+        ),
+    )
+
+    @field_validator("category_code")
+    @classmethod
+    def _normalize_category_code(cls, v: str) -> str:
+        # Normalizamos a uppercase sin espacios (consistente con services/race).
+        return v.strip().upper()
