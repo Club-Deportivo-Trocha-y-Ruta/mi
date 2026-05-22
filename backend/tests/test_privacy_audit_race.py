@@ -8,20 +8,17 @@ Marco legal:
 - Ley 1581/2012 Colombia (Habeas Data) — datos sensibles de menores.
 - CLAUDE.md principio #2: "Nunca exponer datos personales (DOB, datos médicos)
   en logs, commits o respuestas públicas".
-- Workflow `docs/10-race-results/workflow.md` §8.1 — superficies auditables.
+- Sentinels heredados de la auditoría F1.7 Paso 8.
 
 Sentinels cubiertos:
-1. ``ingest --non-interactive`` stdout no debe contener nombres TyR completos
-   (los 10 oracle de edge-cases §5). El stdout de ``ingest`` es para conteos
-   y warnings — los warnings ya están validados por
-   ``test_warnings_do_not_leak_names``; este test cubre además el resto del
-   stdout (banner Parseo, tabla resumen, IngestReport panel).
+1. ``ingest --non-interactive`` stdout no debe contener nombres TyR completos.
+   El stdout de ``ingest`` es para conteos y warnings — los warnings ya están
+   validados por ``test_warnings_do_not_leak_names``; este test cubre además
+   el resto del stdout (banner Parseo, tabla resumen, IngestReport panel).
 2. ``analyze ranking`` stdout no debe contener nombres TyR (ranking es
-   agregado por categoría, NO individual — workflow §8.1).
+   agregado por categoría, NO individual).
 3. ``riders list`` default (sin ``--show-names``) no debe revelar apellido
    completo de los oracle TyR; sólo inicial+apellido del helper ``_mask_name``.
-
-Ver `docs/10-race-results/privacy-audit.md` Paso 8 para el reporte completo.
 """
 from __future__ import annotations
 

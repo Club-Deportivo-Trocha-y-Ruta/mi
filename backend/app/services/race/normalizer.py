@@ -7,8 +7,9 @@ Funciones sin DB ni I/O. Toda la inteligencia de extracción textual está aquí
 - Parseo de status `DNF` / `DSQ` / `DNS` / `(-N VUELTA[S])`.
 - Mapping `CAT: <NOMBRE>` → code interno del catálogo (`HEADER_TO_CODE`).
 
-Referencia: `docs/10-race-results/edge-cases.md` §2 (mapping codes),
-§4.3 (club "0"), §4.7 (DNF/DSQ/MINUS_LAPS), §6.1 (estrategia parser).
+Origen: módulo F1.7 (CLI ingest_race). Decisiones de mapping y edge cases
+documentadas históricamente; consultar `git log -- backend/app/services/race/`
+para audit trail.
 """
 from __future__ import annotations
 

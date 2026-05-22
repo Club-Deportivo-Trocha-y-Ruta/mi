@@ -1,8 +1,8 @@
 """Tests del módulo ``app.services.race.pdf_parser``.
 
 Estos tests usan los PDFs fixture de Válida IV (Cali, 17-may-2026). El
-oracle (esperado) está definido en ``docs/10-race-results/edge-cases.md`` §5.
-Cualquier cambio en los esperados debe reflejarse allí.
+oracle (esperado) está inline en este archivo; ajustar aquí cuando cambie
+el contrato del parser.
 """
 from __future__ import annotations
 

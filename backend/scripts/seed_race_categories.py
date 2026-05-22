@@ -6,10 +6,10 @@ Uso:
 
 Idempotente: usa UPSERT por `code`. Segunda ejecución imprime `inserted=0, updated=26`.
 
-Fuente: `docs/10-race-results/design.md §3.1` + `edge-cases.md §2`.
-26 codes (no 22 — el design tiene un error tipográfico en el conteo).
+Fuente: catálogo oficial Federación Colombiana de Ciclismo — Copa Valle
+XCO 2026. 26 codes activos.
 
-Heurística de edades (design §3.1):
+Heurística de edades:
 - Teteros (TET_*):        edad ≤ 5 años.
 - Preinfantil (PRE_*):    6–8 años.
 - Infantil (INF_*):       9–12 años.

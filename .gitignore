@@ -66,3 +66,7 @@ docker-compose.langfuse.env
 # F4 LangGraph local state + ChromaDB
 backend/data/
 
+
+# Claude Code agent worktrees (efímeros)
+.claude/worktrees/
+

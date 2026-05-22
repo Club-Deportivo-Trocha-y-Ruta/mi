@@ -1,6 +1,9 @@
 """CLI Typer para ingesta y análisis de resultados Copa Valle XCO.
 
-Workflow `docs/10-race-results/workflow.md` Paso 6.
+Herramienta legacy F1.7. Para uso cotidiano del coach existe el wizard
+web `/coach/race-analysis` tab "Cargar resultados" (F-UP + F-UP-REV). Este
+CLI permanece como utilidad de mantenimiento/backfill o backup si el
+wizard falla.
 
 Subcomandos:
 - ``ingest``   — parsea PDFs RESULTADOS + GENERAL, captura condiciones del
