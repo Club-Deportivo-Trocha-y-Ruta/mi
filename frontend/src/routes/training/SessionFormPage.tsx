@@ -192,11 +192,13 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
             pending.payload.convocados_athlete_ids,
             sendNotification,
           );
+          // Invalidación por namespace para alcanzar las variantes con
+          // userId en el key (privacy R2: cache aislado por cuenta).
           await queryClient.invalidateQueries({
-            queryKey: ["training-session-attendance", sessionId],
+            queryKey: ["training-session-attendance"],
           });
           await queryClient.invalidateQueries({
-            queryKey: ["training-session", sessionId],
+            queryKey: ["training-session"],
           });
         }
 

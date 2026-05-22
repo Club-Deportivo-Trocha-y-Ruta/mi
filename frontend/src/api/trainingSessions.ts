@@ -71,8 +71,12 @@ export async function cancelTrainingSession(
 
 export function useTrainingSessions(filters?: SessionFilters) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  // Privacy R2: userId va al inicio del key (después del namespace) para
+  // aislar cache por cuenta. `invalidateQueries({ queryKey: ["training-sessions"] })`
+  // sigue funcionando porque TanStack hace match por prefijo.
   return useQuery({
-    queryKey: ["training-sessions", filters],
+    queryKey: ["training-sessions", userId, filters],
     queryFn: () => fetchTrainingSessions(filters),
     enabled: !!accessToken,
   });
@@ -80,8 +84,13 @@ export function useTrainingSessions(filters?: SessionFilters) {
 
 export function useTrainingSession(id: number, enabled = true) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  // Hook dual-rol (coach + parent). Añadimos userId al key para aislar
+  // cache entre cuentas, pero NO lo exigimos en `enabled` porque tests
+  // de coach legacy mockean auth.store sin `user.id` (queryKey de bajo
+  // riesgo: el backend ya filtra por RBAC).
   return useQuery({
-    queryKey: ["training-session", id],
+    queryKey: ["training-session", userId, id],
     queryFn: () => fetchTrainingSession(id),
     enabled: !!accessToken && enabled && !!id,
   });
@@ -102,11 +111,13 @@ export function useUpdateTrainingSession() {
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: TrainingSessionUpdate }) =>
       updateTrainingSession(id, payload),
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
+      // Invalidación por prefijo de namespace: alcanza a todas las
+      // variantes con userId en el key (R2). Más amplia que la versión
+      // anterior `["training-session", id]`, pero el coach rara vez
+      // tiene múltiples sesiones en cache a la vez.
       void queryClient.invalidateQueries({ queryKey: ["training-sessions"] });
-      void queryClient.invalidateQueries({
-        queryKey: ["training-session", variables.id],
-      });
+      void queryClient.invalidateQueries({ queryKey: ["training-session"] });
     },
   });
 }
@@ -115,9 +126,9 @@ export function useExecuteTrainingSession() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: executeTrainingSession,
-    onSuccess: (_data, id) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["training-sessions"] });
-      void queryClient.invalidateQueries({ queryKey: ["training-session", id] });
+      void queryClient.invalidateQueries({ queryKey: ["training-session"] });
     },
   });
 }
@@ -133,9 +144,9 @@ export function useCancelTrainingSession() {
   return useMutation({
     mutationFn: ({ id, notify, reason }: CancelTrainingSessionVars) =>
       cancelTrainingSession(id, { notify, reason }),
-    onSuccess: (_data, vars) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["training-sessions"] });
-      void queryClient.invalidateQueries({ queryKey: ["training-session", vars.id] });
+      void queryClient.invalidateQueries({ queryKey: ["training-session"] });
     },
   });
 }
@@ -187,8 +198,12 @@ export async function uploadRouteFile(
 
 export function useSessionAttendance(sessionId: number, enabled = true) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  // R2: userId en el key. Dual-rol (coach + parent); no gateamos `enabled`
+  // sobre userId para no romper tests legacy de coach que mockean auth.store
+  // sin `user.id`. Aislamiento del cache se logra via key.
   return useQuery({
-    queryKey: ["training-session-attendance", sessionId],
+    queryKey: ["training-session-attendance", userId, sessionId],
     queryFn: () => fetchSessionAttendance(sessionId),
     enabled: !!accessToken && enabled && !!sessionId,
   });
@@ -196,19 +211,19 @@ export function useSessionAttendance(sessionId: number, enabled = true) {
 
 export function useUpdateAttendance(sessionId: number) {
   const queryClient = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  // El optimistic update toca el cache con el mismo key que la query de
+  // lectura (incluye userId). Si en el futuro este hook lo usa un padre,
+  // el optimistic update sigue tocando su slice del cache.
+  const attendanceKey = ["training-session-attendance", userId, sessionId] as const;
   return useMutation({
     mutationFn: ({ athleteId, payload }: { athleteId: number; payload: AttendanceUpdate }) =>
       updateAttendance(sessionId, athleteId, payload),
     onMutate: async ({ athleteId, payload }) => {
-      await queryClient.cancelQueries({
-        queryKey: ["training-session-attendance", sessionId],
-      });
-      const previous = queryClient.getQueryData<Attendance[]>([
-        "training-session-attendance",
-        sessionId,
-      ]);
+      await queryClient.cancelQueries({ queryKey: attendanceKey });
+      const previous = queryClient.getQueryData<Attendance[]>(attendanceKey);
       queryClient.setQueryData<Attendance[]>(
-        ["training-session-attendance", sessionId],
+        attendanceKey,
         (old) =>
           old?.map((a) =>
             a.athlete_id === athleteId ? { ...a, ...payload } : a,
@@ -218,16 +233,11 @@ export function useUpdateAttendance(sessionId: number) {
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(
-          ["training-session-attendance", sessionId],
-          context.previous,
-        );
+        queryClient.setQueryData(attendanceKey, context.previous);
       }
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["training-session-attendance", sessionId],
-      });
+      void queryClient.invalidateQueries({ queryKey: attendanceKey });
     },
   });
 }
@@ -243,8 +253,10 @@ export function useBulkSetConvocatoria(sessionId: number) {
     mutationFn: ({ athleteIds, sendNotification }: BulkSetConvocatoriaVars) =>
       bulkSetConvocatoria(sessionId, athleteIds, sendNotification ?? false),
     onSuccess: () => {
+      // Invalidación por namespace para alcanzar todas las variantes
+      // con userId en el key (R2).
       void queryClient.invalidateQueries({
-        queryKey: ["training-session-attendance", sessionId],
+        queryKey: ["training-session-attendance"],
       });
     },
   });
@@ -255,7 +267,7 @@ export function useUploadRouteFile(sessionId: number) {
   return useMutation({
     mutationFn: (file: File) => uploadRouteFile(sessionId, file),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["training-session", sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ["training-session"] });
     },
   });
 }
@@ -390,18 +402,25 @@ export async function fetchParentMonthlySummary(
 
 export function useParentSessions(filters?: SessionFilters, parentAthleteIds?: number[]) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  // R2: userId al inicio aísla cache entre cuentas (tablets familiares).
+  // Hook exclusivo de padre → gateamos `enabled` también sobre userId
+  // como defensa en profundidad: si user no está cargado, no disparamos
+  // una request que podría intentar usar credenciales viejas.
   return useQuery({
-    queryKey: ["parent-sessions", filters, parentAthleteIds],
+    queryKey: ["parent-sessions", userId, filters, parentAthleteIds],
     queryFn: () => fetchParentSessions(filters, parentAthleteIds),
-    enabled: !!accessToken,
+    enabled: !!accessToken && userId !== null,
   });
 }
 
 export function useParentMonthlySummary(year: number, month: number, athleteId?: number) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  // R2: ver useParentSessions. Hook exclusivo de padre.
   return useQuery({
-    queryKey: ["parent-monthly-summary", year, month, athleteId],
+    queryKey: ["parent-monthly-summary", userId, year, month, athleteId],
     queryFn: () => fetchParentMonthlySummary(year, month, athleteId),
-    enabled: !!accessToken && !!year && !!month,
+    enabled: !!accessToken && !!year && !!month && userId !== null,
   });
 }

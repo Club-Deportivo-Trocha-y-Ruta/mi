@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { getMe, login as loginRequest, refreshToken } from "@/api/auth";
 import { registerAuthHandlers } from "@/api/client";
+import { getQueryClient } from "@/lib/queryClientHandle";
 import type { MeResponse } from "@/types/auth.types";
 
 interface AuthState {
@@ -47,6 +48,22 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
+        // Privacy R1: purga el cache de TanStack Query ANTES de limpiar el
+        // estado del store. Sin esto, datos de un padre podrían quedar
+        // accesibles para el siguiente login en la misma máquina/tablet
+        // (uso compartido en familias). Crítico para Ley 1581 (menores).
+        const qc = getQueryClient();
+        if (qc) {
+          qc.clear();
+        } else {
+          // En runtime real esto no debería ocurrir (App.tsx registra el
+          // client antes de cualquier render). En tests, los suites que
+          // no mocean queryClientHandle verán este warning — es esperado.
+          // eslint-disable-next-line no-console
+          console.warn(
+            "[auth.store] logout() sin QueryClient registrado — cache no purgado",
+          );
+        }
         set({
           accessToken: null,
           refreshToken: null,

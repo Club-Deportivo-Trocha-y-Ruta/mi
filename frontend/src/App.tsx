@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
+import { setQueryClient } from "@/lib/queryClientHandle";
 
 // Lazy load: race-analysis bundle es pesado (react-markdown + AI hooks)
 // y sólo coach/admin lo abren ocasionalmente.
@@ -44,6 +45,11 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Privacy R1: registramos el QueryClient en el singleton para que el
+// auth store (Zustand) pueda invocar `queryClient.clear()` en logout()
+// y evitar fugas de cache entre cuentas en máquinas compartidas.
+setQueryClient(queryClient);
 
 function RootRedirect() {
   const user = useAuthStore((s) => s.user);

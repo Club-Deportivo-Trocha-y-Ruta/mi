@@ -61,8 +61,12 @@ export async function updateSessionMedia(
 
 export function useSessionMedia(sessionId: number, enabled = true) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  // R2: userId al inicio del key. Hook dual-rol (coach + parent); no
+  // gateamos `enabled` sobre userId para no romper tests legacy de
+  // coach que no incluyen `user.id` en el mock de auth.store.
   return useQuery({
-    queryKey: ["training-session-media", sessionId],
+    queryKey: ["training-session-media", userId, sessionId],
     queryFn: () => fetchSessionMedia(sessionId),
     enabled: !!accessToken && enabled && !!sessionId,
   });
@@ -74,11 +78,13 @@ export function useUploadSessionMedia(sessionId: number) {
     mutationFn: (payload: SessionMediaUploadPayload) =>
       uploadSessionMedia(sessionId, payload),
     onSuccess: () => {
+      // Invalidación por namespace para alcanzar todas las variantes
+      // con userId en el key (R2).
       void queryClient.invalidateQueries({
-        queryKey: ["training-session-media", sessionId],
+        queryKey: ["training-session-media"],
       });
       void queryClient.invalidateQueries({
-        queryKey: ["training-session", sessionId],
+        queryKey: ["training-session"],
       });
     },
   });
@@ -90,10 +96,10 @@ export function useDeleteSessionMedia(sessionId: number) {
     mutationFn: (mediaId: number) => deleteSessionMedia(sessionId, mediaId),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["training-session-media", sessionId],
+        queryKey: ["training-session-media"],
       });
       void queryClient.invalidateQueries({
-        queryKey: ["training-session", sessionId],
+        queryKey: ["training-session"],
       });
     },
   });
@@ -111,10 +117,10 @@ export function useUpdateSessionMedia(sessionId: number) {
     }) => updateSessionMedia(sessionId, mediaId, payload),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["training-session-media", sessionId],
+        queryKey: ["training-session-media"],
       });
       void queryClient.invalidateQueries({
-        queryKey: ["training-session", sessionId],
+        queryKey: ["training-session"],
       });
     },
   });

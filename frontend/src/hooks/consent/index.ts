@@ -10,6 +10,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/api/client";
+import { useAuthStore } from "@/store/auth.store";
 import type {
   ConsentEvent,
   ConsentStatus,
@@ -49,11 +50,15 @@ export function useActivePolicy() {
  * o cuando el componente aún no está montado.
  */
 export function useMyConsentStatus(enabled = true) {
+  // Privacy R2: aislamos cache por usuario para evitar que el estado de
+  // consentimiento de un padre quede expuesto al siguiente login en una
+  // tablet compartida.
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   return useQuery<ConsentStatus>({
-    queryKey: ["my-consent"],
+    queryKey: ["my-consent", userId],
     queryFn: () =>
       apiClient.get<ConsentStatus>("/api/me/consent").then((r) => r.data),
-    enabled,
+    enabled: enabled && userId !== null,
     staleTime: 5 * 60 * 1000, // 5 minutos
   });
 }

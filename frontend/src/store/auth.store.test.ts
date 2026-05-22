@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 import { UserRole } from "@/types/enums";
 import type { MeResponse, TokenResponse } from "@/types/auth.types";
 
@@ -25,6 +26,10 @@ vi.mock("@/api/client", () => ({
 import { useAuthStore } from "./auth.store";
 import * as authApi from "@/api/auth";
 import * as apiClient from "@/api/client";
+import {
+  setQueryClient,
+  __resetQueryClientHandleForTests,
+} from "@/lib/queryClientHandle";
 
 // ---------------------------------------------------------------------------
 // Captura de handlers de registerAuthHandlers
@@ -88,6 +93,10 @@ describe("useAuthStore", () => {
   beforeEach(() => {
     resetStore();
     vi.clearAllMocks();
+    // Asegurar que entre tests no quede un QueryClient registrado
+    // del bloque "logout — purga del cache" (sino, logout() de tests
+    // previos limpiaría un cache que el siguiente test no espera).
+    __resetQueryClientHandleForTests();
     // Silenciar sessionStorage en jsdom
     Object.defineProperty(window, "sessionStorage", {
       value: {
@@ -426,6 +435,99 @@ describe("useAuthStore", () => {
         value: originalLocation,
         writable: true,
       });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // logout — purga del cache de TanStack Query (Wave 2 — R1 privacy)
+  //
+  // En máquinas/tablets compartidas (uso típico en familias), si el padre A
+  // cierra sesión y el padre B entra, el cache de React Query sobrevive al
+  // logout. Sin esta purga, B podría ver datos sensibles de los hijos de A
+  // (atletas menores → Ley 1581 Colombia).
+  // -------------------------------------------------------------------------
+  describe("logout — purga el cache de TanStack Query (privacy R1)", () => {
+    afterEach(() => {
+      __resetQueryClientHandleForTests();
+    });
+
+    it("logout() invoca queryClient.clear() y deja el cache vacío", () => {
+      const qc = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      setQueryClient(qc);
+
+      // Sembramos cache con datos sensibles del "padre A"
+      qc.setQueryData(["my-athletes", 1], [{ athlete_id: 42, name: "Sensible" }]);
+      qc.setQueryData(["parent-sessions", 1, undefined, undefined], [{ id: 99 }]);
+      qc.setQueryData(["my-consent", 1], { needs_renewal: false });
+
+      expect(qc.getQueryCache().getAll().length).toBeGreaterThan(0);
+
+      // Simular sesión activa
+      useAuthStore.setState({
+        accessToken: "tok",
+        refreshToken: "ref",
+        user: mockUser,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+
+      useAuthStore.getState().logout();
+
+      // Cache totalmente purgado
+      expect(qc.getQueryCache().getAll()).toEqual([]);
+      // Estado del store limpio
+      expect(useAuthStore.getState().isAuthenticated).toBe(false);
+      expect(useAuthStore.getState().user).toBeNull();
+    });
+
+    it("logout() no falla cuando no hay QueryClient registrado (loguea warning)", () => {
+      // __resetQueryClientHandleForTests garantiza singleton null
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      useAuthStore.setState({
+        accessToken: "tok",
+        refreshToken: "ref",
+        user: mockUser,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+
+      expect(() => useAuthStore.getState().logout()).not.toThrow();
+      expect(warnSpy).toHaveBeenCalled();
+      // Estado del store limpio igualmente
+      expect(useAuthStore.getState().isAuthenticated).toBe(false);
+      expect(useAuthStore.getState().accessToken).toBeNull();
+
+      warnSpy.mockRestore();
+    });
+
+    it("refreshSession fallido propaga al logout que también purga el cache", async () => {
+      const qc = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      setQueryClient(qc);
+
+      qc.setQueryData(["my-athletes", 1], [{ leak: "no debe quedar" }]);
+
+      useAuthStore.setState({
+        refreshToken: "expired",
+        user: mockUser,
+        accessToken: "old",
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      vi.mocked(authApi.refreshToken).mockRejectedValue(new Error("expired"));
+
+      try {
+        await useAuthStore.getState().refreshSession();
+      } catch {
+        // esperado
+      }
+
+      // refreshSession llama logout() en catch → cache debe estar vacío
+      expect(qc.getQueryCache().getAll()).toEqual([]);
     });
   });
 });

@@ -7,9 +7,14 @@ import { createElement } from "react";
 // Mock auth store — always return a valid token so hooks are enabled
 // ---------------------------------------------------------------------------
 
+// Mock auth store con userId fijo: tras Wave 2 (privacy hardening), las
+// queryKeys incluyen userId para aislar el cache por cuenta. Mockear el
+// `user.id` mantiene los tests realistas y permite ejercitar `enabled`
+// gateado sobre `userId !== null` en los hooks de padre.
 vi.mock("@/store/auth.store", () => ({
-  useAuthStore: (selector: (s: { accessToken: string }) => unknown) =>
-    selector({ accessToken: "test-token" }),
+  useAuthStore: (
+    selector: (s: { accessToken: string; user: { id: number } }) => unknown,
+  ) => selector({ accessToken: "test-token", user: { id: 1 } }),
 }));
 
 vi.mock("@/api/client", () => ({
@@ -374,9 +379,15 @@ describe("useUpdateAttendance", () => {
     const sessionId = 1;
     const initialAttendance = makeAttendance({ status: "ausente" });
 
-    // Pre-populate cache
+    // Pre-populate cache. El key ahora incluye userId (privacy R2):
+    // ["training-session-attendance", userId, sessionId]. El mock de
+    // useAuthStore inyecta user.id = 1.
+    const TEST_USER_ID = 1;
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    queryClient.setQueryData(["training-session-attendance", sessionId], [initialAttendance]);
+    queryClient.setQueryData(
+      ["training-session-attendance", TEST_USER_ID, sessionId],
+      [initialAttendance],
+    );
 
     const customWrapper = ({ children }: { children: React.ReactNode }) =>
       createElement(QueryClientProvider, { client: queryClient }, children);
@@ -395,6 +406,7 @@ describe("useUpdateAttendance", () => {
     // Optimistic update applied synchronously in onMutate
     const optimisticData = queryClient.getQueryData<{ status: string }[]>([
       "training-session-attendance",
+      TEST_USER_ID,
       sessionId,
     ]);
     expect(optimisticData?.[0]?.status).toBe("presente");
@@ -404,8 +416,12 @@ describe("useUpdateAttendance", () => {
     const sessionId = 2;
     const initialAttendance = makeAttendance({ session_id: 2, status: "ausente" });
 
+    const TEST_USER_ID = 1;
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    queryClient.setQueryData(["training-session-attendance", sessionId], [initialAttendance]);
+    queryClient.setQueryData(
+      ["training-session-attendance", TEST_USER_ID, sessionId],
+      [initialAttendance],
+    );
 
     const customWrapper = ({ children }: { children: React.ReactNode }) =>
       createElement(QueryClientProvider, { client: queryClient }, children);
@@ -423,6 +439,7 @@ describe("useUpdateAttendance", () => {
 
     const rolledBack = queryClient.getQueryData<{ status: string }[]>([
       "training-session-attendance",
+      TEST_USER_ID,
       sessionId,
     ]);
     expect(rolledBack?.[0]?.status).toBe("ausente");
