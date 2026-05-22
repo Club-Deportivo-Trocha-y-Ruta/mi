@@ -421,9 +421,23 @@ async def _finalize_run(
     final_payload = _extract_final_output(result_state) if exc is None else None
     graph_status = (result_state or {}).get("status") if exc is None else None
 
+    # LangGraph marca pausa por interrupt() colocando `__interrupt__` en el
+    # state retornado por `ainvoke`. La task del runner termina pero el run
+    # NO es terminal — sigue en `awaiting_hitl` hasta que el coach reanude.
+    interrupts: Any = None
+    if isinstance(result_state, dict) and exc is None:
+        interrupts = (
+            result_state.get("__interrupt__")
+            or result_state.get("interrupt")
+        )
+
     if exc is not None:
         new_status = "failed"
         err: Optional[str] = f"{type(exc).__name__}: {str(exc)[:500]}"
+    elif interrupts:
+        new_status = "awaiting_hitl"
+        err = None
+        final_payload = None
     elif graph_status == "failed":
         new_status = "failed"
         errors_list = (result_state or {}).get("errors") or []

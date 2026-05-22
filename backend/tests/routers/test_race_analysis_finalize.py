@@ -164,6 +164,46 @@ async def test_finalize_is_idempotent(fake_db) -> None:
 
 
 @pytest.mark.asyncio
+async def test_finalize_detects_hitl_interrupt_as_awaiting_hitl(fake_db) -> None:
+    """ainvoke retorna con __interrupt__ (HITL pause) → awaiting_hitl, no failed.
+
+    Bug E2E secundario: cuando hitl_gate_review llama interrupt(), LangGraph
+    retorna sin error pero sin final_analysis. Sin esta detección, el run
+    se marcaba 'failed' por 'Grafo completó sin output'.
+    """
+    rid = "run-hitl-pause-005"
+    fake_db.seed_run(rid, status_="running")
+
+    result_state = {
+        "events": [
+            {"seq": 1, "type": "node_start", "node": "validate_input",
+             "payload": {}, "ts": "2026-05-22T15:45:00Z"},
+            {"seq": 2, "type": "node_end", "node": "validate_input",
+             "payload": {}, "ts": "2026-05-22T15:45:01Z"},
+            {"seq": 3, "type": "node_start", "node": "hitl_gate_review",
+             "payload": {}, "ts": "2026-05-22T15:45:02Z"},
+        ],
+        "__interrupt__": [
+            {"value": {"step": "review", "draft_markdown": "# Draft"},
+             "resumable": True}
+        ],
+    }
+
+    await _finalize_run(fake_db, rid, exc=None, result_state=result_state)
+
+    assert fake_db.runs[rid]["status"] == "awaiting_hitl", (
+        "HITL interrupt no debe terminar el run como failed"
+    )
+    assert fake_db.runs[rid]["finished_at"] is None, (
+        "awaiting_hitl no es terminal — finished_at debe quedar NULL"
+    )
+    persisted = fake_db.events_by_run_db_id.get(1, [])
+    assert len(persisted) == 3, "los eventos previos al interrupt sí se persisten"
+    types = [e["event_type"] for e in persisted]
+    assert "error" not in types, "no debe sintetizar evento error en HITL pause"
+
+
+@pytest.mark.asyncio
 async def test_finalize_maps_node_error_to_db_error_enum(fake_db) -> None:
     """Eventos in-memory con type=node_error → ENUM DB 'error' (DataError)."""
     rid = "run-node-error-004"
