@@ -5,6 +5,7 @@ import { ExternalLink } from "lucide-react";
 import { ReadOnlyAttendanceRow } from "@/components/parents/ReadOnlyAttendanceRow";
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
 import { MediaGallery } from "@/components/training/MediaGallery";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useSessionAttendance, useTrainingSession } from "@/api/trainingSessions";
 import { useSessionMedia } from "@/api/sessionMedia";
@@ -29,7 +30,7 @@ function SkeletonCard() {
   return (
     <div className="rounded-xl bg-white p-5 space-y-3 shadow-ring-soft">
       {[...Array(3)].map((_, i) => (
-        <div key={i} className="h-4 animate-pulse rounded bg-light-gray" style={{ width: `${70 - i * 15}%` }} />
+        <Skeleton key={i} className="h-4" style={{ width: `${70 - i * 15}%` }} />
       ))}
     </div>
   );
@@ -58,8 +59,13 @@ export function ParentSessionDetailPage() {
 
   if (sessionQuery.isLoading || athletesQuery.isLoading) {
     return (
-      <section className="space-y-4">
-        <div className="h-4 w-24 animate-pulse rounded bg-light-gray" />
+      <section
+        role="status"
+        aria-busy="true"
+        aria-label="Cargando sesión"
+        className="space-y-4"
+      >
+        <Skeleton className="h-4 w-24" />
         <SkeletonCard />
         <SkeletonCard />
       </section>
@@ -73,7 +79,7 @@ export function ParentSessionDetailPage() {
           to="/parents/training/sessions"
           className="flex items-center gap-1 text-sm font-medium text-mid-gray hover:text-charcoal"
         >
-          <span>←</span>
+          <span aria-hidden="true">←</span>
           <span>Entrenamientos</span>
         </Link>
         <div className="rounded-xl bg-white p-8 text-center shadow-ring-soft">
@@ -93,7 +99,7 @@ export function ParentSessionDetailPage() {
         to="/parents/training/sessions"
         className="flex w-fit items-center gap-1 text-sm font-medium text-mid-gray hover:text-charcoal"
       >
-        <span>←</span>
+        <span aria-hidden="true">←</span>
         <span>Entrenamientos</span>
       </Link>
 
@@ -156,7 +162,11 @@ export function ParentSessionDetailPage() {
 
           {session.route_file_path && (
             <Suspense
-              fallback={<div className="h-64 animate-pulse rounded-xl bg-light-gray" />}
+              fallback={
+                <div role="status" aria-busy="true" aria-label="Cargando recorrido">
+                  <Skeleton className="h-64 rounded-xl" />
+                </div>
+              }
             >
               <RouteViewer routeFilePath={session.route_file_path} />
             </Suspense>
@@ -168,7 +178,7 @@ export function ParentSessionDetailPage() {
       <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-ring-soft">
         <h2 className={sectionHeading}>Fotos y videos</h2>
         {mediaQuery.isLoading ? (
-          <div className="h-24 animate-pulse rounded-lg bg-light-gray" />
+          <Skeleton className="h-24 rounded-lg" />
         ) : (
           <MediaGallery
             media={(mediaQuery.data ?? []) as SessionMediaParent[]}
@@ -184,7 +194,7 @@ export function ParentSessionDetailPage() {
         </h2>
 
         {attendanceQuery.isLoading && (
-          <div className="h-20 animate-pulse rounded-xl bg-light-gray" />
+          <Skeleton className="h-20 rounded-xl" />
         )}
 
         {attendanceQuery.isError && (

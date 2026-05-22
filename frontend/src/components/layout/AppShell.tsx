@@ -140,6 +140,15 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="flex min-h-screen overflow-x-hidden bg-white text-charcoal">
+      {/* ── Skip link — first focusable element for keyboard / screen reader users.
+            Permanece visualmente oculto hasta recibir foco. ── */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-charcoal focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white focus:shadow-ring-soft focus:outline-none focus-visible:outline-none"
+      >
+        Saltar a contenido
+      </a>
+
       {/* ── Mobile drawer overlay ── */}
       {sidebarOpen && (
         <div
@@ -220,7 +229,13 @@ export function AppShell({ children }: AppShellProps) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 overflow-y-auto p-4 md:p-6 focus:outline-none"
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { MonthlyAveragesBanner } from "@/components/parents/MonthlyAveragesBanner";
 import { ParentSessionCard } from "@/components/parents/ParentSessionCard";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useParentMonthlySummary, useParentSessions } from "@/api/trainingSessions";
 import type { KidAttendance, SessionFilters } from "@/types/trainingSession.types";
@@ -17,6 +18,9 @@ function AthleteChip({
   active: boolean;
   onClick: () => void;
 }) {
+  // Trim para casos donde last_name viene vacío (ej. chip sintético "Todos") —
+  // evita "Todos " con trailing space que screen readers sí leen.
+  const displayName = `${athlete.athlete_first_name} ${athlete.athlete_last_name}`.trim();
   return (
     <button
       type="button"
@@ -29,7 +33,7 @@ function AthleteChip({
       style={!active ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
       aria-pressed={active}
     >
-      {athlete.athlete_first_name} {athlete.athlete_last_name}
+      {displayName}
     </button>
   );
 }
@@ -108,8 +112,27 @@ export function ParentSessionsPage() {
 
   const showBanner = !!effectiveAthleteId && !!focusedAthlete;
 
+  // Mensaje para lector de pantalla cuando cambia mes o atleta seleccionado.
+  // El padre debe enterarse de que la lista debajo se está actualizando aunque
+  // visualmente quede en el mismo sitio. Recalculamos solo con dependencias
+  // estables — `aria-live="polite"` evita interrumpir lectura en curso.
+  const liveMessage = useMemo(() => {
+    const athleteLabel = focusedAthlete
+      ? `${focusedAthlete.athlete_first_name} ${focusedAthlete.athlete_last_name}`.trim()
+      : athletes.length > 1 ? "todos tus atletas" : "tu atleta";
+    if (sessionsQuery.isLoading) {
+      return `Cargando entrenamientos de ${monthLabel} para ${athleteLabel}.`;
+    }
+    return `Mostrando entrenamientos de ${monthLabel} para ${athleteLabel}.`;
+  }, [monthLabel, focusedAthlete, athletes.length, sessionsQuery.isLoading]);
+
   return (
     <section className="space-y-5">
+      {/* Live region — anuncia cambios de mes/atleta a lectores de pantalla.
+          `sr-only` mantiene el patrón invisible visualmente. */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {liveMessage}
+      </div>
       <div>
         <h1
           className="text-2xl text-charcoal"
@@ -145,7 +168,7 @@ export function ParentSessionsPage() {
             className="min-h-11 rounded-lg px-3 py-2.5 text-sm text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal"
             aria-label="Mes anterior"
           >
-            ← Mes anterior
+            <span aria-hidden="true">←</span> Mes anterior
           </button>
           <span className="flex-1 text-center text-sm font-medium capitalize text-charcoal">
             {monthLabel}
@@ -157,7 +180,7 @@ export function ParentSessionsPage() {
             className="min-h-11 rounded-lg px-3 py-2.5 text-sm text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Mes siguiente"
           >
-            Mes siguiente →
+            Mes siguiente <span aria-hidden="true">→</span>
           </button>
         </div>
       )}
@@ -211,9 +234,14 @@ export function ParentSessionsPage() {
 
       {/* Loading */}
       {(sessionsQuery.isLoading || athletesQuery.isLoading) && (
-        <div className="space-y-3">
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Cargando entrenamientos"
+          className="space-y-3"
+        >
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-xl bg-light-gray" />
+            <Skeleton key={i} className="h-24 rounded-xl" />
           ))}
         </div>
       )}

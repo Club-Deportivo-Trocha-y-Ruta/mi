@@ -209,3 +209,23 @@ h3 {
     box-shadow: var(--shadow-ring-soft);
   }
 }
+
+/* ─────────────────────────────────────────────
+   Reduced motion — global opt-out
+   Respeta la preferencia del SO del usuario: cuando el sistema indica
+   `prefers-reduced-motion: reduce`, neutralizamos animaciones y transiciones
+   en todo el árbol DOM para evitar mareo (atletas, padres con sensibilidad
+   vestibular). Las clases `motion-reduce:*` de Tailwind ya cubren componentes
+   nuevos, pero esta regla global garantiza cobertura incluso en estilos
+   inline o librerías externas.
+   ───────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

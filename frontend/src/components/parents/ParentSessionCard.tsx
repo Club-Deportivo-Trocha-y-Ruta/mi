@@ -37,6 +37,7 @@ export function ParentSessionCard({
   kidAttendance,
   athleteAgeDecimal,
 }: ParentSessionCardProps) {
+  const titleId = useId();
   const status = kidAttendance?.status ?? null;
   const attendanceBadge = status
     ? { label: ATTENDANCE_LABELS[status], className: ATTENDANCE_TONE[status] }
@@ -60,6 +61,7 @@ export function ParentSessionCard({
     <article
       className="overflow-hidden rounded-xl bg-white shadow-ring-soft"
       data-testid="parent-session-card"
+      aria-labelledby={titleId}
     >
       <Link
         to={`/parents/training/sessions/${session.id}`}
@@ -68,9 +70,12 @@ export function ParentSessionCard({
       >
         <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-base font-medium text-charcoal">
+            <h3
+              id={titleId}
+              className="truncate text-base font-medium text-charcoal"
+            >
               {session.technical_focus}
-            </p>
+            </h3>
             <p className="mt-0.5 text-sm text-mid-gray">
               {formatDate(session.scheduled_date)} · {formatTime(session.scheduled_start_time)}
             </p>
@@ -210,7 +215,7 @@ function CoachComment({ text }: { text: string }) {
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
           aria-controls={collapsedId}
-          className="mt-1 inline-flex items-center gap-1 rounded text-xs font-medium text-charcoal transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+          className="mt-1 inline-flex min-h-11 items-center gap-1 -mx-2 px-2 rounded text-xs font-medium text-charcoal transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
           data-testid="comment-expand-button"
         >
           {expanded ? (

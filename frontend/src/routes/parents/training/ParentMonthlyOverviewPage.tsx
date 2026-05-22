@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useParentMonthlySummary } from "@/api/trainingSessions";
 import type { MyAthleteOut } from "@/types/parent.types";
@@ -40,21 +41,26 @@ function AthleteSummaryCard({
       aria-label={`Resumen de ${athlete.athlete_first_name} ${athlete.athlete_last_name}`}
     >
       <div>
-        <h3
+        <h2
           className="text-base text-charcoal"
           style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
         >
           {athlete.athlete_first_name} {athlete.athlete_last_name}
-        </h3>
+        </h2>
         {athlete.category && (
           <p className="text-xs text-mid-gray mt-0.5">{athlete.category}</p>
         )}
       </div>
 
       {isLoading && (
-        <div className="space-y-2">
-          <div className="h-4 animate-pulse rounded bg-light-gray w-3/4" />
-          <div className="h-2 animate-pulse rounded-full bg-light-gray" />
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label={`Cargando resumen de ${athlete.athlete_first_name} ${athlete.athlete_last_name}`}
+          className="space-y-2"
+        >
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-2 w-full rounded-full" />
         </div>
       )}
 
@@ -151,7 +157,7 @@ export function ParentMonthlyOverviewPage() {
             id="select-year"
             value={period.year}
             onChange={(e) => setPeriod((p) => ({ ...p, year: Number(e.target.value) }))}
-            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none"
+            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-2"
             style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             aria-label="Seleccionar año"
           >
@@ -169,7 +175,7 @@ export function ParentMonthlyOverviewPage() {
             id="select-month"
             value={period.month}
             onChange={(e) => setPeriod((p) => ({ ...p, month: Number(e.target.value) }))}
-            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none"
+            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-2"
             style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             aria-label="Seleccionar mes"
           >
@@ -182,9 +188,14 @@ export function ParentMonthlyOverviewPage() {
 
       {/* Loading athletes */}
       {athletesQuery.isLoading && (
-        <div className="space-y-3">
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Cargando atletas"
+          className="space-y-3"
+        >
           {[...Array(2)].map((_, i) => (
-            <div key={i} className="h-32 animate-pulse rounded-xl bg-light-gray" />
+            <Skeleton key={i} className="h-32 rounded-xl" />
           ))}
         </div>
       )}

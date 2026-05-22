@@ -3,12 +3,13 @@ import { useState, useEffect } from "react";
 import { ChildCard } from "@/components/parents/portal/ChildCard";
 import { ConsentRenewalModal } from "@/components/consent/ConsentRenewalModal";
 import { ConsentStatusPanel } from "@/components/consent/ConsentStatusPanel";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useMyConsentStatus } from "@/hooks/consent";
 import type { AthleteConsentStatus } from "@/types/consent";
 
 function SkeletonCard() {
-  return <div className="h-48 animate-pulse rounded-xl bg-light-gray" />;
+  return <Skeleton className="h-48 rounded-xl" />;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +81,12 @@ export function ParentDashboardPage() {
       </div>
 
       {isLoading && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Cargando mis atletas"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        >
           <SkeletonCard />
           <SkeletonCard />
         </div>
