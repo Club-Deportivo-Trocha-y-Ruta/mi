@@ -77,6 +77,7 @@ from app.schemas.race_imports import (
     UploadUserRef,
 )
 from app.services.race.ingestor import RaceIngestor
+from app.services.race.revision import detect_revision
 from app.services.training import storage_sftp
 
 logger = logging.getLogger(__name__)
@@ -437,13 +438,27 @@ async def parse_import(
     db.add(race_import)
     await db.flush()
 
+    # F-UP-REV2: detección de revisión post-parse
+    # Si existe `(series, valida_num)` con committed previo y SHA distinto,
+    # marcamos `will_be_revision=true`. SHA byte-exacto ya fue bloqueado arriba
+    # con 409 (línea 322), no llegamos aquí.
+    revision_ctx = await detect_revision(
+        db,
+        series_name=_SERIES_NAME,
+        season=season,
+        valida_num=valida_num,
+    )
+    will_be_revision = revision_ctx is not None
+
     logger.info(
-        "race_import_parse parse_id=%s sha=%s user_id=%s kind=%s rows=%d",
+        "race_import_parse parse_id=%s sha=%s user_id=%s kind=%s rows=%d "
+        "will_be_revision=%s",
         race_import.id,
         results_sha[:12],
         current_user.id,
         kind_value.value,
         n_rows_resultados,
+        will_be_revision,
     )
 
     return ImportParseResponse(
@@ -458,6 +473,15 @@ async def parse_import(
         n_rows_resultados=n_rows_resultados,
         n_rows_general=n_rows_general,
         warnings=warnings_collected,
+        will_be_revision=will_be_revision,
+        parent_event_id=revision_ctx.parent_event_id if revision_ctx else None,
+        parent_import_id=revision_ctx.parent_import_id if revision_ctx else None,
+        parent_committed_at=(
+            revision_ctx.parent_committed_at if revision_ctx else None
+        ),
+        parent_n_results=(
+            revision_ctx.n_results_persisted if revision_ctx else None
+        ),
     )
 
 

@@ -109,7 +109,13 @@ class ParseHeaderInfo(BaseModel):
 
 
 class ImportParseResponse(BaseModel):
-    """Respuesta del endpoint POST /imports/parse (F-UP3 §4.1)."""
+    """Respuesta del endpoint POST /imports/parse (F-UP3 §4.1 + F-UP-REV2).
+
+    F-UP-REV2: campos opcionales ``will_be_revision`` y metadatos del parent
+    cuando el sistema detecta que la `(series, valida)` ya está committed
+    (revision-design.md §1.3). Todos los campos extra son opcionales para
+    preservar backward compat con clientes F-UP.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -119,6 +125,13 @@ class ImportParseResponse(BaseModel):
     n_rows_resultados: int
     n_rows_general: Optional[int] = None
     warnings: list[ParseWarning] = Field(default_factory=list)
+
+    # F-UP-REV2: detección de revisión post-parse
+    will_be_revision: bool = False
+    parent_event_id: Optional[int] = None
+    parent_import_id: Optional[int] = None
+    parent_committed_at: Optional[datetime] = None
+    parent_n_results: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------

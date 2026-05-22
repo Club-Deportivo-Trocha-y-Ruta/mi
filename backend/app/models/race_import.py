@@ -1,7 +1,8 @@
 """Modelo SQLAlchemy para ``race_imports`` (trazabilidad de ingestas PDF).
 
 Schema previo: migración ``0edd41998022`` (2026-05-15). Extendido por
-``e8f9a0b1c2d3`` (2026-05-20, F-UP1) para soportar el flow upload UI.
+``e8f9a0b1c2d3`` (2026-05-20, F-UP1) para soportar el flow upload UI y por
+``f9a0b1c2d3e4`` (2026-05-21, F-UP-REV1) para soportar revisiones integrales.
 
 Cada ingesta deja un ``RaceImport`` con:
 
@@ -15,6 +16,9 @@ Cada ingesta deja un ``RaceImport`` con:
   ``general_storage_url``/``general_sha256`` (GENERAL opcional),
   ``parse_meta_json`` (estado intermedio del wizard),
   ``original_filename`` (preservado pre-sanitización).
+- (F-UP-REV1) Columnas de revisión: ``parent_import_id`` (self-ref al committed
+  inmediato anterior) y ``revision_reason`` (motivo libre del coach).
+  ``is_revision`` se deriva: ``parent_import_id IS NOT NULL``.
 """
 from __future__ import annotations
 
@@ -93,6 +97,8 @@ class RaceImport(Base):
         # F-UP1
         Index("ix_race_imports_event_id", "event_id"),
         Index("ix_race_imports_status", "status"),
+        # F-UP-REV1
+        Index("ix_race_imports_parent_id", "parent_import_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -156,6 +162,25 @@ class RaceImport(Base):
     )
 
     # ---------------------------------------------------------------------
+    # F-UP-REV1: revisión integral de resultados
+    # ---------------------------------------------------------------------
+    # FK self-ref al import committed inmediato anterior. ``ON DELETE SET NULL``
+    # preserva las revisiones descendientes si un import previo se hard-deletea
+    # (operación de emergencia documentada en runbook). Encadenamiento lineal:
+    # revisión-de-revisión apunta al último committed (``committed_at DESC LIMIT 1``
+    # en ``detect_revision``).
+    parent_import_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("race_imports.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Texto libre del motivo de revisión. Obligatorio si el diff incluye deletes
+    # (validación app-level en ``commit_revision``). PRIVACIDAD: nunca se loggea
+    # el texto, solo ``len(reason)``.
+    revision_reason: Mapped[Optional[str]] = mapped_column(
+        String(300), nullable=True
+    )
+
+    # ---------------------------------------------------------------------
     # Relaciones
     # ---------------------------------------------------------------------
     series: Mapped["RaceSeries"] = relationship(
@@ -171,3 +196,23 @@ class RaceImport(Base):
         "RaceEvent",
         foreign_keys="[RaceImport.event_id]",
     )
+    # Self-ref: parent = import committed anterior (NULL para primer import).
+    # ``remote_side=[id]`` indica que el lado "remoto" de la relación es la PK
+    # — patrón canónico SQLAlchemy para FK self-ref.
+    parent: Mapped[Optional["RaceImport"]] = relationship(
+        "RaceImport",
+        remote_side="RaceImport.id",
+        foreign_keys="[RaceImport.parent_import_id]",
+    )
+
+    # ---------------------------------------------------------------------
+    # Properties derivadas
+    # ---------------------------------------------------------------------
+    @property
+    def is_revision(self) -> bool:
+        """True si este import es revisión de uno previo (no persistido).
+
+        Derivado de ``parent_import_id IS NOT NULL`` — no se persiste para evitar
+        drift entre dos campos que deben siempre coincidir.
+        """
+        return self.parent_import_id is not None
