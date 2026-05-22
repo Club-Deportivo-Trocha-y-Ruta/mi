@@ -275,6 +275,74 @@ async def _last_node(db: AsyncSession, run_db_id: int) -> Optional[str]:
     return getattr(first, "node_name", None) or first[0]
 
 
+# Mapeo de tipos in-memory (events.py) → ENUM DB (agentruneventtype).
+# La tabla `agent_run_events.event_type` solo acepta los valores del ENUM,
+# pero los wrappers emiten `node_error` y `run_failed` (sintético). Esto
+# evita DataError al persistir y mantiene los nombres in-memory ricos.
+_EVENT_TYPE_TO_DB: dict[str, str] = {
+    "node_start": "node_start",
+    "node_end": "node_end",
+    "node_error": "error",
+    "hitl_request": "hitl_request",
+    "hitl_response": "hitl_response",
+    "explain": "explain",
+    "token": "token",
+    "error": "error",
+    "done": "done",
+    "run_failed": "error",
+}
+
+
+async def _persist_events(
+    db: AsyncSession,
+    run_db_id: int,
+    events: list[dict[str, Any]],
+) -> int:
+    """Bulk INSERT de eventos in-memory a ``agent_run_events``.
+
+    Idempotente: omite eventos con ``seq <= MAX(seq)`` actual para el run,
+    de forma que reintentos no dupliquen. Retorna el conteo insertado.
+    """
+    if not events:
+        return 0
+    import json as _json
+
+    existing = await _last_seq(db, run_db_id)
+    inserted = 0
+    for ev in events:
+        try:
+            seq = int(ev.get("seq") or 0)
+        except (TypeError, ValueError):
+            continue
+        if seq <= existing:
+            continue
+        type_raw = str(ev.get("type") or "")
+        type_db = _EVENT_TYPE_TO_DB.get(type_raw, "error")
+        node = ev.get("node")
+        payload = ev.get("payload") or {}
+        if not isinstance(payload, dict):
+            payload = {"_value": payload}
+        await db.execute(
+            text(
+                """
+                INSERT INTO agent_run_events
+                    (run_id, seq, event_type, node_name, payload_json, created_at)
+                VALUES (:rid, :seq, :et, :nn, :pl, :ts)
+                """
+            ),
+            {
+                "rid": run_db_id,
+                "seq": seq,
+                "et": type_db,
+                "nn": node,
+                "pl": _json.dumps(payload, ensure_ascii=False, default=str),
+                "ts": _utc_now(),
+            },
+        )
+        inserted += 1
+    return inserted
+
+
 async def _update_run_status(
     db: AsyncSession,
     external_run_id: str,
@@ -332,6 +400,77 @@ def _extract_final_output(result_state: Optional[dict[str, Any]]) -> Optional[di
         return None
 
     return payload
+
+
+async def _finalize_run(
+    db: AsyncSession,
+    external_run_id: str,
+    exc: Optional[BaseException],
+    result_state: Optional[dict[str, Any]],
+) -> None:
+    """Cierre atómico de un run: drena eventos + actualiza estado terminal.
+
+    Se invoca desde ``_on_complete`` del runner (success / exception /
+    cancel). Si el grafo falló antes de emitir cualquier evento de nodo,
+    sintetiza un evento ``error`` para que la UI tenga al menos un dato
+    explícito de la falla (invariante INV-3 del módulo de tests).
+
+    Idempotente: si los eventos ya están persistidos no duplica (filtro
+    por ``seq > MAX(seq)``).
+    """
+    final_payload = _extract_final_output(result_state) if exc is None else None
+    graph_status = (result_state or {}).get("status") if exc is None else None
+
+    if exc is not None:
+        new_status = "failed"
+        err: Optional[str] = f"{type(exc).__name__}: {str(exc)[:500]}"
+    elif graph_status == "failed":
+        new_status = "failed"
+        errors_list = (result_state or {}).get("errors") or []
+        first_err = errors_list[0] if errors_list else {}
+        err = first_err.get("message") or "Grafo terminó con status=failed"
+    elif not final_payload:
+        new_status = "failed"
+        err = "Grafo completó sin output"
+    else:
+        new_status = "completed"
+        err = None
+
+    run = await _load_run(db, external_run_id)
+    if run is None:
+        logger.error("_finalize_run: run %s no existe", external_run_id)
+        return
+    run_db_id = int(run["id"])
+
+    events = list((result_state or {}).get("events") or [])
+
+    if new_status == "failed":
+        has_err_event = any(
+            str(e.get("type") or "") in {"error", "node_error", "run_failed"}
+            for e in events
+        )
+        if not has_err_event:
+            next_seq = max((int(e.get("seq") or 0) for e in events), default=0) + 1
+            err_type = type(exc).__name__ if exc else "GraphFailure"
+            err_msg = (str(exc) if exc else err or "Run failed")[:200]
+            events.append(
+                {
+                    "seq": next_seq,
+                    "ts": _utc_now().isoformat(),
+                    "type": "error",
+                    "node": None,
+                    "payload": {"exc": err_type, "msg": err_msg},
+                }
+            )
+
+    await _persist_events(db, run_db_id, events)
+    await _update_run_status(
+        db,
+        external_run_id,
+        new_status,
+        error_message=err,
+        final_output=final_payload,
+    )
 
 
 def _ensure_run_owner(run: dict[str, Any], user: User) -> None:
@@ -450,36 +589,12 @@ async def start_run(
     ) -> None:
         from app.database import AsyncSessionLocal
 
-        final_payload = _extract_final_output(result_state) if exc is None else None
-        graph_status = (result_state or {}).get("status") if exc is None else None
-
-        if exc is not None:
-            new_status = "failed"
-            err: Optional[str] = f"{type(exc).__name__}: {str(exc)[:500]}"
-        elif graph_status == "failed":
-            new_status = "failed"
-            errors_list = (result_state or {}).get("errors") or []
-            first_err = errors_list[0] if errors_list else {}
-            err = first_err.get("message") or "Grafo terminó con status=failed"
-        elif not final_payload:
-            new_status = "failed"
-            err = "Grafo completó sin output"
-        else:
-            new_status = "completed"
-            err = None
-
         async with AsyncSessionLocal() as session:
             try:
-                await _update_run_status(
-                    session,
-                    rid,
-                    new_status,
-                    error_message=err,
-                    final_output=final_payload,
-                )
+                await _finalize_run(session, rid, exc, result_state)
                 await session.commit()
             except Exception:  # noqa: BLE001
-                logger.exception("_on_complete: update agent_runs falló para %s", rid)
+                logger.exception("_on_complete: finalize_run falló para %s", rid)
 
     try:
         await submit_run(run_id, initial_state, on_complete=_on_complete)

@@ -28,14 +28,31 @@ _db_factory_var: contextvars.ContextVar[Optional[SessionContextFactory]] = (
     contextvars.ContextVar("race_ai_db_factory", default=None)
 )
 
+# Fallback módulo-global. ContextVar.set() en import-time (main.py) no
+# siempre propaga a tasks spawneados por uvicorn cuando el contexto del
+# request es derivado del raíz pero ContextVar fue seteado *después* de
+# que uvicorn inicializó su event loop. Mantenemos ContextVar para tests
+# que necesitan aislamiento por context, y caemos al global cuando el
+# contextvar no fue inyectado en ese contexto.
+_db_factory_global: Optional[SessionContextFactory] = None
+
 
 def set_db_factory(factory: Optional[SessionContextFactory]) -> None:
-    """Setter del factory (tests + boot de la app)."""
+    """Setter del factory (tests + boot de la app).
+
+    Setea tanto el ``ContextVar`` (aislamiento por contexto en tests)
+    como el módulo-global (resiliente a tasks spawneados por uvicorn).
+    """
+    global _db_factory_global
+    _db_factory_global = factory
     _db_factory_var.set(factory)
 
 
 def get_db_factory() -> Optional[SessionContextFactory]:
-    return _db_factory_var.get()
+    factory = _db_factory_var.get()
+    if factory is None:
+        factory = _db_factory_global
+    return factory
 
 
 @asynccontextmanager

@@ -204,14 +204,20 @@ class FakeSession:
         # INSERT agent_run_events
         if "INSERT INTO agent_run_events" in sql:
             rid = params["rid"]
+            # Backward-compat: HITL submit usa params {rid, seq, pl} sin
+            # event_type ni node_name. El finalize_run los provee.
+            event_type = params.get("et") or "hitl_response"
+            node_name = params.get("nn")
+            if node_name is None and event_type == "hitl_response":
+                node_name = "hitl_gate_review"
             self.events_by_run_db_id.setdefault(rid, []).append(
                 {
                     "id": self._next_event_id,
                     "seq": params["seq"],
-                    "event_type": "hitl_response",
-                    "node_name": "hitl_gate_review",
+                    "event_type": event_type,
+                    "node_name": node_name,
                     "payload_json": params.get("pl") or "{}",
-                    "created_at": datetime.now(timezone.utc),
+                    "created_at": params.get("ts") or datetime.now(timezone.utc),
                 }
             )
             self._next_event_id += 1
