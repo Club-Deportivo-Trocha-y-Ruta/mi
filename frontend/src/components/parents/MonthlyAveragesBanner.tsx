@@ -10,9 +10,6 @@ interface MonthlyAveragesBannerProps {
   athleteName: string;
 }
 
-const BANNER_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function AttendanceMeter({ percentage }: { percentage: number }) {
   const pct = Math.min(100, Math.max(0, percentage));
   const color = pct >= 75 ? "bg-green-500" : pct >= 50 ? "bg-amber-400" : "bg-red-400";
@@ -51,8 +48,7 @@ export function MonthlyAveragesBanner({
     <section
       data-testid="parent-monthly-banner"
       aria-label={`Resumen del mes de ${monthLabel} para ${athleteName}`}
-      className="rounded-xl bg-white px-5 py-4"
-      style={{ boxShadow: BANNER_SHADOW }}
+      className="rounded-xl bg-white px-5 py-4 shadow-ring-soft"
     >
       <header className="mb-3 flex items-baseline justify-between gap-3">
         <h2

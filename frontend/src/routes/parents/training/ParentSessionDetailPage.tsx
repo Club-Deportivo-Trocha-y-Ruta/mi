@@ -14,11 +14,6 @@ const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
 );
 
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 const sectionHeading = "text-sm font-semibold text-mid-gray mb-3";
 
 function formatDate(dateStr: string): string {
@@ -32,7 +27,7 @@ function formatTime(timeStr: string): string {
 
 function SkeletonCard() {
   return (
-    <div className="rounded-xl bg-white p-5 space-y-3" style={cardStyle}>
+    <div className="rounded-xl bg-white p-5 space-y-3 shadow-ring-soft">
       {[...Array(3)].map((_, i) => (
         <div key={i} className="h-4 animate-pulse rounded bg-light-gray" style={{ width: `${70 - i * 15}%` }} />
       ))}
@@ -81,7 +76,7 @@ export function ParentSessionDetailPage() {
           <span>←</span>
           <span>Entrenamientos</span>
         </Link>
-        <div className="rounded-xl bg-white p-8 text-center" style={cardStyle}>
+        <div className="rounded-xl bg-white p-8 text-center shadow-ring-soft">
           <p className="text-base font-medium text-charcoal">Sesión no encontrada</p>
           <p className="mt-1 text-sm text-mid-gray">
             La sesión no existe o no tienes acceso a ella.
@@ -103,7 +98,7 @@ export function ParentSessionDetailPage() {
       </Link>
 
       {/* Header */}
-      <div className="rounded-xl bg-white px-5 py-4" style={cardStyle} data-testid="session-header">
+      <div className="rounded-xl bg-white px-5 py-4 shadow-ring-soft" data-testid="session-header">
         <div className="flex flex-wrap items-center gap-2 mb-1">
           <h1
             className="text-xl text-charcoal"
@@ -119,7 +114,7 @@ export function ParentSessionDetailPage() {
       </div>
 
       {/* Detalles generales */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-3" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-ring-soft">
         <h2 className={sectionHeading}>Detalles</h2>
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
@@ -137,7 +132,7 @@ export function ParentSessionDetailPage() {
 
       {/* Recorrido */}
       {(session.route_text || session.strava_url || session.route_file_path) && (
-        <div className="rounded-xl bg-white px-5 py-4 space-y-3" style={cardStyle}>
+        <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-ring-soft">
           <h2 className={sectionHeading}>Recorrido</h2>
 
           {session.route_text && (
@@ -170,7 +165,7 @@ export function ParentSessionDetailPage() {
       )}
 
       {/* Fotos y videos donde aparece tu atleta */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-3" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-ring-soft">
         <h2 className={sectionHeading}>Fotos y videos</h2>
         {mediaQuery.isLoading ? (
           <div className="h-24 animate-pulse rounded-lg bg-light-gray" />
@@ -199,7 +194,7 @@ export function ParentSessionDetailPage() {
         )}
 
         {!attendanceQuery.isLoading && !attendanceQuery.isError && myAttendance.length === 0 && (
-          <div className="rounded-xl bg-white px-5 py-5" style={cardStyle}>
+          <div className="rounded-xl bg-white px-5 py-5 shadow-ring-soft">
             <p className="text-sm text-mid-gray">
               Tu atleta no figura como convocado en esta sesión.
             </p>

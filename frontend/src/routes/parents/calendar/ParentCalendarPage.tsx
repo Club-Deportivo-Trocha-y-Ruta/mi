@@ -7,9 +7,6 @@ import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import type { CalendarView } from "@/components/calendar/CalendarShell";
 import type { MyAthleteOut } from "@/types/parent.types";
 
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 // ─── matchMedia helper ────────────────────────────────────────────────────────
 
 function isDesktop(): boolean {
@@ -155,8 +152,7 @@ export function ParentCalendarPage() {
       {/* Sin atletas vinculados */}
       {!athletesQuery.isLoading && !hasAthletes && (
         <div
-          className="rounded-xl bg-white px-5 py-10 text-center"
-          style={{ boxShadow: CARD_SHADOW }}
+          className="rounded-xl bg-white px-5 py-10 text-center shadow-ring-soft"
           data-testid="no-athletes-state"
         >
           <p className="text-sm font-medium text-charcoal">
@@ -242,8 +238,7 @@ export function ParentCalendarPage() {
           {/* Error state */}
           {eventsQuery.isError && !eventsQuery.isLoading && (
             <div
-              className="rounded-xl bg-white px-5 py-6"
-              style={{ boxShadow: CARD_SHADOW }}
+              className="rounded-xl bg-white px-5 py-6 shadow-ring-soft"
               role="alert"
             >
               <p className="text-sm text-mid-gray">
@@ -255,8 +250,7 @@ export function ParentCalendarPage() {
           {/* Empty state */}
           {!eventsQuery.isLoading && !eventsQuery.isError && events.length === 0 && (
             <div
-              className="rounded-xl bg-white px-5 py-10 text-center"
-              style={{ boxShadow: CARD_SHADOW }}
+              className="rounded-xl bg-white px-5 py-10 text-center shadow-ring-soft"
               data-testid="empty-state"
             >
               <p className="text-sm text-mid-gray">Sin eventos este mes.</p>

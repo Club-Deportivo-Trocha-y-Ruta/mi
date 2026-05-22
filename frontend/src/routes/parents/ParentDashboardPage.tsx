@@ -7,9 +7,6 @@ import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useMyConsentStatus } from "@/hooks/consent";
 import type { AthleteConsentStatus } from "@/types/consent";
 
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function SkeletonCard() {
   return <div className="h-48 animate-pulse rounded-xl bg-light-gray" />;
 }
@@ -90,10 +87,7 @@ export function ParentDashboardPage() {
       )}
 
       {isError && !isLoading && (
-        <div
-          className="rounded-xl bg-white px-5 py-6"
-          style={{ boxShadow: CARD_SHADOW }}
-        >
+        <div className="rounded-xl bg-white px-5 py-6 shadow-ring-soft">
           <p className="text-sm text-mid-gray">
             No fue posible cargar tus atletas. Intenta de nuevo.
           </p>
@@ -101,10 +95,7 @@ export function ParentDashboardPage() {
       )}
 
       {!isLoading && !isError && athletes !== undefined && athletes.length === 0 && (
-        <div
-          className="rounded-xl bg-white px-5 py-6"
-          style={{ boxShadow: CARD_SHADOW }}
-        >
+        <div className="rounded-xl bg-white px-5 py-6 shadow-ring-soft">
           <p className="text-sm text-mid-gray">
             No tienes atletas vinculados aún. Contacta a tu entrenador.
           </p>

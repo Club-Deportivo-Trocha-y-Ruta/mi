@@ -3,9 +3,9 @@ import { Link } from "react-router-dom";
 import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
 
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
+import { ATTENDANCE_LABELS, ATTENDANCE_TONE } from "@/lib/attendanceStatus";
 import { rubricToLabel, RUBRIC_TONE, showsRubricToParent } from "@/lib/parentMetrics";
 import type {
-  AttendanceStatus,
   KidAttendance,
   TrainingSession,
 } from "@/types/trainingSession.types";
@@ -15,20 +15,6 @@ interface ParentSessionCardProps {
   kidAttendance?: KidAttendance | null;
   athleteAgeDecimal?: number | null;
 }
-
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-const ATTENDANCE_CONFIG: Record<
-  AttendanceStatus,
-  { label: string; className: string }
-> = {
-  presente: { label: "Presente", className: "bg-green-100 text-green-800" },
-  tarde: { label: "Tarde", className: "bg-amber-100 text-amber-800" },
-  ausente: { label: "Ausente", className: "bg-red-100 text-red-700" },
-  justificado: { label: "Justificado", className: "bg-blue-100 text-blue-800" },
-  lesionado: { label: "Lesionado", className: "bg-purple-100 text-purple-800" },
-};
 
 const COMMENT_PREVIEW_CHARS = 90;
 
@@ -52,7 +38,9 @@ export function ParentSessionCard({
   athleteAgeDecimal,
 }: ParentSessionCardProps) {
   const status = kidAttendance?.status ?? null;
-  const attendanceBadge = status ? ATTENDANCE_CONFIG[status] : null;
+  const attendanceBadge = status
+    ? { label: ATTENDANCE_LABELS[status], className: ATTENDANCE_TONE[status] }
+    : null;
 
   const hasRubric =
     !!kidAttendance &&
@@ -70,8 +58,7 @@ export function ParentSessionCard({
 
   return (
     <article
-      className="overflow-hidden rounded-xl bg-white"
-      style={{ boxShadow: CARD_SHADOW }}
+      className="overflow-hidden rounded-xl bg-white shadow-ring-soft"
       data-testid="parent-session-card"
     >
       <Link
@@ -237,7 +224,7 @@ function CoachComment({ text }: { text: string }) {
           )}
         </button>
       )}
-      <p className="mt-2 text-[11px] leading-tight text-mid-gray">
+      <p className="mt-2 text-[11px] leading-tight text-text-disclaimer">
         Esta nota es para ti, no para tu atleta. Evita comentarla con él/ella el mismo día —
         habla mejor al día siguiente si lo crees necesario.
       </p>

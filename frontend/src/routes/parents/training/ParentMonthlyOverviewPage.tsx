@@ -5,9 +5,6 @@ import { useParentMonthlySummary } from "@/api/trainingSessions";
 import type { MyAthleteOut } from "@/types/parent.types";
 import type { ParentMonthlySummary } from "@/types/trainingSession.types";
 
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 const MONTHS = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
@@ -39,8 +36,7 @@ function AthleteSummaryCard({
 }) {
   return (
     <div
-      className="rounded-xl bg-white px-5 py-4 space-y-4"
-      style={{ boxShadow: CARD_SHADOW }}
+      className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-ring-soft"
       aria-label={`Resumen de ${athlete.athlete_first_name} ${athlete.athlete_last_name}`}
     >
       <div>
@@ -195,7 +191,7 @@ export function ParentMonthlyOverviewPage() {
 
       {/* Sin atletas */}
       {!athletesQuery.isLoading && athletes.length === 0 && (
-        <div className="rounded-xl bg-white px-5 py-8 text-center" style={{ boxShadow: CARD_SHADOW }}>
+        <div className="rounded-xl bg-white px-5 py-8 text-center shadow-ring-soft">
           <p className="text-sm text-mid-gray">
             No tienes atletas vinculados. Contacta al entrenador.
           </p>

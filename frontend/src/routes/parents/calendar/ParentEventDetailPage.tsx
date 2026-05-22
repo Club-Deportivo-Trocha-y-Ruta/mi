@@ -8,9 +8,6 @@ import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import type { MyAthleteOut } from "@/types/parent.types";
 import type { EventAttendanceRead, RSVPStatus } from "@/types/calendar.types";
 
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatFullDate(iso: string): string {
@@ -56,7 +53,7 @@ const RSVP_LABELS: Record<RSVPStatus, { label: string; classes: string }> = {
 
 function SkeletonCard() {
   return (
-    <div className="rounded-xl bg-white p-5 space-y-3" style={{ boxShadow: CARD_SHADOW }}>
+    <div className="rounded-xl bg-white p-5 space-y-3 shadow-ring-soft">
       {[...Array(4)].map((_, i) => (
         <div
           key={i}
@@ -192,7 +189,7 @@ export function ParentEventDetailPage() {
           <ArrowLeft size={14} aria-hidden="true" />
           Calendario
         </Link>
-        <div className="rounded-xl bg-white p-8 text-center" style={{ boxShadow: CARD_SHADOW }}>
+        <div className="rounded-xl bg-white p-8 text-center shadow-ring-soft">
           <p className="text-base font-medium text-charcoal">Evento no encontrado</p>
           <p className="mt-1 text-sm text-mid-gray">
             El evento no existe o no tienes acceso a él.
@@ -220,8 +217,7 @@ export function ParentEventDetailPage() {
 
       {/* Header del evento */}
       <div
-        className="rounded-xl bg-white px-5 py-4 space-y-2"
-        style={{ boxShadow: CARD_SHADOW }}
+        className="rounded-xl bg-white px-5 py-4 space-y-2 shadow-ring-soft"
         data-testid="event-header"
       >
         <div className="flex flex-wrap items-center gap-2">
@@ -240,8 +236,7 @@ export function ParentEventDetailPage() {
 
       {/* Fecha y hora */}
       <div
-        className="rounded-xl bg-white px-5 py-4 space-y-3 text-sm"
-        style={{ boxShadow: CARD_SHADOW }}
+        className="rounded-xl bg-white px-5 py-4 space-y-3 text-sm shadow-ring-soft"
       >
         <h2 className="text-xs font-semibold uppercase tracking-wide text-mid-gray mb-2">
           Fecha y hora
@@ -276,8 +271,7 @@ export function ParentEventDetailPage() {
       {/* Descripción */}
       {event.description && (
         <div
-          className="rounded-xl bg-white px-5 py-4"
-          style={{ boxShadow: CARD_SHADOW }}
+          className="rounded-xl bg-white px-5 py-4 shadow-ring-soft"
         >
           <h2 className="text-xs font-semibold uppercase tracking-wide text-mid-gray mb-2">
             Descripción
@@ -294,8 +288,7 @@ export function ParentEventDetailPage() {
       {/* Estado de mis atletas */}
       {myAthletes.length > 0 && (
         <div
-          className="rounded-xl bg-white px-5 py-4 space-y-4"
-          style={{ boxShadow: CARD_SHADOW }}
+          className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-ring-soft"
           data-testid="my-athletes-section"
         >
           <h2 className="text-xs font-semibold uppercase tracking-wide text-mid-gray">

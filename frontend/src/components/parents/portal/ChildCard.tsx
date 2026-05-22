@@ -8,9 +8,6 @@ interface ChildCardProps {
   athlete: MyAthleteOut;
 }
 
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 type MeasurementStatus = MyAthleteOut["measurement_status"];
 
 const STATUS_CONFIG: Record<
@@ -52,8 +49,7 @@ export function ChildCard({ athlete }: ChildCardProps) {
   return (
     <Link
       to={`/my-athletes/${athlete.athlete_id}`}
-      className="flex flex-col rounded-xl bg-white transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
-      style={{ boxShadow: CARD_SHADOW }}
+      className="flex flex-col rounded-xl bg-white shadow-ring-soft transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
       aria-label={`Ver detalle de ${athlete.athlete_first_name} ${athlete.athlete_last_name}`}
     >
       {/* Header */}

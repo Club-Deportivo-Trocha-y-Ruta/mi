@@ -1,30 +1,10 @@
-import type { Attendance, AttendanceStatus } from "@/types/trainingSession.types";
+import { ATTENDANCE_LABELS, ATTENDANCE_TONE } from "@/lib/attendanceStatus";
+import type { Attendance } from "@/types/trainingSession.types";
 
 interface ReadOnlyAttendanceRowProps {
   attendance: Attendance;
   athleteName: string;
 }
-
-const STATUS_LABELS: Record<AttendanceStatus, string> = {
-  presente: "Presente",
-  ausente: "Ausente",
-  justificado: "Justificado",
-  tarde: "Tarde",
-  lesionado: "Lesionado",
-};
-
-const STATUS_COLORS: Record<AttendanceStatus, string> = {
-  presente: "bg-green-100 text-green-800",
-  tarde: "bg-amber-100 text-amber-800",
-  ausente: "bg-red-100 text-red-700",
-  justificado: "bg-blue-100 text-blue-800",
-  lesionado: "bg-purple-100 text-purple-800",
-};
-
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
 
 function StatMini({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
@@ -38,8 +18,8 @@ function StatMini({ label, value }: { label: string; value: string | number | nu
 }
 
 export function ReadOnlyAttendanceRow({ attendance, athleteName }: ReadOnlyAttendanceRowProps) {
-  const statusLabel = STATUS_LABELS[attendance.status] ?? attendance.status;
-  const statusClass = STATUS_COLORS[attendance.status] ?? "bg-light-gray text-charcoal";
+  const statusLabel = ATTENDANCE_LABELS[attendance.status] ?? attendance.status;
+  const statusClass = ATTENDANCE_TONE[attendance.status] ?? "bg-light-gray text-charcoal";
 
   const hasRubric =
     attendance.rpe_omni != null ||
@@ -49,8 +29,7 @@ export function ReadOnlyAttendanceRow({ attendance, athleteName }: ReadOnlyAtten
 
   return (
     <div
-      className="rounded-xl bg-white px-5 py-4 space-y-4"
-      style={cardStyle}
+      className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-ring-soft"
       data-athlete-id={attendance.athlete_id}
       aria-label={`Registro de asistencia de ${athleteName}`}
     >

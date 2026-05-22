@@ -7,9 +7,6 @@ import { useParentMonthlySummary, useParentSessions } from "@/api/trainingSessio
 import type { KidAttendance, SessionFilters } from "@/types/trainingSession.types";
 import type { MyAthleteOut } from "@/types/parent.types";
 
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 
 function AthleteChip({
   athlete,
@@ -126,8 +123,7 @@ export function ParentSessionsPage() {
       {/* Sin atletas vinculados */}
       {!athletesQuery.isLoading && athletes.length === 0 && (
         <div
-          className="rounded-xl bg-white px-5 py-10 text-center"
-          style={{ boxShadow: CARD_SHADOW }}
+          className="rounded-xl bg-white px-5 py-10 text-center shadow-ring-soft"
           data-testid="no-athletes-state"
         >
           <p className="text-sm font-medium text-charcoal">
@@ -188,8 +184,7 @@ export function ParentSessionsPage() {
       {/* Aviso multi-atleta: el banner solo aparece con atleta seleccionado */}
       {athletes.length > 1 && selectedAthleteId === null && (
         <div
-          className="rounded-xl bg-white px-5 py-4"
-          style={{ boxShadow: CARD_SHADOW }}
+          className="rounded-xl bg-white px-5 py-4 shadow-ring-soft"
           data-testid="multi-athlete-hint"
         >
           <p className="text-sm text-mid-gray">
@@ -225,7 +220,7 @@ export function ParentSessionsPage() {
 
       {/* Error */}
       {sessionsQuery.isError && !sessionsQuery.isLoading && (
-        <div className="rounded-xl bg-white px-5 py-6" style={{ boxShadow: CARD_SHADOW }}>
+        <div className="rounded-xl bg-white px-5 py-6 shadow-ring-soft">
           <p className="text-sm text-mid-gray">
             No fue posible cargar las sesiones. Intenta de nuevo.
           </p>
@@ -235,8 +230,7 @@ export function ParentSessionsPage() {
       {/* Vacío */}
       {!sessionsQuery.isLoading && !sessionsQuery.isError && displaySessions.length === 0 && (
         <div
-          className="rounded-xl bg-white px-5 py-10 text-center"
-          style={{ boxShadow: CARD_SHADOW }}
+          className="rounded-xl bg-white px-5 py-10 text-center shadow-ring-soft"
           data-testid="empty-state"
         >
           <p className="text-sm text-mid-gray">
