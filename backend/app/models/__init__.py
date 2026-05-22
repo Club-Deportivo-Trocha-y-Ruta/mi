@@ -32,6 +32,10 @@ from app.models.calendar_event import (
 )
 from app.models.race_category import CategoryGender, CategoryTier, RaceCategory
 from app.models.race_competitor import CompetitorSex, RaceCompetitor
+from app.models.race_competitor_link_audit import (
+    LinkAuditAction,
+    RaceCompetitorLinkAudit,
+)
 from app.models.race_event import RaceEvent, RaceEventStatus, SurfaceCondition
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_points_scheme import RacePointsScheme
@@ -87,6 +91,8 @@ __all__ = [
     "SurfaceCondition",
     "RaceCompetitor",
     "CompetitorSex",
+    "RaceCompetitorLinkAudit",
+    "LinkAuditAction",
     "RaceResult",
     "ResultStatus",
     "RaceResultRevision",

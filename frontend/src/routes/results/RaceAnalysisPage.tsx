@@ -15,7 +15,7 @@
  */
 import { Suspense, lazy, useMemo, useState } from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
-import { History, ListChecks, Plus, Upload } from "lucide-react";
+import { History, Link2, ListChecks, Plus, Upload } from "lucide-react";
 
 import { AnalysisRunTimeline } from "@/components/ai/AnalysisRunTimeline";
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
@@ -40,15 +40,22 @@ const ImportsHistoryList = lazy(() =>
     default: m.ImportsHistoryList,
   })),
 );
+const UnlinkedCompetitorsTab = lazy(() =>
+  import("@/components/race/UnlinkedCompetitorsTab").then((m) => ({
+    default: m.UnlinkedCompetitorsTab,
+  })),
+);
 
 function TabTrigger({
   value,
   icon: Icon,
   label,
+  badge,
 }: {
   value: string;
   icon: typeof Plus;
   label: string;
+  badge?: number;
 }) {
   return (
     <TabsPrimitive.Trigger
@@ -56,7 +63,16 @@ function TabTrigger({
       className="flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-white data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
     >
       <Icon size={16} aria-hidden="true" />
-      {label}
+      <span>{label}</span>
+      {badge != null && badge > 0 && (
+        <span
+          className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800"
+          aria-label={`${badge} pendientes`}
+          data-testid={`tab-badge-${value}`}
+        >
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </TabsPrimitive.Trigger>
   );
 }
@@ -65,6 +81,7 @@ export function RaceAnalysisPage() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [hitlStepId, setHitlStepId] = useState<string | null>(null);
   const [chatAthleteId, setChatAthleteId] = useState<number | null>(null);
+  const [unlinkedCount, setUnlinkedCount] = useState<number>(0);
 
   // Resolvemos el nombre del atleta seleccionado en el chat — para
   // mostrar contexto visual sin tocar el body POST /chat.
@@ -128,6 +145,12 @@ export function RaceAnalysisPage() {
         >
           <TabTrigger value="new" icon={Plus} label="Nuevo análisis" />
           <TabTrigger value="upload" icon={Upload} label="Cargar resultados" />
+          <TabTrigger
+            value="unlinked"
+            icon={Link2}
+            label="Sin enlazar"
+            badge={unlinkedCount}
+          />
           <TabTrigger value="active" icon={ListChecks} label="Runs activos" />
           <TabTrigger value="history" icon={History} label="Insights históricos" />
         </TabsPrimitive.List>
@@ -209,6 +232,25 @@ export function RaceAnalysisPage() {
           >
             <ImportWizard />
             <ImportsHistoryList />
+          </Suspense>
+        </TabsPrimitive.Content>
+
+        {/* ── Tab: Sin enlazar (Option A R1) ─────────────────── */}
+        <TabsPrimitive.Content value="unlinked" className="mt-4 space-y-5">
+          <Suspense
+            fallback={
+              <div
+                className="rounded-xl bg-light-gray/40 p-6 text-center text-sm text-mid-gray"
+                role="status"
+                aria-live="polite"
+              >
+                Cargando módulo de enlace retroactivo…
+              </div>
+            }
+          >
+            <UnlinkedCompetitorsTab
+              onUnlinkedCountChange={setUnlinkedCount}
+            />
           </Suspense>
         </TabsPrimitive.Content>
 
