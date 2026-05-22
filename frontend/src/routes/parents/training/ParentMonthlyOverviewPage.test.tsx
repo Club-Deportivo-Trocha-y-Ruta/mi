@@ -84,7 +84,7 @@ describe("ParentMonthlyOverviewPage", () => {
     expect(screen.getByText("Valentina García")).toBeInTheDocument();
   });
 
-  it("muestra el porcentaje de asistencia", () => {
+  it("muestra entrenos absolutos + % como referencia", () => {
     (useMyAthletes as any).mockReturnValue({
       data: [makeAthlete(10, "Sebastián")],
       isLoading: false,
@@ -98,10 +98,13 @@ describe("ParentMonthlyOverviewPage", () => {
 
     renderPage();
 
-    expect(screen.getByText(/8\/10 sesiones \(80%\)/)).toBeInTheDocument();
+    // Wave 5: el número absoluto domina ("8 entrenos de 10 programados")
+    // y el % aparece como secundario.
+    expect(screen.getByText(/8 entrenos de 10 programados/)).toBeInTheDocument();
+    expect(screen.getByText(/80%/)).toBeInTheDocument();
   });
 
-  it("muestra los focos técnicos cubiertos", () => {
+  it("muestra el foco técnico", () => {
     (useMyAthletes as any).mockReturnValue({
       data: [makeAthlete(10, "Sebastián")],
       isLoading: false,
@@ -119,7 +122,7 @@ describe("ParentMonthlyOverviewPage", () => {
     expect(screen.getByText("Virajes")).toBeInTheDocument();
   });
 
-  it("muestra 'Sin datos para este mes' si no hay summary", () => {
+  it("muestra 'Aún no hay sesiones cerradas este mes' si no hay summary", () => {
     (useMyAthletes as any).mockReturnValue({
       data: [makeAthlete(10, "Sebastián")],
       isLoading: false,
@@ -130,7 +133,9 @@ describe("ParentMonthlyOverviewPage", () => {
 
     renderPage();
 
-    expect(screen.getByText("Sin datos para este mes.")).toBeInTheDocument();
+    // Wave 5: copy más explícito sobre QUÉ falta ("sesiones cerradas").
+    // "Sin datos para este mes" sonaba a error técnico.
+    expect(screen.getByText("Aún no hay sesiones cerradas este mes.")).toBeInTheDocument();
   });
 
   it("NO llama al endpoint de reportes del club (solo resumen propio)", () => {

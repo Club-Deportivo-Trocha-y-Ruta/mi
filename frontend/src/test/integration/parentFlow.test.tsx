@@ -33,6 +33,15 @@ vi.mock("@/api/trainingSessions");
 vi.mock("@/components/training/RouteViewer", () => ({
   RouteViewer: () => <div data-testid="route-viewer" />,
 }));
+// Wave 5: MediaGallery ahora es lazy + Suspense en ParentSessionDetailPage.
+// Mockeamos el módulo para mantener el render síncrono y evitar warnings de
+// dynamic import en jsdom.
+vi.mock("@/components/training/MediaGallery", () => ({
+  MediaGallery: () => <div data-testid="media-gallery" />,
+}));
+vi.mock("@/api/sessionMedia", () => ({
+  useSessionMedia: () => ({ data: [], isLoading: false, isError: false }),
+}));
 
 import * as apiModule from "@/api/client";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
@@ -44,6 +53,7 @@ import {
 } from "@/api/trainingSessions";
 import { ParentSessionsPage } from "@/routes/parents/training/ParentSessionsPage";
 import { ParentSessionDetailPage } from "@/routes/parents/training/ParentSessionDetailPage";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import type { TrainingSession, Attendance } from "@/types/trainingSession.types";
 import type { MyAthleteOut } from "@/types/parent.types";
 
@@ -146,9 +156,11 @@ describe("Parent flow — lista de sesiones (ParentSessionsPage)", () => {
   it("muestra solo las sesiones donde el hijo está convocado", () => {
     render(
       <QueryClientProvider client={makeQC()}>
+        <TooltipProvider delayDuration={0}>
         <MemoryRouter>
           <ParentSessionsPage />
         </MemoryRouter>
+        </TooltipProvider>
       </QueryClientProvider>,
     );
 
@@ -159,9 +171,11 @@ describe("Parent flow — lista de sesiones (ParentSessionsPage)", () => {
   it("NO realiza ninguna solicitud GET a /api/clubs endpoints", async () => {
     render(
       <QueryClientProvider client={makeQC()}>
+        <TooltipProvider delayDuration={0}>
         <MemoryRouter>
           <ParentSessionsPage />
         </MemoryRouter>
+        </TooltipProvider>
       </QueryClientProvider>,
     );
 
@@ -201,11 +215,13 @@ describe("Parent flow — detalle de sesión", () => {
   it("muestra únicamente la asistencia del propio hijo (no la de otros atletas)", () => {
     render(
       <QueryClientProvider client={makeQC()}>
+        <TooltipProvider delayDuration={0}>
         <MemoryRouter initialEntries={["/parents/training/sessions/1"]}>
           <Routes>
             <Route path="/parents/training/sessions/:id" element={<ParentSessionDetailPage />} />
           </Routes>
         </MemoryRouter>
+        </TooltipProvider>
       </QueryClientProvider>,
     );
 
@@ -224,11 +240,13 @@ describe("Parent flow — detalle de sesión", () => {
 
     render(
       <QueryClientProvider client={makeQC()}>
+        <TooltipProvider delayDuration={0}>
         <MemoryRouter initialEntries={["/parents/training/sessions/1"]}>
           <Routes>
             <Route path="/parents/training/sessions/:id" element={<ParentSessionDetailPage />} />
           </Routes>
         </MemoryRouter>
+        </TooltipProvider>
       </QueryClientProvider>,
     );
 
@@ -244,11 +262,13 @@ describe("Parent flow — detalle de sesión", () => {
 
     const { container } = render(
       <QueryClientProvider client={makeQC()}>
+        <TooltipProvider delayDuration={0}>
         <MemoryRouter initialEntries={["/parents/training/sessions/1"]}>
           <Routes>
             <Route path="/parents/training/sessions/:id" element={<ParentSessionDetailPage />} />
           </Routes>
         </MemoryRouter>
+        </TooltipProvider>
       </QueryClientProvider>,
     );
 
@@ -270,11 +290,13 @@ describe("Parent flow — detalle de sesión", () => {
 
     render(
       <QueryClientProvider client={makeQC()}>
+        <TooltipProvider delayDuration={0}>
         <MemoryRouter initialEntries={["/parents/training/sessions/1"]}>
           <Routes>
             <Route path="/parents/training/sessions/:id" element={<ParentSessionDetailPage />} />
           </Routes>
         </MemoryRouter>
+        </TooltipProvider>
       </QueryClientProvider>,
     );
 
@@ -315,9 +337,11 @@ describe("Parent flow — padre con múltiples hijos", () => {
 
     render(
       <QueryClientProvider client={makeQC()}>
+        <TooltipProvider delayDuration={0}>
         <MemoryRouter>
           <ParentSessionsPage />
         </MemoryRouter>
+        </TooltipProvider>
       </QueryClientProvider>,
     );
 

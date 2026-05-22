@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 import { ParentSessionCard } from "./ParentSessionCard";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import type { KidAttendance, TrainingSession } from "@/types/trainingSession.types";
 
 function makeSession(overrides?: Partial<TrainingSession>): TrainingSession {
@@ -41,11 +42,13 @@ interface RenderProps {
 function renderCard({ session, kidAttendance, athleteAgeDecimal }: RenderProps = {}) {
   return render(
     <MemoryRouter>
-      <ParentSessionCard
-        session={session ?? makeSession()}
-        kidAttendance={kidAttendance ?? null}
-        athleteAgeDecimal={athleteAgeDecimal ?? null}
-      />
+      <TooltipProvider delayDuration={0}>
+        <ParentSessionCard
+          session={session ?? makeSession()}
+          kidAttendance={kidAttendance ?? null}
+          athleteAgeDecimal={athleteAgeDecimal ?? null}
+        />
+      </TooltipProvider>
     </MemoryRouter>,
   );
 }
@@ -189,12 +192,40 @@ describe("ParentSessionCard", () => {
       expect(screen.queryByText(/Nota del entrenador/)).not.toBeInTheDocument();
     });
 
-    it("muestra disclaimer 'para ti, no para tu atleta'", () => {
+    it("muestra disclaimer pedagógico arriba con role=note", () => {
       renderCard({
         session: executed,
         kidAttendance: makeAttendance({ individual_feedback: "Atento a su frenada." }),
       });
-      expect(screen.getByText(/para ti, no para tu atleta/i)).toBeInTheDocument();
+      // Wave 5: el copy cambió de "para ti, no para tu atleta" a
+      // "para acompañarte como familia" y se movió arriba con role=note.
+      const note = screen.getByRole("note", { name: /recomendación pedagógica/i });
+      expect(note).toHaveTextContent(/acompañarte como familia/i);
+      expect(note).toHaveTextContent(/espera al día siguiente/i);
+    });
+
+    it("disclaimer aparece ANTES del cuerpo del comentario en el DOM", () => {
+      renderCard({
+        session: executed,
+        kidAttendance: makeAttendance({ individual_feedback: "Atento a su frenada." }),
+      });
+      const note = screen.getByRole("note", { name: /recomendación pedagógica/i });
+      const comment = screen.getByTestId("inline-comment-preview");
+      // compareDocumentPosition: 4 = note precede a comment
+      // (https://developer.mozilla.org/docs/Web/API/Node/compareDocumentPosition)
+      expect(note.compareDocumentPosition(comment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("el comentario tiene aria-describedby apuntando al disclaimer", () => {
+      renderCard({
+        session: executed,
+        kidAttendance: makeAttendance({ individual_feedback: "Atento a su frenada." }),
+      });
+      const comment = screen.getByTestId("inline-comment-preview");
+      const describedById = comment.getAttribute("aria-describedby");
+      expect(describedById).toBeTruthy();
+      const note = screen.getByRole("note", { name: /recomendación pedagógica/i });
+      expect(note.id).toBe(describedById);
     });
   });
 

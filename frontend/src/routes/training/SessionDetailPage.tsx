@@ -17,13 +17,22 @@ import {
 } from "@/api/sessionMedia";
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
 import { AttendanceTable } from "@/components/training/AttendanceTable";
-import { MediaGallery } from "@/components/training/MediaGallery";
 import { MediaUploadZone } from "@/components/training/MediaUploadZone";
 import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { SessionMedia } from "@/types/trainingSession.types";
 
 const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
+);
+
+// Wave 5 perf: MediaGallery se importa lazy también en coach. Si quedara
+// estático aquí, el `lazy()` del parent no produce chunk separado
+// (Vite emite INEFFECTIVE_DYNAMIC_IMPORT) — el módulo entra al main bundle
+// y el parent paga ese peso al cargar /parents/training/sessions/:id
+// aunque su lazy import sugiera lo contrario.
+const MediaGallery = lazy(() =>
+  import("@/components/training/MediaGallery").then((m) => ({ default: m.MediaGallery })),
 );
 
 function formatDate(dateStr: string): string {
@@ -391,11 +400,19 @@ export function SessionDetailPage() {
         {mediaQuery.isLoading ? (
           <div className="h-24 animate-pulse rounded-lg bg-light-gray" />
         ) : (
-          <MediaGallery
-            media={(mediaQuery.data ?? []) as SessionMedia[]}
-            onDelete={(mediaId) => mediaDeleteMutation.mutate(mediaId)}
-            isDeleting={mediaDeleteMutation.isPending}
-          />
+          <Suspense
+            fallback={
+              <div role="status" aria-busy="true" aria-label="Cargando fotos y videos">
+                <Skeleton className="h-24 rounded-lg" />
+              </div>
+            }
+          >
+            <MediaGallery
+              media={(mediaQuery.data ?? []) as SessionMedia[]}
+              onDelete={(mediaId) => mediaDeleteMutation.mutate(mediaId)}
+              isDeleting={mediaDeleteMutation.isPending}
+            />
+          </Suspense>
         )}
       </div>
 

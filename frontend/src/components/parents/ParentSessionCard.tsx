@@ -1,10 +1,15 @@
-import { useId, useState } from "react";
+import { memo, useId, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, Info } from "lucide-react";
 
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
-import { ATTENDANCE_LABELS, ATTENDANCE_TONE } from "@/lib/attendanceStatus";
+import { getAttendancePresentationWithExcuse } from "@/lib/attendanceStatus";
 import { rubricToLabel, RUBRIC_TONE, showsRubricToParent } from "@/lib/parentMetrics";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type {
   KidAttendance,
   TrainingSession,
@@ -17,6 +22,22 @@ interface ParentSessionCardProps {
 }
 
 const COMMENT_PREVIEW_CHARS = 90;
+
+// Wave 5: microcopy pedagógico aplicado a cada label de rúbrica.
+// El padre típico interpreta "Esfuerzo: Iniciando" como nota baja. El tooltip
+// reencuadra: en LTAD 10-15 los marcadores cualitativos no son calificación;
+// dependen de sueño/escuela/brote de crecimiento, no de "talento".
+const RUBRIC_TOOLTIPS: Record<"effort" | "attitude" | "technique", string> = {
+  effort:
+    "A los 10-15 años el esfuerzo varía con sueño, escuela, crecimiento. Una sesión 'Iniciando' no es regresión.",
+  attitude:
+    "Disposición y compromiso del entrenamiento. Se ve mejor a lo largo del mes que en una sola sesión.",
+  technique:
+    "Habilidad sobre la bici. Progresa con repetición, no con presión.",
+};
+
+const RPE_TOOLTIP =
+  "Escala interna del entrenador (1-10). No es nota: mide qué tan duro lo sintió tu atleta ese día.";
 
 function formatDate(dateStr: string): string {
   const [year, month, day] = dateStr.split("-");
@@ -32,15 +53,18 @@ function formatTime(timeStr: string): string {
   return timeStr.slice(0, 5);
 }
 
-export function ParentSessionCard({
+function ParentSessionCardImpl({
   session,
   kidAttendance,
   athleteAgeDecimal,
 }: ParentSessionCardProps) {
   const titleId = useId();
   const status = kidAttendance?.status ?? null;
+  const excuseReasonRaw = kidAttendance?.excuse_reason?.trim() || null;
+  // Wave 5: cuando hay excuse_reason, "ausente" se presenta como "No asistió —
+  // justificado" con tono azul (no rojo). Ver `getAttendancePresentationWithExcuse`.
   const attendanceBadge = status
-    ? { label: ATTENDANCE_LABELS[status], className: ATTENDANCE_TONE[status] }
+    ? getAttendancePresentationWithExcuse(status, excuseReasonRaw)
     : null;
 
   const hasRubric =
@@ -53,9 +77,8 @@ export function ParentSessionCard({
   const showRubric = showsRubricToParent(athleteAgeDecimal) && hasRubric;
 
   const feedback = kidAttendance?.individual_feedback?.trim() || null;
-  const excuseReason = kidAttendance?.excuse_reason?.trim() || null;
   const isExecuted = session.status === "executed";
-  const hasInlineFooter = !!attendanceBadge || showRubric || !!feedback || !!excuseReason;
+  const hasInlineFooter = !!attendanceBadge || showRubric || !!feedback || !!excuseReasonRaw;
 
   return (
     <article
@@ -85,7 +108,7 @@ export function ParentSessionCard({
             <SessionStatusBadge status={session.status} />
             {attendanceBadge && (
               <span
-                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${attendanceBadge.className}`}
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${attendanceBadge.tone}`}
                 aria-label={`Asistencia de tu atleta: ${attendanceBadge.label}`}
               >
                 {attendanceBadge.label}
@@ -102,9 +125,9 @@ export function ParentSessionCard({
           data-testid="parent-session-inline"
         >
           {/* Excuse reason (ausente / justificado / lesionado) */}
-          {excuseReason && (
+          {excuseReasonRaw && (
             <p className="text-sm text-mid-gray" data-testid="inline-excuse">
-              <span className="font-medium text-charcoal">Motivo:</span> {excuseReason}
+              <span className="font-medium text-charcoal">Motivo:</span> {excuseReasonRaw}
             </p>
           )}
 
@@ -140,6 +163,31 @@ export function ParentSessionCard({
   );
 }
 
+// Wave 5 perf: el componente recibe props como objetos (`session`, `kidAttendance`).
+// TanStack Query devuelve referencias estables mientras el cache no se invalide
+// y `staleTime: 5min` está activo a nivel global, por lo que `memo` evita
+// re-renders innecesarios cuando el padre cambia mes y la lista de cards
+// vuelve a renderizarse. El comparador shallow default basta — todas las
+// props son referencias o primitivas.
+export const ParentSessionCard = memo(ParentSessionCardImpl);
+ParentSessionCard.displayName = "ParentSessionCard";
+
+function InfoIcon({ label }: { label: string }) {
+  // Botón disparador del tooltip — separado del label para que el chip de la
+  // rúbrica siga siendo "etiqueta" semánticamente y solo el ⓘ sea interactivo.
+  return (
+    <TooltipTrigger asChild>
+      <button
+        type="button"
+        aria-label={label}
+        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-mid-gray transition-colors hover:text-charcoal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+      >
+        <Info size={12} aria-hidden="true" />
+      </button>
+    </TooltipTrigger>
+  );
+}
+
 function RubricInline({
   effort,
   attitude,
@@ -151,7 +199,12 @@ function RubricInline({
   technique: number | null;
   rpe: number | null;
 }) {
-  const items: { key: string; label: string; value: number | null; testId: string }[] = [
+  const items: {
+    key: "effort" | "attitude" | "technique";
+    label: string;
+    value: number | null;
+    testId: string;
+  }[] = [
     { key: "effort", label: "Esfuerzo", value: effort, testId: "inline-rubric-effort" },
     { key: "attitude", label: "Actitud", value: attitude, testId: "inline-rubric-attitude" },
     { key: "technique", label: "Técnica", value: technique, testId: "inline-rubric-technique" },
@@ -160,7 +213,7 @@ function RubricInline({
   return (
     <div data-testid="inline-rubric">
       <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-mid-gray">
-        Cómo le fue esta sesión
+        Lo que observó el entrenador
       </p>
       <ul className="flex flex-wrap gap-1.5">
         {items.map((it) => {
@@ -170,20 +223,28 @@ function RubricInline({
             <li
               key={it.key}
               data-testid={it.testId}
-              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${RUBRIC_TONE[label]}`}
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${RUBRIC_TONE[label]}`}
               aria-label={`${it.label}: ${label}`}
             >
               {it.label}: {label}
+              <Tooltip>
+                <InfoIcon label={`Más información sobre ${it.label}`} />
+                <TooltipContent side="top">{RUBRIC_TOOLTIPS[it.key]}</TooltipContent>
+              </Tooltip>
             </li>
           );
         })}
         {rpe != null && (
           <li
             data-testid="inline-rubric-rpe"
-            className="rounded-full bg-light-gray px-2.5 py-0.5 text-xs font-medium text-charcoal"
+            className="inline-flex items-center rounded-full bg-light-gray px-2.5 py-0.5 text-xs font-medium text-charcoal"
             aria-label={`Esfuerzo percibido registrado por el entrenador: ${rpe} de 10`}
           >
             RPE {rpe}/10
+            <Tooltip>
+              <InfoIcon label="Más información sobre RPE" />
+              <TooltipContent side="top">{RPE_TOOLTIP}</TooltipContent>
+            </Tooltip>
           </li>
         )}
       </ul>
@@ -195,15 +256,31 @@ function CoachComment({ text }: { text: string }) {
   const isLong = text.length > COMMENT_PREVIEW_CHARS;
   const [expanded, setExpanded] = useState(false);
   const collapsedId = useId();
+  const disclaimerId = useId();
   const preview = isLong ? `${text.slice(0, COMMENT_PREVIEW_CHARS).trimEnd()}…` : text;
 
   return (
     <div className="rounded-lg bg-light-gray/60 px-3 py-2.5">
+      {/* Wave 5 — disclaimer pedagógico ARRIBA del comentario.
+          Razón: el coach reportó que padres leen la rúbrica y reaccionan en
+          caliente con el atleta. Poner el disclaimer al pie lo lee demasiado
+          tarde — al inicio, condiciona el marco mental antes de leer la nota. */}
+      <p
+        id={disclaimerId}
+        role="note"
+        aria-label="Recomendación pedagógica"
+        className="mb-2 text-[11px] leading-snug text-text-disclaimer"
+      >
+        Esta nota es para acompañarte como familia. Si vas a conversarlo con tu
+        atleta, espera al día siguiente y enfócate en lo que disfrutó, no en
+        la rúbrica.
+      </p>
       <p className="mb-1 text-xs font-medium uppercase tracking-wide text-mid-gray">
         Nota del entrenador
       </p>
       <p
         id={collapsedId}
+        aria-describedby={disclaimerId}
         className="whitespace-pre-line text-sm text-charcoal"
         data-testid={expanded ? "inline-comment-full" : "inline-comment-preview"}
       >
@@ -229,10 +306,6 @@ function CoachComment({ text }: { text: string }) {
           )}
         </button>
       )}
-      <p className="mt-2 text-[11px] leading-tight text-text-disclaimer">
-        Esta nota es para ti, no para tu atleta. Evita comentarla con él/ella el mismo día —
-        habla mejor al día siguiente si lo crees necesario.
-      </p>
     </div>
   );
 }

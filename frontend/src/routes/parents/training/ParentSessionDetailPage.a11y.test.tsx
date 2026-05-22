@@ -8,6 +8,12 @@ expect.extend(toHaveNoViolations);
 
 vi.mock("@/hooks/parents/useMyAthletes");
 vi.mock("@/api/trainingSessions");
+vi.mock("@/components/training/MediaGallery", () => ({
+  MediaGallery: () => <div data-testid="media-gallery" />,
+}));
+vi.mock("@/api/sessionMedia", () => ({
+  useSessionMedia: () => ({ data: [], isLoading: false, isError: false }),
+}));
 vi.mock("@/components/training/RouteViewer", () => ({
   RouteViewer: () => <div data-testid="route-viewer" />,
 }));
@@ -15,6 +21,7 @@ vi.mock("@/components/training/RouteViewer", () => ({
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useTrainingSession, useSessionAttendance } from "@/api/trainingSessions";
 import { ParentSessionDetailPage } from "./ParentSessionDetailPage";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Attendance, TrainingSession } from "@/types/trainingSession.types";
 import type { MyAthleteOut } from "@/types/parent.types";
 
@@ -96,11 +103,13 @@ function renderPage(sessionId = 1) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/parents/training/sessions/${sessionId}`]}>
-        <Routes>
-          <Route path="/parents/training/sessions/:id" element={<ParentSessionDetailPage />} />
-        </Routes>
-      </MemoryRouter>
+      <TooltipProvider delayDuration={0}>
+        <MemoryRouter initialEntries={[`/parents/training/sessions/${sessionId}`]}>
+          <Routes>
+            <Route path="/parents/training/sessions/:id" element={<ParentSessionDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }

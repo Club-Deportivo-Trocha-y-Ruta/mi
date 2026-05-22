@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
 import { setQueryClient } from "@/lib/queryClientHandle";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 // Lazy load: race-analysis bundle es pesado (react-markdown + AI hooks)
 // y sólo coach/admin lo abren ocasionalmente.
@@ -60,6 +61,7 @@ function RootRedirect() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <TooltipProvider delayDuration={200} skipDelayDuration={300}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
@@ -292,6 +294,7 @@ export default function App() {
         />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

@@ -5,6 +5,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@/hooks/parents/useMyAthletes");
 vi.mock("@/api/trainingSessions");
+// Wave 5: MediaGallery se cargó como `lazy()`. El mock de su módulo evita
+// el Suspense + dynamic import en el entorno de test, manteniendo el flujo
+// síncrono y la cobertura de privacidad inalterada.
+vi.mock("@/components/training/MediaGallery", () => ({
+  MediaGallery: () => <div data-testid="media-gallery" />,
+}));
+vi.mock("@/api/sessionMedia", () => ({
+  useSessionMedia: () => ({ data: [], isLoading: false, isError: false }),
+}));
 vi.mock("@/components/training/RouteViewer", () => ({
   RouteViewer: () => <div data-testid="route-viewer" />,
 }));

@@ -49,3 +49,37 @@ export function getAttendancePresentation(status: AttendanceStatus): {
     tone: ATTENDANCE_TONE[status],
   };
 }
+
+/**
+ * Wave 5 — derivación pedagógica de la asistencia.
+ *
+ * Cuando hay `excuse_reason`, la ausencia tiene contexto (enfermedad, viaje,
+ * lesión leve, conflicto escolar). Mostrarla en rojo como "Ausente" castiga
+ * visualmente algo que es cuidado responsable de la familia. La regla:
+ *
+ *   - `ausente` SIN excuse_reason → "Ausente" en tono rojo (sigue siendo
+ *     una señal real para coach/padre).
+ *   - `ausente` CON excuse_reason → "No asistió — justificado" en tono azul
+ *     (igual que `justificado` — semánticamente lo es).
+ *   - Otros estados → labels/tones estándar.
+ *
+ * Esto NO cambia el dato persistido en BD (sigue siendo `ausente` con motivo);
+ * solo afecta la presentación al padre. El coach mantiene la información
+ * de que el atleta "no estuvo" pero el padre la ve sin estigma.
+ */
+export function getAttendancePresentationWithExcuse(
+  status: AttendanceStatus,
+  excuseReason: string | null | undefined,
+): { label: string; tone: string } {
+  const hasExcuse = !!excuseReason?.trim();
+  if (status === "ausente" && hasExcuse) {
+    return {
+      label: "No asistió — justificado",
+      tone: ATTENDANCE_TONE.justificado,
+    };
+  }
+  return {
+    label: ATTENDANCE_LABELS[status],
+    tone: ATTENDANCE_TONE[status],
+  };
+}

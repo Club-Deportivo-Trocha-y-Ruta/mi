@@ -16,9 +16,12 @@ function defaultPeriod(): { year: number; month: number } {
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
+// Wave 5: <50% deja de ser rojo. La ausencia justificada de un menor es
+// parte legítima del cuidado familiar, no una alerta. Conservamos ámbar
+// para <75% y verde para 75%+, sin rojo automático.
 function AttendanceBar({ percentage }: { percentage: number }) {
   const pct = Math.min(100, Math.max(0, percentage));
-  const color = pct >= 75 ? "bg-green-500" : pct >= 50 ? "bg-amber-400" : "bg-red-400";
+  const color = pct >= 75 ? "bg-green-500" : "bg-amber-400";
   return (
     <div className="h-2 w-full rounded-full bg-light-gray overflow-hidden" aria-hidden="true">
       <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
@@ -65,27 +68,38 @@ function AthleteSummaryCard({
       )}
 
       {!isLoading && !summary && (
-        <p className="text-sm text-mid-gray">Sin datos para este mes.</p>
+        <p className="text-sm text-mid-gray">Aún no hay sesiones cerradas este mes.</p>
       )}
 
       {!isLoading && summary && (
         <>
-          {/* Asistencia */}
+          {/* Asistencia — Wave 5: número absoluto domina, % es referencia */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-baseline justify-between gap-3 text-sm">
               <span className="text-mid-gray">Asistencia</span>
-              <span className="font-semibold text-charcoal">
-                {summary.count_present}/{summary.count_total} sesiones ({Math.round(summary.percentage)}%)
+              <span className="text-right">
+                <span className="font-semibold text-charcoal">
+                  {summary.count_present} entrenos de {summary.count_total} programados
+                </span>
+                <span className="ml-2 text-xs text-mid-gray">
+                  {Math.round(summary.percentage)}%
+                </span>
               </span>
             </div>
             <AttendanceBar percentage={summary.percentage} />
+            {summary.percentage < 75 && (
+              <p className="mt-1.5 text-xs leading-snug text-text-disclaimer">
+                Las ausencias justificadas son parte del cuidado. Conversa con
+                el entrenador si quieres entender la planificación del mes.
+              </p>
+            )}
           </div>
 
-          {/* Focos técnicos */}
+          {/* Foco técnico */}
           {summary.focos_técnicos.length > 0 && (
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-mid-gray mb-2">
-                Focos técnicos cubiertos
+                Foco técnico
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {summary.focos_técnicos.map((foco) => (

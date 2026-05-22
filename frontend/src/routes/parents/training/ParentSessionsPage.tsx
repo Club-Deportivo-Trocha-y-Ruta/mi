@@ -52,7 +52,16 @@ export function ParentSessionsPage() {
   const setSelectedAthleteId = useParentContextStore((s) => s.setActiveAthlete);
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current month, -1 = previous, etc.
 
-  const allAthleteIds = athletes.map((a) => a.athlete_id);
+  // Wave 5 perf: estabilizamos la referencia con useMemo + sort.
+  // Sin esto, `athletes.map(...)` produce un array nuevo cada render
+  // (incluso si las queries devuelven referencias estables), invalidando
+  // hooks downstream que dependen de `allAthleteIds` (useParentSessions,
+  // efectos, memos). Sort opcional pero hace la key estable frente a
+  // reordenamientos accidentales del backend.
+  const allAthleteIds = useMemo(
+    () => athletes.map((a) => a.athlete_id).sort((a, b) => a - b),
+    [athletes],
+  );
   const effectiveAthleteId =
     selectedAthleteId ?? (athletes.length === 1 ? athletes[0]?.athlete_id ?? null : null);
   const focusedAthlete = useMemo<MyAthleteOut | null>(
@@ -110,11 +119,25 @@ export function ParentSessionsPage() {
   const showCancelled = visibleSessions.length === 0 && sessions.length > 0;
   const displaySessions = showCancelled ? sessions : visibleSessions;
 
+  // Wave 5 perf: precomputamos un Map<sessionId, KidAttendance> para que el
+  // lookup en `getKidAttendance` sea O(1) en lugar de O(n*m). Con 20+ sesiones
+  // y 1+ atletas, el patrón find().find() se ejecutaba ~40 veces por render.
+  // El Map se reconstruye sólo cuando cambia la lista de sesiones o el atleta
+  // efectivo — barato.
+  const attendanceBySessionId = useMemo(() => {
+    const map = new Map<number, KidAttendance>();
+    if (!effectiveAthleteId) return map;
+    for (const session of sessions) {
+      const att = session.kid_attendances?.find(
+        (a) => a.athlete_id === effectiveAthleteId,
+      );
+      if (att) map.set(session.id, att);
+    }
+    return map;
+  }, [sessions, effectiveAthleteId]);
+
   const getKidAttendance = (sessionId: number): KidAttendance | null => {
-    const athleteId = effectiveAthleteId;
-    if (!athleteId) return null;
-    const session = sessions.find((s) => s.id === sessionId);
-    return session?.kid_attendances?.find((a) => a.athlete_id === athleteId) ?? null;
+    return attendanceBySessionId.get(sessionId) ?? null;
   };
 
   const showBanner = !!effectiveAthleteId && !!focusedAthlete;

@@ -1,5 +1,12 @@
+import { Info } from "lucide-react";
+
 import type { ParentMonthlySummary } from "@/types/trainingSession.types";
 import { rubricToLabel, RUBRIC_TONE, showsRubricToParent } from "@/lib/parentMetrics";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface MonthlyAveragesBannerProps {
   summary: ParentMonthlySummary | undefined;
@@ -10,9 +17,15 @@ interface MonthlyAveragesBannerProps {
   athleteName: string;
 }
 
+// Wave 5: el padre lee mejor "12 de 20 entrenos" que "60%". El número crudo
+// con denominador da contexto (¿20 fueron muchas o pocas?), el porcentaje
+// abstracto solo se usa como referencia secundaria.
 function AttendanceMeter({ percentage }: { percentage: number }) {
   const pct = Math.min(100, Math.max(0, percentage));
-  const color = pct >= 75 ? "bg-green-500" : pct >= 50 ? "bg-amber-400" : "bg-red-400";
+  // Wave 5: <50% deja de ser rojo (estigma). Se mantiene ámbar y se
+  // acompaña con copy pedagógico aparte ("ausencias justificadas son parte
+  // del cuidado") — el rojo lo reservamos para alertas reales del coach.
+  const color = pct >= 75 ? "bg-green-500" : "bg-amber-400";
   return (
     <div className="h-2 w-full overflow-hidden rounded-full bg-light-gray" aria-hidden="true">
       <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
@@ -70,28 +83,57 @@ export function MonthlyAveragesBanner({
 
       {!isLoading && !isError && (!summary || summary.count_total === 0) && (
         <p className="text-sm text-mid-gray" data-testid="monthly-banner-empty">
-          Aún no hay sesiones registradas este mes.
+          Aún no hay sesiones cerradas este mes.
         </p>
       )}
 
       {!isLoading && !isError && summary && summary.count_total > 0 && (
         <dl className="space-y-3">
-          {/* Asistencia: siempre visible */}
+          {/* Asistencia — Wave 5: el número absoluto domina, el % es referencia */}
           <div data-testid="monthly-stat-attendance">
-            <div className="flex items-baseline justify-between text-sm">
+            <div className="flex items-baseline justify-between gap-3 text-sm">
               <dt className="text-mid-gray">Asistencia</dt>
-              <dd className="font-semibold text-charcoal">
-                {summary.count_present}/{summary.count_total} sesiones · {Math.round(summary.percentage)}%
+              <dd className="text-right">
+                <span className="font-semibold text-charcoal">
+                  {summary.count_present} entrenos de {summary.count_total} programados
+                </span>
+                <span className="ml-2 text-xs text-mid-gray">
+                  {Math.round(summary.percentage)}%
+                </span>
               </dd>
             </div>
             <AttendanceMeter percentage={summary.percentage} />
+            {summary.percentage < 75 && (
+              <p
+                className="mt-2 text-xs leading-snug text-text-disclaimer"
+                data-testid="monthly-attendance-note"
+              >
+                Las ausencias justificadas son parte del cuidado. Conversa con
+                el entrenador si quieres entender la planificación del mes.
+              </p>
+            )}
           </div>
 
           {/* Focos técnicos: siempre visible */}
           {summary.focos_técnicos.length > 0 && (
             <div data-testid="monthly-technical-focuses">
-              <dt className="mb-1.5 text-xs font-medium uppercase tracking-wide text-mid-gray">
-                Habilidades trabajadas
+              <dt className="mb-1.5 flex items-center text-xs font-medium uppercase tracking-wide text-mid-gray">
+                Foco técnico
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Más información sobre Foco técnico"
+                      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-mid-gray transition-colors hover:text-charcoal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+                    >
+                      <Info size={12} aria-hidden="true" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    Habilidad central que se trabajó. El club rota focos cada
+                    2-4 semanas (modelo PMBIA).
+                  </TooltipContent>
+                </Tooltip>
               </dt>
               <dd>
                 <ul className="flex flex-wrap gap-1.5">
@@ -154,7 +196,7 @@ function RubricRow({
   return (
     <div>
       <dt className="mb-1.5 text-xs font-medium uppercase tracking-wide text-mid-gray">
-        Evolución del mes
+        Tendencia del proceso
       </dt>
       <dd>
         <ul className="flex flex-col gap-1.5">

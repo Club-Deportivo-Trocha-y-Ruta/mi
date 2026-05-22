@@ -11,6 +11,7 @@ import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useParentMonthlySummary, useParentSessions } from "@/api/trainingSessions";
 import { useParentContextStore } from "@/store/parentContext.store";
 import { ParentSessionsPage } from "./ParentSessionsPage";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import type { MyAthleteOut } from "@/types/parent.types";
 import type {
   KidAttendance,
@@ -85,9 +86,11 @@ const queryClient = new QueryClient({
 function renderPage() {
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <ParentSessionsPage />
-      </MemoryRouter>
+      <TooltipProvider delayDuration={0}>
+        <MemoryRouter>
+          <ParentSessionsPage />
+        </MemoryRouter>
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
@@ -242,7 +245,10 @@ describe("ParentSessionsPage — banner promedios mensuales", () => {
     renderPage();
 
     expect(screen.getByTestId("parent-monthly-banner")).toBeInTheDocument();
-    expect(screen.getByTestId("monthly-stat-attendance")).toHaveTextContent("3/4");
+    // Wave 5: copy migrado a "X entrenos de Y programados" + % como referencia.
+    expect(screen.getByTestId("monthly-stat-attendance")).toHaveTextContent(
+      /3 entrenos de 4 programados/,
+    );
   });
 
   it("oculta rúbrica numérica en banner para atletas <13 años", () => {

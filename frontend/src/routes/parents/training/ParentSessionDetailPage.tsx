@@ -4,7 +4,6 @@ import { ExternalLink } from "lucide-react";
 
 import { ReadOnlyAttendanceRow } from "@/components/parents/ReadOnlyAttendanceRow";
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
-import { MediaGallery } from "@/components/training/MediaGallery";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useSessionAttendance, useTrainingSession } from "@/api/trainingSessions";
@@ -13,6 +12,14 @@ import type { SessionMediaParent } from "@/types/trainingSession.types";
 
 const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
+);
+
+// Wave 5 perf: MediaGallery monta image previews + lightbox + lógica de
+// permisos por intersección. En sesiones planificadas no hay media; aplicar
+// el mismo patrón que RouteViewer (lazy + Suspense + Skeleton) reduce el
+// initial bundle de la página detalle.
+const MediaGallery = lazy(() =>
+  import("@/components/training/MediaGallery").then((m) => ({ default: m.MediaGallery })),
 );
 
 const sectionHeading = "text-sm font-semibold text-mid-gray mb-3";
@@ -180,10 +187,18 @@ export function ParentSessionDetailPage() {
         {mediaQuery.isLoading ? (
           <Skeleton className="h-24 rounded-lg" />
         ) : (
-          <MediaGallery
-            media={(mediaQuery.data ?? []) as SessionMediaParent[]}
-            readOnly
-          />
+          <Suspense
+            fallback={
+              <div role="status" aria-busy="true" aria-label="Cargando fotos y videos">
+                <Skeleton className="h-24 rounded-lg" />
+              </div>
+            }
+          >
+            <MediaGallery
+              media={(mediaQuery.data ?? []) as SessionMediaParent[]}
+              readOnly
+            />
+          </Suspense>
         )}
       </div>
 
