@@ -41,7 +41,17 @@ async def test_graph_interrupt_emits_hitl_request_not_node_error():
         # Simulamos lo que LangGraph hace al llamar interrupt().
         from langgraph.types import Interrupt
 
-        raise GraphInterrupt((Interrupt(value={"step": "review"}),))
+        raise GraphInterrupt(
+            (
+                Interrupt(
+                    value={
+                        "step": "review",
+                        "draft_markdown": "# Análisis\nContenido del draft",
+                        "pseudonym": "Atleta A",
+                    }
+                ),
+            )
+        )
 
     state: dict = {}
     with pytest.raises(GraphInterrupt):
@@ -55,9 +65,30 @@ async def test_graph_interrupt_emits_hitl_request_not_node_error():
     # No debe haber node_error ni errores acumulados.
     assert "node_error" not in types
     assert state.get("errors", []) == []
-    # El evento hitl_request lleva el nombre del nodo y payload vacío.
+    # El evento hitl_request lleva el nombre del nodo + payload del interrupt
+    # (necesario para que la UI renderice el draft_markdown).
     last = events[-1]
     assert last["node"] == "hitl_gate_review"
+    assert last["payload"]["step"] == "review"
+    assert last["payload"]["draft_markdown"].startswith("# Análisis")
+    assert last["payload"]["pseudonym"] == "Atleta A"
+
+
+@pytest.mark.asyncio
+async def test_graph_interrupt_with_empty_payload_is_resilient():
+    """Si GraphInterrupt llega sin payload o con estructura inesperada,
+    emitimos hitl_request con payload vacío (no crashea)."""
+
+    @with_events("hitl_gate_review")
+    async def node(state: dict) -> dict:
+        raise GraphInterrupt(())  # tupla vacía
+
+    state: dict = {}
+    with pytest.raises(GraphInterrupt):
+        await node(state)
+
+    last = state["events"][-1]
+    assert last["type"] == "hitl_request"
     assert last["payload"] == {}
 
 

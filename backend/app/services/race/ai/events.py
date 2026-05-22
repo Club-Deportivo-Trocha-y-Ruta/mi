@@ -92,11 +92,27 @@ def with_events(node_name: str) -> Callable:
             emit_event(state, "node_start", node=node_name)
             try:
                 update = await fn(state) or {}
-            except GraphInterrupt:
+            except GraphInterrupt as gi:
                 # interrupt() del nodo: flujo de control, no error.
-                # Emitimos hitl_request (sin payload de excepción) y
-                # re-raise para que LangGraph suspenda el grafo.
-                emit_event(state, "hitl_request", node=node_name)
+                # Extraemos el payload pasado a interrupt() para que la UI
+                # pueda renderizar el draft a revisar. GraphInterrupt.args
+                # es una tupla con una tupla de Interrupt; cada Interrupt
+                # lleva el .value que el nodo le pasó a interrupt().
+                interrupt_payload: dict[str, Any] = {}
+                try:
+                    interrupts = gi.args[0] if gi.args else ()
+                    if interrupts:
+                        first_value = getattr(interrupts[0], "value", None)
+                        if isinstance(first_value, dict):
+                            interrupt_payload = first_value
+                except (IndexError, AttributeError, TypeError):
+                    interrupt_payload = {}
+                emit_event(
+                    state,
+                    "hitl_request",
+                    node=node_name,
+                    payload=interrupt_payload,
+                )
                 raise
             except Exception as exc:
                 logger.exception("Nodo %s falló", node_name)
