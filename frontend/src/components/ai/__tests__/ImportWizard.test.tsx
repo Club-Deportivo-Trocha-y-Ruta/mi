@@ -47,7 +47,10 @@ import * as importsApi from "@/api/raceImports";
 import * as athletesApi from "@/api/athletes";
 import { ImportWizard } from "@/components/ai/ImportWizard";
 import type {
+  DiffRow,
+  ImportDryRunMatchesResponse,
   ImportDryRunResponse,
+  ImportDryRunRevisionResponse,
   ImportParseResponse,
 } from "@/types/raceImports.types";
 import { Sex } from "@/types/enums";
@@ -89,7 +92,7 @@ const PARSE_RESPONSE: ImportParseResponse = {
   warnings: [],
 };
 
-const DRY_RUN_CONFIRMED_ONLY: ImportDryRunResponse = {
+const DRY_RUN_CONFIRMED_ONLY: ImportDryRunMatchesResponse = {
   parse_id: "p-1",
   matches: [
     {
@@ -101,6 +104,106 @@ const DRY_RUN_CONFIRMED_ONLY: ImportDryRunResponse = {
     },
   ],
   counts: { confirmed: 1, ambiguous: 0, no_match: 0, total: 1 },
+  warnings: [],
+};
+
+// ---------------- F-UP-REV5 fixtures
+const PARSE_REVISION_RESPONSE: ImportParseResponse = {
+  parse_id: "p-rev-1",
+  sha256: "rev-sha",
+  header: {
+    series_name: "Copa Valle",
+    season: 2026,
+    valida_num: 4,
+    event_name: "IV — Cali",
+  },
+  n_rows_resultados: 80,
+  n_rows_general: 0,
+  warnings: [],
+  will_be_revision: true,
+  parent_import_id: 12,
+  parent_event_id: 4,
+  parent_committed_at: "2026-05-17T18:42:00Z",
+  parent_n_results: 78,
+};
+
+const REVISION_DIFF_BASIC: DiffRow[] = [
+  {
+    action: "update",
+    competitor_normalized_name: "andres mejia",
+    competitor_display_name: "Andrés Mejía",
+    category_code: "JUN_M",
+    before: { position: 5, race_time_ms: 3012000, status: "FINISHED" },
+    after: { position: 3, race_time_ms: 2948000, status: "FINISHED" },
+    result_id: 100,
+  },
+  {
+    action: "create",
+    competitor_normalized_name: "maria gomez",
+    competitor_display_name: "María Gómez",
+    category_code: "INF_A_F",
+    before: null,
+    after: { position: 7, race_time_ms: 2022000, status: "FINISHED" },
+    result_id: null,
+  },
+];
+
+const REVISION_DIFF_WITH_DELETES: DiffRow[] = [
+  ...REVISION_DIFF_BASIC,
+  {
+    action: "delete",
+    competitor_normalized_name: "diego rojas",
+    competitor_display_name: "Diego Rojas",
+    category_code: "JUN_M",
+    before: { position: 8, race_time_ms: 3142000, status: "FINISHED" },
+    after: null,
+    result_id: 234,
+  },
+];
+
+const DRY_RUN_REVISION_SAFE: ImportDryRunRevisionResponse = {
+  parse_id: "p-rev-1",
+  is_revision: true,
+  parent_event_id: 4,
+  diff_summary: {
+    n_create: 1,
+    n_update: 1,
+    n_delete: 0,
+    n_unchanged: 78,
+    n_total: 80,
+  },
+  diff_rows: REVISION_DIFF_BASIC,
+  warnings: [],
+};
+
+const DRY_RUN_REVISION_WITH_DELETES: ImportDryRunRevisionResponse = {
+  parse_id: "p-rev-1",
+  is_revision: true,
+  parent_event_id: 4,
+  diff_summary: {
+    n_create: 1,
+    n_update: 1,
+    n_delete: 1,
+    n_unchanged: 77,
+    n_total: 80,
+  },
+  diff_rows: REVISION_DIFF_WITH_DELETES,
+  warnings: [],
+};
+
+const DRY_RUN_REVISION_LARGE: ImportDryRunRevisionResponse = {
+  parse_id: "p-rev-1",
+  is_revision: true,
+  parent_event_id: 4,
+  // n_delete > 20% de n_unchanged → trigger warning naranja
+  diff_summary: {
+    n_create: 0,
+    n_update: 0,
+    n_delete: 5,
+    n_unchanged: 10,
+    n_total: 15,
+  },
+  diff_rows: REVISION_DIFF_WITH_DELETES,
   warnings: [],
 };
 
@@ -447,5 +550,155 @@ describe("ImportWizard — Step 3", () => {
 
     await user.click(screen.getByTestId("wizard-step3-retry"));
     expect(screen.getByTestId("import-wizard-step2")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-UP-REV5 — Modo revisión
+// ---------------------------------------------------------------------------
+
+describe("ImportWizard — Revision mode (F-UP-REV5)", () => {
+  async function gotoStep2Revision(
+    user: ReturnType<typeof userEvent.setup>,
+    dryRun: ImportDryRunResponse,
+  ) {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(
+      PARSE_REVISION_RESPONSE,
+    );
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(dryRun);
+    wrap(<ImportWizard />);
+    await fillStep1AndSubmit(user);
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-revision-mode")).toBeInTheDocument(),
+    );
+  }
+
+  it("detecta is_revision=true en dry-run → renderiza DiffTable en lugar de matches", async () => {
+    const user = userEvent.setup();
+    await gotoStep2Revision(user, DRY_RUN_REVISION_SAFE);
+
+    // DiffTable es lazy → findBy* espera al chunk
+    expect(await screen.findByTestId("diff-table")).toBeInTheDocument();
+    // No debe haber matches table (modo F-UP normal)
+    expect(screen.queryByTestId("wizard-matches-table")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("wizard-counts")).not.toBeInTheDocument();
+    // Render del competidor del diff
+    expect(await screen.findByText("Andrés Mejía")).toBeInTheDocument();
+  });
+
+  it("banner amarillo de revisión visible con metadata del padre", async () => {
+    const user = userEvent.setup();
+    await gotoStep2Revision(user, DRY_RUN_REVISION_SAFE);
+
+    const banner = screen.getByTestId("wizard-revision-banner");
+    expect(banner).toHaveTextContent(/Revisión detectada/i);
+    // counts del summary visibles
+    expect(banner).toHaveTextContent("1");
+    expect(banner).toHaveTextContent("80");
+    expect(banner).toHaveTextContent(/Válida/);
+  });
+
+  it("banner naranja warning cuando deletes > 20% de unchanged", async () => {
+    const user = userEvent.setup();
+    await gotoStep2Revision(user, DRY_RUN_REVISION_LARGE);
+
+    expect(
+      screen.getByTestId("wizard-revision-warning-large"),
+    ).toHaveTextContent(/inusualmente grandes/i);
+  });
+
+  it("revision_reason obligatorio si n_delete > 0 (botón disabled hasta llenar)", async () => {
+    const user = userEvent.setup();
+    await gotoStep2Revision(user, DRY_RUN_REVISION_WITH_DELETES);
+
+    const confirm = screen.getByTestId("wizard-step2-confirm");
+    const textarea = screen.getByTestId("wizard-revision-reason");
+
+    // Sin reason → disabled
+    expect(confirm).toBeDisabled();
+    expect(textarea).toHaveAttribute("aria-required", "true");
+
+    // Llenar reason → habilitado
+    await user.type(textarea, "Corrección oficial federación post-reclamo");
+    expect(confirm).toBeEnabled();
+  });
+
+  it("revision_reason opcional si solo creates/updates (botón enabled sin texto)", async () => {
+    const user = userEvent.setup();
+    await gotoStep2Revision(user, DRY_RUN_REVISION_SAFE);
+
+    const confirm = screen.getByTestId("wizard-step2-confirm");
+    const textarea = screen.getByTestId("wizard-revision-reason");
+
+    // n_delete=0 → no required → enabled sin texto
+    expect(textarea).not.toHaveAttribute("aria-required", "true");
+    expect(confirm).toBeEnabled();
+  });
+
+  it("commit envía revision_reason en payload + step 3 muestra summary revisión", async () => {
+    vi.mocked(importsApi.commitRaceImport).mockResolvedValue({
+      parse_id: "p-rev-1",
+      race_event_id: 4,
+      n_results_inserted: 0,
+      n_competitors_created: 0,
+      n_competitors_linked: 0,
+    });
+    const user = userEvent.setup();
+    await gotoStep2Revision(user, DRY_RUN_REVISION_WITH_DELETES);
+
+    const textarea = screen.getByTestId("wizard-revision-reason");
+    await user.type(textarea, "  Corrección oficial federación  ");
+    await user.click(screen.getByTestId("wizard-step2-confirm"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step3-success")).toBeInTheDocument(),
+    );
+
+    // Verifica payload: revision_reason trimmed + resolved_matches vacío
+    expect(importsApi.commitRaceImport).toHaveBeenCalledWith("p-rev-1", {
+      resolved_matches: [],
+      revision_reason: "Corrección oficial federación",
+    });
+
+    // Step 3 muestra resumen revisión, no el F-UP normal
+    expect(
+      screen.getByTestId("wizard-step3-revision-summary"),
+    ).toHaveTextContent(/1.*actualizaciones/);
+    expect(
+      screen.getByTestId("wizard-step3-revision-summary"),
+    ).toHaveTextContent(/1.*eliminaciones/);
+    expect(screen.getByText(/Revisión aplicada/)).toBeInTheDocument();
+  });
+
+  it("texto del botón en modo revisión es 'Confirmar y aplicar revisión'", async () => {
+    const user = userEvent.setup();
+    await gotoStep2Revision(user, DRY_RUN_REVISION_SAFE);
+    expect(screen.getByTestId("wizard-step2-confirm")).toHaveTextContent(
+      /aplicar revisión/i,
+    );
+  });
+
+  it("reset desde step 3 limpia revisionReason", async () => {
+    vi.mocked(importsApi.commitRaceImport).mockResolvedValue({
+      parse_id: "p-rev-1",
+      race_event_id: 4,
+      n_results_inserted: 0,
+      n_competitors_created: 0,
+      n_competitors_linked: 0,
+    });
+    const user = userEvent.setup();
+    await gotoStep2Revision(user, DRY_RUN_REVISION_WITH_DELETES);
+
+    await user.type(
+      screen.getByTestId("wizard-revision-reason"),
+      "Mi motivo",
+    );
+    await user.click(screen.getByTestId("wizard-step2-confirm"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step3-success")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId("wizard-step3-new"));
+    expect(screen.getByTestId("import-wizard-step1")).toBeInTheDocument();
   });
 });

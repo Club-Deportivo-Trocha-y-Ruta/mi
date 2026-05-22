@@ -37,12 +37,23 @@ export interface ImportParseRequestFields {
 }
 
 export interface ImportParseResponse {
-  parse_id: string; // uuid
+  parse_id: string; // uuid o id numérico serializado
   sha256: string;
   header: ImportHeader;
   n_rows_resultados: number;
   n_rows_general: number;
   warnings: string[];
+
+  // F-UP-REV2 — metadatos de revisión detectada en /parse.
+  // Cuando `(series, valida_num)` ya tiene un commit previo, el backend
+  // marca el import como revisión y devuelve datos del padre para que
+  // el wizard pueda renderizar el modo `diff` en step 2 sin esperar al
+  // dry-run.
+  will_be_revision?: boolean;
+  parent_import_id?: number;
+  parent_event_id?: number;
+  parent_committed_at?: string; // ISO datetime
+  parent_n_results?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,12 +80,64 @@ export interface ImportMatchCounts {
   total: number;
 }
 
-export interface ImportDryRunResponse {
+/** Dry-run F-UP normal — el coach valida matches TyR antes del commit. */
+export interface ImportDryRunMatchesResponse {
   parse_id: string;
   matches: ImportMatchPreview[];
   counts: ImportMatchCounts;
   warnings: string[];
+  /** `false | undefined` cuando NO es revisión (preserva backward compat). */
+  is_revision?: false;
 }
+
+// ---------------------------------------------------------------------------
+// F-UP-REV3/4 — Diff de revisión
+// ---------------------------------------------------------------------------
+
+/** Estado de una fila persistida o nueva (subset de RaceResult). */
+export interface ResultSnapshot {
+  position?: number | null;
+  race_time_ms?: number | null;
+  points_awarded?: number | null;
+  status?: string | null;
+}
+
+/** Una acción del diff por competidor. */
+export interface DiffRow {
+  action: "create" | "update" | "delete" | "unchanged";
+  competitor_normalized_name: string;
+  competitor_display_name: string;
+  category_code: string;
+  /** Snapshot anterior (presente para update/delete/unchanged). */
+  before?: ResultSnapshot | null;
+  /** Snapshot nuevo (presente para create/update/unchanged). */
+  after?: ResultSnapshot | null;
+  /** ID del RaceResult persistido — null en `create`. */
+  result_id?: number | null;
+}
+
+export interface DiffSummary {
+  n_create: number;
+  n_update: number;
+  n_delete: number;
+  n_unchanged: number;
+  n_total: number;
+}
+
+/** Dry-run modo revisión — backend devuelve diff completo. */
+export interface ImportDryRunRevisionResponse {
+  parse_id: string;
+  is_revision: true;
+  parent_event_id: number;
+  diff_summary: DiffSummary;
+  diff_rows: DiffRow[];
+  warnings: string[];
+}
+
+/** Union — el wizard discrimina en `is_revision`. */
+export type ImportDryRunResponse =
+  | ImportDryRunMatchesResponse
+  | ImportDryRunRevisionResponse;
 
 // ---------------------------------------------------------------------------
 // POST /imports/{parse_id}/commit
@@ -87,6 +150,14 @@ export interface ImportResolvedMatch {
 
 export interface ImportCommitRequest {
   resolved_matches: ImportResolvedMatch[];
+  /**
+   * F-UP-REV4 — motivo opcional de la revisión.
+   *
+   * Obligatorio cuando el dry-run reporta `n_delete > 0`. El backend
+   * valida (422 si missing) — el wizard también valida client-side para
+   * UX (botón disabled).
+   */
+  revision_reason?: string;
 }
 
 export interface ImportCommitResponse {
@@ -95,6 +166,11 @@ export interface ImportCommitResponse {
   n_results_inserted: number;
   n_competitors_created: number;
   n_competitors_linked: number;
+  /**
+   * F-UP-REV4 — banner de advertencia opcional cuando el diff es
+   * inusualmente grande (n_total > 500 o deletes > 20% unchanged).
+   */
+  warning_banner?: string | null;
 }
 
 // ---------------------------------------------------------------------------

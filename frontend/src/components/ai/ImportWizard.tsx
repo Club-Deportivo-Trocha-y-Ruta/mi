@@ -15,7 +15,7 @@
  *   - No persiste en Zustand; navegar fuera reinicia (DT-5 del workflow).
  *   - Stepper visual = breadcrumbs simples con `aria-current`.
  */
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "react-router-dom";
@@ -31,6 +31,12 @@ import { z } from "zod";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import { RaceUploadZone } from "@/components/ai/RaceUploadZone";
+
+// DiffTable lazy → solo se descarga si el wizard detecta modo revisión.
+// Mantiene el chunk de ImportWizard cerca de la baseline F-UP (~18 KB).
+const DiffTable = lazy(() =>
+  import("@/components/ai/DiffTable").then((m) => ({ default: m.DiffTable })),
+);
 import {
   useImportCommit,
   useImportDryRun,
@@ -40,10 +46,55 @@ import { cn } from "@/lib/utils";
 import type {
   ImportCommitResponse,
   ImportDryRunResponse,
+  ImportDryRunRevisionResponse,
   ImportMatchPreview,
   ImportParseResponse,
   ImportResolvedMatch,
 } from "@/types/raceImports.types";
+
+// ---------------------------------------------------------------------------
+// F-UP-REV5 — Revision UX helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Type guard — discrimina la union de dry-run response (matches vs revision).
+ *
+ * Backend marca `is_revision: true` solo en el branch revisión; en F-UP normal
+ * el campo es `false` o ausente.
+ */
+function isRevisionDryRun(
+  data: ImportDryRunResponse | undefined,
+): data is ImportDryRunRevisionResponse {
+  return !!data && (data as ImportDryRunRevisionResponse).is_revision === true;
+}
+
+const REVISION_REASON_MAX = 300;
+
+/** Banner naranja si el diff es inusualmente grande (R1 mitigación). */
+function shouldWarnUnusualDiff(summary: {
+  n_total: number;
+  n_delete: number;
+  n_unchanged: number;
+}): boolean {
+  if (summary.n_total > 500) return true;
+  // Si hay deletes y exceden 20% del unchanged.
+  if (summary.n_delete > 0 && summary.n_delete > summary.n_unchanged * 0.2) {
+    return true;
+  }
+  return false;
+}
+
+function formatCommittedAt(iso: string | undefined | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("es-CO", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return iso;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Step 1 schema
@@ -190,6 +241,9 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   >({});
   const [onlyPending, setOnlyPending] = useState(false);
   const [step1Error, setStep1Error] = useState<string | null>(null);
+  // F-UP-REV5: motivo de revisión (obligatorio si hay deletes).
+  const [revisionReason, setRevisionReason] = useState("");
+  const [revisionReasonTouched, setRevisionReasonTouched] = useState(false);
 
   const parseMutation = useImportParse();
   const dryRunMutation = useImportDryRun();
@@ -248,6 +302,12 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
       { parseId: parseResult.parse_id },
       {
         onSuccess: (data) => {
+          // En modo revisión no hay matches que resolver — los matches del
+          // import original ya están persistidos en BD.
+          if (isRevisionDryRun(data)) {
+            setResolutions({});
+            return;
+          }
           // Pre-poblar resoluciones con matches confirmados.
           const initial: Record<string, number | null> = {};
           for (const m of data.matches) {
@@ -262,29 +322,68 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   }, [step, parseResult]);
 
   const dryRunData: ImportDryRunResponse | undefined = dryRunMutation.data;
+  const revisionData = isRevisionDryRun(dryRunData) ? dryRunData : null;
+  const matchesData = !isRevisionDryRun(dryRunData) ? dryRunData : undefined;
 
   const pendingAmbiguous = useMemo(() => {
-    if (!dryRunData) return [];
-    return dryRunData.matches.filter(
+    if (!matchesData) return [];
+    return matchesData.matches.filter(
       (m) =>
         m.is_ambiguous && resolutions[m.competitor_normalized_name] == null,
     );
-  }, [dryRunData, resolutions]);
+  }, [matchesData, resolutions]);
 
   const visibleMatches = useMemo<ImportMatchPreview[]>(() => {
-    if (!dryRunData) return [];
-    if (!onlyPending) return dryRunData.matches;
-    return dryRunData.matches.filter(
+    if (!matchesData) return [];
+    if (!onlyPending) return matchesData.matches;
+    return matchesData.matches.filter(
       (m) =>
         m.is_ambiguous && resolutions[m.competitor_normalized_name] == null,
     );
-  }, [dryRunData, onlyPending, resolutions]);
+  }, [matchesData, onlyPending, resolutions]);
 
-  const canCommit = pendingAmbiguous.length === 0 && !!dryRunData;
+  // F-UP-REV5 — validación de revision_reason (obligatorio si hay deletes).
+  const reasonTrimmed = revisionReason.trim();
+  const reasonRequired =
+    revisionData != null && revisionData.diff_summary.n_delete > 0;
+  const reasonValid = !reasonRequired || reasonTrimmed.length > 0;
+  const reasonOverflow = revisionReason.length > REVISION_REASON_MAX;
+
+  const canCommit = revisionData
+    ? reasonValid && !reasonOverflow
+    : pendingAmbiguous.length === 0 && !!matchesData;
 
   const submitCommit = async () => {
     if (!parseResult || !dryRunData) return;
-    const resolved_matches: ImportResolvedMatch[] = dryRunData.matches.map(
+    if (revisionData) {
+      // Modo revisión: matches ya persistidos, sólo enviamos revision_reason
+      // (cuando aplica). El backend recomputa el diff server-side y aplica
+      // los cambios transaccionalmente.
+      if (!reasonValid) {
+        setRevisionReasonTouched(true);
+        return;
+      }
+      try {
+        const result = await commitMutation.mutateAsync({
+          parseId: parseResult.parse_id,
+          body: {
+            resolved_matches: [],
+            ...(reasonTrimmed.length > 0
+              ? { revision_reason: reasonTrimmed }
+              : {}),
+          },
+        });
+        setStep(3);
+        onCompleted?.(result);
+      } catch {
+        setStep(3);
+      }
+      return;
+    }
+
+    // Modo matches (F-UP normal).
+    if (!matchesData) return;
+    const resolved_matches: ImportResolvedMatch[] = matchesData.matches.map(
       (m) => ({
         competitor_normalized_name: m.competitor_normalized_name,
         athlete_id: resolutions[m.competitor_normalized_name] ?? null,
@@ -311,6 +410,8 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
     setResolutions({});
     setOnlyPending(false);
     setStep1Error(null);
+    setRevisionReason("");
+    setRevisionReasonTouched(false);
     parseMutation.reset();
     dryRunMutation.reset();
     commitMutation.reset();
@@ -557,7 +658,165 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
             </div>
           )}
 
-          {dryRunData && (
+          {revisionData && (
+            <div className="space-y-4" data-testid="wizard-revision-mode">
+              {/* Banner revisión detectada */}
+              <div
+                role="status"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900"
+                data-testid="wizard-revision-banner"
+              >
+                <p className="font-semibold">Revisión detectada</p>
+                <p className="mt-1 text-xs">
+                  Válida{" "}
+                  <strong>{parseResult?.header.valida_num ?? "?"}</strong> ya
+                  fue importada el{" "}
+                  <strong>
+                    {formatCommittedAt(parseResult?.parent_committed_at)}
+                  </strong>
+                  . Cambios:{" "}
+                  <strong>{revisionData.diff_summary.n_create}</strong> create ·{" "}
+                  <strong>{revisionData.diff_summary.n_update}</strong> update ·{" "}
+                  <strong>{revisionData.diff_summary.n_delete}</strong> delete ·{" "}
+                  <strong>{revisionData.diff_summary.n_unchanged}</strong> sin
+                  cambios (de un total de{" "}
+                  <strong>{revisionData.diff_summary.n_total}</strong>).
+                </p>
+              </div>
+
+              {/* Banner naranja warning si diff inusualmente grande */}
+              {shouldWarnUnusualDiff(revisionData.diff_summary) && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900"
+                  data-testid="wizard-revision-warning-large"
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertCircle
+                      size={16}
+                      aria-hidden="true"
+                      className="mt-0.5 shrink-0"
+                    />
+                    <span>
+                      Cambios inusualmente grandes — verifica que sea la
+                      misma válida antes de aplicar.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Diff table — lazy para mantener chunk wizard pequeño */}
+              <Suspense
+                fallback={
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="h-32 animate-pulse rounded-lg bg-light-gray"
+                    data-testid="wizard-diff-table-loading"
+                  />
+                }
+              >
+                <DiffTable diffRows={revisionData.diff_rows} />
+              </Suspense>
+
+              {/* Revision reason input */}
+              <div className="space-y-1">
+                <label
+                  htmlFor="wizard-revision-reason"
+                  className="block text-xs font-medium text-mid-gray"
+                >
+                  Motivo de la revisión
+                  {reasonRequired && (
+                    <span className="ml-1 text-red-600" aria-hidden="true">
+                      *
+                    </span>
+                  )}
+                </label>
+                <textarea
+                  id="wizard-revision-reason"
+                  data-testid="wizard-revision-reason"
+                  rows={2}
+                  maxLength={REVISION_REASON_MAX + 10}
+                  value={revisionReason}
+                  onChange={(e) => setRevisionReason(e.target.value)}
+                  onBlur={() => setRevisionReasonTouched(true)}
+                  placeholder="Ej: Corrección oficial federación post-reclamo Andrés Mejía"
+                  aria-required={reasonRequired}
+                  aria-invalid={
+                    !reasonValid && revisionReasonTouched ? true : undefined
+                  }
+                  className="w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                  style={{
+                    boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
+                  }}
+                />
+                <div className="flex items-center justify-between text-[11px]">
+                  <span
+                    className={cn(
+                      "text-mid-gray",
+                      reasonOverflow && "text-red-600",
+                    )}
+                  >
+                    {revisionReason.length}/{REVISION_REASON_MAX}
+                  </span>
+                  {reasonRequired && !reasonValid && revisionReasonTouched && (
+                    <span
+                      className="text-red-600"
+                      role="alert"
+                      data-testid="wizard-revision-reason-error"
+                    >
+                      Requerido cuando la revisión elimina resultados.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {commitMutation.isError && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                  data-testid="wizard-commit-error"
+                >
+                  {getErrMsg(
+                    commitMutation.error,
+                    "Error aplicando la revisión.",
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-between">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  data-testid="wizard-step2-back"
+                  className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-mid-gray hover:text-charcoal"
+                >
+                  <ArrowLeft size={14} aria-hidden="true" />
+                  Volver
+                </button>
+                <button
+                  type="button"
+                  onClick={submitCommit}
+                  disabled={!canCommit || commitMutation.isPending}
+                  data-testid="wizard-step2-confirm"
+                  className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {commitMutation.isPending ? (
+                    <Loader2
+                      size={14}
+                      className="animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <ArrowRight size={14} aria-hidden="true" />
+                  )}
+                  Confirmar y aplicar revisión
+                </button>
+              </div>
+            </div>
+          )}
+
+          {matchesData && (
             <>
               <div
                 className="grid grid-cols-2 gap-2 rounded-lg bg-light-gray/40 p-3 text-sm sm:grid-cols-4"
@@ -566,25 +825,25 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 <div>
                   <p className="text-xs text-mid-gray">Confirmados</p>
                   <p className="font-semibold text-charcoal">
-                    {dryRunData.counts.confirmed}
+                    {matchesData.counts.confirmed}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-mid-gray">Ambiguos</p>
                   <p className="font-semibold text-amber-700">
-                    {dryRunData.counts.ambiguous}
+                    {matchesData.counts.ambiguous}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-mid-gray">Sin match</p>
                   <p className="font-semibold text-mid-gray">
-                    {dryRunData.counts.no_match}
+                    {matchesData.counts.no_match}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-mid-gray">Total</p>
                   <p className="font-semibold text-charcoal">
-                    {dryRunData.counts.total}
+                    {matchesData.counts.total}
                   </p>
                 </div>
               </div>
@@ -763,22 +1022,46 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
             >
               <div className="mb-2 flex items-center gap-2">
                 <CheckCircle2 size={18} aria-hidden="true" />
-                <span className="font-semibold">Ingesta completada</span>
+                <span className="font-semibold">
+                  {revisionData ? "Revisión aplicada" : "Ingesta completada"}
+                </span>
               </div>
-              <ul className="ml-5 list-disc space-y-1 text-xs">
-                <li>
-                  Resultados insertados:{" "}
-                  <strong>{commitMutation.data.n_results_inserted}</strong>
-                </li>
-                <li>
-                  Competidores creados:{" "}
-                  <strong>{commitMutation.data.n_competitors_created}</strong>
-                </li>
-                <li>
-                  Competidores vinculados a TyR:{" "}
-                  <strong>{commitMutation.data.n_competitors_linked}</strong>
-                </li>
-              </ul>
+              {revisionData ? (
+                <p className="text-xs" data-testid="wizard-step3-revision-summary">
+                  <strong>{revisionData.diff_summary.n_update}</strong>{" "}
+                  actualizaciones,{" "}
+                  <strong>{revisionData.diff_summary.n_delete}</strong>{" "}
+                  eliminaciones,{" "}
+                  <strong>{revisionData.diff_summary.n_create}</strong>{" "}
+                  nuevas. Audit completo en historial.
+                </p>
+              ) : (
+                <ul className="ml-5 list-disc space-y-1 text-xs">
+                  <li>
+                    Resultados insertados:{" "}
+                    <strong>{commitMutation.data.n_results_inserted}</strong>
+                  </li>
+                  <li>
+                    Competidores creados:{" "}
+                    <strong>
+                      {commitMutation.data.n_competitors_created}
+                    </strong>
+                  </li>
+                  <li>
+                    Competidores vinculados a TyR:{" "}
+                    <strong>{commitMutation.data.n_competitors_linked}</strong>
+                  </li>
+                </ul>
+              )}
+              {commitMutation.data.warning_banner && (
+                <p
+                  className="mt-2 rounded-md bg-orange-100 px-2 py-1 text-[11px] text-orange-900"
+                  data-testid="wizard-step3-warning-banner"
+                  role="alert"
+                >
+                  {commitMutation.data.warning_banner}
+                </p>
+              )}
               <div className="mt-3 flex flex-wrap gap-2">
                 <Link
                   to="/coach/race-analysis?tab=runs"
