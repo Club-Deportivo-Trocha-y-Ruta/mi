@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from app.models.agent_run import AgentRun
     from app.models.anthropometry import AnthropometricRecord
     from app.models.athlete_ai_insight import AthleteAiInsight
+    from app.models.athlete_badge import AthleteBadge
+    from app.models.athlete_newsletter import AthleteMonthlyNewsletter
     from app.models.club import Club
     from app.models.parent_invite import ParentInvite
     from app.models.user import User
@@ -118,6 +120,20 @@ class Athlete(Base):
         foreign_keys="[AgentRun.athlete_id]",
         order_by="desc(AgentRun.started_at)",
         viewonly=True,
+    )
+    # Insignias por periodo (asistencia + competitivas)
+    badges: Mapped[list["AthleteBadge"]] = relationship(
+        "AthleteBadge",
+        back_populates="athlete",
+        foreign_keys="[AthleteBadge.athlete_id]",
+        order_by="desc(AthleteBadge.earned_at)",
+    )
+    # Boletines mensuales individuales
+    monthly_newsletters: Mapped[list["AthleteMonthlyNewsletter"]] = relationship(
+        "AthleteMonthlyNewsletter",
+        back_populates="athlete",
+        foreign_keys="[AthleteMonthlyNewsletter.athlete_id]",
+        order_by="(desc(AthleteMonthlyNewsletter.year), desc(AthleteMonthlyNewsletter.month))",
     )
 
 
