@@ -97,6 +97,36 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
         version=1,
         description="Resumen mensual agregado del club para el comité.",
     ),
+    "athlete_monthly_newsletter_v1": PromptSpec(
+        template_id="athlete_monthly_newsletter_v1",
+        template_path="athlete_monthly_newsletter_v1.j2",
+        required_keys=frozenset(
+            {
+                "period_year",
+                "period_month",
+                "sessions_present",
+                "sessions_total",
+                "attendance_pct",
+                "attendance_pct_prev_month",
+                "streak_days",
+                "focos_tecnicos",
+                "avg_rpe",
+                "avg_rubric_technique",
+                "total_training_hours",
+                "has_races",
+                "race_results",
+                "num_races",
+                "badges",
+                "confidence",
+            }
+        ),
+        version=1,
+        description=(
+            "Narrativa IA individual para boletín mensual por atleta. "
+            "Salida JSON: {strengths, area_to_develop, milestone}. "
+            "Sin nombres reales. Máx 3 frases por bloque."
+        ),
+    ),
 }
 
 

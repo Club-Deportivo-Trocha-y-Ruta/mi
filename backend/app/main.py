@@ -8,6 +8,7 @@ from app.config import settings
 from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, parent_athletes, race_analysis, race_competitors, race_imports, reports, training_sessions
 from app.routers.consent import consent_router, public_router as consent_public_router
 from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
+from app.routers.athlete_monthly_newsletters import router as athlete_newsletters_router, clubs_router as newsletter_clubs_router
 
 app = FastAPI(
     title="Trocha y Ruta API",
@@ -44,6 +45,8 @@ app.include_router(race_analysis.router, prefix="/api/race-analysis", tags=["rac
 app.include_router(race_imports.router, prefix="/api/race-analysis/imports", tags=["race-imports"])
 app.include_router(race_competitors.router, prefix="/api/race-competitors", tags=["race-competitors"])
 app.include_router(athlete_race_analysis.router, prefix="/api/athletes", tags=["athlete-race-analysis"])
+app.include_router(athlete_newsletters_router, prefix="/api/athletes", tags=["athlete-newsletters"])
+app.include_router(newsletter_clubs_router, prefix="/api/clubs", tags=["athlete-newsletters"])
 
 
 # Boot: configurar db_factory del grafo race-AI (F4) para que los nodos

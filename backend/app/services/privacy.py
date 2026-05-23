@@ -201,6 +201,32 @@ async def get_consent_status(
     )
 
 
+async def assert_ai_consent_for_newsletter(
+    db: AsyncSession,
+    athlete_id: int,
+) -> None:
+    """Verifica que el atleta tiene consentimiento para procesamiento IA.
+
+    Lanza HTTP 409 si falta consentimiento Ley 1581 (third_party_sharing=True).
+    Se usa en el endpoint de generación de boletines para cumplir Art. 9 Ley 1581.
+
+    Raises:
+        HTTPException 409: si el atleta tiene padres vinculados y ninguno ha dado
+            consentimiento de procesamiento por terceros (IA).
+    """
+    has_consent = await athlete_has_ai_processing_consent(athlete_id, db)
+    if not has_consent:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "No se puede generar el boletín: el atleta no tiene "
+                "consentimiento de procesamiento con IA (Ley 1581/2012 Art. 9). "
+                "El padre/tutor debe otorgar el permiso 'third_party_sharing' "
+                "en la configuración de privacidad."
+            ),
+        )
+
+
 async def renew_consent(
     parent_user_id: int,
     athlete_id: int,

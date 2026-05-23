@@ -28,6 +28,7 @@ class NotificationTemplate(str, Enum):
     CALENDAR_EVENT_INVITE = "calendar_event_invite"
     CALENDAR_EVENT_RESCHEDULED = "calendar_event_rescheduled"
     CALENDAR_EVENT_CANCELLED = "calendar_event_cancelled"
+    ATHLETE_MONTHLY_NEWSLETTER = "athlete_monthly_newsletter"
 
 
 class DocumentTemplate(str, Enum):
@@ -37,6 +38,7 @@ class DocumentTemplate(str, Enum):
     MONTHLY_PROGRESS = "monthly_progress"
     MEDICAL_CLEARANCE = "medical_clearance"
     TRAINING_MONTHLY_REPORT = "training_monthly_report"
+    ATHLETE_MONTHLY_NEWSLETTER = "athlete_monthly_newsletter"
 
 
 class DocumentFormat(str, Enum):

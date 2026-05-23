@@ -1,0 +1,187 @@
+{% extends "email/base/layout.html" if self._TemplateReference__context.get('_has_base') else "email/base/simple.html" %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Boletín Mensual — {{ month_label }}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; background: #f5f5f5; margin: 0; padding: 0; }
+    .wrapper { max-width: 580px; margin: 0 auto; background: white; }
+    .header { background: #1a1a2e; padding: 20px 24px; }
+    .header h1 { color: #8be000; margin: 0; font-size: 20px; }
+    .header p { color: #cccccc; margin: 4px 0 0 0; font-size: 13px; }
+    .content { padding: 24px; }
+    .greeting { font-size: 15px; color: #1f2937; margin-bottom: 16px; }
+    .child-section { border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 20px; overflow: hidden; }
+    .child-header { background: #f0fdf4; padding: 12px 16px; border-bottom: 1px solid #d1fae5; }
+    .child-header h2 { margin: 0; font-size: 16px; color: #065f46; }
+    .child-header p { margin: 2px 0 0 0; font-size: 12px; color: #6b7280; }
+    .child-body { padding: 16px; }
+    .metric-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+    .metric-label { color: #6b7280; }
+    .metric-value { font-weight: bold; color: #1f2937; }
+    .badge-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .badge { background: #fef3c7; border: 1px solid #fbbf24; padding: 3px 10px; border-radius: 12px; font-size: 11px; color: #92400e; }
+    .narrative-block { background: #f9fafb; border-left: 3px solid #2563eb; padding: 10px 14px; margin: 10px 0; border-radius: 0 4px 4px 0; }
+    .narrative-block.strengths { border-left-color: #16a34a; }
+    .narrative-block.area { border-left-color: #2563eb; }
+    .narrative-block.milestone { border-left-color: #7c3aed; }
+    .narrative-label { font-size: 11px; font-weight: bold; margin-bottom: 4px; }
+    .narrative-label.strengths { color: #15803d; }
+    .narrative-label.area { color: #1d4ed8; }
+    .narrative-label.milestone { color: #6d28d9; }
+    .narrative-text { font-size: 12px; color: #374151; margin: 0; }
+    .confidence-low { background: #fffbeb; border: 1px solid #f59e0b; padding: 6px 12px; border-radius: 4px; font-size: 11px; color: #92400e; margin-bottom: 8px; }
+    .pdf-cta { background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block; font-size: 14px; font-weight: bold; margin: 16px 0; }
+    .footer-note { font-size: 11px; color: #9ca3af; padding: 16px 24px; background: #f9fafb; border-top: 1px solid #e5e7eb; }
+    .privacy-note { font-size: 10px; color: #6b7280; padding: 12px 24px; border-top: 1px solid #f0f0f0; }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+  <!-- Header -->
+  <div class="header">
+    <h1>Club Deportivo Trocha y Ruta</h1>
+    <p>Boletín Mensual de Seguimiento — {{ month_label }} {{ season_year }}</p>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+    <p class="greeting">
+      Hola <strong>{{ parent_name }}</strong>,
+    </p>
+    <p style="font-size: 14px; color: #374151; margin-bottom: 20px;">
+      El equipo técnico del club ha preparado el boletín mensual de seguimiento
+      {% if children | length == 1 %}
+      de <strong>{{ children[0].athlete_first_name }}</strong>.
+      {% else %}
+      de tus atletas.
+      {% endif %}
+      Encuentra el resumen a continuación y el reporte completo (con datos de crecimiento y gráficos) en el PDF adjunto.
+    </p>
+
+    <!-- Sección por cada hijo/atleta -->
+    {% for child in children %}
+    {% set eb = child.email_blocks or {} %}
+    {% set attendance = eb.get('attendance', {}) %}
+    {% set technical = eb.get('technical', {}) %}
+    {% set race = eb.get('race_results', {}) %}
+    {% set badges = eb.get('badges', {}) %}
+    {% set narrative = child.ai_narrative or {} %}
+    {% set overrides = child.coach_narrative_overrides or {} %}
+    {% set confidence = narrative.get('confidence', 'low') %}
+
+    <div class="child-section">
+      <div class="child-header">
+        <h2>{{ child.athlete_first_name }}</h2>
+        <p>{{ club_name }} — {{ month_label }}</p>
+      </div>
+      <div class="child-body">
+
+        <!-- Insignias -->
+        {% if badges and badges.get('items') %}
+        <div class="badge-list">
+          {% for badge in badges.items %}
+          <span class="badge">
+            {% if badge.badge_type == 'attendance_100' %}🏅 100% Asistencia
+            {% elif badge.badge_type == 'attendance_90' %}✅ ≥90% Asistencia
+            {% elif badge.badge_type == 'attendance_75' %}✔ ≥75% Asistencia
+            {% elif badge.badge_type == 'first_podium' %}🥇 ¡Primer Podio!
+            {% elif badge.badge_type == 'mtp' %}⏱ Mejor Tiempo Personal
+            {% elif badge.badge_type == 'top10' %}📊 Top 10
+            {% else %}{{ badge.badge_type }}{% endif %}
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Asistencia -->
+        {% if attendance %}
+        <div class="metric-row">
+          <span class="metric-label">Asistencia</span>
+          <span class="metric-value">{{ attendance.get('sessions_present', 0) }}/{{ attendance.get('sessions_total', 0) }} ({{ attendance.get('attendance_pct', 0) }}%)</span>
+        </div>
+        {% endif %}
+
+        <!-- Resultados de carrera (solo si hubo) -->
+        {% if race and race.get('has_races') %}
+        <div class="metric-row">
+          <span class="metric-label">Carreras este mes</span>
+          <span class="metric-value">{{ race.get('results', []) | length }}</span>
+        </div>
+        {% for r in (race.get('results', []))[:2] %}
+        <div class="metric-row" style="padding-left: 10px; font-size: 12px;">
+          <span class="metric-label">Válida {{ r.valida_num or "—" }}</span>
+          <span class="metric-value">
+            {% if r.position %}P{{ r.position }}{% else %}DNF/DSQ{% endif %}
+            {% if r.gap_to_winner_pct is not none %} (+{{ "%.1f"|format(r.gap_to_winner_pct) }}%){% endif %}
+          </span>
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <!-- Narrativa IA -->
+        {% set strengths_text = overrides.get('strengths') or narrative.get('strengths', '') %}
+        {% set area_text = overrides.get('area_to_develop') or narrative.get('area_to_develop', '') %}
+        {% set milestone_text = overrides.get('milestone') or narrative.get('milestone', '') %}
+
+        {% if strengths_text or area_text or milestone_text %}
+        {% if confidence == 'low' %}
+        <div class="confidence-low">Análisis orientativo (datos del mes aún limitados)</div>
+        {% endif %}
+
+        {% if strengths_text %}
+        <div class="narrative-block strengths">
+          <p class="narrative-label strengths">✓ Fortalezas</p>
+          <p class="narrative-text">{{ strengths_text }}</p>
+        </div>
+        {% endif %}
+
+        {% if area_text %}
+        <div class="narrative-block area">
+          <p class="narrative-label area">→ A trabajar</p>
+          <p class="narrative-text">{{ area_text }}</p>
+        </div>
+        {% endif %}
+
+        {% if milestone_text %}
+        <div class="narrative-block milestone">
+          <p class="narrative-label milestone">★ Hito del mes</p>
+          <p class="narrative-text">{{ milestone_text }}</p>
+        </div>
+        {% endif %}
+        {% endif %}
+
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- CTA PDF -->
+    <p style="text-align: center; margin: 20px 0 8px 0;">
+      <strong style="font-size: 13px; color: #374151;">El reporte completo (datos de crecimiento y gráficos) está en el PDF adjunto.</strong>
+    </p>
+    <p style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">
+      El PDF incluye datos detallados de maduración biológica, mediciones antropométricas y análisis de progresión competitiva — información que, por privacidad, no incluimos en este correo.
+    </p>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="footer-note">
+    <p style="margin: 0;">
+      Este boletín fue preparado por el entrenador del <strong>{{ club_name }}</strong>.
+      Si tienes preguntas, responde a este correo o contacta directamente al entrenador.
+    </p>
+  </div>
+
+  <!-- Nota de privacidad -->
+  <div class="privacy-note">
+    <strong>Ley 1581/2012 (Habeas Data):</strong> Este email contiene información personal de un menor de edad.
+    Se envía al padre/tutor autorizado. Para ejercer derechos de acceso, rectificación o cancelación:
+    privacidad@trochyruta.com. No reenviar sin autorización.
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,74 @@
+{# Macro SVG: proyección de posición con banda de confianza
+   Inputs:
+     history_points      — lista de {x: valida_num, y: position}
+     next_valida_num     — int: número de la próxima válida
+     expected_position   — float: posición proyectada
+     expected_range      — [low, high]: banda de confianza
+     confidence          — 'low'|'medium'|'high'
+     width / height
+#}
+{% macro projection_band(history_points, next_valida_num, expected_position, expected_range, confidence, width=420, height=180) %}
+{%- set low_conf = (confidence == "low") -%}
+{%- set valid_hist = history_points | selectattr("y", "ne", none) | list -%}
+{%- set pad_left = 40 -%}
+{%- set pad_right = 20 -%}
+{%- set pad_top = 20 -%}
+{%- set pad_bottom = 30 -%}
+{%- set chart_w = width - pad_left - pad_right -%}
+{%- set chart_h = height - pad_top - pad_bottom -%}
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{ width }} {{ height }}" width="{{ width }}" height="{{ height }}" role="img" aria-label="Proyección posición próxima válida">
+  <title>Proyección próxima válida</title>
+  <rect x="0" y="0" width="{{ width }}" height="{{ height }}" fill="#f9f9f9" rx="4"/>
+  <rect x="{{ pad_left }}" y="{{ pad_top }}" width="{{ chart_w }}" height="{{ chart_h }}" fill="white" stroke="#e0e0e0"/>
+  {%- if valid_hist | length > 0 and next_valida_num and expected_position -%}
+    {%- set all_x = (valid_hist | map(attribute="x") | list) + [next_valida_num] -%}
+    {%- set all_y_hist = valid_hist | map(attribute="y") | list -%}
+    {%- set all_y = all_y_hist + ([expected_position] if expected_position else []) -%}
+    {%- set min_x = all_x | min -%}
+    {%- set max_x = all_x | max -%}
+    {%- set max_y = all_y | max -%}
+    {%- set max_y = [max_y, 10] | max -%}
+    {%- set x_range = [(max_x - min_x), 1] | max -%}
+    <!-- Banda de confianza si hay rango -->
+    {%- if expected_range and expected_range | length == 2 -%}
+      {%- set band_x = pad_left + ((next_valida_num - min_x) / x_range) * chart_w -%}
+      {%- set band_y_low = pad_top + ((expected_range[0] - 1) / (max_y - 1 if max_y > 1 else 1)) * chart_h -%}
+      {%- set band_y_high = pad_top + ((expected_range[1] - 1) / (max_y - 1 if max_y > 1 else 1)) * chart_h -%}
+      <rect x="{{ band_x - 12 }}" y="{{ band_y_low }}" width="24" height="{{ band_y_high - band_y_low }}"
+            fill="#fbbf24" opacity="{{ 0.3 if not low_conf else 0.15 }}"/>
+    {%- endif -%}
+    <!-- Historial -->
+    {%- set prev_cx = namespace(val=none) -%}
+    {%- set prev_cy = namespace(val=none) -%}
+    {%- for pt in valid_hist -%}
+      {%- set cx = pad_left + ((pt.x - min_x) / x_range) * chart_w -%}
+      {%- set cy = pad_top + ((pt.y - 1) / (max_y - 1 if max_y > 1 else 1)) * chart_h -%}
+      {%- if prev_cx.val is not none -%}
+        <line x1="{{ prev_cx.val }}" y1="{{ prev_cy.val }}" x2="{{ cx }}" y2="{{ cy }}" stroke="#2563eb" stroke-width="2"/>
+      {%- endif -%}
+      <circle cx="{{ cx }}" cy="{{ cy }}" r="3.5" fill="#2563eb"/>
+      <text x="{{ cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#555">V{{ pt.x }}</text>
+      {%- set prev_cx.val = cx -%}
+      {%- set prev_cy.val = cy -%}
+    {%- endfor -%}
+    <!-- Línea punteada al punto proyectado -->
+    {%- set last_hist = valid_hist | last -%}
+    {%- set last_cx2 = pad_left + ((last_hist.x - min_x) / x_range) * chart_w -%}
+    {%- set last_cy2 = pad_top + ((last_hist.y - 1) / (max_y - 1 if max_y > 1 else 1)) * chart_h -%}
+    {%- set proj_cx = pad_left + ((next_valida_num - min_x) / x_range) * chart_w -%}
+    {%- set proj_cy = pad_top + ((expected_position - 1) / (max_y - 1 if max_y > 1 else 1)) * chart_h -%}
+    <line x1="{{ last_cx2 }}" y1="{{ last_cy2 }}" x2="{{ proj_cx }}" y2="{{ proj_cy }}"
+          stroke="#f59e0b" stroke-dasharray="5,3" stroke-width="2"/>
+    <circle cx="{{ proj_cx }}" cy="{{ proj_cy }}" r="5" fill="#f59e0b" stroke="white" stroke-width="1.5"/>
+    <text x="{{ proj_cx }}" y="{{ proj_cy - 7 }}" text-anchor="middle" font-size="8" fill="#92400e">~P{{ "%.0f"|format(expected_position) }}</text>
+    <text x="{{ proj_cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#f59e0b">V{{ next_valida_num }}</text>
+  {%- else -%}
+    <text x="{{ width / 2 }}" y="{{ height / 2 }}" text-anchor="middle" font-size="11" fill="#999">Sin proyección disponible</text>
+  {%- endif -%}
+  {%- if low_conf -%}
+    <rect x="{{ width - 110 }}" y="4" width="106" height="14" rx="3" fill="#fef3c7"/>
+    <text x="{{ width - 57 }}" y="14" text-anchor="middle" font-size="8" fill="#92400e">Confianza baja</text>
+  {%- endif -%}
+  <text x="{{ pad_left }}" y="13" font-size="9" fill="#374151" font-weight="bold">Proyección próxima válida</text>
+</svg>
+{% endmacro %}
