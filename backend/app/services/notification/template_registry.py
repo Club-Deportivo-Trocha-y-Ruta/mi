@@ -272,7 +272,11 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
     ),
     NotificationTemplate.ATHLETE_MONTHLY_NEWSLETTER: EmailTemplateSpec(
         template_id="athlete_monthly_newsletter",
-        subject_template="[Trocha y Ruta] Boletín {{ month_label }}{% if children | length > 1 %} — {{ children | length }} atletas{% else %} — {{ children[0].athlete_first_name }}{% endif %}",
+        # El subject NUNCA expone el nombre del atleta (Ley 1098 + Ley 1581):
+        # subjects son visibles en previews, notificaciones push y servidores
+        # intermedios. El nombre del atleta solo aparece dentro del cuerpo,
+        # que viaja al padre autenticado.
+        subject_template="[Trocha y Ruta] Boletín mensual {{ month_label }} — Seguimiento del atleta",
         body_path="email/athlete_monthly_newsletter.html",
         required_context_keys=frozenset(
             {

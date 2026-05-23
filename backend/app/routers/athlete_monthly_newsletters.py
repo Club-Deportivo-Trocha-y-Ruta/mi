@@ -212,24 +212,26 @@ async def _generate_newsletter_for_athlete(
         )
         ai_result = await ai_use_case.run(ai_ctx)
         ai_narrative_dict = ai_result.model_dump()
-    except AthleteNewsletterLLMTimeout as exc:
+    except AthleteNewsletterLLMTimeout:
         logger.warning(
             "Timeout IA para boletín | athlete_id=%d period=%d-%02d",
             athlete.id, year, month,
         )
-        error_message = f"Timeout IA: {exc}"
+        error_message = "llm_timeout"
     except LLMSchemaError as exc:
         logger.warning(
             "Error guardrails IA | athlete_id=%d period=%d-%02d error=%s",
             athlete.id, year, month, type(exc).__name__,
         )
-        error_message = f"Error guardrails IA: {exc}"
+        # Catálogo de mensajes genéricos — el detalle técnico queda solo en logs
+        # para evitar exponer mensajes del LLM o señales de qué pasó por guardrails.
+        error_message = "guardrails_rejected"
     except Exception as exc:
         logger.error(
             "Error IA inesperado | athlete_id=%d period=%d-%02d error_type=%s",
             athlete.id, year, month, type(exc).__name__,
         )
-        error_message = f"Error IA: {type(exc).__name__}"
+        error_message = "llm_internal_error"
 
     now = datetime.now(timezone.utc)
     final_status = NewsletterStatus.draft if error_message is None else NewsletterStatus.failed
@@ -340,19 +342,20 @@ async def batch_create_newsletters(
             newsletter_ids.append(nl.id)
             if nl.status == NewsletterStatus.failed:
                 failed += 1
-                errors.append(f"Atleta ID {athlete.id}: {nl.error_message}")
+                # error_message ya está sanitizado (catálogo genérico)
+                errors.append(f"Atleta ID {athlete.id}: {nl.error_message or 'unknown'}")
             else:
                 created += 1
         except HTTPException as exc:
             skipped += 1
-            # 409 = consentimiento faltante — no es error técnico
             if exc.status_code == status.HTTP_409_CONFLICT:
-                errors.append(f"Atleta ID {athlete.id}: sin consentimiento IA")
+                errors.append(f"Atleta ID {athlete.id}: consent_missing")
             else:
-                errors.append(f"Atleta ID {athlete.id}: {exc.detail}")
-        except Exception as exc:
+                errors.append(f"Atleta ID {athlete.id}: http_{exc.status_code}")
+        except Exception:
             failed += 1
-            errors.append(f"Atleta ID {athlete.id}: {type(exc).__name__}")
+            # No exponer el tipo de excepción — puede revelar detalles de implementación
+            errors.append(f"Atleta ID {athlete.id}: internal_error")
 
     try:
         await db.commit()

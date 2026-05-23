@@ -250,10 +250,17 @@ async def _send_for_parent(
         if athlete is None:
             continue
 
+        # Defensa en profundidad: aunque el builder ya separa email_blocks
+        # de pdf_only_blocks, blindamos contra regresiones futuras eliminando
+        # cualquier clave de antropometría que pudiera haberse colado.
+        email_blocks_safe = dict(snapshot.get("email_blocks", {}))
+        for forbidden_key in ("anthropometry", "pdf_only_blocks", "charts"):
+            email_blocks_safe.pop(forbidden_key, None)
+
         child_data: dict[str, Any] = {
             "athlete_id": nl.athlete_id,
             "athlete_first_name": athlete.first_name,
-            "email_blocks": snapshot.get("email_blocks", {}),
+            "email_blocks": email_blocks_safe,
             "ai_narrative": ai_narrative,
             "coach_narrative_overrides": overrides,
         }
@@ -300,12 +307,22 @@ async def _send_for_parent(
     send_result: NotificationResult = await email_client.send(msg)
 
     if not send_result.success:
+        # Sanitizar error del proveedor: puede incluir emails de padres o
+        # subjects en respuestas de Resend/SMTP. Redactar emails antes de
+        # loguear o propagar al response del API.
+        import re
+        raw_error = send_result.error or "unknown"
+        safe_error = re.sub(
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+            "[email]",
+            str(raw_error),
+        )[:120]
         logger.error(
             "Error de email client | template_ref=athlete_monthly_newsletter error=%s",
-            send_result.error,
+            safe_error,
         )
         result.errors.append(
-            f"Error de envío para newsletters {[nl.id for nl in newsletters]}: {send_result.error}"
+            f"Error de envío para newsletters {[nl.id for nl in newsletters]}: {safe_error}"
         )
         return []
 

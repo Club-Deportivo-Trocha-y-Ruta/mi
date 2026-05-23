@@ -155,7 +155,14 @@ class AthleteNewsletterRead(BaseModel):
         description="Snapshot de insignias ganadas en el periodo.",
     )
 
-    pdf_storage_url: str | None = None
+    # pdf_storage_url se omite intencionalmente del contrato API: el PDF
+    # se descarga exclusivamente vía el endpoint autenticado /pdf, nunca
+    # exponiendo la ruta de storage que sería predecible y accesible
+    # sin autenticación si el bucket fuese público.
+    has_pdf: bool = Field(
+        default=False,
+        description="Indicador de existencia de PDF generado. Descargar vía endpoint /pdf.",
+    )
     pdf_generated_at: datetime | None = None
     pdf_sha256: str | None = None
 
@@ -202,7 +209,7 @@ class AthleteNewsletterRead(BaseModel):
             ai_narrative=ai_out,
             coach_narrative_overrides=overrides_out,
             badges_earned=obj.badges_earned,
-            pdf_storage_url=obj.pdf_storage_url,
+            has_pdf=bool(obj.pdf_storage_url or obj.pdf_sha256),
             pdf_generated_at=obj.pdf_generated_at,
             pdf_sha256=obj.pdf_sha256,
             generated_by_user_id=obj.generated_by_user_id,
