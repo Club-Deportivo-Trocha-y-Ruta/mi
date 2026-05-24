@@ -28,6 +28,8 @@ import { SessionFormPage } from "@/routes/training/SessionFormPage";
 import { SessionDetailPage } from "@/routes/training/SessionDetailPage";
 import { ReportsListPage } from "@/routes/training/ReportsListPage";
 import { ReportDetailPage } from "@/routes/training/ReportDetailPage";
+import { AthleteNewslettersDashboardPage } from "@/routes/training/AthleteNewslettersDashboardPage";
+import { AthleteNewsletterDetailPage } from "@/routes/training/AthleteNewsletterDetailPage";
 import { ParentSessionsPage } from "@/routes/parents/training/ParentSessionsPage";
 import { ParentSessionDetailPage } from "@/routes/parents/training/ParentSessionDetailPage";
 import { ParentMonthlyOverviewPage } from "@/routes/parents/training/ParentMonthlyOverviewPage";
@@ -197,6 +199,22 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <ReportDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/athlete-newsletters"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <AthleteNewslettersDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/athlete-newsletters/:athleteId/:newsletterId"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <AthleteNewsletterDetailPage />
             </ProtectedRoute>
           }
         />
