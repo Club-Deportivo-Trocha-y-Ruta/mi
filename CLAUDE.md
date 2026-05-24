@@ -195,6 +195,31 @@ Migraciones corren automáticamente via `entrypoint.sh` (`alembic upgrade head`)
 
 > Backfill V-I/II/III pendiente de PDFs oficiales; ingest real contra MySQL Hostinger pendiente de aprobación coach.
 
+## Estado de implementación — Módulo Boletín Mensual Individual (Fase 1.8)
+
+> Entrega mensual a padres (HTML email + PDF adjunto) con métricas longitudinales, narrativa IA del coach y antropometría. Multi-hijo: agrupa boletines de varios hijos en un solo email con N PDFs. Antropometría completa SOLO en el PDF (nunca en el cuerpo del email).
+
+| Paso | Descripción | Estado |
+|---|---|---|
+| 1 | Modelos SQLAlchemy: `AthleteMonthlyNewsletter`, `AthleteBadge`, M:N `parent_athlete_newsletter` + 3 enums (`NewsletterStatus`, `BadgeType`, `BadgeSource`) + migración `a1b2c3d4e5f7` | ✅ Completo 2026-05-24 |
+| 2 | Schemas Pydantic con contrato de privacidad estricto: `sent_to`/`pdf_only_blocks`/`pdf_storage_url` NUNCA en el response; reemplazado por `has_pdf: bool` | ✅ Completo 2026-05-24 |
+| 3 | `badge_evaluator`: thresholds asistencia (100/≥90/≥75) + insignias competitivas (primer podio, MTP, Top 10), idempotente por periodo | ✅ Completo 2026-05-24 |
+| 4 | `newsletter_builder`: orquesta 10 bloques de datos, separa estrictamente `email_blocks` (sin antropometría) vs `pdf_only_blocks` (con antropometría) | ✅ Completo 2026-05-24 |
+| 5 | Use case IA `athlete_monthly_newsletter_v1` con guardrails (forbidden_names dinámicos desde DB, MAX_WORDS por bloque, redacción términos médicos). Property tests verifican que el nombre real nunca aparece en output | ✅ Completo 2026-05-24 |
+| 6 | `assert_ai_consent_for_newsletter` (Ley 1581 Art. 9): bloquea generación con HTTP 409 si falta consentimiento | ✅ Completo 2026-05-24 |
+| 7 | 4 macros Jinja SVG para gráficos longitudinales (positions, gap%, puntos acumulados, proyección con banda de confianza) + template PDF A4 con header, antropometría, gráficos y footer Ley 1581 | ✅ Completo 2026-05-24 |
+| 8 | `newsletter_dispatcher`: agrupa por padre, adjunta N PDFs, idempotente, bloquea envío si hermano sigue draft (escape `force_individual`) | ✅ Completo 2026-05-24 |
+| 9 | Router con 8 endpoints + batch creación (`/api/athletes/{id}/monthly-newsletters/*` y `/api/clubs/{id}/monthly-newsletters/batch`), RBAC coach/admin, transiciones de estado controladas | ✅ Completo 2026-05-24 |
+| 10 | Auditoría privacidad: 3 hallazgos ALTOS resueltos (`error_message` catálogo cerrado, `pdf_storage_url` removido del schema, subject email sin nombre del menor) + 2 MEDIOS (regex emails en dispatcher, defensa antropometría) | ✅ Completo 2026-05-24 |
+| 11 | Tests backend: 137 verdes (123 funcionales + 14 invariantes de privacidad consolidados en `test_newsletter_privacy.py`) | ✅ Completo 2026-05-24 |
+| 12 | Tipos TS + API client + 8 hooks TanStack Query con `userId` en query keys (Privacy R2) + MSW handlers y fixtures | ✅ Completo 2026-05-24 |
+| 13 | Frontend dashboard `/training/athlete-newsletters`: selector mes/año, grid badge × estado, filtros, modal batch generate con resumen created/skipped/failed | ✅ Completo 2026-05-24 |
+| 14 | Frontend detalle `/training/athlete-newsletters/:athleteId/:newsletterId`: layout 2 columnas, `NewsletterPreviewBlocks`, `NewsletterNarrativeEditor` (RHF+Zod, 500 chars, tooltip confianza), botones aprobar/enviar/descargar PDF, dialog sibling-blocking con `force_individual` | ✅ Completo 2026-05-24 |
+| 15 | Tests frontend: 1295 tests verdes (81 nuevos del módulo + 6 a11y con jest-axe, 0 violaciones). `BadgesBlockView` oculta el bloque cuando no hay insignias (no reforzar comparaciones negativas en menores) | ✅ Completo 2026-05-24 |
+| 16 | Deploy a Render | ⏳ Pendiente |
+
+> Deploy pendiente de aprobación coach y merge a `main`. Migración Alembic verificada en SQLite via tests (encadenada a `f9a0b1c2d3e4`).
+
 ## Credenciales de desarrollo (seed data)
 
 > Solo para entorno local / Docker dev. Nunca usar en producción.
