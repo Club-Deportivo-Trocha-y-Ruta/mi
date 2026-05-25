@@ -321,15 +321,24 @@ function CalendarBlockView({ data }: { data: CalendarBlock }) {
 // Bloque Apoyo en casa
 // ---------------------------------------------------------------------------
 
+interface SupportTip {
+  text: string;
+  title?: string;
+  category?: string;
+}
+
 interface SupportBlock {
-  tips?: string[];
+  tips?: Array<string | SupportTip>;
   hydration_reminder?: string;
   sleep_reminder?: string;
 }
 
 function SupportBlockView({ data }: { data: SupportBlock }) {
+  const normalizedTips: string[] = (data.tips ?? []).map((tip) =>
+    typeof tip === 'string' ? tip : tip.text
+  );
   const allTips = [
-    ...(data.tips ?? []),
+    ...normalizedTips,
     ...(data.hydration_reminder ? [data.hydration_reminder] : []),
     ...(data.sleep_reminder ? [data.sleep_reminder] : []),
   ];

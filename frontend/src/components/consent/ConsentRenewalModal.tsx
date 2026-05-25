@@ -15,6 +15,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ExternalLink, Loader2, ShieldCheck } from "lucide-react";
 
+import { formatDate } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { useRenewConsent } from "@/hooks/consent";
 import type { AthleteConsentStatus, PrivacyPolicySummary } from "@/types/consent";
@@ -245,11 +246,7 @@ export function ConsentRenewalModal({
                   {activePolicy.version}
                 </span>
                 {" "}— vigente desde{" "}
-                {new Intl.DateTimeFormat("es-CO", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                }).format(new Date(`${activePolicy.effective_date}T12:00:00`))}
+                {formatDate(`${activePolicy.effective_date}T12:00:00`)}
               </p>
 
               {/* Changelog (solo si existe y no es primer consentimiento) */}

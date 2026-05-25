@@ -134,7 +134,7 @@ class TestBatchErrorsSanitized:
             assert "@" not in err, f"Error contiene char '@': {err}"
 
     def test_error_message_uses_catalog_codes(self):
-        catalog = {"llm_timeout", "guardrails_rejected", "llm_internal_error", "consent_missing"}
+        catalog = {"llm_timeout", "guardrails_rejected", "llm_internal_error", "consent_missing", "no_parent_linked"}
         obj = _make_obj(error_message="guardrails_rejected")
         read = AthleteNewsletterRead.from_orm_model(obj)
         assert read.error_message in catalog

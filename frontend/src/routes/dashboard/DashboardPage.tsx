@@ -1,13 +1,6 @@
 import { MeasurementAlerts } from "@/components/dashboard/MeasurementAlerts";
 import { useDashboardStats } from "@/hooks/athletes/useDashboardStats";
-
-function formatDate(isoDate: string): string {
-  return new Intl.DateTimeFormat("es-CO", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(`${isoDate}T12:00:00`));
-}
+import { formatDateMedium } from "@/lib/datetime";
 
 export function DashboardPage() {
   const { total, evaluatedCount, totalCount, lastEvaluation, isLoading, isDetailLoading } =
@@ -40,7 +33,7 @@ export function DashboardPage() {
         >
           <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Última evaluación</p>
           <p className="mt-2 text-2xl font-bold text-charcoal">
-            {isDetailLoading ? "…" : lastEvaluation ? formatDate(lastEvaluation) : "--"}
+            {isDetailLoading ? "…" : lastEvaluation ? formatDateMedium(`${lastEvaluation}T12:00:00`) : "--"}
           </p>
         </article>
 

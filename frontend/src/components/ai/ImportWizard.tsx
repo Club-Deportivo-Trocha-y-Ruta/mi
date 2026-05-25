@@ -42,6 +42,7 @@ import {
   useImportDryRun,
   useImportParse,
 } from "@/hooks/ai/useRaceImports";
+import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type {
   ImportCommitResponse,
@@ -86,14 +87,7 @@ function shouldWarnUnusualDiff(summary: {
 
 function formatCommittedAt(iso: string | undefined | null): string {
   if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("es-CO", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
+  return formatDateTime(iso) || "—";
 }
 
 // ---------------------------------------------------------------------------

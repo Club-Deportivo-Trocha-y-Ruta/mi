@@ -10,6 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatWeekdayShortDate } from "@/lib/datetime";
 import type {
   KidAttendance,
   TrainingSession,
@@ -39,17 +40,14 @@ const RUBRIC_TOOLTIPS: Record<"effort" | "attitude" | "technique", string> = {
 const RPE_TOOLTIP =
   "Escala interna del entrenador (1-10). No es nota: mide qué tan duro lo sintió tu atleta ese día.";
 
-function formatDate(dateStr: string): string {
-  const [year, month, day] = dateStr.split("-");
-  const date = new Date(Number(year), Number(month) - 1, Number(day));
-  return new Intl.DateTimeFormat("es-CO", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(date);
+/** Formatea una fecha YYYY-MM-DD como "lun., 25 may." en Colombia. */
+function formatSessionDate(dateStr: string): string {
+  // T12:00:00 sin zona → hora local → evita desplazamiento de día en Colombia
+  return formatWeekdayShortDate(`${dateStr}T12:00:00`);
 }
 
-function formatTime(timeStr: string): string {
+/** Hora de sesión como "HH:mm" — campo puro de hora, no timestamp UTC. */
+function formatSessionTime(timeStr: string): string {
   return timeStr.slice(0, 5);
 }
 
@@ -89,7 +87,7 @@ function ParentSessionCardImpl({
       <Link
         to={`/parents/training/sessions/${session.id}`}
         className="flex flex-col rounded-t-xl transition-colors hover:bg-light-gray/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
-        aria-label={`Ver sesión: ${session.technical_focus} del ${formatDate(session.scheduled_date)}`}
+        aria-label={`Ver sesión: ${session.technical_focus} del ${formatSessionDate(session.scheduled_date)}`}
       >
         <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
           <div className="min-w-0 flex-1">
@@ -100,7 +98,7 @@ function ParentSessionCardImpl({
               {session.technical_focus}
             </h3>
             <p className="mt-0.5 text-sm text-mid-gray">
-              {formatDate(session.scheduled_date)} · {formatTime(session.scheduled_start_time)}
+              {formatSessionDate(session.scheduled_date)} · {formatSessionTime(session.scheduled_start_time)}
             </p>
             <p className="mt-0.5 truncate text-sm text-mid-gray">{session.location}</p>
           </div>

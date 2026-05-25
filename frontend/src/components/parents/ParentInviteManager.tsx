@@ -4,6 +4,7 @@ import { CheckCircle, Clock, Mail, XCircle } from "lucide-react";
 import { useCreateParentInvite, useParentInvites } from "@/hooks/parents/useParentInvites";
 import type { ParentInviteOut } from "@/types/parent.types";
 import type { FamilyRelationship } from "@/types/enums";
+import { formatDateMedium } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 const cardShadow =
@@ -21,13 +22,6 @@ function getInviteStatus(invite: ParentInviteOut): InviteStatus {
   return "pending";
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 function InviteStatusBadge({ status }: { status: InviteStatus }) {
   if (status === "pending") {
@@ -170,7 +164,7 @@ export function ParentInviteManager({
                 <span className="font-medium">{pendingInvite.email}</span>
               </p>
               <p className="text-xs text-amber-700">
-                Vence: {formatDate(pendingInvite.expires_at)}
+                Vence: {formatDateMedium(pendingInvite.expires_at)}
               </p>
             </div>
             <button
@@ -245,8 +239,8 @@ export function ParentInviteManager({
                   <div className="space-y-0.5">
                     <span className="font-medium text-charcoal">{invite.email}</span>
                     <p className="text-mid-gray">
-                      Enviada: {formatDate(invite.created_at)} · Vence:{" "}
-                      {formatDate(invite.expires_at)}
+                      Enviada: {formatDateMedium(invite.created_at)} · Vence:{" "}
+                      {formatDateMedium(invite.expires_at)}
                     </p>
                   </div>
                   <InviteStatusBadge status={status} />

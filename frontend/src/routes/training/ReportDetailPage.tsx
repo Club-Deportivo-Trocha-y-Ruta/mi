@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { useMonthlyReport, useSendMonthlyReport } from "@/api/trainingSessions";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { MonthlyMetricsTable } from "@/components/training/MonthlyMetricsTable";
+import { formatDateTime } from "@/lib/datetime";
 import { useAuthStore } from "@/store/auth.store";
 import type { MonthlyMetricsSnapshot } from "@/types/trainingSession.types";
 
@@ -12,17 +13,6 @@ const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
-
-function formatDateTime(isoStr: string): string {
-  const d = new Date(isoStr);
-  return d.toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 const cardStyle: React.CSSProperties = {
   boxShadow:

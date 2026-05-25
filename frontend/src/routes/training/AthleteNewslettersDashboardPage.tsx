@@ -28,6 +28,7 @@ import {
   DialogBody,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { formatDayMonthShort } from "@/lib/datetime";
 import type { AthleteNewsletter, NewsletterStatus } from "@/types/athleteNewsletter.types";
 import type { AthleteOut } from "@/types/athlete.types";
 
@@ -133,11 +134,7 @@ function AthleteNewsletterCard({
 
       {newsletter?.sent_at && (
         <p className="mt-1 text-xs text-mid-gray">
-          Enviado el{" "}
-          {new Date(newsletter.sent_at).toLocaleDateString("es-CO", {
-            day: "2-digit",
-            month: "short",
-          })}
+          Enviado el {formatDayMonthShort(newsletter.sent_at)}
         </p>
       )}
     </button>

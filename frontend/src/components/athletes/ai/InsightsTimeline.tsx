@@ -40,6 +40,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAthleteInsightDetail } from "@/hooks/athletes/useAthleteInsightDetail";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
+import { formatDateTimeCompact } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type {
   AthleteInsightOut,
@@ -78,18 +79,6 @@ function truncate(text: string, max: number): string {
   return `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString("es-CO", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 interface InsightsTimelineProps {
   athleteId: number;
@@ -202,7 +191,7 @@ export function InsightsTimeline({ athleteId, mode }: InsightsTimelineProps) {
               type="button"
               onClick={() => setSelectedInsightId(insight.id)}
               data-testid={`insight-card-${insight.id}`}
-              aria-label={`Ver análisis del ${formatDate(insight.generated_at)}, ${validaLabel(insight.valida_num)}, ${confidenceLabel(insight.confidence)}`}
+              aria-label={`Ver análisis del ${formatDateTimeCompact(insight.generated_at)}, ${validaLabel(insight.valida_num)}, ${confidenceLabel(insight.confidence)}`}
               className={cn(
                 "group flex w-full items-start gap-3 rounded-xl bg-white p-4 text-left transition-colors",
                 "hover:bg-light-gray/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
@@ -212,7 +201,7 @@ export function InsightsTimeline({ athleteId, mode }: InsightsTimelineProps) {
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    {formatDate(insight.generated_at)}
+                    {formatDateTimeCompact(insight.generated_at)}
                   </span>
                   <Badge variant="secondary">{validaLabel(insight.valida_num)}</Badge>
                   <Badge variant={confidenceVariant(insight.confidence)}>
@@ -405,7 +394,7 @@ function SupersedesSection({ chain }: { chain: InsightLink[] }) {
             key={link.id}
             className="flex items-center justify-between gap-2 rounded-md bg-light-gray/30 px-2.5 py-1.5"
           >
-            <span>{formatDate(link.generated_at)}</span>
+            <span>{formatDateTimeCompact(link.generated_at)}</span>
             <span className="font-mono">#{link.id}</span>
             {link.coach_approved ? (
               <Badge variant="success">Aprobado</Badge>
