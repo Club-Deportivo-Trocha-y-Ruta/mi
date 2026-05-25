@@ -1,0 +1,481 @@
+{% extends "documents/pdf/base/layout.html" %}
+
+{#
+  Boletín Mensual Individual por Atleta — PDF completo (Fase 1.8).
+  Variables requeridas:
+    athlete_first_name, athlete_last_name (solo primer nombre en título)
+    club_name, month_label, season_year, generated_at
+    email_blocks   — bloques sin antropometría (asistencia, técnico, carreras, etc.)
+    pdf_only_blocks — bloques solo PDF (antropometría + gráficos)
+    ai_narrative    — {strengths, area_to_develop, milestone, confidence}
+    coach_narrative_overrides — overrides manuales del coach (puede ser null)
+
+  Privacidad:
+    - Este template SÍ puede mostrar el nombre del atleta (es el destinatario: su familia).
+    - Datos antropométricos SOLO en este PDF — NUNCA en el email.
+    - Footer con aviso Ley 1581/2012.
+#}
+
+{% block title %}Boletín {{ month_label }} — {{ athlete_first_name }}{% endblock %}
+{% block header_right %}Boletín Mensual Individual{% endblock %}
+{% block doc_title %}Boletín Mensual — {{ month_label }}{% endblock %}
+{% block generated_at %}{{ generated_at }}{% endblock %}
+
+{% block body %}
+
+{# Importar macros de gráficos SVG #}
+{% from "documents/pdf/charts/line_positions.svg.jinja" import line_positions %}
+{% from "documents/pdf/charts/gap_pct.svg.jinja" import gap_pct %}
+{% from "documents/pdf/charts/points_accumulated.svg.jinja" import points_accumulated %}
+{% from "documents/pdf/charts/projection_band.svg.jinja" import projection_band %}
+
+{# Acceso fácil a bloques #}
+{% set eb = email_blocks or {} %}
+{% set pb = pdf_only_blocks or {} %}
+{% set period = eb.get('period', {}) %}
+{% set attendance = eb.get('attendance', {}) %}
+{% set technical = eb.get('technical', {}) %}
+{% set race_results = eb.get('race_results', {}) %}
+{% set calendar_block = eb.get('calendar', {}) %}
+{% set photos = eb.get('photos', {}) %}
+{% set badges_block = eb.get('badges', {}) %}
+{% set support = eb.get('support_at_home', {}) %}
+{% set anthro = pb.get('anthropometry', {}) %}
+{% set charts_ctx = pb.get('charts_context', {}) %}
+
+<!-- ============================================================
+     ENCABEZADO DEL BOLETÍN
+============================================================ -->
+<div style="margin-bottom: 18pt;">
+  <h2 style="margin: 0; color: #1e293b;">
+    Boletín Mensual de Seguimiento
+  </h2>
+  <p style="margin: 4pt 0 0 0; font-size: 13pt; color: #4b5563;">
+    {{ athlete_first_name }} {{ athlete_last_name }} &mdash; {{ month_label }} {{ season_year }}
+  </p>
+  <p style="margin: 2pt 0 0 0; font-size: 10pt; color: #6b7280;">
+    {{ club_name }}
+  </p>
+</div>
+<hr style="border: 1.5pt solid #8be000; margin-bottom: 14pt;"/>
+
+<!-- ============================================================
+     INSIGNIAS DEL MES
+============================================================ -->
+{% if badges_block and badges_block.get('items') %}
+<div style="margin-bottom: 14pt; background: #fefce8; border-left: 4pt solid #eab308; padding: 8pt 12pt; border-radius: 4pt;">
+  <h3 style="margin: 0 0 6pt 0; font-size: 11pt; color: #854d0e;">🏅 Logros del mes</h3>
+  <div style="display: flex; flex-wrap: wrap; gap: 6pt;">
+    {% for badge in badges_block.items %}
+    <span style="background: #fff7ed; border: 1pt solid #fdba74; padding: 3pt 8pt; border-radius: 10pt; font-size: 9pt; color: #9a3412;">
+      {% if badge.badge_type == 'attendance_100' %}100% Asistencia
+      {% elif badge.badge_type == 'attendance_90' %}≥90% Asistencia
+      {% elif badge.badge_type == 'attendance_75' %}≥75% Asistencia
+      {% elif badge.badge_type == 'first_podium' %}¡Primer Podio!
+      {% elif badge.badge_type == 'mtp' %}Mejor Tiempo Personal
+      {% elif badge.badge_type == 'top10' %}Top 10
+      {% else %}{{ badge.badge_type }}
+      {% endif %}
+    </span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     NARRATIVA IA (+ OVERRIDE SI APLICA)
+============================================================ -->
+{% set narrative = ai_narrative or {} %}
+{% set overrides = coach_narrative_overrides or {} %}
+{% set strengths_text = overrides.get('strengths') or narrative.get('strengths', '') %}
+{% set area_text = overrides.get('area_to_develop') or narrative.get('area_to_develop', '') %}
+{% set milestone_text = overrides.get('milestone') or narrative.get('milestone', '') %}
+{% set confidence = narrative.get('confidence', 'low') %}
+
+{% if strengths_text or area_text or milestone_text %}
+<div style="margin-bottom: 16pt;">
+  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
+    Valoración del entrenador
+  </h2>
+  {% if confidence == 'low' %}
+  <div style="background: #fef3c7; border: 1pt solid #fbbf24; padding: 5pt 10pt; border-radius: 3pt; font-size: 8pt; color: #92400e; margin-bottom: 8pt;">
+    <strong>Nota:</strong> Análisis basado en datos limitados (&lt;3 sesiones o &lt;2 carreras). La valoración es orientativa.
+  </div>
+  {% endif %}
+
+  {% if strengths_text %}
+  <div style="margin-bottom: 8pt;">
+    <strong style="color: #15803d; font-size: 10pt;">✓ Fortalezas observadas</strong>
+    <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #374151;">{{ strengths_text }}</p>
+  </div>
+  {% endif %}
+
+  {% if area_text %}
+  <div style="margin-bottom: 8pt;">
+    <strong style="color: #2563eb; font-size: 10pt;">→ Área de desarrollo</strong>
+    <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #374151;">{{ area_text }}</p>
+  </div>
+  {% endif %}
+
+  {% if milestone_text %}
+  <div style="margin-bottom: 8pt;">
+    <strong style="color: #7c3aed; font-size: 10pt;">★ Hito del mes</strong>
+    <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #374151;">{{ milestone_text }}</p>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ============================================================
+     BLOQUE 1: ASISTENCIA Y COMPROMISO
+============================================================ -->
+{% if attendance %}
+<div style="margin-bottom: 16pt;">
+  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
+    Asistencia y Compromiso
+  </h2>
+  <table class="data-table">
+    <tbody>
+      <tr>
+        <td>Sesiones asistidas</td>
+        <td><strong>{{ attendance.get('sessions_present', 0) }} / {{ attendance.get('sessions_total', 0) }}</strong></td>
+        <td>Porcentaje</td>
+        <td><strong>{{ attendance.get('attendance_pct', 0) }}%</strong></td>
+      </tr>
+      {% if attendance.get('attendance_pct_prev_month') is not none %}
+      <tr>
+        <td>Mes anterior</td>
+        <td>{{ attendance.get('attendance_pct_prev_month') }}%</td>
+        <td>Tendencia</td>
+        <td>
+          {% set diff = attendance.get('attendance_pct', 0) - attendance.get('attendance_pct_prev_month', 0) %}
+          {% if diff > 0 %}<span style="color: #15803d;">↑ +{{ "%.1f"|format(diff) }}%</span>
+          {% elif diff < 0 %}<span style="color: #dc2626;">↓ {{ "%.1f"|format(diff) }}%</span>
+          {% else %}<span style="color: #6b7280;">= Sin cambio</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {% if attendance.get('streak_days', 0) > 0 %}
+      <tr>
+        <td colspan="2">Racha de asistencia consecutiva</td>
+        <td colspan="2"><strong>{{ attendance.get('streak_days') }} sesiones</strong></td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     BLOQUE 2: DESARROLLO TÉCNICO
+============================================================ -->
+{% if technical %}
+<div style="margin-bottom: 16pt;">
+  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
+    Desarrollo Técnico
+  </h2>
+  {% if technical.get('focos_tecnicos') %}
+  <p style="margin: 0 0 6pt 0; font-size: 10pt; color: #374151;">
+    <strong>Focos del mes:</strong>
+    {{ technical.get('focos_tecnicos') | join(", ") }}
+  </p>
+  {% endif %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Indicador</th><th>Valor</th><th>Referencia</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>RPE promedio (escala OMNI)</td>
+        <td>{{ "%.1f"|format(technical.get('avg_rpe')) if technical.get('avg_rpe') is not none else "N/D" }}</td>
+        <td>1-10 (ideal 6-7 para entrenamiento base)</td>
+      </tr>
+      <tr>
+        <td>Rúbrica esfuerzo (1-5)</td>
+        <td>{{ "%.1f"|format(technical.get('avg_rubric_effort')) if technical.get('avg_rubric_effort') is not none else "N/D" }}</td>
+        <td>Compromiso durante la sesión</td>
+      </tr>
+      <tr>
+        <td>Rúbrica actitud (1-5)</td>
+        <td>{{ "%.1f"|format(technical.get('avg_rubric_attitude')) if technical.get('avg_rubric_attitude') is not none else "N/D" }}</td>
+        <td>Disposición y respeto al grupo</td>
+      </tr>
+      <tr>
+        <td>Rúbrica técnica (1-5)</td>
+        <td>{{ "%.1f"|format(technical.get('avg_rubric_technique')) if technical.get('avg_rubric_technique') is not none else "N/D" }}</td>
+        <td>Ejecución de habilidades técnicas</td>
+      </tr>
+      <tr>
+        <td>Horas totales de entrenamiento</td>
+        <td><strong>{{ technical.get('total_training_hours', 0) }}h</strong></td>
+        <td>LTAD: ≤ edad del atleta horas/semana</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     BLOQUE 3: RESULTADOS COMPETITIVOS
+============================================================ -->
+{% if race_results and race_results.get('has_races') %}
+<div style="margin-bottom: 16pt;">
+  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
+    Resultados Copa Valle — {{ month_label }}
+  </h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Válida</th>
+        <th>Categoría</th>
+        <th>Posición</th>
+        <th>Tiempo</th>
+        <th>Gap al P1</th>
+        <th>Puntos</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in race_results.get('results', []) %}
+      <tr>
+        <td>V{{ r.valida_num or "—" }}</td>
+        <td>{{ r.category_code or "—" }}</td>
+        <td>{{ r.position or "DNF/DSQ" }}</td>
+        <td>
+          {% if r.race_time_ms %}
+            {% set total_s = (r.race_time_ms / 1000) | int %}
+            {% set mins = (total_s // 60) %}
+            {% set secs = (total_s % 60) %}
+            {{ "%d:%02d"|format(mins, secs) }}
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if r.gap_to_winner_pct is not none %}
+            +{{ "%.1f"|format(r.gap_to_winner_pct) }}%
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ r.points_awarded or 0 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Gráficos de competencia -->
+  {% if charts_ctx and charts_ctx.get('has_data') %}
+  <div style="margin-top: 12pt;">
+    <h3 style="font-size: 10pt; color: #4b5563; margin-bottom: 8pt;">Evolución en la temporada</h3>
+    <div style="display: flex; flex-wrap: wrap; gap: 10pt; justify-content: space-between;">
+      <div>
+        {{ line_positions(charts_ctx.positions, width=280, height=150, low_confidence=charts_ctx.low_confidence) }}
+      </div>
+      <div>
+        {{ gap_pct(charts_ctx.gap_pcts, width=280, height=150, low_confidence=charts_ctx.low_confidence) }}
+      </div>
+      <div>
+        {{ points_accumulated(charts_ctx.points_accumulated, width=280, height=150, low_confidence=charts_ctx.low_confidence) }}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ============================================================
+     BLOQUE 4: ANTROPOMETRÍA COMPLETA (solo PDF)
+============================================================ -->
+{% if anthro and anthro.get('has_records') %}
+<div style="margin-bottom: 16pt; page-break-before: auto;">
+  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
+    Seguimiento Antropométrico y Maduración
+  </h2>
+  <p style="font-size: 9pt; color: #6b7280; margin-bottom: 8pt; font-style: italic;">
+    Esta información es confidencial y solo se incluye en el PDF. No se envía por email.
+    Fuente: Método Mirwald et al. + Referencias OMS/CDC adaptadas para Colombia (Res. 2465/2016).
+  </p>
+
+  <!-- Tabla longitudinal -->
+  <table class="data-table" style="font-size: 8.5pt;">
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Peso (kg)</th>
+        <th>Talla (cm)</th>
+        <th>IMC</th>
+        <th>Z-Talla</th>
+        <th>P-Talla</th>
+        <th>Z-IMC</th>
+        <th>P-IMC</th>
+        <th>PHV offset</th>
+        <th>Maduración</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in anthro.records %}
+      <tr {% if loop.first %}style="background: #f0fdf4; font-weight: bold;"{% endif %}>
+        <td>{{ r.evaluation_date or "—" }}</td>
+        <td>{{ "%.1f"|format(r.weight_kg) if r.weight_kg is not none else "—" }}</td>
+        <td>{{ "%.1f"|format(r.standing_height_cm) if r.standing_height_cm is not none else "—" }}</td>
+        <td>{{ "%.1f"|format(r.bmi) if r.bmi is not none else "—" }}</td>
+        <td>{{ "%.2f"|format(r.height_z_score) if r.height_z_score is not none else "—" }}</td>
+        <td>{{ "%.0f"|format(r.height_percentile) if r.height_percentile is not none else "—" }}</td>
+        <td>{{ "%.2f"|format(r.bmi_z_score) if r.bmi_z_score is not none else "—" }}</td>
+        <td>{{ "%.0f"|format(r.bmi_percentile) if r.bmi_percentile is not none else "—" }}</td>
+        <td>
+          {% if r.maturity_offset is not none %}
+            {{ "+%.2f"|format(r.maturity_offset) if r.maturity_offset >= 0 else "%.2f"|format(r.maturity_offset) }}
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if r.maturation_status == 'Pre-PHV' %}<span style="color: #2563eb;">Pre-PHV</span>
+          {% elif r.maturation_status == 'Circa-PHV' %}<span style="color: #d97706;">Circa-PHV</span>
+          {% elif r.maturation_status == 'Post-PHV' %}<span style="color: #059669;">Post-PHV</span>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Última medición — detalle PHV -->
+  {% set latest = anthro.latest %}
+  {% if latest %}
+  <div style="margin-top: 10pt; background: #f8fafc; border: 1pt solid #e2e8f0; padding: 10pt; border-radius: 4pt;">
+    <h3 style="margin: 0 0 6pt 0; font-size: 10pt; color: #1e293b;">
+      Última medición ({{ latest.evaluation_date }})
+    </h3>
+    <div style="display: flex; flex-wrap: wrap; gap: 12pt;">
+      <div>
+        <p style="margin: 0; font-size: 9pt;"><strong>Pico de Velocidad de Crecimiento (PHV):</strong></p>
+        <p style="margin: 2pt 0 0 6pt; font-size: 9pt;">
+          Estado: <strong>{{ latest.maturation_status or "—" }}</strong><br/>
+          Offset: <strong>{{ "%.2f años"|format(latest.maturity_offset) if latest.maturity_offset is not none else "—" }}</strong><br/>
+          Edad estimada en PHV: <strong>{{ "%.2f años"|format(latest.age_at_phv) if latest.age_at_phv is not none else "—" }}</strong>
+        </p>
+      </div>
+      {% if latest.training_implications %}
+      <div style="flex: 1; min-width: 160pt;">
+        <p style="margin: 0; font-size: 9pt;"><strong>Implicaciones pedagógicas:</strong></p>
+        <p style="margin: 2pt 0 0 6pt; font-size: 9pt; color: #374151;">{{ latest.training_implications }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ============================================================
+     BLOQUE 5: FOTOS DEL MES
+============================================================ -->
+{% if photos and photos.get('count', 0) > 0 %}
+<div style="margin-bottom: 16pt;">
+  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
+    Galería del Mes
+  </h2>
+  <p style="font-size: 8pt; color: #6b7280; margin-bottom: 8pt;">
+    Fotos compartidas con consentimiento de imagen (Ley 1581/2012).
+    {% if photos.get('soft_cap_reached') %}Se muestran las primeras 8 fotos.{% endif %}
+  </p>
+  <div style="display: flex; flex-wrap: wrap; gap: 8pt;">
+    {% for photo in photos.get('items', []) %}
+    {% if photo.thumbnail_url %}
+    <div style="text-align: center;">
+      <img src="{{ photo.thumbnail_url }}" style="max-width: 80pt; max-height: 60pt; border-radius: 3pt;" alt="Foto de entrenamiento"/>
+      {% if photo.caption %}
+      <p style="font-size: 7pt; color: #6b7280; margin: 2pt 0 0 0; max-width: 80pt;">{{ photo.caption }}</p>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     BLOQUE 6: CALENDARIO
+============================================================ -->
+{% if calendar_block %}
+<div style="margin-bottom: 16pt;">
+  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
+    Próximas Actividades
+  </h2>
+
+  {% if calendar_block.get('next_training_sessions') %}
+  <h3 style="font-size: 10pt; color: #4b5563; margin: 0 0 6pt 0;">Entrenamientos planificados</h3>
+  <table class="data-table" style="font-size: 9pt;">
+    <tbody>
+      {% for s in calendar_block.next_training_sessions %}
+      <tr>
+        <td>{{ s.date or "—" }}</td>
+        <td>{{ s.location or "—" }}</td>
+        <td>{{ s.technical_focus or "—" }}</td>
+        <td>{{ s.duration_min or "—" }} min</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if calendar_block.get('next_race_events') %}
+  <h3 style="font-size: 10pt; color: #4b5563; margin: 8pt 0 6pt 0;">Copa Valle 2026 — Próximas válidas</h3>
+  <table class="data-table" style="font-size: 9pt;">
+    <thead>
+      <tr><th>Válida</th><th>Fecha</th><th>Sede</th><th>Prioridad</th></tr>
+    </thead>
+    <tbody>
+      {% for event in calendar_block.next_race_events %}
+      <tr>
+        <td>{{ event.valida or "—" }}</td>
+        <td>{{ event.date or "—" }}</td>
+        <td>{{ event.location or "—" }}</td>
+        <td>
+          {% if event.priority == 'A' %}<span style="color: #dc2626; font-weight: bold;">A — Principal</span>
+          {% elif event.priority == 'B' %}<span style="color: #d97706;">B — Secundaria</span>
+          {% elif event.priority == 'C' %}<span style="color: #6b7280;">C — Diagnóstica</span>
+          {% else %}{{ event.priority or "—" }}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ============================================================
+     BLOQUE 7: CÓMO APOYAR DESDE CASA
+============================================================ -->
+{% if support and support.get('tips') %}
+<div style="margin-bottom: 16pt; background: #f0fdf4; border: 1pt solid #86efac; padding: 10pt 14pt; border-radius: 4pt;">
+  <h2 style="font-size: 12pt; color: #14532d; margin: 0 0 8pt 0;">
+    Cómo Apoyar desde Casa
+  </h2>
+  <div style="display: flex; flex-wrap: wrap; gap: 8pt;">
+    {% for tip in support.tips %}
+    <div style="flex: 1; min-width: 130pt; background: white; padding: 8pt; border-radius: 3pt; border: 1pt solid #bbf7d0;">
+      <p style="margin: 0 0 4pt 0; font-size: 10pt; font-weight: bold; color: #15803d;">
+        {% if tip.category == 'hidratacion' %}💧
+        {% elif tip.category == 'sueno' %}😴
+        {% elif tip.category == 'descanso' %}🏃
+        {% elif tip.category == 'nutricion' %}🍎
+        {% endif %}{{ tip.title }}</p>
+      <p style="margin: 0; font-size: 9pt; color: #374151;">{{ tip.text }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     AVISO LEGAL LEY 1581 / FOOTER INFORMATIVO
+============================================================ -->
+<div style="margin-top: 20pt; padding: 8pt 12pt; background: #f1f5f9; border-left: 3pt solid #94a3b8; font-size: 8pt; color: #475569;">
+  <strong>Información confidencial — Ley 1581/2012 (Habeas Data)</strong><br/>
+  Este boletín contiene datos personales y sensibles de un menor de edad, protegidos por la Ley Estatutaria 1581/2012.
+  Su uso se limita exclusivamente al seguimiento pedagógico y deportivo. Prohibida su reproducción o distribución
+  sin autorización del Club Deportivo Trocha y Ruta y el titular de los datos.
+  Para ejercer sus derechos de acceso, rectificación, cancelación u oposición, contáctenos en
+  privacidad@trochyruta.com.
+</div>
+
+{% endblock %}

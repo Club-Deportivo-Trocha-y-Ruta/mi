@@ -47,6 +47,10 @@ from app.models.race_series import RaceSeries
 from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
 
+# Fase 1.8 — Boletín mensual individual
+from app.models.athlete_badge import AthleteBadge, BadgeType, BadgeSource
+from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
+
 __all__ = [
     "Base",
     "User",
@@ -109,4 +113,10 @@ __all__ = [
     "AgentRunStatus",
     "AthleteAiInsight",
     "InsightConfidence",
+    # Fase 1.8 — Boletín mensual individual
+    "AthleteBadge",
+    "BadgeType",
+    "BadgeSource",
+    "AthleteMonthlyNewsletter",
+    "NewsletterStatus",
 ]

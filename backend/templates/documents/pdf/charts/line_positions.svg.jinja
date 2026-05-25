@@ -1,0 +1,63 @@
+{# Macro SVG: gráfico de posiciones por válida
+   Inputs:
+     points — lista de {x: valida_num, y: position|null}
+     width   — ancho del SVG (default 420)
+     height  — alto del SVG (default 180)
+     low_confidence — bool, muestra badge si True
+   Output: SVG inline válido
+#}
+{% macro line_positions(points, width=420, height=180, low_confidence=false) %}
+{%- set valid_points = points | selectattr("y", "ne", none) | list -%}
+{%- set pad_left = 40 -%}
+{%- set pad_right = 20 -%}
+{%- set pad_top = 20 -%}
+{%- set pad_bottom = 30 -%}
+{%- set chart_w = width - pad_left - pad_right -%}
+{%- set chart_h = height - pad_top - pad_bottom -%}
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{ width }} {{ height }}" width="{{ width }}" height="{{ height }}" role="img" aria-label="Posiciones por válida">
+  <title>Posiciones por válida</title>
+  <!-- Fondo -->
+  <rect x="0" y="0" width="{{ width }}" height="{{ height }}" fill="#f9f9f9" rx="4"/>
+  <!-- Área del gráfico -->
+  <rect x="{{ pad_left }}" y="{{ pad_top }}" width="{{ chart_w }}" height="{{ chart_h }}" fill="white" stroke="#e0e0e0"/>
+  <!-- Etiqueta Y invertida (posición 1 = arriba) -->
+  <text x="{{ pad_left - 5 }}" y="{{ pad_top }}" text-anchor="end" font-size="9" fill="#666">1</text>
+  <text x="{{ pad_left - 5 }}" y="{{ pad_top + chart_h }}" text-anchor="end" font-size="9" fill="#666">...</text>
+  <!-- Línea de referencia P3 -->
+  {%- if valid_points | length > 0 -%}
+    {%- set max_y = valid_points | map(attribute="y") | max -%}
+    {%- set max_y = [max_y, 10] | max -%}
+    {%- set min_x = valid_points | map(attribute="x") | min -%}
+    {%- set max_x = valid_points | map(attribute="x") | max -%}
+    {%- set x_range = [(max_x - min_x), 1] | max -%}
+    {# Línea de podio (P3) #}
+    {%- set p3_y = pad_top + (2.0 / max_y) * chart_h -%}
+    <line x1="{{ pad_left }}" y1="{{ p3_y }}" x2="{{ pad_left + chart_w }}" y2="{{ p3_y }}" stroke="#f0c040" stroke-dasharray="4,2" stroke-width="1" opacity="0.7"/>
+    <text x="{{ pad_left + chart_w - 2 }}" y="{{ p3_y - 2 }}" font-size="7" fill="#c09000" text-anchor="end">podio</text>
+    <!-- Puntos y línea -->
+    {%- set prev_cx = namespace(val=none) -%}
+    {%- set prev_cy = namespace(val=none) -%}
+    {%- for pt in valid_points -%}
+      {%- set cx = pad_left + ((pt.x - min_x) / x_range) * chart_w -%}
+      {%- set cy = pad_top + ((pt.y - 1) / (max_y - 1 if max_y > 1 else 1)) * chart_h -%}
+      {%- if prev_cx.val is not none -%}
+        <line x1="{{ prev_cx.val }}" y1="{{ prev_cy.val }}" x2="{{ cx }}" y2="{{ cy }}" stroke="#2563eb" stroke-width="2"/>
+      {%- endif -%}
+      <circle cx="{{ cx }}" cy="{{ cy }}" r="4" fill="#2563eb"/>
+      <text x="{{ cx }}" y="{{ cy - 6 }}" text-anchor="middle" font-size="8" fill="#1e40af">{{ pt.y }}</text>
+      <text x="{{ cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#555">V{{ pt.x }}</text>
+      {%- set prev_cx.val = cx -%}
+      {%- set prev_cy.val = cy -%}
+    {%- endfor -%}
+  {%- else -%}
+    <text x="{{ width / 2 }}" y="{{ height / 2 }}" text-anchor="middle" font-size="11" fill="#999">Sin datos</text>
+  {%- endif -%}
+  <!-- Badge de confianza baja -->
+  {%- if low_confidence -%}
+    <rect x="{{ width - 110 }}" y="4" width="106" height="14" rx="3" fill="#fef3c7"/>
+    <text x="{{ width - 57 }}" y="14" text-anchor="middle" font-size="8" fill="#92400e">Confianza baja</text>
+  {%- endif -%}
+  <!-- Título -->
+  <text x="{{ pad_left }}" y="13" font-size="9" fill="#374151" font-weight="bold">Posición por válida</text>
+</svg>
+{% endmacro %}

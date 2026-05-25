@@ -270,6 +270,29 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
         ),
         description="Notificación a padres cuando un evento del calendario es cancelado.",
     ),
+    NotificationTemplate.ATHLETE_MONTHLY_NEWSLETTER: EmailTemplateSpec(
+        template_id="athlete_monthly_newsletter",
+        # El subject NUNCA expone el nombre del atleta (Ley 1098 + Ley 1581):
+        # subjects son visibles en previews, notificaciones push y servidores
+        # intermedios. El nombre del atleta solo aparece dentro del cuerpo,
+        # que viaja al padre autenticado.
+        subject_template="[Trocha y Ruta] Boletín mensual {{ month_label }} — Seguimiento del atleta",
+        body_path="email/athlete_monthly_newsletter.html",
+        required_context_keys=frozenset(
+            {
+                "parent_name",
+                "club_name",
+                "month_label",
+                "season_year",
+                "children",
+            }
+        ),
+        description=(
+            "Email resumen del boletín mensual individual. Soporte multi-hijo: "
+            "`children` es lista de dicts con datos de cada atleta. "
+            "Antropometría NO incluida en el email — solo en el PDF adjunto."
+        ),
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -349,6 +372,29 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
         description=(
             "Reporte mensual de entrenamiento en PDF. "
             "Usa pseudónimos de atletas (A1, A2...) — sin nombres reales."
+        ),
+    ),
+    DocumentTemplate.ATHLETE_MONTHLY_NEWSLETTER: DocumentTemplateSpec(
+        template_id=DocumentTemplate.ATHLETE_MONTHLY_NEWSLETTER,
+        format=DocumentFormat.PDF,
+        template_path="documents/pdf/athlete_monthly_newsletter.html",
+        required_context_keys=frozenset(
+            {
+                "athlete_first_name",
+                "athlete_last_name",
+                "club_name",
+                "month_label",
+                "season_year",
+                "email_blocks",
+                "pdf_only_blocks",
+                "ai_narrative",
+                "coach_narrative_overrides",
+            }
+        ),
+        description=(
+            "Boletín mensual individual por atleta en PDF. "
+            "Incluye antropometría completa y gráficos SVG. "
+            "NO enviar el PDF completo por email sin verificar destinatario."
         ),
     ),
 }
