@@ -22,6 +22,7 @@ import {
   ATTENDANCE_TONE,
   type AttendanceStatus,
 } from "@/lib/attendanceStatus";
+import { formatWeekdayShortDate } from "@/lib/datetime";
 import type {
   KidAttendance,
   TrainingSession,
@@ -37,13 +38,8 @@ interface LastSessionCardProps {
 }
 
 function formatPastDate(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const target = new Date(y, m - 1, d);
-  return new Intl.DateTimeFormat("es-CO", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(target);
+  // T12:00:00 sin zona → hora local → evita desplazamiento de día en Colombia
+  return formatWeekdayShortDate(`${dateStr}T12:00:00`);
 }
 
 function getAttendanceFor(

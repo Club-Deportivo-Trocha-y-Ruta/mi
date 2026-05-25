@@ -18,6 +18,7 @@ import {
   useCalendarEvent,
   useDeleteCalendarEventPermanent,
 } from "@/api/calendar";
+import { CLUB_LOCALE, CLUB_TIMEZONE, formatFullDate, formatTime } from "@/lib/datetime";
 import type {
   Audience,
   CalendarEventRead,
@@ -37,26 +38,17 @@ interface EventDrawerProps {
   userRole?: "coach" | "admin" | "parent";
 }
 
-function formatDateTime(iso: string, allDay: boolean): string {
-  const date = new Date(iso);
-  if (allDay) {
-    return new Intl.DateTimeFormat("es-CO", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      timeZone: "America/Bogota",
-    }).format(date);
-  }
-  return new Intl.DateTimeFormat("es-CO", {
+function formatEventDateTime(iso: string, allDay: boolean): string {
+  if (allDay) return formatFullDate(iso);
+  return new Intl.DateTimeFormat(CLUB_LOCALE, {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "America/Bogota",
-  }).format(date);
+    timeZone: CLUB_TIMEZONE,
+  }).format(new Date(iso));
 }
 
 function audienceLabel(aud: Audience): string {
@@ -214,13 +206,7 @@ interface BirthdayDetailProps {
 }
 
 function BirthdayDetail({ startAt, eventData }: BirthdayDetailProps) {
-  const dateLabel = new Intl.DateTimeFormat("es-CO", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "America/Bogota",
-  }).format(new Date(startAt));
+  const dateLabel = formatFullDate(startAt);
 
   return (
     <dl className="space-y-4 text-sm">
@@ -383,15 +369,9 @@ export function EventDrawer({
                     Fecha y hora
                   </dt>
                   <dd className="mt-1 text-charcoal">
-                    {formatDateTime(event.start_at, event.all_day)}
+                    {formatEventDateTime(event.start_at, event.all_day)}
                     {" — "}
-                    {event.all_day
-                      ? "Todo el día"
-                      : new Intl.DateTimeFormat("es-CO", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          timeZone: "America/Bogota",
-                        }).format(new Date(event.end_at))}
+                    {event.all_day ? "Todo el día" : formatTime(event.end_at)}
                   </dd>
                 </div>
 

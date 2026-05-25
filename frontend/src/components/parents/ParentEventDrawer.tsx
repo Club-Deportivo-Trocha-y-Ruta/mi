@@ -14,6 +14,7 @@ import { EventTypeChip } from "@/components/calendar/EventTypeChip";
 import { ParentRSVPInline } from "./ParentRSVPInline";
 import { useCalendarEvent, useEventAttendances } from "@/api/calendar";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
+import { formatFullDate, formatTime } from "@/lib/datetime";
 import type { MyAthleteOut } from "@/types/parent.types";
 import type { EventAttendanceRead, RSVPStatus } from "@/types/calendar.types";
 
@@ -23,27 +24,6 @@ interface ParentEventDrawerProps {
   onOpenChange: (open: boolean) => void;
   /** Optional pre-fetched attendances for the current parent's athletes */
   myAttendances?: EventAttendanceRead[];
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function formatFullDate(iso: string): string {
-  const date = new Date(iso);
-  return new Intl.DateTimeFormat("es-CO", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "America/Bogota",
-  }).format(date);
-}
-
-function formatTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-CO", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/Bogota",
-  }).format(new Date(iso));
 }
 
 function durationLabel(startIso: string, endIso: string): string {

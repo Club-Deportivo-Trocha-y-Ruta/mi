@@ -8,6 +8,7 @@ import { useState } from "react";
 import { History } from "lucide-react";
 
 import { useImportsHistory } from "@/hooks/ai/useRaceImports";
+import { formatDateTimeCompact } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type {
   ImportListItem,
@@ -39,19 +40,6 @@ function StatusBadge({ status }: { status: ImportStatus }) {
   );
 }
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("es-CO", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 export function ImportsHistoryList() {
   const [statusFilter, setStatusFilter] = useState<ImportStatus | undefined>(
@@ -138,7 +126,7 @@ export function ImportsHistoryList() {
                   data-testid={`history-row-${item.id}`}
                 >
                   <td className="px-2 py-2 text-xs text-mid-gray">
-                    {formatDate(item.created_at)}
+                    {formatDateTimeCompact(item.created_at)}
                   </td>
                   <td className="px-2 py-2 text-charcoal">
                     <span className="block truncate" title={item.original_filename}>

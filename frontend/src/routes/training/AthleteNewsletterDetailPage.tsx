@@ -40,6 +40,7 @@ import {
   DialogBody,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { formatDateTime } from "@/lib/datetime";
 import type { NarrativeOverride } from "@/types/athleteNewsletter.types";
 
 // ---------------------------------------------------------------------------
@@ -50,17 +51,6 @@ const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
-
-function formatDateTime(isoStr: string): string {
-  const d = new Date(isoStr);
-  return d.toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 const cardStyle: React.CSSProperties = {
   boxShadow:

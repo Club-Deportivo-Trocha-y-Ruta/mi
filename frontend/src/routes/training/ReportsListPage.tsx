@@ -23,17 +23,13 @@ import {
   monthlyReportCreateSchema,
   type MonthlyReportFormValues,
 } from "@/schemas/monthlyReport.schema";
+import { formatDateMedium } from "@/lib/datetime";
 import type { MonthlyReportFull } from "@/types/trainingSession.types";
 
 const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
-
-function formatDateTime(isoStr: string): string {
-  const d = new Date(isoStr);
-  return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
-}
 
 const cardStyle: React.CSSProperties = {
   boxShadow:
@@ -205,10 +201,10 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
                 {MONTH_NAMES[r.month - 1]} {r.year}
               </p>
               <p className="mt-0.5 text-xs text-mid-gray">
-                Generado el {formatDateTime(r.generated_at)}
+                Generado el {formatDateMedium(r.generated_at)}
               </p>
               <p className="mt-0.5 text-xs text-mid-gray">
-                {r.sent_at ? `Enviado el ${formatDateTime(r.sent_at)}` : "Pendiente de envío"}
+                {r.sent_at ? `Enviado el ${formatDateMedium(r.sent_at)}` : "Pendiente de envío"}
               </p>
               <div className="mt-3 flex gap-2">
                 <button
@@ -265,9 +261,9 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
                 <td className="px-4 py-3 font-medium text-charcoal">
                   {MONTH_NAMES[r.month - 1]} {r.year}
                 </td>
-                <td className="px-4 py-3 text-mid-gray">{formatDateTime(r.generated_at)}</td>
+                <td className="px-4 py-3 text-mid-gray">{formatDateMedium(r.generated_at)}</td>
                 <td className="px-4 py-3 text-mid-gray">
-                  {r.sent_at ? formatDateTime(r.sent_at) : (
+                  {r.sent_at ? formatDateMedium(r.sent_at) : (
                     <span className="text-yellow-700">Pendiente</span>
                   )}
                 </td>

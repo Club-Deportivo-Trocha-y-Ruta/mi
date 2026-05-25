@@ -40,6 +40,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { formatDateTimeCompact } from "@/lib/datetime";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import type { AthleteOut } from "@/types/athlete.types";
 import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
@@ -63,18 +64,6 @@ function confidenceText(c: InsightConfidence): string {
   return "Confianza baja";
 }
 
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString("es-CO", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 function validaLabel(num: number | null | undefined): string {
   if (num === null || num === undefined) return "agregado";
@@ -160,7 +149,7 @@ export function AthleteAIAnalysisTab({
                 Último análisis
               </span>
               <span className="text-sm font-semibold text-charcoal">
-                {formatDate(latest.generated_at)}
+                {formatDateTimeCompact(latest.generated_at)}
               </span>
               <div className="flex flex-wrap items-center justify-end gap-1.5">
                 <Badge variant="secondary">{validaLabel(latest.valida_num)}</Badge>

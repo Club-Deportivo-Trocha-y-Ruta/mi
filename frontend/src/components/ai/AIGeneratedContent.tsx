@@ -2,6 +2,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 import { PHVBadge } from "@/components/shared/PHVBadge";
+import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { PHVExplanationResponse } from "@/types/ai.types";
 import { MaturationStatus } from "@/types/enums";
@@ -9,17 +10,6 @@ import { MaturationStatus } from "@/types/enums";
 interface AIGeneratedContentProps {
   data: PHVExplanationResponse;
   className?: string;
-}
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("es-CO", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
 }
 
 function statusOrNull(value: string): MaturationStatus | null {
@@ -79,7 +69,7 @@ export function AIGeneratedContent({
           IA · {data.provider}/{data.model}
         </span>
         <span className="ml-auto" aria-label="Fecha de generación">
-          {formatDate(data.generated_at)}
+          {formatDateTime(data.generated_at)}
         </span>
       </header>
 

@@ -55,6 +55,7 @@ import {
   formatRaceTime,
   type ExtractedMetrics,
 } from "@/lib/raceMetrics";
+import { formatDayMonthShort } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import {
   isMetricsSnapshotV1,
@@ -411,7 +412,7 @@ function SideSelector({
               {badgeStyle?.label}
             </Badge>
             <span className="text-mid-gray">
-              {meta.location} · {formatShortDate(meta.date_iso)}
+              {meta.location} · {formatDayMonthShort(`${meta.date_iso}T12:00:00Z`)}
             </span>
           </>
         ) : (
@@ -422,15 +423,6 @@ function SideSelector({
   );
 }
 
-function formatShortDate(iso: string): string {
-  // "2026-05-17" → "17 may"
-  try {
-    const d = new Date(`${iso}T12:00:00Z`);
-    return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
-  } catch {
-    return iso;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Empty state global

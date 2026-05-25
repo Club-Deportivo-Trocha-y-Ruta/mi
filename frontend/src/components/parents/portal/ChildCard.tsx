@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 
 import type { MyAthleteOut } from "@/types/parent.types";
+import { formatDayMonthShort } from "@/lib/datetime";
 import { MaturationStatus } from "@/types/enums";
 
 interface ChildCardProps {
@@ -28,12 +29,6 @@ function phvLabel(status: MaturationStatus | null): string {
   return "Sin evaluación de crecimiento";
 }
 
-function formatDate(isoDate: string): string {
-  return new Intl.DateTimeFormat("es-CO", {
-    day: "numeric",
-    month: "short",
-  }).format(new Date(`${isoDate}T12:00:00`));
-}
 
 export function ChildCard({ athlete }: ChildCardProps) {
   const status = STATUS_CONFIG[athlete.measurement_status];
@@ -112,7 +107,7 @@ export function ChildCard({ athlete }: ChildCardProps) {
                 Última medición
               </p>
               <p className="mt-0.5 text-sm text-charcoal">
-                {formatDate(athlete.latest_anthropometry_date!)}
+                {formatDayMonthShort(`${athlete.latest_anthropometry_date!}T12:00:00`)}
               </p>
             </div>
           </div>

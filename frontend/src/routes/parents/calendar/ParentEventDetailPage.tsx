@@ -5,28 +5,9 @@ import { EventTypeChip } from "@/components/calendar/EventTypeChip";
 import { ParentRSVPInline } from "@/components/parents/ParentRSVPInline";
 import { useCalendarEvent, useEventAttendances } from "@/api/calendar";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
+import { formatFullDate, formatTime } from "@/lib/datetime";
 import type { MyAthleteOut } from "@/types/parent.types";
 import type { EventAttendanceRead, RSVPStatus } from "@/types/calendar.types";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatFullDate(iso: string): string {
-  return new Intl.DateTimeFormat("es-CO", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "America/Bogota",
-  }).format(new Date(iso));
-}
-
-function formatTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-CO", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/Bogota",
-  }).format(new Date(iso));
-}
 
 function durationLabel(startIso: string, endIso: string): string {
   const diffMs = new Date(endIso).getTime() - new Date(startIso).getTime();

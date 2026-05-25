@@ -14,6 +14,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, CheckCircle2, AlertCircle, XCircle, Loader2 } from "lucide-react";
 
+import { formatDateMedium } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { AthleteConsentStatus, PrivacyPolicySummary } from "@/types/consent";
 import { useRenewConsent } from "@/hooks/consent";
@@ -74,13 +75,6 @@ const STATE_CONFIG: Record<
   },
 };
 
-function formatDate(isoString: string): string {
-  return new Intl.DateTimeFormat("es-CO", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(isoString));
-}
 
 // ---------------------------------------------------------------------------
 // Sub-componente: fila de atleta
@@ -129,7 +123,7 @@ function AthleteConsentRow({
           {consent && !consent.withdrawn_at && (
             <p className="mt-0.5 text-xs text-mid-gray">
               Política {consent.policy_version} —{" "}
-              {formatDate(consent.consented_at)}
+              {formatDateMedium(consent.consented_at)}
               {!consent.is_current_policy && (
                 <span className="ml-1 text-amber-600">
                   (política actual: {activePolicy.version})
@@ -139,7 +133,7 @@ function AthleteConsentRow({
           )}
           {consent?.withdrawn_at && (
             <p className="mt-0.5 text-xs text-mid-gray">
-              Revocado el {formatDate(consent.withdrawn_at)}
+              Revocado el {formatDateMedium(consent.withdrawn_at)}
             </p>
           )}
           {!consent && (
