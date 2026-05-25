@@ -23,7 +23,12 @@
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* Strictness */
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "useUnknownInCatchVariables": true
   },
   "include": ["src"]
 }

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/api/client";
+import { sessionMediaKeys, trainingSessionKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 import type {
   SessionMedia,
@@ -66,7 +67,7 @@ export function useSessionMedia(sessionId: number, enabled = true) {
   // gateamos `enabled` sobre userId para no romper tests legacy de
   // coach que no incluyen `user.id` en el mock de auth.store.
   return useQuery({
-    queryKey: ["training-session-media", userId, sessionId],
+    queryKey: sessionMediaKeys.list(userId, sessionId),
     queryFn: () => fetchSessionMedia(sessionId),
     enabled: !!accessToken && enabled && !!sessionId,
   });
@@ -81,10 +82,10 @@ export function useUploadSessionMedia(sessionId: number) {
       // Invalidación por namespace para alcanzar todas las variantes
       // con userId en el key (R2).
       void queryClient.invalidateQueries({
-        queryKey: ["training-session-media"],
+        queryKey: sessionMediaKeys.all,
       });
       void queryClient.invalidateQueries({
-        queryKey: ["training-session"],
+        queryKey: trainingSessionKeys.details,
       });
     },
   });
@@ -96,10 +97,10 @@ export function useDeleteSessionMedia(sessionId: number) {
     mutationFn: (mediaId: number) => deleteSessionMedia(sessionId, mediaId),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["training-session-media"],
+        queryKey: sessionMediaKeys.all,
       });
       void queryClient.invalidateQueries({
-        queryKey: ["training-session"],
+        queryKey: trainingSessionKeys.details,
       });
     },
   });
@@ -117,10 +118,10 @@ export function useUpdateSessionMedia(sessionId: number) {
     }) => updateSessionMedia(sessionId, mediaId, payload),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["training-session-media"],
+        queryKey: sessionMediaKeys.all,
       });
       void queryClient.invalidateQueries({
-        queryKey: ["training-session"],
+        queryKey: trainingSessionKeys.details,
       });
     },
   });

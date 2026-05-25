@@ -13,6 +13,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getAthleteInsights } from "@/api/athleteRaceAnalysis";
+import { athleteKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 import type { AthleteInsightsParams } from "@/types/athleteRaceAnalysis.types";
 
@@ -22,7 +23,7 @@ export function useAthleteInsights(
 ) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
-    queryKey: ["athlete-insights", athleteId, params ?? {}],
+    queryKey: athleteKeys.insights(athleteId, params),
     queryFn: () => getAthleteInsights(athleteId, params),
     enabled: !!accessToken && Number.isFinite(athleteId) && athleteId > 0,
     staleTime: 30_000,

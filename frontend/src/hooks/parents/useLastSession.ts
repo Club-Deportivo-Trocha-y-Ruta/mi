@@ -10,6 +10,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
+import { parentSessionKeys } from "@/api/queryKeys";
 import { fetchParentSessions } from "@/api/trainingSessions";
 import { useAuthStore } from "@/store/auth.store";
 import type { TrainingSession } from "@/types/trainingSession.types";
@@ -29,7 +30,7 @@ export function useLastSession(athleteId: number | null | undefined) {
   const userId = useAuthStore((s) => s.user?.id ?? null);
 
   return useQuery<TrainingSession | null>({
-    queryKey: ["parent-last-session", userId, athleteId ?? null],
+    queryKey: parentSessionKeys.lastSession(userId, athleteId ?? null),
     queryFn: async () => {
       if (!athleteId) return null;
       const sessions = await fetchParentSessions(

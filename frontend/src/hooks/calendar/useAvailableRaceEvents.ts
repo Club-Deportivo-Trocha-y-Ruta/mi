@@ -14,12 +14,13 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getAvailableRaceEvents } from "@/api/calendar";
+import { calendarKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 
 export function useAvailableRaceEvents(season: number | null | undefined) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
-    queryKey: ["calendar", "race-events", "available-for-calendar", season],
+    queryKey: calendarKeys.availableRaceEvents(season),
     queryFn: () => getAvailableRaceEvents(season as number),
     enabled:
       !!accessToken && typeof season === "number" && Number.isFinite(season),

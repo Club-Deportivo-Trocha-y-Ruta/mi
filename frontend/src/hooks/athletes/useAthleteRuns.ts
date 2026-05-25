@@ -8,6 +8,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getAthleteRuns } from "@/api/athleteRaceAnalysis";
+import { athleteKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
 import type { AthleteRunsParams } from "@/types/athleteRaceAnalysis.types";
@@ -20,7 +21,7 @@ export function useAthleteRuns(
   const role = useAuthStore((s) => s.user?.role);
   const isParent = role === UserRole.parent;
   return useQuery({
-    queryKey: ["athlete-runs", athleteId, params ?? {}],
+    queryKey: athleteKeys.runs(athleteId, params),
     queryFn: () => getAthleteRuns(athleteId, params),
     enabled:
       !!accessToken &&

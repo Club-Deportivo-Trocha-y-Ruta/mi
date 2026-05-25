@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { deleteParentAthlete } from "@/api/parents";
+import { athleteKeys, parentKeys } from "@/api/queryKeys";
 
 export function useDeleteParentAthlete() {
   const queryClient = useQueryClient();
@@ -9,10 +10,12 @@ export function useDeleteParentAthlete() {
     mutationFn: ({ id }: { id: number; athlete_id: number; parent_id: number }) =>
       deleteParentAthlete(id),
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["parent-athletes"] });
-      void queryClient.invalidateQueries({ queryKey: ["parent-users"] });
       void queryClient.invalidateQueries({
-        queryKey: ["athlete", variables.athlete_id],
+        queryKey: parentKeys.athletesAll(),
+      });
+      void queryClient.invalidateQueries({ queryKey: parentKeys.usersAll() });
+      void queryClient.invalidateQueries({
+        queryKey: athleteKeys.detail(variables.athlete_id),
       });
     },
   });

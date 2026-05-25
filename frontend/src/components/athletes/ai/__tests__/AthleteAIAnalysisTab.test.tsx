@@ -13,10 +13,9 @@
  * AnalysisRunTimeline) — están testeados en sus propios specs.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
-import { http, HttpResponse } from "msw";
 
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: vi.fn((sel: (s: unknown) => unknown) =>

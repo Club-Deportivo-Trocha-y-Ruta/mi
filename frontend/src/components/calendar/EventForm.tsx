@@ -168,8 +168,7 @@ function buildDefaultValues(
       // FE-2: hidrata el race_event_id existente para que el dropdown
       // muestre la válida ya asociada cuando se edita una competition.
       race_event_id: initialData.race_event_id ?? null,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      audiences: (initialData.audiences ?? []) as any,
+      audiences: (initialData.audiences ?? []) as CalendarEventFormValues["audiences"],
       ...specificFields,
     };
   }

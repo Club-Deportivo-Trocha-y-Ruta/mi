@@ -8,6 +8,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getAthleteEvolution } from "@/api/athleteRaceAnalysis";
+import { athleteKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 import type { EvolutionMetric } from "@/types/athleteRaceAnalysis.types";
 
@@ -18,7 +19,7 @@ export function useAthleteEvolution(
 ) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
-    queryKey: ["athlete-evolution", athleteId, season, metric],
+    queryKey: athleteKeys.evolution(athleteId, season, metric),
     queryFn: () => {
       if (!season || !metric) throw new Error("season y metric requeridos");
       return getAthleteEvolution(athleteId, season, metric);

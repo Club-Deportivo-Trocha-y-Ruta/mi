@@ -8,6 +8,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getAthleteDistribution } from "@/api/athleteRaceAnalysis";
+import { athleteKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 
 export function useAthleteDistribution(
@@ -17,7 +18,7 @@ export function useAthleteDistribution(
 ) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
-    queryKey: ["athlete-distribution", athleteId, season, validaNum],
+    queryKey: athleteKeys.distribution(athleteId, season, validaNum),
     queryFn: () => {
       if (!season || validaNum === null || validaNum === undefined) {
         throw new Error("season y valida_num requeridos");

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getMyAthletes } from "@/api/parents";
+import { parentKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 
 /**
@@ -15,7 +16,7 @@ export function useMyAthletes() {
   const userId = useAuthStore((s) => s.user?.id ?? null);
 
   return useQuery({
-    queryKey: ["my-athletes", userId],
+    queryKey: parentKeys.myAthletes(userId),
     queryFn: getMyAthletes,
     enabled: !!accessToken && userId !== null,
   });

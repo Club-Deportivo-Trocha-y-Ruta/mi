@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/api/client";
+import { calendarKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 import type {
   AvailableRaceEvent,
@@ -129,7 +130,7 @@ export async function getAvailableRaceEvents(
 export function useCalendarEvents(filters: CalendarFilters) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
-    queryKey: ["calendar", "events", filters],
+    queryKey: calendarKeys.events(filters),
     queryFn: () => fetchCalendarEvents(filters),
     enabled: !!accessToken && !!filters.from && !!filters.to,
     staleTime: 60_000,
@@ -139,7 +140,7 @@ export function useCalendarEvents(filters: CalendarFilters) {
 export function useCalendarEvent(id: number | null) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
-    queryKey: ["calendar", "event", id],
+    queryKey: calendarKeys.event(id),
     queryFn: () => fetchCalendarEvent(id!),
     enabled: !!accessToken && id != null,
     staleTime: 30_000,
@@ -151,7 +152,7 @@ export function useCreateCalendarEvent() {
   return useMutation({
     mutationFn: createCalendarEvent,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
+      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
     },
   });
 }
@@ -162,9 +163,9 @@ export function useUpdateCalendarEvent() {
     mutationFn: ({ id, payload }: { id: number; payload: EventUpdatePayload }) =>
       updateCalendarEvent(id, payload),
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
+      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
       void queryClient.invalidateQueries({
-        queryKey: ["calendar", "event", variables.id],
+        queryKey: calendarKeys.event(variables.id),
       });
     },
   });
@@ -176,9 +177,9 @@ export function useCancelCalendarEvent() {
     mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
       cancelCalendarEvent(id, reason),
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
+      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
       void queryClient.invalidateQueries({
-        queryKey: ["calendar", "event", variables.id],
+        queryKey: calendarKeys.event(variables.id),
       });
     },
   });
@@ -189,9 +190,9 @@ export function useDeleteCalendarEventPermanent() {
   return useMutation({
     mutationFn: ({ id }: { id: number }) => deleteCalendarEventPermanent(id),
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
+      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
       void queryClient.invalidateQueries({
-        queryKey: ["calendar", "event", variables.id],
+        queryKey: calendarKeys.event(variables.id),
       });
     },
   });
@@ -202,12 +203,12 @@ export function useRSVPEvent(eventId: number) {
   return useMutation({
     mutationFn: (payload: RSVPPayload) => rsvpEvent(eventId, payload),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
+      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
       void queryClient.invalidateQueries({
-        queryKey: ["calendar", "event", eventId],
+        queryKey: calendarKeys.event(eventId),
       });
       void queryClient.invalidateQueries({
-        queryKey: ["calendar", "attendances", eventId],
+        queryKey: calendarKeys.attendances(eventId),
       });
     },
   });
@@ -216,7 +217,7 @@ export function useRSVPEvent(eventId: number) {
 export function useEventAttendances(eventId: number | null, eventType: EventType) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
-    queryKey: ["calendar", "attendances", eventId],
+    queryKey: calendarKeys.attendances(eventId),
     queryFn: () => fetchEventAttendances(eventId!, eventType),
     enabled: !!accessToken && eventId != null && eventId > 0,
     staleTime: 30_000,

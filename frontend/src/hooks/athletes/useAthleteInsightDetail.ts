@@ -10,6 +10,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getAthleteInsight } from "@/api/athleteRaceAnalysis";
+import { athleteKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 
 export function useAthleteInsightDetail(
@@ -18,7 +19,7 @@ export function useAthleteInsightDetail(
 ) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
-    queryKey: ["athlete-insight-detail", athleteId, insightId],
+    queryKey: athleteKeys.insightDetail(athleteId, insightId),
     queryFn: () => {
       if (!insightId) throw new Error("insightId requerido");
       return getAthleteInsight(athleteId, insightId);

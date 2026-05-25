@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getAthlete, getAthletes } from "@/api/athletes";
+import { athleteKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 
 export function useDashboardStats() {
   const accessToken = useAuthStore((s) => s.accessToken);
 
   const athletesQuery = useQuery({
-    queryKey: ["athletes"],
+    queryKey: athleteKeys.all,
     queryFn: () => getAthletes(),
     enabled: !!accessToken,
   });
@@ -15,7 +16,7 @@ export function useDashboardStats() {
   const athleteIds = athletesQuery.data?.items.map((a) => a.id) ?? [];
 
   const detailsQuery = useQuery({
-    queryKey: ["dashboard-athlete-details", athleteIds],
+    queryKey: athleteKeys.dashboardAthleteDetails(athleteIds),
     queryFn: () => Promise.all(athleteIds.map((id) => getAthlete(id))),
     enabled: athleteIds.length > 0,
   });

@@ -16,6 +16,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import axios from "axios";
 
 import { apiClient } from "@/api/client";
+import { onboardingKeys } from "@/api/queryKeys";
 import type { FamilyRelationship, UserRole } from "@/types/enums";
 import type { ConsentData } from "@/schemas/onboarding.schema";
 
@@ -162,7 +163,7 @@ async function registerParentOnboarding(
  */
 export function useValidateToken(token: string | null) {
   return useQuery<InviteTokenData, OnboardingError>({
-    queryKey: ["invite-token", token],
+    queryKey: onboardingKeys.inviteToken(token),
     queryFn: () => validateInviteToken(token!),
     enabled: !!token,
     // Reintentar solo en errores de red/500 (pool DB frío en Render).

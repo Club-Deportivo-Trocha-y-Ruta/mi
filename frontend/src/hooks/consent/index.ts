@@ -10,6 +10,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/api/client";
+import { consentKeys } from "@/api/queryKeys";
 import { useAuthStore } from "@/store/auth.store";
 import type {
   ConsentEvent,
@@ -32,7 +33,7 @@ import type {
  */
 export function useActivePolicy() {
   return useQuery<PrivacyPolicyFull>({
-    queryKey: ["active-policy"],
+    queryKey: consentKeys.activePolicy(),
     queryFn: () =>
       apiClient.get<PrivacyPolicyFull>("/api/auth/active-policy").then((r) => r.data),
     staleTime: 60 * 60 * 1000, // 1 hora
@@ -55,7 +56,7 @@ export function useMyConsentStatus(enabled = true) {
   // tablet compartida.
   const userId = useAuthStore((s) => s.user?.id ?? null);
   return useQuery<ConsentStatus>({
-    queryKey: ["my-consent", userId],
+    queryKey: consentKeys.myStatus(userId),
     queryFn: () =>
       apiClient.get<ConsentStatus>("/api/me/consent").then((r) => r.data),
     enabled: enabled && userId !== null,
@@ -80,7 +81,7 @@ export function useRenewConsent() {
     mutationFn: (body) =>
       apiClient.post<ConsentEvent>("/api/me/consent/renew", body).then((r) => r.data),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["my-consent"] });
+      void queryClient.invalidateQueries({ queryKey: consentKeys.myStatusAll });
     },
   });
 }
@@ -101,7 +102,7 @@ export function useWithdrawConsent() {
     mutationFn: (body) =>
       apiClient.post<ConsentEvent>("/api/me/consent/withdraw", body).then((r) => r.data),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["my-consent"] });
+      void queryClient.invalidateQueries({ queryKey: consentKeys.myStatusAll });
     },
   });
 }

@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { createAnthropometry, getAnthropometry } from "@/api/athletes";
+import { anthropometryKeys, athleteKeys } from "@/api/queryKeys";
 import type { AnthropometryCreate } from "@/types/anthropometry.types";
 
 export function useAnthropometry(athleteId: number) {
   return useQuery({
-    queryKey: ["anthropometry", athleteId],
+    queryKey: anthropometryKeys.list(athleteId),
     queryFn: () => getAnthropometry(athleteId),
     enabled: athleteId > 0,
   });
@@ -19,16 +20,16 @@ export function useCreateAnthropometry(athleteId: number) {
       createAnthropometry(athleteId, payload),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["anthropometry", athleteId],
+        queryKey: anthropometryKeys.list(athleteId),
       });
       void queryClient.invalidateQueries({
-        queryKey: ["athlete", athleteId],
+        queryKey: athleteKeys.detail(athleteId),
       });
       // Caché de explicación PHV se identifica por la última medición:
       // una nueva medición invalida la caché para que el coach vea el
       // botón "Generar" otra vez.
       void queryClient.invalidateQueries({
-        queryKey: ["ai", "phv", athleteId],
+        queryKey: anthropometryKeys.aiPhv(athleteId),
       });
     },
   });
