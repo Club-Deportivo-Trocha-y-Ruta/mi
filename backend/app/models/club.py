@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import enum
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -8,17 +7,17 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Uniqu
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.user import UserRole
 
 if TYPE_CHECKING:
     from app.models.athlete import Athlete
     from app.models.user import User
 
 
-class ClubRole(str, enum.Enum):
-    admin = "admin"
-    coach = "coach"
-    parent = "parent"
-    athlete = "athlete"
+# Alias backward-compatible: el enum `ClubRole` antes duplicaba `UserRole`
+# con los mismos cuatro valores. Mantener el alias evita refactors invasivos
+# en routers/servicios/schemas que importan `ClubRole`.
+ClubRole = UserRole
 
 
 class Club(Base):
@@ -60,7 +59,16 @@ class ClubMember(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="RESTRICT"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
-    role_in_club: Mapped[ClubRole] = mapped_column(Enum(ClubRole))
+    # Antes era un enum dedicado `clubrole`; ahora reusa el mismo tipo de DB
+    # que `users.role` (name="userrole") porque los valores son idénticos
+    # (admin/coach/parent/athlete).
+    role_in_club: Mapped[UserRole] = mapped_column(
+        Enum(
+            UserRole,
+            name="userrole",
+            values_callable=lambda e: [x.value for x in e],
+        )
+    )
     joined_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
