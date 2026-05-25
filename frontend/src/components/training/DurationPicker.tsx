@@ -11,6 +11,8 @@
 
 import { useId } from "react";
 
+import { Input } from "@/components/ui/input";
+
 interface DurationPickerProps {
   /** Valor actual en minutos totales (15-240). Undefined antes del primer render. */
   value: number | undefined;
@@ -20,12 +22,8 @@ interface DurationPickerProps {
   error?: string;
 }
 
-const labelClass = "block text-sm font-medium text-charcoal";
-const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 const selectClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 cursor-pointer";
+  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 cursor-pointer shadow-ring";
 
 const MINUTE_STEPS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
@@ -85,7 +83,7 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
 
   return (
     <div>
-      <span className={labelClass} id="duration-group-label">
+      <span id="duration-group-label" className="block text-sm font-medium leading-none text-charcoal">
         Duración
       </span>
 
@@ -102,15 +100,14 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
             Horas
           </label>
           <div className="relative">
-            <input
+            <Input
               id={hoursId}
               type="number"
               min={0}
               max={4}
               value={hours}
               onChange={handleHoursChange}
-              className={inputClass}
-              style={inputStyle}
+              className="py-2"
               aria-label="Horas"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-mid-gray select-none">
@@ -129,7 +126,6 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
               value={displayMinutes}
               onChange={handleMinutesChange}
               className={selectClass}
-              style={inputStyle}
               aria-label="Minutos"
             >
               {MINUTE_STEPS.map((m) => (
@@ -159,13 +155,8 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
                 "rounded-md px-2.5 py-1 text-xs font-medium transition-all",
                 isActive
                   ? "bg-charcoal text-white"
-                  : "bg-white text-mid-gray hover:text-charcoal",
+                  : "bg-white text-mid-gray hover:text-charcoal shadow-ring",
               ].join(" ")}
-              style={{
-                boxShadow: isActive
-                  ? undefined
-                  : "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-              }}
             >
               {p.label}
             </button>

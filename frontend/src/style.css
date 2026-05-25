@@ -208,6 +208,27 @@ h3 {
   .shadow-ring-soft {
     box-shadow: var(--shadow-ring-soft);
   }
+  /* Sombras del design system de cards/inputs (mapeo 1:1 con CSS vars). */
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-card-alt {
+    box-shadow: var(--shadow-card-alt);
+  }
+  .shadow-ring {
+    box-shadow: var(--shadow-ring);
+  }
+  .shadow-button-highlight {
+    box-shadow: var(--shadow-button-highlight);
+  }
+  .shadow-ambient {
+    box-shadow: var(--shadow-ambient);
+  }
+  /* Tipografía display (titulares). */
+  .font-heading {
+    font-family: var(--font-display);
+    font-weight: 600;
+  }
 }
 
 /* ─────────────────────────────────────────────

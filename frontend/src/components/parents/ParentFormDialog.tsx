@@ -3,6 +3,15 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { useCreateParentUser } from "@/hooks/parents/useCreateParentUser";
 
 const parentFormSchema = z.object({
@@ -17,10 +26,6 @@ interface ParentFormDialogProps {
   open: boolean;
   onClose: () => void;
 }
-
-const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 
 export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProps) {
   const createMutation = useCreateParentUser();
@@ -84,21 +89,12 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
         <div
-          className="w-full max-w-md overflow-y-auto rounded-xl bg-white p-6"
-          style={{
-            maxHeight: "90dvh",
-            boxShadow:
-              "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-          }}
+          className="w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-card max-h-[90dvh]"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
           <div className="mb-5 flex items-center justify-between">
-            <h2
-              id="parent-dialog-title"
-              className="text-base text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-            >
+            <h2 id="parent-dialog-title" className="text-base text-charcoal font-heading">
               Nuevo padre / acudiente
             </h2>
             <button
@@ -112,66 +108,66 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
           </div>
 
           {/* Form */}
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-medium text-charcoal">
-                Nombres
-                <input
-                  className={inputClass}
-                  style={inputStyle}
-                  placeholder="Juan"
-                  autoComplete="off"
-                  {...form.register("first_name")}
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="first_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Nombres</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Juan" autoComplete="off" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-                <span className="text-xs text-red-600">
-                  {form.formState.errors.first_name?.message}
-                </span>
-              </label>
-
-              <label className="text-sm font-medium text-charcoal">
-                Apellidos
-                <input
-                  className={inputClass}
-                  style={inputStyle}
-                  placeholder="Garcia"
-                  autoComplete="off"
-                  {...form.register("last_name")}
+                <FormField
+                  control={form.control}
+                  name="last_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Apellidos</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Garcia" autoComplete="off" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-                <span className="text-xs text-red-600">
-                  {form.formState.errors.last_name?.message}
-                </span>
-              </label>
-            </div>
+              </div>
 
-            <p className="rounded-lg bg-light-gray px-3 py-2 text-xs text-mid-gray">
-              El padre/acudiente recibirá una invitación por email para completar
-              sus datos de acceso (correo, teléfono y contraseña).
-            </p>
-
-            {submitError && (
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-                {submitError}
+              <p className="rounded-lg bg-light-gray px-3 py-2 text-xs text-mid-gray">
+                El padre/acudiente recibirá una invitación por email para completar
+                sus datos de acceso (correo, teléfono y contraseña).
               </p>
-            )}
 
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={createMutation.isPending}
-                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-                style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
-              >
-                {createMutation.isPending ? "Guardando..." : "Crear padre"}
-              </button>
-            </div>
-          </form>
+              {submitError && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {submitError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={createMutation.isPending}
+                  className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+                >
+                  {createMutation.isPending ? "Guardando..." : "Crear padre"}
+                </button>
+              </div>
+            </form>
+          </Form>
         </div>
       </div>
     </>

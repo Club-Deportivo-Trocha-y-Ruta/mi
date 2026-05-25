@@ -9,12 +9,8 @@ import { useDeleteParentAthlete } from "@/hooks/parents/useDeleteParentAthlete";
 import { FamilyRelationship } from "@/types/enums";
 import { cn } from "@/lib/utils";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-const inputClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+const selectClass =
+  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 const RELATIONSHIP_LABELS: Record<FamilyRelationship, string> = {
   [FamilyRelationship.padre]: "Padre",
@@ -73,16 +69,9 @@ export function ParentAthleteAssignment({
   }
 
   return (
-    <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+    <div className="rounded-xl bg-white p-5 shadow-card">
       <div className="mb-4 flex items-center justify-between">
-        <h3
-          className="flex items-center gap-2 text-sm text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-            letterSpacing: "0.2px",
-          }}
-        >
+        <h3 className="flex items-center gap-2 text-sm text-charcoal font-heading tracking-[0.2px]">
           <UserPlus size={16} />
           Atletas vinculados
         </h3>
@@ -90,8 +79,7 @@ export function ParentAthleteAssignment({
           <button
             type="button"
             onClick={() => setShowForm(!showForm)}
-            className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
           >
             {showForm ? "Cancelar" : "+ Vincular atleta"}
           </button>
@@ -100,21 +88,15 @@ export function ParentAthleteAssignment({
 
       {/* Inline assignment form */}
       {showForm && (
-        <div
-          className="mb-4 rounded-lg p-4"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-        >
-          <p
-            className="mb-3 text-xs font-medium uppercase tracking-wide text-mid-gray"
-          >
+        <div className="mb-4 rounded-lg p-4 shadow-ring">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
             Nueva vinculacion
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <select
               value={selectedAthleteId}
               onChange={(e) => setSelectedAthleteId(e.target.value)}
-              className={cn(inputClass, "flex-1")}
-              style={inputStyle}
+              className={cn(selectClass, "flex-1")}
             >
               <option value="">Seleccionar atleta...</option>
               {availableAthletes.map((athlete) => (
@@ -129,8 +111,7 @@ export function ParentAthleteAssignment({
               onChange={(e) =>
                 setSelectedRelationship(e.target.value as FamilyRelationship)
               }
-              className={inputClass}
-              style={inputStyle}
+              className={selectClass}
             >
               {Object.values(FamilyRelationship).map((rel) => (
                 <option key={rel} value={rel}>
@@ -143,8 +124,7 @@ export function ParentAthleteAssignment({
               type="button"
               onClick={handleAdd}
               disabled={!selectedAthleteId || createMutation.isPending}
-              className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+              className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40 shadow-button-highlight"
             >
               {createMutation.isPending ? "Vinculando..." : "Vincular"}
             </button>
@@ -168,10 +148,7 @@ export function ParentAthleteAssignment({
 
       {/* Empty state */}
       {!relationsQuery.isLoading && linkedRelations.length === 0 && (
-        <div
-          className="rounded-lg px-4 py-6 text-center text-sm text-mid-gray"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px", borderStyle: "dashed" }}
-        >
+        <div className="rounded-lg px-4 py-6 text-center text-sm text-mid-gray shadow-ring border border-dashed border-transparent">
           No hay atletas vinculados a este padre/acudiente.
         </div>
       )}

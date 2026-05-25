@@ -10,6 +10,15 @@
 
 import { useFormContext } from "react-hook-form";
 
+import {
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import type { OnboardingFormData } from "@/schemas/onboarding.schema";
 
 // ---------------------------------------------------------------------------
@@ -62,14 +71,6 @@ const strengthWidths: Record<PasswordStrength, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Estilos compartidos (design system Cal.com)
-// ---------------------------------------------------------------------------
-
-const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
-
-// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
@@ -83,11 +84,7 @@ interface AccountStepProps {
 // ---------------------------------------------------------------------------
 
 export function AccountStep({ email }: AccountStepProps) {
-  const {
-    register,
-    watch,
-    formState: { errors },
-  } = useFormContext<OnboardingFormData>();
+  const { control, watch } = useFormContext<OnboardingFormData>();
 
   const password = watch("password") ?? "";
   const strength = getPasswordStrength(password);
@@ -95,75 +92,81 @@ export function AccountStep({ email }: AccountStepProps) {
 
   return (
     <div className="space-y-5">
-      {/* Email — readonly */}
-      <label className="block text-sm font-medium text-charcoal">
-        Correo electrónico
-        <input
-          type="email"
-          value={email}
-          readOnly
-          disabled
-          className={inputClass}
-          style={inputStyle}
-          aria-label="Correo electrónico (pre-rellenado desde tu invitación)"
-        />
-        <span className="mt-1 block text-xs text-mid-gray">
+      {/* Email — readonly (sin FormField; el campo no está en el schema RHF). */}
+      <FormItem>
+        <FormLabel>Correo electrónico</FormLabel>
+        <FormControl>
+          <Input
+            type="email"
+            value={email}
+            readOnly
+            disabled
+            aria-label="Correo electrónico (pre-rellenado desde tu invitación)"
+          />
+        </FormControl>
+        <FormDescription>
           Este correo viene de tu invitación y no puede cambiarse.
-        </span>
-      </label>
+        </FormDescription>
+      </FormItem>
 
       {/* Contraseña */}
-      <div>
-        <label className="block text-sm font-medium text-charcoal">
-          Contraseña
-          <input
-            type="password"
-            autoComplete="new-password"
-            placeholder="Min. 8 caracteres, una mayúscula y un número"
-            className={inputClass}
-            style={inputStyle}
-            {...register("password")}
-          />
-        </label>
-
-        {/* Indicador de fortaleza */}
-        {password.length > 0 && strengthInfo && strength && (
-          <div className="mt-2 space-y-1" aria-live="polite" aria-label="Fortaleza de contraseña">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-light-gray">
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${strengthWidths[strength]} ${strengthInfo.barClass}`}
+      <FormField
+        control={control}
+        name="password"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Contraseña</FormLabel>
+            <FormControl>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                placeholder="Min. 8 caracteres, una mayúscula y un número"
+                {...field}
               />
-            </div>
-            <span className={`text-xs font-medium ${strengthInfo.color}`}>
-              {strengthInfo.label}
-            </span>
-          </div>
-        )}
+            </FormControl>
 
-        {errors.password && (
-          <span className="mt-1 block text-xs text-red-600" role="alert">
-            {errors.password.message}
-          </span>
+            {/* Indicador de fortaleza */}
+            {password.length > 0 && strengthInfo && strength && (
+              <div
+                className="mt-2 space-y-1"
+                aria-live="polite"
+                aria-label="Fortaleza de contraseña"
+              >
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-light-gray">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${strengthWidths[strength]} ${strengthInfo.barClass}`}
+                  />
+                </div>
+                <span className={`text-xs font-medium ${strengthInfo.color}`}>
+                  {strengthInfo.label}
+                </span>
+              </div>
+            )}
+
+            <FormMessage />
+          </FormItem>
         )}
-      </div>
+      />
 
       {/* Confirmar contraseña */}
-      <label className="block text-sm font-medium text-charcoal">
-        Confirmar contraseña
-        <input
-          type="password"
-          autoComplete="new-password"
-          placeholder="Repite tu contraseña"
-          className={inputClass}
-          style={inputStyle}
-          {...register("password_confirm")}
-        />
-        {errors.password_confirm && (
-          <span className="mt-1 block text-xs text-red-600" role="alert">
-            {errors.password_confirm.message}
-          </span>
+      <FormField
+        control={control}
+        name="password_confirm"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Confirmar contraseña</FormLabel>
+            <FormControl>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                placeholder="Repite tu contraseña"
+                {...field}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
         )}
-      </label>
+      />
     </div>
   );
 }

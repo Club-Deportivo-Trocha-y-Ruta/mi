@@ -3,6 +3,15 @@ import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { useCreateAnthropometry } from "@/hooks/athletes/useAnthropometry";
 import { computeAgeDecimal } from "@/lib/category";
 import { calculatePHV, type PHVResult } from "@/lib/phv";
@@ -31,10 +40,6 @@ interface AnthropometryFormProps {
   athleteBirthDate: string;
   onSuccess: () => void;
 }
-
-const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 
 export function AnthropometryForm({
   athleteId,
@@ -99,108 +104,133 @@ export function AnthropometryForm({
 
   return (
     <div className="space-y-5">
-      <form
-        onSubmit={form.handleSubmit((v) => void handleSubmit(v))}
-        className="space-y-5"
-      >
-        {/* Fecha */}
-        <div>
-          <label className="text-sm font-medium text-charcoal">
-            Fecha de evaluación
-            <input
-              type="date"
-              className={`${inputClass} md:w-64`}
-              style={inputStyle}
-              max={new Date().toISOString().slice(0, 10)}
-              {...form.register("evaluation_date")}
-            />
-            <span className="text-xs text-red-600">
-              {form.formState.errors.evaluation_date?.message}
-            </span>
-          </label>
-        </div>
-
-        {/* Grid de medidas */}
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-          <label className="text-sm font-medium text-charcoal">
-            Peso (kg)
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              className={inputClass}
-              style={inputStyle}
-              {...form.register("weight_kg", { valueAsNumber: true })}
-            />
-            <span className="text-xs text-red-600">
-              {form.formState.errors.weight_kg?.message}
-            </span>
-          </label>
-          <label className="text-sm font-medium text-charcoal">
-            Talla de pie (cm)
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              className={inputClass}
-              style={inputStyle}
-              {...form.register("standing_height_cm", { valueAsNumber: true })}
-            />
-            <span className="text-xs text-red-600">
-              {form.formState.errors.standing_height_cm?.message}
-            </span>
-          </label>
-          <label className="text-sm font-medium text-charcoal">
-            Envergadura (cm)
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              className={inputClass}
-              style={inputStyle}
-              {...form.register("arm_span_cm", { valueAsNumber: true })}
-              placeholder="Opcional"
-            />
-          </label>
-          <label className="text-sm font-medium text-charcoal">
-            Talla sentado (cm)
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              className={inputClass}
-              style={inputStyle}
-              {...form.register("sitting_height_cm", { valueAsNumber: true })}
-            />
-            <span className="text-xs text-red-600">
-              {form.formState.errors.sitting_height_cm?.message}
-            </span>
-          </label>
-        </div>
-
-        {submitError && (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>
-        )}
-
-        <button
-          type="submit"
-          disabled={createMutation.isPending}
-          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+      <Form {...form}>
+        <form
+          onSubmit={form.handleSubmit((v) => void handleSubmit(v))}
+          className="space-y-5"
         >
-          {createMutation.isPending ? "Guardando..." : "Guardar medición"}
-        </button>
-      </form>
+          {/* Fecha */}
+          <FormField
+            control={form.control}
+            name="evaluation_date"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Fecha de evaluación</FormLabel>
+                <FormControl>
+                  <Input
+                    type="date"
+                    className="md:w-64"
+                    max={new Date().toISOString().slice(0, 10)}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Grid de medidas */}
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+            <FormField
+              control={form.control}
+              name="weight_kg"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Peso (kg)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      {...form.register("weight_kg", { valueAsNumber: true })}
+                      // Sobrescribimos value/onChange para que valueAsNumber tome control:
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="standing_height_cm"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Talla de pie (cm)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      {...form.register("standing_height_cm", { valueAsNumber: true })}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="arm_span_cm"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Envergadura (cm)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      placeholder="Opcional"
+                      {...form.register("arm_span_cm", { valueAsNumber: true })}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="sitting_height_cm"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Talla sentado (cm)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      {...form.register("sitting_height_cm", { valueAsNumber: true })}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          {submitError && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={createMutation.isPending}
+            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+          >
+            {createMutation.isPending ? "Guardando..." : "Guardar medición"}
+          </button>
+        </form>
+      </Form>
 
       {/* Panel PHV en tiempo real */}
       <div
         className="rounded-xl bg-light-gray p-4"
         data-testid="phv-preview"
       >
-        <h3
-          className="mb-3 text-sm text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
-        >
+        <h3 className="mb-3 text-sm text-charcoal font-heading tracking-[0.2px]">
           Cálculo PHV (en tiempo real)
         </h3>
         {phvResult ? (

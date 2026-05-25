@@ -33,10 +33,12 @@ interface SessionFormPageProps {
   mode: "create" | "edit";
 }
 
+// Clases compartidas — los inputs usan `shadow-ring` (utility de style.css)
+// para el border 1px del design system. B5 romperá este formulario en
+// sub-componentes; por ahora mantenemos las clases inline alineadas con shadcn.
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
 
 export function SessionFormPage({ mode }: SessionFormPageProps) {
@@ -325,7 +327,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
                 type="date"
                 {...register("scheduled_date")}
                 className={inputClass}
-                style={inputStyle}
+
                 aria-describedby={errors.scheduled_date ? "scheduled_date-error" : undefined}
                 aria-invalid={!!errors.scheduled_date}
               />
@@ -340,7 +342,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
                 type="time"
                 {...register("scheduled_start_time")}
                 className={inputClass}
-                style={inputStyle}
+
                 aria-describedby={errors.scheduled_start_time ? "scheduled_start_time-error" : undefined}
                 aria-invalid={!!errors.scheduled_start_time}
               />
@@ -373,7 +375,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
                 placeholder="Ej: Pista XCO La Buitrera"
                 {...register("location")}
                 className={inputClass}
-                style={inputStyle}
+
                 aria-describedby={errors.location ? "location-error" : undefined}
                 aria-invalid={!!errors.location}
               />
@@ -392,7 +394,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
               placeholder="Ej: Técnica de frenada en descenso"
               {...register("technical_focus")}
               className={inputClass}
-              style={inputStyle}
+
               aria-describedby={errors.technical_focus ? "technical_focus-error" : undefined}
               aria-invalid={!!errors.technical_focus}
             />
@@ -410,7 +412,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
               placeholder="Describe el plan de la sesión, objetivos, metodología..."
               {...register("description")}
               className={`${inputClass} resize-none`}
-              style={inputStyle}
+
               aria-describedby={errors.description ? "description-error" : undefined}
               aria-invalid={!!errors.description}
             />
@@ -443,7 +445,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
               placeholder="Describe el recorrido en texto libre (máx. 500 caracteres)..."
               {...register("route_text")}
               className={`${inputClass} resize-none`}
-              style={inputStyle}
+
               aria-describedby={errors.route_text ? "route_text-error" : undefined}
               aria-invalid={!!errors.route_text}
             />
@@ -460,7 +462,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
               placeholder="https://www.strava.com/activities/..."
               {...register("strava_url")}
               className={inputClass}
-              style={inputStyle}
+
               aria-describedby={errors.strava_url ? "strava_url-error" : undefined}
               aria-invalid={!!errors.strava_url}
             />

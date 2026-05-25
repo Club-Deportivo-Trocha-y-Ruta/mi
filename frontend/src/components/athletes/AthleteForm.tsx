@@ -3,6 +3,15 @@ import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { computeAgeDecimal, getCategory } from "@/lib/category";
 import type { AthleteDetailOut } from "@/types/athlete.types";
 import { Sex } from "@/types/enums";
@@ -34,10 +43,6 @@ interface AthleteFormProps {
   submitError: string | null;
   onSubmit: (values: AthleteFormValues) => void;
 }
-
-const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 
 export function AthleteForm({
   initialValues,
@@ -82,93 +87,120 @@ export function AthleteForm({
   }, [birthDate, sex]);
 
   return (
-    <form
-      onSubmit={form.handleSubmit(onSubmit)}
-      className="space-y-5 rounded-xl bg-white p-5"
-      style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
-    >
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="text-sm font-medium text-charcoal">
-          Nombres
-          <input
-            className={inputClass}
-            style={inputStyle}
-            {...form.register("first_name")}
-          />
-          <span className="text-xs text-red-600">{form.formState.errors.first_name?.message}</span>
-        </label>
-        <label className="text-sm font-medium text-charcoal">
-          Apellidos
-          <input
-            className={inputClass}
-            style={inputStyle}
-            {...form.register("last_name")}
-          />
-          <span className="text-xs text-red-600">{form.formState.errors.last_name?.message}</span>
-        </label>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <label className="text-sm font-medium text-charcoal">
-          Fecha de nacimiento
-          <input
-            type="date"
-            className={inputClass}
-            style={inputStyle}
-            autoComplete="off"
-            max={new Date(Date.now() - 86400000).toISOString().slice(0, 10)}
-            {...form.register("birth_date")}
-            disabled={mode === "edit"}
-          />
-          <span className="text-xs text-red-600">{form.formState.errors.birth_date?.message}</span>
-        </label>
-        <label className="text-sm font-medium text-charcoal">
-          Sexo
-          <select
-            className={inputClass}
-            style={inputStyle}
-            {...form.register("sex")}
-            disabled={mode === "edit"}
-          >
-            <option value={Sex.M}>M</option>
-            <option value={Sex.F}>F</option>
-          </select>
-        </label>
-        <label className="text-sm font-medium text-charcoal">
-          Fecha ingreso al club
-          <input
-            type="date"
-            className={inputClass}
-            style={inputStyle}
-            max={new Date().toISOString().slice(0, 10)}
-            {...form.register("club_join_date")}
-          />
-          <span className="text-xs text-red-600">
-            {form.formState.errors.club_join_date?.message}
-          </span>
-        </label>
-      </div>
-
-      {computed && (
-        <p className="rounded-lg bg-light-gray px-3 py-2.5 text-sm text-mid-gray">
-          Edad estimada: <span className="font-medium text-charcoal">{computed.age_decimal.toFixed(1)} años</span>
-          {" | "}
-          Categoría: <span className="font-medium text-charcoal">{computed.category}</span>
-        </p>
-      )}
-
-      {submitError && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>
-      )}
-
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-        style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+    <Form {...form}>
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="space-y-5 rounded-xl bg-white p-5 shadow-card"
       >
-        {isSubmitting ? "Guardando..." : mode === "create" ? "Crear atleta" : "Guardar cambios"}
-      </button>
-    </form>
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="first_name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Nombres</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="last_name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Apellidos</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <FormField
+            control={form.control}
+            name="birth_date"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Fecha de nacimiento</FormLabel>
+                <FormControl>
+                  <Input
+                    type="date"
+                    autoComplete="off"
+                    max={new Date(Date.now() - 86400000).toISOString().slice(0, 10)}
+                    disabled={mode === "edit"}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="sex"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Sexo</FormLabel>
+                <FormControl>
+                  {/* Mantenemos <select> nativo para no romper getByRole("combobox") en tests. */}
+                  <select
+                    {...field}
+                    disabled={mode === "edit"}
+                    className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray shadow-ring"
+                  >
+                    <option value={Sex.M}>M</option>
+                    <option value={Sex.F}>F</option>
+                  </select>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="club_join_date"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Fecha ingreso al club</FormLabel>
+                <FormControl>
+                  <Input
+                    type="date"
+                    max={new Date().toISOString().slice(0, 10)}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        {computed && (
+          <p className="rounded-lg bg-light-gray px-3 py-2.5 text-sm text-mid-gray">
+            Edad estimada: <span className="font-medium text-charcoal">{computed.age_decimal.toFixed(1)} años</span>
+            {" | "}
+            Categoría: <span className="font-medium text-charcoal">{computed.category}</span>
+          </p>
+        )}
+
+        {submitError && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>
+        )}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+        >
+          {isSubmitting ? "Guardando..." : mode === "create" ? "Crear atleta" : "Guardar cambios"}
+        </button>
+      </form>
+    </Form>
   );
 }

@@ -1,17 +1,11 @@
 import { useState } from "react";
 import { CheckCircle, Clock, Mail, XCircle } from "lucide-react";
 
+import { Input } from "@/components/ui/input";
 import { useCreateParentInvite, useParentInvites } from "@/hooks/parents/useParentInvites";
 import type { ParentInviteOut } from "@/types/parent.types";
 import type { FamilyRelationship } from "@/types/enums";
 import { cn } from "@/lib/utils";
-
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-const inputClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 flex-1";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 
 type InviteStatus = "used" | "expired" | "pending";
 
@@ -117,15 +111,8 @@ export function ParentInviteManager({
   }
 
   return (
-    <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
-      <h4
-        className="mb-1 flex items-center gap-2 text-sm text-charcoal"
-        style={{
-          fontFamily: "'Cal Sans', system-ui, sans-serif",
-          fontWeight: 600,
-          letterSpacing: "0.2px",
-        }}
-      >
+    <div className="rounded-xl bg-white p-5 shadow-card">
+      <h4 className="mb-1 flex items-center gap-2 text-sm text-charcoal font-heading tracking-[0.2px]">
         <Mail size={15} />
         Invitacion — {athleteName}
       </h4>
@@ -137,10 +124,7 @@ export function ParentInviteManager({
 
       {/* Account already activated — parent consumed the invite */}
       {showAccountActivated && usedInvite && (
-        <div
-          className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm"
-          style={{ boxShadow: "rgba(34, 197, 94, 0.25) 0px 0px 0px 1px" }}
-        >
+        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm shadow-[0_0_0_1px_rgba(34,197,94,0.25)]">
           <div className="flex items-start gap-2">
             <CheckCircle size={14} className="mt-0.5 shrink-0 text-green-700" />
             <div className="space-y-0.5">
@@ -158,10 +142,7 @@ export function ParentInviteManager({
 
       {/* Pending invite — show resend action */}
       {showPendingPanel && pendingInvite && (
-        <div
-          className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm"
-          style={{ boxShadow: "rgba(251, 191, 36, 0.25) 0px 0px 0px 1px" }}
-        >
+        <div className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm shadow-[0_0_0_1px_rgba(251,191,36,0.25)]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="space-y-0.5">
               <p className="text-xs font-medium text-amber-800">Invitacion activa</p>
@@ -188,13 +169,12 @@ export function ParentInviteManager({
       {/* Send invite form — only when no active invite and no activated account */}
       {showSendForm && (
         <div className="flex flex-col gap-2 sm:flex-row">
-          <input
+          <Input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="correo@ejemplo.com"
-            className={inputClass}
-            style={inputStyle}
+            className="flex-1 py-2"
             onKeyDown={(e) => {
               if (e.key === "Enter") handleSend();
             }}
@@ -203,8 +183,7 @@ export function ParentInviteManager({
             type="button"
             onClick={() => handleSend()}
             disabled={!email.trim() || createInviteMutation.isPending}
-            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40 shadow-button-highlight"
           >
             {createInviteMutation.isPending ? "Enviando..." : "Enviar invitacion"}
           </button>

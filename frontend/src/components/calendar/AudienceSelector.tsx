@@ -25,8 +25,7 @@ interface AudienceSelectorProps {
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const selectClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
-const selectStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 
 export function AudienceSelector({ value, onChange, error }: AudienceSelectorProps) {
   const [selectedType, setSelectedType] = useState<AudienceType>("all_club");
@@ -115,8 +114,7 @@ export function AudienceSelector({ value, onChange, error }: AudienceSelectorPro
             value={opt.value}
             id={`audience-type-${opt.value}`}
             aria-label={opt.label}
-            className="flex cursor-pointer items-center justify-center rounded-lg px-2 py-2 text-xs font-medium text-charcoal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-1 data-[state=checked]:bg-charcoal data-[state=checked]:text-white data-[state=unchecked]:bg-white data-[state=unchecked]:hover:bg-light-gray"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="flex cursor-pointer items-center justify-center rounded-lg px-2 py-2 text-xs font-medium text-charcoal transition-colors shadow-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-1 data-[state=checked]:bg-charcoal data-[state=checked]:text-white data-[state=unchecked]:bg-white data-[state=unchecked]:hover:bg-light-gray"
           >
             {opt.label}
           </RadioGroupPrimitive.Item>
@@ -134,7 +132,6 @@ export function AudienceSelector({ value, onChange, error }: AudienceSelectorPro
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
             className={selectClass}
-            style={selectStyle}
           >
             {FCC_CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>
@@ -167,7 +164,6 @@ export function AudienceSelector({ value, onChange, error }: AudienceSelectorPro
               setSelectedAthleteId(e.target.value ? Number(e.target.value) : null)
             }
             className={selectClass}
-            style={selectStyle}
           >
             <option value="">Selecciona un atleta</option>
             {athletes.map((a) => (
@@ -182,8 +178,7 @@ export function AudienceSelector({ value, onChange, error }: AudienceSelectorPro
       <button
         type="button"
         onClick={handleAdd}
-        className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+        className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
       >
         + Agregar audiencia
       </button>
