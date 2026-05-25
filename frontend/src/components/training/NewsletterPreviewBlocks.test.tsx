@@ -221,6 +221,37 @@ describe("NewsletterPreviewBlocks — bloque apoyo en casa", () => {
       screen.getByText(/Sin recomendaciones para este mes/i),
     ).toBeInTheDocument();
   });
+
+  it("BUG-001: renderiza tips como objetos {text, title, category} sin crashar", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          support_at_home: {
+            tips: [
+              { text: "Hidratación post", title: "Hidrata", category: "recovery" },
+            ],
+          },
+        }}
+        badges={null}
+      />,
+    );
+    expect(screen.getByTestId("block-support")).toBeInTheDocument();
+    expect(screen.getByText(/Hidratación post/i)).toBeInTheDocument();
+  });
+
+  it("BUG-001: acepta tips como strings simples (back-compat)", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          support_at_home: {
+            tips: ["Tip simple string"],
+          },
+        }}
+        badges={null}
+      />,
+    );
+    expect(screen.getByText(/Tip simple string/i)).toBeInTheDocument();
+  });
 });
 
 describe("NewsletterPreviewBlocks — bloque fotos", () => {
