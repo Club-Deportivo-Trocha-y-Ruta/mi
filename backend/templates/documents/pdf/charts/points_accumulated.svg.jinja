@@ -2,17 +2,21 @@
    Inputs:
      points — lista de {x: valida_num, y: accumulated_points}
      width / height / low_confidence
+   Output: bloque HTML con título <p> + SVG (sin título dentro del SVG)
 #}
-{% macro points_accumulated(points, width=420, height=180, low_confidence=false) %}
+{% macro points_accumulated(points, width=420, height=160, low_confidence=false) %}
 {%- set valid_points = points | selectattr("y", "ne", none) | list -%}
 {%- set pad_left = 45 -%}
 {%- set pad_right = 20 -%}
-{%- set pad_top = 20 -%}
+{%- set pad_top = 8 -%}
 {%- set pad_bottom = 30 -%}
 {%- set chart_w = width - pad_left - pad_right -%}
 {%- set chart_h = height - pad_top - pad_bottom -%}
+<p style="margin: 0 0 3pt 0; font-size: 9pt; font-weight: 700; color: #374151;">Puntos acumulados</p>
+{%- if low_confidence -%}
+<p style="margin: 0 0 3pt 0; font-size: 7.5pt; color: #92400e; background: #fef3c7; display: inline-block; padding: 1pt 5pt; border-radius: 3pt;">Confianza baja</p>
+{%- endif -%}
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{ width }} {{ height }}" width="{{ width }}" height="{{ height }}" role="img" aria-label="Puntos acumulados">
-  <title>Puntos acumulados</title>
   <rect x="0" y="0" width="{{ width }}" height="{{ height }}" fill="#f9f9f9" rx="4"/>
   <rect x="{{ pad_left }}" y="{{ pad_top }}" width="{{ chart_w }}" height="{{ chart_h }}" fill="white" stroke="#e0e0e0"/>
   {%- if valid_points | length > 0 -%}
@@ -51,10 +55,5 @@
   {%- else -%}
     <text x="{{ width / 2 }}" y="{{ height / 2 }}" text-anchor="middle" font-size="11" fill="#999">Sin datos</text>
   {%- endif -%}
-  {%- if low_confidence -%}
-    <rect x="{{ width - 110 }}" y="4" width="106" height="14" rx="3" fill="#fef3c7"/>
-    <text x="{{ width - 57 }}" y="14" text-anchor="middle" font-size="8" fill="#92400e">Confianza baja</text>
-  {%- endif -%}
-  <text x="{{ pad_left }}" y="13" font-size="9" fill="#374151" font-weight="bold">Puntos acumulados</text>
 </svg>
 {% endmacro %}
