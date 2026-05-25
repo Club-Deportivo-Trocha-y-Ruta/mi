@@ -210,6 +210,13 @@ export const calendarEventSchema = z
   });
 
 export type CalendarEventFormValues = z.output<typeof calendarEventSchema>;
+/**
+ * Tipo de los valores tal y como los recibe react-hook-form ANTES de pasar
+ * por el Zod resolver — algunos campos son opcionales antes de la coerción.
+ * Útil para tipar `register` / `control` en sub-componentes que reciben
+ * el form via props.
+ */
+export type CalendarEventFormInput = z.input<typeof calendarEventSchema>;
 
 // ─── Helpers to build API payload from form values ───────────────────────────
 

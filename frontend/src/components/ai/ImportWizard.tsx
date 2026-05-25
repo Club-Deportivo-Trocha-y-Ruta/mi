@@ -15,7 +15,7 @@
  *   - No persiste en Zustand; navegar fuera reinicia (DT-5 del workflow).
  *   - Stepper visual = breadcrumbs simples con `aria-current`.
  */
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "react-router-dom";
@@ -31,7 +31,15 @@ import { z } from "zod";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import { RaceUploadZone } from "@/components/ai/RaceUploadZone";
-import { getImportErrorMessage } from "@/lib/api/errorMessages";
+import { Stepper } from "@/components/ai/wizard/Stepper";
+import {
+  REVISION_REASON_MAX,
+  formatCommittedAt,
+  getErrMsg,
+  isRevisionDryRun,
+  shouldWarnUnusualDiff,
+} from "@/components/ai/wizard/helpers";
+import { useImportWizardState } from "@/components/ai/wizard/useImportWizardState";
 
 // DiffTable lazy → solo se descarga si el wizard detecta modo revisión.
 // Mantiene el chunk de ImportWizard cerca de la baseline F-UP (~18 KB).
@@ -47,55 +55,9 @@ import { cn } from "@/lib/utils";
 import type {
   ImportCommitResponse,
   ImportDryRunResponse,
-  ImportDryRunRevisionResponse,
   ImportMatchPreview,
-  ImportParseResponse,
   ImportResolvedMatch,
 } from "@/types/raceImports.types";
-
-// ---------------------------------------------------------------------------
-// F-UP-REV5 — Revision UX helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Type guard — discrimina la union de dry-run response (matches vs revision).
- *
- * Backend marca `is_revision: true` solo en el branch revisión; en F-UP normal
- * el campo es `false` o ausente.
- */
-function isRevisionDryRun(
-  data: ImportDryRunResponse | undefined,
-): data is ImportDryRunRevisionResponse {
-  return !!data && (data as ImportDryRunRevisionResponse).is_revision === true;
-}
-
-const REVISION_REASON_MAX = 300;
-
-/** Banner naranja si el diff es inusualmente grande (R1 mitigación). */
-function shouldWarnUnusualDiff(summary: {
-  n_total: number;
-  n_delete: number;
-  n_unchanged: number;
-}): boolean {
-  if (summary.n_total > 500) return true;
-  // Si hay deletes y exceden 20% del unchanged.
-  if (summary.n_delete > 0 && summary.n_delete > summary.n_unchanged * 0.2) {
-    return true;
-  }
-  return false;
-}
-
-function formatCommittedAt(iso: string | undefined | null): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("es-CO", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Step 1 schema
@@ -129,89 +91,6 @@ const step1Schema = z.object({
 type Step1Values = z.infer<typeof step1Schema>;
 
 // ---------------------------------------------------------------------------
-// Stepper visual
-// ---------------------------------------------------------------------------
-
-const STEPS = [
-  { idx: 1, label: "Archivos y datos" },
-  { idx: 2, label: "Validar matches" },
-  { idx: 3, label: "Resultado" },
-] as const;
-
-function Stepper({ active }: { active: 1 | 2 | 3 }) {
-  return (
-    <ol
-      className="mb-4 flex items-center gap-2 text-xs"
-      aria-label="Pasos del wizard"
-    >
-      {STEPS.map((s, i) => {
-        const done = s.idx < active;
-        const current = s.idx === active;
-        return (
-          <li
-            key={s.idx}
-            className="flex items-center gap-2"
-            aria-current={current ? "step" : undefined}
-          >
-            <span
-              className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold",
-                done && "bg-charcoal text-white",
-                current && "bg-blue-100 text-blue-700 ring-2 ring-blue-500",
-                !done && !current && "bg-light-gray text-mid-gray",
-              )}
-              aria-hidden="true"
-            >
-              {done ? "✓" : s.idx}
-            </span>
-            <span
-              className={cn(
-                "font-medium",
-                current ? "text-charcoal" : "text-mid-gray",
-              )}
-            >
-              {s.label}
-            </span>
-            {i < STEPS.length - 1 && (
-              <span className="mx-1 text-mid-gray" aria-hidden="true">
-                →
-              </span>
-            )}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Helper para extraer mensaje del error axios
-// ---------------------------------------------------------------------------
-// Prioriza el `detail` del payload (string o array Pydantic) — vía
-// getImportErrorMessage — para preservar mensajes server-side específicos.
-// Si no hay detail explicativo, mapea status codes del wizard de ingesta
-// a copy en español; en último recurso, devuelve el fallback genérico.
-
-function getErrMsg(err: unknown, fallback: string): string {
-  // Status-specific fallback que usaremos si no hay detail informativo.
-  let statusFallback = fallback;
-  if (typeof err === "object" && err !== null) {
-    const e = err as { response?: { status?: number } };
-    if (e.response?.status === 409) {
-      statusFallback = "Este PDF ya fue ingestado previamente.";
-    } else if (e.response?.status === 500) {
-      statusFallback =
-        "Error interno al procesar la ingesta. Revisa el archivo o contacta soporte.";
-    } else if (e.response?.status === 422) {
-      statusFallback = "Datos inválidos. Revisa el formulario y vuelve a intentar.";
-    }
-  }
-  // getImportErrorMessage extrae detail (string / Pydantic array) si existe;
-  // si no, mapea 413 y como último recurso devuelve statusFallback.
-  return getImportErrorMessage(err, statusFallback);
-}
-
-// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -221,21 +100,27 @@ interface ImportWizardProps {
 }
 
 export function ImportWizard({ onCompleted }: ImportWizardProps) {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [parseResult, setParseResult] = useState<ImportParseResponse | null>(
-    null,
-  );
-  const [resultadosPdf, setResultadosPdf] = useState<File | null>(null);
-  const [generalPdf, setGeneralPdf] = useState<File | null>(null);
-  // Resoluciones por competitor_normalized_name → athlete_id (null = no match).
-  const [resolutions, setResolutions] = useState<
-    Record<string, number | null>
-  >({});
-  const [onlyPending, setOnlyPending] = useState(false);
-  const [step1Error, setStep1Error] = useState<string | null>(null);
-  // F-UP-REV5: motivo de revisión (obligatorio si hay deletes).
-  const [revisionReason, setRevisionReason] = useState("");
-  const [revisionReasonTouched, setRevisionReasonTouched] = useState(false);
+  const {
+    step,
+    parseResult,
+    resultadosPdf,
+    generalPdf,
+    resolutions,
+    onlyPending,
+    step1Error,
+    revisionReason,
+    revisionReasonTouched,
+    setStep,
+    setParseResult,
+    setResultadosPdf,
+    setGeneralPdf,
+    setResolutions,
+    setOnlyPending,
+    setStep1Error,
+    setRevisionReason,
+    setRevisionReasonTouched,
+    resetToStep1,
+  } = useImportWizardState();
 
   const parseMutation = useImportParse();
   const dryRunMutation = useImportDryRun();
@@ -395,15 +280,7 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   };
 
   const reset = () => {
-    setStep(1);
-    setParseResult(null);
-    setResultadosPdf(null);
-    setGeneralPdf(null);
-    setResolutions({});
-    setOnlyPending(false);
-    setStep1Error(null);
-    setRevisionReason("");
-    setRevisionReasonTouched(false);
+    resetToStep1();
     parseMutation.reset();
     dryRunMutation.reset();
     commitMutation.reset();

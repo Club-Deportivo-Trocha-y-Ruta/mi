@@ -1,10 +1,15 @@
 import { useEffect, useMemo } from "react";
-import { Link as RouterLink } from "react-router-dom";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 import { AudienceSelector } from "./AudienceSelector";
+import { ClubEventFields } from "./event-form/ClubEventFields";
+import { CompetitionFields } from "./event-form/CompetitionFields";
+import { GroupTrainingFields } from "./event-form/GroupTrainingFields";
+import { PersonalTrainingFields } from "./event-form/PersonalTrainingFields";
+import { RestDayFields } from "./event-form/RestDayFields";
+import { TrainingSessionFields } from "./event-form/TrainingSessionFields";
 import {
   calendarEventSchema,
   buildEventPayload,
@@ -15,16 +20,10 @@ import {
   useUpdateCalendarEvent,
 } from "@/api/calendar";
 import { useAvailableRaceEvents } from "@/hooks/calendar/useAvailableRaceEvents";
-import type {
-  CalendarEventRead,
-  EventDataCompetition,
-  EventDataClubEvent,
-  EventDataPersonalTraining,
-  EventDataGroupTraining,
-  EventDataRestDay,
-  EventDataTrainingSession,
-  EventType,
-} from "@/types/calendar.types";
+import {
+  buildDefaultValues,
+} from "@/lib/calendar/eventFormMapping";
+import type { CalendarEventRead, EventType } from "@/types/calendar.types";
 import { labelForEventType } from "./colors";
 
 import * as TabsPrimitive from "@radix-ui/react-tabs";
@@ -46,18 +45,6 @@ const ALL_EVENT_TYPES: EventType[] = [
   "rest_day",
 ];
 
-const INTENSITY_OPTIONS = [
-  { value: "low", label: "Baja" },
-  { value: "medium", label: "Media" },
-  { value: "high", label: "Alta" },
-] as const;
-
-const COMPETITION_CATEGORIES = [
-  { value: "A", label: "A — Tapering completo" },
-  { value: "B", label: "B — Mini-tapering" },
-  { value: "C", label: "C — Diagnóstica" },
-] as const;
-
 // Clases compartidas — los inputs usan la utility `shadow-ring` (1px border
 // soft) y conservan el tipo focus-ring del design system. La sección usa
 // `shadow-card` (Cal.com multi-layer). Los formularios nuevos deberían usar
@@ -68,130 +55,8 @@ const inputClass =
 const errorClass = "mt-1 text-xs text-red-600";
 const sectionClass = "rounded-xl bg-white p-5 space-y-4 shadow-card";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildSpecificFields(
-  eventType: CalendarEventRead["event_type"],
-  eventData: CalendarEventRead["event_data"],
-): Record<string, any> {
-  if (!eventData) return {};
-  switch (eventType) {
-    case "training_session": {
-      const d = eventData as EventDataTrainingSession;
-      return { data_training_session: { training_session_id: d.training_session_id } };
-    }
-    case "competition": {
-      const d = eventData as EventDataCompetition;
-      return {
-        data_competition: {
-          city: d.city ?? "",
-          race_category: d.race_category ?? "A",
-          is_departmental: d.is_departmental ?? false,
-        },
-      };
-    }
-    case "club_event": {
-      const d = eventData as EventDataClubEvent;
-      return {
-        data_club_event: {
-          kind: d.kind ?? "social",
-          registration_url: d.registration_url ?? "",
-        },
-      };
-    }
-    case "personal_training": {
-      const d = eventData as EventDataPersonalTraining;
-      return {
-        data_personal_training: {
-          athlete_id: d.athlete_id,
-          intensity: d.intensity ?? "medium",
-        },
-      };
-    }
-    case "group_training": {
-      const d = eventData as EventDataGroupTraining;
-      return {
-        data_group_training: {
-          intensity: d.intensity ?? "medium",
-          group_size_max: d.group_size_max,
-        },
-      };
-    }
-    case "rest_day": {
-      const d = eventData as EventDataRestDay;
-      return {
-        data_rest_day: {
-          scope: d.scope ?? "club",
-          reason: d.reason ?? "",
-        },
-      };
-    }
-    default:
-      return {};
-  }
-}
-
-function buildDefaultValues(
-  initialData?: CalendarEventRead,
-  prefillDate?: string,
-): CalendarEventFormValues {
-  if (initialData) {
-    const start = new Date(initialData.start_at);
-    const end = new Date(initialData.end_at);
-    const durationMin = Math.round((end.getTime() - start.getTime()) / 60_000);
-    const startDate = start.toISOString().slice(0, 10);
-    const startTime = start.toISOString().slice(11, 16);
-
-    // Birthdays son virtuales y no se editan; el router bloquea PATCH, pero
-    // como guarda defensiva caemos a "club_event" si llegara a invocarse.
-    const editableType =
-      initialData.event_type === "birthday"
-        ? "club_event"
-        : initialData.event_type;
-
-    const specificFields = buildSpecificFields(
-      editableType,
-      initialData.event_data,
-    );
-
-    return {
-      event_type: editableType,
-      title: initialData.title,
-      description: initialData.description ?? "",
-      location: initialData.location ?? "",
-      start_date: startDate,
-      start_time: startTime,
-      duration_min: durationMin,
-      all_day: initialData.all_day,
-      color_hex: initialData.color_hex ?? "",
-      // FE-2: hidrata el race_event_id existente para que el dropdown
-      // muestre la válida ya asociada cuando se edita una competition.
-      race_event_id: initialData.race_event_id ?? null,
-      audiences: (initialData.audiences ?? []) as CalendarEventFormValues["audiences"],
-      ...specificFields,
-    };
-  }
-
-  const now = new Date();
-  const defaultDate =
-    prefillDate ??
-    now.toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
-  const hours = String(now.getHours()).padStart(2, "0");
-  const mins = String(now.getMinutes()).padStart(2, "0");
-
-  return {
-    event_type: "training_session",
-    title: "",
-    description: "",
-    location: "",
-    start_date: defaultDate,
-    start_time: `${hours}:${mins}`,
-    duration_min: 90,
-    all_day: false,
-    color_hex: "",
-    race_event_id: null,
-    audiences: [{ audience_type: "all_club", audience_value: {} as Record<string, never> }],
-  };
-}
+// Nota: `buildDefaultValues` y `buildSpecificFields` viven en
+// @/lib/calendar/eventFormMapping para mantener este archivo bajo control.
 
 export function EventForm({
   mode,
@@ -583,293 +448,36 @@ export function EventForm({
               Datos de {labelForEventType(selectedType as EventType)}
             </h2>
 
-            {/* training_session — minimal, links to TrainingSession module */}
-            {selectedType === "training_session" && (
-              <p className="text-sm text-mid-gray">
-                Los entrenamientos en el calendario están vinculados al módulo de
-                sesiones. El ID de sesión se enlazará automáticamente.
-              </p>
-            )}
+            {selectedType === "training_session" && <TrainingSessionFields />}
 
-            {/* competition */}
             {selectedType === "competition" && (
-              <div className="space-y-4">
-                {/* FE-2: dropdown obligatorio que asocia este calendar_event
-                    a una válida concreta de race_events. La lista viene del
-                    endpoint /api/race-events/available-for-calendar y excluye
-                    las válidas ya enlazadas a otro evento del calendario. */}
-                <div>
-                  <label htmlFor="comp-race-event" className={labelClass}>
-                    Válida asociada
-                  </label>
-                  <Controller
-                    name="race_event_id"
-                    control={control}
-                    render={({ field }) => (
-                      <select
-                        id="comp-race-event"
-                        ref={field.ref}
-                        name={field.name}
-                        onBlur={field.onBlur}
-                        value={
-                          field.value == null
-                            ? ""
-                            : String(field.value)
-                        }
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          field.onChange(v === "" ? null : Number(v));
-                        }}
-                        aria-invalid={!!errors.race_event_id}
-                        aria-describedby={
-                          errors.race_event_id
-                            ? "comp-race-event-error"
-                            : undefined
-                        }
-                        disabled={
-                          raceEventsQuery.isLoading ||
-                          (raceEventOptions.length === 0 &&
-                            !raceEventsQuery.isError)
-                        }
-                        className={inputClass}
-
-                        data-testid="event-race-event-id"
-                      >
-                        <option value="">
-                          {raceEventsQuery.isLoading
-                            ? "Cargando válidas…"
-                            : "Selecciona una válida…"}
-                        </option>
-                        {raceEventOptions.map((r) => (
-                          <option key={r.id} value={String(r.id)}>
-                            {r.sequence_number > 0
-                              ? `Válida ${r.sequence_number} — ${r.name} (${r.event_date})`
-                              : `${r.name}${r.event_date ? ` (${r.event_date})` : ""}`}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  />
-                  {raceEventsQuery.isError && (
-                    <p className={errorClass}>
-                      No se pudo cargar la lista de válidas. Intenta de nuevo
-                      en unos segundos.
-                    </p>
-                  )}
-                  {!raceEventsQuery.isLoading &&
-                    !raceEventsQuery.isError &&
-                    raceEventOptions.length === 0 && (
-                      <p
-                        className="mt-1 text-xs text-mid-gray"
-                        data-testid="event-race-event-empty"
-                      >
-                        No hay válidas disponibles para {seasonForRaceEvents}.
-                        Crea una desde el{" "}
-                        <RouterLink
-                          to="/coach/race-analysis"
-                          className="font-medium text-charcoal underline transition-opacity hover:opacity-70"
-                        >
-                          módulo de resultados
-                        </RouterLink>
-                        .
-                      </p>
-                    )}
-                  {errors.race_event_id && (
-                    <p id="comp-race-event-error" className={errorClass}>
-                      {errors.race_event_id.message}
-                    </p>
-                  )}
-                  {/* TODO(FE-3+): permitir crear una válida inline cuando el
-                      coach está agendando una competencia sin PDF aún. */}
-                </div>
-                <div>
-                  <label htmlFor="comp-city" className={labelClass}>
-                    Ciudad
-                  </label>
-                  <input
-                    id="comp-city"
-                    type="text"
-                    placeholder="Ej: Cali"
-                    {...register("data_competition.city")}
-                    className={inputClass}
-
-                  />
-                  {errors.data_competition?.city && (
-                    <p className={errorClass}>{errors.data_competition.city.message}</p>
-                  )}
-                </div>
-                <div>
-                  <label htmlFor="comp-race-category" className={labelClass}>
-                    Categoría de carrera
-                  </label>
-                  <select
-                    id="comp-race-category"
-                    {...register("data_competition.race_category")}
-                    className={inputClass}
-
-                  >
-                    {COMPETITION_CATEGORIES.map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-charcoal">
-                  <input
-                    type="checkbox"
-                    {...register("data_competition.is_departmental")}
-                    className="h-4 w-4 rounded border-mid-gray"
-                  />
-                  Campeonato Departamental
-                </label>
-              </div>
+              <CompetitionFields
+                control={control}
+                register={register}
+                errors={errors}
+                raceEventOptions={raceEventOptions}
+                raceEventsQuery={{
+                  isLoading: raceEventsQuery.isLoading,
+                  isError: raceEventsQuery.isError,
+                }}
+                seasonForRaceEvents={seasonForRaceEvents}
+              />
             )}
 
-            {/* club_event */}
             {selectedType === "club_event" && (
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="club-event-kind" className={labelClass}>
-                    Tipo
-                  </label>
-                  <select
-                    id="club-event-kind"
-                    {...register("data_club_event.kind")}
-                    className={inputClass}
-
-                  >
-                    <option value="social">Social</option>
-                    <option value="meeting">Reunión</option>
-                    <option value="workshop">Taller</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="club-event-url" className={labelClass}>
-                    URL de registro{" "}
-                    <span className="font-normal text-mid-gray">(opcional)</span>
-                  </label>
-                  <input
-                    id="club-event-url"
-                    type="url"
-                    placeholder="https://..."
-                    {...register("data_club_event.registration_url")}
-                    className={inputClass}
-
-                  />
-                  {errors.data_club_event?.registration_url && (
-                    <p className={errorClass}>
-                      {errors.data_club_event.registration_url.message}
-                    </p>
-                  )}
-                </div>
-              </div>
+              <ClubEventFields register={register} errors={errors} />
             )}
 
-            {/* personal_training */}
             {selectedType === "personal_training" && (
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="pt-intensity" className={labelClass}>
-                    Intensidad
-                  </label>
-                  <select
-                    id="pt-intensity"
-                    {...register("data_personal_training.intensity")}
-                    className={inputClass}
-
-                  >
-                    {INTENSITY_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              <PersonalTrainingFields register={register} />
             )}
 
-            {/* group_training */}
             {selectedType === "group_training" && (
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="gt-intensity" className={labelClass}>
-                    Intensidad
-                  </label>
-                  <select
-                    id="gt-intensity"
-                    {...register("data_group_training.intensity")}
-                    className={inputClass}
-
-                  >
-                    {INTENSITY_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="gt-group-size" className={labelClass}>
-                    Máx. atletas{" "}
-                    <span className="font-normal text-mid-gray">(opcional)</span>
-                  </label>
-                  <input
-                    id="gt-group-size"
-                    type="number"
-                    min={1}
-                    max={50}
-                    {...register("data_group_training.group_size_max", {
-                      valueAsNumber: true,
-                    })}
-                    className={inputClass}
-
-                  />
-                  {errors.data_group_training?.group_size_max && (
-                    <p className={errorClass}>
-                      {errors.data_group_training.group_size_max.message}
-                    </p>
-                  )}
-                </div>
-              </div>
+              <GroupTrainingFields register={register} errors={errors} />
             )}
 
-            {/* rest_day */}
             {selectedType === "rest_day" && (
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="rd-scope" className={labelClass}>
-                    Alcance
-                  </label>
-                  <select
-                    id="rd-scope"
-                    {...register("data_rest_day.scope")}
-                    className={inputClass}
-
-                  >
-                    <option value="club">Todo el club</option>
-                    <option value="category">Por categoría</option>
-                    <option value="athlete">Atleta específico</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="rd-reason" className={labelClass}>
-                    Motivo{" "}
-                    <span className="font-normal text-mid-gray">(opcional)</span>
-                  </label>
-                  <input
-                    id="rd-reason"
-                    type="text"
-                    placeholder="Ej: Semana de recuperación post-carrera"
-                    {...register("data_rest_day.reason")}
-                    className={inputClass}
-
-                  />
-                  {errors.data_rest_day?.reason && (
-                    <p className={errorClass}>{errors.data_rest_day.reason.message}</p>
-                  )}
-                </div>
-              </div>
+              <RestDayFields register={register} errors={errors} />
             )}
           </div>
         </TabsPrimitive.Content>
