@@ -247,6 +247,7 @@ export function AthleteNewsletterDetailPage() {
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [siblingBlocked, setSiblingBlocked] = useState(false);
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const newsletterQuery = useAthleteNewsletter(athleteId, newsletterId);
@@ -339,6 +340,7 @@ export function AthleteNewsletterDetailPage() {
 
   function handleRegenerate() {
     if (!newsletter) return;
+    setShowRegenerateConfirm(false);
     generateMutation.mutate(
       { year: newsletter.year, month: newsletter.month, force: true },
       {
@@ -557,6 +559,22 @@ export function AthleteNewsletterDetailPage() {
                 </button>
               )}
 
+              {/* Regenerate narrative — solo para draft */}
+              {isDraft && (
+                <button
+                  type="button"
+                  onClick={() => setShowRegenerateConfirm(true)}
+                  disabled={generateMutation.isPending}
+                  className="flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-40"
+                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  data-testid="regenerate-narrative-btn"
+                  aria-label="Regenerar narrativa del boletín"
+                >
+                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                  Regenerar narrativa
+                </button>
+              )}
+
               {/* Send */}
               <button
                 type="button"
@@ -631,6 +649,18 @@ export function AthleteNewsletterDetailPage() {
         onConfirm={handleSend}
         isPending={sendMutation.isPending}
         siblingBlockedError={siblingBlocked}
+      />
+
+      <ConfirmModal
+        open={showRegenerateConfirm}
+        title="Regenerar narrativa"
+        body="Se borrará la narrativa actual y se generará una nueva. La narrativa editada se perderá. ¿Continuar?"
+        confirmLabel="Sí, regenerar"
+        cancelLabel="Cancelar"
+        confirmDanger
+        isPending={generateMutation.isPending}
+        onCancel={() => setShowRegenerateConfirm(false)}
+        onConfirm={handleRegenerate}
       />
     </section>
   );

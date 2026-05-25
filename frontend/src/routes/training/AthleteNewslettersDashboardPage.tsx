@@ -12,12 +12,15 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { isAxiosError } from "axios";
-import { FileText, RefreshCw } from "lucide-react";
+import { FileText, Play, RefreshCw } from "lucide-react";
 
 import {
   useBatchCreateNewsletters,
   useAthleteNewsletters,
+  useGenerateNewsletter,
+  parseApiError,
 } from "@/api/athleteNewsletters";
+import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { useAuthStore } from "@/store/auth.store";
 import {
@@ -101,43 +104,131 @@ function AthleteNewsletterCard({
   const status: NewsletterStatus | "none" = newsletter?.status ?? "none";
   const config = STATUS_CONFIG[status];
 
+  const generateMutation = useGenerateNewsletter(athlete.id);
+  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const isNone = status === "none";
+  const canRegenerate = status === "draft" || status === "failed";
+
+  function handleGenerate(e: React.MouseEvent) {
+    e.stopPropagation();
+    setActionError(null);
+    generateMutation.mutate(
+      { year, month, force: false },
+      {
+        onError: (err) =>
+          setActionError(parseApiError(err, "Error al generar el boletín.")),
+      },
+    );
+  }
+
+  function handleRegenerateConfirm() {
+    setShowRegenerateConfirm(false);
+    setActionError(null);
+    generateMutation.mutate(
+      { year, month, force: true },
+      {
+        onError: (err) =>
+          setActionError(parseApiError(err, "Error al regenerar el boletín.")),
+      },
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={() => onClick(athlete.id, newsletter?.id)}
-      className="w-full rounded-xl bg-white p-4 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-      style={cardStyle}
-      aria-label={`Boletín de ${athlete.first_name} ${athlete.last_name}: ${config.label}`}
-      data-testid={`athlete-card-${athlete.id}`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-medium text-charcoal">
-            {athlete.first_name} {athlete.last_name}
-          </p>
-          <p className="text-xs text-mid-gray mt-0.5">
-            {athlete.category ?? "Sin categoría"}{" "}
-            {athlete.age_decimal ? `· ${Math.floor(athlete.age_decimal)} años` : ""}
-          </p>
-        </div>
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${config.badgeClass}`}
-          data-testid={`status-badge-${athlete.id}`}
+    <>
+      <div
+        className="rounded-xl bg-white p-4 transition-shadow hover:shadow-md"
+        style={cardStyle}
+        data-testid={`athlete-card-${athlete.id}`}
+      >
+        {/* Clickable area — navigate to detail */}
+        <button
+          type="button"
+          onClick={() => onClick(athlete.id, newsletter?.id)}
+          className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 rounded-lg"
+          aria-label={`Ver boletín de ${athlete.first_name} ${athlete.last_name}: ${config.label}`}
         >
-          {config.label}
-        </span>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate font-medium text-charcoal">
+                {athlete.first_name} {athlete.last_name}
+              </p>
+              <p className="text-xs text-mid-gray mt-0.5">
+                {athlete.category ?? "Sin categoría"}{" "}
+                {athlete.age_decimal ? `· ${Math.floor(athlete.age_decimal)} años` : ""}
+              </p>
+            </div>
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${config.badgeClass}`}
+              data-testid={`status-badge-${athlete.id}`}
+            >
+              {config.label}
+            </span>
+          </div>
+
+          {newsletter?.error_message && (
+            <p className="mt-2 text-xs text-red-600 line-clamp-2">{newsletter.error_message}</p>
+          )}
+
+          {newsletter?.sent_at && (
+            <p className="mt-1 text-xs text-mid-gray">
+              Enviado el {formatDayMonthShort(newsletter.sent_at)}
+            </p>
+          )}
+        </button>
+
+        {/* Action error */}
+        {actionError && (
+          <p className="mt-2 text-xs text-red-600" role="alert">{actionError}</p>
+        )}
+
+        {/* Action buttons */}
+        {(isNone || canRegenerate) && (
+          <div className="mt-3 flex gap-2">
+            {isNone && (
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={generateMutation.isPending}
+                className="flex items-center gap-1.5 rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+                data-testid={`generate-btn-${athlete.id}`}
+                aria-label={`Generar boletín para ${athlete.first_name} ${athlete.last_name}`}
+              >
+                <Play className="h-3 w-3" aria-hidden="true" />
+                Generar
+              </button>
+            )}
+            {canRegenerate && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowRegenerateConfirm(true); }}
+                disabled={generateMutation.isPending}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50"
+                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                data-testid={`regenerate-btn-${athlete.id}`}
+                aria-label={`Regenerar boletín de ${athlete.first_name} ${athlete.last_name}`}
+              >
+                <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                Regenerar
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {newsletter?.error_message && (
-        <p className="mt-2 text-xs text-red-600 line-clamp-2">{newsletter.error_message}</p>
-      )}
-
-      {newsletter?.sent_at && (
-        <p className="mt-1 text-xs text-mid-gray">
-          Enviado el {formatDayMonthShort(newsletter.sent_at)}
-        </p>
-      )}
-    </button>
+      <ConfirmModal
+        open={showRegenerateConfirm}
+        title="Regenerar boletín"
+        body="Se borrará la narrativa actual y se generará una nueva. La narrativa editada se perderá. ¿Continuar?"
+        confirmLabel="Sí, regenerar"
+        cancelLabel="Cancelar"
+        confirmDanger
+        isPending={generateMutation.isPending}
+        onCancel={() => setShowRegenerateConfirm(false)}
+        onConfirm={handleRegenerateConfirm}
+      />
+    </>
   );
 }
 

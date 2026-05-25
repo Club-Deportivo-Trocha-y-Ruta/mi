@@ -26,6 +26,8 @@ vi.mock("@/api/client", () => ({
 vi.mock("@/api/athleteNewsletters", () => ({
   useAthleteNewsletters: vi.fn(),
   useBatchCreateNewsletters: vi.fn(),
+  useGenerateNewsletter: vi.fn(),
+  parseApiError: vi.fn((_err: unknown, fallback: string) => fallback),
 }));
 
 vi.mock("@/hooks/athletes/useAthletes", () => ({
@@ -41,7 +43,7 @@ vi.mock("@/store/auth.store", () => ({
   ),
 }));
 
-import { useAthleteNewsletters, useBatchCreateNewsletters } from "@/api/athleteNewsletters";
+import { useAthleteNewsletters, useBatchCreateNewsletters, useGenerateNewsletter } from "@/api/athleteNewsletters";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { AthleteNewslettersDashboardPage } from "./AthleteNewslettersDashboardPage";
 import type { AthleteOut } from "@/types/athlete.types";
@@ -96,6 +98,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(useBatchCreateNewsletters).mockReturnValue(
     mutationStub as unknown as ReturnType<typeof useBatchCreateNewsletters>,
+  );
+  vi.mocked(useGenerateNewsletter).mockReturnValue(
+    mutationStub as unknown as ReturnType<typeof useGenerateNewsletter>,
   );
   vi.mocked(useAthleteNewsletters).mockReturnValue({
     isLoading: false,
@@ -379,5 +384,165 @@ describe("AthleteNewslettersDashboardPage — estados de badge por atleta", () =
     } as unknown as ReturnType<typeof useAthleteNewsletters>);
     renderPage();
     expect(screen.getByTestId("status-badge-42")).toHaveTextContent("Enviado");
+  });
+});
+
+describe("AthleteNewslettersDashboardPage — botón Generar individual", () => {
+  it("muestra botón Generar cuando el atleta no tiene newsletter (Sin generar)", () => {
+    vi.mocked(useAthletes).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { items: [makeAthlete()], total: 1 },
+    } as unknown as ReturnType<typeof useAthletes>);
+    vi.mocked(useAthleteNewsletters).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [],
+    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    renderPage();
+    expect(screen.getByTestId("generate-btn-42")).toBeInTheDocument();
+  });
+
+  it("NO muestra botón Generar cuando el atleta ya tiene newsletter enviado", () => {
+    const now = new Date();
+    const newsletter: AthleteNewsletter = makeNewsletter({
+      athlete_id: 42,
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      status: "sent",
+    });
+    vi.mocked(useAthletes).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { items: [makeAthlete()], total: 1 },
+    } as unknown as ReturnType<typeof useAthletes>);
+    vi.mocked(useAthleteNewsletters).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [newsletter],
+    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    renderPage();
+    expect(screen.queryByTestId("generate-btn-42")).not.toBeInTheDocument();
+  });
+
+  it("llama a useGenerateNewsletter.mutate al hacer click en Generar", () => {
+    const mutateMock = vi.fn();
+    vi.mocked(useGenerateNewsletter).mockReturnValue({
+      ...mutationStub,
+      mutate: mutateMock,
+    } as unknown as ReturnType<typeof useGenerateNewsletter>);
+    vi.mocked(useAthletes).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { items: [makeAthlete()], total: 1 },
+    } as unknown as ReturnType<typeof useAthletes>);
+    vi.mocked(useAthleteNewsletters).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [],
+    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    renderPage();
+
+    fireEvent.click(screen.getByTestId("generate-btn-42"));
+
+    expect(mutateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ force: false }),
+      expect.any(Object),
+    );
+  });
+});
+
+describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", () => {
+  it("muestra botón Regenerar cuando el newsletter está en draft", () => {
+    const now = new Date();
+    const newsletter: AthleteNewsletter = makeNewsletter({
+      athlete_id: 42,
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      status: "draft",
+    });
+    vi.mocked(useAthletes).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { items: [makeAthlete()], total: 1 },
+    } as unknown as ReturnType<typeof useAthletes>);
+    vi.mocked(useAthleteNewsletters).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [newsletter],
+    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    renderPage();
+    expect(screen.getByTestId("regenerate-btn-42")).toBeInTheDocument();
+  });
+
+  it("muestra botón Regenerar cuando el newsletter está en failed", () => {
+    const now = new Date();
+    const newsletter: AthleteNewsletter = makeNewsletter({
+      athlete_id: 42,
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      status: "failed",
+    });
+    vi.mocked(useAthletes).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { items: [makeAthlete()], total: 1 },
+    } as unknown as ReturnType<typeof useAthletes>);
+    vi.mocked(useAthleteNewsletters).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [newsletter],
+    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    renderPage();
+    expect(screen.getByTestId("regenerate-btn-42")).toBeInTheDocument();
+  });
+
+  it("NO muestra botón Regenerar cuando el newsletter está aprobado", () => {
+    const now = new Date();
+    const newsletter: AthleteNewsletter = makeNewsletter({
+      athlete_id: 42,
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      status: "approved",
+    });
+    vi.mocked(useAthletes).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { items: [makeAthlete()], total: 1 },
+    } as unknown as ReturnType<typeof useAthletes>);
+    vi.mocked(useAthleteNewsletters).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [newsletter],
+    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    renderPage();
+    expect(screen.queryByTestId("regenerate-btn-42")).not.toBeInTheDocument();
+  });
+
+  it("abre ConfirmModal al hacer click en Regenerar", async () => {
+    const now = new Date();
+    const newsletter: AthleteNewsletter = makeNewsletter({
+      athlete_id: 42,
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      status: "draft",
+    });
+    vi.mocked(useAthletes).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { items: [makeAthlete()], total: 1 },
+    } as unknown as ReturnType<typeof useAthletes>);
+    vi.mocked(useAthleteNewsletters).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [newsletter],
+    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    renderPage();
+
+    fireEvent.click(screen.getByTestId("regenerate-btn-42"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Se borrará la narrativa actual/i)).toBeInTheDocument();
+    });
   });
 });
