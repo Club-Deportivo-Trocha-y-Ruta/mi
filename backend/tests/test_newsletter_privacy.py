@@ -199,6 +199,56 @@ class TestDispatcherSanitization:
         assert "[email]" in safe
 
 
+class TestRedactorWordBoundaries:
+    """El redactor respeta word boundaries — no corta palabras que contienen un forbidden name como substring."""
+
+    def test_redactor_respeta_word_boundaries(self):
+        from app.services.ai.use_cases.monthly_report import _redact_names
+
+        forbidden: frozenset[str] = frozenset({"Test", "Ana"})
+        text = "testimonio ananá Anatomía Test Cano Ana López"
+        result = _redact_names(text, forbidden)
+
+        assert "testimonio" in result, "NO debe redactar: 'Test' es substring interno de 'testimonio'"
+        assert "ananá" in result, "NO debe redactar: 'Ana' es substring de 'ananá'"
+        assert "Anatomía" in result, "NO debe redactar: 'Ana' es prefix de 'Anatomía'"
+        assert "[REDACTADO] Cano" in result, "DEBE redactar: 'Test' como palabra completa"
+        assert "[REDACTADO] López" in result, "DEBE redactar: 'Ana' como palabra completa"
+
+    def test_redactor_nombre_compuesto(self):
+        from app.services.ai.use_cases.monthly_report import _redact_names
+
+        forbidden: frozenset[str] = frozenset({"Juan Diego"})
+        text = "Juan Diego avanzó bien. Juandiego no aplica."
+        result = _redact_names(text, forbidden)
+
+        assert "[REDACTADO]" in result, "DEBE redactar 'Juan Diego' completo"
+        assert "Juandiego" in result, "NO debe redactar 'Juandiego' (sin espacio)"
+
+    def test_redactor_property_substring_no_redactado(self):
+        """Para cualquier forbidden name N que sea substring estricto de una palabra W
+        (con letra antes O después), W aparece intacta en el output.
+
+        Cada caso: (forbidden, texto, palabra_standalone, palabras_que_no_deben_redactarse)
+        """
+        from app.services.ai.use_cases.monthly_report import _redact_names
+
+        casos = [
+            # forbidden "Luis" → "Luis" standalone se redacta; "Luisito" no
+            ({"Luis"}, "hola Luis por Luisito algo", "Luis", ["Luisito"]),
+            # forbidden "Mar" → "Mar" standalone se redacta; "María" y "mares" no
+            ({"Mar"}, "Mar fue a ver María y los mares", "Mar", ["María", "mares"]),
+            # forbidden "Ana" → "Ana" standalone se redacta; "ananá" y "Anatomía" no
+            ({"Ana"}, "Ana come ananá en Anatomía", "Ana", ["ananá", "Anatomía"]),
+        ]
+        for forbidden_set, text, standalone, no_redact in casos:
+            result = _redact_names(text, frozenset(forbidden_set))
+            name = next(iter(forbidden_set))
+            assert "[REDACTADO]" in result, f"'{name}' como palabra completa debe redactarse en: {text!r}"
+            for word in no_redact:
+                assert word in result, f"'{word}' NO debe redactarse ('{name}' es substring) en: {text!r}"
+
+
 class TestSentToPersistedNotLogged:
     """sent_to se persiste en DB pero NUNCA aparece en logs ni en API."""
 

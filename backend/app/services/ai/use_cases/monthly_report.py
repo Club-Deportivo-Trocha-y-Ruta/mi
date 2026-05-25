@@ -88,13 +88,30 @@ def _ascii_fold(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+def _word_boundary_pattern(name: str) -> re.Pattern[str]:
+    """Compila un patrón con word boundaries Unicode-aware para ``name``.
+
+    Nombres compuestos (ej: "Juan Diego") se tokeniza por espacios y cada token
+    se separa con ``\\s+`` para tolerar espacios múltiples, preservando el
+    boundary al inicio y al final del nombre completo.
+    """
+    tokens = name.split()
+    inner = r"\s+".join(re.escape(t) for t in tokens)
+    return re.compile(rf"(?<!\w){inner}(?!\w)", re.IGNORECASE | re.UNICODE)
+
+
 def _redact_names(text: str, forbidden: frozenset[str]) -> str:
     """Reemplaza nombres reales con '[REDACTADO]' en texto libre del entrenador.
 
-    Detección accent-insensitive: 'Pérez' y 'Perez' se redactan en ambas direcciones
-    (forbidden con/sin acento ↔ texto con/sin acento). Match se realiza sobre la forma
-    NFKD-folded del texto y se mapea a los índices del original cuando las longitudes
-    coinciden (típico en español con caracteres precompuestos).
+    Detección accent-insensitive: 'Pérez' y 'Perez' se redactan en ambas
+    direcciones (forbidden con/sin acento ↔ texto con/sin acento). Match se
+    realiza sobre la forma NFKD-folded del texto y se mapea a los índices del
+    original cuando las longitudes coinciden (típico en español con caracteres
+    precompuestos).
+
+    Word boundaries: se usan lookbehind/lookahead ``(?<!\\w)``/``(?!\\w)`` en
+    lugar de ``\\b`` para evitar que substrings como "test" dentro de
+    "testimonio" sean redactados cuando el forbidden name es "Test".
     """
     if not text or not forbidden:
         return text
@@ -110,7 +127,8 @@ def _redact_names(text: str, forbidden: frozenset[str]) -> str:
                 continue
             folded = _ascii_fold(original)
             for variant in {original, folded}:
-                out = re.sub(re.escape(variant), "[REDACTADO]", out, flags=re.IGNORECASE)
+                pat = _word_boundary_pattern(variant)
+                out = pat.sub("[REDACTADO]", out)
         return out
 
     spans: list[tuple[int, int]] = []
@@ -118,7 +136,8 @@ def _redact_names(text: str, forbidden: frozenset[str]) -> str:
         n = _ascii_fold(name).strip()
         if not n:
             continue
-        for m in re.finditer(re.escape(n), folded_text, re.IGNORECASE):
+        pat = _word_boundary_pattern(n)
+        for m in pat.finditer(folded_text):
             spans.append((m.start(), m.end()))
 
     if not spans:
