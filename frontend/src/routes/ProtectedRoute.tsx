@@ -13,14 +13,14 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const location = useLocation();
-  const {
-    accessToken,
-    refreshToken,
-    user,
-    isAuthenticated,
-    isLoading,
-    refreshSession,
-  } = useAuthStore();
+  // Selectores atómicos: evita que cambios en cualquier otro slice del
+  // auth store re-renderen ProtectedRoute (que envuelve toda la app).
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
+  const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const refreshSession = useAuthStore((s) => s.refreshSession);
 
   useEffect(() => {
     if (!accessToken && refreshToken) {
