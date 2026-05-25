@@ -858,18 +858,37 @@ async def _load_session_coach(db: AsyncSession, session: TrainingSession) -> Use
 async def list_sessions(
     db: AsyncSession,
     *,
-    club_id: int,
+    club_id: int | None = None,
     status: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     athlete_id: int | None = None,
+    athlete_ids: set[int] | None = None,
+    club_ids: set[int] | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[TrainingSession]:
-    """Lista sesiones del club con filtros opcionales."""
+    """Lista sesiones con filtros opcionales.
+
+    Acepta los filtros singulares legacy (``club_id``, ``athlete_id``) y los
+    plurales (``club_ids``, ``athlete_ids``) introducidos para resolver
+    N+1: el caller del rol *parent* puede ahora pedir en UNA query las
+    sesiones de todos sus hijos. Ambas variantes son compatibles entre
+    sí; los valores singulares se mergean con los respectivos sets.
+    """
     from datetime import date
 
-    stmt = select(TrainingSession).where(TrainingSession.club_id == club_id)
+    stmt = select(TrainingSession)
+
+    # Club filter (singular + plural mergeable).
+    effective_club_ids: set[int] = set(club_ids) if club_ids else set()
+    if club_id is not None:
+        effective_club_ids.add(club_id)
+    if effective_club_ids:
+        if len(effective_club_ids) == 1:
+            stmt = stmt.where(TrainingSession.club_id == next(iter(effective_club_ids)))
+        else:
+            stmt = stmt.where(TrainingSession.club_id.in_(effective_club_ids))
 
     if status:
         stmt = stmt.where(TrainingSession.status == status)
@@ -881,11 +900,16 @@ async def list_sessions(
         stmt = stmt.where(
             TrainingSession.scheduled_date <= date.fromisoformat(date_to)
         )
-    if athlete_id:
+
+    # Athlete filter — singular preserva compatibilidad, plural elimina N+1.
+    effective_athlete_ids: set[int] = set(athlete_ids) if athlete_ids else set()
+    if athlete_id is not None:
+        effective_athlete_ids.add(athlete_id)
+    if effective_athlete_ids:
         stmt = stmt.where(
             TrainingSession.id.in_(
                 select(SessionAttendance.session_id).where(
-                    SessionAttendance.athlete_id == athlete_id
+                    SessionAttendance.athlete_id.in_(effective_athlete_ids)
                 )
             )
         )

@@ -196,31 +196,39 @@ async def _list_for_parent(
         )
 
     children_set = set(children_ids)
-    all_sessions: list[TrainingSessionReadParent] = []
-    seen_ids: set[int] = set()
-    ids_to_query = [athlete_id] if athlete_id else list(children_ids)
+    ids_to_query: set[int] = (
+        {athlete_id} if athlete_id is not None else set(children_ids)
+    )
+    if not ids_to_query:
+        return []
 
-    for child_id in ids_to_query:
-        ath_result = await db.execute(select(Athlete).where(Athlete.id == child_id))
-        ath = ath_result.scalar_one_or_none()
-        if ath is None:
-            continue
-        sessions = await training_svc.sessions.list_sessions(
-            db=db,
-            club_id=ath.club_id,
-            status=session_status.value if session_status else None,
-            date_from=from_date.isoformat() if from_date else None,
-            date_to=to_date.isoformat() if to_date else None,
-            athlete_id=child_id,
-            limit=limit,
-            offset=offset,
+    # 1 query: cargar todos los atletas hijos vivos para deducir clubes.
+    ath_result = await db.execute(
+        select(Athlete).where(
+            Athlete.id.in_(ids_to_query),
+            Athlete.deleted_at.is_(None),
         )
-        for s in sessions:
-            if s.id not in seen_ids:
-                seen_ids.add(s.id)
-                all_sessions.append(_session_to_read_parent(s, children_set))
+    )
+    athletes = list(ath_result.scalars().all())
+    if not athletes:
+        return []
 
-    return all_sessions
+    club_ids_set = {a.club_id for a in athletes if a.club_id is not None}
+    active_athlete_ids = {a.id for a in athletes}
+
+    # 1 query: sesiones donde algún hijo está convocado y el club coincide.
+    sessions = await training_svc.sessions.list_sessions(
+        db=db,
+        status=session_status.value if session_status else None,
+        date_from=from_date.isoformat() if from_date else None,
+        date_to=to_date.isoformat() if to_date else None,
+        athlete_ids=active_athlete_ids,
+        club_ids=club_ids_set,
+        limit=limit,
+        offset=offset,
+    )
+
+    return [_session_to_read_parent(s, children_set) for s in sessions]
 
 
 async def _list_for_clubs(

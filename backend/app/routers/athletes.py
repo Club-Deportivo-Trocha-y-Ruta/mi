@@ -20,7 +20,6 @@ from app.models.club import Club, ClubMember, ClubRole
 from app.models.parent_invite import ParentInvite
 from app.models.parental_consent import ParentalConsent
 from app.models.user import User, UserRole
-from app.models.athlete import ParentAthlete
 from app.schemas.athlete import (
     AthleteCreate,
     AthleteDetailOut,
@@ -115,21 +114,14 @@ async def create_athlete(
 
     # -----------------------------------------------------------------------
     # Email de bienvenida (Paso 11)
-    # Busca si hay un padre vinculado (ej: si se crearon a la vez o se hizo attach auto)
+    # Busca si hay un padre vinculado (ej: si se crearon a la vez o se hizo attach auto).
+    # Implementación: 1 JOIN en lugar de N+1 (services/athletes/parents.py).
     # -----------------------------------------------------------------------
-    p_result = await db.execute(
-        select(ParentAthlete).where(ParentAthlete.athlete_id == athlete.id)
-    )
-    parents = p_result.scalars().all()
-    
-    parent_user = None
-    for link in parents:
-        u_res = await db.execute(select(User).where(User.id == link.parent_id))
-        u = u_res.scalar_one_or_none()
-        if u and u.email:
-            parent_user = u
-            break
-            
+    from app.services.athletes.parents import get_primary_parent_with_email
+
+    parent_user = await get_primary_parent_with_email(db, athlete.id)
+
+
     if parent_user:
         club_res = await db.execute(select(Club).where(Club.id == body.club_id))
         club = club_res.scalar_one()
