@@ -265,17 +265,20 @@ async def create_race_result(
     position: int = 1,
     status: ResultStatus = ResultStatus.FINISHED,
     race_time_ms: Optional[int] = 1_800_000,
-    bib_number: Optional[int] = 100,
+    bib_number: Optional[int | str] = 100,
     points_awarded: int = 40,
     created_by_user_id: int = 10,
     deleted_at: Optional[datetime] = None,
 ) -> RaceResult:
+    # `bib_number` se persiste como str (soporta alfanuméricos);
+    # aceptamos int/str del caller y normalizamos a str.
+    bib_str: Optional[str] = None if bib_number is None else str(bib_number)[:10]
     r = RaceResult(
         event_id=event_id,
         category_id=category_id,
         competitor_id=competitor_id,
         athlete_id=athlete_id,
-        bib_number=bib_number,
+        bib_number=bib_str,
         position=position,
         status=status,
         race_time_ms=race_time_ms,

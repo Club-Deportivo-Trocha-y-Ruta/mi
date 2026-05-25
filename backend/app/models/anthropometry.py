@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -47,6 +48,17 @@ class AnthropometricRecord(Base):
     __tablename__ = "anthropometric_records"
     __table_args__ = (
         Index("ix_anthro_athlete_date", "athlete_id", "evaluation_date"),
+        CheckConstraint(
+            "evaluation_date BETWEEN '1900-01-01' AND '2100-12-31'",
+            name="ck_anthro_evaluation_date_range",
+        ),
+        CheckConstraint(
+            "weight_kg BETWEEN 10 AND 200", name="ck_anthro_weight_range"
+        ),
+        CheckConstraint(
+            "standing_height_cm BETWEEN 80 AND 230",
+            name="ck_anthro_standing_height_range",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

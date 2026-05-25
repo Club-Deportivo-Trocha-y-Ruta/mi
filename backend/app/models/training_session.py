@@ -193,6 +193,10 @@ class MonthlyReport(Base):
     __tablename__ = "monthly_reports"
     __table_args__ = (
         UniqueConstraint("club_id", "year", "month", name="uq_monthly_report_period"),
+        CheckConstraint("month BETWEEN 1 AND 12", name="ck_monthly_report_month_range"),
+        CheckConstraint(
+            "year BETWEEN 2000 AND 2100", name="ck_monthly_report_year_range"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

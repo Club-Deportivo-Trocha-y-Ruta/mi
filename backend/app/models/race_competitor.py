@@ -71,6 +71,8 @@ class RaceCompetitor(Base):
         UniqueConstraint("normalized_name", name="uq_race_competitors_normalized_name"),
         Index("ix_race_competitors_athlete_id", "athlete_id"),
         Index("ix_race_competitors_club_text", "club_text"),
+        # Auditoría: "links creados por X coach" — usado en audit dashboards.
+        Index("ix_race_competitors_linked_by_user", "linked_by_user_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

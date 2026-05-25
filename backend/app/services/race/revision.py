@@ -335,7 +335,7 @@ def _parsed_row_snapshot(
     """Serializa una fila parseada (post parse_time) a dict snapshot."""
     return {
         "category_id": category_id,
-        "bib_number": _parse_bib_int(parsed.bib),
+        "bib_number": _parse_bib(parsed.bib),
         "position": parsed.position,
         "status": status.value,
         "race_time_ms": race_time_ms,
@@ -344,17 +344,18 @@ def _parsed_row_snapshot(
     }
 
 
-def _parse_bib_int(bib_raw: str) -> Optional[int]:
-    """Parse defensivo bib → int o None."""
+def _parse_bib(bib_raw: str) -> Optional[str]:
+    """Parse defensivo bib → str (preserva alfanuméricos) o None.
+
+    El schema usa ``String(10)`` para ``bib_number`` (edge-cases §4.8:
+    soporta ``1A``, ``E-23``).
+    """
     if bib_raw is None:
         return None
     s = str(bib_raw).strip()
-    if not s.isdigit():
+    if not s:
         return None
-    try:
-        return int(s)
-    except (TypeError, ValueError):
-        return None
+    return s[:10]
 
 
 def _fuzzy_match_in_category(

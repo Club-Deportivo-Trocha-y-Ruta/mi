@@ -45,13 +45,21 @@ def sqlite_engine():
     engine = create_engine("sqlite:///:memory:", future=True)
     # Importar modelos requeridos para resolver FKs
     from app.models.user import User  # noqa: F401
+    from app.models.race_points_scheme import RacePointsScheme  # noqa: F401
     from app.models.race_series import RaceSeries  # noqa: F401
     from app.models.race_event import RaceEvent  # noqa: F401
     from app.models.race_import import RaceImport  # noqa: F401
 
+    # race_points_schemes es ahora destino de FK desde race_series (C5).
     tables_to_create = [
         Base.metadata.tables[t]
-        for t in ("users", "race_series", "race_events", "race_imports")
+        for t in (
+            "users",
+            "race_points_schemes",
+            "race_series",
+            "race_events",
+            "race_imports",
+        )
     ]
     Base.metadata.create_all(engine, tables=tables_to_create)
     yield engine
@@ -224,6 +232,7 @@ def test_race_import_persistence_kind_default_in_sqlite(sqlite_session):
     # Crear dependencias mínimas para que las FKs (series_id, imported_by_user_id)
     # no exploten. SQLite con PRAGMA foreign_keys=ON enforza FKs.
     from app.models.user import User, UserRole
+    from app.models.race_points_scheme import RacePointsScheme
     from app.models.race_series import RaceSeries
 
     user = User(
@@ -237,6 +246,17 @@ def test_race_import_persistence_kind_default_in_sqlite(sqlite_session):
         can_login=True,
         created_at=datetime.now(timezone.utc),
     )
+    # C5: race_series.points_scheme_code es FK → race_points_schemes.code.
+    scheme = RacePointsScheme(
+        code="copa_valle_2026",
+        description="Test scheme",
+        position_points={"1": 40, "2": 36},
+        attendance_points=10,
+        dnf_points=0,
+        dsq_points=0,
+        dns_points=0,
+        is_official=True,
+    )
     series = RaceSeries(
         id=1,
         name="Test Series",
@@ -244,7 +264,7 @@ def test_race_import_persistence_kind_default_in_sqlite(sqlite_session):
         organizer="Test Org",
         points_scheme_code="copa_valle_2026",
     )
-    sqlite_session.add_all([user, series])
+    sqlite_session.add_all([user, scheme, series])
     sqlite_session.commit()
 
     imp = RaceImport(
@@ -275,6 +295,7 @@ def test_race_import_persistence_with_all_upload_fields(sqlite_session):
     """
     # Setup dependencias mínimas
     from app.models.user import User, UserRole
+    from app.models.race_points_scheme import RacePointsScheme
     from app.models.race_series import RaceSeries
 
     user = User(
@@ -288,6 +309,16 @@ def test_race_import_persistence_with_all_upload_fields(sqlite_session):
         can_login=True,
         created_at=datetime.now(timezone.utc),
     )
+    scheme = RacePointsScheme(
+        code="copa_valle_2026",
+        description="Test scheme",
+        position_points={"1": 40, "2": 36},
+        attendance_points=10,
+        dnf_points=0,
+        dsq_points=0,
+        dns_points=0,
+        is_official=True,
+    )
     series = RaceSeries(
         id=1,
         name="Test Series",
@@ -295,7 +326,7 @@ def test_race_import_persistence_with_all_upload_fields(sqlite_session):
         organizer="Test Org",
         points_scheme_code="copa_valle_2026",
     )
-    sqlite_session.add_all([user, series])
+    sqlite_session.add_all([user, scheme, series])
     sqlite_session.commit()
 
     imp = RaceImport(

@@ -3,7 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -18,6 +25,11 @@ class ParentInvite(Base):
     __table_args__ = (
         Index("ix_parent_invites_athlete_id", "athlete_id"),
         Index("ix_parent_invites_token", "token"),
+        # La invitación debe expirar después de su creación (no antes/igual).
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_parent_invites_expires_after_created",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     Integer,
@@ -68,7 +69,13 @@ class RaceCategory(Base):
     """
 
     __tablename__ = "race_categories"
-    __table_args__ = (UniqueConstraint("code", name="uq_race_categories_code"),)
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_race_categories_code"),
+        CheckConstraint(
+            "age_max IS NULL OR age_min IS NULL OR age_max >= age_min",
+            name="ck_race_categories_age_max_gte_min",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(60), nullable=False)

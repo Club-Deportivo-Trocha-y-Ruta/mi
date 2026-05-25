@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -20,6 +28,11 @@ class ParentalConsent(Base):
         Index("ix_parental_consents_parent_athlete", "parent_user_id", "athlete_id"),
         Index("ix_parental_consents_athlete_id", "athlete_id"),
         Index("ix_parental_consents_policy_id", "policy_id"),
+        # Si hay fecha de retiro, debe ser >= a la fecha de consentimiento.
+        CheckConstraint(
+            "withdrawn_at IS NULL OR withdrawn_at >= consented_at",
+            name="ck_parental_consents_withdrawn_after_consent",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

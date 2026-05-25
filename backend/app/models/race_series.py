@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -39,7 +39,19 @@ class RaceSeries(Base):
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     season_year: Mapped[int] = mapped_column(Integer, nullable=False)
     organizer: Mapped[str | None] = mapped_column(String(150), nullable=True)
-    points_scheme_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    # FK explícita a race_points_schemes.code: garantiza integridad referencial
+    # con RESTRICT (no permitir borrar un scheme con series asociadas) y CASCADE
+    # de update en caso de renombrar el código.
+    points_scheme_code: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey(
+            "race_points_schemes.code",
+            ondelete="RESTRICT",
+            onupdate="CASCADE",
+            name="fk_race_series_points_scheme_code",
+        ),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )

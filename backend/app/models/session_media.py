@@ -94,6 +94,12 @@ class SessionMediaAthlete(Base):
     """
 
     __tablename__ = "session_media_athlete"
+    __table_args__ = (
+        # Búsquedas "todas las media de un atleta" (filtros de privacidad
+        # para padres). El PK compuesto empieza por media_id, así que un
+        # índice secundario solo por athlete_id acelera la query inversa.
+        Index("ix_session_media_athlete_athlete", "athlete_id"),
+    )
 
     media_id: Mapped[int] = mapped_column(
         ForeignKey("session_media.id", ondelete="CASCADE"),

@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -43,6 +44,19 @@ class Athlete(Base):
         Index("ix_athletes_club_id", "club_id"),
         Index("ix_athletes_created_by", "created_by"),
         Index("ix_athletes_deleted_at", "deleted_at"),
+        # Consentimiento parental: si fue obtenido, debe tener fecha; si no,
+        # la fecha debe ser NULL.
+        CheckConstraint(
+            "(parental_consent_obtained = 0 AND parental_consent_date IS NULL) "
+            "OR (parental_consent_obtained = 1 AND parental_consent_date IS NOT NULL)",
+            name="ck_athletes_consent_obtained_date_consistent",
+        ),
+        # birth_date dentro de un rango plausible (MySQL no permite
+        # CURRENT_DATE en CHECK; la validación "no futuro" vive en Pydantic).
+        CheckConstraint(
+            "birth_date BETWEEN '1900-01-01' AND '2100-12-31'",
+            name="ck_athletes_birth_date_range",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -140,10 +154,10 @@ class ParentAthlete(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     parent_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id", ondelete="RESTRICT"))
-    # Renombrado de 'relationship' a 'relationship_type' para evitar colisión
-    # con la función relationship() importada de sqlalchemy.orm
+    # Atributo Python = columna física `relationship_type` (antes alias de
+    # `relationship`; renombramos la columna en la migración para alinearla).
     relationship_type: Mapped[FamilyRelationship] = mapped_column(
-        "relationship", Enum(FamilyRelationship)
+        Enum(FamilyRelationship)
     )
 
     parent: Mapped[User] = relationship(

@@ -34,6 +34,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.mysql import VARCHAR  # noqa: F401
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -102,7 +103,10 @@ class RaceResult(Base):
         ),
         Index("ix_race_results_athlete_event", "athlete_id", "event_id"),
         Index("ix_race_results_category_event", "category_id", "event_id"),
-        Index("ix_race_results_deleted_at", "deleted_at"),
+        # Reemplaza ix_race_results_deleted_at por un índice compuesto que
+        # cubre la query típica "results activos de un evento": WHERE event_id
+        # = ? AND deleted_at IS NULL.
+        Index("ix_race_results_event_deleted", "event_id", "deleted_at"),
         Index("ix_race_results_event_category_position", "event_id", "category_id", "position"),
     )
 
@@ -119,7 +123,9 @@ class RaceResult(Base):
     athlete_id: Mapped[int | None] = mapped_column(
         ForeignKey("athletes.id", ondelete="SET NULL"), nullable=True
     )
-    bib_number: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # `bib_number` se guarda como cadena para soportar dorsales alfanuméricos
+    # (edge-cases.md §4.8: `1A`, `E-23`). Conserva el string del PDF tal cual.
+    bib_number: Mapped[str | None] = mapped_column(String(10), nullable=True)
     position: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     status: Mapped[ResultStatus] = mapped_column(
         Enum(ResultStatus, name="raceresultstatus", values_callable=lambda e: [x.value for x in e]),

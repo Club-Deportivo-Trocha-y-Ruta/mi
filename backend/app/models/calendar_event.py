@@ -211,6 +211,9 @@ class EventAttendance(Base):
     __tablename__ = "event_attendances"
     __table_args__ = (
         UniqueConstraint("event_id", "athlete_id", name="uq_event_attendance"),
+        # Query "asistencia de un atleta a través de eventos" — útil para
+        # vistas de padres/historial.
+        Index("ix_event_attendances_athlete", "athlete_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

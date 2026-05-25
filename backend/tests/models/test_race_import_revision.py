@@ -43,13 +43,21 @@ def sqlite_engine():
     """
     engine = create_engine("sqlite:///:memory:", future=True)
     from app.models.user import User  # noqa: F401
+    from app.models.race_points_scheme import RacePointsScheme  # noqa: F401
     from app.models.race_series import RaceSeries  # noqa: F401
     from app.models.race_event import RaceEvent  # noqa: F401
     from app.models.race_import import RaceImport  # noqa: F401
 
+    # race_points_schemes es ahora destino de FK desde race_series (C5).
     tables_to_create = [
         Base.metadata.tables[t]
-        for t in ("users", "race_series", "race_events", "race_imports")
+        for t in (
+            "users",
+            "race_points_schemes",
+            "race_series",
+            "race_events",
+            "race_imports",
+        )
     ]
     Base.metadata.create_all(engine, tables=tables_to_create)
     yield engine
@@ -67,8 +75,9 @@ def sqlite_session(sqlite_engine) -> Session:
 
 
 def _make_dependencies(session: Session) -> None:
-    """Crea user + series base requeridos por RaceImport FKs."""
+    """Crea user + points scheme + series base requeridos por RaceImport FKs."""
     from app.models.user import User, UserRole
+    from app.models.race_points_scheme import RacePointsScheme
     from app.models.race_series import RaceSeries
 
     user = User(
@@ -82,6 +91,18 @@ def _make_dependencies(session: Session) -> None:
         can_login=True,
         created_at=datetime.now(timezone.utc),
     )
+    # C5: race_series.points_scheme_code es FK → race_points_schemes.code,
+    # así que el scheme debe existir antes que la serie.
+    scheme = RacePointsScheme(
+        code="copa_valle_2026",
+        description="Test scheme",
+        position_points={"1": 40, "2": 36, "3": 33},
+        attendance_points=10,
+        dnf_points=0,
+        dsq_points=0,
+        dns_points=0,
+        is_official=True,
+    )
     series = RaceSeries(
         id=1,
         name="Test Series",
@@ -89,7 +110,7 @@ def _make_dependencies(session: Session) -> None:
         organizer="Test Org",
         points_scheme_code="copa_valle_2026",
     )
-    session.add_all([user, series])
+    session.add_all([user, scheme, series])
     session.commit()
 
 

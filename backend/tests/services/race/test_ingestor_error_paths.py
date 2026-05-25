@@ -251,16 +251,18 @@ class TestRollback:
 class TestParseBibSafe:
     def test_numeric_bib(self):
         from app.services.race.ingestor import RaceIngestor as Ing
-        assert Ing._parse_bib_safe("553") == 553
+        # bib_number es str ahora — preserva el dígito tal cual.
+        assert Ing._parse_bib_safe("553") == "553"
 
     def test_with_whitespace(self):
         from app.services.race.ingestor import RaceIngestor as Ing
-        assert Ing._parse_bib_safe("  553  ") == 553
+        assert Ing._parse_bib_safe("  553  ") == "553"
 
-    def test_alphanumeric_returns_none(self):
+    def test_alphanumeric_preserved(self):
         from app.services.race.ingestor import RaceIngestor as Ing
-        assert Ing._parse_bib_safe("E-23") is None
-        assert Ing._parse_bib_safe("1A") is None
+        # Tras la migración a String(10), los alfanuméricos se conservan.
+        assert Ing._parse_bib_safe("E-23") == "E-23"
+        assert Ing._parse_bib_safe("1A") == "1A"
 
     def test_none_returns_none(self):
         from app.services.race.ingestor import RaceIngestor as Ing

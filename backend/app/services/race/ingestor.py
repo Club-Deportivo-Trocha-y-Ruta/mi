@@ -361,7 +361,7 @@ class RaceIngestor:
                         )
 
                     # Construir RaceResult
-                    bib_int = self._parse_bib_safe(row.bib)
+                    bib_str = self._parse_bib_safe(row.bib)
                     athlete_id_to_persist = competitor.athlete_id if is_tyr else None
                     laps_behind_val = laps_behind if laps_behind > 0 else None
 
@@ -370,7 +370,7 @@ class RaceIngestor:
                         category_id=category.id,
                         competitor_id=competitor.id,
                         athlete_id=athlete_id_to_persist,
-                        bib_number=bib_int,
+                        bib_number=bib_str,
                         position=row.position,
                         status=status,
                         race_time_ms=race_time_ms,
@@ -679,19 +679,17 @@ class RaceIngestor:
     # -------------------------------------------------------------------
 
     @staticmethod
-    def _parse_bib_safe(bib_raw: str) -> Optional[int]:
-        """Convierte ``bib`` (str del PDF) a ``int`` o ``None`` si no es numérico.
+    def _parse_bib_safe(bib_raw: str) -> Optional[str]:
+        """Normaliza ``bib`` (str del PDF) preservando alfanuméricos.
 
-        El schema actual usa ``SmallInteger`` para ``bib_number`` (edge-cases
-        §4.8 confirma todos numéricos en V-IV). Si una válida futura usa
-        dorsales alfanuméricos, este método debe migrarse junto con la columna.
+        El schema actual usa ``String(10)`` para ``bib_number`` para soportar
+        dorsales alfanuméricos (edge-cases §4.8: ``1A``, ``E-23``). Conserva el
+        valor del PDF tal cual (strip), o ``None`` si no hay valor.
         """
         if bib_raw is None:
             return None
         s = str(bib_raw).strip()
-        if not s.isdigit():
+        if not s:
             return None
-        try:
-            return int(s)
-        except (TypeError, ValueError):
-            return None
+        # Limitar a 10 caracteres (longitud de la columna).
+        return s[:10]
