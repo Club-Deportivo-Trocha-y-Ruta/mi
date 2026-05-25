@@ -99,6 +99,17 @@ describe("AppShell", () => {
         screen.queryByRole("link", { name: "Mis Atletas" }),
       ).not.toBeInTheDocument();
     });
+
+    it("debería mostrar el NavLink 'Boletines Mensuales'", () => {
+      renderShell(UserRole.coach);
+      expect(screen.getByRole("link", { name: "Boletines Mensuales" })).toBeInTheDocument();
+    });
+
+    it("'Boletines Mensuales' debería apuntar a /training/athlete-newsletters", () => {
+      renderShell(UserRole.coach);
+      const link = screen.getByRole("link", { name: "Boletines Mensuales" });
+      expect(link).toHaveAttribute("href", "/training/athlete-newsletters");
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -121,6 +132,13 @@ describe("AppShell", () => {
       renderShell(UserRole.parent);
       expect(
         screen.queryByRole("link", { name: "Padres" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("NO debería mostrar el NavLink 'Boletines Mensuales'", () => {
+      renderShell(UserRole.parent);
+      expect(
+        screen.queryByRole("link", { name: "Boletines Mensuales" }),
       ).not.toBeInTheDocument();
     });
   });
@@ -159,6 +177,11 @@ describe("AppShell", () => {
       renderShell(UserRole.admin);
       const link = screen.getByRole("link", { name: "Salud IA" });
       expect(link).toHaveAttribute("href", "/admin/ai");
+    });
+
+    it("debería mostrar el NavLink 'Boletines Mensuales'", () => {
+      renderShell(UserRole.admin);
+      expect(screen.getByRole("link", { name: "Boletines Mensuales" })).toBeInTheDocument();
     });
   });
 });
