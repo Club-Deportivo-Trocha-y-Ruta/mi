@@ -33,10 +33,12 @@ class TestJWT:
 
     def test_refresh_token_roundtrip(self):
         data = {"sub": "2", "role": "admin", "club_ids": []}
-        token = create_refresh_token(data)
+        token, jti, expires_at = create_refresh_token(data)
         payload = decode_token(token)
         assert payload["sub"] == "2"
         assert payload["type"] == "refresh"
+        assert payload["jti"] == jti
+        assert isinstance(jti, str) and len(jti) == 32
 
     def test_invalid_token(self):
         import jwt

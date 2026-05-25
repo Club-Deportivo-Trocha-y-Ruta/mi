@@ -3,17 +3,39 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from app.config import settings
-from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, parent_athletes, race_analysis, race_competitors, race_imports, reports, training_sessions
-from app.routers.consent import consent_router, public_router as consent_public_router
-from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
+
+# ---------------------------------------------------------------------------
+# Rate limiter (A3).
+#
+# Backend in-memory: válido para Render single-worker (free tier). Cuando se
+# escale a multi-worker / multi-instancia hay que migrar a Redis con
+# ``storage_uri="redis://..."`` para que los contadores sean compartidos.
+# Documentación: https://slowapi.readthedocs.io/en/latest/#storage-backends
+#
+# En test/development se desactiva por defecto para no ensuciar el estado
+# entre tests. Para validar el rate-limit explícitamente, el test fixture
+# hace ``limiter.reset()`` y setea ``limiter.enabled = True``.
+# ---------------------------------------------------------------------------
+limiter = Limiter(key_func=get_remote_address)
+if settings.app_env != "production":
+    limiter.enabled = False
+
+from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, parent_athletes, race_analysis, race_competitors, race_imports, reports, training_sessions  # noqa: E402
+from app.routers.consent import consent_router, public_router as consent_public_router  # noqa: E402
+from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router  # noqa: E402
 
 app = FastAPI(
     title="Trocha y Ruta API",
     description="API del Club Deportivo Trocha y Ruta — Fase 1",
     version="0.1.0",
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

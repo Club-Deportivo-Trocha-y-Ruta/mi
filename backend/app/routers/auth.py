@@ -1,3 +1,5 @@
+import logging
+
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -18,15 +20,61 @@ from app.services.auth import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    is_refresh_revoked,
+    persist_refresh_token,
+    revoke_refresh_token,
     verify_password,
 )
 from app.services.invitations import consume_invite, get_valid_invite
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _mask_email(email: str | None) -> str:
+    """Enmascara un email para logs: ``a***@dominio``. Nunca expone PII."""
+    if not email or "@" not in email:
+        return "<empty>"
+    local, _, domain = email.partition("@")
+    if not local:
+        return f"***@{domain}"
+    return f"{local[0]}***@{domain}"
+
+
+def _client_ip(request: Request) -> str:
+    """Obtiene la IP del cliente para logs (o ``unknown``)."""
+    if request.client is None:
+        return "unknown"
+    return request.client.host or "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit decorators
+#
+# Se importan tarde y de forma tolerante para que el módulo siga importable
+# en escenarios de test donde ``app.main`` aún no fue inicializado (los tests
+# del router de auth usan ``override_dependency`` y montan FastAPI ad-hoc).
+# ---------------------------------------------------------------------------
+
+
+def _limit(spec: str):
+    """Decorator wrapper. Si slowapi no está disponible (ej. import circular en
+    tests unitarios del servicio), retorna identity decorator.
+    """
+    try:
+        from app.main import limiter  # noqa: WPS433 — import diferido intencional
+    except Exception:  # pragma: no cover — sólo en escenarios degradados
+        def _noop(func):
+            return func
+        return _noop
+    return limiter.limit(spec)
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+@_limit("10/minute")
+async def login(
+    body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
     # Excluir soft-deleted: el login debe rechazar usuarios eliminados.
     result = await db.execute(
         select(User)
@@ -36,18 +84,33 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     user = result.scalar_one_or_none()
 
     if user is None or not verify_password(body.password, user.hashed_password or ""):
+        logger.warning(
+            "login_failed email=%s ip=%s",
+            _mask_email(body.email),
+            _client_ip(request),
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email o contraseña incorrectos",
         )
 
     if not user.is_active:
+        logger.warning(
+            "login_failed_inactive email=%s ip=%s",
+            _mask_email(body.email),
+            _client_ip(request),
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario desactivado",
         )
 
     if not user.can_login:
+        logger.warning(
+            "login_failed_no_login email=%s ip=%s",
+            _mask_email(body.email),
+            _client_ip(request),
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario sin permisos de acceso",
@@ -56,14 +119,24 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     club_ids = [m.club_id for m in user.club_memberships]
     token_data = {"sub": str(user.id), "role": user.role.value, "club_ids": club_ids}
 
+    access_token = create_access_token(token_data)
+    refresh_token, jti, expires_at = create_refresh_token(token_data)
+    await persist_refresh_token(
+        db, jti=jti, user_id=user.id, expires_at=expires_at
+    )
+    await db.commit()
+
     return TokenResponse(
-        access_token=create_access_token(token_data),
-        refresh_token=create_refresh_token(token_data),
+        access_token=access_token,
+        refresh_token=refresh_token,
     )
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
+@_limit("30/minute")
+async def refresh(
+    body: RefreshRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
     try:
         payload = decode_token(body.refresh_token)
     except jwt.ExpiredSignatureError:
@@ -90,6 +163,20 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
             detail="Token inválido",
         )
 
+    # jti es obligatorio para refresh tokens emitidos por la app (A3).
+    # Tokens viejos sin jti se aceptan sólo para compatibilidad mientras
+    # se rotan, pero saltan el chequeo de revocación.
+    incoming_jti = payload.get("jti")
+    if incoming_jti and await is_refresh_revoked(db, incoming_jti):
+        logger.warning(
+            "refresh_revoked_jti_attempt ip=%s",
+            _client_ip(request),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token revocado",
+        )
+
     user_id = int(sub)
     # Excluir soft-deleted en refresh: tokens de usuarios eliminados deben fallar.
     result = await db.execute(
@@ -108,9 +195,20 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
     club_ids = [m.club_id for m in user.club_memberships]
     token_data = {"sub": str(user.id), "role": user.role.value, "club_ids": club_ids}
 
+    access_token = create_access_token(token_data)
+    new_refresh, new_jti, new_expires_at = create_refresh_token(token_data)
+
+    # Rotación: revocar el viejo (si tiene jti) y persistir el nuevo.
+    if incoming_jti:
+        await revoke_refresh_token(db, incoming_jti, replaced_by=new_jti)
+    await persist_refresh_token(
+        db, jti=new_jti, user_id=user.id, expires_at=new_expires_at
+    )
+    await db.commit()
+
     return TokenResponse(
-        access_token=create_access_token(token_data),
-        refresh_token=create_refresh_token(token_data),
+        access_token=access_token,
+        refresh_token=new_refresh,
     )
 
 
@@ -131,8 +229,10 @@ async def me(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/invite/{token}", response_model=ParentInviteTokenValidation)
+@_limit("20/minute")
 async def validate_invite_token(
     token: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ParentInviteTokenValidation:
     """Valida un token de invitación de padre (endpoint público).
@@ -205,7 +305,12 @@ async def validate_invite_token(
     )
 
 
-@router.post("/parent-register", response_model=ParentRegisterOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/parent-register",
+    response_model=ParentRegisterOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@_limit("5/hour")
 async def parent_register(
     body: ParentRegisterRequest,
     request: Request,
