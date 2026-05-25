@@ -48,6 +48,7 @@ from app.models.lookups import CalendarEventType, RaceImportStatusLookup
 
 # Race-analysis v2 agentic module (BE-1)
 from app.models.agent_run import AgentRun, AgentRunStatus
+from app.models.agent_run_event import AgentRunEvent, AgentRunEventType
 from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
 
 __all__ = [
@@ -110,6 +111,8 @@ __all__ = [
     # Race-analysis v2 agentic (BE-1)
     "AgentRun",
     "AgentRunStatus",
+    "AgentRunEvent",
+    "AgentRunEventType",
     "AthleteAiInsight",
     "InsightConfidence",
 ]

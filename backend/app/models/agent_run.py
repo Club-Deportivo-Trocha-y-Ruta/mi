@@ -1,48 +1,48 @@
-"""Modelo SQLAlchemy *mínimo* para ``agent_runs`` (race-results v2 agéntico).
+"""Modelo SQLAlchemy de ``agent_runs`` (race-results v2 agéntico).
 
-Coexistencia con SQL crudo
-==========================
-La tabla ``agent_runs`` fue creada por la migración
-``7a8b9c0d1e2f_race_agentic_module_tables.py`` para soportar el grafo
-LangGraph del módulo race-analysis (workflow §3.1). Hoy el router
-``app/routers/race_analysis.py`` interactúa con ella **vía SQL crudo
-``text()``** — esa convención NO debe romperse en BE-1 (las queries
-existentes siguen funcionando porque la tabla física no cambia).
+Histórico
+=========
+Originalmente este modelo era *mínimo* — solo mapeaba un subconjunto de
+columnas para soportar la relación ``Athlete.agent_runs``. El router
+``app/routers/race_analysis.py`` consumía/escribía la tabla con SQL
+crudo (``sqlalchemy.text``).
 
-Este modelo se crea sólo para:
+A partir del refactor BE-A1 el router pasa a usar exclusivamente el
+service ORM ``app.services.race.ai.runs``. Por eso ahora **todas** las
+columnas físicas de la tabla se mapean en el modelo (``input_json``,
+``final_output_json``, ``error_message``, ``explain_mode``, ``cost_usd``,
+``langfuse_trace_id``).
 
-1. Exponer la columna ``athlete_id`` (añadida en BE-1) como relación ORM
-   navegable desde ``Athlete.agent_runs``, habilitando el endpoint
-   "histórico de runs por atleta" sin necesidad de queries crudas.
-2. Permitir relaciones ORM desde otros modelos del mismo módulo
-   (``AthleteAiInsight.agent_run`` apunta aquí).
-
-Las columnas mapeadas son **un subconjunto** de las físicas: solo las
-que necesitamos para queries y eager loading. Las demás (cost_usd,
-input_json, final_output_json, langfuse_trace_id, etc.) siguen
-disponibles via SQL crudo en el router; agregarlas al modelo no es
-necesario para BE-1 y mantiene la superficie pequeña.
+La tabla DB ya existe (creada por la migración
+``7a8b9c0d1e2f_race_agentic_module_tables.py``). NO se requiere
+migración adicional: solo se amplía la superficie ORM.
 """
 from __future__ import annotations
 
 import enum
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     Enum,
     ForeignKey,
     Index,
     Integer,
+    JSON,
+    Numeric,
     String,
+    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.agent_run_event import AgentRunEvent
     from app.models.athlete import Athlete
     from app.models.athlete_ai_insight import AthleteAiInsight
     from app.models.user import User
@@ -66,9 +66,7 @@ class AgentRunStatus(str, enum.Enum):
 class AgentRun(Base):
     """Ejecución del grafo race-analysis (LangGraph).
 
-    Solo se mapean las columnas necesarias para queries ORM en BE-1+:
-    listado por atleta, joins con insights, eager-load del usuario que
-    inició el run.
+    Mapea **todas** las columnas físicas de la tabla a partir de BE-A1.
     """
 
     __tablename__ = "agent_runs"
@@ -104,6 +102,13 @@ class AgentRun(Base):
         ForeignKey("athletes.id", ondelete="SET NULL"), nullable=True
     )
     checkpoint_thread_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Columnas mapeadas en BE-A1 (antes accedidas via SQL crudo).
+    input_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    final_output_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    explain_mode: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    langfuse_trace_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
@@ -121,4 +126,10 @@ class AgentRun(Base):
         "AthleteAiInsight",
         back_populates="agent_run",
         foreign_keys="[AthleteAiInsight.agent_run_id]",
+    )
+    events: Mapped[list["AgentRunEvent"]] = relationship(
+        "AgentRunEvent",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )

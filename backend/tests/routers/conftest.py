@@ -1,29 +1,49 @@
-"""Fixtures comunes para tests de routers.
+"""Fixtures comunes para tests del router ``race_analysis``.
 
-Convención del proyecto: ``conftest.py`` raíz expone ``client`` con
-``app`` real. Aquí extendemos para tests del router race_analysis con:
+Tras el refactor BE-A1 el router NO usa SQL crudo: invoca el service
+ORM ``app.services.race.ai.runs``. Por eso los tests usan SQLAlchemy
+real contra SQLite in-memory (StaticPool) en vez del mock ad-hoc por
+substrings que existía antes.
 
-- Fake session async tipo "store SQL crudo" — simula MySQL devolviendo
-  filas mockeadas según el SQL.
-- Override de dependencias ``get_db`` + ``get_current_user`` +
-  ``require_role`` para evitar JWT real y MySQL real.
-- Stub del runner (no llama LangGraph) y del chat agent.
+Fixture principal: :func:`fake_db` retorna un :class:`FakeRunStore` —
+un wrapper sobre ``AsyncSession`` que delega ``execute``/``add``/``flush``
+al engine real y además expone helpers ``await seed_run(...)``,
+``await seed_event(...)``, ``await seed_insight(...)`` y propiedades
+``await load_run(...)`` / ``await load_events(...)`` para asserts.
+
+Compatibilidad: los métodos ``seed_*`` siguen retornando los mismos
+dicts que el FakeSession anterior (``{"id": ..., "external_run_id":
+...}``), permitiendo migración incremental sin tocar la API de los
+tests.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from typing import Any, Optional
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import StaticPool
 
 from app.dependencies import get_current_user, get_db
 from app.main import app
-from app.models.user import UserRole
+from app.models import (
+    AgentRun,
+    AgentRunEvent,
+    AgentRunEventType,
+    AgentRunStatus,
+    AthleteAiInsight,
+    Base,
+    UserRole,
+)
 from app.routers.race_analysis import (
     _admin_only,
     _coach_or_admin,
@@ -36,99 +56,124 @@ from app.routers.race_analysis import (
 # ---------------------------------------------------------------------------
 
 
-def make_user(role: UserRole, user_id: int = 1) -> SimpleNamespace:
-    return SimpleNamespace(
-        id=user_id,
-        first_name="Test",
-        last_name="User",
-        email=f"{role.value}@test.local",
-        role=role,
-        can_login=True,
-        is_active=True,
-        club_memberships=[],
-    )
+class _FakeUser:
+    """SimpleNamespace con .role/.id (pydantic-safe)."""
+
+    def __init__(self, role: UserRole, user_id: int = 1):
+        self.id = user_id
+        self.first_name = "Test"
+        self.last_name = "User"
+        self.email = f"{role.value}@test.local"
+        self.role = role
+        self.can_login = True
+        self.is_active = True
+        self.club_memberships = []
+
+
+def make_user(role: UserRole, user_id: int = 1) -> _FakeUser:
+    return _FakeUser(role, user_id)
 
 
 # ---------------------------------------------------------------------------
-# Fake DB session
+# FakeRunStore — AsyncSession wrapper con helpers seed_*
 # ---------------------------------------------------------------------------
 
 
-class FakeRow:
-    """Row-like con _mapping para imitar SQLAlchemy Result."""
+class FakeRunStore:
+    """Wrapper que delega a ``AsyncSession`` real y añade helpers seed_*.
 
-    def __init__(self, **fields: Any):
-        self._mapping = fields
-        for k, v in fields.items():
-            setattr(self, k, v)
+    El object actúa como ``AsyncSession`` desde la perspectiva del
+    router (tiene ``execute``, ``add``, ``commit``, ``flush``,
+    ``rollback``, ``close``).
+    """
 
-    def __getitem__(self, idx: int) -> Any:
-        return list(self._mapping.values())[idx]
+    def __init__(self, session: AsyncSession):
+        self._session = session
 
+    # -- AsyncSession passthrough ---------------------------------------
 
-class FakeResult:
-    def __init__(self, rows: list[FakeRow]):
-        self._rows = list(rows)
+    async def execute(self, stmt, *args, **kwargs):
+        return await self._session.execute(stmt, *args, **kwargs)
 
-    def fetchall(self) -> list[FakeRow]:
-        return list(self._rows)
+    def add(self, instance, *args, **kwargs):
+        self._session.add(instance, *args, **kwargs)
 
-    def all(self) -> list[FakeRow]:
-        return list(self._rows)
+    def add_all(self, instances, *args, **kwargs):
+        self._session.add_all(instances, *args, **kwargs)
 
-    def first(self) -> Optional[FakeRow]:
-        return self._rows[0] if self._rows else None
+    async def commit(self):
+        await self._session.commit()
 
-    def fetchone(self) -> Optional[FakeRow]:
-        return self._rows[0] if self._rows else None
+    async def rollback(self):
+        await self._session.rollback()
 
-    def scalars(self) -> "FakeResult":
-        return self
+    async def flush(self, *args, **kwargs):
+        await self._session.flush(*args, **kwargs)
 
-    def scalar_one_or_none(self) -> Any:
-        return self._rows[0] if self._rows else None
+    async def close(self):
+        await self._session.close()
 
+    async def refresh(self, instance, *args, **kwargs):
+        await self._session.refresh(instance, *args, **kwargs)
 
-class FakeSession:
-    """Sesión async mínima que dispatcha por substrings del SQL."""
+    async def delete(self, instance):
+        await self._session.delete(instance)
 
-    def __init__(self) -> None:
-        self.runs: dict[str, dict[str, Any]] = {}
-        self.events_by_run_db_id: dict[int, list[dict[str, Any]]] = {}
-        self.insights: list[dict[str, Any]] = []
-        self.executed: list[tuple[str, dict]] = []
-        self._next_run_db_id = 1
-        self._next_event_id = 1
+    async def get(self, *args, **kwargs):
+        return await self._session.get(*args, **kwargs)
 
-    # ---- helpers para tests ----
+    @property
+    def autoflush(self):
+        return self._session.autoflush
 
-    def seed_run(
+    # -- Helpers de seed ------------------------------------------------
+
+    async def seed_run(
         self,
         external_run_id: str,
+        *,
         status_: str = "running",
         requested_by_user_id: int = 1,
         explain_mode: bool = False,
         final_output_json: Any = None,
         finished_at: Optional[datetime] = None,
+        error_message: Optional[str] = None,
+        started_at: Optional[datetime] = None,
     ) -> dict[str, Any]:
-        run = {
-            "id": self._next_run_db_id,
-            "external_run_id": external_run_id,
-            "status": status_,
-            "started_at": datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc),
-            "finished_at": finished_at,
-            "input_json": "{}",
-            "final_output_json": json.dumps(final_output_json) if final_output_json else None,
-            "error_message": None,
-            "requested_by_user_id": requested_by_user_id,
-            "explain_mode": explain_mode,
+        """Inserta una fila ``agent_runs`` y retorna su snapshot."""
+        now = started_at or datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+        run = AgentRun(
+            external_run_id=external_run_id,
+            graph_name="race-analyst",
+            prompt_version="race_analyst_v1",
+            started_at=now,
+            finished_at=finished_at,
+            status=AgentRunStatus(status_),
+            requested_by_user_id=requested_by_user_id,
+            checkpoint_thread_id=external_run_id,
+            input_json={},
+            final_output_json=final_output_json,
+            error_message=error_message,
+            explain_mode=explain_mode,
+            created_at=now,
+            updated_at=now,
+        )
+        self._session.add(run)
+        await self._session.flush()
+        await self._session.refresh(run)
+        return {
+            "id": run.id,
+            "external_run_id": run.external_run_id,
+            "status": run.status.value if isinstance(run.status, AgentRunStatus) else str(run.status),
+            "started_at": run.started_at,
+            "finished_at": run.finished_at,
+            "requested_by_user_id": run.requested_by_user_id,
+            "explain_mode": run.explain_mode,
+            "error_message": run.error_message,
+            "final_output_json": run.final_output_json,
         }
-        self.runs[external_run_id] = run
-        self.events_by_run_db_id.setdefault(run["id"], [])
-        self._next_run_db_id += 1
-        return run
 
-    def seed_event(
+    async def seed_event(
         self,
         run_db_id: int,
         seq: int,
@@ -136,19 +181,20 @@ class FakeSession:
         node_name: Optional[str] = None,
         payload: Optional[dict] = None,
     ) -> None:
-        self.events_by_run_db_id.setdefault(run_db_id, []).append(
-            {
-                "id": self._next_event_id,
-                "seq": seq,
-                "event_type": event_type,
-                "node_name": node_name,
-                "payload_json": payload or {},
-                "created_at": datetime(2026, 5, 20, 12, 0, seq, tzinfo=timezone.utc),
-            }
+        """Inserta una fila ``agent_run_events``."""
+        et = AgentRunEventType(event_type) if not isinstance(event_type, AgentRunEventType) else event_type
+        ev = AgentRunEvent(
+            run_id=run_db_id,
+            seq=seq,
+            event_type=et,
+            node_name=node_name,
+            payload_json=payload or {},
+            created_at=datetime(2026, 5, 20, 12, 0, seq, tzinfo=timezone.utc),
         )
-        self._next_event_id += 1
+        self._session.add(ev)
+        await self._session.flush()
 
-    def seed_insight(
+    async def seed_insight(
         self,
         athlete_id: int = 1,
         cost_total: float = 0.001,
@@ -156,231 +202,148 @@ class FakeSession:
         prompt_version: str = "race_analyst_v1",
         generated_at: Optional[datetime] = None,
     ) -> None:
-        self.insights.append(
-            {
-                "athlete_id": athlete_id,
-                "prompt_version": prompt_version,
-                "generated_at": generated_at or datetime.now(timezone.utc),
-                "metrics_snapshot_json": json.dumps(
-                    {
-                        "aggregate": {
-                            "cost_usd_total": cost_total,
-                            "latency_ms_total": latency_total,
-                        }
-                    }
-                ),
-            }
+        """Inserta una fila ``athlete_ai_insights`` con metrics_snapshot_json.
+
+        Solo llena los campos necesarios para los tests de admin metrics
+        + budget guard. Los FKs (athlete/user) no se validan en SQLite
+        in-memory.
+        """
+        gen_at = generated_at or datetime.now(timezone.utc)
+        ins = AthleteAiInsight(
+            athlete_id=athlete_id,
+            generated_by_user_id=1,
+            season=2026,
+            use_case="race_analysis",
+            summary_text="test summary",
+            recommendations_json=[],
+            principles_cited_json=[],
+            model="gemini-test",
+            prompt_version=prompt_version,
+            generated_at=gen_at,
+            created_at=gen_at,
+            updated_at=gen_at,
+            metrics_snapshot_json={
+                "aggregate": {
+                    "cost_usd_total": cost_total,
+                    "latency_ms_total": latency_total,
+                }
+            },
         )
+        self._session.add(ins)
+        await self._session.flush()
 
-    # ---- SQLAlchemy-compatible API ----
+    # -- Helpers de lectura para asserts --------------------------------
 
-    async def execute(self, stmt: Any, params: Optional[dict] = None) -> FakeResult:
-        sql = getattr(stmt, "text", None) or str(stmt)
-        params = params or {}
-        self.executed.append((sql, params))
+    async def get_run(self, external_run_id: str) -> Optional[AgentRun]:
+        result = await self._session.execute(
+            select(AgentRun).where(AgentRun.external_run_id == external_run_id)
+        )
+        return result.scalar_one_or_none()
 
-        # Routing por substrings — mantenemos la lista ordenada de
-        # match más específico a más general.
+    async def get_run_dict(self, external_run_id: str) -> Optional[dict[str, Any]]:
+        """Snapshot dict del run actual (re-leído del DB)."""
+        run = await self.get_run(external_run_id)
+        if run is None:
+            return None
+        return {
+            "id": run.id,
+            "external_run_id": run.external_run_id,
+            "status": run.status.value if isinstance(run.status, AgentRunStatus) else str(run.status),
+            "started_at": run.started_at,
+            "finished_at": run.finished_at,
+            "requested_by_user_id": run.requested_by_user_id,
+            "explain_mode": run.explain_mode,
+            "error_message": run.error_message,
+            "final_output_json": run.final_output_json,
+        }
 
-        # INSERT agent_runs
-        if "INSERT INTO agent_runs" in sql:
-            rid = params["rid"]
-            self.runs[rid] = {
-                "id": self._next_run_db_id,
-                "external_run_id": rid,
-                "status": "running",
-                "started_at": params.get("sa"),
-                "finished_at": None,
-                "input_json": params.get("inp"),
-                "final_output_json": None,
-                "error_message": None,
-                "requested_by_user_id": params.get("uid"),
-                "explain_mode": params.get("em"),
-            }
-            self.events_by_run_db_id.setdefault(self._next_run_db_id, [])
-            self._next_run_db_id += 1
-            return FakeResult([])
-
-        # INSERT agent_run_events
-        if "INSERT INTO agent_run_events" in sql:
-            rid = params["rid"]
-            # Backward-compat: HITL submit usa params {rid, seq, pl} sin
-            # event_type ni node_name. El finalize_run los provee.
-            event_type = params.get("et") or "hitl_response"
-            node_name = params.get("nn")
-            if node_name is None and event_type == "hitl_response":
-                node_name = "hitl_gate_review"
-            self.events_by_run_db_id.setdefault(rid, []).append(
+    async def get_events(self, run_db_id: int) -> list[dict[str, Any]]:
+        """Snapshot list de eventos del run (dict-like compat)."""
+        result = await self._session.execute(
+            select(AgentRunEvent)
+            .where(AgentRunEvent.run_id == run_db_id)
+            .order_by(AgentRunEvent.seq.asc())
+        )
+        out: list[dict[str, Any]] = []
+        for ev in result.scalars().all():
+            et = ev.event_type.value if isinstance(ev.event_type, AgentRunEventType) else str(ev.event_type)
+            out.append(
                 {
-                    "id": self._next_event_id,
-                    "seq": params["seq"],
-                    "event_type": event_type,
-                    "node_name": node_name,
-                    "payload_json": params.get("pl") or "{}",
-                    "created_at": params.get("ts") or datetime.now(timezone.utc),
+                    "id": ev.id,
+                    "seq": ev.seq,
+                    "event_type": et,
+                    "node_name": ev.node_name,
+                    "payload_json": ev.payload_json,
+                    "created_at": ev.created_at,
                 }
             )
-            self._next_event_id += 1
-            return FakeResult([])
+        return out
 
-        # UPDATE agent_runs
-        if "UPDATE agent_runs" in sql:
-            rid = params.get("rid")
-            if rid and rid in self.runs:
-                run = self.runs[rid]
-                if params.get("st"):
-                    run["status"] = params["st"]
-                if params.get("fin"):
-                    run["finished_at"] = params["fin"]
-                if params.get("em"):
-                    run["error_message"] = params["em"]
-                if params.get("fo"):
-                    run["final_output_json"] = params["fo"]
-            return FakeResult([])
 
-        # SELECT * FROM agent_runs WHERE external_run_id
-        if "FROM agent_runs" in sql and "external_run_id" in sql and "SELECT" in sql.upper():
-            rid = params.get("rid")
-            run = self.runs.get(rid)
-            if run is None:
-                return FakeResult([])
-            return FakeResult([FakeRow(**run)])
+# ---------------------------------------------------------------------------
+# Engine SQLite in-memory compartido
+# ---------------------------------------------------------------------------
 
-        # SELECT status, COUNT FROM agent_runs (admin metrics)
-        if "FROM agent_runs" in sql and "GROUP BY status" in sql:
-            counts: dict[str, int] = {}
-            for r in self.runs.values():
-                counts[r["status"]] = counts.get(r["status"], 0) + 1
-            return FakeResult([FakeRow(status=s, c=c) for s, c in counts.items()])
 
-        # SELECT MAX(seq) FROM agent_run_events
-        if "MAX(seq)" in sql and "agent_run_events" in sql:
-            rid = params.get("rid")
-            evs = self.events_by_run_db_id.get(rid, [])
-            max_seq = max([e["seq"] for e in evs], default=0)
-            return FakeResult([FakeRow(s=max_seq)])
+def _enable_sqlite_bigint_autoincrement(dialect_module):
+    """Compila ``BIGINT`` PKs como ``INTEGER`` en SQLite para autoincrement.
 
-        # SELECT node_name FROM agent_run_events ORDER BY seq DESC LIMIT 1
-        if "SELECT node_name FROM agent_run_events" in sql:
-            rid = params.get("rid")
-            evs = sorted(
-                self.events_by_run_db_id.get(rid, []),
-                key=lambda e: e["seq"],
-                reverse=True,
+    SQLite trata ``INTEGER PRIMARY KEY`` como alias de rowid y autoincrementa;
+    ``BIGINT PRIMARY KEY`` NO recibe ese tratamiento y los inserts sin id
+    fallan con ``NOT NULL constraint failed``.
+
+    Esto es solo para tests; en MySQL ``BIGINT AUTO_INCREMENT`` ya funciona.
+    """
+    from sqlalchemy import BigInteger
+    from sqlalchemy.ext.compiler import compiles
+
+    @compiles(BigInteger, "sqlite")
+    def _bigint_to_integer(type_, compiler, **kw):  # noqa: ARG001
+        return "INTEGER"
+
+
+_enable_sqlite_bigint_autoincrement(None)
+
+
+@pytest_asyncio.fixture
+async def engine():
+    """Engine SQLite in-memory con StaticPool (compartido entre conexiones).
+
+    Solo crea las tablas necesarias para el router race-analysis. Esto
+    evita errores con tipos MySQL-only (LONGTEXT en ``privacy_policies``).
+    """
+    eng = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    # Filtra tablas que usan tipos MySQL-only no soportados por SQLite.
+    _UNSUPPORTED_TABLES = {"privacy_policies"}
+    tables_to_create = [
+        t
+        for t in Base.metadata.tables.values()
+        if t.name not in _UNSUPPORTED_TABLES
+    ]
+
+    async with eng.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: Base.metadata.create_all(
+                sync_conn, tables=tables_to_create, checkfirst=True
             )
-            if not evs:
-                return FakeResult([])
-            return FakeResult([FakeRow(node_name=evs[0]["node_name"])])
+        )
+    yield eng
+    await eng.dispose()
 
-        # SELECT seq, event_type, ... FROM agent_run_events WHERE run_id=:rid AND seq > :since
-        if "FROM agent_run_events" in sql and "seq > :since" in sql:
-            rid = params.get("rid")
-            since = params.get("since", 0)
-            evs = sorted(self.events_by_run_db_id.get(rid, []), key=lambda e: e["seq"])
-            filtered = [e for e in evs if e["seq"] > since]
-            return FakeResult(
-                [
-                    FakeRow(
-                        seq=e["seq"],
-                        event_type=e["event_type"],
-                        node_name=e["node_name"],
-                        payload_json=e["payload_json"],
-                        created_at=e["created_at"],
-                    )
-                    for e in filtered
-                ]
-            )
 
-        # Budget guard (F8A): SELECT SUM(...cost_usd_total) AS total FROM athlete_ai_insights
-        # No tiene COUNT, no tiene GROUP BY, no tiene latency_ms_total → es la del guard.
-        if (
-            "FROM athlete_ai_insights" in sql
-            and "cost_usd_total" in sql
-            and " AS total" in sql
-            and "COUNT" not in sql.upper()
-            and "GROUP BY" not in sql
-        ):
-            cutoff = params.get("cutoff")
-            filtered = [i for i in self.insights if not cutoff or i["generated_at"] >= cutoff]
-            total = 0.0
-            for ins in filtered:
-                try:
-                    total += float(
-                        json.loads(ins["metrics_snapshot_json"])
-                        ["aggregate"]["cost_usd_total"]
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
-            return FakeResult([FakeRow(total=total)])
-
-        # SELECT COUNT/SUM FROM athlete_ai_insights
-        if "FROM athlete_ai_insights" in sql and "COUNT" in sql.upper():
-            cutoff = params.get("cutoff")
-            filtered = [i for i in self.insights if not cutoff or i["generated_at"] >= cutoff]
-            n = len(filtered)
-            cost = 0.0
-            for ins in filtered:
-                try:
-                    cost += float(
-                        json.loads(ins["metrics_snapshot_json"])
-                        ["aggregate"]["cost_usd_total"]
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
-            return FakeResult([FakeRow(n=n, cost=cost)])
-
-        # SELECT lat FROM athlete_ai_insights
-        if "FROM athlete_ai_insights" in sql and "latency_ms_total" in sql and "GROUP BY" not in sql:
-            cutoff = params.get("cutoff")
-            filtered = [i for i in self.insights if not cutoff or i["generated_at"] >= cutoff]
-            rows = []
-            for ins in filtered:
-                try:
-                    lat = int(
-                        json.loads(ins["metrics_snapshot_json"])
-                        ["aggregate"]["latency_ms_total"]
-                    )
-                    rows.append(FakeRow(lat=lat))
-                except Exception:  # noqa: BLE001
-                    pass
-            return FakeResult(rows)
-
-        # SELECT prompt_version, COUNT, SUM FROM athlete_ai_insights GROUP BY prompt_version
-        if "FROM athlete_ai_insights" in sql and "GROUP BY prompt_version" in sql:
-            cutoff = params.get("cutoff")
-            filtered = [i for i in self.insights if not cutoff or i["generated_at"] >= cutoff]
-            by_pv: dict[str, dict] = {}
-            for ins in filtered:
-                pv = ins["prompt_version"]
-                entry = by_pv.setdefault(pv, {"c": 0, "cost": 0.0})
-                entry["c"] += 1
-                try:
-                    entry["cost"] += float(
-                        json.loads(ins["metrics_snapshot_json"])
-                        ["aggregate"]["cost_usd_total"]
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
-            return FakeResult(
-                [FakeRow(prompt_version=pv, c=v["c"], cost=v["cost"]) for pv, v in by_pv.items()]
-            )
-
-        return FakeResult([])
-
-    async def commit(self) -> None:
-        pass
-
-    async def rollback(self) -> None:
-        pass
-
-    async def close(self) -> None:
-        pass
-
-    async def flush(self) -> None:
-        pass
-
-    def add(self, _obj: Any) -> None:
-        pass
+@pytest_asyncio.fixture
+async def fake_db(engine):
+    """Fake DB store con ``AsyncSession`` real (SQLite)."""
+    session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    session = session_factory()
+    store = FakeRunStore(session)
+    yield store
+    await session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -395,24 +358,21 @@ class FakeGraph:
         self.invocations: list[tuple[Any, dict]] = []
 
     async def ainvoke(self, value: Any, config: Optional[dict] = None) -> dict:
+        import asyncio
+
         self.invocations.append((value, config or {}))
         await asyncio.sleep(0)  # ceder loop
         return {"ok": True}
 
 
-# ---------------------------------------------------------------------------
-# Fixtures pytest
-# ---------------------------------------------------------------------------
-
-
-@pytest_asyncio.fixture
-async def fake_db() -> FakeSession:
-    return FakeSession()
-
-
 @pytest_asyncio.fixture
 async def fake_graph() -> FakeGraph:
     return FakeGraph()
+
+
+# ---------------------------------------------------------------------------
+# Fixtures pytest
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -440,8 +400,6 @@ async def coach_client(client, fake_db, fake_graph, monkeypatch):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.coach, user_id=10)
-    # _coach_or_admin y _admin_only son Depends() callables; los
-    # overrides funcionan sobre la callable directa.
     app.dependency_overrides[_coach_or_admin] = lambda: make_user(
         UserRole.coach, user_id=10
     )
@@ -498,10 +456,5 @@ async def parent_client(client, fake_db, monkeypatch):
 
 @pytest_asyncio.fixture
 async def anon_client(client):
-    """Cliente sin auth — debe recibir 401 desde el bearer scheme.
-
-    Para tests donde queremos validar el guard real (no override),
-    NO se setea ningún override y se llama directamente.
-    """
-    # No override — los endpoints usan _coach_or_admin que requiere bearer.
+    """Cliente sin auth — debe recibir 401/403 desde el bearer scheme."""
     yield client

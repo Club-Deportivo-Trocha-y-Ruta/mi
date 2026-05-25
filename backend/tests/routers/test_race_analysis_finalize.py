@@ -29,7 +29,7 @@ from app.routers.race_analysis import _finalize_run
 async def test_finalize_persists_state_events(fake_db) -> None:
     """Eventos in-memory del grafo se persisten a agent_run_events."""
     rid = "run-happy-001"
-    fake_db.seed_run(rid, status_="running")
+    await fake_db.seed_run(rid, status_="running")
 
     result_state = {
         "events": [
@@ -49,25 +49,27 @@ async def test_finalize_persists_state_events(fake_db) -> None:
 
     await _finalize_run(fake_db, rid, exc=None, result_state=result_state)
 
-    persisted = fake_db.events_by_run_db_id.get(1, [])
+    run_snap = await fake_db.get_run_dict(rid)
+    persisted = await fake_db.get_events(run_snap["id"])
     assert len(persisted) == 4
     assert [e["seq"] for e in persisted] == [1, 2, 3, 4]
     assert persisted[0]["event_type"] == "node_start"
     assert persisted[0]["node_name"] == "validate_input"
-    assert fake_db.runs[rid]["status"] == "completed"
+    assert run_snap["status"] == "completed"
 
 
 @pytest.mark.asyncio
 async def test_finalize_synthesizes_error_event_when_exc(fake_db) -> None:
     """Bug bootstrap: grafo falla antes del primer evento. Sintetizar uno."""
     rid = "run-bootstrap-fail-002"
-    fake_db.seed_run(rid, status_="running")
+    await fake_db.seed_run(rid, status_="running")
 
     boom = RuntimeError("race AI db_factory no configurado")
 
     await _finalize_run(fake_db, rid, exc=boom, result_state=None)
 
-    persisted = fake_db.events_by_run_db_id.get(1, [])
+    run_snap = await fake_db.get_run_dict(rid)
+    persisted = await fake_db.get_events(run_snap["id"])
     assert len(persisted) == 1, "debe sintetizar 1 evento error"
     ev = persisted[0]
     assert ev["event_type"] == "error"
@@ -77,7 +79,7 @@ async def test_finalize_synthesizes_error_event_when_exc(fake_db) -> None:
     payload = json.loads(ev["payload_json"]) if isinstance(ev["payload_json"], str) else ev["payload_json"]
     assert payload["exc"] == "RuntimeError"
     assert "db_factory" in payload["msg"]
-    assert fake_db.runs[rid]["status"] == "failed"
+    assert run_snap["status"] == "failed"
 
 
 @pytest.mark.asyncio
@@ -124,7 +126,7 @@ async def test_finalize_synthesizes_error_event_when_exc(fake_db) -> None:
 async def test_finalize_run_terminal_invariant(fake_db, scenario) -> None:
     """INV-3: status terminal ⇒ ≥1 evento persistido en agent_run_events."""
     rid = f"run-inv-{scenario['expected']}"
-    fake_db.seed_run(rid, status_="running")
+    await fake_db.seed_run(rid, status_="running")
 
     await _finalize_run(
         fake_db, rid,
@@ -132,8 +134,9 @@ async def test_finalize_run_terminal_invariant(fake_db, scenario) -> None:
         result_state=scenario["result_state"],
     )
 
-    assert fake_db.runs[rid]["status"] == scenario["expected"]
-    persisted = fake_db.events_by_run_db_id.get(1, [])
+    run_snap = await fake_db.get_run_dict(rid)
+    persisted = await fake_db.get_events(run_snap["id"])
+    assert run_snap["status"] == scenario["expected"]
     assert len(persisted) >= 1, (
         f"INV-3 violado: run status={scenario['expected']} sin eventos "
         f"persistidos (escenario {scenario})"
@@ -144,7 +147,7 @@ async def test_finalize_run_terminal_invariant(fake_db, scenario) -> None:
 async def test_finalize_is_idempotent(fake_db) -> None:
     """Re-invocar finalize no duplica eventos (idempotencia por seq)."""
     rid = "run-idempotent-003"
-    fake_db.seed_run(rid, status_="running")
+    await fake_db.seed_run(rid, status_="running")
 
     state = {
         "events": [
@@ -159,7 +162,8 @@ async def test_finalize_is_idempotent(fake_db) -> None:
     await _finalize_run(fake_db, rid, exc=None, result_state=state)
     await _finalize_run(fake_db, rid, exc=None, result_state=state)
 
-    persisted = fake_db.events_by_run_db_id.get(1, [])
+    run_snap = await fake_db.get_run_dict(rid)
+    persisted = await fake_db.get_events(run_snap["id"])
     assert len(persisted) == 2, "segunda invocación no debe duplicar"
 
 
@@ -172,7 +176,7 @@ async def test_finalize_detects_hitl_interrupt_as_awaiting_hitl(fake_db) -> None
     se marcaba 'failed' por 'Grafo completó sin output'.
     """
     rid = "run-hitl-pause-005"
-    fake_db.seed_run(rid, status_="running")
+    await fake_db.seed_run(rid, status_="running")
 
     result_state = {
         "events": [
@@ -191,13 +195,14 @@ async def test_finalize_detects_hitl_interrupt_as_awaiting_hitl(fake_db) -> None
 
     await _finalize_run(fake_db, rid, exc=None, result_state=result_state)
 
-    assert fake_db.runs[rid]["status"] == "awaiting_hitl", (
+    run_snap = await fake_db.get_run_dict(rid)
+    assert run_snap["status"] == "awaiting_hitl", (
         "HITL interrupt no debe terminar el run como failed"
     )
-    assert fake_db.runs[rid]["finished_at"] is None, (
+    assert run_snap["finished_at"] is None, (
         "awaiting_hitl no es terminal — finished_at debe quedar NULL"
     )
-    persisted = fake_db.events_by_run_db_id.get(1, [])
+    persisted = await fake_db.get_events(run_snap["id"])
     assert len(persisted) == 3, "los eventos previos al interrupt sí se persisten"
     types = [e["event_type"] for e in persisted]
     assert "error" not in types, "no debe sintetizar evento error en HITL pause"
@@ -207,7 +212,7 @@ async def test_finalize_detects_hitl_interrupt_as_awaiting_hitl(fake_db) -> None
 async def test_finalize_maps_node_error_to_db_error_enum(fake_db) -> None:
     """Eventos in-memory con type=node_error → ENUM DB 'error' (DataError)."""
     rid = "run-node-error-004"
-    fake_db.seed_run(rid, status_="running")
+    await fake_db.seed_run(rid, status_="running")
 
     state = {
         "events": [
@@ -223,9 +228,10 @@ async def test_finalize_maps_node_error_to_db_error_enum(fake_db) -> None:
 
     await _finalize_run(fake_db, rid, exc=None, result_state=state)
 
-    persisted = fake_db.events_by_run_db_id.get(1, [])
+    run_snap = await fake_db.get_run_dict(rid)
+    persisted = await fake_db.get_events(run_snap["id"])
     types = [e["event_type"] for e in persisted]
     assert types == ["node_start", "error"], (
         f"node_error in-memory debe mapearse a ENUM 'error' en DB, fue {types}"
     )
-    assert fake_db.runs[rid]["status"] == "failed"
+    assert run_snap["status"] == "failed"

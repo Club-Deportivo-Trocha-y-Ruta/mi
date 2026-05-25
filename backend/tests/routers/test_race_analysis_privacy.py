@@ -63,10 +63,10 @@ class TestPIISentinel:
         run_ids = []
         for athlete_id in range(1, 51):
             rid = f"run-pii-{athlete_id}"
-            run = fake_db.seed_run(rid, requested_by_user_id=10)
+            run = await fake_db.seed_run(rid, requested_by_user_id=10)
             # Seed 50 eventos por run con pseudónimos (correcto).
             for seq in range(1, 51):
-                fake_db.seed_event(
+                await fake_db.seed_event(
                     run["id"],
                     seq,
                     "node_end",
@@ -106,9 +106,9 @@ class TestPIISentinel:
         Marcado como caso "contract documentation" — falla intencional
         para hacer visible la decisión arquitectónica.
         """
-        run = fake_db.seed_run("run-leak-doc", requested_by_user_id=10)
+        run = await fake_db.seed_run("run-leak-doc", requested_by_user_id=10)
         # Simulamos un bug: el nodo upstream dejó un nombre real.
-        fake_db.seed_event(
+        await fake_db.seed_event(
             run["id"],
             1,
             "node_end",
@@ -178,7 +178,7 @@ class TestPIISentinel:
     ):
         """Si el final_output del grafo está limpio (pseudónimos), el
         endpoint /result no debe inyectar nombres."""
-        fake_db.seed_run(
+        await fake_db.seed_run(
             "run-clean",
             status_="completed",
             requested_by_user_id=10,
@@ -203,9 +203,9 @@ class TestPIISentinel:
         runs_meta = []
         for athlete_id in range(1, 6):
             rid = f"prop-{athlete_id}"
-            run = fake_db.seed_run(rid, requested_by_user_id=10)
+            run = await fake_db.seed_run(rid, requested_by_user_id=10)
             for seq in range(1, 11):
-                fake_db.seed_event(
+                await fake_db.seed_event(
                     run["id"],
                     seq,
                     "node_end",

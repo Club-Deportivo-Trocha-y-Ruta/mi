@@ -94,8 +94,8 @@ class TestStartRun:
         assert body["status"] == "running"
         assert body["status_url"] == f"/api/race-analysis/runs/{body['run_id']}/status"
         assert body["estimated_seconds"] == 15 + 5 * 3
-        # Verificar insert en fake_db
-        assert body["run_id"] in fake_db.runs
+        # Verificar insert via DB real (ORM)
+        assert await fake_db.get_run(body["run_id"]) is not None
 
     async def test_valida_nums_vacio_es_400(self, coach_client, ai_enabled):
         resp = await coach_client.post(
@@ -125,15 +125,15 @@ class TestStatus:
 
     async def test_403_si_no_eres_owner(self, coach_client, fake_db):
         # owner=99, coach_client.user.id=10 → forbidden
-        fake_db.seed_run("run-otro", requested_by_user_id=99)
+        await fake_db.seed_run("run-otro", requested_by_user_id=99)
         resp = await coach_client.get("/api/race-analysis/runs/run-otro/status")
         assert resp.status_code == 403
 
     async def test_polling_devuelve_eventos_desde_since(self, coach_client, fake_db):
-        run = fake_db.seed_run("run-poll", requested_by_user_id=10)
-        fake_db.seed_event(run["id"], 1, "node_start", "validate_input")
-        fake_db.seed_event(run["id"], 2, "node_end", "validate_input")
-        fake_db.seed_event(run["id"], 3, "node_start", "load_race_data")
+        run = await fake_db.seed_run("run-poll", requested_by_user_id=10)
+        await fake_db.seed_event(run["id"], 1, "node_start", "validate_input")
+        await fake_db.seed_event(run["id"], 2, "node_end", "validate_input")
+        await fake_db.seed_event(run["id"], 3, "node_start", "load_race_data")
 
         # since=0 → todos
         resp = await coach_client.get("/api/race-analysis/runs/run-poll/status?since=0")
@@ -151,8 +151,8 @@ class TestStatus:
         assert body["new_events"][0]["seq"] == 3
 
     async def test_etag_304_si_no_cambio(self, coach_client, fake_db):
-        run = fake_db.seed_run("run-etag", requested_by_user_id=10)
-        fake_db.seed_event(run["id"], 1, "node_start", "validate_input")
+        run = await fake_db.seed_run("run-etag", requested_by_user_id=10)
+        await fake_db.seed_event(run["id"], 1, "node_start", "validate_input")
 
         r1 = await coach_client.get("/api/race-analysis/runs/run-etag/status")
         etag = r1.headers.get("etag")
@@ -165,7 +165,7 @@ class TestStatus:
         assert r2.status_code == 304
 
     async def test_state_done_cuando_status_completed(self, coach_client, fake_db):
-        fake_db.seed_run(
+        await fake_db.seed_run(
             "run-done",
             status_="completed",
             requested_by_user_id=10,
@@ -177,7 +177,7 @@ class TestStatus:
         assert body["progress_pct"] == 100
 
     async def test_state_hitl_waiting(self, coach_client, fake_db):
-        fake_db.seed_run("run-hitl", status_="awaiting_hitl", requested_by_user_id=10)
+        await fake_db.seed_run("run-hitl", status_="awaiting_hitl", requested_by_user_id=10)
         resp = await coach_client.get("/api/race-analysis/runs/run-hitl/status")
         body = resp.json()
         assert body["state"] == "hitl_waiting"
@@ -197,7 +197,7 @@ class TestHITL:
         assert resp.status_code == 404
 
     async def test_approve_happy_path(self, coach_client, fake_db):
-        fake_db.seed_run("run-ok", status_="awaiting_hitl", requested_by_user_id=10)
+        await fake_db.seed_run("run-ok", status_="awaiting_hitl", requested_by_user_id=10)
         resp = await coach_client.post(
             "/api/race-analysis/runs/run-ok/hitl/review",
             json={"decision": "approve"},
@@ -208,18 +208,18 @@ class TestHITL:
         assert body["run_id"] == "run-ok"
 
     async def test_reject_marca_evento(self, coach_client, fake_db):
-        fake_db.seed_run("run-rej", status_="awaiting_hitl", requested_by_user_id=10)
+        run = await fake_db.seed_run("run-rej", status_="awaiting_hitl", requested_by_user_id=10)
         resp = await coach_client.post(
             "/api/race-analysis/runs/run-rej/hitl/review",
             json={"decision": "reject", "notes": "no aplicable"},
         )
         assert resp.status_code == 200
         # Evento persistido
-        evs = fake_db.events_by_run_db_id[fake_db.runs["run-rej"]["id"]]
+        evs = await fake_db.get_events(run["id"])
         assert any(e["event_type"] == "hitl_response" for e in evs)
 
     async def test_edit_sin_edits_es_422(self, coach_client, fake_db):
-        fake_db.seed_run("run-edit", status_="awaiting_hitl", requested_by_user_id=10)
+        await fake_db.seed_run("run-edit", status_="awaiting_hitl", requested_by_user_id=10)
         resp = await coach_client.post(
             "/api/race-analysis/runs/run-edit/hitl/review",
             json={"decision": "edit"},
@@ -227,7 +227,7 @@ class TestHITL:
         assert resp.status_code == 422
 
     async def test_edit_con_edits_ok(self, coach_client, fake_db):
-        fake_db.seed_run("run-edit-ok", status_="awaiting_hitl", requested_by_user_id=10)
+        await fake_db.seed_run("run-edit-ok", status_="awaiting_hitl", requested_by_user_id=10)
         resp = await coach_client.post(
             "/api/race-analysis/runs/run-edit-ok/hitl/review",
             json={"decision": "edit", "edits": "# Markdown editado"},
@@ -235,7 +235,7 @@ class TestHITL:
         assert resp.status_code == 200
 
     async def test_409_si_run_terminal(self, coach_client, fake_db):
-        fake_db.seed_run("run-comp", status_="completed", requested_by_user_id=10)
+        await fake_db.seed_run("run-comp", status_="completed", requested_by_user_id=10)
         resp = await coach_client.post(
             "/api/race-analysis/runs/run-comp/hitl/review",
             json={"decision": "approve"},
@@ -254,18 +254,22 @@ class TestResult:
         assert resp.status_code == 404
 
     async def test_404_si_aun_running(self, coach_client, fake_db):
-        fake_db.seed_run("run-running", status_="running", requested_by_user_id=10)
+        await fake_db.seed_run("run-running", status_="running", requested_by_user_id=10)
         resp = await coach_client.get("/api/race-analysis/runs/run-running/result")
         assert resp.status_code == 404
 
     async def test_409_si_failed(self, coach_client, fake_db):
-        fake_db.seed_run("run-fail", status_="failed", requested_by_user_id=10)
-        fake_db.runs["run-fail"]["error_message"] = "TimeoutError"
+        await fake_db.seed_run(
+            "run-fail",
+            status_="failed",
+            requested_by_user_id=10,
+            error_message="TimeoutError",
+        )
         resp = await coach_client.get("/api/race-analysis/runs/run-fail/result")
         assert resp.status_code == 409
 
     async def test_happy_path_devuelve_final(self, coach_client, fake_db):
-        fake_db.seed_run(
+        await fake_db.seed_run(
             "run-result",
             status_="completed",
             requested_by_user_id=10,
@@ -294,7 +298,7 @@ class TestPDF:
         assert resp.status_code == 404
 
     async def test_404_si_aun_running(self, coach_client, fake_db):
-        fake_db.seed_run("run-r", status_="running", requested_by_user_id=10)
+        await fake_db.seed_run("run-r", status_="running", requested_by_user_id=10)
         resp = await coach_client.get("/api/race-analysis/runs/run-r/pdf")
         assert resp.status_code == 404
 
@@ -302,7 +306,7 @@ class TestPDF:
         """PDF rendering puede fallar con 501 si weasyprint no tiene libs
         nativas (común en macOS sin brew). Aceptamos 200 (PDF binario)
         o 501 (TODO documentado)."""
-        fake_db.seed_run(
+        await fake_db.seed_run(
             "run-pdf",
             status_="completed",
             requested_by_user_id=10,
@@ -422,9 +426,9 @@ class TestAdminMetrics:
 
     async def test_admin_agrega_insights(self, admin_client, fake_db):
         # Seed 3 insights con costos variados.
-        fake_db.seed_insight(cost_total=0.001, latency_total=1000)
-        fake_db.seed_insight(cost_total=0.002, latency_total=2000)
-        fake_db.seed_insight(cost_total=0.003, latency_total=3000)
+        await fake_db.seed_insight(cost_total=0.001, latency_total=1000)
+        await fake_db.seed_insight(cost_total=0.002, latency_total=2000)
+        await fake_db.seed_insight(cost_total=0.003, latency_total=3000)
 
         resp = await admin_client.get("/api/race-analysis/admin/ai-usage?days=30")
         assert resp.status_code == 200
@@ -437,9 +441,9 @@ class TestAdminMetrics:
         assert len(body["by_prompt_version"]) >= 1
 
     async def test_admin_fail_rate(self, admin_client, fake_db):
-        fake_db.seed_run("r-c", status_="completed")
-        fake_db.seed_run("r-f", status_="failed")
-        fake_db.seed_run("r-f2", status_="failed")
+        await fake_db.seed_run("r-c", status_="completed")
+        await fake_db.seed_run("r-f", status_="failed")
+        await fake_db.seed_run("r-f2", status_="failed")
         resp = await admin_client.get("/api/race-analysis/admin/ai-usage")
         body = resp.json()
         # 2 failed de 3 terminales → 0.6667
@@ -447,7 +451,7 @@ class TestAdminMetrics:
 
     async def test_admin_shape_completo(self, admin_client, fake_db):
         """Verifica TODAS las keys del response shape (F8A regression guard)."""
-        fake_db.seed_insight(cost_total=0.005, latency_total=1500)
+        await fake_db.seed_insight(cost_total=0.005, latency_total=1500)
         resp = await admin_client.get("/api/race-analysis/admin/ai-usage")
         assert resp.status_code == 200
         body = resp.json()
@@ -495,7 +499,12 @@ class TestBudgetGuard:
 
         # Threshold bajo para forzar el bloqueo con seed mínimo.
         monkeypatch.setattr(settings, "race_ai_budget_usd_30d", 0.001)
-        fake_db.seed_insight(cost_total=0.005, latency_total=1000)
+        # SQLite no soporta JSON_EXTRACT del budget_guard; stub el helper
+        # para devolver el costo seedeado y mantener el contrato del 503.
+        async def _fake_sum(db):
+            return 0.005
+        monkeypatch.setattr(budget_guard, "_sum_cost_last_30d", _fake_sum)
+        await fake_db.seed_insight(cost_total=0.005, latency_total=1000)
 
         resp = await coach_client.post(
             "/api/race-analysis/runs",
@@ -516,7 +525,10 @@ class TestBudgetGuard:
         await budget_guard._reset_cooldown_for_tests()
 
         monkeypatch.setattr(settings, "race_ai_budget_usd_30d", 100.0)
-        fake_db.seed_insight(cost_total=0.005, latency_total=1000)
+        async def _fake_sum(db):
+            return 0.005
+        monkeypatch.setattr(budget_guard, "_sum_cost_last_30d", _fake_sum)
+        await fake_db.seed_insight(cost_total=0.005, latency_total=1000)
 
         resp = await coach_client.post(
             "/api/race-analysis/runs",

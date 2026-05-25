@@ -11,9 +11,8 @@ Endpoints (F5, design.md §9):
 
 Convenciones:
 - RBAC: coach + admin (excepto admin/* → admin only). Padres NO acceden.
-- Persistencia: SQL crudo via ``text()`` contra ``agent_runs`` /
-  ``agent_run_events`` / ``athlete_ai_insights`` (modelos SQLAlchemy
-  diferidos a F8B).
+- Persistencia: ORM via :mod:`app.services.race.ai.runs` (refactor BE-A1
+  eliminó el SQL crudo previo, manteniendo paridad funcional).
 - Grafo: spawneado en background via :func:`runner.submit_run` con
   backpressure (10 concurrentes max). El handler HTTP retorna en <50ms.
 - Reanudación HITL: :func:`runner.resume_run` con ``Command(resume=...)``
@@ -31,18 +30,16 @@ Privacidad (CLAUDE.md §Privacidad):
 from __future__ import annotations
 
 import logging
-import statistics
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import StreamingResponse
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_current_user, get_db, require_role
+from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.user import User, UserRole
 from app.schemas.race_ai import (
     AIUsageByPromptVersion,
@@ -57,6 +54,7 @@ from app.schemas.race_ai import (
     StartRunRequest,
     StartRunResponse,
 )
+from app.services.race.ai import runs as runs_service
 from app.services.race.ai.budget_guard import (
     BudgetExceededError,
     check_budget,
@@ -93,11 +91,6 @@ _GRAPH_NODE_COUNT = 13
 _EVENTS_PER_POLL_MAX = 200
 
 
-# ---------------------------------------------------------------------------
-# Dependencies
-# ---------------------------------------------------------------------------
-
-
 _coach_or_admin = require_role([UserRole.coach, UserRole.admin])
 _admin_only = require_role([UserRole.admin])
 
@@ -116,7 +109,7 @@ def get_race_chat_agent():
 
 
 # ---------------------------------------------------------------------------
-# Helpers DB
+# Helpers locales (sin SQL crudo)
 # ---------------------------------------------------------------------------
 
 
@@ -124,279 +117,47 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-async def _load_run(db: AsyncSession, external_run_id: str) -> Optional[dict[str, Any]]:
-    """Carga la fila de ``agent_runs`` por external_run_id."""
-    result = await db.execute(
-        text(
-            """
-            SELECT id, external_run_id, status, started_at, finished_at,
-                   input_json, final_output_json, error_message,
-                   requested_by_user_id, explain_mode
-            FROM agent_runs
-            WHERE external_run_id = :rid
-            LIMIT 1
-            """
-        ),
-        {"rid": external_run_id},
-    )
-    row = result.fetchone() if hasattr(result, "fetchone") else None
-    if row is None:
-        # Compat con FakeResult: usa .first()
-        first = getattr(result, "first", lambda: None)()
-        if first is None:
-            # último fallback: lista
-            rows = result.fetchall() if hasattr(result, "fetchall") else []
-            row = rows[0] if rows else None
-        else:
-            row = first
-    if row is None:
-        return None
-    # Soporta tanto Row tuples como SimpleNamespace en tests.
-    def _g(name: str, idx: int) -> Any:
-        if hasattr(row, name):
-            return getattr(row, name)
-        if hasattr(row, "_mapping"):
-            return row._mapping.get(name)
+def _aware(dt: Any) -> datetime:
+    """Asegura tz=UTC en datetimes que vienen de MySQL DATETIME (naive)."""
+    if dt is None:
+        return _utc_now()
+    if not isinstance(dt, datetime):
+        return _utc_now()
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _event_to_run_event(ev) -> RunEvent:
+    """Adapta una fila ORM ``AgentRunEvent`` al schema HTTP ``RunEvent``."""
+    payload = ev.payload_json
+    # JSON nullable o serializado en algunos dialectos: tolerante a ambos.
+    if isinstance(payload, str):
+        import json
+
         try:
-            return row[idx]
-        except Exception:  # noqa: BLE001
-            return None
+            payload = json.loads(payload)
+        except (ValueError, TypeError):
+            payload = {"_raw": payload}
+    if not isinstance(payload, dict):
+        payload = {"_value": payload} if payload is not None else {}
 
-    return {
-        "id": _g("id", 0),
-        "external_run_id": _g("external_run_id", 1),
-        "status": _g("status", 2),
-        "started_at": _g("started_at", 3),
-        "finished_at": _g("finished_at", 4),
-        "input_json": _g("input_json", 5),
-        "final_output_json": _g("final_output_json", 6),
-        "error_message": _g("error_message", 7),
-        "requested_by_user_id": _g("requested_by_user_id", 8),
-        "explain_mode": _g("explain_mode", 9),
-    }
+    event_type_val = ev.event_type
+    if hasattr(event_type_val, "value"):
+        event_type_val = event_type_val.value
 
-
-async def _load_events_since(
-    db: AsyncSession,
-    run_db_id: int,
-    since: int,
-    limit: int,
-) -> list[dict[str, Any]]:
-    """Lee ``agent_run_events`` con ``seq > since`` ORDER BY seq."""
-    result = await db.execute(
-        text(
-            """
-            SELECT seq, event_type, node_name, payload_json, created_at
-            FROM agent_run_events
-            WHERE run_id = :rid AND seq > :since
-            ORDER BY seq ASC
-            LIMIT :lim
-            """
-        ),
-        {"rid": run_db_id, "since": since, "lim": limit},
-    )
-    rows = (
-        result.fetchall()
-        if hasattr(result, "fetchall")
-        else (result.all() if hasattr(result, "all") else [])
-    )
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        if hasattr(row, "_mapping"):
-            m = row._mapping
-            seq, event_type, node_name, payload, created_at = (
-                m["seq"], m["event_type"], m["node_name"], m["payload_json"], m["created_at"]
-            )
-        else:
-            # tuple-like o SimpleNamespace
-            seq = getattr(row, "seq", None) or row[0]
-            event_type = getattr(row, "event_type", None) or row[1]
-            node_name = getattr(row, "node_name", None) or row[2]
-            payload = getattr(row, "payload_json", None) or row[3]
-            created_at = getattr(row, "created_at", None) or row[4]
-        # payload llega como JSON string en MySQL si la columna es JSON;
-        # SQLite lo entrega como str. SQLAlchemy con sa.JSON puede
-        # deserializar automáticamente — soportamos ambos.
-        if isinstance(payload, str):
-            import json
-            try:
-                payload = json.loads(payload)
-            except (ValueError, TypeError):
-                payload = {"_raw": payload}
-        if not isinstance(payload, dict):
-            payload = {"_value": payload}
-        out.append(
-            {
-                "seq": int(seq),
-                "ts": created_at,
-                "type": str(event_type),
-                "node": str(node_name) if node_name else None,
-                "payload": payload,
-            }
-        )
-    return out
-
-
-async def _last_seq(db: AsyncSession, run_db_id: int) -> int:
-    """Máximo ``seq`` emitido para el run."""
-    result = await db.execute(
-        text("SELECT COALESCE(MAX(seq), 0) AS s FROM agent_run_events WHERE run_id = :rid"),
-        {"rid": run_db_id},
-    )
-    first = getattr(result, "first", lambda: None)()
-    if first is None:
-        rows = result.fetchall() if hasattr(result, "fetchall") else []
-        first = rows[0] if rows else None
-    if first is None:
-        return 0
-    if hasattr(first, "_mapping"):
-        return int(first._mapping.get("s") or 0)
-    return int(getattr(first, "s", None) or first[0] or 0)
-
-
-async def _last_node(db: AsyncSession, run_db_id: int) -> Optional[str]:
-    """Último ``node_name`` con type=node_start sin node_end posterior."""
-    result = await db.execute(
-        text(
-            """
-            SELECT node_name FROM agent_run_events
-            WHERE run_id = :rid
-            ORDER BY seq DESC
-            LIMIT 1
-            """
-        ),
-        {"rid": run_db_id},
-    )
-    first = getattr(result, "first", lambda: None)()
-    if first is None:
-        return None
-    if hasattr(first, "_mapping"):
-        return first._mapping.get("node_name")
-    return getattr(first, "node_name", None) or first[0]
-
-
-# Mapeo de tipos in-memory (events.py) → ENUM DB (agentruneventtype).
-# La tabla `agent_run_events.event_type` solo acepta los valores del ENUM,
-# pero los wrappers emiten `node_error` y `run_failed` (sintético). Esto
-# evita DataError al persistir y mantiene los nombres in-memory ricos.
-_EVENT_TYPE_TO_DB: dict[str, str] = {
-    "node_start": "node_start",
-    "node_end": "node_end",
-    "node_error": "error",
-    "hitl_request": "hitl_request",
-    "hitl_response": "hitl_response",
-    "explain": "explain",
-    "token": "token",
-    "error": "error",
-    "done": "done",
-    "run_failed": "error",
-}
-
-
-async def _persist_events(
-    db: AsyncSession,
-    run_db_id: int,
-    events: list[dict[str, Any]],
-) -> int:
-    """Bulk INSERT de eventos in-memory a ``agent_run_events``.
-
-    Idempotente: omite eventos con ``seq <= MAX(seq)`` actual para el run,
-    de forma que reintentos no dupliquen. Retorna el conteo insertado.
-    """
-    if not events:
-        return 0
-    import json as _json
-
-    existing = await _last_seq(db, run_db_id)
-    inserted = 0
-    fallback_ts = _utc_now()
-    for ev in events:
-        try:
-            seq = int(ev.get("seq") or 0)
-        except (TypeError, ValueError):
-            continue
-        if seq <= existing:
-            continue
-        type_raw = str(ev.get("type") or "")
-        type_db = _EVENT_TYPE_TO_DB.get(type_raw, "error")
-        node = ev.get("node")
-        payload = ev.get("payload") or {}
-        if not isinstance(payload, dict):
-            payload = {"_value": payload}
-        # Preservar el ts original del evento (emitido por with_events al
-        # entrar/salir del nodo) para que la duración por nodo se calcule
-        # correctamente en el cliente. Si el evento no trae ts parseable,
-        # caemos al timestamp del bulk insert.
-        ev_ts = ev.get("ts")
-        ts_value = fallback_ts
-        if isinstance(ev_ts, str) and ev_ts:
-            try:
-                parsed = datetime.fromisoformat(ev_ts)
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                ts_value = parsed
-            except ValueError:
-                ts_value = fallback_ts
-        elif isinstance(ev_ts, datetime):
-            ts_value = (
-                ev_ts if ev_ts.tzinfo is not None else ev_ts.replace(tzinfo=timezone.utc)
-            )
-        await db.execute(
-            text(
-                """
-                INSERT INTO agent_run_events
-                    (run_id, seq, event_type, node_name, payload_json, created_at)
-                VALUES (:rid, :seq, :et, :nn, :pl, :ts)
-                """
-            ),
-            {
-                "rid": run_db_id,
-                "seq": seq,
-                "et": type_db,
-                "nn": node,
-                "pl": _json.dumps(payload, ensure_ascii=False, default=str),
-                "ts": ts_value,
-            },
-        )
-        inserted += 1
-    return inserted
-
-
-async def _update_run_status(
-    db: AsyncSession,
-    external_run_id: str,
-    new_status: str,
-    error_message: Optional[str] = None,
-    final_output: Optional[dict[str, Any]] = None,
-) -> None:
-    import json
-
-    params: dict[str, Any] = {
-        "rid": external_run_id,
-        "st": new_status,
-        "fin": _utc_now() if new_status in {"completed", "rejected", "failed", "cancelled"} else None,
-        "em": error_message,
-        "fo": json.dumps(final_output, ensure_ascii=False, default=str) if final_output else None,
-    }
-    await db.execute(
-        text(
-            """
-            UPDATE agent_runs
-            SET status = :st,
-                finished_at = COALESCE(:fin, finished_at),
-                error_message = COALESCE(:em, error_message),
-                final_output_json = COALESCE(:fo, final_output_json)
-            WHERE external_run_id = :rid
-            """
-        ),
-        params,
+    return RunEvent(
+        seq=int(ev.seq),
+        ts=_aware(ev.created_at),
+        type=str(event_type_val),
+        node=str(ev.node_name) if ev.node_name else None,
+        payload=payload,
     )
 
 
 def _extract_final_output(result_state: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
     if not result_state:
         return None
-
     payload: dict[str, Any] = {}
 
     final_analysis = result_state.get("final_analysis")
@@ -451,7 +212,7 @@ async def _finalize_run(
         )
 
     if exc is not None:
-        new_status = "failed"
+        new_status: str = "failed"
         err: Optional[str] = f"{type(exc).__name__}: {str(exc)[:500]}"
     elif interrupts:
         new_status = "awaiting_hitl"
@@ -469,11 +230,11 @@ async def _finalize_run(
         new_status = "completed"
         err = None
 
-    run = await _load_run(db, external_run_id)
+    run = await runs_service.load_run(db, external_run_id)
     if run is None:
         logger.error("_finalize_run: run %s no existe", external_run_id)
         return
-    run_db_id = int(run["id"])
+    run_db_id = int(run.id)
 
     events = list((result_state or {}).get("events") or [])
 
@@ -496,21 +257,21 @@ async def _finalize_run(
                 }
             )
 
-    await _persist_events(db, run_db_id, events)
-    await _update_run_status(
+    await runs_service.persist_events(db, run_db_id, events)
+    await runs_service.update_run_status(
         db,
-        external_run_id,
-        new_status,
+        run_db_id,
+        status=new_status,
         error_message=err,
-        final_output=final_payload,
+        final_output_json=final_payload,
     )
 
 
-def _ensure_run_owner(run: dict[str, Any], user: User) -> None:
+def _ensure_run_owner(run: AgentRun, user: User) -> None:
     """Solo el owner o admin pueden acceder al run."""
     if user.role == UserRole.admin:
         return
-    if run.get("requested_by_user_id") != user.id:
+    if run.requested_by_user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes acceso a este run",
@@ -564,8 +325,6 @@ async def start_run(
     run_id = uuid.uuid4().hex
     started_at = _utc_now()
 
-    import json
-
     input_payload = {
         "athlete_id": body.athlete_id,
         "season": body.season,
@@ -576,28 +335,17 @@ async def start_run(
     # Insert agent_runs (status=running). El run_id es el thread_id del
     # checkpointer LangGraph para reanudación post-HITL.
     try:
-        await db.execute(
-            text(
-                """
-                INSERT INTO agent_runs (
-                    external_run_id, graph_name, prompt_version, started_at,
-                    status, input_json, requested_by_user_id,
-                    checkpoint_thread_id, explain_mode
-                ) VALUES (
-                    :rid, :gn, :pv, :sa, 'running', :inp, :uid, :tid, :em
-                )
-                """
-            ),
-            {
-                "rid": run_id,
-                "gn": "race-analyst",
-                "pv": "race_analyst_v1",
-                "sa": started_at,
-                "inp": json.dumps(input_payload, ensure_ascii=False, default=str),
-                "uid": current_user.id,
-                "tid": run_id,  # estable durante el lifecycle.
-                "em": 1 if body.explain_mode else 0,
-            },
+        await runs_service.create_run(
+            db,
+            external_run_id=run_id,
+            graph_name="race-analyst",
+            prompt_version="race_analyst_v1",
+            requested_by_user_id=current_user.id,
+            athlete_id=body.athlete_id,
+            checkpoint_thread_id=run_id,
+            input_json=input_payload,
+            explain_mode=body.explain_mode,
+            started_at=started_at,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("start_run: insert agent_runs falló")
@@ -634,8 +382,11 @@ async def start_run(
     except RunBackpressureError as exc:
         # Marcar el run como cancelado y propagar 429.
         try:
-            await _update_run_status(
-                db, run_id, "cancelled", error_message="backpressure: no slots"
+            await runs_service.update_run_status_by_external_id(
+                db,
+                run_id,
+                status=AgentRunStatus.cancelled,
+                error_message="backpressure: no slots",
             )
         except Exception:  # noqa: BLE001
             logger.exception("start_run: falló cancelar tras backpressure")
@@ -683,7 +434,7 @@ async def get_run_status(
     Si ``last_seq == since`` (sin cambios) → 304. Esto reduce ancho de
     banda en runs largos esperando HITL.
     """
-    run = await _load_run(db, run_id)
+    run = await runs_service.load_run(db, run_id)
     if run is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -691,35 +442,42 @@ async def get_run_status(
         )
     _ensure_run_owner(run, current_user)
 
-    last_seq = await _last_seq(db, int(run["id"]))
+    last_seq_val = await runs_service.last_seq(db, int(run.id))
+    db_status_str = (
+        run.status.value if isinstance(run.status, AgentRunStatus) else str(run.status)
+    )
 
     # ETag basado en last_seq + status → cambia con cualquier evento o
     # transición de estado. Más barato que hashear el response completo.
-    etag = f'W/"{run_id}:{last_seq}:{run["status"]}"'
+    etag = f'W/"{run_id}:{last_seq_val}:{db_status_str}"'
     if_none_match = request.headers.get("if-none-match")
     response.headers["ETag"] = etag
     response.headers["Cache-Control"] = "no-cache"
     if if_none_match == etag:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
 
-    state = _DB_STATUS_TO_RUN_STATE.get(str(run["status"]), RunState.RUNNING)
-    current_node = await _last_node(db, int(run["id"])) if state == RunState.RUNNING else None
-
-    new_events_raw = await _load_events_since(
-        db, int(run["id"]), since=since, limit=_EVENTS_PER_POLL_MAX
+    state = _DB_STATUS_TO_RUN_STATE.get(db_status_str, RunState.RUNNING)
+    current_node = (
+        await runs_service.last_node(db, int(run.id))
+        if state == RunState.RUNNING
+        else None
     )
-    new_events = [RunEvent(**e) for e in new_events_raw]
+
+    raw_events = await runs_service.load_events_since(
+        db, int(run.id), since_seq=since, limit=_EVENTS_PER_POLL_MAX
+    )
+    new_events = [_event_to_run_event(ev) for ev in raw_events]
 
     # Heurística de progreso: cuento distinct nodos completados.
     # Aproximación barata: progress = min(100, last_seq / (13*2) * 100)
     # porque cada nodo emite ~2 eventos (start + end).
-    progress_pct = min(100, int(round((last_seq / (_GRAPH_NODE_COUNT * 2)) * 100)))
+    progress_pct = min(100, int(round((last_seq_val / (_GRAPH_NODE_COUNT * 2)) * 100)))
     if state in {RunState.DONE, RunState.FAILED, RunState.CANCELLED}:
         progress_pct = 100
 
     # Estimación tiempo restante: heurística simple.
     if state == RunState.RUNNING:
-        eta = max(0, 30 - int((_utc_now() - _aware(run["started_at"])).total_seconds()))
+        eta = max(0, 30 - int((_utc_now() - _aware(run.started_at)).total_seconds()))
     else:
         eta = 0
 
@@ -728,22 +486,11 @@ async def get_run_status(
         state=state,
         progress_pct=progress_pct,
         current_node=current_node,
-        started_at=_aware(run["started_at"]),
+        started_at=_aware(run.started_at),
         estimated_seconds_remaining=eta,
         new_events=new_events,
-        last_seq=last_seq,
+        last_seq=last_seq_val,
     )
-
-
-def _aware(dt: Any) -> datetime:
-    """Asegura tz=UTC en datetimes que vienen de MySQL DATETIME (naive)."""
-    if dt is None:
-        return _utc_now()
-    if not isinstance(dt, datetime):
-        return _utc_now()
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
 
 
 # ---------------------------------------------------------------------------
@@ -775,7 +522,7 @@ async def submit_hitl_decision(
     asíncrona — el endpoint retorna ``accepted=True`` apenas se spawn la
     task. El cliente sigue pollngueando ``/status`` para ver el avance.
     """
-    run = await _load_run(db, run_id)
+    run = await runs_service.load_run(db, run_id)
     if run is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -786,11 +533,13 @@ async def submit_hitl_decision(
     # Validación de estado: debe estar awaiting_hitl o running (si el
     # status no se actualizó aún por el grafo). Mantenemos permisivo:
     # si está en estado terminal, 409.
-    db_status = str(run["status"])
-    if db_status in {"completed", "rejected", "failed", "cancelled"}:
+    db_status_str = (
+        run.status.value if isinstance(run.status, AgentRunStatus) else str(run.status)
+    )
+    if db_status_str in {"completed", "rejected", "failed", "cancelled"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Run en estado terminal '{db_status}', no acepta HITL",
+            detail=f"Run en estado terminal '{db_status_str}', no acepta HITL",
         )
 
     # Validación edits: si decision=edit, edits es obligatorio.
@@ -809,31 +558,15 @@ async def submit_hitl_decision(
     }
 
     # Persistir evento hitl_response — visible en próximo poll.
-    last_seq_val = await _last_seq(db, int(run["id"]))
-    import json
-
     try:
-        await db.execute(
-            text(
-                """
-                INSERT INTO agent_run_events (
-                    run_id, seq, event_type, node_name, payload_json
-                ) VALUES (
-                    :rid, :seq, 'hitl_response', 'hitl_gate_review', :pl
-                )
-                """
-            ),
-            {
-                "rid": int(run["id"]),
-                "seq": last_seq_val + 1,
-                "pl": json.dumps(
-                    {
-                        "decision": body.decision.value,
-                        "step_id": step_id,
-                        "has_edits": bool(body.edits),
-                    },
-                    ensure_ascii=False,
-                ),
+        await runs_service.insert_hitl_event(
+            db,
+            int(run.id),
+            node_name="hitl_gate_review",
+            payload={
+                "decision": body.decision.value,
+                "step_id": step_id,
+                "has_edits": bool(body.edits),
             },
         )
     except Exception:  # noqa: BLE001
@@ -870,12 +603,12 @@ async def submit_hitl_decision(
 
         async with AsyncSessionLocal() as session:
             try:
-                await _update_run_status(
+                await runs_service.update_run_status_by_external_id(
                     session,
                     rid,
-                    new_status,
+                    status=new_status,
                     error_message=err,
-                    final_output=final_payload,
+                    final_output_json=final_payload,
                 )
                 await session.commit()
             except Exception:  # noqa: BLE001
@@ -902,6 +635,22 @@ async def submit_hitl_decision(
 # ---------------------------------------------------------------------------
 
 
+def _decode_final_output(value: Any) -> dict[str, Any] | None:
+    """Tolerante a ``final_output_json`` serializado o ya dict."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        import json
+
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return {"raw_markdown": value, "_warning": "final_output_json mal formado"}
+    return None
+
+
 @router.get(
     "/runs/{run_id}/result",
     responses={
@@ -917,7 +666,7 @@ async def get_run_result(
     current_user: User = Depends(_coach_or_admin),
 ) -> dict[str, Any]:
     """Retorna el ``AnalysisOutput`` final (markdown + sections + ...)."""
-    run = await _load_run(db, run_id)
+    run = await runs_service.load_run(db, run_id)
     if run is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -925,34 +674,34 @@ async def get_run_result(
         )
     _ensure_run_owner(run, current_user)
 
-    db_status = str(run["status"])
-    if db_status == "failed":
+    db_status_str = (
+        run.status.value if isinstance(run.status, AgentRunStatus) else str(run.status)
+    )
+    if db_status_str == "failed":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Run falló: {run.get('error_message') or 'sin detalle'}",
+            detail=f"Run falló: {run.error_message or 'sin detalle'}",
         )
-    if db_status not in {"completed", "rejected"}:
+    if db_status_str not in {"completed", "rejected"}:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Run aún no terminado (status={db_status})",
+            detail=f"Run aún no terminado (status={db_status_str})",
         )
 
-    final = run.get("final_output_json")
-    if isinstance(final, str):
-        import json
-
-        try:
-            final = json.loads(final)
-        except (ValueError, TypeError):
-            final = {"raw_markdown": final, "_warning": "final_output_json mal formado"}
+    final = _decode_final_output(run.final_output_json)
     if final is None:
-        final = {"raw_markdown": "(sin output persistido)", "sections": {}, "recommendations": [], "risk_flags": []}
+        final = {
+            "raw_markdown": "(sin output persistido)",
+            "sections": {},
+            "recommendations": [],
+            "risk_flags": [],
+        }
 
     return {
         "run_id": run_id,
-        "status": db_status,
+        "status": db_status_str,
         "final": final,
-        "finished_at": _aware(run.get("finished_at")) if run.get("finished_at") else None,
+        "finished_at": _aware(run.finished_at) if run.finished_at else None,
     }
 
 
@@ -975,7 +724,7 @@ async def get_run_pdf(
     current_user: User = Depends(_coach_or_admin),
 ) -> Any:
     """Renderiza el markdown final a PDF con weasyprint + branding TyR."""
-    run = await _load_run(db, run_id)
+    run = await runs_service.load_run(db, run_id)
     if run is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -983,21 +732,17 @@ async def get_run_pdf(
         )
     _ensure_run_owner(run, current_user)
 
-    if str(run["status"]) not in {"completed", "rejected"}:
+    db_status_str = (
+        run.status.value if isinstance(run.status, AgentRunStatus) else str(run.status)
+    )
+    if db_status_str not in {"completed", "rejected"}:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Run aún no completado",
         )
 
-    final = run.get("final_output_json")
-    if isinstance(final, str):
-        import json
-
-        try:
-            final = json.loads(final)
-        except (ValueError, TypeError):
-            final = {"raw_markdown": final}
-    md = (final or {}).get("raw_markdown") or "_(sin contenido)_"
+    final = _decode_final_output(run.final_output_json) or {}
+    md = final.get("raw_markdown") or "_(sin contenido)_"
 
     # weasyprint import lazy: requiere libs nativas (cairo, pango). Si
     # falta en este entorno, devolvemos 501 claro.
@@ -1161,152 +906,24 @@ async def admin_ai_usage(
     """
     cutoff = _utc_now() - timedelta(days=days)
 
-    # Total runs y costo desde athlete_ai_insights (1 fila por run
-    # exitoso). Para fail rate sumamos agent_runs con status=failed.
-    result = await db.execute(
-        text(
-            """
-            SELECT
-              COUNT(*) AS n,
-              COALESCE(SUM(JSON_EXTRACT(metrics_snapshot_json, '$.aggregate.cost_usd_total')), 0) AS cost
-            FROM athlete_ai_insights
-            WHERE generated_at >= :cutoff
-            """
-        ),
-        {"cutoff": cutoff},
-    )
-    first = getattr(result, "first", lambda: None)()
-    if first is None:
-        rows = result.fetchall() if hasattr(result, "fetchall") else []
-        first = rows[0] if rows else None
+    metrics = await runs_service.admin_usage_metrics(db, since=cutoff)
 
-    if first is not None and hasattr(first, "_mapping"):
-        n_insights = int(first._mapping.get("n") or 0)
-        cost_total = float(first._mapping.get("cost") or 0.0)
-    elif first is not None:
-        n_insights = int(getattr(first, "n", None) or first[0] or 0)
-        cost_total = float(getattr(first, "cost", None) or first[1] or 0.0)
-    else:
-        n_insights = 0
-        cost_total = 0.0
-
-    # Latencias: lectura puntual desde aggregate.
-    result2 = await db.execute(
-        text(
-            """
-            SELECT
-              CAST(JSON_EXTRACT(metrics_snapshot_json, '$.aggregate.latency_ms_total') AS UNSIGNED) AS lat
-            FROM athlete_ai_insights
-            WHERE generated_at >= :cutoff
-              AND JSON_EXTRACT(metrics_snapshot_json, '$.aggregate.latency_ms_total') IS NOT NULL
-            """
-        ),
-        {"cutoff": cutoff},
-    )
-    rows2 = (
-        result2.fetchall()
-        if hasattr(result2, "fetchall")
-        else (result2.all() if hasattr(result2, "all") else [])
-    )
-    latencies: list[int] = []
-    for r in rows2:
-        try:
-            if hasattr(r, "_mapping"):
-                v = r._mapping.get("lat")
-            else:
-                v = getattr(r, "lat", None) or r[0]
-            if v is not None:
-                latencies.append(int(v))
-        except (TypeError, ValueError):
-            continue
-
-    p50 = int(statistics.median(latencies)) if latencies else 0
-    p95 = (
-        int(statistics.quantiles(latencies, n=20, method="inclusive")[-1])
-        if len(latencies) >= 2
-        else (latencies[0] if latencies else 0)
-    )
-
-    # Fail rate: failed / (completed + rejected + failed)
-    result3 = await db.execute(
-        text(
-            """
-            SELECT status, COUNT(*) AS c
-            FROM agent_runs
-            WHERE started_at >= :cutoff
-            GROUP BY status
-            """
-        ),
-        {"cutoff": cutoff},
-    )
-    rows3 = (
-        result3.fetchall()
-        if hasattr(result3, "fetchall")
-        else (result3.all() if hasattr(result3, "all") else [])
-    )
-    counts: dict[str, int] = {}
-    for r in rows3:
-        if hasattr(r, "_mapping"):
-            counts[str(r._mapping.get("status"))] = int(r._mapping.get("c") or 0)
-        else:
-            st = getattr(r, "status", None) or r[0]
-            c = getattr(r, "c", None) or r[1]
-            counts[str(st)] = int(c)
-
-    failed = counts.get("failed", 0)
-    terminal = (
-        counts.get("completed", 0)
-        + counts.get("rejected", 0)
-        + counts.get("failed", 0)
-        + counts.get("cancelled", 0)
-    )
-    fail_rate = (failed / terminal) if terminal > 0 else 0.0
-
-    # By prompt_version.
-    result4 = await db.execute(
-        text(
-            """
-            SELECT prompt_version,
-                   COUNT(*) AS c,
-                   COALESCE(SUM(JSON_EXTRACT(metrics_snapshot_json, '$.aggregate.cost_usd_total')), 0) AS cost
-            FROM athlete_ai_insights
-            WHERE generated_at >= :cutoff
-            GROUP BY prompt_version
-            ORDER BY c DESC
-            """
-        ),
-        {"cutoff": cutoff},
-    )
-    rows4 = (
-        result4.fetchall()
-        if hasattr(result4, "fetchall")
-        else (result4.all() if hasattr(result4, "all") else [])
-    )
-    by_pv: list[AIUsageByPromptVersion] = []
-    for r in rows4:
-        if hasattr(r, "_mapping"):
-            pv = r._mapping.get("prompt_version")
-            c = int(r._mapping.get("c") or 0)
-            cost = float(r._mapping.get("cost") or 0.0)
-        else:
-            pv = getattr(r, "prompt_version", None) or r[0]
-            c = int(getattr(r, "c", None) or r[1] or 0)
-            cost = float(getattr(r, "cost", None) or r[2] or 0.0)
-        by_pv.append(
-            AIUsageByPromptVersion(
-                prompt_version=str(pv or "unknown"),
-                run_count=c,
-                cost_usd_total=cost,
-            )
+    by_pv = [
+        AIUsageByPromptVersion(
+            prompt_version=row["prompt_version"],
+            run_count=row["run_count"],
+            cost_usd_total=row["cost_usd_total"],
         )
+        for row in metrics["by_prompt_version"]
+    ]
 
     return AIUsageResponse(
         window_days=days,
-        run_count=n_insights,
-        cost_usd_total=cost_total,
-        latency_ms_p50=p50,
-        latency_ms_p95=p95,
-        fail_rate=round(fail_rate, 4),
+        run_count=metrics["run_count"],
+        cost_usd_total=metrics["cost_usd_total"],
+        latency_ms_p50=metrics["latency_ms_p50"],
+        latency_ms_p95=metrics["latency_ms_p95"],
+        fail_rate=metrics["fail_rate"],
         by_prompt_version=by_pv,
     )
 
