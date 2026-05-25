@@ -56,6 +56,7 @@ function formatMs(ms: number, unit: string): string {
     return `${(ms / 1000).toFixed(2)} s`;
   }
   if (unit === "rank") return `P${Math.round(ms)}`;
+  if (unit === "pct") return `${Math.round(ms)}`;
   return `${ms} ${unit}`;
 }
 
@@ -73,6 +74,7 @@ const METRIC_LABELS: Record<EvolutionMetric, string> = {
   [EvolutionMetric.PODIUM_GAP_MS]: "Diferencia al podio",
   [EvolutionMetric.RANKING]: "Posición en categoría",
   [EvolutionMetric.TIME_MS]: "Tiempo total",
+  [EvolutionMetric.PERCENTILE]: "Percentil categoría",
 };
 
 function getDefaultSeason(): number {

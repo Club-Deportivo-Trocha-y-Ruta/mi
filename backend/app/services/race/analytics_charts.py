@@ -117,11 +117,13 @@ async def build_evolution(
         EvolutionMetric.PODIUM_GAP_MS: "ms",
         EvolutionMetric.TIME_MS: "ms",
         EvolutionMetric.RANKING: "position",
+        EvolutionMetric.PERCENTILE: "pct",
     }[metric]
 
     # CTE strategy:
     # - ``athlete_results``: una fila por evento donde compitió el atleta.
-    # - ``winners``: tiempo del P1 por (event, category) usado en gap.
+    # - ``cat_stats``: agregados FINISHED por (event, category) — MIN/MAX/COUNT
+    #   sustituye al CTE ``winners`` antiguo (MIN cubre el caso gap al P1).
     # Las dos se hacen LEFT JOIN para que un P1 propio aparezca con gap=0.
     sql = text(
         """
@@ -142,15 +144,17 @@ async def build_evolution(
               AND rr.deleted_at IS NULL
               AND s.season_year = :season
         ),
-        winners AS (
+        cat_stats AS (
             SELECT
                 rr.event_id,
                 rr.category_id,
-                MIN(rr.race_time_ms) AS winner_time_ms
+                MIN(rr.race_time_ms) AS time_min_ms,
+                MAX(rr.race_time_ms) AS time_max_ms,
+                COUNT(*)             AS cat_size
             FROM race_results rr
             WHERE rr.deleted_at IS NULL
               AND rr.status = 'finished'
-              AND rr.position = 1
+              AND rr.race_time_ms IS NOT NULL
               AND rr.event_id IN (SELECT event_id FROM athlete_results)
             GROUP BY rr.event_id, rr.category_id
         )
@@ -161,11 +165,13 @@ async def build_evolution(
             ar.status,
             ar.position,
             ar.race_time_ms,
-            w.winner_time_ms
+            cs.time_min_ms AS winner_time_ms,
+            cs.time_max_ms,
+            cs.cat_size
         FROM athlete_results ar
-        LEFT JOIN winners w
-          ON w.event_id    = ar.event_id
-         AND w.category_id = ar.category_id
+        LEFT JOIN cat_stats cs
+          ON cs.event_id    = ar.event_id
+         AND cs.category_id = ar.category_id
         ORDER BY ar.valida_num ASC, ar.event_date ASC
         """
     )
@@ -192,6 +198,8 @@ async def build_evolution(
         position = _get("position", 4)
         race_time_ms = _get("race_time_ms", 5)
         winner_time_ms = _get("winner_time_ms", 6)
+        time_max_ms = _get("time_max_ms", 7)
+        cat_size = _get("cat_size", 8)
 
         if event_id is None or event_date is None:
             continue
@@ -214,6 +222,26 @@ async def build_evolution(
                 gap = int(race_time_ms) - int(winner_time_ms)
                 # Atleta es P1 → gap=0. No es None.
                 value = float(max(gap, 0))
+        elif metric == EvolutionMetric.PERCENTILE:
+            # Percentil por TIEMPO (override coach real 2026-05-25).
+            # n<5 → ocultar (consistente con comparador, fila se omite).
+            if (
+                finished
+                and race_time_ms is not None
+                and winner_time_ms is not None
+                and time_max_ms is not None
+                and cat_size is not None
+                and int(cat_size) >= 5
+            ):
+                t = int(race_time_ms)
+                t_min = int(winner_time_ms)
+                t_max = int(time_max_ms)
+                if t_min <= t <= t_max:
+                    if t_max == t_min:
+                        value = 100.0
+                    else:
+                        pct = 100.0 * (1.0 - (t - t_min) / (t_max - t_min))
+                        value = round(pct)
 
         series.append(
             EvolutionPoint(

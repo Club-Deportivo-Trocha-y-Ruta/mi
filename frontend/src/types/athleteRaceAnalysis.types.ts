@@ -29,6 +29,7 @@ export const EvolutionMetric = {
   PODIUM_GAP_MS: "podium_gap_ms",
   RANKING: "ranking",
   TIME_MS: "time_ms",
+  PERCENTILE: "percentile",
 } as const;
 export type EvolutionMetric = (typeof EvolutionMetric)[keyof typeof EvolutionMetric];
 
