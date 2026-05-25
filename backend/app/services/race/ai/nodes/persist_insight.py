@@ -52,10 +52,12 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
+from app.models.race_result import ResultStatus
 from app.services.race.ai.db import get_session
 from app.services.race.ai.events import with_events
 from app.services.race.ai.retry import with_retry
 from app.services.race.insights_history import deprecate_previous_active
+from app.services.race.queries import load_events, load_results, load_series
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,52 @@ def _serializable(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: _serializable(v) for k, v in obj.items()}
     return obj
+
+
+async def _compute_category_stats(
+    db: Any, season: int, category_id: Optional[int]
+) -> dict[int, dict[str, Optional[int]]]:
+    """Devuelve estadísticas por válida para el percentil de categoría.
+
+    Formato: ``{valida_num: {"size": int, "time_min_ms": int|None,
+    "time_max_ms": int|None}}``.
+
+    Override coach real (2026-05-25): el club usa percentil por TIEMPO
+    en vez de por posición, asumiendo el trade-off biológico documentado
+    en CLAUDE.md (sección "Edad biológica > cronológica"). El coach
+    interpreta la métrica con ese contexto.
+
+    Solo considera ``status='finished'`` con ``race_time_ms`` no-null.
+    """
+    if category_id is None:
+        return {}
+    results = await load_results(db)
+    events = await load_events(db)
+    series_list = await load_series(db)
+    series_ids = {s.id for s in series_list if s.season_year == season}
+    events_in_season = {
+        e.id: e for e in events if e.series_id in series_ids
+    }
+    stats: dict[int, dict[str, Optional[int]]] = {}
+    for event_id, event in events_in_season.items():
+        if not event.sequence_number:
+            continue
+        finished_times = [
+            r.race_time_ms
+            for r in results
+            if r.event_id == event_id
+            and r.category_id == category_id
+            and r.status == ResultStatus.FINISHED
+            and r.race_time_ms is not None
+        ]
+        if not finished_times:
+            continue
+        stats[int(event.sequence_number)] = {
+            "size": len(finished_times),
+            "time_min_ms": int(min(finished_times)),
+            "time_max_ms": int(max(finished_times)),
+        }
+    return stats
 
 
 def _resolve_valida_nums_to_persist(state: dict, use_case: str) -> list[int]:
@@ -159,12 +207,16 @@ async def persist_insight(state: dict) -> dict[str, Any]:
     risks = _serializable(draft.risk_flags or [])
     principles = _serializable(state.get("principles") or [])
 
-    metrics_snapshot = {
+    # `category_stats` se popula dentro del try (requiere sesión DB).
+    # Mantiene `category_sizes` por compatibilidad transitoria con
+    # snapshots intermedios — los nuevos solo usan `category_stats`.
+    metrics_snapshot: dict[str, Any] = {
         "progression": state.get("metrics", {}).get("progression", []),
         "podium_gap": state.get("metrics", {}).get("podium_gap", []),
         "podium_context": state.get("podium_context", {}),
         "aggregate": aggregate,
         "risks": risks,
+        "category_stats": {},
     }
 
     confidence_value = state.get("confidence") or InsightConfidence.medium
@@ -189,6 +241,20 @@ async def persist_insight(state: dict) -> dict[str, Any]:
     try:
         async with get_session() as db:
             from sqlalchemy import update as sa_update
+
+            # Popular category_stats para percentil por TIEMPO en el
+            # Comparador v2. Falla silenciosa: snapshot queda con `{}` y
+            # la UI oculta la fila percentil (graceful degrade).
+            try:
+                category_id = state.get("category_id")
+                metrics_snapshot["category_stats"] = (
+                    await _compute_category_stats(db, season, category_id)
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "compute_category_stats failed; snapshot stays without stats",
+                    exc_info=True,
+                )
 
             # Fan-out: una fila por cada valida_num resuelto. El versionado
             # (deprecate_previous_active) se aplica por (athlete, season,

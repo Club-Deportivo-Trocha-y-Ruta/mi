@@ -3,7 +3,8 @@
 Funciones puras async que producen los payloads de ``GET /evolution`` y
 ``GET /distribution``. Privacidad-first: NO devuelven nombres ni
 ``competitor_id`` reales — emiten pseudónimos determinísticos por
-temporada.
+temporada. ``display_name`` solo viaja cuando el router activa
+``include_display_name=True`` (coach/admin únicamente).
 
 Patrón de queries (sql-pro):
     Usamos CTEs explícitos en lugar de cargar tablas completas con
@@ -49,12 +50,10 @@ logger = logging.getLogger(__name__)
 # Tamaños mínimos para confianza estadística.
 _EVOLUTION_LOW_MAX = 2   # <3 puntos
 _EVOLUTION_HIGH_MIN = 8  # ≥8 puntos
-_DISTRIBUTION_MIN_N = 5  # <5 → no fit curva normal
+_DISTRIBUTION_MIN_N = 5  # <5 → no fit curva normal, mostrar tabla
 
 # Puntos a generar en la curva normal teórica.
 _CURVE_POINTS = 60
-# Cuántas sigmas a cada lado del mean para barrer la curva.
-_CURVE_SIGMA_WIDTH = 3.0
 
 
 def _confidence_from_n(n: int) -> AnalysisConfidence:
@@ -247,6 +246,7 @@ async def build_distribution(
     athlete_id: int,
     season: int,
     valida_num: int,
+    include_display_name: bool = False,
 ) -> DistributionResponse:
     """Distribución de tiempos en la categoría del atleta en una válida.
 
@@ -254,18 +254,23 @@ async def build_distribution(
         athlete_id: PK del atleta.
         season: Año de temporada.
         valida_num: ``sequence_number`` del evento (1..7 / 99 / 0=agregada).
+        include_display_name: Si ``True``, popula ``display_name`` en cada
+            :class:`DistributionPoint` desde ``race_competitors.display_name``
+            (fuente: PDF federativo público). Solo activar para coach/admin.
+            Para parent dejar en ``False`` (pseudónimo únicamente).
 
     Returns:
-        :class:`DistributionResponse`. Si ``sample_size < 5`` la respuesta
-        es informativa pero ``points=[]`` y ``curve=[]`` — no entregamos
-        estadísticas poco confiables sobre grupos chicos de menores.
+        :class:`DistributionResponse`. Si ``sample_size < 5`` no se ajusta
+        curva normal (``curve=[]``, ``confidence="low"``) — el cliente cae
+        a tabla de tiempos pseudonimizados. Los ``points`` (pseudónimo +
+        tiempo + is_self) siempre vienen poblados para n≥1.
 
     Notas SQL:
         - ``target`` (1 fila) localiza (category_id, event_id) del atleta.
         - SELECT principal trae todos los race_results de esa categoría en
           ese evento (FINISHED only para que la curva tenga sentido).
-        - JOIN con ``race_competitors`` solo para tener un id estable que
-          pseudonimizar — el ``display_name`` NUNCA viaja al cliente.
+        - JOIN con ``race_competitors`` para tener id estable (pseudonimizar)
+          y ``display_name`` (solo expuesto si ``include_display_name=True``).
     """
     # Step 1: localizar el target del atleta (category + event).
     target_sql = text(
@@ -329,13 +334,17 @@ async def build_distribution(
     )
 
     # Step 2: todos los corredores FINISHED de esa categoría en ese evento.
+    # JOIN con race_competitors para tener display_name disponible en memoria;
+    # solo se expone al cliente cuando include_display_name=True (coach/admin).
     sample_sql = text(
         """
         SELECT
             rr.competitor_id,
             rr.race_time_ms,
-            rr.athlete_id
+            rr.athlete_id,
+            rc.display_name
         FROM race_results rr
+        JOIN race_competitors rc ON rc.id = rr.competitor_id
         WHERE rr.event_id    = :event_id
           AND rr.category_id = :category_id
           AND rr.status      = 'finished'
@@ -354,17 +363,18 @@ async def build_distribution(
         else list(sample_result)
     )
 
-    times: list[tuple[int, int, bool]] = []
-    # (competitor_id, race_time_ms, is_self)
+    times: list[tuple[int, int, bool, str]] = []
+    # (competitor_id, race_time_ms, is_self, display_name)
     for row in sample_rows:
         rm = row._mapping if hasattr(row, "_mapping") else None
         comp_id = int(rm["competitor_id"] if rm else row[0])
         t_ms = int(rm["race_time_ms"] if rm else row[1])
         row_athlete_id = (rm["athlete_id"] if rm else row[2])
+        dn = str(rm["display_name"] if rm else row[3]) if (rm["display_name"] if rm else row[3]) is not None else ""
         is_self = (
             row_athlete_id is not None and int(row_athlete_id) == int(athlete_id)
         )
-        times.append((comp_id, t_ms, is_self))
+        times.append((comp_id, t_ms, is_self, dn))
 
     sample_size = len(times)
 
@@ -375,10 +385,10 @@ async def build_distribution(
     athlete_pct: Optional[float] = None
 
     if sample_size >= 1:
-        only_times = [t for _, t, _ in times]
+        only_times = [t for _, t, _, _ in times]
         mean_ms = sum(only_times) / sample_size
     if sample_size >= 2:
-        variance = sum((t - mean_ms) ** 2 for t in (x for _, x, _ in times)) / (
+        variance = sum((t - mean_ms) ** 2 for t in (x for _, x, _, _ in times)) / (
             sample_size - 1
         )
         stddev_ms = math.sqrt(variance)
@@ -396,43 +406,36 @@ async def build_distribution(
     # da percentil más alto). Convención reporte deportivo.
     if athlete_time_ms is not None and sample_size >= 2:
         rank_better_or_equal = sum(
-            1 for _, t, _ in times if t >= athlete_time_ms
+            1 for _, t, _, _ in times if t >= athlete_time_ms
         )
         athlete_pct = round(100.0 * rank_better_or_equal / sample_size, 2)
 
-    # Si n<5 no devolvemos puntos ni curva — privacidad estadística.
-    if sample_size < _DISTRIBUTION_MIN_N:
-        return DistributionResponse(
-            season=season,
-            valida_num=valida_num,
-            category_id=category_id,
-            category_code=category_code,
-            sample_size=sample_size,
-            mean_ms=mean_ms,
-            stddev_ms=stddev_ms,
-            athlete_time_ms=athlete_time_ms,
-            athlete_z_score=athlete_z,
-            athlete_percentile=athlete_pct,
-            points=[],
-            curve=[],
-            confidence=AnalysisConfidence.low,
-        )
-
-    # Puntos observados (pseudonimizados).
+    # Puntos observados — pseudónimo siempre presente; display_name solo
+    # cuando include_display_name=True (coach/admin). Nunca se loguea.
     points = [
         DistributionPoint(
             pseudonym=_build_pseudonym(cid),
             time_ms=t,
             is_self=is_self,
+            display_name=dn if include_display_name else None,
         )
-        for (cid, t, is_self) in times
+        for (cid, t, is_self, dn) in times
     ]
 
-    # Curva normal teórica.
+    # Curva normal teórica — solo con n >= MIN_N (=5). Con menos corredores
+    # la campana es engañosa porque outliers inflan σ.
+    # El rango de la curva es [min(times), max(times)] — no ±3σ teórico
+    # (con muestras pequeñas el rango teórico produce límites absurdos).
     curve: list[DistributionCurvePoint] = []
-    if mean_ms is not None and stddev_ms and stddev_ms > 0:
-        low_x = max(0.0, mean_ms - _CURVE_SIGMA_WIDTH * stddev_ms)
-        high_x = mean_ms + _CURVE_SIGMA_WIDTH * stddev_ms
+    if (
+        sample_size >= _DISTRIBUTION_MIN_N
+        and mean_ms is not None
+        and stddev_ms
+        and stddev_ms > 0
+    ):
+        all_times_ms = [t for _, t, _, _ in times]
+        low_x = float(min(all_times_ms))
+        high_x = float(max(all_times_ms))
         if high_x > low_x:
             step = (high_x - low_x) / (_CURVE_POINTS - 1)
             for i in range(_CURVE_POINTS):
@@ -443,6 +446,13 @@ async def build_distribution(
                         density=_normal_pdf(x, mean_ms, stddev_ms),
                     )
                 )
+
+    # Sin curve fit → confidence=low (fuerza al frontend a renderizar tabla).
+    confidence = (
+        AnalysisConfidence.low
+        if sample_size < _DISTRIBUTION_MIN_N
+        else _confidence_from_n(sample_size)
+    )
 
     return DistributionResponse(
         season=season,
@@ -457,7 +467,7 @@ async def build_distribution(
         athlete_percentile=athlete_pct,
         points=points,
         curve=curve,
-        confidence=_confidence_from_n(sample_size),
+        confidence=confidence,
     )
 
 

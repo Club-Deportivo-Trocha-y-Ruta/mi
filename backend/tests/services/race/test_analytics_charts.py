@@ -5,7 +5,8 @@ Cobertura:
 - ``build_evolution``: low confidence con n<3, orden por valida_num,
   cálculo de podium_gap.
 - ``build_distribution``: pseudonimización determinística, low confidence
-  con n<5 (sin points/curve), is_self del atleta, z-score y percentil.
+  con n<5 (sin curve, tabla con points pseudonimizados), is_self del
+  atleta, z-score y percentil, display_name por rol, rango real de curva.
 
 Estrategia: SQLite async in-memory con StaticPool. Cada test siembra
 un escenario mínimo (1 atleta + 1 categoría + N race_results) y verifica
@@ -315,8 +316,8 @@ async def test_build_evolution_podium_gap_metric_calculates_diff_to_winner(sessi
 
 @pytest.mark.asyncio
 async def test_build_distribution_pseudonymizes_competitors(session):
-    """Cada DistributionPoint expone solo ``pseudonym`` — NO display_name ni
-    competitor_id."""
+    """Cada DistributionPoint sin include_display_name solo expone ``pseudonym``
+    y ``display_name=None`` — competitor_id nunca viaja al cliente."""
     await _seed_athlete_in_event(
         session,
         event_id=1,
@@ -339,17 +340,18 @@ async def test_build_distribution_pseudonymizes_competitors(session):
         # Pseudónimo bien formado: "C0000".."C9999".
         assert point.pseudonym.startswith("C")
         assert len(point.pseudonym) == 5
-        # No hay forma de exfiltrar el display_name por el schema (extra=forbid).
-        # Validamos también que el modelo no incluya un display_name por azar.
+        # Sin include_display_name → display_name=None (default).
+        assert point.display_name is None
+        # competitor_id no viaja nunca: no está en el schema.
         dumped = point.model_dump()
-        assert "display_name" not in dumped
         assert "competitor_id" not in dumped
 
 
 @pytest.mark.asyncio
 async def test_build_distribution_low_confidence_when_n_less_than_5(session):
-    """sample_size < 5 → points y curve vacíos, confidence=low."""
-    # Total runners = 4 (1 ganador + atleta + 2 más).
+    """sample_size < 5 → curve vacía y confidence=low; points pseudonimizados
+    siguen viniendo poblados para que el cliente pueda renderizar tabla."""
+    # Total runners = 4 (1 ganador + atleta + 2 más) → debajo del umbral.
     await _seed_athlete_in_event(
         session,
         event_id=1,
@@ -367,7 +369,10 @@ async def test_build_distribution_low_confidence_when_n_less_than_5(session):
         session, athlete_id=144, season=2026, valida_num=1
     )
     assert result.sample_size == 4
-    assert result.points == []
+    # Points pseudonimizados siempre presentes — la tabla los necesita.
+    assert len(result.points) == 4
+    assert all(p.pseudonym.startswith("C") for p in result.points)
+    # Curva normal no se ajusta con n<5 (sería engañosa con muestra chica).
     assert result.curve == []
     assert result.confidence == AnalysisConfidence.low
 
@@ -433,3 +438,95 @@ async def test_build_distribution_athlete_z_score_and_percentile(session):
     # El competitor_id del atleta seed-eado es event_id * 1000 + 2 = 1002.
     expected_pseudo = _build_pseudonym(1002)
     assert self_point.pseudonym == expected_pseudo
+
+
+# ---------------------------------------------------------------------------
+# Nuevos tests: display_name por rol, rango real de curva
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_distribution_with_include_display_name_populates_field(session):
+    """Con include_display_name=True cada point expone display_name no vacío."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=3,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=4,  # total 6 ≥ 5
+    )
+    await session.commit()
+
+    result = await build_distribution(
+        session,
+        athlete_id=144,
+        season=2026,
+        valida_num=1,
+        include_display_name=True,
+    )
+    assert result.sample_size == 6
+    # Todos los puntos deben tener display_name poblado (seed los define).
+    for point in result.points:
+        assert point.display_name is not None
+        assert len(point.display_name) > 0
+
+
+@pytest.mark.asyncio
+async def test_build_distribution_without_include_display_name_is_none(session):
+    """Con include_display_name=False (default) todos los display_name son None."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=3,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=4,
+    )
+    await session.commit()
+
+    result = await build_distribution(
+        session,
+        athlete_id=144,
+        season=2026,
+        valida_num=1,
+        include_display_name=False,
+    )
+    for point in result.points:
+        assert point.display_name is None
+
+
+@pytest.mark.asyncio
+async def test_build_distribution_curve_range_equals_min_max_times(session):
+    """La curva se extiende desde min(times) hasta max(times), no ±3σ."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=3,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=4,  # total 6 ≥ 5, activa curva
+    )
+    await session.commit()
+
+    result = await build_distribution(
+        session, athlete_id=144, season=2026, valida_num=1
+    )
+    # La curva debe estar activa (n=6 ≥ 5).
+    assert len(result.curve) == 60
+
+    # x_ms[0] debe coincidir con el tiempo mínimo del sample (winner 1_800_000).
+    assert result.curve[0].x_ms == pytest.approx(1_800_000.0, rel=1e-4)
+    # x_ms[-1] debe coincidir con el tiempo máximo del sample.
+    # Con other_runners=4: tiempos = 1800k, 1810k, 1811k, 1812k, 1813k, 1814k
+    # (winner + athlete P3 + runners P4..P7).
+    assert result.curve[-1].x_ms == pytest.approx(1_814_000.0, rel=1e-4)

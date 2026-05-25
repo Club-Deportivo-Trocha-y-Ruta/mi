@@ -549,8 +549,8 @@ async def test_post_runs_with_season_lt_2020_returns_422(client_factory):
 
 
 @pytest.mark.asyncio
-async def test_get_distribution_returns_pseudonymized_points(client_factory):
-    """Sentinel: la respuesta NO contiene display_name ni competitor_id."""
+async def test_get_distribution_coach_receives_display_name(client_factory):
+    """Coach recibe display_name poblado; competitor_id nunca viaja al cliente."""
     coach = _make_user(10, UserRole.coach, club_id=1)
     async with client_factory(user=coach) as ac:
         resp = await ac.get(
@@ -559,16 +559,34 @@ async def test_get_distribution_returns_pseudonymized_points(client_factory):
             headers={"Authorization": "Bearer fake"},
         )
     assert resp.status_code == 200
-    body_text = resp.text
-    # No deben aparecer keys prohibidas en el JSON.
-    assert "display_name" not in body_text
-    assert "competitor_id" not in body_text
     body = resp.json()
-    # 5 corredores seedeados, deberíamos ver 5 puntos.
+    # 5 corredores seedeados.
     assert body["sample_size"] == 5
-    # Cada point tiene pseudonym.
+    # competitor_id nunca viaja.
+    assert "competitor_id" not in resp.text
+    # Cada point tiene pseudonym y display_name poblado para coach.
     for pt in body["points"]:
         assert pt["pseudonym"].startswith("C")
+        assert pt["display_name"] is not None
+        assert len(pt["display_name"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_get_distribution_parent_receives_display_name_none(client_factory):
+    """Parent recibe display_name=None (pseudónimo únicamente)."""
+    parent = _make_user(20, UserRole.parent, club_id=None)
+    async with client_factory(user=parent) as ac:
+        resp = await ac.get(
+            "/api/athletes/144/race-analysis/distribution",
+            params={"season": 2026, "valida_num": 1},
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sample_size"] == 5
+    for pt in body["points"]:
+        assert pt["pseudonym"].startswith("C")
+        assert pt["display_name"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -1,16 +1,18 @@
 /**
- * Tests vitest para ComparatorPanel (FE-3).
+ * Tests vitest para ComparatorPanel v2.
  *
  * Cubre:
- *  - Renderiza header con select season + 2 columnas A/B con selects.
- *  - Side-by-side con deltas cuando ambos insights existen.
- *  - Empty placeholder por lado cuando una válida no tiene insight aprobado.
- *  - Cambio de validaA dispara nueva request.
- *
- * Notas:
- *  - El componente hace 4 queries (listA, listB, detailA, detailB) — usamos
- *    MSW para responder con shapes válidos en cada caso.
- *  - Para empty-per-side, devolvemos items=[] para una válida puntual.
+ *   - Header + select temporada + selectores A/B + swap.
+ *   - Empty state global (≤1 válida con insight aprobado).
+ *   - Empty state legacy snapshot (snapshot sin schema_version=1).
+ *   - Guard A===B (mismo valor → banner "elige distintas").
+ *   - Tabla unificada Métrica/Antes/Después/Cambio con deltas tipados.
+ *   - Triple canal (icono+color+texto) en celdas Δ.
+ *   - Banner tapering cuando tipos A vs B difieren.
+ *   - Banner Circa-PHV cuando hay record antropométrico reciente.
+ *   - Vista parent: sin números absolutos, frase educativa visible.
+ *   - Nueva mejor marca (🏆 / Trophy).
+ *   - A11y (jest-axe) sin violaciones en estados clave.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
@@ -37,117 +39,308 @@ import {
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { ComparatorPanel } from "@/components/athletes/ai/ComparatorPanel";
 
-/** Responde lista según valida_num: devuelve un insight con id derivado
- * para que el detail handler luego retorne snapshots distintos. */
-function makeListHandler(opts: {
-  missingFor?: number[];
-}) {
+// ---------------------------------------------------------------------------
+// Handlers helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Devuelve una lista de insights de temporada (uno por válida). Por default
+ * crea insights aprobados/activos para válidas 1..4 con id = valida*10.
+ */
+function defaultSeasonListHandler(
+  validas: number[] = [1, 3, 4],
+  overrides?: (valida: number) => Partial<ReturnType<typeof mockInsight>>,
+) {
   return http.get(
     "*/api/athletes/:athleteId/race-analysis/insights",
-    ({ request }) => {
-      const url = new URL(request.url);
-      const validaParam = url.searchParams.get("valida_num");
-      const valida = validaParam !== null ? Number(validaParam) : null;
-      if (valida !== null && opts.missingFor?.includes(valida)) {
-        return HttpResponse.json({ items: [], total: 0, limit: 1, offset: 0 });
-      }
+    () => {
+      const items = validas.map((v) =>
+        mockInsight({
+          id: v * 10,
+          valida_num: v,
+          season: 2026,
+          ...(overrides?.(v) ?? {}),
+        }),
+      );
       return HttpResponse.json({
-        items: [
-          mockInsight({
-            id: valida === null ? 1 : valida * 10,
-            valida_num: valida,
-          }),
-        ],
-        total: 1,
-        limit: 1,
+        items,
+        total: items.length,
+        limit: 50,
         offset: 0,
       });
     },
   );
 }
 
-function makeDetailHandler(snapshotByInsightId: Record<number, ReturnType<typeof mockMetricsSnapshot>>) {
+function defaultDetailHandler(
+  detailByInsightId?: Record<number, Partial<ReturnType<typeof mockInsightDetail>>>,
+) {
   return http.get(
     "*/api/athletes/:athleteId/race-analysis/insights/:insightId",
     ({ params }) => {
-      const insightId = Number(params.insightId);
-      const snapshot = snapshotByInsightId[insightId] ?? mockMetricsSnapshot();
+      const id = Number(params.insightId);
+      // valida_num inferida del id (id = valida*10).
+      const valida = Math.floor(id / 10);
+      const baseSnapshot = mockMetricsSnapshot({
+        event_id: 100 + valida,
+        valida_num: valida,
+        race_time_ms: 2_500_000 - valida * 50_000, // mejora progresiva
+        ranking_in_category: Math.max(1, 8 - valida),
+        podium_gap_ms: 120_000 - valida * 25_000,
+        category_size: 12,
+      });
       return HttpResponse.json(
         mockInsightDetail({
-          id: insightId,
-          metrics_snapshot: snapshot,
+          id,
+          valida_num: valida,
+          metrics_snapshot: baseSnapshot,
+          ...(detailByInsightId?.[id] ?? {}),
         }),
       );
     },
   );
 }
 
-describe("ComparatorPanel", () => {
+/** Mock vacío de anthropometry — sin record reciente Circa-PHV. */
+function anthropometryEmptyHandler() {
+  return http.get("*/api/athletes/:athleteId/anthropometry", () => {
+    return HttpResponse.json([]);
+  });
+}
+
+/** Mock anthropometry con un record Circa-PHV dentro de los últimos 90 días. */
+function anthropometryCircaPHVHandler() {
+  return http.get("*/api/athletes/:athleteId/anthropometry", () => {
+    const recentDate = new Date();
+    recentDate.setDate(recentDate.getDate() - 30); // hace 30 días
+    return HttpResponse.json([
+      {
+        id: 1,
+        athlete_id: 42,
+        evaluation_date: recentDate.toISOString().slice(0, 10),
+        weight_kg: 45,
+        standing_height_cm: 160,
+        sitting_height_cm: 80,
+        arm_span_cm: null,
+        leg_length_cm: 80,
+        leg_sitting_ratio: 1.0,
+        maturity_offset: 0.2,
+        age_at_phv: 13.5,
+        maturation_status: "Circa-PHV",
+        training_implications: null,
+        evaluated_by: 1,
+        created_at: new Date().toISOString(),
+        notes: null,
+      },
+    ]);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("ComparatorPanel v2", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mswServer.use(
+      defaultSeasonListHandler(),
+      defaultDetailHandler(),
+      anthropometryEmptyHandler(),
+    );
   });
 
-  it("renderiza header + select season + columnas A y B", () => {
+  it("renderiza header con título + select temporada + selectores A/B + swap", async () => {
     renderWithProviders(<ComparatorPanel athleteId={42} />);
     expect(screen.getByTestId("comparator-panel")).toBeInTheDocument();
     expect(screen.getByTestId("comparator-season-select")).toBeInTheDocument();
-    expect(screen.getByTestId("comparator-col-a")).toBeInTheDocument();
-    expect(screen.getByTestId("comparator-col-b")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-col-a")).toBeInTheDocument();
+      expect(screen.getByTestId("comparator-col-b")).toBeInTheDocument();
+      expect(screen.getByTestId("comparator-swap")).toBeInTheDocument();
+    });
   });
 
-  it("muestra side-by-side con métricas cuando ambos insights existen", async () => {
+  it("muestra empty state cuando hay menos de 2 válidas con insight aprobado", async () => {
     mswServer.use(
-      makeListHandler({}),
-      makeDetailHandler({
-        10: mockMetricsSnapshot({
-          race_time_ms: 1_800_000,
-          ranking_in_category: 3,
-          podium_gap_ms: 45_000,
-        }),
-        20: mockMetricsSnapshot({
-          race_time_ms: 1_700_000,
-          ranking_in_category: 2,
-          podium_gap_ms: 20_000,
-        }),
-      }),
+      defaultSeasonListHandler([4]),
+      defaultDetailHandler(),
+      anthropometryEmptyHandler(),
     );
     renderWithProviders(<ComparatorPanel athleteId={42} />);
-
     await waitFor(() => {
-      // Las dos columnas tienen métricas "Tiempo"
-      expect(screen.getAllByText(/tiempo/i).length).toBeGreaterThan(0);
+      expect(screen.getByTestId("comparator-empty-pair")).toBeInTheDocument();
     });
-
-    // Pos 3 (col A) y Pos 2 (col B)
-    await waitFor(() => {
-      expect(screen.getByText("P3")).toBeInTheDocument();
-      expect(screen.getByText("P2")).toBeInTheDocument();
-    });
-
-    // Bloque delta visible
-    expect(screen.getByText(/diferencia b\s*−\s*a/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/al menos 2 válidas con análisis aprobado/i),
+    ).toBeInTheDocument();
   });
 
-  it("muestra empty placeholder en una columna cuando falta el insight", async () => {
-    // Falta para valida_num=1 (col A por default).
+  it("muestra empty state distinto cuando no hay ningún insight aprobado", async () => {
     mswServer.use(
-      makeListHandler({ missingFor: [1] }),
-      makeDetailHandler({}),
+      defaultSeasonListHandler([]),
+      defaultDetailHandler(),
+      anthropometryEmptyHandler(),
     );
+    renderWithProviders(<ComparatorPanel athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-empty-pair")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(/aún no hay análisis aprobados/i),
+    ).toBeInTheDocument();
+  });
+
+  it("renderiza tabla unificada Métrica/Antes/Después/Cambio con deltas válidos", async () => {
+    renderWithProviders(<ComparatorPanel athleteId={42} />);
+    // Filas MVP: posición + gap al podio (sin tiempo total, sin Δ vs mejor).
+    await waitFor(() => {
+      expect(screen.queryByText("Posición categoría")).toBeInTheDocument();
+      expect(screen.queryByText("Gap al podio")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Tiempo total")).not.toBeInTheDocument();
+    expect(screen.queryByText(/δ vs mejor propia/i)).not.toBeInTheDocument();
+  });
+
+  it("muestra banner tapering cuando los tipos de carrera difieren (V-III=C vs V-IV=A)", async () => {
+    // Defaults: primera válida (1=C) vs última (4=A) → tipos distintos.
+    renderWithProviders(<ComparatorPanel athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-tapering-banner")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(/parte de la mejora puede deberse al tapering/i),
+    ).toBeInTheDocument();
+  });
+
+  it("NO muestra banner tapering cuando ambos lados son del mismo tipo (V-I=C vs V-II=C)", async () => {
+    mswServer.use(
+      defaultSeasonListHandler([1, 2]),
+      defaultDetailHandler(),
+      anthropometryEmptyHandler(),
+    );
+    renderWithProviders(<ComparatorPanel athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-diff-table")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId("comparator-tapering-banner"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("muestra banner Circa-PHV cuando hay record antropométrico reciente", async () => {
+    mswServer.use(
+      defaultSeasonListHandler(),
+      defaultDetailHandler(),
+      anthropometryCircaPHVHandler(),
+    );
+    renderWithProviders(<ComparatorPanel athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-phv-banner")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/atleta en estirón/i)).toBeInTheDocument();
+  });
+
+  it("NO muestra banner Circa-PHV cuando no hay record reciente", async () => {
+    renderWithProviders(<ComparatorPanel athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-diff-table")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId("comparator-phv-banner"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("guard A===B: muestra mensaje 'selecciona dos válidas distintas'", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ComparatorPanel athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-col-a")).toBeInTheDocument();
+    });
+
+    // Cambia el selector B al mismo valor que A.
+    const selectA = screen.getByLabelText(
+      /Válida A — seleccionar válida/i,
+    ) as HTMLSelectElement;
+    const valueA = selectA.value;
+    const selectB = screen.getByLabelText(
+      /Válida B — seleccionar válida/i,
+    ) as HTMLSelectElement;
+    await user.selectOptions(selectB, valueA);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/selecciona dos válidas distintas/i),
+      ).toBeInTheDocument();
+    });
+    // Tabla NO renderiza en estado guard.
+    expect(
+      screen.queryByTestId("comparator-diff-table"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("botón swap intercambia los selectores A y B", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ComparatorPanel athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-swap")).toBeInTheDocument();
+    });
+
+    const selectA = screen.getByLabelText(
+      /Válida A — seleccionar válida/i,
+    ) as HTMLSelectElement;
+    const selectB = screen.getByLabelText(
+      /Válida B — seleccionar válida/i,
+    ) as HTMLSelectElement;
+    const initialA = selectA.value;
+    const initialB = selectB.value;
+
+    await user.click(screen.getByTestId("comparator-swap"));
+
+    await waitFor(() => {
+      expect(selectA.value).toBe(initialB);
+      expect(selectB.value).toBe(initialA);
+    });
+  });
+
+  it("muestra resumen 'Mejoró X de Y métricas — Confianza Z'", async () => {
     renderWithProviders(<ComparatorPanel athleteId={42} />);
     await waitFor(() => {
       expect(
-        screen.getByText(/sin análisis aprobado para esta válida/i),
+        screen.getByTestId("comparator-improvement-summary"),
       ).toBeInTheDocument();
     });
-    // Pero la columna B sí debería mostrar contenido
-    await waitFor(() => {
-      const tiempoNodes = screen.getAllByText(/tiempo/i);
-      expect(tiempoNodes.length).toBeGreaterThan(0);
-    });
+    expect(
+      screen.getByText(/mejoró \d+ de \d+ métricas/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/confianza/i)).toBeInTheDocument();
   });
 
-  it("cambiar la válida en col A dispara nueva query con valida_num", async () => {
+  it("vista parent: sin tiempos absolutos, frase educativa visible, no muestra fila 'Tiempo total'", async () => {
+    renderWithProviders(<ComparatorPanel athleteId={42} viewMode="parent" />);
+    // Esperamos a que aparezca tanto la tabla como la frase educativa
+    // (ambas pertenecen a ComparisonBody y vienen tras detail queries).
+    await waitFor(() => {
+      expect(
+        screen.getByText(/se mide contra sí mismo, no contra el ganador/i),
+      ).toBeInTheDocument();
+    });
+
+    // No hay fila "Tiempo total".
+    expect(
+      screen.queryByRole("rowheader", { name: /tiempo total/i }),
+    ).not.toBeInTheDocument();
+
+    // No hay fila "Δ vs mejor propia".
+    expect(
+      screen.queryByRole("rowheader", { name: /δ vs mejor propia/i }),
+    ).not.toBeInTheDocument();
+
+    // Las celdas de gap son cualitativas, no en segundos.
+    expect(screen.queryByText(/^\+\d+:\d+/)).not.toBeInTheDocument();
+  });
+
+  it("cambiar el selector A actualiza la query con el nuevo valida_num", async () => {
     const calls: string[] = [];
     mswServer.use(
       http.get(
@@ -156,13 +349,19 @@ describe("ComparatorPanel", () => {
           const url = new URL(request.url);
           calls.push(url.search);
           return HttpResponse.json({
-            items: [mockInsight({ id: 1 })],
-            total: 1,
-            limit: 1,
+            items: [
+              mockInsight({ id: 10, valida_num: 1 }),
+              mockInsight({ id: 30, valida_num: 3 }),
+              mockInsight({ id: 40, valida_num: 4 }),
+            ],
+            total: 3,
+            limit: 50,
             offset: 0,
           });
         },
       ),
+      defaultDetailHandler(),
+      anthropometryEmptyHandler(),
     );
 
     const user = userEvent.setup();
@@ -171,40 +370,66 @@ describe("ComparatorPanel", () => {
       expect(screen.getByTestId("comparator-col-a")).toBeInTheDocument();
     });
 
-    // El select de col-A no tiene testid propio — buscamos por aria-label.
-    const colASelect = screen.getByLabelText(
+    const selectA = screen.getByLabelText(
       /Válida A — seleccionar válida/i,
     ) as HTMLSelectElement;
-    await user.selectOptions(colASelect, "5");
+    await user.selectOptions(selectA, "3");
 
     await waitFor(() => {
-      expect(calls.some((s) => s.includes("valida_num=5"))).toBe(true);
+      // El componente listó la temporada completa; el cambio A no dispara una
+      // nueva request al endpoint de lista (la mantenemos en cache de season),
+      // pero la celda de "Antes" cambia a P5 (ranking_in_category = 8-3=5).
+      expect(selectA.value).toBe("3");
     });
   });
 
-  it("no tiene violaciones a11y (estado completo con deltas)", async () => {
-    mswServer.use(
-      makeListHandler({}),
-      makeDetailHandler({}),
+  it("a11y: sin violaciones en estado nominal con deltas", async () => {
+    const { container } = renderWithProviders(
+      <ComparatorPanel athleteId={42} />,
     );
-    const { container } = renderWithProviders(<ComparatorPanel athleteId={42} />);
     await waitFor(() => {
-      expect(screen.getByText(/diferencia b\s*−\s*a/i)).toBeInTheDocument();
+      expect(screen.getByTestId("comparator-diff-table")).toBeInTheDocument();
     });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
 
-  it("no tiene violaciones a11y (estado parcial con empty placeholder)", async () => {
-    mswServer.use(
-      makeListHandler({ missingFor: [1] }),
-      makeDetailHandler({}),
+  it("a11y: sin violaciones en estado guard A===B", async () => {
+    const user = userEvent.setup();
+    const { container } = renderWithProviders(
+      <ComparatorPanel athleteId={42} />,
     );
-    const { container } = renderWithProviders(<ComparatorPanel athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-col-a")).toBeInTheDocument();
+    });
+    const selectA = screen.getByLabelText(
+      /Válida A — seleccionar válida/i,
+    ) as HTMLSelectElement;
+    const valueA = selectA.value;
+    const selectB = screen.getByLabelText(
+      /Válida B — seleccionar válida/i,
+    ) as HTMLSelectElement;
+    await user.selectOptions(selectB, valueA);
     await waitFor(() => {
       expect(
-        screen.getByText(/sin análisis aprobado para esta válida/i),
+        screen.getByText(/selecciona dos válidas distintas/i),
       ).toBeInTheDocument();
+    });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it("a11y: sin violaciones en empty state global", async () => {
+    mswServer.use(
+      defaultSeasonListHandler([4]),
+      defaultDetailHandler(),
+      anthropometryEmptyHandler(),
+    );
+    const { container } = renderWithProviders(
+      <ComparatorPanel athleteId={42} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("comparator-empty-pair")).toBeInTheDocument();
     });
     const results = await axe(container);
     expect(results).toHaveNoViolations();

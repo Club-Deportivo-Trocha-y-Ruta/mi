@@ -5,6 +5,7 @@
  *  - Selects season + valida.
  *  - Render chart + reference line cuando hay curve.
  *  - Disclaimer + tabla simple si confidence==="low" (n<5).
+ *  - Reference lines de extremos: display_name real (coach) o pseudónimo (parent).
  *  - Empty state cuando athlete_time_ms===null.
  *  - Loading/error.
  */
@@ -41,10 +42,17 @@ vi.mock("recharts", () => ({
   ),
   Area: () => <div data-testid="recharts-area" />,
   CartesianGrid: () => <div data-testid="recharts-grid" />,
-  XAxis: () => <div data-testid="recharts-x" />,
+  XAxis: ({ domain }: { domain?: unknown }) => (
+    <div data-testid="recharts-x" data-domain={JSON.stringify(domain)} />
+  ),
   YAxis: () => <div data-testid="recharts-y" />,
   Tooltip: () => <div data-testid="recharts-tooltip" />,
-  ReferenceLine: () => <div data-testid="recharts-ref-line" />,
+  ReferenceLine: ({ label }: { label?: { value?: string } }) => (
+    <div
+      data-testid="recharts-ref-line"
+      data-label={typeof label === "object" ? label?.value : undefined}
+    />
+  ),
   LineChart: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="line-chart">{children}</div>
   ),
@@ -53,6 +61,7 @@ vi.mock("recharts", () => ({
 
 import { mswServer } from "@/test/setup";
 import {
+  coachHighConfidenceDistributionHandler,
   lowConfidenceDistributionHandler,
   mockDistribution,
 } from "@/test/msw/athleteRaceAnalysisHandlers";
@@ -70,12 +79,13 @@ describe("DistributionChart", () => {
     expect(screen.getByTestId("distribution-valida-select")).toBeInTheDocument();
   });
 
-  it("renderiza chart + reference line con confidence high (curve presente)", async () => {
+  it("renderiza chart + reference lines con confidence high (curve presente)", async () => {
     renderWithProviders(<DistributionChart athleteId={42} />);
     await waitFor(() => {
       expect(screen.getByTestId("area-chart")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("recharts-ref-line")).toBeInTheDocument();
+    // Hay al menos 1 reference line ("Tú" + extremos min/max)
+    expect(screen.getAllByTestId("recharts-ref-line").length).toBeGreaterThanOrEqual(1);
     // Stats summary muestra Media, Desv, etc.
     expect(screen.getByText(/media/i)).toBeInTheDocument();
     expect(screen.getByText(/desv/i)).toBeInTheDocument();
@@ -188,5 +198,71 @@ describe("DistributionChart", () => {
     });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  it("reference lines muestran TODAS las corredoras con display_name (coach)", async () => {
+    mswServer.use(coachHighConfidenceDistributionHandler);
+    renderWithProviders(<DistributionChart athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("area-chart")).toBeInTheDocument();
+    });
+    const refLines = screen.getAllByTestId("recharts-ref-line");
+    const labels = refLines.map((el) => el.getAttribute("data-label")).filter(Boolean);
+    // Labels usan SOLO el primer nombre (display compacto).
+    // self ("Diego Gómez") NO debe estar — usa la línea "Tú" separada.
+    expect(labels).toContain("Luciana");   // mejor
+    expect(labels).toContain("Sofía");     // peor
+    expect(labels).toContain("Carlos");    // intermedia
+    expect(labels).toContain("Andrés");
+    expect(labels).toContain("Valentina");
+    expect(labels).toContain("Mateo");
+    expect(labels).toContain("Isabela");
+    // Diego es self → no aparece en RiderReferenceLines (aparece como "P67 · Tú")
+    expect(labels).not.toContain("Diego");
+  });
+
+  it("reference lines muestran TODOS los pseudónimos cuando display_name es null (parent)", async () => {
+    renderWithProviders(<DistributionChart athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("area-chart")).toBeInTheDocument();
+    });
+    const refLines = screen.getAllByTestId("recharts-ref-line");
+    const labels = refLines.map((el) => el.getAttribute("data-label")).filter(Boolean);
+    // Todos los no-self deben tener su pseudónimo. self=C0003 → no aparece aquí.
+    expect(labels).toContain("C0001");
+    expect(labels).toContain("C0002");
+    expect(labels).toContain("C0004");
+    expect(labels).toContain("C0005");
+    expect(labels).toContain("C0006");
+    expect(labels).toContain("C0007");
+    expect(labels).toContain("C0008");
+    expect(labels).not.toContain("C0003"); // self → fuera
+    // No debe haber ningún nombre real
+    expect(labels.some((l) => /[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+ [A-ZÁÉÍÓÚÑ][a-záéíóúñ]+/.test(l ?? ""))).toBe(false);
+  });
+
+  it("el XAxis recibe un dominio más amplio que el rango raw de la curva (padding 8%)", async () => {
+    // mockDistribution default: curve xs = [1_700_000, 1_800_000, 1_900_000, 2_000_000, 2_100_000]
+    // rango raw = 400_000 ms → pad = 32_000 ms (8%)
+    // domain esperado = [1_668_000, 2_132_000]
+    renderWithProviders(<DistributionChart athleteId={42} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("area-chart")).toBeInTheDocument();
+    });
+    const xAxisEl = screen.getByTestId("recharts-x");
+    const raw = xAxisEl.getAttribute("data-domain");
+    expect(raw).not.toBeNull();
+    const domain = JSON.parse(raw!) as [number, number];
+    // El dominio debe ser un array de dos números
+    expect(Array.isArray(domain)).toBe(true);
+    expect(domain).toHaveLength(2);
+    const [lo, hi] = domain;
+    // El extremo izquierdo debe ser menor que el mínimo de la curva (1_700_000)
+    expect(lo).toBeLessThan(1_700_000);
+    // El extremo derecho debe ser mayor que el máximo de la curva (2_100_000)
+    expect(hi).toBeGreaterThan(2_100_000);
+    // El padding debe ser al menos 1 s (1_000 ms) a cada lado
+    expect(1_700_000 - lo).toBeGreaterThanOrEqual(1_000);
+    expect(hi - 2_100_000).toBeGreaterThanOrEqual(1_000);
   });
 });

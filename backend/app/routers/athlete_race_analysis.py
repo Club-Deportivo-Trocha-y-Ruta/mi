@@ -524,11 +524,16 @@ async def get_distribution(
     current_user: User = Depends(get_current_user),
     athlete: Athlete = Depends(verify_athlete_access),
 ) -> DistributionResponse:
+    # display_name es dato público (fuente: PDFs federativos). Solo se expone
+    # a coach/admin; parent ve únicamente pseudónimo para no ver datos de
+    # otros menores que no son sus hijos.
+    include_display_name = current_user.role in (UserRole.coach, UserRole.admin)
     return await build_distribution(
         db,
         athlete_id=athlete.id,
         season=season,
         valida_num=valida_num,
+        include_display_name=include_display_name,
     )
 
 

@@ -72,6 +72,7 @@ class EvolutionMetric(str, Enum):
     PODIUM_GAP_MS = "podium_gap_ms"
     RANKING = "ranking"
     TIME_MS = "time_ms"
+    PERCENTILE = "percentile"
 
 
 class AthleteRunStatus(str, Enum):
@@ -263,8 +264,10 @@ class EvolutionResponse(BaseModel):
 class DistributionPoint(BaseModel):
     """Un punto observado en la distribución de tiempos por categoría.
 
-    NUNCA expone identidad real del corredor — solo pseudónimo
-    determinístico estable por temporada.
+    ``pseudonym`` siempre presente — identificador determinístico no
+    reversible por temporada. ``display_name`` solo viene poblado cuando
+    el llamador es coach o admin (``include_display_name=True`` en el
+    servicio); para rol parent permanece ``None``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -272,6 +275,13 @@ class DistributionPoint(BaseModel):
     pseudonym: str = Field(..., min_length=2, max_length=16)
     time_ms: int = Field(..., ge=0)
     is_self: bool = False
+    display_name: Optional[str] = Field(
+        default=None,
+        description=(
+            "Nombre real del corredor (fuente: PDF federativo público). "
+            "Solo presente para coach/admin. Siempre None para parent."
+        ),
+    )
 
 
 class DistributionCurvePoint(BaseModel):
@@ -286,9 +296,13 @@ class DistributionCurvePoint(BaseModel):
 class DistributionResponse(BaseModel):
     """Respuesta de ``GET /distribution`` — histograma + curva + z-score.
 
-    Si ``sample_size < 5`` la API NO ajusta curva normal (``points=[]``,
-    ``curve=[]``, ``confidence="low"``). Esto evita exponer estadísticas
-    poco confiables sobre grupos pequeños de menores.
+    Si ``sample_size < 5`` la API NO ajusta curva normal (``curve=[]``,
+    ``confidence="low"``); el cliente debe caer a tabla de tiempos. Los
+    ``points`` (pseudonimizados) vienen siempre poblados para n≥1.
+
+    ``display_name`` en cada :class:`DistributionPoint` solo viene
+    poblado para coach/admin — el router lo activa según el rol del
+    usuario autenticado. Para parent permanece ``None``.
     """
 
     model_config = ConfigDict(extra="forbid")

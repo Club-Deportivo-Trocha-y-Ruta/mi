@@ -176,6 +176,8 @@ export interface DistributionPoint {
   pseudonym: string;
   time_ms: number;
   is_self: boolean;
+  /** Coach/admin: nombre real del competidor. Parent: null (solo pseudónimo). */
+  display_name?: string | null;
 }
 
 export interface DistributionCurvePoint {

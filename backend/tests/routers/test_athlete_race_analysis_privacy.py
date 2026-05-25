@@ -5,11 +5,17 @@ recursivamente que NO contiene keys prohibidas:
 
 - ``athlete_id`` (el cliente ya lo conoce por la URL).
 - ``competitor_id`` (PK interna de ``race_competitors``).
-- ``display_name`` (nombre real del atleta — los pseudónimos lo
-  reemplazan).
+- ``display_name`` en endpoints donde NO debe aparecer (ver tabla abajo).
 - ``generated_by_user_id`` / ``requested_by_user_id`` (PK del coach que
   generó el insight/run).
 - ``agent_run_id`` / PK BigInt interna de agent_runs.
+
+Política display_name en /distribution
+---------------------------------------
+- Coach/admin → ``display_name`` PUEDE venir (fuente: PDF federativo público).
+  No está en ``FORBIDDEN_KEYS_GLOBAL`` para ese test.
+- Parent → ``display_name`` siempre ``null`` / ausente.
+  Verificado en ``test_distribution_parent_no_real_names``.
 
 El helper ``assert_no_keys_recursively`` baja por listas y dicts hasta
 cualquier nivel — si algún campo está donde no debe, el test falla con
@@ -81,15 +87,20 @@ CREATE TABLE agent_runs (
 # ---------------------------------------------------------------------------
 
 
-# Estas keys NO deben aparecer NUNCA en ningún payload público.
+# Estas keys NO deben aparecer NUNCA en ningún payload público (todos los endpoints).
 FORBIDDEN_KEYS_GLOBAL = {
     "athlete_id",
     "competitor_id",
-    "display_name",
     "generated_by_user_id",
     "requested_by_user_id",
     "agent_run_id",
 }
+
+# Para /distribution la política de display_name es por rol:
+# - coach/admin → display_name PUEDE venir (dato público vía PDFs federativos).
+# - parent      → display_name debe ser null / ausente.
+# El test de insights/runs SÍ prohíbe display_name porque no aplica ahí.
+FORBIDDEN_KEYS_NON_DISTRIBUTION = FORBIDDEN_KEYS_GLOBAL | {"display_name"}
 
 
 def assert_no_keys_recursively(
@@ -306,7 +317,7 @@ async def test_insights_response_never_exposes_athlete_id_or_competitor_id(
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert_no_keys_recursively(body, FORBIDDEN_KEYS_GLOBAL)
+    assert_no_keys_recursively(body, FORBIDDEN_KEYS_NON_DISTRIBUTION)
 
 
 @pytest.mark.asyncio
@@ -319,7 +330,7 @@ async def test_runs_response_never_exposes_requested_by_user_id_or_internal_pk(
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert_no_keys_recursively(body, FORBIDDEN_KEYS_GLOBAL)
+    assert_no_keys_recursively(body, FORBIDDEN_KEYS_NON_DISTRIBUTION)
     # ``id`` (PK interna del run) NO debe aparecer como key — el alias público
     # es ``run_id`` (UUID hex). Verificamos puntualmente.
     for item in body.get("items", []):
@@ -328,9 +339,11 @@ async def test_runs_response_never_exposes_requested_by_user_id_or_internal_pk(
 
 
 @pytest.mark.asyncio
-async def test_distribution_response_never_exposes_display_name_or_competitor_id(
+async def test_distribution_coach_receives_display_name_no_competitor_id(
     coach_client,
 ):
+    """Coach recibe display_name (dato público vía PDF federativo).
+    competitor_id, athlete_id y PKs internas NUNCA viajan."""
     resp = await coach_client.get(
         "/api/athletes/144/race-analysis/distribution",
         params={"season": 2026, "valida_num": 1},
@@ -338,13 +351,71 @@ async def test_distribution_response_never_exposes_display_name_or_competitor_id
     )
     assert resp.status_code == 200
     body = resp.json()
+    # Keys siempre prohibidas (no incluye display_name para distribution/coach).
     assert_no_keys_recursively(body, FORBIDDEN_KEYS_GLOBAL)
-    # Y además: el string "Athlete Real Name" del seed NO debe aparecer en
-    # ningún lado del JSON serializado.
-    raw_text = resp.text
-    assert "Athlete Real Name" not in raw_text
-    assert "Runner Real" not in raw_text
-    assert "Winner Real" not in raw_text
+    # competitor_id nunca viaja.
+    assert "competitor_id" not in resp.text
+    # Coach debe ver display_name en cada punto.
+    for pt in body.get("points", []):
+        assert pt.get("display_name") is not None
+
+
+@pytest.mark.asyncio
+async def test_distribution_parent_no_real_names(seeded_factory):
+    """Parent recibe display_name=None; nombres reales del seed no aparecen."""
+    from types import SimpleNamespace
+
+    parent_user = SimpleNamespace(
+        id=99,
+        first_name="Parent",
+        last_name="Test",
+        email="parent@test.com",
+        role=UserRole.parent,
+        can_login=True,
+        is_active=True,
+        club_memberships=[],
+    )
+
+    # Override get_current_user + verify_athlete_access para que el parent
+    # pueda acceder al atleta 144 sin la comprobación de parentesco.
+    from app.dependencies import verify_athlete_access
+    from app.models.athlete import Athlete
+
+    async def _override_db():
+        async with seeded_factory() as s:
+            try:
+                yield s
+                await s.commit()
+            except Exception:
+                await s.rollback()
+                raise
+
+    fake_athlete = SimpleNamespace(id=144)
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_current_user] = lambda: parent_user
+    app.dependency_overrides[verify_athlete_access] = lambda: fake_athlete
+
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.get(
+                "/api/athletes/144/race-analysis/distribution",
+                params={"season": 2026, "valida_num": 1},
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        # Parent no debe recibir display_name.
+        for pt in body.get("points", []):
+            assert pt.get("display_name") is None
+        # Nombres reales del seed no deben aparecer en texto crudo.
+        raw = resp.text
+        assert "Athlete Real Name" not in raw
+        assert "Runner Real" not in raw
+        assert "Winner Real" not in raw
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -356,7 +427,7 @@ async def test_evolution_response_only_exposes_aggregated_fields(coach_client):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert_no_keys_recursively(body, FORBIDDEN_KEYS_GLOBAL)
+    assert_no_keys_recursively(body, FORBIDDEN_KEYS_NON_DISTRIBUTION)
     # Cada punto de la serie debe tener exactamente estos campos: el contrato
     # cerrado de EvolutionPoint (extra="forbid") garantiza esto, pero acá
     # validamos también que no se haya leak-eado nada.

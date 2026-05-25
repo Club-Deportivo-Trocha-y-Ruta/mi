@@ -47,10 +47,13 @@ function getDefaultSeason(): number {
 
 function formatTime(ms: number): string {
   if (!Number.isFinite(ms)) return "—";
-  const totalSec = ms / 1000;
-  const min = Math.floor(totalSec / 60);
-  const sec = (totalSec - min * 60).toFixed(1);
-  return `${min}:${sec.padStart(4, "0")}`;
+  const totalSec = Math.round(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const mm = m.toString().padStart(2, "0");
+  const ss = s.toString().padStart(2, "0");
+  return `${h}:${mm}:${ss}`;
 }
 
 interface DistributionChartProps {
@@ -86,6 +89,23 @@ export function DistributionChart({
     query.data.curve.length > 0 &&
     query.data.mean_ms !== null &&
     query.data.stddev_ms !== null;
+
+  /**
+   * Dominio del XAxis con padding lateral para que las ReferenceLine de los
+   * extremos (mejor/peor tiempo) no queden pegadas al borde del SVG y sus
+   * labels sean clipeadas por recharts.
+   *
+   * Padding = 8% del rango total de la curva, con un mínimo de 1 s (1 000 ms)
+   * para evitar padding cero cuando la curva tiene un solo punto.
+   */
+  const xDomain = useMemo<[number, number] | undefined>(() => {
+    if (!query.data || query.data.curve.length === 0) return undefined;
+    const xs = query.data.curve.map((p) => p.x_ms);
+    const lo = Math.min(...xs);
+    const hi = Math.max(...xs);
+    const pad = Math.max((hi - lo) * 0.08, 1_000);
+    return [lo - pad, hi + pad];
+  }, [query.data]);
 
   return (
     <section
@@ -187,16 +207,16 @@ export function DistributionChart({
           {query.data.athlete_time_ms !== null && !lowConfidence && hasFit && (
             <>
               <div className="w-full">
-                <ResponsiveContainer width="100%" height={280}>
+                <ResponsiveContainer width="100%" height={320}>
                   <AreaChart
                     data={query.data.curve}
-                    margin={{ top: 30, right: 16, bottom: 8, left: 12 }}
+                    margin={{ top: 30, right: 16, bottom: 48, left: 12 }}
                   >
                     <CartesianGrid stroke="rgba(34,42,53,0.08)" strokeDasharray="3 3" />
                     <XAxis
                       dataKey="x_ms"
                       type="number"
-                      domain={["dataMin", "dataMax"]}
+                      domain={xDomain ?? ["dataMin", "dataMax"]}
                       tick={{ fontSize: 12, fill: "#5a6172" }}
                       tickFormatter={(v: number) => formatTime(v)}
                       label={{
@@ -247,6 +267,7 @@ export function DistributionChart({
                         }}
                       />
                     )}
+                    <RiderReferenceLines points={query.data.points} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -285,7 +306,7 @@ export function DistributionChart({
 // ---------------------------------------------------------------------------
 
 interface LowConfidenceTableProps {
-  points: { pseudonym: string; time_ms: number; is_self: boolean }[];
+  points: { pseudonym: string; time_ms: number; is_self: boolean; display_name?: string | null }[];
   sampleSize: number;
   athleteTimeMs: number;
   categoryCode: string;
@@ -298,6 +319,8 @@ function LowConfidenceTable({
   categoryCode,
 }: LowConfidenceTableProps) {
   const sorted = [...points].sort((a, b) => a.time_ms - b.time_ms);
+  const hasDisplayNames = sorted.some((p) => p.display_name != null);
+  const nameHeader = hasDisplayNames ? "Nombre" : "Pseudónimo";
   return (
     <div className="space-y-3">
       <p className="text-xs text-mid-gray">
@@ -308,7 +331,7 @@ function LowConfidenceTable({
         <thead>
           <tr className="text-left text-xs uppercase tracking-wide text-mid-gray">
             <th className="px-3 py-2 font-medium">Posición</th>
-            <th className="px-3 py-2 font-medium">Pseudónimo</th>
+            <th className="px-3 py-2 font-medium">{nameHeader}</th>
             <th className="px-3 py-2 font-medium">Tiempo</th>
           </tr>
         </thead>
@@ -323,7 +346,9 @@ function LowConfidenceTable({
               }
             >
               <td className="px-3 py-1.5">{i + 1}</td>
-              <td className="px-3 py-1.5 font-mono text-xs">{p.pseudonym}</td>
+              <td className="px-3 py-1.5 font-mono text-xs">
+                {p.display_name ?? p.pseudonym}
+              </td>
               <td className="px-3 py-1.5">
                 {formatTime(p.time_ms)}{" "}
                 {p.is_self && <span className="ml-1 text-xs">· Tú</span>}
@@ -343,6 +368,62 @@ function LowConfidenceTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RiderReferenceLines — marca a CADA corredora sobre la curva
+// ---------------------------------------------------------------------------
+
+interface RiderReferenceLinesProps {
+  points: { pseudonym: string; time_ms: number; is_self: boolean; display_name?: string | null }[];
+}
+
+function shortName(name: string): string {
+  const first = name.trim().split(/\s+/)[0];
+  return first ?? name;
+}
+
+/** Renderiza una ReferenceLine por corredora (excluye self — ya tiene su
+ *  propia línea "Tú" arriba). Color: verde=mejor, rojo=peor, gris=resto.
+ *  Labels alternados arriba/abajo según índice para reducir solapamiento.
+ *  Usa primer nombre para que el label no invada otros. */
+function RiderReferenceLines({ points }: RiderReferenceLinesProps) {
+  if (points.length === 0) return null;
+  const sorted = [...points].sort((a, b) => a.time_ms - b.time_ms);
+  const bestTime = sorted[0].time_ms;
+  const worstTime = sorted[sorted.length - 1].time_ms;
+  return (
+    <>
+      {sorted.map((p, idx) => {
+        if (p.is_self) return null;
+        const isBest = p.time_ms === bestTime;
+        const isWorst = p.time_ms === worstTime && worstTime !== bestTime;
+        const stroke = isBest ? "#16a34a" : isWorst ? "#dc2626" : "#94a3b8";
+        const fill = isBest ? "#15803d" : isWorst ? "#b91c1c" : "#64748b";
+        // Mejor + peor siempre abajo (anclas visuales); el resto alterna.
+        const position: "top" | "bottom" =
+          isBest || isWorst ? "bottom" : idx % 2 === 0 ? "bottom" : "top";
+        const label = p.display_name
+          ? shortName(p.display_name)
+          : p.pseudonym;
+        return (
+          <ReferenceLine
+            key={`${p.pseudonym}-${p.time_ms}`}
+            x={p.time_ms}
+            stroke={stroke}
+            strokeDasharray="3 3"
+            strokeWidth={1.5}
+            label={{
+              value: label,
+              position,
+              fill,
+              fontSize: 10,
+            }}
+          />
+        );
+      })}
+    </>
   );
 }
 
@@ -373,9 +454,7 @@ function StatsSummary({
       />
       <Stat
         label="Desv. (σ)"
-        value={
-          stddevMs !== null ? `${(stddevMs / 1000).toFixed(1)} s` : "—"
-        }
+        value={stddevMs !== null ? formatTime(stddevMs) : "—"}
       />
       {zScore !== null && (
         <Stat label="z-score" value={zScore.toFixed(2)} />

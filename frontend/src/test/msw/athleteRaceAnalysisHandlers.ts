@@ -327,9 +327,54 @@ export const lowConfidenceDistributionHandler = http.get(
         athlete_percentile: null,
         curve: [],
         points: [
-          { pseudonym: "C0001", time_ms: 1_750_000, is_self: false },
-          { pseudonym: "C0002", time_ms: 1_800_000, is_self: true },
-          { pseudonym: "C0003", time_ms: 1_870_000, is_self: false },
+          { pseudonym: "C0001", time_ms: 1_750_000, is_self: false, display_name: null },
+          { pseudonym: "C0002", time_ms: 1_800_000, is_self: true, display_name: null },
+          { pseudonym: "C0003", time_ms: 1_870_000, is_self: false, display_name: null },
+        ],
+      }),
+    );
+  },
+);
+
+/** Handler para vista de entrenador: distribution con display_name poblado
+ *  (coach/admin recibe nombres reales). */
+export const coachDistributionHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/distribution",
+  () => {
+    return HttpResponse.json(
+      mockDistribution({
+        confidence: "low",
+        sample_size: 3,
+        mean_ms: null,
+        stddev_ms: null,
+        athlete_z_score: null,
+        athlete_percentile: null,
+        curve: [],
+        points: [
+          { pseudonym: "C0001", time_ms: 1_750_000, is_self: false, display_name: "Luciana Ríos" },
+          { pseudonym: "C0002", time_ms: 1_800_000, is_self: true, display_name: "Diego Gómez" },
+          { pseudonym: "C0003", time_ms: 1_870_000, is_self: false, display_name: "Sofía Martínez" },
+        ],
+      }),
+    );
+  },
+);
+
+/** Handler high-confidence con display_name para tests de reference lines de extremos. */
+export const coachHighConfidenceDistributionHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/distribution",
+  () => {
+    return HttpResponse.json(
+      mockDistribution({
+        points: [
+          { pseudonym: "C0001", time_ms: 1_750_000, is_self: false, display_name: "Luciana Ríos" },
+          { pseudonym: "C0002", time_ms: 1_790_000, is_self: false, display_name: "Carlos Vera" },
+          { pseudonym: "C0003", time_ms: 1_800_000, is_self: true, display_name: "Diego Gómez" },
+          { pseudonym: "C0004", time_ms: 1_870_000, is_self: false, display_name: "Andrés Pino" },
+          { pseudonym: "C0005", time_ms: 1_910_000, is_self: false, display_name: "Valentina Cruz" },
+          { pseudonym: "C0006", time_ms: 1_950_000, is_self: false, display_name: "Mateo Soto" },
+          { pseudonym: "C0007", time_ms: 2_010_000, is_self: false, display_name: "Isabela Rojas" },
+          { pseudonym: "C0008", time_ms: 2_080_000, is_self: false, display_name: "Sofía Martínez" },
         ],
       }),
     );
