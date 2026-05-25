@@ -29,6 +29,7 @@ import {
   useDownloadNewsletterPdf,
   parseApiError,
 } from "@/api/athleteNewsletters";
+import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { NewsletterNarrativeEditor } from "@/components/training/NewsletterNarrativeEditor";
 import { NewsletterPreviewBlocks } from "@/components/training/NewsletterPreviewBlocks";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
@@ -252,6 +253,7 @@ export function AthleteNewsletterDetailPage() {
 
   const newsletterQuery = useAthleteNewsletter(athleteId, newsletterId);
   const newsletter = newsletterQuery.data;
+  const athleteQuery = useAthlete(athleteId, Number.isFinite(athleteId));
 
   const patchMutation = usePatchNewsletter(athleteId, newsletterId);
   const approveMutation = useApproveNewsletter(athleteId, newsletterId);
@@ -408,12 +410,37 @@ export function AthleteNewsletterDetailPage() {
       <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <Link
-              to="/training/athlete-newsletters"
-              className="mb-2 inline-block text-xs text-mid-gray transition-opacity hover:opacity-70"
-            >
-              ← Boletines mensuales
-            </Link>
+            {/* Breadcrumbs: dashboard + chip atleta */}
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <Link
+                to="/training/athlete-newsletters"
+                className="text-xs text-mid-gray transition-opacity hover:opacity-70"
+              >
+                ← Boletines mensuales
+              </Link>
+              {athleteQuery.data && (
+                <Link
+                  to={`/athletes/${athleteId}?tab=newsletters`}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full py-2 px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-charcoal"
+                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  aria-label={`Ver perfil de ${athleteQuery.data.first_name} ${athleteQuery.data.last_name}`}
+                  data-testid="athlete-profile-chip"
+                >
+                  {/* Avatar iniciales */}
+                  <span
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-charcoal text-[10px] font-bold text-white"
+                    aria-hidden="true"
+                  >
+                    {athleteQuery.data.first_name[0]}
+                    {athleteQuery.data.last_name[0]}
+                  </span>
+                  <span>
+                    {athleteQuery.data.first_name} {athleteQuery.data.last_name}
+                  </span>
+                  <span className="text-mid-gray">· Ver perfil</span>
+                </Link>
+              )}
+            </div>
             <h1
               className="text-xl text-charcoal"
               style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}

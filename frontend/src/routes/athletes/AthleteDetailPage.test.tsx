@@ -99,6 +99,12 @@ vi.mock("@/components/athletes/PercentileCurves", () => ({
   PercentileCurves: () => <div data-testid="percentile-curves">PercentileCurves</div>,
 }));
 
+vi.mock("@/components/training/AthleteNewslettersTabPanel", () => ({
+  AthleteNewslettersTabPanel: () => (
+    <div data-testid="newsletters-tab-panel">AthleteNewslettersTabPanel</div>
+  ),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports de producción (después de mocks)
 // ---------------------------------------------------------------------------
@@ -478,7 +484,41 @@ describe("AthleteDetailPage — refactor Opción C", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 6. Estados de carga y error
+  // 6. Tab Boletines (newsletters) — RBAC coach/admin
+  // -------------------------------------------------------------------------
+
+  describe("Tab Boletines — coach", () => {
+    beforeEach(() => {
+      vi.mocked(athletesApi.getAthlete).mockResolvedValue(mockAthlete);
+      vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([]);
+    });
+
+    it("coach ve el tab Boletines en la barra de tabs", async () => {
+      renderPage();
+      await screen.findByTestId("athlete-info-card");
+      expect(screen.getByTestId("athlete-tab-newsletters")).toBeInTheDocument();
+    });
+
+    it("navegar al tab Boletines renderiza AthleteNewslettersTabPanel", async () => {
+      renderPage();
+      await act(async () => {
+        await userEvent.click(await screen.findByTestId("athlete-tab-newsletters"));
+      });
+      expect(screen.getByTestId("newsletters-tab-panel")).toBeInTheDocument();
+    });
+
+    it("tab Boletines activo no renderiza GrowthCharts ni AnthropometryHistory", async () => {
+      renderPage();
+      await act(async () => {
+        await userEvent.click(await screen.findByTestId("athlete-tab-newsletters"));
+      });
+      expect(screen.queryByTestId("growth-charts")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("anthropometry-history")).not.toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. Estados de carga y error
   // -------------------------------------------------------------------------
 
   describe("Estados de carga y error", () => {

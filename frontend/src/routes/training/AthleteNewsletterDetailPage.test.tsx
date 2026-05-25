@@ -43,6 +43,10 @@ vi.mock("@/store/auth.store", () => ({
   ),
 }));
 
+vi.mock("@/hooks/athletes/useAthlete", () => ({
+  useAthlete: vi.fn(),
+}));
+
 vi.mock("@/components/training/NewsletterNarrativeEditor", () => ({
   NewsletterNarrativeEditor: () => <div data-testid="narrative-editor">Editor</div>,
 }));
@@ -59,6 +63,7 @@ import {
   useGenerateNewsletter,
   useDownloadNewsletterPdf,
 } from "@/api/athleteNewsletters";
+import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { AthleteNewsletterDetailPage } from "./AthleteNewsletterDetailPage";
 import { makeNewsletter } from "@/test/msw/newsletterHandlers";
 import type { NewsletterStatus } from "@/types/athleteNewsletter.types";
@@ -96,13 +101,26 @@ function renderPage(athleteId = 42, newsletterId = 1) {
   );
 }
 
-function setupMocks(status: NewsletterStatus) {
+const mockAthleteData = {
+  id: 42,
+  first_name: "Carlos",
+  last_name: "Perez",
+  age_decimal: 13.5,
+  category: "Sub-15",
+};
+
+function setupMocks(status: NewsletterStatus, withAthlete = true) {
   const newsletter = makeNewsletter({ status, athlete_id: 42, year: 2026, month: 5 });
   vi.mocked(useAthleteNewsletter).mockReturnValue({
     isLoading: false,
     isError: false,
     data: newsletter,
   } as unknown as ReturnType<typeof useAthleteNewsletter>);
+  vi.mocked(useAthlete).mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: withAthlete ? mockAthleteData : undefined,
+  } as unknown as ReturnType<typeof useAthlete>);
   vi.mocked(useApproveNewsletter).mockReturnValue(
     mutationStub as unknown as ReturnType<typeof useApproveNewsletter>,
   );
@@ -207,6 +225,11 @@ describe("AthleteNewsletterDetailPage — banner de error con botón Regenerar",
       isError: false,
       data: newsletter,
     } as unknown as ReturnType<typeof useAthleteNewsletter>);
+    vi.mocked(useAthlete).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: mockAthleteData,
+    } as unknown as ReturnType<typeof useAthlete>);
     vi.mocked(useApproveNewsletter).mockReturnValue(mutationStub as any);
     vi.mocked(useSendNewsletter).mockReturnValue(mutationStub as any);
     vi.mocked(usePatchNewsletter).mockReturnValue(mutationStub as any);
@@ -249,5 +272,50 @@ describe("AthleteNewsletterDetailPage — acciones por estado", () => {
     renderPage();
     const sendBtn = screen.getByTestId("send-btn");
     expect(sendBtn).toBeDisabled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: chip header — cross-link atleta ↔ boletín
+// ---------------------------------------------------------------------------
+
+describe("AthleteNewsletterDetailPage — chip de atleta en header", () => {
+  it("muestra el chip cuando el atleta cargó", () => {
+    setupMocks("draft");
+    renderPage(42, 1);
+    expect(screen.getByTestId("athlete-profile-chip")).toBeInTheDocument();
+  });
+
+  it("chip muestra nombre completo del atleta", () => {
+    setupMocks("draft");
+    renderPage(42, 1);
+    expect(screen.getByText(/Carlos/i)).toBeInTheDocument();
+    expect(screen.getByText(/Perez/i)).toBeInTheDocument();
+  });
+
+  it("chip incluye texto 'Ver perfil'", () => {
+    setupMocks("draft");
+    renderPage(42, 1);
+    expect(screen.getByText(/Ver perfil/i)).toBeInTheDocument();
+  });
+
+  it("chip navega a /athletes/{athleteId}?tab=newsletters", () => {
+    setupMocks("draft");
+    renderPage(42, 1);
+    const chip = screen.getByTestId("athlete-profile-chip");
+    expect(chip).toHaveAttribute("href", "/athletes/42?tab=newsletters");
+  });
+
+  it("chip muestra iniciales del atleta como avatar", () => {
+    setupMocks("draft");
+    renderPage(42, 1);
+    // Las iniciales CP (Carlos Perez) aparecen en el avatar
+    expect(screen.getByText("CP")).toBeInTheDocument();
+  });
+
+  it("NO muestra el chip si el atleta no ha cargado aún", () => {
+    setupMocks("draft", false);
+    renderPage(42, 1);
+    expect(screen.queryByTestId("athlete-profile-chip")).not.toBeInTheDocument();
   });
 });

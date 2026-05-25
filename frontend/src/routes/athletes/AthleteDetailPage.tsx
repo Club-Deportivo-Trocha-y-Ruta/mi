@@ -26,6 +26,7 @@ import { MorphologyCard } from "@/components/athletes/MorphologyCard";
 import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
 import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
+import { AthleteNewslettersTabPanel } from "@/components/training/AthleteNewslettersTabPanel";
 import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
@@ -33,13 +34,14 @@ import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
 import { useAuthStore } from "@/store/auth.store";
 import { MaturationStatus, UserRole } from "@/types/enums";
 
-type Tab = "info" | "anthropometry" | "growth" | "ai_analysis";
+type Tab = "info" | "anthropometry" | "growth" | "ai_analysis" | "newsletters";
 
 const VALID_TABS: readonly Tab[] = [
   "info",
   "anthropometry",
   "growth",
   "ai_analysis",
+  "newsletters",
 ] as const;
 
 function parseTabParam(raw: string | null): Tab | null {
@@ -108,8 +110,11 @@ export function AthleteDetailPage() {
   // FE-2: el tab inicial puede venir del query string (?tab=ai_analysis).
   // Permite que el combobox del tab "Insights históricos" en
   // RaceAnalysisPage enrute directo al histórico del deportista.
+  // Si el rol es parent y la URL pide "newsletters" → fallback silencioso a "info".
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabFromUrl = parseTabParam(searchParams.get("tab"));
+  const rawTabFromUrl = parseTabParam(searchParams.get("tab"));
+  const tabFromUrl =
+    rawTabFromUrl === "newsletters" && isParent ? null : rawTabFromUrl;
   const [activeTab, setActiveTab] = useState<Tab>(tabFromUrl ?? "info");
   const [showForm, setShowForm] = useState(false);
   // Si el tab vino por URL, ya consideramos el "tab inicial" decidido —
@@ -132,8 +137,10 @@ export function AthleteDetailPage() {
   };
 
   // Reaccionar a cambios externos del query string (back/forward del navegador).
+  // Si el rol es parent y pide "newsletters" → fallback silencioso a "info".
   useEffect(() => {
-    const urlTab = parseTabParam(searchParams.get("tab"));
+    const rawUrlTab = parseTabParam(searchParams.get("tab"));
+    const urlTab = rawUrlTab === "newsletters" && isParent ? null : rawUrlTab;
     if (urlTab && urlTab !== activeTab) {
       setActiveTab(urlTab);
       setHasSetInitialTab(true);
@@ -325,6 +332,19 @@ export function AthleteDetailPage() {
           Análisis IA
         </button>
 
+        {!isParent && (
+          <button
+            type="button"
+            className={tabClasses("newsletters")}
+            style={tabStyle("newsletters")}
+            onClick={() => updateTab("newsletters")}
+            data-testid="athlete-tab-newsletters"
+          >
+            <Mail size={14} />
+            Boletines
+          </button>
+        )}
+
         {/* TODO: Este botón será eliminado cuando se implemente el cron job mensual automático.
             Ver: backend/app/routers/reports.py - POST /athletes/{id}/report/email */}
         <div className="ml-auto flex flex-col items-end gap-1">
@@ -485,6 +505,11 @@ export function AthleteDetailPage() {
           athlete={athlete}
           mode={isParent ? "parent" : "coach"}
         />
+      )}
+
+      {/* Tab content — Boletines (solo coach/admin) */}
+      {activeTab === "newsletters" && !isParent && (
+        <AthleteNewslettersTabPanel athleteId={athleteId} />
       )}
 
       {/* Tab content — Crecimiento */}
