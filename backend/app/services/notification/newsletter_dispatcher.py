@@ -170,12 +170,15 @@ async def _group_by_parent(
         if nl not in grouped[pa.parent_id]:
             grouped[pa.parent_id].append(nl)
 
-    # Atletas sin padres vinculados: newsletter se omite (no hay a quién enviar)
+    # Atletas sin padres vinculados: marcar newsletter como failed con código de catálogo
+    athletes_with_parent = {pa.athlete_id for pa in parent_athletes}
     for nl in newsletters:
-        has_parent = any(pa.athlete_id == nl.athlete_id for pa in parent_athletes)
-        if not has_parent:
+        if nl.athlete_id not in athletes_with_parent:
+            nl.status = NewsletterStatus.failed
+            nl.error_message = "no_parent_linked"
+            await db.flush()
             logger.info(
-                "Atleta sin padres vinculados, newsletter omitido | newsletter_id=%d",
+                "Atleta sin padres vinculados, newsletter marcado failed | newsletter_id=%d",
                 nl.id,
             )
 
