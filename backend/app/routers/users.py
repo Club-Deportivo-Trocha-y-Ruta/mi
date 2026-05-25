@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select, update, func
 from sqlalchemy.exc import IntegrityError
@@ -144,9 +146,9 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> UserListOut:
-    # Los atletas se gestionan por /api/athletes
-    # Construir filtros base
-    base_filters = [User.role != UserRole.athlete]
+    # Los atletas se gestionan por /api/athletes.
+    # Excluir usuarios soft-deleted (deleted_at IS NULL).
+    base_filters = [User.role != UserRole.athlete, User.deleted_at.is_(None)]
 
     if role is not None:
         if role == UserRole.athlete:
@@ -227,11 +229,11 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> User:
-    # Cargar el usuario objetivo
+    # Cargar el usuario objetivo (excluyendo soft-deleted)
     result = await db.execute(
         select(User)
         .options(selectinload(User.club_memberships))
-        .where(User.id == user_id)
+        .where(User.id == user_id, User.deleted_at.is_(None))
     )
     target = result.scalar_one_or_none()
 
@@ -298,7 +300,7 @@ async def delete_user(
     result = await db.execute(
         select(User)
         .options(selectinload(User.club_memberships))
-        .where(User.id == user_id)
+        .where(User.id == user_id, User.deleted_at.is_(None))
     )
     target = result.scalar_one_or_none()
 
@@ -329,19 +331,14 @@ async def delete_user(
                 detail="Este usuario no pertenece a ninguno de tus clubes",
             )
 
-    # Cascada manual: limpiar referencias antes de eliminar el user.
-    await db.execute(delete(ParentalConsent).where(ParentalConsent.parent_user_id == user_id))
-    await db.execute(delete(ParentAthlete).where(ParentAthlete.parent_id == user_id))
-    await db.execute(delete(ClubMember).where(ClubMember.user_id == user_id))
-    await db.execute(
-        update(ParentInvite).where(ParentInvite.used_by == user_id).values(used_by=None)
-    )
-    # parent_user_id apunta al padre pre-creado que aún no aceptó la invitación
-    await db.execute(
-        update(ParentInvite).where(ParentInvite.parent_user_id == user_id).values(parent_user_id=None)
-    )
-    await db.execute(
-        update(User).where(User.created_by == user_id).values(created_by=None)
-    )
-    await db.execute(delete(User).where(User.id == user_id))
+    # Soft-delete: marcar el usuario como eliminado y desactivar login.
+    # Las filas relacionadas (consents, parent_athlete, club_members,
+    # parent_invites con used_by/parent_user_id) se conservan; la
+    # integridad referencial está garantizada por las FKs con
+    # ondelete=RESTRICT (para parent_user_id de consent y parent_id de
+    # parent_athlete) y ondelete=SET NULL (para used_by/parent_user_id de
+    # parent_invites). El club membership permanece — para revocar acceso
+    # operativo basta con is_active=False y deleted_at != NULL en User.
+    target.deleted_at = datetime.now(timezone.utc)
+    target.is_active = False
     await db.flush()

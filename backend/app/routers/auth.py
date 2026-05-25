@@ -27,10 +27,11 @@ router = APIRouter()
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    # Excluir soft-deleted: el login debe rechazar usuarios eliminados.
     result = await db.execute(
         select(User)
         .options(selectinload(User.club_memberships))
-        .where(User.email == body.email)
+        .where(User.email == body.email, User.deleted_at.is_(None))
     )
     user = result.scalar_one_or_none()
 
@@ -90,10 +91,11 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
         )
 
     user_id = int(sub)
+    # Excluir soft-deleted en refresh: tokens de usuarios eliminados deben fallar.
     result = await db.execute(
         select(User)
         .options(selectinload(User.club_memberships))
-        .where(User.id == user_id)
+        .where(User.id == user_id, User.deleted_at.is_(None))
     )
     user = result.scalar_one_or_none()
 

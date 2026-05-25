@@ -53,8 +53,8 @@ class ClubMember(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"))
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="RESTRICT"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     role_in_club: Mapped[ClubRole] = mapped_column(Enum(ClubRole))
     joined_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)

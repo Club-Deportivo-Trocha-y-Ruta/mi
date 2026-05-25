@@ -23,8 +23,8 @@ class ParentalConsent(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    parent_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"))
+    parent_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id", ondelete="RESTRICT"))
 
     # Versión de política como string — deprecado, conservar para compatibilidad
     # y como fallback de lectura. La FK policy_id es la fuente canónica.

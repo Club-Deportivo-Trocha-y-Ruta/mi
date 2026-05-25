@@ -21,18 +21,20 @@ class ParentInvite(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"))
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id", ondelete="RESTRICT"))
     email: Mapped[str] = mapped_column(String(255))
     token: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used: Mapped[bool] = mapped_column(Boolean, default=False)
     used_by: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     parent_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -42,8 +44,8 @@ class ParentInvite(Base):
         "Athlete",
         foreign_keys="[ParentInvite.athlete_id]",
     )
-    # Coach/admin que generó la invitación
-    creator: Mapped[User] = relationship(
+    # Coach/admin que generó la invitación (NULL si el creador fue eliminado)
+    creator: Mapped[User | None] = relationship(
         "User",
         foreign_keys="[ParentInvite.created_by]",
     )

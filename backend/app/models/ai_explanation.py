@@ -65,9 +65,9 @@ class AthleteAIExplanation(Base):
         String(32), nullable=False, default=""
     )
 
-    # Auditoría: ¿quién pidió la generación?
-    generated_by_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+    # Auditoría: ¿quién pidió la generación? (NULL si el usuario fue eliminado)
+    generated_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
@@ -86,7 +86,7 @@ class AthleteAIExplanation(Base):
         "AnthropometricRecord",
         foreign_keys="[AthleteAIExplanation.anthropometric_record_id]",
     )
-    generated_by: Mapped[User] = relationship(
+    generated_by: Mapped[User | None] = relationship(
         "User",
         foreign_keys="[AthleteAIExplanation.generated_by_user_id]",
     )

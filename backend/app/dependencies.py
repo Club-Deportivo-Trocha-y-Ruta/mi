@@ -58,10 +58,11 @@ async def get_current_user(
         )
 
     user_id = int(sub)
+    # Excluir soft-deleted: deleted_at IS NULL.
     result = await db.execute(
         select(User)
         .options(selectinload(User.club_memberships))
-        .where(User.id == user_id)
+        .where(User.id == user_id, User.deleted_at.is_(None))
     )
     user = result.scalar_one_or_none()
 
@@ -99,8 +100,12 @@ async def verify_athlete_access(
     from app.models.athlete import Athlete, ParentAthlete
     from app.models.club import ClubMember, ClubRole
 
-    # Cargar el atleta
-    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    # Cargar el atleta (excluyendo soft-deleted)
+    result = await db.execute(
+        select(Athlete).where(
+            Athlete.id == athlete_id, Athlete.deleted_at.is_(None)
+        )
+    )
     athlete = result.scalar_one_or_none()
 
     if athlete is None:
@@ -132,6 +137,7 @@ async def verify_athlete_access(
             .where(
                 ParentAthlete.parent_id == current_user.id,
                 Athlete.id == athlete_id,
+                Athlete.deleted_at.is_(None),
             )
         )
         result = await db.execute(stmt)

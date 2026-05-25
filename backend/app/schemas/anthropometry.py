@@ -58,7 +58,7 @@ class AnthropometryOut(BaseModel):
     age_at_phv: float
     maturation_status: MaturationStatus
     training_implications: str | None
-    evaluated_by: int
+    evaluated_by: int | None
     created_at: datetime
     notes: str | None
     # Campos individuales de percentiles (nullable — compatibilidad backward)

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select, func
@@ -179,7 +179,8 @@ async def list_athletes(
         else:
             scope_clubs = coach_clubs
 
-    filters = []
+    # Excluir soft-deleted: filtra atletas con deleted_at NULL.
+    filters = [Athlete.deleted_at.is_(None)]
     if scope_clubs is not None:
         filters.append(Athlete.club_id.in_(scope_clubs))
 
@@ -261,7 +262,11 @@ async def update_athlete(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> AthleteOut:
-    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    result = await db.execute(
+        select(Athlete).where(
+            Athlete.id == athlete_id, Athlete.deleted_at.is_(None)
+        )
+    )
     athlete = result.scalar_one_or_none()
 
     if athlete is None:
@@ -304,13 +309,21 @@ async def delete_athlete(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> None:
-    """Elimina un atleta y toda su información asociada.
+    """Marca un atleta como eliminado (soft-delete).
 
-    Cascada manual: consents, AI explanations, parent invites, anthropometric
-    records, parent_athlete links, club_members del user stub, athlete row,
-    user stub (role=athlete).
+    El atleta queda con `deleted_at != NULL`; los lectores deben filtrar
+    `WHERE deleted_at IS NULL`. El user stub asociado (role=athlete) también
+    se marca soft-deleted y se desactiva (is_active=False).
+
+    Las filas relacionadas (consents, parent_athlete, anthropometry, etc.)
+    se conservan: la integridad referencial está garantizada por las FKs
+    con ondelete=RESTRICT.
     """
-    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    result = await db.execute(
+        select(Athlete).where(
+            Athlete.id == athlete_id, Athlete.deleted_at.is_(None)
+        )
+    )
     athlete = result.scalar_one_or_none()
 
     if athlete is None:
@@ -326,16 +339,23 @@ async def delete_athlete(
                 detail="No tienes acceso a este atleta",
             )
 
-    user_id = athlete.user_id
+    now = datetime.now(timezone.utc)
+    athlete.deleted_at = now
 
-    await db.execute(delete(ParentalConsent).where(ParentalConsent.athlete_id == athlete_id))
-    await db.execute(delete(AthleteAIExplanation).where(AthleteAIExplanation.athlete_id == athlete_id))
-    await db.execute(delete(ParentInvite).where(ParentInvite.athlete_id == athlete_id))
-    await db.execute(delete(AnthropometricRecord).where(AnthropometricRecord.athlete_id == athlete_id))
-    await db.execute(delete(ParentAthlete).where(ParentAthlete.athlete_id == athlete_id))
-    await db.execute(delete(ClubMember).where(ClubMember.user_id == user_id))
-    await db.execute(delete(Athlete).where(Athlete.id == athlete_id))
-    await db.execute(delete(User).where(User.id == user_id, User.role == UserRole.athlete))
+    # Soft-delete del user stub vinculado (role=athlete) si existe.
+    if athlete.user_id:
+        user_res = await db.execute(
+            select(User).where(
+                User.id == athlete.user_id,
+                User.role == UserRole.athlete,
+                User.deleted_at.is_(None),
+            )
+        )
+        user_stub = user_res.scalar_one_or_none()
+        if user_stub is not None:
+            user_stub.deleted_at = now
+            user_stub.is_active = False
+
     await db.flush()
 
 
@@ -368,9 +388,13 @@ async def get_athlete_attendance(
             detail="No tienes permisos para ver la asistencia de este atleta",
         )
 
-    # Coach: verificar que el atleta pertenece a su club
+    # Coach: verificar que el atleta pertenece a su club (excluye soft-deleted)
     if current_user.role == UserRole.coach:
-        result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+        result = await db.execute(
+            select(Athlete).where(
+                Athlete.id == athlete_id, Athlete.deleted_at.is_(None)
+            )
+        )
         athlete = result.scalar_one_or_none()
         if athlete is None:
             raise HTTPException(

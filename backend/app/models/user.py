@@ -26,6 +26,7 @@ class User(Base):
     __table_args__ = (
         # Filtra usuarios por rol (listar coaches, parents, etc.)
         Index("ix_users_role", "role"),
+        Index("ix_users_deleted_at", "deleted_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -40,7 +41,15 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
-    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # Soft-delete: cuando != NULL, el usuario está marcado como eliminado.
+    # Los lectores deben filtrar WHERE deleted_at IS NULL salvo que
+    # explícitamente pidan include_deleted.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
+    )
 
     # Self-referential: quién creó a este usuario (Many→1)
     creator: Mapped[User | None] = relationship(

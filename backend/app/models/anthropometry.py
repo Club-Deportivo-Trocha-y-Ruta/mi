@@ -50,7 +50,7 @@ class AnthropometricRecord(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"))
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id", ondelete="RESTRICT"))
     evaluation_date: Mapped[date] = mapped_column(Date)
     weight_kg: Mapped[Decimal] = mapped_column(Numeric(5, 2))
     standing_height_cm: Mapped[Decimal] = mapped_column(Numeric(5, 1))
@@ -64,7 +64,9 @@ class AnthropometricRecord(Base):
         Enum(MaturationStatus, values_callable=lambda e: [x.value for x in e])
     )
     training_implications: Mapped[str | None] = mapped_column(Text, nullable=True)
-    evaluated_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    evaluated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -89,8 +91,8 @@ class AnthropometricRecord(Base):
         back_populates="anthropometric_records",
         foreign_keys="[AnthropometricRecord.athlete_id]",
     )
-    # Coach/admin que realizó la evaluación
-    evaluator: Mapped[User] = relationship(
+    # Coach/admin que realizó la evaluación (NULL si el evaluador fue eliminado)
+    evaluator: Mapped[User | None] = relationship(
         "User",
         foreign_keys="[AnthropometricRecord.evaluated_by]",
     )

@@ -75,11 +75,11 @@ async def link_parent_athlete(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> ParentAthleteOut:
-    # 1. Verificar que parent_id sea un usuario con rol parent
+    # 1. Verificar que parent_id sea un usuario con rol parent (excluye soft-deleted)
     parent_result = await db.execute(
         select(User)
         .options(selectinload(User.club_memberships))
-        .where(User.id == body.parent_id)
+        .where(User.id == body.parent_id, User.deleted_at.is_(None))
     )
     parent = parent_result.scalar_one_or_none()
     if parent is None:
@@ -95,7 +95,9 @@ async def link_parent_athlete(
 
     # 2. Verificar que athlete_id existe
     athlete_result = await db.execute(
-        select(Athlete).where(Athlete.id == body.athlete_id)
+        select(Athlete).where(
+            Athlete.id == body.athlete_id, Athlete.deleted_at.is_(None)
+        )
     )
     athlete = athlete_result.scalar_one_or_none()
     if athlete is None:
@@ -235,7 +237,9 @@ async def generate_invite(
 ) -> ParentInviteCreatedOut:
     # Verificar que el atleta existe
     athlete_result = await db.execute(
-        select(Athlete).where(Athlete.id == body.athlete_id)
+        select(Athlete).where(
+            Athlete.id == body.athlete_id, Athlete.deleted_at.is_(None)
+        )
     )
     athlete = athlete_result.scalar_one_or_none()
     if athlete is None:
@@ -336,9 +340,11 @@ async def list_invites(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> list[ParentInviteOut]:
-    # Verificar que el atleta existe
+    # Verificar que el atleta existe (excluye soft-deleted)
     athlete_result = await db.execute(
-        select(Athlete).where(Athlete.id == athlete_id)
+        select(Athlete).where(
+            Athlete.id == athlete_id, Athlete.deleted_at.is_(None)
+        )
     )
     athlete = athlete_result.scalar_one_or_none()
     if athlete is None:

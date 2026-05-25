@@ -42,17 +42,20 @@ class Athlete(Base):
     __table_args__ = (
         Index("ix_athletes_club_id", "club_id"),
         Index("ix_athletes_created_by", "created_by"),
+        Index("ix_athletes_deleted_at", "deleted_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), unique=True
+    )
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
     birth_date: Mapped[date] = mapped_column(Date)
     sex: Mapped[Sex] = mapped_column(Enum(Sex))
     club_join_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"))
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="RESTRICT"))
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -63,6 +66,12 @@ class Athlete(Base):
     )
     parental_consent_obtained: Mapped[bool] = mapped_column(default=False)
     parental_consent_date: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
+    )
+    # Soft-delete: cuando != NULL, el atleta está marcado como eliminado.
+    # Los lectores deben filtrar WHERE deleted_at IS NULL salvo que
+    # explícitamente pidan include_deleted.
+    deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, default=None
     )
 
@@ -129,8 +138,8 @@ class ParentAthlete(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    parent_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"))
+    parent_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id", ondelete="RESTRICT"))
     # Renombrado de 'relationship' a 'relationship_type' para evitar colisión
     # con la función relationship() importada de sqlalchemy.orm
     relationship_type: Mapped[FamilyRelationship] = mapped_column(
