@@ -45,17 +45,20 @@ def sqlite_engine():
     engine = create_engine("sqlite:///:memory:", future=True)
     # Importar modelos requeridos para resolver FKs
     from app.models.user import User  # noqa: F401
+    from app.models.lookups import RaceImportStatusLookup  # noqa: F401
     from app.models.race_points_scheme import RacePointsScheme  # noqa: F401
     from app.models.race_series import RaceSeries  # noqa: F401
     from app.models.race_event import RaceEvent  # noqa: F401
     from app.models.race_import import RaceImport  # noqa: F401
 
-    # race_points_schemes es ahora destino de FK desde race_series (C5).
+    # race_points_schemes ahora es FK de race_series (C5).
+    # race_import_statuses ahora es FK de race_imports.status (C3).
     tables_to_create = [
         Base.metadata.tables[t]
         for t in (
             "users",
             "race_points_schemes",
+            "race_import_statuses",
             "race_series",
             "race_events",
             "race_imports",
@@ -232,6 +235,7 @@ def test_race_import_persistence_kind_default_in_sqlite(sqlite_session):
     # Crear dependencias mínimas para que las FKs (series_id, imported_by_user_id)
     # no exploten. SQLite con PRAGMA foreign_keys=ON enforza FKs.
     from app.models.user import User, UserRole
+    from app.models.lookups import RaceImportStatusLookup
     from app.models.race_points_scheme import RacePointsScheme
     from app.models.race_series import RaceSeries
 
@@ -264,7 +268,14 @@ def test_race_import_persistence_kind_default_in_sqlite(sqlite_session):
         organizer="Test Org",
         points_scheme_code="copa_valle_2026",
     )
-    sqlite_session.add_all([user, scheme, series])
+    # C3: race_imports.status es FK → race_import_statuses.code.
+    statuses = [
+        RaceImportStatusLookup(code="pending", label_es="Pendiente", is_terminal=False),
+        RaceImportStatusLookup(code="dry_run", label_es="Validación previa", is_terminal=False),
+        RaceImportStatusLookup(code="committed", label_es="Confirmado", is_terminal=True),
+        RaceImportStatusLookup(code="failed", label_es="Fallido", is_terminal=True),
+    ]
+    sqlite_session.add_all([user, scheme, series, *statuses])
     sqlite_session.commit()
 
     imp = RaceImport(
@@ -295,6 +306,7 @@ def test_race_import_persistence_with_all_upload_fields(sqlite_session):
     """
     # Setup dependencias mínimas
     from app.models.user import User, UserRole
+    from app.models.lookups import RaceImportStatusLookup
     from app.models.race_points_scheme import RacePointsScheme
     from app.models.race_series import RaceSeries
 
@@ -326,7 +338,13 @@ def test_race_import_persistence_with_all_upload_fields(sqlite_session):
         organizer="Test Org",
         points_scheme_code="copa_valle_2026",
     )
-    sqlite_session.add_all([user, scheme, series])
+    statuses = [
+        RaceImportStatusLookup(code="pending", label_es="Pendiente", is_terminal=False),
+        RaceImportStatusLookup(code="dry_run", label_es="Validación previa", is_terminal=False),
+        RaceImportStatusLookup(code="committed", label_es="Confirmado", is_terminal=True),
+        RaceImportStatusLookup(code="failed", label_es="Fallido", is_terminal=True),
+    ]
+    sqlite_session.add_all([user, scheme, series, *statuses])
     sqlite_session.commit()
 
     imp = RaceImport(

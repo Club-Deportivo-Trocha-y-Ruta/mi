@@ -96,8 +96,24 @@ class CalendarEvent(Base):
         ForeignKey("clubs.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    # event_type pasa a VARCHAR(50) con FK a la tabla lookup
+    # ``calendar_event_types.code`` (C3). El enum Python ``EventType`` se
+    # conserva para tipado y comparaciones en services/routers — SQLAlchemy
+    # acepta el enum como literal (native_enum=False persiste como VARCHAR).
     event_type: Mapped[EventType] = mapped_column(
-        Enum(EventType, values_callable=lambda e: [x.value for x in e]),
+        Enum(
+            EventType,
+            values_callable=lambda e: [x.value for x in e],
+            native_enum=False,
+            length=50,
+        ),
+        ForeignKey(
+            "calendar_event_types.code",
+            ondelete="RESTRICT",
+            # No CASCADE update: MySQL no acepta FK con CASCADE en una
+            # columna que también participa en un CHECK constraint.
+            name="fk_calendar_events_event_type",
+        ),
         nullable=False,
     )
     status: Mapped[EventStatus] = mapped_column(

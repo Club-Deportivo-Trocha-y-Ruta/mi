@@ -107,11 +107,22 @@ class RaceImport(Base):
     series_id: Mapped[int] = mapped_column(
         ForeignKey("race_series.id", ondelete="RESTRICT"), nullable=False
     )
+    # status pasa a VARCHAR(50) con FK a la tabla lookup
+    # ``race_import_statuses.code`` (C3). El enum Python ``RaceImportStatus``
+    # se mantiene; native_enum=False persiste como VARCHAR.
     status: Mapped[RaceImportStatus] = mapped_column(
         Enum(
             RaceImportStatus,
             name="raceimportstatus",
             values_callable=lambda e: [x.value for x in e],
+            native_enum=False,
+            length=50,
+        ),
+        ForeignKey(
+            "race_import_statuses.code",
+            ondelete="RESTRICT",
+            onupdate="CASCADE",
+            name="fk_race_imports_status",
         ),
         nullable=False,
         default=RaceImportStatus.pending,

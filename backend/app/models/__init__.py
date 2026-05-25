@@ -43,6 +43,9 @@ from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_result_revision import RaceResultRevision, RaceResultRevisionAction
 from app.models.race_series import RaceSeries
 
+# Lookup tables (catálogos) — C3 reemplaza enums DDL por filas referenciables
+from app.models.lookups import CalendarEventType, RaceImportStatusLookup
+
 # Race-analysis v2 agentic module (BE-1)
 from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
