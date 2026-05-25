@@ -4,7 +4,10 @@
   Boletín Mensual Individual por Atleta — PDF completo (Fase 1.8).
   Variables requeridas:
     athlete_first_name, athlete_last_name (solo primer nombre en título)
+    initials        — 2 letras para el avatar del hero
     club_name, month_label, season_year, generated_at
+    category_label  — nombre legible de categoría (ej: "Sub-13 Masculino")
+    category_code   — código corto (ej: "M13")
     email_blocks   — bloques sin antropometría (asistencia, técnico, carreras, etc.)
     pdf_only_blocks — bloques solo PDF (antropometría + gráficos)
     ai_narrative    — {strengths, area_to_develop, milestone, confidence}
@@ -18,7 +21,9 @@
 
 {% block title %}Boletín {{ month_label }} — {{ athlete_first_name }}{% endblock %}
 {% block header_right %}Boletín Mensual Individual{% endblock %}
-{% block doc_title %}Boletín Mensual — {{ month_label }}{% endblock %}
+{# El doc_title del layout.html ya muestra el header visual del documento.
+   Sobreescribimos con string vacío para que el hero band sea la única cabecera. #}
+{% block doc_title %}{% endblock %}
 {% block generated_at %}{{ generated_at }}{% endblock %}
 
 {% block body %}
@@ -43,35 +48,235 @@
 {% set anthro = pb.get('anthropometry', {}) %}
 {% set charts_ctx = pb.get('charts_context', {}) %}
 
+{# Iniciales para el avatar #}
+{% set display_initials = initials if initials else (athlete_first_name[0] ~ (athlete_last_name[0] if athlete_last_name else '')) %}
+
 <!-- ============================================================
-     ENCABEZADO DEL BOLETÍN
+     HERO BAND — identificación visual del atleta
 ============================================================ -->
-<div style="margin-bottom: 18pt;">
-  <h2 style="margin: 0; color: #1e293b;">
-    Boletín Mensual de Seguimiento
-  </h2>
-  <p style="margin: 4pt 0 0 0; font-size: 13pt; color: #4b5563;">
-    {{ athlete_first_name }} {{ athlete_last_name }} &mdash; {{ month_label }} {{ season_year }}
-  </p>
-  <p style="margin: 2pt 0 0 0; font-size: 10pt; color: #6b7280;">
-    {{ club_name }}
-  </p>
+<div style="
+  background-color: #8be000;
+  padding: 16pt 18pt;
+  margin-bottom: 0;
+  display: table;
+  width: 100%;
+  min-height: 90pt;
+  page-break-inside: avoid;
+">
+  <!-- Avatar -->
+  <div style="
+    display: table-cell;
+    width: 56pt;
+    vertical-align: middle;
+  ">
+    <div style="
+      width: 48pt;
+      height: 48pt;
+      border-radius: 24pt;
+      background-color: #ffffff;
+      border: 2pt solid #5fa600;
+      text-align: center;
+      line-height: 48pt;
+      font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif;
+      font-size: 18pt;
+      font-weight: 700;
+      color: #2f2f2f;
+    ">{{ display_initials | upper }}</div>
+  </div>
+  <!-- Texto hero -->
+  <div style="display: table-cell; vertical-align: middle; padding-left: 12pt;">
+    <p style="
+      margin: 0;
+      font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif;
+      font-size: 22pt;
+      font-weight: 700;
+      line-height: 1.15;
+      color: #2f2f2f;
+    ">{{ athlete_first_name | upper }} {{ athlete_last_name[0] if athlete_last_name else '' }}.</p>
+    <p style="margin: 4pt 0 0 0; font-size: 10pt; color: #2f2f2f; font-weight: 600;">
+      Boletín de {{ month_label }}
+    </p>
+    <p style="margin: 2pt 0 0 0; font-size: 9pt; color: #374151;">
+      {{ club_name }}{% if category_label %} &middot; {{ category_label }}{% elif category_code %} &middot; Cat. {{ category_code }}{% endif %}
+    </p>
+  </div>
 </div>
-<hr style="border: 1.5pt solid #8be000; margin-bottom: 14pt;"/>
+
+<!-- ============================================================
+     BANNER: DATOS LIMITADOS (bajo hero, condicional)
+============================================================ -->
+{% set narrative = ai_narrative or {} %}
+{% if narrative.get('confidence') == 'low' %}
+<div style="
+  background: #fef3c7;
+  border: 1pt solid #fbbf24;
+  border-top: none;
+  padding: 5pt 12pt;
+  font-size: 8.5pt;
+  color: #92400e;
+  margin-bottom: var(--sp-lg);
+  display: table;
+  width: 100%;
+">
+  <span style="display: table-cell; width: 16pt; vertical-align: middle; color: #b45309;">
+    {% include "documents/pdf/icons/alert.svg" %}
+  </span>
+  <span style="display: table-cell; vertical-align: middle;">
+    <strong>Datos limitados:</strong> análisis basado en &lt;3 sesiones o &lt;2 carreras. La valoración es orientativa.
+  </span>
+</div>
+{% else %}
+<div style="margin-bottom: var(--sp-lg);"></div>
+{% endif %}
+
+<!-- ============================================================
+     KPI ROW — 4 métricas clave
+============================================================ -->
+{% set att_pct = attendance.get('attendance_pct') %}
+{% set att_prev = attendance.get('attendance_pct_prev_month') %}
+{% set streak = attendance.get('streak_days', 0) %}
+{% set last_race = race_results.get('results', [])[0] if race_results.get('results') else none %}
+{% set next_race_list = calendar_block.get('next_race_events', []) %}
+{% set next_race = next_race_list[0] if next_race_list else none %}
+{% set has_kpi = att_pct is not none or streak > 0 or last_race or next_race %}
+
+{% if has_kpi %}
+<div style="
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 6pt 0;
+  margin-bottom: var(--sp-lg);
+  page-break-inside: avoid;
+">
+  <!-- Card 1: Asistencia -->
+  {% if att_pct is not none %}
+  <div style="
+    display: table-cell;
+    width: 25%;
+    background: #ffffff;
+    border: 0.5pt solid #d1d5db;
+    border-top: 2pt solid #8be000;
+    padding: 8pt 10pt;
+    border-radius: 3pt;
+    vertical-align: top;
+    page-break-inside: avoid;
+  ">
+    <p style="margin: 0; font-size: 18pt; font-weight: 700; color: #111827; line-height: 1.1;">{{ att_pct }}%</p>
+    <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">Asistencia</p>
+    {% if att_prev is not none %}
+      {% set diff = att_pct - att_prev %}
+      {% if diff > 0 %}
+      <p style="margin: 4pt 0 0 0; font-size: 8pt; color: #15803d;">&#8593; +{{ "%.1f"|format(diff) }}% vs mes ant.</p>
+      {% elif diff < 0 %}
+      <p style="margin: 4pt 0 0 0; font-size: 8pt; color: #b91c1c;">&#8595; {{ "%.1f"|format(diff) }}% vs mes ant.</p>
+      {% else %}
+      <p style="margin: 4pt 0 0 0; font-size: 8pt; color: #6b7280;">= Sin cambio</p>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Card 2: Racha -->
+  {% if streak > 0 %}
+  <div style="
+    display: table-cell;
+    width: 25%;
+    background: #ffffff;
+    border: 0.5pt solid #d1d5db;
+    border-top: 2pt solid #8be000;
+    padding: 8pt 10pt;
+    border-radius: 3pt;
+    vertical-align: top;
+    page-break-inside: avoid;
+  ">
+    <p style="margin: 0; font-size: 18pt; font-weight: 700; color: #111827; line-height: 1.1;">{{ streak }}</p>
+    <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">Sesiones seguidas</p>
+  </div>
+  {% endif %}
+
+  <!-- Card 3: Última carrera -->
+  {% if last_race %}
+  <div style="
+    display: table-cell;
+    width: 25%;
+    background: #ffffff;
+    border: 0.5pt solid #d1d5db;
+    border-top: 2pt solid #8be000;
+    padding: 8pt 10pt;
+    border-radius: 3pt;
+    vertical-align: top;
+    page-break-inside: avoid;
+  ">
+    {% if last_race.position %}
+    <p style="margin: 0; font-size: 18pt; font-weight: 700; color: #111827; line-height: 1.1;">{{ last_race.position }}°</p>
+    {% else %}
+    <p style="margin: 0; font-size: 14pt; font-weight: 700; color: #111827; line-height: 1.1;">DNF</p>
+    {% endif %}
+    <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">
+      V{{ last_race.valida_num or "—" }}{% if last_race.city %} {{ last_race.city }}{% endif %}
+    </p>
+    {% if last_race.gap_to_winner_pct is not none %}
+    <p style="margin: 4pt 0 0 0; font-size: 8pt; color: #6b7280;">+{{ "%.1f"|format(last_race.gap_to_winner_pct) }}% gap</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Card 4: Próxima válida -->
+  {% if next_race %}
+  <div style="
+    display: table-cell;
+    width: 25%;
+    background: #ffffff;
+    border: 0.5pt solid #d1d5db;
+    border-top: 2pt solid #8be000;
+    padding: 8pt 10pt;
+    border-radius: 3pt;
+    vertical-align: top;
+    page-break-inside: avoid;
+  ">
+    <p style="margin: 0; font-size: 18pt; font-weight: 700; color: #111827; line-height: 1.1;">{{ next_race.valida or "—" }}</p>
+    <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">Próxima válida</p>
+    <p style="margin: 4pt 0 0 0; font-size: 8pt; color: #374151;">
+      {{ next_race.date or "" }}{% if next_race.location %} · {{ next_race.location }}{% endif %}
+    </p>
+    {% if next_race.priority %}
+    <p style="margin: 3pt 0 0 0; font-size: 8pt;
+      {% if next_race.priority == 'A' %}color: #b91c1c; font-weight: 700;
+      {% elif next_race.priority == 'B' %}color: #b45309;
+      {% else %}color: #6b7280;{% endif %}
+    ">{{ next_race.priority }}{% if next_race.priority == 'A' %} — Principal{% elif next_race.priority == 'B' %} — Secundaria{% else %} — Diagnóstica{% endif %}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
 <!-- ============================================================
      INSIGNIAS DEL MES
 ============================================================ -->
 {% if badges_block and badges_block.get('items') %}
-<div style="margin-bottom: 14pt; background: #fefce8; border-left: 4pt solid #eab308; padding: 8pt 12pt; border-radius: 4pt;">
-  <h3 style="margin: 0 0 6pt 0; font-size: 11pt; color: #854d0e;">🏅 Logros del mes</h3>
-  <div style="display: flex; flex-wrap: wrap; gap: 6pt;">
+<div style="
+  margin-bottom: var(--sp-lg);
+  background: #fefce8;
+  border-left: 4pt solid #eab308;
+  padding: 8pt 12pt;
+  border-radius: 3pt;
+  page-break-inside: avoid;
+">
+  <h3 style="margin: 0 0 6pt 0; color: #854d0e; display: table-cell; vertical-align: middle;">
+    <span style="color: #854d0e; vertical-align: middle; margin-right: 4pt;">
+      {% include "documents/pdf/icons/medal.svg" %}
+    </span>
+    Logros del mes
+  </h3>
+  <div>
     {% for badge in badges_block['items'] %}
-    <span style="background: #fff7ed; border: 1pt solid #fdba74; padding: 3pt 8pt; border-radius: 10pt; font-size: 9pt; color: #9a3412;">
+    <span style="display: inline-block; background: #fff7ed; border: 1pt solid #fdba74; padding: 3pt 8pt; border-radius: 10pt; font-size: 9pt; color: #9a3412; margin: 2pt 3pt 2pt 0;">
       {% if badge.badge_type == 'attendance_100' %}100% Asistencia
-      {% elif badge.badge_type == 'attendance_90' %}≥90% Asistencia
-      {% elif badge.badge_type == 'attendance_75' %}≥75% Asistencia
-      {% elif badge.badge_type == 'first_podium' %}¡Primer Podio!
+      {% elif badge.badge_type == 'attendance_90' %}&#8805;90% Asistencia
+      {% elif badge.badge_type == 'attendance_75' %}&#8805;75% Asistencia
+      {% elif badge.badge_type == 'first_podium' %}&#161;Primer Podio!
       {% elif badge.badge_type == 'mtp' %}Mejor Tiempo Personal
       {% elif badge.badge_type == 'top10' %}Top 10
       {% else %}{{ badge.badge_type }}
@@ -85,7 +290,6 @@
 <!-- ============================================================
      NARRATIVA IA (+ OVERRIDE SI APLICA)
 ============================================================ -->
-{% set narrative = ai_narrative or {} %}
 {% set overrides = coach_narrative_overrides or {} %}
 {% set strengths_text = overrides.get('strengths') or narrative.get('strengths', '') %}
 {% set area_text = overrides.get('area_to_develop') or narrative.get('area_to_develop', '') %}
@@ -93,36 +297,53 @@
 {% set confidence = narrative.get('confidence', 'low') %}
 
 {% if strengths_text or area_text or milestone_text %}
-<div style="margin-bottom: 16pt;">
-  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
-    Valoración del entrenador
-  </h2>
-  {% if confidence == 'low' %}
-  <div style="background: #fef3c7; border: 1pt solid #fbbf24; padding: 5pt 10pt; border-radius: 3pt; font-size: 8pt; color: #92400e; margin-bottom: 8pt;">
-    <strong>Nota:</strong> Análisis basado en datos limitados (&lt;3 sesiones o &lt;2 carreras). La valoración es orientativa.
-  </div>
-  {% endif %}
+<div style="margin-bottom: var(--sp-lg);">
+  <h2>Valoración del entrenador</h2>
 
-  {% if strengths_text %}
-  <div style="margin-bottom: 8pt;">
-    <strong style="color: #15803d; font-size: 10pt;">✓ Fortalezas observadas</strong>
-    <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #374151;">{{ strengths_text }}</p>
-  </div>
-  {% endif %}
+  <!-- Card container: fortalezas + área + hito -->
+  <div style="
+    background: #fafafa;
+    border: 0.5pt solid #d1d5db;
+    padding: 14pt;
+    border-radius: 4pt;
+    page-break-inside: avoid;
+  ">
+    {% if strengths_text %}
+    <div style="margin-bottom: 10pt; display: table; width: 100%;">
+      <span style="display: table-cell; width: 18pt; vertical-align: top; padding-top: 1pt; color: #15803d;">
+        {% include "documents/pdf/icons/check.svg" %}
+      </span>
+      <div style="display: table-cell; vertical-align: top;">
+        <strong style="color: #15803d; font-size: 10pt; font-weight: 600;">Fortalezas observadas</strong>
+        <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #374151;">{{ strengths_text }}</p>
+      </div>
+    </div>
+    {% endif %}
 
-  {% if area_text %}
-  <div style="margin-bottom: 8pt;">
-    <strong style="color: #2563eb; font-size: 10pt;">→ Área de desarrollo</strong>
-    <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #374151;">{{ area_text }}</p>
-  </div>
-  {% endif %}
+    {% if area_text %}
+    <div style="margin-bottom: 10pt; display: table; width: 100%;">
+      <span style="display: table-cell; width: 18pt; vertical-align: top; padding-top: 1pt; color: #1d4ed8;">
+        {% include "documents/pdf/icons/arrow-right.svg" %}
+      </span>
+      <div style="display: table-cell; vertical-align: top;">
+        <strong style="color: #1d4ed8; font-size: 10pt; font-weight: 600;">&#193;rea de desarrollo</strong>
+        <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #374151;">{{ area_text }}</p>
+      </div>
+    </div>
+    {% endif %}
 
-  {% if milestone_text %}
-  <div style="margin-bottom: 8pt;">
-    <strong style="color: #7c3aed; font-size: 10pt;">★ Hito del mes</strong>
-    <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #374151;">{{ milestone_text }}</p>
+    {% if milestone_text %}
+    <div style="display: table; width: 100%;">
+      <span style="display: table-cell; width: 18pt; vertical-align: top; padding-top: 1pt; color: #6d28d9;">
+        {% include "documents/pdf/icons/star.svg" %}
+      </span>
+      <div style="display: table-cell; vertical-align: top;">
+        <strong style="color: #6d28d9; font-size: 10pt; font-weight: 600;">Hito del mes</strong>
+        <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #374151;">{{ milestone_text }}</p>
+      </div>
+    </div>
+    {% endif %}
   </div>
-  {% endif %}
 </div>
 {% endif %}
 
@@ -130,40 +351,49 @@
      BLOQUE 1: ASISTENCIA Y COMPROMISO
 ============================================================ -->
 {% if attendance %}
-<div style="margin-bottom: 16pt;">
-  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
-    Asistencia y Compromiso
-  </h2>
-  <table class="data-table">
-    <tbody>
-      <tr>
-        <td>Sesiones asistidas</td>
-        <td><strong>{{ attendance.get('sessions_present', 0) }} / {{ attendance.get('sessions_total', 0) }}</strong></td>
-        <td>Porcentaje</td>
-        <td><strong>{{ attendance.get('attendance_pct', 0) }}%</strong></td>
-      </tr>
+<div style="margin-bottom: var(--sp-lg);">
+  <h2>Asistencia y Compromiso</h2>
+
+  {# Mini-cards de asistencia (3 tarjetas) #}
+  <div style="display: table; width: 100%; border-collapse: separate; border-spacing: 6pt 0; margin-bottom: 10pt; page-break-inside: avoid;">
+    <!-- Card: sesiones -->
+    <div style="display: table-cell; width: 33%; background: #ffffff; border: 0.5pt solid #d1d5db; border-top: 2pt solid #8be000; padding: 8pt 10pt; border-radius: 3pt; vertical-align: top;">
+      <p style="margin: 0; font-size: 16pt; font-weight: 700; color: #111827; line-height: 1.1;">
+        {{ attendance.get('sessions_present', 0) }}<span style="font-size: 10pt; color: #6b7280;">/{{ attendance.get('sessions_total', 0) }}</span>
+      </p>
+      <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">Sesiones</p>
+    </div>
+    <!-- Card: porcentaje -->
+    <div style="display: table-cell; width: 33%; background: #ffffff; border: 0.5pt solid #d1d5db; border-top: 2pt solid #8be000; padding: 8pt 10pt; border-radius: 3pt; vertical-align: top;">
+      <p style="margin: 0; font-size: 16pt; font-weight: 700; color: #111827; line-height: 1.1;">{{ attendance.get('attendance_pct', 0) }}%</p>
+      <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">Porcentaje</p>
+    </div>
+    <!-- Card: tendencia -->
+    <div style="display: table-cell; width: 33%; background: #ffffff; border: 0.5pt solid #d1d5db; border-top: 2pt solid #8be000; padding: 8pt 10pt; border-radius: 3pt; vertical-align: top;">
       {% if attendance.get('attendance_pct_prev_month') is not none %}
-      <tr>
-        <td>Mes anterior</td>
-        <td>{{ attendance.get('attendance_pct_prev_month') }}%</td>
-        <td>Tendencia</td>
-        <td>
-          {% set diff = attendance.get('attendance_pct', 0) - attendance.get('attendance_pct_prev_month', 0) %}
-          {% if diff > 0 %}<span style="color: #15803d;">↑ +{{ "%.1f"|format(diff) }}%</span>
-          {% elif diff < 0 %}<span style="color: #dc2626;">↓ {{ "%.1f"|format(diff) }}%</span>
-          {% else %}<span style="color: #6b7280;">= Sin cambio</span>
-          {% endif %}
-        </td>
-      </tr>
+        {% set diff = attendance.get('attendance_pct', 0) - attendance.get('attendance_pct_prev_month', 0) %}
+        {% if diff > 0 %}
+        <p style="margin: 0; font-size: 16pt; font-weight: 700; color: #15803d; line-height: 1.1;">&#8593;+{{ "%.1f"|format(diff) }}%</p>
+        <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">Tendencia</p>
+        {% elif diff < 0 %}
+        <p style="margin: 0; font-size: 16pt; font-weight: 700; color: #b91c1c; line-height: 1.1;">&#8595;{{ "%.1f"|format(diff) }}%</p>
+        <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">Tendencia</p>
+        {% else %}
+        <p style="margin: 0; font-size: 16pt; font-weight: 700; color: #6b7280; line-height: 1.1;">=</p>
+        <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">Sin cambio</p>
+        {% endif %}
+      {% else %}
+        <p style="margin: 0; font-size: 16pt; font-weight: 700; color: #6b7280; line-height: 1.1;">—</p>
+        <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3pt;">Tendencia</p>
       {% endif %}
-      {% if attendance.get('streak_days', 0) > 0 %}
-      <tr>
-        <td colspan="2">Racha de asistencia consecutiva</td>
-        <td colspan="2"><strong>{{ attendance.get('streak_days') }} sesiones</strong></td>
-      </tr>
-      {% endif %}
-    </tbody>
-  </table>
+    </div>
+  </div>
+
+  {% if attendance.get('streak_days', 0) > 0 %}
+  <p style="margin: 6pt 0 0 0; font-size: 9pt; color: #374151;">
+    <strong>Racha de asistencia consecutiva:</strong> {{ attendance.get('streak_days') }} sesiones
+  </p>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -171,10 +401,8 @@
      BLOQUE 2: DESARROLLO TÉCNICO
 ============================================================ -->
 {% if technical %}
-<div style="margin-bottom: 16pt;">
-  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
-    Desarrollo Técnico
-  </h2>
+<div style="margin-bottom: var(--sp-lg);">
+  <h2>Desarrollo Técnico</h2>
   {% if technical.get('focos_tecnicos') %}
   <p style="margin: 0 0 6pt 0; font-size: 10pt; color: #374151;">
     <strong>Focos del mes:</strong>
@@ -209,7 +437,7 @@
       <tr>
         <td>Horas totales de entrenamiento</td>
         <td><strong>{{ technical.get('total_training_hours', 0) }}h</strong></td>
-        <td>LTAD: ≤ edad del atleta horas/semana</td>
+        <td>LTAD: &#8804; edad del atleta horas/semana</td>
       </tr>
     </tbody>
   </table>
@@ -220,59 +448,106 @@
      BLOQUE 3: RESULTADOS COMPETITIVOS
 ============================================================ -->
 {% if race_results and race_results.get('has_races') %}
-<div style="margin-bottom: 16pt;">
-  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
-    Resultados Copa Valle — {{ month_label }}
-  </h2>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Válida</th>
-        <th>Categoría</th>
-        <th>Posición</th>
-        <th>Tiempo</th>
-        <th>Gap al P1</th>
-        <th>Puntos</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in race_results.get('results', []) %}
-      <tr>
-        <td>V{{ r.valida_num or "—" }}</td>
-        <td>{{ r.category_code or "—" }}</td>
-        <td>{{ r.position or "DNF/DSQ" }}</td>
-        <td>
-          {% if r.race_time_ms %}
-            {% set total_s = (r.race_time_ms / 1000) | int %}
-            {% set mins = (total_s // 60) %}
-            {% set secs = (total_s % 60) %}
-            {{ "%d:%02d"|format(mins, secs) }}
-          {% else %}—{% endif %}
-        </td>
-        <td>
-          {% if r.gap_to_winner_pct is not none %}
-            +{{ "%.1f"|format(r.gap_to_winner_pct) }}%
-          {% else %}—{% endif %}
-        </td>
-        <td>{{ r.points_awarded or 0 }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div style="margin-bottom: var(--sp-lg);">
+  <h2>Resultados Copa Valle — {{ month_label }}</h2>
+
+  {% set results_list = race_results.get('results', []) %}
+
+  {# Si hay un solo resultado, tarjeta destacada en lugar de tabla de 1 fila #}
+  {% if results_list | length == 1 %}
+    {% set r = results_list[0] %}
+    <div style="
+      background: #fafafa;
+      border: 0.5pt solid #d1d5db;
+      border-left: 4pt solid #8be000;
+      padding: 12pt 14pt;
+      border-radius: 3pt;
+      display: table;
+      width: 100%;
+      page-break-inside: avoid;
+    ">
+      <div style="display: table-cell; width: 80pt; vertical-align: middle; text-align: center;">
+        {% if r.position %}
+        <p style="margin: 0; font-size: 28pt; font-weight: 700; color: #111827; line-height: 1.0;">{{ r.position }}°</p>
+        <p style="margin: 2pt 0 0 0; font-size: 8pt; color: #6b7280; font-weight: 600;">POSICIÓN</p>
+        {% else %}
+        <p style="margin: 0; font-size: 18pt; font-weight: 700; color: #6b7280;">DNF</p>
+        {% endif %}
+      </div>
+      <div style="display: table-cell; vertical-align: middle; padding-left: 14pt;">
+        <p style="margin: 0 0 4pt 0; font-size: 11pt; font-weight: 700; color: #111827;">
+          V{{ r.valida_num or "—" }}{% if r.city %} · {{ r.city }}{% endif %}
+          {% if r.category_code %}<span style="font-size: 9pt; color: #6b7280; font-weight: 400;"> — {{ r.category_code }}</span>{% endif %}
+        </p>
+        {% if r.race_time_ms %}
+          {% set total_s = (r.race_time_ms / 1000) | int %}
+          {% set mins = (total_s // 60) %}
+          {% set secs = (total_s % 60) %}
+        <p style="margin: 0 0 2pt 0; font-size: 9.5pt; color: #374151;">Tiempo: <strong>{{ "%d:%02d"|format(mins, secs) }}</strong></p>
+        {% endif %}
+        {% if r.gap_to_winner_pct is not none %}
+        <p style="margin: 0 0 2pt 0; font-size: 9.5pt; color: #374151;">Gap al líder: <strong>+{{ "%.1f"|format(r.gap_to_winner_pct) }}%</strong></p>
+        {% endif %}
+        {% if r.points_awarded %}
+        <p style="margin: 0; font-size: 9.5pt; color: #374151;">Puntos Copa: <strong>{{ r.points_awarded }}</strong></p>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    {# Múltiples resultados → tabla #}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Válida</th>
+          <th>Categoría</th>
+          <th>Posición</th>
+          <th>Tiempo</th>
+          <th>Gap al P1</th>
+          <th>Puntos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in results_list %}
+        <tr>
+          <td>V{{ r.valida_num or "—" }}</td>
+          <td>{{ r.category_code or "—" }}</td>
+          <td>{{ r.position or "DNF/DSQ" }}</td>
+          <td>
+            {% if r.race_time_ms %}
+              {% set total_s = (r.race_time_ms / 1000) | int %}
+              {% set mins = (total_s // 60) %}
+              {% set secs = (total_s % 60) %}
+              {{ "%d:%02d"|format(mins, secs) }}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if r.gap_to_winner_pct is not none %}
+              +{{ "%.1f"|format(r.gap_to_winner_pct) }}%
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ r.points_awarded or 0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
 
   <!-- Gráficos de competencia -->
   {% if charts_ctx and charts_ctx.get('has_data') %}
   <div style="margin-top: 12pt;">
-    <h3 style="font-size: 10pt; color: #4b5563; margin-bottom: 8pt;">Evolución en la temporada</h3>
-    <div style="display: flex; flex-wrap: wrap; gap: 10pt; justify-content: space-between;">
-      <div>
-        {{ line_positions(charts_ctx.positions, width=280, height=150, low_confidence=charts_ctx.low_confidence) }}
+    <h3>Evolución en la temporada</h3>
+    <div style="display: table; width: 100%;">
+      <div style="display: table-cell; width: 33%; vertical-align: top; padding-right: 5pt;">
+        {{ line_positions(charts_ctx.positions, width=175, height=130, low_confidence=charts_ctx.low_confidence) }}
+        <p class="caption">Posición menor = mejor rendimiento</p>
       </div>
-      <div>
-        {{ gap_pct(charts_ctx.gap_pcts, width=280, height=150, low_confidence=charts_ctx.low_confidence) }}
+      <div style="display: table-cell; width: 33%; vertical-align: top; padding: 0 3pt;">
+        {{ gap_pct(charts_ctx.gap_pcts, width=175, height=130, low_confidence=charts_ctx.low_confidence) }}
+        <p class="caption">% de distancia al primero (0% = ganador)</p>
       </div>
-      <div>
-        {{ points_accumulated(charts_ctx.points_accumulated, width=280, height=150, low_confidence=charts_ctx.low_confidence) }}
+      <div style="display: table-cell; width: 33%; vertical-align: top; padding-left: 5pt;">
+        {{ points_accumulated(charts_ctx.points_accumulated, width=175, height=130, low_confidence=charts_ctx.low_confidence) }}
+        <p class="caption">Puntos acumulados en la temporada</p>
       </div>
     </div>
   </div>
@@ -284,10 +559,8 @@
      BLOQUE 4: ANTROPOMETRÍA COMPLETA (solo PDF)
 ============================================================ -->
 {% if anthro and anthro.get('has_records') %}
-<div style="margin-bottom: 16pt; page-break-before: auto;">
-  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
-    Seguimiento Antropométrico y Maduración
-  </h2>
+<div style="margin-bottom: var(--sp-lg); page-break-before: auto;">
+  <h2>Seguimiento Antropométrico y Maduración</h2>
   <p style="font-size: 9pt; color: #6b7280; margin-bottom: 8pt; font-style: italic;">
     Esta información es confidencial y solo se incluye en el PDF. No se envía por email.
     Fuente: Método Mirwald et al. + Referencias OMS/CDC adaptadas para Colombia (Res. 2465/2016).
@@ -326,8 +599,8 @@
           {% else %}—{% endif %}
         </td>
         <td>
-          {% if r.maturation_status == 'Pre-PHV' %}<span style="color: #2563eb;">Pre-PHV</span>
-          {% elif r.maturation_status == 'Circa-PHV' %}<span style="color: #d97706;">Circa-PHV</span>
+          {% if r.maturation_status == 'Pre-PHV' %}<span style="color: #1d4ed8;">Pre-PHV</span>
+          {% elif r.maturation_status == 'Circa-PHV' %}<span style="color: #b45309;">Circa-PHV</span>
           {% elif r.maturation_status == 'Post-PHV' %}<span style="color: #059669;">Post-PHV</span>
           {% else %}—{% endif %}
         </td>
@@ -339,12 +612,12 @@
   <!-- Última medición — detalle PHV -->
   {% set latest = anthro.latest %}
   {% if latest %}
-  <div style="margin-top: 10pt; background: #f8fafc; border: 1pt solid #e2e8f0; padding: 10pt; border-radius: 4pt;">
-    <h3 style="margin: 0 0 6pt 0; font-size: 10pt; color: #1e293b;">
+  <div style="margin-top: 10pt; background: #fafafa; border: 0.5pt solid #d1d5db; padding: 10pt; border-radius: 4pt; page-break-inside: avoid;">
+    <h3 style="margin: 0 0 6pt 0;">
       Última medición ({{ latest.evaluation_date }})
     </h3>
-    <div style="display: flex; flex-wrap: wrap; gap: 12pt;">
-      <div>
+    <div style="display: table; width: 100%;">
+      <div style="display: table-cell; vertical-align: top; width: 50%;">
         <p style="margin: 0; font-size: 9pt;"><strong>Pico de Velocidad de Crecimiento (PHV):</strong></p>
         <p style="margin: 2pt 0 0 6pt; font-size: 9pt;">
           Estado: <strong>{{ latest.maturation_status or "—" }}</strong><br/>
@@ -353,7 +626,7 @@
         </p>
       </div>
       {% if latest.training_implications %}
-      <div style="flex: 1; min-width: 160pt;">
+      <div style="display: table-cell; vertical-align: top; padding-left: 12pt;">
         <p style="margin: 0; font-size: 9pt;"><strong>Implicaciones pedagógicas:</strong></p>
         <p style="margin: 2pt 0 0 6pt; font-size: 9pt; color: #374151;">{{ latest.training_implications }}</p>
       </div>
@@ -368,19 +641,17 @@
      BLOQUE 5: FOTOS DEL MES
 ============================================================ -->
 {% if photos and photos.get('count', 0) > 0 %}
-<div style="margin-bottom: 16pt;">
-  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
-    Galería del Mes
-  </h2>
+<div style="margin-bottom: var(--sp-lg);">
+  <h2>Galería del Mes</h2>
   <p style="font-size: 8pt; color: #6b7280; margin-bottom: 8pt;">
     Fotos compartidas con consentimiento de imagen (Ley 1581/2012).
     {% if photos.get('soft_cap_reached') %}Se muestran las primeras 8 fotos.{% endif %}
   </p>
-  <div style="display: flex; flex-wrap: wrap; gap: 8pt;">
+  <div style="display: table; width: 100%; border-spacing: 6pt;">
     {% for photo in photos.get('items', []) %}
     {% if photo.thumbnail_url %}
-    <div style="text-align: center;">
-      <img src="{{ photo.thumbnail_url }}" style="max-width: 80pt; max-height: 60pt; border-radius: 3pt;" alt="Foto de entrenamiento"/>
+    <div style="display: table-cell; text-align: center; vertical-align: top; padding: 3pt;">
+      <img src="{{ photo.thumbnail_url }}" style="max-width: 80pt; max-height: 60pt; border-radius: 3pt;" alt="Foto de entrenamiento del mes — Club Trocha y Ruta"/>
       {% if photo.caption %}
       <p style="font-size: 7pt; color: #6b7280; margin: 2pt 0 0 0; max-width: 80pt;">{{ photo.caption }}</p>
       {% endif %}
@@ -395,13 +666,11 @@
      BLOQUE 6: CALENDARIO
 ============================================================ -->
 {% if calendar_block %}
-<div style="margin-bottom: 16pt;">
-  <h2 style="font-size: 12pt; color: #1e293b; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt;">
-    Próximas Actividades
-  </h2>
+<div style="margin-bottom: var(--sp-lg);">
+  <h2>Próximas Actividades</h2>
 
   {% if calendar_block.get('next_training_sessions') %}
-  <h3 style="font-size: 10pt; color: #4b5563; margin: 0 0 6pt 0;">Entrenamientos planificados</h3>
+  <h3>Entrenamientos planificados</h3>
   <table class="data-table" style="font-size: 9pt;">
     <tbody>
       {% for s in calendar_block.next_training_sessions %}
@@ -417,7 +686,7 @@
   {% endif %}
 
   {% if calendar_block.get('next_race_events') %}
-  <h3 style="font-size: 10pt; color: #4b5563; margin: 8pt 0 6pt 0;">Copa Valle 2026 — Próximas válidas</h3>
+  <h3>Copa Valle 2026 — Próximas válidas</h3>
   <table class="data-table" style="font-size: 9pt;">
     <thead>
       <tr><th>Válida</th><th>Fecha</th><th>Sede</th><th>Prioridad</th></tr>
@@ -429,8 +698,8 @@
         <td>{{ event.date or "—" }}</td>
         <td>{{ event.location or "—" }}</td>
         <td>
-          {% if event.priority == 'A' %}<span style="color: #dc2626; font-weight: bold;">A — Principal</span>
-          {% elif event.priority == 'B' %}<span style="color: #d97706;">B — Secundaria</span>
+          {% if event.priority == 'A' %}<span style="color: #b91c1c; font-weight: bold;">A — Principal</span>
+          {% elif event.priority == 'B' %}<span style="color: #b45309;">B — Secundaria</span>
           {% elif event.priority == 'C' %}<span style="color: #6b7280;">C — Diagnóstica</span>
           {% else %}{{ event.priority or "—" }}{% endif %}
         </td>
@@ -446,19 +715,24 @@
      BLOQUE 7: CÓMO APOYAR DESDE CASA
 ============================================================ -->
 {% if support and support.get('tips') %}
-<div style="margin-bottom: 16pt; background: #f0fdf4; border: 1pt solid #86efac; padding: 10pt 14pt; border-radius: 4pt;">
-  <h2 style="font-size: 12pt; color: #14532d; margin: 0 0 8pt 0;">
+<div style="margin-bottom: var(--sp-lg); background: #f0fdf4; border: 1pt solid #86efac; padding: 10pt 14pt; border-radius: 4pt; page-break-inside: avoid;">
+  <h2 style="color: #14532d; margin-top: 0;">
     Cómo Apoyar desde Casa
   </h2>
-  <div style="display: flex; flex-wrap: wrap; gap: 8pt;">
+  <div style="display: table; width: 100%; border-spacing: 6pt;">
     {% for tip in support.tips %}
-    <div style="flex: 1; min-width: 130pt; background: white; padding: 8pt; border-radius: 3pt; border: 1pt solid #bbf7d0;">
-      <p style="margin: 0 0 4pt 0; font-size: 10pt; font-weight: bold; color: #15803d;">
-        {% if tip.category == 'hidratacion' %}💧
-        {% elif tip.category == 'sueno' %}😴
-        {% elif tip.category == 'descanso' %}🏃
-        {% elif tip.category == 'nutricion' %}🍎
-        {% endif %}{{ tip.title }}</p>
+    <div style="display: table-cell; background: white; padding: 8pt; border-radius: 3pt; border: 1pt solid #bbf7d0; vertical-align: top;">
+      <p style="margin: 0 0 4pt 0; font-size: 10pt; font-weight: 600; color: #15803d; display: table; width: 100%;">
+        <span style="display: table-cell; width: 18pt; vertical-align: middle; color: #15803d;">
+          {% if tip.category == 'hidratacion' %}{% include "documents/pdf/icons/drop.svg" %}
+          {% elif tip.category == 'sueno' %}{% include "documents/pdf/icons/moon.svg" %}
+          {% elif tip.category == 'descanso' %}{% include "documents/pdf/icons/walk.svg" %}
+          {% elif tip.category == 'nutricion' %}{% include "documents/pdf/icons/apple.svg" %}
+          {% else %}{% include "documents/pdf/icons/check.svg" %}
+          {% endif %}
+        </span>
+        <span style="display: table-cell; vertical-align: middle;">{{ tip.title }}</span>
+      </p>
       <p style="margin: 0; font-size: 9pt; color: #374151;">{{ tip.text }}</p>
     </div>
     {% endfor %}
@@ -469,7 +743,7 @@
 <!-- ============================================================
      AVISO LEGAL LEY 1581 / FOOTER INFORMATIVO
 ============================================================ -->
-<div style="margin-top: 20pt; padding: 8pt 12pt; background: #f1f5f9; border-left: 3pt solid #94a3b8; font-size: 8pt; color: #475569;">
+<div style="margin-top: 20pt; padding: 8pt 12pt; background: #f1f5f9; border-left: 3pt solid #94a3b8; font-size: 8pt; color: #475569; page-break-inside: avoid;">
   <strong>Información confidencial — Ley 1581/2012 (Habeas Data)</strong><br/>
   Este boletín contiene datos personales y sensibles de un menor de edad, protegidos por la Ley Estatutaria 1581/2012.
   Su uso se limita exclusivamente al seguimiento pedagógico y deportivo. Prohibida su reproducción o distribución
