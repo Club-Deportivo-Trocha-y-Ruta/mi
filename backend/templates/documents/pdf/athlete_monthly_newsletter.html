@@ -66,7 +66,7 @@
 <div style="margin-bottom: 14pt; background: #fefce8; border-left: 4pt solid #eab308; padding: 8pt 12pt; border-radius: 4pt;">
   <h3 style="margin: 0 0 6pt 0; font-size: 11pt; color: #854d0e;">🏅 Logros del mes</h3>
   <div style="display: flex; flex-wrap: wrap; gap: 6pt;">
-    {% for badge in badges_block.items %}
+    {% for badge in badges_block['items'] %}
     <span style="background: #fff7ed; border: 1pt solid #fdba74; padding: 3pt 8pt; border-radius: 10pt; font-size: 9pt; color: #9a3412;">
       {% if badge.badge_type == 'attendance_100' %}100% Asistencia
       {% elif badge.badge_type == 'attendance_90' %}≥90% Asistencia
