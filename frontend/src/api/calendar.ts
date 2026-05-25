@@ -1,8 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-
+/**
+ * Funciones HTTP puras para calendar events.
+ *
+ * Los hooks de TanStack Query viven en `@/hooks/calendar/index.ts`.
+ * Re-exports al final preservan los imports históricos.
+ */
 import { apiClient } from "@/api/client";
-import { calendarKeys } from "@/api/queryKeys";
-import { useAuthStore } from "@/store/auth.store";
 import type {
   AvailableRaceEvent,
   CalendarEventListItem,
@@ -125,101 +127,16 @@ export async function getAvailableRaceEvents(
   return response.data;
 }
 
-// ─── TanStack Query hooks ─────────────────────────────────────────────────────
+// ─── Re-export de hooks (migración incremental: ver @/hooks/calendar) ────────
 
-export function useCalendarEvents(filters: CalendarFilters) {
-  const accessToken = useAuthStore((s) => s.accessToken);
-  return useQuery({
-    queryKey: calendarKeys.events(filters),
-    queryFn: () => fetchCalendarEvents(filters),
-    enabled: !!accessToken && !!filters.from && !!filters.to,
-    staleTime: 60_000,
-  });
-}
-
-export function useCalendarEvent(id: number | null) {
-  const accessToken = useAuthStore((s) => s.accessToken);
-  return useQuery({
-    queryKey: calendarKeys.event(id),
-    queryFn: () => fetchCalendarEvent(id!),
-    enabled: !!accessToken && id != null,
-    staleTime: 30_000,
-  });
-}
-
-export function useCreateCalendarEvent() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: createCalendarEvent,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
-    },
-  });
-}
-
-export function useUpdateCalendarEvent() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: EventUpdatePayload }) =>
-      updateCalendarEvent(id, payload),
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
-      void queryClient.invalidateQueries({
-        queryKey: calendarKeys.event(variables.id),
-      });
-    },
-  });
-}
-
-export function useCancelCalendarEvent() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
-      cancelCalendarEvent(id, reason),
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
-      void queryClient.invalidateQueries({
-        queryKey: calendarKeys.event(variables.id),
-      });
-    },
-  });
-}
-
-export function useDeleteCalendarEventPermanent() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id }: { id: number }) => deleteCalendarEventPermanent(id),
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
-      void queryClient.invalidateQueries({
-        queryKey: calendarKeys.event(variables.id),
-      });
-    },
-  });
-}
-
-export function useRSVPEvent(eventId: number) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: RSVPPayload) => rsvpEvent(eventId, payload),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: calendarKeys.eventsAll });
-      void queryClient.invalidateQueries({
-        queryKey: calendarKeys.event(eventId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: calendarKeys.attendances(eventId),
-      });
-    },
-  });
-}
-
-export function useEventAttendances(eventId: number | null, eventType: EventType) {
-  const accessToken = useAuthStore((s) => s.accessToken);
-  return useQuery({
-    queryKey: calendarKeys.attendances(eventId),
-    queryFn: () => fetchEventAttendances(eventId!, eventType),
-    enabled: !!accessToken && eventId != null && eventId > 0,
-    staleTime: 30_000,
-  });
-}
+export {
+  useAvailableRaceEvents,
+  useCalendarEvent,
+  useCalendarEvents,
+  useCancelCalendarEvent,
+  useCreateCalendarEvent,
+  useDeleteCalendarEventPermanent,
+  useEventAttendances,
+  useRSVPEvent,
+  useUpdateCalendarEvent,
+} from "@/hooks/calendar";

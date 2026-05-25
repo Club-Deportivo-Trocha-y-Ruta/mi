@@ -112,40 +112,7 @@ export function useUnlinkCompetitor() {
 }
 
 // ---------------------------------------------------------------------------
-// Error message helper — mapea status codes a copy en español
+// Error message helper — re-export desde lib/api/errorMessages (consolidado)
 // ---------------------------------------------------------------------------
 
-/**
- * Extrae mensaje legible del error axios para mostrar en toast.
- * Mapea status codes documentados (403, 404, 409, 422) a copy específico.
- */
-export function getCompetitorErrorMessage(
-  err: unknown,
-  fallback = "Error inesperado. Intenta de nuevo.",
-): string {
-  if (typeof err === "object" && err !== null) {
-    const e = err as {
-      response?: { data?: { detail?: unknown }; status?: number };
-      message?: string;
-    };
-    const status = e.response?.status;
-    if (status === 409) {
-      return "Este competidor ya está enlazado a otro atleta. Desvincúlalo primero.";
-    }
-    if (status === 403) {
-      return "Sin permiso: el atleta no pertenece a tu club.";
-    }
-    if (status === 404) {
-      return "Competidor o atleta no encontrado.";
-    }
-    if (status === 422) {
-      return "Datos inválidos. Verifica el atleta seleccionado.";
-    }
-    const detail = e.response?.data?.detail;
-    if (typeof detail === "string") return detail;
-    if (e.message && !/status code \d+/i.test(e.message)) {
-      return e.message;
-    }
-  }
-  return fallback;
-}
+export { getCompetitorErrorMessage } from "@/lib/api/errorMessages";

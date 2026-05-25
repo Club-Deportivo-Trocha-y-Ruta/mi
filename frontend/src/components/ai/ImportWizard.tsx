@@ -31,6 +31,7 @@ import { z } from "zod";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import { RaceUploadZone } from "@/components/ai/RaceUploadZone";
+import { getImportErrorMessage } from "@/lib/api/errorMessages";
 
 // DiffTable lazy → solo se descarga si el wizard detecta modo revisión.
 // Mantiene el chunk de ImportWizard cerca de la baseline F-UP (~18 KB).
@@ -186,37 +187,28 @@ function Stepper({ active }: { active: 1 | 2 | 3 }) {
 // ---------------------------------------------------------------------------
 // Helper para extraer mensaje del error axios
 // ---------------------------------------------------------------------------
+// Prioriza el `detail` del payload (string o array Pydantic) — vía
+// getImportErrorMessage — para preservar mensajes server-side específicos.
+// Si no hay detail explicativo, mapea status codes del wizard de ingesta
+// a copy en español; en último recurso, devuelve el fallback genérico.
 
 function getErrMsg(err: unknown, fallback: string): string {
+  // Status-specific fallback que usaremos si no hay detail informativo.
+  let statusFallback = fallback;
   if (typeof err === "object" && err !== null) {
-    const e = err as {
-      response?: { data?: { detail?: unknown }; status?: number };
-      message?: string;
-    };
-    const detail = e.response?.data?.detail;
-    if (typeof detail === "string") return detail;
-    if (Array.isArray(detail) && detail.length > 0) {
-      const first = detail[0] as { msg?: string };
-      if (first?.msg) return first.msg;
-    }
-    if (e.response?.status === 413) {
-      return "El archivo excede el tamaño permitido (máx 8 MB).";
-    }
+    const e = err as { response?: { status?: number } };
     if (e.response?.status === 409) {
-      return "Este PDF ya fue ingestado previamente.";
-    }
-    if (e.response?.status === 500) {
-      return "Error interno al procesar la ingesta. Revisa el archivo o contacta soporte.";
-    }
-    if (e.response?.status === 422) {
-      return "Datos inválidos. Revisa el formulario y vuelve a intentar.";
-    }
-    if (e.message && !/status code \d+/i.test(e.message)) {
-      // Solo mostrar e.message si NO es el genérico "Request failed with status code XXX"
-      return e.message;
+      statusFallback = "Este PDF ya fue ingestado previamente.";
+    } else if (e.response?.status === 500) {
+      statusFallback =
+        "Error interno al procesar la ingesta. Revisa el archivo o contacta soporte.";
+    } else if (e.response?.status === 422) {
+      statusFallback = "Datos inválidos. Revisa el formulario y vuelve a intentar.";
     }
   }
-  return fallback;
+  // getImportErrorMessage extrae detail (string / Pydantic array) si existe;
+  // si no, mapea 413 y como último recurso devuelve statusFallback.
+  return getImportErrorMessage(err, statusFallback);
 }
 
 // ---------------------------------------------------------------------------
