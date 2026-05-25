@@ -170,8 +170,7 @@ export function AppShell({ children }: AppShellProps) {
         {/* Logo */}
         <div className="mb-8 px-2">
           <h2
-            className="text-lg text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="text-lg text-charcoal font-heading"
           >
             Trocha y Ruta
           </h2>
@@ -225,7 +224,6 @@ export function AppShell({ children }: AppShellProps) {
               type="button"
               onClick={logout}
               className="ml-1 shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             >
               Cerrar sesión
             </button>

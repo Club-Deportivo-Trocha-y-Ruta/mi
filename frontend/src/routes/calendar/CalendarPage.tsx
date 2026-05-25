@@ -83,7 +83,7 @@ export function CalendarPage() {
 
           <div className="flex items-center gap-2">
             {/* View selector */}
-            <div className="flex rounded-lg overflow-hidden" style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}>
+            <div className="flex rounded-lg overflow-hidden">
               {(Object.entries(VIEW_LABELS) as [CalendarView, string][]).map(
                 ([v, label]) => (
                   <button
@@ -106,7 +106,6 @@ export function CalendarPage() {
             <Link
               to="/calendar/events/new"
               className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-              style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
             >
               + Nuevo evento
             </Link>
@@ -131,10 +130,6 @@ export function CalendarPage() {
         {!eventsQuery.isLoading && (
           <div
             className="rounded-xl bg-white p-4"
-            style={{
-              boxShadow:
-                "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-            }}
           >
             <CalendarShell
               events={events}

@@ -65,8 +65,7 @@ export function MonthlyAveragesBanner({
     >
       <header className="mb-3 flex items-baseline justify-between gap-3">
         <h2
-          className="text-base text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-base text-charcoal font-heading"
         >
           Cómo va este mes
         </h2>

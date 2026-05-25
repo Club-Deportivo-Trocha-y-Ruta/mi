@@ -4,9 +4,7 @@ import { CheckCircle2 } from "lucide-react";
 // Shared style constants (mirror LoginPage / ParentRegisterPage)
 // ---------------------------------------------------------------------------
 
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -25,7 +23,6 @@ export function OnboardingSuccess({ userName, onGoToLogin }: OnboardingSuccessPr
     <div className="flex min-h-screen items-center justify-center bg-white p-4">
       <div
         className="w-full max-w-md rounded-xl bg-white p-8 text-center"
-        style={{ boxShadow: CARD_SHADOW }}
       >
         {/* Club header */}
         <div className="mb-8 text-center">
@@ -33,12 +30,7 @@ export function OnboardingSuccess({ userName, onGoToLogin }: OnboardingSuccessPr
             Club Deportivo
           </p>
           <h1
-            className="mt-1 text-2xl text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-              letterSpacing: "0.2px",
-            }}
+            className="mt-1 text-2xl text-charcoal font-heading tracking-[0.2px]"
           >
             Trocha y Ruta
           </h1>
@@ -57,12 +49,7 @@ export function OnboardingSuccess({ userName, onGoToLogin }: OnboardingSuccessPr
 
         {/* Mensaje principal */}
         <h2
-          className="text-xl text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-            letterSpacing: "0.2px",
-          }}
+          className="text-xl text-charcoal font-heading tracking-[0.2px]"
         >
           ¡Cuenta creada exitosamente!
         </h2>
@@ -82,7 +69,6 @@ export function OnboardingSuccess({ userName, onGoToLogin }: OnboardingSuccessPr
           type="button"
           onClick={onGoToLogin}
           className="mt-8 w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
         >
           Iniciar sesión
         </button>

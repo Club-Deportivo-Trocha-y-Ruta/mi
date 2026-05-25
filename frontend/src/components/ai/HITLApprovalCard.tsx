@@ -211,7 +211,6 @@ export function HITLApprovalCard({
           onChange={(e) => setRejectionNotes(e.target.value)}
           maxLength={500}
           className="flex-1 min-w-[180px] rounded-lg bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500/40"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           aria-label="Motivo de rechazo (opcional)"
           data-testid="hitl-reject-notes-input"
         />
@@ -241,7 +240,6 @@ export function HITLApprovalCard({
                   rows={18}
                   data-testid="hitl-edit-textarea"
                   className="w-full rounded-lg bg-white px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-blue-500/40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   aria-label="Markdown editado"
                 />
               </div>

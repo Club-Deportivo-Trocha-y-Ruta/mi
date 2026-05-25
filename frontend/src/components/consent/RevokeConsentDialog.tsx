@@ -128,8 +128,7 @@ export function RevokeConsentDialog({
             <div>
               <h2
                 id="revoke-dialog-title"
-                className="text-base text-charcoal"
-                style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+                className="text-base text-charcoal font-heading"
               >
                 Revocar consentimiento
               </h2>
@@ -187,7 +186,6 @@ export function RevokeConsentDialog({
                   "border-0 bg-light-gray outline-none",
                   "focus:ring-2 focus:ring-charcoal/20",
                 )}
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 {...register("reason")}
                 aria-describedby="revoke-reason-hint"
               />

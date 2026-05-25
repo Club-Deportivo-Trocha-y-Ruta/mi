@@ -78,10 +78,6 @@ export function AnthropometryHistory({
             <button
               type="button"
               className="w-full cursor-pointer rounded-xl bg-white p-4 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
-              style={{
-                boxShadow:
-                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-              }}
               onClick={() => setSelectedRecord(record)}
               aria-label={`Ver detalle de medición del ${formatDate(record.evaluation_date)}`}
             >
@@ -110,7 +106,6 @@ export function AnthropometryHistory({
         <table className="min-w-full text-sm">
           <thead
             className="text-left"
-            style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
           >
             <tr>
               <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Fecha</th>
@@ -128,7 +123,6 @@ export function AnthropometryHistory({
               <tr
                 key={record.id}
                 className="cursor-pointer transition-colors hover:bg-light-gray"
-                style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
                 onClick={() => setSelectedRecord(record)}
               >
                 <td className="px-3 py-2.5 text-charcoal" data-testid="record-date">
@@ -173,12 +167,10 @@ export function AnthropometryHistory({
           >
             <div
               className="mb-4 flex items-center justify-between pb-3"
-              style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
             >
               <h3
                 id="anthropometry-record-modal-title"
-                className="text-base text-charcoal"
-                style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+                className="text-base text-charcoal font-heading tracking-[0.2px]"
               >
                 Medición del {formatDate(selectedRecord.evaluation_date)}
               </h3>
@@ -227,7 +219,6 @@ export function AnthropometryHistory({
             {athleteId !== undefined && athleteId > 0 && (
               <div
                 className="mt-5 pt-4"
-                style={{ borderTop: "1px solid rgba(34, 42, 53, 0.08)" }}
                 data-testid="anthropometry-record-explanation-section"
               >
                 <AnthropometricRecordExplanationCard

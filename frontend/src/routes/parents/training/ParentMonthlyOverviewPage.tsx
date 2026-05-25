@@ -45,8 +45,7 @@ function AthleteSummaryCard({
     >
       <div>
         <h2
-          className="text-base text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-base text-charcoal font-heading"
         >
           {athlete.athlete_first_name} {athlete.athlete_last_name}
         </h2>
@@ -153,8 +152,7 @@ export function ParentMonthlyOverviewPage() {
     <section className="space-y-5">
       <div>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-2xl text-charcoal font-heading"
         >
           Resumen mensual
         </h1>
@@ -172,7 +170,6 @@ export function ParentMonthlyOverviewPage() {
             value={period.year}
             onChange={(e) => setPeriod((p) => ({ ...p, year: Number(e.target.value) }))}
             className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-2"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             aria-label="Seleccionar año"
           >
             {years.map((y) => (
@@ -190,7 +187,6 @@ export function ParentMonthlyOverviewPage() {
             value={period.month}
             onChange={(e) => setPeriod((p) => ({ ...p, month: Number(e.target.value) }))}
             className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-2"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             aria-label="Seleccionar mes"
           >
             {MONTHS.map((name, i) => (

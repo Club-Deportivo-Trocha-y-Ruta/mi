@@ -34,11 +34,7 @@ export function SessionsTable({
         {items.map((session) => (
           <li key={session.id}>
             <div
-              className="rounded-xl bg-white p-4"
-              style={{
-                boxShadow:
-                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-              }}
+              className="rounded-xl bg-white p-4 shadow-card"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -61,7 +57,6 @@ export function SessionsTable({
                 <Link
                   to={`/training/sessions/${session.id}`}
                   className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 >
                   Ver
                 </Link>
@@ -69,7 +64,6 @@ export function SessionsTable({
                   <Link
                     to={`/training/sessions/${session.id}/edit`}
                     className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   >
                     Editar
                   </Link>
@@ -80,7 +74,6 @@ export function SessionsTable({
                     onClick={() => onExecute(session.id)}
                     disabled={executePendingId === session.id}
                     className="rounded-lg bg-green-50 px-3 py-2 text-xs font-medium text-green-700 transition-opacity hover:opacity-70 disabled:opacity-40"
-                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   >
                     Ejecutar
                   </button>
@@ -91,7 +84,6 @@ export function SessionsTable({
                     onClick={() => onCancel(session.id)}
                     disabled={cancelPendingId === session.id}
                     className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600 transition-opacity hover:opacity-70 disabled:opacity-40"
-                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   >
                     Cancelar
                   </button>
@@ -105,16 +97,11 @@ export function SessionsTable({
       {/* Vista desktop: tabla */}
       <div
         className="hidden overflow-x-auto rounded-xl bg-white md:block"
-        style={{
-          boxShadow:
-            "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-        }}
       >
         <table className="min-w-full text-sm">
           <caption className="sr-only">Lista de sesiones de entrenamiento</caption>
           <thead
             className="text-left"
-            style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
           >
             <tr>
               <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
@@ -145,7 +132,6 @@ export function SessionsTable({
               <tr
                 key={session.id}
                 className="transition-colors hover:bg-light-gray"
-                style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
               >
                 <td className="px-4 py-3 text-charcoal">
                   {formatDate(session.scheduled_date)}
@@ -172,7 +158,6 @@ export function SessionsTable({
                     <Link
                       to={`/training/sessions/${session.id}`}
                       className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                     >
                       Ver
                     </Link>
@@ -180,7 +165,6 @@ export function SessionsTable({
                       <Link
                         to={`/training/sessions/${session.id}/edit`}
                         className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                       >
                         Editar
                       </Link>
@@ -191,7 +175,6 @@ export function SessionsTable({
                         onClick={() => onExecute(session.id)}
                         disabled={executePendingId === session.id}
                         className="rounded-lg bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 transition-opacity hover:opacity-70 disabled:opacity-40"
-                        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                       >
                         Ejecutar
                       </button>
@@ -202,7 +185,6 @@ export function SessionsTable({
                         onClick={() => onCancel(session.id)}
                         disabled={cancelPendingId === session.id}
                         className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-70 disabled:opacity-40"
-                        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                       >
                         Cancelar
                       </button>

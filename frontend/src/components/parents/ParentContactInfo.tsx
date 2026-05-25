@@ -3,23 +3,16 @@ import { Mail, Phone, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserOut } from "@/types/user.types";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 interface ParentContactInfoProps {
   parent: UserOut;
 }
 
 export function ParentContactInfo({ parent }: ParentContactInfoProps) {
   return (
-    <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+    <div className="rounded-xl bg-white p-5">
       <h3
-        className="mb-4 flex items-center gap-2 text-sm text-charcoal"
-        style={{
-          fontFamily: "'Cal Sans', system-ui, sans-serif",
-          fontWeight: 600,
-          letterSpacing: "0.2px",
-        }}
+        className="mb-4 flex items-center gap-2 text-sm text-charcoal font-heading tracking-[0.2px]"
       >
         <User size={16} />
         Datos de contacto

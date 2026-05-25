@@ -216,8 +216,7 @@ export function ConsentRenewalModal({
               <div>
                 <h2
                   id="renewal-modal-title"
-                  className="text-base text-charcoal"
-                  style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+                  className="text-base text-charcoal font-heading"
                 >
                   {isFirstConsent
                     ? "Consentimiento parental requerido"

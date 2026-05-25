@@ -16,8 +16,7 @@ export function DashboardPage() {
   return (
     <section className="space-y-6">
       <h1
-        className="text-2xl text-charcoal"
-        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+        className="text-2xl text-charcoal font-heading"
       >
         Dashboard
       </h1>
@@ -26,7 +25,6 @@ export function DashboardPage() {
         {/* Stat card */}
         <article
           className="rounded-xl bg-white p-5"
-          style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
         >
           <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Total atletas</p>
           <p className="mt-2 text-2xl font-bold text-charcoal">
@@ -36,7 +34,6 @@ export function DashboardPage() {
 
         <article
           className="rounded-xl bg-white p-5"
-          style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
         >
           <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Última evaluación</p>
           <p className="mt-2 text-2xl font-bold text-charcoal">
@@ -46,7 +43,6 @@ export function DashboardPage() {
 
         <article
           className="rounded-xl bg-white p-5"
-          style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
         >
           <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Estado PHV</p>
           <p className="mt-2 text-2xl font-bold text-charcoal">

@@ -165,8 +165,7 @@ export function ParentSessionsPage() {
       </div>
       <div>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-2xl text-charcoal font-heading"
         >
           Entrenamientos
         </h1>

@@ -25,7 +25,7 @@ export function MeasurementAlerts() {
   if (isPending) {
     return (
       <section className="mt-6">
-        <h2 className="mb-3 text-lg text-charcoal" style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}>
+        <h2 className="mb-3 text-lg text-charcoal font-heading">
           Mediciones pendientes
         </h2>
         <p className="text-sm text-mid-gray">Cargando alertas...</p>
@@ -36,7 +36,7 @@ export function MeasurementAlerts() {
   if (isError) {
     return (
       <section className="mt-6">
-        <h2 className="mb-3 text-lg text-charcoal" style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}>
+        <h2 className="mb-3 text-lg text-charcoal font-heading">
           Mediciones pendientes
         </h2>
         <p className="text-sm text-red-600">Error al cargar alertas</p>
@@ -57,8 +57,7 @@ export function MeasurementAlerts() {
   return (
     <section className="mt-6 space-y-4">
       <h2
-        className="text-lg text-charcoal"
-        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+        className="text-lg text-charcoal font-heading"
       >
         Mediciones pendientes
       </h2>
@@ -108,7 +107,6 @@ export function MeasurementAlerts() {
       {actionable.length > 0 && (
         <div
           className="rounded-xl bg-white"
-          style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
         >
           <ul>
             {actionable.map((a, idx) => {

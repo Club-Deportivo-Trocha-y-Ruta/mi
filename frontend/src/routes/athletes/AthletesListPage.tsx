@@ -72,8 +72,7 @@ export function AthletesListPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="text-2xl text-charcoal font-heading"
           >
             Atletas
           </h1>
@@ -83,7 +82,6 @@ export function AthletesListPage() {
           <Link
             to="/athletes/new"
             className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
           >
             + Agregar atleta
           </Link>
@@ -93,7 +91,6 @@ export function AthletesListPage() {
       {/* Filtros */}
       <div
         className="grid gap-3 rounded-xl bg-white p-4 md:grid-cols-3"
-        style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
       >
         <input
           value={search}
@@ -131,7 +128,6 @@ export function AthletesListPage() {
       {athletesQuery.isLoading ? (
         <div
           className="space-y-2 rounded-xl bg-white p-4"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         >
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />

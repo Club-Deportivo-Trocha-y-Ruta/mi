@@ -117,8 +117,7 @@ export function PrivacyPage() {
         {/* Título */}
         <div className="mb-8">
           <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="text-2xl text-charcoal font-heading"
           >
             Política de Tratamiento de Datos Personales
           </h1>

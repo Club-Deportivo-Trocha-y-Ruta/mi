@@ -10,9 +10,7 @@ interface MorphologyCardProps {
   latestRecord?: AnthropometricRecord;
 }
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 const BIKE_FIT_LABEL: Record<BikeFitCategory, string> = {
   short_reach: "Reach corto",
   standard: "Estándar",
@@ -107,7 +105,6 @@ function MorphologyContent({ morphology, armSpanCm, standingHeightCm }: InfoBloc
 
       <p
         className="text-xs text-mid-gray pt-3"
-        style={{ borderTop: "1px solid rgba(34, 42, 53, 0.08)" }}
       >
         Datos orientativos. No utilizar para selección de talento. Re-evaluar cada
         3-6 meses durante el crecimiento.
@@ -123,16 +120,11 @@ export function MorphologyCard({ latestRecord }: MorphologyCardProps) {
     !latestRecord.morphology;
 
   return (
-    <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+    <div className="rounded-xl bg-white p-5">
       <div className="mb-3 flex items-center gap-2">
         <Ruler size={16} className="text-mid-gray" />
         <h4
-          className="text-sm text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-            letterSpacing: "0.2px",
-          }}
+          className="text-sm text-charcoal font-heading tracking-[0.2px]"
         >
           Morfología y ajuste de bici
         </h4>

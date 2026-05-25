@@ -36,8 +36,7 @@ export function SessionsListPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="text-2xl text-charcoal font-heading"
           >
             Sesiones de Entrenamiento
           </h1>
@@ -48,7 +47,6 @@ export function SessionsListPage() {
         <Link
           to="/training/sessions/new"
           className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
         >
           + Nueva sesión
         </Link>
@@ -59,7 +57,6 @@ export function SessionsListPage() {
       {sessionsQuery.isLoading && (
         <div
           className="space-y-2 rounded-xl bg-white p-4"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         >
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />

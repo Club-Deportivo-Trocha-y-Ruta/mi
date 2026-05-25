@@ -24,9 +24,7 @@ import { MaturationStatus, Sex } from "@/types/enums";
 
 type Tab = "info" | "growth";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 function StatCard({
   icon: Icon,
   label,
@@ -41,7 +39,7 @@ function StatCard({
   colorClass?: string;
 }) {
   return (
-    <div className="rounded-xl bg-white p-4" style={{ boxShadow: cardShadow }}>
+    <div className="rounded-xl bg-white p-4 shadow-card">
       <div className="flex items-center gap-2 text-mid-gray">
         <Icon size={16} />
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
@@ -122,7 +120,7 @@ export function MyAthleteDetailPage() {
           <span>←</span>
           <span>Mis Atletas</span>
         </Link>
-        <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+        <div className="rounded-xl bg-white p-5 shadow-card">
           <p className="text-sm text-mid-gray">
             No se pudo cargar la información del atleta.
           </p>
@@ -240,14 +238,9 @@ export function MyAthleteDetailPage() {
       {activeTab === "info" && (
         <div className="space-y-4">
           {/* Datos basicos */}
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <h3
-              className="mb-4 flex items-center gap-2 text-sm text-charcoal"
-              style={{
-                fontFamily: "'Cal Sans', system-ui, sans-serif",
-                fontWeight: 600,
-                letterSpacing: "0.2px",
-              }}
+              className="mb-4 flex items-center gap-2 text-sm text-charcoal font-heading tracking-[0.2px]"
             >
               <Info size={16} />
               Datos del atleta
@@ -295,25 +288,15 @@ export function MyAthleteDetailPage() {
                 "rounded-xl p-5",
                 latest.maturation_status === MaturationStatus.CircaPHV
                   ? "border border-amber-200 bg-amber-50"
-                  : "bg-white",
+                  : "bg-white shadow-card",
               )}
-              style={
-                latest.maturation_status !== MaturationStatus.CircaPHV
-                  ? { boxShadow: cardShadow }
-                  : undefined
-              }
             >
               <div className="mb-3 flex items-center gap-2">
                 {latest.maturation_status === MaturationStatus.CircaPHV && (
                   <AlertTriangle size={16} className="text-amber-500" />
                 )}
                 <span
-                  className="text-sm text-charcoal"
-                  style={{
-                    fontFamily: "'Cal Sans', system-ui, sans-serif",
-                    fontWeight: 600,
-                    letterSpacing: "0.2px",
-                  }}
+                  className="text-sm text-charcoal font-heading tracking-[0.2px]"
                 >
                   Etapa de desarrollo
                 </span>
@@ -342,7 +325,7 @@ export function MyAthleteDetailPage() {
             sex={athlete.sex}
             birthDate={athlete.birth_date}
           />
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <AnthropometryHistory
               records={records}
               isLoading={anthropometryQuery.isLoading}
@@ -350,7 +333,7 @@ export function MyAthleteDetailPage() {
               mode="parent"
             />
           </div>
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <GrowthCharts
               records={records}
               sex={athlete.sex}

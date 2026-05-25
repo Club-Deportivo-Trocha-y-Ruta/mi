@@ -121,7 +121,6 @@ function ParentSessionCardImpl({
       {isExecuted && hasInlineFooter && (
         <div
           className="space-y-3 px-4 pt-3 pb-3"
-          style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
           data-testid="parent-session-inline"
         >
           {/* Excuse reason (ausente / justificado / lesionado) */}

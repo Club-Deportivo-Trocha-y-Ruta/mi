@@ -24,9 +24,7 @@ import { RevokeConsentDialog } from "./RevokeConsentDialog";
 // Estilos del design system (Cal.com)
 // ---------------------------------------------------------------------------
 
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 const btnSecondaryStyle: React.CSSProperties = {
   boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
 };
@@ -298,7 +296,6 @@ export function ConsentStatusPanel({
     <>
       <div
         className="rounded-xl bg-white"
-        style={{ boxShadow: CARD_SHADOW }}
       >
         {/* Header con toggle */}
         <button
@@ -370,7 +367,6 @@ export function ConsentStatusPanel({
       {successMessage && (
         <div
           className="fixed bottom-6 right-6 z-50 rounded-xl bg-charcoal px-5 py-3 text-sm font-medium text-white"
-          style={{ boxShadow: CARD_SHADOW }}
           role="status"
           aria-live="polite"
         >

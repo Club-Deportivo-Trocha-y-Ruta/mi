@@ -28,9 +28,7 @@ import {
 } from "@/types/athleteRaceAnalysis.types";
 import { useAthleteInsightDetail } from "@/hooks/athletes/useAthleteInsightDetail";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 const VALIDA_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 1, label: "Válida I" },
   { value: 2, label: "Válida II" },
@@ -72,15 +70,13 @@ export function ComparatorPanel({ athleteId }: ComparatorPanelProps) {
   return (
     <section
       className="rounded-xl bg-white p-5 space-y-4"
-      style={{ boxShadow: cardShadow }}
       aria-label="Comparador entre válidas"
       data-testid="comparator-panel"
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3
-            className="flex items-center gap-2 text-sm text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+            className="flex items-center gap-2 text-sm text-charcoal font-heading tracking-[0.2px]"
           >
             <Scale size={16} aria-hidden="true" />
             Comparador
@@ -97,7 +93,6 @@ export function ComparatorPanel({ athleteId }: ComparatorPanelProps) {
           value={season}
           onChange={(e) => setSeason(Number(e.target.value))}
           className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           data-testid="comparator-season-select"
         >
           {Array.from({ length: getDefaultSeason() - 2023 }, (_, i) => getDefaultSeason() - i).map((y) => (
@@ -181,7 +176,6 @@ function ComparatorColumn({
           value={validaNum}
           onChange={(e) => onValidaChange(Number(e.target.value))}
           className="rounded-md bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-primary/40"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           aria-label={`${label} — seleccionar válida`}
         >
           {VALIDA_OPTIONS.map((o) => (

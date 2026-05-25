@@ -158,7 +158,6 @@ export function RubricSliders({ control, disabled, feedbackLength }: RubricSlide
               placeholder="Observaciones del coach…"
               aria-label="Comentario del coach"
               className="w-full resize-none rounded-lg px-2.5 py-2 text-xs text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             />
           </div>
         )}

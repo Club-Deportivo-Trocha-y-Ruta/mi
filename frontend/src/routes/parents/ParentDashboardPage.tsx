@@ -100,8 +100,7 @@ export function ParentDashboardPage() {
     <section className="space-y-6">
       <div>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-2xl text-charcoal font-heading"
         >
           Mis Atletas
         </h1>
@@ -170,8 +169,7 @@ export function ParentDashboardPage() {
       {!isLoading && hasAthletes && (
         <div>
           <h2
-            className="mb-3 text-base text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="mb-3 text-base text-charcoal font-heading"
           >
             Perfil deportivo
           </h2>

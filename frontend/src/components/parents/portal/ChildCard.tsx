@@ -56,8 +56,7 @@ export function ChildCard({ athlete }: ChildCardProps) {
       <div className="flex items-start justify-between px-5 pt-5 pb-4">
         <div className="min-w-0 flex-1">
           <h2
-            className="truncate text-lg text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="truncate text-lg text-charcoal font-heading"
           >
             {athlete.athlete_first_name} {athlete.athlete_last_name}
           </h2>
@@ -80,7 +79,7 @@ export function ChildCard({ athlete }: ChildCardProps) {
       </div>
 
       {/* Divider */}
-      <div style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }} />
+      <div />
 
       {/* Body */}
       <div className="flex-1 px-5 py-4">
@@ -124,7 +123,6 @@ export function ChildCard({ athlete }: ChildCardProps) {
       {/* Footer — indicador visual de navegación */}
       <div
         className="flex items-center justify-between px-5 py-3"
-        style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
       >
         <span className="text-sm font-medium text-link-blue">Ver detalle</span>
         <ArrowRight size={14} className="text-link-blue" />

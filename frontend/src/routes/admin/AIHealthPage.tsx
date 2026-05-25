@@ -3,9 +3,7 @@ import { Activity, AlertCircle, Cpu, Loader2, Power } from "lucide-react";
 import { useAIHealth } from "@/hooks/ai/useAIHealth";
 import { cn } from "@/lib/utils";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 interface StatCardProps {
   label: string;
   value: React.ReactNode;
@@ -17,7 +15,6 @@ function StatCard({ label, value, icon: Icon, accentClass }: StatCardProps) {
   return (
     <div
       className="flex items-start gap-3 rounded-xl bg-white p-5"
-      style={{ boxShadow: cardShadow }}
     >
       <div
         className={cn(
@@ -30,12 +27,7 @@ function StatCard({ label, value, icon: Icon, accentClass }: StatCardProps) {
       <div>
         <p className="text-xs uppercase tracking-wide text-mid-gray">{label}</p>
         <p
-          className="mt-1 text-base text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-            letterSpacing: "0.2px",
-          }}
+          className="mt-1 text-base text-charcoal font-heading tracking-[0.2px]"
         >
           {value}
         </p>
@@ -51,12 +43,7 @@ export function AIHealthPage() {
     <section className="space-y-6 p-6">
       <header>
         <h1
-          className="text-2xl text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-            letterSpacing: "0.2px",
-          }}
+          className="text-2xl text-charcoal font-heading tracking-[0.2px]"
         >
           Estado de la capa de IA
         </h1>
@@ -69,7 +56,6 @@ export function AIHealthPage() {
       {isLoading && (
         <div
           className="flex items-center gap-3 rounded-xl bg-white p-5 text-sm text-mid-gray"
-          style={{ boxShadow: cardShadow }}
         >
           <Loader2 className="h-4 w-4 animate-spin" />
           Consultando estado…

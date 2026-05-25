@@ -49,9 +49,7 @@ function parseTabParam(raw: string | null): Tab | null {
   return null;
 }
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 function StatCard({
   icon: Icon,
   label,
@@ -66,7 +64,7 @@ function StatCard({
   colorClass?: string;
 }) {
   return (
-    <div className="rounded-xl bg-white p-4" style={{ boxShadow: cardShadow }}>
+    <div className="rounded-xl bg-white p-4 shadow-card">
       <div className="flex items-center gap-2 text-mid-gray">
         <Icon size={16} />
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
@@ -194,8 +192,7 @@ export function AthleteDetailPage() {
     return (
       <section className="space-y-3">
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-2xl text-charcoal font-heading"
         >
           Atleta no encontrado
         </h1>
@@ -272,8 +269,7 @@ export function AthleteDetailPage() {
           </>
         ) : (
           <div
-            className="col-span-1 flex items-center justify-center rounded-xl bg-white p-4 text-sm text-mid-gray lg:col-span-3"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px", borderStyle: "dashed" }}
+            className="col-span-1 flex items-center justify-center rounded-xl bg-white p-4 text-sm text-mid-gray lg:col-span-3 shadow-ring border border-dashed border-transparent"
           >
             Sin mediciones antropométricas registradas
           </div>
@@ -339,7 +335,6 @@ export function AthleteDetailPage() {
                 : "bg-charcoal text-white hover:opacity-70",
               (sendReportMutation.isPending || reportSent) && "cursor-not-allowed opacity-70",
             )}
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
           >
             {sendReportMutation.isPending ? (
               <>
@@ -369,10 +364,9 @@ export function AthleteDetailPage() {
       {/* Tab content — Info general */}
       {activeTab === "info" && (
         <div className="space-y-4">
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <h3
-              className="mb-4 flex items-center gap-2 text-sm text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+              className="mb-4 flex items-center gap-2 text-sm text-charcoal font-heading tracking-[0.2px]"
             >
               <Info size={16} />
               Datos del atleta
@@ -413,17 +407,15 @@ export function AthleteDetailPage() {
                 "rounded-xl p-5",
                 latest.maturation_status === "Circa-PHV"
                   ? "border border-amber-200 bg-amber-50"
-                  : "bg-white",
+                  : "bg-white shadow-card",
               )}
-              style={latest.maturation_status !== "Circa-PHV" ? { boxShadow: cardShadow } : undefined}
             >
               <div className="mb-3 flex items-center gap-2">
                 {latest.maturation_status === "Circa-PHV" && (
                   <AlertTriangle size={16} className="text-amber-500" />
                 )}
                 <span
-                  className="text-sm text-charcoal"
-                  style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+                  className="text-sm text-charcoal font-heading tracking-[0.2px]"
                 >
                   Implicaciones PHV
                 </span>
@@ -442,8 +434,7 @@ export function AthleteDetailPage() {
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <h3
-              className="text-lg text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+              className="text-lg text-charcoal font-heading"
             >
               Registro de mediciones
             </h3>
@@ -451,14 +442,13 @@ export function AthleteDetailPage() {
               type="button"
               onClick={() => setShowForm(!showForm)}
               className="rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-              style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
             >
               {showForm ? "Cancelar" : "+ Nueva medición"}
             </button>
           </div>
 
           {showForm && (
-            <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+            <div className="rounded-xl bg-white p-5 shadow-card">
               <AnthropometryForm
                 athleteId={athlete.id}
                 athleteSex={athlete.sex}
@@ -468,7 +458,7 @@ export function AthleteDetailPage() {
             </div>
           )}
 
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <AnthropometryHistory
               records={records}
               isLoading={anthropometryQuery.isLoading}
@@ -495,7 +485,7 @@ export function AthleteDetailPage() {
             sex={athlete.sex}
             birthDate={athlete.birth_date}
           />
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <GrowthCharts
               records={records}
               sex={athlete.sex}

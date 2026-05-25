@@ -97,8 +97,7 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
     return (
       <section className="space-y-3">
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-2xl text-charcoal font-heading"
         >
           Editar atleta
         </h1>
@@ -122,8 +121,7 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="text-2xl text-charcoal font-heading"
           >
             {isEdit ? "Editar atleta" : "Nuevo atleta"}
           </h1>

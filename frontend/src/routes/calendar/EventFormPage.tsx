@@ -96,7 +96,6 @@ export function EventFormPage({ mode }: EventFormPageProps) {
           <Link
             to="/calendar"
             className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           >
             Cancelar
           </Link>

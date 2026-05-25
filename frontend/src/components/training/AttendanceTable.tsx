@@ -83,7 +83,6 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
       onKeyDown={handleKeyDown}
       aria-keyshortcuts="p a j t l"
       className="group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-      style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
       data-testid={`attendance-row-${attendance.athlete_id}`}
     >
       {/* Atleta */}
@@ -137,7 +136,6 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
           disabled={disabled}
           aria-label="Estado de asistencia"
           className="rounded-lg px-2 py-1.5 text-xs text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         >
           {Object.entries(STATUS_LABELS).map(([val, label]) => (
             <option key={val} value={val}>
@@ -235,8 +233,7 @@ function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps)
 
   return (
     <div
-      className="rounded-xl bg-white p-4 space-y-3"
-      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+      className="rounded-xl bg-white p-4 space-y-3 shadow-card"
     >
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-charcoal">{athleteName}</p>
@@ -267,7 +264,6 @@ function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps)
             disabled={disabled}
             aria-label="Estado de asistencia"
             className="rounded-lg px-2 py-1 text-xs text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           >
             {Object.entries(STATUS_LABELS).map(([val, label]) => (
               <option key={val} value={val}>
@@ -364,7 +360,7 @@ export function AttendanceTable({ sessionId, attendances, disabled }: Attendance
       <div className="hidden overflow-x-auto md:block">
         <table className="min-w-full text-sm">
           <caption className="sr-only">Asistencia de atletas convocados</caption>
-          <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
+          <thead>
             <tr>
               <th scope="col" className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Atleta

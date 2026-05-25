@@ -49,9 +49,7 @@ import type {
 
 const SUMMARY_MAX_CHARS = 160;
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 function confidenceVariant(
   confidence: InsightConfidence,
 ): "success" | "warning" | "destructive" {
@@ -173,7 +171,6 @@ export function InsightsTimeline({ athleteId, mode }: InsightsTimelineProps) {
     return (
       <div
         className="rounded-xl bg-white p-8 text-center"
-        style={{ boxShadow: cardShadow }}
       >
         <Sparkles
           size={28}
@@ -207,7 +204,6 @@ export function InsightsTimeline({ athleteId, mode }: InsightsTimelineProps) {
                 "group flex w-full items-start gap-3 rounded-xl bg-white p-4 text-left transition-colors",
                 "hover:bg-light-gray/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
               )}
-              style={{ boxShadow: cardShadow }}
             >
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -326,8 +322,7 @@ function InsightDetailDrawer({
             className="rounded-xl bg-white p-4 ring-1 ring-light-gray space-y-2"
           >
             <h3
-              className="text-sm text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+              className="text-sm text-charcoal font-heading"
             >
               Recomendaciones
             </h3>

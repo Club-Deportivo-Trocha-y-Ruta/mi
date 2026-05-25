@@ -43,9 +43,7 @@ import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import type { AthleteOut } from "@/types/athlete.types";
 import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 type SubTab = "history" | "evolution" | "compare" | "distribution" | "launch";
 
 function confidenceBadgeVariant(
@@ -115,13 +113,11 @@ export function AthleteAIAnalysisTab({
       {/* Header — resumen ejecutivo */}
       <div
         className="rounded-xl bg-white p-5"
-        style={{ boxShadow: cardShadow }}
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2
-              className="flex items-center gap-2 text-base text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+              className="flex items-center gap-2 text-base text-charcoal font-heading"
             >
               <Sparkles size={16} aria-hidden="true" />
               Análisis IA del deportista

@@ -314,7 +314,6 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 type="text"
                 {...register("series_name")}
                 className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 data-testid="wizard-series-name"
               />
               {errors.series_name && (
@@ -338,7 +337,6 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 max={2100}
                 {...register("season", { valueAsNumber: true })}
                 className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 data-testid="wizard-season"
               />
               {errors.season && (
@@ -362,7 +360,6 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 max={9}
                 {...register("valida_num", { valueAsNumber: true })}
                 className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 data-testid="wizard-valida-num"
               />
               {errors.valida_num && (
@@ -385,7 +382,6 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 placeholder="Ej: Válida IV — Cali"
                 {...register("event_name")}
                 className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 data-testid="wizard-event-name"
               />
               {errors.event_name && (
@@ -407,7 +403,6 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 type="date"
                 {...register("event_date")}
                 className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 data-testid="wizard-event-date"
               />
               {errors.event_date && (
@@ -430,7 +425,6 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 placeholder="Ej: Cali"
                 {...register("location")}
                 className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 data-testid="wizard-location"
               />
               {errors.location && (

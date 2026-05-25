@@ -19,10 +19,6 @@ export function SessionFiltersBar() {
   return (
     <div
       className="rounded-xl bg-white p-4"
-      style={{
-        boxShadow:
-          "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-      }}
     >
       {/* Mobile: 2-col grid; sm+: single inline row */}
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3">

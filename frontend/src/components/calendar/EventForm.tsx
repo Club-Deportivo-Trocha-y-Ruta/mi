@@ -494,7 +494,6 @@ export function EventForm({
           type="button"
           onClick={onCancel}
           className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         >
           Cancelar
         </button>
@@ -502,7 +501,6 @@ export function EventForm({
           type="submit"
           disabled={isSubmitting}
           className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
         >
           {isSubmitting
             ? "Guardando..."

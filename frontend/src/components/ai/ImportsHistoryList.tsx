@@ -78,7 +78,6 @@ export function ImportsHistoryList() {
             )
           }
           className="rounded-lg bg-white px-2 py-1 text-xs text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           data-testid="history-status-filter"
           aria-label="Filtrar por estado"
         >

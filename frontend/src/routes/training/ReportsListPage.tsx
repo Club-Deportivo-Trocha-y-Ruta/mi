@@ -90,7 +90,6 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
                   id="report-year"
                   {...register("year", { valueAsNumber: true })}
                   className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 >
                   {years.map((y) => (
                     <option key={y} value={y}>{y}</option>
@@ -108,7 +107,6 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
                   id="report-month"
                   {...register("month", { valueAsNumber: true })}
                   className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 >
                   {months.map(({ value, label }) => (
                     <option key={value} value={value}>{label}</option>
@@ -133,7 +131,6 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
                 maxLength={2000}
                 placeholder="Notas del entrenador para incluir en el reporte…"
                 className="w-full resize-none rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
               />
               {errors.coach_observations && (
                 <p className="mt-1 text-xs text-red-600">{errors.coach_observations.message}</p>
@@ -162,7 +159,6 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
               onClick={handleClose}
               disabled={isPending}
               className="rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             >
               Cancelar
             </button>
@@ -215,7 +211,6 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
                   type="button"
                   onClick={() => navigate(`/training/reports/${r.year}/${r.month}`)}
                   className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 >
                   Ver
                 </button>
@@ -239,7 +234,7 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
       >
         <table className="min-w-full text-sm">
           <caption className="sr-only">Lista de reportes mensuales del club</caption>
-          <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
+          <thead className="border-b border-[rgba(34,42,53,0.08)]">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Mes / Año
@@ -259,8 +254,7 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
             {reports.map((r) => (
               <tr
                 key={r.id}
-                className="transition-colors hover:bg-light-gray"
-                style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
+                className="transition-colors hover:bg-light-gray border-t border-[rgba(34,42,53,0.06)]"
               >
                 <td className="px-4 py-3 font-medium text-charcoal">
                   {MONTH_NAMES[r.month - 1]} {r.year}
@@ -277,7 +271,6 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
                       type="button"
                       onClick={() => navigate(`/training/reports/${r.year}/${r.month}`)}
                       className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                     >
                       Ver
                     </button>
@@ -360,10 +353,7 @@ export function ReportsListPage() {
     <section className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-          >
+          <h1 className="text-2xl text-charcoal font-heading">
             Reportes Mensuales
           </h1>
           <p className="mt-0.5 text-sm text-mid-gray">
@@ -377,7 +367,6 @@ export function ReportsListPage() {
             setShowGenerateModal(true);
           }}
           className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
           data-testid="open-generate-modal"
         >
           + Generar reporte
@@ -387,7 +376,6 @@ export function ReportsListPage() {
       {reportsQuery.isLoading && (
         <div
           className="space-y-2 rounded-xl bg-white p-4"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         >
           {Array.from({ length: 3 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
@@ -403,11 +391,7 @@ export function ReportsListPage() {
 
       {!reportsQuery.isLoading && !reportsQuery.isError && reports.length === 0 && (
         <div
-          className="rounded-xl bg-white p-10 text-center"
-          style={{
-            boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-            borderStyle: "dashed",
-          }}
+          className="rounded-xl bg-white p-10 text-center shadow-ring border border-dashed border-transparent"
           data-testid="empty-state"
         >
           <p className="text-sm text-mid-gray">

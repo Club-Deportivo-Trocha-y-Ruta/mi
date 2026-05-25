@@ -136,7 +136,6 @@ export function GrowthCharts({
             disabled={isExporting}
             onClick={handleExportPng}
             className="ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-mid-gray transition-colors hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           >
             <Download className="size-4" aria-hidden="true" />
             {isExporting ? "Exportando..." : "Descargar PNG"}

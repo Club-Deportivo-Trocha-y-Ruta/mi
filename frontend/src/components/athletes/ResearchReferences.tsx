@@ -50,7 +50,6 @@ export function ResearchReferences() {
   return (
     <div
       className="rounded-xl bg-white"
-      style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
     >
       <button
         type="button"
@@ -65,13 +64,11 @@ export function ResearchReferences() {
       {open && (
         <ul
           className="px-5 pb-5"
-          style={{ borderTop: "1px solid rgba(34, 42, 53, 0.08)" }}
         >
           {REFERENCES.map((ref) => (
             <li
               key={ref.url}
               className="py-3"
-              style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.06)" }}
             >
               <a
                 href={ref.url}

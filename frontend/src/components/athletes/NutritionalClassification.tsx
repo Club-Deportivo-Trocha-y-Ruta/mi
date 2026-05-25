@@ -90,12 +90,10 @@ export function NutritionalClassification({
 
   return (
     <div
-      className="rounded-xl bg-white p-5"
-      style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+      className="rounded-xl bg-white p-5 shadow-card"
     >
       <h4
-        className="mb-4 text-sm text-charcoal"
-        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+        className="mb-4 text-sm text-charcoal font-heading tracking-[0.2px]"
       >
         Clasificación Nutricional{" "}
         <span
@@ -106,16 +104,15 @@ export function NutritionalClassification({
         </span>
       </h4>
 
-      <div style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}>
+      <div>
         <ClassificationRow indicatorLabel="Talla/Edad" result={heightResult} />
-        <div style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}>
+        <div>
           <ClassificationRow indicatorLabel="IMC/Edad" result={bmiResult} />
         </div>
       </div>
 
       <div
         className="mt-3 space-y-1 pt-3"
-        style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
       >
         <p className="text-xs text-mid-gray">
           Fuente: OMS 2007 / Res. 2465/2016 — MinSalud Colombia

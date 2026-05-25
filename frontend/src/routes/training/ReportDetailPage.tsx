@@ -116,8 +116,7 @@ export function ReportDetailPage() {
               ← Reportes mensuales
             </Link>
             <h1
-              className="text-xl text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+              className="text-xl text-charcoal font-heading"
             >
               Reporte mensual — {monthLabel} {report.year}
             </h1>

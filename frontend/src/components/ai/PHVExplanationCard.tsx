@@ -64,12 +64,7 @@ function PHVExplanationReadOnly({
         aria-busy="true"
       >
         <h4
-          className="text-sm text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-            letterSpacing: "0.2px",
-          }}
+          className="text-sm text-charcoal font-heading tracking-[0.2px]"
         >
           Explicación PHV
         </h4>
@@ -102,12 +97,7 @@ function PHVExplanationReadOnly({
       data-testid="phv-explanation-idle"
     >
       <h4
-        className="text-sm text-charcoal"
-        style={{
-          fontFamily: "'Cal Sans', system-ui, sans-serif",
-          fontWeight: 600,
-          letterSpacing: "0.2px",
-        }}
+        className="text-sm text-charcoal font-heading tracking-[0.2px]"
       >
         Explicación PHV
       </h4>
@@ -241,12 +231,7 @@ function PHVExplanationCoach({
         aria-busy="true"
       >
         <h4
-          className="text-sm text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-            letterSpacing: "0.2px",
-          }}
+          className="text-sm text-charcoal font-heading tracking-[0.2px]"
         >
           Explicación PHV
         </h4>
@@ -272,12 +257,7 @@ function PHVExplanationCoach({
       >
         <div className="flex items-center justify-between">
           <h4
-            className="text-sm text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-              letterSpacing: "0.2px",
-            }}
+            className="text-sm text-charcoal font-heading tracking-[0.2px]"
           >
             Explicación PHV
           </h4>
@@ -389,12 +369,7 @@ function PHVExplanationCoach({
     >
       <div>
         <h4
-          className="text-sm text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-            letterSpacing: "0.2px",
-          }}
+          className="text-sm text-charcoal font-heading tracking-[0.2px]"
         >
           Explicación PHV para padres
         </h4>

@@ -45,7 +45,7 @@ export function MonthlyMetricsTable({ metrics }: MonthlyMetricsTableProps) {
           <div className="overflow-x-auto rounded-xl bg-white" style={cardStyle}>
             <table className="min-w-full text-sm" data-testid="attendance-table">
               <caption className="sr-only">Métricas mensuales del club</caption>
-              <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
+              <thead>
                 <tr>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                     Atleta
@@ -62,7 +62,6 @@ export function MonthlyMetricsTable({ metrics }: MonthlyMetricsTableProps) {
                 {sortedAttendance.map((stat) => (
                   <tr
                     key={stat.pseudonym}
-                    style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
                   >
                     <td className="px-4 py-3 font-medium text-charcoal">
                       {stat.pseudonym}

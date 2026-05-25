@@ -25,9 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
 import { cn } from "@/lib/utils";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 const VALIDA_CHOICES: Array<{ value: number; label: string }> = [
   { value: 1, label: "I" },
   { value: 2, label: "II" },
@@ -140,13 +138,11 @@ export function LaunchAnalysisForm({
     <form
       onSubmit={handleSubmit(onSubmit)}
       className="rounded-xl bg-white p-5 space-y-5"
-      style={{ boxShadow: cardShadow }}
       aria-label="Lanzar análisis IA"
       data-testid="launch-analysis-form"
     >
       <h3
-        className="flex items-center gap-2 text-base text-charcoal"
-        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+        className="flex items-center gap-2 text-base text-charcoal font-heading"
       >
         <Play size={16} aria-hidden="true" />
         Lanzar análisis IA
@@ -179,7 +175,6 @@ export function LaunchAnalysisForm({
                 onChange={(e) => field.onChange(Number(e.target.value))}
                 id="launch-season"
                 className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 data-testid="launch-season-select"
               >
                 {seasonOptions.map((y) => (
@@ -276,7 +271,6 @@ export function LaunchAnalysisForm({
             "inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity",
             isDisabled ? "cursor-not-allowed opacity-60" : "hover:opacity-90",
           )}
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
         >
           {isDisabled ? (
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />

@@ -114,8 +114,7 @@ export function ParentSessionDetailPage() {
       <div className="rounded-xl bg-white px-5 py-4 shadow-ring-soft" data-testid="session-header">
         <div className="flex flex-wrap items-center gap-2 mb-1">
           <h1
-            className="text-xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="text-xl text-charcoal font-heading"
           >
             {session.technical_focus}
           </h1>

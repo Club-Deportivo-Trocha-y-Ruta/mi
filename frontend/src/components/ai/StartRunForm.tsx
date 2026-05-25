@@ -160,7 +160,6 @@ export function StartRunForm({ onStarted, className }: StartRunFormProps) {
             max={2100}
             {...register("season")}
             className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             data-testid="start-run-season"
           />
           {errors.season && (
@@ -183,7 +182,6 @@ export function StartRunForm({ onStarted, className }: StartRunFormProps) {
             placeholder="ej: 1,2,3,4 — vacío = todas"
             {...register("valida_nums_csv")}
             className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             data-testid="start-run-valida-nums"
           />
           {errors.valida_nums_csv && (

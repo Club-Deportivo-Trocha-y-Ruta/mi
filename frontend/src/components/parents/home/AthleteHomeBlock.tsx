@@ -63,8 +63,7 @@ export function AthleteHomeBlock({ athlete, showHeader = false }: AthleteHomeBlo
     >
       {showHeader && (
         <h2
-          className="text-base text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-base text-charcoal font-heading"
         >
           {athleteName}
         </h2>

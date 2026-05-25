@@ -243,7 +243,6 @@ export function NotifyParentsDialog({
                 placeholder="Ej: Lluvia intensa, cierre de la pista..."
                 disabled={isPending}
                 className="mt-1 w-full resize-none rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
               />
               <p className="mt-1 text-xs text-mid-gray">
                 Se incluirá en el email enviado a los padres.

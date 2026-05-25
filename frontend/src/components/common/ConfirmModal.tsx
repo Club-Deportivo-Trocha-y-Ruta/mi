@@ -55,7 +55,6 @@ export function ConfirmModal({
             onClick={onCancel}
             disabled={isPending}
             className="rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           >
             {cancelLabel}
           </button>

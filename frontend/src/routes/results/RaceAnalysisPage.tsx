@@ -169,8 +169,7 @@ export function RaceAnalysisPage() {
     <div className="mx-auto max-w-6xl space-y-5 px-4 py-6">
       <header>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-2xl text-charcoal font-heading"
         >
           Análisis de carreras
         </h1>

@@ -222,8 +222,7 @@ export function ParentEventDetailPage() {
       >
         <div className="flex flex-wrap items-center gap-2">
           <h1
-            className="text-xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="text-xl text-charcoal font-heading"
           >
             {event.title}
           </h1>

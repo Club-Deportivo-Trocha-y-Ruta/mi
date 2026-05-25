@@ -179,8 +179,7 @@ export function SessionDetailPage() {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1
-                className="text-xl text-charcoal"
-                style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+                className="text-xl text-charcoal font-heading"
               >
                 {session.technical_focus}
               </h1>
@@ -197,7 +196,6 @@ export function SessionDetailPage() {
                 <Link
                   to={`/training/sessions/${session.id}/edit`}
                   className="rounded-lg px-3 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 >
                   Editar
                 </Link>
@@ -205,7 +203,6 @@ export function SessionDetailPage() {
                   type="button"
                   onClick={() => setShowCancelModal(true)}
                   className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   data-testid="cancel-session-button"
                 >
                   Cancelar sesión
@@ -249,7 +246,6 @@ export function SessionDetailPage() {
                   placeholder="Notas post-sesión…"
                   aria-label="Notas del entrenador"
                   className="w-full resize-none rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 />
                 <span
                   role="status"

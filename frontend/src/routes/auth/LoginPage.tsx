@@ -56,10 +56,6 @@ export function LoginPage() {
       {/* Login card — shadow Level 2 (ring + soft), 12px radius */}
       <div
         className="w-full max-w-md rounded-xl bg-white p-8"
-        style={{
-          boxShadow:
-            "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-        }}
       >
         {/* Header */}
         <div className="mb-8 text-center">
@@ -67,12 +63,7 @@ export function LoginPage() {
             Club Deportivo
           </p>
           <h1
-            className="mt-1 text-2xl text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-              letterSpacing: "0.2px",
-            }}
+            className="mt-1 text-2xl text-charcoal font-heading tracking-[0.2px]"
           >
             Trocha y Ruta
           </h1>
@@ -91,7 +82,6 @@ export function LoginPage() {
               id="email"
               type="email"
               className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
               {...form.register("email")}
             />
             {form.formState.errors.email && (
@@ -113,7 +103,6 @@ export function LoginPage() {
               id="password"
               type="password"
               className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
               {...form.register("password")}
             />
             {form.formState.errors.password && (
@@ -134,7 +123,6 @@ export function LoginPage() {
             type="submit"
             disabled={isLoading}
             className="w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
           >
             {isLoading ? "Ingresando..." : "Ingresar"}
           </button>

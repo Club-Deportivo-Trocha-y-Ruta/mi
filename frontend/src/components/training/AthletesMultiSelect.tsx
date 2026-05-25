@@ -65,13 +65,11 @@ export function AthletesMultiSelect({
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar atleta..."
           className="flex-1 rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         />
         <button
           type="button"
           onClick={selectAll}
           className="rounded-lg px-2.5 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         >
           Todos
         </button>
@@ -79,7 +77,6 @@ export function AthletesMultiSelect({
           type="button"
           onClick={clearAll}
           className="rounded-lg px-2.5 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         >
           Limpiar
         </button>
@@ -87,7 +84,6 @@ export function AthletesMultiSelect({
 
       <div
         className="max-h-72 overflow-y-auto rounded-lg bg-white"
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
       >
         {sortedFiltered.length === 0 ? (
           <p className="px-4 py-3 text-sm text-mid-gray">No hay atletas.</p>

@@ -27,9 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAthleteDistribution } from "@/hooks/athletes/useAthleteDistribution";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 const VALIDA_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 1, label: "I" },
   { value: 2, label: "II" },
@@ -90,15 +88,13 @@ export function DistributionChart({
   return (
     <section
       className="rounded-xl bg-white p-5 space-y-4"
-      style={{ boxShadow: cardShadow }}
       aria-label="Distribución de tiempos en la categoría"
       data-testid="distribution-chart"
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3
-            className="flex items-center gap-2 text-sm text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+            className="flex items-center gap-2 text-sm text-charcoal font-heading tracking-[0.2px]"
           >
             <BarChart3 size={16} aria-hidden="true" />
             Distribución de tiempos
@@ -116,7 +112,6 @@ export function DistributionChart({
             value={season}
             onChange={(e) => setSeason(Number(e.target.value))}
             className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             data-testid="distribution-season-select"
           >
             {seasonOptions.map((y) => (
@@ -133,7 +128,6 @@ export function DistributionChart({
             value={validaNum}
             onChange={(e) => setValidaNum(Number(e.target.value))}
             className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             data-testid="distribution-valida-select"
           >
             {VALIDA_OPTIONS.map((o) => (

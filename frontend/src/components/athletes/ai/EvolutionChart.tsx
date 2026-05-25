@@ -26,9 +26,7 @@ import { useAthleteEvolution } from "@/hooks/athletes/useAthleteEvolution";
 import { cn } from "@/lib/utils";
 import { EvolutionMetric } from "@/types/athleteRaceAnalysis.types";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
+/* shadow-card utility */
 const ROMAN: Record<number, string> = {
   1: "I",
   2: "II",
@@ -127,15 +125,13 @@ export function EvolutionChart({
   return (
     <section
       className="rounded-xl bg-white p-5 space-y-4"
-      style={{ boxShadow: cardShadow }}
       aria-label="Gráfica de evolución por temporada"
       data-testid="evolution-chart"
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3
-            className="flex items-center gap-2 text-sm text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+            className="flex items-center gap-2 text-sm text-charcoal font-heading tracking-[0.2px]"
           >
             <Calendar size={16} aria-hidden="true" />
             Evolución
@@ -153,7 +149,6 @@ export function EvolutionChart({
             value={season}
             onChange={(e) => setSeason(Number(e.target.value))}
             className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             data-testid="evolution-season-select"
           >
             {seasonOptions.map((y) => (
@@ -170,7 +165,6 @@ export function EvolutionChart({
             value={metric}
             onChange={(e) => setMetric(e.target.value as EvolutionMetric)}
             className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             data-testid="evolution-metric-select"
           >
             {Object.entries(METRIC_LABELS).map(([k, label]) => (

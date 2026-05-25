@@ -139,8 +139,7 @@ export function ParentCalendarPage() {
       {/* Header */}
       <div>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="text-2xl text-charcoal font-heading"
         >
           Mi calendario
         </h1>
