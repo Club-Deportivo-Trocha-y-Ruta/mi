@@ -15,7 +15,8 @@
  * "Lanzar" y el AnalysisRunTimeline (datos operativos del agente, costos
  * LLM, prompts, etc).
  */
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
   Calendar,
@@ -102,6 +103,22 @@ export function AthleteAIAnalysisTab({
     latest_only: true,
     limit: 1,
   });
+
+  const queryClient = useQueryClient();
+  const handleRunComplete = useCallback(() => {
+    // Invalidar todas las queries "athlete-*" del atleta para refrescar
+    // el header (Total aprobados + último análisis) y el Histórico.
+    void queryClient.invalidateQueries({
+      predicate: (q) => {
+        const k = q.queryKey;
+        return (
+          Array.isArray(k) &&
+          typeof k[0] === "string" &&
+          (k[0] as string).startsWith("athlete-")
+        );
+      },
+    });
+  }, [queryClient]);
   const latest = headerQuery.data?.items[0];
   const total = headerQuery.data?.total ?? 0;
 
@@ -163,7 +180,7 @@ export function AthleteAIAnalysisTab({
 
       {/* Run timeline en vivo — solo coach, solo si acaba de lanzar */}
       {mode === "coach" && activeRunId && (
-        <AnalysisRunTimeline runId={activeRunId} />
+        <AnalysisRunTimeline runId={activeRunId} onComplete={handleRunComplete} />
       )}
 
       {/* Sub-tabs (Radix) */}

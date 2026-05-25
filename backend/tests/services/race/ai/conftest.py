@@ -35,6 +35,12 @@ class _FakeResult:
     def scalars(self) -> "_FakeResult":
         return self
 
+    def scalar_one_or_none(self) -> Any:
+        return self._rows[0] if self._rows else None
+
+    def scalar_one(self) -> Any:
+        return self._rows[0] if self._rows else 0
+
 
 class FakeSession:
     """Sesión async mínima para tests de nodos.
@@ -51,6 +57,7 @@ class FakeSession:
         self.row_responses: dict[str, list[Any]] = {}
         self.executed_statements: list[tuple[str, dict]] = []
         self._ext_results: list[Any] = []
+        self.added_objects: list[Any] = []
 
     async def execute(self, stmt: Any, params: dict | None = None) -> _FakeResult:
         sql_text = getattr(stmt, "text", None)
@@ -78,7 +85,7 @@ class FakeSession:
         pass
 
     def add(self, obj: Any) -> None:
-        pass
+        self.added_objects.append(obj)
 
 
 @pytest_asyncio.fixture

@@ -160,6 +160,8 @@ function reduceNodeStatuses(
 interface AnalysisRunTimelineProps {
   runId: string;
   className?: string;
+  /** Llamado una sola vez cuando el run alcanza estado terminal (done/failed/cancelled). */
+  onComplete?: () => void;
 }
 
 function statusBadge(status: NodeStatus): {
@@ -205,6 +207,7 @@ function statusBadge(status: NodeStatus): {
 export function AnalysisRunTimeline({
   runId,
   className,
+  onComplete,
 }: AnalysisRunTimelineProps) {
   const query = useRunStatus(runId);
   const { data, isLoading, isError, error } = query;
@@ -231,6 +234,16 @@ export function AnalysisRunTimeline({
     }
     return enriched;
   }, [data]);
+
+  // Notificar al caller cuando el run llega a estado terminal.
+  const completedRef = useRef(false);
+  useEffect(() => {
+    if (!data || completedRef.current) return;
+    if (isTerminalState(data.latest.state)) {
+      completedRef.current = true;
+      onComplete?.();
+    }
+  }, [data, onComplete]);
 
   // Auto-scroll al nodo activo cuando llega un nuevo evento.
   const activeRef = useRef<HTMLLIElement | null>(null);

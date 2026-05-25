@@ -22,8 +22,8 @@ async def test_persist_insight_inserts_row(configure_db_factory, fake_session):
         "metrics": {},
     }
     await persist_insight(state)
-    inserts = [s for s, _ in fake_session.executed_statements if "athlete_ai_insights" in s]
-    assert len(inserts) == 1
+    # persist_insight usa ORM db.add() — verificar objetos agregados.
+    assert len(fake_session.added_objects) == 1
 
 
 @pytest.mark.asyncio
@@ -31,7 +31,7 @@ async def test_persist_insight_skip_when_no_draft(configure_db_factory, fake_ses
     configure_db_factory(fake_session)
     update = await persist_insight({"draft_analysis": None})
     assert update == {} or "errors" not in update
-    assert all("athlete_ai_insights" not in s for s, _ in fake_session.executed_statements)
+    assert len(fake_session.added_objects) == 0
 
 
 @pytest.mark.asyncio
@@ -49,11 +49,8 @@ async def test_persist_insight_rejected_decision_marks_archived(configure_db_fac
         "metrics": {},
     }
     await persist_insight(state)
-    # Verificamos que el INSERT incluyó approved=0 y archived_at no nulo.
-    inserts = [
-        (s, p) for s, p in fake_session.executed_statements if "athlete_ai_insights" in s
-    ]
-    assert len(inserts) == 1
-    _, params = inserts[0]
-    assert params["coach_approved"] == 0
-    assert params["archived_at"] is not None
+    # persist_insight usa ORM db.add() — verificar atributos del objeto ORM.
+    assert len(fake_session.added_objects) == 1
+    row = fake_session.added_objects[0]
+    assert row.coach_approved is False
+    assert row.archived_at is not None

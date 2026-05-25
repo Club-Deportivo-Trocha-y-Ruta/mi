@@ -840,6 +840,22 @@ async def submit_hitl_decision(
         logger.exception("submit_hitl_decision: insert evento hitl_response falló")
 
     # Reanudar grafo en background.
+    #
+    # Fix BUG-002: la reanudación tras HITL ejecuta nodos post-gate
+    # (rehydrate_names, persist_insight, render_outputs, notify_coach)
+    # que emiten ``node_start`` / ``node_end`` en ``result_state.events``.
+    # Antes drenábamos solo ``status`` con ``_update_run_status`` y los
+    # eventos quedaban en memoria, sin persistirse a ``agent_run_events``.
+    # El polling del frontend nunca veía los ``node_end`` y el timeline
+    # mostraba ``hitl_gate_review`` "en curso" indefinidamente.
+    #
+    # Reutilizamos ``_finalize_run`` (mismo helper que el flujo inicial)
+    # para garantizar que los eventos generados durante la reanudación
+    # se persisten antes de marcar el estado terminal. Para el caso
+    # ``reject``, sobrescribimos el status final a ``rejected`` después
+    # del finalize (que por sí solo lo marcaría ``completed``).
+    is_reject = body.decision == HITLDecision.REJECT
+
     async def _on_complete(
         rid: str,
         exc: Optional[BaseException],
@@ -847,39 +863,23 @@ async def submit_hitl_decision(
     ) -> None:
         from app.database import AsyncSessionLocal
 
-        final_payload = _extract_final_output(result_state) if exc is None else None
-        graph_status = (result_state or {}).get("status") if exc is None else None
-
-        if exc is not None:
-            new_status = "failed"
-            err: Optional[str] = f"{type(exc).__name__}: {str(exc)[:500]}"
-        elif body.decision == HITLDecision.REJECT:
-            new_status = "rejected"
-            err = None
-        elif graph_status == "failed":
-            new_status = "failed"
-            errors_list = (result_state or {}).get("errors") or []
-            first_err = errors_list[0] if errors_list else {}
-            err = first_err.get("message") or "Grafo terminó con status=failed"
-        elif not final_payload:
-            new_status = "failed"
-            err = "Grafo completó sin output"
-        else:
-            new_status = "completed"
-            err = None
-
         async with AsyncSessionLocal() as session:
             try:
-                await _update_run_status(
-                    session,
-                    rid,
-                    new_status,
-                    error_message=err,
-                    final_output=final_payload,
-                )
+                await _finalize_run(session, rid, exc, result_state)
+                # Tras reject, el grafo igual completa los nodos post-HITL
+                # (persist con archived_at, etc.). El status correcto es
+                # ``rejected`` — _finalize_run lo dejaría como ``completed``.
+                if is_reject and exc is None:
+                    await _update_run_status(
+                        session,
+                        rid,
+                        "rejected",
+                        error_message=None,
+                        final_output=None,
+                    )
                 await session.commit()
             except Exception:  # noqa: BLE001
-                logger.exception("_on_complete hitl: update falló para %s", rid)
+                logger.exception("_on_complete hitl: finalize falló para %s", rid)
 
     try:
         await resume_run(run_id, resume_value, on_complete=_on_complete)
@@ -1025,28 +1025,32 @@ async def get_run_pdf(
         else "<h2>Club Deportivo Trocha y Ruta</h2>"
     )
 
-    # Markdown → HTML básico (sin parser markdown para evitar deps): el
-    # md viene ya como markdown. Para MVP, lo envolvemos en <pre>
-    # preservando estructura. TODO: integrar python-markdown si el coach
-    # pide rendering rico.
-    import html as html_mod
+    import markdown as _md_lib
 
-    safe_md = html_mod.escape(md)
+    body_html = _md_lib.markdown(
+        md,
+        extensions=["extra", "sane_lists"],
+        output_format="html",
+    )
     html_doc = f"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8"/>
 <title>Análisis race {run_id[:8]}</title>
 <style>
-  body {{ font-family: 'Helvetica', sans-serif; margin: 2cm; }}
-  header {{ border-bottom: 2px solid #2c5282; padding-bottom: 1em; }}
-  pre {{ white-space: pre-wrap; font-family: 'Helvetica', sans-serif; font-size: 11pt; }}
+  body {{ font-family: 'Helvetica', sans-serif; margin: 2cm; font-size: 11pt; line-height: 1.5; }}
+  header {{ border-bottom: 2px solid #2c5282; padding-bottom: 1em; margin-bottom: 1.5em; }}
+  h2 {{ font-size: 14pt; color: #1a365d; margin-top: 1.4em; margin-bottom: 0.4em; }}
+  h3 {{ font-size: 12pt; color: #2c5282; margin-top: 1em; margin-bottom: 0.3em; }}
+  ul, ol {{ padding-left: 1.4em; }}
+  li {{ margin-bottom: 0.3em; }}
+  p {{ margin-top: 0; margin-bottom: 0.7em; }}
   footer {{ position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 9pt; color: #666; }}
 </style>
 </head>
 <body>
 <header>{logo_html}<p><strong>Análisis de carrera</strong> · Run {run_id[:8]}</p></header>
-<pre>{safe_md}</pre>
+{body_html}
 <footer>Club Deportivo Trocha y Ruta — Generado {_utc_now().strftime('%Y-%m-%d')}</footer>
 </body>
 </html>"""

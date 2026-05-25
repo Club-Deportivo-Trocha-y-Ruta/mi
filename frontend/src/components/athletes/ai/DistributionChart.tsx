@@ -190,7 +190,7 @@ export function DistributionChart({
                 <ResponsiveContainer width="100%" height={280}>
                   <AreaChart
                     data={query.data.curve}
-                    margin={{ top: 8, right: 16, bottom: 8, left: 12 }}
+                    margin={{ top: 30, right: 16, bottom: 8, left: 12 }}
                   >
                     <CartesianGrid stroke="rgba(34,42,53,0.08)" strokeDasharray="3 3" />
                     <XAxis

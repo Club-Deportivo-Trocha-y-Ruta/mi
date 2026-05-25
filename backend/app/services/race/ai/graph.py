@@ -11,7 +11,7 @@ Topología (lineal con conditional edges para error handling y fallback):
                                        │            render_outputs → notify → END
                                        └─ ok    → critic_agent → hitl_gate_review
                                                   (interrupt si must_block / explain_mode)
-                                                  → persist_insight → rehydrate_names
+                                                  → rehydrate_names → persist_insight
                                                   → render_outputs → notify_coach → END
 
 Checkpointer:
@@ -177,9 +177,9 @@ def build_graph(checkpointer: Optional[Any] = None):
     sg.add_edge("recall_memory", "analyst_agent")
     sg.add_edge("analyst_agent", "critic_agent")
     sg.add_edge("critic_agent", "hitl_gate_review")
-    sg.add_edge("hitl_gate_review", "persist_insight")
-    sg.add_edge("persist_insight", "rehydrate_names")
-    sg.add_edge("rehydrate_names", "render_outputs")
+    sg.add_edge("hitl_gate_review", "rehydrate_names")
+    sg.add_edge("rehydrate_names", "persist_insight")
+    sg.add_edge("persist_insight", "render_outputs")
     sg.add_edge("render_outputs", "notify_coach")
     sg.add_edge("notify_coach", END)
 
