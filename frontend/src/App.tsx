@@ -30,6 +30,7 @@ import { ReportsListPage } from "@/routes/training/ReportsListPage";
 import { ReportDetailPage } from "@/routes/training/ReportDetailPage";
 import { AthleteNewslettersDashboardPage } from "@/routes/training/AthleteNewslettersDashboardPage";
 import { AthleteNewsletterDetailPage } from "@/routes/training/AthleteNewsletterDetailPage";
+import { ClubInsightsByRacePage } from "@/routes/training/ClubInsightsByRacePage";
 import { ParentSessionsPage } from "@/routes/parents/training/ParentSessionsPage";
 import { ParentSessionDetailPage } from "@/routes/parents/training/ParentSessionDetailPage";
 import { ParentMonthlyOverviewPage } from "@/routes/parents/training/ParentMonthlyOverviewPage";
@@ -282,6 +283,16 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
               <ParentEventDetailPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Club insights by race (coach/admin) — Sprint 3 ── */}
+        <Route
+          path="/training/races/:raceEventId/club-insights"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <ClubInsightsByRacePage />
             </ProtectedRoute>
           }
         />

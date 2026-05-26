@@ -235,6 +235,27 @@ export interface AvailableRaceEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Club insights by race — cross-atleta por válida (Sprint 3)
+// ---------------------------------------------------------------------------
+
+export interface ClubInsightByRaceItem {
+  athlete_id: number;
+  athlete_display_name: string;
+  valida_num: number | null;
+  insight_id: number | null;
+  summary_excerpt: string | null;
+  generated_at: string | null;
+  confidence: InsightConfidence | null;
+}
+
+export interface ClubInsightsByRaceResponse {
+  race_event_id: number;
+  race_event_label: string;
+  total_athletes: number;
+  items: ClubInsightByRaceItem[];
+}
+
+// ---------------------------------------------------------------------------
 // Query params type-aliases (para uso en hooks)
 // ---------------------------------------------------------------------------
 

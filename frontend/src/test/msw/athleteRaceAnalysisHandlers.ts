@@ -18,6 +18,7 @@ import type {
   AthleteRunListResponse,
   AthleteRunOut,
   AvailableRaceEvent,
+  ClubInsightsByRaceResponse,
   DistributionResponse,
   EvolutionResponse,
   MetricsSnapshotV1,
@@ -379,6 +380,62 @@ export const coachHighConfidenceDistributionHandler = http.get(
       }),
     );
   },
+);
+
+// ---------------------------------------------------------------------------
+// Club insights by race handlers (Sprint 3)
+// ---------------------------------------------------------------------------
+
+/** Respuesta default: 3 items — coach ve todos, parent ve enmascarado. */
+export const clubInsightsByRaceDefaultResponse: ClubInsightsByRaceResponse = {
+  race_event_id: 4,
+  race_event_label: "Válida 4 — Cali 17 may 2026",
+  total_athletes: 3,
+  items: [
+    {
+      athlete_id: 145,
+      athlete_display_name: "Isabel Quiñoez",
+      valida_num: 4,
+      insight_id: 99,
+      summary_excerpt: "Finalizó en 3er lugar, con progreso técnico en frenada.",
+      generated_at: "2026-05-25T19:49:00",
+      confidence: "medium",
+    },
+    {
+      athlete_id: 0,
+      athlete_display_name: "[Atleta del club]",
+      valida_num: 4,
+      insight_id: 100,
+      summary_excerpt: null,
+      generated_at: "2026-05-25T20:00:00",
+      confidence: null,
+    },
+    {
+      athlete_id: 201,
+      athlete_display_name: "Mateo Pérez",
+      valida_num: 4,
+      insight_id: null,
+      summary_excerpt: null,
+      generated_at: null,
+      confidence: null,
+    },
+  ],
+};
+
+export const clubInsightsByRaceHandler = http.get(
+  "*/api/races/:raceEventId/club-insights",
+  () => HttpResponse.json(clubInsightsByRaceDefaultResponse),
+);
+
+export const emptyClubInsightsByRaceHandler = http.get(
+  "*/api/races/:raceEventId/club-insights",
+  () =>
+    HttpResponse.json({
+      race_event_id: 4,
+      race_event_label: "Válida 4 — Cali 17 may 2026",
+      total_athletes: 0,
+      items: [],
+    } satisfies ClubInsightsByRaceResponse),
 );
 
 export const insightsWithSupersedesHandler = http.get(

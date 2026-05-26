@@ -7,7 +7,8 @@
  *   - Empty state con copy diferenciado por rol.
  *   - No expone metadatos operativos (tokens, costo, prompts).
  */
-import { BookmarkPlus } from "lucide-react";
+import { BookmarkPlus, Users } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -145,6 +146,21 @@ export function HeroLastInsightCard({
           );
         })()}
       </div>
+
+      {/* Link cross-atleta — solo para válidas regulares/CD (no resumen temporada) */}
+      {insight.event_id !== null &&
+        insight.valida_num !== null &&
+        insight.valida_num !== 0 && (
+          <Link
+            to={`/training/races/${insight.event_id}/club-insights`}
+            className="mt-3 inline-flex items-center gap-1 text-xs text-mid-gray underline-offset-2 hover:underline"
+            data-testid="hero-link-club-insights"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Users size={12} aria-hidden="true" />
+            Ver club en esta válida
+          </Link>
+        )}
     </div>
   );
 }

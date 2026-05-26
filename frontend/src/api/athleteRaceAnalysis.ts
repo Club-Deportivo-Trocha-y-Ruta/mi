@@ -25,6 +25,7 @@ import type {
   AthleteRunsParams,
   AthleteStartRunBody,
   AvailableRaceEvent,
+  ClubInsightsByRaceResponse,
   DistributionResponse,
   EvolutionMetric,
   EvolutionResponse,
@@ -145,6 +146,31 @@ export async function getAthleteEvolution(
   const response = await apiClient.get<EvolutionResponse>(
     `${buildBase(athleteId)}/evolution`,
     { params: { season, metric } },
+  );
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Club insights by race — cross-atleta por válida (Sprint 3)
+// ---------------------------------------------------------------------------
+
+export interface ClubInsightsByRaceOpts {
+  clubId?: number;
+  latestOnly?: boolean;
+  limit?: number;
+}
+
+export async function getClubInsightsByRace(
+  raceEventId: number,
+  opts: ClubInsightsByRaceOpts = {},
+): Promise<ClubInsightsByRaceResponse> {
+  const params: Record<string, unknown> = {};
+  if (opts.clubId !== undefined) params.club_id = opts.clubId;
+  if (opts.latestOnly !== undefined) params.latest_only = opts.latestOnly;
+  if (opts.limit !== undefined) params.limit = opts.limit;
+  const response = await apiClient.get<ClubInsightsByRaceResponse>(
+    `/api/races/${raceEventId}/club-insights`,
+    { params },
   );
   return response.data;
 }

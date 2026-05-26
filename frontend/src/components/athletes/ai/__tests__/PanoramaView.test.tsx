@@ -390,6 +390,144 @@ describe("PanoramaView", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Sprint 3 — HeroLastInsightCard link "Ver club en esta válida"
+  // ---------------------------------------------------------------------------
+
+  describe("HeroLastInsightCard — link cross-atleta (Sprint 3)", () => {
+    it("link 'Ver club en esta válida' visible para válida regular (valida_num=4, event_id≠null)", async () => {
+      // Handler default: mockInsight tiene valida_num=4, event_id=100
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("hero-link-club-insights")).toBeInTheDocument();
+      });
+      const link = screen.getByTestId("hero-link-club-insights");
+      expect(link).toHaveTextContent(/Ver club en esta válida/i);
+      // El href apunta al event_id del insight (100)
+      expect(link).toHaveAttribute("href", expect.stringContaining("100"));
+    });
+
+    it("link visible para Cto. Departamental (valida_num=99)", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/insights",
+          () =>
+            HttpResponse.json({
+              items: [mockInsight({ valida_num: 99, event_id: 106 })],
+              total: 1,
+              limit: 1,
+              offset: 0,
+            }),
+        ),
+      );
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("hero-link-club-insights")).toBeInTheDocument();
+      });
+    });
+
+    it("link OCULTO cuando valida_num === 0 (resumen de temporada)", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/insights",
+          () =>
+            HttpResponse.json({
+              items: [mockInsight({ valida_num: 0, event_id: 200 })],
+              total: 1,
+              limit: 1,
+              offset: 0,
+            }),
+        ),
+      );
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByTestId("hero-link-club-insights"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("link OCULTO cuando event_id === null", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/insights",
+          () =>
+            HttpResponse.json({
+              items: [mockInsight({ valida_num: 4, event_id: null })],
+              total: 1,
+              limit: 1,
+              offset: 0,
+            }),
+        ),
+      );
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByTestId("hero-link-club-insights"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("link OCULTO cuando valida_num === null", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/insights",
+          () =>
+            HttpResponse.json({
+              items: [mockInsight({ valida_num: null, event_id: 100 })],
+              total: 1,
+              limit: 1,
+              offset: 0,
+            }),
+        ),
+      );
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByTestId("hero-link-club-insights"),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Sprint 2 BB2 — MiniSparkline + KPI cards en PanoramaView
   // ---------------------------------------------------------------------------
 
