@@ -539,16 +539,16 @@
   {% if charts_ctx and charts_ctx.get('has_data') %}
   <div style="margin-top: 12pt;">
     <h3>Evolución en la temporada</h3>
-    <div style="display: table; width: 100%;">
-      <div style="display: table-cell; width: 33%; vertical-align: top; padding-right: 5pt;">
+    <div style="display: table; width: 100%; table-layout: fixed;">
+      <div style="display: table-cell; width: 33.33%; vertical-align: top; padding-right: 4pt;">
         {{ line_positions(charts_ctx.positions, width=175, height=130, low_confidence=charts_ctx.low_confidence) }}
         <p class="caption">Posición menor = mejor rendimiento</p>
       </div>
-      <div style="display: table-cell; width: 33%; vertical-align: top; padding: 0 3pt;">
+      <div style="display: table-cell; width: 33.33%; vertical-align: top; padding: 0 2pt;">
         {{ gap_pct(charts_ctx.gap_pcts, width=175, height=130, low_confidence=charts_ctx.low_confidence) }}
         <p class="caption">% de distancia al primero (0% = ganador)</p>
       </div>
-      <div style="display: table-cell; width: 33%; vertical-align: top; padding-left: 5pt;">
+      <div style="display: table-cell; width: 33.34%; vertical-align: top; padding-left: 4pt;">
         {{ points_accumulated(charts_ctx.points_accumulated, width=175, height=130, low_confidence=charts_ctx.low_confidence) }}
         <p class="caption">Puntos acumulados en la temporada</p>
       </div>

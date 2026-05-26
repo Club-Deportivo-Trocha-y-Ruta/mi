@@ -58,26 +58,10 @@
     ----------------------------------------------------------------------- */
     @page {
       size: A4;
-      margin: 22mm 18mm 28mm 18mm;
+      margin: 28mm 18mm 28mm 18mm;
 
-      @top-left {
-        content: "Club Deportivo Trocha y Ruta";
-        font-family: 'Inter Variable', Arial, Helvetica, sans-serif;
-        font-size: 9pt;
-        color: #ffffff;
-        background-color: #2f2f2f;
-        padding: 6pt 12pt;
-        border-bottom: 3pt solid #8be000;
-      }
-
-      @top-right {
-        content: "{% block header_right %}Documento oficial{% endblock %}";
-        font-family: 'Inter Variable', Arial, Helvetica, sans-serif;
-        font-size: 9pt;
-        color: #ffffff;
-        background-color: #2f2f2f;
-        padding: 6pt 12pt;
-        border-bottom: 3pt solid #8be000;
+      @top-center {
+        content: element(page_header);
       }
 
       @bottom-left {
@@ -219,6 +203,47 @@
       font-size: 9pt;
     }
 
+    /* -----------------------------------------------------------------------
+       Running header — posición: running(page_header)
+    ----------------------------------------------------------------------- */
+    .page-runner {
+      position: running(page_header);
+      width: 100%;
+      padding: 4pt 0 6pt 0;
+      border-bottom: 1pt solid var(--brand-lime);
+      font-family: 'Inter Variable', Arial, sans-serif;
+      font-size: 8.5pt;
+      color: var(--gray-700);
+    }
+    .page-runner-grid {
+      display: table;
+      width: 100%;
+      table-layout: fixed;
+    }
+    .page-runner-left, .page-runner-center, .page-runner-right {
+      display: table-cell;
+      vertical-align: middle;
+    }
+    .page-runner-left   { text-align: left;   width: 30%; }
+    .page-runner-center { text-align: center; width: 40%; color: var(--gray-500); font-weight: 500; }
+    .page-runner-right  { text-align: right;  width: 30%; color: var(--gray-500); font-size: 8pt; }
+    .page-runner-logo {
+      display: inline-block;
+      color: var(--brand-lime-dark);
+      font-size: 11pt;
+      margin-right: 4pt;
+      vertical-align: middle;
+    }
+    .page-runner-brand {
+      font-weight: 700;
+      letter-spacing: 0.6pt;
+      color: var(--brand-charcoal);
+      font-size: 8.5pt;
+      vertical-align: middle;
+    }
+    .page-num::before   { content: counter(page); }
+    .pages-num::before  { content: counter(pages); }
+
     /* Salto de página */
     .page-break { page-break-before: always; }
 
@@ -241,6 +266,17 @@
   </style>
 </head>
 <body>
+
+  <div class="page-runner">
+    <div class="page-runner-grid">
+      <div class="page-runner-left">
+        <span class="page-runner-logo">◆</span>
+        <span class="page-runner-brand">TROCHA Y RUTA</span>
+      </div>
+      <div class="page-runner-center">{% block runner_title %}{{ self.header_right() }}{% endblock %}</div>
+      <div class="page-runner-right">{% block runner_meta %}Pág. <span class="page-num"></span> / <span class="pages-num"></span>{% endblock %}</div>
+    </div>
+  </div>
 
   <div class="doc-header">
     <h1>{% block doc_title %}Documento{% endblock %}</h1>
