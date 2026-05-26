@@ -210,10 +210,11 @@ def upgrade() -> None:
             ["id"],
             ondelete="SET NULL",
         )
-        # Relax CHECK: drop viejo + add nuevo. MySQL 8.0.16+ soporta
-        # DROP/ADD CHECK con `ALTER TABLE ... DROP CHECK <name>`.
+        # Relax CHECK: drop viejo + add nuevo. Usamos `DROP CONSTRAINT`
+        # (portable: MySQL 8.0.19+ y MariaDB 10.2+). `DROP CHECK` es
+        # MySQL-only y rompe en MariaDB (prod Hostinger corre MariaDB).
         op.execute(
-            f"ALTER TABLE athlete_ai_insights DROP CHECK {_OLD_VALIDA_CHECK}"
+            f"ALTER TABLE athlete_ai_insights DROP CONSTRAINT {_OLD_VALIDA_CHECK}"
         )
         op.create_check_constraint(
             _NEW_VALIDA_CHECK,
@@ -394,7 +395,7 @@ def downgrade() -> None:
             batch_op.drop_column("deprecated_at")
     else:
         op.execute(
-            f"ALTER TABLE athlete_ai_insights DROP CHECK {_NEW_VALIDA_CHECK}"
+            f"ALTER TABLE athlete_ai_insights DROP CONSTRAINT {_NEW_VALIDA_CHECK}"
         )
         op.create_check_constraint(
             _OLD_VALIDA_CHECK,
