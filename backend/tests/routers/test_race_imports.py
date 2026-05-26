@@ -1061,7 +1061,7 @@ class TestFullFlowWithStubIngestor:
         from app.models.club import Club, ClubMember, ClubRole
 
         async with db_session_factory() as session:
-            club = Club(id=1, name="Club Trocha y Ruta", region="Valle")
+            club = Club(id=1, name="Club Trocha y Ruta", code="TYR")
             session.add(club)
             session.add(
                 ClubMember(club_id=1, user_id=10, role_in_club=ClubRole.coach)
