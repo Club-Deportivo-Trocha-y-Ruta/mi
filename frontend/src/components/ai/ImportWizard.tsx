@@ -222,6 +222,27 @@ interface ImportWizardProps {
   onCompleted?: (response: ImportCommitResponse) => void;
 }
 
+/**
+ * Resolución explícita de una fila del paso 2.
+ *
+ * Bug #3: el state previo era `Record<string, number | null>`, donde `null`
+ * cubría DOS estados distintos:
+ *  - "El coach todavía no toca esta fila."
+ *  - "El coach marcó deliberadamente 'Sin match (rival/otro club)'."
+ *
+ * Resultado: el botón "Confirmar e ingestar" se quedaba bloqueado para
+ * siempre cuando el coach resolvía un ambiguo como "sin match" — porque
+ * el filtro `pendingAmbiguous` usaba `resolutions[norm] == null` para
+ * detectar pendientes, y la elección "sin match" también evaluaba a
+ * `null`.
+ *
+ * Solución: estado discriminado. La clave AUSENTE (`undefined`) es la
+ * única señal de "pendiente"; cualquier objeto es decisión tomada.
+ */
+type MatchResolution =
+  | { decision: "match"; athleteId: number }
+  | { decision: "no_match"; athleteId: null };
+
 export function ImportWizard({ onCompleted }: ImportWizardProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [parseResult, setParseResult] = useState<ImportParseResponse | null>(
@@ -229,9 +250,10 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   );
   const [resultadosPdf, setResultadosPdf] = useState<File | null>(null);
   const [generalPdf, setGeneralPdf] = useState<File | null>(null);
-  // Resoluciones por competitor_normalized_name → athlete_id (null = no match).
+  // Resoluciones por competitor_normalized_name. Clave AUSENTE = pendiente.
+  // Cualquier `MatchResolution` presente = decisión explícita del coach.
   const [resolutions, setResolutions] = useState<
-    Record<string, number | null>
+    Record<string, MatchResolution>
   >({});
   const [onlyPending, setOnlyPending] = useState(false);
   const [step1Error, setStep1Error] = useState<string | null>(null);
@@ -302,11 +324,18 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
             setResolutions({});
             return;
           }
-          // Pre-poblar resoluciones con matches confirmados.
-          const initial: Record<string, number | null> = {};
+          // Pre-poblar resoluciones SOLO para matches con candidato TyR
+          // confirmado (no ambiguo). Los ambiguos quedan AUSENTES del map
+          // para que `pendingAmbiguous` los detecte como tal hasta que el
+          // coach actúe explícitamente (Bug #3).
+          const initial: Record<string, MatchResolution> = {};
           for (const m of data.matches) {
-            initial[m.competitor_normalized_name] =
-              m.tyr_athlete?.id ?? null;
+            if (!m.is_ambiguous && m.tyr_athlete) {
+              initial[m.competitor_normalized_name] = {
+                decision: "match",
+                athleteId: m.tyr_athlete.id,
+              };
+            }
           }
           setResolutions(initial);
         },
@@ -319,11 +348,15 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   const revisionData = isRevisionDryRun(dryRunData) ? dryRunData : null;
   const matchesData = !isRevisionDryRun(dryRunData) ? dryRunData : undefined;
 
+  // Bug #3: "pendiente" = clave AUSENTE en `resolutions`. Antes usábamos
+  // `== null` y eso atrapaba como pendiente al coach que marcaba "sin
+  // match" explícito (porque la elección "sin match" también es `null`
+  // como athlete_id). Ahora el check es `!(norm in resolutions)`.
   const pendingAmbiguous = useMemo(() => {
     if (!matchesData) return [];
     return matchesData.matches.filter(
       (m) =>
-        m.is_ambiguous && resolutions[m.competitor_normalized_name] == null,
+        m.is_ambiguous && !(m.competitor_normalized_name in resolutions),
     );
   }, [matchesData, resolutions]);
 
@@ -332,7 +365,7 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
     if (!onlyPending) return matchesData.matches;
     return matchesData.matches.filter(
       (m) =>
-        m.is_ambiguous && resolutions[m.competitor_normalized_name] == null,
+        m.is_ambiguous && !(m.competitor_normalized_name in resolutions),
     );
   }, [matchesData, onlyPending, resolutions]);
 
@@ -375,13 +408,21 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
       return;
     }
 
-    // Modo matches (F-UP normal).
+    // Modo matches (F-UP normal). Bug #3: el payload deriva `athlete_id`
+    // del objeto `MatchResolution` cuando existe. Si la clave está ausente
+    // (no debería llegar aquí por el guard `canCommit`, pero por defensa),
+    // se envía `null` — el backend ya acepta `athlete_id=null` como "sin
+    // match" persistido como contexto de carrera sin atleta TyR (ver
+    // `backend/app/routers/race_imports.py::commit_import`, línea ~766).
     if (!matchesData) return;
     const resolved_matches: ImportResolvedMatch[] = matchesData.matches.map(
-      (m) => ({
-        competitor_normalized_name: m.competitor_normalized_name,
-        athlete_id: resolutions[m.competitor_normalized_name] ?? null,
-      }),
+      (m) => {
+        const r = resolutions[m.competitor_normalized_name];
+        return {
+          competitor_normalized_name: m.competitor_normalized_name,
+          athlete_id: r ? r.athleteId : null,
+        };
+      },
     );
     try {
       const result = await commitMutation.mutateAsync({
@@ -842,15 +883,47 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 </div>
               </div>
 
-              <label className="flex items-center gap-2 text-xs text-mid-gray">
-                <input
-                  type="checkbox"
-                  checked={onlyPending}
-                  onChange={(e) => setOnlyPending(e.target.checked)}
-                  data-testid="wizard-toggle-pending"
-                />
-                Mostrar solo pendientes de resolver
-              </label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-xs text-mid-gray">
+                  <input
+                    type="checkbox"
+                    checked={onlyPending}
+                    onChange={(e) => setOnlyPending(e.target.checked)}
+                    data-testid="wizard-toggle-pending"
+                  />
+                  Mostrar solo pendientes de resolver
+                </label>
+                {/* Bug #3: acción bulk para marcar el resto como "sin match".
+                    Útil cuando el coach revisó visualmente y descarta a los
+                    pendientes — evita que tenga que abrir 9+ comboboxes
+                    para confirmar lo evidente. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!matchesData) return;
+                    setResolutions((prev) => {
+                      const next = { ...prev };
+                      for (const m of matchesData.matches) {
+                        if (
+                          m.is_ambiguous &&
+                          !(m.competitor_normalized_name in next)
+                        ) {
+                          next[m.competitor_normalized_name] = {
+                            decision: "no_match",
+                            athleteId: null,
+                          };
+                        }
+                      }
+                      return next;
+                    });
+                  }}
+                  disabled={pendingAmbiguous.length === 0}
+                  data-testid="wizard-mark-rest-no-match"
+                  className="inline-flex items-center gap-1 rounded-lg border border-light-gray bg-white px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  Marcar restantes como sin match
+                </button>
+              </div>
 
               <div
                 className="max-h-96 overflow-y-auto rounded-lg ring-1 ring-light-gray"
@@ -877,8 +950,19 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                     )}
                     {visibleMatches.map((m) => {
                       const editable = m.is_ambiguous || !m.tyr_athlete;
-                      const value =
-                        resolutions[m.competitor_normalized_name] ?? null;
+                      const resolution =
+                        resolutions[m.competitor_normalized_name];
+                      const isPending =
+                        m.is_ambiguous && resolution === undefined;
+                      // Combobox value: athleteId si hay decision="match",
+                      // null si decision="no_match", null si no hay resolution
+                      // (ambiguo sin tocar). El combobox usa null tanto para
+                      // "Sin match" seleccionado como para "vacío", pero el
+                      // STATE del wizard distingue ambos vía `resolution`.
+                      const comboValue =
+                        resolution?.decision === "match"
+                          ? resolution.athleteId
+                          : null;
                       return (
                         <tr
                           key={m.competitor_normalized_name}
@@ -887,9 +971,9 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                         >
                           <td className="px-3 py-2 align-top">
                             <p className="text-charcoal">
-                              {m.competitor_display_name}
+                              {m.competitor_name}
                             </p>
-                            {m.is_ambiguous && value == null && (
+                            {isPending && (
                               <p className="text-[10px] font-medium text-amber-700">
                                 Requiere resolución
                               </p>
@@ -900,11 +984,14 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                               <AthleteCombobox
                                 allowAny
                                 anyLabel="Sin match (rival/otro club)"
-                                value={value}
+                                value={comboValue}
                                 onChange={(id) =>
                                   setResolutions((prev) => ({
                                     ...prev,
-                                    [m.competitor_normalized_name]: id,
+                                    [m.competitor_normalized_name]:
+                                      id == null
+                                        ? { decision: "no_match", athleteId: null }
+                                        : { decision: "match", athleteId: id },
                                   }))
                                 }
                                 data-testid={`wizard-combo-${m.competitor_normalized_name}`}

@@ -67,7 +67,14 @@ export interface MatchedAthlete {
 
 export interface ImportMatchPreview {
   competitor_normalized_name: string;
-  competitor_display_name: string;
+  /**
+   * Nombre original del corredor tal como aparece en el PDF (sin normalizar).
+   * El backend lo emite como `competitor_name` (ver
+   * `backend/app/schemas/race_imports.py::MatchPreview`). Mantener este
+   * nombre alineado con el schema Pydantic para evitar columnas vacías en
+   * el wizard de validación (paso 2).
+   */
+  competitor_name: string;
   tyr_athlete: MatchedAthlete | null;
   confidence: number; // 0-1
   is_ambiguous: boolean;

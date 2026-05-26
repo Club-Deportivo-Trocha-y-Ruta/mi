@@ -97,7 +97,7 @@ const DRY_RUN_CONFIRMED_ONLY: ImportDryRunMatchesResponse = {
   matches: [
     {
       competitor_normalized_name: "juan perez",
-      competitor_display_name: "Juan Pérez",
+      competitor_name: "Juan Pérez",
       tyr_athlete: { id: 1, full_name: "Juan Pérez" },
       confidence: 0.95,
       is_ambiguous: false,
@@ -212,14 +212,14 @@ const DRY_RUN_WITH_AMBIGUOUS: ImportDryRunResponse = {
   matches: [
     {
       competitor_normalized_name: "juan perez",
-      competitor_display_name: "Juan Pérez",
+      competitor_name: "Juan Pérez",
       tyr_athlete: { id: 1, full_name: "Juan Pérez" },
       confidence: 0.95,
       is_ambiguous: false,
     },
     {
       competitor_normalized_name: "maria gonzalez",
-      competitor_display_name: "María González",
+      competitor_name: "María González",
       tyr_athlete: null,
       confidence: 0.7,
       is_ambiguous: true,
@@ -391,6 +391,52 @@ describe("ImportWizard — Step 2", () => {
     ).toBeInTheDocument();
   });
 
+  // Regression Bug #1: la columna "Competidor" mostraba vacío porque el
+  // frontend leía `competitor_display_name` mientras el backend emite
+  // `competitor_name`. Este test asegura que el nombre real del corredor
+  // (campo `competitor_name`) aparece en la primera celda (columna
+  // "Competidor") del paso 2. Para fila confirmada el nombre del atleta
+  // TyR coincide con el del PDF, por eso buscamos específicamente la
+  // primera celda con un selector basado en `<p>` de la primera columna.
+  it("muestra el nombre del competidor (competitor_name) en la columna 'Competidor'", async () => {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
+      DRY_RUN_WITH_AMBIGUOUS,
+    );
+
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+    await fillStep1AndSubmit(user);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-matches-table")).toBeInTheDocument(),
+    );
+
+    // Fila ambigua: María González sólo aparece UNA vez en la fila (no
+    // hay tyr_athlete match, así que la columna "Match TyR" muestra el
+    // combobox, no el nombre del atleta).
+    const ambiguousRow = screen.getByTestId(
+      "wizard-match-row-maria gonzalez",
+    );
+    expect(within(ambiguousRow).getByText("María González")).toBeInTheDocument();
+
+    // Fila confirmada: "Juan Pérez" aparece en la columna "Competidor"
+    // (como nombre del PDF) Y en "Match TyR" (como atleta confirmado).
+    // Aserción específica: la primera columna debe tener el nombre
+    // (es decir, getAllByText devuelve al menos una ocurrencia).
+    const confirmedRow = screen.getByTestId("wizard-match-row-juan perez");
+    expect(within(confirmedRow).getAllByText("Juan Pérez").length).toBeGreaterThan(
+      0,
+    );
+    // Defensa explícita contra regresión del Bug #1: el nombre debe
+    // aparecer dentro de la PRIMERA celda (columna "Competidor"), no
+    // sólo en la segunda (columna "Match TyR"). Si el bug regresa, la
+    // primera celda queda vacía.
+    const firstCell = confirmedRow.querySelector("td");
+    expect(firstCell).not.toBeNull();
+    expect(firstCell?.textContent).toContain("Juan Pérez");
+  });
+
   it("toggle 'solo pendientes' filtra a sólo ambiguos no resueltos", async () => {
     vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
     vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
@@ -457,6 +503,93 @@ describe("ImportWizard — Step 2", () => {
     );
     await user.click(screen.getByTestId("wizard-step2-back"));
     expect(screen.getByTestId("import-wizard-step1")).toBeInTheDocument();
+  });
+
+  // Bug #3 — Regression: el botón "Confirmar e ingestar" se quedaba
+  // bloqueado para siempre cuando el coach marcaba ambiguos como "sin
+  // match" porque el state previo usaba `null` para ambos casos
+  // (pendiente vs decisión explícita de "sin match"). Tras el refactor a
+  // un objeto discriminado, el botón debe habilitarse al presionar el
+  // bulk "Marcar restantes como sin match" sobre las filas pendientes.
+  it("bulk 'Marcar restantes como sin match' habilita el botón de confirmar (Bug #3)", async () => {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
+      DRY_RUN_WITH_AMBIGUOUS,
+    );
+
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+    await fillStep1AndSubmit(user);
+
+    // Estado inicial: hay 1 ambiguo pendiente → botón deshabilitado.
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step2-confirm")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("wizard-step2-confirm")).toBeDisabled();
+    expect(screen.getByTestId("wizard-pending-hint")).toBeInTheDocument();
+
+    // Coach presiona bulk action.
+    const bulkBtn = screen.getByTestId("wizard-mark-rest-no-match");
+    expect(bulkBtn).toBeEnabled();
+    await user.click(bulkBtn);
+
+    // Tras el bulk, ya no hay ambiguos pendientes → botón habilitado y el
+    // hint ámbar desaparece.
+    expect(screen.getByTestId("wizard-step2-confirm")).toBeEnabled();
+    expect(
+      screen.queryByTestId("wizard-pending-hint"),
+    ).not.toBeInTheDocument();
+
+    // El bulk button queda inhabilitado (no quedan pendientes).
+    expect(screen.getByTestId("wizard-mark-rest-no-match")).toBeDisabled();
+  });
+
+  // Bug #3 — Regression: el bulk no debe sobrescribir las decisiones de
+  // match ya tomadas (por pre-poblado del dry-run o por elección del
+  // coach). Sólo marca como "no_match" las filas AUSENTES de
+  // `resolutions`.
+  it("bulk 'Marcar restantes' NO sobrescribe matches confirmados (Bug #3)", async () => {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
+      DRY_RUN_WITH_AMBIGUOUS,
+    );
+    vi.mocked(importsApi.commitRaceImport).mockResolvedValue({
+      parse_id: "p-1",
+      race_event_id: 4,
+      n_results_inserted: 2,
+      n_competitors_created: 1,
+      n_competitors_linked: 1,
+    });
+
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+    await fillStep1AndSubmit(user);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-mark-rest-no-match")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId("wizard-mark-rest-no-match"));
+
+    // Confirmamos el commit: el payload debe contener athlete_id=1 para
+    // Juan Pérez (match pre-poblado) y athlete_id=null para María
+    // González (marcada por el bulk como sin match).
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step2-confirm")).toBeEnabled(),
+    );
+    await user.click(screen.getByTestId("wizard-step2-confirm"));
+
+    await waitFor(() =>
+      expect(vi.mocked(importsApi.commitRaceImport)).toHaveBeenCalledTimes(1),
+    );
+    const calls = vi.mocked(importsApi.commitRaceImport).mock.calls;
+    // commitRaceImport(parseId, body) — body es el 2do argumento.
+    const payload = calls[0][1];
+    const byName: Record<string, number | null> = {};
+    for (const rm of payload.resolved_matches) {
+      byName[rm.competitor_normalized_name] = rm.athlete_id;
+    }
+    expect(byName["juan perez"]).toBe(1);
+    expect(byName["maria gonzalez"]).toBeNull();
   });
 });
 
