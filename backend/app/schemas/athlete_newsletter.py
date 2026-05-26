@@ -222,6 +222,54 @@ class AthleteNewsletterRead(BaseModel):
         )
 
 
+class AttachInsightsRequest(BaseModel):
+    """Body para adjuntar insights de race-analysis aprobados a un boletín.
+
+    El coach selecciona N insights desde el tab Análisis IA y los envía aquí.
+    El endpoint hace upsert: si ya existe un newsletter para (athlete_id, year, month)
+    se hace append+dedupe; si no existe, se crea con status=pending (draft).
+
+    Privacy: solo accesible a coach/admin del club. Parent → 403 en el endpoint.
+    """
+
+    insight_ids: list[int] = Field(
+        min_length=1,
+        max_length=20,
+        description="IDs de AthleteAIInsight a adjuntar (activos y del atleta).",
+    )
+    year: int | None = Field(
+        default=None,
+        ge=2020,
+        le=2100,
+        description="Año del boletín. Default: año actual en zona Colombia.",
+    )
+    month: int | None = Field(
+        default=None,
+        ge=1,
+        le=12,
+        description="Mes del boletín (1=enero). Default: mes actual en zona Colombia.",
+    )
+
+
+class AttachInsightsResponse(BaseModel):
+    """Respuesta del endpoint attach-insights.
+
+    Privacy: no expone datos del atleta ni de los insights más allá de sus IDs.
+    """
+
+    newsletter_id: int
+    athlete_id: int
+    year: int
+    month: int
+    status: NewsletterStatus
+    selected_race_insight_ids: list[int]
+    created: bool = Field(
+        description="True si el newsletter se creó en esta operación; False si ya existía.",
+    )
+
+    model_config = {"from_attributes": True}
+
+
 class AthleteNewsletterBatchResult(BaseModel):
     """Resultado del batch de creación de boletines."""
 

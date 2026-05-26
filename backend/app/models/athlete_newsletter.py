@@ -108,6 +108,17 @@ class AthleteMonthlyNewsletter(Base):
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # IDs ordenados de AthleteAIInsight seleccionados manualmente por el coach
+    # para incluir en el boletín. La posición en la lista define el orden de
+    # renderizado. Dedupe garantizado por el endpoint attach-insights.
+    # RBAC: solo accesible a coach/admin del club — nunca a padres.
+    selected_race_insight_ids: Mapped[list | None] = mapped_column(
+        JSON,
+        nullable=True,
+        default=None,
+        comment="IDs ordenados de AthleteAIInsight seleccionados manualmente por el coach",
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),

@@ -56,6 +56,8 @@ from app.schemas.athlete_newsletter import (
     AthleteNewsletterCreate,
     AthleteNewsletterPatch,
     AthleteNewsletterRead,
+    AttachInsightsRequest,
+    AttachInsightsResponse,
 )
 from app.services.permissions import user_club_role
 
@@ -682,3 +684,118 @@ async def send_newsletter(
         "emails_sent": dispatch_result.emails_sent,
         "errors": dispatch_result.errors,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/athletes/{athlete_id}/monthly-newsletters/attach-insights
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{athlete_id}/monthly-newsletters/attach-insights",
+    response_model=AttachInsightsResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["athlete-newsletters"],
+)
+async def attach_insights(
+    athlete_id: int,
+    body: AttachInsightsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> AttachInsightsResponse:
+    """Adjunta insights de race-analysis aprobados a un boletín mensual.
+
+    Lógica:
+    - RBAC: solo coach del club del atleta o admin global. Parent → 403.
+    - Valida que todos los insight_ids pertenecen al atleta y tienen is_active=1.
+    - Si algún insight no cumple → 400 con detalle de cuáles fallaron.
+    - year/month default al mes/año actuales en zona Colombia (America/Bogota).
+    - Upsert del newsletter:
+        - Si existe: append + dedupe preservando orden (items nuevos al final). created=False.
+        - Si no existe: crea con status=draft, selected_race_insight_ids=[...]. created=True.
+
+    Privacidad Ley 1581:
+    - selected_race_insight_ids solo accesible a coach/admin.
+    - Parent NUNCA llega aquí (RBAC require_role bloquea en Depends).
+    """
+    from zoneinfo import ZoneInfo
+
+    from app.models.athlete_ai_insight import AthleteAiInsight
+
+    # 1. Verificar acceso al atleta
+    await _verify_coach_athlete_access(db, current_user, athlete_id)
+
+    # 2. Resolver year/month con default Colombia
+    tz_bogota = ZoneInfo("America/Bogota")
+    now_bogota = datetime.now(tz_bogota)
+    year = body.year if body.year is not None else now_bogota.year
+    month = body.month if body.month is not None else now_bogota.month
+
+    # 3. Validar que todos los insights pertenecen al atleta y están activos
+    insights_result = await db.execute(
+        select(AthleteAiInsight).where(
+            AthleteAiInsight.id.in_(body.insight_ids),
+            AthleteAiInsight.athlete_id == athlete_id,
+            AthleteAiInsight.is_active == 1,
+        )
+    )
+    valid_insights = insights_result.scalars().all()
+    valid_ids = {i.id for i in valid_insights}
+    invalid_ids = [iid for iid in body.insight_ids if iid not in valid_ids]
+
+    if invalid_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Los siguientes insight_ids no son válidos para este atleta "
+                f"(no existen, pertenecen a otro atleta o están inactivos): {invalid_ids}"
+            ),
+        )
+
+    # 4. Lookup newsletter por (athlete_id, year, month)
+    nl_result = await db.execute(
+        select(AthleteMonthlyNewsletter).where(
+            AthleteMonthlyNewsletter.athlete_id == athlete_id,
+            AthleteMonthlyNewsletter.year == year,
+            AthleteMonthlyNewsletter.month == month,
+        )
+    )
+    nl = nl_result.scalar_one_or_none()
+    created = False
+
+    now_utc = datetime.now(timezone.utc)
+
+    if nl is not None:
+        # Append + dedupe preservando orden: existentes primero, luego nuevos
+        existing_ids: list[int] = nl.selected_race_insight_ids or []
+        existing_set = set(existing_ids)
+        new_ids = [iid for iid in body.insight_ids if iid not in existing_set]
+        nl.selected_race_insight_ids = existing_ids + new_ids
+        nl.updated_at = now_utc
+        await db.flush()
+    else:
+        # Crear newsletter mínimo con status draft
+        nl = AthleteMonthlyNewsletter(
+            athlete_id=athlete_id,
+            year=year,
+            month=month,
+            status=NewsletterStatus.draft,
+            selected_race_insight_ids=list(body.insight_ids),
+            created_at=now_utc,
+            updated_at=now_utc,
+        )
+        db.add(nl)
+        await db.flush()
+        created = True
+
+    await db.commit()
+
+    return AttachInsightsResponse(
+        newsletter_id=nl.id,
+        athlete_id=athlete_id,
+        year=year,
+        month=month,
+        status=nl.status,
+        selected_race_insight_ids=nl.selected_race_insight_ids or [],
+        created=created,
+    )

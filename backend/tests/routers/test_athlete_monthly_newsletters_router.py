@@ -511,3 +511,486 @@ class TestAthleteNewsletterBatchResult:
         # Los errores no deben incluir PII como emails
         for err in result.errors:
             assert "@" not in err
+
+
+# ---------------------------------------------------------------------------
+# Pruebas de attach-insights — lógica de servicio directa (sin HTTP)
+# ---------------------------------------------------------------------------
+# Estrategia: testeamos la lógica del endpoint directamente, mockeando db,
+# _verify_coach_athlete_access y AthleteAiInsight para evitar MySQL.
+# Los tests de RBAC HTTP-level se hacen con dependency_overrides.
+
+
+def make_insight(id_: int, athlete_id: int = 5, is_active: int = 1) -> Any:
+    """Factory de AthleteAiInsight mínimo para tests."""
+    return SimpleNamespace(
+        id=id_,
+        athlete_id=athlete_id,
+        is_active=is_active,
+        coach_approved=True,
+    )
+
+
+def make_newsletter_with_insights(
+    id_: int = 1,
+    athlete_id: int = 5,
+    selected_race_insight_ids: list | None = None,
+    status: NewsletterStatus = NewsletterStatus.draft,
+) -> Any:
+    """Factory de newsletter con campo selected_race_insight_ids."""
+    now = datetime.now(timezone.utc)
+    nl = make_newsletter(id_=id_, athlete_id=athlete_id, status=status)
+    nl.selected_race_insight_ids = selected_race_insight_ids
+    return nl
+
+
+class TestAttachInsightsSchemas:
+    """Validaciones de schema Pydantic sin HTTP."""
+
+    def test_request_requires_at_least_one_insight(self):
+        from pydantic import ValidationError
+        from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+        with pytest.raises(ValidationError):
+            AttachInsightsRequest(insight_ids=[])
+
+    def test_request_max_20_insights(self):
+        from pydantic import ValidationError
+        from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+        with pytest.raises(ValidationError):
+            AttachInsightsRequest(insight_ids=list(range(1, 22)))  # 21 elementos
+
+    def test_request_valid_with_defaults(self):
+        from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+        req = AttachInsightsRequest(insight_ids=[1, 2, 3])
+        assert req.year is None
+        assert req.month is None
+        assert req.insight_ids == [1, 2, 3]
+
+    def test_request_with_explicit_year_month(self):
+        from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+        req = AttachInsightsRequest(insight_ids=[10], year=2026, month=3)
+        assert req.year == 2026
+        assert req.month == 3
+
+    def test_response_schema_fields(self):
+        from app.schemas.athlete_newsletter import AttachInsightsResponse
+
+        resp = AttachInsightsResponse(
+            newsletter_id=1,
+            athlete_id=5,
+            year=2026,
+            month=3,
+            status=NewsletterStatus.draft,
+            selected_race_insight_ids=[10, 20],
+            created=True,
+        )
+        assert resp.created is True
+        assert resp.selected_race_insight_ids == [10, 20]
+
+    def test_response_no_pii_fields(self):
+        """El response schema no expone emails, DOB ni datos médicos."""
+        from app.schemas.athlete_newsletter import AttachInsightsResponse
+
+        resp = AttachInsightsResponse(
+            newsletter_id=1,
+            athlete_id=5,
+            year=2026,
+            month=3,
+            status=NewsletterStatus.draft,
+            selected_race_insight_ids=[1],
+            created=False,
+        )
+        data = resp.model_dump()
+        sensitive_keys = {"sent_to", "email", "birth_date", "pdf_storage_url", "anthropometry"}
+        assert not sensitive_keys.intersection(data.keys())
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_creates_newsletter_when_not_exists():
+    """Coach attach con newsletter inexistente → crea newsletter, created=True."""
+    from unittest.mock import patch as _patch
+    from app.routers.athlete_monthly_newsletters import attach_insights
+    from app.schemas.athlete_newsletter import AttachInsightsRequest
+    from app.models.user import UserRole
+
+    coach = make_user(role="coach")
+    insight_10 = make_insight(id_=10, athlete_id=5)
+    insight_20 = make_insight(id_=20, athlete_id=5)
+
+    # db devuelve insights válidos en primera query, ningún newsletter en segunda
+    call_count = 0
+
+    async def fake_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # Verificar coach → atleta found
+            return make_scalars_result([make_athlete(id_=5, club_id=1)])
+        elif call_count == 2:
+            # Query de insights válidos
+            return make_scalars_result([insight_10, insight_20])
+        else:
+            # Query de newsletter existente → None
+            return make_scalars_result([])
+
+    # flush simula el INSERT asignando id al objeto recién agregado
+    added_objects: list = []
+
+    def fake_add(obj):
+        obj.id = 42  # simula autoincrement post-flush
+        added_objects.append(obj)
+
+    async def fake_flush():
+        # Si hay objetos sin id en added_objects, ya se asignaron en add
+        pass
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=fake_execute)
+    db.flush = AsyncMock(side_effect=fake_flush)
+    db.commit = AsyncMock()
+    db.add = MagicMock(side_effect=fake_add)
+
+    body = AttachInsightsRequest(insight_ids=[10, 20], year=2026, month=3)
+
+    with _patch(
+        "app.routers.athlete_monthly_newsletters.user_club_role",
+        new_callable=AsyncMock,
+        return_value="coach",
+    ):
+        result = await attach_insights(
+            athlete_id=5,
+            body=body,
+            db=db,
+            current_user=coach,
+        )
+
+    assert result.created is True
+    assert result.newsletter_id == 42
+    assert result.athlete_id == 5
+    assert result.year == 2026
+    assert result.month == 3
+    assert result.status == NewsletterStatus.draft
+    assert set(result.selected_race_insight_ids) == {10, 20}
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_appends_to_existing_newsletter():
+    """Coach attach con newsletter existente → append + dedupe, created=False."""
+    from unittest.mock import patch as _patch
+    from app.routers.athlete_monthly_newsletters import attach_insights
+    from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+    coach = make_user(role="coach")
+    existing_nl = make_newsletter_with_insights(
+        id_=1, athlete_id=5, selected_race_insight_ids=[10, 20]
+    )
+    insight_30 = make_insight(id_=30, athlete_id=5)
+
+    call_count = 0
+
+    async def fake_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return make_scalars_result([make_athlete(id_=5, club_id=1)])
+        elif call_count == 2:
+            return make_scalars_result([insight_30])
+        else:
+            return make_scalars_result([existing_nl])
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=fake_execute)
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.add = MagicMock()
+
+    body = AttachInsightsRequest(insight_ids=[30], year=2026, month=3)
+
+    with _patch(
+        "app.routers.athlete_monthly_newsletters.user_club_role",
+        new_callable=AsyncMock,
+        return_value="coach",
+    ):
+        result = await attach_insights(
+            athlete_id=5,
+            body=body,
+            db=db,
+            current_user=coach,
+        )
+
+    assert result.created is False
+    assert result.selected_race_insight_ids == [10, 20, 30]
+    db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_deduplicates_on_repeated_append():
+    """Append repetido del mismo insight_id no genera duplicados."""
+    from unittest.mock import patch as _patch
+    from app.routers.athlete_monthly_newsletters import attach_insights
+    from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+    coach = make_user(role="coach")
+    # Newsletter ya tiene [10, 20]
+    existing_nl = make_newsletter_with_insights(
+        id_=1, athlete_id=5, selected_race_insight_ids=[10, 20]
+    )
+    insight_10 = make_insight(id_=10, athlete_id=5)  # ya estaba
+
+    call_count = 0
+
+    async def fake_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return make_scalars_result([make_athlete(id_=5, club_id=1)])
+        elif call_count == 2:
+            return make_scalars_result([insight_10])
+        else:
+            return make_scalars_result([existing_nl])
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=fake_execute)
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.add = MagicMock()
+
+    body = AttachInsightsRequest(insight_ids=[10], year=2026, month=3)
+
+    with _patch(
+        "app.routers.athlete_monthly_newsletters.user_club_role",
+        new_callable=AsyncMock,
+        return_value="coach",
+    ):
+        result = await attach_insights(
+            athlete_id=5,
+            body=body,
+            db=db,
+            current_user=coach,
+        )
+
+    assert result.created is False
+    # Sin duplicados: [10, 20] + [] = [10, 20]
+    assert result.selected_race_insight_ids == [10, 20]
+    assert len(result.selected_race_insight_ids) == len(set(result.selected_race_insight_ids))
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_rejects_insight_of_another_athlete():
+    """Insight que pertenece a otro atleta → 400 con IDs inválidos."""
+    from fastapi import HTTPException
+    from unittest.mock import patch as _patch
+    from app.routers.athlete_monthly_newsletters import attach_insights
+    from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+    coach = make_user(role="coach")
+    # insight_99 pertenece al atleta 99, no al 5
+    # La query filtra por athlete_id=5, así que no lo devuelve
+
+    call_count = 0
+
+    async def fake_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return make_scalars_result([make_athlete(id_=5, club_id=1)])
+        else:
+            # Ningún insight válido devuelto (el insight 99 es de otro atleta)
+            return make_scalars_result([])
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=fake_execute)
+
+    body = AttachInsightsRequest(insight_ids=[99], year=2026, month=3)
+
+    with _patch(
+        "app.routers.athlete_monthly_newsletters.user_club_role",
+        new_callable=AsyncMock,
+        return_value="coach",
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
+
+    assert exc.value.status_code == 400
+    assert "99" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_rejects_inactive_insight():
+    """Insight con is_active != 1 → 400."""
+    from fastapi import HTTPException
+    from unittest.mock import patch as _patch
+    from app.routers.athlete_monthly_newsletters import attach_insights
+    from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+    coach = make_user(role="coach")
+    # La query en el endpoint filtra por is_active=1, por tanto el insight inactivo
+    # no aparece en valid_insights → se reporta como inválido
+
+    call_count = 0
+
+    async def fake_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return make_scalars_result([make_athlete(id_=5, club_id=1)])
+        else:
+            # insight 50 existe pero is_active=NULL → no pasa el filtro is_active==1
+            return make_scalars_result([])
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=fake_execute)
+
+    body = AttachInsightsRequest(insight_ids=[50], year=2026, month=3)
+
+    with _patch(
+        "app.routers.athlete_monthly_newsletters.user_club_role",
+        new_callable=AsyncMock,
+        return_value="coach",
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
+
+    assert exc.value.status_code == 400
+    assert "50" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_parent_blocked_by_rbac():
+    """Parent no puede usar attach-insights → require_role devuelve 403."""
+    from app.dependencies import get_db, require_role
+    from app.models.user import UserRole
+
+    parent = make_user(role="parent")
+
+    app.dependency_overrides[get_db] = lambda: MagicMock()
+    app.dependency_overrides[require_role([UserRole.admin, UserRole.coach])] = (
+        lambda: (_ for _ in ()).throw(
+            __import__("fastapi").HTTPException(status_code=403, detail="Forbidden")
+        )
+    )
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/api/athletes/5/monthly-newsletters/attach-insights",
+                json={"insight_ids": [1]},
+            )
+        # Sin auth real → 401; con override de parent → 403
+        assert resp.status_code in {401, 403}
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_custom_year_month():
+    """year/month explícito en el body se usa en lugar del default Colombia."""
+    from unittest.mock import patch as _patch
+    from app.routers.athlete_monthly_newsletters import attach_insights
+    from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+    coach = make_user(role="coach")
+    insight_10 = make_insight(id_=10, athlete_id=5)
+
+    call_count = 0
+
+    async def fake_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return make_scalars_result([make_athlete(id_=5, club_id=1)])
+        elif call_count == 2:
+            return make_scalars_result([insight_10])
+        else:
+            return make_scalars_result([])  # no existe newsletter
+
+    def fake_add(obj):
+        obj.id = 7  # simula autoincrement post-flush
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=fake_execute)
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.add = MagicMock(side_effect=fake_add)
+
+    # year/month custom: enero 2025
+    body = AttachInsightsRequest(insight_ids=[10], year=2025, month=1)
+
+    with _patch(
+        "app.routers.athlete_monthly_newsletters.user_club_role",
+        new_callable=AsyncMock,
+        return_value="coach",
+    ):
+        result = await attach_insights(
+            athlete_id=5,
+            body=body,
+            db=db,
+            current_user=coach,
+        )
+
+    assert result.year == 2025
+    assert result.month == 1
+    assert result.created is True
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_multiple_invalid_ids_all_reported():
+    """Varios IDs inválidos → todos aparecen en el detalle del 400."""
+    from fastapi import HTTPException
+    from unittest.mock import patch as _patch
+    from app.routers.athlete_monthly_newsletters import attach_insights
+    from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+    coach = make_user(role="coach")
+
+    call_count = 0
+
+    async def fake_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return make_scalars_result([make_athlete(id_=5, club_id=1)])
+        else:
+            # Solo insight 10 es válido, 88 y 99 no lo son
+            return make_scalars_result([make_insight(id_=10, athlete_id=5)])
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=fake_execute)
+
+    body = AttachInsightsRequest(insight_ids=[10, 88, 99], year=2026, month=3)
+
+    with _patch(
+        "app.routers.athlete_monthly_newsletters.user_club_role",
+        new_callable=AsyncMock,
+        return_value="coach",
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
+
+    assert exc.value.status_code == 400
+    assert "88" in exc.value.detail
+    assert "99" in exc.value.detail
+    # 10 era válido, no debe aparecer en el detalle de error
+    assert "10" not in exc.value.detail

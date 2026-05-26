@@ -8,6 +8,8 @@ import { http, HttpResponse } from "msw";
 import type {
   AthleteNewsletter,
   AiNarrative,
+  AttachInsightsRequest,
+  AttachInsightsResponse,
   BatchResult,
   NarrativeOverride,
   NewsletterStatus,
@@ -242,6 +244,25 @@ export const newsletterHandlers = [
       return HttpResponse.json(makeBatchResult(), { status: 201 });
     },
   ),
+
+  // POST /api/athletes/:athleteId/monthly-newsletters/attach-insights
+  http.post(
+    "*/api/athletes/:athleteId/monthly-newsletters/attach-insights",
+    async ({ params, request }) => {
+      const athleteId = Number(params.athleteId);
+      const body = (await request.json()) as AttachInsightsRequest;
+      const response: AttachInsightsResponse = {
+        newsletter_id: 42,
+        athlete_id: athleteId,
+        year: 2026,
+        month: 5,
+        status: "pending",
+        selected_race_insight_ids: body.insight_ids,
+        created: true,
+      };
+      return HttpResponse.json(response);
+    },
+  ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -289,5 +310,27 @@ export const notFoundHandler = http.get(
   "*/api/athletes/:athleteId/monthly-newsletters/:id",
   () => {
     return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+  },
+);
+
+/** Handler que simula 400 en attach-insights por insight_ids inválidos */
+export const attachInsightsInvalidHandler = http.post(
+  "*/api/athletes/:athleteId/monthly-newsletters/attach-insights",
+  () => {
+    return HttpResponse.json(
+      { detail: { invalid_ids: [4, 5] } },
+      { status: 400 },
+    );
+  },
+);
+
+/** Handler que simula 403 en attach-insights (intento de parent) */
+export const attachInsightsForbiddenHandler = http.post(
+  "*/api/athletes/:athleteId/monthly-newsletters/attach-insights",
+  () => {
+    return HttpResponse.json(
+      { detail: "No tienes permiso para realizar esta acción." },
+      { status: 403 },
+    );
   },
 );

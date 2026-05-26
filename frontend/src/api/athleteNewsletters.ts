@@ -14,6 +14,8 @@ import type {
   AthleteNewsletter,
   AthleteNewsletterCreate,
   AthleteNewsletterPatch,
+  AttachInsightsRequest,
+  AttachInsightsResponse,
   BatchResult,
 } from "@/types/athleteNewsletter.types";
 
@@ -123,6 +125,22 @@ export async function batchCreateNewsletters(
   const response = await apiClient.post<BatchResult>(
     `${CLUBS_BASE}/${clubId}/monthly-newsletters/batch`,
     payload,
+  );
+  return response.data;
+}
+
+/**
+ * Adjunta insights de carrera a un boletín mensual del atleta.
+ * Si no existe boletín para el mes actual, el backend lo crea en estado draft.
+ * Solo accesible para coach (backend devuelve 403 para parent).
+ */
+export async function attachInsightsToNewsletter(
+  athleteId: number,
+  body: AttachInsightsRequest,
+): Promise<AttachInsightsResponse> {
+  const response = await apiClient.post<AttachInsightsResponse>(
+    `${ATHLETE_BASE}/${athleteId}/monthly-newsletters/attach-insights`,
+    body,
   );
   return response.data;
 }
@@ -257,6 +275,24 @@ export function useDownloadNewsletterPdf() {
   return useMutation({
     mutationFn: ({ athleteId, newsletterId }: { athleteId: number; newsletterId: number }) =>
       downloadNewsletterPdf(athleteId, newsletterId),
+  });
+}
+
+/**
+ * Adjunta insights de carrera al boletín del mes para un atleta.
+ * Invalida la caché de "athlete-newsletters" para reflejar el nuevo estado.
+ * Solo coach puede ejecutar esta mutación (el backend rechaza con 403 a parent).
+ */
+export function useAttachInsightsToNewsletter(athleteId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AttachInsightsRequest) =>
+      attachInsightsToNewsletter(athleteId, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["athlete-newsletters", athleteId],
+      });
+    },
   });
 }
 

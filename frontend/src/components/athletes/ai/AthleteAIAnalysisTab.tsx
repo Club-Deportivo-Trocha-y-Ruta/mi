@@ -18,7 +18,7 @@
  *   - Multi-select y action bar SOLO en mode="coach".
  *   - Checkbox nunca se renderiza para parent.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -62,6 +62,8 @@ import {
 import { formatDateTimeCompact } from "@/lib/datetime";
 import { useRunStatus } from "@/hooks/ai/useRaceRun";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
+import { useAttachInsightsToNewsletter } from "@/api/athleteNewsletters";
+import type { AttachInsightsRequest } from "@/types/athleteNewsletter.types";
 import type { AthleteOut } from "@/types/athlete.types";
 import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
 
@@ -112,6 +114,10 @@ export function AthleteAIAnalysisTab({
   // BB4: multi-select para boletín — solo coach.
   const [newsletterSelection, setNewsletterSelection] = useState<Set<number>>(new Set());
 
+  const attachMutation = useAttachInsightsToNewsletter(athlete.id);
+  // Ref para guardar el último payload enviado (para el botón "Reintentar").
+  const lastAttachPayloadRef = useRef<AttachInsightsRequest | null>(null);
+
   const toggleNewsletterSelection = (id: number) => {
     setNewsletterSelection((prev) => {
       const next = new Set(prev);
@@ -125,10 +131,13 @@ export function AthleteAIAnalysisTab({
   };
 
   const handleAddBulkToNewsletter = () => {
-    console.info(
-      "[TODO Sprint 3] Bulk add a boletín:",
-      Array.from(newsletterSelection),
-    );
+    const ids = Array.from(newsletterSelection);
+    if (ids.length === 0) return;
+    const payload: AttachInsightsRequest = { insight_ids: ids };
+    lastAttachPayloadRef.current = payload;
+    attachMutation.mutate(payload, {
+      onSuccess: () => setNewsletterSelection(new Set()),
+    });
   };
 
   // Defensivo: si el sub-tab activo es distribution y el modo es parent, resetear.
@@ -138,8 +147,22 @@ export function AthleteAIAnalysisTab({
     }
   }, [mode, subTab]);
 
+  // Tras éxito en la sticky bar: la selección ya se limpió (onSuccess).
+  // Esperar 3 s mostrando el mensaje de confirmación y luego resetear la mutación
+  // para que la barra desaparezca completamente.
+  useEffect(() => {
+    if (attachMutation.isSuccess && newsletterSelection.size === 0) {
+      const timer = setTimeout(() => {
+        attachMutation.reset();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [attachMutation, newsletterSelection.size]);
+
+  // T4 — el botón Hero mantiene toggle a newsletterSelection (selección local).
+  // El envío real se hace únicamente desde la sticky bar. No llama a la API aquí.
   const handleAddToNewsletter = (insightId: number) => {
-    console.info("[TODO Sprint 3] Insight agregado al boletín:", insightId);
+    toggleNewsletterSelection(insightId);
   };
 
   const headerQuery = useAthleteInsights(athlete.id, {
@@ -394,36 +417,70 @@ export function AthleteAIAnalysisTab({
         )}
       </Tabs>
 
-      {/* BB4: Sticky action bar — solo coach, solo si hay items seleccionados */}
-      {mode === "coach" && newsletterSelection.size > 0 && (
+      {/* BB4: Sticky action bar — solo coach */}
+      {mode === "coach" && (newsletterSelection.size > 0 || attachMutation.isSuccess || attachMutation.isError) && (
         <div
           className="sticky bottom-4 left-0 right-0 z-20 mx-auto flex max-w-2xl items-center justify-between gap-3 rounded-xl bg-charcoal p-3 text-white shadow-lg"
           data-testid="newsletter-action-bar"
         >
-          <span className="text-sm">
-            {newsletterSelection.size}{" "}
-            {newsletterSelection.size === 1
-              ? "insight seleccionado"
-              : "insights seleccionados"}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setNewsletterSelection(new Set())}
-              className="border-white/30 text-white hover:bg-white/10 hover:text-white"
+          {attachMutation.isError ? (
+            <>
+              <span className="text-sm text-red-200" data-testid="newsletter-action-bar-error">
+                No pudimos agregar al boletín. Intenta de nuevo.
+              </span>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  if (lastAttachPayloadRef.current) {
+                    attachMutation.mutate(lastAttachPayloadRef.current, {
+                      onSuccess: () => setNewsletterSelection(new Set()),
+                    });
+                  }
+                }}
+                className="bg-white text-charcoal hover:bg-white/90"
+              >
+                Reintentar
+              </Button>
+            </>
+          ) : attachMutation.isSuccess && newsletterSelection.size === 0 ? (
+            <span
+              className="text-sm text-emerald-200"
+              data-testid="newsletter-action-bar-success"
             >
-              Limpiar
-            </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleAddBulkToNewsletter}
-              className="bg-white text-charcoal hover:bg-white/90"
-            >
-              Enviar a boletín
-            </Button>
-          </div>
+              Agregados al boletín del mes
+            </span>
+          ) : (
+            <>
+              <span className="text-sm">
+                {newsletterSelection.size}{" "}
+                {newsletterSelection.size === 1
+                  ? "insight seleccionado"
+                  : "insights seleccionados"}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setNewsletterSelection(new Set())}
+                  disabled={attachMutation.isPending}
+                  className="border-white/30 text-white hover:bg-white/10 hover:text-white"
+                >
+                  Limpiar
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleAddBulkToNewsletter}
+                  disabled={attachMutation.isPending}
+                  className="bg-white text-charcoal hover:bg-white/90"
+                  data-testid="newsletter-action-bar-submit"
+                >
+                  {attachMutation.isPending ? "Enviando…" : "Enviar a boletín"}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </section>

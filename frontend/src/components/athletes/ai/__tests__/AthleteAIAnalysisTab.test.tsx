@@ -34,6 +34,39 @@ vi.mock("@/store/auth.store", () => ({
   ),
 }));
 
+// ---------------------------------------------------------------------------
+// Mocks de useAttachInsightsToNewsletter para controlar el estado de la mutación
+// en los tests de la sticky action bar (Sprint 4).
+// Usamos una variable mutable que cada test puede sobreescribir.
+// ---------------------------------------------------------------------------
+const mockAttachMutate = vi.fn();
+const mockAttachReset = vi.fn();
+let mockAttachState: {
+  isPending: boolean;
+  isSuccess: boolean;
+  isError: boolean;
+  data: unknown;
+  error: unknown;
+  mutate: typeof mockAttachMutate;
+  reset: typeof mockAttachReset;
+} = {
+  isPending: false,
+  isSuccess: false,
+  isError: false,
+  data: undefined,
+  error: null,
+  mutate: mockAttachMutate,
+  reset: mockAttachReset,
+};
+
+vi.mock("@/api/athleteNewsletters", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/athleteNewsletters")>();
+  return {
+    ...actual,
+    useAttachInsightsToNewsletter: vi.fn(() => mockAttachState),
+  };
+});
+
 vi.mock("@/components/athletes/ai/PanoramaView", () => ({
   PanoramaView: ({ mode }: { mode: string }) => (
     <div data-testid="mock-panorama-view">panorama-{mode}</div>
@@ -118,6 +151,16 @@ const athlete: AthleteOut = {
 describe("AthleteAIAnalysisTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Resetear el estado de la mutación al estado idle por defecto
+    mockAttachState = {
+      isPending: false,
+      isSuccess: false,
+      isError: false,
+      data: undefined,
+      error: null,
+      mutate: mockAttachMutate,
+      reset: mockAttachReset,
+    };
   });
 
   it("renderiza los 5 sub-tabs en mode=coach (Panorama, Histórico, Evolución, Distribución, Lanzar) — Comparador eliminado en Sprint 2 BB3", async () => {
@@ -424,6 +467,98 @@ describe("AthleteAIAnalysisTab", () => {
       });
       const results = await axe(container);
       expect(results).toHaveNoViolations();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Sprint 4 — attach-insights: mutation real vs action bar feedback
+  // -------------------------------------------------------------------------
+
+  describe("Sprint 4 — attach-insights mutation", () => {
+    async function setupHistoryWithSelection(user: ReturnType<typeof userEvent.setup>) {
+      renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("ai-subtab-history"));
+      await waitFor(() => {
+        expect(screen.getByTestId("mock-insights-timeline")).toBeInTheDocument();
+      });
+      // Seleccionar 2 insights
+      await user.click(screen.getByTestId("insight-checkbox-101"));
+      await user.click(screen.getByTestId("insight-checkbox-102"));
+      await waitFor(() => {
+        expect(screen.getByTestId("newsletter-action-bar")).toBeInTheDocument();
+      });
+    }
+
+    it("click 'Enviar a boletín' dispara la mutación con los insight_ids seleccionados", async () => {
+      const user = userEvent.setup();
+      await setupHistoryWithSelection(user);
+
+      await user.click(screen.getByTestId("newsletter-action-bar-submit"));
+
+      await waitFor(() => {
+        expect(mockAttachMutate).toHaveBeenCalledOnce();
+      });
+      const [payload] = mockAttachMutate.mock.calls[0] as [{ insight_ids: number[] }];
+      expect(payload.insight_ids).toContain(101);
+      expect(payload.insight_ids).toContain(102);
+    });
+
+    it("isPending → label 'Enviando…' y botón disabled", async () => {
+      mockAttachState = { ...mockAttachState, isPending: true };
+      const user = userEvent.setup();
+      renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("ai-subtab-history"));
+      await waitFor(() => {
+        expect(screen.getByTestId("mock-insights-timeline")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("insight-checkbox-101"));
+      await waitFor(() => {
+        expect(screen.getByTestId("newsletter-action-bar")).toBeInTheDocument();
+      });
+
+      const submitBtn = screen.getByTestId("newsletter-action-bar-submit");
+      expect(submitBtn).toHaveTextContent(/enviando/i);
+      expect(submitBtn).toBeDisabled();
+    });
+
+    it("isSuccess con selección vacía → mensaje de confirmación visible", async () => {
+      // isSuccess = true, selección vacía (ya fue limpiada por onSuccess)
+      mockAttachState = { ...mockAttachState, isSuccess: true };
+      renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+      await waitFor(() => {
+        expect(screen.getByTestId("newsletter-action-bar")).toBeInTheDocument();
+      });
+      expect(screen.getByTestId("newsletter-action-bar-success")).toBeInTheDocument();
+      expect(screen.getByTestId("newsletter-action-bar-success")).toHaveTextContent(
+        /agregados al boletín del mes/i,
+      );
+    });
+
+    it("isError → mensaje de error + botón Reintentar visibles; sin exponer datos PII", async () => {
+      mockAttachState = {
+        ...mockAttachState,
+        isError: true,
+        error: { response: { status: 400 } },
+      };
+      renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+      await waitFor(() => {
+        expect(screen.getByTestId("newsletter-action-bar")).toBeInTheDocument();
+      });
+
+      const errorMsg = screen.getByTestId("newsletter-action-bar-error");
+      expect(errorMsg).toBeInTheDocument();
+      // El mensaje no expone IDs ni datos del atleta
+      expect(errorMsg.textContent).not.toMatch(/\d{3,}/);
+      expect(errorMsg).toHaveTextContent(/no pudimos agregar al boletín/i);
+
+      // Botón Reintentar presente
+      expect(screen.getByRole("button", { name: /reintentar/i })).toBeInTheDocument();
     });
   });
 });

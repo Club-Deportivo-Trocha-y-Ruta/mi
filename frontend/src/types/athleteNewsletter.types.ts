@@ -71,3 +71,23 @@ export type BatchResult = {
   newsletter_ids: number[];
   errors: string[];
 };
+
+// ---------------------------------------------------------------------------
+// attach-insights (Sprint 4 hotfix)
+// ---------------------------------------------------------------------------
+
+export interface AttachInsightsRequest {
+  insight_ids: number[];
+  year?: number | null;
+  month?: number | null;
+}
+
+export interface AttachInsightsResponse {
+  newsletter_id: number;
+  athlete_id: number;
+  year: number;
+  month: number;
+  status: string;
+  selected_race_insight_ids: number[];
+  created: boolean;
+}
