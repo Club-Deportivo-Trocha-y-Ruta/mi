@@ -609,6 +609,10 @@ async def dry_run_import(
     parse_meta = imp.parse_meta_json or {}
     header = parse_meta.get("header", {})
 
+    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse.
+    # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
+    await db.commit()
+
     parsed_results, parsed_general, _ = await _reload_parsed_from_storage(imp)
 
     # Construir EventMeta desde parse_meta + valores del cliente persistidos
@@ -713,6 +717,10 @@ async def commit_import(
     imp = await _load_pending_import(db, parse_id, current_user)
     parse_meta = imp.parse_meta_json or {}
     header = parse_meta.get("header", {})
+
+    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse.
+    # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
+    await db.commit()
 
     parsed_results, parsed_general, _ = await _reload_parsed_from_storage(imp)
 
