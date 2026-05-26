@@ -13,10 +13,9 @@
  * AnalysisRunTimeline) — están testeados en sus propios specs.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
-import { http, HttpResponse } from "msw";
 
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: vi.fn((sel: (s: unknown) => unknown) =>
@@ -28,6 +27,11 @@ vi.mock("@/store/auth.store", () => ({
   ),
 }));
 
+vi.mock("@/components/athletes/ai/PanoramaView", () => ({
+  PanoramaView: ({ mode }: { mode: string }) => (
+    <div data-testid="mock-panorama-view">panorama-{mode}</div>
+  ),
+}));
 vi.mock("@/components/athletes/ai/InsightsTimeline", () => ({
   InsightsTimeline: ({ mode }: { mode: string }) => (
     <div data-testid="mock-insights-timeline">timeline-{mode}</div>
@@ -82,21 +86,39 @@ describe("AthleteAIAnalysisTab", () => {
     vi.clearAllMocks();
   });
 
-  it("renderiza los 5 sub-tabs en mode=coach (incluye Lanzar)", async () => {
+  it("renderiza los 6 sub-tabs en mode=coach (Panorama, Histórico, Evolución, Comparador, Distribución, Lanzar)", async () => {
     renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
     await waitFor(() => {
-      expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      expect(screen.getByTestId("ai-subtab-panorama")).toBeInTheDocument();
     });
+    expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
     expect(screen.getByTestId("ai-subtab-evolution")).toBeInTheDocument();
     expect(screen.getByTestId("ai-subtab-compare")).toBeInTheDocument();
     expect(screen.getByTestId("ai-subtab-distribution")).toBeInTheDocument();
     expect(screen.getByTestId("ai-subtab-launch")).toBeInTheDocument();
   });
 
+  it("default activo en mode=coach es 'panorama'", async () => {
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-subtab-panorama")).toBeInTheDocument();
+    });
+    // Radix Tabs marca el trigger activo con data-state="active" y
+    // aria-selected="true".
+    const panoramaTrigger = screen.getByTestId("ai-subtab-panorama");
+    expect(panoramaTrigger).toHaveAttribute("data-state", "active");
+    expect(panoramaTrigger).toHaveAttribute("aria-selected", "true");
+    // Y el contenido inicial es el de Panorama (no Histórico).
+    expect(screen.getByTestId("mock-panorama-view")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-insights-timeline"),
+    ).not.toBeInTheDocument();
+  });
+
   it("oculta 'Lanzar' en mode=parent", async () => {
     renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="parent" />);
     await waitFor(() => {
-      expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      expect(screen.getByTestId("ai-subtab-panorama")).toBeInTheDocument();
     });
     expect(screen.queryByTestId("ai-subtab-launch")).not.toBeInTheDocument();
   });
@@ -134,6 +156,11 @@ describe("AthleteAIAnalysisTab", () => {
   it("cambia el contenido al hacer click en otro tab", async () => {
     const user = userEvent.setup();
     renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    // Sprint 1: default tab es Panorama. Histórico ahora requiere click.
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-panorama-view")).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId("ai-subtab-history"));
     await waitFor(() => {
       expect(screen.getByTestId("mock-insights-timeline")).toBeInTheDocument();
     });

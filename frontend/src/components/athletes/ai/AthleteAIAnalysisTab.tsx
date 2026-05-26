@@ -15,7 +15,7 @@
  * "Lanzar" y el AnalysisRunTimeline (datos operativos del agente, costos
  * LLM, prompts, etc).
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -33,6 +33,7 @@ import { DistributionChart } from "@/components/athletes/ai/DistributionChart";
 import { EvolutionChart } from "@/components/athletes/ai/EvolutionChart";
 import { InsightsTimeline } from "@/components/athletes/ai/InsightsTimeline";
 import { LaunchAnalysisForm } from "@/components/athletes/ai/LaunchAnalysisForm";
+import { PanoramaView } from "@/components/athletes/ai/PanoramaView";
 import { SeasonSummaryButton } from "@/components/athletes/ai/SeasonSummaryButton";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,7 +58,7 @@ import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
 
-type SubTab = "history" | "evolution" | "compare" | "distribution" | "launch";
+type SubTab = "panorama" | "history" | "evolution" | "compare" | "distribution" | "launch";
 
 function confidenceBadgeVariant(
   c: InsightConfidence,
@@ -90,12 +91,31 @@ export function AthleteAIAnalysisTab({
   athlete,
   mode,
 }: AthleteAIAnalysisTabProps) {
-  const [subTab, setSubTab] = useState<SubTab>("history");
+  const [subTab, setSubTab] = useState<SubTab>("panorama");
   // run_id devuelto por LaunchAnalysisForm — al setearse muestra el
   // AnalysisRunTimeline encima del histórico para que el coach lo vea
   // ejecutarse en vivo.
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [hitlStepId, setHitlStepId] = useState<string | null>(null);
+  // selectedInsightId: compartido entre PanoramaView e InsightsTimeline
+  // para abrir el drawer de detalle desde ambos contextos (Sprint 2 BB4).
+  const [selectedInsightId, setSelectedInsightId] = useState<number | null>(null);
+
+  // Defensivo: si el sub-tab activo es compare/distribution y el modo es
+  // parent (no debería llegar aquí, pero por si hay deep-link o HMR),
+  // resetear a "panorama".
+  useEffect(() => {
+    if (
+      mode === "parent" &&
+      (subTab === "compare" || subTab === "distribution")
+    ) {
+      setSubTab("panorama");
+    }
+  }, [mode, subTab]);
+
+  const handleAddToNewsletter = (insightId: number) => {
+    console.info("[TODO Sprint 3] Insight agregado al boletín:", insightId);
+  };
 
   // Resumen del header: último análisis (latest_only=true, limit=1).
   const headerQuery = useAthleteInsights(athlete.id, {
@@ -249,46 +269,75 @@ export function AthleteAIAnalysisTab({
         onValueChange={(v) => setSubTab(v as SubTab)}
         className="w-full"
       >
-        <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-white p-1">
-          <TabsTrigger value="history" data-testid="ai-subtab-history">
+        <TabsList className="flex w-full justify-start gap-1 overflow-x-auto bg-white p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <TabsTrigger value="panorama" data-testid="ai-subtab-panorama" className="shrink-0">
+            <Sparkles size={14} aria-hidden="true" />
+            Panorama
+          </TabsTrigger>
+          <TabsTrigger value="history" data-testid="ai-subtab-history" className="shrink-0">
             <History size={14} aria-hidden="true" />
             Histórico
           </TabsTrigger>
-          <TabsTrigger value="evolution" data-testid="ai-subtab-evolution">
+          <TabsTrigger value="evolution" data-testid="ai-subtab-evolution" className="shrink-0">
             <Calendar size={14} aria-hidden="true" />
             Evolución
           </TabsTrigger>
-          <TabsTrigger value="compare" data-testid="ai-subtab-compare">
-            <Scale size={14} aria-hidden="true" />
-            Comparador
-          </TabsTrigger>
-          <TabsTrigger
-            value="distribution"
-            data-testid="ai-subtab-distribution"
-          >
-            <BarChart3 size={14} aria-hidden="true" />
-            Distribución
-          </TabsTrigger>
           {mode === "coach" && (
-            <TabsTrigger value="launch" data-testid="ai-subtab-launch">
+            <TabsTrigger value="compare" data-testid="ai-subtab-compare" className="shrink-0">
+              <Scale size={14} aria-hidden="true" />
+              Comparador
+            </TabsTrigger>
+          )}
+          {mode === "coach" && (
+            <TabsTrigger
+              value="distribution"
+              data-testid="ai-subtab-distribution"
+              className="shrink-0"
+            >
+              <BarChart3 size={14} aria-hidden="true" />
+              Distribución
+            </TabsTrigger>
+          )}
+          {mode === "coach" && (
+            <TabsTrigger value="launch" data-testid="ai-subtab-launch" className="shrink-0">
               <Play size={14} aria-hidden="true" />
               Lanzar
             </TabsTrigger>
           )}
         </TabsList>
 
+        <TabsContent value="panorama">
+          <PanoramaView
+            athlete={athlete}
+            mode={mode}
+            onOpenDetail={(id) => {
+              setSelectedInsightId(id);
+              setSubTab("history");
+            }}
+            onAddToNewsletter={handleAddToNewsletter}
+          />
+        </TabsContent>
         <TabsContent value="history">
-          <InsightsTimeline athleteId={athlete.id} mode={mode} />
+          <InsightsTimeline
+            athleteId={athlete.id}
+            mode={mode}
+            selectedInsightId={selectedInsightId}
+            onSelectInsight={setSelectedInsightId}
+          />
         </TabsContent>
         <TabsContent value="evolution">
           <EvolutionChart athleteId={athlete.id} />
         </TabsContent>
-        <TabsContent value="compare">
-          <ComparatorPanel athleteId={athlete.id} />
-        </TabsContent>
-        <TabsContent value="distribution">
-          <DistributionChart athleteId={athlete.id} />
-        </TabsContent>
+        {mode === "coach" && (
+          <TabsContent value="compare">
+            <ComparatorPanel athleteId={athlete.id} />
+          </TabsContent>
+        )}
+        {mode === "coach" && (
+          <TabsContent value="distribution">
+            <DistributionChart athleteId={athlete.id} />
+          </TabsContent>
+        )}
         {mode === "coach" && (
           <TabsContent value="launch">
             <LaunchAnalysisForm

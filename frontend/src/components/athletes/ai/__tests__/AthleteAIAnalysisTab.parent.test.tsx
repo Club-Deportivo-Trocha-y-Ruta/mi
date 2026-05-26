@@ -108,13 +108,48 @@ describe("AthleteAIAnalysisTab — vista parent (v2)", () => {
     expect(screen.queryByTestId("ai-subtab-launch")).not.toBeInTheDocument();
   });
 
-  it("modo parent muestra Histórico / Evolución / Comparador / Distribución", async () => {
+  it("modo parent muestra solo Panorama / Histórico / Evolución (oculta Comparador y Distribución)", async () => {
+    // Sprint 1 — privacidad de datos operativos para padres: las vistas
+    // "Comparador" y "Distribución" sólo aplican al coach. Padre ve 3 tabs.
     renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="parent" />);
     await waitFor(() => {
-      expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      expect(screen.getByTestId("ai-subtab-panorama")).toBeInTheDocument();
     });
+    expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
     expect(screen.getByTestId("ai-subtab-evolution")).toBeInTheDocument();
-    expect(screen.getByTestId("ai-subtab-compare")).toBeInTheDocument();
-    expect(screen.getByTestId("ai-subtab-distribution")).toBeInTheDocument();
+    // Comparador y Distribución NO se renderizan para parent.
+    expect(screen.queryByTestId("ai-subtab-compare")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("ai-subtab-distribution"),
+    ).not.toBeInTheDocument();
+    // Confirma count exacto: panorama, history, evolution (Lanzar también
+    // está oculto en parent → 3 tabs visibles).
+    const tabsList = screen.getByRole("tablist");
+    expect(tabsList.querySelectorAll('[role="tab"]').length).toBe(3);
+  });
+
+  it("modo parent nunca expone datos operativos sensibles", async () => {
+    // Privacidad cross-cutting Ley 1581: el árbol renderizado para padres
+    // no debe mencionar metadatos de IA (model, prompt, tokens, costo,
+    // confianza, telemetría) ni montos en USD.
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="parent" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("athlete-ai-analysis-tab")).toBeInTheDocument();
+    });
+    const tree =
+      screen.getByTestId("athlete-ai-analysis-tab").textContent ?? "";
+    const sensitivePatterns: RegExp[] = [
+      /confianza/i,
+      /confidence/i,
+      /\$\d/,
+      /tokens?/i,
+      /\bprompt\b/i,
+      /\bmodel\b/i,
+      /telemetr/i,
+      /\bcost(o|s)?\b/i,
+    ];
+    sensitivePatterns.forEach((p) => {
+      expect(tree).not.toMatch(p);
+    });
   });
 });

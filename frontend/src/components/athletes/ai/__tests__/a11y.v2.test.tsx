@@ -10,7 +10,7 @@
  * Política: 0 violaciones jest-axe.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { waitFor } from "@testing-library/react";
+import { waitFor, screen } from "@testing-library/react";
 import { axe } from "jest-axe";
 
 vi.mock("@/store/auth.store", () => ({
@@ -44,6 +44,8 @@ vi.mock("@/components/ai/AnalysisRunTimeline", () => ({
 
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
+import { PanoramaView } from "@/components/athletes/ai/PanoramaView";
+import { HeroLastInsightCard } from "@/components/athletes/ai/HeroLastInsightCard";
 import { SeasonSummaryButton } from "@/components/athletes/ai/SeasonSummaryButton";
 import type { AthleteOut } from "@/types/athlete.types";
 import { Sex } from "@/types/enums";
@@ -102,6 +104,74 @@ describe("a11y — race-analysis v2 layout", () => {
     const { container } = renderWithProviders(
       <SeasonSummaryButton athleteId={42} analyzedValidasCount={5} />,
     );
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  // ------------------------------------------------------------------
+  // Sprint 1 — PanoramaView + HeroLastInsightCard (default tab)
+  // ------------------------------------------------------------------
+
+  it("PanoramaView mode=coach sin violaciones a11y", async () => {
+    const { container } = renderWithProviders(
+      <PanoramaView
+        athlete={athlete}
+        mode="coach"
+        onOpenDetail={() => undefined}
+        onAddToNewsletter={() => undefined}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+    });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it("PanoramaView mode=parent sin violaciones a11y", async () => {
+    const { container } = renderWithProviders(
+      <PanoramaView
+        athlete={athlete}
+        mode="parent"
+        onOpenDetail={() => undefined}
+        onAddToNewsletter={() => undefined}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+    });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it("HeroLastInsightCard mode=coach sin violaciones a11y", async () => {
+    const { container } = renderWithProviders(
+      <HeroLastInsightCard
+        athlete={athlete}
+        mode="coach"
+        onOpenDetail={() => undefined}
+        onAddToNewsletter={() => undefined}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+    });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it("HeroLastInsightCard mode=parent sin violaciones a11y", async () => {
+    const { container } = renderWithProviders(
+      <HeroLastInsightCard
+        athlete={athlete}
+        mode="parent"
+        onOpenDetail={() => undefined}
+        onAddToNewsletter={() => undefined}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+    });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });

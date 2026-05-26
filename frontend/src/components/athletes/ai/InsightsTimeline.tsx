@@ -49,57 +49,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAthleteInsightDetail } from "@/hooks/athletes/useAthleteInsightDetail";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import { formatDateTimeCompact } from "@/lib/datetime";
+import {
+  confidenceLabel,
+  confidenceVariant,
+  extractSection,
+  getV2Preview,
+  PROMPT_VERSION_V2,
+  validaLabel,
+} from "@/lib/insights";
 import { cn } from "@/lib/utils";
 import type {
   AthleteInsightOut,
-  InsightConfidence,
   InsightLink,
   InsightParsedSections,
 } from "@/types/athleteRaceAnalysis.types";
 
 // ---------------------------------------------------------------------------
-// Helpers de parsing para insights v2
+// Helpers locales — parsing v2 (parseV2Sections usa extractSection de lib)
 // ---------------------------------------------------------------------------
-
-const PROMPT_VERSION_V2 = "race_analyst_v2";
-
-/** Normaliza acentos y casing para comparar headers tolerando variantes. */
-function normalizeHeader(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-/**
- * Extrae el contenido de una sección markdown delimitada por un header ##.
- * Devuelve el texto entre el header encontrado y el siguiente header ## (o
- * fin de string).
- *
- * Usa `startsWith` sobre el header normalizado para tolerar variantes del
- * backend (ej: "## Qué pasó en esta válida" matchea con headerText "Qué pasó",
- * "## Recorrido hasta acá" matchea con "Recorrido hasta").
- */
-function extractSection(markdown: string, headerText: string): string {
-  const lines = markdown.split("\n");
-  const needle = normalizeHeader(headerText);
-  let inside = false;
-  const collected: string[] = [];
-  for (const line of lines) {
-    if (/^##\s/.test(line)) {
-      if (inside) break;
-      const headerInLine = normalizeHeader(line.replace(/^##\s+/, ""));
-      if (headerInLine.startsWith(needle)) {
-        inside = true;
-        continue;
-      }
-    } else if (inside) {
-      collected.push(line);
-    }
-  }
-  return collected.join("\n").trim();
-}
 
 /**
  * Parsea las 4 secciones del summary_text de un insight v2.
@@ -117,55 +84,17 @@ function parseV2Sections(summaryText: string): InsightParsedSections {
   };
 }
 
-/**
- * Para la preview de la card, extrae la primera línea no vacía del bloque
- * "Qué pasó" en insights v2.
- */
-function getV2Preview(summaryText: string): string {
-  const section = extractSection(summaryText, "Qué pasó");
-  if (!section) return summaryText;
-  const firstLine = section
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.length > 0);
-  return firstLine ?? summaryText;
-}
-
-const SUMMARY_MAX_CHARS = 160;
-
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-function confidenceVariant(
-  confidence: InsightConfidence,
-): "success" | "warning" | "destructive" {
-  if (confidence === "high") return "success";
-  if (confidence === "medium") return "warning";
-  return "destructive";
-}
-
-function confidenceLabel(confidence: InsightConfidence): string {
-  if (confidence === "high") return "Confianza alta";
-  if (confidence === "medium") return "Confianza media";
-  return "Confianza baja";
-}
-
-function validaLabel(valida: number | null | undefined): string {
-  if (valida === null || valida === undefined) return "—";
-  if (valida === 0) return "Resumen de temporada";
-  if (valida === 99) return "Cto. Departamental";
-  return `Válida ${valida}`;
-}
-
-function truncate(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 1).trimEnd()}…`;
-}
 
 
 interface InsightsTimelineProps {
   athleteId: number;
   mode: "coach" | "parent";
+  /** Controlado desde el padre para abrir el drawer via PanoramaView (Sprint 2 BB4). */
+  selectedInsightId?: number | null;
+  /** Callback para levantar el estado al padre cuando cambia la selección. */
+  onSelectInsight?: (id: number | null) => void;
 }
 
 /** Hook utilitario: ``true`` si la ventana cumple media query, ``false``
@@ -196,13 +125,24 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-export function InsightsTimeline({ athleteId, mode }: InsightsTimelineProps) {
+export function InsightsTimeline({
+  athleteId,
+  mode,
+  selectedInsightId: controlledInsightId,
+  onSelectInsight,
+}: InsightsTimelineProps) {
   const insightsQuery = useAthleteInsights(athleteId, {
     latest_only: true,
     limit: 50,
   });
 
-  const [selectedInsightId, setSelectedInsightId] = useState<number | null>(null);
+  // Estado local como fallback cuando no hay control externo.
+  const [localInsightId, setLocalInsightId] = useState<number | null>(null);
+  const selectedInsightId = controlledInsightId ?? localInsightId;
+  const setSelectedInsightId = (id: number | null) => {
+    setLocalInsightId(id);
+    onSelectInsight?.(id);
+  };
   const isDesktop = useMediaQuery("(min-width: 768px)");
 
   const items: AthleteInsightOut[] = insightsQuery.data?.items ?? [];
@@ -274,7 +214,7 @@ export function InsightsTimeline({ athleteId, mode }: InsightsTimelineProps) {
               type="button"
               onClick={() => setSelectedInsightId(insight.id)}
               data-testid={`insight-card-${insight.id}`}
-              aria-label={`Ver análisis del ${formatDateTimeCompact(insight.generated_at)}, ${validaLabel(insight.valida_num)}, ${confidenceLabel(insight.confidence)}`}
+              aria-label={`Ver análisis del ${formatDateTimeCompact(insight.generated_at)}, ${validaLabel(insight.valida_num)}`}
               className={cn(
                 "group flex w-full items-start gap-3 rounded-xl bg-white p-4 text-left transition-colors",
                 "hover:bg-light-gray/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
@@ -287,17 +227,14 @@ export function InsightsTimeline({ athleteId, mode }: InsightsTimelineProps) {
                     {formatDateTimeCompact(insight.generated_at)}
                   </span>
                   <Badge variant="secondary">{validaLabel(insight.valida_num)}</Badge>
-                  <Badge variant={confidenceVariant(insight.confidence)}>
-                    {confidenceLabel(insight.confidence)}
-                  </Badge>
                   {!insight.is_active && (
                     <Badge variant="outline">Histórico</Badge>
                   )}
                 </div>
-                <p className="mt-2 text-sm leading-relaxed text-charcoal">
+                <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-charcoal">
                   {insight.prompt_version === PROMPT_VERSION_V2
-                    ? truncate(getV2Preview(insight.summary_text), SUMMARY_MAX_CHARS)
-                    : truncate(insight.summary_text, SUMMARY_MAX_CHARS)}
+                    ? getV2Preview(insight.summary_text)
+                    : insight.summary_text}
                 </p>
               </div>
               <ChevronRight

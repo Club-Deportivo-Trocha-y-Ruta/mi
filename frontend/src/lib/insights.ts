@@ -1,0 +1,94 @@
+/**
+ * Utilidades compartidas del módulo "Análisis IA" del atleta.
+ *
+ * Centraliza helpers de parsing de insights v2 y etiquetas de enums
+ * para que sean reutilizables desde InsightsTimeline, HeroLastInsightCard
+ * y cualquier componente futuro sin duplicación.
+ *
+ * Privacidad: ninguna de estas funciones maneja datos PII directamente;
+ * el control de visibilidad (modo coach vs parent) se hace en los
+ * componentes que consumen estas utilidades.
+ */
+import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
+
+export const PROMPT_VERSION_V2 = "race_analyst_v2";
+
+// ---------------------------------------------------------------------------
+// Parsing markdown v2
+// ---------------------------------------------------------------------------
+
+/** Normaliza acentos y casing para comparar headers tolerando variantes. */
+function normalizeHeader(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Extrae el contenido de una sección markdown delimitada por un header ##.
+ * Devuelve el texto entre el header encontrado y el siguiente header ## (o
+ * fin de string).
+ *
+ * Usa `startsWith` sobre el header normalizado para tolerar variantes del
+ * backend (ej: "## Qué pasó en esta válida" matchea con headerText "Qué pasó").
+ */
+export function extractSection(markdown: string, headerText: string): string {
+  const lines = markdown.split("\n");
+  const needle = normalizeHeader(headerText);
+  let inside = false;
+  const collected: string[] = [];
+  for (const line of lines) {
+    if (/^##\s/.test(line)) {
+      if (inside) break;
+      const headerInLine = normalizeHeader(line.replace(/^##\s+/, ""));
+      if (headerInLine.startsWith(needle)) {
+        inside = true;
+        continue;
+      }
+    } else if (inside) {
+      collected.push(line);
+    }
+  }
+  return collected.join("\n").trim();
+}
+
+/**
+ * Para la preview de la card, extrae la primera línea no vacía del bloque
+ * "Qué pasó" en insights v2. Si no hay sección, devuelve el texto completo.
+ */
+export function getV2Preview(summaryText: string): string {
+  const section = extractSection(summaryText, "Qué pasó");
+  if (!section) return summaryText;
+  const firstLine = section
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  return firstLine ?? summaryText;
+}
+
+// ---------------------------------------------------------------------------
+// Etiquetas de enums — reutilizables en lista y hero card
+// ---------------------------------------------------------------------------
+
+export function validaLabel(num: number | null | undefined): string {
+  if (num === null || num === undefined) return "—";
+  if (num === 0) return "Resumen de temporada";
+  if (num === 99) return "Cto. Departamental";
+  return `Válida ${num}`;
+}
+
+export function confidenceVariant(
+  confidence: InsightConfidence,
+): "success" | "warning" | "destructive" {
+  if (confidence === "high") return "success";
+  if (confidence === "medium") return "warning";
+  return "destructive";
+}
+
+export function confidenceLabel(confidence: InsightConfidence): string {
+  if (confidence === "high") return "Confianza alta";
+  if (confidence === "medium") return "Confianza media";
+  return "Confianza baja";
+}

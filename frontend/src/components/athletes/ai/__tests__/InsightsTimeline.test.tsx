@@ -11,7 +11,7 @@
  * jsdom). Auth se mockea como coach con token.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
@@ -161,7 +161,10 @@ describe("InsightsTimeline", () => {
     });
   });
 
-  it("truncia summaries muy largos (>160 chars) con elipsis", async () => {
+  it("aplica line-clamp-2 sobre summaries largos (truncado por CSS, no por JS)", async () => {
+    // Sprint 1 — el truncate JS con "…" fue reemplazado por CSS line-clamp-2.
+    // El texto completo se mantiene en el DOM (mejor a11y para lectores de
+    // pantalla) y el navegador lo recorta visualmente con dos líneas + "…".
     const longText = "Lorem ipsum ".repeat(40);
     mswServer.use(
       http.get(
@@ -179,8 +182,20 @@ describe("InsightsTimeline", () => {
     await waitFor(() => {
       expect(screen.getByTestId("insight-card-1")).toBeInTheDocument();
     });
-    // El elipsis (…) está en el render truncado.
-    expect(screen.getByText(/…$/)).toBeInTheDocument();
+    // 1) El texto COMPLETO está en el DOM (sin recorte JS, sin "…").
+    const preview = screen.getByText((_content, node) => {
+      if (!node) return false;
+      return (
+        node.tagName.toLowerCase() === "p" &&
+        node.className.includes("line-clamp-2") &&
+        (node.textContent ?? "").trim() === longText.trim()
+      );
+    });
+    expect(preview).toBeInTheDocument();
+    // 2) El recorte es responsabilidad de CSS — verificamos la clase Tailwind.
+    expect(preview).toHaveClass("line-clamp-2");
+    // 3) Sanidad: ningún "…" insertado por JS al final del nodo.
+    expect((preview.textContent ?? "").trim().endsWith("…")).toBe(false);
   });
 
   it("no tiene violaciones a11y en el listado", async () => {
