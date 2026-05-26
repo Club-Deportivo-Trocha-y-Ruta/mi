@@ -11,6 +11,14 @@
     parent_name, athlete_first_name, club_name,
     valida_label, valida_date, tier_label,
     coach_summary, deep_link_path
+
+  Variables opcionales (Sprint 3 — resumen embebido):
+    summary_excerpt   — texto plano (sin markdown) extraído del insight.
+                        Si está vacío o None, NO se renderiza la sección.
+    app_url           — URL absoluta al detalle del análisis (CTA primario).
+                        Si no se provee, se usa deep_link_path como fallback.
+    panorama_url      — URL al panorama del atleta (CTA secundario opcional).
+                        Si es None, el botón secundario NO se renderiza.
 #}
 
 {% block title %}Análisis de carrera disponible — {{ club_name }}{% endblock %}
@@ -59,11 +67,26 @@
   {{ coach_summary }}
 </p>
 
-<p>
-  Puedes consultar el análisis completo, métricas y recomendaciones del
-  entrenador iniciando sesión en la plataforma:
-  <a href="{{ deep_link_path }}">{{ deep_link_path }}</a>
+{% if summary_excerpt %}
+<h2 style="font-size: 16px; color: #2f2f2f; margin: 24px 0 10px 0;">
+  Resumen del análisis
+</h2>
+<div style="background-color: #f9f9f9; border-left: 4px solid #8be000; padding: 14px 18px; margin: 0 0 20px 0;">
+  <p style="font-size: 14px; color: #2f2f2f; line-height: 1.65; margin: 0; white-space: pre-line;">{{ summary_excerpt }}</p>
+</div>
+{% endif %}
+
+<div class="btn-wrapper">
+  <a href="{{ app_url or deep_link_path }}" class="btn">Leer análisis completo</a>
+</div>
+
+{% if panorama_url %}
+<p style="text-align: center; margin: 0 0 20px 0;">
+  <a href="{{ panorama_url }}" style="font-size: 14px; color: #1a96a4; text-decoration: underline;">
+    Ver progreso de tu hijo
+  </a>
 </p>
+{% endif %}
 
 <hr class="divider">
 

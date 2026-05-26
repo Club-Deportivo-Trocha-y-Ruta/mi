@@ -97,6 +97,7 @@ async def _dispatch_for_persisted_insights(state: dict) -> int:
                     db,
                     notification_service=notification_service,
                     dispatcher=None,  # sync inline — estamos en background ya
+                    settings=settings,
                 )
                 logger.info(
                     "notify_coach.dispatch | insight_id=%s decision=%s tier=%s "

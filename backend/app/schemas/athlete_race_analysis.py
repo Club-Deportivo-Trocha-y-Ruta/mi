@@ -50,6 +50,8 @@ __all__ = [
     "DistributionCurvePoint",
     "DistributionResponse",
     "AnalysisConfidence",
+    "ClubInsightByRaceItem",
+    "ClubInsightsByRaceResponse",
 ]
 
 
@@ -336,6 +338,92 @@ class DistributionResponse(BaseModel):
     points: list[DistributionPoint] = Field(default_factory=list)
     curve: list[DistributionCurvePoint] = Field(default_factory=list)
     confidence: AnalysisConfidence
+
+
+# ---------------------------------------------------------------------------
+# Club insights por válida — vista agregada (Sprint 3)
+# ---------------------------------------------------------------------------
+
+
+class ClubInsightByRaceItem(BaseModel):
+    """Item de un atleta del club en la vista agregada por válida.
+
+    Privacidad (CLAUDE.md §Privacidad):
+    - ``athlete_display_name``: enmascarado para caller rol=parent si el
+      atleta no es hijo suyo. Formato: ``"[Atleta del club]"``.
+    - ``summary_excerpt``: solo presente para coach/admin o para el hijo
+      propio del parent. Para otros atletas del club: ``None``.
+    - ``confidence``: NUNCA exponer a parent. Solo coach/admin.
+    - No se expone ``athlete_id`` directamente — el frontend que necesite
+      navegar al detalle del atleta lo obtiene del campo ``athlete_id``
+      únicamente si es coach/admin; para parent se omite.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    athlete_id: int = Field(
+        ...,
+        ge=0,
+        description=(
+            "PK del atleta. 0 indica item enmascarado (atleta ajeno a parent) — "
+            "el frontend no debe intentar navegar al detalle de ese atleta."
+        ),
+    )
+    athlete_display_name: str = Field(
+        ...,
+        description=(
+            "Nombre completo del atleta (coach/admin). "
+            "Nombre propio si es hijo del caller (parent). "
+            "``'[Atleta del club]'`` para otros atletas (parent)."
+        ),
+    )
+    valida_num: Optional[int] = Field(default=None, ge=0, le=99)
+    insight_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="PK del insight activo aprobado. None si no tiene análisis.",
+    )
+    summary_excerpt: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description=(
+            "Primeras 200 chars del summary_text del insight activo. "
+            "None si no hay insight o si caller es parent y el atleta no es su hijo."
+        ),
+    )
+    generated_at: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp de generación del insight. None si no hay insight.",
+    )
+    confidence: Optional[InsightConfidence] = Field(
+        default=None,
+        description=(
+            "Confianza del insight. Solo presente para coach/admin. "
+            "Siempre None para parent (Ley 1581)."
+        ),
+    )
+
+
+class ClubInsightsByRaceResponse(BaseModel):
+    """Respuesta del endpoint ``GET /api/races/{race_event_id}/club-insights``.
+
+    Lista todos los atletas del club que corrieron la válida, cada uno con
+    su insight activo aprobado más reciente (si existe). El endpoint soporta
+    vista filtrada por RBAC según el rol del caller.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    race_event_id: int = Field(..., ge=1)
+    race_event_label: str = Field(
+        ...,
+        description=(
+            "Etiqueta legible del evento. "
+            "Formato: ``'Válida {N} — {location} {date}'`` o ``'{name} {date}'``."
+        ),
+    )
+    total_athletes: int = Field(..., ge=0)
+    items: list[ClubInsightByRaceItem]
 
 
 # ---------------------------------------------------------------------------

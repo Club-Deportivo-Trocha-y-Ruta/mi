@@ -46,6 +46,7 @@ from __future__ import annotations
 import enum
 import hashlib
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING
@@ -54,6 +55,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import Settings
 from app.models.athlete import Athlete, ParentAthlete
 from app.models.athlete_ai_insight import AthleteAiInsight
 from app.models.club import Club, ClubMember
@@ -185,6 +187,16 @@ def _tier_label_es(tier: RaceTier) -> str:
 
 _SUMMARY_MAX_CHARS = 500
 
+#: Tope del extracto embebido en el cuerpo del email. Más permisivo que
+#: ``_SUMMARY_MAX_CHARS`` (legado del banner corto) porque el padre lee el
+#: resumen completo del análisis de carrera dentro del email (móvil 3G/4G).
+_EXCERPT_MAX_CHARS = 1200
+
+#: Versión del prompt que produce markdown de 4 secciones (## headers).
+#: Otras versiones (v1) generan prosa libre sin headers — usamos heurística
+#: de "primeras N oraciones".
+PROMPT_VERSION_V2 = "race_analyst_v2"
+
 
 def _safe_summary(text: str | None) -> str:
     """Trunca el summary del insight al límite del email (500 chars).
@@ -198,6 +210,205 @@ def _safe_summary(text: str | None) -> str:
     if len(cleaned) <= _SUMMARY_MAX_CHARS:
         return cleaned
     return cleaned[: _SUMMARY_MAX_CHARS - 1].rstrip() + "…"
+
+
+# ---------------------------------------------------------------------------
+# Markdown → texto plano + extracción de excerpt
+# ---------------------------------------------------------------------------
+
+
+def _strip_markdown(text: str) -> str:
+    """Convierte markdown ligero a texto plano apto para clientes de email.
+
+    Cubre los constructos que el prompt v2 emite:
+
+    - Headers ``## Título`` → línea con el texto (sin '##').
+    - Negrita ``**foo**`` / itálica ``*foo*`` ``_foo_`` → texto sin marcadores.
+    - Inline code `` `foo` `` → ``foo`` (sin backticks).
+    - Code fences triple-backtick: se eliminan los marcadores, se preserva
+      el contenido.
+    - Links ``[texto](url)`` → ``texto`` (descartamos la URL para no spamear
+      el email con enlaces externos no auditados).
+    - Bullets ``- foo`` o ``* foo`` → ``• foo`` (más legible en plain).
+    - Citas ``> foo`` → ``foo``.
+    - Sin tablas / sin HTML: el prompt v2 no las usa, y si las usara las
+      pasaríamos crudas (defensa profundidad: no inyectamos HTML al email).
+
+    Implementación pura-Python (sin dependencias) para mantener el dispatcher
+    sin nuevos imports pesados. La librería ``markdown`` instalada en pyproject
+    está pensada para convertir a HTML completo (otro caso de uso).
+    """
+    if not text:
+        return ""
+
+    # 1. Code fences ``` … ``` (multi-linea). Removemos los marcadores.
+    cleaned = re.sub(r"```[^\n]*\n", "", text)
+    cleaned = cleaned.replace("```", "")
+
+    # 2. Links [texto](url) → texto. Imágenes ![alt](url) → alt.
+    cleaned = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", cleaned)
+    cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
+
+    # 3. Negrita y subrayado: ** y __.
+    cleaned = re.sub(r"\*\*([^*]+)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"__([^_]+)__", r"\1", cleaned)
+
+    # 4. Itálica: * y _ (respeta backslash-escapes y palabras con _ interno).
+    cleaned = re.sub(r"(?<!\w)\*([^*\n]+)\*(?!\w)", r"\1", cleaned)
+    cleaned = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", r"\1", cleaned)
+
+    # 5. Inline code `foo` → foo.
+    cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
+
+    # 6. Headers (#, ##, ###) — solo dejamos el texto, sin '#'.
+    cleaned = re.sub(r"^\s{0,3}#{1,6}\s+", "", cleaned, flags=re.MULTILINE)
+
+    # 7. Bullets y citas en inicio de línea.
+    cleaned = re.sub(r"^\s{0,3}[-*+]\s+", "• ", cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r"^\s{0,3}>\s?", "", cleaned, flags=re.MULTILINE)
+
+    # 8. Colapsa múltiples blank lines (>2) a doble salto.
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+    return cleaned.strip()
+
+
+def _normalize_header(s: str) -> str:
+    """Normaliza headers para matching tolerante (acentos + casing).
+
+    Equivalente al ``normalizeHeader`` de :file:`frontend/src/lib/insights.ts`
+    — mantenemos paridad para que cualquier ajuste al prompt v2 se propague
+    consistente al email.
+    """
+    import unicodedata
+
+    nfkd = unicodedata.normalize("NFKD", s)
+    without_accents = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return without_accents.lower().strip()
+
+
+def _extract_v2_section(markdown_text: str, header_text: str) -> str:
+    """Extrae el contenido bajo un header ``## …`` en un insight v2.
+
+    Mismo patrón que ``extractSection`` de ``frontend/src/lib/insights.ts``:
+    recorre líneas, detecta inicio del header objetivo y acumula hasta el
+    próximo header ``##`` o fin de string. Tolera variantes ("Qué pasó",
+    "Qué pasó en esta válida") con prefix-match normalizado.
+    """
+    if not markdown_text:
+        return ""
+    needle = _normalize_header(header_text)
+    inside = False
+    collected: list[str] = []
+    for raw_line in markdown_text.split("\n"):
+        line = raw_line.rstrip("\r")
+        if re.match(r"^\s{0,3}##\s", line):
+            if inside:
+                break
+            header_body = re.sub(r"^\s{0,3}##\s+", "", line)
+            if _normalize_header(header_body).startswith(needle):
+                inside = True
+                continue
+        elif inside:
+            collected.append(line)
+    return "\n".join(collected).strip()
+
+
+def _first_sentences(text: str, max_sentences: int = 4, max_chars: int = 400) -> str:
+    """Devuelve las primeras N oraciones limitadas a ``max_chars``.
+
+    Heurística simple para v1 (prompt sin estructura): cortamos por
+    ``.``, ``!`` o ``?`` seguidos de espacio. No usamos NLTK / spaCy
+    para mantener el dispatcher sin nuevas dependencias.
+    """
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    # Si no hay puntuación final, devolvemos el texto recortado.
+    sentences = re.split(r"(?<=[\.\!\?])\s+", cleaned)
+    chunk = " ".join(s for s in sentences[:max_sentences] if s).strip()
+    if len(chunk) > max_chars:
+        chunk = chunk[: max_chars - 1].rstrip() + "…"
+    return chunk
+
+
+def _build_summary_excerpt(
+    *,
+    summary_text: str | None,
+    prompt_version: str | None,
+) -> str | None:
+    """Construye el extracto que va embebido en el cuerpo del email.
+
+    Retorna ``None`` si no hay contenido aprovechable; en ese caso el
+    template oculta la sección "Resumen del análisis" — compatibilidad
+    backwards con insights legacy o vacíos.
+
+    Pipeline:
+
+    1. Si ``prompt_version == "race_analyst_v2"``: extraer sección
+       "Qué pasó" (markdown).
+    2. Si v1 / otro / sin versión: tomar primeras 3-4 oraciones del
+       ``summary_text`` (max ~400 chars).
+    3. ``_strip_markdown`` para garantizar texto plano (sin **, ##, etc.).
+    4. Recortar al máximo del excerpt (``_EXCERPT_MAX_CHARS``).
+    """
+    if not summary_text or not summary_text.strip():
+        return None
+
+    if prompt_version == PROMPT_VERSION_V2:
+        section = _extract_v2_section(summary_text, "Qué pasó")
+        if section:
+            raw = section
+        else:
+            # v2 pero el LLM no respetó el header — fallback a oraciones.
+            raw = _first_sentences(summary_text)
+    else:
+        raw = _first_sentences(summary_text)
+
+    plain = _strip_markdown(raw)
+    if not plain:
+        return None
+
+    if len(plain) > _EXCERPT_MAX_CHARS:
+        plain = plain[: _EXCERPT_MAX_CHARS - 1].rstrip() + "…"
+    return plain
+
+
+def _build_urls(
+    *,
+    deep_link_path: str,
+    athlete_id: int,
+    settings: Settings | None,
+) -> tuple[str, str | None]:
+    """Construye URLs absolutas para los CTAs del email.
+
+    Retorna:
+        ``(app_url, panorama_url)``.
+
+        - ``app_url`` es la URL absoluta al detalle del insight (CTA primario).
+        - ``panorama_url`` es opcional (CTA secundario "Ver progreso").
+          Por ahora retornamos ``None`` para padres: no existe una ruta
+          frontend dedicada al panorama del atleta para rol parent.
+          El día que se agregue ``/parents/athletes/:id?tab=ai_analysis``
+          (o equivalente) se activa pasando ``settings`` con un campo
+          ``parent_athlete_panorama_path``.
+
+    Si ``settings`` es ``None`` o ``frontend_base_url`` no está configurado,
+    retorna el deep link relativo tal cual (el email-client se encargará
+    o el padre verá una URL relativa — fallback honesto).
+    """
+    base = ""
+    if settings is not None:
+        base = (getattr(settings, "frontend_base_url", "") or "").rstrip("/")
+    if base:
+        app_url = f"{base}{deep_link_path}"
+    else:
+        app_url = deep_link_path
+
+    # Panorama parent-side aún no existe como ruta. Mantener None hasta
+    # que el frontend exponga la vista correspondiente.
+    panorama_url: str | None = None
+    return app_url, panorama_url
 
 
 async def _load_insight_with_relations(
@@ -301,11 +512,30 @@ async def _send_email_to_parents(
     tier: RaceTier,
     parents: list[User],
     athlete_first_name: str,
+    athlete_last_name: str | None,
     club_name: str,
     notification_service: "NotificationService",
     dispatcher: "TaskDispatcher | None",
+    settings: Settings | None = None,
 ) -> int:
-    """Despacha el email ``race_insight_published`` a cada padre con email."""
+    """Despacha el email ``race_insight_published`` a cada padre con email.
+
+    Sprint 3 — Resumen embebido:
+        Además del banner ``coach_summary`` corto, ahora inyectamos
+        ``summary_excerpt`` (texto plano extraído del insight) para que el
+        padre pueda leer en el cliente de email sin abrir la app. El extracto
+        se construye con :func:`_build_summary_excerpt` que respeta la versión
+        del prompt (v2 → sección "Qué pasó"; v1 → primeras 3-4 oraciones).
+
+    Privacidad (Ley 1581 — inviolable):
+        - Verificamos que el extracto NO contenga el nombre/apellido del menor.
+          El guardrail v2 (forbidden_names dinámicos) ya redacta esto upstream,
+          pero defendemos en profundidad: si por algún motivo el nombre cuela,
+          aborta el envío para ese padre con log warning.
+        - NUNCA inyectamos al template: confidence score, tokens, costo,
+          prompt_version, model. El contrato actual de la template_registry
+          ya bloquea claves no declaradas; mantenemos la lista cerrada.
+    """
     from app.schemas.notification import (
         NotificationRecipient,
         NotificationRequest,
@@ -317,6 +547,48 @@ async def _send_email_to_parents(
     valida_date = _format_date_es(event.event_date)
     coach_summary = _safe_summary(insight.summary_text)
     deep_link = f"/athletes/{insight.athlete_id}/race-analysis/insights/{insight.id}"
+
+    summary_excerpt = _build_summary_excerpt(
+        summary_text=insight.summary_text,
+        prompt_version=insight.prompt_version,
+    )
+
+    # ── Privacy guard: validar que el extracto NO contiene nombre del menor.
+    # Esta es una defensa en profundidad sobre el guardrail upstream del
+    # use case IA. Si falla, abortamos el envío para no exponer PII.
+    forbidden_tokens: list[str] = []
+    if athlete_first_name and athlete_first_name not in {"su hijo/a", ""}:
+        forbidden_tokens.append(athlete_first_name)
+    if athlete_last_name:
+        # Solo banderamos apellidos con ≥3 chars para evitar falsos positivos
+        # con apellidos cortos comunes que podrían colisionar con palabras.
+        if len(athlete_last_name.strip()) >= 3:
+            forbidden_tokens.append(athlete_last_name.strip())
+
+    def _excerpt_safe(excerpt: str | None) -> bool:
+        if not excerpt:
+            return True
+        lowered = excerpt.lower()
+        for token in forbidden_tokens:
+            if token.lower() in lowered:
+                return False
+        return True
+
+    if not _excerpt_safe(summary_excerpt):
+        logger.warning(
+            "race_insight_dispatcher.excerpt_blocked | insight_id=%s tier=%s "
+            "athlete_hash=%s reason=name_in_excerpt — fallback to no excerpt",
+            insight.id,
+            tier.value,
+            _hash_id(insight.athlete_id),
+        )
+        summary_excerpt = None
+
+    app_url, panorama_url = _build_urls(
+        deep_link_path=deep_link,
+        athlete_id=insight.athlete_id,
+        settings=settings,
+    )
 
     sent = 0
     for parent in parents:
@@ -339,6 +611,10 @@ async def _send_email_to_parents(
                     "tier_label": tier_label,
                     "coach_summary": coach_summary,
                     "deep_link_path": deep_link,
+                    # Sprint 3 — Resumen embebido + dual CTA.
+                    "summary_excerpt": summary_excerpt,
+                    "app_url": app_url,
+                    "panorama_url": panorama_url,
                 },
                 send_async=True,
             )
@@ -376,6 +652,7 @@ async def dispatch_insight_notification(
     *,
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
+    settings: Settings | None = None,
 ) -> NotificationResult:
     """Decide canal de notificación tras aprobación de un insight de carrera.
 
@@ -547,6 +824,7 @@ async def dispatch_insight_notification(
     # Resolver datos para el email.
     athlete = fresh.athlete
     athlete_first_name = (athlete.first_name if athlete else None) or "su hijo/a"
+    athlete_last_name = (athlete.last_name if athlete else None)
     club_name = await _resolve_club_name(db, fresh.athlete_id)
 
     emails_sent = await _send_email_to_parents(
@@ -555,9 +833,11 @@ async def dispatch_insight_notification(
         tier=tier,
         parents=parents,
         athlete_first_name=athlete_first_name,
+        athlete_last_name=athlete_last_name,
         club_name=club_name,
         notification_service=notification_service,
         dispatcher=dispatcher,
+        settings=settings,
     )
 
     return NotificationResult(
@@ -575,5 +855,11 @@ __all__ = [
     "NotificationChannel",
     "NotificationDecision",
     "NotificationResult",
+    "PROMPT_VERSION_V2",
     "dispatch_insight_notification",
+    # Helpers exportados para tests / reutilización in-app.
+    "_build_summary_excerpt",
+    "_extract_v2_section",
+    "_first_sentences",
+    "_strip_markdown",
 ]
