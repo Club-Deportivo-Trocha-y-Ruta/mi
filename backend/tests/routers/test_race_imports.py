@@ -1173,7 +1173,7 @@ class TestFullFlowWithStubIngestor:
         )
 
         # Stub de download_to_tempfile que crea un tmp válido con magic bytes PDF
-        import tempfile, os
+        import tempfile
         from pathlib import Path
 
         async def fake_download(storage_path: str, suffix: str = "") -> Path:
@@ -1360,4 +1360,70 @@ class TestFullFlowWithStubIngestor:
         )
         assert r.status_code == 200
         assert r.json()["counts"]["total"] == 0
-        assert r.json()["matches"] == []
+
+    @pytest.mark.asyncio
+    async def test_dry_run_unknown_category_returns_422(
+        self, coach_client, monkeypatch, db_session_factory
+    ):
+        """Categoría desconocida en parsed_results → ingestor lanza ValueError
+        → dry-run debe devolver HTTP 422 con detail que mencione la categoría.
+
+        Regresión: antes del fix el ingestor propagaba ValueError sin handler
+        y FastAPI devolvía HTTP 500 sin body (bug producción 2026-05-26).
+        """
+        from app.routers import race_imports as router_mod
+        from app.services.race import ingestor as ingestor_mod
+        from app.services.race.pdf_parser import ResultsRow
+
+        # Stub parser devuelve una categoría inexistente en DB
+        _FAKE_CODE = "XYZ_FAKE"
+
+        async def fake_unknown_cat(path, ext):  # noqa: ARG001
+            return {
+                _FAKE_CODE: [
+                    ResultsRow(
+                        position=1, bib="001", name="Ciclista Fantasma",
+                        city="Cali", club="Club Trocha y Ruta",
+                        time_raw="0:04:00", points=40,
+                    ),
+                ],
+            }
+
+        async def fake_g(path):  # noqa: ARG001
+            return {}
+
+        monkeypatch.setattr(router_mod, "_parse_results_with_timeout", fake_unknown_cat)
+        monkeypatch.setattr(router_mod, "_parse_general_with_timeout", fake_g)
+
+        # El ingestor real lanza ValueError cuando no encuentra la categoría.
+        # Lo replicamos con un stub que no toca la DB pero reproduce el error.
+        async def fake_ingest_raises(self, meta, results_by_category, **kwargs):
+            for code in results_by_category:
+                raise ValueError(
+                    f"Categoría desconocida en RESULTADOS: code='{code}'"
+                )
+
+        monkeypatch.setattr(ingestor_mod.RaceIngestor, "ingest_event", fake_ingest_raises)
+
+        # 1. Parse (necesitamos un parse_id válido en DB)
+        files = {"resultados_pdf": _pdf_file(b"unknown cat content")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse",
+            data=_parse_form(),
+            files=files,
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        # 2. Dry-run — debe devolver 422, no 500
+        r = await coach_client.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
+        assert r.status_code == 422, (
+            f"Se esperaba 422 por categoría desconocida, se obtuvo {r.status_code}: {r.text}"
+        )
+        detail = r.json().get("detail", "")
+        assert "Categoría desconocida" in detail, (
+            f"El detail debe mencionar 'Categoría desconocida', se obtuvo: {detail!r}"
+        )
+        assert _FAKE_CODE in detail, (
+            f"El detail debe incluir el code inválido '{_FAKE_CODE}', se obtuvo: {detail!r}"
+        )

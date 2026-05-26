@@ -631,15 +631,21 @@ async def dry_run_import(
 
     # Ejecutar dry-run real
     ingestor = RaceIngestor(db)
-    report = await ingestor.ingest_event(
-        meta=meta_obj,
-        results_by_category=parsed_results,
-        general_by_category=parsed_general,
-        pdf_results_sha256=imp.sha256,
-        pdf_general_sha256=imp.general_sha256,
-        ingested_by_user_id=current_user.id,
-        dry_run=True,
-    )
+    try:
+        report = await ingestor.ingest_event(
+            meta=meta_obj,
+            results_by_category=parsed_results,
+            general_by_category=parsed_general,
+            pdf_results_sha256=imp.sha256,
+            pdf_general_sha256=imp.general_sha256,
+            ingested_by_user_id=current_user.id,
+            dry_run=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
 
     # Construir matches preview desde RESULTADOS — basado en is_trocha_y_ruta
     from app.services.race.normalizer import is_trocha_y_ruta, normalize_name
