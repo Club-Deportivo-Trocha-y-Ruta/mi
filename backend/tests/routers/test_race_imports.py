@@ -1427,3 +1427,59 @@ class TestFullFlowWithStubIngestor:
         assert _FAKE_CODE in detail, (
             f"El detail debe incluir el code inválido '{_FAKE_CODE}', se obtuvo: {detail!r}"
         )
+
+    @pytest.mark.asyncio
+    async def test_dry_run_session_rollback_does_not_break_response(
+        self, coach_client, stub_parsers, db_session_factory, monkeypatch
+    ):
+        """Regresión: el ingestor real hace `await self.db.rollback()` en
+        dry_run. Esto expira todos los ORM objects de la session compartida
+        (incluido `imp` cargado por el router). Acceder `imp.id` después dispara
+        lazy-load en contexto async sin greenlet adapter → MissingGreenlet HTTP 500.
+
+        El fix snapshotea `imp.id` (y otros attrs leídos post-ingest) antes de
+        invocar `ingest_event`. Este test reproduce el ciclo rollback con un
+        stub y verifica que la respuesta sigue trayendo `parse_id` válido.
+        """
+        from app.schemas.race import IngestReport
+        from app.services.race import ingestor as ingestor_mod
+
+        async def fake_ingest_with_rollback(self, meta, results_by_category, **kwargs):
+            # Reproduce el comportamiento real del ingestor en dry_run.
+            await self.db.rollback()
+            return IngestReport(
+                event_id=200,
+                series_id=2,
+                competitors_created=0,
+                competitors_updated=0,
+                results_inserted=0,
+                results_skipped=0,
+                tyr_count=0,
+                warnings=[],
+            )
+
+        monkeypatch.setattr(
+            ingestor_mod.RaceIngestor, "ingest_event", fake_ingest_with_rollback
+        )
+
+        # 1. Parse para obtener un parse_id válido.
+        files = {"resultados_pdf": _pdf_file(b"rollback regression content")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse",
+            data=_parse_form(),
+            files=files,
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        # 2. Dry-run con rollback interno — NO debe romper con MissingGreenlet/500.
+        r = await coach_client.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
+        assert r.status_code == 200, (
+            f"Regresión: dry-run rompió tras rollback del ingestor. "
+            f"status={r.status_code} body={r.text}"
+        )
+        body = r.json()
+        assert body["parse_id"] == parse_id, (
+            f"parse_id en response debe coincidir con el snapshotted, "
+            f"se obtuvo {body['parse_id']!r}"
+        )

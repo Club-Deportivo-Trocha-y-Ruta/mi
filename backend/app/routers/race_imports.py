@@ -629,6 +629,12 @@ async def dry_run_import(
             detail=f"parse_meta inválido: {exc}",
         )
 
+    # Snapshot attrs antes del ingest: el ingestor hace rollback/commit sobre la
+    # misma session, lo que expira el ORM `imp` (MissingGreenlet en lazy-load).
+    imp_id = imp.id
+    imp_sha256 = imp.sha256
+    imp_general_sha256 = imp.general_sha256
+
     # Ejecutar dry-run real
     ingestor = RaceIngestor(db)
     try:
@@ -636,8 +642,8 @@ async def dry_run_import(
             meta=meta_obj,
             results_by_category=parsed_results,
             general_by_category=parsed_general,
-            pdf_results_sha256=imp.sha256,
-            pdf_general_sha256=imp.general_sha256,
+            pdf_results_sha256=imp_sha256,
+            pdf_general_sha256=imp_general_sha256,
             ingested_by_user_id=current_user.id,
             dry_run=True,
         )
@@ -678,7 +684,7 @@ async def dry_run_import(
     ]
 
     return ImportDryRunResponse(
-        parse_id=imp.id,
+        parse_id=imp_id,
         matches=matches,
         counts=counts,
         warnings=warnings,
@@ -759,6 +765,11 @@ async def commit_import(
         if bib is not None:
             match_decisions[bib] = rm.athlete_id
 
+    # Snapshot attrs antes del ingest: el ingestor hace commit/rollback sobre la
+    # misma session, lo que expira el ORM `imp` (MissingGreenlet en lazy-load).
+    imp_sha256 = imp.sha256
+    imp_general_sha256 = imp.general_sha256
+
     # Ejecutar commit (dry_run=False) — promueve pending → committed
     ingestor = RaceIngestor(db)
     try:
@@ -767,8 +778,8 @@ async def commit_import(
             results_by_category=parsed_results,
             general_by_category=parsed_general,
             match_decisions=match_decisions,
-            pdf_results_sha256=imp.sha256,
-            pdf_general_sha256=imp.general_sha256,
+            pdf_results_sha256=imp_sha256,
+            pdf_general_sha256=imp_general_sha256,
             ingested_by_user_id=current_user.id,
             dry_run=False,
         )
@@ -778,6 +789,9 @@ async def commit_import(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         )
+
+    # Re-cargar imp tras commit interno del ingestor (atributos quedaron expirados)
+    await db.refresh(imp)
 
     # Mover PDFs en SFTP: pending/{uuid}/ → committed/{uuid}/
     parse_uuid = parse_meta.get("parse_uuid", "unknown")
