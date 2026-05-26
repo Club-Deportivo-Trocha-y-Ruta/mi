@@ -324,5 +324,162 @@ describe("PanoramaView", () => {
       expect(svg).toBeTruthy();
       expect(svg).toHaveAttribute("aria-hidden", "true");
     });
+
+    // ---------------------------------------------------------------------
+    // Sprint 2 BB4 — el botón Hero refleja estado de multi-select.
+    // ---------------------------------------------------------------------
+
+    it("con newsletterSelection vacío muestra 'Agregar al boletín'; al ya estar seleccionado muestra 'Quitar del boletín'", async () => {
+      const onToggle = vi.fn();
+      const { rerender } = renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+          newsletterSelection={new Set<number>()}
+          onToggleSelection={onToggle}
+        />,
+      );
+      await waitFor(() => {
+        const btn = screen.getByTestId("hero-btn-add-newsletter");
+        expect(btn).toHaveAccessibleName(/Agregar al boletín/i);
+      });
+
+      // Insight default tiene id=1 (mockInsight).
+      rerender(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+          newsletterSelection={new Set<number>([1])}
+          onToggleSelection={onToggle}
+        />,
+      );
+      await waitFor(() => {
+        const btn = screen.getByTestId("hero-btn-add-newsletter");
+        expect(btn).toHaveAccessibleName(/Quitar del boletín/i);
+      });
+    });
+
+    it("con onToggleSelection definido, click invoca toggle (no onAddToNewsletter)", async () => {
+      const onAdd = vi.fn();
+      const onToggle = vi.fn();
+      const user = userEvent.setup();
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={onAdd}
+          newsletterSelection={new Set<number>()}
+          onToggleSelection={onToggle}
+        />,
+      );
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("hero-btn-add-newsletter"),
+        ).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("hero-btn-add-newsletter"));
+      expect(onToggle).toHaveBeenCalledTimes(1);
+      expect(onToggle).toHaveBeenCalledWith(1);
+      expect(onAdd).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Sprint 2 BB2 — MiniSparkline + KPI cards en PanoramaView
+  // ---------------------------------------------------------------------------
+
+  describe("PanoramaView — MiniSparkline + KPIs (BB2)", () => {
+    it("renderiza el contenedor 'mini-evolution-sparkline' cuando hay evolución (≥2 puntos)", async () => {
+      // Handler default de evolution devuelve 4 puntos no-nulos.
+      renderWithProviders(
+        <PanoramaView
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("mini-evolution-sparkline"),
+        ).toBeInTheDocument();
+      });
+      // No debe mostrar el empty state.
+      expect(
+        screen.queryByText(/al menos 2 análisis/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("muestra empty state cuando hay <2 puntos en la serie", async () => {
+      // Override: serie con un solo punto.
+      mswServer.use(
+        http.get("*/api/athletes/:athleteId/race-analysis/evolution", () =>
+          HttpResponse.json({
+            season: 2026,
+            metric: "ranking",
+            confidence: "low",
+            series: [
+              {
+                valida_num: 1,
+                event_id: 91,
+                event_date: "2026-01-31",
+                value: 5,
+                unit: null,
+              },
+            ],
+          }),
+        ),
+      );
+      renderWithProviders(
+        <PanoramaView
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(
+          screen.getByText(/al menos 2 análisis/i),
+        ).toBeInTheDocument();
+      });
+      // El testid del wrapper se mantiene aunque sea empty.
+      expect(
+        screen.getByTestId("mini-evolution-sparkline"),
+      ).toBeInTheDocument();
+    });
+
+    it("renderiza las 3 KPI cards con sus testids esperados", async () => {
+      renderWithProviders(
+        <PanoramaView
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("panorama-kpi-total")).toBeInTheDocument();
+      });
+      expect(
+        screen.getByTestId("panorama-kpi-best-position"),
+      ).toBeInTheDocument();
+      // NOTA: el ingeniero usó 'panorama-kpi-races' (no 'panorama-kpi-validas')
+      // porque la KPI fue renombrada a "Válidas completadas" (TODO Sprint 3
+      // para "Podios"). Cubrimos el testid real.
+      expect(screen.getByTestId("panorama-kpi-races")).toBeInTheDocument();
+      // Labels visibles para sanidad de copy — esperamos a que el loading
+      // de evolution/insights termine (skeleton → contenido con label).
+      await waitFor(() => {
+        expect(screen.getByText(/análisis aprobados/i)).toBeInTheDocument();
+      });
+      expect(screen.getByText(/mejor posición/i)).toBeInTheDocument();
+      expect(screen.getByText(/válidas completadas/i)).toBeInTheDocument();
+    });
   });
 });

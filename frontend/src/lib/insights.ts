@@ -1,9 +1,10 @@
 /**
  * Utilidades compartidas del módulo "Análisis IA" del atleta.
  *
- * Centraliza helpers de parsing de insights v2 y etiquetas de enums
- * para que sean reutilizables desde InsightsTimeline, HeroLastInsightCard
- * y cualquier componente futuro sin duplicación.
+ * Centraliza helpers de parsing de insights v2, etiquetas de enums
+ * y calendario Copa Valle para que sean reutilizables desde
+ * InsightsTimeline, HeroLastInsightCard y cualquier componente futuro
+ * sin duplicación.
  *
  * Privacidad: ninguna de estas funciones maneja datos PII directamente;
  * el control de visibilidad (modo coach vs parent) se hace en los
@@ -91,4 +92,51 @@ export function confidenceLabel(confidence: InsightConfidence): string {
   if (confidence === "high") return "Confianza alta";
   if (confidence === "medium") return "Confianza media";
   return "Confianza baja";
+}
+
+// ---------------------------------------------------------------------------
+// Calendario Copa Valle 2026 — tier por mes-año
+// ---------------------------------------------------------------------------
+
+/**
+ * Mapa mes-año → tipo de carrera Copa Valle 2026.
+ * Clave: "YYYY-MM" (ISO). Valores tomados del CLAUDE.md § Calendario Copa Valle 2026.
+ *
+ *   I   31-ene (2026-01)  → C  (sin tapering)
+ *   II  28-feb (2026-02)  → C
+ *   III 19-abr (2026-04)  → C  (diagnóstica)
+ *   IV  17-may (2026-05)  → A  (tapering completo)
+ *   CD  26-jun (2026-06)  → CD (Campeonato Departamental)
+ *   V   01-ago (2026-08)  → B  (mini-tapering)
+ *   VI  12-sep (2026-09)  → A
+ *   VII 18-oct (2026-10)  → B
+ */
+const CARRERA_TIER: Record<string, "A" | "B" | "C" | "CD"> = {
+  "2026-01": "C",
+  "2026-02": "C",
+  "2026-04": "C",
+  "2026-05": "A",
+  "2026-06": "CD",
+  "2026-08": "B",
+  "2026-09": "A",
+  "2026-10": "B",
+};
+
+/**
+ * Dado un insight (o su fecha ``generated_at``), devuelve el tier de la
+ * carrera Copa Valle correspondiente al mes-año de la fecha.
+ * Devuelve ``null`` si la fecha no coincide con ninguna válida del calendario.
+ *
+ * @param date - ISO date string o Date object (``generated_at`` del insight).
+ */
+export function getCarreraTier(
+  date: Date | string,
+): "A" | "B" | "C" | "CD" | null {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (!Number.isFinite(d.getTime())) return null;
+  // getMonth() es 0-based — añadimos 1 y pad con "0".
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = String(d.getFullYear());
+  const key = `${year}-${month}`;
+  return CARRERA_TIER[key] ?? null;
 }

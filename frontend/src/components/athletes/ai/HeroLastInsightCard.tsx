@@ -31,6 +31,10 @@ interface HeroLastInsightCardProps {
   mode: "coach" | "parent";
   onOpenDetail: (id: number) => void;
   onAddToNewsletter: (id: number) => void;
+  /** IDs seleccionados para boletín — cuando se pasa, el botón refleja estado. */
+  newsletterSelection?: Set<number>;
+  /** Toggle multi-select del boletín (BB4). */
+  onToggleSelection?: (id: number) => void;
 }
 
 export function HeroLastInsightCard({
@@ -38,6 +42,8 @@ export function HeroLastInsightCard({
   mode,
   onOpenDetail,
   onAddToNewsletter,
+  newsletterSelection,
+  onToggleSelection,
 }: HeroLastInsightCardProps) {
   const insightQuery = useAthleteInsights(athlete.id, {
     latest_only: true,
@@ -117,17 +123,27 @@ export function HeroLastInsightCard({
         >
           Releer último
         </Button>
-        {mode === "coach" && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onAddToNewsletter(insight.id)}
-            data-testid="hero-btn-add-newsletter"
-          >
-            <BookmarkPlus size={14} className="mr-1.5" aria-hidden="true" />
-            Agregar al boletín
-          </Button>
-        )}
+        {mode === "coach" && (() => {
+          // BB4: si hay estado de selección controlado, lo refleja en el botón.
+          const isSelectedForNewsletter =
+            newsletterSelection !== undefined
+              ? newsletterSelection.has(insight.id)
+              : false;
+          const handleClick = onToggleSelection
+            ? () => onToggleSelection(insight.id)
+            : () => onAddToNewsletter(insight.id);
+          return (
+            <Button
+              variant={isSelectedForNewsletter ? "secondary" : "outline"}
+              size="sm"
+              onClick={handleClick}
+              data-testid="hero-btn-add-newsletter"
+            >
+              <BookmarkPlus size={14} className="mr-1.5" aria-hidden="true" />
+              {isSelectedForNewsletter ? "Quitar del boletín" : "Agregar al boletín"}
+            </Button>
+          );
+        })()}
       </div>
     </div>
   );

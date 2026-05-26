@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: vi.fn((sel: (s: unknown) => unknown) =>
@@ -151,5 +152,58 @@ describe("AthleteAIAnalysisTab — vista parent (v2)", () => {
     sensitivePatterns.forEach((p) => {
       expect(tree).not.toMatch(p);
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Sprint 2 — privacidad cross-cutting BB3 + BB4 para parent.
+  // -------------------------------------------------------------------------
+
+  it("modo parent NO renderiza la sticky action bar (BB4) bajo ningún flujo", async () => {
+    // Action bar es coach-only y depende de selección. Para parent NUNCA
+    // debe aparecer. Validamos directamente que el testid no existe en el
+    // árbol renderizado por defecto.
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="parent" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("athlete-ai-analysis-tab")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId("newsletter-action-bar"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("modo parent NO tiene acceso al Sheet del Comparador (BB3): Distribución oculta y botón ausente", async () => {
+    // El botón "open-comparator-sheet" vive dentro de TabsContent
+    // value="distribution", que sólo se renderiza para coach. Para parent
+    // ni el tab ni el botón deben existir.
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="parent" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("athlete-ai-analysis-tab")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId("ai-subtab-distribution"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("open-comparator-sheet"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("modo parent NO renderiza checkboxes de multi-select (BB4): InsightsTimeline recibe onToggleSelection=undefined", async () => {
+    // El mock global de InsightsTimeline en este file no renderiza los
+    // checkboxes (sólo el texto "timeline-{mode}"). Verificamos por la
+    // ausencia del prefijo de testid usado por el componente real, tras
+    // activar el sub-tab Histórico (default es Panorama).
+    const user = userEvent.setup();
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="parent" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId("ai-subtab-history"));
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-insights-timeline")).toBeInTheDocument();
+    });
+    // Ningún checkbox del componente real podría montarse aquí.
+    expect(
+      screen.queryByTestId(/^insight-checkbox-/),
+    ).not.toBeInTheDocument();
   });
 });

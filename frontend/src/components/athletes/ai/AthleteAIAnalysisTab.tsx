@@ -1,19 +1,22 @@
 /**
  * AthleteAIAnalysisTab — tab raíz "Análisis IA" del perfil del atleta.
  *
- * Estructura:
- *   - Header con resumen ejecutivo (último análisis aprobado + badge
- *     confidence + total de aprobados).
- *   - Sub-tabs internas (shadcn Tabs, Radix):
- *       · Histórico    → InsightsTimeline
- *       · Evolución    → EvolutionChart
- *       · Comparador   → ComparatorPanel
- *       · Distribución → DistributionChart
- *       · Lanzar       → LaunchAnalysisForm (solo coach/admin)
+ * Sprint 2:
+ *   - BB3: Comparador movido a Sheet lateral dentro del tab Distribución.
+ *          Tab "Comparador" eliminado de la TabsList.
+ *   - BB4: Multi-select bulk para boletín + sticky action bar inferior (solo coach).
  *
- * Privacidad: en mode="parent" ocultamos completamente la pestaña
- * "Lanzar" y el AnalysisRunTimeline (datos operativos del agente, costos
- * LLM, prompts, etc).
+ * Estructura de sub-tabs (post-Sprint 2):
+ *   · Panorama     → PanoramaView (default)
+ *   · Histórico    → InsightsTimeline
+ *   · Evolución    → EvolutionChart
+ *   · Distribución → DistributionChart + Sheet con ComparatorPanel (solo coach)
+ *   · Lanzar       → LaunchAnalysisForm (solo coach)
+ *
+ * Privacidad Ley 1581:
+ *   - mode="parent" oculta Distribución, Lanzar, Sheet del Comparador.
+ *   - Multi-select y action bar SOLO en mode="coach".
+ *   - Checkbox nunca se renderiza para parent.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -22,7 +25,6 @@ import {
   Calendar,
   History,
   Play,
-  Scale,
   Sparkles,
 } from "lucide-react";
 
@@ -36,7 +38,15 @@ import { LaunchAnalysisForm } from "@/components/athletes/ai/LaunchAnalysisForm"
 import { PanoramaView } from "@/components/athletes/ai/PanoramaView";
 import { SeasonSummaryButton } from "@/components/athletes/ai/SeasonSummaryButton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Tabs,
   TabsContent,
@@ -58,7 +68,7 @@ import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
 
-type SubTab = "panorama" | "history" | "evolution" | "compare" | "distribution" | "launch";
+type SubTab = "panorama" | "history" | "evolution" | "distribution" | "launch";
 
 function confidenceBadgeVariant(
   c: InsightConfidence,
@@ -73,7 +83,6 @@ function confidenceText(c: InsightConfidence): string {
   if (c === "medium") return "Confianza media";
   return "Confianza baja";
 }
-
 
 function validaLabel(num: number | null | undefined): string {
   if (num === null || num === undefined) return "agregado";
@@ -92,23 +101,39 @@ export function AthleteAIAnalysisTab({
   mode,
 }: AthleteAIAnalysisTabProps) {
   const [subTab, setSubTab] = useState<SubTab>("panorama");
-  // run_id devuelto por LaunchAnalysisForm — al setearse muestra el
-  // AnalysisRunTimeline encima del histórico para que el coach lo vea
-  // ejecutarse en vivo.
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [hitlStepId, setHitlStepId] = useState<string | null>(null);
-  // selectedInsightId: compartido entre PanoramaView e InsightsTimeline
-  // para abrir el drawer de detalle desde ambos contextos (Sprint 2 BB4).
+  // selectedInsightId: compartido entre PanoramaView e InsightsTimeline.
   const [selectedInsightId, setSelectedInsightId] = useState<number | null>(null);
 
-  // Defensivo: si el sub-tab activo es compare/distribution y el modo es
-  // parent (no debería llegar aquí, pero por si hay deep-link o HMR),
-  // resetear a "panorama".
+  // BB3: estado del Sheet del Comparador (dentro de Distribución).
+  const [comparatorSheetOpen, setComparatorSheetOpen] = useState(false);
+
+  // BB4: multi-select para boletín — solo coach.
+  const [newsletterSelection, setNewsletterSelection] = useState<Set<number>>(new Set());
+
+  const toggleNewsletterSelection = (id: number) => {
+    setNewsletterSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleAddBulkToNewsletter = () => {
+    console.info(
+      "[TODO Sprint 3] Bulk add a boletín:",
+      Array.from(newsletterSelection),
+    );
+  };
+
+  // Defensivo: si el sub-tab activo es distribution y el modo es parent, resetear.
   useEffect(() => {
-    if (
-      mode === "parent" &&
-      (subTab === "compare" || subTab === "distribution")
-    ) {
+    if (mode === "parent" && subTab === "distribution") {
       setSubTab("panorama");
     }
   }, [mode, subTab]);
@@ -117,7 +142,6 @@ export function AthleteAIAnalysisTab({
     console.info("[TODO Sprint 3] Insight agregado al boletín:", insightId);
   };
 
-  // Resumen del header: último análisis (latest_only=true, limit=1).
   const headerQuery = useAthleteInsights(athlete.id, {
     latest_only: true,
     limit: 1,
@@ -125,8 +149,6 @@ export function AthleteAIAnalysisTab({
 
   const queryClient = useQueryClient();
   const handleRunComplete = useCallback(() => {
-    // Invalidar todas las queries "athlete-*" del atleta para refrescar
-    // el header (Total aprobados + último análisis) y el Histórico.
     void queryClient.invalidateQueries({
       predicate: (q) => {
         const k = q.queryKey;
@@ -147,7 +169,6 @@ export function AthleteAIAnalysisTab({
     setSubTab("history");
   };
 
-  // HITL detection — solo coach (parent NO aprueba). Sólo polleamos si hay run activo.
   const statusQuery = useRunStatus(mode === "coach" ? activeRunId : null);
   const runState = statusQuery.data?.latest?.state;
   const lastHitlEvent = statusQuery.data?.events
@@ -248,7 +269,7 @@ export function AthleteAIAnalysisTab({
         </div>
       </div>
 
-      {/* Run timeline en vivo — solo coach, solo si acaba de lanzar */}
+      {/* Run timeline en vivo — solo coach */}
       {mode === "coach" && activeRunId && (
         <>
           <AnalysisRunTimeline runId={activeRunId} onComplete={handleRunComplete} />
@@ -283,12 +304,6 @@ export function AthleteAIAnalysisTab({
             Evolución
           </TabsTrigger>
           {mode === "coach" && (
-            <TabsTrigger value="compare" data-testid="ai-subtab-compare" className="shrink-0">
-              <Scale size={14} aria-hidden="true" />
-              Comparador
-            </TabsTrigger>
-          )}
-          {mode === "coach" && (
             <TabsTrigger
               value="distribution"
               data-testid="ai-subtab-distribution"
@@ -315,6 +330,8 @@ export function AthleteAIAnalysisTab({
               setSubTab("history");
             }}
             onAddToNewsletter={handleAddToNewsletter}
+            newsletterSelection={mode === "coach" ? newsletterSelection : undefined}
+            onToggleSelection={mode === "coach" ? toggleNewsletterSelection : undefined}
           />
         </TabsContent>
         <TabsContent value="history">
@@ -323,19 +340,47 @@ export function AthleteAIAnalysisTab({
             mode={mode}
             selectedInsightId={selectedInsightId}
             onSelectInsight={setSelectedInsightId}
+            newsletterSelection={mode === "coach" ? newsletterSelection : undefined}
+            onToggleSelection={mode === "coach" ? toggleNewsletterSelection : undefined}
           />
         </TabsContent>
         <TabsContent value="evolution">
           <EvolutionChart athleteId={athlete.id} />
         </TabsContent>
         {mode === "coach" && (
-          <TabsContent value="compare">
-            <ComparatorPanel athleteId={athlete.id} />
-          </TabsContent>
-        )}
-        {mode === "coach" && (
           <TabsContent value="distribution">
-            <DistributionChart athleteId={athlete.id} />
+            <div className="space-y-3">
+              {/* BB3: botón para abrir el comparador como Sheet lateral */}
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setComparatorSheetOpen(true)}
+                  data-testid="open-comparator-sheet"
+                >
+                  Comparar con otro atleta
+                </Button>
+              </div>
+              <DistributionChart athleteId={athlete.id} />
+            </div>
+
+            {/* Sheet del Comparador (BB3) */}
+            <Sheet
+              open={comparatorSheetOpen}
+              onOpenChange={setComparatorSheetOpen}
+            >
+              <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle>Comparador de progreso</SheetTitle>
+                  <SheetDescription>
+                    Compara el progreso del atleta entre dos válidas de la temporada.
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="mt-4">
+                  <ComparatorPanel athleteId={athlete.id} />
+                </div>
+              </SheetContent>
+            </Sheet>
           </TabsContent>
         )}
         {mode === "coach" && (
@@ -348,6 +393,39 @@ export function AthleteAIAnalysisTab({
           </TabsContent>
         )}
       </Tabs>
+
+      {/* BB4: Sticky action bar — solo coach, solo si hay items seleccionados */}
+      {mode === "coach" && newsletterSelection.size > 0 && (
+        <div
+          className="sticky bottom-4 left-0 right-0 z-20 mx-auto flex max-w-2xl items-center justify-between gap-3 rounded-xl bg-charcoal p-3 text-white shadow-lg"
+          data-testid="newsletter-action-bar"
+        >
+          <span className="text-sm">
+            {newsletterSelection.size}{" "}
+            {newsletterSelection.size === 1
+              ? "insight seleccionado"
+              : "insights seleccionados"}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setNewsletterSelection(new Set())}
+              className="border-white/30 text-white hover:bg-white/10 hover:text-white"
+            >
+              Limpiar
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleAddBulkToNewsletter}
+              className="bg-white text-charcoal hover:bg-white/90"
+            >
+              Enviar a boletín
+            </Button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

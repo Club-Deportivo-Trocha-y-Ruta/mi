@@ -1,16 +1,23 @@
 /**
- * Tests vitest para AthleteAIAnalysisTab (FE-3).
+ * Tests vitest para AthleteAIAnalysisTab (FE-3, Sprint 2 BB3+BB4).
  *
  * Cubre:
- *  - 5 sub-tabs renderizados en mode=coach (incluye "Lanzar").
- *  - mode=parent oculta "Lanzar".
+ *  - 5 sub-tabs renderizados en mode=coach (Panorama, Histórico,
+ *    Evolución, Distribución, Lanzar). El tab "Comparador" fue
+ *    eliminado en Sprint 2 BB3 — ahora es un Sheet dentro de
+ *    Distribución.
+ *  - mode=parent oculta "Lanzar" + "Distribución" (privacidad).
  *  - Header del tab muestra última fecha/válida cuando hay insights.
  *  - Loading state mientras espera datos.
  *  - Click en tab cambia el contenido renderizado.
+ *  - BB3: botón "open-comparator-sheet" dentro de Distribución abre
+ *    Sheet con ComparatorPanel montado.
+ *  - BB4: multi-select para boletín — checkboxes solo coach,
+ *    action bar aparece con copy correcto, "Limpiar" la cierra.
  *
  * Mockeamos los sub-componentes pesados (InsightsTimeline,
  * EvolutionChart, ComparatorPanel, DistributionChart, LaunchAnalysisForm,
- * AnalysisRunTimeline) — están testeados en sus propios specs.
+ * AnalysisRunTimeline, PanoramaView) — están testeados en sus propios specs.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
@@ -32,9 +39,36 @@ vi.mock("@/components/athletes/ai/PanoramaView", () => ({
     <div data-testid="mock-panorama-view">panorama-{mode}</div>
   ),
 }));
+// InsightsTimeline mock: expone toggleSelection vía botones-checkbox para
+// poder probar la action bar BB4 sin depender del componente real.
 vi.mock("@/components/athletes/ai/InsightsTimeline", () => ({
-  InsightsTimeline: ({ mode }: { mode: string }) => (
-    <div data-testid="mock-insights-timeline">timeline-{mode}</div>
+  InsightsTimeline: ({
+    mode,
+    newsletterSelection,
+    onToggleSelection,
+  }: {
+    mode: string;
+    newsletterSelection?: Set<number>;
+    onToggleSelection?: (id: number) => void;
+  }) => (
+    <div data-testid="mock-insights-timeline">
+      timeline-{mode}
+      {onToggleSelection && (
+        <div>
+          {[101, 102, 103].map((id) => (
+            <button
+              key={id}
+              type="button"
+              data-testid={`insight-checkbox-${id}`}
+              aria-pressed={newsletterSelection?.has(id) ?? false}
+              onClick={() => onToggleSelection(id)}
+            >
+              toggle-{id}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   ),
 }));
 vi.mock("@/components/athletes/ai/EvolutionChart", () => ({
@@ -86,16 +120,20 @@ describe("AthleteAIAnalysisTab", () => {
     vi.clearAllMocks();
   });
 
-  it("renderiza los 6 sub-tabs en mode=coach (Panorama, Histórico, Evolución, Comparador, Distribución, Lanzar)", async () => {
+  it("renderiza los 5 sub-tabs en mode=coach (Panorama, Histórico, Evolución, Distribución, Lanzar) — Comparador eliminado en Sprint 2 BB3", async () => {
     renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
     await waitFor(() => {
       expect(screen.getByTestId("ai-subtab-panorama")).toBeInTheDocument();
     });
     expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
     expect(screen.getByTestId("ai-subtab-evolution")).toBeInTheDocument();
-    expect(screen.getByTestId("ai-subtab-compare")).toBeInTheDocument();
     expect(screen.getByTestId("ai-subtab-distribution")).toBeInTheDocument();
     expect(screen.getByTestId("ai-subtab-launch")).toBeInTheDocument();
+    // BB3: Comparador ya no es un tab. Vive dentro de Distribución como Sheet.
+    expect(screen.queryByTestId("ai-subtab-compare")).not.toBeInTheDocument();
+    // Sanidad: exactamente 5 tabs en coach.
+    const tabsList = screen.getByRole("tablist");
+    expect(tabsList.querySelectorAll('[role="tab"]').length).toBe(5);
   });
 
   it("default activo en mode=coach es 'panorama'", async () => {
@@ -170,15 +208,14 @@ describe("AthleteAIAnalysisTab", () => {
       expect(screen.getByTestId("mock-evolution-chart")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByTestId("ai-subtab-compare"));
-    await waitFor(() => {
-      expect(screen.getByTestId("mock-comparator-panel")).toBeInTheDocument();
-    });
-
+    // BB3: el tab Comparador fue reemplazado por Distribución + Sheet.
+    // Verificamos que al entrar a Distribución, además del chart
+    // aparezca el botón "open-comparator-sheet" (sin abrirlo aquí).
     await user.click(screen.getByTestId("ai-subtab-distribution"));
     await waitFor(() => {
       expect(screen.getByTestId("mock-distribution-chart")).toBeInTheDocument();
     });
+    expect(screen.getByTestId("open-comparator-sheet")).toBeInTheDocument();
 
     await user.click(screen.getByTestId("ai-subtab-launch"));
     await waitFor(() => {
@@ -213,5 +250,180 @@ describe("AthleteAIAnalysisTab", () => {
     });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  // -------------------------------------------------------------------------
+  // Sprint 2 BB3 — Comparador como Sheet on-demand dentro de Distribución
+  // -------------------------------------------------------------------------
+
+  describe("Sprint 2 BB3 — Comparator Sheet", () => {
+    it("click en 'open-comparator-sheet' abre Sheet con ComparatorPanel montado", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-subtab-panorama")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("ai-subtab-distribution"));
+      await waitFor(() => {
+        expect(screen.getByTestId("open-comparator-sheet")).toBeInTheDocument();
+      });
+      // ComparatorPanel mock NO debe estar montado antes de abrir el Sheet.
+      expect(
+        screen.queryByTestId("mock-comparator-panel"),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId("open-comparator-sheet"));
+
+      // Sheet abierto → SheetTitle visible + ComparatorPanel montado.
+      await waitFor(() => {
+        expect(
+          screen.getByText(/comparador de progreso/i),
+        ).toBeInTheDocument();
+      });
+      expect(screen.getByTestId("mock-comparator-panel")).toBeInTheDocument();
+    });
+
+    it("parent NO tiene acceso al botón 'open-comparator-sheet' (Distribución oculta)", async () => {
+      renderWithProviders(
+        <AthleteAIAnalysisTab athlete={athlete} mode="parent" />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-subtab-panorama")).toBeInTheDocument();
+      });
+      // Distribución no se renderiza para parent → botón no existe.
+      expect(
+        screen.queryByTestId("open-comparator-sheet"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("ai-subtab-distribution"),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Sprint 2 BB4 — Multi-select bulk para boletín (sticky action bar)
+  // -------------------------------------------------------------------------
+
+  describe("Sprint 2 BB4 — Multi-select boletín", () => {
+    it("coach: cada insight tiene checkbox accesible; click activa la action bar con copy en singular", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
+      );
+      // Cambiamos a Histórico para que se monten los checkboxes del mock.
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("ai-subtab-history"));
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("mock-insights-timeline"),
+        ).toBeInTheDocument();
+      });
+      // Checkboxes del mock presentes.
+      expect(screen.getByTestId("insight-checkbox-101")).toBeInTheDocument();
+      // Action bar aún no visible (sin selección).
+      expect(
+        screen.queryByTestId("newsletter-action-bar"),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId("insight-checkbox-101"));
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("newsletter-action-bar"),
+        ).toBeInTheDocument();
+      });
+      const bar = screen.getByTestId("newsletter-action-bar");
+      expect(bar).toHaveTextContent(/1\s+insight\s+seleccionado/i);
+    });
+
+    it("coach: dos checks → copy en plural; 'Limpiar' colapsa la action bar", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("ai-subtab-history"));
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("mock-insights-timeline"),
+        ).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("insight-checkbox-101"));
+      await user.click(screen.getByTestId("insight-checkbox-102"));
+      await waitFor(() => {
+        const bar = screen.getByTestId("newsletter-action-bar");
+        expect(bar).toHaveTextContent(/2\s+insights\s+seleccionados/i);
+      });
+
+      // Botón "Limpiar" → action bar desaparece.
+      await user.click(screen.getByRole("button", { name: /limpiar/i }));
+      await waitFor(() => {
+        expect(
+          screen.queryByTestId("newsletter-action-bar"),
+        ).not.toBeInTheDocument();
+      });
+    });
+
+    it("parent: NO se renderizan checkboxes ni la action bar nunca aparece", async () => {
+      renderWithProviders(
+        <AthleteAIAnalysisTab athlete={athlete} mode="parent" />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      });
+      // No es necesario clicar histórico — el contrato es que onToggleSelection
+      // sólo se pasa al mock cuando mode==="coach". Aún así verificamos que
+      // tras navegar a Histórico no aparezcan checkboxes.
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId("ai-subtab-history"));
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("mock-insights-timeline"),
+        ).toBeInTheDocument();
+      });
+      // Privacidad Ley 1581: el rol parent no maneja flujo de boletín.
+      expect(
+        screen.queryByTestId("insight-checkbox-101"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("insight-checkbox-102"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("insight-checkbox-103"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("newsletter-action-bar"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("coach: a11y con action bar visible (estado seleccionado) no introduce violaciones", async () => {
+      const user = userEvent.setup();
+      const { container } = renderWithProviders(
+        <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("ai-subtab-history"));
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("mock-insights-timeline"),
+        ).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("insight-checkbox-101"));
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("newsletter-action-bar"),
+        ).toBeInTheDocument();
+      });
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
   });
 });
