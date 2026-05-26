@@ -36,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
+import os
 import re
 import tempfile
 import uuid
@@ -531,13 +532,20 @@ async def _reload_parsed_from_storage(
 
     Necesario para dry-run/commit: el bytes original ya está en SFTP/local; lo
     descargamos a tmp, parseamos, descartamos.
-    """
-    import asyncio
 
+    En producción (SFTP configurado) el ``storage_path`` es un path remoto
+    Hostinger que no existe en el disco del contenedor. Se descarga vía FTPS
+    a un archivo temporal, se parsea y se borra en el finally.
+    """
     meta = imp.parse_meta_json or {}
     results_ext = meta.get("results_ext", "pdf")
-    results_path = PathLib(imp.storage_path or "")
-    if not results_path.exists():
+
+    # --- RESULTADOS (obligatorio) ---
+    try:
+        results_tmp_path = await storage_sftp.download_to_tempfile(
+            imp.storage_path or "", suffix=f".{results_ext}"
+        )
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail=(
@@ -545,13 +553,41 @@ async def _reload_parsed_from_storage(
                 f"(path={imp.storage_path}). Re-suba el archivo."
             ),
         )
-    parsed_results = await _parse_results_with_timeout(results_path, results_ext)
 
+    # ¿Es el path un temporal nuevo (SFTP) o el mismo local ya existente?
+    results_is_tmp = str(results_tmp_path) != str(imp.storage_path or "")
+    try:
+        parsed_results = await _parse_results_with_timeout(results_tmp_path, results_ext)
+    finally:
+        if results_is_tmp:
+            try:
+                os.unlink(results_tmp_path)
+            except OSError:
+                pass
+
+    # --- GENERAL (opcional) ---
     parsed_general: Optional[dict[str, list]] = None
     if imp.general_storage_path:
-        general_path = PathLib(imp.general_storage_path)
-        if general_path.exists():
-            parsed_general = await _parse_general_with_timeout(general_path)
+        try:
+            general_tmp_path = await storage_sftp.download_to_tempfile(
+                imp.general_storage_path, suffix=".pdf"
+            )
+            general_is_tmp = str(general_tmp_path) != str(imp.general_storage_path)
+            try:
+                parsed_general = await _parse_general_with_timeout(general_tmp_path)
+            finally:
+                if general_is_tmp:
+                    try:
+                        os.unlink(general_tmp_path)
+                    except OSError:
+                        pass
+        except FileNotFoundError:
+            # GENERAL es opcional; si no está en storage, continuamos sin él.
+            logger.warning(
+                "_reload_parsed_from_storage: GENERAL no encontrado en storage "
+                "(parse_id implícito). Continuando sin GENERAL."
+            )
+            parsed_general = None
 
     return parsed_results, parsed_general, results_ext
 

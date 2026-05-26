@@ -20,7 +20,9 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import os
 import ssl
+import tempfile
 from contextlib import contextmanager
 from ftplib import FTP, FTP_TLS, error_perm, error_temp
 from pathlib import Path, PurePosixPath
@@ -255,6 +257,65 @@ def _move_local_sync(
         # Si no existe el origen, tratamos como no-op (best-effort).
         logger.warning("move_object local: src %s no existe", src_storage_path)
     return str(dst), f"{_LOCAL_FALLBACK_URL_PREFIX}/{dst_relative_path}"
+
+
+def _download_sftp_sync(storage_path: str, suffix: str = "") -> Path:
+    """Descarga un archivo remoto FTPS a un archivo temporal y retorna su Path.
+
+    Raises:
+        FileNotFoundError: Si el archivo remoto no existe (error_perm / error_temp).
+    """
+    path = PurePosixPath(storage_path)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        with _ftp_client() as ftp:
+            try:
+                ftp.cwd("/")
+            except error_perm:
+                pass
+            try:
+                ftp.retrbinary(f"RETR {storage_path}", tmp.write)
+            except (error_perm, error_temp) as exc:
+                raise FileNotFoundError(storage_path) from exc
+    except FileNotFoundError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "download_to_tempfile: error descargando %s: %s", path.name, type(exc).__name__
+        )
+        raise FileNotFoundError(storage_path) from exc
+    finally:
+        tmp.close()
+
+    logger.debug("download_to_tempfile: descargado %s → %s", path.name, tmp.name)
+    return Path(tmp.name)
+
+
+async def download_to_tempfile(storage_path: str, suffix: str = "") -> Path:
+    """Descarga ``storage_path`` a un NamedTemporaryFile y retorna su Path local.
+
+    - Si SFTP está configurado Y el path NO es del fallback local: descarga
+      vía FTPS usando ``asyncio.to_thread`` (operación bloqueante).
+    - Si SFTP no está configurado o el path es local: verifica existencia y
+      retorna el Path directamente (sin copiar).
+
+    El caller es responsable de borrar el archivo temporal tras usarlo.
+
+    Raises:
+        FileNotFoundError: Si el archivo no se puede encontrar en ninguna
+            de las dos rutas.
+    """
+    if _is_sftp_configured() and not storage_path.startswith(
+        str(_LOCAL_FALLBACK_BASE)
+    ):
+        logger.debug("download_to_tempfile: modo SFTP para %s", storage_path)
+        return await asyncio.to_thread(_download_sftp_sync, storage_path, suffix)
+
+    # Fallback local
+    p = Path(storage_path)
+    if not p.exists():
+        raise FileNotFoundError(storage_path)
+    return p
 
 
 async def move_object(
