@@ -100,20 +100,37 @@ def _ftp_client() -> Iterator[FTP]:
                 pass
 
 
-def _cwd_into(ftp: FTP, abs_dir: PurePosixPath) -> None:
-    """Navega a `abs_dir` (path absoluto), creando subdirectorios si faltan.
+def _split_path(p: PurePosixPath) -> list[str]:
+    """Componentes no vacíos del path (sin `/` raíz)."""
+    return [part for part in p.parts if part and part != "/"]
 
-    Arranca siempre desde `/` para no depender del PWD post-login (Hostinger
-    deja al usuario en `/public_html` por defecto, lo que duplicaría el path si
-    `REMOTE_DIR` también incluye `public_html`).
+
+def _normalized_remote_parts() -> list[str]:
+    """Componentes de ``HOSTINGER_SFTP_REMOTE_DIR`` relativos a la PWD post-login.
+
+    Hostinger Shared deja al usuario FTP dentro de ``/public_html`` tras login.
+    Si ``REMOTE_DIR`` incluye ``public_html`` (caso común cuando el usuario lo
+    configura mirando la ruta absoluta del file manager), se elimina ese
+    prefijo redundante para evitar crear ``/public_html/public_html/...``.
     """
-    try:
-        ftp.cwd("/")
-    except error_perm:
-        # Si el servidor jaílea al usuario y rechaza `/`, navegar relativo.
-        pass
+    raw = (settings.hostinger_sftp_remote_dir or "").strip("/")
+    parts = [p for p in raw.split("/") if p]
+    if parts and parts[0] == "public_html":
+        parts = parts[1:]
+    return parts
 
-    for part in _split_path(abs_dir):
+
+def _cwd_into(ftp: FTP, parts: list[str]) -> None:
+    """Navega RELATIVO desde la PWD actual, creando subdirectorios si faltan.
+
+    No se usa ``cwd('/')`` previo: Hostinger Shared coloca al usuario en
+    ``/public_html`` después del login y un ``cwd('/')`` exitoso escaparía
+    ese chroot lógico, dejando los uploads en ``/mi/media/...`` (fuera del
+    webroot servido por el subdominio).
+    """
+    for part in parts:
+        if not part or part == "/":
+            continue
         try:
             ftp.cwd(part)
         except error_perm:
@@ -121,47 +138,35 @@ def _cwd_into(ftp: FTP, abs_dir: PurePosixPath) -> None:
             ftp.cwd(part)
 
 
-def _split_path(p: PurePosixPath) -> list[str]:
-    """Componentes no vacíos del path (sin `/` raíz)."""
-    return [part for part in p.parts if part and part != "/"]
-
-
-def _absolute_remote_dir() -> PurePosixPath:
-    """`HOSTINGER_SFTP_REMOTE_DIR` interpretado como path absoluto.
-
-    Acepta valores con o sin `/` inicial — siempre devuelve un path absoluto
-    para evitar ambigüedad con el PWD post-login.
-    """
-    raw = settings.hostinger_sftp_remote_dir or ""
-    if not raw.startswith("/"):
-        raw = "/" + raw
-    return PurePosixPath(raw)
-
-
 def _upload_sftp_sync(content: bytes, relative_path: str) -> tuple[str, str]:
-    """Sube `content` a Hostinger por FTPS y retorna (storage_path, storage_url).
+    """Sube ``content`` a Hostinger por FTPS y retorna (storage_path, storage_url).
 
-    `storage_path` es el path absoluto (base + relativo) para uso al borrar.
+    ``storage_path`` es el path absoluto reportado por el servidor FTP tras
+    ``pwd()`` (chroot-relativo) — uso confiable para RETR/DELE/RNFR posteriores.
     """
-    remote_base = _absolute_remote_dir()
-    remote_path = remote_base / relative_path
+    rel = PurePosixPath(relative_path)
+    rel_parts = _split_path(rel)
+    if not rel_parts:
+        raise ValueError("relative_path inválido")
+    parent_parts = _normalized_remote_parts() + rel_parts[:-1]
+    filename = rel_parts[-1]
 
     with _ftp_client() as ftp:
-        _cwd_into(ftp, remote_path.parent)
+        _cwd_into(ftp, parent_parts)
         buf = io.BytesIO(content)
-        ftp.storbinary(f"STOR {remote_path.name}", buf)
+        ftp.storbinary(f"STOR {filename}", buf)
+        abs_dir = ftp.pwd().rstrip("/")
+        storage_path = f"{abs_dir}/{filename}"
 
     storage_url = f"{settings.hostinger_public_base_url}/{relative_path}"
-    return str(remote_path), storage_url
+    return storage_path, storage_url
 
 
 def _delete_sftp_sync(storage_path: str) -> None:
     """Borra un archivo remoto por FTPS. Errores se loguean (best-effort)."""
     try:
-        path = PurePosixPath(storage_path)
         with _ftp_client() as ftp:
-            _cwd_into(ftp, path.parent)
-            ftp.delete(path.name)
+            ftp.delete(storage_path)
     except Exception:  # noqa: BLE001
         logger.warning("No se pudo borrar archivo FTPS (best-effort).")
 
@@ -219,20 +224,25 @@ def _move_sftp_sync(src_storage_path: str, dst_relative_path: str) -> tuple[str,
     """
     from ftplib import error_perm as _err
 
-    remote_base = _absolute_remote_dir()
-    dst_remote_path = remote_base / dst_relative_path
+    dst_rel = PurePosixPath(dst_relative_path)
+    dst_rel_parts = _split_path(dst_rel)
+    if not dst_rel_parts:
+        raise ValueError("dst_relative_path inválido")
+    parent_parts = _normalized_remote_parts() + dst_rel_parts[:-1]
+    filename = dst_rel_parts[-1]
 
     with _ftp_client() as ftp:
-        # Crear directorio destino si no existe (mkdir -p).
-        _cwd_into(ftp, dst_remote_path.parent)
+        _cwd_into(ftp, parent_parts)
+        abs_dst_dir = ftp.pwd().rstrip("/")
+        dst_full = f"{abs_dst_dir}/{filename}"
         try:
-            ftp.rename(src_storage_path, str(dst_remote_path))
+            ftp.rename(src_storage_path, dst_full)
         except _err:
             # Fallback: download src → upload dst → delete src
             buf = io.BytesIO()
             ftp.retrbinary(f"RETR {src_storage_path}", buf.write)
             buf.seek(0)
-            ftp.storbinary(f"STOR {dst_remote_path.name}", buf)
+            ftp.storbinary(f"STOR {filename}", buf)
             try:
                 ftp.delete(src_storage_path)
             except _err:
@@ -242,7 +252,7 @@ def _move_sftp_sync(src_storage_path: str, dst_relative_path: str) -> tuple[str,
                 )
 
     storage_url = f"{settings.hostinger_public_base_url}/{dst_relative_path}"
-    return str(dst_remote_path), storage_url
+    return dst_full, storage_url
 
 
 def _move_local_sync(
@@ -262,21 +272,36 @@ def _move_local_sync(
 def _download_sftp_sync(storage_path: str, suffix: str = "") -> Path:
     """Descarga un archivo remoto FTPS a un archivo temporal y retorna su Path.
 
+    Intenta RETR con el ``storage_path`` tal como está y, si falla, reintenta
+    con un prefijo legado ``/public_html`` strippeado — backward-compat para
+    archivos persistidos antes del fix de chroot.
+
     Raises:
-        FileNotFoundError: Si el archivo remoto no existe (error_perm / error_temp).
+        FileNotFoundError: Si el archivo remoto no existe en ninguna variante.
     """
     path = PurePosixPath(storage_path)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
         with _ftp_client() as ftp:
-            try:
-                ftp.cwd("/")
-            except error_perm:
-                pass
-            try:
-                ftp.retrbinary(f"RETR {storage_path}", tmp.write)
-            except (error_perm, error_temp) as exc:
-                raise FileNotFoundError(storage_path) from exc
+            candidates = [storage_path]
+            # Backward-compat: archivos viejos subidos antes del fix quedaron
+            # en ``/mi/...`` (sin prefijo ``/public_html``). Si tras mover
+            # manualmente a ``/public_html/mi/...`` el storage_path en DB
+            # sigue apuntando al path viejo, reintentamos con el prefijo.
+            if not storage_path.startswith("/public_html/"):
+                candidates.append("/public_html" + storage_path)
+            last_exc: Exception | None = None
+            for candidate in candidates:
+                try:
+                    ftp.retrbinary(f"RETR {candidate}", tmp.write)
+                    last_exc = None
+                    break
+                except (error_perm, error_temp) as exc:
+                    last_exc = exc
+                    tmp.seek(0)
+                    tmp.truncate()
+            if last_exc is not None:
+                raise FileNotFoundError(storage_path) from last_exc
     except FileNotFoundError:
         raise
     except Exception as exc:  # noqa: BLE001
