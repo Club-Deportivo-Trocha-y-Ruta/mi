@@ -8,6 +8,13 @@
  * - El layout responsive se decide al runtime con ``matchMedia`` para
  *   evitar duplicar todo el árbol en SSR-style "hidden md:block".
  *
+ * v2 (Task #8):
+ *   - Preview: si prompt_version === "race_analyst_v2", muestra primera
+ *     línea del bloque "## Qué pasó". Legacy v1 muestra truncate del
+ *     summary_text completo.
+ *   - Detalle: si v2, renderiza 4 secciones collapsibles (details).
+ *     Legacy v1 mantiene MarkdownReportViewer.
+ *
  * Privacidad: el backend ya filtra el listado según el rol. Acá no
  * se hace nada adicional — confiamos en BE-2.
  *
@@ -20,6 +27,7 @@ import { useEffect, useState } from "react";
 import { ChevronRight, History, Sparkles } from "lucide-react";
 
 import { MarkdownReportViewer } from "@/components/ai/MarkdownReportViewer";
+import { InsightN1Banner } from "./InsightN1Banner";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -46,7 +54,82 @@ import type {
   AthleteInsightOut,
   InsightConfidence,
   InsightLink,
+  InsightParsedSections,
 } from "@/types/athleteRaceAnalysis.types";
+
+// ---------------------------------------------------------------------------
+// Helpers de parsing para insights v2
+// ---------------------------------------------------------------------------
+
+const PROMPT_VERSION_V2 = "race_analyst_v2";
+
+/** Normaliza acentos y casing para comparar headers tolerando variantes. */
+function normalizeHeader(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Extrae el contenido de una sección markdown delimitada por un header ##.
+ * Devuelve el texto entre el header encontrado y el siguiente header ## (o
+ * fin de string).
+ *
+ * Usa `startsWith` sobre el header normalizado para tolerar variantes del
+ * backend (ej: "## Qué pasó en esta válida" matchea con headerText "Qué pasó",
+ * "## Recorrido hasta acá" matchea con "Recorrido hasta").
+ */
+function extractSection(markdown: string, headerText: string): string {
+  const lines = markdown.split("\n");
+  const needle = normalizeHeader(headerText);
+  let inside = false;
+  const collected: string[] = [];
+  for (const line of lines) {
+    if (/^##\s/.test(line)) {
+      if (inside) break;
+      const headerInLine = normalizeHeader(line.replace(/^##\s+/, ""));
+      if (headerInLine.startsWith(needle)) {
+        inside = true;
+        continue;
+      }
+    } else if (inside) {
+      collected.push(line);
+    }
+  }
+  return collected.join("\n").trim();
+}
+
+/**
+ * Parsea las 4 secciones del summary_text de un insight v2.
+ * Los headers en el markdown son exactamente:
+ *   ## Qué pasó / ## Recorrido hasta aquí / ## Hacia dónde va / ## Resumen de temporada
+ */
+function parseV2Sections(summaryText: string): InsightParsedSections {
+  return {
+    what_happened: extractSection(summaryText, "Qué pasó") || undefined,
+    journey_so_far:
+      extractSection(summaryText, "Recorrido hasta") || undefined,
+    looking_ahead: extractSection(summaryText, "Hacia dónde va") || undefined,
+    season_summary:
+      extractSection(summaryText, "Resumen de temporada") || undefined,
+  };
+}
+
+/**
+ * Para la preview de la card, extrae la primera línea no vacía del bloque
+ * "Qué pasó" en insights v2.
+ */
+function getV2Preview(summaryText: string): string {
+  const section = extractSection(summaryText, "Qué pasó");
+  if (!section) return summaryText;
+  const firstLine = section
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  return firstLine ?? summaryText;
+}
 
 const SUMMARY_MAX_CHARS = 160;
 
@@ -212,7 +295,9 @@ export function InsightsTimeline({ athleteId, mode }: InsightsTimelineProps) {
                   )}
                 </div>
                 <p className="mt-2 text-sm leading-relaxed text-charcoal">
-                  {truncate(insight.summary_text, SUMMARY_MAX_CHARS)}
+                  {insight.prompt_version === PROMPT_VERSION_V2
+                    ? truncate(getV2Preview(insight.summary_text), SUMMARY_MAX_CHARS)
+                    : truncate(insight.summary_text, SUMMARY_MAX_CHARS)}
                 </p>
               </div>
               <ChevronRight
@@ -295,6 +380,9 @@ function InsightDetailDrawer({
       );
     }
     const insight = detailQuery.data;
+    const isV2 = insight.prompt_version === PROMPT_VERSION_V2;
+    const sections = isV2 ? parseV2Sections(insight.summary_text) : null;
+
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -307,7 +395,13 @@ function InsightDetailDrawer({
           )}
         </div>
 
-        <MarkdownReportViewer markdown={insight.summary_text} />
+        {insight.is_first_in_season === true && <InsightN1Banner mode={mode} />}
+
+        {isV2 && sections ? (
+          <InsightV2Sections sections={sections} mode={mode} />
+        ) : (
+          <MarkdownReportViewer markdown={insight.summary_text} />
+        )}
 
         {insight.recommendations.length > 0 && (
           <section
@@ -370,6 +464,82 @@ function InsightDetailDrawer({
         <SheetBody>{body}</SheetBody>
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Secciones v2 — renderiza los 4 bloques del prompt race_analyst_v2
+// ---------------------------------------------------------------------------
+
+/** Labels por sección para coach y para parent. */
+const SECTION_LABELS: Record<
+  keyof InsightParsedSections,
+  { coach: string; parent: string }
+> = {
+  what_happened: { coach: "Qué pasó", parent: "Qué pasó" },
+  journey_so_far: { coach: "Recorrido hasta aquí", parent: "Recorrido" },
+  looking_ahead: { coach: "Hacia dónde va", parent: "Hacia dónde va" },
+  season_summary: { coach: "Resumen de temporada", parent: "Resumen temporada" },
+};
+
+const SECTION_ORDER: Array<keyof InsightParsedSections> = [
+  "what_happened",
+  "journey_so_far",
+  "looking_ahead",
+  "season_summary",
+];
+
+interface InsightV2SectionsProps {
+  sections: InsightParsedSections;
+  mode: "coach" | "parent";
+}
+
+function InsightV2Sections({ sections, mode }: InsightV2SectionsProps) {
+  const visibleSections = SECTION_ORDER.filter((key) => !!sections[key]);
+
+  if (visibleSections.length === 0) {
+    return (
+      <p className="text-sm text-mid-gray">
+        No se encontraron secciones en este análisis.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2" data-testid="insight-v2-sections">
+      {visibleSections.map((key, index) => {
+        const label =
+          mode === "parent"
+            ? SECTION_LABELS[key].parent
+            : SECTION_LABELS[key].coach;
+        const content = sections[key] ?? "";
+        // Primera sección abierta por defecto
+        const isOpen = index === 0;
+        return (
+          <details
+            key={key}
+            open={isOpen}
+            className="rounded-xl bg-white ring-1 ring-light-gray"
+            data-testid={`insight-v2-section-${key}`}
+          >
+            <summary
+              className={cn(
+                "flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium text-charcoal",
+                "hover:bg-light-gray/30 rounded-xl transition-colors select-none",
+              )}
+              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif" }}
+            >
+              {label}
+            </summary>
+            <div className="px-4 pb-4 pt-1">
+              <p className="text-sm leading-relaxed text-charcoal whitespace-pre-wrap">
+                {content}
+              </p>
+            </div>
+          </details>
+        );
+      })}
+    </div>
   );
 }
 

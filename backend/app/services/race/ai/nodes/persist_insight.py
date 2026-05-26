@@ -181,7 +181,10 @@ def _resolve_valida_nums_to_persist(state: dict, use_case: str) -> list[int]:
 @with_retry(max_attempts=3, backoff=0)
 async def persist_insight(state: dict) -> dict[str, Any]:
     draft = state.get("draft_analysis")
-    if draft is None:
+    per_valida_drafts: dict[int, Any] | None = state.get("per_valida_drafts")
+
+    # Sin ningún análisis disponible → no persistir.
+    if draft is None and not per_valida_drafts:
         return {}
 
     decision = (state.get("hitl_decision") or {}).get("decision", "auto-approve")
@@ -195,21 +198,43 @@ async def persist_insight(state: dict) -> dict[str, Any]:
     event_id = state.get("event_id")
     use_case = state.get("use_case") or _USE_CASE
 
-    # Fix BUG-001: derivar la lista de válidas a persistir.
-    # - valida_num singular → [valida_num] (compat con tests/use_cases puntuales).
-    # - valida_nums plural  → fan-out: 1 inserción por válida.
-    # - ninguno             → [0] sentinel para agregados.
-    valida_nums_db: list[int] = _resolve_valida_nums_to_persist(state, use_case)
+    # v2: si per_valida_drafts existe, usamos su mapping {valida_num: draft}
+    # para que cada fila tenga summary_text DISTINTO (spec §Output).
+    # v1: fan-out con el mismo summary_text para todas las válidas en la lista.
+    is_v2 = bool(per_valida_drafts)
+
+    if is_v2:
+        # Construir lista de pares (valida_num, summary_text) desde los drafts v2.
+        v2_pairs: list[tuple[int, str, Any, Any]] = []
+        for vn, vn_draft in (per_valida_drafts or {}).items():
+            vn_raw_md = getattr(vn_draft, "raw_markdown", None) or ""
+            vn_summary = vn_raw_md[:_SUMMARY_MAX_CHARS]
+            vn_recs = _serializable(getattr(vn_draft, "recommendations", None) or [])
+            v2_pairs.append((int(vn), vn_summary, vn_recs, vn_draft))
+        valida_nums_db = [p[0] for p in v2_pairs]
+    else:
+        # Flujo v1: derivar la lista de válidas a persistir (BUG-001).
+        valida_nums_db = _resolve_valida_nums_to_persist(state, use_case)
+        v2_pairs = []
+
+    persisted_insight_ids: list[int] = []
 
     aggregate = state.get("aggregate_metrics") or {}
 
-    recommendations = _serializable(draft.recommendations or [])
-    risks = _serializable(draft.risk_flags or [])
+    # Valores base para v1 (compartidos por todas las válidas en v1).
+    base_draft = draft or (list(per_valida_drafts.values())[0] if per_valida_drafts else None)
+    base_recommendations = _serializable(getattr(base_draft, "recommendations", None) or [])
+    risks = _serializable(getattr(base_draft, "risk_flags", None) or [])
     principles = _serializable(state.get("principles") or [])
 
-    # `category_stats` se popula dentro del try (requiere sesión DB).
-    # Mantiene `category_sizes` por compatibilidad transitoria con
-    # snapshots intermedios — los nuevos solo usan `category_stats`.
+    base_raw_md = (
+        getattr(state.get("final_analysis"), "raw_markdown", None)
+        or getattr(base_draft, "raw_markdown", None)
+        or ""
+    )
+    base_summary_text = base_raw_md[:_SUMMARY_MAX_CHARS]
+    prompt_version = aggregate.get("prompt_version_analyst", "race_analyst_v1")
+
     metrics_snapshot: dict[str, Any] = {
         "progression": state.get("metrics", {}).get("progression", []),
         "podium_gap": state.get("metrics", {}).get("podium_gap", []),
@@ -229,22 +254,11 @@ async def persist_insight(state: dict) -> dict[str, Any]:
         confidence_enum = confidence_value
 
     now = _now()
-    final = state.get("final_analysis")
-    raw_md = (
-        getattr(final, "raw_markdown", None)
-        or getattr(draft, "raw_markdown", None)
-        or ""
-    )
-    summary_text = raw_md[:_SUMMARY_MAX_CHARS]
-    prompt_version = aggregate.get("prompt_version_analyst", "race_analyst_v1")
 
     try:
         async with get_session() as db:
             from sqlalchemy import update as sa_update
 
-            # Popular category_stats para percentil por TIEMPO en el
-            # Comparador v2. Falla silenciosa: snapshot queda con `{}` y
-            # la UI oculta la fila percentil (graceful degrade).
             try:
                 category_id = state.get("category_id")
                 metrics_snapshot["category_stats"] = (
@@ -256,73 +270,126 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                     exc_info=True,
                 )
 
-            # Fan-out: una fila por cada valida_num resuelto. El versionado
-            # (deprecate_previous_active) se aplica por (athlete, season,
-            # valida_num) — cada válida es independiente. Todas las filas
-            # comparten el mismo summary_text/recommendations porque el
-            # análisis del LLM es uno solo para el conjunto seleccionado.
-            for valida_num_db in valida_nums_db:
-                previous_id: Optional[int] = None
-                is_active_value: Optional[int] = None
+            if is_v2:
+                # v2: una fila por válida con summary_text DISTINTO.
+                for vn_num, vn_summary, vn_recs, _vn_draft in v2_pairs:
+                    previous_id: Optional[int] = None
+                    is_active_value: Optional[int] = None
 
-                if approved:
-                    # Liberar slot UNIQUE antes del INSERT (clave para no chocar
-                    # con uq_insights_active_terna). new_insight_id se enlaza
-                    # después del flush con UPDATE puntual.
-                    previous_id = await deprecate_previous_active(
-                        db,
+                    if approved:
+                        previous_id = await deprecate_previous_active(
+                            db,
+                            athlete_id=athlete_id,
+                            season=season,
+                            valida_num=vn_num,
+                            new_insight_id=None,
+                        )
+                        is_active_value = 1
+
+                    new_row = AthleteAiInsight(
                         athlete_id=athlete_id,
+                        competitor_id=competitor_id,
+                        event_id=event_id,
+                        agent_run_id=state.get("agent_run_id"),
+                        generated_by_user_id=coach_id,
+                        season=season,
+                        valida_num=vn_num,
+                        use_case=use_case,
+                        summary_text=vn_summary,  # DISTINTO por válida (v2)
+                        recommendations_json=vn_recs,
+                        metrics_snapshot_json=metrics_snapshot,
+                        principles_cited_json=principles,
+                        confidence=confidence_enum,
+                        model="gemini-2.5-flash-lite",
+                        prompt_version=prompt_version,
+                        coach_approved=approved,
+                        coach_edits_count=0,
+                        generated_at=now,
+                        approved_at=now if approved else None,
+                        archived_at=now if archived else None,
+                        deprecated_at=None,
+                        is_active=is_active_value,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    db.add(new_row)
+                    await db.flush()
+                    # `new_row.id` puede ser None en tests con FakeSession (no
+                    # autoassign de PK). En prod siempre es int post-flush.
+                    if new_row.id is not None:
+                        persisted_insight_ids.append(int(new_row.id))
+
+                    if approved and previous_id is not None:
+                        await db.execute(
+                            sa_update(AthleteAiInsight)
+                            .where(AthleteAiInsight.id == previous_id)
+                            .values(
+                                superseded_by_insight_id=new_row.id,
+                                updated_at=now,
+                            )
+                        )
+            else:
+                # v1: fan-out con el mismo summary_text para todas las válidas.
+                for valida_num_db in valida_nums_db:
+                    previous_id = None
+                    is_active_value = None
+
+                    if approved:
+                        previous_id = await deprecate_previous_active(
+                            db,
+                            athlete_id=athlete_id,
+                            season=season,
+                            valida_num=valida_num_db,
+                            new_insight_id=None,
+                        )
+                        is_active_value = 1
+
+                    new_row = AthleteAiInsight(
+                        athlete_id=athlete_id,
+                        competitor_id=competitor_id,
+                        event_id=event_id,
+                        agent_run_id=state.get("agent_run_id"),
+                        generated_by_user_id=coach_id,
                         season=season,
                         valida_num=valida_num_db,
-                        new_insight_id=None,
+                        use_case=use_case,
+                        summary_text=base_summary_text,
+                        recommendations_json=base_recommendations,
+                        metrics_snapshot_json=metrics_snapshot,
+                        principles_cited_json=principles,
+                        confidence=confidence_enum,
+                        model="gemini-2.5-flash-lite",
+                        prompt_version=prompt_version,
+                        coach_approved=approved,
+                        coach_edits_count=0,
+                        generated_at=now,
+                        approved_at=now if approved else None,
+                        archived_at=now if archived else None,
+                        deprecated_at=None,
+                        is_active=is_active_value,
+                        created_at=now,
+                        updated_at=now,
                     )
-                    is_active_value = 1
+                    db.add(new_row)
+                    await db.flush()
+                    # `new_row.id` puede ser None en tests con FakeSession (no
+                    # autoassign de PK). En prod siempre es int post-flush.
+                    if new_row.id is not None:
+                        persisted_insight_ids.append(int(new_row.id))
 
-                new_row = AthleteAiInsight(
-                    athlete_id=athlete_id,
-                    competitor_id=competitor_id,
-                    event_id=event_id,
-                    agent_run_id=state.get("agent_run_id"),
-                    generated_by_user_id=coach_id,
-                    season=season,
-                    valida_num=valida_num_db,
-                    use_case=use_case,
-                    summary_text=summary_text,
-                    recommendations_json=recommendations,
-                    metrics_snapshot_json=metrics_snapshot,
-                    principles_cited_json=principles,
-                    confidence=confidence_enum,
-                    model="gemini-2.5-flash-lite",
-                    prompt_version=prompt_version,
-                    coach_approved=approved,
-                    coach_edits_count=0,
-                    generated_at=now,
-                    approved_at=now if approved else None,
-                    archived_at=now if archived else None,
-                    deprecated_at=None,
-                    is_active=is_active_value,
-                    created_at=now,
-                    updated_at=now,
-                )
-                db.add(new_row)
-                await db.flush()  # Asigna new_row.id sin commit aún.
-
-                # Enlazar la cadena: el insight previo ahora apunta al nuevo.
-                if approved and previous_id is not None:
-                    await db.execute(
-                        sa_update(AthleteAiInsight)
-                        .where(AthleteAiInsight.id == previous_id)
-                        .values(
-                            superseded_by_insight_id=new_row.id,
-                            updated_at=now,
+                    if approved and previous_id is not None:
+                        await db.execute(
+                            sa_update(AthleteAiInsight)
+                            .where(AthleteAiInsight.id == previous_id)
+                            .values(
+                                superseded_by_insight_id=new_row.id,
+                                updated_at=now,
+                            )
                         )
-                    )
 
             await db.commit()
 
     except Exception as exc:  # noqa: BLE001
-        # Persistencia es importante pero no debe romper el grafo
-        # (notify_coach aún tiene valor). Log + sigue.
         logger.error("persist_insight: insert falló: %s", type(exc).__name__)
         return {
             "errors": list(state.get("errors") or [])
@@ -335,7 +402,10 @@ async def persist_insight(state: dict) -> dict[str, Any]:
             ]
         }
 
-    return {}
+    return {
+        "persisted_insight_ids": persisted_insight_ids,
+        "insight_approved": approved,
+    }
 
 
 __all__ = ["persist_insight", "NODE_NAME", "_resolve_valida_nums_to_persist"]

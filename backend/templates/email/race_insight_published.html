@@ -1,0 +1,80 @@
+{% extends "email/base/layout.html" %}
+
+{#
+  Notificación a padres cuando el coach aprueba un análisis de carrera
+  para una válida tier A (tapering completo) o CD (Campeonato Departamental).
+
+  Las válidas tier B y C NO disparan este email — se incluyen en el
+  boletín mensual existente (Fase 1.8).
+
+  Variables requeridas:
+    parent_name, athlete_first_name, club_name,
+    valida_label, valida_date, tier_label,
+    coach_summary, deep_link_path
+#}
+
+{% block title %}Análisis de carrera disponible — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1>Análisis de carrera disponible</h1>
+
+<p>Hola {{ parent_name }},</p>
+
+<p>
+  El entrenador del <strong>{{ club_name }}</strong> publicó el análisis de la
+  participación de <strong>{{ athlete_first_name }}</strong> en la válida
+  <strong>{{ valida_label }}</strong> ({{ valida_date }}).
+</p>
+
+<div class="highlight-box">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0; width: 160px;">
+        <strong style="color: #2f2f2f;">Válida:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ valida_label }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Fecha:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ valida_date }}
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0;">
+        <strong style="color: #2f2f2f;">Prioridad:</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">
+        {{ tier_label }}
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p style="font-size: 14px; color: #2f2f2f; line-height: 1.6;">
+  {{ coach_summary }}
+</p>
+
+<p>
+  Puedes consultar el análisis completo, métricas y recomendaciones del
+  entrenador iniciando sesión en la plataforma:
+  <a href="{{ deep_link_path }}">{{ deep_link_path }}</a>
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #aaaaaa;">
+  Esta notificación se envía solamente para válidas de máxima prioridad
+  (tipo A y Campeonato Departamental). El resto de las válidas se resumen
+  mensualmente en el boletín de progreso.
+</p>
+
+<p>
+  Saludos,<br>
+  <strong>{{ club_name }}</strong>
+</p>
+{% endblock %}

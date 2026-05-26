@@ -28,6 +28,16 @@ from app.services.race.schemas import AnalysisOutput, Citation, CriticFeedback
 class RaceAnalystState(TypedDict, total=False):
     """Estado mutable del grafo ``race-analyst``.
 
+    Campos v2 añadidos (race-results-v2-foundation):
+    - ``per_valida_drafts``: dict ``{valida_num: AnalysisOutput}`` emitido
+      por ``analyst_agent`` en modo v2. Persiste una fila distinta por
+      válida en ``persist_insight``.
+    - ``forbidden_names``: lista de nombres reales cargados dinámicamente
+      desde DB (athlete.full_name, athlete.nickname, padres). Se inyectan
+      en los guardrails post-generación; NUNCA van al LLM ni a los logs.
+    - ``prompt_version``: versión del prompt activa. Default
+      ``race_analyst_v1`` para compat con flujos existentes.
+
     El grafo es secuencial (no fork-join), por lo que basta con merge
     de dict para fusionar updates. Si en F8 metemos paralelismo
     (ramas analyst + critic en paralelo), habrá que migrar a
@@ -40,6 +50,9 @@ class RaceAnalystState(TypedDict, total=False):
     valida_nums: list[int] | None
     coach_id: int  # audit
     explain_mode: bool
+    # Edad cronológica del atleta calculada en el router desde birth_date.
+    # NULL → fallback warning en analyst_agent + retrieve_principles.
+    athlete_age: int | None
 
     # ---- Derivado por nodos ----
     raw_data: list[dict]
@@ -64,6 +77,33 @@ class RaceAnalystState(TypedDict, total=False):
     errors: list[dict]  # [{node, error, timestamp}]
     events: list[dict]  # stream para polling: [{seq, ts, type, payload}]
     aggregate_metrics: dict  # totales tokens/cost/latency
+
+    # ---- v2: análisis por válida + privacidad ----
+    # Dict {valida_num: AnalysisOutput} emitido por analyst_agent en modo v2.
+    # Cada entrada produce una fila independiente en athlete_ai_insights.
+    per_valida_drafts: dict[int, AnalysisOutput] | None
+
+    # Nombres reales prohibidos: cargados desde DB antes de invocar el LLM.
+    # Alimentan guardrails._RACE_V2_RULES. NUNCA se pasan al modelo.
+    forbidden_names: list[str]
+
+    # Versión del prompt activa. Default "race_analyst_v1" para compat.
+    # "race_analyst_v2" activa flujo por-válida con 4 secciones nuevas.
+    prompt_version: str
+
+    # ---- v2: contexto de temporada completa ----
+    # Resultados de TODAS las válidas de la temporada para el atleta
+    # (sin filtrar por valida_nums del set lanzado). Usado en sección
+    # "Recorrido hasta acá" para construir tendencia longitudinal real.
+    full_season_results: list[dict] | None
+
+    # COUNT(DISTINCT valida_num) de resultados válidos (excluye DNS/DNF)
+    # de TODA la temporada, no solo el set lanzado.
+    season_validas_count: int
+
+    # True si el atleta tiene exactamente 1 valid en TODA la temporada.
+    # Regla N=1 aplica cuando es True — independiente del tamaño del set.
+    is_first_in_season: bool
 
     # ---- Outputs ----
     rendered_markdown: str

@@ -160,7 +160,11 @@ class AthleteNewsletterGuardrails(Guardrails):
 
     _MEDICAL_PATTERN = re.compile(
         r"\b(suplement\w*|creatina|proteína en polvo|proteínas en polvo|"
-        r"medicament\w*|prescrip\w*|dosis\w*|batido\w* proteico\w*|aminoácidos?)\b",
+        r"medicament\w*|prescrip\w*|dosis\w*|batido\w* proteico\w*|aminoácidos?|"
+        # Términos nutricionales clasificatorios — Ley 1098/2006 Art. 27:
+        # solo personal de salud autorizado puede emitir etiquetas diagnósticas
+        # sobre menores. Cubren los 5 términos del spec de curvas de percentiles.
+        r"obesidad|sobrepeso|bajo\s+peso|talla\s+baja|desnutrici[oó]n)\b",
         re.IGNORECASE,
     )
 

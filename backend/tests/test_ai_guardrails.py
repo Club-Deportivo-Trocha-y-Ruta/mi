@@ -6,6 +6,7 @@ import pytest
 
 from app.services.ai.errors import LLMSchemaError
 from app.services.ai.guardrails import Guardrails
+from app.services.ai.use_cases.athlete_monthly_newsletter import AthleteNewsletterGuardrails
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +117,38 @@ def test_clean_text_passes_through():
     )
     out = g.scrub(text)
     assert out == text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Guardrails boletín mensual — términos nutricionales clasificatorios (P6)
+# Ley 1098/2006 Art. 27: solo personal de salud autorizado puede emitir
+# etiquetas diagnósticas sobre menores. Regresión contra gap detectado en
+# auditoría de curvas de percentiles (2026-05-25).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("forbidden_term", [
+    "obesidad",
+    "Obesidad",
+    "sobrepeso",
+    "bajo peso",
+    "talla baja",
+    "desnutrición",
+    "desnutricion",
+])
+def test_newsletter_guardrail_blocks_nutritional_labels(forbidden_term: str):
+    """AthleteNewsletterGuardrails debe rechazar etiquetas diagnósticas nutricionales."""
+    from app.services.ai.errors import LLMSchemaError
+
+    g = AthleteNewsletterGuardrails()
+    # Texto sintético con suficiente largo (≥10 palabras) para pasar la guardia de
+    # MIN_WORDS pero que contiene el término prohibido.
+    text = (
+        f"Este mes el deportista mostró buen progreso técnico "
+        f"aunque presenta {forbidden_term} según la evaluación de crecimiento."
+    )
+    with pytest.raises(LLMSchemaError, match="médicos/nutricionales"):
+        g.scrub_block(text)
 
 
 # ---------------------------------------------------------------------------

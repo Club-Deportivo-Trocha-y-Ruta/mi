@@ -33,6 +33,7 @@
 {% from "documents/pdf/charts/gap_pct.svg.jinja" import gap_pct %}
 {% from "documents/pdf/charts/points_accumulated.svg.jinja" import points_accumulated %}
 {% from "documents/pdf/charts/projection_band.svg.jinja" import projection_band %}
+{% from "documents/pdf/charts/percentile_curves.svg.jinja" import percentile_curves %}
 
 {# Acceso fácil a bloques #}
 {% set eb = email_blocks or {} %}
@@ -47,6 +48,7 @@
 {% set support = eb.get('support_at_home', {}) %}
 {% set anthro = pb.get('anthropometry', {}) %}
 {% set charts_ctx = pb.get('charts_context', {}) %}
+{% set percentile_ctx = pb.get('percentile_curves', {}) %}
 
 {# Iniciales para el avatar #}
 {% set display_initials = initials if initials else (athlete_first_name[0] ~ (athlete_last_name[0] if athlete_last_name else '')) %}
@@ -634,6 +636,18 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
+
+  <!-- Curvas de percentiles de crecimiento (solo PDF) -->
+  {% if percentile_ctx %}
+  <section style="page-break-before: always; page-break-inside: avoid; break-inside: avoid-page; margin-top: 0;">
+    <h3 style="font-size: 10pt; margin: 0 0 6pt 0;">Curvas de Percentiles de Referencia</h3>
+    <p style="font-size: 8pt; color: #6b7280; margin: 0 0 8pt 0;">Comparación con población de referencia CDC. La línea negra muestra las mediciones registradas.</p>
+    {% if percentile_ctx.height %}{{ percentile_curves(percentile_ctx.height) }}{% endif %}
+    {% if percentile_ctx.bmi %}{{ percentile_curves(percentile_ctx.bmi) }}{% endif %}
+    {% if percentile_ctx.weight %}{{ percentile_curves(percentile_ctx.weight) }}{% endif %}
+    <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 8pt;">Fuente: tablas CDC 2000 (5-19 años). De acuerdo con Res. 2465/2016 MinSalud Colombia. <strong>No constituye diagnóstico médico.</strong></p>
+  </section>
   {% endif %}
 </div>
 {% endif %}

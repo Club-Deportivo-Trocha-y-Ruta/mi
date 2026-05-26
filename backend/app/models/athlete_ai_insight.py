@@ -175,6 +175,9 @@ class AthleteAiInsight(Base):
     deprecated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Sentinel: 1 = activo, NULL = no activo. Ver docstring de tabla.
     is_active: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Task #7: bandera idempotente del job de retención (180d post deprecated_at).
+    # NULL = aún no scrubeado; NOT NULL = timestamp en que el job redactó PII.
+    pii_scrubbed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # --- Timestamps --------------------------------------------------------
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

@@ -3,10 +3,20 @@ export const CLUB_LOCALE = "es-CO";
 
 type DateInput = string | Date | null | undefined;
 
+/**
+ * Detecta strings ISO 8601 con fecha+hora pero sin marcador de zona
+ * (sin "Z" ni offset ±HH:MM). El backend usa columnas MySQL DateTime
+ * sin tz que viajan en UTC pero Pydantic las serializa naive; JS
+ * interpretaría esos strings como local del browser y desfasaría las
+ * horas. Convención: tratar naive como UTC.
+ */
+const ISO_DATETIME_NAIVE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+
 function toDate(value: DateInput): Date | null {
   if (value == null || value === "") return null;
   if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
-  const d = new Date(value);
+  const normalized = ISO_DATETIME_NAIVE_RE.test(value) ? `${value}Z` : value;
+  const d = new Date(normalized);
   return isNaN(d.getTime()) ? null : d;
 }
 

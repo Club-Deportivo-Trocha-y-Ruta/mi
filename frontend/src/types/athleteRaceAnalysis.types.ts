@@ -92,6 +92,19 @@ export interface InsightLink {
   coach_approved: boolean;
 }
 
+/**
+ * Secciones parseadas del summary_text para insights v2 (prompt_version
+ * === "race_analyst_v2"). Se poblan en el frontend extrayendo los bloques
+ * bajo headers ## del markdown. No vienen del backend — se computan en
+ * el cliente mediante ``parseV2Sections``.
+ */
+export interface InsightParsedSections {
+  what_happened?: string;
+  journey_so_far?: string;
+  looking_ahead?: string;
+  season_summary?: string;
+}
+
 export interface AthleteInsightOut {
   id: number;
   season: number;
@@ -108,6 +121,8 @@ export interface AthleteInsightOut {
   approved_at: string | null;
   is_active: boolean;
   deprecated_at: string | null;
+  /** Solo presente si fue parseado en el cliente (v2 insights). */
+  parsed_sections?: InsightParsedSections;
 }
 
 export interface AthleteInsightDetailOut extends AthleteInsightOut {
@@ -116,6 +131,10 @@ export interface AthleteInsightDetailOut extends AthleteInsightOut {
   principles_cited: Array<Record<string, unknown>>;
   supersedes: InsightLink[];
   superseded_by: InsightLink | null;
+  /** True si la atleta tiene 1 válida en toda la temporada — gatilla banner N=1. */
+  is_first_in_season?: boolean | null;
+  /** Informativo: total de válidas de la temporada con resultados. */
+  season_validas_count?: number | null;
 }
 
 export interface AthleteInsightListResponse {

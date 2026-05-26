@@ -287,6 +287,247 @@ _RECORD_ANALYSIS_RULES: tuple[_Rule, ...] = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Reglas race analyst v2
+# ---------------------------------------------------------------------------
+#
+# Grupo _RACE_V2_RULES: aplicado cuando use_case="race_analyst_v2".
+#
+# 1. max_words_section_*: los guardrails NO verifican word count aquí —
+#    esa validación la hace _enforce_v2_word_limits() (separada) porque
+#    requiere parsear el markdown por secciones, no reemplazos regex.
+#
+# 2. forbidden_real_names: se construye dinámicamente con
+#    build_race_v2_forbidden_names_rules(names). No está en este tuple
+#    constante — se inyecta por instancia en Guardrails.scrub_with_report.
+#
+# 3. no_pseudonym_in_what_happened: la sección "Qué pasó" NUNCA debe tener
+#    pseudónimos AtletaXXX (el v2 usa "la deportista" / pronombres).
+#
+# 4. Frases de veto duro (5 frases exactas del spec).
+
+_NO_PSEUDONYM_IN_WHAT_HAPPENED_PATTERN = re.compile(
+    r"Atleta[-\s]?\w{1,10}[-\s]?\d{1,6}",
+    re.IGNORECASE,
+)
+
+_VETO_DURO_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bdebe\s+ganar\b", re.IGNORECASE),
+    re.compile(r"\btiene\s+que\s+llegar\s+al\s+podio\b", re.IGNORECASE),
+    re.compile(r"\bnecesita\s+m[aá]s\s+horas\b", re.IGNORECASE),
+    re.compile(r"\bm[aá]s\s+intensidad\b", re.IGNORECASE),
+    re.compile(r"\btrabajo\s+de\s+potencia\s+para\s+superar\s+a\b", re.IGNORECASE),
+)
+
+# Secciones v2 y sus límites en palabras (spec: 120/120/120).
+_V2_SECTIONS_MAX_WORDS: dict[str, int] = {
+    "qué pasó en esta válida": 120,
+    "que paso en esta valida": 120,
+    "recorrido hasta acá": 120,
+    "recorrido hasta aca": 120,
+    "hacia dónde va": 120,
+    "hacia donde va": 120,
+}
+
+# Margen de tolerancia: +10% sobre el límite antes de rechazar (spec).
+_V2_WORDS_TOLERANCE_FACTOR = 1.10
+
+# ---------------------------------------------------------------------------
+# Veto duro N=1 — verbos prohibidos cuando solo hay una válida en el set
+# ---------------------------------------------------------------------------
+#
+# Se activan únicamente cuando ``Guardrails(is_first_in_season=True)``.
+# Rechazo automático ante cualquier match (sin contar hacia MAX_VIOLATIONS).
+
+_VETO_N1_VERBS: tuple[str, ...] = (
+    # Solo formas verbales conjugadas (no sustantivos puros como
+    # "tendencia"/"progresión"/"evolución" — la frase canónica CA-6
+    # las usa NEGADAS: "no es posible establecer una tendencia de
+    # progresión"). El prompt v2 prohíbe afirmarlas vía DO/DON'T.
+    "evolucionó",
+    "evoluciono",
+    "mejoró",
+    "mejoro",
+    "empeoró",
+    "empeoro",
+    "empeora",
+    "subió",
+    "subio",
+    "bajó",
+    "ascendió",
+    "ascendio",
+    "descendió",
+    "descendio",
+    "progresó",
+    "progreso",
+    "regresó",
+    "regreso",
+    "consolidó",
+    "consolido",
+    "confirmó",
+    "confirmo",
+    "venía",
+    "venia",
+    "viene mostrando",
+    "sigue mejorando",
+    "proyecta",
+    "proyectado",
+    "apunta a",
+    "alcanzará",
+    "alcanzara",
+    "debería llegar",
+    "deberia llegar",
+    "se perfila",
+)
+
+
+def _build_n1_veto_patterns() -> list[tuple[str, re.Pattern[str]]]:
+    """Compila un patrón ``\\b{verb}\\b`` case-insensitive por cada verbo N=1.
+
+    Returns:
+        Lista de ``(verb, compiled_pattern)`` lista para ``check_v2_veto_n1``.
+    """
+    patterns: list[tuple[str, re.Pattern[str]]] = []
+    for verb in _VETO_N1_VERBS:
+        escaped = re.escape(verb)
+        # Verbos multi-palabra no necesitan \\b en el espacio interior.
+        patterns.append((verb, re.compile(rf"\b{escaped}\b", re.IGNORECASE)))
+    return patterns
+
+
+_N1_VETO_PATTERNS: list[tuple[str, re.Pattern[str]]] = _build_n1_veto_patterns()
+
+
+def check_v2_veto_n1(text: str) -> list[str]:
+    """Verifica verbos de veto duro N=1 en el texto generado.
+
+    Solo debe llamarse cuando ``is_first_in_season=True``.
+
+    Returns:
+        Lista de verbos detectados. Vacía si el texto es conforme.
+    """
+    found: list[str] = []
+    for verb, pattern in _N1_VETO_PATTERNS:
+        if pattern.search(text):
+            found.append(verb)
+    return found
+
+
+_RACE_V2_BASE_RULES: tuple[_Rule, ...] = (
+    _Rule(
+        name="no_pseudonym_what_happened",
+        pattern=_NO_PSEUDONYM_IN_WHAT_HAPPENED_PATTERN,
+        replacement="la deportista",
+        description=(
+            "v2: la sección 'Qué pasó' no debe contener pseudónimos "
+            "del tipo AtletaXXX-NNN. Reemplazar por 'la deportista'."
+        ),
+    ),
+)
+
+
+def build_race_v2_forbidden_names_rules(names: list[str]) -> tuple[_Rule, ...]:
+    """Construye reglas dinámicas de nombres prohibidos para v2.
+
+    Se llama una vez por análisis con la lista de nombres reales del atleta
+    (full_name, nickname, padres) cargada desde DB por el nodo analyst_agent.
+    Cada nombre genera una _Rule que lo reemplaza por 'la deportista'.
+
+    Args:
+        names: lista de nombres reales a prohibir (case-insensitive).
+
+    Returns:
+        Tuple de ``_Rule`` lista para añadir a un ``Guardrails`` de use_case
+        ``"race_analyst_v2"``.
+    """
+    rules: list[_Rule] = []
+    for name in names:
+        name = name.strip()
+        if not name:
+            continue
+        # Escapar caracteres especiales de regex para nombres con puntuación.
+        escaped = re.escape(name)
+        rules.append(
+            _Rule(
+                name=f"forbidden_name_{escaped[:20]}",
+                pattern=re.compile(rf"\b{escaped}\b", re.IGNORECASE),
+                replacement="la deportista",
+                description=(
+                    f"v2: nombre real prohibido detectado en output LLM. "
+                    f"Privacidad Ley 1581 Art. 3 (Colombia)."
+                ),
+            )
+        )
+    return tuple(rules)
+
+
+def check_v2_veto_duro(text: str) -> list[str]:
+    """Verifica las 5 frases de veto duro del spec v2.
+
+    Returns:
+        Lista de nombres de frases vetadas encontradas. Vacía si OK.
+    """
+    found: list[str] = []
+    names = [
+        "debe_ganar",
+        "tiene_que_llegar_al_podio",
+        "necesita_mas_horas",
+        "mas_intensidad",
+        "trabajo_de_potencia_para_superar_a",
+    ]
+    for pattern, name in zip(_VETO_DURO_PATTERNS, names):
+        if pattern.search(text):
+            found.append(name)
+    return found
+
+
+def check_v2_section_word_limits(markdown: str) -> list[str]:
+    """Verifica que cada sección v2 no exceda su límite de palabras (+10%).
+
+    Parsea headings ``## ...`` para delimitar secciones. Solo verifica las
+    secciones conocidas en ``_V2_SECTIONS_MAX_WORDS``.
+
+    Returns:
+        Lista de nombres de secciones que exceden el límite. Vacía si OK.
+    """
+    violations: list[str] = []
+    current_key: str | None = None
+    buf: list[str] = []
+
+    def _check_buf(key: str, lines: list[str]) -> None:
+        body = "\n".join(lines).strip()
+        word_count = len([w for w in re.split(r"\s+", body) if w])
+        limit = _V2_SECTIONS_MAX_WORDS.get(key, 999)
+        if word_count > int(limit * _V2_WORDS_TOLERANCE_FACTOR):
+            violations.append(key)
+
+    for line in markdown.splitlines():
+        m = re.match(r"^##\s+(?P<title>.+?)\s*$", line)
+        if m:
+            if current_key is not None:
+                _check_buf(current_key, buf)
+            title_lower = m.group("title").lower().strip()
+            # Normalizar acentos para match flexible.
+            import unicodedata
+            normalized = "".join(
+                c for c in unicodedata.normalize("NFD", title_lower)
+                if unicodedata.category(c) != "Mn"
+            )
+            current_key = next(
+                (k for k in _V2_SECTIONS_MAX_WORDS if normalized in k or k in normalized),
+                None,
+            )
+            buf = []
+        else:
+            if current_key is not None:
+                buf.append(line)
+
+    if current_key is not None:
+        _check_buf(current_key, buf)
+
+    return violations
+
+
 @dataclass(frozen=True)
 class GuardrailReport:
     """Resultado del scrub para que el caller pueda auditar."""
@@ -294,6 +535,16 @@ class GuardrailReport:
     text: str
     violations: tuple[str, ...]
     rejected: bool
+
+
+_AGE_MENTION_PATTERN = re.compile(
+    r"\b(?:tiene\s+|de\s+)(\d{1,2})\s*años\b",
+    re.IGNORECASE,
+)
+
+# Tolerancia en años para la comprobación de edad: si la diferencia entre
+# la edad mencionada y la real supera este umbral se marca violation.
+_AGE_MISMATCH_TOLERANCE = 0.6
 
 
 class Guardrails:
@@ -304,7 +555,20 @@ class Guardrails:
             extra como bloqueo de potenciómetro).
         use_case: Identificador del use case. Cuando vale
             `"anthropometric_record_analysis"` se aplican reglas anti-diagnóstico
-            además de las globales.
+            además de las globales. Cuando vale `"race_analyst_v2"` se aplican
+            las reglas RACE_V2_BASE y las de nombres prohibidos.
+        forbidden_names: Lista de nombres reales a prohibir. Solo se usa
+            cuando ``use_case="race_analyst_v2"``. Se construyen como reglas
+            regex dinámicas via :func:`build_race_v2_forbidden_names_rules`.
+        is_first_in_season: True si el atleta tiene exactamente 1 válida con
+            participación real en toda la temporada (no solo en el set lanzado).
+            Cuando vale ``True`` y ``use_case="race_analyst_v2"``, activa el
+            veto duro N=1 que rechaza automáticamente si aparece cualquier
+            verbo de tendencia/progresión. No aplica a resúmenes de temporada.
+        athlete_age: Edad real del atleta en años enteros. Solo aplica en
+            ``use_case="race_analyst_v2"``. Si el LLM menciona una edad numérica
+            con `|mencionada - athlete_age| > 0.6`, se registra violation
+            ``age_mismatch`` y el output se rechaza (force reject).
     """
 
     def __init__(
@@ -312,9 +576,15 @@ class Guardrails:
         *,
         age_group: str | None = None,
         use_case: str | None = None,
+        forbidden_names: list[str] | None = None,
+        is_first_in_season: bool = False,
+        athlete_age: int | None = None,
     ) -> None:
         self._age_group = age_group
         self._use_case = use_case
+        self._forbidden_names: list[str] = forbidden_names or []
+        self._is_first_in_season = is_first_in_season
+        self._athlete_age = athlete_age
 
     def scrub(self, text: str) -> str:
         """Devuelve `text` saneado. Si hubo demasiadas violaciones, lanza."""
@@ -337,6 +607,11 @@ class Guardrails:
         if self._use_case == "anthropometric_record_analysis":
             rules.extend(_RECORD_ANALYSIS_RULES)
 
+        if self._use_case == "race_analyst_v2":
+            rules.extend(_RACE_V2_BASE_RULES)
+            if self._forbidden_names:
+                rules.extend(build_race_v2_forbidden_names_rules(self._forbidden_names))
+
         for rule in rules:
             new_text, count = rule.pattern.subn(
                 rule.replacement or "", sanitized
@@ -348,7 +623,55 @@ class Guardrails:
                 )
                 sanitized = new_text
 
-        rejected = len(violations) >= MAX_VIOLATIONS_BEFORE_REJECT
+        # --- Verificaciones extra para v2 (no regex-replace, sino validación) ---
+        has_age_mismatch = False
+        if self._use_case == "race_analyst_v2":
+            # Veto duro: frases explícitamente prohibidas por el Head Coach.
+            veto_hits = check_v2_veto_duro(sanitized)
+            if veto_hits:
+                for v in veto_hits:
+                    violations.append(f"veto_duro_{v}")
+                    logger.warning("ai.guardrail.veto_duro phrase=%s", v)
+
+            # Veto duro N=1: verbos de tendencia/progresión prohibidos cuando
+            # el atleta tiene una sola válida en toda la temporada.
+            if self._is_first_in_season:
+                n1_hits = check_v2_veto_n1(sanitized)
+                if n1_hits:
+                    for v in n1_hits:
+                        violations.append(f"veto_n1_{v}")
+                        logger.warning("ai.guardrail.veto_n1 verb=%s", v)
+
+            # Word limits por sección (+10% tolerancia).
+            section_violations = check_v2_section_word_limits(sanitized)
+            for sv in section_violations:
+                violations.append(f"word_limit_{sv[:30]}")
+                logger.warning("ai.guardrail.word_limit section=%s", sv)
+
+            # Guardrail edad (Head Coach regla 1): si el LLM menciona una edad
+            # numérica que difiere >0.6 años de la real → force reject.
+            if self._athlete_age is not None:
+                age_mentions = _AGE_MENTION_PATTERN.findall(sanitized)
+                for mention in age_mentions:
+                    try:
+                        mentioned_age = int(mention)
+                    except (ValueError, TypeError):
+                        continue
+                    if abs(mentioned_age - self._athlete_age) > _AGE_MISMATCH_TOLERANCE:
+                        violations.append("age_mismatch")
+                        has_age_mismatch = True
+                        logger.warning(
+                            "ai.guardrail.age_mismatch mentioned=%d real=%d",
+                            mentioned_age,
+                            self._athlete_age,
+                        )
+
+        has_n1_veto = any(v.startswith("veto_n1_") for v in violations)
+        rejected = (
+            len(violations) >= MAX_VIOLATIONS_BEFORE_REJECT
+            or has_n1_veto
+            or has_age_mismatch
+        )
         return GuardrailReport(
             text=sanitized.strip(),
             violations=tuple(violations),

@@ -28,6 +28,8 @@ import { cn } from "@/lib/utils";
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
 
+const MAX_VALIDA_SELECTION = 4;
+
 const VALIDA_CHOICES: Array<{ value: number; label: string }> = [
   { value: 1, label: "I" },
   { value: 2, label: "II" },
@@ -121,6 +123,8 @@ export function LaunchAnalysisForm({
         { shouldValidate: true },
       );
     } else {
+      // No-op silencioso si ya se alcanzó el cap
+      if (current.length >= MAX_VALIDA_SELECTION) return;
       setValue("valida_nums", [...current, value].sort((a, b) => a - b), {
         shouldValidate: true,
       });
@@ -230,7 +234,7 @@ export function LaunchAnalysisForm({
         </legend>
         <p className="text-[11px] text-mid-gray">
           Deja vacío para analizar todas las válidas disponibles de la
-          temporada.
+          temporada. Máximo 4 válidas por lanzamiento.
         </p>
         <div
           className="flex flex-wrap gap-2"
@@ -239,12 +243,21 @@ export function LaunchAnalysisForm({
         >
           {VALIDA_CHOICES.map((c) => {
             const isChecked = watchedValidaNums?.includes(c.value);
+            const currentLength = watchedValidaNums?.length ?? 0;
+            const isCapReached = !isChecked && currentLength >= MAX_VALIDA_SELECTION;
             return (
               <button
                 key={c.value}
                 type="button"
                 onClick={() => toggleValida(c.value)}
                 aria-pressed={isChecked}
+                aria-disabled={isCapReached}
+                disabled={isCapReached}
+                title={
+                  isCapReached
+                    ? "Máximo 4 válidas por lanzamiento (cap v2). Usa resumen temporada para visión global."
+                    : undefined
+                }
                 data-testid={`launch-valida-${c.value}`}
                 className={cn(
                   "min-h-9 rounded-full px-3 py-1 text-xs font-medium transition-colors",
@@ -252,6 +265,7 @@ export function LaunchAnalysisForm({
                   isChecked
                     ? "bg-charcoal text-white"
                     : "bg-light-gray/40 text-charcoal hover:bg-light-gray/60",
+                  isCapReached && "cursor-not-allowed opacity-50",
                 )}
               >
                 {c.label}

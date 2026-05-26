@@ -27,11 +27,13 @@ import {
 } from "lucide-react";
 
 import { AnalysisRunTimeline } from "@/components/ai/AnalysisRunTimeline";
+import { HITLApprovalCard } from "@/components/ai/HITLApprovalCard";
 import { ComparatorPanel } from "@/components/athletes/ai/ComparatorPanel";
 import { DistributionChart } from "@/components/athletes/ai/DistributionChart";
 import { EvolutionChart } from "@/components/athletes/ai/EvolutionChart";
 import { InsightsTimeline } from "@/components/athletes/ai/InsightsTimeline";
 import { LaunchAnalysisForm } from "@/components/athletes/ai/LaunchAnalysisForm";
+import { SeasonSummaryButton } from "@/components/athletes/ai/SeasonSummaryButton";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -40,7 +42,14 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatDateTimeCompact } from "@/lib/datetime";
+import { useRunStatus } from "@/hooks/ai/useRaceRun";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import type { AthleteOut } from "@/types/athlete.types";
 import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
@@ -86,6 +95,7 @@ export function AthleteAIAnalysisTab({
   // AnalysisRunTimeline encima del histórico para que el coach lo vea
   // ejecutarse en vivo.
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [hitlStepId, setHitlStepId] = useState<string | null>(null);
 
   // Resumen del header: último análisis (latest_only=true, limit=1).
   const headerQuery = useAthleteInsights(athlete.id, {
@@ -113,8 +123,32 @@ export function AthleteAIAnalysisTab({
 
   const handleStarted = (runId: string) => {
     setActiveRunId(runId);
+    setHitlStepId(null);
     setSubTab("history");
   };
+
+  // HITL detection — solo coach (parent NO aprueba). Sólo polleamos si hay run activo.
+  const statusQuery = useRunStatus(mode === "coach" ? activeRunId : null);
+  const runState = statusQuery.data?.latest?.state;
+  const lastHitlEvent = statusQuery.data?.events
+    ?.slice()
+    .reverse()
+    .find(
+      (e) =>
+        e.type === "hitl_request" ||
+        e.type === "hitl_required" ||
+        e.node === "hitl_gate_review",
+    );
+  const hitlStepIdFromEvent =
+    typeof lastHitlEvent?.payload?.step_id === "string"
+      ? (lastHitlEvent.payload.step_id as string)
+      : null;
+  const effectiveStepId = hitlStepId ?? hitlStepIdFromEvent ?? "hitl_default";
+  const showHITL = runState === "hitl_waiting" || !!hitlStepIdFromEvent;
+  const draftMarkdown =
+    typeof lastHitlEvent?.payload?.draft_markdown === "string"
+      ? (lastHitlEvent.payload.draft_markdown as string)
+      : "_(El agente generó un borrador, pero no incluyó el markdown en el evento. Aprueba o rechaza.)_";
 
   return (
     <section className="space-y-4" data-testid="athlete-ai-analysis-tab">
@@ -130,46 +164,83 @@ export function AthleteAIAnalysisTab({
               style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
             >
               <Sparkles size={16} aria-hidden="true" />
-              Análisis IA del deportista
+              {mode === "parent" ? "Análisis del coach" : "Análisis IA del deportista"}
             </h2>
             <p className="mt-1 text-xs text-mid-gray">
               {mode === "parent"
-                ? "Resúmenes aprobados por el entrenador, basados en resultados de carrera."
+                ? "Seguimiento y evolución del deportista, revisado por el entrenador."
                 : "Pipeline agéntico: análisis, comparaciones y proyecciones a partir de resultados oficiales."}
             </p>
+            {mode === "parent" && (
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="mt-1.5 inline-block cursor-default text-[11px] text-mid-gray underline decoration-dotted underline-offset-2"
+                      tabIndex={0}
+                    >
+                      ¿Cómo se elaboran estos análisis?
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-64">
+                    Análisis preparado con apoyo de herramientas y revisado por el coach
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
-          {headerQuery.isLoading ? (
-            <Skeleton className="h-16 w-48 rounded-lg" />
-          ) : latest ? (
-            <div
-              className="flex flex-col items-end gap-1 rounded-lg bg-light-gray/40 px-3 py-2"
-              data-testid="ai-header-summary"
-            >
-              <span className="text-[10px] font-medium uppercase tracking-wide text-mid-gray">
-                Último análisis
-              </span>
-              <span className="text-sm font-semibold text-charcoal">
-                {formatDateTimeCompact(latest.generated_at)}
-              </span>
-              <div className="flex flex-wrap items-center justify-end gap-1.5">
-                <Badge variant="secondary">{validaLabel(latest.valida_num)}</Badge>
-                <Badge variant={confidenceBadgeVariant(latest.confidence)}>
-                  {confidenceText(latest.confidence)}
-                </Badge>
+          <div className="flex flex-col items-end gap-2">
+            {mode === "coach" && (
+              <SeasonSummaryButton
+                athleteId={athlete.id}
+                analyzedValidasCount={total}
+              />
+            )}
+            {headerQuery.isLoading ? (
+              <Skeleton className="h-16 w-48 rounded-lg" />
+            ) : latest ? (
+              <div
+                className="flex flex-col items-end gap-1 rounded-lg bg-light-gray/40 px-3 py-2"
+                data-testid="ai-header-summary"
+              >
+                <span className="text-[10px] font-medium uppercase tracking-wide text-mid-gray">
+                  Último análisis
+                </span>
+                <span className="text-sm font-semibold text-charcoal">
+                  {formatDateTimeCompact(latest.generated_at)}
+                </span>
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                  <Badge variant="secondary">{validaLabel(latest.valida_num)}</Badge>
+                  {mode === "coach" && (
+                    <Badge variant={confidenceBadgeVariant(latest.confidence)}>
+                      {confidenceText(latest.confidence)}
+                    </Badge>
+                  )}
+                </div>
+                <span className="text-[11px] text-mid-gray">
+                  Total aprobados: {total}
+                </span>
               </div>
-              <span className="text-[11px] text-mid-gray">
-                Total aprobados: {total}
-              </span>
-            </div>
-          ) : (
-            <p className="text-xs text-mid-gray">Sin análisis aprobados aún.</p>
-          )}
+            ) : (
+              <p className="text-xs text-mid-gray">Sin análisis aprobados aún.</p>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Run timeline en vivo — solo coach, solo si acaba de lanzar */}
       {mode === "coach" && activeRunId && (
-        <AnalysisRunTimeline runId={activeRunId} onComplete={handleRunComplete} />
+        <>
+          <AnalysisRunTimeline runId={activeRunId} onComplete={handleRunComplete} />
+          {showHITL && (
+            <HITLApprovalCard
+              runId={activeRunId}
+              stepId={effectiveStepId}
+              draftMarkdown={draftMarkdown}
+              onSubmitted={() => setHitlStepId(null)}
+            />
+          )}
+        </>
       )}
 
       {/* Sub-tabs (Radix) */}

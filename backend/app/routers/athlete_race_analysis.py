@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -50,12 +50,15 @@ from app.schemas.athlete_race_analysis import (
     EvolutionMetric,
     EvolutionResponse,
     InsightLink,
+    SeasonSummaryRequest,
+    SeasonSummaryResponse,
 )
 from app.schemas.race_ai import (
     MetricsSnapshotV1,
     RunState,
     StartRunResponse,
 )
+from app.services.race.agents.pricing import PROMPT_VERSION_ANALYST_V2
 from app.services.race.analytics_charts import build_distribution, build_evolution
 from app.services.race.ai.budget_guard import BudgetExceededError, check_budget
 from app.services.race.ai.runner import RunBackpressureError, submit_run
@@ -135,12 +138,36 @@ def _ensure_json_list(raw: Any) -> list[dict[str, Any]]:
     return []
 
 
+_PII_KEYS_TO_SCRUB = frozenset({"competitor_id", "athlete_id", "rider_id"})
+
+
+def _scrub_pii_keys(obj: Any) -> Any:
+    """Scrubber recursivo que elimina claves PII de dicts anidados.
+
+    Cubre snapshots viejos (pre-Fix 4) que pueden contener ``competitor_id``,
+    ``athlete_id`` o ``rider_id`` en cualquier nivel de anidamiento.
+    """
+    if isinstance(obj, dict):
+        return {
+            k: _scrub_pii_keys(v)
+            for k, v in obj.items()
+            if k not in _PII_KEYS_TO_SCRUB
+        }
+    if isinstance(obj, list):
+        return [_scrub_pii_keys(item) for item in obj]
+    return obj
+
+
 def _maybe_metrics_snapshot(raw: Any) -> MetricsSnapshotV1 | dict[str, Any]:
     """Intenta tipar como :class:`MetricsSnapshotV1`, fallback a dict.
 
     Snapshots viejos (pre-schema_version) se entregan como dict crudo.
+    Aplica scrub recursivo de claves PII (competitor_id, athlete_id,
+    rider_id) antes de exponer al cliente — cobertura de snapshots
+    pre-Fix4 que no fueron scrubados en compute_metrics.
     """
     data = _ensure_json_dict(raw)
+    data = _scrub_pii_keys(data)
     if data.get("schema_version") == 1:
         try:
             return MetricsSnapshotV1(**data)
@@ -156,6 +183,29 @@ def _insight_to_detail(
     superseded_by: Optional[InsightLink],
 ) -> AthleteInsightDetailOut:
     base = _insight_to_out(row)
+    snapshot = _ensure_json_dict(row.metrics_snapshot_json)
+
+    aggregate = snapshot.get("aggregate", {}) if isinstance(snapshot, dict) else {}
+
+    # is_first_in_season — campo nuevo (v2). None para insights v1.
+    is_first_in_season_raw = aggregate.get("is_first_in_season")
+    is_first_in_season: Optional[bool] = (
+        bool(is_first_in_season_raw)
+        if is_first_in_season_raw is not None
+        else None
+    )
+
+    # season_validas_count — campo nuevo (v2). None para insights v1.
+    season_validas_count_raw = aggregate.get("season_validas_count")
+    try:
+        season_validas_count: Optional[int] = (
+            int(season_validas_count_raw)
+            if season_validas_count_raw is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        season_validas_count = None
+
     return AthleteInsightDetailOut(
         **base.model_dump(),
         recommendations=_ensure_json_list(row.recommendations_json),
@@ -163,6 +213,8 @@ def _insight_to_detail(
         principles_cited=_ensure_json_list(row.principles_cited_json),
         supersedes=supersedes,
         superseded_by=superseded_by,
+        is_first_in_season=is_first_in_season,
+        season_validas_count=season_validas_count,
     )
 
 
@@ -398,6 +450,12 @@ async def start_athlete_run(
             detail="Servicio de IA no disponible (AI_ENABLED=false)",
         )
 
+    if body.valida_nums and len(body.valida_nums) > 4:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cap v2: máximo 4 válidas por lanzamiento. Usa resumen temporada para visión global.",
+        )
+
     try:
         await check_budget(db)
     except BudgetExceededError as exc:
@@ -435,7 +493,7 @@ async def start_athlete_run(
             {
                 "rid": run_id,
                 "gn": "race-analyst",
-                "pv": "race_analyst_v1",
+                "pv": PROMPT_VERSION_ANALYST_V2,
                 "sa": started_at,
                 "inp": json.dumps(input_payload, ensure_ascii=False, default=str),
                 "uid": current_user.id,
@@ -451,6 +509,8 @@ async def start_athlete_run(
             detail=f"No se pudo crear el run: {type(exc).__name__}",
         )
 
+    athlete_age = int((date.today() - athlete.birth_date).days / 365.25)
+
     initial_state = {
         "athlete_id": athlete.id,
         "season": body.season,
@@ -458,6 +518,8 @@ async def start_athlete_run(
         "coach_id": current_user.id,
         "explain_mode": body.explain_mode,
         "run_id": run_id,
+        "prompt_version": PROMPT_VERSION_ANALYST_V2,
+        "athlete_age": athlete_age,
     }
 
     # Reusar el closure de finalize del router race_analysis (idéntica lógica
@@ -558,6 +620,270 @@ async def get_evolution(
         athlete_id=athlete.id,
         season=season,
         metric=metric,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /race-analysis/season-summary (v2, coach/admin only)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{athlete_id}/race-analysis/season-summary",
+    response_model=SeasonSummaryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_season_summary(
+    body: SeasonSummaryRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+    athlete: Athlete = Depends(verify_athlete_access),
+) -> SeasonSummaryResponse:
+    """Genera el resumen de temporada v2 on-demand (coach/admin only).
+
+    Body opcional: si se omite, usa el año actual UTC. Requiere ≥3 válidas
+    con insights activos aprobados para la temporada resuelta. Devuelve el
+    insight persistido con ``valida_num=0`` (sentinel de temporada) y
+    ``prompt_version="race_analyst_v2"``.
+    """
+    if body is None:
+        body = SeasonSummaryRequest()
+    if body.season is None:
+        body.season = datetime.now(timezone.utc).year
+
+    if not settings.ai_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de IA no disponible (AI_ENABLED=false)",
+        )
+
+    # Verificar budget.
+    from app.services.race.ai.budget_guard import BudgetExceededError, check_budget
+    try:
+        await check_budget(db)
+    except BudgetExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"Presupuesto mensual de IA excedido: ${exc.current_usd:.4f} "
+                f"de ${exc.budget_usd:.2f}. Reintenta más tarde."
+            ),
+        )
+
+    # Verificar que existan ≥3 válidas analizadas (insights activos aprobados).
+    count_sql = text(
+        """
+        SELECT COUNT(DISTINCT valida_num) AS c
+        FROM athlete_ai_insights
+        WHERE athlete_id = :aid
+          AND season = :season
+          AND valida_num > 0
+          AND is_active = 1
+          AND coach_approved = 1
+          AND deprecated_at IS NULL
+          AND archived_at IS NULL
+        """
+    )
+    count_res = await db.execute(count_sql, {"aid": athlete.id, "season": body.season})
+    count_row = count_res.first()
+    validas_count = int(
+        (count_row._mapping.get("c") if count_row and hasattr(count_row, "_mapping") else 0)
+        or 0
+    )
+
+    if validas_count < 3:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Se requieren ≥3 válidas con análisis aprobados para generar el resumen "
+                f"de temporada. Válidas encontradas: {validas_count}."
+            ),
+        )
+
+    # Cargar progresión agregada (todas las válidas de la temporada).
+    from app.services.race.ai.db import get_session as get_race_session
+    from app.services.race.queries import fetch_results_for_athlete
+    from app.services.race.schemas import AnalysisInput, LTADGroup
+
+    # Cargar forbidden_names dinámicamente desde DB.
+    forbidden_names: list[str] = []
+    try:
+        from app.models.athlete import Athlete as AthleteModel
+        from app.models.parent_athlete import ParentAthlete
+        from app.models.user import User as UserModel
+        from sqlalchemy import select as sa_select
+
+        fn_rows = await db.execute(
+            sa_select(UserModel.full_name).where(
+                UserModel.id == (
+                    sa_select(AthleteModel.user_id)
+                    .where(AthleteModel.id == athlete.id)
+                    .scalar_subquery()
+                )
+            )
+        )
+        fn_row = fn_rows.scalar_one_or_none()
+        if fn_row:
+            forbidden_names.append(fn_row)
+
+        # Nicknames y apodos del atleta.
+        if getattr(athlete, "nickname", None):
+            forbidden_names.append(str(athlete.nickname))
+
+        # Nombres de padres vinculados.
+        parent_rows = await db.execute(
+            sa_select(UserModel.full_name)
+            .join(ParentAthlete, UserModel.id == ParentAthlete.parent_id)
+            .where(ParentAthlete.athlete_id == athlete.id)
+        )
+        for prow in parent_rows.scalars().all():
+            if prow:
+                forbidden_names.append(str(prow))
+
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "season_summary: no se pudieron cargar forbidden_names para atleta %d",
+            athlete.id,
+            exc_info=True,
+        )
+
+    # Construir AnalysisInput con la progresión completa de la temporada.
+    from app.services.race.rag.tools import format_citations
+    from app.services.race.rag.retriever import Citation
+
+    # Pseudónimo determinístico para la temporada.
+    season_pseudonym = f"Atleta-{athlete.id % 10000:04d}-T{body.season}"
+
+    async with get_race_session() as race_db:
+        race_results = await fetch_results_for_athlete(
+            race_db, athlete.id, body.season, valida_nums=None
+        )
+
+    progression_records = [
+        {
+            "valida_num": getattr(r, "valida_num", None),
+            "event_id": getattr(r, "event_id", None),
+            "position": getattr(r, "position", None),
+            "race_time_ms": getattr(r, "race_time_ms", None),
+            "points_awarded": getattr(r, "points_awarded", None),
+        }
+        for r in race_results
+    ]
+
+    # Edad y grupo LTAD del atleta.
+    from datetime import date as _date
+
+    athlete_age = 12  # fallback
+    ltad_group_val = LTADGroup.BAMBINO
+    try:
+        if getattr(athlete, "birth_date", None):
+            age_decimal = (_date.today() - athlete.birth_date).days / 365.25
+            athlete_age = int(age_decimal)
+            if athlete_age <= 12:
+                ltad_group_val = LTADGroup.BAMBINO
+            elif athlete_age <= 15:
+                ltad_group_val = LTADGroup.JUVENIL
+            else:
+                ltad_group_val = LTADGroup.JUNIOR
+    except Exception:  # noqa: BLE001
+        pass
+
+    summary_input = AnalysisInput(
+        athlete_pseudonym=season_pseudonym,
+        age=athlete_age,
+        ltad_group=ltad_group_val,
+        progression_df_records=progression_records,
+        podium_context={},
+        memory_recent_insights=[],
+        principles_citations=[],
+        explain_mode=body.explain_mode,
+        athlete_id=athlete.id,
+        season=body.season,
+    )
+
+    from app.services.race.agents.analyst import PROMPT_VERSION_ANALYST_V2, RaceAnalystAgent
+
+    agent = RaceAnalystAgent(prompt_version=PROMPT_VERSION_ANALYST_V2)
+    summary_output, run_metrics = await agent.invoke_season_summary(
+        summary_input,
+        forbidden_names=forbidden_names,
+    )
+
+    # Persistir el resumen con valida_num=0 (sentinel temporada).
+    now = _utc_now()
+    from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
+    from app.services.race.insights_history import deprecate_previous_active
+
+    try:
+        previous_id: Optional[int] = await deprecate_previous_active(
+            db,
+            athlete_id=athlete.id,
+            season=body.season,
+            valida_num=0,
+            new_insight_id=None,
+        )
+
+        new_row = AthleteAiInsight(
+            athlete_id=athlete.id,
+            competitor_id=None,
+            event_id=None,
+            agent_run_id=None,
+            generated_by_user_id=current_user.id,
+            season=body.season,
+            valida_num=0,
+            use_case="season_summary_v2",
+            summary_text=(summary_output.raw_markdown or "")[:5000],
+            recommendations_json=[
+                r.model_dump() for r in (summary_output.recommendations or [])
+            ],
+            metrics_snapshot_json={
+                "validas_analyzed": validas_count,
+                "prompt_version": PROMPT_VERSION_ANALYST_V2,
+                "tokens_in": run_metrics.tokens_in,
+                "tokens_out": run_metrics.tokens_out,
+                "cost_usd": run_metrics.cost_usd,
+            },
+            principles_cited_json=[],
+            confidence=InsightConfidence.medium,
+            model="gemini-2.5-flash-lite",
+            prompt_version=PROMPT_VERSION_ANALYST_V2,
+            coach_approved=True,
+            coach_edits_count=0,
+            generated_at=now,
+            approved_at=now,
+            archived_at=None,
+            deprecated_at=None,
+            is_active=1,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(new_row)
+        await db.flush()
+
+        if previous_id is not None:
+            from sqlalchemy import update as sa_update
+            await db.execute(
+                sa_update(AthleteAiInsight)
+                .where(AthleteAiInsight.id == previous_id)
+                .values(superseded_by_insight_id=new_row.id, updated_at=now)
+            )
+
+        await db.commit()
+        insight_id = int(new_row.id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("season_summary: persistencia falló")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No se pudo persistir el resumen: {type(exc).__name__}",
+        )
+
+    return SeasonSummaryResponse(
+        insight_id=insight_id,
+        season=body.season,
+        summary_text=(summary_output.raw_markdown or "")[:5000],
+        prompt_version=PROMPT_VERSION_ANALYST_V2,
+        generated_at=now,
+        validas_analyzed=validas_count,
     )
 
 

@@ -228,6 +228,43 @@ async def fetch_results_for_athlete(
     return filtered
 
 
+async def fetch_all_results_for_season(
+    db: AsyncSession,
+    category_id: int,
+    season: int,
+) -> list[RaceResult]:
+    """Todos los resultados de una categoría en una temporada.
+
+    No filtra por atleta — retorna TODOS los competidores de la categoría en
+    todos los eventos de la temporada. Se usa para calcular el tiempo del
+    ganador (position=1) por event_id y así calcular ``gap_to_winner_ms`` en
+    ``load_race_data``.
+
+    Args:
+        db: Sesión async.
+        category_id: PK ``RaceCategory``.
+        season: año de temporada (vía ``RaceSeries.season_year``).
+
+    Returns:
+        Lista de ``RaceResult`` filtrada por categoría + temporada. Vacía si
+        no hay resultados.
+    """
+    results = await load_results(db)
+    events = await load_events(db)
+    series = await load_series(db)
+
+    series_ids_in_season = {s.id for s in series if s.season_year == season}
+    event_ids_in_season = {
+        e.id for e in events if e.series_id in series_ids_in_season
+    }
+
+    return [
+        r
+        for r in results
+        if r.category_id == category_id and r.event_id in event_ids_in_season
+    ]
+
+
 async def fetch_podium_context(
     db: AsyncSession, category_id: int, event_id: int
 ) -> dict[str, Any]:

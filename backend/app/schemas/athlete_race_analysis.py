@@ -163,6 +163,22 @@ class AthleteInsightDetailOut(AthleteInsightOut):
         description="Cadena de insights anteriores (más reciente primero).",
     )
     superseded_by: Optional[InsightLink] = None
+    is_first_in_season: Optional[bool] = Field(
+        default=None,
+        description=(
+            "True si el atleta tenía 1 sola válida en toda la temporada "
+            "cuando se generó este insight. Cuando es True, el frontend "
+            "muestra banner N=1. None para insights v1 (sin dato)."
+        ),
+    )
+    season_validas_count: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Número de válidas con participación real en toda la temporada "
+            "al momento de generación. Informativo. None para insights v1."
+        ),
+    )
 
 
 class AthleteInsightListResponse(BaseModel):
@@ -320,3 +336,48 @@ class DistributionResponse(BaseModel):
     points: list[DistributionPoint] = Field(default_factory=list)
     curve: list[DistributionCurvePoint] = Field(default_factory=list)
     confidence: AnalysisConfidence
+
+
+# ---------------------------------------------------------------------------
+# Race analysis v2 — resumen de temporada on-demand
+# ---------------------------------------------------------------------------
+
+
+class SeasonSummaryRequest(BaseModel):
+    """Body para ``POST /athletes/{id}/race-analysis/season-summary``.
+
+    ``season`` opcional: si se omite usa el año actual UTC. El endpoint
+    verifica que existan ≥3 válidas analizadas (insights activos aprobados)
+    antes de proceder. ``explain_mode`` activa el modo aprendizaje activo
+    en el prompt v2.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    season: int | None = Field(default=None, ge=2020, le=2100)
+    explain_mode: bool = False
+
+
+class SeasonSummaryResponse(BaseModel):
+    """Respuesta del endpoint ``POST /race-analysis/season-summary``.
+
+    ``insight_id`` es la PK del insight persistido (``valida_num=0``).
+    ``summary_text`` es el texto completo del resumen (≤5000 chars).
+    ``prompt_version`` siempre ``"race_analyst_v2"`` cuando se usa este
+    endpoint.
+    ``validas_analyzed`` es el número de válidas que alimentaron el resumen
+    (≥3 requeridas).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    insight_id: int = Field(..., ge=1)
+    season: int = Field(..., ge=2020, le=2100)
+    summary_text: str
+    prompt_version: str = Field(..., max_length=32)
+    generated_at: datetime
+    validas_analyzed: int = Field(
+        ...,
+        ge=3,
+        description="Número de válidas que alimentaron el resumen (≥3 requeridas).",
+    )

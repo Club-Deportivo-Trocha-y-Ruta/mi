@@ -13,6 +13,7 @@ Edad / ltad_group derivado:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.services.race.ai.events import with_events
@@ -21,11 +22,26 @@ from app.services.race.rag.retriever import Citation, retrieve_principles as rag
 
 NODE_NAME = "retrieve_principles"
 
+logger = logging.getLogger(__name__)
+
+_AGE_FALLBACK = 12
+
 
 def _build_queries(state: dict) -> list[str]:
     """Construye 2-3 queries diversificadas del contexto del atleta."""
     ltad = state.get("ltad_group", "bambino")
-    age = state.get("athlete_age", 12)
+    raw_age = state.get("athlete_age")
+    if isinstance(raw_age, int) and 6 <= raw_age <= 20:
+        age = raw_age
+    else:
+        logger.warning(
+            "retrieve_principles: athlete_age ausente o fuera de rango en state "
+            "(valor=%r); usando fallback=%d para construir queries RAG. "
+            "Verificar que el router inyecta 'athlete_age' en initial_state (Fix 1).",
+            raw_age,
+            _AGE_FALLBACK,
+        )
+        age = _AGE_FALLBACK
     return [
         f"ventana entrenabilidad {ltad}",
         f"carga juvenil {age} años",

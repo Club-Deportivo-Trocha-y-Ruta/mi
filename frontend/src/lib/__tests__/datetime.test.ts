@@ -175,6 +175,27 @@ describe("formatDateTimeCompact", () => {
     expect(result.toLowerCase()).toMatch(/may/);
   });
 
+  it("interpreta ISO naive (sin Z) como UTC, no como local del browser", () => {
+    // El backend serializa naive datetimes (MySQL DateTime sin tz) sin
+    // sufijo Z. Sin normalización JS lo trataría como local del browser
+    // y desfasaría horas según TZ del sistema. Helper debe asumir UTC.
+    const naive = "2026-05-25T23:13:00";
+    expect(formatDateTimeCompact(naive)).toBe(formatDateTimeCompact(UTC_23_13));
+  });
+
+  it("también normaliza ISO naive con fracción de segundo", () => {
+    expect(formatDateTimeCompact("2026-05-25T23:13:00.123456")).toBe(
+      formatDateTimeCompact("2026-05-25T23:13:00.123456Z"),
+    );
+  });
+
+  it("respeta strings con offset explícito sin sobreescribir TZ", () => {
+    // "2026-05-25T20:13:00-03:00" = 23:13 UTC = 18:13 Bogotá
+    const withOffset = "2026-05-25T20:13:00-03:00";
+    const result = formatDateTimeCompact(withOffset);
+    expect(result).toContain("18:13");
+  });
+
   it("devuelve string vacío para null", () => {
     expect(formatDateTimeCompact(null)).toBe("");
   });

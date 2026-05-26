@@ -1,0 +1,139 @@
+{# Macro SVG: curvas de percentiles de crecimiento (height / bmi / weight)
+   Inputs:
+     chart  — dict de build_percentile_chart_ctx (P2)
+     width  — ancho del SVG (default 400)
+     height — alto del SVG (default 260)
+   Output: bloque HTML con título <p> + SVG inline + leyenda compacta
+   Privacidad: sin nombre, DOB, z-scores ni labels diagnósticos. Solo indicador.
+#}
+{% macro percentile_curves(chart, width=500, height=320) %}
+{%- set pad_left   = 42 -%}
+{%- set pad_right  = 16 -%}
+{%- set pad_top    = 16 -%}
+{%- set pad_bottom = 36 -%}
+{%- set chart_w    = width  - pad_left - pad_right -%}
+{%- set chart_h    = height - pad_top  - pad_bottom -%}
+
+<div style="margin-bottom: 10pt; page-break-inside: avoid;">
+  <p style="margin: 0 0 4pt 0; font-size: 9pt; font-weight: 700; color: #374151;">{{ chart.indicator_label_es }}</p>
+
+  {%- if not chart.enough_data %}
+    {%- if chart.reason_no_data == 'insufficient_records' %}
+    <p style="font-size: 8pt; color: #6b7280; font-style: italic; margin: 0;">Se requieren al menos 2 mediciones.</p>
+    {%- elif chart.reason_no_data == 'age_out_of_range' %}
+    <p style="font-size: 8pt; color: #6b7280; font-style: italic; margin: 0;">Edad fuera del rango de referencia (5-19 años).</p>
+    {%- elif chart.reason_no_data == 'missing_sex' %}
+    <p style="font-size: 8pt; color: #6b7280; font-style: italic; margin: 0;">Información de sexo no registrada.</p>
+    {%- else %}
+    <p style="font-size: 8pt; color: #6b7280; font-style: italic; margin: 0;">Datos de referencia no disponibles.</p>
+    {%- endif %}
+  {%- else %}
+
+  <svg xmlns="http://www.w3.org/2000/svg"
+       viewBox="{{ chart.viewbox }}"
+       width="100%"
+       preserveAspectRatio="xMidYMid meet"
+       role="img"
+       aria-label="Curvas de percentiles - {{ chart.indicator_label_es }}"
+       style="display: block;">
+
+    <!-- Fondo -->
+    <rect x="0" y="0" width="{{ width }}" height="{{ height }}" fill="#f9f9f9" rx="4"/>
+    <!-- Área del gráfico -->
+    <rect x="{{ pad_left }}" y="{{ pad_top }}" width="{{ chart_w }}" height="{{ chart_h }}" fill="white" stroke="#e0e0e0" stroke-width="0.5"/>
+
+    <!-- Ticks eje Y -->
+    {%- for tick in chart.y_axis.ticks -%}
+      {%- set y_range = chart.y_axis.max - chart.y_axis.min -%}
+      {%- if y_range > 0 -%}
+        {%- set ty = pad_top + chart_h - ((tick - chart.y_axis.min) / y_range) * chart_h -%}
+        <line x1="{{ pad_left }}" y1="{{ ty }}" x2="{{ pad_left + chart_w }}" y2="{{ ty }}"
+              stroke="#e5e7eb" stroke-width="0.5"/>
+        <text x="{{ pad_left - 4 }}" y="{{ ty + 3 }}"
+              text-anchor="end" font-size="7" fill="#9ca3af">{{ "%.0f"|format(tick) }}</text>
+      {%- endif -%}
+    {%- endfor -%}
+
+    <!-- Ticks eje X (edad en años) -->
+    {%- set x_range = chart.x_axis.max_months - chart.x_axis.min_months -%}
+    {%- for tick_months in chart.x_axis.ticks -%}
+      {%- if x_range > 0 -%}
+        {%- set tx = pad_left + ((tick_months - chart.x_axis.min_months) / x_range) * chart_w -%}
+        <line x1="{{ tx }}" y1="{{ pad_top }}" x2="{{ tx }}" y2="{{ pad_top + chart_h }}"
+              stroke="#e5e7eb" stroke-width="0.5"/>
+        <text x="{{ tx }}" y="{{ pad_top + chart_h + 11 }}"
+              text-anchor="middle" font-size="7" fill="#9ca3af">{{ (tick_months / 12) | int }}a</text>
+      {%- endif -%}
+    {%- endfor -%}
+
+    <!-- Etiqueta eje X -->
+    <text x="{{ pad_left + chart_w / 2 }}" y="{{ height - 2 }}"
+          text-anchor="middle" font-size="7.5" fill="#6b7280">Edad</text>
+
+    <!-- Curvas de percentiles P3 / P25 / P50 / P75 / P97 -->
+    {%- for name, curve in chart.curves.items() -%}
+      <path d="{{ curve.path }}"
+            fill="none"
+            stroke="{{ curve.color }}"
+            stroke-width="{{ '2.5' if name == 'p50' else '1.5' }}"
+            {%- if curve.stroke_dasharray %} stroke-dasharray="{{ curve.stroke_dasharray }}"{% endif %}
+            opacity="0.85"/>
+    {%- endfor -%}
+
+    <!-- Trayectoria del atleta -->
+    {%- if chart.athlete.polyline_points %}
+    <polyline points="{{ chart.athlete.polyline_points }}"
+              stroke="#111827" stroke-width="2" fill="none" stroke-linejoin="round"/>
+    {%- endif -%}
+
+    <!-- Puntos del atleta -->
+    {%- for pt in chart.athlete.points -%}
+    <circle cx="{{ pt.x }}" cy="{{ pt.y }}" r="3.5"
+            fill="#111827" stroke="white" stroke-width="1"/>
+    {%- endfor -%}
+
+    <!-- Marker PHV -->
+    {%- if chart.phv_marker %}
+    <line x1="{{ chart.phv_marker.x }}" y1="{{ pad_top }}"
+          x2="{{ chart.phv_marker.x }}" y2="{{ pad_top + chart_h }}"
+          stroke="#6b7280" stroke-dasharray="3,3" stroke-width="1"/>
+    <text x="{{ chart.phv_marker.x + 2 }}" y="{{ pad_top + 9 }}"
+          font-size="7" fill="#6b7280">{{ chart.phv_marker.label }}</text>
+    {%- endif %}
+
+  </svg>
+
+  <!-- Leyenda compacta (HTML, fuera del SVG) -->
+  <div style="display: flex; flex-wrap: wrap; gap: 6pt; margin-top: 4pt; font-size: 7pt; color: #374151; align-items: center;">
+    <span style="display: flex; align-items: center; gap: 3pt;">
+      <svg width="18" height="8" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="4" x2="18" y2="4" stroke="#e74c3c" stroke-width="1.5" stroke-dasharray="2,2"/>
+      </svg>P3 / P97
+    </span>
+    <span style="display: flex; align-items: center; gap: 3pt;">
+      <svg width="18" height="8" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="4" x2="18" y2="4" stroke="#f39c12" stroke-width="1.5" stroke-dasharray="6,2"/>
+      </svg>P25 / P75
+    </span>
+    <span style="display: flex; align-items: center; gap: 3pt;">
+      <svg width="18" height="8" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="4" x2="18" y2="4" stroke="#27ae60" stroke-width="2.5"/>
+      </svg>P50 (mediana)
+    </span>
+    <span style="display: flex; align-items: center; gap: 3pt;">
+      <svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="5" cy="5" r="3.5" fill="#111827" stroke="white" stroke-width="1"/>
+      </svg>Atleta
+    </span>
+    {%- if chart.phv_marker %}
+    <span style="display: flex; align-items: center; gap: 3pt;">
+      <svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
+        <line x1="5" y1="0" x2="5" y2="10" stroke="#6b7280" stroke-dasharray="3,3" stroke-width="1"/>
+      </svg>PHV
+    </span>
+    {%- endif %}
+  </div>
+
+  {%- endif %}
+</div>
+{% endmacro %}

@@ -33,16 +33,17 @@ from __future__ import annotations
 import logging
 import statistics
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_current_user, get_db, require_role
+from app.models.athlete import Athlete
 from app.models.user import User, UserRole
 from app.schemas.race_ai import (
     AIUsageByPromptVersion,
@@ -61,6 +62,7 @@ from app.services.race.ai.budget_guard import (
     BudgetExceededError,
     check_budget,
 )
+from app.services.race.agents.pricing import PROMPT_VERSION_ANALYST_V2
 from app.services.race.ai.runner import (
     RunBackpressureError,
     resume_run,
@@ -546,6 +548,12 @@ async def start_run(
             detail="Servicio de IA no disponible (AI_ENABLED=false)",
         )
 
+    if body.valida_nums and len(body.valida_nums) > 4:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cap v2: máximo 4 válidas por lanzamiento. Usa resumen temporada para visión global.",
+        )
+
     # F8A: Budget guard — chequea ANTES de insertar agent_runs y adquirir
     # el semáforo. Si el gasto de los últimos 30d excede el presupuesto,
     # respondemos 503 con mensaje claro. Runs en curso completan.
@@ -591,7 +599,7 @@ async def start_run(
             {
                 "rid": run_id,
                 "gn": "race-analyst",
-                "pv": "race_analyst_v1",
+                "pv": PROMPT_VERSION_ANALYST_V2,
                 "sa": started_at,
                 "inp": json.dumps(input_payload, ensure_ascii=False, default=str),
                 "uid": current_user.id,
@@ -606,14 +614,35 @@ async def start_run(
             detail=f"No se pudo crear el run: {type(exc).__name__}",
         )
 
-    initial_state = {
+    # Calcular edad del atleta para inyectarla en el state del grafo.
+    # Si el atleta no existe (body.athlete_id inválido), continuamos sin edad
+    # y el nodo analyst_agent emitirá un warning explícito.
+    athlete_age: Optional[int] = None
+    if body.athlete_id is not None:
+        _athlete_result = await db.execute(
+            select(Athlete).where(Athlete.id == body.athlete_id)
+        )
+        _athlete = _athlete_result.scalar_one_or_none()
+        if _athlete is not None and _athlete.birth_date is not None:
+            athlete_age = int((date.today() - _athlete.birth_date).days / 365.25)
+        else:
+            logger.warning(
+                "start_run: athlete_id=%s no encontrado o sin birth_date; "
+                "athlete_age no inyectado al state",
+                body.athlete_id,
+            )
+
+    initial_state: dict[str, Any] = {
         "athlete_id": body.athlete_id,
         "season": body.season,
         "valida_nums": body.valida_nums,
         "coach_id": current_user.id,
         "explain_mode": body.explain_mode,
         "run_id": run_id,
+        "prompt_version": PROMPT_VERSION_ANALYST_V2,
     }
+    if athlete_age is not None:
+        initial_state["athlete_age"] = athlete_age
 
     async def _on_complete(
         rid: str,

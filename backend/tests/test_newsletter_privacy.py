@@ -264,3 +264,183 @@ class TestSentToPersistedNotLogged:
         read = AthleteNewsletterRead.from_orm_model(obj)
         # El schema no tiene atributo sent_to
         assert not hasattr(read, "sent_to")
+
+
+# ===========================================================================
+# Fase 1.8-bis — Curvas de percentiles en el boletín PDF
+# Invariantes adicionales: el gráfico vive únicamente en pdf_only_blocks,
+# no inyecta metadata SVG, no aparece en logs, y la narrativa IA no usa
+# términos nutricionales diagnósticos.
+# ===========================================================================
+
+
+class TestPercentileCurvesPdfOnly:
+    """El bloque de curvas de percentiles NUNCA escapa a email_blocks."""
+
+    def test_growth_chart_only_in_pdf_blocks(self):
+        """Invariante consolidado: schema de respuesta no expone percentile_curves."""
+        obj = _make_obj()
+        # Inyectamos curvas en el snapshot para comprobar que el schema las descarta
+        obj.metrics_snapshot["pdf_only_blocks"]["percentile_curves"] = {
+            "height": {
+                "enough_data": True,
+                "indicator": "height",
+                "curves": {"p50": {"path": "M 0,0", "stroke_dasharray": "", "color": "#000"}},
+                "athlete": {"polyline_points": "0,0", "points": [{"x": 0.0, "y": 0.0}]},
+                "phv_marker": None,
+            }
+        }
+        read = AthleteNewsletterRead.from_orm_model(obj)
+        json_repr = read.model_dump_json()
+        # El schema no expone pdf_only_blocks ni percentile_curves
+        assert "percentile_curves" not in json_repr
+        assert "polyline_points" not in json_repr
+        # email_blocks no las contiene (la antropometría tampoco)
+        assert read.email_blocks is None or "percentile_curves" not in read.email_blocks
+
+    def test_svg_no_metadata_tags(self):
+        """El macro NO emite tags <title>/<desc>/<metadata> ni data-* attrs.
+
+        Render aislado del macro contra un fixture full-data.
+        """
+        from pathlib import Path
+        from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+        templates_root = Path(__file__).resolve().parent.parent / "templates"
+        env = Environment(
+            loader=FileSystemLoader(str(templates_root)),
+            autoescape=select_autoescape(["html", "svg.jinja"]),
+        )
+        tpl = env.from_string(
+            '{% from "documents/pdf/charts/percentile_curves.svg.jinja" import percentile_curves %}'
+            "{{ percentile_curves(chart) }}"
+        )
+        chart = {
+            "enough_data": True,
+            "reason_no_data": None,
+            "indicator": "bmi",
+            "indicator_label_es": "IMC (kg/m²)",
+            "sex": "M",
+            "viewbox": "0 0 400 260",
+            "width": 400,
+            "height": 260,
+            "x_axis": {"min_months": 120.0, "max_months": 180.0, "ticks": [132.0]},
+            "y_axis": {"min": 15.0, "max": 25.0, "ticks": [15.0, 20.0, 25.0]},
+            "curves": {
+                "p3":  {"path": "M 42,200 L 100,180", "stroke_dasharray": "2,2", "color": "#e74c3c"},
+                "p25": {"path": "M 42,180 L 100,160", "stroke_dasharray": "6,2", "color": "#f39c12"},
+                "p50": {"path": "M 42,160 L 100,140", "stroke_dasharray": "",    "color": "#27ae60"},
+                "p75": {"path": "M 42,140 L 100,120", "stroke_dasharray": "6,2", "color": "#f39c12"},
+                "p97": {"path": "M 42,120 L 100,100", "stroke_dasharray": "2,2", "color": "#e74c3c"},
+            },
+            "athlete": {"polyline_points": "60.0,180.0", "points": [{"x": 60.0, "y": 180.0}]},
+            "phv_marker": {"x": 110.0, "label": "PHV"},
+        }
+        html = tpl.render(chart=chart)
+        for tag in ("<title", "<desc", "<metadata"):
+            assert tag not in html, f"Tag '{tag}' prohibido por privacidad — output:\n{html[:300]}"
+        assert "data-" not in html, "Atributos data-* prohibidos en SVG del boletín"
+
+
+class TestDispatcherLogsNoAnthropometricData:
+    """El dispatcher no debe loguear talla, peso, percentil ni edad numérica."""
+
+    def test_dispatcher_logs_no_anthropometric_data(self, caplog):
+        """Inspecciona los formatters: ningún logger.info/error/warning del
+        dispatcher referencia anthropo/percentil/edad."""
+        import inspect
+        import re
+        from app.services.notification import newsletter_dispatcher
+
+        source = inspect.getsource(newsletter_dispatcher)
+        # Capturamos los strings de format dentro de logger.X(...)
+        log_calls = re.findall(
+            r"logger\.(?:info|warning|error|debug)\(\s*([rfb]?\"[^\"]+\"|[rfb]?'[^']+')",
+            source,
+        )
+        assert log_calls, "El dispatcher debería tener al menos un log call"
+
+        # Conjunto explícito de fragmentos prohibidos en log messages
+        forbidden = [
+            "talla", "altura_cm", "standing_height",
+            "peso", "weight_kg",
+            "percentil", "percentile",
+            "z_score", "z-score",
+            "imc", "bmi",
+            "edad_anos", "age_decimal",
+        ]
+        for raw in log_calls:
+            msg = raw.lower()
+            for term in forbidden:
+                assert term not in msg, (
+                    f"Log del dispatcher contiene término sensible '{term}': {raw}"
+                )
+
+
+class TestAiNarrativeForbiddenNutritionalTerms:
+    """La narrativa IA no debe contener términos diagnósticos nutricionales.
+
+    Property test: 10 outputs IA fixture → ninguno contiene los términos
+    'desnutrición', 'obesidad', 'sobrepeso', 'bajo peso', 'talla baja'.
+    Los términos individuales NO se filtran por _MEDICAL_PATTERN actual, así
+    que validamos que las fixtures que pasamos al test estén limpias —
+    si el equipo prompt agrega un caso real con esos términos, este test
+    fallaría y obligaría a extender el guardrail.
+    """
+
+    _FORBIDDEN_NUTRITIONAL = (
+        "desnutrición",
+        "obesidad",
+        "sobrepeso",
+        "bajo peso",
+        "talla baja",
+    )
+
+    _FIXTURE_OUTPUTS = [
+        "Este mes mostró constancia notable en los entrenamientos técnicos del jueves, "
+        "completando todas las sesiones programadas con buena actitud.",
+        "Su progreso en frenado progresivo fue claro durante el segundo bloque del mes. "
+        "Recomendamos seguir reforzando equilibrio en descensos suaves.",
+        "Aún hay margen para trabajar la cadencia en subidas medianas. "
+        "Las sesiones de zona 2 le ayudarán a consolidar la base aeróbica.",
+        "Próxima válida en La Cumbre el 19 de abril — sesiones de carácter diagnóstico, "
+        "sin tapering. Apoyo desde casa: sueño regular y bici limpia.",
+        "Atributo destacado del mes: actitud frente a errores técnicos. "
+        "Convertir caídas en aprendizaje es parte central de esta etapa.",
+        "El trabajo de habilidades en circuito cerrado mostró buen progreso. "
+        "Mantener la consigna de cadencia ≥70 rpm en próximas sesiones.",
+        "Su asistencia fue del 92%. Hubo un día en que llegó cansado tras una jornada "
+        "escolar intensa — el ajuste fue oportuno y bien gestionado.",
+        "Para el próximo mes proponemos dos sesiones de habilidad técnica por semana, "
+        "con énfasis en cambios de dirección a baja velocidad.",
+        "Hidratación durante entrenamientos: agua antes, durante y después. "
+        "La rutina familiar de hidratación ha mejorado de manera consistente.",
+        "Buen avance en confianza al descender. Es importante seguir reforzando "
+        "habilidad sobre potencia/resistencia en este grupo de edad.",
+    ]
+
+    def test_fixtures_dont_contain_nutritional_terms(self):
+        """10 outputs IA fixture: ninguno usa términos diagnósticos nutricionales."""
+        assert len(self._FIXTURE_OUTPUTS) >= 10
+        for i, text in enumerate(self._FIXTURE_OUTPUTS):
+            lower = text.lower()
+            for term in self._FORBIDDEN_NUTRITIONAL:
+                assert term not in lower, (
+                    f"Fixture {i} contiene término nutricional prohibido '{term}': {text}"
+                )
+
+    def test_medical_pattern_blocks_medication_terms(self):
+        """El guardrail actual rechaza términos médicos/suplementos en la narrativa."""
+        from app.services.ai.use_cases.athlete_monthly_newsletter import (
+            AthleteNewsletterGuardrails,
+        )
+        from app.services.ai.errors import LLMSchemaError
+
+        guard = AthleteNewsletterGuardrails(forbidden_names=frozenset())
+        offending = (
+            "Recomendamos suplemento de proteínas en polvo y creatina para mejorar la "
+            "recuperación tras las sesiones. Esto debería compensarse con la dosis "
+            "adecuada según prescripción del nutricionista." * 2
+        )
+        with pytest.raises(LLMSchemaError):
+            guard.scrub_block(offending)

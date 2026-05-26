@@ -102,6 +102,26 @@ export async function startAthleteRun(
 }
 
 // ---------------------------------------------------------------------------
+// Season summary (on-demand)
+// ---------------------------------------------------------------------------
+
+export interface SeasonSummaryResponse {
+  /** external_run_id del run que produce el resumen. */
+  run_id: string;
+  status: string;
+  started_at: string;
+}
+
+export async function generateSeasonSummary(
+  athleteId: number,
+): Promise<SeasonSummaryResponse> {
+  const response = await apiClient.post<SeasonSummaryResponse>(
+    `${buildBase(athleteId)}/season-summary`,
+  );
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
 // Analytics — distribution + evolution
 // ---------------------------------------------------------------------------
 

@@ -118,6 +118,24 @@ async def build_newsletter_metrics(
     anthropometry_block = await _build_anthropometry_block(db, athlete_id, year, month)
 
     # -----------------------------------------------------------------------
+    # Bloque 9 (pdf_only): Curvas de percentiles de crecimiento
+    # CRÍTICO: NUNCA incluir en email_blocks.
+    # -----------------------------------------------------------------------
+    # Cargar todos los registros ordenados asc para el builder
+    from app.models.anthropometry import AnthropometricRecord
+
+    all_records_result = await db.execute(
+        select(AnthropometricRecord)
+        .where(AnthropometricRecord.athlete_id == athlete_id)
+        .order_by(AnthropometricRecord.evaluation_date.asc())
+    )
+    all_records = all_records_result.scalars().all()
+
+    percentile_curves_block = await _build_percentile_charts_block(
+        db, athlete, list(all_records)
+    )
+
+    # -----------------------------------------------------------------------
     # Ensamble final
     # -----------------------------------------------------------------------
     email_blocks: dict[str, Any] = {
@@ -138,6 +156,10 @@ async def build_newsletter_metrics(
         # Los gráficos SVG se generan en render time a partir de race_results
         "charts_context": _build_charts_context(race_block),
     }
+
+    # Inyectar curvas de percentiles solo si hay al menos un indicador con datos
+    if percentile_curves_block is not None:
+        pdf_only_blocks["percentile_curves"] = percentile_curves_block
 
     return {
         "email_blocks": email_blocks,
@@ -657,6 +679,78 @@ async def _build_anthropometry_block(
         "records": serialized,
         "latest": latest,
     }
+
+
+async def _build_percentile_charts_block(
+    db: AsyncSession,
+    athlete: Any,
+    records: list,
+) -> dict[str, Any] | None:
+    """Construye los 3 gráficos de percentiles de crecimiento para el PDF.
+
+    Retorna dict con claves "height", "bmi", "weight" (los que tengan datos),
+    o None si los 3 indicadores carecen de datos suficientes.
+
+    PRIVACIDAD: el dict resultante no contiene nombre, DOB ni z-scores.
+    Solo va a pdf_only_blocks — NUNCA a email_blocks.
+    """
+    from app.services.training.growth_chart_builder import build_percentile_chart_ctx
+
+    sex_attr = getattr(athlete, "sex", None)
+    if sex_attr is None:
+        return None
+    sex: str = sex_attr.value if hasattr(sex_attr, "value") else str(sex_attr)
+    birth_date = getattr(athlete, "birth_date", None)
+    if birth_date is None:
+        return None
+
+    # PHV: extraer del registro más reciente que tenga age_at_phv
+    phv_age: float | None = None
+    for r in reversed(records):
+        if r.age_at_phv is not None:
+            phv_age = float(r.age_at_phv)
+            break
+
+    charts: dict[str, Any] = {}
+    has_any_data = False
+
+    for indicator in ("height", "bmi", "weight"):
+        try:
+            ctx = await build_percentile_chart_ctx(
+                db=db,
+                athlete_id=athlete.id,
+                birth_date=birth_date,
+                sex=sex,
+                records=records,
+                indicator=indicator,
+                phv_age_decimal=phv_age,
+            )
+        except Exception:
+            logger.error(
+                "growth_chart_unavailable athlete_id=%s indicator=%s",
+                athlete.id,
+                indicator,
+            )
+            charts[indicator] = {
+                "enough_data": False,
+                "reason_no_data": "growth_chart_unavailable",
+                "indicator": indicator,
+                "indicator_label_es": {
+                    "height": "Talla (cm)",
+                    "bmi": "IMC (kg/m²)",
+                    "weight": "Peso (kg)",
+                }.get(indicator, indicator),
+            }
+            continue
+
+        charts[indicator] = dict(ctx)
+        if ctx["enough_data"]:
+            has_any_data = True
+
+    if not has_any_data:
+        return None
+
+    return charts
 
 
 def _build_charts_context(race_block: dict[str, Any]) -> dict[str, Any]:

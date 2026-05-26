@@ -29,6 +29,9 @@ class NotificationTemplate(str, Enum):
     CALENDAR_EVENT_RESCHEDULED = "calendar_event_rescheduled"
     CALENDAR_EVENT_CANCELLED = "calendar_event_cancelled"
     ATHLETE_MONTHLY_NEWSLETTER = "athlete_monthly_newsletter"
+    # Solo se dispara para válidas tier A o CD (Campeonato Departamental).
+    # Las tier B/C quedan en notificación in-app + boletín mensual.
+    RACE_INSIGHT_PUBLISHED = "race_insight_published"
 
 
 class DocumentTemplate(str, Enum):

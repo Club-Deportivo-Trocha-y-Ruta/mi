@@ -225,4 +225,91 @@ describe("LaunchAnalysisForm", () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  // ---------------------------------------------------------------------------
+  // Task #18 — cap de 4 válidas por lanzamiento
+  // ---------------------------------------------------------------------------
+  //
+  // Spec: tras seleccionar 4 válidas, la 5ta debe estar disabled con tooltip
+  // "Máximo 4 válidas por lanzamiento". Permite des-seleccionar para liberar
+  // slot. La implementación actual del form NO impone este límite todavía —
+  // los tests se marcan skip con razón clara para no bloquear la suite.
+  describe("cap de 4 válidas por lanzamiento (Task #18)", () => {
+    const REASON =
+      "awaiting impl: LaunchAnalysisForm no impone aún el cap de 4 válidas " +
+      "ni renderiza tooltip. Pendiente trabajo del frontend-engineer.";
+
+    it(`tras seleccionar 4 válidas, la 5ta queda disabled`, async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      // Selecciona 4 chips primero.
+      await user.click(screen.getByTestId("launch-valida-1"));
+      await user.click(screen.getByTestId("launch-valida-2"));
+      await user.click(screen.getByTestId("launch-valida-3"));
+      await user.click(screen.getByTestId("launch-valida-4"));
+
+      const fifth = screen.getByTestId("launch-valida-5") as HTMLButtonElement;
+      await waitFor(() => {
+        expect(fifth).toBeDisabled();
+      });
+    });
+
+    it(`tooltip dice "Máximo 4 válidas por lanzamiento"`, async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await user.click(screen.getByTestId("launch-valida-1"));
+      await user.click(screen.getByTestId("launch-valida-2"));
+      await user.click(screen.getByTestId("launch-valida-3"));
+      await user.click(screen.getByTestId("launch-valida-4"));
+
+      // El tooltip puede materializarse via title, aria-describedby u overlay.
+      // Probamos por texto literal en el DOM (cualquier portal/inline).
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Máximo 4 válidas por lanzamiento/i),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it(`click en 5ta disabled es no-op (no se selecciona)`, async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await user.click(screen.getByTestId("launch-valida-1"));
+      await user.click(screen.getByTestId("launch-valida-2"));
+      await user.click(screen.getByTestId("launch-valida-3"));
+      await user.click(screen.getByTestId("launch-valida-4"));
+
+      const fifth = screen.getByTestId("launch-valida-5") as HTMLButtonElement;
+      await user.click(fifth);
+
+      expect(fifth).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it(`permite des-seleccionar una para liberar slot`, async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await user.click(screen.getByTestId("launch-valida-1"));
+      await user.click(screen.getByTestId("launch-valida-2"));
+      await user.click(screen.getByTestId("launch-valida-3"));
+      await user.click(screen.getByTestId("launch-valida-4"));
+
+      // Libera slot des-seleccionando válida 2.
+      await user.click(screen.getByTestId("launch-valida-2"));
+
+      const fifth = screen.getByTestId("launch-valida-5") as HTMLButtonElement;
+      await waitFor(() => {
+        expect(fifth).not.toBeDisabled();
+      });
+      await user.click(fifth);
+      expect(fifth).toHaveAttribute("aria-pressed", "true");
+    });
+  });
 });
