@@ -16,7 +16,7 @@
  *   - Stepper visual = breadcrumbs simples con `aria-current`.
  */
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "react-router-dom";
 import {
@@ -31,12 +31,8 @@ import { z } from "zod";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import { RaceUploadZone } from "@/components/ai/RaceUploadZone";
-
-// DiffTable lazy → solo se descarga si el wizard detecta modo revisión.
-// Mantiene el chunk de ImportWizard cerca de la baseline F-UP (~18 KB).
-const DiffTable = lazy(() =>
-  import("@/components/ai/DiffTable").then((m) => ({ default: m.DiffTable })),
-);
+import { RaceConditionsCard } from "@/components/race/RaceConditionsCard";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   useImportCommit,
   useImportDryRun,
@@ -52,6 +48,18 @@ import type {
   ImportParseResponse,
   ImportResolvedMatch,
 } from "@/types/raceImports.types";
+import {
+  SURFACE_CONDITIONS,
+  SURFACE_CONDITION_LABELS,
+  VENUE_ALTITUDES,
+} from "@/types/raceEvents.types";
+import type { SurfaceCondition } from "@/types/raceEvents.types";
+
+// DiffTable lazy → solo se descarga si el wizard detecta modo revisión.
+// Mantiene el chunk de ImportWizard cerca de la baseline F-UP (~18 KB).
+const DiffTable = lazy(() =>
+  import("@/components/ai/DiffTable").then((m) => ({ default: m.DiffTable })),
+);
 
 // ---------------------------------------------------------------------------
 // F-UP-REV5 — Revision UX helpers
@@ -117,6 +125,41 @@ const step1Schema = z.object({
       "Formato YYYY-MM-DD",
     ),
   location: z.string().min(2, "Ciudad requerida"),
+  // F-COND — condiciones opcionales (NO bloquean avance)
+  temperature_c: z
+    .string()
+    .optional()
+    .refine(
+      (v) => {
+        if (!v || v.trim() === "") return true;
+        const n = parseFloat(v);
+        return !isNaN(n) && n >= 0 && n <= 50;
+      },
+      { message: "Debe estar entre 0 y 50 °C" },
+    ),
+  surface_condition: z
+    .enum(["seca", "humeda", "barro", "lluvia", "mixta"] as const)
+    .optional()
+    .nullable(),
+  altitude_msnm: z
+    .string()
+    .optional()
+    .refine(
+      (v) => {
+        if (!v || v.trim() === "") return true;
+        const n = parseFloat(v);
+        return !isNaN(n) && n >= 0 && n <= 5000;
+      },
+      { message: "Debe estar entre 0 y 5000 msnm" },
+    ),
+  climate: z
+    .string()
+    .max(60, "Máximo 60 caracteres")
+    .optional(),
+  weather_notes: z
+    .string()
+    .max(2000, "Máximo 2000 caracteres")
+    .optional(),
 });
 
 type Step1Values = z.infer<typeof step1Schema>;
@@ -257,6 +300,8 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   >({});
   const [onlyPending, setOnlyPending] = useState(false);
   const [step1Error, setStep1Error] = useState<string | null>(null);
+  // F-COND: toast neutral cuando el coach avanza sin llenar condiciones.
+  const [conditionsToast, setConditionsToast] = useState(false);
   // F-UP-REV5: motivo de revisión (obligatorio si hay deletes).
   const [revisionReason, setRevisionReason] = useState("");
   const [revisionReasonTouched, setRevisionReasonTouched] = useState(false);
@@ -269,6 +314,9 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   const {
     register,
     handleSubmit,
+    control,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<Step1Values>({
     resolver: zodResolver(step1Schema),
@@ -279,8 +327,26 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
       event_name: "",
       event_date: "",
       location: "",
+      // F-COND — condiciones opcionales
+      temperature_c: "",
+      surface_condition: null,
+      altitude_msnm: "",
+      climate: "",
+      weather_notes: "",
     },
   });
+
+  // F-COND: Auto-rellena altitud cuando location coincide con catálogo Copa Valle.
+  // Solo si altitude_msnm está vacío (shouldDirty: false para no marcar dirty).
+  const watchedLocation = watch("location");
+  const watchedAltitude = watch("altitude_msnm");
+  useEffect(() => {
+    if (!watchedLocation) return;
+    const matched = VENUE_ALTITUDES[watchedLocation];
+    if (matched != null && (!watchedAltitude || watchedAltitude.trim() === "")) {
+      setValue("altitude_msnm", String(matched), { shouldDirty: false });
+    }
+  }, [watchedLocation, watchedAltitude, setValue]);
 
   const submitStep1 = async (values: Step1Values) => {
     if (!resultadosPdf) {
@@ -288,6 +354,36 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
       return;
     }
     setStep1Error(null);
+
+    // F-COND: detecta si el coach avanzó sin llenar ninguna condición.
+    const hasAnyCondition =
+      (values.temperature_c && values.temperature_c.trim() !== "") ||
+      values.surface_condition != null ||
+      (values.altitude_msnm && values.altitude_msnm.trim() !== "") ||
+      (values.climate && values.climate.trim() !== "") ||
+      (values.weather_notes && values.weather_notes.trim() !== "");
+    if (!hasAnyCondition) {
+      setConditionsToast(true);
+      // Auto-ocultar el toast tras 5 s
+      setTimeout(() => setConditionsToast(false), 5000);
+    } else {
+      setConditionsToast(false);
+    }
+
+    // Normalizar campos de condiciones: string vacío → null
+    const tempC = values.temperature_c && values.temperature_c.trim() !== ""
+      ? values.temperature_c
+      : null;
+    const altMsnm = values.altitude_msnm && values.altitude_msnm.trim() !== ""
+      ? parseFloat(values.altitude_msnm)
+      : null;
+    const climateVal = values.climate && values.climate.trim() !== ""
+      ? values.climate.trim()
+      : null;
+    const weatherNotes = values.weather_notes && values.weather_notes.trim() !== ""
+      ? values.weather_notes.trim()
+      : null;
+
     try {
       const result = await parseMutation.mutateAsync({
         fields: {
@@ -298,6 +394,12 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
           event_date: values.event_date,
           location: values.location,
           kind: generalPdf ? "both" : "resultados",
+          // F-COND — condiciones opcionales
+          climate: climateVal,
+          temperature_c: tempC,
+          surface_condition: values.surface_condition ?? null,
+          altitude_msnm: isNaN(altMsnm as number) ? null : altMsnm,
+          weather_notes: weatherNotes,
         },
         files: {
           resultadosPdf,
@@ -445,6 +547,7 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
     setResolutions({});
     setOnlyPending(false);
     setStep1Error(null);
+    setConditionsToast(false);
     setRevisionReason("");
     setRevisionReasonTouched(false);
     parseMutation.reset();
@@ -466,6 +569,7 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
           onSubmit={handleSubmit(submitStep1)}
           className="space-y-4"
           data-testid="import-wizard-step1"
+          noValidate
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -606,6 +710,206 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
               )}
             </div>
           </div>
+
+          {/* ── F-COND: Sección Condiciones de carrera (opcional) ── */}
+          <div className="rounded-lg border border-[rgba(34,42,53,0.08)] p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-charcoal">
+                Condiciones de carrera
+              </h3>
+              <span className="rounded-full bg-light-gray px-2 py-0.5 text-[11px] font-medium text-mid-gray">
+                Opcional
+              </span>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Fila 1 — Temperatura */}
+              <div className="space-y-1">
+                <label
+                  htmlFor="wizard-temperature"
+                  className="block text-xs font-medium text-mid-gray"
+                >
+                  Temperatura
+                </label>
+                <div className="relative">
+                  <input
+                    id="wizard-temperature"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={50}
+                    step={0.1}
+                    {...register("temperature_c")}
+                    className="w-full rounded-lg bg-white py-2.5 pl-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                    aria-invalid={errors.temperature_c ? true : undefined}
+                    data-testid="wizard-temperature"
+                  />
+                  <span
+                    className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-mid-gray"
+                    aria-hidden="true"
+                  >
+                    °C
+                  </span>
+                </div>
+                {errors.temperature_c && (
+                  <p className="text-xs text-red-600" role="alert">
+                    {errors.temperature_c.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Fila 1 — Superficie (ToggleGroup chips) */}
+              <div className="space-y-1">
+                <span className="block text-xs font-medium text-mid-gray">
+                  Condición del terreno
+                </span>
+                <Controller
+                  name="surface_condition"
+                  control={control}
+                  render={({ field }) => (
+                    <ToggleGroup
+                      type="single"
+                      value={field.value ?? ""}
+                      onValueChange={(v) =>
+                        field.onChange(
+                          v === "" ? null : (v as SurfaceCondition),
+                        )
+                      }
+                      className="flex flex-wrap gap-1.5"
+                      aria-label="Condición del terreno"
+                      data-testid="wizard-surface-condition"
+                    >
+                      {SURFACE_CONDITIONS.map((sc) => (
+                        <ToggleGroupItem
+                          key={sc}
+                          value={sc}
+                          aria-label={SURFACE_CONDITION_LABELS[sc]}
+                          className="min-h-[48px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-1.5 text-xs font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+                          data-testid={`wizard-surface-chip-${sc}`}
+                        >
+                          {SURFACE_CONDITION_LABELS[sc]}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  )}
+                />
+              </div>
+
+              {/* Fila 2 — Altitud */}
+              <div className="space-y-1">
+                <label
+                  htmlFor="wizard-altitude"
+                  className="block text-xs font-medium text-mid-gray"
+                >
+                  Altitud
+                </label>
+                <div className="relative">
+                  <input
+                    id="wizard-altitude"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={5000}
+                    step={1}
+                    {...register("altitude_msnm")}
+                    className="w-full rounded-lg bg-white py-2.5 pl-3 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                    aria-invalid={errors.altitude_msnm ? true : undefined}
+                    data-testid="wizard-altitude"
+                  />
+                  <span
+                    className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-mid-gray"
+                    aria-hidden="true"
+                  >
+                    msnm
+                  </span>
+                </div>
+                {errors.altitude_msnm && (
+                  <p className="text-xs text-red-600" role="alert">
+                    {errors.altitude_msnm.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Fila 2 — Clima (input text + datalist) */}
+              <div className="space-y-1">
+                <label
+                  htmlFor="wizard-climate"
+                  className="block text-xs font-medium text-mid-gray"
+                >
+                  Clima
+                </label>
+                <input
+                  id="wizard-climate"
+                  type="text"
+                  list="wizard-climate-suggestions"
+                  placeholder="ej: soleado, parcialmente nublado"
+                  maxLength={60}
+                  {...register("climate")}
+                  className="w-full rounded-lg bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  aria-invalid={errors.climate ? true : undefined}
+                  data-testid="wizard-climate"
+                />
+                <datalist id="wizard-climate-suggestions">
+                  <option value="Soleado" />
+                  <option value="Parcialmente nublado" />
+                  <option value="Nublado" />
+                  <option value="Llovizna" />
+                  <option value="Lluvioso" />
+                  <option value="Ventoso" />
+                  <option value="Soleado con viento" />
+                </datalist>
+                {errors.climate && (
+                  <p className="text-xs text-red-600" role="alert">
+                    {errors.climate.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Fila 3 — Notas de clima (full-width) */}
+              <div className="space-y-1 md:col-span-2">
+                <label
+                  htmlFor="wizard-weather-notes"
+                  className="block text-xs font-medium text-mid-gray"
+                >
+                  Notas de condiciones
+                </label>
+                <textarea
+                  id="wizard-weather-notes"
+                  maxLength={2000}
+                  placeholder="Condiciones generales del trazado y clima — evite incluir nombres de atletas o información médica"
+                  {...register("weather_notes")}
+                  className="w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                  style={{
+                    boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
+                    minHeight: "80px",
+                  }}
+                  aria-invalid={errors.weather_notes ? true : undefined}
+                  data-testid="wizard-weather-notes"
+                />
+                {errors.weather_notes && (
+                  <p className="text-xs text-red-600" role="alert">
+                    {errors.weather_notes.message}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          {/* ── Fin F-COND ── */}
+
+          {/* Toast neutral si avanza sin condiciones */}
+          {conditionsToast && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-lg bg-light-gray px-3 py-2 text-xs text-mid-gray"
+              data-testid="wizard-conditions-toast"
+            >
+              Condiciones sin registrar — podrás agregarlas después desde el evento.
+            </div>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <RaceUploadZone
@@ -775,7 +1079,7 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                   value={revisionReason}
                   onChange={(e) => setRevisionReason(e.target.value)}
                   onBlur={() => setRevisionReasonTouched(true)}
-                  placeholder="Ej: Corrección oficial federación post-reclamo Andrés Mejía"
+                  placeholder="Ej: Corrección oficial de la Federación post-reclamo de un participante"
                   aria-required={reasonRequired}
                   aria-invalid={
                     !reasonValid && revisionReasonTouched ? true : undefined
@@ -1163,6 +1467,14 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
             </div>
           ) : (
             <p className="text-sm text-mid-gray">Procesando…</p>
+          )}
+
+          {/* F4 — Tarjeta condiciones tras commit exitoso */}
+          {commitMutation.data && !commitMutation.isError && (
+            <RaceConditionsCard
+              raceEventId={commitMutation.data.race_event_id}
+              conditions={parseResult?.conditions}
+            />
           )}
         </div>
       )}

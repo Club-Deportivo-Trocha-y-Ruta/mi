@@ -82,6 +82,8 @@ async def sqlite_engine() -> AsyncEngine:
     )
     # Crear subgrafo (evita LONGTEXT incompatible)
     from app.models.user import User as _U  # noqa: F401
+    from app.models.club import Club as _Cl, ClubMember as _CM  # noqa: F401
+    from app.models.athlete import Athlete as _A  # noqa: F401
     from app.models.race_series import RaceSeries as _S  # noqa: F401
     from app.models.race_event import RaceEvent as _E  # noqa: F401
     from app.models.race_import import RaceImport as _I  # noqa: F401
@@ -93,6 +95,9 @@ async def sqlite_engine() -> AsyncEngine:
         Base.metadata.tables[t]
         for t in (
             "users",
+            "clubs",
+            "club_members",
+            "athletes",
             "race_series",
             "race_events",
             "race_imports",
@@ -1040,6 +1045,67 @@ class TestFullFlowWithStubIngestor:
             assert imp.storage_path and "committed" in imp.storage_path
 
     @pytest.mark.asyncio
+    async def test_dry_run_matcher_returns_real_confidence_and_autoconfirms(
+        self, coach_client, stub_parsers, stub_ingestor, db_session_factory
+    ):
+        """Cuando hay roster cargado del club del coach, el dry-run corre el
+        matcher real y devuelve ``confidence > 0`` para los TyR que matchean.
+
+        Regresión: antes el endpoint hardcodeaba ``confidence=0.0`` y
+        ``is_ambiguous=True`` (MVP) — la UI siempre mostraba 0% en la columna
+        Confianza.
+        """
+        from datetime import date as _date
+
+        from app.models.athlete import Athlete, Sex
+        from app.models.club import Club, ClubMember, ClubRole
+
+        async with db_session_factory() as session:
+            club = Club(id=1, name="Club Trocha y Ruta", region="Valle")
+            session.add(club)
+            session.add(
+                ClubMember(club_id=1, user_id=10, role_in_club=ClubRole.coach)
+            )
+            athlete_user = User(
+                id=500, email="sebas@test.com", hashed_password="x",
+                first_name="Sebastian", last_name="Yule Mendoza",
+                role=UserRole.parent, is_active=True, can_login=False,
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(athlete_user)
+            await session.flush()
+            session.add(Athlete(
+                id=500, user_id=500, first_name="Sebastian",
+                last_name="Yule Mendoza", birth_date=_date(2012, 6, 1),
+                sex=Sex.M, club_id=1, created_by=10,
+            ))
+            await session.commit()
+
+        files = {"resultados_pdf": _pdf_file(b"matcher confidence flow")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse",
+            data=_parse_form(), files=files,
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        r = await coach_client.post(
+            f"/api/race-analysis/imports/{parse_id}/dry-run"
+        )
+        assert r.status_code == 200, r.text
+        dry = r.json()
+        # 1 TyR row — debe matchear al atleta seeded con confidence > 0.9
+        assert len(dry["matches"]) == 1
+        m = dry["matches"][0]
+        assert m["tyr_athlete"] is not None
+        assert m["tyr_athlete"]["id"] == 500
+        assert m["confidence"] > 0.9
+        # Top único + score perfecto → auto-confirmado
+        assert m["is_ambiguous"] is False
+        assert dry["counts"]["confirmed"] == 1
+        assert dry["counts"]["ambiguous"] == 0
+
+    @pytest.mark.asyncio
     async def test_commit_missing_resolved_matches_422(
         self, coach_client, stub_parsers, stub_ingestor, db_session_factory
     ):
@@ -1483,3 +1549,426 @@ class TestFullFlowWithStubIngestor:
             f"parse_id en response debe coincidir con el snapshotted, "
             f"se obtuvo {body['parse_id']!r}"
         )
+
+
+# ===========================================================================
+# B2 — Condiciones de carrera vía POST /parse
+# ===========================================================================
+#
+# Cobertura del flujo de captura de condiciones desde el wizard upload:
+# - Persistencia en ``parse_meta_json["conditions"]`` con serialización correcta.
+# - Subset / sin condiciones (regresión backward-compat).
+# - Validaciones de rango (temperature_c, altitude_msnm, climate length).
+# - Flujo full /parse → /commit con todos los campos llegando a ``race_events``.
+
+
+class TestParseConditions:
+    """Tests del input opcional de condiciones de carrera en POST /parse."""
+
+    @pytest.mark.asyncio
+    async def test_parse_with_all_five_conditions_persists_correctly(
+        self, coach_client, stub_parsers, db_session_factory
+    ):
+        """Parse con los 5 campos → parse_meta_json['conditions'] correcto.
+
+        - temperature_c: se serializa como string (preserva Decimal).
+        - surface_condition: se serializa como el valor del enum ('seca'|...).
+        - altitude_msnm: int.
+        - climate, weather_notes: str.
+        """
+        form = _parse_form()
+        form.update({
+            "climate": "Soleado con viento moderado",
+            "temperature_c": "23.5",
+            "surface_condition": "seca",
+            "altitude_msnm": "1200",
+            "weather_notes": "Viento del NE 12 km/h, humedad 55%",
+        })
+        files = {"resultados_pdf": _pdf_file(b"content with conditions")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=form, files=files
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        async with db_session_factory() as session:
+            from sqlalchemy import select as _sel
+            imp = (await session.execute(
+                _sel(RaceImport).where(RaceImport.id == parse_id)
+            )).scalar_one()
+            conditions = imp.parse_meta_json.get("conditions") or {}
+            assert conditions["climate"] == "Soleado con viento moderado"
+            assert conditions["temperature_c"] == "23.5"
+            assert conditions["surface_condition"] == "seca"
+            assert conditions["altitude_msnm"] == 1200
+            assert conditions["weather_notes"] == "Viento del NE 12 km/h, humedad 55%"
+
+    @pytest.mark.asyncio
+    async def test_parse_with_subset_only_climate_and_temperature(
+        self, coach_client, stub_parsers, db_session_factory
+    ):
+        """Subset: enviamos climate + temperature_c → el resto queda None."""
+        form = _parse_form()
+        form.update({
+            "climate": "Soleado",
+            "temperature_c": "20.0",
+        })
+        files = {"resultados_pdf": _pdf_file(b"subset content")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=form, files=files
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        async with db_session_factory() as session:
+            from sqlalchemy import select as _sel
+            imp = (await session.execute(
+                _sel(RaceImport).where(RaceImport.id == parse_id)
+            )).scalar_one()
+            conditions = imp.parse_meta_json.get("conditions") or {}
+            assert conditions["climate"] == "Soleado"
+            assert conditions["temperature_c"] == "20.0"
+            # Resto debe estar explícitamente en None (no faltante)
+            assert conditions["surface_condition"] is None
+            assert conditions["altitude_msnm"] is None
+            assert conditions["weather_notes"] is None
+
+    @pytest.mark.asyncio
+    async def test_parse_without_any_conditions_backwards_compat(
+        self, coach_client, stub_parsers, db_session_factory
+    ):
+        """Regresión: parse sin ningún campo de condiciones funciona igual que antes.
+
+        La clave 'conditions' DEBE existir con los 5 valores en None (contrato B2).
+        """
+        files = {"resultados_pdf": _pdf_file(b"no conditions at all")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        async with db_session_factory() as session:
+            from sqlalchemy import select as _sel
+            imp = (await session.execute(
+                _sel(RaceImport).where(RaceImport.id == parse_id)
+            )).scalar_one()
+            conditions = imp.parse_meta_json.get("conditions")
+            assert conditions is not None, (
+                "La clave 'conditions' debe existir incluso sin captura"
+            )
+            assert conditions == {
+                "climate": None,
+                "temperature_c": None,
+                "surface_condition": None,
+                "altitude_msnm": None,
+                "weather_notes": None,
+            }
+
+    @pytest.mark.asyncio
+    async def test_parse_then_commit_without_conditions_creates_valida_with_nulls(
+        self, coach_client, stub_parsers, db_session_factory, monkeypatch
+    ):
+        """End-to-end: /parse SIN condiciones → /commit → race_events con NULLs.
+
+        Usamos un stub_ingestor especializado que sí persiste el RaceEvent
+        para verificar que la falta de condiciones se propaga como NULL en BD.
+        """
+        from app.models.race_event import RaceEvent, RaceEventStatus
+        from app.schemas.race import IngestReport
+        from app.services.race import ingestor as ingestor_mod
+
+        captured: dict = {}
+
+        async def fake_ingest_persists(self, meta, results_by_category, **kwargs):
+            captured["meta_climate"] = meta.climate
+            captured["meta_temperature_c"] = meta.temperature_c
+            captured["meta_surface_condition"] = meta.surface_condition
+            captured["meta_altitude_msnm"] = meta.altitude_msnm
+            captured["meta_weather_notes"] = meta.weather_notes
+            # Crear el RaceEvent realmente en la DB para verificar persistencia
+            event = RaceEvent(
+                series_id=1,
+                sequence_number=meta.valida_num,
+                name=meta.name,
+                event_date=meta.event_date,
+                location=meta.location,
+                is_championship=False,
+                status=RaceEventStatus.COMPLETED,
+                created_by_user_id=kwargs.get("ingested_by_user_id") or 10,
+                climate=meta.climate,
+                temperature_c=meta.temperature_c,
+                surface_condition=meta.surface_condition,
+                altitude_msnm=meta.altitude_msnm,
+                weather_notes=meta.weather_notes,
+            )
+            self.db.add(event)
+            await self.db.flush()
+            # Promover el pending → committed (como hace el ingestor real)
+            sha = kwargs.get("pdf_results_sha256")
+            if sha:
+                from sqlalchemy import select as _sel
+                result = await self.db.execute(
+                    _sel(RaceImport).where(
+                        RaceImport.sha256 == sha,
+                        RaceImport.status == RaceImportStatus.pending,
+                    )
+                )
+                pending = result.scalar_one_or_none()
+                if pending is not None:
+                    pending.status = RaceImportStatus.committed
+                    pending.event_id = event.id
+                    pending.stats_json = {"results_inserted": 2, "tyr_count": 1}
+                    await self.db.flush()
+            captured["event_id"] = event.id
+            return IngestReport(
+                event_id=event.id,
+                series_id=1,
+                competitors_created=0,
+                competitors_updated=0,
+                results_inserted=2,
+                results_skipped=0,
+                tyr_count=1,
+                warnings=[],
+            )
+
+        monkeypatch.setattr(
+            ingestor_mod.RaceIngestor, "ingest_event", fake_ingest_persists
+        )
+
+        # 1) /parse SIN condiciones
+        files = {"resultados_pdf": _pdf_file(b"e2e no conditions xyz")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        # 2) /commit con resolved_matches del TyR detectado por el stub
+        from app.services.race.normalizer import normalize_name
+        match_norm = normalize_name("Sebastian Yule Mendoza")
+        r = await coach_client.post(
+            f"/api/race-analysis/imports/{parse_id}/commit",
+            json={
+                "resolved_matches": [
+                    {"competitor_normalized_name": match_norm, "athlete_id": None}
+                ]
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        # 3) Verificar que el meta llegó con todos None y la BD también
+        assert captured["meta_climate"] is None
+        assert captured["meta_temperature_c"] is None
+        assert captured["meta_surface_condition"] is None
+        assert captured["meta_altitude_msnm"] is None
+        assert captured["meta_weather_notes"] is None
+
+        async with db_session_factory() as session:
+            from sqlalchemy import select as _sel
+            event = (await session.execute(
+                _sel(RaceEvent).where(RaceEvent.id == captured["event_id"])
+            )).scalar_one()
+            assert event.climate is None
+            assert event.temperature_c is None
+            assert event.surface_condition is None
+            assert event.altitude_msnm is None
+            assert event.weather_notes is None
+
+    @pytest.mark.asyncio
+    async def test_parse_then_commit_with_all_conditions_persists_in_race_events(
+        self, coach_client, stub_parsers, db_session_factory, monkeypatch
+    ):
+        """End-to-end full: /parse con 5 condiciones → /commit → race_events row.
+
+        Verifica que el flujo completo (form → parse_meta_json → EventMeta →
+        RaceIngestor → race_events) propaga los 5 valores sin pérdida.
+        """
+        from decimal import Decimal as _D
+        from app.models.race_event import RaceEvent, RaceEventStatus, SurfaceCondition as _SC
+        from app.schemas.race import IngestReport
+        from app.services.race import ingestor as ingestor_mod
+
+        captured: dict = {}
+
+        async def fake_ingest_persists(self, meta, results_by_category, **kwargs):
+            event = RaceEvent(
+                series_id=1,
+                sequence_number=meta.valida_num,
+                name=meta.name,
+                event_date=meta.event_date,
+                location=meta.location,
+                is_championship=False,
+                status=RaceEventStatus.COMPLETED,
+                created_by_user_id=kwargs.get("ingested_by_user_id") or 10,
+                climate=meta.climate,
+                temperature_c=meta.temperature_c,
+                surface_condition=meta.surface_condition,
+                altitude_msnm=meta.altitude_msnm,
+                weather_notes=meta.weather_notes,
+            )
+            self.db.add(event)
+            await self.db.flush()
+            sha = kwargs.get("pdf_results_sha256")
+            if sha:
+                from sqlalchemy import select as _sel
+                result = await self.db.execute(
+                    _sel(RaceImport).where(
+                        RaceImport.sha256 == sha,
+                        RaceImport.status == RaceImportStatus.pending,
+                    )
+                )
+                pending = result.scalar_one_or_none()
+                if pending is not None:
+                    pending.status = RaceImportStatus.committed
+                    pending.event_id = event.id
+                    pending.stats_json = {"results_inserted": 2, "tyr_count": 1}
+                    await self.db.flush()
+            captured["event_id"] = event.id
+            return IngestReport(
+                event_id=event.id,
+                series_id=1,
+                competitors_created=0,
+                competitors_updated=0,
+                results_inserted=2,
+                results_skipped=0,
+                tyr_count=1,
+                warnings=[],
+            )
+
+        monkeypatch.setattr(
+            ingestor_mod.RaceIngestor, "ingest_event", fake_ingest_persists
+        )
+
+        # 1) /parse con TODOS los 5 campos
+        form = _parse_form()
+        form.update({
+            "climate": "Lluvioso",
+            "temperature_c": "16.3",
+            "surface_condition": "barro",
+            "altitude_msnm": "1800",
+            "weather_notes": "Llovió toda la noche; pista resbaladiza",
+        })
+        files = {"resultados_pdf": _pdf_file(b"e2e full conditions abc")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=form, files=files
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        # 2) /commit
+        from app.services.race.normalizer import normalize_name
+        match_norm = normalize_name("Sebastian Yule Mendoza")
+        r = await coach_client.post(
+            f"/api/race-analysis/imports/{parse_id}/commit",
+            json={
+                "resolved_matches": [
+                    {"competitor_normalized_name": match_norm, "athlete_id": None}
+                ]
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        # 3) Verificar que los 5 campos llegan a race_events
+        async with db_session_factory() as session:
+            from sqlalchemy import select as _sel
+            event = (await session.execute(
+                _sel(RaceEvent).where(RaceEvent.id == captured["event_id"])
+            )).scalar_one()
+            assert event.climate == "Lluvioso"
+            assert event.temperature_c == _D("16.3")
+            assert event.surface_condition == _SC.barro
+            assert event.altitude_msnm == 1800
+            assert event.weather_notes == "Llovió toda la noche; pista resbaladiza"
+
+
+class TestParseConditionsValidation:
+    """Tests de las validaciones de rango/enum para los Form() params.
+
+    El handler combina las validaciones nativas de FastAPI/Form con un re-check
+    Pydantic vía ``ImportParseRequestFields``. Ambos caminos retornan 422.
+    """
+
+    @pytest.mark.asyncio
+    async def test_parse_temperature_above_max_returns_422(
+        self, coach_client, stub_parsers
+    ):
+        """Regresión del bug Decimal-not-serializable.
+
+        Antes del fix (uso de ``jsonable_encoder`` sobre ``exc.errors()``), un
+        ``temperature_c=51`` rompía la respuesta 422 con HTTP 500 porque el
+        ``input`` del error era ``Decimal('51')`` y FastAPI no lo serializaba.
+        """
+        form = _parse_form()
+        form["temperature_c"] = "51"
+        files = {"resultados_pdf": _pdf_file(b"temp out of range")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=form, files=files
+        )
+        assert r.status_code == 422
+        # El body 422 debe ser JSON válido (no HTML 500)
+        body = r.json()
+        assert "detail" in body
+
+    @pytest.mark.asyncio
+    async def test_parse_temperature_below_min_returns_422(
+        self, coach_client, stub_parsers
+    ):
+        """Mismo bug Decimal-not-serializable con valor negativo."""
+        form = _parse_form()
+        form["temperature_c"] = "-1"
+        files = {"resultados_pdf": _pdf_file(b"temp negative")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=form, files=files
+        )
+        assert r.status_code == 422
+        body = r.json()
+        assert "detail" in body
+
+    @pytest.mark.asyncio
+    async def test_parse_surface_condition_invalid_value_returns_422(
+        self, coach_client, stub_parsers
+    ):
+        form = _parse_form()
+        form["surface_condition"] = "invalida"
+        files = {"resultados_pdf": _pdf_file(b"invalid surface")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=form, files=files
+        )
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_parse_altitude_negative_returns_422(
+        self, coach_client, stub_parsers
+    ):
+        form = _parse_form()
+        form["altitude_msnm"] = "-1"
+        files = {"resultados_pdf": _pdf_file(b"altitude negative")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=form, files=files
+        )
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_parse_altitude_above_max_returns_422(
+        self, coach_client, stub_parsers
+    ):
+        form = _parse_form()
+        form["altitude_msnm"] = "6000"
+        files = {"resultados_pdf": _pdf_file(b"altitude over max")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=form, files=files
+        )
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_parse_climate_over_60_chars_returns_422(
+        self, coach_client, stub_parsers
+    ):
+        form = _parse_form()
+        form["climate"] = "a" * 61
+        files = {"resultados_pdf": _pdf_file(b"climate too long")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse", data=form, files=files
+        )
+        assert r.status_code == 422

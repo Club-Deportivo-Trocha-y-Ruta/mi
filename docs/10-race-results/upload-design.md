@@ -887,6 +887,125 @@ async def parse(results_file, general_file, current_user) -> ImportParseResponse
 
 ---
 
+## 14. Extensión — Condiciones de carrera en UI (2026-05-26)
+
+> Entregado y verde en tests; pendiente de commit + deploy. Documentado aquí como extensión cerrada del diseño original §4-§5.
+
+### 14.1 Motivación
+
+Las analíticas longitudinales del módulo Race Results (`services/race/analytics.py`: `athlete_progression`, `podium_gap`, `projection`) necesitan contexto ambiental para interpretar diferencias de rendimiento entre válidas. Una misma posición en Roldanillo (950 msnm, seco) vs La Cumbre (1581 msnm, lluvia) no se compara igual.
+
+Los PDFs oficiales de la Federación **no incluyen** clima, temperatura, condición del trazado ni altitud. La única fuente confiable es el coach al momento de subir el PDF (memoria fresca) o post-ingest (corrección/complemento).
+
+Las columnas ambientales ya existen en `race_events` desde la migración delta Paso 2 Fase 1.7 (`64c263edd07f`): `climate`, `temperature_c`, `surface_condition`, `altitude_msnm`, `weather_notes`. Esta extensión expone la captura en la UI sin tocar el modelo de datos.
+
+### 14.2 Flujo de captura
+
+**Wizard Step 1 — durante la ingesta (opcional).**
+
+`backend/app/routers/race_imports.py::parse_import` acepta 5 form fields opcionales adicionales en el multipart del `POST /api/race-analysis/imports/parse`:
+
+| Campo | Tipo | Rango / Validación |
+|---|---|---|
+| `climate` | `str` | máx 60 chars |
+| `temperature_c` | `Decimal` | 0 ≤ x ≤ 50, un decimal |
+| `surface_condition` | enum | `seca` \| `humeda` \| `barro` \| `lluvia` \| `mixta` |
+| `altitude_msnm` | `int` | 0 ≤ x ≤ 5000 |
+| `weather_notes` | `str` | máx 2000 chars |
+
+Validados por `ImportParseRequestFields` (Pydantic, `str_strip_whitespace=True`). FastAPI no aplica Pydantic automáticamente a `Form()` individuales, así que el handler construye el modelo explícitamente para mantener invariantes idénticos al PATCH B3. Las condiciones se persisten en `RaceImport.parse_meta_json["conditions"]` y se aplican al `RaceEvent` durante el commit.
+
+**Edición post-ingest (PATCH).**
+
+`backend/app/routers/race_events.py::update_race_event_conditions` expone:
+
+```
+PATCH /api/race-analysis/race-events/{race_event_id}/conditions
+```
+
+- **RBAC:** `require_role([UserRole.admin, UserRole.coach])` — padres reciben 403.
+- **Body:** `RaceEventConditionsUpdate` con `extra="forbid"` (rechaza atributos no esperados).
+- **Semántica:** actualización parcial vía `model_dump(exclude_unset=True)`. Body vacío retorna estado actual sin tocar DB.
+- **Respuesta:** `RaceEventConditionsRead` (5 campos + `updated_at`).
+- **Códigos:** 200 ok / 404 evento no existe / 422 fuera de rango / 403 sin rol.
+- **Log:** solo claves modificadas (`sorted(campos_actualizados.keys())`), nunca valores — `weather_notes` es texto libre.
+
+Frontend equivalente:
+- `frontend/src/api/raceEvents.ts::updateRaceEventConditions`
+- `frontend/src/hooks/race/useRaceEventConditions.ts::useUpdateRaceEventConditions` (mutation con invalidación de query).
+
+### 14.3 Catálogo `VENUE_ALTITUDES`
+
+`frontend/src/types/raceEvents.types.ts` exporta el catálogo de altitudes aproximadas (msnm) para las 7 sedes habituales de la Copa Valle XCO:
+
+| Sede | msnm |
+|---|---|
+| Sevilla | 1340 |
+| Ginebra | 1080 |
+| Cali | 1000 |
+| Palmira | 1001 |
+| Roldanillo | 950 |
+| Yumbo | 1021 |
+| La Cumbre | 1581 |
+
+**Razón:** evitar typos en datos que luego alimentan analíticas (un `2000` accidental sesga el cálculo de proyección por altitud). El wizard precarga el campo `altitude_msnm` al detectar coincidencia exacta en `location`, reduciendo fricción cuando el coach está subiendo el PDF post-evento y solo recuerda la sede. El coach puede sobreescribir el valor.
+
+### 14.4 Decisión UX — ToggleGroup chips ≥48 px
+
+Para `surface_condition` se descartó el select nativo (`<select>`) en favor de `ToggleGroup` chips:
+
+- **Contexto de uso real:** el coach sube PDFs desde tablet en zonas de carrera/eventos con sol directo. Los selects nativos en iOS/Android pierden contraste y obligan a un tap extra que confunde.
+- **Tamaño táctil:** `min-h-[48px]` en cada `ToggleGroupItem` cumple guía WCAG / Apple HIG (44 px mín, 48 px recomendado) — un toque preciso evita selecciones erradas con dedos húmedos.
+- **Visibilidad de opciones:** las 5 condiciones (Seca / Húmeda / Barro / Lluvia / Mixta) caben en una fila wrap; el coach las ve todas sin abrir menú.
+- **Implementación:** `ImportWizard.tsx:771-794` con `aria-label` por chip y `data-testid` para Playwright.
+
+Bug colateral resuelto: se agregó `noValidate` al `<form>` (`ImportWizard.tsx:572`) para que la validación HTML5 nativa no se dispare antes que Zod — antes bloqueaba el botón "Siguiente" con mensajes en inglés del navegador en lugar de los errores Zod en español.
+
+### 14.5 Tarjeta tri-estado sin lenguaje warning
+
+`frontend/src/components/race/RaceConditionsCard.tsx` muestra el estado de las condiciones en la página de detalle del evento con tres modos basados en `countFilledFields(c)`:
+
+| Campos llenos | Estado | UI | Botón coach/admin |
+|---|---|---|---|
+| 0 | Vacío | Card colapsada con placeholder | "Agregar" |
+| 1-3 | Parcial | Faltantes en `text-[rgba(34,42,53,0.35)]` con leyenda `— sin registro —` | "Completar" |
+| ≥4 | Completo | Grilla normal con valores formateados | "Editar" |
+
+**Decisión inviolable:** sin iconos warning, sin colores amarillo/rojo, sin badges "Incompleto". Los datos ambientales son enriquecimiento opcional — el coach no debe sentir que la app lo regaña por no haberlos llenado. El placeholder gris neutro comunica ausencia sin moralizar.
+
+El `EmptyPlaceholder` lleva `aria-label="Sin registro de {label}"` para que lectores de pantalla anuncien la ausencia explícitamente.
+
+Edición vía `EditConditionsDialog.tsx` (Sheet lateral, lazy-loaded para no inflar el chunk del wizard): precarga con `RaceEventConditions` actuales, valida con RHF + Zod, llama `useUpdateRaceEventConditions` al guardar. Solo visible si `currentUser.role ∈ {coach, admin}` (verificado por `useAuthStore`); padres ven la card readonly sin botones.
+
+### 14.6 Toast neutral en wizard
+
+Si el coach intenta avanzar del Step 1 sin llenar ninguna condición, se muestra un toast (`data-testid="wizard-conditions-toast"`, auto-oculta a 5 s) con el texto:
+
+> "Condiciones sin registrar — podrás agregarlas después desde el evento."
+
+No es un error ni un warning: es un recordatorio informativo de que la edición post-ingest existe. No bloquea el avance.
+
+### 14.7 Privacidad
+
+- El placeholder de `weather_notes` (textarea) incluye guía explícita: *"Condiciones generales del trazado y clima — evite incluir nombres de atletas o información médica"*.
+- Los logs del PATCH registran únicamente las **claves** modificadas, nunca los valores (un `weather_notes` mal usado podría incluir un nombre que no debe persistir en logs estructurados).
+- La auditoría privacidad X1 detectó y corrigió 3 placeholders preexistentes:
+  - 1 ALTO: nombre real "Andrés Mejía" hardcoded en `revision_reason` de fixtures (reemplazado por placeholder ficticio marcado).
+  - 2 MEDIO: placeholders de `weather_notes` sin la guía de privacidad anterior.
+
+### 14.8 Cobertura de tests
+
+- **Backend:** 27 tests nuevos (16 PATCH `/race-events/{id}/conditions` + 11 `POST /imports/parse` extendido). Incluye regresión del bug Decimal serialization (HTTP 500 → 422) que ocurría cuando `temperature_c` inválido propagaba un `Decimal` no-JSON-serializable a través de `ValidationError.errors()[i]["input"]`. Solución: pasar `errors()` por `jsonable_encoder` antes de devolver el 422.
+- **Frontend:** 55 tests nuevos (vitest + 5 a11y con jest-axe). Cubren wizard (ToggleGroup, auto-altitud, toast, `noValidate`), `RaceConditionsCard` (tri-estado + visibilidad por rol), `EditConditionsDialog` (precarga + validación + mutation), API client y hook.
+
+### 14.9 Compatibilidad
+
+- `scripts/ingest_race.py` (CLI) no requiere cambios: los nuevos campos son opcionales en `parse_meta_json` y el commit antiguo sigue funcionando sin condiciones.
+- Imports F1.7 ya commiteados quedan sin condiciones (NULL) — la tarjeta los muestra en estado "Vacío" con botón "Agregar" para coach/admin.
+- Sin migración Alembic: las columnas ya existen desde `64c263edd07f`.
+
+---
+
 ## 13. Próximos pasos
 
 1. **Validar asunciones A1-A8 con coach** (estimado 15 min de conversación).

@@ -2,11 +2,14 @@
 
 Cubre los DTOs del wizard upload UI (F-UP3, docs/10-race-results/upload-design.md §4):
 
-- ``ImportParseResponse``    — output del paso 1 (parse).
-- ``ImportDryRunResponse``   — output del paso 2 (dry-run preview).
-- ``ImportCommitRequest``    — body del paso 3 (commit con resolved matches).
-- ``ImportCommitResponse``   — output del paso 3 (post-ingest).
-- ``ImportListResponse``     — output del histórico GET /.
+- ``ImportParseResponse``      — output del paso 1 (parse).
+- ``ImportDryRunResponse``     — output del paso 2 (dry-run preview).
+- ``ImportCommitRequest``      — body del paso 3 (commit con resolved matches).
+- ``ImportCommitResponse``     — output del paso 3 (post-ingest).
+- ``ImportListResponse``       — output del histórico GET /.
+- ``ImportParseRequestFields`` — campos de condiciones de carrera para el wizard.
+- ``RaceEventConditionsRead``  — respuesta del PATCH condiciones (B3).
+- ``RaceEventConditionsUpdate``— body del PATCH condiciones (B3).
 
 Convenciones:
 - Pydantic v2 (``model_config``, ``ConfigDict``).
@@ -18,9 +21,12 @@ Convenciones:
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.race_event import SurfaceCondition
 
 
 # ---------------------------------------------------------------------------
@@ -225,3 +231,113 @@ class ImportListResponse(BaseModel):
 
     items: list[ImportListItem]
     total: int
+
+
+# ---------------------------------------------------------------------------
+# Campos de condiciones de carrera — wizard upload (B1)
+# ---------------------------------------------------------------------------
+
+
+class ImportParseRequestFields(BaseModel):
+    """Campos opcionales de condiciones de carrera para el wizard de ingesta.
+
+    Se validan dentro del handler POST /parse después de extraer los valores
+    de los ``Form()`` params (FastAPI no aplica Pydantic automáticamente a
+    campos multipart individuales). La construcción explícita del modelo
+    en el handler garantiza que la validación sea idéntica a la del PATCH B3.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    climate: Optional[str] = Field(
+        default=None,
+        max_length=60,
+        description="Descripción libre del clima (ej: 'Soleado con viento moderado').",
+    )
+    temperature_c: Optional[Decimal] = Field(
+        default=None,
+        ge=0,
+        le=50,
+        decimal_places=1,
+        description="Temperatura en grados Celsius (0-50). Un decimal.",
+    )
+    surface_condition: Optional[SurfaceCondition] = Field(
+        default=None,
+        description="Condición del trazado: seca | humeda | barro | lluvia | mixta.",
+    )
+    altitude_msnm: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=5000,
+        description="Altitud en metros sobre el nivel del mar (0-5000).",
+    )
+    weather_notes: Optional[str] = Field(
+        default=None,
+        max_length=2000,
+        description="Notas adicionales de condiciones climatológicas.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# DTOs para PATCH /api/race-analysis/race-events/{id}/conditions (B3)
+# ---------------------------------------------------------------------------
+
+
+class RaceEventConditionsUpdate(BaseModel):
+    """Body del PATCH — actualización parcial de condiciones de carrera.
+
+    Solo los campos enviados (exclude_unset=True) se aplican al evento.
+    Campos extra son rechazados (extra='forbid') para evitar inyecciones
+    accidentales de atributos no esperados.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    climate: Optional[str] = Field(
+        default=None,
+        max_length=60,
+        description="Descripción libre del clima.",
+    )
+    temperature_c: Optional[Decimal] = Field(
+        default=None,
+        ge=0,
+        le=50,
+        decimal_places=1,
+        description="Temperatura en grados Celsius (0-50). Un decimal.",
+    )
+    surface_condition: Optional[SurfaceCondition] = Field(
+        default=None,
+        description="Condición del trazado: seca | humeda | barro | lluvia | mixta.",
+    )
+    altitude_msnm: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=5000,
+        description="Altitud sobre el nivel del mar en metros.",
+    )
+    weather_notes: Optional[str] = Field(
+        default=None,
+        max_length=2000,
+        description="Notas adicionales de condiciones climatológicas.",
+    )
+
+
+class RaceEventConditionsRead(BaseModel):
+    """Respuesta del PATCH — condiciones actuales del evento tras el update.
+
+    ``from_attributes=True`` permite construir directamente desde el ORM
+    ``RaceEvent`` tras el flush.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    race_event_id: int
+    climate: Optional[str] = None
+    temperature_c: Optional[Decimal] = None
+    surface_condition: Optional[SurfaceCondition] = None
+    altitude_msnm: Optional[int] = None
+    weather_notes: Optional[str] = None
+    updated_at: datetime

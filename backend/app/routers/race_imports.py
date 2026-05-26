@@ -41,6 +41,7 @@ import re
 import tempfile
 import uuid
 from asyncio import wait_for
+from decimal import Decimal
 from pathlib import Path as PathLib
 from typing import Annotated, Optional
 
@@ -59,6 +60,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_db, require_role
+from app.models.athlete import Athlete
+from app.models.club import ClubMember, ClubRole
+from app.models.race_category import RaceCategory
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
@@ -71,13 +75,16 @@ from app.schemas.race_imports import (
     ImportDryRunResponse,
     ImportListItem,
     ImportListResponse,
+    ImportParseRequestFields,
     ImportParseResponse,
     MatchPreview,
     ParseHeaderInfo,
     ParseWarning,
+    TyrAthleteRef,
     UploadUserRef,
 )
 from app.services.race.ingestor import RaceIngestor
+from app.services.race.matcher import match_athletes
 from app.services.race.revision import detect_revision
 from app.services.training import storage_sftp
 
@@ -290,10 +297,74 @@ async def parse_import(
         Optional[UploadFile], File(description="PDF GENERAL (opcional)")
     ] = None,
     kind: Annotated[Optional[str], Form()] = None,  # 'resultados'|'general'|'both'
+    # --- Condiciones de carrera (opcionales — no están en el PDF) ---
+    climate: Annotated[
+        Optional[str],
+        Form(description="Descripción libre del clima (máx 60 chars)."),
+    ] = None,
+    temperature_c: Annotated[
+        Optional[Decimal],
+        Form(description="Temperatura en °C (0-50, un decimal)."),
+    ] = None,
+    surface_condition: Annotated[
+        Optional[str],
+        Form(description="seca | humeda | barro | lluvia | mixta"),
+    ] = None,
+    altitude_msnm: Annotated[
+        Optional[int],
+        Form(description="Altitud msnm (0-5000)."),
+    ] = None,
+    weather_notes: Annotated[
+        Optional[str],
+        Form(description="Notas climatológicas adicionales (máx 2000 chars)."),
+    ] = None,
+    # ---------------------------------------------------------------
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> ImportParseResponse:
-    """Endpoint 1 wizard (parse) — sube PDFs, valida, parsea, crea pending."""
+    """Endpoint 1 wizard (parse) — sube PDFs, valida, parsea, crea pending.
+
+    Los campos de condiciones de carrera (climate, temperature_c, etc.) son
+    opcionales y retrocompatibles: parse sin ellos funciona exactamente igual.
+    Se validan vía ``ImportParseRequestFields`` antes de persistir en
+    ``parse_meta_json`` para garantizar invariantes (rangos, longitudes).
+    """
+    # Validar campos de condiciones mediante el schema Pydantic
+    # (FastAPI no aplica validación Pydantic a Form() individuales)
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.models.race_event import SurfaceCondition as _SurfaceCondition
+
+    surface_condition_enum: Optional[_SurfaceCondition] = None
+    if surface_condition is not None:
+        try:
+            surface_condition_enum = _SurfaceCondition(surface_condition)
+        except ValueError:
+            values = [e.value for e in _SurfaceCondition]
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"surface_condition inválido: '{surface_condition}'. Valores permitidos: {values}.",
+            )
+
+    try:
+        conditions_fields = ImportParseRequestFields(
+            climate=climate,
+            temperature_c=temperature_c,
+            surface_condition=surface_condition_enum,
+            altitude_msnm=altitude_msnm,
+            weather_notes=weather_notes,
+        )
+    except PydanticValidationError as exc:
+        # `exc.errors()` puede contener `input=Decimal(...)` cuando el campo
+        # inválido es `temperature_c`; Decimal NO es JSON-serializable y
+        # rompería la respuesta 422 con HTTP 500. Pasamos por `jsonable_encoder`
+        # para forzar conversión Decimal -> str antes de serializar el body.
+        from fastapi.encoders import jsonable_encoder
+
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=jsonable_encoder(exc.errors(include_url=False)),
+        )
     # 1. Leer + validar magic bytes RESULTADOS
     resultados_bytes = await _read_with_cap(resultados_pdf, settings.race_max_pdf_mb)
     results_ext = _validate_results_magic(
@@ -417,6 +488,23 @@ async def parse_import(
             "event_name": event_name,
             "event_date": event_date,
             "location": location,
+        },
+        # Condiciones de carrera — None si el coach no las capturó aún;
+        # el commit las propagará a EventMeta → RaceIngestor → race_events.
+        "conditions": {
+            "climate": conditions_fields.climate,
+            "temperature_c": (
+                str(conditions_fields.temperature_c)
+                if conditions_fields.temperature_c is not None
+                else None
+            ),
+            "surface_condition": (
+                conditions_fields.surface_condition.value
+                if conditions_fields.surface_condition is not None
+                else None
+            ),
+            "altitude_msnm": conditions_fields.altitude_msnm,
+            "weather_notes": conditions_fields.weather_notes,
         },
         "results_ext": results_ext,
         "results_storage_path": results_storage_path,
@@ -598,6 +686,64 @@ async def _reload_parsed_from_storage(
     return parsed_results, parsed_general, results_ext
 
 
+def _build_event_meta_from_parse_meta(
+    parse_meta: dict,
+    filename: Optional[str],
+) -> "EventMeta":
+    """Construye un ``EventMeta`` desde el ``parse_meta_json`` persistido en ``RaceImport``.
+
+    Centraliza la lógica de dry-run y commit para mantener un único punto de
+    conversión del JSON almacenado → schema Pydantic.
+
+    Las condiciones de carrera se leen desde ``parse_meta["conditions"]`` (clave
+    introducida en B2). Si la clave no existe (imports previos al cambio), los
+    campos quedan en ``None`` — compatibilidad total hacia atrás.
+    """
+    from datetime import date as _date
+    from decimal import Decimal as _Decimal
+
+    from app.models.race_event import SurfaceCondition as _SurfaceCondition
+
+    header = parse_meta.get("header", {})
+    conditions = parse_meta.get("conditions", {}) or {}
+
+    event_date_str = header.get("event_date", "")
+    event_date_obj = (
+        _date.fromisoformat(event_date_str) if event_date_str else _date.today()
+    )
+
+    # Convertir temperatura de string (guardada como str para preservar Decimal)
+    temp_raw = conditions.get("temperature_c")
+    temperature_c: Optional[_Decimal] = (
+        _Decimal(str(temp_raw)) if temp_raw is not None else None
+    )
+
+    # Convertir surface_condition de string a enum
+    sc_raw = conditions.get("surface_condition")
+    surface_condition: Optional[_SurfaceCondition] = None
+    if sc_raw is not None:
+        try:
+            surface_condition = _SurfaceCondition(sc_raw)
+        except ValueError:
+            pass  # valor obsoleto o corrupto — ignorar silenciosamente
+
+    return EventMeta(
+        season=int(header.get("season", 2026)),
+        copa_code="copa_valle",
+        valida_num=int(header.get("valida_num", 1)),
+        name=str(header.get("event_name", "Sin nombre")),
+        event_date=event_date_obj,
+        location=str(header.get("location", "Sin ubicación")),
+        climate=conditions.get("climate"),
+        temperature_c=temperature_c,
+        surface_condition=surface_condition,
+        altitude_msnm=conditions.get("altitude_msnm"),
+        weather_notes=conditions.get("weather_notes"),
+        pdf_results_filename=filename,
+        pdf_general_filename=None,
+    )
+
+
 @router.post("/{parse_id}/dry-run", response_model=ImportDryRunResponse)
 async def dry_run_import(
     parse_id: int,
@@ -607,7 +753,6 @@ async def dry_run_import(
     """Endpoint 2 wizard (dry-run) — ejecuta ingest sin commit + retorna matches."""
     imp = await _load_pending_import(db, parse_id, current_user)
     parse_meta = imp.parse_meta_json or {}
-    header = parse_meta.get("header", {})
 
     # Liberar conexión MySQL antes de SFTP download + pdfplumber parse.
     # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
@@ -615,24 +760,9 @@ async def dry_run_import(
 
     parsed_results, parsed_general, _ = await _reload_parsed_from_storage(imp)
 
-    # Construir EventMeta desde parse_meta + valores del cliente persistidos
+    # Construir EventMeta desde parse_meta (incluye condiciones de carrera si las hay)
     try:
-        from datetime import date as _date
-
-        event_date_str = header.get("event_date", "")
-        event_date_obj = (
-            _date.fromisoformat(event_date_str) if event_date_str else _date.today()
-        )
-        meta_obj = EventMeta(
-            season=int(header.get("season", 2026)),
-            copa_code="copa_valle",
-            valida_num=int(header.get("valida_num", 1)),
-            name=str(header.get("event_name", "Sin nombre")),
-            event_date=event_date_obj,
-            location=str(header.get("location", "Sin ubicación")),
-            pdf_results_filename=imp.filename,
-            pdf_general_filename=None,
-        )
+        meta_obj = _build_event_meta_from_parse_meta(parse_meta, imp.filename)
     except (ValueError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -666,25 +796,83 @@ async def dry_run_import(
     # Construir matches preview desde RESULTADOS — basado en is_trocha_y_ruta
     from app.services.race.normalizer import is_trocha_y_ruta, normalize_name
 
+    # Cargar atletas del/los club(s) del uploader (admin: cae al mismo set para
+    # consistencia con lo que vería el coach). Vacío → matcher devuelve top-3
+    # vacío → todas las filas quedan ambiguas sin sugerencia (comportamiento
+    # legacy preservado cuando no hay roster cargado).
+    club_ids_stmt = select(ClubMember.club_id).where(
+        ClubMember.user_id == imp.imported_by_user_id,
+        ClubMember.role_in_club == ClubRole.coach,
+    )
+    coach_club_ids = list(
+        (await db.execute(club_ids_stmt)).scalars().all()
+    )
+    athletes: list[Athlete] = []
+    if coach_club_ids:
+        athletes_stmt = select(Athlete).where(Athlete.club_id.in_(coach_club_ids))
+        athletes = list((await db.execute(athletes_stmt)).scalars().all())
+
+    # Pre-cargar RaceCategory por code para el boost por edad del matcher.
+    cat_codes = [c for c in parsed_results.keys() if c]
+    cat_by_code: dict[str, RaceCategory] = {}
+    if cat_codes:
+        cat_stmt = select(RaceCategory).where(RaceCategory.code.in_(cat_codes))
+        cat_by_code = {
+            c.code: c for c in (await db.execute(cat_stmt)).scalars().all()
+        }
+
     matches: list[MatchPreview] = []
+    confirmed = 0
+    ambiguous = 0
     for code, rows in parsed_results.items():
+        category = cat_by_code.get(code)
         for row in rows:
             if not is_trocha_y_ruta(getattr(row, "club", None)):
                 continue
             normalized = normalize_name(row.name) or ""
+
+            candidates = match_athletes(
+                competitor_name=row.name,
+                competitor_club=getattr(row, "club", "") or "",
+                competitor_category=category,
+                athletes=athletes,
+                threshold=70.0,
+                reference_date=meta_obj.event_date,
+            )
+
+            tyr_ref: Optional[TyrAthleteRef] = None
+            confidence = 0.0
+            is_ambiguous = True
+            if candidates:
+                top = candidates[0]
+                confidence = round(top.score / 100.0, 4)
+                second_score = candidates[1].score if len(candidates) > 1 else 0.0
+                # Auto-confirma cuando el top es alto y claramente único.
+                if top.score >= 95.0 and (top.score - second_score) >= 5.0:
+                    tyr_ref = TyrAthleteRef(id=top.athlete_id, full_name=top.full_name)
+                    is_ambiguous = False
+                else:
+                    # Sugerencia presente pero coach debe confirmar (homónimos o score medio).
+                    tyr_ref = TyrAthleteRef(id=top.athlete_id, full_name=top.full_name)
+
+            if is_ambiguous:
+                ambiguous += 1
+            else:
+                confirmed += 1
+
             matches.append(
                 MatchPreview(
                     competitor_name=row.name,
                     competitor_normalized_name=normalized,
-                    tyr_athlete=None,  # MVP: no fuzzy contra Athlete pre-cargado
-                    confidence=0.0,
-                    is_ambiguous=True,
+                    tyr_athlete=tyr_ref,
+                    confidence=confidence,
+                    is_ambiguous=is_ambiguous,
                 )
             )
 
     counts = DryRunCounts(
-        confirmed=0,
-        ambiguous=len(matches),
+        confirmed=confirmed,
+        ambiguous=ambiguous,
         no_match=0,
         total=len(matches),
     )
@@ -716,7 +904,6 @@ async def commit_import(
     """Endpoint 3 wizard (commit) — promueve pending → committed con resolved matches."""
     imp = await _load_pending_import(db, parse_id, current_user)
     parse_meta = imp.parse_meta_json or {}
-    header = parse_meta.get("header", {})
 
     # Liberar conexión MySQL antes de SFTP download + pdfplumber parse.
     # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
@@ -724,24 +911,9 @@ async def commit_import(
 
     parsed_results, parsed_general, _ = await _reload_parsed_from_storage(imp)
 
-    # Construir EventMeta
+    # Construir EventMeta (incluye condiciones de carrera si fueron capturadas en /parse)
     try:
-        from datetime import date as _date
-
-        event_date_str = header.get("event_date", "")
-        event_date_obj = (
-            _date.fromisoformat(event_date_str) if event_date_str else _date.today()
-        )
-        meta_obj = EventMeta(
-            season=int(header.get("season", 2026)),
-            copa_code="copa_valle",
-            valida_num=int(header.get("valida_num", 1)),
-            name=str(header.get("event_name", "Sin nombre")),
-            event_date=event_date_obj,
-            location=str(header.get("location", "Sin ubicación")),
-            pdf_results_filename=imp.filename,
-            pdf_general_filename=None,
-        )
+        meta_obj = _build_event_meta_from_parse_meta(parse_meta, imp.filename)
     except (ValueError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

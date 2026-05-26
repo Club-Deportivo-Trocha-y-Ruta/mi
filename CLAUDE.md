@@ -195,6 +195,22 @@ Migraciones corren automáticamente via `entrypoint.sh` (`alembic upgrade head`)
 
 > Backfill V-I/II/III pendiente de PDFs oficiales; ingest real contra MySQL Hostinger pendiente de aprobación coach.
 
+### Extensión UI — Condiciones de carrera (2026-05-26)
+
+> Captura ambiental opcional (clima, temperatura, superficie, altitud, notas) en la UI. Sin migración Alembic: las columnas ya existen en `race_events` desde el Paso 2 (`64c263edd07f`). Detalle técnico en `docs/10-race-results/upload-design.md` §14.
+
+| Paso | Descripción | Estado |
+|---|---|---|
+| E1 | Schemas: `RaceEventConditionsUpdate`, `RaceEventConditionsRead`, `ImportParseRequestFields` (5 campos opcionales) en `app/schemas/race_imports.py` | ✅ Completo 2026-05-26 |
+| E2 | `POST /api/race-analysis/imports/parse` extendido con 5 form fields opcionales; bug Decimal en `ValidationError.errors()` corregido (HTTP 500 → 422) vía `jsonable_encoder` | ✅ Completo 2026-05-26 |
+| E3 | Nuevo endpoint `PATCH /api/race-analysis/race-events/{race_event_id}/conditions` (RBAC coach+admin, update parcial con `exclude_unset=True`, log solo claves) | ✅ Completo 2026-05-26 |
+| E4 | Frontend wizard Step 1: sección "Condiciones de carrera (Opcional)" con ToggleGroup chips (≥48px), auto-altitud desde `VENUE_ALTITUDES` (7 sedes Copa Valle), toast neutral si avanza vacío, `noValidate` en form (fix HTML5 vs Zod) | ✅ Completo 2026-05-26 |
+| E5 | `RaceConditionsCard` (tri-estado: Completo ≥4 / Parcial 1-3 / Vacío 0, sin lenguaje warning) + `EditConditionsDialog` (Sheet lateral lazy, RHF+Zod, PATCH al guardar) | ✅ Completo 2026-05-26 |
+| E6 | Tipos TS + API client + hook: `raceEvents.types.ts`, `api/raceEvents.ts::updateRaceEventConditions`, `hooks/race/useRaceEventConditions.ts::useUpdateRaceEventConditions` (mutation con invalidación) | ✅ Completo 2026-05-26 |
+| E7 | Tests: 27 backend (16 PATCH + 11 parse extendido) + 55 frontend (vitest + 5 a11y axe) | ✅ Completo 2026-05-26 |
+| E8 | Auditoría privacidad X1 — APROBADO CON CONDICIONES: 3 placeholders corregidos (1 ALTO nombre real `revision_reason` preexistente + 2 MEDIO placeholders `weather_notes` sin guía privacidad) | ✅ Completo 2026-05-26 |
+| E9 | Commit + deploy Render | ⏳ Pendiente |
+
 ## Estado de implementación — Módulo Boletín Mensual Individual (Fase 1.8)
 
 > Entrega mensual a padres (HTML email + PDF adjunto) con métricas longitudinales, narrativa IA del coach y antropometría. Multi-hijo: agrupa boletines de varios hijos en un solo email con N PDFs. Antropometría completa SOLO en el PDF (nunca en el cuerpo del email).

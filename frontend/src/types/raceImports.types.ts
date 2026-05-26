@@ -10,6 +10,21 @@
  */
 
 // ---------------------------------------------------------------------------
+// Condiciones de carrera (F-COND — feature condiciones)
+// ---------------------------------------------------------------------------
+
+/**
+ * Estado del terreno al momento de la carrera.
+ * Mirror del enum `SurfaceCondition` en el backend.
+ */
+export type SurfaceCondition =
+  | "seca"
+  | "humeda"
+  | "barro"
+  | "lluvia"
+  | "mixta";
+
+// ---------------------------------------------------------------------------
 // Header / Warnings
 // ---------------------------------------------------------------------------
 
@@ -34,6 +49,32 @@ export interface ImportParseRequestFields {
   event_date: string; // YYYY-MM-DD
   location: string;
   kind?: "resultados" | "general" | "both";
+  // F-COND — campos opcionales de condiciones de carrera
+  /** Descripción corta del clima (máx 60 chars), ej: "Soleado con viento". */
+  climate?: string | null;
+  /** Temperatura ambiente en °C (0-50). Acepta string o number para flexibilidad de inputs. */
+  temperature_c?: string | number | null;
+  /** Estado del terreno en el momento de la prueba. */
+  surface_condition?: SurfaceCondition | null;
+  /** Altitud de la sede en metros sobre el nivel del mar (0-5000). */
+  altitude_msnm?: number | null;
+  /** Notas adicionales de condiciones climáticas (máx 2000 chars). */
+  weather_notes?: string | null;
+}
+
+/**
+ * Condiciones de carrera tal como las devuelve el backend en el bloque
+ * `conditions` del response de `/imports/parse`.
+ *
+ * Todos los campos son `null` cuando no se enviaron en el form-data.
+ * `temperature_c` llega como string decimal desde el backend (Decimal → str).
+ */
+export interface ParsedConditions {
+  climate: string | null;
+  temperature_c: string | null;
+  surface_condition: SurfaceCondition | null;
+  altitude_msnm: number | null;
+  weather_notes: string | null;
 }
 
 export interface ImportParseResponse {
@@ -43,6 +84,9 @@ export interface ImportParseResponse {
   n_rows_resultados: number;
   n_rows_general: number;
   warnings: string[];
+
+  // F-COND — condiciones de carrera parseadas (null si no se enviaron).
+  conditions?: ParsedConditions | null;
 
   // F-UP-REV2 — metadatos de revisión detectada en /parse.
   // Cuando `(series, valida_num)` ya tiene un commit previo, el backend

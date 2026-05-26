@@ -42,6 +42,27 @@ export async function parseRaceImport(
   formData.append("location", fields.location);
   if (fields.kind) formData.append("kind", fields.kind);
 
+  // F-COND — campos opcionales de condiciones de carrera.
+  // Se omiten si son null, undefined o cadena vacía para no contaminar el
+  // multipart con campos vacíos que el backend interpretraría como "sin dato".
+  if (fields.climate != null && fields.climate !== "") {
+    formData.append("climate", fields.climate);
+  }
+  if (fields.temperature_c != null && fields.temperature_c !== "") {
+    // FormData sólo acepta string o Blob; convertir a string explícitamente.
+    formData.append("temperature_c", String(fields.temperature_c));
+  }
+  if (fields.surface_condition != null) {
+    formData.append("surface_condition", fields.surface_condition);
+  }
+  if (fields.altitude_msnm != null) {
+    // Convertir a string para cumplir el contrato de FormData.
+    formData.append("altitude_msnm", String(fields.altitude_msnm));
+  }
+  if (fields.weather_notes != null && fields.weather_notes !== "") {
+    formData.append("weather_notes", fields.weather_notes);
+  }
+
   const response = await apiClient.post<ImportParseResponse>(
     `${BASE}/parse`,
     formData,
