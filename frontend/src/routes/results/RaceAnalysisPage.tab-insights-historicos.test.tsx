@@ -130,8 +130,8 @@ describe("RaceAnalysisPage — refactor FE-2 tab 'Insights históricos'", () => 
   beforeEach(() => {
     vi.clearAllMocks();
     // Default: coach
-    vi.mocked(useAuthStore).mockImplementation((sel: never) =>
-      (sel as unknown as (s: unknown) => unknown)({
+    vi.mocked(useAuthStore).mockImplementation(((sel: (s: unknown) => unknown) =>
+      sel({
         accessToken: "test-token",
         user: {
           id: 1,
@@ -140,8 +140,7 @@ describe("RaceAnalysisPage — refactor FE-2 tab 'Insights históricos'", () => 
           last_name: "Test",
         },
         isAuthenticated: true,
-      }),
-    );
+      })) as never);
     useMyAthletesMock.mockReturnValue({ data: [], isLoading: false });
   });
 
@@ -186,8 +185,8 @@ describe("RaceAnalysisPage — refactor FE-2 tab 'Insights históricos'", () => 
 
   it("parent con un único hijo se redirige automáticamente a /my-athletes/:id", async () => {
     // Re-mock auth como parent
-    vi.mocked(useAuthStore).mockImplementation((sel: never) =>
-      (sel as unknown as (s: unknown) => unknown)({
+    vi.mocked(useAuthStore).mockImplementation(((sel: (s: unknown) => unknown) =>
+      sel({
         accessToken: "test-token",
         user: {
           id: 99,
@@ -196,8 +195,7 @@ describe("RaceAnalysisPage — refactor FE-2 tab 'Insights históricos'", () => 
           last_name: "Test",
         },
         isAuthenticated: true,
-      }),
-    );
+      })) as never);
     useMyAthletesMock.mockReturnValue({
       data: [{ athlete_id: 42, first_name: "Hijo", last_name: "Único" }],
       isLoading: false,
@@ -212,8 +210,8 @@ describe("RaceAnalysisPage — refactor FE-2 tab 'Insights históricos'", () => 
   });
 
   it("parent con MÚLTIPLES hijos NO redirige automáticamente", async () => {
-    vi.mocked(useAuthStore).mockImplementation((sel: never) =>
-      (sel as unknown as (s: unknown) => unknown)({
+    vi.mocked(useAuthStore).mockImplementation(((sel: (s: unknown) => unknown) =>
+      sel({
         accessToken: "test-token",
         user: {
           id: 99,
@@ -222,8 +220,7 @@ describe("RaceAnalysisPage — refactor FE-2 tab 'Insights históricos'", () => 
           last_name: "Test",
         },
         isAuthenticated: true,
-      }),
-    );
+      })) as never);
     useMyAthletesMock.mockReturnValue({
       data: [
         { athlete_id: 42, first_name: "Hijo", last_name: "A" },

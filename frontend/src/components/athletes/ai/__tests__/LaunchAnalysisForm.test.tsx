@@ -235,10 +235,6 @@ describe("LaunchAnalysisForm", () => {
   // slot. La implementación actual del form NO impone este límite todavía —
   // los tests se marcan skip con razón clara para no bloquear la suite.
   describe("cap de 4 válidas por lanzamiento (Task #18)", () => {
-    const REASON =
-      "awaiting impl: LaunchAnalysisForm no impone aún el cap de 4 válidas " +
-      "ni renderiza tooltip. Pendiente trabajo del frontend-engineer.";
-
     it(`tras seleccionar 4 válidas, la 5ta queda disabled`, async () => {
       const user = userEvent.setup();
       renderWithProviders(

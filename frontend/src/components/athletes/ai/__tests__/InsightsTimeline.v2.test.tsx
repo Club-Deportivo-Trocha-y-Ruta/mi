@@ -15,7 +15,7 @@
  * sin el campo (``is_first_in_season: null``) NO disparan el banner.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // Auth mock — coach.
