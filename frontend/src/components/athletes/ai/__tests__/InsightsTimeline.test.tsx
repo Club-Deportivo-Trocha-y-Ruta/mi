@@ -143,6 +143,21 @@ describe("InsightsTimeline", () => {
     expect(screen.queryByText("v1.2")).not.toBeInTheDocument();
   });
 
+  it("oculta el badge de confianza en el drawer detalle para parents (Ley 1581)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="parent" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("insight-card-1")).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId("insight-card-1"));
+    await waitFor(() => {
+      expect(screen.getByText(/detalle del análisis/i)).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(/confianza (alta|media|baja)/i),
+    ).not.toBeInTheDocument();
+  });
+
   it("muestra un error de servidor cuando el listado falla", async () => {
     mswServer.use(
       http.get(

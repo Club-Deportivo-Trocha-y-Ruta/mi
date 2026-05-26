@@ -482,11 +482,13 @@ function InsightDetailDrawer({
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{validaLabel(insight.valida_num)}</Badge>
-          <Badge variant={confidenceVariant(insight.confidence)}>
-            {confidenceLabel(insight.confidence)}
-          </Badge>
           {mode === "coach" && (
-            <Badge variant="outline">v{insight.prompt_version}</Badge>
+            <>
+              <Badge variant={confidenceVariant(insight.confidence)}>
+                {confidenceLabel(insight.confidence)}
+              </Badge>
+              <Badge variant="outline">v{insight.prompt_version}</Badge>
+            </>
           )}
         </div>
 
