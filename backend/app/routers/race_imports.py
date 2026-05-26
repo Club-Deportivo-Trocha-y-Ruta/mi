@@ -330,6 +330,12 @@ async def parse_import(
             ),
         )
 
+    # Liberar conexión MySQL antes de SFTP upload + pdfplumber parse (pueden
+    # tardar minutos). Hostinger cierra sockets ociosos por wait_timeout y
+    # NullPool no detecta la conexión muerta dentro de una transacción abierta.
+    # SQLAlchemy autobegin abrirá una conexión fresca en el próximo execute.
+    await db.commit()
+
     # 4. Determinar kind (override del cliente sobre auto-detection)
     if kind is None:
         kind_value = (
