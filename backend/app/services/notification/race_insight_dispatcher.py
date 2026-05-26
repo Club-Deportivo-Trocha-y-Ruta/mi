@@ -405,9 +405,12 @@ def _build_urls(
     else:
         app_url = deep_link_path
 
-    # Panorama parent-side aún no existe como ruta. Mantener None hasta
-    # que el frontend exponga la vista correspondiente.
+    # Panorama parent-side: sub-tab "Análisis IA" dentro del detalle del
+    # hijo en la vista parent. Ruta: /my-athletes/{athlete_id}?tab=ai-analysis
+    # (T1 Sprint 4 — MyAthleteDetailPage con ?tab=ai-analysis).
     panorama_url: str | None = None
+    if base:
+        panorama_url = f"{base}/my-athletes/{athlete_id}?tab=ai-analysis"
     return app_url, panorama_url
 
 

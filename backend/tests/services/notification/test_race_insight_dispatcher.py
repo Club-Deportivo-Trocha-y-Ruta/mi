@@ -547,8 +547,9 @@ async def test_dispatch_sends_email_with_summary_excerpt_for_v2_insight(monkeypa
     # 3. app_url absoluta usando frontend_base_url.
     assert ctx["app_url"].startswith("https://app.example/athletes/42/")
 
-    # 4. panorama_url None (no existe ruta parent aún).
-    assert ctx["panorama_url"] is None
+    # 4. panorama_url apunta a la sub-tab IA del padre (T2 Sprint 4).
+    assert ctx["panorama_url"] is not None
+    assert ctx["panorama_url"] == "https://app.example/my-athletes/42?tab=ai-analysis"
 
 
 @pytest.mark.asyncio
@@ -648,3 +649,64 @@ async def test_dispatch_blocks_excerpt_if_name_leaks(caplog):
     assert ctx["summary_excerpt"] is None
     # Y quedó constancia en logs.
     assert any("excerpt_blocked" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Tests: _build_urls — panorama_url (T2 Sprint 4)
+# ---------------------------------------------------------------------------
+
+
+def test_build_urls_panorama_url_points_to_parent_ai_tab():
+    """panorama_url apunta a /my-athletes/{id}?tab=ai-analysis (T2 Sprint 4).
+
+    Valida que el link del CTA secundario del email del padre aterriza en la
+    sub-tab "Análisis IA" de MyAthleteDetailPage, no en None.
+    """
+    from types import SimpleNamespace
+
+    from app.services.notification.race_insight_dispatcher import _build_urls
+
+    settings = SimpleNamespace(frontend_base_url="https://app.trochyruta.com")
+    app_url, panorama_url = _build_urls(
+        deep_link_path="/athletes/42/race-analysis/insights/7",
+        athlete_id=42,
+        settings=settings,
+    )
+
+    assert app_url == "https://app.trochyruta.com/athletes/42/race-analysis/insights/7"
+    assert panorama_url is not None
+    assert panorama_url == "https://app.trochyruta.com/my-athletes/42?tab=ai-analysis"
+
+
+def test_build_urls_panorama_url_none_when_no_base():
+    """Sin frontend_base_url configurado, panorama_url sigue siendo None.
+
+    Fallback conservador: no construir URL relativa para panorama (podría
+    enviarse a un email y no funcionar en contexto de cliente de correo).
+    """
+    from app.services.notification.race_insight_dispatcher import _build_urls
+
+    app_url, panorama_url = _build_urls(
+        deep_link_path="/athletes/42/race-analysis/insights/7",
+        athlete_id=42,
+        settings=None,
+    )
+
+    assert app_url == "/athletes/42/race-analysis/insights/7"
+    assert panorama_url is None
+
+
+def test_build_urls_panorama_url_encodes_athlete_id():
+    """El athlete_id se inyecta correctamente en panorama_url."""
+    from types import SimpleNamespace
+
+    from app.services.notification.race_insight_dispatcher import _build_urls
+
+    settings = SimpleNamespace(frontend_base_url="https://app.example")
+    _, panorama_url = _build_urls(
+        deep_link_path="/athletes/99/race-analysis/insights/1",
+        athlete_id=99,
+        settings=settings,
+    )
+
+    assert panorama_url == "https://app.example/my-athletes/99?tab=ai-analysis"

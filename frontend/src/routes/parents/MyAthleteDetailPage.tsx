@@ -1,11 +1,12 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
   CalendarDays,
   Info,
   Ruler,
+  Sparkles,
   TrendingUp,
   User,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
+import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
 import { GrowthCharts } from "@/components/athletes/GrowthCharts";
 import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
@@ -22,7 +24,7 @@ import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
 import { MaturationStatus, Sex } from "@/types/enums";
 
-type Tab = "info" | "growth";
+type Tab = "info" | "growth" | "ai-analysis";
 
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
@@ -85,11 +87,23 @@ function formatRelativeDate(dateStr: string): string {
 
 export function MyAthleteDetailPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const athleteId = Number(id);
   const athleteQuery = useAthlete(athleteId, Number.isFinite(athleteId));
   const anthropometryQuery = useAnthropometry(athleteId);
 
-  const [activeTab, setActiveTab] = useState<Tab>("info");
+  // Soportar deep-link desde email: ?tab=ai-analysis&insight=<id>
+  const tabParam = searchParams.get("tab") as Tab | null;
+  const [activeTab, setActiveTab] = useState<Tab>(
+    tabParam === "ai-analysis" ? "ai-analysis" : "info",
+  );
+
+  // Si el parámetro cambia (ej: navegación interna), sincronizar.
+  useEffect(() => {
+    if (tabParam === "ai-analysis") {
+      setActiveTab("ai-analysis");
+    }
+  }, [tabParam]);
 
   const records = anthropometryQuery.data ?? [];
 
@@ -234,6 +248,16 @@ export function MyAthleteDetailPage() {
             Crecimiento
           </button>
         )}
+        <button
+          type="button"
+          className={tabClasses("ai-analysis")}
+          style={tabStyle("ai-analysis")}
+          onClick={() => setActiveTab("ai-analysis")}
+          data-testid="parent-tab-ai-analysis"
+        >
+          <Sparkles size={14} />
+          Análisis IA
+        </button>
       </div>
 
       {/* Tab content — Datos */}
@@ -332,6 +356,11 @@ export function MyAthleteDetailPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Tab content — Análisis IA (parent) */}
+      {activeTab === "ai-analysis" && (
+        <AthleteAIAnalysisTab athlete={athlete} mode="parent" />
       )}
 
       {/* Tab content — Crecimiento */}
