@@ -774,6 +774,7 @@ async def dry_run_import(
     imp_id = imp.id
     imp_sha256 = imp.sha256
     imp_general_sha256 = imp.general_sha256
+    imp_uploader_user_id = imp.imported_by_user_id
 
     # Ejecutar dry-run real
     ingestor = RaceIngestor(db)
@@ -801,7 +802,7 @@ async def dry_run_import(
     # vacío → todas las filas quedan ambiguas sin sugerencia (comportamiento
     # legacy preservado cuando no hay roster cargado).
     club_ids_stmt = select(ClubMember.club_id).where(
-        ClubMember.user_id == imp.imported_by_user_id,
+        ClubMember.user_id == imp_uploader_user_id,
         ClubMember.role_in_club == ClubRole.coach,
     )
     coach_club_ids = list(
