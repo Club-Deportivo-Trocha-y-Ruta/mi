@@ -228,13 +228,14 @@ async def _evaluate_race_badges(
         logger.debug("Modelos de carrera no disponibles, omitiendo insignias race.")
         return []
 
-    # Buscar el competitor vinculado al atleta
+    # Buscar todos los competitors vinculados al atleta (athlete_id no tiene UNIQUE)
     comp_result = await db.execute(
         select(RaceCompetitor).where(RaceCompetitor.athlete_id == athlete_id)
     )
-    competitor = comp_result.scalar_one_or_none()
-    if competitor is None:
+    competitors = comp_result.scalars().all()
+    if not competitors:
         return []
+    competitor_ids = [c.id for c in competitors]
 
     # Eventos del periodo (mes/año)
     month_start = date(year, month, 1)
@@ -253,10 +254,10 @@ async def _evaluate_race_badges(
 
     event_ids = [e.id for e in events_in_month]
 
-    # Resultados del competitor en ese periodo
+    # Resultados de todos los competitors del atleta en ese periodo
     results_result = await db.execute(
         select(RaceResult).where(
-            RaceResult.competitor_id == competitor.id,
+            RaceResult.competitor_id.in_(competitor_ids),
             RaceResult.event_id.in_(event_ids),
             RaceResult.status == ResultStatus.FINISHED,
         )
@@ -290,7 +291,7 @@ async def _evaluate_race_badges(
                 RaceEvent,
                 RaceEvent.id == RaceResult.event_id,
             ).where(
-                RaceResult.competitor_id == competitor.id,
+                RaceResult.competitor_id.in_(competitor_ids),
                 RaceResult.position <= 3,
                 RaceResult.status == ResultStatus.FINISHED,
                 RaceEvent.event_date < month_start,
@@ -325,7 +326,7 @@ async def _evaluate_race_badges(
                 RaceEvent,
                 RaceEvent.id == RaceResult.event_id,
             ).where(
-                RaceResult.competitor_id == competitor.id,
+                RaceResult.competitor_id.in_(competitor_ids),
                 RaceResult.race_time_ms.isnot(None),
                 RaceResult.status == ResultStatus.FINISHED,
                 RaceEvent.event_date < month_start,

@@ -49,7 +49,7 @@ export const SURFACE_CONDITION_LABELS: Record<SurfaceCondition, string> = {
  * Fuente: datos topográficos de los municipios del Valle del Cauca.
  */
 export const VENUE_ALTITUDES: Record<string, number> = {
-  Sevilla: 1340,
+  Sevilla: 1620,
   Ginebra: 1080,
   Cali: 1000,
   Palmira: 1001,

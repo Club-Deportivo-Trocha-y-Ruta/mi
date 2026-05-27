@@ -380,20 +380,31 @@ async def _build_race_block(
     Reutiliza funciones de services/race/analytics.py.
     """
     try:
+        import pandas as pd
         from app.models.race_competitor import RaceCompetitor
         from app.services.race.analytics import athlete_progression, podium_gap, projection
 
         comp_result = await db.execute(
             select(RaceCompetitor).where(RaceCompetitor.athlete_id == athlete_id)
         )
-        competitor = comp_result.scalar_one_or_none()
-        if competitor is None:
+        competitors = comp_result.scalars().all()
+        if not competitors:
             return {"has_races": False, "competitor_id": None, "results": [], "projection": None}
 
-        # Historial completo del competidor
-        progression_df = await athlete_progression(db, competitor.id)
-        if progression_df.empty:
-            return {"has_races": False, "competitor_id": competitor.id, "results": [], "projection": None}
+        primary_competitor_id = competitors[0].id
+
+        # Historial completo: agrega progression de todos los competitors vinculados
+        progression_dfs = []
+        for c in competitors:
+            df = await athlete_progression(db, c.id)
+            if not df.empty:
+                progression_dfs.append(df)
+        if not progression_dfs:
+            return {"has_races": False, "competitor_id": primary_competitor_id, "results": [], "projection": None}
+
+        progression_df = pd.concat(progression_dfs, ignore_index=True)
+        # Dedup por event_date: mismo atleta corrió un evento bajo nombres distintos
+        progression_df = progression_df.drop_duplicates(subset=["event_date"], keep="first")
 
         # Filtrar solo el mes actual
         month_start_str = f"{year}-{month:02d}-01"
@@ -437,7 +448,7 @@ async def _build_race_block(
 
         return {
             "has_races": len(results_serialized) > 0,
-            "competitor_id": competitor.id,
+            "competitor_id": primary_competitor_id,
             "results": results_serialized,
             "progression_history": all_results,
             "projection": None,  # Se puede completar con next_event_id cuando se conozca
