@@ -33,6 +33,13 @@ interface EventFormProps {
   mode: "create" | "edit";
   initialData?: CalendarEventRead;
   prefillDate?: string; // YYYY-MM-DD
+  /**
+   * CF6: cuando se navega desde CompetitionDetailPage via
+   * /calendar/events/new?race_event_id=N, pre-selecciona event_type=competition
+   * y asocia automáticamente la válida indicada.
+   * Solo aplica en mode=create (ignorado en edit).
+   */
+  prefillRaceEventId?: number;
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -135,6 +142,7 @@ function buildSpecificFields(
 function buildDefaultValues(
   initialData?: CalendarEventRead,
   prefillDate?: string,
+  prefillRaceEventId?: number,
 ): CalendarEventFormValues {
   if (initialData) {
     const start = new Date(initialData.start_at);
@@ -181,8 +189,11 @@ function buildDefaultValues(
   const hours = String(now.getHours()).padStart(2, "0");
   const mins = String(now.getMinutes()).padStart(2, "0");
 
+  // CF6: si viene prefillRaceEventId, pre-seleccionamos competition + la válida
+  const hasPrefillRace = prefillRaceEventId != null && prefillRaceEventId > 0;
+
   return {
-    event_type: "training_session",
+    event_type: hasPrefillRace ? "competition" : "training_session",
     title: "",
     description: "",
     location: "",
@@ -191,7 +202,7 @@ function buildDefaultValues(
     duration_min: 90,
     all_day: false,
     color_hex: "",
-    race_event_id: null,
+    race_event_id: hasPrefillRace ? prefillRaceEventId : null,
     audiences: [{ audience_type: "all_club", audience_value: {} as Record<string, never> }],
   };
 }
@@ -200,6 +211,7 @@ export function EventForm({
   mode,
   initialData,
   prefillDate,
+  prefillRaceEventId,
   onSuccess,
   onCancel,
 }: EventFormProps) {
@@ -219,7 +231,7 @@ export function EventForm({
     CalendarEventFormValues
   >({
     resolver: zodResolver(calendarEventSchema),
-    defaultValues: buildDefaultValues(initialData, prefillDate) as z.input<typeof calendarEventSchema>,
+    defaultValues: buildDefaultValues(initialData, prefillDate, prefillRaceEventId) as z.input<typeof calendarEventSchema>,
   });
 
   const selectedType = useWatch({ control, name: "event_type" });
@@ -677,13 +689,25 @@ export function EventForm({
                         .
                       </p>
                     )}
+                  {/* CF6: link inline "crear nueva válida" cuando el dropdown está vacío */}
+                  {!raceEventsQuery.isLoading &&
+                    !raceEventsQuery.isError &&
+                    raceEventOptions.length === 0 && (
+                      <p className="mt-1 text-xs text-mid-gray">
+                        <RouterLink
+                          to="/competitions/new?returnTo=/calendar/events/new"
+                          className="font-medium text-charcoal underline transition-opacity hover:opacity-70"
+                          data-testid="event-race-event-create-link"
+                        >
+                          ¿Aún no existe la válida? Crear nueva
+                        </RouterLink>
+                      </p>
+                    )}
                   {errors.race_event_id && (
                     <p id="comp-race-event-error" className={errorClass}>
                       {errors.race_event_id.message}
                     </p>
                   )}
-                  {/* TODO(FE-3+): permitir crear una válida inline cuando el
-                      coach está agendando una competencia sin PDF aún. */}
                 </div>
                 <div>
                   <label htmlFor="comp-city" className={labelClass}>

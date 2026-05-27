@@ -1,8 +1,14 @@
 /**
- * Tipos del módulo race-events — condiciones de carrera (F-COND).
+ * Tipos del módulo race-events.
  *
  * Mirror de los Pydantic schemas en `backend/app/schemas/race_events.py`.
- * Endpoint: PATCH /api/race-analysis/race-events/{id}/conditions
+ *
+ * Endpoints cubiertos:
+ *   - PATCH /api/race-analysis/race-events/{id}/conditions   (F-COND)
+ *   - POST  /api/race-analysis/race-events/                  (CF3)
+ *   - PATCH /api/race-analysis/race-events/{id}              (CF3)
+ *   - DELETE /api/race-analysis/race-events/{id}             (CF3)
+ *   - GET   /api/race-analysis/race-events/                  (CF3)
  *
  * Privacidad: este módulo no contiene datos de menores; sólo metadatos
  * logísticos y climáticos de las jornadas.
@@ -95,4 +101,126 @@ export interface RaceEventConditionsUpdate {
   surface_condition?: SurfaceCondition | null;
   altitude_msnm?: number | null;
   weather_notes?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// CRUD race-events (CF3) — mirror de schemas backend
+// ---------------------------------------------------------------------------
+
+/**
+ * Estados posibles de un evento de carrera.
+ * Mirror de `RaceEventStatus` enum del backend.
+ */
+export type RaceEventStatus = "scheduled" | "completed" | "cancelled";
+
+/**
+ * Payload de creación de un evento de carrera.
+ * Mirror de `RaceEventCreate` del backend.
+ *
+ * Los campos de condiciones son opcionales al crear; se pueden completar
+ * después vía PATCH /{id}/conditions (F-COND).
+ */
+export interface RaceEventCreate {
+  series_id: number;
+  sequence_number: number;
+  name: string;
+  /** Fecha ISO YYYY-MM-DD (sin hora). */
+  event_date: string;
+  location?: string | null;
+  is_championship?: boolean;
+  status?: RaceEventStatus;
+  // Condiciones opcionales — heredan validaciones de _ConditionsFields backend
+  climate?: string | null;
+  /** El backend almacena Decimal; acepta string o number desde el form. */
+  temperature_c?: string | number | null;
+  surface_condition?: SurfaceCondition | null;
+  altitude_msnm?: number | null;
+  weather_notes?: string | null;
+}
+
+/**
+ * Payload de actualización parcial de un evento de carrera.
+ * `extra=forbid` en el backend: no enviar campos de condiciones aquí,
+ * usar PATCH /{id}/conditions para eso.
+ */
+export interface RaceEventUpdate {
+  name?: string;
+  event_date?: string;
+  location?: string | null;
+  sequence_number?: number;
+  status?: RaceEventStatus;
+  is_championship?: boolean;
+}
+
+/**
+ * Respuesta completa de creación/actualización de un evento de carrera.
+ * Mirror de `RaceEventRead` del backend.
+ */
+export interface RaceEventRead {
+  id: number;
+  series_id: number;
+  sequence_number: number;
+  name: string;
+  event_date: string;
+  location: string | null;
+  is_championship: boolean;
+  status: RaceEventStatus;
+  // Condiciones (pueden ser null si aún no se han registrado)
+  climate: string | null;
+  /** Serializado como string por el backend (Decimal). */
+  temperature_c: string | null;
+  surface_condition: SurfaceCondition | null;
+  altitude_msnm: number | null;
+  weather_notes: string | null;
+  // Auditoría
+  created_at: string;
+  updated_at: string;
+  created_by_user_id: number;
+  /** true si el evento ya tiene un calendar_event asociado. Backend calcula en GET /{id}. */
+  has_calendar_event?: boolean;
+}
+
+/**
+ * Ítem reducido para la vista de lista de eventos.
+ * Mirror de `RaceEventListItem` del backend.
+ *
+ * `conditions_completeness` resume qué tan completo está el registro de
+ * condiciones — útil para mostrar badge visual sin calcular en frontend.
+ */
+export interface RaceEventListItem {
+  id: number;
+  series_id: number;
+  sequence_number: number;
+  name: string;
+  event_date: string;
+  location: string | null;
+  is_championship: boolean;
+  status: RaceEventStatus;
+  /** true si la válida ya tiene race_results importados. */
+  has_results: boolean;
+  /** true si tiene un calendar_event asociado. */
+  has_calendar_event: boolean;
+  conditions_completeness: "complete" | "partial" | "empty";
+}
+
+/**
+ * Response paginado del GET /race-events/.
+ */
+export interface RaceEventListResponse {
+  items: RaceEventListItem[];
+  total: number;
+}
+
+/**
+ * Filtros opcionales para el GET /race-events/.
+ * Todos son opcionales — ausencia = sin filtro.
+ */
+export interface RaceEventListFilters {
+  /** Año de temporada (ej. 2026). */
+  season?: number;
+  status?: RaceEventStatus;
+  /** true = solo campeonatos, false = solo válidas regulares. */
+  is_championship?: boolean;
+  /** Filtro parcial por nombre de ubicación. */
+  location?: string;
 }

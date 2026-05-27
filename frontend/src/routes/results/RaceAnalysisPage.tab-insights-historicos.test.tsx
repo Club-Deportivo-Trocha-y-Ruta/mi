@@ -94,7 +94,7 @@ vi.mock("@/components/ai/ChatConsole", () => ({
 vi.mock("@/components/ai/ExplainModeBanner", () => ({
   ExplainModeBanner: () => <div data-testid="mock-explain-banner" />,
 }));
-vi.mock("@/components/ai/ImportWizard", () => ({
+vi.mock("@/components/competitions/import/ImportWizard", () => ({
   ImportWizard: () => <div data-testid="mock-import-wizard" />,
 }));
 vi.mock("@/components/ai/ImportsHistoryList", () => ({

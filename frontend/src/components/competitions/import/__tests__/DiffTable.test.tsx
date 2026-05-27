@@ -16,7 +16,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe, toHaveNoViolations } from "jest-axe";
 
-import { DiffTable, formatRaceTimeMs } from "@/components/ai/DiffTable";
+import { DiffTable, formatRaceTimeMs } from "@/components/competitions/import/DiffTable";
 import type { DiffRow } from "@/types/raceImports.types";
 
 expect.extend(toHaveNoViolations);

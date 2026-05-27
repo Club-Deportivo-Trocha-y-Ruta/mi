@@ -13,6 +13,14 @@ import type {
   EventUpdatePayload,
   RSVPPayload,
 } from "@/types/calendar.types";
+import { raceEventKeys } from "@/hooks/race/useRaceEvents";
+
+/** Prefijo de la query key de available-for-calendar. */
+const CALENDAR_AVAILABLE_ROOT = [
+  "calendar",
+  "race-events",
+  "available-for-calendar",
+] as const;
 
 const BASE = "/api/calendar/events";
 
@@ -150,8 +158,24 @@ export function useCreateCalendarEvent() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createCalendarEvent,
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
+
+      // CF6: si el evento creado tiene race_event_id, invalidamos los datos
+      // de la válida para que has_calendar_event se refresque en tiempo real
+      // en CompetitionDetailPage y CompetitionsListPage.
+      const raceEventId = (variables as { race_event_id?: number | null }).race_event_id;
+      if (raceEventId != null) {
+        void queryClient.invalidateQueries({
+          queryKey: raceEventKeys.detail(raceEventId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: raceEventKeys.lists(),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: CALENDAR_AVAILABLE_ROOT,
+        });
+      }
     },
   });
 }

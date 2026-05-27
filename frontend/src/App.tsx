@@ -38,6 +38,10 @@ import { CalendarPage } from "@/routes/calendar/CalendarPage";
 import { EventFormPage } from "@/routes/calendar/EventFormPage";
 import { ParentCalendarPage } from "@/routes/parents/calendar/ParentCalendarPage";
 import { ParentEventDetailPage } from "@/routes/parents/calendar/ParentEventDetailPage";
+import { CompetitionsListPage } from "@/routes/competitions/CompetitionsListPage";
+import { CompetitionFormPage } from "@/routes/competitions/CompetitionFormPage";
+import { CompetitionDetailPage } from "@/routes/competitions/CompetitionDetailPage";
+import { CompetitionImportPage } from "@/routes/competitions/CompetitionImportPage";
 import { UserRole } from "@/types/enums";
 
 const queryClient = new QueryClient({
@@ -293,6 +297,56 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <ClubInsightsByRacePage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Competencias (coach/admin) ── */}
+        <Route
+          path="/competitions"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <CompetitionsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competitions/new"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <CompetitionFormPage mode="create" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competitions/import"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <CompetitionImportPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competitions/:id"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <CompetitionDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competitions/:id/edit"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <CompetitionFormPage mode="edit" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competitions/:id/import"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <CompetitionImportPage />
             </ProtectedRoute>
           }
         />

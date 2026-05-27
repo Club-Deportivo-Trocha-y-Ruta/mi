@@ -16,7 +16,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe, toHaveNoViolations } from "jest-axe";
 
-import { RaceUploadZone } from "@/components/ai/RaceUploadZone";
+import { RaceUploadZone } from "@/components/competitions/import/RaceUploadZone";
 
 expect.extend(toHaveNoViolations);
 

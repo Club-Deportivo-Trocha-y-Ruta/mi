@@ -40,7 +40,7 @@ import { UserRole } from "@/types/enums";
 // Lazy: el wizard y el histórico sólo se cargan al abrir la tab de carga.
 // Esto mantiene el chunk principal de RaceAnalysisPage cerca del baseline.
 const ImportWizard = lazy(() =>
-  import("@/components/ai/ImportWizard").then((m) => ({
+  import("@/components/competitions/import/ImportWizard").then((m) => ({
     default: m.ImportWizard,
   })),
 );

@@ -30,7 +30,7 @@ import {
 import { z } from "zod";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
-import { RaceUploadZone } from "@/components/ai/RaceUploadZone";
+import { RaceUploadZone } from "@/components/competitions/import/RaceUploadZone";
 import { RaceConditionsCard } from "@/components/race/RaceConditionsCard";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -58,7 +58,7 @@ import type { SurfaceCondition } from "@/types/raceEvents.types";
 // DiffTable lazy → solo se descarga si el wizard detecta modo revisión.
 // Mantiene el chunk de ImportWizard cerca de la baseline F-UP (~18 KB).
 const DiffTable = lazy(() =>
-  import("@/components/ai/DiffTable").then((m) => ({ default: m.DiffTable })),
+  import("@/components/competitions/import/DiffTable").then((m) => ({ default: m.DiffTable })),
 );
 
 // ---------------------------------------------------------------------------

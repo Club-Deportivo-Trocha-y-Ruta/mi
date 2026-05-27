@@ -52,7 +52,7 @@ vi.mock("@/store/auth.store", () => ({
 }));
 
 import * as importsApi from "@/api/raceImports";
-import { ImportWizard } from "@/components/ai/ImportWizard";
+import { ImportWizard } from "@/components/competitions/import/ImportWizard";
 import type { ImportParseResponse } from "@/types/raceImports.types";
 
 function wrap(ui: ReactNode) {

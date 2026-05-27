@@ -1,20 +1,32 @@
 /**
- * API client del módulo race-events — condiciones de carrera (F-COND).
+ * API client del módulo race-events.
  *
- * Endpoint: PATCH /api/race-analysis/race-events/{id}/conditions
- * Auth: JWT via interceptor en apiClient. Cobertura: coach + admin.
+ * Auth: JWT via interceptor en apiClient.
  *
- * No existe GET independiente de condiciones — el evento completo se
- * obtiene desde los endpoints de análisis existentes que retornan el
- * race_event embebido (ej. /runs/:id/result).
+ * Endpoints cubiertos:
+ *   - PATCH  /{id}/conditions  → updateRaceEventConditions  (F-COND, coach+admin)
+ *   - POST   /                 → createRaceEvent            (CF3, coach+admin)
+ *   - PATCH  /{id}             → updateRaceEvent            (CF3, coach+admin)
+ *   - DELETE /{id}             → deleteRaceEvent            (CF3, admin only)
+ *   - GET    /                 → listRaceEvents             (CF3, todos)
+ *   - GET    /{id}             → getRaceEvent               (CF5, todos)
  */
 import { apiClient } from "@/api/client";
 import type {
   RaceEventConditions,
   RaceEventConditionsUpdate,
+  RaceEventCreate,
+  RaceEventListFilters,
+  RaceEventListResponse,
+  RaceEventRead,
+  RaceEventUpdate,
 } from "@/types/raceEvents.types";
 
 const BASE = "/api/race-analysis/race-events";
+
+// ---------------------------------------------------------------------------
+// F-COND — condiciones logísticas (ya existía)
+// ---------------------------------------------------------------------------
 
 /**
  * PATCH /api/race-analysis/race-events/{raceEventId}/conditions
@@ -35,5 +47,106 @@ export async function updateRaceEventConditions(
     body,
     { signal: options?.signal },
   );
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// CF3 — CRUD completo de eventos de carrera
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/race-analysis/race-events/
+ *
+ * Crea un nuevo evento de carrera (válida de Copa Valle).
+ * RBAC: coach + admin.
+ *
+ * El backend retorna 201 con el evento creado.
+ */
+export async function createRaceEvent(
+  body: RaceEventCreate,
+  options?: { signal?: AbortSignal },
+): Promise<RaceEventRead> {
+  const response = await apiClient.post<RaceEventRead>(BASE + "/", body, {
+    signal: options?.signal,
+  });
+  return response.data;
+}
+
+/**
+ * PATCH /api/race-analysis/race-events/{id}
+ *
+ * Actualiza campos básicos del evento (nombre, fecha, ubicación, estado).
+ * No incluye condiciones — usar `updateRaceEventConditions` para eso.
+ * RBAC: coach + admin.
+ *
+ * El backend usa `extra=forbid`: no enviar campos no declarados en
+ * `RaceEventUpdate`.
+ */
+export async function updateRaceEvent(
+  id: number,
+  body: RaceEventUpdate,
+  options?: { signal?: AbortSignal },
+): Promise<RaceEventRead> {
+  const response = await apiClient.patch<RaceEventRead>(
+    `${BASE}/${id}`,
+    body,
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+/**
+ * DELETE /api/race-analysis/race-events/{id}
+ *
+ * Elimina un evento de carrera. Retorna 204 sin body.
+ * RBAC: admin only.
+ *
+ * 409 Conflict si el evento tiene `race_results` o `calendar_event`
+ * asociados — el hook propagará el error para que el componente muestre
+ * el mensaje de confirmación al usuario.
+ */
+export async function deleteRaceEvent(
+  id: number,
+  options?: { signal?: AbortSignal },
+): Promise<void> {
+  await apiClient.delete(`${BASE}/${id}`, { signal: options?.signal });
+}
+
+/**
+ * GET /api/race-analysis/race-events/{id}
+ *
+ * Retorna el evento completo (`RaceEventRead`) con todos los campos incluyendo
+ * condiciones logísticas. Usa este endpoint cuando necesitas datos completos
+ * del evento (ej: CompetitionDetailPage).
+ *
+ * 404 si el evento no existe.
+ */
+export async function getRaceEvent(
+  id: number,
+  options?: { signal?: AbortSignal },
+): Promise<RaceEventRead> {
+  const response = await apiClient.get<RaceEventRead>(`${BASE}/${id}`, {
+    signal: options?.signal,
+  });
+  return response.data;
+}
+
+/**
+ * GET /api/race-analysis/race-events/
+ *
+ * Lista eventos de carrera con filtros opcionales.
+ * Retorna `{ items, total }` paginado.
+ *
+ * Los parámetros `undefined` se omiten del query string — axios serializa
+ * solo los que tienen valor.
+ */
+export async function listRaceEvents(
+  filters: RaceEventListFilters = {},
+  options?: { signal?: AbortSignal },
+): Promise<RaceEventListResponse> {
+  const response = await apiClient.get<RaceEventListResponse>(BASE + "/", {
+    params: filters,
+    signal: options?.signal,
+  });
   return response.data;
 }

@@ -45,7 +45,7 @@ vi.mock("@/store/auth.store", () => ({
 
 import * as importsApi from "@/api/raceImports";
 import * as athletesApi from "@/api/athletes";
-import { ImportWizard } from "@/components/ai/ImportWizard";
+import { ImportWizard } from "@/components/competitions/import/ImportWizard";
 import type {
   DiffRow,
   ImportDryRunMatchesResponse,

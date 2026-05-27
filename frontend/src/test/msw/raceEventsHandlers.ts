@@ -1,0 +1,241 @@
+/**
+ * MSW handlers para el módulo race-events CRUD (CF3 + CF5).
+ *
+ * Cubre los endpoints:
+ *   - GET    /api/race-analysis/race-events/     → listRaceEvents
+ *   - GET    /api/race-analysis/race-events/:id  → getRaceEvent (CF5)
+ *   - POST   /api/race-analysis/race-events/     → createRaceEvent
+ *   - PATCH  /api/race-analysis/race-events/:id  → updateRaceEvent
+ *   - DELETE /api/race-analysis/race-events/:id  → deleteRaceEvent
+ *
+ * El handler de PATCH /:id/conditions ya tiene su propio test suite y
+ * no se duplica aquí.
+ *
+ * Uso en tests:
+ * ```ts
+ * import { raceEventsHandlers, makeRaceEventListItem } from "@/test/msw/raceEventsHandlers";
+ *
+ * // Registrar en setup global o por suite:
+ * mswServer.use(...raceEventsHandlers);
+ *
+ * // Sobreescribir escenario puntual:
+ * mswServer.use(raceEventsDeleteConflictHandler);
+ * ```
+ */
+import { http, HttpResponse } from "msw";
+
+import type {
+  RaceEventListItem,
+  RaceEventListResponse,
+  RaceEventRead,
+} from "@/types/raceEvents.types";
+
+// ---------------------------------------------------------------------------
+// Factory helpers
+// ---------------------------------------------------------------------------
+
+export function makeRaceEventRead(
+  overrides?: Partial<RaceEventRead>,
+): RaceEventRead {
+  return {
+    id: 1,
+    series_id: 1,
+    sequence_number: 1,
+    name: "Copa Valle XCO — Válida I",
+    event_date: "2026-01-31",
+    location: "Sevilla",
+    is_championship: false,
+    status: "completed",
+    climate: "soleado",
+    temperature_c: "22.5",
+    surface_condition: "seca",
+    altitude_msnm: 1620,
+    weather_notes: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-31T18:00:00Z",
+    created_by_user_id: 10,
+    ...overrides,
+  };
+}
+
+export function makeRaceEventListItem(
+  overrides?: Partial<RaceEventListItem>,
+): RaceEventListItem {
+  return {
+    id: 1,
+    series_id: 1,
+    sequence_number: 1,
+    name: "Copa Valle XCO — Válida I",
+    event_date: "2026-01-31",
+    location: "Sevilla",
+    is_championship: false,
+    status: "completed",
+    has_results: true,
+    has_calendar_event: true,
+    conditions_completeness: "complete",
+    ...overrides,
+  };
+}
+
+export function makeRaceEventListResponse(
+  overrides?: Partial<RaceEventListResponse>,
+): RaceEventListResponse {
+  return {
+    items: [
+      makeRaceEventListItem(),
+      makeRaceEventListItem({
+        id: 2,
+        sequence_number: 2,
+        name: "Copa Valle XCO — Válida II",
+        event_date: "2026-02-28",
+        location: "Ginebra",
+        has_results: true,
+        has_calendar_event: false,
+        conditions_completeness: "partial",
+      }),
+      makeRaceEventListItem({
+        id: 3,
+        sequence_number: 3,
+        name: "Copa Valle XCO — Válida III",
+        event_date: "2026-04-19",
+        location: "La Cumbre",
+        status: "scheduled",
+        has_results: false,
+        has_calendar_event: false,
+        conditions_completeness: "empty",
+      }),
+    ],
+    total: 3,
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Handlers por defecto (escenario feliz)
+// ---------------------------------------------------------------------------
+
+const BASE = "*/api/race-analysis/race-events";
+
+/** GET /race-events/ → lista con 3 válidas de la Copa Valle 2026. */
+const listHandler = http.get(`${BASE}/`, () => {
+  return HttpResponse.json(makeRaceEventListResponse());
+});
+
+/**
+ * GET /race-events/:id → evento completo (RaceEventRead) por id.
+ * Retorna el evento de la lista de fixtures o un evento genérico con el id solicitado.
+ */
+const getByIdHandler = http.get(`${BASE}/:id`, ({ params }) => {
+  const id = Number(params.id);
+  // Mapeamos los ids fijos de los fixtures
+  const fixtureMap: Record<number, Partial<ReturnType<typeof makeRaceEventRead>>> = {
+    1: { id: 1, sequence_number: 1, name: "Copa Valle XCO — Válida I", location: "Sevilla", status: "completed" },
+    2: { id: 2, sequence_number: 2, name: "Copa Valle XCO — Válida II", location: "Ginebra", status: "completed" },
+    3: { id: 3, sequence_number: 3, name: "Copa Valle XCO — Válida III", location: "La Cumbre", status: "scheduled", climate: null, temperature_c: null, surface_condition: null, altitude_msnm: null, weather_notes: null },
+  };
+  const overrides = fixtureMap[id] ?? { id };
+  return HttpResponse.json(makeRaceEventRead(overrides));
+});
+
+/** POST /race-events/ → evento recién creado con id=99. */
+const createHandler = http.post(`${BASE}/`, () => {
+  return HttpResponse.json(makeRaceEventRead({ id: 99 }), { status: 201 });
+});
+
+/** PATCH /race-events/:id → evento actualizado. */
+const updateHandler = http.patch(`${BASE}/:id`, ({ params }) => {
+  const id = Number(params.id);
+  return HttpResponse.json(makeRaceEventRead({ id }));
+});
+
+/** DELETE /race-events/:id → 204 sin body. */
+const deleteHandler = http.delete(`${BASE}/:id`, () => {
+  return new HttpResponse(null, { status: 204 });
+});
+
+/** Conjunto de handlers del escenario feliz — registrar en setup global. */
+export const raceEventsHandlers = [
+  listHandler,
+  getByIdHandler,
+  createHandler,
+  updateHandler,
+  deleteHandler,
+];
+
+// ---------------------------------------------------------------------------
+// Handlers de escenarios de error — importar por suite según necesidad
+// ---------------------------------------------------------------------------
+
+/**
+ * DELETE 409 Conflict — el evento tiene race_results o calendar_event.
+ * Usar cuando el test valida que el componente muestra el mensaje de error.
+ */
+export const raceEventsDeleteConflictHandler = http.delete(
+  `${BASE}/:id`,
+  () => {
+    return HttpResponse.json(
+      {
+        detail:
+          "El evento tiene resultados importados o está vinculado al calendario. Elimina esas dependencias primero.",
+      },
+      { status: 409 },
+    );
+  },
+);
+
+/**
+ * GET 500 — simula error de servidor (cold start Render expirado).
+ * Usar en tests de estado de error de `useRaceEventsList`.
+ */
+export const raceEventsListErrorHandler = http.get(`${BASE}/`, () => {
+  return HttpResponse.json(
+    { detail: "Error interno del servidor." },
+    { status: 500 },
+  );
+});
+
+/**
+ * GET /:id 404 — evento no encontrado.
+ * Usar en tests de CompetitionDetailPage para simular evento eliminado.
+ */
+export const raceEventNotFoundHandler = http.get(`${BASE}/:id`, () => {
+  return HttpResponse.json(
+    { detail: "Evento de carrera no encontrado." },
+    { status: 404 },
+  );
+});
+
+/**
+ * POST 422 — payload inválido (ej. sequence_number duplicado).
+ */
+export const raceEventsCreateValidationErrorHandler = http.post(
+  `${BASE}/`,
+  () => {
+    return HttpResponse.json(
+      {
+        detail: [
+          {
+            loc: ["body", "sequence_number"],
+            msg: "sequence_number ya existe en esta serie.",
+            type: "value_error",
+          },
+        ],
+      },
+      { status: 422 },
+    );
+  },
+);
+
+/**
+ * POST 409 — sequence_number duplicado en la temporada.
+ * Se usa para verificar el manejo inline de errores en CompetitionFormPage.
+ */
+export const raceEventsCreateConflictHandler = http.post(`${BASE}/`, () => {
+  return HttpResponse.json(
+    {
+      detail:
+        "Ya existe una válida con sequence_number=3 en la temporada 2026.",
+    },
+    { status: 409 },
+  );
+});

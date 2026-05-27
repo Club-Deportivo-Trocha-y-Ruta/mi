@@ -14,6 +14,12 @@ export function EventFormPage({ mode }: EventFormPageProps) {
   const eventId = id ? Number(id) : null;
   const prefillDate = searchParams.get("date") ?? undefined;
 
+  // CF6: query params para integración desde CompetitionDetailPage
+  // ?race_event_id=N  → pre-selecciona competition y la válida
+  // ?season=YYYY      → (reservado, el EventForm ya infiere el season de la fecha)
+  const raceEventIdParam = searchParams.get("race_event_id");
+  const prefillRaceEventId = raceEventIdParam ? Number(raceEventIdParam) : undefined;
+
   const isEdit = mode === "edit";
   const eventQuery = useCalendarEvent(isEdit ? eventId : null);
 
@@ -106,6 +112,7 @@ export function EventFormPage({ mode }: EventFormPageProps) {
           mode={mode}
           initialData={isEdit ? eventQuery.data : undefined}
           prefillDate={!isEdit ? prefillDate : undefined}
+          prefillRaceEventId={!isEdit ? prefillRaceEventId : undefined}
           onSuccess={handleSuccess}
           onCancel={handleCancel}
         />

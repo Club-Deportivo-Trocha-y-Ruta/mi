@@ -2,34 +2,237 @@
 
 Endpoints implementados:
 
-- ``PATCH /{race_event_id}/conditions`` — actualización parcial de condiciones
-  de carrera (clima, temperatura, superficie, altitud, notas).
+- ``GET    /``                              — listado filtrado con flags derivados.
+- ``POST   /``                             — crea evento vacío (coach + admin).
+- ``PATCH  /{race_event_id}``              — edita metadata (coach + admin).
+- ``DELETE /{race_event_id}``              — borra evento limpio (admin only).
+- ``PATCH  /{race_event_id}/conditions``   — actualiza condiciones de carrera (coach + admin).
 
 Convenciones:
-- RBAC: coach + admin. Padres reciben 403.
-- Update parcial: solo los campos enviados se aplican (``exclude_unset=True``).
-- Sin migración Alembic: las columnas ya existen en ``race_events`` desde la
-  migración delta Paso 2 Fase 1.7 (``64c263edd07f``).
-- Privacidad: el body completo NO se loguea (``weather_notes`` puede contener
-  información eventual; política de logs es siempre conservadora).
+- RBAC: coach + admin en escritura. Admin exclusivo para DELETE.
+- Update parcial con ``exclude_unset=True``.
+- Sin migración Alembic: todas las columnas ya existen.
+- Privacidad: body de condiciones NO se loguea (policy conservadora).
 """
 from __future__ import annotations
 
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
-from app.models.race_event import RaceEvent
+from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.user import User, UserRole
+from app.schemas.race_event import (
+    RaceEventCreate,
+    RaceEventListResponse,
+    RaceEventRead,
+    RaceEventUpdate,
+)
 from app.schemas.race_imports import RaceEventConditionsRead, RaceEventConditionsUpdate
+import app.services.race_events as race_events_svc
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# GET / — Listado de eventos con filtros
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/",
+    response_model=RaceEventListResponse,
+    summary="Listar eventos de carrera",
+)
+async def list_race_events(
+    season: Optional[int] = Query(default=None, ge=2020, le=2100, description="Año de temporada de la serie."),
+    status: Optional[RaceEventStatus] = Query(default=None, description="Filtrar por estado del evento."),
+    is_championship: Optional[bool] = Query(default=None, description="Filtrar solo campeonatos departamentales."),
+    location: Optional[str] = Query(default=None, max_length=150, description="Búsqueda parcial por municipio/lugar."),
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> RaceEventListResponse:
+    """Listado de eventos de carrera con flags derivados.
+
+    Campos derivados por evento:
+    - ``has_results``: existen resultados ingestados en ``race_results``.
+    - ``has_calendar_event``: existe al menos un ``calendar_event`` asociado.
+    - ``conditions_completeness``: completitud de los campos de clima.
+
+    Ordenado por ``event_date`` ascendente.
+
+    Códigos de respuesta:
+    - 200: listado (puede estar vacío si no hay eventos o no coincide el filtro).
+    - 403: usuario sin rol coach o admin.
+    """
+    items = await race_events_svc.list_race_events(
+        db=db,
+        season=season,
+        status_filter=status,
+        is_championship=is_championship,
+        location=location,
+    )
+    return RaceEventListResponse(items=items, total=len(items))
+
+
+# ---------------------------------------------------------------------------
+# GET /{race_event_id} — Detalle de un evento
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{race_event_id}",
+    response_model=RaceEventRead,
+    summary="Detalle de un evento de carrera",
+)
+async def get_race_event(
+    race_event_id: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> RaceEventRead:
+    """Retorna el ``RaceEvent`` completo (metadata + condiciones).
+
+    Códigos de respuesta:
+    - 200: evento encontrado.
+    - 404: evento no existe.
+    - 403: usuario sin rol coach o admin.
+    """
+    from sqlalchemy import exists
+    from app.models.calendar_event import CalendarEvent
+
+    result = await db.execute(select(RaceEvent).where(RaceEvent.id == race_event_id))
+    event: Optional[RaceEvent] = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Evento de carrera con id={race_event_id} no existe.",
+        )
+    # Flag derivado: ¿hay calendar_event vinculado?
+    has_cal_result = await db.execute(
+        select(exists().where(CalendarEvent.race_event_id == race_event_id))
+    )
+    has_calendar_event = bool(has_cal_result.scalar())
+    payload = RaceEventRead.model_validate(event)
+    payload.has_calendar_event = has_calendar_event
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# POST / — Crear evento vacío
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/",
+    response_model=RaceEventRead,
+    status_code=201,
+    summary="Crear evento de carrera",
+)
+async def create_race_event(
+    body: RaceEventCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> RaceEventRead:
+    """Crea un nuevo evento de carrera vacío (sin resultados).
+
+    El evento se asocia a una serie existente. Los campos de condiciones
+    de carrera son opcionales y pueden completarse después con
+    ``PATCH /{id}/conditions``.
+
+    Códigos de respuesta:
+    - 201: evento creado correctamente.
+    - 404: la serie referenciada no existe.
+    - 409: ya existe un evento con la misma ``(series_id, sequence_number)``.
+    - 422: campo fuera de rango o serie no existe.
+    - 403: usuario sin rol coach o admin.
+    """
+    event = await race_events_svc.create_race_event(
+        db=db,
+        payload=body,
+        user_id=current_user.id,
+    )
+    return RaceEventRead.model_validate(event)
+
+
+# ---------------------------------------------------------------------------
+# PATCH /{race_event_id} — Editar metadata
+# ---------------------------------------------------------------------------
+
+
+@router.patch(
+    "/{race_event_id}",
+    response_model=RaceEventRead,
+    summary="Editar metadata de un evento de carrera",
+)
+async def update_race_event(
+    race_event_id: int,
+    body: RaceEventUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> RaceEventRead:
+    """Actualización parcial de metadata de un evento.
+
+    Solo los campos enviados se aplican; los ausentes conservan su valor.
+    No modifica condiciones de carrera (clima, temperatura, etc.) — para
+    eso usar ``PATCH /{id}/conditions``.
+
+    Códigos de respuesta:
+    - 200: actualización exitosa.
+    - 404: evento no existe.
+    - 409: nueva ``sequence_number`` ya está tomada en la misma serie.
+    - 422: valor fuera de rango.
+    - 403: usuario sin rol coach o admin.
+    """
+    event = await race_events_svc.update_race_event(
+        db=db,
+        race_event_id=race_event_id,
+        payload=body,
+    )
+    return RaceEventRead.model_validate(event)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{race_event_id} — Borrar evento limpio
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/{race_event_id}",
+    status_code=204,
+    summary="Eliminar evento de carrera",
+)
+async def delete_race_event(
+    race_event_id: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_role([UserRole.admin])),
+) -> None:
+    """Elimina un evento de carrera si no tiene dependencias.
+
+    Solo el rol ``admin`` puede borrar. Los coaches deben hacer
+    ``PATCH /{id}`` con ``status=cancelled`` en su lugar.
+
+    Verificaciones antes de borrar:
+    - Sin resultados ingestados en ``race_results`` → 409.
+    - Sin asociación a evento de calendario → 409.
+
+    Códigos de respuesta:
+    - 204: eliminado correctamente (sin body).
+    - 404: evento no existe.
+    - 409: tiene resultados ingestados o está vinculado a un calendario.
+    - 403: usuario sin rol admin.
+    """
+    await race_events_svc.delete_race_event(db=db, race_event_id=race_event_id)
+
+
+# ---------------------------------------------------------------------------
+# PATCH /{race_event_id}/conditions — Condiciones de carrera (endpoint previo)
+# ---------------------------------------------------------------------------
 
 
 @router.patch(

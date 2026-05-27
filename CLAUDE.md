@@ -211,6 +211,25 @@ Migraciones corren automáticamente via `entrypoint.sh` (`alembic upgrade head`)
 | E8 | Auditoría privacidad X1 — APROBADO CON CONDICIONES: 3 placeholders corregidos (1 ALTO nombre real `revision_reason` preexistente + 2 MEDIO placeholders `weather_notes` sin guía privacidad) | ✅ Completo 2026-05-26 |
 | E9 | Commit + deploy Render | ⏳ Pendiente |
 
+### Módulo Competencias (Fase 1.7+/1.8) (2026-05-27)
+
+> CRUD de `race_events` para gestionar el ciclo de vida de las válidas Copa Valle: planificar antes del PDF, editar metadata, asociar a calendario, lanzar wizard de importación y cancelar. Sin migración Alembic (`RaceEventStatus.CANCELLED` y todas las columnas ya existían). Detalle técnico en `docs/10-race-results/competitions-module.md`.
+
+| Paso | Descripción | Estado |
+|---|---|---|
+| CB1 | Backend: 5 endpoints en `app/routers/race_events.py` (GET list con filtros + flags derivados, GET detalle con `has_calendar_event`, POST crear vacío, PATCH metadata, DELETE admin-only con guards de dependencias). Endpoint `PATCH /{id}/conditions` ya existía (Fase 1.7+). | ✅ Completo 2026-05-27 |
+| CB2 | Schemas Pydantic v2 en `app/schemas/race_event.py` (Create/Update/Read/ListItem/ListResponse + `ConditionsCompleteness` Literal) + servicio `app/services/race_events.py` con guards 422/409 + 32 tests en `tests/routers/test_race_events_crud.py` (0 regresiones, 834 tests race totales verdes) | ✅ Completo 2026-05-27 |
+| CF1 | Codemod: `components/ai/ImportWizard.tsx` → `components/competitions/import/ImportWizard.tsx` (+ `RaceUploadZone`, `DiffTable`, tests). 4 imports actualizados | ✅ Completo 2026-05-27 |
+| CF2 | `api/raceEvents.ts` extendido (get/create/update/delete/list) + `hooks/race/useRaceEvents.ts` con query keys + invalidaciones cruzadas raceEvents↔calendar + `test/msw/raceEventsHandlers.ts` | ✅ Completo 2026-05-27 |
+| CF3 | Sidebar "Competencias" entre Boletines y Análisis IA. 6 rutas en `App.tsx` (`/competitions`, `/new`, `/import`, `/:id`, `/:id/edit`, `/:id/import`) con `ProtectedRoute allowedRoles=[coach, admin]` (parent → 403) | ✅ Completo 2026-05-27 |
+| CF4 | `CompetitionsListPage` (tabla desktop + cards mobile, filtros, badges tri-estado, kebab acciones, DELETE admin-only) + `CompetitionFormPage` (RHF+Zod, create/edit, auto-altitud `VENUE_ALTITUDES`, 409 inline, `?returnTo`) + `CompetitionFiltersBar` + `CompetitionStatusBadges` | ✅ Completo 2026-05-27 |
+| CF5 | `CompetitionDetailPage` con header + 5 tabs URL-driven (`?tab=info|results|conditions|athletes|insights`) en `components/competitions/tabs/`. Lazy de `AthletesTab` e `InsightsTab`. Refactor mecánico sin tocar `RaceAnalysisPage` ni `ClubInsightsByRacePage` | ✅ Completo 2026-05-27 |
+| CF6 | `CompetitionImportPage` con wizard montado (con/sin `:id`) + `EventForm` con `prefillRaceEventId` + link inline "Crear nueva válida" + `EventFormPage` lee `?race_event_id` + botón "Asociar a calendario" en detalle cuando `has_calendar_event=false` | ✅ Completo 2026-05-27 |
+| CF7 | Tests frontend: 69 vitest nuevos (1682 totales) + 4 a11y axe (0 violaciones). 2 fixes post-CF7: URL `/calendar/new` → `/calendar/events/new`, `navigate` en `useEffect` (evita setState durante render React 19) | ✅ Completo 2026-05-27 |
+| CX1 | Auditoría privacidad módulo Competencias | ✅ APROBADO con 1 corrección (open-redirect `?returnTo`) 2026-05-27 |
+| CX2 | Docs (`competitions-module.md` + CLAUDE.md + README) | ✅ Completo 2026-05-27 |
+| CX3 | Commit + deploy Render | ⏳ Pendiente |
+
 ## Estado de implementación — Módulo Boletín Mensual Individual (Fase 1.8)
 
 > Entrega mensual a padres (HTML email + PDF adjunto) con métricas longitudinales, narrativa IA del coach y antropometría. Multi-hijo: agrupa boletines de varios hijos en un solo email con N PDFs. Antropometría completa SOLO en el PDF (nunca en el cuerpo del email).
