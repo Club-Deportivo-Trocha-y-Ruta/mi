@@ -213,15 +213,9 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
               setSeqError(
                 "Ya existe una válida con este número en la temporada. Elige otro número.",
               );
-            } else if (
-              typeof err === "object" &&
-              err !== null &&
-              (err as { response?: { status?: number } }).response?.status === 422
-            ) {
-              setSeqError(
-                "Datos inválidos. Verifica el número de válida y la fecha.",
-              );
             } else {
+              // 422 y resto → muestra detail real del backend si está
+              // disponible (más útil que un mensaje genérico).
               setGlobalError(msg);
             }
           },

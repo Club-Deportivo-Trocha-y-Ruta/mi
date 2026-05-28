@@ -47,10 +47,10 @@ export const STATUS_OPTIONS = [
  *
  * NOTA: El `id` de esta serie se asigna al crear la primera importación
  * (el backend crea la serie dinámicamente). En un entorno limpio el
- * primer registro suele ser id=1. Si hay desajuste, el backend retornará
- * 422 al crear la válida y el coach puede ajustar el ID manualmente.
+ * Valor verificado contra DB local + prod (seed Fase 1.7): id=2.
+ * Si en algún ambiente difiere, backend retornará 422 — el handler de
+ * CompetitionFormPage muestra el detail real del backend.
  *
- * CF5+ debería añadir un endpoint GET /race-series/ para cargar el
- * id real dinámicamente.
+ * TODO post-MVP: GET /api/race-analysis/series/ para cargar dinámicamente.
  */
-export const COPA_VALLE_SERIES = { id: 1, name: "Copa Valle de Ciclomontañismo" };
+export const COPA_VALLE_SERIES = { id: 2, name: "Copa Valle de Ciclomontañismo" };
