@@ -87,8 +87,13 @@ class TestComputeConfidence:
     def test_low_few_sessions(self):
         assert _compute_confidence(2, 3) == "low"
 
-    def test_low_few_races(self):
-        assert _compute_confidence(8, 1) == "low"
+    def test_high_even_few_races(self):
+        # num_races no penaliza: meses-bloque sin carrera pueden ser high
+        assert _compute_confidence(8, 1) == "high"
+
+    def test_high_zero_races(self):
+        # Mes solo-entreno con volumen alto sigue siendo high
+        assert _compute_confidence(8, 0) == "high"
 
     def test_medium_middle_range(self):
         assert _compute_confidence(5, 2) == "medium"

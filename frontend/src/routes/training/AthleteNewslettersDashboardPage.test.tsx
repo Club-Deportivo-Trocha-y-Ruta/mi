@@ -72,6 +72,14 @@ function makeAthlete(overrides?: Partial<AthleteOut>): AthleteOut {
   };
 }
 
+/** Dashboard arranca en mes anterior al actual (boletines = mes finalizado). */
+function getPrevPeriod(): { year: number; month: number } {
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const y = now.getFullYear();
+  return m === 1 ? { year: y - 1, month: 12 } : { year: y, month: m - 1 };
+}
+
 const mutationStub = {
   mutate: vi.fn(),
   mutateAsync: vi.fn(),
@@ -342,11 +350,11 @@ describe("AthleteNewslettersDashboardPage — estados de badge por atleta", () =
   });
 
   it("muestra badge 'Borrador' cuando el newsletter está en draft", () => {
-    const now = new Date();
+    const prev = getPrevPeriod();
     const newsletter: AthleteNewsletter = makeNewsletter({
       athlete_id: 42,
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
+      year: prev.year,
+      month: prev.month,
       status: "draft",
     });
     vi.mocked(useAthletes).mockReturnValue({
@@ -364,11 +372,11 @@ describe("AthleteNewslettersDashboardPage — estados de badge por atleta", () =
   });
 
   it("muestra badge 'Enviado' cuando el newsletter fue enviado", () => {
-    const now = new Date();
+    const prev = getPrevPeriod();
     const newsletter: AthleteNewsletter = makeNewsletter({
       athlete_id: 42,
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
+      year: prev.year,
+      month: prev.month,
       status: "sent",
       sent_at: "2026-05-01T10:00:00Z",
     });
@@ -404,11 +412,11 @@ describe("AthleteNewslettersDashboardPage — botón Generar individual", () => 
   });
 
   it("NO muestra botón Generar cuando el atleta ya tiene newsletter enviado", () => {
-    const now = new Date();
+    const prev = getPrevPeriod();
     const newsletter: AthleteNewsletter = makeNewsletter({
       athlete_id: 42,
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
+      year: prev.year,
+      month: prev.month,
       status: "sent",
     });
     vi.mocked(useAthletes).mockReturnValue({
@@ -454,11 +462,11 @@ describe("AthleteNewslettersDashboardPage — botón Generar individual", () => 
 
 describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", () => {
   it("muestra botón Regenerar cuando el newsletter está en draft", () => {
-    const now = new Date();
+    const prev = getPrevPeriod();
     const newsletter: AthleteNewsletter = makeNewsletter({
       athlete_id: 42,
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
+      year: prev.year,
+      month: prev.month,
       status: "draft",
     });
     vi.mocked(useAthletes).mockReturnValue({
@@ -476,11 +484,11 @@ describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", ()
   });
 
   it("muestra botón Regenerar cuando el newsletter está en failed", () => {
-    const now = new Date();
+    const prev = getPrevPeriod();
     const newsletter: AthleteNewsletter = makeNewsletter({
       athlete_id: 42,
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
+      year: prev.year,
+      month: prev.month,
       status: "failed",
     });
     vi.mocked(useAthletes).mockReturnValue({
@@ -498,11 +506,11 @@ describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", ()
   });
 
   it("NO muestra botón Regenerar cuando el newsletter está aprobado", () => {
-    const now = new Date();
+    const prev = getPrevPeriod();
     const newsletter: AthleteNewsletter = makeNewsletter({
       athlete_id: 42,
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
+      year: prev.year,
+      month: prev.month,
       status: "approved",
     });
     vi.mocked(useAthletes).mockReturnValue({
@@ -520,11 +528,11 @@ describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", ()
   });
 
   it("abre ConfirmModal al hacer click en Regenerar", async () => {
-    const now = new Date();
+    const prev = getPrevPeriod();
     const newsletter: AthleteNewsletter = makeNewsletter({
       athlete_id: 42,
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
+      year: prev.year,
+      month: prev.month,
       status: "draft",
     });
     vi.mocked(useAthletes).mockReturnValue({

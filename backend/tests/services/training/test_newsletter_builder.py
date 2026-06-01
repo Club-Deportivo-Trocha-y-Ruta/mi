@@ -87,6 +87,13 @@ def make_attendance(session_id: int, status_) -> Any:
     )
 
 
+def is_delete_stmt(stmt: Any) -> bool:
+    """Detecta DELETE inicial del re-evaluador de badges (clean slate del periodo)."""
+    from sqlalchemy.sql.dml import Delete
+
+    return isinstance(stmt, Delete)
+
+
 # ---------------------------------------------------------------------------
 # build_newsletter_metrics — separación email_blocks / pdf_only_blocks
 # ---------------------------------------------------------------------------
@@ -106,6 +113,8 @@ async def test_build_newsletter_metrics_has_both_blocks():
 
     async def mock_execute(stmt):
         nonlocal call_count
+        if is_delete_stmt(stmt):
+            return MagicMock()
         call_count += 1
         if call_count == 1:
             # Athlete query
@@ -179,6 +188,8 @@ async def test_anthropometry_only_in_pdf_blocks():
 
     async def mock_execute(stmt):
         nonlocal call_count
+        if is_delete_stmt(stmt):
+            return MagicMock()
         call_count += 1
         if call_count == 1:
             return make_scalars_result([athlete])
@@ -217,6 +228,8 @@ async def test_email_blocks_required_keys():
 
     async def mock_execute2(stmt):
         nonlocal call_count
+        if is_delete_stmt(stmt):
+            return MagicMock()
         call_count += 1
         if call_count == 1:
             return make_scalars_result([athlete])

@@ -87,10 +87,16 @@ class AthleteNewsletterContext:
 
 
 def _compute_confidence(sessions_total: int, num_races: int) -> str:
-    """Calcula el nivel de confianza del análisis IA."""
-    if sessions_total < 3 or num_races < 2:
+    """Calcula el nivel de confianza del análisis IA.
+
+    Basado en volumen de sesiones (evidencia para narrar progreso técnico).
+    `num_races` se mantiene en la firma por compatibilidad pero no penaliza
+    meses-bloque sin carrera (Copa Valle solo tiene ~7 válidas al año).
+    """
+    del num_races  # no se usa: meses sin carrera no deben bajar confianza
+    if sessions_total < 3:
         return "low"
-    if sessions_total >= 8 and num_races >= 3:
+    if sessions_total >= 8:
         return "high"
     return "medium"
 

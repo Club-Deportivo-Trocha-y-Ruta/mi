@@ -23,7 +23,7 @@ import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.athlete_badge import AthleteBadge, BadgeSource, BadgeType
@@ -159,8 +159,7 @@ async def _evaluate_attendance_badges(
         )
     )
     sessions = sessions_result.scalars().all()
-    total = len(sessions)
-    if total == 0:
+    if not sessions:
         return []
 
     session_ids = [s.id for s in sessions]
@@ -171,6 +170,12 @@ async def _evaluate_attendance_badges(
         )
     )
     attendances = att_result.scalars().all()
+
+    # Solo cuentan sesiones donde el atleta fue convocado (tiene registro).
+    # Si no fue convocado, no debe penalizar su % asistencia.
+    total = len(attendances)
+    if total == 0:
+        return []
 
     present = sum(
         1
@@ -402,10 +407,24 @@ async def evaluate_and_persist_badges(
     year: int,
     month: int,
 ) -> list[AthleteBadge]:
-    """API pública: evalúa e inserta insignias. Retorna lista de nuevas insignias.
+    """API pública: re-evalúa e inserta insignias para el atleta/periodo.
 
-    Idempotente: llamadas repetidas no duplican registros.
+    Borra los badges existentes del periodo antes de reinsertar para que el
+    estado refleje siempre las métricas actuales (e.g. si al regenerar el
+    boletín la asistencia subió de 94% a 100%, se reemplaza attendance_90 por
+    attendance_100). Los badges automáticos (source: attendance/race) son
+    derivados de datos, no aportes manuales.
     """
+    # Borrar badges previos del periodo para reflejar métricas actuales.
+    await db.execute(
+        delete(AthleteBadge).where(
+            AthleteBadge.athlete_id == athlete_id,
+            AthleteBadge.period_year == year,
+            AthleteBadge.period_month == month,
+        )
+    )
+    await db.flush()
+
     new_badges: list[AthleteBadge] = []
 
     attendance_badge_datas = await _evaluate_attendance_badges(db, athlete_id, year, month)

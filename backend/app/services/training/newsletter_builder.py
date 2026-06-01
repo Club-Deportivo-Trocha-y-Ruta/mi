@@ -192,9 +192,8 @@ async def _build_attendance_block(
         )
     )
     sessions = sessions_result.scalars().all()
-    total = len(sessions)
 
-    if total == 0:
+    if not sessions:
         return {
             "sessions_total": 0,
             "sessions_present": 0,
@@ -212,6 +211,20 @@ async def _build_attendance_block(
     )
     attendances = att_result.scalars().all()
 
+    # Solo cuentan sesiones donde el atleta fue convocado (tiene registro)
+    convoked_ids = {a.session_id for a in attendances}
+    convoked_sessions = [s for s in sessions if s.id in convoked_ids]
+    total = len(convoked_sessions)
+
+    if total == 0:
+        return {
+            "sessions_total": 0,
+            "sessions_present": 0,
+            "attendance_pct": 0.0,
+            "attendance_pct_prev_month": None,
+            "streak_days": 0,
+        }
+
     present = sum(
         1 for a in attendances
         if a.status in {AttendanceStatus.PRESENTE, AttendanceStatus.TARDE}
@@ -226,7 +239,7 @@ async def _build_attendance_block(
     )
 
     # Racha actual (días consecutivos con asistencia PRESENTE)
-    streak = _compute_streak(sessions, attendances)
+    streak = _compute_streak(convoked_sessions, attendances)
 
     return {
         "sessions_total": total,
@@ -259,8 +272,7 @@ async def _get_prev_month_attendance(
         )
     )
     sessions = sessions_result.scalars().all()
-    total = len(sessions)
-    if total == 0:
+    if not sessions:
         return None
 
     session_ids = [s.id for s in sessions]
@@ -271,6 +283,10 @@ async def _get_prev_month_attendance(
         )
     )
     attendances = att_result.scalars().all()
+    # Solo cuentan sesiones donde el atleta fue convocado
+    total = len(attendances)
+    if total == 0:
+        return None
     present = sum(
         1 for a in attendances
         if a.status in {AttendanceStatus.PRESENTE, AttendanceStatus.TARDE}

@@ -9,7 +9,7 @@
  * Roles: coach, admin
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { isAxiosError } from "axios";
 import { FileText, Play, RefreshCw } from "lucide-react";
@@ -399,9 +399,16 @@ export function AthleteNewslettersDashboardPage() {
   const user = useAuthStore((s) => s.user);
   const clubId = user?.club_ids?.[0];
 
-  const now = new Date();
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  // Boletines solo cubren meses ya finalizados → arrancar en mes anterior al actual.
+  const initialPeriod = useMemo(() => {
+    const now = new Date();
+    const m = now.getMonth() + 1;
+    const y = now.getFullYear();
+    return m === 1 ? { year: y - 1, month: 12 } : { year: y, month: m - 1 };
+  }, []);
+
+  const [selectedYear, setSelectedYear] = useState(initialPeriod.year);
+  const [selectedMonth, setSelectedMonth] = useState(initialPeriod.month);
   const [statusFilter, setStatusFilter] = useState<NewsletterStatus | "all" | "none">("all");
   const [nameFilter, setNameFilter] = useState("");
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -409,8 +416,33 @@ export function AthleteNewslettersDashboardPage() {
   const athletesQuery = useAthletes(clubId ? { club_id: clubId } : undefined);
   const athletes = athletesQuery.data?.items ?? [];
 
-  const currentYear = now.getFullYear();
-  const years = Array.from({ length: currentYear - 2023 }, (_, i) => currentYear - i);
+  const years = Array.from(
+    { length: initialPeriod.year - 2023 },
+    (_, i) => initialPeriod.year - i,
+  );
+
+  // Meses disponibles según año: para el año más reciente, hasta el mes anterior al actual.
+  const availableMonths = useMemo(() => {
+    const maxMonth =
+      selectedYear < initialPeriod.year
+        ? 12
+        : selectedYear === initialPeriod.year
+          ? initialPeriod.month
+          : 0;
+    return MONTH_NAMES.slice(0, maxMonth).map((name, i) => ({
+      value: i + 1,
+      name,
+    }));
+  }, [selectedYear, initialPeriod]);
+
+  // Si el mes seleccionado deja de ser válido al cambiar de año, ajustar al último válido.
+  useEffect(() => {
+    if (availableMonths.length === 0) return;
+    const validValues = availableMonths.map((m) => m.value);
+    if (!validValues.includes(selectedMonth)) {
+      setSelectedMonth(validValues[validValues.length - 1]);
+    }
+  }, [availableMonths, selectedMonth]);
 
   function handleAthleteClick(athleteId: number, newsletterId?: number) {
     if (newsletterId) {
@@ -469,8 +501,8 @@ export function AthleteNewslettersDashboardPage() {
             className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
             style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
           >
-            {MONTH_NAMES.map((name, i) => (
-              <option key={i + 1} value={i + 1}>
+            {availableMonths.map(({ value, name }) => (
+              <option key={value} value={value}>
                 {name}
               </option>
             ))}

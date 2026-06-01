@@ -72,6 +72,13 @@ def make_attendance(session_id: int, status_) -> Any:
     )
 
 
+def is_delete_stmt(stmt: Any) -> bool:
+    """Detecta DELETE inicial del re-evaluador (clean slate del periodo)."""
+    from sqlalchemy.sql.dml import Delete
+
+    return isinstance(stmt, Delete)
+
+
 # ---------------------------------------------------------------------------
 # Test: compute_streak
 # ---------------------------------------------------------------------------
@@ -141,6 +148,8 @@ async def test_badge_attendance_100():
 
     async def mock_execute(stmt):
         nonlocal call_count
+        if is_delete_stmt(stmt):
+            return MagicMock()
         call_count += 1
         if call_count == 1:
             # select Athlete
@@ -187,6 +196,8 @@ async def test_badge_attendance_90():
 
     async def mock_execute(stmt):
         nonlocal call_count
+        if is_delete_stmt(stmt):
+            return MagicMock()
         call_count += 1
         if call_count == 1:
             return make_scalars_result([athlete])
@@ -228,6 +239,8 @@ async def test_badge_no_badge_below_75():
 
     async def mock_execute(stmt):
         nonlocal call_count
+        if is_delete_stmt(stmt):
+            return MagicMock()
         call_count += 1
         if call_count == 1:
             return make_scalars_result([athlete])
@@ -249,7 +262,12 @@ async def test_badge_no_badge_below_75():
 
 @pytest.mark.asyncio
 async def test_badge_idempotent():
-    """Evaluar el mismo periodo dos veces no duplica insignias."""
+    """Re-evaluar el periodo refleja métricas actuales sin duplicar.
+
+    El evaluador borra los badges del periodo y reinserta. Si las métricas no
+    cambiaron, el set final es el mismo; si cambiaron (e.g. asistencia subió
+    de 94% a 100%), reemplaza attendance_90 por attendance_100.
+    """
     from app.models.athlete_badge import AthleteBadge
     from app.models.training_session import AttendanceStatus
 
@@ -274,6 +292,8 @@ async def test_badge_idempotent():
 
     async def mock_execute(stmt):
         nonlocal call_count
+        if is_delete_stmt(stmt):
+            return MagicMock()
         call_count += 1
         if call_count == 1:
             return make_scalars_result([athlete])
@@ -314,6 +334,8 @@ async def test_no_sessions_no_badges():
 
     async def mock_execute(stmt):
         nonlocal call_count
+        if is_delete_stmt(stmt):
+            return MagicMock()
         call_count += 1
         if call_count == 1:
             return make_scalars_result([athlete])
