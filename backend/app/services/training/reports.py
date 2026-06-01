@@ -30,20 +30,12 @@ if TYPE_CHECKING:
     from app.services.notification.service import NotificationService
     from app.services.notification.task_dispatcher import TaskDispatcher
 
-_MONTH_CLOSE_DAY = 28
-
-
 def _validate_period(year: int, month: int) -> None:
     today = date.today()
     if year > today.year or (year == today.year and month >= today.month):
         raise ValueError(
             f"El período {year}-{month:02d} no está cerrado todavía. "
             "Solo se pueden generar reportes de meses anteriores."
-        )
-    if year == today.year and month == today.month - 1 and today.day < _MONTH_CLOSE_DAY:
-        raise ValueError(
-            f"El mes {year}-{month:02d} todavía no está cerrado (se requiere "
-            f"que el día actual sea >= {_MONTH_CLOSE_DAY})."
         )
 
 
