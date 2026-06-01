@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { z } from "zod";
 
 import { useAuthStore } from "@/store/auth.store";
-import { UserRole } from "@/types/enums";
+import { landingPathForRole } from "@/lib/landing";
 
 const loginSchema = z.object({
   email: z.string().email("Ingresa un correo válido"),
@@ -19,8 +19,15 @@ export function LoginPage() {
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
   const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const isLoading = useAuthStore((state) => state.isLoading);
   const [serverError, setServerError] = useState<string | null>(null);
+
+  // Si ya hay una sesión válida, nunca mostrar el formulario de login:
+  // la primera vista debe ser el panel del usuario (Dashboard / Mis atletas).
+  if (isAuthenticated && user) {
+    return <Navigate to={landingPathForRole(user.role)} replace />;
+  }
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -35,13 +42,7 @@ export function LoginPage() {
     try {
       await login(values.email, values.password);
       const role = useAuthStore.getState().user?.role ?? user?.role;
-      if (role === UserRole.admin || role === UserRole.coach) {
-        navigate("/dashboard", { replace: true });
-      } else if (role === UserRole.parent) {
-        navigate("/my-athletes", { replace: true });
-      } else {
-        navigate("/", { replace: true });
-      }
+      navigate(landingPathForRole(role), { replace: true });
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         setServerError("Credenciales inválidas. Verifica tu correo y contraseña.");
