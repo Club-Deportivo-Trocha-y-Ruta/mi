@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
 import { setQueryClient } from "@/lib/queryClientHandle";
+import { landingPathForRole } from "@/lib/landing";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 // Lazy load: race-analysis bundle es pesado (react-markdown + AI hooks)
@@ -61,8 +62,7 @@ setQueryClient(queryClient);
 
 function RootRedirect() {
   const user = useAuthStore((s) => s.user);
-  const to = user?.role === UserRole.parent ? "/my-athletes" : "/dashboard";
-  return <Navigate to={to} replace />;
+  return <Navigate to={landingPathForRole(user?.role)} replace />;
 }
 
 export default function App() {
