@@ -515,7 +515,7 @@ def _get_upcoming_copa_valle_races(after_date: date) -> list[dict[str, Any]]:
     """Retorna las próximas válidas de la Copa Valle 2026 tras la fecha dada."""
     calendar_copa_valle_2026 = [
         {"valida": "IV", "date": "2026-05-17", "location": "Cali", "priority": "A"},
-        {"valida": "CD", "date": "2026-06-26", "location": "Ginebra", "priority": "A"},
+        {"valida": "CD", "date": "2026-06-12", "location": "Ginebra", "priority": "A"},
         {"valida": "V", "date": "2026-08-01", "location": "Palmira", "priority": "B"},
         {"valida": "VI", "date": "2026-09-12", "location": "Roldanillo", "priority": "A"},
         {"valida": "VII", "date": "2026-10-18", "location": "Yumbo", "priority": "B"},

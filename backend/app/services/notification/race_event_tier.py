@@ -73,7 +73,7 @@ _CALENDAR_TIERS: dict[tuple[int, int], RaceTier] = {
     (2026, 2): RaceTier.UNKNOWN,  # II 28-feb Ginebra — ya completada, sin clasif
     (2026, 3): RaceTier.C,        # III 19-abr La Cumbre (diagnóstica)
     (2026, 4): RaceTier.A,        # IV  17-may Cali (A)
-    (2026, 99): RaceTier.CD,      # CD  26-jun Ginebra (Cto. Departamental)
+    (2026, 99): RaceTier.CD,      # CD  12-jun Ginebra (Cto. Departamental)
     (2026, 5): RaceTier.B,        # V   01-ago Palmira (B)
     (2026, 6): RaceTier.A,        # VI  12-sep Roldanillo (A)
     (2026, 7): RaceTier.B,        # VII 18-oct Yumbo (B)

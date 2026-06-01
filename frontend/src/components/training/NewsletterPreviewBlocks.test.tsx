@@ -317,13 +317,13 @@ describe("NewsletterPreviewBlocks — bloque badges", () => {
       <NewsletterPreviewBlocks
         emailBlocks={{
           badges: {
-            badges: [{ badge_type: "first_podium", label: "Primer Podio" }],
+            badges: [{ badge_type: "first_podium", label: "Primer Top 5" }],
           },
         }}
         badges={null}
       />,
     );
-    expect(screen.getByText(/Primer Podio/i)).toBeInTheDocument();
+    expect(screen.getByText(/Primer Top 5/i)).toBeInTheDocument();
   });
 
   it("muestra 'Sin insignias' cuando no hay badges", () => {

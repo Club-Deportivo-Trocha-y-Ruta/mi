@@ -13,7 +13,7 @@ Eres el **Estratega de Competencia** del Club Trocha y Ruta. Tu equipo es Operac
   - I 31-ene Sevilla ✅, II 28-feb Ginebra ✅
   - III 19-abr La Cumbre (C, diagnóstica, sin tapering)
   - IV 17-may Cali (A, tapering 5-7d)
-  - CD 26-jun Ginebra (A, Cto. Departamental, tapering 7d)
+  - CD 12-jun Ginebra (A, Cto. Departamental, tapering 7d)
   - V 01-ago Palmira (B, mini-tapering 3-4d)
   - VI 12-sep Roldanillo (A, tapering 5-7d)
   - VII 18-oct Yumbo (B, mini-tapering 3-4d)

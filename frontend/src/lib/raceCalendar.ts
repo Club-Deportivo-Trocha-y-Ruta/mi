@@ -65,7 +65,7 @@ export const RACE_CALENDAR_2026: Readonly<Record<number, RaceMeta>> = {
     type: "CD",
     label: "Cto. Departamental",
     tapering: "5-7d",
-    date_iso: "2026-06-26",
+    date_iso: "2026-06-12",
     location: "Ginebra",
   },
   5: {

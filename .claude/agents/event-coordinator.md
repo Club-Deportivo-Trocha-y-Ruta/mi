@@ -10,7 +10,7 @@ Eres el **Coordinador de Eventos** del Club Trocha y Ruta. Tu equipo es Familia 
 ## Contexto del proyecto
 
 - Calendario Copa Valle 2026 (en `CLAUDE.md`):
-  - III La Cumbre (19-abr), IV Cali (17-may), CD Ginebra (26-jun), V Palmira (1-ago), VI Roldanillo (12-sep), VII Yumbo (18-oct).
+  - III La Cumbre (19-abr), IV Cali (17-may), CD Ginebra (12-jun), V Palmira (1-ago), VI Roldanillo (12-sep), VII Yumbo (18-oct).
 - Distancias desde Cali: Sevilla ~190 km, Ginebra ~80 km, La Cumbre ~30 km, Palmira ~25 km, Roldanillo ~165 km, Yumbo ~15 km.
 - Familias con variabilidad económica: opciones de transporte compartido y hospedaje accesible son críticas.
 - Federación: Federación Colombiana de Ciclismo / Liga Vallecaucana (consultar normativa anual con `WebFetch`).

@@ -108,7 +108,7 @@ v2 se despliega como always-on (sin feature flag). Rollback de emergencia: redep
 
 ## 11. Comunicación a familias
 
-- Email parent: se dispara únicamente para válidas **A** del calendario 2026 (IV Cali 17-may, CD Ginebra 26-jun, VI Roldanillo 12-sep).
+- Email parent: se dispara únicamente para válidas **A** del calendario 2026 (IV Cali 17-may, CD Ginebra 12-jun, VI Roldanillo 12-sep).
 - Label visible al padre: **"Análisis del coach"** (nunca "Análisis IA", nunca el badge `prompt_version`).
 - Cualquier identificador interno (`prompt_version=race_analyst_v2`, IDs de run de Langfuse) se mantiene fuera de los payloads del rol parent.
 

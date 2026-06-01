@@ -147,11 +147,13 @@ def _build_fetch_results_tool(db_factory: Optional[Callable[[], AsyncSession]] =
         if not results:
             return "(sin resultados)"
 
+        from app.services.race.agents.analyst import _format_ms_hhmmss
+
         out: list[str] = []
         for r in results:
             pos = getattr(r, "position", "—")
             time_ms = getattr(r, "race_time_ms", None)
-            time_str = f"{time_ms} ms" if time_ms else "—"
+            time_str = _format_ms_hhmmss(time_ms)
             event_id = getattr(r, "event_id", "?")
             out.append(f"- event_id={event_id}, pos={pos}, race_time={time_str}")
         return "\n".join(out)

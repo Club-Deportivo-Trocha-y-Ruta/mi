@@ -93,7 +93,7 @@ describe("NewsletterPreviewBlocks — accesibilidad", () => {
             results: [{ race_name: "Válida IV", position: 5, category: "JUV-M" }],
           },
           calendar: {
-            upcoming: [{ name: "Cto. Departamental", date: "2026-06-26", phase: "A" }],
+            upcoming: [{ name: "Cto. Departamental", date: "2026-06-12", phase: "A" }],
           },
           support_at_home: {
             hydration: "Asegurar 2 litros al día.",
@@ -102,7 +102,7 @@ describe("NewsletterPreviewBlocks — accesibilidad", () => {
         }}
         badges={[
           { badge_type: "attendance_90", label: "Asistencia 90%" },
-          { badge_type: "first_podium", label: "Primer podio" },
+          { badge_type: "first_podium", label: "Primer Top 5" }, // Copa Valle XCO juvenil premia hasta puesto 5
         ]}
       />,
     );

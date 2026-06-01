@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
+
+_BOGOTA_TZ = ZoneInfo("America/Bogota")
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -158,7 +161,7 @@ class DocumentGenerator:
     def _enrich_context(self, context: dict) -> dict:
         """Agrega campos automáticos: generated_at, club_name."""
         enriched = dict(context)
-        enriched.setdefault("generated_at", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+        enriched.setdefault("generated_at", datetime.now(_BOGOTA_TZ).strftime("%Y-%m-%d %H:%M COT"))
         enriched.setdefault("club_name", self._club_name)
         return enriched
 

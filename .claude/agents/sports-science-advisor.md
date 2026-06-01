@@ -59,7 +59,7 @@ I   31-ene  Sevilla      Completada
 II  28-feb  Ginebra      Completada
 III 19-abr  La Cumbre    C  (diagnostica, sin tapering)
 IV  17-may  Cali         A  (tapering completo 5-7 dias)
-CD  26-jun  Ginebra      A  (tapering completo 7 dias) - Cto. Departamental
+CD  12-jun  Ginebra      A  (tapering completo 7 dias) - Cto. Departamental
 V   01-ago  Palmira      B  (mini-tapering 3-4 dias)
 VI  12-sep  Roldanillo   A  (tapering completo 5-7 dias)
 VII 18-oct  Yumbo        B  (mini-tapering 3-4 dias)

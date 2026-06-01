@@ -272,14 +272,34 @@ def _split_sections_v2(markdown: str) -> dict[str, str]:
     return sections
 
 
+def _format_ms_hhmmss(ms: Any) -> str:
+    """Convierte milisegundos a ``hh:mm:ss`` (o ``—`` si vacío/no numérico)."""
+    if ms is None or ms == "" or str(ms) == "<NA>":
+        return "—"
+    try:
+        total_sec = int(round(int(ms) / 1000))
+    except (TypeError, ValueError):
+        return "—"
+    h, rem = divmod(total_sec, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:d}:{m:02d}:{s:02d}"
+
+
 def _progression_to_md(records: list[dict[str, Any]]) -> str:
     """Convierte records de progresión a tabla markdown corta."""
     if not records:
         return "_(sin resultados previos en esta temporada)_"
-    headers = ["valida_num", "event_date", "position", "race_time_ms", "points_awarded"]
+    headers = ["valida_num", "event_date", "position", "race_time", "points_awarded"]
     lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
     for r in records:
-        row = [str(r.get(h, "")) for h in headers]
+        race_time_fmt = _format_ms_hhmmss(r.get("race_time_ms"))
+        row = [
+            str(r.get("valida_num", "")),
+            str(r.get("event_date", "")),
+            str(r.get("position", "")),
+            race_time_fmt,
+            str(r.get("points_awarded", "")),
+        ]
         lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines)
 
@@ -289,10 +309,10 @@ def _podium_to_md(podium: dict[str, Any]) -> str:
     if not podium or not podium.get("podium"):
         return "_(sin datos de podio para el evento foco)_"
     finishers = podium.get("finishers_count", 0)
-    out = [f"**Finalizaron:** {finishers}", "", "| Posición | competitor_id | race_time_ms |", "| --- | --- | --- |"]
+    out = [f"**Finalizaron:** {finishers}", "", "| Posición | competitor_id | race_time |", "| --- | --- | --- |"]
     for row in podium["podium"]:
         out.append(
-            f"| {row['position']} | {row['competitor_id']} | {row.get('race_time_ms', '—')} |"
+            f"| {row['position']} | {row['competitor_id']} | {_format_ms_hhmmss(row.get('race_time_ms'))} |"
         )
     return "\n".join(out)
 
@@ -677,8 +697,8 @@ class RaceAnalystAgent:
                 compact_season.append({
                     "valida_num": r.get("valida_num"),
                     "position": r.get("position"),
-                    "race_time_ms": r.get("race_time_ms"),
-                    "gap_to_winner_ms": r.get("gap_to_winner_ms"),
+                    "race_time": _format_ms_hhmmss(r.get("race_time_ms")),
+                    "gap_to_winner": _format_ms_hhmmss(r.get("gap_to_winner_ms")),
                     "gap_pct": r.get("gap_pct"),
                 })
 

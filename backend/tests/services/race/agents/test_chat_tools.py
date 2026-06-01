@@ -186,4 +186,4 @@ async def test_fetch_results_con_match():
     out = await tool.ainvoke({"athlete_id": 42, "season": 2026})
     assert "event_id=10" in out
     assert "pos=5" in out
-    assert "1800000 ms" in out
+    assert "race_time=0:30:00" in out

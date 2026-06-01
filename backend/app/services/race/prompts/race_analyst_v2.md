@@ -37,7 +37,8 @@ Estas reglas vienen del marco teórico-metodológico del club y son **no negocia
 ## Restricciones por sección (OBLIGATORIO)
 
 ### Sección 1 "Qué pasó en esta válida"
-- **SÍ incluir:** posición final, tiempo de carrera, gap al líder, número de vueltas completadas, si hubo abandono, condiciones de clima, tipo de pista.
+- **SÍ incluir:** posición final, tiempo de carrera (formato `hh:mm:ss`), gap al líder, número de vueltas completadas, si hubo abandono, condiciones de clima, tipo de pista.
+- **Formato de tiempos OBLIGATORIO:** los tiempos en las tablas vienen como `hh:mm:ss`. Cítalos así en la narrativa (ej: "registró un tiempo de 0:59:05"). **PROHIBIDO** expresar tiempos en milisegundos o segundos.
 - **Verbos permitidos:** completó, registró, finalizó, participó, alcanzó.
 - **PROHIBIDO:** adjetivos valorativos (destacada, decepcionante, brillante, mediocre, excelente, pobre); comparaciones de mérito ("fue la mejor", "no estuvo a la altura"); atribuciones causales subjetivas ("le faltó ganas", "no entrenó suficiente"). Usar siempre "la deportista" o pronombres — **NUNCA pseudónimo, alias ni dorsal**.
 
@@ -161,10 +162,10 @@ Para que el critic pueda validar, cada recomendación debe ir como bullet con su
 
 La atleta ha disputado {{ season_progression|length }} válidas en esta temporada (incluyendo la del set lanzado). Usa estos datos para construir la tendencia longitudinal en la sección "Recorrido hasta acá":
 
-| válida | posición | tiempo (ms) | gap líder (ms) | gap_pct |
+| válida | posición | tiempo (hh:mm:ss) | gap líder (hh:mm:ss) | gap_pct |
 | --- | --- | --- | --- | --- |
 {% for r in season_progression -%}
-| {{ r.valida_num }} | {{ r.position }} | {{ r.race_time_ms }} | {{ r.gap_to_winner_ms }} | {{ "%.1f"|format(r.gap_pct) if r.gap_pct is not none else "—" }}% |
+| {{ r.valida_num }} | {{ r.position }} | {{ r.race_time }} | {{ r.gap_to_winner }} | {{ "%.1f"|format(r.gap_pct) if r.gap_pct is not none else "—" }}% |
 {% endfor %}
 
 **OBLIGATORIO en la sección "Recorrido hasta acá":**

@@ -11,7 +11,7 @@ Insignias disponibles:
     attendance_90  — ≥90%
     attendance_75  — ≥75%
   Competitivas:
-    first_podium   — Primer podio (P1/P2/P3) histórico del atleta
+    first_podium   — Primer Top 5 (posición ≤5) histórico del atleta. Copa Valle XCO juvenil premia hasta puesto 5.
     mtp            — Mejor Tiempo Personal en una carrera del periodo
     top10          — Posición ≤10 en alguna carrera del periodo
 """
@@ -287,17 +287,18 @@ async def _evaluate_race_badges(
             },
         })
 
-    # Primer podio histórico: P1/P2/P3 en este periodo Y no tiene podios previos
-    podium_results = [r for r in results if r.position is not None and r.position <= 3]
+    # Primer Top 5 histórico: posición ≤5 en este periodo Y no tiene Top 5 previos.
+    # Copa Valle XCO juvenil premia hasta puesto 5 → ese es el "podio" oficial.
+    podium_results = [r for r in results if r.position is not None and r.position <= 5]
     if podium_results:
-        # Verificar si ya tenía podios antes de este periodo
+        # Verificar si ya tenía Top 5 antes de este periodo
         prev_podium_result = await db.execute(
             select(RaceResult).join(
                 RaceEvent,
                 RaceEvent.id == RaceResult.event_id,
             ).where(
                 RaceResult.competitor_id.in_(competitor_ids),
-                RaceResult.position <= 3,
+                RaceResult.position <= 5,
                 RaceResult.status == ResultStatus.FINISHED,
                 RaceEvent.event_date < month_start,
             ).limit(1)

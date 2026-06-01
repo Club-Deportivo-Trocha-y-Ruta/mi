@@ -106,7 +106,7 @@ export function confidenceLabel(confidence: InsightConfidence): string {
  *   II  28-feb (2026-02)  → C
  *   III 19-abr (2026-04)  → C  (diagnóstica)
  *   IV  17-may (2026-05)  → A  (tapering completo)
- *   CD  26-jun (2026-06)  → CD (Campeonato Departamental)
+ *   CD  12-jun (2026-06)  → CD (Campeonato Departamental)
  *   V   01-ago (2026-08)  → B  (mini-tapering)
  *   VI  12-sep (2026-09)  → A
  *   VII 18-oct (2026-10)  → B
