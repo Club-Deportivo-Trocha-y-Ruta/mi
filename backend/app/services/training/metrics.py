@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+from collections import Counter
 from datetime import date
 
 from sqlalchemy import select
@@ -53,6 +54,28 @@ async def compute_monthly_metrics(
         {s.technical_focus for s in sessions if s.technical_focus}
     )
 
+    # SPEC 1 — Volumen de entrenamiento (minutos). Planificado = sesiones que se
+    # iban a hacer (no canceladas); ejecutado = solo las realmente ejecutadas.
+    total_minutes_planned = sum(
+        s.duration_min
+        for s in sessions
+        if s.status in (SessionStatus.PLANNED, SessionStatus.EXECUTED)
+    )
+    total_minutes_executed = sum(
+        s.duration_min for s in sessions if s.status == SessionStatus.EXECUTED
+    )
+    weeks_in_month = last_day / 7
+    avg_hours_per_week = (
+        round(total_minutes_executed / 60 / weeks_in_month, 1)
+        if total_minutes_executed > 0
+        else None
+    )
+
+    # SPEC 1 — Frecuencia de cada foco técnico (nº de sesiones que lo trabajaron).
+    technical_focus_counts = dict(
+        Counter(s.technical_focus for s in sessions if s.technical_focus)
+    )
+
     if not session_ids:
         return MonthlyMetrics(
             club_id=club_id,
@@ -75,6 +98,15 @@ async def compute_monthly_metrics(
         )
     )
     all_attendance = list(attendance_result.scalars().all())
+
+    # SPEC 1 — Conteos de asistencia a nivel club por estado.
+    attendance_status_totals = {
+        "presente": sum(1 for a in all_attendance if a.status == AttendanceStatus.PRESENTE),
+        "tarde": sum(1 for a in all_attendance if a.status == AttendanceStatus.TARDE),
+        "justificado": sum(1 for a in all_attendance if a.status == AttendanceStatus.JUSTIFICADO),
+        "ausente": sum(1 for a in all_attendance if a.status == AttendanceStatus.AUSENTE),
+        "lesionado": sum(1 for a in all_attendance if a.status == AttendanceStatus.LESIONADO),
+    }
 
     # Estadísticas por atleta
     athlete_stats: dict[int, dict] = {}
@@ -144,4 +176,9 @@ async def compute_monthly_metrics(
         avg_rubric_effort=avg_rubric_effort,
         avg_rubric_attitude=avg_rubric_attitude,
         avg_rubric_technique=avg_rubric_technique,
+        total_minutes_planned=total_minutes_planned,
+        total_minutes_executed=total_minutes_executed,
+        avg_hours_per_week=avg_hours_per_week,
+        technical_focus_counts=technical_focus_counts,
+        attendance_status_totals=attendance_status_totals,
     )

@@ -69,6 +69,15 @@ from app.services.race.ai.runner import (
     submit_run,
 )
 from app.services.race.schemas import ChatResponse
+from app.schemas.season_panorama import (
+    SeasonPanoramaAthleteItem,
+    SeasonPanoramaResponse,
+)
+from app.services.permissions import user_club_role
+from app.services.race.season_panorama import fetch_season_panorama
+from app.services.race.run_staleness import mark_run_stale
+from app.models.club import ClubMember
+from pydantic import BaseModel as _BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -1342,6 +1351,213 @@ async def admin_ai_usage(
         fail_rate=round(fail_rate, 4),
         by_prompt_version=by_pv,
     )
+
+
+# ---------------------------------------------------------------------------
+# Panorama de temporada (PR3 unificación /competitions)
+# ---------------------------------------------------------------------------
+
+
+async def _resolve_panorama_club_id(
+    db: AsyncSession,
+    current_user: User,
+    club_id_param: Optional[int],
+) -> Optional[int]:
+    """Resuelve el club para el panorama de temporada.
+
+    - admin: usa ``club_id`` si se pasa (verificado a nivel existencia por la
+      query); si se omite ⇒ ``None`` = panorama global (todos los clubes).
+    - coach: ignora ``club_id`` ajeno y SIEMPRE usa su propio club (defensa:
+      un coach no puede inspeccionar otro club). Si pasa un ``club_id`` del
+      que no es miembro ⇒ 403.
+    """
+    if current_user.role == UserRole.admin:
+        return club_id_param  # None ⇒ global
+
+    # coach: resolver su club. Si pasa club_id, debe ser uno suyo.
+    if club_id_param is not None:
+        role = await user_club_role(db, current_user.id, club_id_param)
+        if role is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No eres miembro del club indicado",
+            )
+        return club_id_param
+
+    stmt = (
+        select(ClubMember.club_id)
+        .where(ClubMember.user_id == current_user.id)
+        .order_by(ClubMember.club_id)
+        .limit(1)
+    )
+    res = await db.execute(stmt)
+    first_club_id = res.scalar_one_or_none()
+    if first_club_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No perteneces a ningún club.",
+        )
+    return int(first_club_id)
+
+
+@router.get(
+    "/insights/season/{year}",
+    response_model=SeasonPanoramaResponse,
+    summary="Panorama agregado de una temporada",
+    description=(
+        "Vista agregada por deportista a lo largo de todas las válidas de una "
+        "temporada (válidas + podios + puntos + mejor posición). "
+        "RBAC: coach/admin. Parents → 403. Una sola query agregada (sin N+1)."
+    ),
+    responses={
+        200: {"model": SeasonPanoramaResponse},
+        403: {"description": "Solo coach/admin."},
+    },
+)
+async def season_panorama(
+    year: int,
+    club_id: Optional[int] = Query(
+        default=None,
+        ge=1,
+        description=(
+            "Club a consultar. Coach: opcional, se fuerza su club. "
+            "Admin: opcional, si se omite es panorama global (todos los clubes)."
+        ),
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+) -> SeasonPanoramaResponse:
+    """``GET /api/race-analysis/insights/season/{year}`` (coach/admin)."""
+    resolved_club_id = await _resolve_panorama_club_id(db, current_user, club_id)
+
+    rows = await fetch_season_panorama(db, season=year, club_id=resolved_club_id)
+
+    items = [
+        SeasonPanoramaAthleteItem(
+            athlete_id=row.athlete_id,
+            athlete_display_name=f"{row.first_name} {row.last_name}",
+            races_count=row.races_count,
+            wins=row.wins,
+            podiums=row.podiums,
+            best_position=row.best_position,
+            total_points=row.total_points,
+        )
+        for row in rows
+    ]
+
+    return SeasonPanoramaResponse(
+        season=year,
+        total_athletes=len(items),
+        items=items,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Re-trigger IA + flag stale (PR5 unificación /competitions)
+# ---------------------------------------------------------------------------
+
+
+class RunInvalidateResponse(_BaseModel):
+    run_id: str
+    stale: bool
+
+
+@router.post(
+    "/runs/{run_id}/invalidate",
+    response_model=RunInvalidateResponse,
+    summary="Marca un run de análisis como desactualizado (stale)",
+    description=(
+        "Marca el run como 'análisis desactualizado'. Idempotente. "
+        "Usado tras una re-ingesta que cambió los resultados. NO re-ejecuta "
+        "nada (D5: el re-trigger es manual). RBAC coach/admin + owner."
+    ),
+    responses={
+        200: {"model": RunInvalidateResponse},
+        403: {"description": "No eres owner del run."},
+        404: {"description": "Run no existe."},
+    },
+)
+async def invalidate_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+) -> RunInvalidateResponse:
+    """``POST /api/race-analysis/runs/{run_id}/invalidate`` (coach/admin)."""
+    run = await _load_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run no encontrado")
+    _ensure_run_owner(run, current_user)
+    await mark_run_stale(db, int(run["id"]))
+    return RunInvalidateResponse(run_id=run_id, stale=True)
+
+
+@router.post(
+    "/runs/{run_id}/re-execute",
+    response_model=StartRunResponse,
+    summary="Re-ejecuta un análisis desactualizado (manual, D5)",
+    description=(
+        "Lanza un NUEVO run agéntico reutilizando los parámetros del run "
+        "original (athlete, temporada, válidas). Acción MANUAL del coach con "
+        "confirmación — NO hay cron ni auto-trigger (D5). RBAC coach/admin + owner."
+    ),
+    responses={
+        200: {"model": StartRunResponse},
+        403: {"description": "No eres owner del run."},
+        404: {"description": "Run no existe."},
+        503: {"description": "AI deshabilitada o presupuesto excedido."},
+    },
+)
+async def re_execute_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+) -> StartRunResponse:
+    """``POST /api/race-analysis/runs/{run_id}/re-execute`` (coach/admin)."""
+    run = await _load_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run no encontrado")
+    _ensure_run_owner(run, current_user)
+
+    # Reconstruir los parámetros originales desde input_json.
+    import json as _json
+
+    raw = run.get("input_json")
+    if isinstance(raw, str):
+        try:
+            params = _json.loads(raw)
+        except (ValueError, TypeError):
+            params = {}
+    elif isinstance(raw, dict):
+        params = raw
+    else:
+        params = {}
+
+    athlete_id = params.get("athlete_id")
+    season = params.get("season")
+    if athlete_id is None or season is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="El run original no tiene parámetros suficientes para re-ejecutar.",
+        )
+
+    valida_nums = params.get("valida_nums") or None  # [] inválido → None = todas
+
+    try:
+        body = StartRunRequest(
+            athlete_id=athlete_id,
+            season=season,
+            valida_nums=valida_nums,
+            explain_mode=bool(params.get("explain_mode", False)),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Parámetros del run original inválidos: {exc}",
+        )
+
+    # Delegar al launcher canónico (valida AI_ENABLED, budget, backpressure).
+    # El run viejo conserva su marca stale; el nuevo run lo supersede.
+    return await start_run(body=body, db=db, current_user=current_user)
 
 
 __all__ = ["router"]

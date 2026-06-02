@@ -381,7 +381,7 @@ class TestModelAttributes:
         cols = {c.name for c in MonthlyReport.__table__.columns}
         required = {
             "id", "club_id", "year", "month", "ai_summary",
-            "metrics_snapshot", "generated_by_user_id", "generated_at", "sent_at",
+            "metrics_snapshot", "generated_by_user_id", "generated_at",
         }
         assert required.issubset(cols)
 

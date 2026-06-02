@@ -306,7 +306,9 @@ class MonthlyReportRead(BaseModel):
     coach_observations: str | None
     generated_by_user_id: int
     generated_at: datetime
-    sent_at: datetime | None
+    # Mapa id_atleta (str) -> "Nombre Apellido". Solo se rellena para coach/admin
+    # en el endpoint de detalle; vacío para padres (privacidad de menores).
+    athlete_names: dict[str, str] = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
 
@@ -364,3 +366,14 @@ class MonthlyMetrics(BaseModel):
     avg_rubric_effort: float | None
     avg_rubric_attitude: float | None
     avg_rubric_technique: float | None
+    # SPEC 1 — datos ya recolectados que enriquecen el reporte (defaults seguros
+    # para reportes antiguos cuyo snapshot no los incluye):
+    # Volumen de entrenamiento (minutos). Planificado = sesiones no canceladas.
+    total_minutes_planned: int = 0
+    total_minutes_executed: int = 0
+    avg_hours_per_week: float | None = None
+    # Frecuencia de cada foco técnico (cuántas sesiones lo trabajaron).
+    technical_focus_counts: dict[str, int] = Field(default_factory=dict)
+    # Conteos de asistencia a nivel club por estado (presente/tarde/justificado/
+    # ausente/lesionado).
+    attendance_status_totals: dict[str, int] = Field(default_factory=dict)

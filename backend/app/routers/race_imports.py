@@ -80,12 +80,19 @@ from app.schemas.race_imports import (
     MatchPreview,
     ParseHeaderInfo,
     ParseWarning,
+    RaceEventDiffResponse,
+    REVISION_REASON_LABELS,
+    RevisionReasonCode,
+    RevisionReasonOption,
+    RevisionReasonsResponse,
     TyrAthleteRef,
     UploadUserRef,
 )
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
 from app.services.race.revision import detect_revision
+from app.services.race.revision_diff_view import build_event_diff_view
+from app.services.race.run_staleness import invalidate_runs_for_event
 from app.services.training import storage_sftp
 
 logger = logging.getLogger(__name__)
@@ -1020,7 +1027,29 @@ async def commit_import(
     # Limpiar parse_meta_json y enlazar event_id en RaceImport
     imp.event_id = report.event_id
     imp.parse_meta_json = None
+    # PR4: persistir el motivo de revisión (catálogo cerrado) si se envió.
+    # Pydantic ya validó que sea un RevisionReasonCode válido. Guardamos el
+    # code (string) — nunca texto libre.
+    is_revision = body.revision_reason is not None
+    if is_revision:
+        imp.revision_reason = body.revision_reason.value
     await db.flush()
+
+    # PR5 (D5): si fue una re-ingesta (revisión), marcamos como stale los
+    # análisis IA basados en los resultados ahora corregidos + boletines
+    # enviados como outdated (D3). NO se re-ejecuta nada automáticamente —
+    # el coach decide el re-trigger manualmente.
+    if is_revision and report.event_id is not None:
+        try:
+            await invalidate_runs_for_event(db, int(report.event_id))
+            await db.flush()
+        except Exception as exc:  # noqa: BLE001
+            # No bloquea el commit: la invalidación es best-effort.
+            logger.warning(
+                "race_import_commit invalidate_runs failed parse_id=%s err=%s",
+                parse_id,
+                exc,
+            )
 
     logger.info(
         "race_import_commit parse_id=%s event_id=%s results_inserted=%d "
@@ -1113,3 +1142,45 @@ async def list_imports(
         )
 
     return ImportListResponse(items=items, total=total)
+
+
+@router.get(
+    "/revision-reasons",
+    response_model=RevisionReasonsResponse,
+    summary="Catálogo cerrado de motivos de revisión",
+    description=(
+        "Devuelve los motivos permitidos para una re-ingesta (revisión). "
+        "El frontend usa este catálogo para poblar el dropdown — sin texto "
+        "libre (privacidad menores). RBAC coach/admin."
+    ),
+)
+async def list_revision_reasons(
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> RevisionReasonsResponse:
+    """``GET /api/race-analysis/imports/revision-reasons`` (coach/admin)."""
+    return RevisionReasonsResponse(
+        options=[
+            RevisionReasonOption(code=code.value, label=REVISION_REASON_LABELS[code])
+            for code in RevisionReasonCode
+        ]
+    )
+
+
+@router.get(
+    "/{race_event_id}/diff",
+    response_model=RaceEventDiffResponse,
+    summary="Diff de la última revisión de una válida (read-only)",
+    description=(
+        "Devuelve los cambios aplicados en la última re-ingesta (revisión) de "
+        "la válida, agrupados por: posición, tiempo, gap GC, recategorización y "
+        "nuevos/eliminados. Read-only: NO recomputa contra un PDF. "
+        "RBAC coach/admin. Si la válida no tiene revisiones → has_revision=false."
+    ),
+)
+async def get_event_revision_diff(
+    race_event_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> RaceEventDiffResponse:
+    """``GET /api/race-analysis/imports/{race_event_id}/diff`` (coach/admin)."""
+    return await build_event_diff_view(db, race_event_id)

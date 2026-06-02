@@ -8,7 +8,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 const COACH_EMAIL = 'entrenador@trochyruta.com';
 const COACH_PASSWORD = 'Coach2026!';
-const PARENT_EMAIL = 'padre@trochyruta.com';
+const PARENT_EMAIL = 'padre@trochayruta.com';
 const PARENT_PASSWORD = 'Parent2026!';
 
 // ---------------------------------------------------------------------------
@@ -17,16 +17,16 @@ const PARENT_PASSWORD = 'Parent2026!';
 
 async function loginAsCoach(page: Page) {
   await page.goto('/login');
-  await page.getByLabel(/email/i).fill(COACH_EMAIL);
-  await page.getByLabel(/contraseña|password/i).fill(COACH_PASSWORD);
+  await page.getByRole('textbox', { name: /correo/i }).fill(COACH_EMAIL);
+  await page.getByRole('textbox', { name: /contraseña/i }).fill(COACH_PASSWORD);
   await page.getByRole('button', { name: /iniciar sesión|ingresar/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
 
 async function loginAsParent(page: Page) {
   await page.goto('/login');
-  await page.getByLabel(/email/i).fill(PARENT_EMAIL);
-  await page.getByLabel(/contraseña|password/i).fill(PARENT_PASSWORD);
+  await page.getByRole('textbox', { name: /correo/i }).fill(PARENT_EMAIL);
+  await page.getByRole('textbox', { name: /contraseña/i }).fill(PARENT_PASSWORD);
   await page.getByRole('button', { name: /iniciar sesión|ingresar/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
@@ -45,9 +45,59 @@ async function goToParentDetail(page: Page, parentId: number) {
 // Constantes del seed
 // ---------------------------------------------------------------------------
 
-// El padre de prueba con atletas vinculados (seed: Luis Rodriguez, padre-coach-db2fabb1@test.com)
-// El ID 29 es el que muestra la UI del screenshot; si el seed cambia, actualizar aquí.
+// El padre de prueba con atletas vinculados (su atleta ya tiene la cuenta
+// ACTIVADA en el seed → muestra "Cuenta activada" + historial de invitaciones).
+// Útil para INV-001/006/008/009. Si el seed cambia, actualizar aquí.
 const PARENT_WITH_ATHLETES_ID = 29;
+
+// Padres del seed cuyo (único) atleta está en estado "formulario de envío"
+// (sin invitación usada ni pendiente) → la tarjeta muestra el input de correo
+// y el botón "Enviar invitacion". Cada test que muta estado usa un padre
+// distinto para evitar contaminación cruzada bajo ejecución paralela.
+//   - parent 4   (Carlos Garcia → Santiago Lopez)  — no-mutación (botón disabled)
+//   - parent 225 (Padre Test)                       — INV-002 envía (muta)
+//   - parent 227 (Padre Test)                       — INV-003 reenvía (auto-siembra)
+//   - parent 229 (Padre Test)                       — INV-005 email inválido (no-mutación)
+//   - parent 248 (PadreA SinEmail)                  — INV-007 activa (auto-siembra)
+const PARENT_SENDFORM_DISABLED_ID = 4;
+const PARENT_SENDFORM_SEND_ID = 225;
+const PARENT_SENDFORM_RESEND_ID = 227;
+const PARENT_SENDFORM_INVALID_ID = 229;
+const PARENT_SENDFORM_ACTIVE_ID = 248;
+
+const TEST_INVITE_EMAIL = 'test-invite-e2e@example.com';
+
+/**
+ * Garantiza que la tarjeta de invitación del (único) atleta del padre quede en
+ * estado "pendiente/activa". El seed no trae invitaciones pendientes, así que
+ * si la tarjeta muestra el formulario de envío, enviamos una invitación.
+ *
+ * Idempotente: si una corrida previa ya dejó la invitación pendiente (los
+ * tests mutan estado real en MySQL), el formulario ya no aparece y saltamos
+ * el envío. Tras enviar recargamos para forzar el refetch del panel activo
+ * (evita la carrera entre el mensaje de éxito inmediato y la invalidación de
+ * la query de invitaciones).
+ */
+async function ensureActiveInvite(page: Page) {
+  const emailInput = page.getByPlaceholder(/correo@ejemplo.com/i).first();
+  const activePanel = page.getByText(/Invitacion activa/i);
+
+  if (await emailInput.isVisible().catch(() => false)) {
+    await emailInput.fill(TEST_INVITE_EMAIL);
+    await page.getByRole('button', { name: /Enviar invitacion/i }).first().click();
+    await expect(
+      page.getByText(/Invitacion enviada correctamente\./i),
+    ).toBeVisible({ timeout: 8_000 });
+    // Recargar fuerza un fetch fresco de las invitaciones → el panel "activa"
+    // se renderiza de forma determinista (no dependemos del refetch en vuelo).
+    await page.reload();
+    await expect(page.getByText(/Invitaciones al portal/i)).toBeVisible({
+      timeout: 10_000,
+    });
+  }
+
+  await expect(activePanel).toBeVisible({ timeout: 8_000 });
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -68,34 +118,41 @@ test('E2E-INV-001: coach ve sección "Invitaciones al portal" con tarjeta por at
 // E2E-INV-002 — Happy path: enviar invitación nueva a atleta sin invitación activa
 test('E2E-INV-002: coach envía invitación nueva y ve confirmación "Invitacion enviada correctamente."', async ({ page }) => {
   await loginAsCoach(page);
-  await goToParentDetail(page, PARENT_WITH_ATHLETES_ID);
+  // Padre con atleta en estado "formulario de envío" (sin invitación previa).
+  await goToParentDetail(page, PARENT_SENDFORM_SEND_ID);
 
-  // Localizar la tarjeta que NO tiene invitación activa (tiene campo de email visible)
-  // El componente oculta el formulario cuando hay invitación activa y muestra botón "Reenviar"
   const emailInput = page.getByPlaceholder(/correo@ejemplo.com/i).first();
-  await expect(emailInput).toBeVisible();
 
-  // Llenar con email de prueba (no es un email real de atleta)
-  await emailInput.fill('test-invite-e2e@example.com');
-
-  // Click en "Enviar invitacion"
-  const sendButton = page.getByRole('button', { name: /Enviar invitacion/i }).first();
-  await expect(sendButton).toBeEnabled();
-  await sendButton.click();
-
-  // Verificar mensaje de confirmación
-  await expect(page.getByText(/Invitacion enviada correctamente\./i)).toBeVisible({ timeout: 8_000 });
+  // Idempotencia: en la 1ª corrida la tarjeta muestra el formulario y enviamos
+  // verificando el mensaje de éxito. En corridas posteriores (los tests mutan
+  // estado real), la invitación ya quedó pendiente → el formulario no aparece
+  // y validamos que el panel de invitación activa está presente.
+  if (await emailInput.isVisible().catch(() => false)) {
+    await emailInput.fill(TEST_INVITE_EMAIL);
+    const sendButton = page.getByRole('button', { name: /Enviar invitacion/i }).first();
+    await expect(sendButton).toBeEnabled();
+    await sendButton.click();
+    await expect(
+      page.getByText(/Invitacion enviada correctamente\./i),
+    ).toBeVisible({ timeout: 8_000 });
+  } else {
+    await expect(page.getByText(/Invitacion activa/i)).toBeVisible({
+      timeout: 8_000,
+    });
+  }
 });
 
 // E2E-INV-003 — Happy path: reenviar invitación existente (botón "Reenviar")
 test('E2E-INV-003: coach reenvía invitación activa y ve confirmación', async ({ page }) => {
   await loginAsCoach(page);
-  await goToParentDetail(page, PARENT_WITH_ATHLETES_ID);
+  // El seed no tiene invitaciones pendientes; el helper siembra una (o reusa
+  // la de una corrida previa). Padre dedicado para no contaminar otros tests.
+  await goToParentDetail(page, PARENT_SENDFORM_RESEND_ID);
+  await ensureActiveInvite(page);
 
-  // La tarjeta con invitación activa muestra el bloque "Invitacion activa" y el botón "Reenviar"
+  // La tarjeta con invitación activa muestra el botón "Reenviar".
   const reenviarButton = page.getByRole('button', { name: /^Reenviar$/i });
   await expect(reenviarButton).toBeVisible({ timeout: 8_000 });
-
   await reenviarButton.click();
 
   // Verificar mensaje de éxito — aparece en la misma tarjeta
@@ -105,7 +162,8 @@ test('E2E-INV-003: coach reenvía invitación activa y ve confirmación', async 
 // E2E-INV-004 — Campo vacío: botón "Enviar invitacion" está deshabilitado sin email
 test('E2E-INV-004: botón "Enviar invitacion" está deshabilitado cuando el campo está vacío', async ({ page }) => {
   await loginAsCoach(page);
-  await goToParentDetail(page, PARENT_WITH_ATHLETES_ID);
+  // Padre con atleta en estado formulario de envío. Este test NO muta estado.
+  await goToParentDetail(page, PARENT_SENDFORM_DISABLED_ID);
 
   // Localizar el campo de email (solo visible cuando no hay invitación activa)
   const emailInput = page.getByPlaceholder(/correo@ejemplo.com/i).first();
@@ -122,7 +180,9 @@ test('E2E-INV-004: botón "Enviar invitacion" está deshabilitado cuando el camp
 // E2E-INV-005 — Validación nativa HTML: email inválido no dispara la mutación
 test('E2E-INV-005: email inválido activa validación nativa del input type=email y no envía', async ({ page }) => {
   await loginAsCoach(page);
-  await goToParentDetail(page, PARENT_WITH_ATHLETES_ID);
+  // Padre con atleta en estado formulario de envío. El email inválido es
+  // bloqueado por la validación nativa de type=email → no muta estado.
+  await goToParentDetail(page, PARENT_SENDFORM_INVALID_ID);
 
   const emailInput = page.getByPlaceholder(/correo@ejemplo.com/i).first();
   await expect(emailInput).toBeVisible();
@@ -164,7 +224,10 @@ test('E2E-INV-006: historial de invitación muestra "Enviada:", "Vence:" y badge
 // E2E-INV-007 — Invitación activa: bloque "Invitacion activa" muestra "Vence:" (no expone email de atleta)
 test('E2E-INV-007: bloque de invitación activa muestra "Invitacion activa" y fecha de vencimiento', async ({ page }) => {
   await loginAsCoach(page);
-  await goToParentDetail(page, PARENT_WITH_ATHLETES_ID);
+  // El seed no tiene invitaciones pendientes; el helper siembra una (o reusa
+  // la de una corrida previa). Padre dedicado para no contaminar otros tests.
+  await goToParentDetail(page, PARENT_SENDFORM_ACTIVE_ID);
+  await ensureActiveInvite(page);
 
   // El bloque de invitación activa (fondo ámbar) muestra estos textos
   await expect(page.getByText(/Invitacion activa/i)).toBeVisible({ timeout: 8_000 });

@@ -110,6 +110,28 @@ describe("AppShell", () => {
       const link = screen.getByRole("link", { name: "Boletines Mensuales" });
       expect(link).toHaveAttribute("href", "/training/athlete-newsletters");
     });
+
+    // PR1 unificación /competitions: la entrada IA se consolida bajo el hub
+    // /competitions/insights. No deben quedar enlaces a la ruta legacy.
+    it("'Análisis IA carreras' debería apuntar a /competitions/insights", () => {
+      renderShell(UserRole.coach);
+      const link = screen.getByRole("link", { name: "Análisis IA carreras" });
+      expect(link).toHaveAttribute("href", "/competitions/insights");
+    });
+
+    it("NO debería quedar ningún enlace a la ruta legacy /coach/race-analysis", () => {
+      renderShell(UserRole.coach);
+      const legacy = screen
+        .queryAllByRole("link")
+        .filter((el) => el.getAttribute("href") === "/coach/race-analysis");
+      expect(legacy).toHaveLength(0);
+    });
+
+    it("debería mostrar el NavLink 'Competencias' apuntando a /competitions", () => {
+      renderShell(UserRole.coach);
+      const link = screen.getByRole("link", { name: "Competencias" });
+      expect(link).toHaveAttribute("href", "/competitions");
+    });
   });
 
   // -------------------------------------------------------------------------

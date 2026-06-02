@@ -15,6 +15,8 @@ import type {
   ImportParseRequestFields,
   ImportParseResponse,
   ImportsHistoryParams,
+  RaceEventDiffResponse,
+  RevisionReasonsResponse,
 } from "@/types/raceImports.types";
 
 const BASE = "/api/race-analysis/imports";
@@ -117,5 +119,28 @@ export async function listRaceImports(
     },
     signal: options?.signal,
   });
+  return response.data;
+}
+
+/** GET /api/race-analysis/imports/revision-reasons — catálogo cerrado (PR4). */
+export async function getRevisionReasons(options?: {
+  signal?: AbortSignal;
+}): Promise<RevisionReasonsResponse> {
+  const response = await apiClient.get<RevisionReasonsResponse>(
+    `${BASE}/revision-reasons`,
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+/** GET /api/race-analysis/imports/{race_event_id}/diff — read-only (PR4). */
+export async function getRaceEventDiff(
+  raceEventId: number,
+  options?: { signal?: AbortSignal },
+): Promise<RaceEventDiffResponse> {
+  const response = await apiClient.get<RaceEventDiffResponse>(
+    `${BASE}/${raceEventId}/diff`,
+    { signal: options?.signal },
+  );
   return response.data;
 }

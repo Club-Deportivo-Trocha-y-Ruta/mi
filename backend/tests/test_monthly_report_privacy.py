@@ -228,7 +228,6 @@ class TestMonthlyReportReadSchema:
             coach_observations=None,
             generated_by_user_id=1,
             generated_at=datetime.now(timezone.utc),
-            sent_at=None,
         )
         assert report.coach_observations is None
 

@@ -29,6 +29,7 @@ import type {
   DistributionResponse,
   EvolutionMetric,
   EvolutionResponse,
+  SeasonPanoramaResponse,
 } from "@/types/athleteRaceAnalysis.types";
 
 function buildBase(athleteId: number): string {
@@ -170,6 +171,24 @@ export async function getClubInsightsByRace(
   if (opts.limit !== undefined) params.limit = opts.limit;
   const response = await apiClient.get<ClubInsightsByRaceResponse>(
     `/api/races/${raceEventId}/club-insights`,
+    { params },
+  );
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Season panorama — agregado cross-válida por temporada (PR3)
+// GET /api/race-analysis/insights/season/{year} — coach/admin only.
+// ---------------------------------------------------------------------------
+
+export async function getSeasonPanorama(
+  year: number,
+  clubId?: number,
+): Promise<SeasonPanoramaResponse> {
+  const params: Record<string, unknown> = {};
+  if (clubId !== undefined) params.club_id = clubId;
+  const response = await apiClient.get<SeasonPanoramaResponse>(
+    `/api/race-analysis/insights/season/${year}`,
     { params },
   );
   return response.data;

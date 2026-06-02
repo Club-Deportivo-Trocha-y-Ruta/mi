@@ -307,15 +307,16 @@ export async function createMonthlyReport(
   return response.data;
 }
 
-export async function sendMonthlyReport(
+export async function downloadMonthlyReportPdf(
   clubId: number,
   year: number,
   month: number,
-): Promise<{ enviados: number; total_admins: number; sent_at: string | null }> {
-  const response = await apiClient.post(
-    `${CLUBS_BASE}/${clubId}/monthly-reports/${year}/${month}/send`,
+): Promise<Blob> {
+  const response = await apiClient.get(
+    `${CLUBS_BASE}/${clubId}/monthly-reports/${year}/${month}/pdf`,
+    { responseType: "blob" },
   );
-  return response.data;
+  return response.data as Blob;
 }
 
 export function useMonthlyReports(clubId: number | undefined) {
@@ -351,15 +352,10 @@ export function useGenerateMonthlyReport(clubId: number) {
   });
 }
 
-export function useSendMonthlyReport(clubId: number) {
-  const queryClient = useQueryClient();
+export function useDownloadMonthlyReportPdf(clubId: number) {
   return useMutation({
     mutationFn: ({ year, month }: { year: number; month: number }) =>
-      sendMonthlyReport(clubId, year, month),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["monthly-reports", clubId] });
-      void queryClient.invalidateQueries({ queryKey: ["monthly-report", clubId] });
-    },
+      downloadMonthlyReportPdf(clubId, year, month),
   });
 }
 

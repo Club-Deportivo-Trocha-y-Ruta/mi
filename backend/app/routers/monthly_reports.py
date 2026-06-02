@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
@@ -16,19 +18,20 @@ from app.dependencies import (
     get_llm_provider,
     get_notification_service,
     get_prompt_registry,
-    get_task_dispatcher,
     require_role,
 )
+from app.models.athlete import Athlete
 from app.models.training_session import MonthlyReport
 from app.models.user import User, UserRole
+from app.schemas.notification import DocumentFormat, DocumentRequest, DocumentTemplate
 from app.schemas.training_session import MonthlyReportCreate, MonthlyReportRead, ParentMonthlySummary
 from app.services.notification.service import NotificationService
-from app.services.notification.task_dispatcher import TaskDispatcher
 from app.services.permissions import can_view_monthly_report, user_club_role
 from app.services.training.reports import (
+    _month_label,
+    build_report_photo_evidence,
     generate_monthly_report,
     parent_monthly_summary,
-    send_monthly_report_email,
 )
 
 router = APIRouter()
@@ -194,30 +197,45 @@ async def get_monthly_report(
     # Padres ven el reporte agregado pero sin observaciones individuales del coach
     if current_user.role == UserRole.parent:
         out.coach_observations = None
+    else:
+        # Solo coach/admin reciben los nombres reales de atletas (para la tabla
+        # de asistencia del UI). Nunca a padres: verían nombres de otros menores.
+        athletes_result = await db.execute(
+            select(Athlete).where(Athlete.club_id == club_id)
+        )
+        out.athlete_names = {
+            str(a.id): f"{a.first_name} {a.last_name}"
+            for a in athletes_result.scalars().all()
+        }
 
     return out
 
 
 # ---------------------------------------------------------------------------
-# POST /api/clubs/{club_id}/monthly-reports/{year}/{month}/send
+# GET /api/clubs/{club_id}/monthly-reports/{year}/{month}/pdf
 # ---------------------------------------------------------------------------
 
 
-@router.post(
-    "/{club_id}/monthly-reports/{year}/{month}/send",
-    status_code=status.HTTP_200_OK,
+@router.get(
+    "/{club_id}/monthly-reports/{year}/{month}/pdf",
+    summary="Descargar el reporte mensual del club en PDF",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/pdf": {}}, "description": "Archivo PDF"},
+        403: {"description": "Sin acceso al club"},
+        404: {"description": "Reporte no encontrado"},
+    },
     tags=["monthly-reports"],
 )
-async def send_monthly_report(
+async def download_monthly_report_pdf(
     club_id: int,
     year: int,
     month: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     notification_service: NotificationService = Depends(get_notification_service),
-    dispatcher: TaskDispatcher = Depends(get_task_dispatcher),
-) -> dict:
-    """Envía el reporte mensual por email a todos los admins del club."""
+) -> Response:
+    """Genera y retorna el reporte mensual del club en PDF (coach/admin)."""
     club_role = await user_club_role(db, current_user.id, club_id)
     if current_user.role != UserRole.admin and club_role is None:
         raise HTTPException(
@@ -226,7 +244,9 @@ async def send_monthly_report(
         )
 
     result = await db.execute(
-        select(MonthlyReport).where(
+        select(MonthlyReport)
+        .options(selectinload(MonthlyReport.club))
+        .where(
             MonthlyReport.club_id == club_id,
             MonthlyReport.year == year,
             MonthlyReport.month == month,
@@ -239,22 +259,46 @@ async def send_monthly_report(
             detail=f"No existe reporte para {year}-{month:02d} en el club {club_id}.",
         )
 
-    try:
-        results = await send_monthly_report_email(
-            db=db,
-            report_id=report.id,
-            notification_service=notification_service,
-            dispatcher=dispatcher,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-
-    successes = sum(1 for r in results if r.success)
-    return {
-        "enviados": successes,
-        "total_admins": len(results),
-        "sent_at": report.sent_at.isoformat() if report.sent_at else None,
+    # Nombres reales de atletas del club, resueltos al renderizar (no se persisten
+    # en el snapshot). Claves str para coincidir con las del metrics_snapshot JSON.
+    athletes_result = await db.execute(
+        select(Athlete).where(Athlete.club_id == club_id)
+    )
+    athlete_names = {
+        str(a.id): f"{a.first_name} {a.last_name}"
+        for a in athletes_result.scalars().all()
     }
+
+    # Evidencia fotográfica del mes (thumbnails consentidos embebidos en base64).
+    # El helper degrada limpio: si no hay storage/fotos, retorna [].
+    photos = await build_report_photo_evidence(db, club_id, year, month)
+
+    doc_request = DocumentRequest(
+        template=DocumentTemplate.TRAINING_MONTHLY_REPORT,
+        format=DocumentFormat.PDF,
+        context={
+            "club_name": report.club.name,
+            "month_label": _month_label(report.year, report.month),
+            "season_year": str(report.year),
+            "ai_summary": report.ai_summary or "",
+            "metrics_snapshot": report.metrics_snapshot or {},
+            "coach_observations": report.coach_observations or "",
+            "athlete_names": athlete_names,
+            "photos": photos,
+        },
+        filename_hint=f"reporte_{report.year}_{report.month:02d}",
+    )
+
+    generated = await notification_service.generate_document_only(doc_request)
+
+    return Response(
+        content=generated.data,
+        media_type=generated.content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{generated.filename}"',
+            "Content-Length": str(len(generated.data)),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 """
-Tests PASO 9 — Endpoint reporte mensual + envío email.
+Tests PASO 9 — Endpoint reporte mensual + descarga PDF.
 
 Cubre:
 1. Happy path: generate crea MonthlyReport con métricas e IA
@@ -7,7 +7,7 @@ Cubre:
 3. force_regenerate sobreescribe reporte existente
 4. Período futuro rechazado (400)
 5. Mes actual (< día 28) rechazado (400)
-6. send: actualiza sent_at, llama send() por cada admin
+6. pdf: genera y retorna el PDF del reporte (coach/admin)
 7. Listado devuelve reportes del club
 8. Variante padre: resumen mensual solo de sus atletas
 H8. LLM timeout → propagación de MonthlyReportLLMTimeout al router → 503
@@ -25,7 +25,6 @@ from app.services.training.reports import (
     _validate_period,
     generate_monthly_report,
     parent_monthly_summary,
-    send_monthly_report_email,
 )
 
 
@@ -62,7 +61,6 @@ def _make_report(rid: int = 1, club_id: int = 1, year: int = 2026, month: int = 
     r.coach_observations = None
     r.generated_by_user_id = 1
     r.generated_at = datetime.now(timezone.utc)
-    r.sent_at = None
     r.club = _make_club(club_id)
     return r
 
@@ -284,106 +282,240 @@ class TestGenerateMonthlyReport:
 
 
 # ---------------------------------------------------------------------------
-# Tests send_monthly_report_email
+# Tests download_monthly_report_pdf (router)
 # ---------------------------------------------------------------------------
 
 
-class TestSendMonthlyReportEmail:
+class TestDownloadMonthlyReportPdf:
     @pytest.mark.asyncio
-    async def test_envia_a_admins_y_actualiza_sent_at(self):
-        db = AsyncMock()
+    async def test_genera_y_retorna_pdf_con_nombres_reales(self):
+        from app.models.user import UserRole
+        from app.routers.monthly_reports import download_monthly_report_pdf
+
         report = _make_report()
-        admin1 = _make_user(10, "admin1@club.com", "Carlos")
-        admin2 = _make_user(11, "admin2@club.com", "María")
 
-        call_count = {"n": 0}
+        athlete = MagicMock()
+        athlete.id = 42
+        athlete.first_name = "Juan"
+        athlete.last_name = "Pérez"
 
-        async def mock_execute(stmt):
-            call_count["n"] += 1
-            result = MagicMock()
-            if call_count["n"] == 1:
-                result.scalar_one_or_none.return_value = report
-            else:
-                result.scalars.return_value.all.return_value = [admin1, admin2]
-            return result
+        report_res = MagicMock()
+        report_res.scalar_one_or_none.return_value = report
+        athletes_res = MagicMock()
+        athletes_res.scalars.return_value.all.return_value = [athlete]
 
-        db.execute = mock_execute
-        db.flush = AsyncMock()
-
-        notif_service = MagicMock()
-        ok_result = MagicMock()
-        ok_result.success = True
-        notif_service.send = AsyncMock(return_value=ok_result)
-
-        dispatcher = MagicMock()
-
-        results = await send_monthly_report_email(
-            db=db,
-            report_id=1,
-            notification_service=notif_service,
-            dispatcher=dispatcher,
-        )
-
-        assert len(results) == 2
-        assert all(r.success for r in results)
-        assert notif_service.send.call_count == 2
-        assert report.sent_at is not None
-        db.flush.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_reporte_no_encontrado_lanza_error(self):
         db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[report_res, athletes_res])
 
-        async def mock_execute(stmt):
-            result = MagicMock()
-            result.scalar_one_or_none.return_value = None
-            return result
+        coach = _make_user(1)
+        coach.role = UserRole.coach
 
-        db.execute = mock_execute
+        generated = MagicMock()
+        generated.data = b"%PDF-1.4 fake"
+        generated.content_type = "application/pdf"
+        generated.filename = "reporte_2026_03.pdf"
 
         notif_service = MagicMock()
-        dispatcher = MagicMock()
+        notif_service.generate_document_only = AsyncMock(return_value=generated)
 
-        with pytest.raises(ValueError, match="no encontrado"):
-            await send_monthly_report_email(
+        with patch(
+            "app.routers.monthly_reports.user_club_role",
+            AsyncMock(return_value=MagicMock()),  # coach pertenece al club
+        ):
+            response = await download_monthly_report_pdf(
+                club_id=1,
+                year=2026,
+                month=3,
                 db=db,
-                report_id=999,
+                current_user=coach,
                 notification_service=notif_service,
-                dispatcher=dispatcher,
             )
 
+        assert response.body == b"%PDF-1.4 fake"
+        assert response.media_type == "application/pdf"
+        assert "attachment" in response.headers["content-disposition"]
+        notif_service.generate_document_only.assert_awaited_once()
+
+        # El contexto del documento lleva los nombres reales resueltos (clave str)
+        doc_request = notif_service.generate_document_only.await_args.args[0]
+        assert doc_request.context["athlete_names"] == {"42": "Juan Pérez"}
+
     @pytest.mark.asyncio
-    async def test_sin_admins_no_envia(self):
+    async def test_404_si_reporte_no_existe(self):
+        from fastapi import HTTPException
+        from app.models.user import UserRole
+        from app.routers.monthly_reports import download_monthly_report_pdf
+
         db = AsyncMock()
-        report = _make_report()
-
-        call_count = {"n": 0}
-
-        async def mock_execute(stmt):
-            call_count["n"] += 1
-            result = MagicMock()
-            if call_count["n"] == 1:
-                result.scalar_one_or_none.return_value = report
-            else:
-                result.scalars.return_value.all.return_value = []
-            return result
-
-        db.execute = mock_execute
-        db.flush = AsyncMock()
-
-        notif_service = MagicMock()
-        notif_service.send = AsyncMock()
-        dispatcher = MagicMock()
-
-        results = await send_monthly_report_email(
-            db=db,
-            report_id=1,
-            notification_service=notif_service,
-            dispatcher=dispatcher,
+        db.execute = AsyncMock(
+            return_value=MagicMock(
+                scalar_one_or_none=MagicMock(return_value=None)
+            )
         )
 
-        assert results == []
-        notif_service.send.assert_not_called()
+        coach = _make_user(1)
+        coach.role = UserRole.coach
+
+        notif_service = MagicMock()
+        notif_service.generate_document_only = AsyncMock()
+
+        with patch(
+            "app.routers.monthly_reports.user_club_role",
+            AsyncMock(return_value=MagicMock()),
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await download_monthly_report_pdf(
+                    club_id=1,
+                    year=2026,
+                    month=3,
+                    db=db,
+                    current_user=coach,
+                    notification_service=notif_service,
+                )
+
+        assert exc_info.value.status_code == 404
+        notif_service.generate_document_only.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests get_monthly_report — gate de nombres reales (coach sí, padre no)
+# ---------------------------------------------------------------------------
+
+
+class TestGetMonthlyReportAthleteNames:
+    @pytest.mark.asyncio
+    async def test_coach_recibe_nombres_reales(self):
+        from app.models.user import UserRole
+        from app.routers.monthly_reports import get_monthly_report
+
+        report = _make_report()
+        report.metrics_snapshot = {}
+        report.athlete_names = {}  # evita auto-attr de MagicMock en model_validate
+
+        athlete = MagicMock()
+        athlete.id = 42
+        athlete.first_name = "Juan"
+        athlete.last_name = "Pérez"
+
+        report_res = MagicMock()
+        report_res.scalar_one_or_none.return_value = report
+        athletes_res = MagicMock()
+        athletes_res.scalars.return_value.all.return_value = [athlete]
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[report_res, athletes_res])
+
+        coach = _make_user(1)
+        coach.role = UserRole.coach
+
+        with patch(
+            "app.routers.monthly_reports.can_view_monthly_report",
+            AsyncMock(return_value=True),
+        ):
+            out = await get_monthly_report(
+                club_id=1, year=2026, month=3, db=db, current_user=coach,
+            )
+
+        assert out.athlete_names == {"42": "Juan Pérez"}
+
+    @pytest.mark.asyncio
+    async def test_parent_no_recibe_nombres(self):
+        from app.models.user import UserRole
+        from app.routers.monthly_reports import get_monthly_report
+
+        report = _make_report()
+        report.metrics_snapshot = {}
+        report.athlete_names = {}
+
+        report_res = MagicMock()
+        report_res.scalar_one_or_none.return_value = report
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[report_res])
+
+        parent = _make_user(2)
+        parent.role = UserRole.parent
+
+        with patch(
+            "app.routers.monthly_reports.can_view_monthly_report",
+            AsyncMock(return_value=True),
+        ):
+            out = await get_monthly_report(
+                club_id=1, year=2026, month=3, db=db, current_user=parent,
+            )
+
+        # Padre NUNCA recibe nombres de menores ni observaciones del coach.
+        assert out.athlete_names == {}
+        assert out.coach_observations is None
+        # Solo hubo 1 query (reporte); no se consultaron atletas.
+        assert db.execute.await_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests build_report_photo_evidence — fotos del mes con fecha de sesión
+# ---------------------------------------------------------------------------
+
+
+class TestReportPhotoEvidence:
+    @pytest.mark.asyncio
+    async def test_embebe_thumbnail_base64_con_fecha_de_sesion(self):
+        import base64 as _b64
+        import tempfile as _tf
+        from app.services.training.reports import build_report_photo_evidence
+
+        media = MagicMock()
+        media.storage_path = "static/uploads/media/sessions/1/abc.jpg"
+        media.caption = "Bajada técnica"
+
+        row_result = MagicMock()
+        row_result.all.return_value = [(media, date(2026, 5, 15))]
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=row_result)
+
+        # Thumbnail "descargado": archivo temporal con bytes conocidos.
+        tmp = _tf.NamedTemporaryFile(delete=False, suffix=".jpg")
+        tmp.write(b"\xff\xd8\xff\xe0FAKEJPEG")
+        tmp.close()
+
+        with patch(
+            "app.services.training.storage_sftp.download_to_tempfile",
+            AsyncMock(return_value=tmp.name),
+        ):
+            items = await build_report_photo_evidence(
+                db=db, club_id=1, year=2026, month=5,
+            )
+
+        assert len(items) == 1
+        it = items[0]
+        assert it["session_date"] == "15/05/2026"   # fecha de la SESIÓN, no de subida
+        assert it["caption"] == "Bajada técnica"
+        assert it["data_uri"].startswith("data:image/jpeg;base64,")
+        decoded = _b64.b64decode(it["data_uri"].split(",", 1)[1])
+        assert decoded == b"\xff\xd8\xff\xe0FAKEJPEG"
+
+    @pytest.mark.asyncio
+    async def test_omite_foto_que_no_se_puede_leer(self):
+        from app.services.training.reports import build_report_photo_evidence
+
+        media = MagicMock()
+        media.storage_path = "static/uploads/media/sessions/1/missing.jpg"
+        media.caption = None
+
+        row_result = MagicMock()
+        row_result.all.return_value = [(media, date(2026, 5, 10))]
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=row_result)
+
+        with patch(
+            "app.services.training.storage_sftp.download_to_tempfile",
+            AsyncMock(side_effect=FileNotFoundError("nope")),
+        ):
+            items = await build_report_photo_evidence(
+                db=db, club_id=1, year=2026, month=5,
+            )
+
+        # Degradación limpia: foto ilegible se omite, no rompe.
+        assert items == []
 
 
 # ---------------------------------------------------------------------------

@@ -38,6 +38,7 @@ import {
   useImportDryRun,
   useImportParse,
 } from "@/hooks/ai/useRaceImports";
+import { useRevisionReasons } from "@/hooks/race/useRevisionReasons";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type {
@@ -76,8 +77,6 @@ function isRevisionDryRun(
 ): data is ImportDryRunRevisionResponse {
   return !!data && (data as ImportDryRunRevisionResponse).is_revision === true;
 }
-
-const REVISION_REASON_MAX = 300;
 
 /** Banner naranja si el diff es inusualmente grande (R1 mitigación). */
 function shouldWarnUnusualDiff(summary: {
@@ -302,9 +301,11 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   const [step1Error, setStep1Error] = useState<string | null>(null);
   // F-COND: toast neutral cuando el coach avanza sin llenar condiciones.
   const [conditionsToast, setConditionsToast] = useState(false);
-  // F-UP-REV5: motivo de revisión (obligatorio si hay deletes).
+  // F-UP-REV5 / PR4: motivo de revisión — code del catálogo CERRADO
+  // (sin texto libre, privacidad menores). Obligatorio si hay deletes.
   const [revisionReason, setRevisionReason] = useState("");
   const [revisionReasonTouched, setRevisionReasonTouched] = useState(false);
+  const revisionReasonsQuery = useRevisionReasons();
 
   const parseMutation = useImportParse();
   const dryRunMutation = useImportDryRun();
@@ -471,12 +472,13 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
     );
   }, [matchesData, onlyPending, resolutions]);
 
-  // F-UP-REV5 — validación de revision_reason (obligatorio si hay deletes).
+  // F-UP-REV5 / PR4 — validación del code de revisión (catálogo cerrado).
+  // Obligatorio si hay deletes. Sin overflow (ya no es texto libre).
   const reasonTrimmed = revisionReason.trim();
   const reasonRequired =
     revisionData != null && revisionData.diff_summary.n_delete > 0;
   const reasonValid = !reasonRequired || reasonTrimmed.length > 0;
-  const reasonOverflow = revisionReason.length > REVISION_REASON_MAX;
+  const reasonOverflow = false;
 
   const canCommit = revisionData
     ? reasonValid && !reasonOverflow
@@ -1058,7 +1060,7 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 <DiffTable diffRows={revisionData.diff_rows} />
               </Suspense>
 
-              {/* Revision reason input */}
+              {/* Revision reason — catálogo CERRADO (PR4, sin texto libre) */}
               <div className="space-y-1">
                 <label
                   htmlFor="wizard-revision-reason"
@@ -1071,43 +1073,37 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                     </span>
                   )}
                 </label>
-                <textarea
+                <select
                   id="wizard-revision-reason"
                   data-testid="wizard-revision-reason"
-                  rows={2}
-                  maxLength={REVISION_REASON_MAX + 10}
                   value={revisionReason}
                   onChange={(e) => setRevisionReason(e.target.value)}
                   onBlur={() => setRevisionReasonTouched(true)}
-                  placeholder="Ej: Corrección oficial de la Federación post-reclamo de un participante"
                   aria-required={reasonRequired}
                   aria-invalid={
                     !reasonValid && revisionReasonTouched ? true : undefined
                   }
-                  className="w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                  className="w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
                   style={{
                     boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
                   }}
-                />
-                <div className="flex items-center justify-between text-[11px]">
+                >
+                  <option value="">Selecciona un motivo…</option>
+                  {(revisionReasonsQuery.data?.options ?? []).map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                {reasonRequired && !reasonValid && revisionReasonTouched && (
                   <span
-                    className={cn(
-                      "text-mid-gray",
-                      reasonOverflow && "text-red-600",
-                    )}
+                    className="block text-[11px] text-red-600"
+                    role="alert"
+                    data-testid="wizard-revision-reason-error"
                   >
-                    {revisionReason.length}/{REVISION_REASON_MAX}
+                    Requerido cuando la revisión elimina resultados.
                   </span>
-                  {reasonRequired && !reasonValid && revisionReasonTouched && (
-                    <span
-                      className="text-red-600"
-                      role="alert"
-                      data-testid="wizard-revision-reason-error"
-                    >
-                      Requerido cuando la revisión elimina resultados.
-                    </span>
-                  )}
-                </div>
+                )}
               </div>
 
               {commitMutation.isError && (
@@ -1449,11 +1445,11 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
               )}
               <div className="mt-3 flex flex-wrap gap-2">
                 <Link
-                  to="/coach/race-analysis?tab=runs"
+                  to={`/competitions/${commitMutation.data.race_event_id}?tab=results`}
                   className="inline-flex items-center gap-1 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
                   data-testid="wizard-step3-link-analysis"
                 >
-                  Ver análisis de la válida
+                  Ver resultados de la válida
                 </Link>
                 <button
                   type="button"

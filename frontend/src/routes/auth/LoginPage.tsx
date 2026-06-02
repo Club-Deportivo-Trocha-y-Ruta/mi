@@ -23,12 +23,6 @@ export function LoginPage() {
   const isLoading = useAuthStore((state) => state.isLoading);
   const [serverError, setServerError] = useState<string | null>(null);
 
-  // Si ya hay una sesión válida, nunca mostrar el formulario de login:
-  // la primera vista debe ser el panel del usuario (Dashboard / Mis atletas).
-  if (isAuthenticated && user) {
-    return <Navigate to={landingPathForRole(user.role)} replace />;
-  }
-
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -36,6 +30,19 @@ export function LoginPage() {
       password: "",
     },
   });
+
+  // Si ya hay una sesión válida, nunca mostrar el formulario de login:
+  // la primera vista debe ser el panel del usuario (Dashboard / Mis atletas).
+  //
+  // IMPORTANTE: este return va DESPUÉS de todos los hooks (useForm incluido).
+  // Cuando login() actualiza el store, este componente re-renderiza con
+  // isAuthenticated=true; si el return estuviera antes de useForm, React
+  // contaría menos hooks que en el render previo ("Rendered fewer hooks than
+  // expected") y el árbol se rompería durante la transición SPA → pantalla en
+  // blanco en la primera navegación post-login.
+  if (isAuthenticated && user) {
+    return <Navigate to={landingPathForRole(user.role)} replace />;
+  }
 
   const onSubmit = async (values: LoginForm) => {
     setServerError(null);

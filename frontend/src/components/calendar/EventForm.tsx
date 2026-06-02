@@ -681,10 +681,10 @@ export function EventForm({
                         No hay válidas disponibles para {seasonForRaceEvents}.
                         Crea una desde el{" "}
                         <RouterLink
-                          to="/coach/race-analysis"
+                          to="/competitions/import"
                           className="font-medium text-charcoal underline transition-opacity hover:opacity-70"
                         >
-                          módulo de resultados
+                          módulo de importación
                         </RouterLink>
                         .
                       </p>

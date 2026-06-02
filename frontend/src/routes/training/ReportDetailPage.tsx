@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { Download } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
-import { useMonthlyReport, useSendMonthlyReport } from "@/api/trainingSessions";
-import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { useMonthlyReport, useDownloadMonthlyReportPdf } from "@/api/trainingSessions";
 import { MonthlyMetricsTable } from "@/components/training/MonthlyMetricsTable";
 import { formatDateTime } from "@/lib/datetime";
+import { triggerBlobDownload } from "@/lib/download";
 import { useAuthStore } from "@/store/auth.store";
 import type { MonthlyMetricsSnapshot } from "@/types/trainingSession.types";
 
@@ -39,24 +39,27 @@ export function ReportDetailPage() {
   const user = useAuthStore((s) => s.user);
   const clubId = user?.club_ids?.[0];
 
-  const [showSendModal, setShowSendModal] = useState(false);
-  const [sendSuccess, setSendSuccess] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const reportQuery = useMonthlyReport(clubId, year, month);
-  const sendMutation = useSendMonthlyReport(clubId ?? 0);
+  const downloadMutation = useDownloadMonthlyReportPdf(clubId ?? 0);
 
   const report = reportQuery.data;
 
-  function handleSendConfirm() {
+  function handleDownload() {
     if (!clubId) return;
-    sendMutation.mutate(
+    setDownloadError(null);
+    downloadMutation.mutate(
       { year, month },
       {
-        onSuccess: () => {
-          setShowSendModal(false);
-          setSendSuccess(true);
+        onSuccess: (blob) => {
+          triggerBlobDownload(
+            blob,
+            `reporte-${year}-${String(month).padStart(2, "0")}.pdf`,
+          );
         },
-        onError: () => setShowSendModal(false),
+        onError: () =>
+          setDownloadError("No se pudo descargar el PDF. Intenta de nuevo."),
       },
     );
   }
@@ -115,24 +118,14 @@ export function ReportDetailPage() {
           <div className="flex flex-col items-end gap-1">
             <button
               type="button"
-              onClick={() => setShowSendModal(true)}
-              className={
-                report.sent_at
-                  ? "flex items-center gap-1.5 rounded-lg border border-charcoal/20 bg-white px-4 py-2 text-sm font-semibold text-charcoal transition-opacity hover:opacity-70"
-                  : "rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-              }
-              data-testid="resend-button"
+              onClick={handleDownload}
+              disabled={downloadMutation.isPending}
+              className="flex items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              data-testid="download-pdf-button"
             >
-              {report.sent_at && (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
-              )}
-              {report.sent_at ? "Volver a enviar" : "Re-enviar al club"}
+              <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {downloadMutation.isPending ? "Descargando…" : "Descargar PDF"}
             </button>
-            {report.sent_at && (
-              <span className="text-xs text-mid-gray">
-                Enviado el {formatDateTime(report.sent_at)}
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -149,21 +142,18 @@ export function ReportDetailPage() {
             <path d="M10 8v4M10 14h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
           <p className="text-sm text-yellow-800">
-            Resumen generado por IA — revisalo antes de enviar.
+            Resumen generado por IA — revisalo antes de descargar.
           </p>
         </div>
       )}
 
-      {sendSuccess && (
+      {downloadError && (
         <div
-          className="rounded-xl border border-green-300 bg-green-50 px-5 py-4"
-          role="status"
-          data-testid="send-success-banner"
+          className="rounded-xl border border-red-200 bg-red-50 px-5 py-4"
+          role="alert"
+          data-testid="download-error-banner"
         >
-          <p className="text-sm text-green-800">
-            Reporte re-enviado correctamente. Enviado el{" "}
-            {report.sent_at ? formatDateTime(report.sent_at) : "—"}
-          </p>
+          <p className="text-sm text-red-700">{downloadError}</p>
         </div>
       )}
 
@@ -198,7 +188,7 @@ export function ReportDetailPage() {
       {metrics && (
         <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
           <h2 className={sectionHeading}>Métricas del mes</h2>
-          <MonthlyMetricsTable metrics={metrics} />
+          <MonthlyMetricsTable metrics={metrics} athleteNames={report.athlete_names} />
         </div>
       )}
 
@@ -207,23 +197,7 @@ export function ReportDetailPage() {
         <p className="text-xs text-mid-gray">
           Generado el {formatDateTime(report.generated_at)}
         </p>
-        {report.sent_at && (
-          <p className="mt-1 text-xs text-mid-gray" data-testid="sent-at-text">
-            Enviado el {formatDateTime(report.sent_at)}
-          </p>
-        )}
       </div>
-
-      <ConfirmModal
-        open={showSendModal}
-        title="Re-enviar reporte al club"
-        body={`¿Deseas re-enviar el reporte de ${monthLabel} ${report.year} a todos los administradores del club?`}
-        confirmLabel="Sí, re-enviar"
-        cancelLabel="Cancelar"
-        isPending={sendMutation.isPending}
-        onCancel={() => setShowSendModal(false)}
-        onConfirm={handleSendConfirm}
-      />
     </section>
   );
 }

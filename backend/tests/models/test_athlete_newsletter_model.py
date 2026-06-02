@@ -103,7 +103,9 @@ def _valid_snapshot() -> dict:
 class TestNewsletterStatus:
     def test_all_values_defined(self):
         values = {s.value for s in NewsletterStatus}
-        assert values == {"draft", "approved", "sent", "failed"}
+        # PR5 (D3): 'outdated' añadido — boletín enviado que quedó
+        # desactualizado por una re-ingesta (no se reenvía).
+        assert values == {"draft", "approved", "sent", "failed", "outdated"}
 
     def test_is_str_enum(self):
         assert isinstance(NewsletterStatus.draft, str)

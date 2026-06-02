@@ -841,6 +841,66 @@ class TestUpdateRaceEvent:
         assert r.status_code == 404
         assert "9999" in r.json()["detail"]
 
+    # ── PR6: propagación válida → calendar_event ligado ──────────────────
+
+    @pytest.mark.asyncio
+    async def test_patch_propaga_name_y_location_al_calendar(
+        self, coach_client_with_calendar, db_session_factory
+    ):
+        """Cambiar name + location de la válida actualiza el calendar_event ligado.
+
+        seed_with_calendar: CalendarEvent id=500, race_event_id=100,
+        title="VALIDA IV CALI (calendario)", location=None.
+        """
+        r = await coach_client_with_calendar.patch(
+            _DETAIL_URL.format(event_id=100),
+            json={"name": "VALIDA IV CALI v2", "location": "Cali Centro"},
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as s:
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 500))
+            ).scalar_one()
+            assert cal.title == "VALIDA IV CALI v2"
+            assert cal.location == "Cali Centro"
+
+    @pytest.mark.asyncio
+    async def test_patch_propaga_event_date_preservando_hora(
+        self, coach_client_with_calendar, db_session_factory
+    ):
+        """Cambiar event_date mueve start_at/end_at preservando hora y duración.
+
+        Calendar previo: 2026-05-17 07:00 → 12:00 (5h). Nueva fecha 2026-05-24.
+        """
+        r = await coach_client_with_calendar.patch(
+            _DETAIL_URL.format(event_id=100),
+            json={"event_date": "2026-05-24"},
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as s:
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 500))
+            ).scalar_one()
+            assert cal.start_at == datetime(2026, 5, 24, 7, 0, 0)
+            assert cal.end_at == datetime(2026, 5, 24, 12, 0, 0)
+
+    @pytest.mark.asyncio
+    async def test_patch_sin_calendar_ligado_no_falla(
+        self, coach_client, db_session_factory
+    ):
+        """PATCH de una válida SIN calendar_event ligado no debe fallar.
+
+        El set base (seed_minimal) no tiene calendar_event para id=100 en
+        este cliente; el cambio se aplica sin error.
+        """
+        r = await coach_client.patch(
+            _DETAIL_URL.format(event_id=100),
+            json={"name": "Sin calendario ligado"},
+        )
+        assert r.status_code == 200, r.text
+
 
 # ===========================================================================
 # DELETE /api/race-analysis/race-events/{id}  (admin only)

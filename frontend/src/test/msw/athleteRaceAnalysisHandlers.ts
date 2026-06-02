@@ -22,6 +22,7 @@ import type {
   DistributionResponse,
   EvolutionResponse,
   MetricsSnapshotV1,
+  SeasonPanoramaResponse,
 } from "@/types/athleteRaceAnalysis.types";
 
 // ---------------------------------------------------------------------------
@@ -451,4 +452,53 @@ export const insightsWithSupersedesHandler = http.get(
       }),
     );
   },
+);
+
+// ---------------------------------------------------------------------------
+// Season panorama (PR3) — GET /api/race-analysis/insights/season/{year}
+// ---------------------------------------------------------------------------
+
+export const seasonPanoramaDefaultResponse: SeasonPanoramaResponse = {
+  season: 2026,
+  total_athletes: 2,
+  items: [
+    {
+      athlete_id: 144,
+      athlete_display_name: "Juan Garcia",
+      races_count: 2,
+      wins: 1,
+      podiums: 2,
+      best_position: 1,
+      total_points: 60,
+    },
+    {
+      athlete_id: 145,
+      athlete_display_name: "Maria Perez",
+      races_count: 1,
+      wins: 0,
+      podiums: 0,
+      best_position: 5,
+      total_points: 10,
+    },
+  ],
+};
+
+export const seasonPanoramaHandler = http.get(
+  "*/api/race-analysis/insights/season/:year",
+  () => HttpResponse.json(seasonPanoramaDefaultResponse),
+);
+
+export const emptySeasonPanoramaHandler = http.get(
+  "*/api/race-analysis/insights/season/:year",
+  ({ params }) =>
+    HttpResponse.json({
+      season: Number(params.year),
+      total_athletes: 0,
+      items: [],
+    } satisfies SeasonPanoramaResponse),
+);
+
+export const errorSeasonPanoramaHandler = http.get(
+  "*/api/race-analysis/insights/season/:year",
+  () => new HttpResponse(null, { status: 500 }),
 );

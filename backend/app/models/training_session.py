@@ -209,7 +209,6 @@ class MonthlyReport(Base):
     generated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
-    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     coach_observations: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relaciones

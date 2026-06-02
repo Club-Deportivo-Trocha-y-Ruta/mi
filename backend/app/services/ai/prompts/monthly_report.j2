@@ -6,7 +6,7 @@ Genera un resumen mensual del entrenamiento del club, dirigido al comité del cl
 
 # Restricciones obligatorias
 - Máximo 500 palabras, organizado en 2-3 párrafos cortos y un breve listado opcional al final.
-- En español, tono profesional, dirigido al comité del club.
+- En español, tono profesional. Redacta como resumen directo, NO como carta: NO incluyas saludos ni encabezados (ej: "Estimado Comité..."), NO firmes ni te despidas. Comienza directamente con el contenido del resumen.
 - NO menciones nombres propios. Los atletas se identifican por pseudónimos (A1, A2, ...). Si los mencionas, hazlo solo de forma agregada ("3 de los 8 atletas mantuvieron asistencia ≥80%").
 - NO recomiendes intervenciones médicas, suplementación, ni planes de entrenamiento individuales.
 - NO incluyas juicios subjetivos sobre la actitud o capacidad de atletas individuales.
@@ -41,7 +41,6 @@ Genera un resumen mensual del entrenamiento del club, dirigido al comité del cl
 {% endif %}
 
 ## Promedios (cuando disponibles)
-- RPE OMNI promedio: {{ "%.1f"|format(avg_rpe) if avg_rpe is not none else "N/D" }}
 - Rúbrica esfuerzo (1-5): {{ "%.1f"|format(avg_rubric_effort) if avg_rubric_effort is not none else "N/D" }}
 - Rúbrica actitud (1-5): {{ "%.1f"|format(avg_rubric_attitude) if avg_rubric_attitude is not none else "N/D" }}
 - Rúbrica técnica (1-5): {{ "%.1f"|format(avg_rubric_technique) if avg_rubric_technique is not none else "N/D" }}

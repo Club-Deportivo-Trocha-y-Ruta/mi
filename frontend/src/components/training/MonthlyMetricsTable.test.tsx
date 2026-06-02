@@ -9,81 +9,132 @@ function makeMetrics(overrides?: Partial<MonthlyMetricsSnapshot>): MonthlyMetric
     total_sessions_planned: 8,
     total_sessions_executed: 6,
     total_sessions_cancelled: 2,
-    attendance_stats: [
-      { pseudonym: "A1", count_present: 6, count_total: 8, percentage: 75 },
-      { pseudonym: "A2", count_present: 4, count_total: 8, percentage: 50 },
-    ],
-    focos_técnicos: ["Frenada", "Curvas técnicas"],
+    attendance_by_athlete: {
+      "10": {
+        athlete_id: 10, count_present: 6, count_absent: 1, count_justified: 0,
+        count_late: 1, count_injured: 0, total_sessions: 8, attendance_pct: 75,
+      },
+      "20": {
+        athlete_id: 20, count_present: 4, count_absent: 3, count_justified: 1,
+        count_late: 0, count_injured: 1, total_sessions: 8, attendance_pct: 50,
+      },
+    },
+    technical_focus_list: ["Frenada", "Curvas técnicas"],
+    technical_focus_counts: { Frenada: 3, "Curvas técnicas": 2 },
     avg_rpe: 6.5,
     avg_rubric_effort: 4.2,
     avg_rubric_attitude: 4.8,
     avg_rubric_technique: 3.9,
+    total_minutes_planned: 720,
+    total_minutes_executed: 540,
+    avg_hours_per_week: 2.1,
+    attendance_status_totals: { presente: 30, tarde: 1, justificado: 1, ausente: 4, lesionado: 1 },
     ...overrides,
   };
 }
 
+const NAMES = { "10": "Juan Pérez", "20": "Ana Gómez" };
+
 describe("MonthlyMetricsTable", () => {
   it("renderiza todas las secciones", () => {
-    render(<MonthlyMetricsTable metrics={makeMetrics()} />);
+    render(<MonthlyMetricsTable metrics={makeMetrics()} athleteNames={NAMES} />);
     expect(screen.getByTestId("monthly-metrics-table")).toBeInTheDocument();
+    expect(screen.getByTestId("volume-grid")).toBeInTheDocument();
     expect(screen.getByTestId("attendance-table")).toBeInTheDocument();
+    expect(screen.getByTestId("status-totals")).toBeInTheDocument();
     expect(screen.getByTestId("focos-tecnicos")).toBeInTheDocument();
     expect(screen.getByTestId("averages-grid")).toBeInTheDocument();
   });
 
-  it("muestra los KPIs correctamente", () => {
-    render(<MonthlyMetricsTable metrics={makeMetrics()} />);
-    expect(screen.getByText("8")).toBeInTheDocument();
-    expect(screen.getByText("Planificadas")).toBeInTheDocument();
-    expect(screen.getByText("6")).toBeInTheDocument();
+  it("muestra los KPIs de sesiones (sin planificadas)", () => {
+    render(<MonthlyMetricsTable metrics={makeMetrics()} athleteNames={NAMES} />);
+    expect(screen.queryByText("Planificadas")).not.toBeInTheDocument();
     expect(screen.getByText("Ejecutadas")).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("Canceladas")).toBeInTheDocument();
   });
 
-  it("la tabla de asistencia muestra pseudónimos, no nombres reales", () => {
-    render(<MonthlyMetricsTable metrics={makeMetrics()} />);
-    expect(screen.getByText("A1")).toBeInTheDocument();
-    expect(screen.getByText("A2")).toBeInTheDocument();
+  it("la tabla de asistencia muestra nombres reales cuando se proveen", () => {
+    render(<MonthlyMetricsTable metrics={makeMetrics()} athleteNames={NAMES} />);
+    expect(screen.getByText("Juan Pérez")).toBeInTheDocument();
+    expect(screen.getByText("Ana Gómez")).toBeInTheDocument();
+  });
+
+  it("cae a 'Atleta N' cuando no hay nombres (ej. vista sin permisos)", () => {
+    render(<MonthlyMetricsTable metrics={makeMetrics()} athleteNames={{}} />);
+    expect(screen.getByText("Atleta 1")).toBeInTheDocument();
+    expect(screen.getByText("Atleta 2")).toBeInTheDocument();
   });
 
   it("ordena la asistencia por porcentaje descendente", () => {
-    const metrics = makeMetrics({
-      attendance_stats: [
-        { pseudonym: "A2", count_present: 4, count_total: 8, percentage: 50 },
-        { pseudonym: "A1", count_present: 6, count_total: 8, percentage: 75 },
-      ],
-    });
-    render(<MonthlyMetricsTable metrics={metrics} />);
-    const rows = screen.getAllByRole("row").slice(1);
-    expect(rows[0]).toHaveTextContent("A1");
-    expect(rows[1]).toHaveTextContent("A2");
+    render(<MonthlyMetricsTable metrics={makeMetrics()} athleteNames={NAMES} />);
+    const rows = screen.getAllByRole("row").slice(1); // sin cabecera
+    expect(rows[0]).toHaveTextContent("Juan Pérez"); // 75%
+    expect(rows[1]).toHaveTextContent("Ana Gómez"); // 50%
   });
 
-  it("muestra N/D cuando los promedios son null", () => {
+  it("muestra el desglose por estado, con lesionados visibles", () => {
+    render(<MonthlyMetricsTable metrics={makeMetrics()} athleteNames={NAMES} />);
+    expect(screen.getByText("Lesion.")).toBeInTheDocument(); // columna
+    const totals = screen.getByTestId("status-totals");
+    expect(totals).toHaveTextContent("Lesionados: 1");
+    expect(totals).toHaveTextContent("Ausencias: 4");
+  });
+
+  it("muestra el volumen ejecutado en hh:mm:ss (sin planificado)", () => {
+    render(<MonthlyMetricsTable metrics={makeMetrics()} athleteNames={NAMES} />);
+    expect(screen.queryByText("Planificado")).not.toBeInTheDocument();
+    expect(screen.getByText("Ejecutado")).toBeInTheDocument();
+    expect(screen.getByText("09:00:00")).toBeInTheDocument(); // 540 min ejecutados
+    expect(screen.getByText("02:06:00")).toBeInTheDocument(); // 2.1 h/sem
+  });
+
+  it("muestra los focos técnicos con su frecuencia", () => {
+    render(<MonthlyMetricsTable metrics={makeMetrics()} athleteNames={NAMES} />);
+    expect(screen.getByText("Frenada · 3")).toBeInTheDocument();
+    expect(screen.getByText("Curvas técnicas · 2")).toBeInTheDocument();
+  });
+
+  it("cae a la lista de focos sin conteo si no hay technical_focus_counts", () => {
     render(
       <MonthlyMetricsTable
-        metrics={makeMetrics({
-          avg_rpe: null,
-          avg_rubric_effort: null,
-          avg_rubric_attitude: null,
-          avg_rubric_technique: null,
-        })}
+        metrics={makeMetrics({ technical_focus_counts: undefined })}
+        athleteNames={NAMES}
       />,
     );
-    const ndElements = screen.getAllByText("N/D");
-    expect(ndElements.length).toBe(4);
-  });
-
-  it("muestra los focos técnicos como chips", () => {
-    render(<MonthlyMetricsTable metrics={makeMetrics()} />);
     expect(screen.getByText("Frenada")).toBeInTheDocument();
     expect(screen.getByText("Curvas técnicas")).toBeInTheDocument();
   });
 
-  it("muestra presencias en formato 'presente / total'", () => {
-    render(<MonthlyMetricsTable metrics={makeMetrics()} />);
-    expect(screen.getByText("6 / 8")).toBeInTheDocument();
-    expect(screen.getByText("4 / 8")).toBeInTheDocument();
+  it("muestra N/D cuando los promedios de rúbrica son null", () => {
+    render(
+      <MonthlyMetricsTable
+        metrics={makeMetrics({
+          avg_rubric_effort: null,
+          avg_rubric_attitude: null,
+          avg_rubric_technique: null,
+        })}
+        athleteNames={NAMES}
+      />,
+    );
+    // 3 promedios de rúbrica (RPE omitido); h/sem sigue con valor.
+    const ndElements = screen.getAllByText("N/D");
+    expect(ndElements.length).toBe(3);
+  });
+
+  it("oculta secciones opcionales en reportes antiguos sin los campos SPEC 1", () => {
+    render(
+      <MonthlyMetricsTable
+        metrics={makeMetrics({
+          total_minutes_planned: undefined,
+          total_minutes_executed: undefined,
+          attendance_status_totals: undefined,
+        })}
+        athleteNames={NAMES}
+      />,
+    );
+    expect(screen.queryByTestId("volume-grid")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("status-totals")).not.toBeInTheDocument();
+    // La tabla de asistencia sigue presente (dato siempre existió).
+    expect(screen.getByTestId("attendance-table")).toBeInTheDocument();
   });
 });

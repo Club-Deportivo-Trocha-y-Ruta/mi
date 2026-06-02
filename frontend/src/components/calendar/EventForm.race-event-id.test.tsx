@@ -4,7 +4,7 @@
  * Cubre:
  *  - Cambio a event_type=competition muestra dropdown de válida asociada.
  *  - Submit sin race_event_id da error de validación (Zod).
- *  - Empty state link a /coach/race-analysis cuando no hay válidas
+ *  - Empty state link a /competitions/import cuando no hay válidas
  *    disponibles para la temporada.
  *  - Hidrata el race_event_id en mode=edit.
  *
@@ -154,7 +154,7 @@ describe("EventForm — refactor FE-2 race_event_id", () => {
     expect(select.value).toBe("100");
   });
 
-  it("muestra empty state con link a /coach/race-analysis cuando no hay válidas", async () => {
+  it("muestra empty state con link a /competitions/import cuando no hay válidas", async () => {
     mswServer.use(
       http.get("*/api/race-events/available-for-calendar", () =>
         HttpResponse.json([]),
@@ -170,8 +170,8 @@ describe("EventForm — refactor FE-2 race_event_id", () => {
       expect(screen.getByTestId("event-race-event-empty")).toBeInTheDocument();
     });
 
-    const link = screen.getByRole("link", { name: /módulo de resultados/i });
-    expect(link).toHaveAttribute("href", "/coach/race-analysis");
+    const link = screen.getByRole("link", { name: /módulo de importación/i });
+    expect(link).toHaveAttribute("href", "/competitions/import");
   });
 
   it("hidrata el race_event_id en mode=edit", async () => {

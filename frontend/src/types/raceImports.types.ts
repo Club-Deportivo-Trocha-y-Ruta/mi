@@ -254,3 +254,47 @@ export interface ImportsHistoryParams {
   offset?: number;
   status?: ImportStatus;
 }
+
+// ---------------------------------------------------------------------------
+// PR4 — catálogo cerrado de motivos + diff read-only de la última revisión
+// ---------------------------------------------------------------------------
+
+export interface RevisionReasonOption {
+  code: string;
+  label: string;
+}
+
+export interface RevisionReasonsResponse {
+  options: RevisionReasonOption[];
+}
+
+export interface RevisionDiffItem {
+  action: "create" | "update" | "delete";
+  group:
+    | "position"
+    | "time"
+    | "gap_gc"
+    | "category_reclassified"
+    | "added_removed";
+  competitor_display_name: string;
+  category_code: string | null;
+  field_before: string | null;
+  field_after: string | null;
+}
+
+export interface RevisionDiffGroupCounts {
+  position: number;
+  time: number;
+  gap_gc: number;
+  category_reclassified: number;
+  added_removed: number;
+}
+
+export interface RaceEventDiffResponse {
+  race_event_id: number;
+  has_revision: boolean;
+  last_revision_at: string | null;
+  reason_code: string | null;
+  counts: RevisionDiffGroupCounts;
+  items: RevisionDiffItem[];
+}

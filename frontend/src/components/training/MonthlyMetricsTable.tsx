@@ -1,14 +1,20 @@
-import type { MonthlyMetricsSnapshot } from "@/types/trainingSession.types";
+import { formatMinutesAsHms } from "@/lib/datetime";
+import type {
+  AthleteAttendanceStats,
+  MonthlyMetricsSnapshot,
+} from "@/types/trainingSession.types";
 
 interface MonthlyMetricsTableProps {
   metrics: MonthlyMetricsSnapshot;
+  /** Mapa id_atleta (str) -> "Nombre Apellido". Solo coach/admin; si falta, cae a "Atleta N". */
+  athleteNames?: Record<string, string>;
 }
 
 const cardStyle: React.CSSProperties = {
   boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
 };
 
-function StatCard({ label, value }: { label: string; value: number }) {
+function StatCard({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-xl bg-white p-4 text-center" style={cardStyle}>
       <p className="text-2xl font-bold text-charcoal">{value}</p>
@@ -17,70 +23,123 @@ function StatCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function metricLabel(value: number | null): string {
-  if (value === null) return "N/D";
+function metricLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "N/D";
   return value.toFixed(1);
 }
 
-export function MonthlyMetricsTable({ metrics }: MonthlyMetricsTableProps) {
-  const sortedAttendance = [...(metrics.attendance_stats ?? [])].sort(
-    (a, b) => b.percentage - a.percentage,
-  );
+// Etiquetas de estado de asistencia, en el orden que se muestra.
+const STATUS_TOTALS: { key: string; label: string }[] = [
+  { key: "presente", label: "Presentes" },
+  { key: "tarde", label: "Tarde" },
+  { key: "justificado", label: "Justificadas" },
+  { key: "ausente", label: "Ausencias" },
+  { key: "lesionado", label: "Lesionados" },
+];
+
+export function MonthlyMetricsTable({ metrics, athleteNames }: MonthlyMetricsTableProps) {
+  const attendanceRows = Object.entries(metrics.attendance_by_athlete ?? {})
+    .map(([id, stats]) => ({ id, stats: stats as AthleteAttendanceStats }))
+    .sort((a, b) => b.stats.attendance_pct - a.stats.attendance_pct);
+
+  const focusCounts = metrics.technical_focus_counts;
+  const focusList = metrics.technical_focus_list ?? [];
+  const hasFocus =
+    (focusCounts && Object.keys(focusCounts).length > 0) || focusList.length > 0;
+
+  const hasVolume = (metrics.total_minutes_executed ?? 0) > 0;
+
+  const statusTotals = metrics.attendance_status_totals;
 
   return (
     <div className="space-y-6" data-testid="monthly-metrics-table">
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-        <StatCard label="Planificadas" value={metrics.total_sessions_planned} />
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         <StatCard label="Ejecutadas" value={metrics.total_sessions_executed} />
         <StatCard label="Canceladas" value={metrics.total_sessions_cancelled} />
       </div>
 
-      {/* Asistencia */}
-      {sortedAttendance.length > 0 && (
+      {/* Volumen de entrenamiento */}
+      {hasVolume && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mid-gray">
+            Volumen de entrenamiento
+          </h3>
+          <div className="grid grid-cols-2 gap-3" data-testid="volume-grid">
+            <StatCard label="Ejecutado" value={formatMinutesAsHms(metrics.total_minutes_executed ?? 0)} />
+            <StatCard
+              label="Prom. semanal"
+              value={
+                metrics.avg_hours_per_week != null
+                  ? formatMinutesAsHms(metrics.avg_hours_per_week * 60)
+                  : "N/D"
+              }
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Asistencia por atleta — desglose por estado */}
+      {attendanceRows.length > 0 && (
         <div>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mid-gray">
             Asistencia por atleta
           </h3>
           <div className="overflow-x-auto rounded-xl bg-white" style={cardStyle}>
             <table className="min-w-full text-sm" data-testid="attendance-table">
-              <caption className="sr-only">Métricas mensuales del club</caption>
+              <caption className="sr-only">
+                Asistencia mensual por atleta y estado
+              </caption>
               <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  <th scope="col" className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                     Atleta
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    Presencias
+                  <th scope="col" className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                    Pres.
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    Asistencia
+                  <th scope="col" className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                    Tarde
+                  </th>
+                  <th scope="col" className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                    Justif.
+                  </th>
+                  <th scope="col" className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                    Ausente
+                  </th>
+                  <th scope="col" className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                    Lesion.
+                  </th>
+                  <th scope="col" className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                    % Asist.
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {sortedAttendance.map((stat) => (
+                {attendanceRows.map(({ id, stats }, index) => (
                   <tr
-                    key={stat.pseudonym}
+                    key={id}
                     style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
                   >
-                    <td className="px-4 py-3 font-medium text-charcoal">
-                      {stat.pseudonym}
+                    <td className="px-3 py-3 font-medium text-charcoal">
+                      {athleteNames?.[id] ?? `Atleta ${index + 1}`}
                     </td>
-                    <td className="px-4 py-3 text-mid-gray">
-                      {stat.count_present} / {stat.count_total}
-                    </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 text-mid-gray">{stats.count_present}</td>
+                    <td className="px-3 py-3 text-mid-gray">{stats.count_late}</td>
+                    <td className="px-3 py-3 text-mid-gray">{stats.count_justified}</td>
+                    <td className="px-3 py-3 text-mid-gray">{stats.count_absent}</td>
+                    <td className="px-3 py-3 text-mid-gray">{stats.count_injured}</td>
+                    <td className="px-3 py-3">
                       <span
                         className={`font-medium ${
-                          stat.percentage >= 75
+                          stats.attendance_pct >= 75
                             ? "text-green-700"
-                            : stat.percentage >= 50
+                            : stats.attendance_pct >= 50
                               ? "text-yellow-700"
                               : "text-red-700"
                         }`}
                       >
-                        {stat.percentage.toFixed(0)}%
+                        {stats.attendance_pct.toFixed(0)}%
                       </span>
                     </td>
                   </tr>
@@ -88,37 +147,62 @@ export function MonthlyMetricsTable({ metrics }: MonthlyMetricsTableProps) {
               </tbody>
             </table>
           </div>
+
+          {/* Totales del club por estado */}
+          {statusTotals && (
+            <div
+              className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-mid-gray"
+              data-testid="status-totals"
+            >
+              {STATUS_TOTALS.map(({ key, label }) => (
+                <span key={key}>
+                  {label}:{" "}
+                  <span className="font-semibold text-charcoal">
+                    {statusTotals[key] ?? 0}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Focos técnicos */}
-      {metrics.focos_técnicos && metrics.focos_técnicos.length > 0 && (
+      {/* Focos técnicos — con frecuencia si está disponible */}
+      {hasFocus && (
         <div>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mid-gray">
             Focos técnicos del mes
           </h3>
           <div className="flex flex-wrap gap-2" data-testid="focos-tecnicos">
-            {metrics.focos_técnicos.map((foco) => (
-              <span
-                key={foco}
-                className="rounded-full bg-light-gray px-3 py-1 text-xs font-medium text-charcoal"
-              >
-                {foco}
-              </span>
-            ))}
+            {focusCounts && Object.keys(focusCounts).length > 0
+              ? Object.entries(focusCounts).map(([foco, n]) => (
+                  <span
+                    key={foco}
+                    className="rounded-full bg-light-gray px-3 py-1 text-xs font-medium text-charcoal"
+                  >
+                    {foco} · {n}
+                  </span>
+                ))
+              : focusList.map((foco) => (
+                  <span
+                    key={foco}
+                    className="rounded-full bg-light-gray px-3 py-1 text-xs font-medium text-charcoal"
+                  >
+                    {foco}
+                  </span>
+                ))}
           </div>
         </div>
       )}
 
-      {/* Promedios */}
+      {/* Promedios de rúbrica */}
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mid-gray">
           Promedios de la sesión
         </h3>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="averages-grid">
+        <div className="grid grid-cols-3 gap-3" data-testid="averages-grid">
           {(
             [
-              { label: "RPE", value: metrics.avg_rpe },
               { label: "Esfuerzo", value: metrics.avg_rubric_effort },
               { label: "Actitud", value: metrics.avg_rubric_attitude },
               { label: "Técnica", value: metrics.avg_rubric_technique },

@@ -15,7 +15,7 @@ vi.mock("@/api/client", () => ({
 vi.mock("@/api/trainingSessions", () => ({
   useMonthlyReports: vi.fn(),
   useGenerateMonthlyReport: vi.fn(),
-  useSendMonthlyReport: vi.fn(),
+  useDownloadMonthlyReportPdf: vi.fn(),
 }));
 
 vi.mock("@/store/auth.store", () => ({
@@ -30,7 +30,7 @@ vi.mock("@/store/auth.store", () => ({
 import {
   useMonthlyReports,
   useGenerateMonthlyReport,
-  useSendMonthlyReport,
+  useDownloadMonthlyReportPdf,
 } from "@/api/trainingSessions";
 import { ReportsListPage } from "./ReportsListPage";
 import type { MonthlyReportFull } from "@/types/trainingSession.types";
@@ -57,7 +57,6 @@ function makeReport(overrides?: Partial<MonthlyReportFull>): MonthlyReportFull {
     coach_observations: null,
     generated_by_user_id: 10,
     generated_at: "2026-05-01T10:00:00Z",
-    sent_at: null,
     ...overrides,
   };
 }
@@ -77,8 +76,8 @@ beforeEach(() => {
   vi.mocked(useGenerateMonthlyReport).mockReturnValue(
     mutationStub as unknown as ReturnType<typeof useGenerateMonthlyReport>,
   );
-  vi.mocked(useSendMonthlyReport).mockReturnValue(
-    mutationStub as unknown as ReturnType<typeof useSendMonthlyReport>,
+  vi.mocked(useDownloadMonthlyReportPdf).mockReturnValue(
+    mutationStub as unknown as ReturnType<typeof useDownloadMonthlyReportPdf>,
   );
 });
 
@@ -118,6 +117,25 @@ describe("ReportsListPage", () => {
     renderPage();
     const items = screen.getAllByText(/Abril 2026/i);
     expect(items.length).toBeGreaterThan(0);
+  });
+
+  it("el botón 'Descargar PDF' dispara la mutación de descarga", () => {
+    const mutateMock = vi.fn();
+    vi.mocked(useDownloadMonthlyReportPdf).mockReturnValue({
+      ...mutationStub,
+      mutate: mutateMock,
+    } as unknown as ReturnType<typeof useDownloadMonthlyReportPdf>);
+    vi.mocked(useMonthlyReports).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [makeReport()],
+    } as unknown as ReturnType<typeof useMonthlyReports>);
+    renderPage();
+    fireEvent.click(screen.getAllByText("Descargar PDF")[0]);
+    expect(mutateMock).toHaveBeenCalledWith(
+      { year: 2026, month: 4 },
+      expect.anything(),
+    );
   });
 
   it("muestra skeleton durante la carga", () => {

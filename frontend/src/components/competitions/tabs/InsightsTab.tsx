@@ -1,9 +1,9 @@
 /**
  * InsightsTab — insights agregados del club para una válida.
  *
- * Reutiliza `useClubInsightsByRace` con `latestOnly: true` para mostrar
- * el grid de análisis IA por atleta. Es la misma vista que ClubInsightsByRacePage
- * pero incrustada dentro de un tab (sin header propio, sin botón "Volver").
+ * Muestra el grid de análisis IA por atleta (scopeado a la válida).
+ * Es la misma vista que ClubInsightsByRacePage pero incrustada dentro
+ * de un tab (sin header propio, sin botón "Volver").
  *
  * Props: `raceEventId: number`
  */
@@ -167,7 +167,17 @@ export interface InsightsTabProps {
   raceEventId: number;
 }
 
+/**
+ * InsightsTab — grid de análisis IA por atleta scopeado a la válida.
+ */
 export function InsightsTab({ raceEventId }: InsightsTabProps) {
+  return <ClubInsightsGrid raceEventId={raceEventId} />;
+}
+
+/**
+ * ClubInsightsGrid — grid de análisis IA por atleta para una válida concreta.
+ */
+function ClubInsightsGrid({ raceEventId }: InsightsTabProps) {
   const navigate = useNavigate();
   const { data, isLoading, isError, refetch } = useClubInsightsByRace(
     raceEventId,

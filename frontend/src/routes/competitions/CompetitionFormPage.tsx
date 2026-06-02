@@ -40,7 +40,9 @@ import {
   useRaceEvent,
   useUpdateRaceEvent,
 } from "@/hooks/race/useRaceEvents";
+import { useCreateCalendarEventFromRace } from "@/hooks/race/useCreateCalendarEventFromRace";
 import { VENUE_ALTITUDES } from "@/types/raceEvents.types";
+import type { EventCreatePayload } from "@/types/calendar.types";
 
 // ---------------------------------------------------------------------------
 // Estilos compartidos (patrón del proyecto)
@@ -93,6 +95,12 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
 
   const createMutation = useCreateRaceEvent();
   const updateMutation = useUpdateRaceEvent();
+  // PR6: creación bidireccional del evento de calendario ligado.
+  const calendarFromRace = useCreateCalendarEventFromRace();
+
+  // PR6 (D1): "Crear evento en calendario" — ON por default (opt-out visible).
+  // Solo aplica en modo create.
+  const [createCalendarEvent, setCreateCalendarEvent] = useState(true);
 
   // Estado de la sede: "predefined" | "custom"
   const [locationMode, setLocationMode] = useState<"predefined" | "custom">("predefined");
@@ -190,6 +198,34 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
     };
   }
 
+  // PR6: construye el payload del calendar_event ligado a la válida recién
+  // creada. Evento all-day en la fecha de la válida; la válida es source-of-
+  // truth, así que título/sede/fecha se copian. El coach puede refinar la
+  // categoría de carrera (A/B/C) luego desde el calendario.
+  function buildCalendarPayload(
+    raceEventId: number,
+    values: CompetitionEventFormValues,
+  ): EventCreatePayload {
+    const date = values.event_date; // YYYY-MM-DD
+    return {
+      event_type: "competition",
+      title: values.name,
+      location: values.location || undefined,
+      start_at: `${date}T00:00:00`,
+      end_at: `${date}T23:59:59`,
+      all_day: true,
+      race_event_id: raceEventId,
+      event_data: {
+        city: values.location || "",
+        race_category: "A",
+        is_departmental: values.is_championship,
+      },
+      audiences: [
+        { audience_type: "all_club", audience_value: {} as Record<string, never> },
+      ],
+    };
+  }
+
   async function onSubmit(values: CompetitionEventFormValues) {
     setGlobalError(null);
     setSeqError(null);
@@ -198,7 +234,20 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
       createMutation.mutate(
         { body: buildPayload(values) },
         {
-          onSuccess: (created) => {
+          onSuccess: async (created) => {
+            // PR6 (D1): si el checkbox está activo, crea el calendar_event
+            // ligado. Best-effort: si falla, navega igual (el coach puede
+            // reintentar vía "Asociar a calendario" en el detalle).
+            if (createCalendarEvent) {
+              try {
+                await calendarFromRace.createWithRaceEvent(
+                  buildCalendarPayload(created.id, values),
+                  created.id,
+                );
+              } catch {
+                // Silencioso: la válida ya existe; el vínculo es opcional.
+              }
+            }
             const dest = returnTo ?? `/competitions/${created.id}`;
             navigate(dest);
           },
@@ -605,6 +654,30 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
             )}
           </div>
         </div>
+
+        {/* Sección 4: Calendario (solo en create) — PR6 D1 */}
+        {!isEdit && (
+          <div className={sectionClass} style={sectionStyle}>
+            <h2 className="text-base font-semibold text-charcoal">Calendario</h2>
+            <label className="flex cursor-pointer items-start gap-2.5 text-sm text-charcoal">
+              <input
+                type="checkbox"
+                checked={createCalendarEvent}
+                onChange={(e) => setCreateCalendarEvent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-mid-gray"
+                data-testid="create-calendar-event-checkbox"
+              />
+              <span>
+                Crear evento en el calendario del club
+                <span className="mt-0.5 block text-xs font-normal text-mid-gray">
+                  Se creará un evento ligado a esta válida. Si luego cambias
+                  fecha, nombre o sede, el calendario se actualizará
+                  automáticamente.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
 
         {/* Error global */}
         {globalError && (

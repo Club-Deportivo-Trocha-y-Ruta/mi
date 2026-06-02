@@ -104,6 +104,12 @@ class AgentRun(Base):
         ForeignKey("athletes.id", ondelete="SET NULL"), nullable=True
     )
     checkpoint_thread_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # PR5 (unificación /competitions): marca de "análisis desactualizado".
+    # Se puebla cuando una re-ingesta sobre el mismo race_event detecta un
+    # SHA256 distinto (el análisis se basó en resultados ya corregidos).
+    # NULL = vigente. NOT NULL = stale desde ese timestamp. Sin default →
+    # migración no bloqueante; filas existentes quedan NULL (vigentes).
+    stale_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 

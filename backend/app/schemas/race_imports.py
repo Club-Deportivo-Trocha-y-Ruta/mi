@@ -20,6 +20,7 @@ Convenciones:
 """
 from __future__ import annotations
 
+import enum
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
@@ -27,6 +28,43 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.race_event import SurfaceCondition
+
+
+# ---------------------------------------------------------------------------
+# Catálogo CERRADO de motivos de revisión (PR4 unificación /competitions)
+# ---------------------------------------------------------------------------
+
+
+class RevisionReasonCode(str, enum.Enum):
+    """Motivos permitidos para una re-ingesta (revisión).
+
+    Catálogo CERRADO — reemplaza el texto libre previo. Privacidad menores:
+    al ser un enum, el coach NO puede escribir nombres ni datos sensibles en
+    el motivo (que se persiste en ``race_result_revisions.reason`` y
+    ``race_imports.revision_reason``).
+    """
+
+    official_correction = "official_correction"  # Corrección oficial de la fed
+    timing_fix = "timing_fix"  # Ajuste de tiempos
+    position_fix = "position_fix"  # Reordenamiento de posiciones
+    category_reclassification = "category_reclassification"  # Recategorización
+    dsq_added = "dsq_added"  # Descalificación añadida
+    result_removed = "result_removed"  # Resultado retirado del acta
+    result_added = "result_added"  # Resultado añadido al acta
+    data_entry_error = "data_entry_error"  # Error de digitación previo
+
+
+#: Etiquetas legibles (es-CO) para la UI. El backend solo persiste el code.
+REVISION_REASON_LABELS: dict[RevisionReasonCode, str] = {
+    RevisionReasonCode.official_correction: "Corrección oficial de la Federación",
+    RevisionReasonCode.timing_fix: "Ajuste de tiempos",
+    RevisionReasonCode.position_fix: "Reordenamiento de posiciones",
+    RevisionReasonCode.category_reclassification: "Recategorización de deportistas",
+    RevisionReasonCode.dsq_added: "Descalificación añadida",
+    RevisionReasonCode.result_removed: "Resultado retirado del acta",
+    RevisionReasonCode.result_added: "Resultado añadido al acta",
+    RevisionReasonCode.data_entry_error: "Error de digitación previo",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -176,11 +214,41 @@ class ResolvedMatch(BaseModel):
 
 
 class ImportCommitRequest(BaseModel):
-    """Body del endpoint POST /imports/{parse_id}/commit (F-UP3 §4.3)."""
+    """Body del endpoint POST /imports/{parse_id}/commit (F-UP3 §4.3).
+
+    PR4: ``revision_reason`` ahora es un code del catálogo CERRADO
+    (``RevisionReasonCode``), no texto libre. Privacidad menores: el coach no
+    puede escribir nombres/datos sensibles en el motivo. Pydantic rechaza
+    cualquier valor fuera del enum con 422.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     resolved_matches: list[ResolvedMatch] = Field(default_factory=list)
+    revision_reason: Optional[RevisionReasonCode] = Field(
+        default=None,
+        description=(
+            "Motivo de la revisión (catálogo cerrado). Obligatorio si el diff "
+            "incluye eliminaciones (validado en el flujo de revisión)."
+        ),
+    )
+
+
+class RevisionReasonOption(BaseModel):
+    """Opción del catálogo de motivos de revisión (para poblar el dropdown UI)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    label: str
+
+
+class RevisionReasonsResponse(BaseModel):
+    """Catálogo cerrado de motivos de revisión."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    options: list[RevisionReasonOption]
 
 
 class ImportCommitResponse(BaseModel):
@@ -193,6 +261,72 @@ class ImportCommitResponse(BaseModel):
     n_results_inserted: int
     n_competitors_created: int
     n_competitors_linked: int
+
+
+# ---------------------------------------------------------------------------
+# Diff read-only de la última revisión (PR4 unificación /competitions)
+# GET /api/race-analysis/imports/{race_event_id}/diff
+# ---------------------------------------------------------------------------
+
+
+class RevisionDiffItem(BaseModel):
+    """Un cambio individual de la última revisión, agrupable en la UI.
+
+    Privacidad: ``competitor_display_name`` proviene de PDFs públicos de la
+    Federación (no datos privados de TyR). NO se exponen ``athlete_id`` ni IDs
+    internos de usuario.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(..., description="create | update | delete")
+    group: str = Field(
+        ...,
+        description=(
+            "Grupo UI: position | time | gap_gc | category_reclassified | "
+            "added_removed"
+        ),
+    )
+    competitor_display_name: str
+    category_code: str | None = None
+    field_before: str | None = Field(
+        default=None, description="Valor previo (display) del campo cambiado."
+    )
+    field_after: str | None = Field(
+        default=None, description="Valor nuevo (display) del campo cambiado."
+    )
+
+
+class RevisionDiffGroupCounts(BaseModel):
+    """Conteos por grupo para los encabezados de la UI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    position: int = 0
+    time: int = 0
+    gap_gc: int = 0
+    category_reclassified: int = 0
+    added_removed: int = 0
+
+
+class RaceEventDiffResponse(BaseModel):
+    """Diff read-only de la última revisión commiteada de una válida.
+
+    Si la válida no tiene revisiones (primer import o sin re-ingesta), retorna
+    ``has_revision=false`` y listas vacías.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    race_event_id: int
+    has_revision: bool
+    last_revision_at: datetime | None = None
+    reason_code: str | None = Field(
+        default=None,
+        description="Code del catálogo cerrado (o legacy text si es previo a PR4).",
+    )
+    counts: RevisionDiffGroupCounts = Field(default_factory=RevisionDiffGroupCounts)
+    items: list[RevisionDiffItem] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

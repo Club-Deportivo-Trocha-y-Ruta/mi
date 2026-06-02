@@ -31,6 +31,8 @@ vi.mock("@/api/raceImports", () => ({
   dryRunRaceImport: vi.fn(),
   commitRaceImport: vi.fn(),
   listRaceImports: vi.fn(),
+  getRevisionReasons: vi.fn(),
+  getRaceEventDiff: vi.fn(),
 }));
 
 vi.mock("@/api/athletes", () => ({
@@ -231,6 +233,14 @@ const DRY_RUN_WITH_AMBIGUOUS: ImportDryRunResponse = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // PR4: catálogo cerrado de motivos de revisión (poblar el dropdown).
+  vi.mocked(importsApi.getRevisionReasons).mockResolvedValue({
+    options: [
+      { code: "official_correction", label: "Corrección oficial de la Federación" },
+      { code: "timing_fix", label: "Ajuste de tiempos" },
+      { code: "data_entry_error", label: "Error de digitación previo" },
+    ],
+  });
   vi.mocked(athletesApi.getAthletes).mockResolvedValue({
     items: [
       {
@@ -594,7 +604,7 @@ describe("ImportWizard — Step 2", () => {
 });
 
 describe("ImportWizard — Step 3", () => {
-  it("success: muestra summary y link al análisis", async () => {
+  it("success: muestra summary y link a los resultados de la válida", async () => {
     vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
     vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
       DRY_RUN_CONFIRMED_ONLY,
@@ -624,7 +634,7 @@ describe("ImportWizard — Step 3", () => {
     );
     expect(
       screen.getByTestId("wizard-step3-link-analysis"),
-    ).toHaveAttribute("href", expect.stringContaining("tab=runs"));
+    ).toHaveAttribute("href", "/competitions/4?tab=results");
   });
 
   it("'Cargar otro' resetea el wizard a step 1", async () => {
@@ -745,14 +755,14 @@ describe("ImportWizard — Revision mode (F-UP-REV5)", () => {
     await gotoStep2Revision(user, DRY_RUN_REVISION_WITH_DELETES);
 
     const confirm = screen.getByTestId("wizard-step2-confirm");
-    const textarea = screen.getByTestId("wizard-revision-reason");
+    const select = screen.getByTestId("wizard-revision-reason");
 
     // Sin reason → disabled
     expect(confirm).toBeDisabled();
-    expect(textarea).toHaveAttribute("aria-required", "true");
+    expect(select).toHaveAttribute("aria-required", "true");
 
-    // Llenar reason → habilitado
-    await user.type(textarea, "Corrección oficial federación post-reclamo");
+    // Seleccionar motivo del catálogo cerrado → habilitado
+    await user.selectOptions(select, "official_correction");
     expect(confirm).toBeEnabled();
   });
 
@@ -761,10 +771,10 @@ describe("ImportWizard — Revision mode (F-UP-REV5)", () => {
     await gotoStep2Revision(user, DRY_RUN_REVISION_SAFE);
 
     const confirm = screen.getByTestId("wizard-step2-confirm");
-    const textarea = screen.getByTestId("wizard-revision-reason");
+    const select = screen.getByTestId("wizard-revision-reason");
 
-    // n_delete=0 → no required → enabled sin texto
-    expect(textarea).not.toHaveAttribute("aria-required", "true");
+    // n_delete=0 → no required → enabled sin seleccionar motivo
+    expect(select).not.toHaveAttribute("aria-required", "true");
     expect(confirm).toBeEnabled();
   });
 
@@ -779,18 +789,18 @@ describe("ImportWizard — Revision mode (F-UP-REV5)", () => {
     const user = userEvent.setup();
     await gotoStep2Revision(user, DRY_RUN_REVISION_WITH_DELETES);
 
-    const textarea = screen.getByTestId("wizard-revision-reason");
-    await user.type(textarea, "  Corrección oficial federación  ");
+    const select = screen.getByTestId("wizard-revision-reason");
+    await user.selectOptions(select, "official_correction");
     await user.click(screen.getByTestId("wizard-step2-confirm"));
 
     await waitFor(() =>
       expect(screen.getByTestId("wizard-step3-success")).toBeInTheDocument(),
     );
 
-    // Verifica payload: revision_reason trimmed + resolved_matches vacío
+    // Verifica payload: revision_reason es el CODE del catálogo + matches vacío
     expect(importsApi.commitRaceImport).toHaveBeenCalledWith("p-rev-1", {
       resolved_matches: [],
-      revision_reason: "Corrección oficial federación",
+      revision_reason: "official_correction",
     });
 
     // Step 3 muestra resumen revisión, no el F-UP normal
@@ -822,9 +832,9 @@ describe("ImportWizard — Revision mode (F-UP-REV5)", () => {
     const user = userEvent.setup();
     await gotoStep2Revision(user, DRY_RUN_REVISION_WITH_DELETES);
 
-    await user.type(
+    await user.selectOptions(
       screen.getByTestId("wizard-revision-reason"),
-      "Mi motivo",
+      "official_correction",
     );
     await user.click(screen.getByTestId("wizard-step2-confirm"));
 

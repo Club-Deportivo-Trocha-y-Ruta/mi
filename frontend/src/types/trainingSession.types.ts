@@ -152,48 +152,39 @@ export interface AttendanceUpdate {
   individual_feedback?: string | null;
 }
 
-export interface MonthlyMetrics {
-  total_sessions: number;
-  executed_sessions: number;
-  cancelled_sessions: number;
-  planned_sessions: number;
-  technical_focuses: string[];
-  avg_attendance_rate?: number | null;
-}
-
-export interface MonthlyReport {
-  id: number;
-  club_id: number;
-  year: number;
-  month: number;
-  ai_summary?: string | null;
-  metrics_snapshot: MonthlyMetrics;
-  generated_by_user_id: number;
-  generated_at: string;
-  sent_at?: string | null;
-}
-
 // ---------------------------------------------------------------------------
 // Reporte mensual — PASO 12
 // ---------------------------------------------------------------------------
 
+// Forma REAL del backend (MonthlyMetrics.model_dump): dict keyed por athlete_id.
 export interface AthleteAttendanceStats {
-  pseudonym: string;
+  athlete_id: number;
   count_present: number;
-  count_total: number;
-  percentage: number;
+  count_absent: number;
+  count_justified: number;
+  count_late: number;
+  count_injured: number;
+  total_sessions: number;
+  attendance_pct: number;
 }
 
 export interface MonthlyMetricsSnapshot {
   total_sessions_planned: number;
   total_sessions_executed: number;
   total_sessions_cancelled: number;
-  attendance_stats: AthleteAttendanceStats[];
-  focos_técnicos: string[];
+  // Claves string (athlete_id) porque el snapshot se serializa a JSON.
+  attendance_by_athlete?: Record<string, AthleteAttendanceStats>;
+  technical_focus_list?: string[];
+  technical_focus_counts?: Record<string, number>;
   avg_rpe: number | null;
   avg_rubric_effort: number | null;
   avg_rubric_attitude: number | null;
   avg_rubric_technique: number | null;
+  // SPEC 1 — campos nuevos (opcionales: reportes antiguos no los traen).
+  total_minutes_planned?: number;
+  total_minutes_executed?: number;
+  avg_hours_per_week?: number | null;
+  attendance_status_totals?: Record<string, number>;
 }
 
 export interface MonthlyReportFull {
@@ -206,7 +197,8 @@ export interface MonthlyReportFull {
   coach_observations: string | null;
   generated_by_user_id: number;
   generated_at: string;
-  sent_at: string | null;
+  // id_atleta (str) -> "Nombre Apellido". Solo presente para coach/admin.
+  athlete_names?: Record<string, string>;
 }
 
 export interface MonthlyReportCreatePayload {

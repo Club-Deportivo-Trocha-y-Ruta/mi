@@ -134,3 +134,38 @@ export async function downloadRunPdf(
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
+
+// ---------------------------------------------------------------------------
+// PR5 — re-trigger IA + flag stale
+// ---------------------------------------------------------------------------
+
+export interface RunInvalidateResponse {
+  run_id: string;
+  stale: boolean;
+}
+
+/** POST /runs/:id/invalidate — marca un run como desactualizado (stale). */
+export async function invalidateRun(
+  runId: string,
+  options?: { signal?: AbortSignal },
+): Promise<RunInvalidateResponse> {
+  const response = await apiClient.post<RunInvalidateResponse>(
+    `${BASE}/runs/${runId}/invalidate`,
+    undefined,
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+/** POST /runs/:id/re-execute — re-ejecuta el análisis (manual, D5). */
+export async function reExecuteRun(
+  runId: string,
+  options?: { signal?: AbortSignal },
+): Promise<StartRunResponse> {
+  const response = await apiClient.post<StartRunResponse>(
+    `${BASE}/runs/${runId}/re-execute`,
+    undefined,
+    { signal: options?.signal },
+  );
+  return response.data;
+}

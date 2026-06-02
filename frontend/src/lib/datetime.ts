@@ -197,3 +197,19 @@ export function formatRelativeDay(value: DateInput): string {
   if (diffDays === 1) return "Mañana";
   return formatDate(d);
 }
+
+/**
+ * Formatea una duración en minutos como "hh:mm:ss".
+ * Acepta minutos fraccionarios (ej. un promedio en horas convertido a minutos);
+ * los segundos salen de la fracción. Retorna "—" si el valor es null/undefined.
+ * Ej: 720 → "12:00:00", 126 → "02:06:00".
+ */
+export function formatMinutesAsHms(minutes: number | null | undefined): string {
+  if (minutes == null) return "—";
+  const totalSeconds = Math.round(minutes * 60);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}

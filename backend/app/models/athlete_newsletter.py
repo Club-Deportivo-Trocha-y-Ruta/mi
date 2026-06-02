@@ -31,6 +31,9 @@ class NewsletterStatus(str, enum.Enum):
     approved = "approved"
     sent = "sent"
     failed = "failed"
+    # PR5 (D3): boletín ya enviado que quedó desactualizado por una corrección
+    # de resultados (re-ingesta). NO se reenvía automáticamente — solo se marca.
+    outdated = "outdated"
 
 
 class AthleteMonthlyNewsletter(Base):

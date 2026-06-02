@@ -7,9 +7,8 @@ import { isAxiosError } from "axios";
 import {
   useGenerateMonthlyReport,
   useMonthlyReports,
-  useSendMonthlyReport,
+  useDownloadMonthlyReportPdf,
 } from "@/api/trainingSessions";
-import { ConfirmModal } from "@/components/common/ConfirmModal";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +23,7 @@ import {
   type MonthlyReportFormValues,
 } from "@/schemas/monthlyReport.schema";
 import { formatDateMedium } from "@/lib/datetime";
+import { triggerBlobDownload } from "@/lib/download";
 import type { MonthlyReportFull } from "@/types/trainingSession.types";
 
 const MONTH_NAMES = [
@@ -184,10 +184,11 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
 
 interface ReportsTableProps {
   reports: MonthlyReportFull[];
-  onResend: (report: MonthlyReportFull) => void;
+  onDownload: (report: MonthlyReportFull) => void;
+  downloadingId: number | null;
 }
 
-function ReportsTable({ reports, onResend }: ReportsTableProps) {
+function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps) {
   const navigate = useNavigate();
 
   return (
@@ -203,9 +204,6 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
               <p className="mt-0.5 text-xs text-mid-gray">
                 Generado el {formatDateMedium(r.generated_at)}
               </p>
-              <p className="mt-0.5 text-xs text-mid-gray">
-                {r.sent_at ? `Enviado el ${formatDateMedium(r.sent_at)}` : "Pendiente de envío"}
-              </p>
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
@@ -217,10 +215,11 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => onResend(r)}
-                  className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-70"
+                  onClick={() => onDownload(r)}
+                  disabled={downloadingId === r.id}
+                  className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
                 >
-                  Re-enviar al club
+                  {downloadingId === r.id ? "Descargando…" : "Descargar PDF"}
                 </button>
               </div>
             </div>
@@ -244,9 +243,6 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
                 Generado el
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                Enviado el
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Acciones
               </th>
             </tr>
@@ -262,11 +258,6 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
                   {MONTH_NAMES[r.month - 1]} {r.year}
                 </td>
                 <td className="px-4 py-3 text-mid-gray">{formatDateMedium(r.generated_at)}</td>
-                <td className="px-4 py-3 text-mid-gray">
-                  {r.sent_at ? formatDateMedium(r.sent_at) : (
-                    <span className="text-yellow-700">Pendiente</span>
-                  )}
-                </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
                     <button
@@ -279,10 +270,11 @@ function ReportsTable({ reports, onResend }: ReportsTableProps) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => onResend(r)}
-                      className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-70"
+                      onClick={() => onDownload(r)}
+                      disabled={downloadingId === r.id}
+                      className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
                     >
-                      Re-enviar al club
+                      {downloadingId === r.id ? "Descargando…" : "Descargar PDF"}
                     </button>
                   </div>
                 </td>
@@ -302,11 +294,12 @@ export function ReportsListPage() {
 
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
-  const [resendTarget, setResendTarget] = useState<MonthlyReportFull | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const reportsQuery = useMonthlyReports(clubId);
   const generateMutation = useGenerateMonthlyReport(clubId ?? 0);
-  const sendMutation = useSendMonthlyReport(clubId ?? 0);
+  const downloadMutation = useDownloadMonthlyReportPdf(clubId ?? 0);
 
   const reports = reportsQuery.data ?? [];
 
@@ -341,13 +334,23 @@ export function ReportsListPage() {
     );
   }
 
-  function handleResendConfirm() {
-    if (!resendTarget) return;
-    sendMutation.mutate(
-      { year: resendTarget.year, month: resendTarget.month },
+  function handleDownload(report: MonthlyReportFull) {
+    setDownloadError(null);
+    setDownloadingId(report.id);
+    downloadMutation.mutate(
+      { year: report.year, month: report.month },
       {
-        onSuccess: () => setResendTarget(null),
-        onError: () => setResendTarget(null),
+        onSuccess: (blob) => {
+          triggerBlobDownload(
+            blob,
+            `reporte-${report.year}-${String(report.month).padStart(2, "0")}.pdf`,
+          );
+          setDownloadingId(null);
+        },
+        onError: () => {
+          setDownloadError("No se pudo descargar el PDF. Intenta de nuevo.");
+          setDownloadingId(null);
+        },
       },
     );
   }
@@ -422,8 +425,21 @@ export function ReportsListPage() {
         </div>
       )}
 
+      {downloadError && (
+        <p
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          role="alert"
+        >
+          {downloadError}
+        </p>
+      )}
+
       {!reportsQuery.isLoading && !reportsQuery.isError && reports.length > 0 && (
-        <ReportsTable reports={reports} onResend={setResendTarget} />
+        <ReportsTable
+          reports={reports}
+          onDownload={handleDownload}
+          downloadingId={downloadingId}
+        />
       )}
 
       <GenerateModal
@@ -432,21 +448,6 @@ export function ReportsListPage() {
         onSubmit={handleGenerate}
         isPending={generateMutation.isPending}
         error={generateError}
-      />
-
-      <ConfirmModal
-        open={!!resendTarget}
-        title="Re-enviar reporte al club"
-        body={
-          resendTarget
-            ? `¿Deseas re-enviar el reporte de ${MONTH_NAMES[resendTarget.month - 1]} ${resendTarget.year} a todos los administradores del club?`
-            : ""
-        }
-        confirmLabel="Sí, re-enviar"
-        cancelLabel="Cancelar"
-        isPending={sendMutation.isPending}
-        onCancel={() => setResendTarget(null)}
-        onConfirm={handleResendConfirm}
       />
     </section>
   );

@@ -60,19 +60,33 @@ export function makeMonthlyReport(overrides?: Partial<MonthlyReportFull>): Month
       total_sessions_planned: 8,
       total_sessions_executed: 7,
       total_sessions_cancelled: 1,
-      attendance_stats: [
-        { pseudonym: "Atleta A", count_present: 6, count_total: 7, percentage: 85.7 },
-      ],
-      focos_técnicos: ["Frenada", "Saltos"],
+      attendance_by_athlete: {
+        "42": {
+          athlete_id: 42,
+          count_present: 6,
+          count_absent: 1,
+          count_justified: 0,
+          count_late: 0,
+          count_injured: 0,
+          total_sessions: 7,
+          attendance_pct: 85.7,
+        },
+      },
+      technical_focus_list: ["Frenada", "Saltos"],
+      technical_focus_counts: { Frenada: 3, Saltos: 2 },
       avg_rpe: 6.5,
       avg_rubric_effort: 3.8,
       avg_rubric_attitude: 4.1,
       avg_rubric_technique: 3.5,
+      total_minutes_planned: 720,
+      total_minutes_executed: 630,
+      avg_hours_per_week: 2.4,
+      attendance_status_totals: { presente: 30, tarde: 4, justificado: 2, ausente: 5, lesionado: 1 },
     },
     coach_observations: null,
     generated_by_user_id: 10,
     generated_at: "2026-06-01T00:00:00Z",
-    sent_at: null,
+    athlete_names: { "42": "Juan Pérez" },
     ...overrides,
   };
 }
@@ -151,7 +165,7 @@ export const trainingHandlers = [
 
   // GET /api/clubs/:id/monthly-reports — lista de reportes
   http.get("*/api/clubs/:id/monthly-reports", () => {
-    return HttpResponse.json([makeMonthlyReport(), makeMonthlyReport({ id: 2, month: 4, sent_at: "2026-05-01T10:00:00Z" })]);
+    return HttpResponse.json([makeMonthlyReport(), makeMonthlyReport({ id: 2, month: 4 })]);
   }),
 
   // GET /api/clubs/:id/monthly-reports/:year/:month — reporte individual
@@ -164,9 +178,15 @@ export const trainingHandlers = [
     return HttpResponse.json(makeMonthlyReport({ id: 10 }), { status: 201 });
   }),
 
-  // POST /api/clubs/:id/monthly-reports/:year/:month/send — enviar reporte
-  http.post("*/api/clubs/:id/monthly-reports/:year/:month/send", () => {
-    return HttpResponse.json({ enviados: 2, total_admins: 2, sent_at: "2026-06-01T12:00:00Z" });
+  // GET /api/clubs/:id/monthly-reports/:year/:month/pdf — descargar PDF
+  http.get("*/api/clubs/:id/monthly-reports/:year/:month/pdf", () => {
+    const pdf = new Blob(["%PDF-1.4 fake"], { type: "application/pdf" });
+    return new HttpResponse(pdf, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'attachment; filename="reporte.pdf"',
+      },
+    });
   }),
 
   // GET /api/parents/training/monthly-summary/:year/:month — resumen mensual para padre

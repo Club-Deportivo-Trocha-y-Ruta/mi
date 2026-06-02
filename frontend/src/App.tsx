@@ -7,9 +7,28 @@ import { setQueryClient } from "@/lib/queryClientHandle";
 import { landingPathForRole } from "@/lib/landing";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-// Lazy load: race-analysis bundle es pesado (react-markdown + AI hooks)
-// y sólo coach/admin lo abren ocasionalmente.
-const RaceAnalysisPage = lazy(() => import("@/routes/results/RaceAnalysisPage"));
+// PR1: índice slim de análisis IA (solo vistas cross-válida, sin lanzador ni chat).
+const InsightsHubPage = lazy(() =>
+  import("@/routes/competitions/insights/InsightsHubPage").then((m) => ({
+    default: m.InsightsHubPage,
+  })),
+);
+// Paso 3: página de competidores sin enlazar (wrapper sobre UnlinkedCompetitorsTab).
+const UnlinkedCompetitorsPage = lazy(() =>
+  import("@/routes/competitions/UnlinkedCompetitorsPage").then((m) => ({
+    default: m.UnlinkedCompetitorsPage,
+  })),
+);
+// PR3: subpáginas IA cross-válida bajo /competitions/insights/* (lazy por chunk).
+const SeasonInsightsPage = lazy(
+  () => import("@/routes/competitions/insights/SeasonInsightsPage"),
+);
+const AthleteInsightsPage = lazy(
+  () => import("@/routes/competitions/insights/AthleteInsightsPage"),
+);
+const ClubInsightsPage = lazy(
+  () => import("@/routes/competitions/insights/ClubInsightsPage"),
+);
 import { useAuthStore } from "@/store/auth.store";
 import { AIHealthPage } from "@/routes/admin/AIHealthPage";
 import { LoginPage } from "@/routes/auth/LoginPage";
@@ -24,6 +43,7 @@ import { MyAthleteDetailPage } from "@/routes/parents/MyAthleteDetailPage";
 import { OnboardingPage } from "@/routes/auth/OnboardingPage";
 import { PrivacyPage } from "@/routes/PrivacyPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
+import { GonePage } from "@/routes/GonePage";
 import { SessionsListPage } from "@/routes/training/SessionsListPage";
 import { SessionFormPage } from "@/routes/training/SessionFormPage";
 import { SessionDetailPage } from "@/routes/training/SessionDetailPage";
@@ -31,7 +51,6 @@ import { ReportsListPage } from "@/routes/training/ReportsListPage";
 import { ReportDetailPage } from "@/routes/training/ReportDetailPage";
 import { AthleteNewslettersDashboardPage } from "@/routes/training/AthleteNewslettersDashboardPage";
 import { AthleteNewsletterDetailPage } from "@/routes/training/AthleteNewsletterDetailPage";
-import { ClubInsightsByRacePage } from "@/routes/training/ClubInsightsByRacePage";
 import { ParentSessionsPage } from "@/routes/parents/training/ParentSessionsPage";
 import { ParentSessionDetailPage } from "@/routes/parents/training/ParentSessionDetailPage";
 import { ParentMonthlyOverviewPage } from "@/routes/parents/training/ParentMonthlyOverviewPage";
@@ -291,12 +310,13 @@ export default function App() {
           }
         />
 
-        {/* ── Club insights by race (coach/admin) — Sprint 3 ── */}
+        {/* ── PR7 (D7): legacy club-insights deprecado definitivamente (410).
+              Tras un ciclo completo con redirect 301, ahora muestra GonePage. ── */}
         <Route
           path="/training/races/:raceEventId/club-insights"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <ClubInsightsByRacePage />
+              <GonePage />
             </ProtectedRoute>
           }
         />
@@ -351,20 +371,101 @@ export default function App() {
           }
         />
 
-        {/* ── Race analysis v2 (coach/admin) ── */}
+        {/* ── Análisis IA carreras — índice slim (solo vistas cross-válida).
+              Rediseño: sin lanzador, sin chat, sin import. ── */}
         <Route
-          path="/coach/race-analysis"
+          path="/competitions/insights"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense
                 fallback={
                   <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando módulo de análisis...
+                    Cargando análisis IA...
                   </div>
                 }
               >
-                <RaceAnalysisPage />
+                <InsightsHubPage />
               </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Competidores sin enlazar — reubicado desde el hub ── */}
+        <Route
+          path="/competitions/unlinked"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando competidores...
+                  </div>
+                }
+              >
+                <UnlinkedCompetitorsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── PR3: subpáginas IA cross-válida. RBAC coach/admin (parent →
+              redirect por ProtectedRoute; backend devuelve 403). ── */}
+        <Route
+          path="/competitions/insights/club"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando análisis del club...
+                  </div>
+                }
+              >
+                <ClubInsightsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competitions/insights/season/:year"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando panorama de temporada...
+                  </div>
+                }
+              >
+                <SeasonInsightsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competitions/insights/athletes/:id"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando análisis del deportista...
+                  </div>
+                }
+              >
+                <AthleteInsightsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── PR7 (D7): ruta legacy del módulo IA deprecada definitivamente (410).
+              Tras un ciclo completo con redirect 301, ahora muestra GonePage. ── */}
+        <Route
+          path="/coach/race-analysis"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <GonePage />
             </ProtectedRoute>
           }
         />

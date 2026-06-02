@@ -174,12 +174,70 @@ async def update_race_event(
 
     await db.flush()
 
+    # PR6 (calendario bidireccional): la válida (race_event) es source-of-truth.
+    # Si cambió nombre/fecha/sede, propagamos a su calendar_event ligado (1:1).
+    propagables = {"name", "event_date", "location"} & set(campos.keys())
+    if propagables:
+        await _propagate_to_calendar_event(db, event, propagables)
+
     logger.info(
         "race_event_updated event_id=%s campos=%s",
         race_event_id,
         sorted(campos.keys()),
     )
     return event
+
+
+async def _propagate_to_calendar_event(
+    db: AsyncSession,
+    event: RaceEvent,
+    changed_fields: set[str],
+) -> None:
+    """Propaga cambios de la válida a su ``CalendarEvent`` ligado (PR6).
+
+    Vínculo 1:1: ``calendar_events.race_event_id == event.id``. Si no existe
+    ningún calendar_event ligado, no hace nada (no es error).
+
+    Mapeo de campos:
+    - ``name``       → ``CalendarEvent.title``
+    - ``location``   → ``CalendarEvent.location``
+    - ``event_date`` → mueve ``start_at`` / ``end_at`` a la nueva fecha
+      preservando la hora del día existente (los eventos de válida suelen ser
+      all-day, pero respetamos cualquier hora previa).
+
+    La válida lidera: NO leemos del calendario hacia la válida aquí.
+    """
+    result = await db.execute(
+        select(CalendarEvent).where(CalendarEvent.race_event_id == event.id)
+    )
+    cal_events = list(result.scalars().all())
+    if not cal_events:
+        return
+
+    for cal in cal_events:
+        if "name" in changed_fields:
+            cal.title = event.name
+        if "location" in changed_fields:
+            cal.location = event.location
+        if "event_date" in changed_fields and event.event_date is not None:
+            # Conservar la hora del día previa; solo cambiar la fecha.
+            new_start = cal.start_at.replace(
+                year=event.event_date.year,
+                month=event.event_date.month,
+                day=event.event_date.day,
+            )
+            # Mantener la duración previa (delta entre end y start).
+            duration = cal.end_at - cal.start_at
+            cal.start_at = new_start
+            cal.end_at = new_start + duration
+
+    await db.flush()
+    logger.info(
+        "race_event_calendar_propagated event_id=%s calendar_ids=%s fields=%s",
+        event.id,
+        [c.id for c in cal_events],
+        sorted(changed_fields),
+    )
 
 
 async def delete_race_event(db: AsyncSession, race_event_id: int) -> None:

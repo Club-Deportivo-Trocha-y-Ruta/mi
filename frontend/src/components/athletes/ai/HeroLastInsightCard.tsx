@@ -152,7 +152,7 @@ export function HeroLastInsightCard({
         insight.valida_num !== null &&
         insight.valida_num !== 0 && (
           <Link
-            to={`/training/races/${insight.event_id}/club-insights`}
+            to={`/competitions/${insight.event_id}?tab=insights`}
             className="mt-3 inline-flex items-center gap-1 text-xs text-mid-gray underline-offset-2 hover:underline"
             data-testid="hero-link-club-insights"
             onClick={(e) => e.stopPropagation()}

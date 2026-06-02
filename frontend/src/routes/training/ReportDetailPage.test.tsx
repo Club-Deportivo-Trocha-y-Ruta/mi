@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -14,7 +14,7 @@ vi.mock("@/api/client", () => ({
 
 vi.mock("@/api/trainingSessions", () => ({
   useMonthlyReport: vi.fn(),
-  useSendMonthlyReport: vi.fn(),
+  useDownloadMonthlyReportPdf: vi.fn(),
 }));
 
 vi.mock("@/store/auth.store", () => ({
@@ -32,7 +32,7 @@ vi.mock("@/components/training/MonthlyMetricsTable", () => ({
 
 import {
   useMonthlyReport,
-  useSendMonthlyReport,
+  useDownloadMonthlyReportPdf,
 } from "@/api/trainingSessions";
 import { ReportDetailPage } from "./ReportDetailPage";
 import type { MonthlyReportFull } from "@/types/trainingSession.types";
@@ -59,8 +59,7 @@ function makeReport(overrides?: Partial<MonthlyReportFull>): MonthlyReportFull {
       total_sessions_planned: 8,
       total_sessions_executed: 7,
       total_sessions_cancelled: 1,
-      attendance_stats: [],
-      focos_técnicos: ["Frenada", "Curvas"],
+      technical_focus_list: ["Frenada", "Curvas"],
       avg_rpe: 6.5,
       avg_rubric_effort: 4.2,
       avg_rubric_attitude: 4.8,
@@ -69,7 +68,6 @@ function makeReport(overrides?: Partial<MonthlyReportFull>): MonthlyReportFull {
     coach_observations: "Buena actitud del grupo.",
     generated_by_user_id: 10,
     generated_at: "2026-05-01T10:00:00Z",
-    sent_at: null,
     ...overrides,
   };
 }
@@ -88,8 +86,8 @@ function renderPage(year = "2026", month = "4") {
 }
 
 beforeEach(() => {
-  vi.mocked(useSendMonthlyReport).mockReturnValue(
-    mutationStub as unknown as ReturnType<typeof useSendMonthlyReport>,
+  vi.mocked(useDownloadMonthlyReportPdf).mockReturnValue(
+    mutationStub as unknown as ReturnType<typeof useDownloadMonthlyReportPdf>,
   );
 });
 
@@ -103,38 +101,43 @@ describe("ReportDetailPage", () => {
     renderPage();
     expect(screen.getByTestId("ai-banner")).toBeInTheDocument();
     expect(
-      screen.getByText(/Resumen generado por IA — revisalo antes de enviar/i),
+      screen.getByText(/Resumen generado por IA — revisalo antes de descargar/i),
     ).toBeInTheDocument();
   });
 
-  it("el botón 'Re-enviar al club' abre el ConfirmModal", async () => {
+  it("el botón 'Descargar PDF' dispara la mutación con el período correcto", () => {
+    const mutateMock = vi.fn();
+    vi.mocked(useDownloadMonthlyReportPdf).mockReturnValue({
+      ...mutationStub,
+      mutate: mutateMock,
+    } as unknown as ReturnType<typeof useDownloadMonthlyReportPdf>);
     vi.mocked(useMonthlyReport).mockReturnValue({
       isLoading: false,
       isError: false,
       data: makeReport(),
     } as unknown as ReturnType<typeof useMonthlyReport>);
     renderPage();
-    fireEvent.click(screen.getByTestId("resend-button"));
-    await waitFor(() => {
-      expect(screen.getByText(/Re-enviar reporte al club/i)).toBeInTheDocument();
-    });
+    fireEvent.click(screen.getByTestId("download-pdf-button"));
+    expect(mutateMock).toHaveBeenCalledWith(
+      { year: 2026, month: 4 },
+      expect.anything(),
+    );
   });
 
-  it("muestra 'Enviado el' en el footer después de éxito", async () => {
-    const mutateMock = vi.fn((_vars, opts) =>
-      opts?.onSuccess?.({ enviados: 1, total_admins: 1, sent_at: null }),
-    );
-    vi.mocked(useSendMonthlyReport).mockReturnValue({
+  it("muestra un banner de error si la descarga falla", () => {
+    const mutateMock = vi.fn((_vars, opts) => opts?.onError?.(new Error("boom")));
+    vi.mocked(useDownloadMonthlyReportPdf).mockReturnValue({
       ...mutationStub,
       mutate: mutateMock,
-    } as unknown as ReturnType<typeof useSendMonthlyReport>);
+    } as unknown as ReturnType<typeof useDownloadMonthlyReportPdf>);
     vi.mocked(useMonthlyReport).mockReturnValue({
       isLoading: false,
       isError: false,
-      data: makeReport({ sent_at: "2026-05-02T09:00:00Z" }),
+      data: makeReport(),
     } as unknown as ReturnType<typeof useMonthlyReport>);
     renderPage();
-    expect(screen.getByTestId("sent-at-text")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("download-pdf-button"));
+    expect(screen.getByTestId("download-error-banner")).toBeInTheDocument();
   });
 
   it("el resumen de IA se renderiza como texto plano, no como input o textarea", () => {

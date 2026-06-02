@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 const COACH_EMAIL = 'entrenador@trochyruta.com';
 const COACH_PASSWORD = 'Coach2026!';
 
-const PARENT_EMAIL = 'padre@trochyruta.com';
+const PARENT_EMAIL = 'padre@trochayruta.com';
 const PARENT_PASSWORD = 'Parent2026!';
 
 // ---------------------------------------------------------------------------
@@ -17,16 +17,16 @@ const PARENT_PASSWORD = 'Parent2026!';
 
 async function loginAsCoach(page: import('@playwright/test').Page) {
   await page.goto('/login');
-  await page.getByLabel(/email/i).fill(COACH_EMAIL);
-  await page.getByLabel(/contraseña|password/i).fill(COACH_PASSWORD);
+  await page.getByRole('textbox', { name: /correo/i }).fill(COACH_EMAIL);
+  await page.getByRole('textbox', { name: /contraseña/i }).fill(COACH_PASSWORD);
   await page.getByRole('button', { name: /iniciar sesión|ingresar/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
 
 async function loginAsParent(page: import('@playwright/test').Page) {
   await page.goto('/login');
-  await page.getByLabel(/email/i).fill(PARENT_EMAIL);
-  await page.getByLabel(/contraseña|password/i).fill(PARENT_PASSWORD);
+  await page.getByRole('textbox', { name: /correo/i }).fill(PARENT_EMAIL);
+  await page.getByRole('textbox', { name: /contraseña/i }).fill(PARENT_PASSWORD);
   await page.getByRole('button', { name: /iniciar sesión|ingresar/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
@@ -36,7 +36,7 @@ async function loginAsParent(page: import('@playwright/test').Page) {
 // ---------------------------------------------------------------------------
 
 // E2E-PAD-001 — Login como padre redirige a /my-athletes
-test('E2E-PAD-001: login con padre@trochyruta.com redirige a /my-athletes', async ({ page }) => {
+test('E2E-PAD-001: login con padre@trochayruta.com redirige a /my-athletes', async ({ page }) => {
   await loginAsParent(page);
   await expect(page).toHaveURL(/\/my-athletes/);
 });
@@ -45,8 +45,13 @@ test('E2E-PAD-001: login con padre@trochyruta.com redirige a /my-athletes', asyn
 test('E2E-PAD-002: parent ve dashboard con sus atletas vinculados (Santiago)', async ({ page }) => {
   await loginAsParent(page);
   await expect(page).toHaveURL(/\/my-athletes/);
-  // El seed vincula padre@trochyruta.com con Santiago López
-  await expect(page.getByText(/Santiago/i)).toBeVisible();
+  // El seed vincula padre@trochayruta.com con Santiago López. La card del
+  // atleta expone un link "Ver detalle de <nombre>" — usamos ese rol/nombre
+  // para evitar el strict-mode violation con otras menciones de "Santiago"
+  // (athlete-switcher del header, texto de sesiones).
+  await expect(
+    page.getByRole('link', { name: /ver detalle de santiago/i }),
+  ).toBeVisible();
 });
 
 // E2E-PAD-003 — Parent navega al detalle del atleta
@@ -54,8 +59,14 @@ test('E2E-PAD-003: parent navega al detalle del atleta via "Ver detalle"', async
   await loginAsParent(page);
   await expect(page).toHaveURL(/\/my-athletes/);
 
-  // Clic en el link "Ver detalle" de la primera card
-  await page.getByRole('link', { name: /ver detalle/i }).first().click();
+  // Clic en el link de detalle del atleta. OJO: la card de "próxima sesión"
+  // también tiene un link "Ver detalle de la última sesión…" que navega a
+  // /parents/training/sessions/{id}. Scope al link específico del atleta
+  // ("Ver detalle de <nombre>") para no clickar el de sesión.
+  await page
+    .getByRole('link', { name: /ver detalle de santiago/i })
+    .first()
+    .click();
 
   // URL cambia a /my-athletes/{id}
   await expect(page).toHaveURL(/\/my-athletes\/\d+/);
@@ -79,7 +90,11 @@ test('E2E-PAD-006: coach navega a lista de padres y ve a Carlos García del seed
   await loginAsCoach(page);
   await page.getByRole('link', { name: /padres/i }).click();
   await expect(page).toHaveURL(/\/parents/);
-  await expect(page.getByText(/Carlos/i)).toBeVisible();
+  // El seed tiene varios "Carlos" (Carlos Ríos repetido). Apuntamos al link
+  // exacto del padre "Carlos Garcia" para evitar strict-mode violation.
+  await expect(
+    page.getByRole('link', { name: /^Carlos Garcia$/i }),
+  ).toBeVisible();
 });
 
 // E2E-PAD-007 — Coach navega al detalle de un padre

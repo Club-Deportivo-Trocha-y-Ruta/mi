@@ -14,12 +14,12 @@
  * Gate de admin: solo admin ve "Eliminar" en el kebab.
  */
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   CalendarPlus,
   Edit2,
-  ExternalLink,
+  Link2Off,
   Loader2,
   MoreHorizontal,
   RefreshCw,
@@ -162,13 +162,35 @@ export function CompetitionsListPage() {
             Válidas Copa Valle y campeonatos del club.
           </p>
         </div>
-        <Link
-          to="/competitions/new"
-          className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
-        >
-          + Nueva competencia
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Acciones secundarias */}
+          <Link
+            to="/competitions/import"
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            aria-label="Cargar resultados de una válida"
+          >
+            <Upload size={14} aria-hidden="true" />
+            Cargar resultados
+          </Link>
+          <Link
+            to="/competitions/unlinked"
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            aria-label="Ver competidores sin enlazar"
+          >
+            <Link2Off size={14} aria-hidden="true" />
+            Sin enlazar
+          </Link>
+          {/* Acción primaria */}
+          <Link
+            to="/competitions/new"
+            className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
+            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+          >
+            + Nueva competencia
+          </Link>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -356,8 +378,12 @@ function CompetitionTableRow({
   deleteDisabledReason,
   onDelete,
 }: RowProps) {
+  const navigate = useNavigate();
   return (
-    <tr className="hover:bg-[rgba(34,42,53,0.02)] transition-colors">
+    <tr
+      className="hover:bg-[rgba(34,42,53,0.02)] transition-colors cursor-pointer"
+      onClick={() => navigate(`/competitions/${item.id}`)}
+    >
       <td className="px-4 py-3 text-sm font-medium text-charcoal">
         {item.is_championship ? "CD" : `V${item.sequence_number}`}
       </td>
@@ -368,6 +394,7 @@ function CompetitionTableRow({
         <Link
           to={`/competitions/${item.id}`}
           className="transition-opacity hover:opacity-70"
+          onClick={(e) => e.stopPropagation()}
         >
           {item.name}
         </Link>
@@ -381,7 +408,8 @@ function CompetitionTableRow({
       <td className="px-4 py-3">
         <CompetitionStatusBadges item={item} />
       </td>
-      <td className="px-4 py-3 text-right">
+      {/* stopPropagation: interactuar con el kebab no debe navegar la fila */}
+      <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
         <ActionsKebab
           item={item}
           isAdmin={isAdmin}
@@ -405,19 +433,22 @@ function CompetitionCard({
   deleteDisabledReason,
   onDelete,
 }: RowProps) {
+  const navigate = useNavigate();
   return (
     <div
-      className="rounded-xl bg-white p-4 space-y-3"
+      className="rounded-xl bg-white p-4 space-y-3 cursor-pointer"
       style={{
         boxShadow:
           "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
       }}
+      onClick={() => navigate(`/competitions/${item.id}`)}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <Link
             to={`/competitions/${item.id}`}
             className="block text-sm font-semibold text-charcoal truncate transition-opacity hover:opacity-70"
+            onClick={(e) => e.stopPropagation()}
           >
             {item.name}
           </Link>
@@ -426,13 +457,16 @@ function CompetitionCard({
             {item.location ? ` · ${item.location}` : ""}
           </p>
         </div>
-        <ActionsKebab
-          item={item}
-          isAdmin={isAdmin}
-          canDelete={canDelete}
-          deleteDisabledReason={deleteDisabledReason}
-          onDelete={onDelete}
-        />
+        {/* stopPropagation: interactuar con el kebab no debe navegar la card */}
+        <div onClick={(e) => e.stopPropagation()}>
+          <ActionsKebab
+            item={item}
+            isAdmin={isAdmin}
+            canDelete={canDelete}
+            deleteDisabledReason={deleteDisabledReason}
+            onDelete={onDelete}
+          />
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-xs text-mid-gray">
@@ -476,14 +510,6 @@ function ActionsKebab({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {/* Ver detalle */}
-        <DropdownMenuItem asChild>
-          <Link to={`/competitions/${item.id}`} className="flex items-center gap-2">
-            <ExternalLink size={14} aria-hidden="true" />
-            Ver detalle
-          </Link>
-        </DropdownMenuItem>
-
         {/* Importar resultados — solo si no tiene resultados */}
         {!item.has_results && (
           <DropdownMenuItem asChild>

@@ -108,10 +108,10 @@ export function ResultsTab({
             </Button>
           )}
           <Link
-            to="/coach/race-analysis"
+            to={`/competitions/${raceEventId}?tab=insights`}
             className={buttonVariants({ variant: "outline" })}
           >
-            Módulo de análisis
+            Ver insights IA
           </Link>
         </div>
       </div>

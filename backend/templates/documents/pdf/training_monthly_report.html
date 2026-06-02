@@ -4,7 +4,10 @@
   Reporte mensual de entrenamiento — PDF para admins del club.
   Variables requeridas: club_name, month_label, season_year, ai_summary,
                         metrics_snapshot, coach_observations, generated_at
-  Privacidad: usa pseudónimos de atletas (A1, A2...) — sin nombres reales.
+  Opcional: athlete_names ({id_str: "Nombre Apellido"}) para mostrar nombres
+            reales en la tabla de asistencia; si falta, cae a "Atleta N".
+  Privacidad: documento interno del club — contiene nombres reales de menores.
+  No distribuir externamente. La narrativa IA sí permanece anonimizada.
 #}
 
 {% block title %}Reporte mensual {{ month_label }} — {{ club_name }}{% endblock %}
@@ -17,7 +20,7 @@
 <!-- Encabezado del período -->
 <h2>{{ club_name }}</h2>
 <h3 style="color: #666666; font-weight: normal; margin-top: 0;">
-  Período: {{ month_label }} {{ season_year }}
+  Período: {{ month_label }}
 </h3>
 
 <!-- Métricas de sesiones -->
@@ -33,10 +36,6 @@
   </thead>
   <tbody>
     <tr>
-      <td>Sesiones planificadas</td>
-      <td>{{ ms.get('total_sessions_planned', 0) }}</td>
-    </tr>
-    <tr>
       <td>Sesiones ejecutadas</td>
       <td>{{ ms.get('total_sessions_executed', 0) }}</td>
     </tr>
@@ -44,10 +43,16 @@
       <td>Sesiones canceladas</td>
       <td>{{ ms.get('total_sessions_cancelled', 0) }}</td>
     </tr>
-    {% if ms.get('avg_rpe') is not none %}
+    {% if ms.get('total_minutes_executed') %}
     <tr>
-      <td>RPE promedio (escala 0-10)</td>
-      <td>{{ "%.1f"|format(ms.avg_rpe) }}</td>
+      <td>Volumen ejecutado</td>
+      <td>{{ ms.get('total_minutes_executed', 0) | hms }}</td>
+    </tr>
+    {% endif %}
+    {% if ms.get('avg_hours_per_week') is not none %}
+    <tr>
+      <td>Promedio semanal (ejecutado)</td>
+      <td>{{ (ms.avg_hours_per_week * 60) | hms }}</td>
     </tr>
     {% endif %}
     {% if ms.get('avg_rubric_effort') is not none %}
@@ -71,8 +76,15 @@
   </tbody>
 </table>
 
-<!-- Focos técnicos cubiertos -->
-{% if ms.get('technical_focus_list') %}
+<!-- Focos técnicos cubiertos — con frecuencia de sesiones por foco -->
+{% if ms.get('technical_focus_counts') %}
+<h2>Focos técnicos cubiertos</h2>
+<ul>
+  {% for foco, n in ms.technical_focus_counts.items() %}
+  <li>{{ foco }} — {{ n }} {{ "sesión" if n == 1 else "sesiones" }}</li>
+  {% endfor %}
+</ul>
+{% elif ms.get('technical_focus_list') %}
 <h2>Focos técnicos cubiertos</h2>
 <ul>
   {% for foco in ms.technical_focus_list %}
@@ -81,48 +93,62 @@
 </ul>
 {% endif %}
 
-<!-- Tabla de asistencia — con pseudónimos -->
+<!-- Tabla de asistencia — con nombres reales (documento interno del club) -->
 {% if ms.get('attendance_by_athlete') %}
 <h2>Asistencia por atleta</h2>
 <p style="font-size: 10px; color: #888888; margin-bottom: 8px;">
-  Los atletas se identifican con pseudónimos (A1, A2...) para proteger su privacidad.
+  Documento interno del club. Contiene datos personales de menores — no distribuir externamente.
 </p>
 <table class="data-table">
   <thead>
     <tr>
       <th>Atleta</th>
-      <th>Presencias</th>
-      <th>Total sesiones</th>
-      <th>% Asistencia</th>
+      <th>Pres.</th>
+      <th>Tarde</th>
+      <th>Justif.</th>
+      <th>Ausente</th>
+      <th>Lesion.</th>
+      <th>Total</th>
+      <th>% Asist.</th>
     </tr>
   </thead>
   <tbody>
     {% set attendance_items = ms.attendance_by_athlete.items() | list %}
     {% for athlete_id, stats in attendance_items %}
-    {% set pseudonym = "A" ~ loop.index %}
+    {% set athlete_label = (athlete_names.get(athlete_id) if athlete_names else none) or ("Atleta " ~ loop.index) %}
     <tr>
-      <td>{{ pseudonym }}</td>
+      <td>{{ athlete_label }}</td>
       <td>{{ stats.count_present }}</td>
+      <td>{{ stats.get('count_late', 0) }}</td>
+      <td>{{ stats.get('count_justified', 0) }}</td>
+      <td>{{ stats.get('count_absent', 0) }}</td>
+      <td>{{ stats.get('count_injured', 0) }}</td>
       <td>{{ stats.total_sessions }}</td>
       <td>{{ "%.1f"|format(stats.attendance_pct) }}%</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+{% if ms.get('attendance_status_totals') %}
+{% set t = ms.attendance_status_totals %}
+<p style="font-size: 10px; color: #666666; margin-top: 6px;">
+  Totales del club — Presentes: {{ t.get('presente', 0) }} ·
+  Tarde: {{ t.get('tarde', 0) }} ·
+  Justificadas: {{ t.get('justificado', 0) }} ·
+  Ausencias: {{ t.get('ausente', 0) }} ·
+  <strong>Lesionados: {{ t.get('lesionado', 0) }}</strong>
+</p>
+{% endif %}
 {% endif %}
 {% endif %}
 
-<!-- Narrativa IA -->
+<!-- Resumen narrativo -->
 {% if ai_summary %}
-<h2>Resumen narrativo (generado por IA)</h2>
+<h2>Resumen narrativo</h2>
 <div style="background: #f9f9f9; padding: 12px; border-left: 4px solid #cccccc;
             font-size: 12px; line-height: 1.6; color: #333333;">
-  {{ ai_summary }}
+  {{ ai_summary | markdown }}
 </div>
-<p style="font-size: 9px; color: #aaaaaa; margin-top: 6px;">
-  Resumen generado automáticamente. El entrenador es responsable de validar la
-  información antes de distribuir externamente.
-</p>
 {% endif %}
 
 <!-- Observaciones del entrenador -->
@@ -131,6 +157,26 @@
 <div style="background: #f0f7ff; padding: 12px; border-left: 4px solid #4a90d9;
             font-size: 12px; line-height: 1.6; color: #333333;">
   {{ coach_observations }}
+</div>
+{% endif %}
+
+{# Bloque de fotos: thumbnails consentidos embebidos como data-URI base64. #}
+{% if photos %}
+<h2>Evidencia fotográfica del mes</h2>
+<p style="font-size: 10px; color: #888888; margin-bottom: 8px;">
+  Documento interno del club. Imágenes con consentimiento — no distribuir externamente.
+</p>
+<div>
+  {% for p in photos %}
+  <div style="display: inline-block; width: 31%; margin: 0 1% 12px 1%; vertical-align: top; text-align: center;">
+    <img src="{{ p.data_uri }}"
+         style="max-width: 100%; max-height: 110pt; border: 1px solid #dddddd; border-radius: 4px;"
+         alt="Evidencia de sesión {{ p.session_date }}"/>
+    <p style="font-size: 9px; color: #666666; margin: 4px 0 0 0;">
+      {{ p.session_date }}{% if p.caption %} — {{ p.caption }}{% endif %}
+    </p>
+  </div>
+  {% endfor %}
 </div>
 {% endif %}
 

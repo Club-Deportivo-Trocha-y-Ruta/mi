@@ -625,11 +625,12 @@ class TestAthleteAttendanceHistory:
 
 
 class TestComputeMonthlyMetrics:
-    def _make_mock_session(self, session_id, status: SessionStatus, technical_focus: str = "Descenso") -> MagicMock:
+    def _make_mock_session(self, session_id, status: SessionStatus, technical_focus: str = "Descenso", duration_min: int = 90) -> MagicMock:
         s = MagicMock(spec=TrainingSession)
         s.id = session_id
         s.status = status
         s.technical_focus = technical_focus
+        s.duration_min = duration_min
         s.scheduled_date = date(2026, 3, session_id)
         return s
 
@@ -711,6 +712,19 @@ class TestComputeMonthlyMetrics:
         # Promedio RPE: solo presentes/tardes: 7, 5, 8, 6, 6, 9 → 41/6 ≈ 6.83
         assert metrics.avg_rpe is not None
         assert metrics.avg_rpe > 6.0
+        # SPEC 1 — volumen: planificado = no canceladas (1,2,3,5) ×90 = 360;
+        # ejecutado = EXECUTED (1,2,5) ×90 = 270.
+        assert metrics.total_minutes_planned == 360
+        assert metrics.total_minutes_executed == 270
+        assert metrics.avg_hours_per_week is not None
+        # SPEC 1 — frecuencia de focos: cada foco aparece en 1 sesión.
+        assert metrics.technical_focus_counts == {
+            "Descenso": 1, "Pedaleo": 1, "Técnica": 1, "Carrera": 1, "Salto": 1,
+        }
+        # SPEC 1 — totales de asistencia por estado a nivel club (10 registros).
+        assert metrics.attendance_status_totals == {
+            "presente": 5, "tarde": 1, "justificado": 1, "ausente": 3, "lesionado": 0,
+        }
 
     async def test_zero_sessions_returns_zeros(self):
         db = AsyncMock()

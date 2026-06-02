@@ -20,6 +20,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
+import { Route, Routes } from "react-router-dom";
 
 // Mock de auth.store — se reconfigura por test para alternar entre coach y admin.
 vi.mock("@/store/auth.store", () => ({
@@ -84,6 +85,89 @@ describe("CompetitionsListPage — render", () => {
     renderWithProviders(<CompetitionsListPage />);
     const link = await screen.findByRole("link", { name: /Nueva competencia/i });
     expect(link).toHaveAttribute("href", "/competitions/new");
+  });
+
+  it("click en la fila navega al detalle de la competencia", async () => {
+    mockAuthAs("coach");
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Routes>
+        <Route path="/" element={<CompetitionsListPage />} />
+        <Route
+          path="/competitions/:id"
+          element={<div>DETALLE COMPETENCIA</div>}
+        />
+      </Routes>,
+    );
+
+    await waitFor(() =>
+      expect(
+        inTable().getByText("Copa Valle XCO — Válida I"),
+      ).toBeInTheDocument(),
+    );
+    const row = inTable()
+      .getByText("Copa Valle XCO — Válida I")
+      .closest("tr");
+    expect(row).not.toBeNull();
+    // Click en una celda no interactiva de la fila (no el link de nombre ni el kebab).
+    await user.click(row as HTMLElement);
+    expect(
+      await screen.findByText("DETALLE COMPETENCIA"),
+    ).toBeInTheDocument();
+  });
+
+  it("kebab de acciones ya no incluye 'Ver detalle' (la fila es clickeable)", async () => {
+    mockAuthAs("coach");
+    const user = userEvent.setup();
+    renderWithProviders(<CompetitionsListPage />);
+
+    await waitFor(() =>
+      expect(
+        inTable().getByText("Copa Valle XCO — Válida I"),
+      ).toBeInTheDocument(),
+    );
+    const kebab = inTable().getAllByRole("button", {
+      name: /Acciones para/i,
+    })[0];
+    await user.click(kebab);
+    expect(screen.queryByText("Ver detalle")).not.toBeInTheDocument();
+    // El kebab sigue ofreciendo otras acciones.
+    expect(await screen.findByText("Editar metadata")).toBeInTheDocument();
+  });
+});
+
+describe("CompetitionsListPage — acciones secundarias del header", () => {
+  it("acción 'Cargar resultados' apunta a /competitions/import", async () => {
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />);
+    // El nombre accesible viene del aria-label del link.
+    const link = await screen.findByRole("link", {
+      name: /Cargar resultados de una válida/i,
+    });
+    expect(link).toHaveAttribute("href", "/competitions/import");
+  });
+
+  it("acción 'Sin enlazar' apunta a /competitions/unlinked", async () => {
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />);
+    const link = await screen.findByRole("link", {
+      name: /Ver competidores sin enlazar/i,
+    });
+    expect(link).toHaveAttribute("href", "/competitions/unlinked");
+  });
+
+  it("las acciones secundarias mantienen altura táctil ≥44px", async () => {
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />);
+    const importLink = await screen.findByRole("link", {
+      name: /Cargar resultados de una válida/i,
+    });
+    const unlinkedLink = screen.getByRole("link", {
+      name: /Ver competidores sin enlazar/i,
+    });
+    // El patrón del repo usa min-h-[44px] (clase utilitaria de altura mínima).
+    expect(importLink.className).toMatch(/min-h-\[44px\]/);
+    expect(unlinkedLink.className).toMatch(/min-h-\[44px\]/);
   });
 });
 

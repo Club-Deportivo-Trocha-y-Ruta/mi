@@ -29,8 +29,11 @@ import {
 import {
   getRunResult,
   getRunStatus,
+  invalidateRun,
+  reExecuteRun,
   startRun,
   submitHITLDecision,
+  type RunInvalidateResponse,
 } from "@/api/raceAnalysis";
 import type {
   HITLDecisionRequest,
@@ -265,5 +268,33 @@ export function useRunResult(
     },
     retry: false,
     staleTime: Infinity,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PR5 — invalidate (marcar stale) + re-execute (manual, D5)
+// ---------------------------------------------------------------------------
+
+/** Marca un run como desactualizado (stale). Invalida la cache del módulo. */
+export function useInvalidateRun() {
+  const queryClient = useQueryClient();
+  return useMutation<RunInvalidateResponse, unknown, string>({
+    mutationKey: ["race-analysis", "invalidate-run"],
+    mutationFn: (runId) => invalidateRun(runId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: raceRunKeys.all });
+    },
+  });
+}
+
+/** Re-ejecuta un run (manual, con confirmación del coach — D5). */
+export function useReExecuteRun() {
+  const queryClient = useQueryClient();
+  return useMutation<StartRunResponse, unknown, string>({
+    mutationKey: ["race-analysis", "re-execute-run"],
+    mutationFn: (runId) => reExecuteRun(runId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: raceRunKeys.all });
+    },
   });
 }

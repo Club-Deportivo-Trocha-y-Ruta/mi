@@ -199,24 +199,6 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
             "El motivo (reason) puede venir vacío."
         ),
     ),
-    NotificationTemplate.TRAINING_MONTHLY_REPORT: EmailTemplateSpec(
-        template_id=NotificationTemplate.TRAINING_MONTHLY_REPORT,
-        subject_template="Reporte mensual de entrenamiento {{ month_label }} — {{ club_name }}",
-        body_path="email/training_monthly_report.html",
-        required_context_keys=frozenset(
-            {
-                "admin_name",
-                "club_name",
-                "month_label",
-                "season_year",
-                "ai_summary_excerpt",
-            }
-        ),
-        description=(
-            "Email con resumen de reporte mensual de entrenamiento, enviado a admins del club. "
-            "Incluye extracto de narrativa IA y PDF adjunto con métricas completas."
-        ),
-    ),
     NotificationTemplate.CALENDAR_EVENT_INVITE: EmailTemplateSpec(
         template_id="calendar_event_invite",
         subject_template="[Trocha y Ruta] {{ event_type_label }} {{ event_date }} - {{ athlete_name }}",
@@ -396,8 +378,9 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
             }
         ),
         description=(
-            "Reporte mensual de entrenamiento en PDF. "
-            "Usa pseudónimos de atletas (A1, A2...) — sin nombres reales."
+            "Reporte mensual de entrenamiento en PDF (documento interno del club). "
+            "Muestra nombres reales en la tabla de asistencia; la narrativa IA "
+            "permanece anonimizada."
         ),
     ),
     DocumentTemplate.ATHLETE_MONTHLY_NEWSLETTER: DocumentTemplateSpec(

@@ -29,6 +29,35 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATES_ROOT = Path(__file__).parents[3] / "templates"
 
+
+def _render_markdown(text: str | None):
+    """Convierte texto Markdown a HTML para inyectar en plantillas PDF.
+
+    Filtro Jinja `markdown`: la narrativa de IA viene en Markdown
+    (**negrita**, *cursiva*, listas) y WeasyPrint renderiza el HTML resultante.
+    Retorna Markup para que el autoescape de Jinja no re-escape las etiquetas.
+    """
+    from markdown import markdown as _md
+    from markupsafe import Markup
+
+    if not text:
+        return Markup("")
+    return Markup(_md(text, extensions=["nl2br", "sane_lists"]))
+
+
+def _format_hms(minutes) -> str:
+    """Formatea una duración en minutos como 'hh:mm:ss' (filtro Jinja `hms`).
+
+    Acepta minutos fraccionarios (ej. un promedio en horas ya convertido a
+    minutos). Retorna '' si el valor es None.
+    """
+    if minutes is None:
+        return ""
+    total_seconds = round(float(minutes) * 60)
+    h, rem = divmod(total_seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
 # MIME types por formato
 _CONTENT_TYPES: dict[DocumentFormat, str] = {
     DocumentFormat.PDF: "application/pdf",
@@ -61,6 +90,8 @@ class DocumentGenerator:
             loader=FileSystemLoader(str(self._root)),
             autoescape=select_autoescape(["html"]),
         )
+        self._jinja.filters["markdown"] = _render_markdown
+        self._jinja.filters["hms"] = _format_hms
 
         # Nombre del club para enriquecer contexto automáticamente
         self._club_name: str = getattr(settings, "club_name", "Trocha y Ruta") if settings else "Trocha y Ruta"

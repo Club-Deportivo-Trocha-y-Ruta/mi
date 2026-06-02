@@ -275,3 +275,25 @@ export interface AthleteRunsParams {
   limit?: number;
   offset?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Season panorama (PR3 unificación /competitions)
+// GET /api/race-analysis/insights/season/{year} — coach/admin only.
+// Mirror de backend/app/schemas/season_panorama.py.
+// ---------------------------------------------------------------------------
+
+export interface SeasonPanoramaAthleteItem {
+  athlete_id: number;
+  athlete_display_name: string;
+  races_count: number;
+  wins: number;
+  podiums: number;
+  best_position: number | null;
+  total_points: number;
+}
+
+export interface SeasonPanoramaResponse {
+  season: number;
+  total_athletes: number;
+  items: SeasonPanoramaAthleteItem[];
+}

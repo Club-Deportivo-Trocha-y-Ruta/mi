@@ -222,11 +222,18 @@ test.describe('Calendar coach E2E', () => {
     await setupAuth(page);
     await mockBackendForCoach(page);
 
-    await page.goto('/dashboard');
+    // Partimos de /calendar (ruta completamente mockeada por mockBackendForCoach).
+    // No usamos /dashboard porque esa página dispara llamadas a /api/athletes y
+    // /api/alerts que este mock no cubre → el interceptor 401 cerraría sesión y
+    // redirigiría a /login (rompiendo el click del link). El AppShell renderiza
+    // el sidebar en cualquier ruta autenticada, así que validamos la entrada
+    // de navegación igual de bien desde aquí.
+    await page.goto('/calendar');
 
-    // El sidebar debe contener un link al calendario
-    const calendarLink = page.getByRole('link', { name: /calendario/i }).first();
+    // El sidebar debe contener un link al calendario que apunte a /calendar.
+    const calendarLink = page.getByRole('link', { name: /^calendario$/i }).first();
     await expect(calendarLink).toBeVisible({ timeout: 10_000 });
+    await expect(calendarLink).toHaveAttribute('href', '/calendar');
 
     await calendarLink.click();
     await expect(page).toHaveURL(/\/calendar/);

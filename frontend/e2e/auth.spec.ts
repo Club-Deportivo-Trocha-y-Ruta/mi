@@ -15,8 +15,10 @@ test('E2E-001: login exitoso redirige al dashboard y guarda token en sessionStor
   // Verificar redirección al dashboard (no está en /login)
   await expect(page).not.toHaveURL(/\/login/);
 
-  // Verificar que el nombre del usuario aparece en el header
-  await expect(page.getByRole('banner')).toContainText(/entrenador|coach/i);
+  // Verificar que el NOMBRE del usuario aparece en el header (no el rol).
+  // El AppShell renderiza `{first_name} {last_name}`; el coach del seed
+  // (entrenador@trochyruta.com) se llama "Juan Diaz".
+  await expect(page.getByRole('banner')).toContainText(/Juan Diaz/i);
 
   // PRIV-001: token en sessionStorage (clave 'auth-session'), no en localStorage
   const sessionData = await page.evaluate(() =>

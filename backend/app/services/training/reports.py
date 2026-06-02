@@ -2,33 +2,30 @@
 
 from __future__ import annotations
 
+import base64
 import calendar
+import logging
+import tempfile
 from datetime import date, datetime, timezone
-from typing import TYPE_CHECKING
+from pathlib import Path, PurePosixPath
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.models.club import Club, ClubMember, ClubRole
+from app.models.club import Club
 from app.models.training_session import MonthlyReport, TrainingSession
 from app.models.user import User
-from app.schemas.notification import (
-    DocumentFormat,
-    DocumentRequest,
-    DocumentTemplate,
-    NotificationRecipient,
-    NotificationRequest,
-    NotificationResult,
-    NotificationTemplate,
-)
 from app.schemas.training_session import ParentMonthlySummary
 from app.services.permissions import parent_athlete_ids
 from app.services.training.metrics import compute_monthly_metrics
 
-if TYPE_CHECKING:
-    from app.services.notification.service import NotificationService
-    from app.services.notification.task_dispatcher import TaskDispatcher
+logger = logging.getLogger(__name__)
+
+# Evidencia fotográfica: tope de fotos y de bytes embebidos (guardia de RAM/peso
+# en Render Free). Solo thumbnails (~15-40 KB c/u), nunca originales.
+_REPORT_PHOTO_LIMIT = 6
+_REPORT_PHOTO_MAX_TOTAL_BYTES = 2 * 1024 * 1024  # 2 MB de base64
+
 
 def _validate_period(year: int, month: int) -> None:
     today = date.today()
@@ -110,7 +107,6 @@ async def generate_monthly_report(
         existing.coach_observations = coach_observations
         existing.generated_by_user_id = generator_user.id
         existing.generated_at = now
-        existing.sent_at = None
         await db.flush()
         try:
             await db.commit()
@@ -137,78 +133,6 @@ async def generate_monthly_report(
         await db.rollback()
         raise
     return report
-
-
-async def send_monthly_report_email(
-    db: AsyncSession,
-    report_id: int,
-    notification_service: NotificationService,
-    dispatcher: TaskDispatcher,
-) -> list[NotificationResult]:
-    """Envía el reporte mensual por email a todos los admins del club.
-
-    Actualiza `report.sent_at` al finalizar.
-    Retorna lista de resultados de envío (uno por admin).
-    """
-    report_result = await db.execute(
-        select(MonthlyReport)
-        .options(selectinload(MonthlyReport.club))
-        .where(MonthlyReport.id == report_id)
-    )
-    report = report_result.scalar_one_or_none()
-    if report is None:
-        raise ValueError(f"Reporte {report_id} no encontrado.")
-
-    admins_result = await db.execute(
-        select(User)
-        .join(ClubMember, ClubMember.user_id == User.id)
-        .where(
-            ClubMember.club_id == report.club_id,
-            ClubMember.role_in_club == ClubRole.admin,
-        )
-    )
-    admins = admins_result.scalars().all()
-
-    month_label = _month_label(report.year, report.month)
-
-    results: list[NotificationResult] = []
-    for admin in admins:
-        doc_request = DocumentRequest(
-            template=DocumentTemplate.TRAINING_MONTHLY_REPORT,
-            format=DocumentFormat.PDF,
-            context={
-                "club_name": report.club.name,
-                "month_label": month_label,
-                "season_year": str(report.year),
-                "ai_summary": report.ai_summary or "",
-                "metrics_snapshot": report.metrics_snapshot or {},
-                "coach_observations": report.coach_observations or "",
-            },
-            filename_hint=f"reporte_{report.year}_{report.month:02d}",
-        )
-
-        notif_request = NotificationRequest(
-            recipient=NotificationRecipient(
-                email=admin.email,
-                name=admin.first_name,
-            ),
-            template=NotificationTemplate.TRAINING_MONTHLY_REPORT,
-            context={
-                "admin_name": admin.first_name,
-                "club_name": report.club.name,
-                "month_label": month_label,
-                "season_year": str(report.year),
-                "ai_summary_excerpt": (report.ai_summary or "")[:300],
-            },
-            attachments=[doc_request],
-            send_async=True,
-        )
-        result = await notification_service.send(notif_request, dispatcher=dispatcher)
-        results.append(result)
-
-    report.sent_at = datetime.now(timezone.utc)
-    await db.flush()
-    return results
 
 
 async def parent_monthly_summary(
@@ -308,3 +232,92 @@ def _month_label(year: int, month: int) -> str:
         "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
     ]
     return f"{months_es[month - 1]} {year}"
+
+
+async def build_report_photo_evidence(
+    db: AsyncSession,
+    club_id: int,
+    year: int,
+    month: int,
+    limit: int = _REPORT_PHOTO_LIMIT,
+) -> list[dict]:
+    """Evidencia fotográfica del mes para el PDF del reporte de club.
+
+    Trae hasta `limit` fotos CONSENTIDAS de las sesiones del club en el mes y
+    embebe su thumbnail como data-URI base64 (independiente del storage en
+    render-time: robusto en dev local y en SFTP). Cada item lleva la fecha de
+    la SESIÓN (no la de subida).
+
+    Degrada limpio: si una foto no se puede leer, se omite; ante cualquier
+    error retorna lo acumulado (o lista vacía). Nunca rompe el PDF.
+
+    Privacidad: filtra `consent_ack=True` y `deleted_at IS NULL`. Solo fotos
+    (no videos). Documento interno del club (endpoint coach/admin).
+    """
+    from app.models.session_media import MediaType, SessionMedia
+
+    month_start = date(year, month, 1)
+    last_day = calendar.monthrange(year, month)[1]
+    month_end = date(year, month, last_day)
+
+    try:
+        result = await db.execute(
+            select(SessionMedia, TrainingSession.scheduled_date)
+            .join(TrainingSession, TrainingSession.id == SessionMedia.session_id)
+            .where(
+                TrainingSession.club_id == club_id,
+                TrainingSession.scheduled_date >= month_start,
+                TrainingSession.scheduled_date <= month_end,
+                SessionMedia.media_type == MediaType.PHOTO,
+                SessionMedia.consent_ack.is_(True),
+                SessionMedia.deleted_at.is_(None),
+                SessionMedia.thumbnail_url.is_not(None),
+            )
+            .order_by(
+                TrainingSession.scheduled_date.desc(),
+                SessionMedia.uploaded_at.desc(),
+            )
+            .limit(limit)
+        )
+        rows = result.all()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Evidencia fotográfica: error en query (%s)", type(exc).__name__)
+        return []
+
+    from app.services.training import storage_sftp
+
+    tmpdir = tempfile.gettempdir()
+    items: list[dict] = []
+    total_bytes = 0
+
+    for media, scheduled in rows:
+        # Deriva el path del thumbnail desde el del original:
+        # .../{uuid}{ext} → .../{uuid}.thumb.jpg (ver media_files.save_session_media).
+        orig = PurePosixPath(media.storage_path)
+        thumb_path = str(orig.with_name(f"{orig.stem}.thumb.jpg"))
+
+        local_path: Path | None = None
+        try:
+            resolved = await storage_sftp.download_to_tempfile(thumb_path, suffix=".jpg")
+            local_path = Path(resolved)
+            data = local_path.read_bytes()
+        except Exception:  # noqa: BLE001
+            continue
+        finally:
+            # Borra SOLO si es un temporal (modo SFTP). En modo local el path es
+            # el archivo real del storage y NO debe borrarse.
+            if local_path is not None and str(local_path).startswith(tmpdir):
+                local_path.unlink(missing_ok=True)
+
+        total_bytes += len(data)
+        if total_bytes > _REPORT_PHOTO_MAX_TOTAL_BYTES:
+            break
+
+        b64 = base64.b64encode(data).decode("ascii")
+        items.append({
+            "data_uri": f"data:image/jpeg;base64,{b64}",
+            "session_date": scheduled.strftime("%d/%m/%Y"),
+            "caption": media.caption,
+        })
+
+    return items
