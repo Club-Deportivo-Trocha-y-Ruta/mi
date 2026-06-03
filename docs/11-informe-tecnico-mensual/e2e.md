@@ -20,7 +20,7 @@ Hay dos modalidades de E2E para este módulo:
 | Archivo | Cobertura |
 |---|---|
 | `frontend/e2e/monthly-technical-report-coach.spec.ts` | Vista coach: lista, detalle (7 bloques, métricas, competición), editar+guardar bloque (PATCH), regenerar bloque (POST), aprobar (PATCH status), descargar PDF (GET blob), project profile (PUT). |
-| `frontend/e2e/monthly-technical-report-parent.spec.ts` | Vista padre (privacidad): ve métricas + nota "solo para el equipo técnico"; NO ve editores, NO botón Aprobar, NO descarga PDF, NO tabla de competición. |
+| `frontend/e2e/monthly-technical-report-parent.spec.ts` | Privacidad: el padre **no** accede a la ruta del informe (`[coach, admin]`); por URL directa es redirigido a `/my-athletes` y no ve métricas, editores, Aprobar, PDF ni competición. |
 
 ### Cómo funcionan
 
@@ -37,9 +37,20 @@ Hay dos modalidades de E2E para este módulo:
 - **Fixtures sin datos reales de menores.** Nombres ficticios tipo
   "Valentina Garcia" / "Mateo Lopez" / "Madre Ficticia". Ningún dato real de
   atletas TyR.
-- **Contrato de privacidad del padre.** El fixture del padre entrega
-  `narrative_blocks=null` y `competition_results=null`, replicando lo que el
-  backend filtra. La UI del padre se valida en consecuencia.
+- **Contrato de privacidad del padre.** El Informe Técnico Mensual es un
+  documento **interno** del equipo técnico (coach/admin). La ruta
+  `/training/reports/:year/:month` está protegida con `allowedRoles
+  [coach, admin]` y el link del sidebar tampoco se muestra a padres, así que un
+  padre que entre por URL directa es redirigido a `/my-athletes` (ver
+  `ProtectedRoute`). El E2E del padre valida esa expulsión + la ausencia total de
+  UI del informe. El mock del padre se conserva como red defensiva por si el SPA
+  prefetchea antes de resolver el guard.
+
+  > Nota de código muerto: `ReportDetailPage` conserva un `ParentReadOnlyView`
+  > (con su unit test que monta el componente directamente). Hoy **no es
+  > alcanzable** por routing/nav para padres. Decisión del coach (2026-06-03):
+  > el informe queda interno; el padre se bloquea. El fallback y su unit test son
+  > candidatos a limpieza aparte.
 
 ### Requisitos para ejecutar (entorno con red)
 
@@ -73,10 +84,11 @@ PLAYWRIGHT_CHROMIUM_PATH=/ruta/a/chromium npm run test:e2e
 
 (`playwright.config.ts` usa `executablePath` cuando esa variable está definida.)
 
-### Validación sin navegador (lo que SÍ corre offline)
+### Validación rápida sin navegador (smoke offline)
 
-Aun sin poder lanzar el navegador, se puede verificar que los specs compilan y
-colectan (TypeScript + parsing de Playwright). Esto **no** requiere Chromium:
+Como chequeo veloz —o en un entorno sin Chromium— se puede verificar que los
+specs compilan y colectan (TypeScript + parsing de Playwright) sin lanzar el
+navegador:
 
 ```bash
 cd frontend
@@ -109,7 +121,7 @@ Total: 8 tests in 2 files
 | ITR-005 | coach | Aprobar → `PATCH status=approved`; badge "Aprobado"; editores deshabilitados. |
 | ITR-006 | coach | Descargar PDF → `GET .../pdf` blob `application/pdf`; sin romper UI. |
 | ITR-007 | coach | Project profile: llenar, agregar/quitar objetivo, Guardar → `PUT`. |
-| ITR-008 | parent | Privacidad: ve métricas + nota; sin editores, sin Aprobar, sin PDF. |
+| ITR-008 | parent | Privacidad: por URL directa es redirigido a `/my-athletes`; sin métricas, sin editores, sin Aprobar, sin PDF, sin competición. |
 
 ---
 
@@ -205,27 +217,41 @@ cerrado** (todas las sesiones del período ya ejecutadas/registradas).
 ### Privacidad — vista del padre
 
 - [ ] Logout y login como padre (`padre@trochayruta.com` / `Parent2026!`).
-- [ ] Ir al detalle del reporte del mes.
-- [ ] Confirmar que el padre **ve** la tabla de métricas (solo de sus atletas).
-- [ ] Confirmar la nota "El informe técnico completo está disponible solo para
-      el equipo técnico del club".
-- [ ] Confirmar que el padre **NO ve**: editores de bloque, botón Aprobar, botón
-      de descarga de PDF, tabla de competición, ni datos de atletas ajenos.
-- [ ] Confirmar en la respuesta de red que `narrative_blocks` y
-      `competition_results` llegan `null` para el padre.
+- [ ] Confirmar que el sidebar del padre **no** muestra el acceso a Informes /
+      `/training/reports`.
+- [ ] Intentar entrar por URL directa a `/training/reports/{year}/{month}` →
+      confirmar **redirección a `/my-athletes`** (el informe es interno del club).
+- [ ] Confirmar que el padre **NO ve** nada del informe: métricas, editores de
+      bloque, botón Aprobar, descarga de PDF ni tabla de competición.
+- [ ] (Defensa en profundidad del backend) Si se consulta el endpoint del reporte
+      como padre, confirmar que `narrative_blocks` y `competition_results` llegan
+      `null` y que solo se exponen métricas de sus propios atletas.
 
 ---
 
-## 4. Nota honesta sobre el estado de validación
+## 4. Estado de validación
 
-Los specs `monthly-technical-report-coach.spec.ts` y
-`monthly-technical-report-parent.spec.ts` se escribieron siguiendo el patrón de
-mock existente (`newsletters-coach.spec.ts`) y se **validaron con
-`playwright test --list`** (compilan y colectan los 8 tests sin errores de
-TypeScript). Adicionalmente, `npx tsc --noEmit` permanece limpio.
+Los 8 specs **se ejecutan de verdad** con Chromium contra el Vite dev server
+(`webServer` de `playwright.config.ts`, sin backend real): **8/8 en verde**
+(~2.5s). `npx tsc --noEmit` permanece limpio.
 
-La **ejecución con navegador** (lanzar Chromium contra Vite dev) **queda
-pendiente** de un entorno con acceso a red, ya que el contenedor de desarrollo
-actual no puede descargar el binario de Chromium (`npx playwright install
-chromium`) ni levantar el backend. En cuanto se disponga de red, basta correr
-`npm run test:e2e` para ejecutarlos de verdad.
+La primera ejecución real (que la validación previa por solo `--list` no podía
+detectar) reveló **2 fallos de selector/premisa**, ya corregidos:
+
+- **ITR-001** — `getByText("Borrador").first()` tomaba la primera coincidencia
+  del DOM, que es la card mobile (`ul md:hidden`), oculta en el viewport por
+  defecto (1280px). Corregido con `.filter({ visible: true }).first()` para
+  apuntar a la variante visible (tabla desktop).
+- **ITR-008** — el spec asumía que el padre veía un `ParentReadOnlyView` con
+  métricas en `/training/reports/:year/:month`. En realidad el app bloquea a los
+  padres de esa ruta de forma consistente (guard `[coach, admin]` + link de nav
+  oculto) y los redirige a `/my-athletes`. Reescrito para afirmar esa expulsión
+  como invariante de privacidad (sin cambiar el app). Ver la nota de código
+  muerto sobre `ParentReadOnlyView` en la sección 1.
+
+Para reproducir:
+
+```bash
+cd frontend
+npx playwright test e2e/monthly-technical-report-coach.spec.ts e2e/monthly-technical-report-parent.spec.ts
+```

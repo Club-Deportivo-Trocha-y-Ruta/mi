@@ -1,21 +1,18 @@
 /**
  * E2E del módulo Informe Técnico Mensual — vista del PADRE/MADRE (privacidad).
  *
- * Backend mockeado vía page.route (sin backend real ni red). Valida que la vista
- * de solo lectura del padre respeta el contrato de privacidad del refactor:
- * - El backend entrega narrative_blocks=null y competition_results=null al padre.
- * - La UI NO muestra editores de bloque, NO muestra el botón Aprobar, NO muestra
- *   el botón de descarga de PDF.
- * - SÍ muestra la nota "solo para el equipo técnico del club" y la tabla de
- *   métricas de asistencia.
+ * Backend mockeado vía page.route (sin backend real ni red). Valida la invariante
+ * de privacidad del refactor: el Informe Técnico Mensual es un documento INTERNO
+ * del equipo técnico del club (coach/admin). Un padre NO accede a la ruta del
+ * informe:
+ * - La ruta /training/reports/:year/:month está protegida con allowedRoles
+ *   [coach, admin] y el link del sidebar no se muestra a padres.
+ * - Un padre que intente entrar por URL directa es redirigido a /my-athletes.
+ * - En consecuencia no ve métricas, ni editores, ni botón de aprobar, ni descarga
+ *   de PDF, ni tabla de competencia.
  *
- * El informe técnico completo (PDF) es un documento interno del equipo técnico;
- * las familias no lo descargan.
- *
- * NOTA DE ENTORNO: en el contenedor sin red NO se puede descargar Chromium ni
- * levantar el backend; estos specs se validaron con `playwright test --list`
- * (compilan/colectan). La ejecución con navegador queda para un entorno con red.
- * Ver docs/11-informe-tecnico-mensual/e2e.md.
+ * (El componente ReportDetailPage conserva un ParentReadOnlyView defensivo, pero
+ * no es alcanzable por routing/nav: ver e2e.md para la nota de código muerto.)
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
 
@@ -182,38 +179,32 @@ async function mockBackendForParent(page: Page) {
 const REPORT_PATH = `/training/reports/${YEAR}/${MONTH}`;
 
 test.describe("Informe Técnico Mensual — parent E2E (privacidad)", () => {
-  test("ITR-008: el padre ve métricas y la nota, pero NO editores, NO aprobar, NO PDF", async ({
+  test("ITR-008: el padre NO accede al informe técnico (ruta coach) y es redirigido a /my-athletes", async ({
     page,
   }) => {
+    // El mock es defensivo: cubre cualquier prefetch del SPA antes de que el
+    // guard de ruta resuelva la redirección. El padre nunca debería llegar a
+    // consumir el detalle del informe.
     await mockBackendForParent(page);
     await setupAuthParent(page);
 
+    // El Informe Técnico Mensual es un documento interno del equipo técnico del
+    // club. La ruta /training/reports/:year/:month está protegida con
+    // allowedRoles [coach, admin]; el link del sidebar tampoco se muestra a
+    // padres. Un padre autenticado que intente entrar por URL directa es
+    // redirigido a su propia área (/my-athletes) por ProtectedRoute.
     await page.goto(REPORT_PATH);
 
-    // SÍ aparece la tabla de métricas.
-    await expect(page.getByTestId("monthly-metrics-table")).toBeVisible({
-      timeout: 10_000,
-    });
+    // Invariante de privacidad: es expulsado de la ruta del informe.
+    await expect(page).toHaveURL(/\/my-athletes\/?$/, { timeout: 10_000 });
 
-    // SÍ aparece la nota de privacidad "solo para el equipo técnico del club".
-    await expect(
-      page.getByText(/solo para el equipo técnico del club/i),
-    ).toBeVisible();
-
-    // NO hay editores de bloque (ninguno de las 7 claves).
+    // No ve NADA del informe técnico: ni tabla de métricas, ni editores de
+    // bloque, ni botones de aprobar/descargar PDF, ni tabla de competición.
+    await expect(page.getByTestId("monthly-metrics-table")).toHaveCount(0);
     await expect(page.locator('[data-testid^="block-editor-"]')).toHaveCount(0);
-
-    // NO hay botón Aprobar.
     await expect(page.getByTestId("approve-btn")).toHaveCount(0);
-
-    // NO hay botón de descarga de PDF.
     await expect(page.getByTestId("download-pdf-button")).toHaveCount(0);
-
-    // NO hay tabla de competición (results=null → ni siquiera el contenedor coach).
     await expect(page.getByTestId("competition-results-table")).toHaveCount(0);
-
-    // Invariante adicional: no aparece texto de "Aprobar" como botón en la vista
-    // del padre.
     await expect(page.getByRole("button", { name: /aprobar/i })).toHaveCount(0);
   });
 });

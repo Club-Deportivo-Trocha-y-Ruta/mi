@@ -16,10 +16,11 @@
  * Los unit tests (vitest) cubren contratos y RBAC en detalle; este E2E valida el
  * flujo de UI end-to-end con mocks deterministas.
  *
- * NOTA DE ENTORNO: en el contenedor sin red NO se puede descargar Chromium ni
- * levantar el backend; estos specs se validaron con `playwright test --list`
- * (compilan/colectan). La ejecución con navegador queda para un entorno con red
- * (`npx playwright install chromium`). Ver docs/11-informe-tecnico-mensual/e2e.md.
+ * EJECUCIÓN: requiere Chromium de Playwright + el dev server (lo levanta el
+ * webServer de playwright.config.ts en :5173). No necesita backend real porque
+ * todas las llamadas se interceptan con page.route. Correr con
+ * `npx playwright test e2e/monthly-technical-report-*.spec.ts`.
+ * Ver docs/11-informe-tecnico-mensual/e2e.md.
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
 
@@ -434,8 +435,12 @@ test.describe("Informe Técnico Mensual — coach E2E", () => {
     await expect(profileLink).toHaveText(/datos del proyecto/i);
 
     // El badge de estado del reporte (Borrador) aparece en la lista. El fixture
-    // se renderiza en card mobile y tabla desktop; el texto "Borrador" basta.
-    await expect(page.getByText("Borrador").first()).toBeVisible();
+    // se renderiza en card mobile (ul md:hidden) y tabla desktop; en el viewport
+    // por defecto (1280px) la card mobile está oculta, así que filtramos a la
+    // variante visible en vez de tomar la primera del DOM (que sería la oculta).
+    await expect(
+      page.getByText("Borrador").filter({ visible: true }).first(),
+    ).toBeVisible();
   });
 
   test("ITR-002: detalle renderiza 7 editores en orden, métricas y competición", async ({
