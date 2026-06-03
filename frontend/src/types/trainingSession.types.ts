@@ -29,6 +29,8 @@ export interface TrainingSession {
   attendance_summary?: AttendanceSummaryCounts | null;
   kid_attendances?: KidAttendance[] | null;
   media?: SessionMedia[] | SessionMediaParent[];
+  session_kind?: SessionKind | null;
+  objectives?: string | null;
 }
 
 export type MediaType = "photo" | "video";
@@ -99,6 +101,8 @@ export interface AttendanceSummaryCounts {
   lesionados: number;
 }
 
+export type SessionKind = "entrenamiento" | "actividad_conjunta" | "salida" | "otro";
+
 export interface TrainingSessionCreate {
   scheduled_date: string;
   scheduled_start_time: string;
@@ -110,6 +114,8 @@ export interface TrainingSessionCreate {
   strava_url?: string | null;
   convocados_athlete_ids: number[];
   send_notification?: boolean;
+  session_kind?: SessionKind;
+  objectives?: string | null;
 }
 
 export interface TrainingSessionUpdate {
@@ -124,6 +130,8 @@ export interface TrainingSessionUpdate {
   coach_notes?: string | null;
   convocados_athlete_ids?: number[];
   send_notification?: boolean;
+  session_kind?: SessionKind;
+  objectives?: string | null;
 }
 
 export interface Attendance {
@@ -187,6 +195,37 @@ export interface MonthlyMetricsSnapshot {
   attendance_status_totals?: Record<string, number>;
 }
 
+// ---------------------------------------------------------------------------
+// Reporte mensual — extensión Informe Técnico (refactor)
+// ---------------------------------------------------------------------------
+
+export type MonthlyReportStatus = "draft" | "approved";
+
+export interface NarrativeBlock {
+  ai_draft: string | null;
+  final_text: string | null;
+  ai_model: string | null;
+  ai_generated_at: string | null;
+}
+
+export interface CompetitionResult {
+  athlete_name: string;
+  category: string | null;
+  position: number | null;
+  points: number | null;
+  event_name: string | null;
+  event_date: string | null;
+}
+
+export type NarrativeBlockKey =
+  | "objetivo"
+  | "desarrollo"
+  | "resultados"
+  | "conclusiones"
+  | "apoyos_materiales"
+  | "analisis_grupo"
+  | "competencia";
+
 export interface MonthlyReportFull {
   id: number;
   club_id: number;
@@ -199,6 +238,30 @@ export interface MonthlyReportFull {
   generated_at: string;
   // id_atleta (str) -> "Nombre Apellido". Solo presente para coach/admin.
   athlete_names?: Record<string, string>;
+  // Nuevos campos — Informe Técnico Mensual
+  status?: MonthlyReportStatus;
+  narrative_blocks?: Record<NarrativeBlockKey, NarrativeBlock> | null;
+  competition_results?: CompetitionResult[] | null;
+}
+
+// ---------------------------------------------------------------------------
+// Perfil de proyecto del club — Informe Técnico
+// ---------------------------------------------------------------------------
+
+export interface ProjectProfile {
+  project_name: string | null;
+  executing_entity: string | null;
+  report_responsible: string | null;
+  purpose: string | null;
+  general_objective: string | null;
+  specific_objectives: string[] | null;
+  territory_location: string | null;
+  territory_description: string | null;
+}
+
+export interface MonthlyReportBlocksUpdate {
+  blocks?: Record<string, string>;
+  status?: MonthlyReportStatus;
 }
 
 export interface MonthlyReportCreatePayload {

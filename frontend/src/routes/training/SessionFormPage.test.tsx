@@ -124,6 +124,32 @@ describe("SessionFormPage — modo crear", () => {
     expect(screen.getByLabelText("Descripción")).toBeInTheDocument();
   });
 
+  it("renderiza el selector de tipo de sesión con default 'Entrenamiento'", () => {
+    renderCreate();
+    const kindSelect = screen.getByLabelText(/Tipo de sesión/i);
+    expect(kindSelect).toBeInTheDocument();
+    expect(kindSelect).toHaveValue("entrenamiento");
+  });
+
+  it("renderiza el campo de objetivos de la sesión", () => {
+    renderCreate();
+    expect(screen.getByLabelText(/Objetivos de la sesión/i)).toBeInTheDocument();
+  });
+
+  it("cambia el tipo de sesión a 'Salida'", () => {
+    renderCreate();
+    const kindSelect = screen.getByLabelText(/Tipo de sesión/i);
+    fireEvent.change(kindSelect, { target: { value: "salida" } });
+    expect(kindSelect).toHaveValue("salida");
+  });
+
+  it("acepta texto en el campo de objetivos", () => {
+    renderCreate();
+    const objectivesInput = screen.getByLabelText(/Objetivos de la sesión/i);
+    fireEvent.change(objectivesInput, { target: { value: "Mejorar frenada técnica en bajadas" } });
+    expect(objectivesInput).toHaveValue("Mejorar frenada técnica en bajadas");
+  });
+
   it("DurationPicker inicia con default 1h 0min (60 minutos)", () => {
     renderCreate();
     expect(screen.getByRole("spinbutton", { name: /Horas/i })).toHaveValue(1);

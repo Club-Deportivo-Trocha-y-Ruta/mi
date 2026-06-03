@@ -4,7 +4,10 @@ import type {
   Attendance,
   AttendanceStatus,
   MonthlyReportFull,
+  NarrativeBlock,
+  NarrativeBlockKey,
   ParentMonthlySummary,
+  ProjectProfile,
   TrainingSession,
 } from "@/types/trainingSession.types";
 
@@ -49,7 +52,27 @@ export function makeAttendance(overrides?: Partial<Attendance>): Attendance {
   };
 }
 
+function makeNarrativeBlock(overrides?: Partial<NarrativeBlock>): NarrativeBlock {
+  return {
+    ai_draft: "Texto generado por IA.",
+    final_text: null,
+    ai_model: "gemini-2.5-flash-lite",
+    ai_generated_at: "2026-06-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 export function makeMonthlyReport(overrides?: Partial<MonthlyReportFull>): MonthlyReportFull {
+  const defaultBlocks: Record<NarrativeBlockKey, NarrativeBlock> = {
+    objetivo: makeNarrativeBlock({ ai_draft: "Desarrollar habilidades técnicas en XCO." }),
+    desarrollo: makeNarrativeBlock({ ai_draft: "Se realizaron 7 sesiones técnicas." }),
+    resultados: makeNarrativeBlock({ ai_draft: "85% de asistencia promedio." }),
+    conclusiones: makeNarrativeBlock({ ai_draft: "Buena progresión del grupo." }),
+    apoyos_materiales: makeNarrativeBlock({ ai_draft: "Sin salidas externas este mes." }),
+    analisis_grupo: makeNarrativeBlock({ ai_draft: "El grupo muestra cohesión." }),
+    competencia: makeNarrativeBlock({ ai_draft: "No hubo válidas este mes." }),
+  };
+
   return {
     id: 1,
     club_id: 1,
@@ -87,6 +110,23 @@ export function makeMonthlyReport(overrides?: Partial<MonthlyReportFull>): Month
     generated_by_user_id: 10,
     generated_at: "2026-06-01T00:00:00Z",
     athlete_names: { "42": "Juan Pérez" },
+    status: "draft",
+    narrative_blocks: defaultBlocks,
+    competition_results: [],
+    ...overrides,
+  };
+}
+
+export function makeProjectProfile(overrides?: Partial<ProjectProfile>): ProjectProfile {
+  return {
+    project_name: "Formación deportiva XCO",
+    executing_entity: "Club Trocha y Ruta",
+    report_responsible: "Entrenador Principal",
+    purpose: "Promover el deporte en menores.",
+    general_objective: "Desarrollar ciclistas XCO juveniles.",
+    specific_objectives: ["Mejorar técnica de frenada", "Incrementar resistencia"],
+    territory_location: "Cali, Valle del Cauca",
+    territory_description: "Zona sur del Valle del Cauca.",
     ...overrides,
   };
 }
@@ -187,6 +227,38 @@ export const trainingHandlers = [
         "Content-Disposition": 'attachment; filename="reporte.pdf"',
       },
     });
+  }),
+
+  // PATCH /api/clubs/:id/monthly-reports/:year/:month/blocks — editar bloques
+  http.patch("*/api/clubs/:id/monthly-reports/:year/:month/blocks", ({ params }) => {
+    return HttpResponse.json(
+      makeMonthlyReport({ year: Number(params.year), month: Number(params.month) }),
+    );
+  }),
+
+  // POST /api/clubs/:id/monthly-reports/:year/:month/blocks/:blockKey/regenerate
+  http.post(
+    "*/api/clubs/:id/monthly-reports/:year/:month/blocks/:blockKey/regenerate",
+    ({ params }) => {
+      return HttpResponse.json(
+        makeMonthlyReport({ year: Number(params.year), month: Number(params.month) }),
+      );
+    },
+  ),
+
+  // GET /api/clubs/:id/project-profile
+  http.get("*/api/clubs/:id/project-profile", () => {
+    return HttpResponse.json(makeProjectProfile());
+  }),
+
+  // PUT /api/clubs/:id/project-profile — upsert
+  http.put("*/api/clubs/:id/project-profile", () => {
+    return HttpResponse.json(makeProjectProfile());
+  }),
+
+  // PATCH /api/clubs/:id/project-profile — update parcial
+  http.patch("*/api/clubs/:id/project-profile", () => {
+    return HttpResponse.json(makeProjectProfile());
   }),
 
   // GET /api/parents/training/monthly-summary/:year/:month — resumen mensual para padre

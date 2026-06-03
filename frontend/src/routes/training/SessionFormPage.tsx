@@ -19,6 +19,7 @@ import {
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  SESSION_KIND_OPTIONS,
   trainingSessionCreateSchema,
   type TrainingSessionFormValues,
 } from "@/schemas/trainingSession.schema";
@@ -70,6 +71,8 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
       route_text: "",
       strava_url: "",
       convocados_athlete_ids: [],
+      session_kind: "entrenamiento",
+      objectives: "",
     },
   });
 
@@ -89,6 +92,8 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
         route_text: s.route_text ?? "",
         strava_url: s.strava_url ?? "",
         convocados_athlete_ids: attendanceQuery.data.map((a) => a.athlete_id),
+        session_kind: s.session_kind ?? "entrenamiento",
+        objectives: s.objectives ?? "",
       };
       reset(snapshot);
       initialValuesRef.current = snapshot;
@@ -416,6 +421,49 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
             />
             {errors.description && (
               <p id="description-error" className={errorClass}>{errors.description.message}</p>
+            )}
+          </div>
+
+          {/* Tipo de sesión */}
+          <div>
+            <label htmlFor="session_kind-input" className={labelClass}>
+              Tipo de sesión
+            </label>
+            <select
+              id="session_kind-input"
+              {...register("session_kind")}
+              className={inputClass}
+              style={inputStyle}
+              aria-describedby={errors.session_kind ? "session_kind-error" : undefined}
+              aria-invalid={!!errors.session_kind}
+            >
+              {SESSION_KIND_OPTIONS.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            {errors.session_kind && (
+              <p id="session_kind-error" className={errorClass}>{errors.session_kind.message}</p>
+            )}
+          </div>
+
+          {/* Objetivos de la sesión */}
+          <div>
+            <label htmlFor="objectives-input" className={labelClass}>
+              Objetivos de la sesión{" "}
+              <span className="font-normal text-mid-gray">(opcional)</span>
+            </label>
+            <textarea
+              id="objectives-input"
+              rows={3}
+              placeholder="Lista los objetivos específicos de esta sesión…"
+              {...register("objectives")}
+              className={`${inputClass} resize-none`}
+              style={inputStyle}
+              aria-describedby={errors.objectives ? "objectives-error" : undefined}
+              aria-invalid={!!errors.objectives}
+            />
+            {errors.objectives && (
+              <p id="objectives-error" className={errorClass}>{errors.objectives.message}</p>
             )}
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { isAxiosError } from "axios";
@@ -30,6 +30,21 @@ const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
+
+function ReportStatusBadge({ status }: { status?: string }) {
+  if (status === "approved") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+        Aprobado
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+      Borrador
+    </span>
+  );
+}
 
 const cardStyle: React.CSSProperties = {
   boxShadow:
@@ -198,9 +213,12 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
         {reports.map((r) => (
           <li key={r.id}>
             <div className="rounded-xl bg-white p-4" style={cardStyle}>
-              <p className="font-medium text-charcoal">
-                {MONTH_NAMES[r.month - 1]} {r.year}
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium text-charcoal">
+                  {MONTH_NAMES[r.month - 1]} {r.year}
+                </p>
+                <ReportStatusBadge status={r.status} />
+              </div>
               <p className="mt-0.5 text-xs text-mid-gray">
                 Generado el {formatDateMedium(r.generated_at)}
               </p>
@@ -240,6 +258,9 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
                 Mes / Año
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                Estado
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Generado el
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
@@ -256,6 +277,9 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
               >
                 <td className="px-4 py-3 font-medium text-charcoal">
                   {MONTH_NAMES[r.month - 1]} {r.year}
+                </td>
+                <td className="px-4 py-3">
+                  <ReportStatusBadge status={r.status} />
                 </td>
                 <td className="px-4 py-3 text-mid-gray">{formatDateMedium(r.generated_at)}</td>
                 <td className="px-4 py-3">
@@ -369,18 +393,28 @@ export function ReportsListPage() {
             Resúmenes mensuales de actividad del club.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setGenerateError(null);
-            setShowGenerateModal(true);
-          }}
-          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
-          data-testid="open-generate-modal"
-        >
-          + Generar reporte
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/training/reports/project-profile"
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            data-testid="project-profile-link"
+          >
+            Datos del proyecto
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setGenerateError(null);
+              setShowGenerateModal(true);
+            }}
+            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
+            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            data-testid="open-generate-modal"
+          >
+            + Generar reporte
+          </button>
+        </div>
       </div>
 
       {reportsQuery.isLoading && (

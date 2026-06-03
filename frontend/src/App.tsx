@@ -49,6 +49,7 @@ import { SessionFormPage } from "@/routes/training/SessionFormPage";
 import { SessionDetailPage } from "@/routes/training/SessionDetailPage";
 import { ReportsListPage } from "@/routes/training/ReportsListPage";
 import { ReportDetailPage } from "@/routes/training/ReportDetailPage";
+import { ProjectProfilePage } from "@/routes/training/ProjectProfilePage";
 import { AthleteNewslettersDashboardPage } from "@/routes/training/AthleteNewslettersDashboardPage";
 import { AthleteNewsletterDetailPage } from "@/routes/training/AthleteNewsletterDetailPage";
 import { ParentSessionsPage } from "@/routes/parents/training/ParentSessionsPage";
@@ -215,6 +216,14 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <ReportsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/reports/project-profile"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <ProjectProfilePage />
             </ProtectedRoute>
           }
         />

@@ -5,9 +5,12 @@ import { useAuthStore } from "@/store/auth.store";
 import type {
   Attendance,
   AttendanceUpdate,
+  MonthlyReportBlocksUpdate,
   MonthlyReportCreatePayload,
   MonthlyReportFull,
+  NarrativeBlockKey,
   ParentMonthlySummary,
+  ProjectProfile,
   SessionFilters,
   TrainingSession,
   TrainingSessionCreate,
@@ -356,6 +359,99 @@ export function useDownloadMonthlyReportPdf(clubId: number) {
   return useMutation({
     mutationFn: ({ year, month }: { year: number; month: number }) =>
       downloadMonthlyReportPdf(clubId, year, month),
+  });
+}
+
+export async function updateReportBlocks(
+  clubId: number,
+  year: number,
+  month: number,
+  payload: MonthlyReportBlocksUpdate,
+): Promise<MonthlyReportFull> {
+  const response = await apiClient.patch<MonthlyReportFull>(
+    `${CLUBS_BASE}/${clubId}/monthly-reports/${year}/${month}/blocks`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function regenerateBlock(
+  clubId: number,
+  year: number,
+  month: number,
+  blockKey: NarrativeBlockKey,
+): Promise<MonthlyReportFull> {
+  const response = await apiClient.post<MonthlyReportFull>(
+    `${CLUBS_BASE}/${clubId}/monthly-reports/${year}/${month}/blocks/${blockKey}/regenerate`,
+  );
+  return response.data;
+}
+
+export async function fetchProjectProfile(clubId: number): Promise<ProjectProfile | null> {
+  try {
+    const response = await apiClient.get<ProjectProfile>(
+      `${CLUBS_BASE}/${clubId}/project-profile`,
+    );
+    return response.data;
+  } catch (err) {
+    // 404 → tratar como perfil vacío
+    const axiosErr = err as { response?: { status?: number } };
+    if (axiosErr?.response?.status === 404) return null;
+    throw err;
+  }
+}
+
+export async function upsertProjectProfile(
+  clubId: number,
+  payload: Partial<ProjectProfile>,
+): Promise<ProjectProfile> {
+  const response = await apiClient.put<ProjectProfile>(
+    `${CLUBS_BASE}/${clubId}/project-profile`,
+    payload,
+  );
+  return response.data;
+}
+
+export function useUpdateReportBlocks(clubId: number, year: number, month: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: MonthlyReportBlocksUpdate) =>
+      updateReportBlocks(clubId, year, month, payload),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["monthly-report", clubId, year, month], updated);
+      void queryClient.invalidateQueries({ queryKey: ["monthly-reports", clubId] });
+    },
+  });
+}
+
+export function useRegenerateBlock(clubId: number, year: number, month: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (blockKey: NarrativeBlockKey) =>
+      regenerateBlock(clubId, year, month, blockKey),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["monthly-report", clubId, year, month], updated);
+    },
+  });
+}
+
+export function useProjectProfile(clubId: number | undefined) {
+  const accessToken = useAuthStore((s) => s.accessToken);
+  return useQuery({
+    queryKey: ["project-profile", clubId],
+    queryFn: () => fetchProjectProfile(clubId!),
+    enabled: !!accessToken && !!clubId,
+  });
+}
+
+export function useUpsertProjectProfile(clubId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Partial<ProjectProfile>) =>
+      upsertProjectProfile(clubId, payload),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["project-profile", clubId], updated);
+    },
   });
 }
 

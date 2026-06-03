@@ -158,6 +158,38 @@ describe("ReportsListPage", () => {
     expect(screen.getByText(/No se pudo cargar la lista de reportes/i)).toBeInTheDocument();
   });
 
+  it("muestra badge de estado 'Borrador' en la tabla cuando status es draft", () => {
+    vi.mocked(useMonthlyReports).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [makeReport({ status: "draft" })],
+    } as unknown as ReturnType<typeof useMonthlyReports>);
+    renderPage();
+    const badgeDraft = screen.getAllByText("Borrador");
+    expect(badgeDraft.length).toBeGreaterThan(0);
+  });
+
+  it("muestra badge de estado 'Aprobado' cuando status es approved", () => {
+    vi.mocked(useMonthlyReports).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [makeReport({ status: "approved" })],
+    } as unknown as ReturnType<typeof useMonthlyReports>);
+    renderPage();
+    const badgeApproved = screen.getAllByText("Aprobado");
+    expect(badgeApproved.length).toBeGreaterThan(0);
+  });
+
+  it("muestra el enlace 'Datos del proyecto'", () => {
+    vi.mocked(useMonthlyReports).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [],
+    } as unknown as ReturnType<typeof useMonthlyReports>);
+    renderPage();
+    expect(screen.getByTestId("project-profile-link")).toBeInTheDocument();
+  });
+
   it("conflict 409 muestra mensaje de regeneración en el modal", async () => {
     const axiosError = {
       isAxiosError: true,

@@ -2,6 +2,13 @@ import { z } from "zod";
 
 const STRAVA_URL_RE = /^https?:\/\/(www\.)?strava\.com\/activities\/\d+/;
 
+export const SESSION_KIND_OPTIONS = [
+  { value: "entrenamiento", label: "Entrenamiento" },
+  { value: "actividad_conjunta", label: "Actividad conjunta" },
+  { value: "salida", label: "Salida" },
+  { value: "otro", label: "Otro" },
+] as const;
+
 export const trainingSessionCreateSchema = z.object({
   scheduled_date: z.string().min(1, "La fecha es requerida"),
   scheduled_start_time: z
@@ -37,6 +44,17 @@ export const trainingSessionCreateSchema = z.object({
   convocados_athlete_ids: z
     .array(z.number())
     .min(1, "Debes convocar al menos un atleta"),
+  session_kind: z
+    .enum(["entrenamiento", "actividad_conjunta", "salida", "otro"])
+    .default("entrenamiento"),
+  objectives: z
+    .string()
+    .max(1000, "Máximo 1000 caracteres")
+    .optional()
+    .or(z.literal("")),
 });
 
-export type TrainingSessionFormValues = z.infer<typeof trainingSessionCreateSchema>;
+// Usamos z.input para que session_kind sea optional en el form (el schema
+// tiene .default("entrenamiento") que hace el output non-optional, pero
+// el form necesita poder inicializar el campo con undefined).
+export type TrainingSessionFormValues = z.input<typeof trainingSessionCreateSchema>;
