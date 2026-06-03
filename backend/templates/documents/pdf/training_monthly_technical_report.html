@@ -1,0 +1,441 @@
+{% extends "documents/pdf/base/layout.html" %}
+
+{#
+  Informe Técnico Mensual — Grupo de Alto Rendimiento
+  Club Deportivo Trocha y Ruta — Valle del Cauca, Colombia
+
+  Variables requeridas (ver DocumentTemplateSpec):
+    club_name           str
+    month_label         str  "Mayo 2026"
+    season_year         str  "2026"
+    is_draft            bool — True muestra banner BORRADOR
+    project_profile     dict|None — ClubProjectProfile serializado
+    narrative_blocks    dict[str, dict]|None — {clave: {final_text: str, ...}}
+    metrics_snapshot    dict|None — MonthlyMetrics serializado
+    athlete_names       dict[str, str]|None — {str(id): "Nombre Apellido"}
+    competition_results list[dict]|None — CompetitionResultItem serializado
+    conjoint_sessions   list[dict]|None — sesiones actividad_conjunta/salida
+    photos              list[dict]|None — [{data_uri, session_date, caption}]
+
+  PRIVACIDAD: documento de distribución restringida. Contiene nombres reales
+  de menores de edad en la tabla de asistencia y resultados de competencia.
+  Solo para coach y administrador del club. No distribuir externamente.
+  La narrativa IA (ai_draft) NUNCA aparece en este documento; solo final_text
+  aprobado por el coach.
+#}
+
+{% block title %}Informe Técnico Mensual {{ month_label }} — {{ club_name }}{% endblock %}
+{% block header_right %}Informe Técnico Mensual{% endblock %}
+{% block doc_title %}Informe Técnico Mensual de Entrenamiento{% endblock %}
+{% block generated_at %}{{ generated_at }}{% endblock %}
+
+{% block body %}
+
+{# ====================================================================
+   BANNER BORRADOR — visible solo cuando is_draft=True
+   ==================================================================== #}
+{% if is_draft %}
+<div style="background: #fef3c7; border: 2pt solid #d97706; border-radius: 4pt;
+            padding: 10pt 14pt; margin-bottom: 16pt;">
+  <strong style="color: #92400e; font-size: 11pt;">BORRADOR</strong>
+  <span style="color: #92400e; font-size: 9.5pt; margin-left: 8pt;">
+    — Este informe está pendiente de aprobación por parte del entrenador.
+    Los textos pueden estar incompletos o sin revisar.
+  </span>
+</div>
+{% endif %}
+
+{# ====================================================================
+   AVISO DE PRIVACIDAD
+   ==================================================================== #}
+<p style="font-size: 8.5pt; color: #888888; margin-bottom: 14pt; border-left: 2pt solid #d1d5db; padding-left: 8pt;">
+  Documento de distribución restringida. Contiene datos personales de menores
+  de edad protegidos por la Ley 1581 de 2012 (Colombia). Uso exclusivo del
+  equipo técnico y administrativo del club. Prohibida su divulgación o
+  reproducción sin autorización.
+</p>
+
+{# ====================================================================
+   PORTADA INSTITUCIONAL
+   ==================================================================== #}
+{% set pp = project_profile or {} %}
+
+<h2>Datos del proyecto</h2>
+<table class="meta-table">
+  <tbody>
+    <tr>
+      <td>Club</td>
+      <td>{{ club_name }}</td>
+    </tr>
+    <tr>
+      <td>Nombre del proyecto</td>
+      <td>{{ pp.get('project_name') or '—' }}</td>
+    </tr>
+    <tr>
+      <td>Entidad ejecutora</td>
+      <td>{{ pp.get('executing_entity') or '—' }}</td>
+    </tr>
+    <tr>
+      <td>Responsable del informe</td>
+      <td>{{ pp.get('report_responsible') or '—' }}</td>
+    </tr>
+    <tr>
+      <td>Período</td>
+      <td>{{ month_label }}</td>
+    </tr>
+    <tr>
+      <td>Temporada</td>
+      <td>{{ season_year }}</td>
+    </tr>
+  </tbody>
+</table>
+
+{# ====================================================================
+   1. CONTEXTO
+   ==================================================================== #}
+{% if pp.get('purpose') or pp.get('general_objective') or pp.get('specific_objectives') %}
+<h2>1. Contexto del proyecto</h2>
+
+{% if pp.get('purpose') %}
+<h3>Propósito</h3>
+<p style="font-size: 9.5pt; line-height: 1.55;">{{ pp.purpose }}</p>
+{% endif %}
+
+{% if pp.get('general_objective') %}
+<h3>Objetivo general</h3>
+<p style="font-size: 9.5pt; line-height: 1.55;">{{ pp.general_objective }}</p>
+{% endif %}
+
+{% if pp.get('specific_objectives') %}
+<h3>Objetivos específicos</h3>
+<ul style="font-size: 9.5pt; line-height: 1.55; padding-left: 16pt;">
+  {% for obj in pp.specific_objectives %}
+  <li>{{ obj }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endif %}
+
+{# ====================================================================
+   2. TERRITORIO
+   ==================================================================== #}
+{% if pp.get('territory_location') or pp.get('territory_description') %}
+<h2>2. Localización territorial</h2>
+<table class="meta-table">
+  {% if pp.get('territory_location') %}
+  <tr>
+    <td>Ubicación</td>
+    <td>{{ pp.territory_location }}</td>
+  </tr>
+  {% endif %}
+  {% if pp.get('territory_description') %}
+  <tr>
+    <td>Descripción</td>
+    <td>{{ pp.territory_description }}</td>
+  </tr>
+  {% endif %}
+</table>
+{% endif %}
+
+{# ====================================================================
+   3. OBJETIVO DEL PERÍODO (bloque narrativo)
+   ==================================================================== #}
+{% set nb = narrative_blocks or {} %}
+{% if nb.get('objetivo') and nb.objetivo.get('final_text') %}
+<h2>3. Objetivo del período</h2>
+<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
+  {{ nb.objetivo.final_text | markdown }}
+</div>
+{% endif %}
+
+{# ====================================================================
+   4. ACTIVIDADES EJECUTADAS — Grupo Alto Rendimiento
+   ==================================================================== #}
+{% set ms = metrics_snapshot or {} %}
+<h2>4. Actividades ejecutadas — Grupo de Alto Rendimiento</h2>
+
+{# 4a. Bloque narrativo: desarrollo #}
+{% if nb.get('desarrollo') and nb.desarrollo.get('final_text') %}
+<h3>Descripción del desarrollo</h3>
+<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
+  {{ nb.desarrollo.final_text | markdown }}
+</div>
+{% endif %}
+
+{# 4b. Tabla resumen de sesiones #}
+<h3>Resumen de sesiones</h3>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Indicador</th>
+      <th>Valor</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Sesiones planificadas</td>
+      <td>{{ ms.get('total_sessions_planned', 0) }}</td>
+    </tr>
+    <tr>
+      <td>Sesiones ejecutadas</td>
+      <td>{{ ms.get('total_sessions_executed', 0) }}</td>
+    </tr>
+    <tr>
+      <td>Sesiones canceladas</td>
+      <td>{{ ms.get('total_sessions_cancelled', 0) }}</td>
+    </tr>
+    {% if ms.get('total_minutes_executed') %}
+    <tr>
+      <td>Volumen ejecutado</td>
+      <td>{{ ms.get('total_minutes_executed', 0) | hms }}</td>
+    </tr>
+    {% endif %}
+    {% if ms.get('avg_hours_per_week') is not none %}
+    <tr>
+      <td>Promedio semanal</td>
+      <td>{{ (ms.avg_hours_per_week * 60) | hms }}</td>
+    </tr>
+    {% endif %}
+    {% if ms.get('avg_rubric_effort') is not none %}
+    <tr>
+      <td>Rúbrica esfuerzo prom. (1-5)</td>
+      <td>{{ "%.1f"|format(ms.avg_rubric_effort) }}</td>
+    </tr>
+    {% endif %}
+    {% if ms.get('avg_rubric_attitude') is not none %}
+    <tr>
+      <td>Rúbrica actitud prom. (1-5)</td>
+      <td>{{ "%.1f"|format(ms.avg_rubric_attitude) }}</td>
+    </tr>
+    {% endif %}
+    {% if ms.get('avg_rubric_technique') is not none %}
+    <tr>
+      <td>Rúbrica técnica prom. (1-5)</td>
+      <td>{{ "%.1f"|format(ms.avg_rubric_technique) }}</td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+
+{# 4c. Focos técnicos #}
+{% if ms.get('technical_focus_counts') %}
+<h3>Focos técnicos cubiertos</h3>
+<ul style="font-size: 9.5pt; line-height: 1.5;">
+  {% for foco, n in ms.technical_focus_counts.items() %}
+  <li>{{ foco }} — {{ n }} {{ "sesión" if n == 1 else "sesiones" }}</li>
+  {% endfor %}
+</ul>
+{% elif ms.get('technical_focus_list') %}
+<h3>Focos técnicos cubiertos</h3>
+<ul style="font-size: 9.5pt; line-height: 1.5;">
+  {% for foco in ms.technical_focus_list %}
+  <li>{{ foco }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{# 4d. Tabla de asistencia con rúbricas — nombres reales (doc. interno) #}
+{% if ms.get('attendance_by_athlete') %}
+<h3>Asistencia y rúbrica por atleta</h3>
+<p style="font-size: 8.5pt; color: #888888; margin-bottom: 6pt;">
+  Documento interno del club. Contiene datos personales de menores — no distribuir externamente.
+</p>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Atleta</th>
+      <th>Pres.</th>
+      <th>Tarde</th>
+      <th>Just.</th>
+      <th>Aus.</th>
+      <th>Les.</th>
+      <th>Total</th>
+      <th>% Asist.</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for athlete_id, stats in ms.attendance_by_athlete.items() %}
+    {% set athlete_label = (athlete_names.get(athlete_id) if athlete_names else none) or ("Atleta " ~ loop.index) %}
+    <tr>
+      <td>{{ athlete_label }}</td>
+      <td>{{ stats.count_present }}</td>
+      <td>{{ stats.get('count_late', 0) }}</td>
+      <td>{{ stats.get('count_justified', 0) }}</td>
+      <td>{{ stats.get('count_absent', 0) }}</td>
+      <td>{{ stats.get('count_injured', 0) }}</td>
+      <td>{{ stats.total_sessions }}</td>
+      <td>{{ "%.1f"|format(stats.attendance_pct) }}%</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if ms.get('attendance_status_totals') %}
+{% set t = ms.attendance_status_totals %}
+<p style="font-size: 8.5pt; color: #666666; margin-top: 5pt;">
+  Totales club — Pres.: {{ t.get('presente', 0) }} ·
+  Tarde: {{ t.get('tarde', 0) }} ·
+  Just.: {{ t.get('justificado', 0) }} ·
+  Ausen.: {{ t.get('ausente', 0) }} ·
+  <strong>Lesion.: {{ t.get('lesionado', 0) }}</strong>
+</p>
+{% endif %}
+{% endif %}
+
+{# ====================================================================
+   5. PARTICIPACIÓN EN COMPETENCIA
+   ==================================================================== #}
+{% if competition_results or (nb.get('competencia') and nb.competencia.get('final_text')) %}
+<h2>5. Participación en competencia</h2>
+
+{% if nb.get('competencia') and nb.competencia.get('final_text') %}
+<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
+  {{ nb.competencia.final_text | markdown }}
+</div>
+{% endif %}
+
+{% if competition_results %}
+<h3>Resultados del período</h3>
+<p style="font-size: 8.5pt; color: #888888; margin-bottom: 6pt;">
+  Documento interno del club. Contiene datos personales de menores — no distribuir externamente.
+</p>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Atleta</th>
+      <th>Categoría</th>
+      <th>Evento</th>
+      <th>Fecha</th>
+      <th>Pos.</th>
+      <th>Pts.</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in competition_results %}
+    <tr>
+      <td>{{ r.athlete_name }}</td>
+      <td>{{ r.category or '—' }}</td>
+      <td>{{ r.event_name or '—' }}</td>
+      <td>{{ r.event_date if r.event_date else '—' }}</td>
+      <td>{{ r.position if r.position else '—' }}</td>
+      <td>{{ r.points if r.points else '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+{# ====================================================================
+   6. ACTIVIDADES CONJUNTAS
+   ==================================================================== #}
+{% if conjoint_sessions %}
+<h2>6. Actividades conjuntas y salidas</h2>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Fecha</th>
+      <th>Tipo</th>
+      <th>Foco técnico</th>
+      <th>Objetivos</th>
+      <th>Lugar</th>
+      <th>Duración</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in conjoint_sessions %}
+    <tr>
+      <td>{{ s.date }}</td>
+      <td>{{ "Actividad conjunta" if s.kind == "actividad_conjunta" else "Salida" }}</td>
+      <td>{{ s.technical_focus or '—' }}</td>
+      <td>{{ s.objectives or '—' }}</td>
+      <td>{{ s.location or '—' }}</td>
+      <td>{{ s.duration_min }} min</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# ====================================================================
+   7. APOYOS Y RECURSOS MATERIALES (bloque narrativo)
+   ==================================================================== #}
+{% if nb.get('apoyos_materiales') and nb.apoyos_materiales.get('final_text') %}
+<h2>7. Apoyos y recursos materiales</h2>
+<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
+  {{ nb.apoyos_materiales.final_text | markdown }}
+</div>
+{% endif %}
+
+{# ====================================================================
+   8. RESULTADOS — bloque narrativo
+   ==================================================================== #}
+{% if nb.get('resultados') and nb.resultados.get('final_text') %}
+<h2>8. Resultados</h2>
+<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
+  {{ nb.resultados.final_text | markdown }}
+</div>
+{% endif %}
+
+{# ====================================================================
+   9. ANÁLISIS DEL GRUPO (bloque narrativo — sin juicios individuales)
+   ==================================================================== #}
+{% if nb.get('analisis_grupo') and nb.analisis_grupo.get('final_text') %}
+<h2>9. Análisis del grupo de alto rendimiento</h2>
+<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
+  {{ nb.analisis_grupo.final_text | markdown }}
+</div>
+{% endif %}
+
+{# ====================================================================
+   10. CONCLUSIONES (bloque narrativo)
+   ==================================================================== #}
+{% if nb.get('conclusiones') and nb.conclusiones.get('final_text') %}
+<h2>10. Conclusiones y recomendaciones</h2>
+<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
+  {{ nb.conclusiones.final_text | markdown }}
+</div>
+{% endif %}
+
+{# ====================================================================
+   11. REGISTRO FOTOGRÁFICO
+   ==================================================================== #}
+{% if photos %}
+<h2>11. Registro fotográfico</h2>
+<p style="font-size: 8.5pt; color: #888888; margin-bottom: 8pt;">
+  Imágenes con consentimiento informado — no distribuir externamente (Ley 1581/2012).
+</p>
+<div>
+  {% for p in photos %}
+  <div style="display: inline-block; width: 31%; margin: 0 1% 12pt 1%; vertical-align: top; text-align: center;">
+    <img src="{{ p.data_uri }}"
+         style="max-width: 100%; max-height: 110pt; border: 1pt solid #d1d5db; border-radius: 3pt;"
+         alt="Sesión {{ p.session_date }}"/>
+    <p style="font-size: 8.5pt; color: #6b7280; margin: 3pt 0 0 0;">
+      {{ p.session_date }}{% if p.caption %} — {{ p.caption }}{% endif %}
+    </p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ====================================================================
+   PIE DE DOCUMENTO
+   ==================================================================== #}
+<div class="doc-footer" style="margin-top: 28pt;">
+  <p style="font-size: 8pt; color: #6b7280; margin: 0;">
+    Informe elaborado por el equipo técnico del Club Deportivo Trocha y Ruta ·
+    Valle del Cauca, Colombia · Temporada {{ season_year }}.
+  </p>
+  <p style="font-size: 7.5pt; color: #9ca3af; margin: 4pt 0 0 0;">
+    Documento de distribución restringida. Contiene datos personales de menores
+    de edad conforme a la Ley 1581 de 2012 y el Decreto 1377 de 2013 (Colombia).
+    Prohibida su reproducción o distribución sin autorización del responsable del informe.
+  </p>
+  {% if is_draft %}
+  <p style="font-size: 8pt; color: #d97706; margin: 6pt 0 0 0; font-weight: bold;">
+    BORRADOR — pendiente de aprobación por el entrenador responsable.
+  </p>
+  {% endif %}
+</div>
+
+{% endblock %}

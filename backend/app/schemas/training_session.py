@@ -1,12 +1,27 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
-from app.models.training_session import AttendanceStatus, SessionStatus
+from app.models.training_session import AttendanceStatus, MonthlyReportStatus, SessionStatus
 from app.schemas.session_media import SessionMediaRead, SessionMediaReadParent
+
+
+# ---------------------------------------------------------------------------
+# Claves de bloque permitidas en el Informe Técnico Mensual
+# ---------------------------------------------------------------------------
+
+ALLOWED_BLOCK_KEYS: frozenset[str] = frozenset({
+    "objetivo",
+    "desarrollo",
+    "resultados",
+    "conclusiones",
+    "apoyos_materiales",
+    "analisis_grupo",
+    "competencia",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -294,8 +309,58 @@ class MonthlyReportCreate(BaseModel):
         return self
 
 
+# ---------------------------------------------------------------------------
+# Tipos auxiliares para el Informe Técnico Mensual
+# ---------------------------------------------------------------------------
+
+
+class NarrativeBlock(BaseModel):
+    """Bloque de narrativa IA + texto final editado por el coach.
+
+    - ``ai_draft``: borrador generado por la IA (anonimizado, sin nombres reales).
+    - ``final_text``: texto aprobado por el coach. Se inicializa igual al
+      ai_draft y el coach lo puede editar antes de aprobar.
+    - ``ai_model``: identificador del modelo que generó el borrador.
+    - ``ai_generated_at``: timestamp de generación del borrador.
+
+    PRIVACIDAD: este objeto NUNCA se devuelve a padres. El router aplica
+    ``narrative_blocks=None`` para el rol ``parent``.
+    """
+
+    ai_draft: str | None = None
+    final_text: str | None = None
+    ai_model: str | None = None
+    ai_generated_at: datetime | None = None
+
+
+class CompetitionResultItem(BaseModel):
+    """Un resultado de competencia de un atleta del club en el período.
+
+    Los nombres de atletas aquí son intencionales: el Informe Técnico Mensual
+    es un documento controlado de distribución restringida (coach/admin del club),
+    no se expone a la IA ni a padres. El router asegura RBAC.
+    """
+
+    athlete_name: str
+    category: str | None = None
+    position: int | None = None
+    points: int | None = None
+    event_name: str | None = None
+    event_date: date | None = None
+
+
 class MonthlyReportRead(BaseModel):
-    """Respuesta de un reporte mensual."""
+    """Respuesta de un reporte mensual.
+
+    PRIVACIDAD:
+    - ``narrative_blocks``: NUNCA enviado a padres (contiene narrativa interna
+      del coach). El router establece ``narrative_blocks=None`` para ``parent``.
+    - ``competition_results``: tampoco se envía a padres (contiene nombres de
+      otros atletas menores). El router establece ``competition_results=None``
+      para ``parent``.
+    - ``athlete_names``: solo se rellena para coach/admin en el endpoint de
+      detalle; siempre ``{}`` para padres (privacidad de menores ajenos).
+    """
 
     id: int
     club_id: int
@@ -306,11 +371,78 @@ class MonthlyReportRead(BaseModel):
     coach_observations: str | None
     generated_by_user_id: int
     generated_at: datetime
-    # Mapa id_atleta (str) -> "Nombre Apellido". Solo se rellena para coach/admin
-    # en el endpoint de detalle; vacío para padres (privacidad de menores).
+    # Campos del Informe Técnico Mensual
+    narrative_blocks: dict[str, NarrativeBlock] | None = None
+    competition_results: list[CompetitionResultItem] | None = None
+    status: MonthlyReportStatus = MonthlyReportStatus.DRAFT
+    # Mapa id_atleta (str) -> "Nombre Apellido". Solo para coach/admin.
     athlete_names: dict[str, str] = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
+
+    @field_validator("narrative_blocks", mode="before")
+    @classmethod
+    def _coerce_narrative_blocks(cls, v: Any) -> Any:
+        """Acepta dict o None; cualquier otro tipo (ORM JSON, MagicMock) → None."""
+        if v is None or isinstance(v, dict):
+            return v
+        return None
+
+    @field_validator("competition_results", mode="before")
+    @classmethod
+    def _coerce_competition_results(cls, v: Any) -> Any:
+        """Acepta list o None; cualquier otro tipo → None."""
+        if v is None or isinstance(v, list):
+            return v
+        return None
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _coerce_status(cls, v: Any) -> Any:
+        """Acepta valor de enum válido; cualquier otro (MagicMock) → draft."""
+        if isinstance(v, MonthlyReportStatus):
+            return v
+        if isinstance(v, str) and v in (m.value for m in MonthlyReportStatus):
+            return v
+        return MonthlyReportStatus.DRAFT
+
+
+class MonthlyReportBlocksUpdate(BaseModel):
+    """Payload PATCH para que el coach edite los bloques de narrativa y/o apruebe.
+
+    ``blocks``: dict con clave = nombre del bloque y valor = ``final_text``
+    editado. Solo se aceptan claves dentro de ``ALLOWED_BLOCK_KEYS``.
+
+    ``status``: si se pasa ``"approved"``, el reporte transiciona de draft
+    a approved. Solo se permite ``draft -> approved`` (no reversión en este
+    endpoint; para revertir se regenera con force_regenerate).
+    """
+
+    blocks: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Claves permitidas: objetivo, desarrollo, resultados, conclusiones, "
+            "apoyos_materiales, analisis_grupo, competencia. "
+            "Valor: texto final editado por el coach (max 2000 chars por bloque)."
+        ),
+    )
+    status: MonthlyReportStatus | None = None
+
+    @field_validator("blocks")
+    @classmethod
+    def _validate_block_keys(cls, v: dict[str, str]) -> dict[str, str]:
+        invalid = set(v.keys()) - ALLOWED_BLOCK_KEYS
+        if invalid:
+            raise ValueError(
+                f"Claves de bloque no permitidas: {sorted(invalid)}. "
+                f"Permitidas: {sorted(ALLOWED_BLOCK_KEYS)}"
+            )
+        for key, text in v.items():
+            if len(text) > 2000:
+                raise ValueError(
+                    f"El bloque '{key}' excede el máximo de 2000 caracteres."
+                )
+        return v
 
 
 class ParentMonthlySummary(BaseModel):

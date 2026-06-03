@@ -97,6 +97,38 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
         version=1,
         description="Resumen mensual agregado del club para el comité.",
     ),
+    "monthly_report_blocks": PromptSpec(
+        template_id="monthly_report_blocks",
+        template_path="monthly_report_blocks.j2",
+        required_keys=frozenset(
+            {
+                "block_key",
+                "block_title",
+                "block_prompt",
+                "block_max_words",
+                "club_name",
+                "period_year",
+                "period_month",
+                "total_sessions_planned",
+                "total_sessions_executed",
+                "total_sessions_cancelled",
+                "attendance_stats",
+                "attendance_summary",
+                "focos_técnicos",
+                "avg_rpe",
+                "avg_rubric_effort",
+                "avg_rubric_attitude",
+                "avg_rubric_technique",
+                "coach_observations",
+            }
+        ),
+        version=1,
+        description=(
+            "Bloque individual de narrativa para el Informe Técnico Mensual. "
+            "Mismo contexto que monthly_report + block_key/title/prompt/max_words. "
+            "Sin nombres reales de atletas."
+        ),
+    ),
     "athlete_monthly_newsletter_v1": PromptSpec(
         template_id="athlete_monthly_newsletter_v1",
         template_path="athlete_monthly_newsletter_v1.j2",

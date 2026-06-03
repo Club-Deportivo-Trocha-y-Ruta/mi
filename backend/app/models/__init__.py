@@ -11,10 +11,13 @@ from app.models.ai_explanation import AthleteAIExplanation
 from app.models.training_session import (
     AttendanceStatus,
     MonthlyReport,
+    MonthlyReportStatus,
     SessionAttendance,
+    SessionKind,
     SessionStatus,
     TrainingSession,
 )
+from app.models.club_project_profile import ClubProjectProfile
 from app.models.session_media import (
     MediaType,
     SessionMedia,
@@ -74,9 +77,12 @@ __all__ = [
     "AthleteAIExplanation",
     "SessionStatus",
     "AttendanceStatus",
+    "SessionKind",
     "TrainingSession",
     "SessionAttendance",
     "MonthlyReport",
+    "MonthlyReportStatus",
+    "ClubProjectProfile",
     "MediaType",
     "SessionMedia",
     "SessionMediaAthlete",

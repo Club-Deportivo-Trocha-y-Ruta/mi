@@ -406,6 +406,33 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
             "NO enviar el PDF completo por email sin verificar destinatario."
         ),
     ),
+    DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT: DocumentTemplateSpec(
+        template_id=DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT,
+        format=DocumentFormat.PDF,
+        template_path="documents/pdf/training_monthly_technical_report.html",
+        required_context_keys=frozenset(
+            {
+                "club_name",
+                "month_label",
+                "season_year",
+                "is_draft",
+                "project_profile",
+                "narrative_blocks",
+                "metrics_snapshot",
+                "athlete_names",
+                "competition_results",
+                "conjoint_sessions",
+                "photos",
+            }
+        ),
+        description=(
+            "Informe Técnico Mensual estilo financiador — Grupo Alto Rendimiento. "
+            "Contiene nombres reales de menores (tabla de asistencia, competencia). "
+            "Solo coach/admin del club. Distribución restringida. "
+            "Los narrative_blocks son final_text aprobado por el coach. "
+            "is_draft=True añade banner BORRADOR al PDF."
+        ),
+    ),
 }
 
 

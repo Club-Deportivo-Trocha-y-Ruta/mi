@@ -1,0 +1,77 @@
+{# version: 1
+   Audiencia: coach y administrador del club (documento interno).
+   Objetivo: generar UN bloque de narrativa para el Informe Técnico Mensual
+   estilo financiador. Sin nombres reales de atletas.
+
+   Variables esperadas:
+     block_key        — clave del bloque a generar (objetivo, desarrollo, etc.)
+     block_title      — título legible del bloque
+     block_prompt     — instrucción específica del bloque (ver cada case)
+     block_max_words  — máximo de palabras para este bloque
+     club_name
+     period_year
+     period_month
+     total_sessions_planned
+     total_sessions_executed
+     total_sessions_cancelled
+     attendance_stats          — lista de {pseudonym, count_present, count_total, percentage}
+     attendance_summary        — string agregado (cuando grupo < 5 atletas)
+     focos_técnicos
+     avg_rpe
+     avg_rubric_effort
+     avg_rubric_attitude
+     avg_rubric_technique
+     coach_observations
+#}
+# Tarea
+Genera el bloque **{{ block_title }}** para el Informe Técnico Mensual del club {{ club_name }}, período {{ period_month }}/{{ period_year }}.
+
+# Instrucción específica del bloque
+{{ block_prompt }}
+
+# Restricciones obligatorias
+- Máximo {{ block_max_words }} palabras. El texto debe ser conciso y directo.
+- En español, tono técnico-profesional (estilo informe de gestión). Sin saludos, sin firma, sin encabezados redundantes.
+- **NUNCA menciones nombres propios de atletas** — usa solo agregados o pseudónimos (A1, A2, …). Los nombres de menores no aparecen en este output.
+- NO recomiendes intervenciones médicas, suplementación, ni planes individuales.
+- NO incluyas juicios subjetivos sobre la actitud o capacidad de atletas individuales.
+- Si recibes `attendance_summary` (grupo pequeño), usa solo ese agregado. NO desgloses por atleta, NO inventes pseudónimos.
+- Entrega el texto del bloque directamente, sin título ni prefijo. Comienza con el primer párrafo.
+
+# Datos del período {{ period_month }}/{{ period_year }}
+
+## Sesiones
+- Planificadas: {{ total_sessions_planned }}
+- Ejecutadas: {{ total_sessions_executed }}
+- Canceladas: {{ total_sessions_cancelled }}
+
+## Asistencia
+{% if attendance_summary %}
+{{ attendance_summary }}
+(grupo pequeño: detalle individual omitido por privacidad)
+{% elif attendance_stats %}
+{% for s in attendance_stats %}
+- {{ s.pseudonym }}: {{ s.count_present }}/{{ s.count_total }} ({{ "%.0f"|format(s.percentage) }}%)
+{% endfor %}
+{% else %}
+(Sin registros de asistencia)
+{% endif %}
+
+## Focos técnicos
+{% if focos_técnicos %}
+{% for f in focos_técnicos %}- {{ f }}
+{% endfor %}
+{% else %}
+(No se registraron focos técnicos)
+{% endif %}
+
+## Promedios de rúbrica (cuando disponibles)
+- Esfuerzo (1-5): {{ "%.1f"|format(avg_rubric_effort) if avg_rubric_effort is not none else "N/D" }}
+- Actitud (1-5): {{ "%.1f"|format(avg_rubric_attitude) if avg_rubric_attitude is not none else "N/D" }}
+- Técnica (1-5): {{ "%.1f"|format(avg_rubric_technique) if avg_rubric_technique is not none else "N/D" }}
+- RPE promedio: {{ "%.1f"|format(avg_rpe) if avg_rpe is not none else "N/D" }}
+
+## Observaciones del entrenador (texto libre, previamente redactado)
+{{ coach_observations if coach_observations else "(sin observaciones)" }}
+
+# Genera ahora el bloque siguiendo todas las restricciones.

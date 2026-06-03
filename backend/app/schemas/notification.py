@@ -41,6 +41,9 @@ class DocumentTemplate(str, Enum):
     MEDICAL_CLEARANCE = "medical_clearance"
     TRAINING_MONTHLY_REPORT = "training_monthly_report"
     ATHLETE_MONTHLY_NEWSLETTER = "athlete_monthly_newsletter"
+    # Informe Técnico Mensual estilo financiador (Grupo Alto Rendimiento).
+    # Solo coach/admin del club — contiene nombres de menores. No distribuir.
+    TRAINING_MONTHLY_TECHNICAL_REPORT = "training_monthly_technical_report"
 
 
 class DocumentFormat(str, Enum):

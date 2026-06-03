@@ -44,6 +44,18 @@ class AttendanceStatus(str, enum.Enum):
     LESIONADO = "lesionado"
 
 
+class SessionKind(str, enum.Enum):
+    ENTRENAMIENTO = "entrenamiento"
+    ACTIVIDAD_CONJUNTA = "actividad_conjunta"
+    SALIDA = "salida"
+    OTRO = "otro"
+
+
+class MonthlyReportStatus(str, enum.Enum):
+    DRAFT = "draft"
+    APPROVED = "approved"
+
+
 class TrainingSession(Base):
     """Sesión de entrenamiento planificada o ejecutada por el club."""
 
@@ -78,6 +90,13 @@ class TrainingSession(Base):
     strava_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     route_file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     coach_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session_kind: Mapped[SessionKind] = mapped_column(
+        Enum(SessionKind, values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+        default=SessionKind.ENTRENAMIENTO,
+        server_default=SessionKind.ENTRENAMIENTO.value,
+    )
+    objectives: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -203,6 +222,14 @@ class MonthlyReport(Base):
     month: Mapped[int] = mapped_column(Integer, nullable=False)
     ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     metrics_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    narrative_blocks: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    competition_results: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[MonthlyReportStatus] = mapped_column(
+        Enum(MonthlyReportStatus, values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+        default=MonthlyReportStatus.DRAFT,
+        server_default=MonthlyReportStatus.DRAFT.value,
+    )
     generated_by_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
