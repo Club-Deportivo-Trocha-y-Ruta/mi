@@ -255,6 +255,25 @@ Migraciones corren automáticamente via `entrypoint.sh` (`alembic upgrade head`)
 
 > Deploy pendiente de aprobación coach y merge a `main`. Migración Alembic verificada en SQLite via tests (encadenada a `f9a0b1c2d3e4`).
 
+## Estado de implementación — Módulo Informe Técnico Mensual (Fase 1.9)
+
+> Refactor del "Reporte Mensual del Club" (Fase 1.5) hacia un **Informe Técnico Mensual** estilo informe a financiador. Documento estructurado por capítulos con perfil de proyecto del club (1:1), narrativa IA pre-redactada por bloques que el coach edita y aprueba, podios del mes (Copa Valle), y PDF de distribución restringida (coach/admin). Solo Grupo de Alto Rendimiento; sección "Población Atendida" OMITIDA; sin segmentación por programa. Detalle técnico en `docs/11-informe-tecnico-mensual/`. Migración encadenada al head `c6d7e8f9a0b1` → `d4e5f6a7b8c9`.
+
+| Paso | Descripción | Estado |
+|---|---|---|
+| 1 | Modelo `ClubProjectProfile` (1:1 club) + columnas `monthly_reports` (`narrative_blocks` JSON, `competition_results` JSON, `status` draft/approved) + `training_sessions` (`session_kind` enum, `objectives`) + enums `SessionKind`/`MonthlyReportStatus` + migración `d4e5f6a7b8c9` | ✅ Completo 2026-06-03 |
+| 2 | Schemas Pydantic (`ClubProjectProfile*`, `NarrativeBlock`, `CompetitionResultItem`, `MonthlyReportBlocksUpdate`, `ALLOWED_BLOCK_KEYS`) + servicios `reports.py` (update/regenerate bloques) + helper `competition_results.py` (podios del club del mes, degrada a `[]`) | ✅ Completo 2026-06-03 |
+| 3 | IA por bloques: `MonthlyReportBlocksUseCase` + prompt `monthly_report_blocks.j2` (6 bloques narrativos, límites de palabras por bloque, fallback independiente por bloque). Reutiliza `MonthlyReportGuardrails` (sin nombres reales, sin términos médicos); la IA nunca recibe nombres ni `competition_results` | ✅ Completo 2026-06-03 |
+| 4 | Router: CRUD `project-profile` (GET/PUT/PATCH), `PATCH .../monthly-reports/{year}/{month}/blocks`, `POST .../blocks/{block_key}/regenerate`, `GET .../pdf` con template técnico. RBAC coach/admin; vista padre sin bloques/competencia | ✅ Completo 2026-06-03 |
+| 5 | PDF: template `training_monthly_technical_report.html` (portada institucional, contexto, territorio, actividades grupo, competencia+podios, actividades conjuntas, apoyos materiales, análisis del grupo, conclusiones, registro fotográfico) + registro `TRAINING_MONTHLY_TECHNICAL_REPORT`. Banner BORRADOR si `draft` + aviso Ley 1581 distribución restringida | ✅ Completo 2026-06-03 |
+| 6 | Frontend: `ReportDetailPage` editor por bloques (generar/regenerar IA, editar, aprobar, descargar PDF) + `ProjectProfilePage` + badges de estado + campos `session_kind`/`objectives` en form de sesión + tipos/API/hooks (`useProjectProfile`, `useUpsertProjectProfile`, `useUpdateReportBlocks`, `useRegenerateBlock`) | ✅ Completo 2026-06-03 |
+| 7 | Privacidad: la IA nunca emite nombres; padres no reciben `narrative_blocks`/`competition_results`; nombres de menores en el PDF (podios/asistencia) como excepción deliberada para documento externo controlado, gated por RBAC + aprobación + aviso | ✅ Completo 2026-06-03 |
+| 8 | Tests: 52 backend targeted verdes + 1742 frontend vitest verdes + `tsc` limpio | ✅ Completo 2026-06-03 |
+| 9 | Docs: `docs/11-informe-tecnico-mensual/` (`workflow.md`, `design.md`, `runbook.md`) + CLAUDE.md + README docs | ✅ Completo 2026-06-03 |
+| 10 | Deploy a Render | ⏳ Pendiente |
+
+> Deploy pendiente de aprobación del usuario. Migración verificada en SQLite vía tests.
+
 ## Credenciales de desarrollo (seed data)
 
 > Solo para entorno local / Docker dev. Nunca usar en producción.

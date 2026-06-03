@@ -14,6 +14,7 @@ Carpetas numeradas por feature en orden cronológico. Archivos internos por tipo
 | 08 | [08-onboarding/](08-onboarding/) | Onboarding por invitación: investigación + diseño + implementación |
 | 09 | [09-training-planning/](09-training-planning/) | Sesiones de entrenamiento: planificación, asistencia, rúbrica, reporte mensual con IA |
 | 10 | [10-race-results/](10-race-results/) | Resultados Copa Valle XCO: ingesta de PDFs, normalización fuzzy, analíticas longitudinales (evolución, gap podio, ranking club, proyección). Extensión 2026-05-26: condiciones de carrera en UI (wizard + tarjeta tri-estado + PATCH) — ver `upload-design.md` §14. Extensión 2026-05-27: módulo **Competencias** (CRUD `race_events`, wizard reubicado, tabs URL-driven) — ver `competitions-module.md` |
+| 11 | [11-informe-tecnico-mensual/](11-informe-tecnico-mensual/) | **Informe Técnico Mensual** (Fase 1.9): refactor del reporte mensual del club hacia documento estilo informe a financiador. Perfil de proyecto 1:1, narrativa IA por bloques editable por el coach, podios del mes, PDF de distribución restringida — `workflow.md` + `design.md` + `runbook.md` (guía del coach) |
 
 ## Archivo de entrenamiento
 

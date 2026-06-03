@@ -102,6 +102,14 @@ def _build_report_read(report: MonthlyReport, is_parent: bool) -> MonthlyReportR
         out.narrative_blocks = None
         out.competition_results = None
         out.athlete_names = {}
+        # Padres NO reciben attendance_by_athlete: contiene IDs de todos los
+        # atletas del club (categoría ALTA — Ley 1581). Se preservan las métricas
+        # agregadas (totales de sesiones, volumen, rúbrica promedio, focos técnicos)
+        # que son suficientes para la vista padre.
+        if isinstance(out.metrics_snapshot, dict) and "attendance_by_athlete" in out.metrics_snapshot:
+            filtered = dict(out.metrics_snapshot)
+            filtered.pop("attendance_by_athlete", None)
+            out.metrics_snapshot = filtered
     return out
 
 

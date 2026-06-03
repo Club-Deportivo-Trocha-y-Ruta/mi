@@ -418,13 +418,16 @@ describe("ReportDetailPage — parent (solo lectura)", () => {
     expect(screen.getByTestId("metrics-table")).toBeInTheDocument();
   });
 
-  it("muestra botón Descargar PDF para parent", () => {
+  it("NO muestra botón Descargar PDF para parent (documento interno del club)", () => {
     vi.mocked(useMonthlyReport).mockReturnValue({
       isLoading: false,
       isError: false,
       data: makeReport({ narrative_blocks: null }),
     } as unknown as ReturnType<typeof useMonthlyReport>);
     renderPage();
-    expect(screen.getByTestId("download-pdf-button")).toBeInTheDocument();
+    expect(screen.queryByTestId("download-pdf-button")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/solo para el equipo técnico del club/i),
+    ).toBeInTheDocument();
   });
 });

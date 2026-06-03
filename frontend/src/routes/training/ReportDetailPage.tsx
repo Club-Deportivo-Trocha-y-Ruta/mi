@@ -515,14 +515,8 @@ function CoachEditorView({
 
 function ParentReadOnlyView({
   report,
-  onDownload,
-  isDownloading,
-  downloadError,
 }: {
   report: MonthlyReportFull;
-  onDownload: () => void;
-  isDownloading: boolean;
-  downloadError: string | null;
 }) {
   const monthLabel = MONTH_NAMES[report.month - 1] ?? String(report.month);
   const metrics = report.metrics_snapshot as MonthlyMetricsSnapshot | null;
@@ -530,43 +524,30 @@ function ParentReadOnlyView({
   return (
     <section className="space-y-5">
       <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <Link
-              to="/training/reports"
-              className="mb-2 inline-block text-xs text-mid-gray transition-opacity hover:opacity-70"
-            >
-              ← Reportes
-            </Link>
-            <h1
-              className="text-xl text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-            >
-              Reporte mensual — {monthLabel} {report.year}
-            </h1>
-          </div>
-          <button
-            type="button"
-            onClick={onDownload}
-            disabled={isDownloading}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-            data-testid="download-pdf-button"
+        <div>
+          <Link
+            to="/training/reports"
+            className="mb-2 inline-block text-xs text-mid-gray transition-opacity hover:opacity-70"
           >
-            <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
-            {isDownloading ? "Descargando…" : "Descargar PDF"}
-          </button>
+            ← Reportes
+          </Link>
+          <h1
+            className="text-xl text-charcoal"
+            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          >
+            Reporte mensual — {monthLabel} {report.year}
+          </h1>
         </div>
       </div>
 
-      {downloadError && (
-        <div
-          className="rounded-xl border border-red-200 bg-red-50 px-5 py-4"
-          role="alert"
-          data-testid="download-error-banner"
-        >
-          <p className="text-sm text-red-700">{downloadError}</p>
-        </div>
-      )}
+      {/* El informe técnico completo (PDF) es un documento interno del equipo
+          técnico del club; no se ofrece su descarga a las familias. */}
+      <div className="rounded-xl bg-blue-50 px-5 py-4" style={cardStyle}>
+        <p className="text-sm text-charcoal">
+          El informe técnico completo está disponible solo para el equipo técnico
+          del club. Aquí puedes ver el resumen de métricas del mes.
+        </p>
+      </div>
 
       {metrics && (
         <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
@@ -665,12 +646,5 @@ export function ReportDetailPage() {
     );
   }
 
-  return (
-    <ParentReadOnlyView
-      report={report}
-      onDownload={handleDownload}
-      isDownloading={downloadMutation.isPending}
-      downloadError={downloadError}
-    />
-  );
+  return <ParentReadOnlyView report={report} />;
 }
