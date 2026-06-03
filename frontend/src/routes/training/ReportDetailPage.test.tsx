@@ -382,52 +382,39 @@ describe("ReportDetailPage — coach", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests — parent view (rol parent, narrative_blocks=null)
+// Tests — fallback sin club / sin acceso
+//
+// El Informe Técnico Mensual es interno del club: la ruta está protegida con
+// allowedRoles [coach, admin] y los padres son redirigidos por el guard de ruta
+// (ProtectedRoute) antes de montar esta página. El único caso defensivo que
+// llega al fallback es coach/admin sin club asignado: no debe caer en una vista
+// de reporte, sino mostrar un estado neutro "Informe no disponible".
 // ---------------------------------------------------------------------------
 
-describe("ReportDetailPage — parent (solo lectura)", () => {
+describe("ReportDetailPage — fallback sin club asignado", () => {
   beforeEach(() => {
-    const parentState = {
+    const noClubState = {
       accessToken: "tok",
-      user: { role: "parent", first_name: "Mamá", last_name: "García", club_ids: [1] },
+      user: { role: "coach", first_name: "Entrena", last_name: "Dor", club_ids: [] },
     };
     vi.mocked(useAuthStore).mockImplementation(
-      ((sel: (s: typeof parentState) => unknown) => sel(parentState)) as unknown as typeof useAuthStore,
+      ((sel: (s: typeof noClubState) => unknown) => sel(noClubState)) as unknown as typeof useAuthStore,
     );
   });
 
-  it("NO renderiza bloques narrativos para parent", () => {
+  it("muestra 'Informe no disponible' sin caer en una vista de reporte", () => {
     vi.mocked(useMonthlyReport).mockReturnValue({
       isLoading: false,
       isError: false,
       data: makeReport({ narrative_blocks: null }),
     } as unknown as ReturnType<typeof useMonthlyReport>);
     renderPage();
-    // No debe haber ningún editor de bloque
+
+    expect(screen.getByText(/informe no disponible/i)).toBeInTheDocument();
+    // No expone nada del informe: ni métricas, ni editores, ni aprobar, ni PDF.
+    expect(screen.queryByTestId("metrics-table")).not.toBeInTheDocument();
     expect(screen.queryByTestId("block-editor-objetivo")).not.toBeInTheDocument();
     expect(screen.queryByTestId("approve-btn")).not.toBeInTheDocument();
-  });
-
-  it("muestra métricas para parent", () => {
-    vi.mocked(useMonthlyReport).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: makeReport({ narrative_blocks: null }),
-    } as unknown as ReturnType<typeof useMonthlyReport>);
-    renderPage();
-    expect(screen.getByTestId("metrics-table")).toBeInTheDocument();
-  });
-
-  it("NO muestra botón Descargar PDF para parent (documento interno del club)", () => {
-    vi.mocked(useMonthlyReport).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: makeReport({ narrative_blocks: null }),
-    } as unknown as ReturnType<typeof useMonthlyReport>);
-    renderPage();
     expect(screen.queryByTestId("download-pdf-button")).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/solo para el equipo técnico del club/i),
-    ).toBeInTheDocument();
   });
 });

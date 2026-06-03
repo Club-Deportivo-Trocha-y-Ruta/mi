@@ -46,11 +46,12 @@ Hay dos modalidades de E2E para este módulo:
   UI del informe. El mock del padre se conserva como red defensiva por si el SPA
   prefetchea antes de resolver el guard.
 
-  > Nota de código muerto: `ReportDetailPage` conserva un `ParentReadOnlyView`
-  > (con su unit test que monta el componente directamente). Hoy **no es
-  > alcanzable** por routing/nav para padres. Decisión del coach (2026-06-03):
-  > el informe queda interno; el padre se bloquea. El fallback y su unit test son
-  > candidatos a limpieza aparte.
+  > Nota (2026-06-03): `ReportDetailPage` ya **no** tiene una vista de padre. La
+  > rama parent (`ParentReadOnlyView`) era inalcanzable por routing/nav y se
+  > eliminó; el fallback del entry point ahora es un estado neutro "Informe no
+  > disponible" para el único caso defensivo real (coach/admin sin club
+  > asignado). Su unit test del camino muerto se sustituyó por uno del nuevo
+  > fallback.
 
 ### Requisitos para ejecutar (entorno con red)
 

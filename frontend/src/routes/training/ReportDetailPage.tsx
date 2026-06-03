@@ -1,11 +1,12 @@
 /**
  * ReportDetailPage — Editor del Informe Técnico Mensual (coach/admin)
- *                   Vista de solo lectura simplificada (parent)
  *
  * Coach/admin: edita bloques narrativos por sección, regenera IA por bloque,
  *              aprueba el informe y descarga el PDF.
- * Parent: narrative_blocks y competition_results llegan null desde el backend;
- *         muestra solo métricas de asistencia de sus atletas.
+ *
+ * El informe es un documento interno del equipo técnico: la ruta está protegida
+ * con allowedRoles [coach, admin] y los padres son redirigidos por el guard de
+ * ruta (ProtectedRoute) antes de montar esta página.
  *
  * Path: /training/reports/:year/:month
  */
@@ -510,62 +511,6 @@ function CoachEditorView({
 }
 
 // ---------------------------------------------------------------------------
-// ParentReadOnlyView — vista simplificada para padres
-// ---------------------------------------------------------------------------
-
-function ParentReadOnlyView({
-  report,
-}: {
-  report: MonthlyReportFull;
-}) {
-  const monthLabel = MONTH_NAMES[report.month - 1] ?? String(report.month);
-  const metrics = report.metrics_snapshot as MonthlyMetricsSnapshot | null;
-
-  return (
-    <section className="space-y-5">
-      <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
-        <div>
-          <Link
-            to="/training/reports"
-            className="mb-2 inline-block text-xs text-mid-gray transition-opacity hover:opacity-70"
-          >
-            ← Reportes
-          </Link>
-          <h1
-            className="text-xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-          >
-            Reporte mensual — {monthLabel} {report.year}
-          </h1>
-        </div>
-      </div>
-
-      {/* El informe técnico completo (PDF) es un documento interno del equipo
-          técnico del club; no se ofrece su descarga a las familias. */}
-      <div className="rounded-xl bg-blue-50 px-5 py-4" style={cardStyle}>
-        <p className="text-sm text-charcoal">
-          El informe técnico completo está disponible solo para el equipo técnico
-          del club. Aquí puedes ver el resumen de métricas del mes.
-        </p>
-      </div>
-
-      {metrics && (
-        <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
-          <h2 className={sectionHeading}>Métricas del mes</h2>
-          <MonthlyMetricsTable metrics={metrics} />
-        </div>
-      )}
-
-      <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
-        <p className="text-xs text-mid-gray">
-          Generado el {formatDateTime(report.generated_at)}
-        </p>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // ReportDetailPage — entry point
 // ---------------------------------------------------------------------------
 
@@ -646,5 +591,23 @@ export function ReportDetailPage() {
     );
   }
 
-  return <ParentReadOnlyView report={report} />;
+  // Llegados aquí la cuenta no tiene club asignado (o un rol sin acceso, aunque
+  // el guard de ruta ya redirige a los padres a /my-athletes antes de montar
+  // esta página). No caemos en una vista de reporte: estado neutro.
+  return (
+    <section className="space-y-4">
+      <div className="rounded-xl bg-white p-8 text-center" style={cardStyle}>
+        <p className="text-base font-medium text-charcoal">Informe no disponible</p>
+        <p className="mt-1 text-sm text-mid-gray">
+          Tu cuenta no tiene un club asignado para ver este informe.
+        </p>
+        <Link
+          to="/dashboard"
+          className="mt-4 inline-block text-sm font-medium text-charcoal underline hover:opacity-70"
+        >
+          Volver al inicio
+        </Link>
+      </div>
+    </section>
+  );
 }
