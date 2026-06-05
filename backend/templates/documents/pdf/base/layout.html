@@ -3,6 +3,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="color-scheme" content="light" />
   <title>{% block title %}Club Deportivo Trocha y Ruta{% endblock %}</title>
   <style>
     /* -----------------------------------------------------------------------
@@ -91,6 +92,9 @@
       color: var(--gray-700);
       margin: 0;
       padding: 0;
+      /* T017: suppress lone orphan/widow lines at page boundaries */
+      widows: 2;
+      orphans: 2;
     }
 
     /* Cabecera del documento (visual, dentro del cuerpo) */
@@ -134,7 +138,7 @@
       margin: 14pt 0 6pt 0;
     }
 
-    p { margin: 0 0 8pt 0; line-height: 1.5; }
+    p { margin: 0 0 8pt 0; line-height: 1.5; widows: 2; orphans: 2; }
 
     /* Tabla de datos */
     table.data-table {
@@ -262,6 +266,8 @@
       line-height: 1.4;
       color: var(--gray-500);
       margin: 4pt 0 0 0;
+      widows: 2;
+      orphans: 2;
     }
   </style>
 </head>

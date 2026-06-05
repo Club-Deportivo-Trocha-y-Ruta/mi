@@ -522,6 +522,18 @@ export function AthleteNewsletterDetailPage() {
           <NewsletterPreviewBlocks
             emailBlocks={newsletter.email_blocks}
             badges={newsletter.badges_earned}
+            blockCaptions={
+              (newsletter.ai_narrative as Record<string, unknown> | null)?.block_captions as
+                | Record<string, string>
+                | null
+                | undefined
+            }
+            monthHighlights={
+              (newsletter.ai_narrative as Record<string, unknown> | null)?.month_highlights as
+                | string
+                | null
+                | undefined
+            }
           />
         </div>
 

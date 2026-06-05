@@ -1,13 +1,22 @@
 /**
  * Tests para NewsletterPreviewBlocks.
  *
- * Cubre: render de cada bloque, skip si data faltante, empty state.
+ * Cubre: render de cada bloque, skip si data faltante, empty state,
+ * US3 captions/highlights (T031), privacidad antropometría (FR-004/SC-008),
+ * y accesibilidad jest-axe (SC-007).
  */
 
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { axe, toHaveNoViolations } from "jest-axe";
 
 import { NewsletterPreviewBlocks } from "./NewsletterPreviewBlocks";
+
+expect.extend(toHaveNoViolations);
+
+// ---------------------------------------------------------------------------
+// Empty state
+// ---------------------------------------------------------------------------
 
 describe("NewsletterPreviewBlocks — empty state", () => {
   it("muestra empty state cuando no hay bloques ni badges", () => {
@@ -23,6 +32,10 @@ describe("NewsletterPreviewBlocks — empty state", () => {
     expect(screen.getByTestId("preview-empty")).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bloque asistencia
+// ---------------------------------------------------------------------------
 
 describe("NewsletterPreviewBlocks — bloque asistencia", () => {
   it("renderiza bloque de asistencia con porcentaje", () => {
@@ -68,6 +81,10 @@ describe("NewsletterPreviewBlocks — bloque asistencia", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Bloque carga técnica
+// ---------------------------------------------------------------------------
+
 describe("NewsletterPreviewBlocks — bloque carga técnica", () => {
   it("renderiza focos técnicos", () => {
     render(
@@ -105,6 +122,10 @@ describe("NewsletterPreviewBlocks — bloque carga técnica", () => {
     expect(screen.getByText("Técnica")).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bloque carreras
+// ---------------------------------------------------------------------------
 
 describe("NewsletterPreviewBlocks — bloque carreras", () => {
   it("renderiza resultado de carrera con posición", () => {
@@ -161,6 +182,10 @@ describe("NewsletterPreviewBlocks — bloque carreras", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Bloque calendario
+// ---------------------------------------------------------------------------
+
 describe("NewsletterPreviewBlocks — bloque calendario", () => {
   it("renderiza próxima válida", () => {
     render(
@@ -192,6 +217,10 @@ describe("NewsletterPreviewBlocks — bloque calendario", () => {
     ).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bloque apoyo en casa
+// ---------------------------------------------------------------------------
 
 describe("NewsletterPreviewBlocks — bloque apoyo en casa", () => {
   it("renderiza lista de tips", () => {
@@ -254,6 +283,10 @@ describe("NewsletterPreviewBlocks — bloque apoyo en casa", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Bloque fotos
+// ---------------------------------------------------------------------------
+
 describe("NewsletterPreviewBlocks — bloque fotos", () => {
   it("renderiza fotos con placeholder cuando no hay thumbnail", () => {
     render(
@@ -268,7 +301,6 @@ describe("NewsletterPreviewBlocks — bloque fotos", () => {
       />,
     );
     expect(screen.getByTestId("block-photos")).toBeInTheDocument();
-    // Debería tener el contenedor de fotos
   });
 
   it("muestra 'Sin fotos' cuando no hay fotos", () => {
@@ -297,6 +329,10 @@ describe("NewsletterPreviewBlocks — bloque fotos", () => {
     expect(screen.getByText(/\+4 fotos adicionales en el PDF/i)).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bloque badges
+// ---------------------------------------------------------------------------
 
 describe("NewsletterPreviewBlocks — bloque badges", () => {
   it("renderiza insignias desde badges_earned raíz", () => {
@@ -338,6 +374,10 @@ describe("NewsletterPreviewBlocks — bloque badges", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Skip de bloques faltantes
+// ---------------------------------------------------------------------------
+
 describe("NewsletterPreviewBlocks — skip de bloques faltantes", () => {
   it("omite bloques que no están en email_blocks", () => {
     render(
@@ -375,5 +415,247 @@ describe("NewsletterPreviewBlocks — skip de bloques faltantes", () => {
     expect(screen.getByTestId("block-support")).toBeInTheDocument();
     expect(screen.getByTestId("block-photos")).toBeInTheDocument();
     expect(screen.getByTestId("block-badges")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US3 (T031): captions + month_highlights
+// ---------------------------------------------------------------------------
+
+describe("NewsletterPreviewBlocks — US3 captions y highlights", () => {
+  it("renderiza banner de highlights cuando monthHighlights está presente", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{ attendance: { attendance_pct: 80 } }}
+        badges={null}
+        monthHighlights="Gran mes de entrenamiento con mejora en técnica."
+      />,
+    );
+    expect(screen.getByTestId("month-highlights-banner")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Gran mes de entrenamiento con mejora en técnica/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Lo destacado del mes/i)).toBeInTheDocument();
+  });
+
+  it("NO muestra el banner de highlights cuando monthHighlights es null", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{ attendance: { attendance_pct: 80 } }}
+        badges={null}
+        monthHighlights={null}
+      />,
+    );
+    expect(screen.queryByTestId("month-highlights-banner")).not.toBeInTheDocument();
+  });
+
+  it("muestra caption de asistencia cuando blockCaptions.attendance está presente", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          attendance: { attendance_pct: 90 },
+        }}
+        badges={null}
+        blockCaptions={{ attendance: "Excelente regularidad este mes." }}
+      />,
+    );
+    const captionEl = screen.getByTestId("block-attendance-caption");
+    expect(captionEl).toBeInTheDocument();
+    expect(captionEl).toHaveTextContent("Excelente regularidad este mes.");
+  });
+
+  it("muestra caption de carreras cuando blockCaptions.race_results está presente", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          races: {
+            races: [{ event_name: "Válida IV", position: 3 }],
+          },
+        }}
+        badges={null}
+        blockCaptions={{ race_results: "Buen desempeño en la válida." }}
+      />,
+    );
+    const captionEl = screen.getByTestId("block-races-caption");
+    expect(captionEl).toBeInTheDocument();
+    expect(captionEl).toHaveTextContent("Buen desempeño en la válida.");
+  });
+
+  it("muestra caption de técnica cuando blockCaptions.technical está presente", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          technical_load: { avg_rpe: 6.5 },
+        }}
+        badges={null}
+        blockCaptions={{ technical: "Enfoque en desarrollo de habilidades." }}
+      />,
+    );
+    const captionEl = screen.getByTestId("block-technical-load-caption");
+    expect(captionEl).toBeInTheDocument();
+    expect(captionEl).toHaveTextContent("Enfoque en desarrollo de habilidades.");
+  });
+
+  it("lee highlights desde email_blocks.month_highlights si no se pasa por prop", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          attendance: { attendance_pct: 80 },
+          month_highlights: "Resumen desde email_blocks.",
+        }}
+        badges={null}
+      />,
+    );
+    expect(screen.getByTestId("month-highlights-banner")).toBeInTheDocument();
+    expect(screen.getByText(/Resumen desde email_blocks\./i)).toBeInTheDocument();
+  });
+
+  it("lee captions desde email_blocks.block_captions si no se pasa por prop", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          attendance: { attendance_pct: 80 },
+          block_captions: { attendance: "Caption desde email_blocks." },
+        }}
+        badges={null}
+      />,
+    );
+    expect(screen.getByTestId("block-attendance-caption")).toHaveTextContent(
+      "Caption desde email_blocks.",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US4 (T031): Privacidad — NO se filtra antropometría en el email-preview
+// ---------------------------------------------------------------------------
+
+describe("NewsletterPreviewBlocks — privacidad FR-004/SC-008", () => {
+  it("NO renderiza peso (weight_kg) si aparece en emailBlocks", () => {
+    // weight_kg no es un bloque reconocido; el componente solo procesa bloques tipados.
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          attendance: { attendance_pct: 80 },
+          weight_kg: 45.2,   // dato antropométrico — nunca debe renderizarse
+        }}
+        badges={null}
+      />,
+    );
+    // El texto del valor antropométrico no debe aparecer en el DOM
+    expect(screen.queryByText("45.2")).not.toBeInTheDocument();
+    expect(screen.queryByText(/kg/i)).not.toBeInTheDocument();
+  });
+
+  it("NO renderiza bmi si aparece en emailBlocks", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          attendance: { attendance_pct: 80 },
+          bmi: 18.0,   // dato antropométrico — nunca debe renderizarse
+        }}
+        badges={null}
+      />,
+    );
+    // "18.0" alone is ambiguous (could appear in other blocks), so check specifically
+    // that there's no anthropometry-labelled text.
+    expect(screen.queryByText(/IMC/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("block-anthropometry")).not.toBeInTheDocument();
+  });
+
+  it("NO renderiza un bloque 'anthropometry' aunque aparezca en emailBlocks", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          attendance: { attendance_pct: 80 },
+          anthropometry: {
+            has_records: true,
+            records: [{ bmi: 18, height_cm: 158 }],
+          },
+        }}
+        badges={null}
+      />,
+    );
+    expect(screen.queryByTestId("block-anthropometry")).not.toBeInTheDocument();
+    // Also ensure the specific anthropometric values are not rendered
+    expect(screen.queryByText("18")).not.toBeInTheDocument();
+  });
+
+  it("NO muestra altura ni percentil si aparecen en emailBlocks", () => {
+    render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          attendance: { attendance_pct: 80 },
+          height_cm: 158.5,
+          percentile: 45,
+        }}
+        badges={null}
+      />,
+    );
+    expect(screen.queryByText("158.5")).not.toBeInTheDocument();
+    expect(screen.queryByText(/percentil/i)).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US4 (T031): Accesibilidad jest-axe — zero violations (SC-007)
+// ---------------------------------------------------------------------------
+
+describe("NewsletterPreviewBlocks — accesibilidad (jest-axe)", () => {
+  it("sin violaciones axe — empty state", async () => {
+    const { container } = render(
+      <NewsletterPreviewBlocks emailBlocks={null} badges={null} />,
+    );
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it("sin violaciones axe — todos los bloques presentes + captions + highlights", async () => {
+    const { container } = render(
+      <NewsletterPreviewBlocks
+        emailBlocks={{
+          attendance: { attendance_pct: 80, count_present: 4, count_total: 5 },
+          technical_load: {
+            focos_tecnicos: ["Curvas"],
+            avg_rpe: 6.5,
+            avg_rubric_effort: 3.8,
+            avg_rubric_attitude: 4.1,
+            avg_rubric_technique: 3.5,
+          },
+          races: {
+            races: [{ event_name: "Válida IV", position: 3, event_date: "2026-05-17" }],
+          },
+          calendar: {
+            next_race_name: "Válida V",
+            next_race_date: "2026-08-01",
+            next_race_location: "Palmira",
+          },
+          support_at_home: { tips: ["Dormir 9 horas"] },
+          photos: { photos: [], total: 0 },
+        }}
+        badges={[{ badge_type: "attendance_90", label: "Asistencia ≥90%" }]}
+        monthHighlights="Gran mes de progreso técnico."
+        blockCaptions={{
+          attendance: "Excelente regularidad.",
+          technical: "Buen trabajo de técnica.",
+          race_results: "Progresión positiva.",
+        }}
+      />,
+    );
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it("sin violaciones axe — solo badges", async () => {
+    const { container } = render(
+      <NewsletterPreviewBlocks
+        emailBlocks={null}
+        badges={[
+          { badge_type: "first_podium", label: "Primer Top 5", description: "Primer Top 5 de la temporada" },
+        ]}
+      />,
+    );
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

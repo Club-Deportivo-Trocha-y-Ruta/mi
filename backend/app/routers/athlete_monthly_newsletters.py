@@ -146,8 +146,12 @@ async def _generate_newsletter_for_athlete(
     prompt_registry,
 ) -> AthleteMonthlyNewsletter:
     """Crea o regenera el borrador del boletín para un atleta."""
-    from app.services.privacy import assert_ai_consent_for_newsletter
+    from app.services.privacy import athlete_has_ai_processing_consent
     from app.services.training.newsletter_builder import build_newsletter_metrics
+    from app.services.training.newsletter_static_copy import (
+        COACH_NARRATIVE_UNAVAILABLE,
+        build_static_narrative,
+    )
     from app.services.ai.use_cases.athlete_monthly_newsletter import (
         AthleteNewsletterLLMTimeout,
         AthleteNewsletterUseCase,
@@ -155,8 +159,11 @@ async def _generate_newsletter_for_athlete(
     )
     from app.services.ai.errors import LLMSchemaError
 
-    # Verificar consentimiento Ley 1581
-    await assert_ai_consent_for_newsletter(db, athlete.id)
+    # Consentimiento Ley 1581 para procesamiento con IA.
+    # US3 (FR-009/FR-010): la ausencia de consentimiento ya NO bloquea el
+    # boletín — solo desactiva la narrativa generada por IA. Los subtítulos,
+    # el resumen del mes y el apoyo en casa caen al fallback estático.
+    has_ai_consent = await athlete_has_ai_processing_consent(athlete.id, db)
 
     # Verificar si ya existe
     existing_result = await db.execute(
@@ -197,46 +204,80 @@ async def _generate_newsletter_for_athlete(
         if name
     )
 
-    # Generar narrativa IA
+    # Fallback estático determinista: subtítulos por bloque + resumen del mes +
+    # placeholder de la valoración del entrenador. Siempre disponible (sin red).
+    email_blocks_for_static = metrics_snapshot.get("email_blocks", {})
+    static_narrative = build_static_narrative(email_blocks_for_static)
+
+    # Generar narrativa IA (solo con consentimiento).
     ai_narrative_dict: dict | None = None
     error_message: str | None = None
 
-    try:
-        ai_use_case = AthleteNewsletterUseCase(
-            provider=llm_provider,
-            registry=prompt_registry,
-        )
-        ai_ctx = build_context_from_metrics(
-            metrics_snapshot=metrics_snapshot,
-            year=year,
-            month=month,
-            forbidden_names=forbidden_names,
-        )
-        ai_result = await ai_use_case.run(ai_ctx)
-        ai_narrative_dict = ai_result.model_dump()
-    except AthleteNewsletterLLMTimeout:
-        logger.warning(
-            "Timeout IA para boletín | athlete_id=%d period=%d-%02d",
-            athlete.id, year, month,
-        )
-        error_message = "llm_timeout"
-    except LLMSchemaError as exc:
-        logger.warning(
-            "Error guardrails IA | athlete_id=%d period=%d-%02d error=%s",
-            athlete.id, year, month, type(exc).__name__,
-        )
-        # Catálogo de mensajes genéricos — el detalle técnico queda solo en logs
-        # para evitar exponer mensajes del LLM o señales de qué pasó por guardrails.
-        error_message = "guardrails_rejected"
-    except Exception as exc:
-        logger.error(
-            "Error IA inesperado | athlete_id=%d period=%d-%02d error_type=%s",
-            athlete.id, year, month, type(exc).__name__,
-        )
-        error_message = "llm_internal_error"
+    if not has_ai_consent:
+        # Sin consentimiento: NO se llama al LLM. La narrativa del entrenador
+        # queda con placeholder neutro; el resto cae al fallback estático.
+        ai_narrative_dict = {
+            **static_narrative,
+            "strengths": COACH_NARRATIVE_UNAVAILABLE,
+            "area_to_develop": "",
+            "milestone": "",
+        }
+    else:
+        try:
+            ai_use_case = AthleteNewsletterUseCase(
+                provider=llm_provider,
+                registry=prompt_registry,
+            )
+            ai_ctx = build_context_from_metrics(
+                metrics_snapshot=metrics_snapshot,
+                year=year,
+                month=month,
+                forbidden_names=forbidden_names,
+            )
+            ai_result = await ai_use_case.run(ai_ctx)
+            ai_narrative_dict = ai_result.model_dump()
+            # Rellenar con el fallback estático cualquier caption/highlight que la
+            # IA no haya producido (o que el guardrail haya descartado).
+            if not ai_narrative_dict.get("block_captions"):
+                ai_narrative_dict["block_captions"] = static_narrative["block_captions"]
+            if not ai_narrative_dict.get("month_highlights"):
+                ai_narrative_dict["month_highlights"] = static_narrative["month_highlights"]
+        except AthleteNewsletterLLMTimeout:
+            logger.warning(
+                "Timeout IA para boletín | athlete_id=%d period=%d-%02d",
+                athlete.id, year, month,
+            )
+            error_message = "llm_timeout"
+        except LLMSchemaError as exc:
+            logger.warning(
+                "Error guardrails IA | athlete_id=%d period=%d-%02d error=%s",
+                athlete.id, year, month, type(exc).__name__,
+            )
+            # Catálogo de mensajes genéricos — el detalle técnico queda solo en logs
+            # para evitar exponer mensajes del LLM o señales de qué pasó por guardrails.
+            error_message = "guardrails_rejected"
+        except Exception as exc:
+            logger.error(
+                "Error IA inesperado | athlete_id=%d period=%d-%02d error_type=%s",
+                athlete.id, year, month, type(exc).__name__,
+            )
+            error_message = "llm_internal_error"
+
+        # Si la IA falló (timeout/guardrails/interno), degradar a estático en
+        # lugar de dejar el boletín sin contenido legible para la familia.
+        if error_message is not None:
+            ai_narrative_dict = {
+                **static_narrative,
+                "strengths": COACH_NARRATIVE_UNAVAILABLE,
+                "area_to_develop": "",
+                "milestone": "",
+            }
 
     now = datetime.now(timezone.utc)
-    final_status = NewsletterStatus.draft if error_message is None else NewsletterStatus.failed
+    # El boletín se considera 'draft' aunque la IA haya fallado: el fallback
+    # estático garantiza un documento válido y revisable por el entrenador.
+    # error_message se conserva para trazabilidad/telemetría.
+    final_status = NewsletterStatus.draft
 
     if existing is not None:
         existing.status = final_status

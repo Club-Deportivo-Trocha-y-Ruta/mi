@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -146,6 +148,12 @@ async def create_anthropometry(
     if growth is not None and growth.height_z_score is None and growth.bmi_z_score is None:
         growth = None
 
+    # BMI desacoplado de la tabla LMS (feature 003 / FR-001a): se calcula y
+    # persiste SIEMPRE que haya peso y talla, sin depender de las constantes de
+    # referencia. Los percentiles/z-scores siguen condicionados a LMS.
+    bmi_value = float(body.weight_kg) / (float(body.standing_height_cm) / 100) ** 2
+    bmi_decimal = Decimal(str(round(bmi_value, 2)))
+
     record = AnthropometricRecord(
         athlete_id=athlete.id,
         evaluation_date=body.evaluation_date,
@@ -164,7 +172,7 @@ async def create_anthropometry(
         # Campos de percentiles (None si tabla LMS vacía)
         height_z_score=growth.height_z_score if growth else None,
         height_percentile=growth.height_percentile if growth else None,
-        bmi=growth.bmi if growth else None,
+        bmi=bmi_decimal,
         bmi_z_score=growth.bmi_z_score if growth else None,
         bmi_percentile=growth.bmi_percentile if growth else None,
         weight_z_score=growth.weight_z_score if growth else None,

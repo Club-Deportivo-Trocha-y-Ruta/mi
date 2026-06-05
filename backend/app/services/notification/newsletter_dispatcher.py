@@ -259,6 +259,25 @@ async def _send_for_parent(
         email_blocks_safe = dict(snapshot.get("email_blocks", {}))
         for forbidden_key in ("anthropometry", "pdf_only_blocks", "charts"):
             email_blocks_safe.pop(forbidden_key, None)
+        # US3: el subtítulo de antropometría es solo-PDF. Aunque el template de
+        # email no lo renderiza, lo eliminamos del snapshot que viaja al email
+        # como defensa en profundidad (Ley 1581).
+        captions = email_blocks_safe.get("block_captions")
+        if isinstance(captions, dict) and "anthropometry" in captions:
+            captions = {k: v for k, v in captions.items() if k != "anthropometry"}
+            email_blocks_safe["block_captions"] = captions
+
+        # Defensa en profundidad: quitar el caption antropométrico también de la
+        # narrativa IA antes de enviarla al template de email (solo-PDF).
+        if isinstance(ai_narrative, dict):
+            nar_caps = ai_narrative.get("block_captions")
+            if isinstance(nar_caps, dict) and "anthropometry" in nar_caps:
+                ai_narrative = {
+                    **ai_narrative,
+                    "block_captions": {
+                        k: v for k, v in nar_caps.items() if k != "anthropometry"
+                    },
+                }
 
         child_data: dict[str, Any] = {
             "athlete_id": nl.athlete_id,

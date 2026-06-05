@@ -42,6 +42,15 @@ logger = logging.getLogger(__name__)
 _PROMPT_VERSION = "athlete_monthly_newsletter_v1"
 _LLM_TIMEOUT_SECONDS = 45.0
 
+# US3 (T021/T022): claves de subtítulo por bloque que la IA puede producir.
+# Cualquier otra clave devuelta por el LLM se ignora.
+_ALLOWED_CAPTION_KEYS: tuple[str, ...] = (
+    "attendance",
+    "technical",
+    "race_results",
+    "anthropometry",
+)
+
 
 class AthleteNewsletterLLMTimeout(Exception):
     """Se lanza cuando el proveedor LLM no responde en tiempo."""
@@ -53,6 +62,12 @@ class AthleteNewsletterNarrativeOut(BaseModel):
     strengths: str = Field(..., min_length=10, max_length=500)
     area_to_develop: str = Field(..., min_length=10, max_length=500)
     milestone: str = Field(..., min_length=10, max_length=500)
+    # US3 (T021): subtítulos opcionales por bloque + resumen del mes.
+    # Pasan por el MISMO guardrail (scrub_block: <=80 palabras, sin términos
+    # médicos, redacción de nombres). Opcionales: el boletín se renderiza igual
+    # con el fallback estático si la IA no los produce.
+    block_captions: dict[str, str] | None = None
+    month_highlights: str | None = None
     model: str
     prompt_version: str
     confidence: str  # 'low' | 'medium' | 'high'
@@ -304,11 +319,61 @@ class AthleteNewsletterUseCase(BaseUseCase):
         cleaned_area = guardrails.scrub_block(parsed["area_to_develop"])
         cleaned_milestone = guardrails.scrub_block(parsed["milestone"])
 
+        # US3 (T021): subtítulos por bloque + resumen del mes (opcionales).
+        # Cada uno pasa por el MISMO guardrail scrub_block (límite de palabras,
+        # bloqueo de términos médicos, redacción de nombres). Si la IA omite o
+        # produce un campo inválido, se descarta silenciosamente y el fallback
+        # estático lo cubre — nunca rompe la generación del boletín.
+        cleaned_captions = self._scrub_block_captions(
+            parsed.get("block_captions"), guardrails
+        )
+        cleaned_highlights = self._scrub_optional_block(
+            parsed.get("month_highlights"), guardrails
+        )
+
         return AthleteNewsletterNarrativeOut(
             strengths=cleaned_strengths,
             area_to_develop=cleaned_area,
             milestone=cleaned_milestone,
+            block_captions=cleaned_captions or None,
+            month_highlights=cleaned_highlights,
             model=response.model or self._provider.model,
             prompt_version=_PROMPT_VERSION,
             confidence=ctx.confidence,
         )
+
+    @staticmethod
+    def _scrub_optional_block(
+        value: Any, guardrails: AthleteNewsletterGuardrails
+    ) -> str | None:
+        """Aplica scrub_block a un campo opcional; descarta si no es válido.
+
+        El guardrail rechaza por palabras/médico/nombre lanzando LLMSchemaError;
+        para los campos OPCIONALES (captions/highlights) no queremos abortar el
+        boletín, así que tratamos cualquier rechazo como "no disponible" y el
+        fallback estático lo sustituye aguas abajo.
+        """
+        from app.services.ai.errors import LLMSchemaError
+
+        if not isinstance(value, str) or not value.strip():
+            return None
+        try:
+            return guardrails.scrub_block(value)
+        except LLMSchemaError:
+            return None
+
+    @classmethod
+    def _scrub_block_captions(
+        cls,
+        value: Any,
+        guardrails: AthleteNewsletterGuardrails,
+    ) -> dict[str, str]:
+        """Valida y redacta cada caption por clave permitida."""
+        if not isinstance(value, dict):
+            return {}
+        cleaned: dict[str, str] = {}
+        for key in _ALLOWED_CAPTION_KEYS:
+            scrubbed = cls._scrub_optional_block(value.get(key), guardrails)
+            if scrubbed:
+                cleaned[key] = scrubbed
+        return cleaned

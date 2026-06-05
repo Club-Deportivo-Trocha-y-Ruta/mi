@@ -47,6 +47,12 @@
 {% set badges_block = eb.get('badges', {}) %}
 {% set support = eb.get('support_at_home', {}) %}
 {% set anthro = pb.get('anthropometry', {}) %}
+{# US3 (T024): subtítulos por bloque + resumen del mes.
+   Preferir la versión de la narrativa (IA o fallback del router); si no,
+   usar la línea base estática del snapshot (email_blocks). #}
+{% set _narr = ai_narrative or {} %}
+{% set block_captions = _narr.get('block_captions') or eb.get('block_captions', {}) %}
+{% set month_highlights = _narr.get('month_highlights') or eb.get('month_highlights', '') %}
 {% set charts_ctx = pb.get('charts_context', {}) %}
 {% set percentile_ctx = pb.get('percentile_curves', {}) %}
 
@@ -132,6 +138,24 @@
 {% endif %}
 
 <!-- ============================================================
+     US3 (T024): RESUMEN DEL MES (highlights)
+============================================================ -->
+{% if month_highlights %}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+  <div style="
+    background: #f7fee7;
+    border: 0.5pt solid #d9f99d;
+    border-left: 3pt solid #8be000;
+    padding: 9pt 12pt;
+    border-radius: 3pt;
+  ">
+    <p style="margin: 0; font-size: 8pt; color: #4d7c0f; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3pt;">Lo destacado del mes</p>
+    <p style="margin: 4pt 0 0 0; font-size: 10pt; color: #374151;">{{ month_highlights }}</p>
+  </div>
+</div>
+{% endif %}
+
+<!-- ============================================================
      KPI ROW — 4 métricas clave
 ============================================================ -->
 {% set att_pct = attendance.get('attendance_pct') %}
@@ -143,13 +167,15 @@
 {% set has_kpi = att_pct is not none or streak > 0 or last_race or next_race %}
 
 {% if has_kpi %}
+{# T015/T016: plain block wrapper with break-inside:avoid so the heading
+   stays with the KPI cards across page breaks. The inner display:table
+   keeps the card grid; break-inside on table rows is ignored by WeasyPrint. #}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
 <div style="
   display: table;
   width: 100%;
   border-collapse: separate;
   border-spacing: 6pt 0;
-  margin-bottom: var(--sp-lg);
-  page-break-inside: avoid;
 ">
   <!-- Card 1: Asistencia -->
   {% if att_pct is not none %}
@@ -251,20 +277,21 @@
     {% endif %}
   </div>
   {% endif %}
-</div>
+</div>{# /table #}
+</div>{# /break-inside wrapper #}
 {% endif %}
 
 <!-- ============================================================
      INSIGNIAS DEL MES
 ============================================================ -->
 {% if badges_block and badges_block.get('items') %}
+{# T016: plain block wrapper keeps the badges heading + chips together. #}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
 <div style="
-  margin-bottom: var(--sp-lg);
   background: #fefce8;
   border-left: 4pt solid #eab308;
   padding: 8pt 12pt;
   border-radius: 3pt;
-  page-break-inside: avoid;
 ">
   <h3 style="margin: 0 0 6pt 0; color: #854d0e; display: table-cell; vertical-align: middle;">
     <span style="color: #854d0e; vertical-align: middle; margin-right: 4pt;">
@@ -286,7 +313,8 @@
     </span>
     {% endfor %}
   </div>
-</div>
+</div>{# /badges inner #}
+</div>{# /break-inside wrapper #}
 {% endif %}
 
 <!-- ============================================================
@@ -299,8 +327,9 @@
 {% set confidence = narrative.get('confidence', 'low') %}
 
 {% if strengths_text or area_text or milestone_text %}
-<div style="margin-bottom: var(--sp-lg);">
-  <h2>Valoración del entrenador</h2>
+{# T016: outer block keeps heading attached to card; card itself already fits in one page. #}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+  <h2 style="break-after: avoid;">Valoración del entrenador</h2>
 
   <!-- Card container: fortalezas + área + hito -->
   <div style="
@@ -308,7 +337,6 @@
     border: 0.5pt solid #d1d5db;
     padding: 14pt;
     border-radius: 4pt;
-    page-break-inside: avoid;
   ">
     {% if strengths_text %}
     <div style="margin-bottom: 10pt; display: table; width: 100%;">
@@ -346,7 +374,7 @@
     </div>
     {% endif %}
   </div>
-</div>
+</div>{# /break-inside wrapper coach-narrative #}
 {% endif %}
 
 <!-- ============================================================
@@ -355,6 +383,9 @@
 {% if attendance %}
 <div style="margin-bottom: var(--sp-lg);">
   <h2>Asistencia y Compromiso</h2>
+  {% if block_captions.get('attendance') %}
+  <p style="margin: 0 0 8pt 0; font-size: 9pt; color: #6b7280; font-style: italic;">{{ block_captions.get('attendance') }}</p>
+  {% endif %}
 
   {# Mini-cards de asistencia (3 tarjetas) #}
   <div style="display: table; width: 100%; border-collapse: separate; border-spacing: 6pt 0; margin-bottom: 10pt; page-break-inside: avoid;">
@@ -406,6 +437,9 @@
 {% if technical %}
 <div style="margin-bottom: var(--sp-lg);">
   <h2>Desarrollo Técnico</h2>
+  {% if block_captions.get('technical') %}
+  <p style="margin: 0 0 8pt 0; font-size: 9pt; color: #6b7280; font-style: italic;">{{ block_captions.get('technical') }}</p>
+  {% endif %}
   {% if technical.get('focos_tecnicos') %}
   <p style="margin: 0 0 6pt 0; font-size: 10pt; color: #374151;">
     <strong>Focos del mes:</strong>
@@ -453,6 +487,9 @@
 {% if race_results and race_results.get('has_races') %}
 <div style="margin-bottom: var(--sp-lg);">
   <h2>Resultados Copa Valle — {{ month_label }}</h2>
+  {% if block_captions.get('race_results') %}
+  <p style="margin: 0 0 8pt 0; font-size: 9pt; color: #6b7280; font-style: italic;">{{ block_captions.get('race_results') }}</p>
+  {% endif %}
 
   {% set results_list = race_results.get('results', []) %}
 
@@ -537,8 +574,11 @@
 
   <!-- Gráficos de competencia -->
   {% if charts_ctx and charts_ctx.get('has_data') %}
-  <div style="margin-top: 12pt;">
-    <h3>Evolución en la temporada</h3>
+  {# T015: plain block wrapper keeps the "Evolución" heading attached to the
+     chart row. break-inside:avoid on the display:table row is ignored by
+     WeasyPrint — the wrapper (a normal block) is required. #}
+  <div style="break-inside: avoid; margin-top: 12pt;">
+    <h3 style="break-after: avoid;">Evolución en la temporada</h3>
     <div style="display: table; width: 100%; table-layout: fixed;">
       <div style="display: table-cell; width: 33.33%; vertical-align: top; padding-right: 4pt;">
         {{ line_positions(charts_ctx.positions, width=175, height=130, low_confidence=charts_ctx.low_confidence) }}
@@ -553,7 +593,7 @@
         <p class="caption">Puntos acumulados en la temporada</p>
       </div>
     </div>
-  </div>
+  </div>{# /break-inside charts wrapper #}
   {% endif %}
 </div>
 {% endif %}
@@ -568,54 +608,107 @@
     Esta información es confidencial y solo se incluye en el PDF. No se envía por email.
     Fuente: Método Mirwald et al. + Referencias OMS/CDC adaptadas para Colombia (Res. 2465/2016).
   </p>
+  {# US3 (T024): caption antropométrico — SOLO PDF, nunca email. #}
+  {% if block_captions.get('anthropometry') %}
+  <p style="margin: 0 0 8pt 0; font-size: 9pt; color: #6b7280; font-style: italic;">{{ block_captions.get('anthropometry') }}</p>
+  {% endif %}
 
   <!-- Tabla longitudinal -->
-  <table class="data-table" style="font-size: 8.5pt;">
+  {# Tabla densa (10 columnas): layout fijo + colgroup + padding compacto para
+     que NUNCA se desborde del ancho A4. Las celdas sin valor muestran "n/d"
+     (no disponible) y la explicación va en la nota al pie (FR-002). #}
+  <style>
+    table.anthro-table { table-layout: fixed; width: 100%; font-size: 7.5pt; }
+    /* Encabezados: pueden envolver a dos líneas (se ve intencional). */
+    table.anthro-table th {
+      padding: 3pt 2pt; overflow-wrap: anywhere; word-break: break-word;
+      vertical-align: bottom;
+    }
+    /* Celdas de datos: NUNCA partir fechas/números a media palabra. */
+    table.anthro-table td {
+      padding: 3pt 2pt; white-space: nowrap;
+    }
+    /* Columnas numéricas centradas (Fecha y Maduración quedan a la izquierda). */
+    table.anthro-table th.num, table.anthro-table td.num { text-align: center; }
+    table.anthro-table td.na { color: #9ca3af; font-style: italic; }
+  </style>
+  {%- set ns = namespace(has_na=false) %}
+  <table class="data-table anthro-table">
+    <colgroup>
+      <col style="width: 15%;"><col style="width: 9%;"><col style="width: 9%;">
+      <col style="width: 7%;"><col style="width: 9%;"><col style="width: 9%;">
+      <col style="width: 9%;"><col style="width: 9%;"><col style="width: 8%;">
+      <col style="width: 16%;">
+    </colgroup>
     <thead>
       <tr>
         <th>Fecha</th>
-        <th>Peso (kg)</th>
-        <th>Talla (cm)</th>
-        <th>IMC</th>
-        <th>Z-Talla</th>
-        <th>P-Talla</th>
-        <th>Z-IMC</th>
-        <th>P-IMC</th>
-        <th>PHV offset</th>
+        <th class="num">Peso (kg)</th>
+        <th class="num">Talla (cm)</th>
+        <th class="num">IMC</th>
+        <th class="num">Z-Talla</th>
+        <th class="num">P-Talla</th>
+        <th class="num">Z-IMC</th>
+        <th class="num">P-IMC</th>
+        <th class="num">PHV</th>
         <th>Maduración</th>
       </tr>
     </thead>
     <tbody>
       {% for r in anthro.records %}
+      {%- set ur = r.unavailable_reasons if r.unavailable_reasons is defined else {} %}
       <tr {% if loop.first %}style="background: #f0fdf4; font-weight: bold;"{% endif %}>
         <td>{{ r.evaluation_date or "—" }}</td>
-        <td>{{ "%.1f"|format(r.weight_kg) if r.weight_kg is not none else "—" }}</td>
-        <td>{{ "%.1f"|format(r.standing_height_cm) if r.standing_height_cm is not none else "—" }}</td>
-        <td>{{ "%.1f"|format(r.bmi) if r.bmi is not none else "—" }}</td>
-        <td>{{ "%.2f"|format(r.height_z_score) if r.height_z_score is not none else "—" }}</td>
-        <td>{{ "%.0f"|format(r.height_percentile) if r.height_percentile is not none else "—" }}</td>
-        <td>{{ "%.2f"|format(r.bmi_z_score) if r.bmi_z_score is not none else "—" }}</td>
-        <td>{{ "%.0f"|format(r.bmi_percentile) if r.bmi_percentile is not none else "—" }}</td>
-        <td>
+        <td class="num">{{ "%.1f"|format(r.weight_kg) if r.weight_kg is not none else "—" }}</td>
+        <td class="num">{{ "%.1f"|format(r.standing_height_cm) if r.standing_height_cm is not none else "—" }}</td>
+        <td class="num{% if r.bmi is none and ur.get('bmi') %} na{% set ns.has_na = true %}{% endif %}">
+          {% if r.bmi is not none %}{{ "%.1f"|format(r.bmi) }}
+          {% elif ur.get('bmi') %}n/d{% else %}—{% endif %}
+        </td>
+        <td class="num{% if r.height_z_score is none and ur.get('height_lms') %} na{% set ns.has_na = true %}{% endif %}">
+          {% if r.height_z_score is not none %}{{ "%.2f"|format(r.height_z_score) }}
+          {% elif ur.get('height_lms') %}n/d{% else %}—{% endif %}
+        </td>
+        <td class="num{% if r.height_percentile is none and ur.get('height_lms') %} na{% set ns.has_na = true %}{% endif %}">
+          {% if r.height_percentile is not none %}{{ "%.0f"|format(r.height_percentile) }}
+          {% elif ur.get('height_lms') %}n/d{% else %}—{% endif %}
+        </td>
+        <td class="num{% if r.bmi_z_score is none and ur.get('bmi_lms') %} na{% set ns.has_na = true %}{% endif %}">
+          {% if r.bmi_z_score is not none %}{{ "%.2f"|format(r.bmi_z_score) }}
+          {% elif ur.get('bmi_lms') %}n/d{% else %}—{% endif %}
+        </td>
+        <td class="num{% if r.bmi_percentile is none and ur.get('bmi_lms') %} na{% set ns.has_na = true %}{% endif %}">
+          {% if r.bmi_percentile is not none %}{{ "%.0f"|format(r.bmi_percentile) }}
+          {% elif ur.get('bmi_lms') %}n/d{% else %}—{% endif %}
+        </td>
+        <td class="num">
           {% if r.maturity_offset is not none %}
             {{ "+%.2f"|format(r.maturity_offset) if r.maturity_offset >= 0 else "%.2f"|format(r.maturity_offset) }}
           {% else %}—{% endif %}
         </td>
         <td>
-          {% if r.maturation_status == 'Pre-PHV' %}<span style="color: #1d4ed8;">Pre-PHV</span>
-          {% elif r.maturation_status == 'Circa-PHV' %}<span style="color: #b45309;">Circa-PHV</span>
-          {% elif r.maturation_status == 'Post-PHV' %}<span style="color: #059669;">Post-PHV</span>
+          {% if r.maturation_status == 'Pre-PHV' %}<span style="color: var(--info);">&#9654; Pre-PHV</span>
+          {% elif r.maturation_status == 'Circa-PHV' %}<span style="color: var(--warning);">&#9654; Circa-PHV</span>
+          {% elif r.maturation_status == 'Post-PHV' %}<span style="color: var(--success);">&#10003; Post-PHV</span>
           {% else %}—{% endif %}
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  {% if ns.has_na %}
+  <p style="margin: 4pt 0 0 0; font-size: 8pt; color: #6b7280; font-style: italic;">
+    <strong>n/d</strong> = no disponible: el valor no pudo calcularse para esta medición
+    (por ejemplo, la edad está fuera del rango de las tablas de referencia, o falta una medida).
+  </p>
+  {% endif %}
 
   <!-- Última medición — detalle PHV -->
   {% set latest = anthro.latest %}
   {% if latest %}
-  <div style="margin-top: 10pt; background: #fafafa; border: 0.5pt solid #d1d5db; padding: 10pt; border-radius: 4pt; page-break-inside: avoid;">
+  {# T016: plain block wrapper — keeps the "Última medición" heading + card together. #}
+  <div style="break-inside: avoid; margin-top: 10pt;">
+  <div style="background: #fafafa; border: 0.5pt solid #d1d5db; padding: 10pt; border-radius: 4pt;">
     <h3 style="margin: 0 0 6pt 0;">
       Última medición ({{ latest.evaluation_date }})
     </h3>
@@ -627,21 +720,28 @@
           Offset: <strong>{{ "%.2f años"|format(latest.maturity_offset) if latest.maturity_offset is not none else "—" }}</strong><br/>
           Edad estimada en PHV: <strong>{{ "%.2f años"|format(latest.age_at_phv) if latest.age_at_phv is not none else "—" }}</strong>
         </p>
+        {% if latest.maturation_pedagogy %}
+        <p style="margin: 6pt 0 0 6pt; font-size: 8.5pt; color: #374151; font-style: italic;">
+          {{ latest.maturation_pedagogy }}
+        </p>
+        {% endif %}
       </div>
       {% if latest.training_implications %}
       <div style="display: table-cell; vertical-align: top; padding-left: 12pt;">
-        <p style="margin: 0; font-size: 9pt;"><strong>Implicaciones pedagógicas:</strong></p>
+        <p style="margin: 0; font-size: 9pt;"><strong>Orientaciones del entrenador:</strong></p>
         <p style="margin: 2pt 0 0 6pt; font-size: 9pt; color: #374151;">{{ latest.training_implications }}</p>
       </div>
       {% endif %}
     </div>
-  </div>
+  </div>{# /latest card inner #}
+  </div>{# /break-inside wrapper latest #}
   {% endif %}
 
   <!-- Curvas de percentiles de crecimiento (solo PDF) -->
+  {# T017: removed forced page-break-before:always; rely on natural flow + break-inside:avoid. #}
   {% if percentile_ctx %}
-  <section style="page-break-before: always; page-break-inside: avoid; break-inside: avoid-page; margin-top: 0;">
-    <h3 style="font-size: 10pt; margin: 0 0 6pt 0;">Curvas de Percentiles de Referencia</h3>
+  <section style="break-inside: avoid; margin-top: 12pt;">
+    <h3 style="font-size: 10pt; margin: 0 0 6pt 0; break-after: avoid;">Curvas de Percentiles de Referencia</h3>
     <p style="font-size: 8pt; color: #6b7280; margin: 0 0 8pt 0;">Comparación con población de referencia CDC. La línea negra muestra las mediciones registradas.</p>
     {% if percentile_ctx.height %}{{ percentile_curves(percentile_ctx.height) }}{% endif %}
     {% if percentile_ctx.bmi %}{{ percentile_curves(percentile_ctx.bmi) }}{% endif %}
@@ -755,16 +855,9 @@
 </div>
 {% endif %}
 
-<!-- ============================================================
-     AVISO LEGAL LEY 1581 / FOOTER INFORMATIVO
-============================================================ -->
-<div style="margin-top: 20pt; padding: 8pt 12pt; background: #f1f5f9; border-left: 3pt solid #94a3b8; font-size: 8pt; color: #475569; page-break-inside: avoid;">
-  <strong>Información confidencial — Ley 1581/2012 (Habeas Data)</strong><br/>
-  Este boletín contiene datos personales y sensibles de un menor de edad, protegidos por la Ley Estatutaria 1581/2012.
-  Su uso se limita exclusivamente al seguimiento pedagógico y deportivo. Prohibida su reproducción o distribución
-  sin autorización del Club Deportivo Trocha y Ruta y el titular de los datos.
-  Para ejercer sus derechos de acceso, rectificación, cancelación u oposición, contáctenos en
-  privacidad@trochyruta.com.
-</div>
+{# T018 (FR-019): Ley 1581/2012 boxed confidential block removed by explicit
+   user decision (spec 003 Clarifications/Assumptions). The @page running
+   footer and .doc-footer in base/layout.html remain untouched.
+   This removal requires human/legal review before production deployment. #}
 
 {% endblock %}

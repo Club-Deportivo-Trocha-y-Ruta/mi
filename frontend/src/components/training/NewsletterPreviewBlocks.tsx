@@ -9,37 +9,79 @@
  * - support_at_home: tips de apoyo en casa
  * - photos: miniaturas (links, sin datos binarios)
  * - badges: insignias ganadas
+ * - block_captions / month_highlights: US3 (T024) — subtítulos generados por IA o fallback
  *
  * Si un bloque falta en email_blocks se omite silenciosamente.
  * NO se renderiza antropometría — esa información va solo en el PDF.
  */
 
-import { Award, Calendar, Camera, Home, TrendingUp, Users } from "lucide-react";
+import { Award, Calendar, Camera, Home, Sparkles, TrendingUp, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// BlockCard base
+// ---------------------------------------------------------------------------
 
 interface BlockCardProps {
   icon: React.ReactNode;
   title: string;
   children: React.ReactNode;
   testId?: string;
+  /** US3: plain-language caption below the title (AI or static fallback) */
+  caption?: string;
 }
 
-function BlockCard({ icon, title, children, testId }: BlockCardProps) {
+function BlockCard({ icon, title, children, testId, caption }: BlockCardProps) {
   return (
     <article
       className="rounded-xl border border-[rgba(34,42,53,0.08)] bg-white px-4 py-4 shadow-sm"
       data-testid={testId}
       aria-label={title}
     >
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-2 flex items-center gap-2">
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-light-gray text-charcoal">
           {icon}
         </span>
         <h3 className="text-sm font-semibold text-charcoal">{title}</h3>
       </div>
+      {caption && (
+        <p
+          className="mb-3 text-xs text-mid-gray italic leading-relaxed"
+          data-testid={testId ? `${testId}-caption` : undefined}
+        >
+          {caption}
+        </p>
+      )}
       {children}
     </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// US3: Banner "Lo destacado del mes" (month_highlights)
+// ---------------------------------------------------------------------------
+
+interface HighlightsBannerProps {
+  highlights: string;
+}
+
+function HighlightsBanner({ highlights }: HighlightsBannerProps) {
+  return (
+    <div
+      className="flex items-start gap-2 rounded-xl border border-[#d9f99d] bg-[#f7fee7] px-4 py-3"
+      data-testid="month-highlights-banner"
+      role="note"
+      aria-label="Lo destacado del mes"
+    >
+      <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#4d7c0f]" aria-hidden="true" />
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-[#4d7c0f] mb-0.5">
+          Lo destacado del mes
+        </p>
+        <p className="text-sm text-charcoal leading-relaxed">{highlights}</p>
+      </div>
+    </div>
   );
 }
 
@@ -55,7 +97,13 @@ interface AttendanceBlock {
   count_total?: number;
 }
 
-function AttendanceBlockView({ data }: { data: AttendanceBlock }) {
+function AttendanceBlockView({
+  data,
+  caption,
+}: {
+  data: AttendanceBlock;
+  caption?: string;
+}) {
   const pct = data.attendance_pct ?? null;
   const prev = data.prev_month_pct ?? null;
   const streak = data.streak_sessions ?? null;
@@ -65,6 +113,7 @@ function AttendanceBlockView({ data }: { data: AttendanceBlock }) {
       icon={<Users className="h-4 w-4" aria-hidden="true" />}
       title="Asistencia y compromiso"
       testId="block-attendance"
+      caption={caption}
     >
       <div className="space-y-2 text-sm text-charcoal">
         {pct !== null && (
@@ -93,7 +142,8 @@ function AttendanceBlockView({ data }: { data: AttendanceBlock }) {
         )}
         {streak !== null && streak > 0 && (
           <p className="text-xs text-mid-gray">
-            Racha activa: <span className="font-medium text-charcoal">{streak} sesiones consecutivas</span>
+            Racha activa:{" "}
+            <span className="font-medium text-charcoal">{streak} sesiones consecutivas</span>
           </p>
         )}
       </div>
@@ -114,7 +164,13 @@ interface TechnicalLoadBlock {
   hours_per_week?: number;
 }
 
-function TechnicalLoadBlockView({ data }: { data: TechnicalLoadBlock }) {
+function TechnicalLoadBlockView({
+  data,
+  caption,
+}: {
+  data: TechnicalLoadBlock;
+  caption?: string;
+}) {
   const metrics = [
     { label: "Esfuerzo", value: data.avg_rubric_effort },
     { label: "Actitud", value: data.avg_rubric_attitude },
@@ -126,6 +182,7 @@ function TechnicalLoadBlockView({ data }: { data: TechnicalLoadBlock }) {
       icon={<TrendingUp className="h-4 w-4" aria-hidden="true" />}
       title="Carga y desarrollo técnico"
       testId="block-technical-load"
+      caption={caption}
     >
       <div className="space-y-3 text-sm">
         {data.focos_tecnicos && data.focos_tecnicos.length > 0 && (
@@ -147,7 +204,8 @@ function TechnicalLoadBlockView({ data }: { data: TechnicalLoadBlock }) {
         )}
         {data.avg_rpe !== undefined && data.avg_rpe !== null && (
           <p className="text-xs text-mid-gray">
-            RPE promedio: <span className="font-semibold text-charcoal">{data.avg_rpe.toFixed(1)}</span>
+            RPE promedio:{" "}
+            <span className="font-semibold text-charcoal">{data.avg_rpe.toFixed(1)}</span>
             <span className="ml-1 text-[10px]">(escala 1-10)</span>
           </p>
         )}
@@ -165,7 +223,8 @@ function TechnicalLoadBlockView({ data }: { data: TechnicalLoadBlock }) {
         )}
         {data.hours_per_week !== undefined && data.hours_per_week !== null && (
           <p className="text-xs text-mid-gray">
-            Carga semanal: <span className="font-medium text-charcoal">{data.hours_per_week.toFixed(1)} h/semana</span>
+            Carga semanal:{" "}
+            <span className="font-medium text-charcoal">{data.hours_per_week.toFixed(1)} h/semana</span>
           </p>
         )}
       </div>
@@ -199,12 +258,19 @@ function formatGap(ms: number): string {
   return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
 
-function RacesBlockView({ data }: { data: RacesBlock }) {
+function RacesBlockView({
+  data,
+  caption,
+}: {
+  data: RacesBlock;
+  caption?: string;
+}) {
   return (
     <BlockCard
       icon={<Award className="h-4 w-4" aria-hidden="true" />}
       title="Resultados Copa Valle"
       testId="block-races"
+      caption={caption}
     >
       {data.races && data.races.length > 0 ? (
         <div className="space-y-3">
@@ -236,25 +302,26 @@ function RacesBlockView({ data }: { data: RacesBlock }) {
               )}
               {race.gap_p1_ms !== undefined && race.gap_p1_ms > 0 && (
                 <p className="text-xs text-mid-gray mt-1">
-                  Gap P1: <span className="font-medium text-charcoal">+{formatGap(race.gap_p1_ms)}</span>
+                  Gap P1:{" "}
+                  <span className="font-medium text-charcoal">+{formatGap(race.gap_p1_ms)}</span>
                 </p>
               )}
               {race.gap_p3_ms !== undefined && race.gap_p3_ms > 0 && (
                 <p className="text-xs text-mid-gray">
-                  Gap P3: <span className="font-medium text-charcoal">+{formatGap(race.gap_p3_ms)}</span>
+                  Gap P3:{" "}
+                  <span className="font-medium text-charcoal">+{formatGap(race.gap_p3_ms)}</span>
                 </p>
               )}
             </div>
           ))}
           {data.ranking_club !== undefined && (
             <p className="text-xs text-mid-gray">
-              Posición en ranking del club: <span className="font-medium text-charcoal">{data.ranking_club}</span>
+              Posición en ranking del club:{" "}
+              <span className="font-medium text-charcoal">{data.ranking_club}</span>
             </p>
           )}
           {data.projection && (
-            <p className="text-xs text-mid-gray italic">
-              Proyección: {data.projection}
-            </p>
+            <p className="text-xs text-mid-gray italic">Proyección: {data.projection}</p>
           )}
         </div>
       ) : (
@@ -300,7 +367,8 @@ function CalendarBlockView({ data }: { data: CalendarBlock }) {
         )}
         {data.macro_phase && (
           <p className="text-xs text-mid-gray">
-            Fase macrociclo: <span className="font-medium text-charcoal">{data.macro_phase}</span>
+            Fase macrociclo:{" "}
+            <span className="font-medium text-charcoal">{data.macro_phase}</span>
           </p>
         )}
         {data.planned_sessions_next_month !== undefined && (
@@ -335,7 +403,7 @@ interface SupportBlock {
 
 function SupportBlockView({ data }: { data: SupportBlock }) {
   const normalizedTips: string[] = (data.tips ?? []).map((tip) =>
-    typeof tip === 'string' ? tip : tip.text
+    typeof tip === "string" ? tip : tip.text,
   );
   const allTips = [
     ...normalizedTips,
@@ -353,7 +421,10 @@ function SupportBlockView({ data }: { data: SupportBlock }) {
         <ul className="space-y-1.5 text-sm text-charcoal" role="list">
           {allTips.map((tip, idx) => (
             <li key={idx} className="flex items-start gap-2">
-              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-charcoal/40" aria-hidden="true" />
+              <span
+                className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-charcoal/40"
+                aria-hidden="true"
+              />
               {tip}
             </li>
           ))}
@@ -454,8 +525,9 @@ const BADGE_ICONS: Record<string, string> = {
 function BadgesBlockView({ data }: { data: BadgesBlock }) {
   const badges = data.badges ?? [];
 
-  // Sin insignias este mes: ocultar el bloque entero. Es más sutil para
-  // el padre que mostrar "0 insignias", evitando reforzar comparaciones.
+  // Sin insignias este mes: ocultar el bloque entero.
+  // Es más sutil para el padre que mostrar "0 insignias",
+  // evitando reforzar comparaciones negativas en menores.
   if (badges.length === 0) {
     return null;
   }
@@ -466,32 +538,28 @@ function BadgesBlockView({ data }: { data: BadgesBlock }) {
       title="Insignias del mes"
       testId="block-badges"
     >
-      {badges.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {badges.map((badge, idx) => (
-            <div
-              key={idx}
-              className="flex flex-col items-center gap-1 rounded-xl border border-yellow-200 bg-yellow-50 px-3 py-2"
-              role="img"
-              aria-label={badge.label ?? badge.badge_type ?? "Insignia"}
-            >
-              <span className="text-lg font-bold text-yellow-700">
-                {BADGE_ICONS[badge.badge_type ?? ""] ?? "★"}
+      <div className="flex flex-wrap gap-2">
+        {badges.map((badge, idx) => (
+          <div
+            key={idx}
+            className="flex flex-col items-center gap-1 rounded-xl border border-yellow-200 bg-yellow-50 px-3 py-2"
+            role="img"
+            aria-label={badge.label ?? badge.badge_type ?? "Insignia"}
+          >
+            <span className="text-lg font-bold text-yellow-700">
+              {BADGE_ICONS[badge.badge_type ?? ""] ?? "★"}
+            </span>
+            <span className="text-xs font-medium text-charcoal">
+              {badge.label ?? badge.badge_type}
+            </span>
+            {badge.description && (
+              <span className="text-[10px] text-mid-gray text-center leading-tight">
+                {badge.description}
               </span>
-              <span className="text-xs font-medium text-charcoal">
-                {badge.label ?? badge.badge_type}
-              </span>
-              {badge.description && (
-                <span className="text-[10px] text-mid-gray text-center leading-tight">
-                  {badge.description}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-mid-gray">Sin insignias este mes.</p>
-      )}
+            )}
+          </div>
+        ))}
+      </div>
     </BlockCard>
   );
 }
@@ -503,11 +571,17 @@ function BadgesBlockView({ data }: { data: BadgesBlock }) {
 interface NewsletterPreviewBlocksProps {
   emailBlocks: Record<string, unknown> | null;
   badges: Array<Record<string, unknown>> | null;
+  /** US3: AI or static-fallback per-block captions keyed by block name */
+  blockCaptions?: Record<string, string> | null;
+  /** US3: AI or static-fallback summary of the month */
+  monthHighlights?: string | null;
 }
 
 export function NewsletterPreviewBlocks({
   emailBlocks,
   badges,
+  blockCaptions,
+  monthHighlights,
 }: NewsletterPreviewBlocksProps) {
   if (!emailBlocks && (!badges || badges.length === 0)) {
     return (
@@ -523,6 +597,33 @@ export function NewsletterPreviewBlocks({
   }
 
   const blocks = (emailBlocks ?? {}) as Record<string, unknown>;
+
+  // US3: captions can come from the top-level prop (passed via ai_narrative) or
+  // fall back to whatever was serialised into email_blocks.block_captions.
+  const captions = (
+    blockCaptions ??
+    (blocks.block_captions as Record<string, string> | undefined) ??
+    {}
+  ) as Record<string, string>;
+
+  // US3: month highlights from prop or email_blocks
+  const highlights =
+    monthHighlights ??
+    (blocks.month_highlights as string | undefined) ??
+    null;
+
+  // Privacy guard: never read anthropometry keys from email_blocks.
+  // We do a runtime check to ensure the anthropometry key is never rendered.
+  const ANTHROPOMETRY_KEYS = ["anthropometry", "bmi", "height_cm", "weight_kg", "percentile", "z_score"];
+  const anthropometryLeak = ANTHROPOMETRY_KEYS.filter((k) => k in blocks);
+  if (anthropometryLeak.length > 0 && import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[NewsletterPreviewBlocks] PRIVACY: anthropometry keys detected in emailBlocks — these must NOT be rendered:",
+      anthropometryLeak,
+    );
+  }
+
   const attendance = blocks.attendance as AttendanceBlock | undefined;
   const technical = blocks.technical_load as TechnicalLoadBlock | undefined;
   const races = blocks.races as RacesBlock | undefined;
@@ -531,10 +632,32 @@ export function NewsletterPreviewBlocks({
   const photos = blocks.photos as PhotosBlock | undefined;
 
   return (
-    <div className="space-y-3" data-testid="newsletter-preview-blocks" aria-label="Preview del boletín">
-      {attendance && <AttendanceBlockView data={attendance} />}
-      {technical && <TechnicalLoadBlockView data={technical} />}
-      {races && <RacesBlockView data={races} />}
+    <div
+      className="space-y-3"
+      data-testid="newsletter-preview-blocks"
+      aria-label="Preview del boletín"
+    >
+      {/* US3: highlights banner — never contains anthropometry */}
+      {highlights && <HighlightsBanner highlights={highlights} />}
+
+      {attendance && (
+        <AttendanceBlockView
+          data={attendance}
+          caption={captions.attendance}
+        />
+      )}
+      {technical && (
+        <TechnicalLoadBlockView
+          data={technical}
+          caption={captions.technical}
+        />
+      )}
+      {races && (
+        <RacesBlockView
+          data={races}
+          caption={captions.race_results}
+        />
+      )}
       {calendar && <CalendarBlockView data={calendar} />}
       {support && <SupportBlockView data={support} />}
       {photos && <PhotosBlockView data={photos} />}

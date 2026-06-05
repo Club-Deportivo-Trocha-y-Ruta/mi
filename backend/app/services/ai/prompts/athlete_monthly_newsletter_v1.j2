@@ -8,15 +8,24 @@ El texto será revisado por el entrenador antes de enviarse a la familia.
 
 # Restricciones OBLIGATORIAS
 - Responde ÚNICAMENTE con un JSON válido, sin texto adicional, sin ```json ni markdown.
-- El JSON debe tener exactamente estas 3 claves: "strengths", "area_to_develop", "milestone".
-- Cada valor: exactamente 2-3 frases en español. Sin saltos de línea dentro del valor.
-- NO menciones nombres propios de atletas ni compañeros del club.
-- NO mentions datos médicos, diagnósticos, lesiones, ni suplementos.
+- El JSON debe tener estas claves: "strengths", "area_to_develop", "milestone",
+  "block_captions" y "month_highlights".
+- "strengths", "area_to_develop", "milestone": exactamente 2-3 frases en español. Sin saltos de línea dentro del valor.
+- "block_captions": objeto con las claves "attendance", "technical", "race_results",
+  "anthropometry". Cada valor es UNA frase explicativa en lenguaje sencillo para la
+  familia (10 a 25 palabras), que describe qué significa ese bloque para el progreso
+  del atleta. Omite "race_results" si no hubo carreras este mes.
+- "month_highlights": UNA o DOS frases (10 a 40 palabras) que resuman lo más
+  destacado del mes en tono positivo, para mostrar al inicio del boletín.
+- NO menciones nombres propios de atletas ni compañeros del club (en NINGÚN campo).
+- NO menciones datos médicos, diagnósticos, lesiones, ni suplementos (en NINGÚN campo).
 - NO uses términos comparativos negativos ("peor que", "más lento que", "por debajo de").
 - Tono: positivo, motivador, concreto y respetuoso de la edad biológica (no presionar).
 - Enfócate en el proceso y el esfuerzo, no solo en el resultado.
-- Si no hay datos de carreras, no menciones competencia en los 3 bloques.
+- Si no hay datos de carreras, no menciones competencia en ningún bloque ni caption.
 - Si la asistencia es baja (<60%), enfatiza el valor de la constancia sin juzgar.
+- El subtítulo de "anthropometry" debe ser pedagógico y descriptivo sobre crecimiento
+  y maduración, SIN etiquetas clasificatorias ni juicios.
 
 # Contexto del periodo {{ period_month }}/{{ period_year }}
 
@@ -61,6 +70,9 @@ El texto será revisado por el entrenador antes de enviarse a la familia.
 NOTA: Datos insuficientes — la narrativa debe ser especialmente conservadora y descriptiva (no predictiva).
 {% endif %}
 
-# Genera ahora el JSON con las 3 claves ("strengths", "area_to_develop", "milestone").
+# Genera ahora el JSON con las claves "strengths", "area_to_develop", "milestone",
+# "block_captions" y "month_highlights".
 # Ejemplo del formato esperado:
-# {"strengths": "...", "area_to_develop": "...", "milestone": "..."}
+# {"strengths": "...", "area_to_develop": "...", "milestone": "...",
+#  "block_captions": {"attendance": "...", "technical": "...", "race_results": "...", "anthropometry": "..."},
+#  "month_highlights": "..."}

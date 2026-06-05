@@ -253,6 +253,22 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 
 > Deployment pending coach approval and merge to `main`. Alembic migration verified in SQLite via tests (chained to `f9a0b1c2d3e4`).
 
+### Newsletter improvements — feature 003 (2026-06-05)
+
+> Branch `003-improve-individual-newsletter-pdf`. Fixes + quality raise on the per-athlete newsletter (email + PDF + preview). **No new tables/columns/endpoints.** Docs: `docs/04-percentiles/003-lms-seed-and-backfill.md`, `docs/06-parents/003-newsletter-improvements.md`.
+
+| Step | Description | Status |
+|---|---|---|
+| US1 | Anthropometry data integrity: BMI **decoupled** from LMS (always computed on capture); vendored CDC LMS CSVs (`backend/app/data/cdc_lms/`) + **offline idempotent seed**; idempotent `app/scripts/backfill_anthropometry.py`; plain-language `n/d` reason for genuinely-missing cells. Anthropometry stays PDF-only | ✅ Complete 2026-06-05 |
+| US2 | Clean PDF pagination: heading+content wrapped in WeasyPrint `break-inside: avoid` blocks; removed forced `page-break-before`; `widows/orphans`; **removed Ley 1581 boxed notice** (FR-019, ⚠️ flagged for legal review; running footer kept) | ✅ Complete 2026-06-05 |
+| US3 | Parent insight: AI `block_captions` + `month_highlights` under existing guardrails + **deterministic static fallback** (`newsletter_static_copy.py`) so the newsletter renders without consent; legacy coach narrative stays consent-gated | ✅ Complete 2026-06-05 |
+| US4 | Modern UX/UI: responsive single-column inline-CSS email (`lang="es-CO"`, `role="presentation"`, ≥16px, dark-mode-safe); PDF + React preview on shared brand tokens; WCAG AA, status not by color alone; zero anthropometry in email/preview | ✅ Complete 2026-06-05 |
+| Layout | Anthropometry table switched to `table-layout: fixed` + `<colgroup>`; data cells `white-space: nowrap` (no mid-token wrap), headers may wrap; regression test asserts no overflow past the A4 right edge | ✅ Complete 2026-06-05 |
+| Tests | 95+ new backend feature tests + frontend (NewsletterPreviewBlocks a11y 0 violations, `tsc` clean); 159 pre-existing newsletter/notification/training tests still green; `entrypoint.sh` runs seed + backfill idempotently | ✅ Complete 2026-06-05 |
+| Deploy | Render (seed + backfill on boot) | ⏳ Pending coach approval |
+
+> `seed_growth_data.py` upsert is dialect-aware (MySQL `ON DUPLICATE KEY UPDATE` / SQLite `ON CONFLICT`). Implemented via a dynamic multi-agent workflow per the spec. Privacy audit: APPROVED-WITH-CONDITIONS (0 critical/high; 1 medium = Ley 1581 box removal flagged for legal review).
+
 ## Implementation status — Monthly Technical Report Module (Phase 1.9)
 
 > Refactor of the "Club Monthly Report" (Phase 1.5) into a **Monthly Technical Report** styled as a funder report. Structured document by chapters with club project profile (1:1), AI pre-drafted narrative by blocks that the coach edits and approves, month's podiums (Copa Valle), and restricted-distribution PDF (coach/admin). High-Performance Group only; "Population Served" section OMITTED; no program segmentation. Technical detail in `docs/11-informe-tecnico-mensual/`. Migration chained to head `c6d7e8f9a0b1` → `d4e5f6a7b8c9`.

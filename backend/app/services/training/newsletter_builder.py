@@ -151,6 +151,19 @@ async def build_newsletter_metrics(
         "ai_narrative": None,
     }
 
+    # US3 (T024): subtítulos por bloque + resumen del mes deterministas.
+    # Se calculan aquí como línea base (sin IA, sin red) a partir de las señales
+    # ya disponibles en email_blocks. El router puede sobrescribirlos con la
+    # versión IA cuando hay consentimiento; si no, esta versión estática viaja
+    # en el snapshot y las plantillas la renderizan igual.
+    from app.services.training.newsletter_static_copy import (
+        build_static_captions,
+        build_static_highlights,
+    )
+
+    email_blocks["block_captions"] = build_static_captions(email_blocks)
+    email_blocks["month_highlights"] = build_static_highlights(email_blocks)
+
     pdf_only_blocks: dict[str, Any] = {
         "anthropometry": anthropometry_block,
         # Los gráficos SVG se generan en render time a partir de race_results
@@ -654,6 +667,79 @@ def _build_support_block() -> dict[str, Any]:
     }
 
 
+def _anthropometry_unavailable_reason(
+    *,
+    weight_kg: float | None,
+    standing_height_cm: float | None,
+    bmi: float | None,
+    height_z_score: float | None,
+    height_percentile: float | None,
+    bmi_z_score: float | None,
+    bmi_percentile: float | None,
+    weight_z_score: float | None,
+    weight_percentile: float | None,
+) -> dict[str, str]:
+    """Devuelve un diccionario con razones pedagógicas (español neutro, sin diagnóstico)
+    para cada celda de la tabla que no tiene valor numérico disponible.
+
+    Las razones son breves, informativas, y no implican ningún juicio sobre el atleta.
+    Solo se incluyen entradas para campos genuinamente ausentes.
+    """
+    reasons: dict[str, str] = {}
+
+    has_weight = weight_kg is not None
+    has_height = standing_height_cm is not None
+
+    if bmi is None:
+        if not has_weight and not has_height:
+            reasons["bmi"] = "Se requiere peso y talla para calcularlo"
+        elif not has_weight:
+            reasons["bmi"] = "Se requiere peso para calcularlo"
+        elif not has_height:
+            reasons["bmi"] = "Se requiere talla para calcularlo"
+
+    _lms_missing_msg = "Fuera del rango de tablas de referencia para esta edad"
+
+    if height_z_score is None or height_percentile is None:
+        if not has_height:
+            reasons["height_lms"] = "Se requiere talla para calcularlo"
+        else:
+            reasons["height_lms"] = _lms_missing_msg
+
+    if bmi_z_score is None or bmi_percentile is None:
+        if bmi is None:
+            reasons["bmi_lms"] = "Se requiere IMC calculado"
+        else:
+            reasons["bmi_lms"] = _lms_missing_msg
+
+    if weight_z_score is None or weight_percentile is None:
+        if not has_weight:
+            reasons["weight_lms"] = "Se requiere peso para calcularlo"
+        else:
+            reasons["weight_lms"] = _lms_missing_msg
+
+    return reasons
+
+
+# Interpretaciones pedagógicas del estado de maduración — español neutro, sin diagnóstico.
+_MATURATION_PEDAGOGY: dict[str, str] = {
+    "Pre-PHV": (
+        "El deportista se encuentra en la etapa previa al pico de velocidad de crecimiento. "
+        "Es un período ideal para consolidar habilidades técnicas y coordinativas."
+    ),
+    "Circa-PHV": (
+        "El deportista está transitando el período de mayor velocidad de crecimiento. "
+        "Se recomienda monitorear la carga de entrenamiento y dar prioridad a la técnica "
+        "y la movilidad para acompañar los cambios corporales."
+    ),
+    "Post-PHV": (
+        "El deportista ha superado el pico de velocidad de crecimiento. "
+        "Este momento es propicio para consolidar la base aeróbica y continuar "
+        "el desarrollo técnico con mayor estabilidad física."
+    ),
+}
+
+
 async def _build_anthropometry_block(
     db: AsyncSession,
     athlete_id: int,
@@ -663,6 +749,10 @@ async def _build_anthropometry_block(
     """Antropometría completa: historial + implicaciones pedagógicas (solo PDF).
 
     NUNCA debe incluirse en email_blocks.
+
+    Cada registro serializado incluye un campo opcional 'unavailable_reasons'
+    (dict[str, str]) con explicaciones en español neutro para celdas sin valor.
+    El registro 'latest' incluye además 'maturation_pedagogy' si hay estado PHV.
     """
     from app.models.anthropometry import AnthropometricRecord
 
@@ -679,32 +769,63 @@ async def _build_anthropometry_block(
 
     serialized = []
     for r in records:
+        bmi_val = float(r.bmi) if r.bmi is not None else None
+        weight_val = float(r.weight_kg) if r.weight_kg is not None else None
+        height_val = float(r.standing_height_cm) if r.standing_height_cm is not None else None
+        height_z = float(r.height_z_score) if r.height_z_score is not None else None
+        height_p = float(r.height_percentile) if r.height_percentile is not None else None
+        bmi_z = float(r.bmi_z_score) if r.bmi_z_score is not None else None
+        bmi_p = float(r.bmi_percentile) if r.bmi_percentile is not None else None
+        weight_z = float(r.weight_z_score) if r.weight_z_score is not None else None
+        weight_p = float(r.weight_percentile) if r.weight_percentile is not None else None
+
+        unavailable_reasons = _anthropometry_unavailable_reason(
+            weight_kg=weight_val,
+            standing_height_cm=height_val,
+            bmi=bmi_val,
+            height_z_score=height_z,
+            height_percentile=height_p,
+            bmi_z_score=bmi_z,
+            bmi_percentile=bmi_p,
+            weight_z_score=weight_z,
+            weight_percentile=weight_p,
+        )
+
         serialized.append({
             "evaluation_date": r.evaluation_date.isoformat() if r.evaluation_date else None,
-            "weight_kg": float(r.weight_kg) if r.weight_kg is not None else None,
-            "standing_height_cm": float(r.standing_height_cm) if r.standing_height_cm is not None else None,
+            "weight_kg": weight_val,
+            "standing_height_cm": height_val,
             "sitting_height_cm": float(r.sitting_height_cm) if r.sitting_height_cm is not None else None,
-            "bmi": float(r.bmi) if r.bmi is not None else None,
-            "height_z_score": float(r.height_z_score) if r.height_z_score is not None else None,
-            "height_percentile": float(r.height_percentile) if r.height_percentile is not None else None,
-            "bmi_z_score": float(r.bmi_z_score) if r.bmi_z_score is not None else None,
-            "bmi_percentile": float(r.bmi_percentile) if r.bmi_percentile is not None else None,
-            "weight_z_score": float(r.weight_z_score) if r.weight_z_score is not None else None,
-            "weight_percentile": float(r.weight_percentile) if r.weight_percentile is not None else None,
+            "bmi": bmi_val,
+            "height_z_score": height_z,
+            "height_percentile": height_p,
+            "bmi_z_score": bmi_z,
+            "bmi_percentile": bmi_p,
+            "weight_z_score": weight_z,
+            "weight_percentile": weight_p,
             "maturity_offset": float(r.maturity_offset) if r.maturity_offset is not None else None,
             "age_at_phv": float(r.age_at_phv) if r.age_at_phv is not None else None,
             "maturation_status": r.maturation_status.value if r.maturation_status else None,
             "nutritional_status": r.nutritional_status.value if r.nutritional_status else None,
             "training_implications": r.training_implications,
+            # Razones pedagógicas para celdas sin valor — vacío si todo está disponible
+            "unavailable_reasons": unavailable_reasons,
         })
 
     # Registro más reciente para el resumen
     latest = serialized[0]
 
+    # Añadir interpretación pedagógica del estado PHV (español neutro, sin diagnóstico)
+    maturation_status = latest.get("maturation_status")
+    latest_with_pedagogy = {
+        **latest,
+        "maturation_pedagogy": _MATURATION_PEDAGOGY.get(maturation_status, ""),
+    }
+
     return {
         "has_records": True,
         "records": serialized,
-        "latest": latest,
+        "latest": latest_with_pedagogy,
     }
 
 
