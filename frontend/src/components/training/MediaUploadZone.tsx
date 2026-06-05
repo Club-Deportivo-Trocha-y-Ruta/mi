@@ -9,7 +9,7 @@ import type {
 const PHOTO_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const VIDEO_EXTENSIONS = [".mp4", ".mov"];
 const MAX_PHOTO_MB = 10;
-const MAX_VIDEO_MB = 50;
+const MAX_VIDEO_MB = 120;
 
 interface AthleteOption {
   id: number;

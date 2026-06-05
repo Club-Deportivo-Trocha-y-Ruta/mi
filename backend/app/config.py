@@ -104,7 +104,7 @@ class Settings(BaseSettings):
 
     # Límites
     media_max_photo_mb: int = 10
-    media_max_video_mb: int = 50
+    media_max_video_mb: int = 120
 
     # -----------------------------------------------------------------------
     # Race results upload UI (F-UP* — docs/10-race-results/upload-design.md)
