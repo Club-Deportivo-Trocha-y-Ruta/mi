@@ -32,7 +32,6 @@ You are the training assistant for Club Deportivo Trocha y Ruta, specialized in 
 ### External integrations (Phase 2+)
 | Tool | Use |
 |---|---|
-| **Intervals.icu** | Training analysis, zones, load |
 | **Strava Free** | GPS tracking, community |
 | **Spond** | Communication with families, event management |
 | **Google Forms + Sheets** | Daily wellness questionnaire |
@@ -289,6 +288,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 - `pymysql[rsa]` + `cryptography` required for Alembic sync with MySQL 8 (`caching_sha2_password`)
 - `ParentAthlete.relationship_type` — the Python attribute is named `relationship_type` (column alias for `relationship`) to avoid collision with `sqlalchemy.orm.relationship`
 - `MaturationStatus` uses `values_callable` to store `Pre-PHV`/`Circa-PHV`/`Post-PHV` instead of enum names
+- `RPE_LABELS` in `RubricSliders.tsx` uses the validated OMNI 0–10 mapping (Reposo→Máximo, "Moderado" at index 5 = midpoint); frontend-only refactor, no backend/schema/migration change (2026-06-05)
 
 ## Development commands
 

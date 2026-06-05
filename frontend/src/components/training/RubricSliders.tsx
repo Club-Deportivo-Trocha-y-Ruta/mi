@@ -3,20 +3,24 @@ import { Controller } from "react-hook-form";
 
 import type { AttendanceFormValues } from "./AttendanceTable";
 
-const RPE_FACES = ["😴", "😌", "🙂", "😊", "😐", "🫤", "😮‍💨", "😤", "😰", "😩", "🥵"];
+// OMNI 0-10 (Robertson et al.): even indices map validated adult-OMNI anchors;
+// odd indices are documented interpolations so every integer shows one word.
+// "Moderado" sits at the midpoint (5) per the scientific reference.
 const RPE_LABELS = [
-  "Reposo",
-  "Muy suave",
-  "Suave",
-  "Moderado",
-  "Algo difícil",
-  "Difícil",
-  "Muy difícil",
-  "Muy muy difícil",
-  "Extremo",
-  "Máximo casi",
-  "Máximo",
+  "Reposo",      // 0
+  "Muy fácil",   // 1
+  "Fácil",       // 2
+  "Ligero",      // 3
+  "Algo fácil",  // 4
+  "Moderado",    // 5 ← midpoint
+  "Algo duro",   // 6
+  "Duro",        // 7
+  "Muy duro",    // 8
+  "Muy muy duro", // 9
+  "Máximo",      // 10
 ];
+// Faces aligned: calm/rested (0) → neutral midpoint (5, 😐) → exhausted (10)
+const RPE_FACES = ["😴", "😌", "🙂", "😊", "😀", "😐", "🫤", "😮‍💨", "😤", "😩", "🥵"];
 
 const RUBRIC_LABELS: Record<number, string> = {
   1: "Muy bajo",

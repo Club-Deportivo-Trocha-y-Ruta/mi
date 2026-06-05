@@ -102,6 +102,28 @@ describe("RubricSliders", () => {
     });
   });
 
+  describe("RPE_LABELS contract (G1–G3)", () => {
+    it("G1 — muestra 'Moderado' en valor 5", () => {
+      render(<Wrapper defaultValues={{ rpe_omni: 5 }} />);
+      expect(screen.getByText("5 — Moderado")).toBeInTheDocument();
+    });
+
+    it("G2 — valor 3 NO muestra 'Moderado' (defecto corregido)", () => {
+      render(<Wrapper defaultValues={{ rpe_omni: 3 }} />);
+      expect(screen.queryByText("3 — Moderado")).not.toBeInTheDocument();
+    });
+
+    it("G3 — extremo inferior es 'Reposo' (valor 0)", () => {
+      render(<Wrapper defaultValues={{ rpe_omni: 0 }} />);
+      expect(screen.getByText("0 — Reposo")).toBeInTheDocument();
+    });
+
+    it("G3 — extremo superior es 'Máximo' (valor 10)", () => {
+      render(<Wrapper defaultValues={{ rpe_omni: 10 }} />);
+      expect(screen.getByText("10 — Máximo")).toBeInTheDocument();
+    });
+  });
+
   describe("disabled", () => {
     it("todos los sliders deshabilitados cuando disabled=true", () => {
       render(<Wrapper disabled />);
