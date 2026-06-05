@@ -1,231 +1,231 @@
-# Informe Técnico Mensual — Diseño técnico
+# Monthly Technical Report — Technical Design
 
-**Fecha:** 2026-06-03
-**Estado:** Implementado (backend + frontend + tests). Deploy a Render pendiente de aprobación.
-**Migración:** Alembic `d4e5f6a7b8c9` (down_revision `c6d7e8f9a0b1`).
+**Date:** 2026-06-03
+**Status:** Implemented (backend + frontend + tests). Deployment to Render pending approval.
+**Migration:** Alembic `d4e5f6a7b8c9` (down_revision `c6d7e8f9a0b1`).
 
-Este documento detalla el diseño técnico del refactor del módulo "Reporte Mensual del Club" (Fase 1.5) hacia un **Informe Técnico Mensual** estilo informe a financiador. La visión general, el alcance acordado y los pasos de implementación están en [`workflow.md`](workflow.md). La guía operativa para el coach está en [`runbook.md`](runbook.md).
-
----
-
-## 1. Resumen de la solución
-
-El reporte mensual deja de ser un único párrafo de IA (`ai_summary`, intacto y preservado) y pasa a ser un documento estructurado por capítulos, con:
-
-- **Metadata institucional** del proyecto del club (perfil 1:1, configurado una vez).
-- **Narrativa por bloques**: la IA pre-redacta seis bloques; el coach edita cada uno antes de aprobar.
-- **Resultados de competencia** del mes: podios del club tomados del módulo Copa Valle (Fase 1.7).
-- **PDF de distribución restringida** (coach/admin), con banner BORRADOR mientras está en `draft` y aviso de Ley 1581.
-
-La IA nunca emite nombres reales de menores. Los padres no reciben `narrative_blocks` ni `competition_results`.
+This document details the technical design of the refactor of the "Monthly Club Report" module (Phase 1.5) into a **Monthly Technical Report** styled as a funder/financier report. The overall vision, agreed scope, and implementation steps are in [`workflow.md`](workflow.md). The operational guide for the coach is in [`runbook.md`](runbook.md).
 
 ---
 
-## 2. Modelo de datos
+## 1. Solution Summary
 
-Todos los cambios viven en la migración `d4e5f6a7b8c9`. Patrón `batch_alter_table` + enums en minúsculas + `server_default`, de modo que funciona en MySQL (ALTER nativo) y SQLite (recrea tabla) y los registros legacy quedan en valores coherentes sin backfill.
+The monthly report is no longer a single AI paragraph (`ai_summary`, intact and preserved) and becomes a document structured by chapters, with:
 
-### 2.1 Tabla nueva: `club_project_profiles`
+- **Institutional metadata** of the sports club's project (1:1 profile, configured once).
+- **Narrative blocks**: the AI pre-drafts six blocks; the coach edits each one before approving.
+- **Monthly competition results**: the club's podiums drawn from the Copa Valle results module (Phase 1.7).
+- **Restricted-distribution PDF** (coach/admin), with a DRAFT banner while in `draft` status and a Ley 1581 notice.
 
-Relación **1:1 con `clubs`** (UNIQUE en `club_id`, FK `ON DELETE RESTRICT`). Metadata estática del proyecto que encabeza cada informe.
+The AI never emits real names of minors. Parents do not receive `narrative_blocks` or `competition_results`.
 
-| Columna | Tipo | Nullable | Notas |
+---
+
+## 2. Data Models
+
+All changes live in migration `d4e5f6a7b8c9`. Pattern `batch_alter_table` + lowercase enums + `server_default`, so it works in MySQL (native ALTER) and SQLite (recreates table) and legacy records remain in coherent values without backfill.
+
+### 2.1 New Table: `club_project_profiles`
+
+**1:1 relationship with `clubs`** (UNIQUE on `club_id`, FK `ON DELETE RESTRICT`). Static project metadata that heads each report.
+
+| Column | Type | Nullable | Notes |
 |---|---|---|---|
 | `id` | Integer PK | no | autoincrement |
 | `club_id` | Integer FK → `clubs.id` | no | UNIQUE `uq_club_project_profile_club`, `ON DELETE RESTRICT` |
-| `project_name` | String(200) | sí | Nombre del proyecto (ej: "Pedaleando por un Sueño") |
-| `executing_entity` | String(200) | sí | Entidad ejecutora |
-| `report_responsible` | String(200) | sí | Responsable del informe |
-| `purpose` | Text | sí | Propósito del proyecto |
-| `general_objective` | Text | sí | Objetivo general |
-| `specific_objectives` | JSON | sí | Lista de strings (objetivos específicos) |
-| `territory_location` | String(200) | sí | Localización (municipio/sede) |
-| `territory_description` | Text | sí | Descripción del territorio |
-| `created_at` / `updated_at` | DateTime | no | UTC, `onupdate` en `updated_at` |
+| `project_name` | String(200) | yes | Project name (e.g. "Pedaleando por un Sueño") |
+| `executing_entity` | String(200) | yes | Executing entity |
+| `report_responsible` | String(200) | yes | Report responsible person |
+| `purpose` | Text | yes | Project purpose |
+| `general_objective` | Text | yes | General goal |
+| `specific_objectives` | JSON | yes | List of strings (specific goals) |
+| `territory_location` | String(200) | yes | Location (municipality/venue) |
+| `territory_description` | Text | yes | Territory description |
+| `created_at` / `updated_at` | DateTime | no | UTC, `onupdate` on `updated_at` |
 
-Todos los campos de contenido son opcionales para permitir upsert incremental. El modelo no contiene datos de menores; el router aplica RBAC (coach/admin del club).
+All content fields are optional to allow incremental upsert. The model contains no minors' data; the router applies RBAC (coach/admin of the sports club).
 
-Modelo: `backend/app/models/club_project_profile.py`.
+Model: `backend/app/models/club_project_profile.py`.
 
-### 2.2 Columnas nuevas en `monthly_reports`
+### 2.2 New Columns in `monthly_reports`
 
-| Columna | Tipo | Nullable | Default | Notas |
+| Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
-| `narrative_blocks` | JSON | sí | NULL | Mapa `{block_key: {ai_draft, final_text, ai_model, ai_generated_at}}` |
-| `competition_results` | JSON | sí | NULL | Snapshot de podios del mes (lista de `CompetitionResultItem`) |
-| `status` | Enum(`draft`, `approved`) | no | `'draft'` | `server_default`; reportes legacy quedan en `draft` |
+| `narrative_blocks` | JSON | yes | NULL | Map `{block_key: {ai_draft, final_text, ai_model, ai_generated_at}}` |
+| `competition_results` | JSON | yes | NULL | Snapshot of monthly podiums (list of `CompetitionResultItem`) |
+| `status` | Enum(`draft`, `approved`) | no | `'draft'` | `server_default`; legacy reports remain in `draft` |
 
-`ai_summary` (reporte v1) **no se migra ni se elimina**: queda intacto para compatibilidad.
+`ai_summary` (v1 report) **is not migrated or removed**: it stays intact for compatibility.
 
-### 2.3 Columnas nuevas en `training_sessions`
+### 2.3 New Columns in `training_sessions`
 
-| Columna | Tipo | Nullable | Default | Notas |
+| Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
-| `session_kind` | Enum(`entrenamiento`, `actividad_conjunta`, `salida`, `otro`) | no | `'entrenamiento'` | `server_default`; sesiones legacy quedan como `entrenamiento` |
-| `objectives` | Text | sí | NULL | Objetivos de la sesión (texto libre) |
+| `session_kind` | Enum(`entrenamiento`, `actividad_conjunta`, `salida`, `otro`) | no | `'entrenamiento'` | `server_default`; legacy sessions remain as `entrenamiento` |
+| `objectives` | Text | yes | NULL | Training session goals (free text) |
 
-Enums persistidos en minúsculas (coherente con `values_callable` de `SessionKind` / `MonthlyReportStatus`).
+Enums persisted in lowercase (consistent with `values_callable` of `SessionKind` / `MonthlyReportStatus`).
 
-### 2.4 Reversibilidad
+### 2.4 Reversibility
 
-`downgrade()` elimina las 5 columnas, la tabla `club_project_profiles` y los tipos enum nativos `sessionkind` / `monthlyreportstatus` (solo MySQL; en SQLite son VARCHAR + CHECK que desaparecen con la columna/tabla).
+`downgrade()` removes the 5 columns, the `club_project_profiles` table, and the native enum types `sessionkind` / `monthlyreportstatus` (MySQL only; in SQLite these are VARCHAR + CHECK that disappear with the column/table).
 
 ---
 
-## 3. Bloques narrativos
+## 3. Narrative Blocks
 
-El informe se estructura en bloques con clave fija. La IA redacta seis bloques; `competencia` es estructurado (lo llena el helper de competencia, no la IA).
+The report is structured in blocks with a fixed key. The AI drafts six blocks; `competencia` is structured (filled by the competition helper, not the AI).
 
-| Clave | Capítulo | Generación | Máx. palabras |
+| Key | Chapter | Generation | Max words |
 |---|---|---|---|
-| `objetivo` | Objetivo del período | IA | 150 |
-| `desarrollo` | Desarrollo de actividades | IA | 200 |
-| `resultados` | Resultados obtenidos (indicadores agregados) | IA | 180 |
-| `conclusiones` | Conclusiones y recomendaciones | IA | 150 |
-| `apoyos_materiales` | Apoyos y recursos materiales | IA | 120 |
-| `analisis_grupo` | Análisis cualitativo del grupo de alto rendimiento | IA | 220 |
-| `competencia` | Participación en competencia (podios) | Estructurado (helper) | — |
+| `objetivo` | Period goal | AI | 150 |
+| `desarrollo` | Activity development | AI | 200 |
+| `resultados` | Results obtained (aggregated indicators) | AI | 180 |
+| `conclusiones` | Conclusions and recommendations | AI | 150 |
+| `apoyos_materiales` | Material support and resources | AI | 120 |
+| `analisis_grupo` | Qualitative analysis of the high-performance group | AI | 220 |
+| `competencia` | Competition participation (podiums) | Structured (helper) | — |
 
-Las claves permitidas se validan contra `ALLOWED_BLOCK_KEYS` en `backend/app/schemas/training_session.py`.
+Allowed keys are validated against `ALLOWED_BLOCK_KEYS` in `backend/app/schemas/training_session.py`.
 
-El bloque `analisis_grupo` es el **capítulo cualitativo del grupo de alto rendimiento** — el "capítulo" que el jefe sumará al informe consolidado de junio. Su prompt exige tono reflexivo del entrenador, sin juicios individuales y sin mencionar pseudónimos de atletas.
+The `analisis_grupo` block is the **qualitative chapter of the high-performance group** — the "chapter" that the director will add to the consolidated June report. Its prompt requires a reflective coach tone, without individual judgments and without mentioning athlete pseudonyms.
 
-### 3.1 Estructura de un bloque (`NarrativeBlock`)
+### 3.1 Block Structure (`NarrativeBlock`)
 
 ```json
 {
-  "ai_draft": "borrador anonimizado generado por la IA",
-  "final_text": "texto aprobado/editado por el coach",
-  "ai_model": "<modelo>",
+  "ai_draft": "anonymized draft generated by the AI",
+  "final_text": "text approved/edited by the coach",
+  "ai_model": "<model>",
   "ai_generated_at": "2026-06-03T..."
 }
 ```
 
-- `ai_draft`: borrador de la IA, ya pasado por guardrails de privacidad.
-- `final_text`: se inicializa igual al `ai_draft`; el coach lo edita antes de aprobar. Es el texto que entra al PDF.
-- `ai_model` / `ai_generated_at`: trazabilidad de la generación.
+- `ai_draft`: AI draft, already passed through privacy guardrails.
+- `final_text`: initialized equal to `ai_draft`; the coach edits it before approving. This is the text that goes into the PDF.
+- `ai_model` / `ai_generated_at`: generation traceability.
 
-### 3.2 Use case IA: `MonthlyReportBlocksUseCase`
+### 3.2 AI Use Case: `MonthlyReportBlocksUseCase`
 
-Archivo: `backend/app/services/ai/use_cases/monthly_report_blocks.py`. Hereda de `MonthlyReportUseCase` (reporte v1) para **reutilizar** anonimización de atletas, guardrails y el cliente LLM. No se duplica lógica de privacidad.
+File: `backend/app/services/ai/use_cases/monthly_report_blocks.py`. Inherits from `MonthlyReportUseCase` (v1 report) to **reuse** athlete anonymization, guardrails, and the LLM client. No privacy logic is duplicated.
 
-- `run_block(ctx, block_key)`: genera el borrador de un bloque. Ante timeout, error de red o rechazo de guardrail, retorna `BlockDraft` con `ai_draft=None` y un `error` descriptivo en vez de lanzar excepción. Así un bloque fallido no tumba el resto.
-- `run_all_blocks(ctx, block_keys=None)`: genera los seis bloques narrativos en paralelo (`asyncio.gather`); excluye `competencia`. Cada bloque falla de forma independiente.
+- `run_block(ctx, block_key)`: generates the draft for one block. On timeout, network error, or guardrail rejection, returns `BlockDraft` with `ai_draft=None` and a descriptive `error` instead of raising an exception. This way a failed block does not bring down the rest.
+- `run_all_blocks(ctx, block_keys=None)`: generates the six narrative blocks in parallel (`asyncio.gather`); excludes `competencia`. Each block fails independently.
 
-Prompt: `backend/app/services/ai/prompts/monthly_report_blocks.j2` (registrado en `backend/app/services/ai/prompts/registry.py` con id `monthly_report_blocks`). Cada bloque inyecta `block_title`, `block_prompt` (instrucción específica) y `block_max_words` en el contexto. El contexto enviado al LLM solo contiene datos agregados y pseudónimos deterministas — **nunca** nombres reales ni `competition_results`.
+Prompt: `backend/app/services/ai/prompts/monthly_report_blocks.j2` (registered in `backend/app/services/ai/prompts/registry.py` with id `monthly_report_blocks`). Each block injects `block_title`, `block_prompt` (specific instruction), and `block_max_words` into the context. The context sent to the LLM contains only aggregated data and deterministic pseudonyms — **never** real names or `competition_results`.
 
-Guardrails: `MonthlyReportGuardrails(forbidden_names=ctx.forbidden_names)`, los mismos del reporte v1: sin nombres reales (lista dinámica desde DB), sin términos médicos ni de suplementos. La salida pasa por `_scrub()`; si el guardrail rechaza, el bloque se marca con `error="guardrail: ..."`.
+Guardrails: `MonthlyReportGuardrails(forbidden_names=ctx.forbidden_names)`, the same as the v1 report: no real names (dynamic list from DB), no medical terms or supplement references. Output passes through `_scrub()`; if the guardrail rejects, the block is marked with `error="guardrail: ..."`.
 
 ---
 
-## 4. Helper de competencia
+## 4. Competition Helper
 
-Archivo: `backend/app/services/training/competition_results.py`.
+File: `backend/app/services/training/competition_results.py`.
 
 `build_competition_results(db, club_id, year, month) -> list[CompetitionResultItem]`:
 
-- Une `RaceResult` → `RaceEvent` (evento dentro del mes) → `RaceCategory` → `Athlete` (del club), con `deleted_at IS NULL` y `position IS NOT NULL`.
-- Ordena por `event_date ASC, position ASC`.
-- Devuelve `CompetitionResultItem` con `athlete_name`, `category`, `position`, `points`, `event_name`, `event_date`.
-- **Degrada limpio**: cualquier error de BD devuelve `[]` sin romper el informe.
+- Joins `RaceResult` → `RaceEvent` (event within the month) → `RaceCategory` → `Athlete` (of the club), with `deleted_at IS NULL` and `position IS NOT NULL`.
+- Orders by `event_date ASC, position ASC`.
+- Returns `CompetitionResultItem` with `athlete_name`, `category`, `position`, `points`, `event_name`, `event_date`.
+- **Degrades cleanly**: any DB error returns `[]` without breaking the report.
 
-Los nombres de atletas aquí son **intencionales**: alimentan el PDF (documento controlado), no la IA. La IA nunca recibe este objeto.
+Athlete names here are **intentional**: they feed the PDF (a controlled document), not the AI. The AI never receives this object.
 
 ---
 
 ## 5. Endpoints
 
-Router: `backend/app/routers/monthly_reports.py`. Montado en `main.py` con prefijo `/api/clubs` (router coach/admin) y `/api/parents` (router padre de solo lectura).
+Router: `backend/app/routers/monthly_reports.py`. Mounted in `main.py` with prefix `/api/clubs` (coach/admin router) and `/api/parents` (parent read-only router).
 
-| Método | Ruta | Rol | Propósito |
+| Method | Path | Role | Purpose |
 |---|---|---|---|
-| GET | `/api/clubs/{id}/project-profile` | coach/admin | Lee el perfil de proyecto del club |
-| PUT | `/api/clubs/{id}/project-profile` | coach/admin | Crea o reemplaza el perfil (upsert) |
-| PATCH | `/api/clubs/{id}/project-profile` | coach/admin | Actualiza parcial (`exclude_unset`) |
-| POST | `/api/clubs/{id}/monthly-reports` | coach/admin | Genera/regenera el reporte del período (incluye bloques IA + competencia) |
-| GET | `/api/clubs/{id}/monthly-reports` | coach/admin | Lista reportes del club |
-| GET | `/api/clubs/{id}/monthly-reports/{year}/{month}` | coach/admin | Detalle del reporte (con bloques y competencia) |
-| PATCH | `/api/clubs/{id}/monthly-reports/{year}/{month}/blocks` | coach/admin | Actualiza `final_text` de bloques y/o transiciona `draft → approved` |
-| POST | `/api/clubs/{id}/monthly-reports/{year}/{month}/blocks/{block_key}/regenerate` | coach/admin | Regenera el `ai_draft` de un bloque individual |
-| GET | `/api/clubs/{id}/monthly-reports/{year}/{month}/pdf` | coach/admin | Descarga el PDF (template técnico) |
-| GET | `/api/parents/.../monthly-summary` | parent | Resumen filtrado, sin bloques ni competencia |
+| GET | `/api/clubs/{id}/project-profile` | coach/admin | Read the sports club's project profile |
+| PUT | `/api/clubs/{id}/project-profile` | coach/admin | Create or replace the profile (upsert) |
+| PATCH | `/api/clubs/{id}/project-profile` | coach/admin | Partial update (`exclude_unset`) |
+| POST | `/api/clubs/{id}/monthly-reports` | coach/admin | Generate/regenerate the period report (includes AI blocks + competition) |
+| GET | `/api/clubs/{id}/monthly-reports` | coach/admin | List sports club reports |
+| GET | `/api/clubs/{id}/monthly-reports/{year}/{month}` | coach/admin | Report detail (with blocks and competition) |
+| PATCH | `/api/clubs/{id}/monthly-reports/{year}/{month}/blocks` | coach/admin | Update `final_text` of blocks and/or transition `draft → approved` |
+| POST | `/api/clubs/{id}/monthly-reports/{year}/{month}/blocks/{block_key}/regenerate` | coach/admin | Regenerate the `ai_draft` of an individual block |
+| GET | `/api/clubs/{id}/monthly-reports/{year}/{month}/pdf` | coach/admin | Download the PDF (technical template) |
+| GET | `/api/parents/.../monthly-summary` | parent | Filtered summary, without blocks or competition |
 
-Notas de contrato:
+Contract notes:
 
-- `PATCH .../blocks` (`MonthlyReportBlocksUpdate`): solo acepta claves en `ALLOWED_BLOCK_KEYS`; la transición de estado es solo `draft → approved` (no hay reversión a draft). Devuelve `MonthlyReportRead` con `athlete_names` resuelto para el rol coach/admin.
-- `POST .../regenerate`: preserva el `final_text` editado por el coach si ya difería del `ai_draft` previo.
-- `GET .../pdf`: usa el template `DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT` (registrado en `backend/app/services/notification/template_registry.py`, ruta `documents/pdf/training_monthly_technical_report.html`). El reporte v1 (`TRAINING_MONTHLY_REPORT`) sigue existiendo.
+- `PATCH .../blocks` (`MonthlyReportBlocksUpdate`): only accepts keys in `ALLOWED_BLOCK_KEYS`; the state transition is only `draft → approved` (no reversion to draft). Returns `MonthlyReportRead` with `athlete_names` resolved for the coach/admin role.
+- `POST .../regenerate`: preserves the `final_text` edited by the coach if it already differed from the previous `ai_draft`.
+- `GET .../pdf`: uses the template `DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT` (registered in `backend/app/services/notification/template_registry.py`, path `documents/pdf/training_monthly_technical_report.html`). The v1 report (`TRAINING_MONTHLY_REPORT`) still exists.
 
 ---
 
 ## 6. PDF — `training_monthly_technical_report.html`
 
-Template: `backend/templates/documents/pdf/training_monthly_technical_report.html`. Variable `is_draft: bool` controla el banner BORRADOR.
+Template: `backend/templates/documents/pdf/training_monthly_technical_report.html`. Variable `is_draft: bool` controls the DRAFT banner.
 
-Secciones en orden:
+Sections in order:
 
-1. Portada institucional / datos del proyecto (desde `ClubProjectProfile`).
-2. Contexto del proyecto.
-3. Localización territorial.
-4. Objetivo del período (bloque `objetivo`).
-5. Actividades ejecutadas — Grupo de Alto Rendimiento (bloque `desarrollo` + tabla de sesiones).
-6. Participación en competencia (`competition_results`, con podios).
-7. Actividades conjuntas y salidas (sesiones con `session_kind` `actividad_conjunta` / `salida`).
-8. Apoyos y recursos materiales (bloque `apoyos_materiales`).
-9. Resultados (bloque `resultados`).
-10. Análisis del grupo de alto rendimiento (bloque `analisis_grupo`).
-11. Conclusiones y recomendaciones (bloque `conclusiones`).
-12. Registro fotográfico (media consentida).
+1. Institutional cover page / project data (from `ClubProjectProfile`).
+2. Project context.
+3. Territorial location.
+4. Period goal (block `objetivo`).
+5. Executed activities — High-Performance Group (block `desarrollo` + sessions table).
+6. Competition participation (`competition_results`, with podiums).
+7. Joint activities and outings (sessions with `session_kind` `actividad_conjunta` / `salida`).
+8. Material support and resources (block `apoyos_materiales`).
+9. Results (block `resultados`).
+10. High-performance group analysis (block `analisis_grupo`).
+11. Conclusions and recommendations (block `conclusiones`).
+12. Photo record (consented media).
 
-> La sección **"Población Atendida" está OMITIDA** por decisión explícita del usuario; el documento se limita al grupo de alto rendimiento, sin segmentación por programa (no se documenta "Teteros" ni otros programas formativos).
+> The **"Population Served" section is OMITTED** by explicit user decision; the document is limited to the high-performance group, without segmentation by program ("Teteros" and other formative programs are not documented).
 
-Avisos legales:
+Legal notices:
 
-- **Banner BORRADOR** visible solo si `is_draft=True` ("pendiente de aprobación por el entrenador responsable").
-- **Aviso Ley 1581/2012** (+ Decreto 1377/2013): documento de **distribución restringida**, contiene datos de menores de edad, uso exclusivo del equipo técnico, no distribuir externamente.
+- **DRAFT banner** visible only if `is_draft=True` ("pending approval by the responsible coach").
+- **Ley 1581/2012 notice** (+ Decreto 1377/2013): **restricted distribution** document, contains minors' data, for exclusive use by the technical team, do not distribute externally.
 
 ---
 
-## 7. Privacidad
+## 7. Privacy
 
-Resumen del contrato de privacidad (auditoría reutiliza el marco del reporte v1 y del newsletter de Fase 1.8):
+Summary of the privacy contract (audit reuses the framework from the v1 report and the Phase 1.8 newsletter):
 
-| Regla | Mecanismo |
+| Rule | Mechanism |
 |---|---|
-| La IA nunca recibe ni emite nombres reales | Anonimización con pseudónimos deterministas + `MonthlyReportGuardrails(forbidden_names)` + `_scrub()`; `competition_results` no se pasa al LLM |
-| Padres no reciben `narrative_blocks` | El router fuerza `narrative_blocks=None` para el rol `parent` |
-| Padres no reciben `competition_results` | El router fuerza `competition_results=None` para el rol `parent` (contiene nombres de otros menores) |
-| `athlete_names` solo para coach/admin | Se rellena únicamente en endpoints coach/admin; ausente en la vista padre |
-| Nombres de menores en el PDF | **Excepción deliberada**: el informe es un documento externo controlado. Gated por: RBAC coach/admin + aprobación + aviso Ley 1581 en el documento. Sin nombres en `draft` distribuido sin aprobación → banner BORRADOR |
+| AI never receives or emits real names | Anonymization with deterministic pseudonyms + `MonthlyReportGuardrails(forbidden_names)` + `_scrub()`; `competition_results` is not passed to the LLM |
+| Parents do not receive `narrative_blocks` | Router forces `narrative_blocks=None` for the `parent` role |
+| Parents do not receive `competition_results` | Router forces `competition_results=None` for the `parent` role (contains names of other minors) |
+| `athlete_names` only for coach/admin | Populated only in coach/admin endpoints; absent in the parent view |
+| Minors' names in the PDF | **Deliberate exception**: the report is a controlled external document. Gated by: RBAC coach/admin + approval + Ley 1581 notice in the document. No names in `draft` distributed without approval → DRAFT banner |
 
-Los nombres de menores aparecen en el PDF únicamente en podios (`competition_results`) y tablas de asistencia. Es una excepción consciente al principio general "sin nombres en artefactos", justificada porque el PDF es de distribución restringida bajo control del coach/admin.
+Minors' names appear in the PDF only in podiums (`competition_results`) and attendance tables. This is a conscious exception to the general "no names in artifacts" principle, justified because the PDF is a restricted-distribution document under coach/admin control.
 
 ---
 
 ## 8. Frontend
 
-- **`ReportDetailPage`** (`frontend/src/routes/training/ReportDetailPage.tsx`): reescrita como **editor por bloques**. Por bloque: generar/regenerar con IA, editar `final_text`, ver trazabilidad del modelo. Acciones globales: aprobar (`draft → approved`), descargar PDF. Vista de solo lectura para padres (sin bloques internos ni competencia).
-- **`ProjectProfilePage`** (`frontend/src/routes/training/ProjectProfilePage.tsx`): edición del perfil de proyecto (RHF + Zod; objetivos específicos como lista). Se configura una vez por club.
-- **`ReportsListPage`**: badge de estado (`draft` / `approved`) + enlace a los datos del proyecto.
-- **`SessionFormPage`**: campos nuevos `session_kind` (selector) y `objectives` (texto).
-- **Tipos / API / hooks**: `useProjectProfile`, `useUpsertProjectProfile`, `useUpdateReportBlocks`, `useRegenerateBlock` + handlers MSW. Schemas Zod en `frontend/src/schemas/trainingSession.schema.ts`.
+- **`ReportDetailPage`** (`frontend/src/routes/training/ReportDetailPage.tsx`): rewritten as a **block-by-block editor**. Per block: generate/regenerate with AI, edit `final_text`, view model traceability. Global actions: approve (`draft → approved`), download PDF. Read-only view for parents (without internal blocks or competition).
+- **`ProjectProfilePage`** (`frontend/src/routes/training/ProjectProfilePage.tsx`): project profile editing (RHF + Zod; specific goals as a list). Configured once per sports club.
+- **`ReportsListPage`**: status badge (`draft` / `approved`) + link to project data.
+- **`SessionFormPage`**: new fields `session_kind` (selector) and `objectives` (text).
+- **Types / API / hooks**: `useProjectProfile`, `useUpsertProjectProfile`, `useUpdateReportBlocks`, `useRegenerateBlock` + MSW handlers. Zod schemas in `frontend/src/schemas/trainingSession.schema.ts`.
 
 ---
 
-## 9. Pruebas
+## 9. Tests
 
-- **Backend**: 52 tests targeted verdes (incluye `backend/tests/models/test_monthly_report_refactor_columns.py` para las columnas/enums nuevos).
-- **Frontend**: 1742 tests vitest verdes + `tsc` limpio.
-- Migración encadenada al head `c6d7e8f9a0b1` → `d4e5f6a7b8c9`, verificada en SQLite vía tests.
+- **Backend**: 52 targeted green tests (includes `backend/tests/models/test_monthly_report_refactor_columns.py` for the new columns/enums).
+- **Frontend**: 1742 green vitest tests + clean `tsc`.
+- Migration chained to head `c6d7e8f9a0b1` → `d4e5f6a7b8c9`, verified in SQLite via tests.
 
 ---
 
-## 10. Referencias
+## 10. References
 
-- [`workflow.md`](workflow.md) — visión general, alcance, pasos.
-- [`runbook.md`](runbook.md) — guía operativa del coach.
-- [`../09-training-planning/`](../09-training-planning/) — módulo base de sesiones y reporte mensual v1.
-- [`../10-race-results/`](../10-race-results/) — origen de los resultados de competencia.
+- [`workflow.md`](workflow.md) — overall vision, scope, steps.
+- [`runbook.md`](runbook.md) — coach operational guide.
+- [`../09-training-planning/`](../09-training-planning/) — base training session and v1 monthly report module.
+- [`../10-race-results/`](../10-race-results/) — source of competition results.
 - `backend/app/models/club_project_profile.py`
 - `backend/alembic/versions/d4e5f6a7b8c9_informe_tecnico_mensual.py`
 - `backend/app/services/ai/use_cases/monthly_report_blocks.py`

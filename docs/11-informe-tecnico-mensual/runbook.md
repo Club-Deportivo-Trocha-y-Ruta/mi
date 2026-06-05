@@ -1,117 +1,117 @@
-# Informe Técnico Mensual — Runbook del coach
+# Monthly Technical Report — Coach Runbook
 
-**Audiencia:** entrenador (coach) y administrador del club.
-**Objetivo:** que al cerrar **junio 2026** tengas todos los insumos capturados durante el mes y, con pocos clics, generes el PDF del Informe Técnico Mensual (estilo informe del jefe), incluyendo el capítulo cualitativo del grupo de alto rendimiento.
+**Audience:** coach and sports club administrator.
+**Goal:** by the time **June 2026 closes** you have all the inputs captured during the month and, with just a few clicks, generate the PDF of the Monthly Technical Report (funder-style report), including the qualitative chapter of the high-performance group.
 
-Detalle técnico en [`design.md`](design.md). Visión general en [`workflow.md`](workflow.md).
-
----
-
-## Idea general
-
-El informe se arma con dos clases de trabajo:
-
-1. **Durante el mes** capturas insumos a medida que ocurren (sesiones, fotos, asistencia, rúbricas, resultados de la válida).
-2. **Al cerrar el mes** configuras una vez el perfil del proyecto, generas el reporte, revisas/editas cada bloque, apruebas y descargas el PDF.
-
-La IA pre-redacta la narrativa con datos **agregados** (nunca nombres de menores). Tú la editas y apruebas: el PDF final siempre pasa por tu revisión.
+Technical detail in [`design.md`](design.md). Overall vision in [`workflow.md`](workflow.md).
 
 ---
 
-## Parte A — Durante el mes (junio): capturar insumos
+## General Idea
 
-### A1. Registrar cada sesión con tipo y objetivos
+The report is assembled with two types of work:
 
-Al crear una sesión en el formulario, completa además:
+1. **During the month** you capture inputs as they occur (training sessions, photos, attendance, rubrics, round results).
+2. **At month close** you configure the project profile once, generate the report, review/edit each block, approve it, and download the PDF.
 
-- **Tipo de sesión (`session_kind`)**: clasifica la actividad.
-  - `entrenamiento` — sesión técnica/física habitual del grupo.
-  - `actividad_conjunta` — actividad con varios grupos, familias o aliados.
-  - `salida` — salida o rodada fuera de la sede.
-  - `otro` — cualquier otra actividad relevante para el informe.
-- **Objetivos (`objectives`)**: una o dos frases con el foco de la sesión.
-
-> El tipo alimenta la separación del PDF: las sesiones de `entrenamiento` van al capítulo del grupo de alto rendimiento; `actividad_conjunta` y `salida` van al capítulo de actividades conjuntas y salidas.
-
-### A2. Subir fotos consentidas
-
-Sube fotos a las sesiones desde la galería de media. Usa **solo imágenes con consentimiento informado** (Ley 1581/2012). Las imágenes alimentan el "Registro fotográfico" del informe, que es de distribución restringida.
-
-### A3. Registrar asistencia y rúbricas
-
-Por sesión, marca asistencia de cada atleta y completa la rúbrica (esfuerzo, actitud, técnica) y el RPE cuando aplique. Estos datos:
-
-- Sustentan el cálculo agregado (porcentaje de asistencia, nivel técnico del grupo).
-- Alimentan, ya agregados y anonimizados, la narrativa que la IA redacta.
-
-> La IA solo ve agregados y pseudónimos: nunca ve nombres reales.
-
-### A4. Ingerir resultados de la válida
-
-Cuando se publiquen los PDFs oficiales de la válida del mes (en junio: **CD — Cto. Departamental, 12-jun, Ginebra**), ingiere los resultados con el flujo de Copa Valle (módulo de resultados, Fase 1.7 / módulo Competencias). El helper de competencia tomará automáticamente los **podios del club** de los eventos cuya fecha cae dentro del mes del informe.
+The AI pre-drafts the narrative with **aggregated** data (never minors' names). You edit and approve it: the final PDF always goes through your review.
 
 ---
 
-## Parte B — Al cerrar el mes: generar y aprobar el informe
+## Part A — During the Month (June): Capturing Inputs
 
-### B1. Configurar el perfil del proyecto (una sola vez)
+### A1. Record Each Training Session with Type and Goals
 
-En **Datos del proyecto** (`ProjectProfilePage`), completa una vez por club:
+When creating a training session in the form, also fill in:
 
-- Nombre del proyecto, entidad ejecutora, responsable del informe.
-- Propósito, objetivo general, objetivos específicos (lista).
-- Localización y descripción del territorio.
+- **Session type (`session_kind`)**: classify the activity.
+  - `entrenamiento` — regular technical/physical training session for the group.
+  - `actividad_conjunta` — activity with multiple groups, families, or partners.
+  - `salida` — outing or ride outside the venue.
+  - `otro` — any other activity relevant to the report.
+- **Goals (`objectives`)**: one or two sentences about the session's focus.
 
-Esta metadata encabeza **todos** los informes; no hace falta repetirla cada mes. Si algo cambia, edítalo y se reflejará en el próximo PDF.
+> The type feeds the PDF separation: `entrenamiento` sessions go to the high-performance group chapter; `actividad_conjunta` and `salida` go to the joint activities and outings chapter.
 
-### B2. Generar el reporte del período
+### A2. Upload Consented Photos
 
-Genera el reporte del mes cerrado (no se permite el mes en curso ni meses futuros). La generación:
+Upload photos to sessions from the media gallery. Use **only images with informed consent** (Ley 1581/2012). The images feed the "Photo record" of the report, which is restricted distribution.
 
-- Pre-redacta con IA los seis bloques narrativos (objetivo, desarrollo, resultados, conclusiones, apoyos materiales, análisis del grupo).
-- Toma automáticamente los podios del club del mes (bloque de competencia).
-- Deja el reporte en estado **`draft`**.
+### A3. Record Attendance and Rubrics
 
-Si un bloque falla (timeout o rechazo de privacidad), el resto se genera igual; podrás regenerar el bloque fallido individualmente.
+Per session, mark each athlete's attendance and complete the rubric (effort, attitude, technique) and the RPE when applicable. This data:
 
-### B3. Revisar y editar cada bloque
+- Supports the aggregated calculation (attendance percentage, group technical level).
+- Feeds, already aggregated and anonymized, the narrative that the AI drafts.
 
-En el detalle del reporte (`ReportDetailPage`, modo editor por bloques):
+> The AI only sees aggregates and pseudonyms: it never sees real names.
 
-- Lee el borrador de cada bloque y **edita el texto final** (`final_text`).
-- Si un borrador no te convence, usa **regenerar** ese bloque: la IA produce un nuevo borrador y se preserva tu edición previa si ya la habías cambiado.
-- Presta atención especial al bloque **Análisis del grupo de alto rendimiento** (`analisis_grupo`): es el capítulo cualitativo que el jefe sumará al informe consolidado.
+### A4. Ingest Round Results
 
-> Regla de privacidad: la IA nunca escribe nombres de menores. Si necesitas mencionar un podio con nombre, eso ya viene del bloque estructurado de competencia, no de la narrativa.
-
-### B4. Aprobar
-
-Cuando los bloques estén listos, **aprueba** el reporte (`draft → approved`). La aprobación es de un solo sentido (no hay reversión a borrador). Mientras esté en `draft`, el PDF lleva un banner **BORRADOR**.
-
-### B5. Descargar y distribuir el PDF
-
-Descarga el PDF (template técnico). El documento incluye portada institucional, contexto, territorio, actividades del grupo de alto rendimiento, competencia con podios, actividades conjuntas, apoyos materiales, análisis del grupo, conclusiones y registro fotográfico.
-
-El PDF es de **distribución restringida** (coach/admin) y lleva el aviso de Ley 1581/2012: contiene datos de menores, uso exclusivo del equipo técnico, no distribuir externamente. El coach lo descarga y lo distribuye manualmente (no hay envío automático por email).
+When the official PDFs for the month's round are published (in June: **CD — Cto. Departamental, 12-jun, Ginebra**), ingest the results using the Copa Valle flow (results module, Phase 1.7 / Competitions module). The competition helper will automatically pick up the **club's podiums** from events whose date falls within the report month.
 
 ---
 
-## Checklist de cierre de mes
+## Part B — At Month Close: Generate and Approve the Report
 
-- [ ] Todas las sesiones del mes registradas con `session_kind` y `objectives`.
-- [ ] Fotos consentidas subidas a las sesiones.
-- [ ] Asistencia y rúbricas completas.
-- [ ] Resultados de la válida del mes ingeridos.
-- [ ] Perfil del proyecto del club configurado (una sola vez).
-- [ ] Reporte del mes generado (estado `draft`).
-- [ ] Cada bloque revisado y editado; bloque `analisis_grupo` afinado.
-- [ ] Reporte aprobado (`approved`).
-- [ ] PDF descargado y distribuido por canal controlado.
+### B1. Configure the Project Profile (once only)
+
+In **Project data** (`ProjectProfilePage`), fill in once per sports club:
+
+- Project name, executing entity, report responsible person.
+- Purpose, general goal, specific goals (list).
+- Location and territory description.
+
+This metadata heads **all** reports; no need to repeat it each month. If something changes, edit it and it will be reflected in the next PDF.
+
+### B2. Generate the Period Report
+
+Generate the report for the closed month (the current month and future months are not allowed). Generation:
+
+- Pre-drafts with AI the six narrative blocks (period goal, activity development, results, conclusions, material support, group analysis).
+- Automatically picks up the club's podiums for the month (competition block).
+- Leaves the report in **`draft`** status.
+
+If a block fails (timeout or privacy rejection), the rest are generated anyway; you can regenerate the failed block individually.
+
+### B3. Review and Edit Each Block
+
+In the report detail view (`ReportDetailPage`, block-by-block editor mode):
+
+- Read the draft of each block and **edit the final text** (`final_text`).
+- If a draft does not satisfy you, use **regenerate** for that block: the AI produces a new draft and your previous edit is preserved if you had already changed it.
+- Pay special attention to the **High-performance group analysis** block (`analisis_grupo`): this is the qualitative chapter that the director will add to the consolidated report.
+
+> Privacy rule: the AI never writes minors' names. If you need to mention a podium with a name, that already comes from the structured competition block, not from the narrative.
+
+### B4. Approve
+
+When the blocks are ready, **approve** the report (`draft → approved`). Approval is one-way (there is no reversion to draft). While in `draft`, the PDF carries a **DRAFT** banner.
+
+### B5. Download and Distribute the PDF
+
+Download the PDF (technical template). The document includes the institutional cover page, context, territory, high-performance group activities, competition with podiums, joint activities, material support, group analysis, conclusions, and photo record.
+
+The PDF has **restricted distribution** (coach/admin) and carries the Ley 1581/2012 notice: contains minors' data, for exclusive use by the technical team, do not distribute externally. The coach downloads it and distributes it manually (no automatic email sending).
 
 ---
 
-## Notas
+## Month-Close Checklist
 
-- **Población Atendida** no aparece en el informe (omitida por decisión del club). El documento se limita al grupo de alto rendimiento, sin segmentación por programa.
-- Los **padres** no ven la narrativa interna (`narrative_blocks`) ni los resultados de competencia (`competition_results`); su vista es un resumen filtrado.
-- Calendario de junio relevante: **CD — Cto. Departamental, 12-jun, Ginebra** (válida A, tapering completo 7 días).
+- [ ] All sessions for the month recorded with `session_kind` and `objectives`.
+- [ ] Consented photos uploaded to sessions.
+- [ ] Attendance and rubrics complete.
+- [ ] Round results for the month ingested.
+- [ ] Sports club project profile configured (once only).
+- [ ] Month's report generated (`draft` status).
+- [ ] Each block reviewed and edited; `analisis_grupo` block refined.
+- [ ] Report approved (`approved`).
+- [ ] PDF downloaded and distributed via controlled channel.
+
+---
+
+## Notes
+
+- **Population Served** does not appear in the report (omitted by the sports club's decision). The document is limited to the high-performance group, without segmentation by program.
+- **Parents** do not see the internal narrative (`narrative_blocks`) or competition results (`competition_results`); their view is a filtered summary.
+- Relevant June calendar: **CD — Cto. Departamental, 12-jun, Ginebra** (round A, full taper 7 days).

@@ -1,33 +1,33 @@
-# Deploy Checklist — Módulo Sesiones de Entrenamiento
+# Deploy Checklist — Training Sessions Module
 
-**Fecha preparación:** 2026-05-06
+**Preparation date:** 2026-05-06
 **Target:** Render Free Tier — Oregon — Branch `main`
-**Auto-deploy:** activado en push a `main`
+**Auto-deploy:** enabled on push to `main`
 
 ---
 
-## Pre-deploy: verificación local
+## Pre-deploy: local verification
 
-- [ ] `alembic heads` muestra exactamente un head: `b2c3d4e5f6a7`
-- [ ] `alembic history` muestra cadena sin forks (chain completa sin "Requested revision overlaps")
-- [ ] `pytest --collect-only -q` recolecta 669 tests sin import errors
-- [ ] `pnpm build` exitoso (exit 0), warnings de chunk size son no-bloqueantes
+- [ ] `alembic heads` shows exactly one head: `b2c3d4e5f6a7`
+- [ ] `alembic history` shows a chain with no forks (complete chain with no "Requested revision overlaps")
+- [ ] `pytest --collect-only -q` collects 669 tests with no import errors
+- [ ] `pnpm build` successful (exit 0), chunk size warnings are non-blocking
 - [ ] `pnpm vitest run` — 717 tests passed
 
 ---
 
-## Pasos de deploy (ejecutar en orden)
+## Deployment steps (execute in order)
 
-### Paso 1: Revisar estado del repositorio
+### Step 1: Review repository status
 ```bash
 git status
 git diff --stat
 ```
-Confirmar que los archivos modificados son los esperados del módulo training.
+Confirm that the modified files are the expected ones from the training module.
 
-### Paso 2: Staging de archivos específicos
+### Step 2: Stage specific files
 
-**Backend — modelos, schemas, routers, services:**
+**Backend — models, schemas, routers, services:**
 ```bash
 git add backend/app/models/training_session.py
 git add backend/app/schemas/training_session.py
@@ -43,16 +43,16 @@ git add backend/app/templates/notifications/
 git add backend/app/main.py
 ```
 
-**Backend — migraciones (incluye la corrección del fork):**
+**Backend — migrations (includes the fork fix):**
 ```bash
 git add backend/alembic/versions/6e189a7e1e51_agrega_tablas_training_session_session_.py
 git add backend/alembic/versions/b2c3d4e5f6a7_agrega_coach_observations_a_monthly_report.py
 ```
-> NOTA: El archivo `a1b2c3d4e5f6_agrega_coach_observations_a_monthly_report.py` fue
-> renombrado a `b2c3d4e5f6a7_*` para resolver un conflicto de revision ID duplicado.
-> Git detectará esto como rename si usás `git add -A` o como delete+add si añadís
-> cada archivo individualmente. Asegurate de que el archivo antiguo aparezca como
-> eliminado: `git add backend/alembic/versions/a1b2c3d4e5f6_agrega_coach_observations_a_monthly_report.py`
+> NOTE: The file `a1b2c3d4e5f6_agrega_coach_observations_a_monthly_report.py` was
+> renamed to `b2c3d4e5f6a7_*` to resolve a duplicate revision ID conflict.
+> Git will detect this as a rename if you use `git add -A` or as a delete+add if you add
+> each file individually. Make sure the old file appears as
+> deleted: `git add backend/alembic/versions/a1b2c3d4e5f6_agrega_coach_observations_a_monthly_report.py`
 
 **Backend — tests:**
 ```bash
@@ -63,7 +63,7 @@ git add backend/tests/test_training_session_privacy.py
 git add backend/tests/test_training_session_notifications.py
 ```
 
-**Backend — otros archivos modificados:**
+**Backend — other modified files:**
 ```bash
 git add backend/app/models/anthropometry.py
 git add backend/app/models/parent_invite.py
@@ -90,7 +90,7 @@ git add frontend/src/routes/athletes/
 git add frontend/src/types/anthropometry.types.ts
 ```
 
-> Para los archivos del módulo training frontend (routes, components, api, hooks, types):
+> For the training module frontend files (routes, components, api, hooks, types):
 ```bash
 git add frontend/src/routes/training/
 git add frontend/src/routes/parents/training/
@@ -104,14 +104,14 @@ git add frontend/src/hooks/training/
 git add frontend/src/test/
 ```
 
-**Docs y memoria:**
+**Docs and memory:**
 ```bash
 git add docs/09-training-planning/
 git add docs/README.md
 git add CLAUDE.md
 ```
 
-### Paso 3: Commit
+### Step 3: Commit
 
 ```bash
 git commit -m "$(cat <<'EOF'
@@ -141,29 +141,29 @@ EOF
 )"
 ```
 
-### Paso 4: Push
+### Step 4: Push
 
 ```bash
 git push origin main
 ```
 
-Render iniciará auto-deploy automáticamente.
+Render will start auto-deploy automatically.
 
-### Paso 5: Monitorear deploy en Render
+### Step 5: Monitor deployment on Render
 
-1. Ir a Render Dashboard → servicio `mi` → pestaña **Events**
-2. Esperar mensaje: `Your service is live`  (aprox. 2-3 min desde push)
-3. Verificar logs de startup:
+1. Go to Render Dashboard → `mi` service → **Events** tab
+2. Wait for message: `Your service is live`  (approx. 2-3 min from push)
+3. Verify startup logs:
    ```
-   Aplicando migraciones...
+   Applying migrations...
    INFO  [alembic.runtime.migration] Running upgrade ... -> b2c3d4e5f6a7
-   Iniciando servidor...
+   Starting server...
    ```
 
-### Paso 6: Smoke test en producción
+### Step 6: Smoke test in production
 
 ```bash
-# Verificar docs
+# Verify docs
 curl -s https://mi-2yzi.onrender.com/docs | grep -o "training-sessions"
 
 # Login
@@ -172,77 +172,77 @@ TOKEN=$(curl -s -X POST https://mi-2yzi.onrender.com/api/v1/auth/login \
   -d '{"email":"entrenador@trochyruta.com","password":"Coach2026!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-# Listar sesiones (debe retornar [])
+# List sessions (should return [])
 curl -s -H "Authorization: Bearer $TOKEN" \
   https://mi-2yzi.onrender.com/api/v1/training-sessions | python3 -m json.tool
 ```
 
-### Paso 7: Verificar migración en DB
+### Step 7: Verify migration in DB
 
-Conectarse a la DB de Hostinger y ejecutar:
+Connect to the Hostinger DB and execute:
 ```sql
 SELECT version_num FROM alembic_version;
--- Debe retornar: b2c3d4e5f6a7
+-- Should return: b2c3d4e5f6a7
 
 SHOW TABLES LIKE '%training%';
--- Debe mostrar: training_sessions, session_attendance
+-- Should show: training_sessions, session_attendance
 
 SHOW TABLES LIKE '%monthly%';
--- Debe mostrar: monthly_reports
+-- Should show: monthly_reports
 ```
 
 ---
 
-## Plan de rollback (si migración falla en Render)
+## Rollback plan (if migration fails on Render)
 
-### Opción A: Downgrade Alembic (si la DB migró parcialmente)
+### Option A: Alembic downgrade (if DB migrated partially)
 
-1. Conectarse al servicio de Render vía Shell (Dashboard → Shell)
-2. Ejecutar:
+1. Connect to the Render service via Shell (Dashboard → Shell)
+2. Run:
    ```bash
-   alembic downgrade 6e189a7e1e51   # vuelve a antes de coach_observations
-   # o para volver a antes del módulo training:
+   alembic downgrade 6e189a7e1e51   # reverts to before coach_observations
+   # or to revert to before the training module:
    alembic downgrade f3a4b5c6d7e8
    ```
 
-### Opción B: Revertir el commit en git
+### Option B: Revert the git commit
 
 ```bash
 git revert HEAD --no-edit
 git push origin main
 ```
-Render re-deployará con el código anterior. Alembic en startup correrá el downgrade automáticamente si el código lo soporta.
+Render will re-deploy with the previous code. Alembic on startup will run the downgrade automatically if the code supports it.
 
-> ADVERTENCIA: `alembic downgrade` en producción implica DROP de tablas. Si ya hay
-> datos de sesiones guardados, se perderán. Evaluar si hacer backup antes.
+> WARNING: `alembic downgrade` in production implies DROP of tables. If session
+> data has already been saved, it will be lost. Evaluate whether to take a backup first.
 
-### Opción C: Manual fix si hay datos
+### Option C: Manual fix if there is data
 
-Si ya hay datos en `training_sessions` y la migración falla a mitad:
-1. Corregir el script de migración manualmente
-2. Aplicar `alembic stamp <revision>` para marcar el estado actual sin correr migración
-3. Contactar soporte Hostinger si hay lock de tabla
+If there is already data in `training_sessions` and the migration fails halfway:
+1. Fix the migration script manually
+2. Apply `alembic stamp <revision>` to mark the current state without running the migration
+3. Contact Hostinger support if there is a table lock
 
 ---
 
-## Variables de entorno — Auditoría
+## Environment variables — Audit
 
-El módulo training **NO requiere variables de entorno nuevas**. Reutiliza:
+The training module **does NOT require new environment variables**. It reuses:
 
-| Variable | Uso en módulo training | Estado en Render |
+| Variable | Use in training module | Status on Render |
 |---|---|---|
-| `NOTIFICATION_SEND_EMAILS` | Enviar emails a padres al planificar sesión | Ya configurada |
-| `NOTIFICATION_LOG_BODIES` | Debe ser `false` (NUNCA loguear emails con datos atletas) | Ya configurada |
-| `EMAIL_PROVIDER` + `RESEND_API_KEY` | Backend de envío email | Ya configurada |
-| `EMAIL_FROM_ADDRESS` | `noreply@trochyruta.com` | Ya configurada |
-| `APP_ENV` | Controla seed y mock LLM en dev | Ya configurada |
+| `NOTIFICATION_SEND_EMAILS` | Send emails to parents when planning a session | Already configured |
+| `NOTIFICATION_LOG_BODIES` | Must be `false` (NEVER log emails with athlete data) | Already configured |
+| `EMAIL_PROVIDER` + `RESEND_API_KEY` | Email sending backend | Already configured |
+| `EMAIL_FROM_ADDRESS` | `noreply@trochyruta.com` | Already configured |
+| `APP_ENV` | Controls seed and mock LLM in dev | Already configured |
 
-Variables de IA (si se activa LLM real):
+AI variables (if real LLM is activated):
 
-| Variable | Descripción | ¿Configurada? |
+| Variable | Description | Configured? |
 |---|---|---|
-| `OPENAI_API_KEY` o `ANTHROPIC_API_KEY` | Para `monthly_report` use case | Verificar en Render |
-| `AI_PROVIDER` | `openai` o `anthropic` | Verificar en Render |
+| `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` | For `monthly_report` use case | Verify on Render |
+| `AI_PROVIDER` | `openai` or `anthropic` | Verify on Render |
 
-> Si las variables de IA no están configuradas, el endpoint de reporte mensual fallará
-> en producción. En `APP_ENV=development` usa mock LLM sin necesidad de API key.
+> If the AI variables are not configured, the monthly report endpoint will fail
+> in production. With `APP_ENV=development` it uses a mock LLM with no API key needed.

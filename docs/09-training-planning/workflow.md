@@ -1,516 +1,516 @@
-# Workflow — Implementación Módulo Sesiones de Entrenamiento
+# Workflow — Training Sessions Module Implementation
 
-**Fecha:** 2026-05-06
-**Diseño base:** [`design.md`](./design.md)
-**Estado:** Pendiente kickoff
+**Date:** 2026-05-06
+**Base design:** [`design.md`](./design.md)
+**Status:** Pending kickoff
 
 ---
 
-## Mapa rápido
+## Quick map
 
 ```
-PASO 1   Modelo datos + migración Alembic
-PASO 2   Schemas Pydantic + permisos
-PASO 3   Service layer (TrainingSessionService, AttendanceService)
-PASO 4   Routers + endpoints CRUD sesión
-PASO 5   Routers asistencia + endpoint upload .gpx
-PASO 6   Tests backend (unit + integration)
-PASO 7   Notificación padres al planificar (template + flow)
-PASO 8   IA monthly report use case
-PASO 9   Endpoint reporte mensual + envío email
-PASO 10  Frontend coach: lista + form sesión
-PASO 11  Frontend coach: detalle + asistencia + rúbrica
-PASO 12  Frontend coach: reporte mensual UI
-PASO 13  Frontend parent: lectura sesiones + reporte
-PASO 14  Tests frontend (vitest + RTL)
-PASO 15  E2E + deploy + docs
+STEP 1   Data model + Alembic migration
+STEP 2   Pydantic schemas + permissions
+STEP 3   Service layer (TrainingSessionService, AttendanceService)
+STEP 4   Routers + session CRUD endpoints
+STEP 5   Attendance routers + .gpx upload endpoint
+STEP 6   Backend tests (unit + integration)
+STEP 7   Parent notification when planning (template + flow)
+STEP 8   AI monthly report use case
+STEP 9   Monthly report endpoint + email send
+STEP 10  Coach frontend: session list + form
+STEP 11  Coach frontend: detail + attendance + rubric
+STEP 12  Coach frontend: monthly report UI
+STEP 13  Parent frontend: session reading + report
+STEP 14  Frontend tests (vitest + RTL)
+STEP 15  E2E + deploy + docs
 ```
 
 ---
 
-## Principios transversales (NO violar)
+## Cross-cutting principles (DO NOT violate)
 
-Tomados de `CLAUDE.md` y marco teórico:
+Taken from `CLAUDE.md` and theoretical framework:
 
-1. Idioma respuestas API → mensajes de error en español.
-2. Privacidad menores: NUNCA exponer feedback individual en reporte agregado club.
-3. Reusar `services/notification/` y `services/ai/` (no duplicar plumbing).
-4. RBAC con tests exhaustivos por endpoint.
-5. Convention git: Conventional Commits (`feat(training):`, `fix(training):`, etc).
-6. No introducir abstracciones de más. Tres líneas similares > prematura abstracción.
-7. Diseño backend antes que frontend. Una capa a la vez.
+1. API response language → error messages in Spanish.
+2. Minors privacy: NEVER expose individual feedback in club aggregated report.
+3. Reuse `services/notification/` and `services/ai/` (do not duplicate plumbing).
+4. RBAC with exhaustive tests per endpoint.
+5. Git convention: Conventional Commits (`feat(training):`, `fix(training):`, etc).
+6. Do not introduce unnecessary abstractions. Three similar lines > premature abstraction.
+7. Backend design before frontend. One layer at a time.
 
 ---
 
-## PASO 1 — Modelo de datos + migración
+## STEP 1 — Data model + migration
 
-**Objetivo:** Crear tablas `training_sessions`, `session_attendance`, `monthly_reports` con enums.
+**Goal:** Create tables `training_sessions`, `session_attendance`, `monthly_reports` with enums.
 
-### Tareas
+### Tasks
 
-1.1. Crear `backend/app/models/training_session.py`:
+1.1. Create `backend/app/models/training_session.py`:
 - `class AgeGroup(str, Enum)`: `U12`, `U15`
 - `class SessionStatus(str, Enum)`: `PLANNED`, `EXECUTED`, `CANCELLED`
 - `class AttendanceStatus(str, Enum)`: `PRESENTE`, `AUSENTE`, `JUSTIFICADO`, `TARDE`, `LESIONADO`
-- `class TrainingSession(Base)` — campos según `design.md §3.1`
-- `class SessionAttendance(Base)` — relación N:N con metadata
-- `class MonthlyReport(Base)` — agregado club/mes
-- Usar `values_callable` para enums (consistente con `MaturationStatus`).
-- Relaciones SQLAlchemy con `back_populates` (no `backref`).
+- `class TrainingSession(Base)` — fields per `design.md §3.1`
+- `class SessionAttendance(Base)` — N:N relationship with metadata
+- `class MonthlyReport(Base)` — club/month aggregate
+- Use `values_callable` for enums (consistent with `MaturationStatus`).
+- SQLAlchemy relationships with `back_populates` (not `backref`).
 
-1.2. Registrar modelos en `backend/app/models/__init__.py`.
+1.2. Register models in `backend/app/models/__init__.py`.
 
-1.3. Generar migración:
+1.3. Generate migration:
 ```bash
 cd backend && alembic revision --autogenerate -m "agrega tablas training_session, session_attendance, monthly_report"
 ```
 
-1.4. Revisar migración a mano:
-- Índices: `idx_training_session_club_date`, `idx_training_session_club_age_date`, `uq_session_attendance_session_athlete`, `uq_monthly_report_club_year_month`
-- Constraint check para `rpe_omni 0-10`, `rubric_* 1-5`, `duration_min 15-240`.
+1.4. Review migration manually:
+- Indexes: `idx_training_session_club_date`, `idx_training_session_club_age_date`, `uq_session_attendance_session_athlete`, `uq_monthly_report_club_year_month`
+- Check constraints for `rpe_omni 0-10`, `rubric_* 1-5`, `duration_min 15-240`.
 
-1.5. Aplicar local:
+1.5. Apply locally:
 ```bash
 alembic upgrade head
 ```
 
-### Criterio aceptación
-- [ ] Tres tablas creadas con FK correctas.
-- [ ] Índices y unique constraints presentes.
-- [ ] Tests modelo CRUD pasan (PASO 6 los cubre).
+### Acceptance criteria
+- [ ] Three tables created with correct FKs.
+- [ ] Indexes and unique constraints present.
+- [ ] Model CRUD tests pass (STEP 6 covers them).
 
 ---
 
-## PASO 2 — Schemas Pydantic + permisos
+## STEP 2 — Pydantic schemas + permissions
 
-**Objetivo:** Capa contrato API + extensión RBAC.
+**Goal:** API contract layer + RBAC extension.
 
-### Tareas
+### Tasks
 
-2.1. Crear `backend/app/schemas/training_session.py`:
+2.1. Create `backend/app/schemas/training_session.py`:
 - `TrainingSessionCreate`, `TrainingSessionUpdate`, `TrainingSessionRead`
-- `AttendanceCreate` (bulk convocatoria), `AttendanceUpdate`, `AttendanceRead`
+- `AttendanceCreate` (bulk call-up), `AttendanceUpdate`, `AttendanceRead`
 - `MonthlyReportCreate`, `MonthlyReportRead`
-- Validators: `_validate_consistency` en `AttendanceUpdate` (rúbrica solo si presente/tarde, razón si ausente).
-- `route_file_path` solo lectura — upload en endpoint dedicado.
+- Validators: `_validate_consistency` in `AttendanceUpdate` (rubric only if present/late, reason if absent).
+- `route_file_path` read-only — upload via dedicated endpoint.
 
-2.2. Extender `backend/app/services/permissions.py`:
+2.2. Extend `backend/app/services/permissions.py`:
 - `can_view_session(user, session) -> bool`
 - `can_edit_session(user, session) -> bool`
 - `can_view_athlete_feedback(user, athlete) -> bool`
 - `can_view_monthly_report(user, club, individual: bool) -> bool`
 - Helper `parent_athlete_ids(user) -> list[int]` (cached).
 
-### Criterio aceptación
-- [ ] Schemas serializan/deserializan correctamente.
-- [ ] Validators rechazan combinaciones inválidas.
-- [ ] Tests `test_permissions_training.py` cubren matriz §6 del design.
+### Acceptance criteria
+- [ ] Schemas serialize/deserialize correctly.
+- [ ] Validators reject invalid combinations.
+- [ ] Tests `test_permissions_training.py` cover the matrix in design §6.
 
 ---
 
-## PASO 3 — Service layer
+## STEP 3 — Service layer
 
-**Objetivo:** Lógica de negocio fuera de routers (mismo patrón `services/phv.py`).
+**Goal:** Business logic outside of routers (same pattern as `services/phv.py`).
 
-### Tareas
+### Tasks
 
-3.1. `backend/app/services/training/__init__.py` (paquete nuevo).
+3.1. `backend/app/services/training/__init__.py` (new package).
 
 3.2. `backend/app/services/training/sessions.py`:
-- `create_session(db, payload, coach_id) -> TrainingSession` — crea sesión + filas asistencia para convocados.
+- `create_session(db, payload, coach_id) -> TrainingSession` — creates session + attendance rows for called-up athletes.
 - `update_session(...)`
 - `execute_session(db, session_id)` — set `status=executed`, `executed_at=now`.
 - `cancel_session(...)` — soft delete.
-- `list_sessions(db, filters: SessionFilters)` — query con joins eficientes.
+- `list_sessions(db, filters: SessionFilters)` — query with efficient joins.
 
 3.3. `backend/app/services/training/attendance.py`:
 - `bulk_upsert_convocatoria(db, session_id, athlete_ids)`
-- `update_attendance(db, session_id, athlete_id, payload)` — valida coach mismo club.
+- `update_attendance(db, session_id, athlete_id, payload)` — validates coach same club.
 - `athlete_attendance_history(db, athlete_id, from_, to_)`.
 
 3.4. `backend/app/services/training/metrics.py`:
 - `compute_monthly_metrics(db, club_id, year, month) -> MonthlyMetrics` (dataclass):
-  - Total sesiones planificadas / ejecutadas / canceladas
-  - Por atleta: % asistencia, # sesiones presente
-  - Focos técnicos cubiertos (lista única)
-  - Promedio RPE / rúbrica (agregado, sin individuales)
-  - Sesiones por grupo edad
+  - Total planned / executed / cancelled sessions
+  - Per athlete: % attendance, # sessions present
+  - Technical focuses covered (unique list)
+  - Average RPE / rubric (aggregated, no individuals)
+  - Sessions by age group
 
 3.5. `backend/app/services/training/route_files.py`:
-- `save_route_file(file: UploadFile, session_id) -> str` — valida extensión, tamaño, parsea con `gpxpy`+`defusedxml` para detectar XXE, devuelve path relativo.
-- Almacenamiento `static/uploads/routes/{session_id}/{uuid}.gpx`.
+- `save_route_file(file: UploadFile, session_id) -> str` — validates extension, size, parses with `gpxpy`+`defusedxml` to detect XXE, returns relative path.
+- Storage at `static/uploads/routes/{session_id}/{uuid}.gpx`.
 
-### Criterio aceptación
-- [ ] Services no tocan FastAPI directamente (testeable sin TestClient).
-- [ ] Inyección de DB via parámetro, no global.
-
----
-
-## PASO 4 — Routers CRUD sesión
-
-**Objetivo:** Endpoints REST `/training-sessions/*`.
-
-### Tareas
-
-4.1. Crear `backend/app/routers/training_sessions.py` con los endpoints §4.1 del design.
-
-4.2. Registrar router en `backend/app/main.py`.
-
-4.3. Cada endpoint:
-- Depende de `get_db`, `get_current_user`.
-- Aplica permiso correspondiente (PASO 2).
-- Mensajes de error en español.
-- Respuestas usan `*Read` schemas.
-
-4.4. Manejo de errores:
-- 403 si permisos no.
-- 404 si no existe.
-- 409 si conflicto (ej. ejecutar ya ejecutada).
-- 422 si validation Pydantic.
-
-### Criterio aceptación
-- [ ] Swagger `/docs` muestra los endpoints con schemas.
-- [ ] Smoke test manual con `Admin2026!` token.
+### Acceptance criteria
+- [ ] Services do not touch FastAPI directly (testable without TestClient).
+- [ ] DB injection via parameter, not global.
 
 ---
 
-## PASO 5 — Routers asistencia + upload `.gpx`
+## STEP 4 — Session CRUD routers
 
-**Objetivo:** Endpoints §4.2 del design + multipart upload.
+**Goal:** REST endpoints `/training-sessions/*`.
 
-### Tareas
+### Tasks
 
-5.1. En `backend/app/routers/training_sessions.py` agregar:
+4.1. Create `backend/app/routers/training_sessions.py` with the endpoints from design §4.1.
+
+4.2. Register router in `backend/app/main.py`.
+
+4.3. Each endpoint:
+- Depends on `get_db`, `get_current_user`.
+- Applies corresponding permission (STEP 2).
+- Error messages in Spanish.
+- Responses use `*Read` schemas.
+
+4.4. Error handling:
+- 403 if no permissions.
+- 404 if not found.
+- 409 if conflict (e.g. execute already executed).
+- 422 if Pydantic validation.
+
+### Acceptance criteria
+- [ ] Swagger `/docs` shows endpoints with schemas.
+- [ ] Manual smoke test with `Admin2026!` token.
+
+---
+
+## STEP 5 — Attendance routers + `.gpx` upload
+
+**Goal:** Endpoints from design §4.2 + multipart upload.
+
+### Tasks
+
+5.1. In `backend/app/routers/training_sessions.py` add:
 - `PUT /training-sessions/{id}/attendance` (bulk)
 - `PATCH /training-sessions/{id}/attendance/{athlete_id}`
 - `POST /training-sessions/{id}/route-file` (multipart)
 
-5.2. En `backend/app/routers/athletes.py` agregar:
-- `GET /athletes/{id}/attendance` (delegado a service).
+5.2. In `backend/app/routers/athletes.py` add:
+- `GET /athletes/{id}/attendance` (delegated to service).
 
-5.3. Validación archivo:
+5.3. File validation:
 - `Content-Type` ∈ `application/gpx+xml`, `application/octet-stream`, `application/vnd.garmin.fit`.
-- Extensión `.gpx`, `.fit`.
-- Tamaño máx 5 MB (usar `Settings.MAX_UPLOAD_SIZE_BYTES`).
-- Si `.fit` en MVP: guardar tal cual, **no parsear** (parser fase 2).
+- Extension `.gpx`, `.fit`.
+- Max size 5 MB (use `Settings.MAX_UPLOAD_SIZE_BYTES`).
+- If `.fit` in MVP: save as-is, **do not parse** (parser phase 2).
 
-### Criterio aceptación
-- [ ] Upload correcto guarda archivo y actualiza `route_file_path`.
-- [ ] Upload de archivo malicioso (`<!DOCTYPE [...XXE...]>`) rechazado.
-- [ ] Permisos validados (parent NO puede subir).
+### Acceptance criteria
+- [ ] Correct upload saves file and updates `route_file_path`.
+- [ ] Malicious file upload (`<!DOCTYPE [...XXE...]>`) rejected.
+- [ ] Permissions validated (parent CANNOT upload).
 
 ---
 
-## PASO 6 — Tests backend
+## STEP 6 — Backend tests
 
-**Objetivo:** Cobertura ≥80% en services + routers.
+**Goal:** Coverage ≥80% on services + routers.
 
-### Tareas
+### Tasks
 
 6.1. `backend/tests/test_training_session_models.py`:
-- CRUD básico, FK, constraints check.
-- Soft delete cascade comportamiento.
+- Basic CRUD, FK, check constraints.
+- Soft delete cascade behavior.
 
 6.2. `backend/tests/test_training_session_service.py`:
-- `create_session` crea filas asistencia.
-- `execute_session` rechaza si ya executed.
-- `compute_monthly_metrics` con dataset fixture.
+- `create_session` creates attendance rows.
+- `execute_session` rejects if already executed.
+- `compute_monthly_metrics` with fixture dataset.
 
 6.3. `backend/tests/test_training_session_router.py`:
-- Cada endpoint × cada rol (admin, coach mismo club, coach otro club, parent, anónimo).
-- 200 / 403 / 404 esperados.
+- Each endpoint × each role (admin, coach same club, coach other club, parent, anonymous).
+- Expected 200 / 403 / 404.
 
 6.4. `backend/tests/test_training_session_privacy.py`:
-- **Crítico:** parent A NO ve sesiones de atleta B (otro padre).
-- parent NO ve feedback individual de atletas no suyos.
-- reporte mensual agregado NO incluye nombres ni feedback individual.
+- **Critical:** parent A does NOT see sessions for athlete B (another parent).
+- Parent does NOT see individual feedback from athletes that are not theirs.
+- Aggregated monthly report does NOT include names or individual feedback.
 
 6.5. `backend/tests/test_attendance_validation.py`:
-- Rúbrica + status=ausente → 422.
-- Rúbrica + status=presente sin razón → 200.
-- Status=justificado sin razón → 422.
+- Rubric + status=ausente → 422.
+- Rubric + status=presente without reason → 200.
+- Status=justificado without reason → 422.
 
-### Criterio aceptación
-- [ ] `pytest backend/tests -k training` todo verde.
-- [ ] Cobertura `services/training/` ≥80%.
+### Acceptance criteria
+- [ ] `pytest backend/tests -k training` all green.
+- [ ] Coverage `services/training/` ≥80%.
 
 ---
 
-## PASO 7 — Notificación padres al planificar (Q7)
+## STEP 7 — Parent notification when planning (Q7)
 
-**Objetivo:** Cuando coach crea sesión `planned`, padres de atletas convocados reciben email.
+**Goal:** When coach creates a `planned` session, parents of called-up athletes receive an email.
 
-### Tareas
+### Tasks
 
-7.1. Plantilla nueva:
+7.1. New template:
 - `backend/app/templates/notifications/training_session_invite.html` (HTML)
 - `backend/app/templates/notifications/training_session_invite.txt` (fallback)
 - Variables: `parent_name`, `athlete_name`, `session_date`, `session_time`, `location`, `technical_focus`, `duration_min`, `coach_name`.
 
-7.2. Registrar en `template_registry.py` con kind `training_session_invite`.
+7.2. Register in `template_registry.py` with kind `training_session_invite`.
 
-7.3. En `services/training/sessions.py::create_session` después de commit:
-- Para cada atleta convocado → buscar padres (`parent_athlete`).
-- Para cada padre → `notification_service.send(NotificationRequest(...))` async via dispatcher.
-- Log estructurado, NO PII en logs (CLAUDE.md `NOTIFICATION_LOG_BODIES=false`).
+7.3. In `services/training/sessions.py::create_session` after commit:
+- For each called-up athlete → find parents (`parent_athlete`).
+- For each parent → `notification_service.send(NotificationRequest(...))` async via dispatcher.
+- Structured log, NO PII in logs (CLAUDE.md `NOTIFICATION_LOG_BODIES=false`).
 
 7.4. Throttle:
-- Helper `should_throttle(parent_id, athlete_id, kind)` consultando `notification_log` (si existe). Skip si email igual enviado <60min.
+- Helper `should_throttle(parent_id, athlete_id, kind)` querying `notification_log` (if it exists). Skip if same email sent <60min ago.
 
 7.5. Tests:
-- Mock `NotificationService` y verifica llamadas.
-- Verifica que coach planifica sesión cancelada → NO email.
-- Verifica que padre con `notification_opt_out=true` NO recibe.
+- Mock `NotificationService` and verify calls.
+- Verify that coach planning a cancelled session → NO email.
+- Verify that parent with `notification_opt_out=true` does NOT receive.
 
-### Criterio aceptación
-- [ ] Email llega con render correcto en cliente real (test manual con padre@trochyruta.com en local).
-- [ ] No envía si `APP_ENV=production` y `NOTIFICATION_SEND_EMAILS=false`.
+### Acceptance criteria
+- [ ] Email arrives with correct rendering in a real client (manual test with padre@trochyruta.com locally).
+- [ ] Does not send if `APP_ENV=production` and `NOTIFICATION_SEND_EMAILS=false`.
 
 ---
 
-## PASO 8 — IA monthly report use case
+## STEP 8 — AI monthly report use case
 
-**Objetivo:** Use case `monthly_report` siguiendo patrón `phv_explainer.py`.
+**Goal:** `monthly_report` use case following the `phv_explainer.py` pattern.
 
-### Tareas
+### Tasks
 
 8.1. `backend/app/services/ai/use_cases/monthly_report.py`:
-- `class MonthlyReportContext(BaseModel)` — agregados `MonthlyMetrics` + meta (club_name, period, coach_name).
+- `class MonthlyReportContext(BaseModel)` — `MonthlyMetrics` aggregates + meta (club_name, period, coach_name).
 - `class MonthlyReportUseCase(BaseUseCase)`:
-  - `build_context(...)` (privacy-safe: sin nombres atletas, solo iniciales o ID).
-  - `render_prompt(context)` con `monthly_report.j2`.
-  - `parse_output(raw)` valida estructura.
-  - Hereda guardrails de `BaseUseCase`.
+  - `build_context(...)` (privacy-safe: no athlete names, only initials or ID).
+  - `render_prompt(context)` with `monthly_report.j2`.
+  - `parse_output(raw)` validates structure.
+  - Inherits guardrails from `BaseUseCase`.
 
 8.2. `backend/app/services/ai/prompts/monthly_report.j2`:
-- Prologue con `system_principles.md`.
-- Instrucciones explícitas:
-  - "Genera resumen agregado, no juicios individuales."
-  - "Máximo 500 palabras, 3 párrafos."
-  - "Sin recomendaciones médicas ni nutricionales."
-  - "No menciones nombres específicos."
-- Datos input estructurados.
+- Prologue with `system_principles.md`.
+- Explicit instructions:
+  - "Generate aggregated summary, no individual judgments."
+  - "Maximum 500 words, 3 paragraphs."
+  - "No medical or nutritional recommendations."
+  - "Do not mention specific names."
+- Structured input data.
 
-8.3. Extender `services/ai/guardrails.py`:
-- Validar output sin nombres ∈ lista convocados (regex protección).
-- Validar longitud y secciones.
+8.3. Extend `services/ai/guardrails.py`:
+- Validate output without names ∈ called-up list (regex protection).
+- Validate length and sections.
 
 8.4. Tests:
 - `backend/tests/test_ai_monthly_report.py`:
-  - Snapshot de prompt con datos de ejemplo.
-  - Mock provider con respuesta dummy.
-  - Guardrails rechazan output con nombre.
+  - Prompt snapshot with example data.
+  - Mock provider with dummy response.
+  - Guardrails reject output with a name.
 
-### Criterio aceptación
-- [ ] Use case integrado en `factory.py`.
-- [ ] Prompt no contiene PII.
+### Acceptance criteria
+- [ ] Use case integrated in `factory.py`.
+- [ ] Prompt does not contain PII.
 
 ---
 
-## PASO 9 — Endpoint reporte mensual + envío email
+## STEP 9 — Monthly report endpoint + email send
 
-**Objetivo:** Endpoints §4.3 + envío al admin del club.
+**Goal:** Endpoints from design §4.3 + send to club admin.
 
-### Tareas
+### Tasks
 
 9.1. `backend/app/routers/monthly_reports.py`:
 - `POST /clubs/{id}/monthly-reports` — body `{year, month}`.
-  - Valida year/month no futuro y mes ya cerrado.
-  - 409 si ya existe (reusar via `force_regenerate=true` opcional).
-  - Service: `compute_monthly_metrics` → `MonthlyReportUseCase.run` → persistir.
-- `GET /clubs/{id}/monthly-reports` — listar.
-- `GET /clubs/{id}/monthly-reports/{year}/{month}` — detalle.
-- `POST /clubs/{id}/monthly-reports/{report_id}/send` — re-enviar email.
+  - Validates year/month not in future and month already closed.
+  - 409 if already exists (optional reuse via `force_regenerate=true`).
+  - Service: `compute_monthly_metrics` → `MonthlyReportUseCase.run` → persist.
+- `GET /clubs/{id}/monthly-reports` — list.
+- `GET /clubs/{id}/monthly-reports/{year}/{month}` — detail.
+- `POST /clubs/{id}/monthly-reports/{report_id}/send` — re-send email.
 
-9.2. Plantilla email + PDF:
+9.2. Email + PDF template:
 - `backend/app/templates/notifications/monthly_report.html`.
-- Reusar `DocumentGenerator` (ya genera PDF) para adjunto.
-- Email incluye: narrativa IA + tabla métricas (desde `metrics_snapshot`).
+- Reuse `DocumentGenerator` (already generates PDF) for attachment.
+- Email includes: AI narrative + metrics table (from `metrics_snapshot`).
 
-9.3. Variante padre:
-- `GET /parents/training/monthly-summary/{year}/{month}` — devuelve solo sesiones de SUS atletas (no agregado del club).
+9.3. Parent variant:
+- `GET /parents/training/monthly-summary/{year}/{month}` — returns only THEIR athletes' sessions (not the club aggregate).
 
 9.4. Tests:
-- `test_monthly_report_router.py` — happy path + errores.
-- `test_monthly_report_privacy.py` — padre NO ve agregado club, sí ve resumen propio atleta.
+- `test_monthly_report_router.py` — happy path + errors.
+- `test_monthly_report_privacy.py` — parent does NOT see club aggregate, does see own athlete summary.
 
-### Criterio aceptación
-- [ ] Reporte generado mes pasado con datos seed visible en `/docs` Swagger.
-- [ ] Email + PDF llegan a admin@ del club.
+### Acceptance criteria
+- [ ] Report generated for a past month with seed data visible in Swagger `/docs`.
+- [ ] Email + PDF arrive at the club's admin@.
 
 ---
 
-## PASO 10 — Frontend coach: lista + form sesión
+## STEP 10 — Coach frontend: session list + form
 
-**Objetivo:** UI coach para CRUD sesiones (rutas `/training/sessions`, `/new`, `/:id/edit`).
+**Goal:** Coach UI for session CRUD (routes `/training/sessions`, `/new`, `/:id/edit`).
 
-### Tareas
+### Tasks
 
 10.1. API client:
-- `frontend/src/api/trainingSessions.ts` — funciones tipadas + TanStack Query hooks (`useSessions`, `useCreateSession`, etc).
+- `frontend/src/api/trainingSessions.ts` — typed functions + TanStack Query hooks (`useSessions`, `useCreateSession`, etc).
 
-10.2. Tipos:
-- `frontend/src/types/trainingSession.types.ts` — espejo de schemas Pydantic.
+10.2. Types:
+- `frontend/src/types/trainingSession.types.ts` — mirror of Pydantic schemas.
 
-10.3. Schemas Zod:
-- `frontend/src/schemas/trainingSession.schema.ts` — para RHF.
+10.3. Zod schemas:
+- `frontend/src/schemas/trainingSession.schema.ts` — for RHF.
 
-10.4. Páginas:
-- `frontend/src/routes/training/SessionsListPage.tsx` — tabla con filtros (mes, age_group, status).
-- `frontend/src/routes/training/SessionFormPage.tsx` — RHF + Zod + selector multi-atleta convocados (filtrado por age_group del club).
+10.4. Pages:
+- `frontend/src/routes/training/SessionsListPage.tsx` — table with filters (month, age_group, status).
+- `frontend/src/routes/training/SessionFormPage.tsx` — RHF + Zod + multi-athlete call-up selector (filtered by club age_group).
 
-10.5. Componentes:
+10.5. Components:
 - `components/training/SessionsTable.tsx`
-- `components/training/AthletesMultiSelect.tsx` (filtrado por age_group)
+- `components/training/AthletesMultiSelect.tsx` (filtered by age_group)
 - `components/training/SessionStatusBadge.tsx`
 
-10.6. Estado:
-- TanStack Query cache invalidate en mutations.
-- Zustand para filtros UI persistentes en sesión navegador.
+10.6. State:
+- TanStack Query cache invalidate on mutations.
+- Zustand for UI filters persisted in browser session.
 
-### Criterio aceptación
-- [ ] Coach crea sesión planificada en <30s.
-- [ ] Lista carga <500ms con 100 sesiones.
-- [ ] Atletas filtrados correctamente por age_group.
+### Acceptance criteria
+- [ ] Coach creates planned session in <30s.
+- [ ] List loads <500ms with 100 sessions.
+- [ ] Athletes correctly filtered by age_group.
 
 ---
 
-## PASO 11 — Frontend coach: detalle + asistencia + rúbrica
+## STEP 11 — Coach frontend: detail + attendance + rubric
 
-**Objetivo:** UI ejecución sesión (ruta `/training/sessions/:id`).
+**Goal:** Session execution UI (route `/training/sessions/:id`).
 
-### Tareas
+### Tasks
 
 11.1. `routes/training/SessionDetailPage.tsx`:
-- Header: fecha, lugar, foco técnico, duración, status, botón "Marcar ejecutada".
-- Sección recorrido: render `route_text`, link Strava, viewer `.gpx` (leaflet).
-- Tabla asistencia editable (un row por convocado).
+- Header: date, location, technical focus, duration, status, "Mark as executed" button.
+- Route section: render `route_text`, Strava link, `.gpx` viewer (leaflet).
+- Editable attendance table (one row per called-up athlete).
 
 11.2. `components/training/AttendanceTable.tsx`:
-- Columnas: atleta | status select | razón (si no presente) | RPE 0-10 | rúbrica esfuerzo/actitud/técnica | comentario.
-- Edición inline, autosave debounced 500ms.
-- Atajos teclado: `P/A/J/T/L` para status rápido.
+- Columns: athlete | status select | reason (if not present) | RPE 0-10 | effort/attitude/technique rubric | comment.
+- Inline editing, debounced autosave 500ms.
+- Keyboard shortcuts: `P/A/J/T/L` for quick status.
 
 11.3. `components/training/RubricSliders.tsx`:
-- 3 sliders 1-5 con etiquetas (1=Muy bajo, 5=Excelente).
-- RPE OMNI 0-10 con visual emoji o caras.
-- Textarea 500 chars con contador.
+- 3 sliders 1-5 with labels (1=Very low, 5=Excellent).
+- OMNI RPE 0-10 with visual emoji or faces.
+- 500-char textarea with counter.
 
 11.4. `components/training/RouteViewer.tsx`:
-- Carga `.gpx` con `leaflet-gpx`. Fallback "no disponible" si solo `.fit`.
+- Loads `.gpx` with `leaflet-gpx`. Fallback "not available" if only `.fit`.
 
-11.5. Tests vitest + RTL:
-- `AttendanceTable` permite editar y autosave llama API.
-- `RubricSliders` rechaza valores fuera rango.
-- `SessionDetailPage` muestra "Marcar ejecutada" solo si planned.
+11.5. Vitest + RTL tests:
+- `AttendanceTable` allows editing and autosave calls API.
+- `RubricSliders` rejects out-of-range values.
+- `SessionDetailPage` shows "Mark as executed" only if planned.
 
-### Criterio aceptación
-- [ ] Coach completa asistencia 10 atletas en <2 min.
-- [ ] Sin pérdida de datos al cambiar de fila (autosave).
+### Acceptance criteria
+- [ ] Coach completes attendance for 10 athletes in <2 min.
+- [ ] No data loss when changing rows (autosave).
 
 ---
 
-## PASO 12 — Frontend coach: reporte mensual UI
+## STEP 12 — Coach frontend: monthly report UI
 
-**Objetivo:** Generar y visualizar reporte mensual (ruta `/training/reports`).
+**Goal:** Generate and view monthly report (route `/training/reports`).
 
-### Tareas
+### Tasks
 
 12.1. `routes/training/ReportsListPage.tsx`:
-- Lista reportes existentes por mes.
-- Botón "Generar reporte" con selector mes/año.
+- List existing reports by month.
+- "Generate report" button with month/year selector.
 
 12.2. `routes/training/ReportDetailPage.tsx`:
-- Sección "Resumen IA" (narrativa).
-- Tabla métricas: # sesiones, % asistencia por atleta, focos cubiertos.
-- Botón "Re-enviar al club".
-- Banner advertencia: "Resumen generado por IA — revisar antes de enviar."
+- "AI Summary" section (narrative).
+- Metrics table: # sessions, % attendance per athlete, focuses covered.
+- "Re-send to club" button.
+- Warning banner: "Summary generated by AI — review before sending."
 
-12.3. Componente `MonthlyMetricsTable.tsx` reusable.
+12.3. Reusable `MonthlyMetricsTable.tsx` component.
 
-### Criterio aceptación
-- [ ] Coach genera reporte mensual en <10s (mock LLM).
-- [ ] Edición narrativa NO permitida (read-only desde IA, override por coach via comentario adicional fase 2).
+### Acceptance criteria
+- [ ] Coach generates monthly report in <10s (mock LLM).
+- [ ] Narrative editing NOT allowed (read-only from AI, coach override via additional comment in phase 2).
 
 ---
 
-## PASO 13 — Frontend parent: lectura
+## STEP 13 — Parent frontend: reading
 
-**Objetivo:** Padres ven sesiones de su atleta.
+**Goal:** Parents view their athlete's sessions.
 
-### Tareas
+### Tasks
 
 13.1. `routes/parents/training/SessionsPage.tsx`:
-- Lista sesiones donde su atleta fue convocado.
-- Sin botones edición.
+- List sessions where their athlete was called up.
+- No editing buttons.
 
 13.2. `routes/parents/training/SessionDetailPage.tsx`:
-- Descripción general visible.
-- Asistencia: solo fila de SU atleta (status, rúbrica, feedback).
-- NO ve otros atletas.
+- General description visible.
+- Attendance: only THEIR athlete's row (status, rubric, feedback).
+- Does NOT see other athletes.
 
 13.3. `routes/parents/training/MonthlyOverviewPage.tsx`:
-- Resumen mensual personalizado: % asistencia atleta, # sesiones, focos cubiertos.
-- NO ve narrativa agregada del club.
+- Personalized monthly summary: % athlete attendance, # sessions, focuses covered.
+- Does NOT see club aggregated narrative.
 
-13.4. Componente reutilizable `ParentSessionCard.tsx`.
+13.4. Reusable component `ParentSessionCard.tsx`.
 
-### Criterio aceptación
-- [ ] Padre A nunca ve datos de atleta B en network tab.
-- [ ] Tests RTL verifican render filtrado correcto.
-
----
-
-## PASO 14 — Tests frontend
-
-**Objetivo:** Cobertura vitest ≥75% en componentes y rutas nuevas.
-
-### Tareas
-
-14.1. Component tests por cada componente nuevo (`*.test.tsx`).
-
-14.2. Hook tests para queries TanStack (`useSessions`, `useAttendance`, `useMonthlyReport`).
-
-14.3. Integration tests rutas con MSW mocks.
-
-14.4. A11y tests:
-- `AttendanceTable` accesible vía teclado (axe-core).
-- Labels y aria correctos.
-
-### Criterio aceptación
-- [ ] `pnpm test` verde.
-- [ ] Coverage report supera 75%.
+### Acceptance criteria
+- [ ] Parent A never sees athlete B's data in the network tab.
+- [ ] RTL tests verify correct filtered rendering.
 
 ---
 
-## PASO 15 — E2E + deploy + docs
+## STEP 14 — Frontend tests
 
-**Objetivo:** Verificar flujo completo y deploy producción.
+**Goal:** vitest coverage ≥75% on new components and routes.
 
-### Tareas
+### Tasks
+
+14.1. Component tests for each new component (`*.test.tsx`).
+
+14.2. Hook tests for TanStack queries (`useSessions`, `useAttendance`, `useMonthlyReport`).
+
+14.3. Route integration tests with MSW mocks.
+
+14.4. Accessibility tests:
+- `AttendanceTable` accessible via keyboard (axe-core).
+- Correct labels and aria attributes.
+
+### Acceptance criteria
+- [ ] `pnpm test` green.
+- [ ] Coverage report exceeds 75%.
+
+---
+
+## STEP 15 — E2E + deploy + docs
+
+**Goal:** Verify complete flow and production deployment.
+
+### Tasks
 
 15.1. E2E manual checklist (`docs/09-training-planning/qa.md`):
-- Coach crea sesión → padre recibe email → padre abre portal → ve detalle → coach ejecuta → coach pone rúbrica → padre ve rúbrica de su atleta → coach genera reporte mensual → admin recibe PDF → padre ve resumen mes propio.
+- Coach creates session → parent receives email → parent opens portal → views detail → coach executes → coach adds rubric → parent views their athlete's rubric → coach generates monthly report → admin receives PDF → parent views own monthly summary.
 
-15.2. Deploy:
-- PR con todos los cambios → review → merge a `main`.
+15.2. Deployment:
+- PR with all changes → review → merge to `main`.
 - Render auto-deploy.
-- Verificar `alembic upgrade head` corre OK en startup.
-- Smoke test producción `https://mi-2yzi.onrender.com/docs`.
+- Verify `alembic upgrade head` runs OK on startup.
+- Production smoke test `https://mi-2yzi.onrender.com/docs`.
 
-15.3. Actualizar docs:
-- `docs/README.md` agregar entrada `09 — training-planning`.
-- `CLAUDE.md` actualizar tabla "Estado de implementación Fase 1" con módulo training.
-- Memoria proyecto: `~/.claude/projects/.../memory/training_module_done.md` con resumen de decisiones.
+15.3. Update docs:
+- `docs/README.md` add entry `09 — training-planning`.
+- `CLAUDE.md` update "Phase 1 implementation status" table with training module.
+- Project memory: `~/.claude/projects/.../memory/training_module_done.md` with summary of decisions.
 
-### Criterio aceptación
-- [ ] Producción funcional con seed coach + atleta + padre dummy.
-- [ ] Tabla docs actualizada.
-- [ ] Memoria proyecto guardada.
+### Acceptance criteria
+- [ ] Production functional with seed coach + athlete + dummy parent.
+- [ ] Docs table updated.
+- [ ] Project memory saved.
 
 ---
 
-## Comandos útiles durante desarrollo
+## Useful commands during development
 
 ```bash
 # Backend
@@ -525,48 +525,48 @@ cd frontend && pnpm dev
 cd frontend && pnpm test
 cd frontend && pnpm test --coverage
 
-# Stack completo
+# Full stack
 docker compose up
 
-# Lint pre-commit
+# Pre-commit lint
 cd backend && ruff check . && black --check .
 cd frontend && pnpm lint
 ```
 
 ---
 
-## Métricas de éxito del módulo
+## Module success metrics
 
-Al cerrar PASO 15, deberíamos ver:
+At the close of STEP 15, we should see:
 
-- **Adopción coach:** ≥1 sesión registrada por semana del entrenador real.
-- **Asistencia padres:** ≥40% de padres abren al menos un email invitación.
-- **Privacidad:** 0 incidentes de fuga datos cross-atleta (verificable con logs).
-- **Performance:** Lista mes <300ms, generación reporte IA <15s.
-- **Testing:** Backend ≥80% cobertura services, frontend ≥75% rutas.
+- **Coach adoption:** ≥1 session registered per week from the real coach.
+- **Parent attendance:** ≥40% of parents open at least one invitation email.
+- **Privacy:** 0 cross-athlete data leak incidents (verifiable with logs).
+- **Performance:** Monthly listing <300ms, AI report generation <15s.
+- **Testing:** Backend ≥80% coverage on services, frontend ≥75% on routes.
 
 ---
 
-## Decisiones diferidas (sprint 2 del módulo)
+## Deferred decisions (module sprint 2)
 
-Anotar para no olvidar:
+Note for later:
 - `.fit` → `.gpx` server-side conversion.
-- Sesiones recurrentes (cron coach: "todos los martes 5pm").
-- Plantillas reutilizables ("Sesión técnica intervalos cortos").
-- Push notifications móvil (PWA notif).
-- Integración Intervals.icu para datos GPS de atletas con dispositivo propio.
-- Upload fotos/videos sesión.
-- Vista calendario (mes/semana) tipo agenda.
-- Padre puede confirmar asistencia previa ("mi hijo NO podrá ir el martes").
-- Estadísticas comparativas (atleta vs promedio club, agregado, anonimizado).
+- Recurring sessions (coach cron: "every Tuesday 5pm").
+- Reusable templates ("Short interval technique session").
+- Mobile push notifications (PWA notification).
+- Intervals.icu integration for GPS data from athletes with their own device.
+- Session photo/video upload.
+- Calendar view (month/week) agenda-style.
+- Parent can confirm advance attendance ("my child will NOT be able to go on Tuesday").
+- Comparative statistics (athlete vs club average, aggregated, anonymized).
 
 ---
 
-## Referencias
+## References
 
-- Diseño: [`design.md`](./design.md)
-- Marco teórico: [`../01-marco-teorico.md`](../01-marco-teorico.md) §2, §5, §6
-- Patrón AI use case: `backend/app/services/ai/use_cases/phv_explainer.py`
-- Patrón notification: `backend/app/services/notification/service.py`
+- Design: [`design.md`](./design.md)
+- Theoretical framework: [`../01-marco-teorico.md`](../01-marco-teorico.md) §2, §5, §6
+- AI use case pattern: `backend/app/services/ai/use_cases/phv_explainer.py`
+- Notification pattern: `backend/app/services/notification/service.py`
 - RBAC: `backend/app/services/permissions.py`
-- Strava research: ver brainstorm previo (Nov 2024 ToS bloqueo coach reading athletes).
+- Strava research: see prior brainstorm (Nov 2024 ToS blocking coach reading athletes).

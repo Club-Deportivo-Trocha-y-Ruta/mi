@@ -1,96 +1,96 @@
-# Informe Técnico Mensual — Workflow
+# Monthly Technical Report — Workflow
 
-**Fecha:** 2026-06-03
-**Estado:** Implementado (backend + frontend + tests). Deploy a Render pendiente de aprobación.
-**Origen:** Refactorización del módulo "Reporte Mensual del Club" (Fase 1.5) hacia un documento estilo informe a financiador.
+**Date:** 2026-06-03
+**Status:** Implemented (backend + frontend + tests). Deployment to Render pending approval.
+**Origin:** Refactor of the "Monthly Club Report" module (Phase 1.5) into a funder/financier-style report document.
 
 ---
 
-## Contexto
+## Context
 
-El club ya generaba un "reporte mensual" con un único resumen de IA (campo `ai_summary`) y métricas agregadas. Ese formato no servía como entregable hacia un financiador o aliado institucional (estilo informe del proyecto "Pedaleando por un Sueño"): es un párrafo suelto, sin estructura de informe de gestión, sin portada institucional ni sección de competencia con podios.
+The sports club already generated a "monthly report" with a single AI summary (`ai_summary` field) and aggregated metrics. That format did not serve as a deliverable to a funder or institutional partner (in the style of the "Pedaleando por un Sueño" project report): it is a standalone paragraph, without a management report structure, without an institutional cover page or a competition section with podiums.
 
-Esta refactorización convierte el reporte mensual en un **Informe Técnico Mensual**: un documento estructurado por capítulos, con metadata institucional del proyecto, narrativa pre-redactada por IA y editada por el coach, resultados de competencia del mes y registro fotográfico. El entregable final es un PDF de distribución restringida (coach/admin).
+This refactor converts the monthly report into a **Monthly Technical Report**: a document structured by chapters, with institutional project metadata, AI pre-drafted narrative edited by the coach, monthly competition results, and a photo record. The final deliverable is a restricted-distribution PDF (coach/admin).
 
-El objetivo operativo concreto: que al **cerrar junio 2026** el coach tenga todos los insumos capturados durante el mes y, con pocos clics, genere un PDF estilo informe del jefe — incluyendo el "capítulo" cualitativo del grupo de alto rendimiento que el jefe sumará al informe consolidado.
+The concrete operational goal: by **closing June 2026** the coach has all inputs captured during the month and, with just a few clicks, generates a director-style PDF — including the qualitative "chapter" of the high-performance group that the director will add to the consolidated report.
 
-## Alcance acordado con el usuario
+## Agreed Scope with the User
 
-**En alcance:**
-- Documento limitado al **Grupo de Alto Rendimiento**. Sin segmentación por programa (no se documenta el programa "Teteros" ni otros programas formativos).
-- Sección "Población Atendida" **OMITIDA** del informe (decisión explícita del usuario).
-- Narrativa **pre-redactada por IA** bloque a bloque; el **coach edita** cada bloque antes de aprobar. La IA nunca emite el documento final sin revisión humana.
-- Entrega **completa**: capa de datos (modelo + migración), motor de IA por bloques, helper de competencia, endpoints, editor frontend por bloques, página de perfil del proyecto, y plantilla PDF.
-- Resultados de competencia del mes: podios del club tomados del módulo de resultados Copa Valle (Fase 1.7).
+**In scope:**
+- Document limited to the **High-Performance Group**. No segmentation by program ("Teteros" and other formative programs are not documented).
+- "Population Served" section **OMITTED** from the report (explicit user decision).
+- **AI pre-drafted** narrative block by block; the **coach edits** each block before approving. The AI never emits the final document without human review.
+- **Complete delivery**: data layer (model + migration), AI block engine, competition helper, endpoints, frontend block editor, project profile page, and PDF template.
+- Monthly competition results: the club's podiums drawn from the Copa Valle results module (Phase 1.7).
 
-**Fuera de alcance:**
-- Segmentación por programa / "Población Atendida".
-- Envío automático del informe por email (el coach descarga el PDF y lo distribuye manualmente).
-- Métricas individuales por atleta en el cuerpo narrativo (la IA trabaja solo con datos agregados).
-- Cambios al newsletter individual a padres (Fase 1.8), que es un módulo distinto.
+**Out of scope:**
+- Segmentation by program / "Population Served".
+- Automatic email sending of the report (coach downloads the PDF and distributes manually).
+- Individual athlete metrics in the narrative body (the AI works only with aggregated data).
+- Changes to the individual newsletter to parents (Phase 1.8), which is a separate module.
 
-## Modelo de datos nuevo
+## New Data Models
 
-Tres cambios en la capa de datos, todos en la migración Alembic `d4e5f6a7b8c9` (encadenada al head `c6d7e8f9a0b1`). Detalle de campos y justificación en [`design.md`](design.md) §2.
+Three changes in the data layer, all in Alembic migration `d4e5f6a7b8c9` (chained to head `c6d7e8f9a0b1`). Field details and rationale in [`design.md`](design.md) §2.
 
-| Cambio | Tabla / objeto | Resumen |
+| Change | Table / object | Summary |
 |---|---|---|
-| Tabla nueva | `club_project_profiles` | Metadata estática del proyecto del club (1:1 con `clubs`). Encabeza cada informe. |
-| Columnas nuevas | `monthly_reports` | `narrative_blocks` (JSON), `competition_results` (JSON), `status` (enum `draft`/`approved`). |
-| Columnas nuevas | `training_sessions` | `session_kind` (enum `entrenamiento`/`actividad_conjunta`/`salida`/`otro`), `objectives` (texto). |
+| New table | `club_project_profiles` | Static project metadata for the sports club (1:1 with `clubs`). Heads each report. |
+| New columns | `monthly_reports` | `narrative_blocks` (JSON), `competition_results` (JSON), `status` (enum `draft`/`approved`). |
+| New columns | `training_sessions` | `session_kind` (enum `entrenamiento`/`actividad_conjunta`/`salida`/`otro`), `objectives` (text). |
 
-Todas las columnas nuevas son seguras hacia atrás: `narrative_blocks` y `competition_results` son `NULL` por defecto; `status` y `session_kind` tienen `server_default` (`draft` y `entrenamiento` respectivamente), de modo que los registros legacy quedan en valores coherentes sin backfill.
+All new columns are backward-safe: `narrative_blocks` and `competition_results` are `NULL` by default; `status` and `session_kind` have `server_default` (`draft` and `entrenamiento` respectively), so legacy records remain in coherent values without backfill.
 
-## Bloques narrativos
+## Narrative Blocks
 
-El informe se estructura en bloques con clave fija. La IA redacta seis bloques narrativos; `competencia` es estructurado (no narrativo, se llena con el helper de competencia).
+The report is structured in blocks with a fixed key. The AI drafts six narrative blocks; `competencia` is structured (not narrative, filled by the competition helper).
 
-| Clave | Capítulo | Generación |
+| Key | Chapter | Generation |
 |---|---|---|
-| `objetivo` | Objetivo del período | IA |
-| `desarrollo` | Desarrollo de actividades | IA |
-| `resultados` | Resultados obtenidos (indicadores agregados) | IA |
-| `conclusiones` | Conclusiones y recomendaciones | IA |
-| `apoyos_materiales` | Apoyos y recursos materiales | IA |
-| `analisis_grupo` | Análisis cualitativo del grupo de alto rendimiento | IA |
-| `competencia` | Participación en competencia (podios) | Estructurado (helper) |
+| `objetivo` | Period goal | AI |
+| `desarrollo` | Activity development | AI |
+| `resultados` | Results obtained (aggregated indicators) | AI |
+| `conclusiones` | Conclusions and recommendations | AI |
+| `apoyos_materiales` | Material support and resources | AI |
+| `analisis_grupo` | Qualitative analysis of the high-performance group | AI |
+| `competencia` | Competition participation (podiums) | Structured (helper) |
 
-El bloque `analisis_grupo` es el **capítulo cualitativo del grupo** — el "capítulo" que el jefe sumará al informe consolidado de junio.
+The `analisis_grupo` block is the **qualitative chapter of the group** — the "chapter" that the director will add to the consolidated June report.
 
-## Pasos de implementación
+## Implementation Steps
 
-| # | Tarea | Owner | Estado | Fecha |
+| # | Task | Owner | Status | Date |
 |---|---|---|---|---|
-| 1 | Modelo `ClubProjectProfile` + columnas nuevas en `MonthlyReport` y `TrainingSession` + enums `SessionKind`/`MonthlyReportStatus` + migración `d4e5f6a7b8c9` | backend-dev | ✅ Completo | 2026-06-03 |
-| 2 | Schemas Pydantic (`ClubProjectProfile*`, `NarrativeBlock`, `CompetitionResultItem`, `MonthlyReportBlocksUpdate`) + servicios `reports.py` (update/regenerate bloques) | backend-dev | ✅ Completo | 2026-06-03 |
-| 3 | Use case IA `MonthlyReportBlocksUseCase` + prompt `monthly_report_blocks.j2` con límites de palabras por bloque y guardrails de privacidad reutilizados | backend-dev | ✅ Completo | 2026-06-03 |
-| 4 | Helper `competition_results.py` (podios del club en válidas del mes) | backend-dev | ✅ Completo | 2026-06-03 |
-| 5 | Endpoints: CRUD `project-profile`, `PATCH .../blocks`, `POST .../blocks/{key}/regenerate`, `GET .../pdf` con template técnico | backend-dev | ✅ Completo | 2026-06-03 |
-| 6 | Plantilla PDF `training_monthly_technical_report.html` + registro en `template_registry.py` (`TRAINING_MONTHLY_TECHNICAL_REPORT`) | backend-dev | ✅ Completo | 2026-06-03 |
-| 7 | Frontend: `ReportDetailPage` como editor por bloques, `ProjectProfilePage`, badges de estado, campos `session_kind`/`objectives` en form de sesión | frontend-dev | ✅ Completo | 2026-06-03 |
-| 8 | Tests: 52 backend targeted verdes; 1742 frontend vitest verdes + `tsc` limpio | qa | ✅ Completo | 2026-06-03 |
-| 9 | Documentación (este módulo) | technical-writer | ✅ Completo | 2026-06-03 |
-| 10 | Deploy a Render | ops | ⏳ Pendiente | — |
+| 1 | `ClubProjectProfile` model + new columns in `MonthlyReport` and `TrainingSession` + enums `SessionKind`/`MonthlyReportStatus` + migration `d4e5f6a7b8c9` | backend-dev | ✅ Complete | 2026-06-03 |
+| 2 | Pydantic schemas (`ClubProjectProfile*`, `NarrativeBlock`, `CompetitionResultItem`, `MonthlyReportBlocksUpdate`) + services `reports.py` (update/regenerate blocks) | backend-dev | ✅ Complete | 2026-06-03 |
+| 3 | AI use case `MonthlyReportBlocksUseCase` + prompt `monthly_report_blocks.j2` with per-block word limits and reused privacy guardrails | backend-dev | ✅ Complete | 2026-06-03 |
+| 4 | Helper `competition_results.py` (club podiums in month's rounds) | backend-dev | ✅ Complete | 2026-06-03 |
+| 5 | Endpoints: CRUD `project-profile`, `PATCH .../blocks`, `POST .../blocks/{key}/regenerate`, `GET .../pdf` with technical template | backend-dev | ✅ Complete | 2026-06-03 |
+| 6 | PDF template `training_monthly_technical_report.html` + registration in `template_registry.py` (`TRAINING_MONTHLY_TECHNICAL_REPORT`) | backend-dev | ✅ Complete | 2026-06-03 |
+| 7 | Frontend: `ReportDetailPage` as block-by-block editor, `ProjectProfilePage`, status badges, `session_kind`/`objectives` fields in session form | frontend-dev | ✅ Complete | 2026-06-03 |
+| 8 | Tests: 52 backend targeted green; 1742 frontend vitest green + clean `tsc` | qa | ✅ Complete | 2026-06-03 |
+| 9 | Documentation (this module) | technical-writer | ✅ Complete | 2026-06-03 |
+| 10 | Deployment to Render | ops | ⏳ Pending | — |
 
-## Criterios de aceptación
+## Acceptance Criteria
 
-- [x] El coach puede registrar sesiones clasificadas por `session_kind` y con `objectives`.
-- [x] El coach configura una sola vez el perfil del proyecto del club.
-- [x] La IA pre-redacta los seis bloques narrativos sin emitir nombres reales de menores.
-- [x] El coach edita y aprueba cada bloque; el PDF en `draft` lleva banner BORRADOR.
-- [x] Los podios del mes se toman automáticamente de los resultados Copa Valle.
-- [x] Los padres NO reciben `narrative_blocks` ni `competition_results`.
-- [x] El informe omite la sección "Población Atendida" y se limita al grupo de alto rendimiento.
-- [ ] Deploy a Render aprobado y aplicado.
+- [x] The coach can record training sessions classified by `session_kind` and with `objectives`.
+- [x] The coach configures the sports club project profile once only.
+- [x] The AI pre-drafts the six narrative blocks without emitting real minors' names.
+- [x] The coach edits and approves each block; the PDF in `draft` carries a DRAFT banner.
+- [x] The month's podiums are automatically drawn from Copa Valle results.
+- [x] Parents do NOT receive `narrative_blocks` or `competition_results`.
+- [x] The report omits the "Population Served" section and is limited to the high-performance group.
+- [ ] Deployment to Render approved and applied.
 
-## Runbook del coach
+## Coach Runbook
 
-El paso a paso operativo para capturar insumos durante el mes y cerrar el informe está en [`runbook.md`](runbook.md).
+The step-by-step operational guide for capturing inputs during the month and closing the report is in [`runbook.md`](runbook.md).
 
-## Referencias
+## References
 
-- [`design.md`](design.md) — diseño técnico detallado.
-- [`runbook.md`](runbook.md) — guía operativa para el coach.
+- [`design.md`](design.md) — detailed technical design.
+- [`runbook.md`](runbook.md) — operational guide for the coach.
 - `backend/app/models/club_project_profile.py`
 - `backend/app/models/training_session.py`
 - `backend/alembic/versions/d4e5f6a7b8c9_informe_tecnico_mensual.py`
@@ -100,5 +100,5 @@ El paso a paso operativo para capturar insumos durante el mes y cerrar el inform
 - `backend/templates/documents/pdf/training_monthly_technical_report.html`
 - `frontend/src/routes/training/ReportDetailPage.tsx`
 - `frontend/src/routes/training/ProjectProfilePage.tsx`
-- [`../09-training-planning/design.md`](../09-training-planning/design.md) — módulo base de sesiones y reporte mensual v1.
-- [`../10-race-results/`](../10-race-results/) — origen de los resultados de competencia.
+- [`../09-training-planning/design.md`](../09-training-planning/design.md) — base training session and v1 monthly report module.
+- [`../10-race-results/`](../10-race-results/) — source of competition results.

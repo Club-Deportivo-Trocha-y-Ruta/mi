@@ -1,409 +1,409 @@
-# Workflow: Implementación Flujo de Onboarding
+# Workflow: Onboarding Flow Implementation
 
-**Fecha:** 2026-04-15
-**Basado en:** `docs/08-onboarding/research.md`, `docs/08-onboarding/design.md`
-**Prerequisito:** Módulo de padres implementado (`docs/06-parents/workflow.md`)
-
----
-
-## Resumen
-
-17 pasos organizados en 5 fases. Cada paso indica el agente especializado responsable, archivos a crear/modificar, y dependencias. Los pasos sin dependencias entre sí pueden ejecutarse en paralelo.
+**Date:** 2026-04-15
+**Based on:** `docs/08-onboarding/research.md`, `docs/08-onboarding/design.md`
+**Prerequisite:** Parents module implemented (`docs/06-parents/workflow.md`)
 
 ---
 
-## Fase A — Backend: Modelo de Datos y Migración
+## Summary
 
-### Paso 1: Crear modelo `ParentalConsent`
-**Agente:** `fastapi-architect`
-**Archivos:**
-- Crear: `backend/app/models/parental_consent.py`
-- Modificar: `backend/app/models/__init__.py` (agregar import)
+17 steps organized in 5 phases. Each step indicates the responsible specialized agent, files to create/modify, and dependencies. Steps with no dependencies between them can be executed in parallel.
 
-**Detalle:**
-- Tabla `parental_consents` con campos: id, parent_user_id (FK users), athlete_id (FK athletes), consent_version, consented_at, consent_method, ip_address, data_collection, training_tracking, anthropometry, third_party_sharing, withdrawn_at
-- Índices: `(parent_user_id, athlete_id)`, `athlete_id`
+---
+
+## Phase A — Backend: Data Models and Migration
+
+### Step 1: Create `ParentalConsent` model
+**Agent:** `fastapi-architect`
+**Files:**
+- Create: `backend/app/models/parental_consent.py`
+- Modify: `backend/app/models/__init__.py` (add import)
+
+**Detail:**
+- `parental_consents` table with fields: id, parent_user_id (FK users), athlete_id (FK athletes), consent_version, consented_at, consent_method, ip_address, data_collection, training_tracking, anthropometry, third_party_sharing, withdrawn_at
+- Indexes: `(parent_user_id, athlete_id)`, `athlete_id`
 - Relationships: parent → User, athlete → Athlete
 
-**Criterio de éxito:** Modelo importable, sin errores de sintaxis.
-**Dependencias:** Ninguna
-**Estimado:** Pequeño
+**Success criterion:** Model importable, no syntax errors.
+**Dependencies:** None
+**Estimate:** Small
 
 ---
 
-### Paso 2: Generar migración Alembic
-**Agente:** `fastapi-architect`
-**Comando:**
+### Step 2: Generate Alembic migration
+**Agent:** `fastapi-architect`
+**Command:**
 ```bash
 cd backend && alembic revision --autogenerate -m "add_parental_consents_table"
 ```
-**Verificación:**
+**Verification:**
 ```bash
 cd backend && alembic upgrade head
 ```
 
-**Criterio de éxito:** Migración aplica sin errores. Tabla `parental_consents` existe en DB.
-**Dependencias:** Paso 1
-**Estimado:** Pequeño
+**Success criterion:** Migration applies without errors. Table `parental_consents` exists in DB.
+**Dependencies:** Step 1
+**Estimate:** Small
 
 ---
 
-### Paso 3: Extender schemas Pydantic
-**Agente:** `fastapi-architect`
-**Archivos:**
-- Modificar: `backend/app/schemas/parent_invite.py`
+### Step 3: Extend Pydantic schemas
+**Agent:** `fastapi-architect`
+**Files:**
+- Modify: `backend/app/schemas/parent_invite.py`
 
-**Cambios:**
-1. Agregar `ParentalConsentData` schema (accept_data_collection, accept_training_tracking, accept_anthropometry, accept_third_party, privacy_policy_version)
-2. Agregar `consent: ParentalConsentData` y `relationship_type: str = "acudiente"` a `ParentRegisterRequest`
-3. Agregar `role: str = "parent"` y `club_name: str = ""` a `ParentInviteTokenValidation`
-4. Crear `ParentalConsentOut` schema para respuestas futuras
+**Changes:**
+1. Add `ParentalConsentData` schema (accept_data_collection, accept_training_tracking, accept_anthropometry, accept_third_party, privacy_policy_version)
+2. Add `consent: ParentalConsentData` and `relationship_type: str = "acudiente"` to `ParentRegisterRequest`
+3. Add `role: str = "parent"` and `club_name: str = ""` to `ParentInviteTokenValidation`
+4. Create `ParentalConsentOut` schema for future responses
 
-**Criterio de éxito:** Schemas validan correctamente. Tests de importación pasan.
-**Dependencias:** Ninguna (puede ir paralelo con Paso 1)
-**Estimado:** Pequeño
-
----
-
-### Paso 4: Extender servicio `consume_invite()`
-**Agente:** `fastapi-architect`
-**Archivos:**
-- Modificar: `backend/app/services/invitations.py`
-
-**Cambios:**
-1. Agregar parámetros: `relationship_type: str`, `consent: ParentalConsentData`, `ip_address: str | None`
-2. Usar `relationship_type` para crear `ParentAthlete` (en vez de hardcoded "acudiente")
-3. Crear `ParentalConsent` record con datos del consentimiento
-4. Actualizar `athlete.parental_consent_obtained = True` y `athlete.parental_consent_date`
-5. Mantener backward compatibility: parámetros nuevos con defaults
-
-**Criterio de éxito:** `consume_invite()` crea User + ClubMember + ParentAthlete + ParentalConsent en transacción atómica.
-**Dependencias:** Paso 1, Paso 3
-**Estimado:** Mediano
+**Success criterion:** Schemas validate correctly. Import tests pass.
+**Dependencies:** None (can run in parallel with Step 1)
+**Estimate:** Small
 
 ---
 
-### Paso 5: Actualizar endpoint `POST /api/auth/parent-register`
-**Agente:** `fastapi-architect`
-**Archivos:**
-- Modificar: `backend/app/routers/auth.py`
+### Step 4: Extend `consume_invite()` service
+**Agent:** `fastapi-architect`
+**Files:**
+- Modify: `backend/app/services/invitations.py`
 
-**Cambios:**
-1. Pasar `body.relationship_type`, `body.consent`, y `request.client.host` a `consume_invite()`
-2. Agregar `Request` como dependency para obtener IP
+**Changes:**
+1. Add parameters: `relationship_type: str`, `consent: ParentalConsentData`, `ip_address: str | None`
+2. Use `relationship_type` to create `ParentAthlete` (instead of hardcoded "acudiente")
+3. Create `ParentalConsent` record with consent data
+4. Update `athlete.parental_consent_obtained = True` and `athlete.parental_consent_date`
+5. Maintain backward compatibility: new parameters with defaults
 
-**Criterio de éxito:** Endpoint acepta payload extendido y registra consentimiento.
-**Dependencias:** Paso 4
-**Estimado:** Pequeño
-
----
-
-### Paso 6: Actualizar endpoint `GET /api/auth/invite/{token}`
-**Agente:** `fastapi-architect`
-**Archivos:**
-- Modificar: `backend/app/routers/auth.py`
-
-**Cambios:**
-1. Incluir `role="parent"` en respuesta
-2. Obtener `club_name` del atleta y agregarlo a respuesta
-
-**Criterio de éxito:** Respuesta incluye role y club_name.
-**Dependencias:** Paso 3
-**Estimado:** Pequeño
+**Success criterion:** `consume_invite()` creates User + ClubMember + ParentAthlete + ParentalConsent in an atomic transaction.
+**Dependencies:** Step 1, Step 3
+**Estimate:** Medium
 
 ---
 
-## Fase B — Backend: Template Email
+### Step 5: Update endpoint `POST /api/auth/parent-register`
+**Agent:** `fastapi-architect`
+**Files:**
+- Modify: `backend/app/routers/auth.py`
 
-### Paso 7: Crear template email HTML
-**Agente:** `fastapi-architect`
-**Archivos:**
-- Crear: `backend/templates/email/parent_invite.html`
+**Changes:**
+1. Pass `body.relationship_type`, `body.consent`, and `request.client.host` to `consume_invite()`
+2. Add `Request` as dependency to obtain IP
 
-**Detalle:**
-- Template Jinja2 con inline CSS (compatibilidad email)
+**Success criterion:** Endpoint accepts extended payload and records consent.
+**Dependencies:** Step 4
+**Estimate:** Small
+
+---
+
+### Step 6: Update endpoint `GET /api/auth/invite/{token}`
+**Agent:** `fastapi-architect`
+**Files:**
+- Modify: `backend/app/routers/auth.py`
+
+**Changes:**
+1. Include `role="parent"` in response
+2. Obtain `club_name` from the athlete and add to response
+
+**Success criterion:** Response includes role and club_name.
+**Dependencies:** Step 3
+**Estimate:** Small
+
+---
+
+## Phase B — Backend: Email Template
+
+### Step 7: Create HTML email template
+**Agent:** `fastapi-architect`
+**Files:**
+- Create: `backend/templates/email/parent_invite.html`
+
+**Detail:**
+- Jinja2 template with inline CSS (email compatibility)
 - Variables: `{{ athlete_first_name }}`, `{{ club_name }}`, `{{ invite_url }}`
-- Diseño: header verde (#16a34a), contenido con beneficios, botón CTA, footer club
+- Design: green header (#16a34a), content with benefits, CTA button, club footer
 - Responsive (max-width: 600px)
-- Autoescaping Jinja2 habilitado
+- Jinja2 autoescaping enabled
 
-**Criterio de éxito:** Template renderiza correctamente con variables de prueba. No hay XSS posible.
-**Dependencias:** Ninguna (paralelo con Fase A)
-**Estimado:** Pequeño
-
----
-
-### Paso 8: Fix URL en generación de invitaciones
-**Agente:** `fastapi-architect`
-**Archivos:**
-- Modificar: `backend/app/routers/parent_athletes.py` (línea ~264)
-
-**Cambio:**
-- Cambiar URL de invitación de `/registro-padre?token=` a `/onboarding?token=`
-- O usar variable de configuración `ONBOARDING_URL` en `config.py`
-
-**Criterio de éxito:** URL generada apunta a `/onboarding?token={token}`.
-**Dependencias:** Ninguna (paralelo)
-**Estimado:** Pequeño
+**Success criterion:** Template renders correctly with test variables. No XSS possible.
+**Dependencies:** None (parallel with Phase A)
+**Estimate:** Small
 
 ---
 
-## Fase C — Frontend: Infraestructura del Wizard
+### Step 8: Fix URL in invitation generation
+**Agent:** `fastapi-architect`
+**Files:**
+- Modify: `backend/app/routers/parent_athletes.py` (line ~264)
 
-### Paso 9: Crear schemas Zod de onboarding
-**Agente:** `react-ui-engineer`
-**Archivos:**
-- Crear: `frontend/src/schemas/onboarding.schema.ts`
+**Change:**
+- Change invitation URL from `/registro-padre?token=` to `/onboarding?token=`
+- Or use configuration variable `ONBOARDING_URL` in `config.py`
 
-**Detalle:**
-- `accountSchema`: password + password_confirm con refinement
+**Success criterion:** Generated URL points to `/onboarding?token={token}`.
+**Dependencies:** None (parallel)
+**Estimate:** Small
+
+---
+
+## Phase C — Frontend: Wizard Infrastructure
+
+### Step 9: Create onboarding Zod schemas
+**Agent:** `react-ui-engineer`
+**Files:**
+- Create: `frontend/src/schemas/onboarding.schema.ts`
+
+**Detail:**
+- `accountSchema`: password + password_confirm with refinement
 - `parentProfileSchema`: first_name, last_name, phone, relationship_type
-- `consentSchema`: 3 obligatorios (literal true) + 1 opcional (boolean)
-- `onboardingFormSchema`: combinación para type-safety
+- `consentSchema`: 3 mandatory (literal true) + 1 optional (boolean)
+- `onboardingFormSchema`: combination for type-safety
 - Type export: `OnboardingFormData`
 
-**Criterio de éxito:** Schemas compilan sin errores TypeScript. Validaciones correctas.
-**Dependencias:** Ninguna (paralelo con backend)
-**Estimado:** Pequeño
+**Success criterion:** Schemas compile without TypeScript errors. Validations are correct.
+**Dependencies:** None (parallel with backend)
+**Estimate:** Small
 
 ---
 
-### Paso 10: Crear Zustand store de onboarding
-**Agente:** `react-ui-engineer`
-**Archivos:**
-- Crear: `frontend/src/stores/onboarding-store.ts`
+### Step 10: Create onboarding Zustand store
+**Agent:** `react-ui-engineer`
+**Files:**
+- Create: `frontend/src/stores/onboarding-store.ts`
 
-**Detalle:**
+**Detail:**
 - State: currentStep, role, token, email, athleteName, clubName, formData
 - Actions: setStep, setTokenData, updateFormData, reset
-- Middleware: `persist` con key `"trocha-onboarding"` en localStorage
+- Middleware: `persist` with key `"trocha-onboarding"` in localStorage
 
-**Criterio de éxito:** Store persiste y recupera estado correctamente.
-**Dependencias:** Ninguna (paralelo)
-**Estimado:** Pequeño
+**Success criterion:** Store persists and recovers state correctly.
+**Dependencies:** None (parallel)
+**Estimate:** Small
 
 ---
 
-### Paso 11: Crear hook `useOnboarding`
-**Agente:** `react-ui-engineer`
-**Archivos:**
-- Crear: `frontend/src/hooks/onboarding/useOnboarding.ts`
-- Crear: `frontend/src/hooks/onboarding/index.ts`
+### Step 11: Create `useOnboarding` hook
+**Agent:** `react-ui-engineer`
+**Files:**
+- Create: `frontend/src/hooks/onboarding/useOnboarding.ts`
+- Create: `frontend/src/hooks/onboarding/index.ts`
 
-**Detalle:**
+**Detail:**
 - `useValidateToken(token)` — TanStack Query wrapping `GET /api/auth/invite/{token}`
 - `useCompleteOnboarding()` — Mutation wrapping `POST /api/auth/parent-register`
-- Manejo de errores: 410 (expirado), 409 (email duplicado), 500 (server error)
+- Error handling: 410 (expired), 409 (duplicate email), 500 (server error)
 
-**Criterio de éxito:** Hooks funcionan con TanStack Query. Loading/error states correctos.
-**Dependencias:** Paso 9 (tipos), API client existente
-**Estimado:** Pequeño
-
----
-
-### Paso 12: Actualizar API client
-**Agente:** `react-ui-engineer`
-**Archivos:**
-- Modificar: `frontend/src/api/parents.ts` (o crear `frontend/src/api/onboarding.ts`)
-
-**Cambios:**
-- Actualizar `registerParent()` para incluir `relationship_type` y `consent` en payload
-- Actualizar tipo de respuesta de `validateInviteToken()` para incluir `role` y `club_name`
-
-**Criterio de éxito:** API client alineado con schemas backend actualizados.
-**Dependencias:** Paso 3 (schemas backend definidos)
-**Estimado:** Pequeño
+**Success criterion:** Hooks work with TanStack Query. Correct loading/error states.
+**Dependencies:** Step 9 (types), existing API client
+**Estimate:** Small
 
 ---
 
-## Fase D — Frontend: Componentes del Wizard
+### Step 12: Update API client
+**Agent:** `react-ui-engineer`
+**Files:**
+- Modify: `frontend/src/api/parents.ts` (or create `frontend/src/api/onboarding.ts`)
 
-### Paso 13: Crear componente `OnboardingStepper`
-**Agente:** `react-ui-engineer`
-**Archivos:**
-- Crear: `frontend/src/components/onboarding/OnboardingStepper.tsx`
-- Crear: `frontend/src/components/onboarding/onboarding-steps.ts` (config declarativa)
+**Changes:**
+- Update `registerParent()` to include `relationship_type` and `consent` in payload
+- Update return type of `validateInviteToken()` to include `role` and `club_name`
 
-**Detalle:**
-- Stepper visual custom con primitivas shadcn (Badge, Separator)
+**Success criterion:** API client aligned with updated backend schemas.
+**Dependencies:** Step 3 (backend schemas defined)
+**Estimate:** Small
+
+---
+
+## Phase D — Frontend: Wizard Components
+
+### Step 13: Create `OnboardingStepper` component
+**Agent:** `react-ui-engineer`
+**Files:**
+- Create: `frontend/src/components/onboarding/OnboardingStepper.tsx`
+- Create: `frontend/src/components/onboarding/onboarding-steps.ts` (declarative config)
+
+**Detail:**
+- Custom visual stepper with shadcn primitives (Badge, Separator)
 - Props: steps (StepConfig[]), currentStep (number)
-- Muestra: ícono + label por paso, estado (completed/current/pending)
-- Responsive: horizontal en desktop, vertical en mobile
-- Config declarativa `ONBOARDING_STEPS` con roles, schemas, fields, components
+- Shows: icon + label per step, state (completed/current/pending)
+- Responsive: horizontal on desktop, vertical on mobile
+- Declarative `ONBOARDING_STEPS` config with roles, schemas, fields, components
 
-**Criterio de éxito:** Stepper renderiza correctamente para 4 pasos (parent) y 4 pasos (coach futuro).
-**Dependencias:** Paso 9
-**Estimado:** Mediano
+**Success criterion:** Stepper renders correctly for 4 steps (parent) and 4 steps (future coach).
+**Dependencies:** Step 9
+**Estimate:** Medium
 
 ---
 
-### Paso 14: Crear componentes de cada paso
-**Agente:** `react-ui-engineer`
-**Archivos:**
-- Crear: `frontend/src/components/onboarding/steps/AccountStep.tsx`
-- Crear: `frontend/src/components/onboarding/steps/ParentProfileStep.tsx`
-- Crear: `frontend/src/components/onboarding/steps/ConsentStep.tsx`
-- Crear: `frontend/src/components/onboarding/steps/ConfirmStep.tsx`
+### Step 14: Create step components
+**Agent:** `react-ui-engineer`
+**Files:**
+- Create: `frontend/src/components/onboarding/steps/AccountStep.tsx`
+- Create: `frontend/src/components/onboarding/steps/ParentProfileStep.tsx`
+- Create: `frontend/src/components/onboarding/steps/ConsentStep.tsx`
+- Create: `frontend/src/components/onboarding/steps/ConfirmStep.tsx`
 
-**Detalle por componente:**
+**Detail per component:**
 
 **AccountStep:**
-- Email (readonly, pre-rellenado desde token)
-- Password con indicador de fortaleza
+- Email (readonly, pre-filled from token)
+- Password with strength indicator
 - Password confirm
-- Usa shadcn Input, Label
+- Uses shadcn Input, Label
 
 **ParentProfileStep:**
-- Nombre, Apellido (Input)
-- Teléfono (Input, opcional)
-- Parentesco (Select: padre/madre/acudiente)
-- Usa shadcn Input, Label, Select
+- First name, Last name (Input)
+- Phone (Input, optional)
+- Relationship (Select: padre/madre/acudiente)
+- Uses shadcn Input, Label, Select
 
 **ConsentStep:**
-- Card con explicación de datos recolectados
-- 3 Checkbox obligatorios con descripciones detalladas
-- 1 Checkbox opcional (terceros)
-- Link a política de privacidad
-- Nombre del atleta contextualizado
-- Usa shadcn Checkbox, Card, Alert
+- Card with explanation of data collected
+- 3 mandatory checkboxes with detailed descriptions
+- 1 optional checkbox (third parties)
+- Link to privacy policy
+- Contextualized athlete name
+- Uses shadcn Checkbox, Card, Alert
 
 **ConfirmStep:**
-- Resumen de todos los datos ingresados (readonly)
-- Mensaje: "Serás vinculado como [parentesco] de [atleta] en [club]"
-- Botón "Crear cuenta" (submit final)
-- Usa shadcn Card, Badge, Button
+- Summary of all entered data (readonly)
+- Message: "You will be linked as [relationship] of [athlete] in [club]"
+- "Create account" button (final submit)
+- Uses shadcn Card, Badge, Button
 
-**Criterio de éxito:** Cada componente renderiza y valida independientemente.
-**Dependencias:** Paso 9, Paso 13
-**Estimado:** Grande
+**Success criterion:** Each component renders and validates independently.
+**Dependencies:** Step 9, Step 13
+**Estimate:** Large
 
 ---
 
-### Paso 15: Crear `OnboardingWizard` container
-**Agente:** `react-ui-engineer`
-**Archivos:**
-- Crear: `frontend/src/components/onboarding/OnboardingWizard.tsx`
+### Step 15: Create `OnboardingWizard` container
+**Agent:** `react-ui-engineer`
+**Files:**
+- Create: `frontend/src/components/onboarding/OnboardingWizard.tsx`
 
-**Detalle:**
+**Detail:**
 - Props: `{ role, tokenData, onComplete }`
-- Filtra `ONBOARDING_STEPS` por rol
+- Filters `ONBOARDING_STEPS` by role
 - `FormProvider` wrapping (React Hook Form)
-- `defaultValues` hidratados desde Zustand store
+- `defaultValues` hydrated from Zustand store
 - `handleNext()`: `trigger(fields)` → `updateFormData()` → `setStep(+1)`
 - `handleBack()`: `setStep(-1)`
-- `handleSubmit()`: en último paso, llama `onComplete(formData)`
-- Animación de transición entre pasos (opcional, CSS transition)
+- `handleSubmit()`: on last step, calls `onComplete(formData)`
+- Step transition animation (optional, CSS transition)
 
-**Criterio de éxito:** Wizard navega correctamente, valida por paso, persiste estado.
-**Dependencias:** Paso 10, Paso 13, Paso 14
-**Estimado:** Mediano
+**Success criterion:** Wizard navigates correctly, validates per step, persists state.
+**Dependencies:** Step 10, Step 13, Step 14
+**Estimate:** Medium
 
 ---
 
-### Paso 16: Crear `OnboardingPage` y actualizar rutas
-**Agente:** `react-ui-engineer`
-**Archivos:**
-- Crear: `frontend/src/routes/auth/OnboardingPage.tsx`
-- Crear: `frontend/src/components/onboarding/OnboardingSuccess.tsx`
-- Modificar: `frontend/src/App.tsx` (agregar ruta `/onboarding`, redirect `/registro-padre`)
+### Step 16: Create `OnboardingPage` and update routes
+**Agent:** `react-ui-engineer`
+**Files:**
+- Create: `frontend/src/routes/auth/OnboardingPage.tsx`
+- Create: `frontend/src/components/onboarding/OnboardingSuccess.tsx`
+- Modify: `frontend/src/App.tsx` (add route `/onboarding`, redirect `/registro-padre`)
 
-**Detalle:**
+**Detail:**
 
 **OnboardingPage:**
-- Estados: "loading" | "invalid" | "expired" | "wizard" | "success"
-- Mount: extrae `?token=`, llama `useValidateToken(token)`
+- States: "loading" | "invalid" | "expired" | "wizard" | "success"
+- Mount: extracts `?token=`, calls `useValidateToken(token)`
 - Loading: skeleton/spinner
-- Invalid/Expired: Card con mensaje descriptivo + link "Contactar al entrenador"
-- Wizard: renderiza `OnboardingWizard` con `role` y `tokenData`
-- onComplete: llama `useCompleteOnboarding()` mutation → "success"
+- Invalid/Expired: Card with descriptive message + link "Contact the coach"
+- Wizard: renders `OnboardingWizard` with `role` and `tokenData`
+- onComplete: calls `useCompleteOnboarding()` mutation → "success"
 
 **OnboardingSuccess:**
-- Ícono de éxito (CheckCircle)
-- "¡Cuenta creada exitosamente!"
-- "Ya puedes seguir el progreso deportivo de [atleta]"
-- Botón "Iniciar sesión" → `/login`
-- Limpiar Zustand store (reset)
+- Success icon (CheckCircle)
+- "Account created successfully!"
+- "You can now follow [athlete]'s sports progress"
+- "Log in" button → `/login`
+- Clear Zustand store (reset)
 
-**Rutas App.tsx:**
+**App.tsx routes:**
 ```tsx
 <Route path="/onboarding" element={<OnboardingPage />} />
 <Route path="/registro-padre" element={<Navigate to="/onboarding" replace />} />
 ```
 
-**Criterio de éxito:** Flujo completo funciona E2E: URL con token → wizard → registro → éxito.
-**Dependencias:** Paso 11, Paso 15
-**Estimado:** Mediano
+**Success criterion:** Complete flow works E2E: URL with token → wizard → registration → success.
+**Dependencies:** Step 11, Step 15
+**Estimate:** Medium
 
 ---
 
-## Fase E — Validación y Cleanup
+## Phase E — Validation and Cleanup
 
-### Paso 17: Tests E2E del flujo completo
-**Agente:** `quality-engineer`
-**Archivos:**
-- Crear: `backend/tests/test_onboarding_consent.py`
-- Verificar: flujo E2E manual con Docker Compose
+### Step 17: E2E tests for the complete flow
+**Agent:** `quality-engineer`
+**Files:**
+- Create: `backend/tests/test_onboarding_consent.py`
+- Verify: manual E2E flow with Docker Compose
 
-**Escenarios a testear:**
+**Scenarios to test:**
 
-| # | Escenario | Resultado esperado |
+| # | Scenario | Expected result |
 |---|---|---|
-| 1 | Token válido → wizard completo → registro | User + ParentAthlete + ParentalConsent creados |
-| 2 | Token expirado | Pantalla "enlace expirado" |
-| 3 | Token ya usado | Pantalla "enlace ya utilizado" |
-| 4 | Token inválido/inexistente | Pantalla "enlace inválido" |
-| 5 | Email ya registrado | Error 409 con mensaje descriptivo |
-| 6 | Consentimiento incompleto (falta obligatorio) | Validación frontend bloquea avance |
-| 7 | Navegación atrás/adelante en wizard | Estado persistido correctamente |
-| 8 | Cerrar browser y volver a URL | Recupera progreso desde localStorage |
-| 9 | `/registro-padre` redirect | Redirige a `/onboarding` |
-| 10 | Registro exitoso → login → dashboard padre | Flujo completo end-to-end |
+| 1 | Valid token → complete wizard → registration | User + ParentAthlete + ParentalConsent created |
+| 2 | Expired token | "Link expired" screen |
+| 3 | Already-used token | "Link already used" screen |
+| 4 | Invalid/non-existent token | "Invalid link" screen |
+| 5 | Already-registered email | 409 error with descriptive message |
+| 6 | Incomplete consent (missing mandatory) | Frontend validation blocks progress |
+| 7 | Back/forward navigation in wizard | State persisted correctly |
+| 8 | Close browser and return to URL | Recovers progress from localStorage |
+| 9 | `/registro-padre` redirect | Redirects to `/onboarding` |
+| 10 | Successful registration → login → parent dashboard | Complete end-to-end flow |
 
-**Criterio de éxito:** Todos los escenarios pasan.
-**Dependencias:** Todos los pasos anteriores
-**Estimado:** Mediano
+**Success criterion:** All scenarios pass.
+**Dependencies:** All previous steps
+**Estimate:** Medium
 
 ---
 
-## Diagrama de Dependencias
+## Dependency Diagram
 
 ```
-Fase A (Backend)                    Fase B (Backend)        Fase C (Frontend)
+Phase A (Backend)                   Phase B (Backend)       Phase C (Frontend)
                                     
-Paso 1 ──┬──→ Paso 2               Paso 7 (paralelo)       Paso 9 (paralelo)
+Step 1 ──┬──→ Step 2               Step 7 (parallel)       Step 9 (parallel)
           │                                                  │
-          ├──→ Paso 4 ──→ Paso 5   Paso 8 (paralelo)       Paso 10 (paralelo)
+          ├──→ Step 4 ──→ Step 5   Step 8 (parallel)       Step 10 (parallel)
           │                                                  │
-Paso 3 ──┤                                                  Paso 11 (paralelo)
+Step 3 ──┤                                                  Step 11 (parallel)
           │                                                  │
-          └──→ Paso 6                                       Paso 12
+          └──→ Step 6                                       Step 12
                                                              │
-                                    Fase D (Frontend)        │
+                                    Phase D (Frontend)       │
                                                              ▼
-                                    Paso 13 ──→ Paso 14 ──→ Paso 15 ──→ Paso 16
+                                    Step 13 ──→ Step 14 ──→ Step 15 ──→ Step 16
                                     
-                                    Fase E (Validación)
+                                    Phase E (Validation)
                                     
-                                    Paso 17 (depende de TODOS)
+                                    Step 17 (depends on ALL)
 ```
 
-### Ejecución paralela óptima
+### Optimal parallel execution
 
-| Ronda | Pasos | Agentes en paralelo |
+| Round | Steps | Parallel agents |
 |---|---|---|
-| **Ronda 1** | 1, 3, 7, 8, 9, 10 | `fastapi-architect` × 3, `react-ui-engineer` × 2 |
-| **Ronda 2** | 2, 4, 6, 11, 12, 13 | `fastapi-architect` × 3, `react-ui-engineer` × 2 |
-| **Ronda 3** | 5, 14 | `fastapi-architect` × 1, `react-ui-engineer` × 1 |
-| **Ronda 4** | 15, 16 | `react-ui-engineer` × 1 |
-| **Ronda 5** | 17 | `quality-engineer` × 1 |
+| **Round 1** | 1, 3, 7, 8, 9, 10 | `fastapi-architect` × 3, `react-ui-engineer` × 2 |
+| **Round 2** | 2, 4, 6, 11, 12, 13 | `fastapi-architect` × 3, `react-ui-engineer` × 2 |
+| **Round 3** | 5, 14 | `fastapi-architect` × 1, `react-ui-engineer` × 1 |
+| **Round 4** | 15, 16 | `react-ui-engineer` × 1 |
+| **Round 5** | 17 | `quality-engineer` × 1 |
 
 ---
 
-## Resumen de Archivos
+## File Summary
 
-### Crear (12 archivos nuevos)
+### Create (12 new files)
 
-| # | Archivo | Paso |
+| # | File | Step |
 |---|---|---|
 | 1 | `backend/app/models/parental_consent.py` | 1 |
 | 2 | `backend/alembic/versions/xxx_add_parental_consents.py` | 2 |
@@ -423,44 +423,44 @@ Paso 3 ──┤                                                  Paso 11 (paral
 | 16 | `frontend/src/components/onboarding/OnboardingSuccess.tsx` | 16 |
 | 17 | `backend/tests/test_onboarding_consent.py` | 17 |
 
-### Modificar (7 archivos existentes)
+### Modify (7 existing files)
 
-| # | Archivo | Paso | Cambio |
+| # | File | Step | Change |
 |---|---|---|---|
-| 1 | `backend/app/models/__init__.py` | 1 | Agregar import ParentalConsent |
-| 2 | `backend/app/schemas/parent_invite.py` | 3 | Agregar schemas consent + extender request/response |
-| 3 | `backend/app/services/invitations.py` | 4 | Extender consume_invite() con consent |
-| 4 | `backend/app/routers/auth.py` | 5, 6 | Pasar consent a consume_invite, agregar role/club a response |
-| 5 | `backend/app/routers/parent_athletes.py` | 8 | Fix URL onboarding |
-| 6 | `frontend/src/api/parents.ts` | 12 | Actualizar tipos payload/response |
-| 7 | `frontend/src/App.tsx` | 16 | Agregar ruta /onboarding, redirect /registro-padre |
+| 1 | `backend/app/models/__init__.py` | 1 | Add ParentalConsent import |
+| 2 | `backend/app/schemas/parent_invite.py` | 3 | Add consent schemas + extend request/response |
+| 3 | `backend/app/services/invitations.py` | 4 | Extend consume_invite() with consent |
+| 4 | `backend/app/routers/auth.py` | 5, 6 | Pass consent to consume_invite, add role/club to response |
+| 5 | `backend/app/routers/parent_athletes.py` | 8 | Fix onboarding URL |
+| 6 | `frontend/src/api/parents.ts` | 12 | Update payload/response types |
+| 7 | `frontend/src/App.tsx` | 16 | Add /onboarding route, redirect /registro-padre |
 
 ---
 
-## Fase 1B (Sprint siguiente) — Coach Onboarding
+## Phase 1B (Next sprint) — Coach Onboarding
 
-Una vez completada Fase 1A (padres), extender para coaches:
+Once Phase 1A (parents) is complete, extend for coaches:
 
-| Paso | Descripción | Agente |
+| Step | Description | Agent |
 |---|---|---|
-| B1 | Crear modelo `CoachInvite` (o generalizar `Invitation` con campo `role`) | `fastapi-architect` |
+| B1 | Create `CoachInvite` model (or generalize `Invitation` with `role` field) | `fastapi-architect` |
 | B2 | Endpoints: `POST /api/invitations/coach`, `POST /api/auth/coach-register` | `fastapi-architect` |
-| B3 | Crear `CoachProfileStep.tsx` (certificaciones, experiencia, especialización) | `react-ui-engineer` |
-| B4 | Agregar "coach" a `ONBOARDING_STEPS` config | `react-ui-engineer` |
-| B5 | Template email `coach_invite.html` | `fastapi-architect` |
-| B6 | UI admin: "Invitar entrenador" en panel de administración | `react-ui-engineer` |
+| B3 | Create `CoachProfileStep.tsx` (certifications, experience, specialization) | `react-ui-engineer` |
+| B4 | Add "coach" to `ONBOARDING_STEPS` config | `react-ui-engineer` |
+| B5 | Email template `coach_invite.html` | `fastapi-architect` |
+| B6 | Admin UI: "Invite coach" in admin panel | `react-ui-engineer` |
 
-**Decisión clave Fase 1B:** ¿Generalizar `ParentInvite` → `Invitation` con campo `role`? Sí, pero en Fase 1B para no romper lo existente ahora.
+**Key decision Phase 1B:** Generalize `ParentInvite` → `Invitation` with `role` field? Yes, but in Phase 1B to avoid breaking existing functionality now.
 
 ---
 
-## Fase 2+ — Athlete Self-Onboarding
+## Phase 2+ — Athlete Self-Onboarding
 
-Para atletas mayores de 16 años que se registran solos:
+For athletes over 16 who register themselves:
 
-| Paso | Descripción |
+| Step | Description |
 |---|---|
-| C1 | Nuevo tipo de invitación: `athlete_self` |
-| C2 | `AthleteProfileStep.tsx`: datos deportivos básicos |
-| C3 | Consentimiento propio (>16) vs. parental (<16) — lógica por edad |
-| C4 | Vinculación automática a club sin parent intermediario |
+| C1 | New invitation type: `athlete_self` |
+| C2 | `AthleteProfileStep.tsx`: basic sports data |
+| C3 | Own consent (>16) vs. parental (<16) — logic by age |
+| C4 | Automatic club linkage without parent intermediary |

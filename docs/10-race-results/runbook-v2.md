@@ -1,112 +1,111 @@
-# Runbook v2 — race-analyst agentico (operacion, retencion)
+# Runbook v2 — agentic race-analyst (operation, retention)
 
-> **Audiencia**: coach, admin, on-call.
-> **Alcance**: cap operativo, monitoreo cuota Gemini, rollback via redeploy
-> y job de retencion 180d post `deprecated_at`.
-> Complementa al runbook operativo `runbook-ops.md` (alertas/metricas en vivo).
-
----
-
-## 1. Activacion y operacion
-
-v2 esta **siempre activo** (sin feature flag). El unico gate es `AI_ENABLED`
-(ya existente para todos los modulos IA).
-
-Cap operativo (acordado con engineering-lead):
-
-- Maximo **4 validas/run** -> hasta **12 LLM calls + 1 season summary** por analisis.
-- Encuadra costo esperado y permite proyectar cuota Gemini.
-
-### Rollback de emergencia
-
-Disparador: error 5xx > 5% en endpoints v2, costo Gemini disparado, PII leak.
-
-- Render Dashboard -> pestana **Deploys** -> click en el deploy
-  anterior estable -> **Redeploy**. Restaura el binario sin esperar build.
-- Para deshabilitar IA en general (incluye v1 y v2): set `AI_ENABLED=false`
-  en Environment -> Save -> auto-redeploy (~3-5 min).
-- Tras rollback documentar incidente en `docs/10-race-results/` y avisar
-  a engineering-lead.
-
-> Rollback **no** borra filas en `athlete_ai_insights`. Si una fila
-> publicada es problematica, marcar `archived_at = NOW()` desde MySQL
-> (mismo procedimiento de `runbook-ops.md` seccion 3.5).
+> **Audience**: coach, admin, on-call.
+> **Scope**: operational cap, Gemini quota monitoring, rollback via redeploy
+> and 180d retention job post `deprecated_at`.
+> Complements the operational runbook `runbook-ops.md` (live alerts/metrics).
 
 ---
 
-## 2. Monitoreo cuota Gemini
+## 1. Activation and operation
 
-### 2.1 Donde mirar
+v2 is **always active** (no feature flag). The only gate is `AI_ENABLED`
+(already existing for all AI modules).
+
+Operational cap (agreed with engineering-lead):
+
+- Maximum **4 rounds/run** -> up to **12 LLM calls + 1 season summary** per analysis.
+- Frames expected cost and allows projecting Gemini quota.
+
+### Emergency rollback
+
+Trigger: 5xx error > 5% on v2 endpoints, Gemini cost spike, PII leak.
+
+- Render Dashboard -> **Deploys** tab -> click on the
+  previous stable deploy -> **Redeploy**. Restores the binary without waiting for build.
+- To disable AI in general (includes v1 and v2): set `AI_ENABLED=false`
+  in Environment -> Save -> auto-redeploy (~3-5 min).
+- After rollback, document incident in `docs/10-race-results/` and notify
+  engineering-lead.
+
+> Rollback does **not** delete rows in `athlete_ai_insights`. If a published
+> row is problematic, mark `archived_at = NOW()` from MySQL
+> (same procedure as `runbook-ops.md` section 3.5).
+
+---
+
+## 2. Gemini quota monitoring
+
+### 2.1 Where to look
 
 - Google AI Studio dashboard: <https://aistudio.google.com/app/apikey>
-  -> seleccionar la API key del proyecto -> "Usage".
-- Filtrar por modelo `gemini-2.5-flash-lite` (es el unico que usa el
-  modulo race-analyst v2; cualquier consumo de otro modelo es anomalia).
+  -> select the project API key -> "Usage".
+- Filter by model `gemini-2.5-flash-lite` (it is the only one used by the
+  race-analyst v2 module; any consumption from another model is anomalous).
 
-### 2.2 Limites tier free Gemini (referencia)
+### 2.2 Gemini free tier limits (reference)
 
-| Modelo | RPM | RPD | Tokens/dia |
+| Model | RPM | RPD | Tokens/day |
 |---|---|---|---|
 | `gemini-2.5-flash-lite` | 15 | 1500 | 1M |
 
-> Valores de la consola al 2026-05-25. **Confirmar en consola antes de
-> dimensionar** porque Google ajusta cuotas periodicamente.
+> Values from the console at 2026-05-25. **Confirm in console before
+> sizing** because Google periodically adjusts quotas.
 
-### 2.3 Estimacion vs cap operativo
+### 2.3 Estimate vs operational cap
 
-- 1 analisis completo = max 12 + 1 = **13 calls**.
-- Con 1500 RPD libre teorico, eso son **~115 analisis/dia** antes de
-  topar limite del free tier.
-- **El gate practico es el budget guard** (`RACE_AI_BUDGET_USD_30D`,
-  ver `runbook-ops.md` seccion 3.4), no la cuota Gemini per se.
+- 1 complete analysis = max 12 + 1 = **13 calls**.
+- With 1500 theoretical free RPD, that is **~115 analyses/day** before
+  hitting the free tier limit.
+- **The practical gate is the budget guard** (`RACE_AI_BUDGET_USD_30D`,
+  see `runbook-ops.md` section 3.4), not the Gemini quota per se.
 
-### 2.4 Alerta operativa: 80% de cuota
+### 2.4 Operational alert: 80% of quota
 
-**Disparador**: consumo diario supera **1200 calls / dia** (80% de 1500
-en tier free) **durante 2 dias consecutivos**.
+**Trigger**: daily consumption exceeds **1200 calls / day** (80% of 1500
+in free tier) **for 2 consecutive days**.
 
-**Accion**:
+**Action**:
 
-1. Revisar `/ai-usage` (drill-down por `prompt_version`) — ver si hay
-   regresion o feature nueva consumiendo de mas.
-2. Cap temporal: bajar `RACE_AI_BUDGET_USD_30D` para frenar nuevas
-   ejecuciones, o reducir allowlist canary.
-3. Si el consumo es legitimo y sostenido: **plan migracion a tier pago
-   Gemini** ("Pay-as-you-go") — coordinar con engineering-lead. El cambio
-   se hace en Google Cloud Console; la API key existente funciona,
-   solo cambia la facturacion.
-4. Post-migracion, subir `AI_MAX_TOKENS` si hace falta y documentar
-   nuevo costo unitario en `runbook-ops.md` seccion 3.4.
+1. Review `/ai-usage` (drill-down by `prompt_version`) — see if there is a
+   regression or new feature consuming more.
+2. Temporary cap: lower `RACE_AI_BUDGET_USD_30D` to slow down new
+   executions, or reduce canary allowlist.
+3. If consumption is legitimate and sustained: **migration plan to paid Gemini tier**
+   ("Pay-as-you-go") — coordinate with engineering-lead. The change
+   is done in Google Cloud Console; the existing API key works,
+   only billing changes.
+4. Post-migration, raise `AI_MAX_TOKENS` if needed and document
+   new unit cost in `runbook-ops.md` section 3.4.
 
-### 2.5 Polling manual rapido
+### 2.5 Quick manual polling
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_JWT" \
   "https://mi-2yzi.onrender.com/api/race-analysis/admin/ai-usage?days=7"
 ```
 
-Si `run_count` x 13 calls/dia se acerca a 1200, alerta.
+If `run_count` x 13 calls/day approaches 1200, alert.
 
 ---
 
-## 3. Retencion 180d post `deprecated_at`
+## 3. 180d retention post `deprecated_at`
 
-### 3.1 Politica
+### 3.1 Policy
 
-- Filas en `athlete_ai_insights` con `deprecated_at` (insight superado
-  por una version mas reciente) conservan su contenido por **180 dias**
-  para auditoria.
-- A los 180 dias el script `retention_ai_insights.py` redacta el campo
-  `summary_text` y marca `pii_scrubbed_at = NOW()` (idempotente: filas
-  ya scrubeadas se ignoran).
-- Las filas **no se borran** — quedan registros de "que se publico y
-  cuando", con su contenido textual ofuscado.
+- Rows in `athlete_ai_insights` with `deprecated_at` (insight superseded
+  by a more recent version) retain their content for **180 days**
+  for auditing.
+- After 180 days the script `retention_ai_insights.py` redacts the
+  `summary_text` field and marks `pii_scrubbed_at = NOW()` (idempotent: already-scrubbed rows are ignored).
+- Rows are **not deleted** — records of "what was published and
+  when" remain, with their textual content obfuscated.
 
 ### 3.2 Script
 
-`backend/scripts/retention_ai_insights.py` (CLI Typer).
+`backend/scripts/retention_ai_insights.py` (Typer CLI).
 
-**Dry-run (default, seguro)**:
+**Dry-run (default, safe)**:
 
 ```bash
 cd backend
@@ -114,67 +113,66 @@ source .venv/bin/activate
 python -m scripts.retention_ai_insights
 ```
 
-Imprime tabla de filas que se redactarian (sin ejecutar UPDATE).
+Prints table of rows that would be redacted (without executing UPDATE).
 
-**Aplicar**:
+**Apply**:
 
 ```bash
 python -m scripts.retention_ai_insights --apply
 ```
 
-Idempotente: filtra por `pii_scrubbed_at IS NULL`, asi correrlo dos
-veces no doble-redacta.
+Idempotent: filters by `pii_scrubbed_at IS NULL`, so running it twice
+does not double-redact.
 
-**Override del threshold (debugging)**:
+**Override threshold (debugging)**:
 
 ```bash
-# Forzar 90d en vez de 180d (uso interno, no operativo):
+# Force 90d instead of 180d (internal use, not operational):
 python -m scripts.retention_ai_insights --days 90 --apply
 ```
 
-### 3.3 Programacion (Render Free no tiene cron nativo)
+### 3.3 Scheduling (Render Free has no native cron)
 
-Render Free tier no expone cron jobs. Tres opciones, en orden de
-preferencia operativa:
+Render Free tier does not expose cron jobs. Three options, in order of
+operational preference:
 
-**A. GitHub Actions schedule (recomendado)**
+**A. GitHub Actions schedule (recommended)**
 
-Workflow `.github/workflows/retention-cron.yml` con `schedule: cron: '0 5 1 * *'`
-(mensual, primer dia 05:00 UTC) que:
+Workflow `.github/workflows/retention-cron.yml` with `schedule: cron: '0 5 1 * *'`
+(monthly, first day 05:00 UTC) that:
 
-1. Checkout del repo.
+1. Checkout the repo.
 2. Setup Python + venv.
-3. Lee secret `DATABASE_URL` desde GitHub Secrets.
-4. Corre `python -m scripts.retention_ai_insights --apply`.
+3. Reads secret `DATABASE_URL` from GitHub Secrets.
+4. Runs `python -m scripts.retention_ai_insights --apply`.
 
-> A definir cuando engineering-lead apruebe el workflow. Requiere
-> agregar `MYSQL_*` o `DATABASE_URL` como GitHub Secrets.
+> To be defined when engineering-lead approves the workflow. Requires
+> adding `MYSQL_*` or `DATABASE_URL` as GitHub Secrets.
 
-**B. Endpoint admin protegido**
+**B. Protected admin endpoint**
 
-Exponer `POST /api/race-analysis/admin/retention/run` (RBAC admin)
-que importe el script como funcion. Disparado desde cron externo
-(cron-job.org, uptime monitor). Ventaja: no expone credenciales DB
-fuera de Render. Desventaja: requiere desarrollo backend adicional.
+Expose `POST /api/race-analysis/admin/retention/run` (RBAC admin)
+that imports the script as a function. Triggered from external cron
+(cron-job.org, uptime monitor). Advantage: does not expose DB credentials
+outside Render. Disadvantage: requires additional backend development.
 
-**C. Manual mensual**
+**C. Monthly manual**
 
-Coach o devops corre el script desde su maquina con credenciales
-del .env de produccion el primer dia de cada mes. Aceptable como
-puente hasta que A o B esten implementados. Anotar en bitacora cada
-corrida.
+Coach or devops runs the script from their machine with production
+credentials from the .env on the first day of each month. Acceptable as a
+bridge until A or B are implemented. Log each run in a notes file.
 
-### 3.4 Validacion post-corrida
+### 3.4 Post-run validation
 
 ```sql
--- Filas elegibles que aun no fueron scrubeadas (deberia ser 0
--- inmediatamente despues de --apply):
+-- Eligible rows that have not yet been scrubbed (should be 0
+-- immediately after --apply):
 SELECT COUNT(*)
 FROM athlete_ai_insights
 WHERE deprecated_at < NOW() - INTERVAL 180 DAY
   AND pii_scrubbed_at IS NULL;
 
--- Filas scrubeadas recientemente (verifica que el job corrio):
+-- Recently scrubbed rows (verifies the job ran):
 SELECT id, athlete_id, deprecated_at, pii_scrubbed_at
 FROM athlete_ai_insights
 WHERE pii_scrubbed_at >= NOW() - INTERVAL 1 DAY
@@ -184,24 +182,24 @@ LIMIT 20;
 
 ---
 
-## 4. Checklist rapido por situacion
+## 4. Quick checklist by situation
 
-| Situacion | Pasos |
+| Situation | Steps |
 |---|---|
-| Activar v2 para 1 atleta canary | Env -> `V2_ENABLED=true`, `V2_ATHLETE_ALLOWLIST=<id>` -> Save -> smoke -> avisar coach |
-| Quitar atleta del canary | Editar CSV en `V2_ATHLETE_ALLOWLIST` removiendo el id -> Save |
-| Rollback emergencia | `V2_ENABLED=false` o redeploy del deploy anterior estable |
-| Cuota Gemini 80% | Revisar `/ai-usage`, bajar `RACE_AI_BUDGET_USD_30D`, plan migrar a tier pago |
-| Retencion mensual | `python -m scripts.retention_ai_insights --apply` (o esperar a cron) |
-| PII leak | Ver `runbook-ops.md` seccion 3.5 — protocolo separado |
+| Activate v2 for 1 canary athlete | Env -> `V2_ENABLED=true`, `V2_ATHLETE_ALLOWLIST=<id>` -> Save -> smoke -> notify coach |
+| Remove athlete from canary | Edit CSV in `V2_ATHLETE_ALLOWLIST` removing the id -> Save |
+| Emergency rollback | `V2_ENABLED=false` or redeploy of previous stable deploy |
+| Gemini quota 80% | Review `/ai-usage`, lower `RACE_AI_BUDGET_USD_30D`, plan migration to paid tier |
+| Monthly retention | `python -m scripts.retention_ai_insights --apply` (or wait for cron) |
+| PII leak | See `runbook-ops.md` section 3.5 — separate protocol |
 
 ---
 
-## 5. Referencias
+## 5. References
 
-- `runbook-ops.md` — alertas, queries y procedimientos generales.
-- `v2-agentic-design.md` — diseno tecnico del pipeline LangGraph.
-- `backend/scripts/retention_ai_insights.py` — script de retencion.
-- `backend/app/models/athlete_ai_insight.py` — modelo con
+- `runbook-ops.md` — alerts, queries and general procedures.
+- `v2-agentic-design.md` — technical design of the LangGraph pipeline.
+- `backend/scripts/retention_ai_insights.py` — retention script.
+- `backend/app/models/athlete_ai_insight.py` — model with
   `deprecated_at`, `pii_scrubbed_at`, `summary_text`.
 - Google AI Studio: <https://aistudio.google.com/app/apikey>.

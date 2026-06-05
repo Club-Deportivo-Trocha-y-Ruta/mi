@@ -1,96 +1,96 @@
-# E2E Test Report — Módulo Sesiones de Entrenamiento
-**Fecha de ejecución:** 2026-05-06  
-**Rama:** feature/training-module  
+# E2E Test Report — Training Sessions Module
+**Execution date:** 2026-05-06  
+**Branch:** feature/training-module  
 **PR:** https://github.com/Club-Deportivo-Trocha-y-Ruta/mi/pull/4  
-**Ejecutado por:** quality-engineer agent
+**Executed by:** quality-engineer agent
 
 ---
 
-## Entorno
+## Environment
 
-| Componente | Estado | Detalle |
+| Component | Status | Detail |
 |---|---|---|
-| Docker Compose (backend + MySQL + mailhog) | UP (sano) | 3 servicios healthy |
+| Docker Compose (backend + MySQL + mailhog) | UP (healthy) | 3 healthy services |
 | Backend (`http://localhost:8000`) | UP | FastAPI + aiomysql |
 | Frontend (`http://localhost:5173`) | UP | React 19 + Vite |
 | playwright-cli | v0.1.7 | Chromium |
-| Migraciones Alembic | INCOMPLETAS al inicio | `training_sessions` / `session_attendance` / `monthly_reports` faltaban. Se aplicaron durante el test con `docker exec ... alembic upgrade head`. |
+| Alembic migrations | INCOMPLETE at start | `training_sessions` / `session_attendance` / `monthly_reports` were missing. Applied during the test with `docker exec ... alembic upgrade head`. |
 
-> **Incidencia pre-vuelo:** Las migraciones `6e189a7e1e51` y `b2c3d4e5f6a7` no se habían aplicado porque el contenedor fue creado antes del commit del módulo. Se aplicaron manualmente. En producción esto se haría automáticamente al desplegar.
+> **Pre-flight incident:** Migrations `6e189a7e1e51` and `b2c3d4e5f6a7` had not been applied because the container was created before the module commit. They were applied manually. In production this would happen automatically on deployment.
 
 ---
 
 ## Tier 1 — Smoke API (backend curl)
 
-### 1.1 Sesiones — Autenticación y Permisos
+### 1.1 Sessions — Authentication and Permissions
 
-| Test | Endpoint | Rol | Esperado | Obtenido | Resultado |
+| Test | Endpoint | Role | Expected | Obtained | Result |
 |---|---|---|---|---|---|
-| T1.1 | `POST /api/training-sessions` | coach | 201 | 500 (sesión creada en DB, error en respuesta) | **FAIL** |
+| T1.1 | `POST /api/training-sessions` | coach | 201 | 500 (session created in DB, error in response) | **FAIL** |
 | T1.2 | `POST /api/training-sessions` | parent | 403 | 403 | PASS |
 | T1.3 | `POST /api/training-sessions` | anon | 401 | 401 | PASS |
 | T1.4 | `GET /api/training-sessions` | coach | 200 | 200 | PASS |
 | T1.5 | `GET /api/training-sessions` | parent | 200 | 200 | PASS |
 | T1.6 | `GET /api/training-sessions/{id}` | coach | 200 | 200 | PASS |
-| T1.7 | `GET /api/training-sessions/{id}` (no convocado) | parent | 403 | 403 | PASS |
+| T1.7 | `GET /api/training-sessions/{id}` (not called up) | parent | 403 | 403 | PASS |
 | T1.8 | `GET /api/training-sessions/999999` | coach | 404 | 404 | PASS |
 
-### 1.2 Validaciones de creación
+### 1.2 Creation validations
 
-| Test | Validación | Esperado | Obtenido | Resultado |
+| Test | Validation | Expected | Obtained | Result |
 |---|---|---|---|---|
-| T1.5 | `scheduled_date` pasada | 422 | 422 | PASS |
+| T1.5 | Past `scheduled_date` | 422 | 422 | PASS |
 | T1.6 | `duration_min=5` (< 15) | 422 | 422 | PASS |
 | T1.7 | `duration_min=999` (> 240) | 422 | 422 | PASS |
-| T1.8 | `strava_url` inválida | 422 | 422 | PASS |
+| T1.8 | Invalid `strava_url` | 422 | 422 | PASS |
 | T1.8b | `convocados_athlete_ids=[]` | 422 | 422 | PASS |
 
-### 1.3 Ejecución de sesiones
+### 1.3 Session execution
 
-| Test | Endpoint | Rol | Esperado | Obtenido | Resultado |
+| Test | Endpoint | Role | Expected | Obtained | Result |
 |---|---|---|---|---|---|
 | T1.9 | `POST /{id}/execute` | coach | 200 + status=executed | 200 + executed | PASS |
-| T1.10 | `POST /{id}/execute` (ya ejecutada) | coach | 409 | 409 | PASS |
+| T1.10 | `POST /{id}/execute` (already executed) | coach | 409 | 409 | PASS |
 | T1.11 | `POST /{id}/execute` | parent | 403 | 403 | PASS |
 
-### 1.4 Asistencia
+### 1.4 Attendance
 
-| Test | Endpoint | Rol | Esperado | Obtenido | Resultado |
+| Test | Endpoint | Role | Expected | Obtained | Result |
 |---|---|---|---|---|---|
-| T1.12 | `PATCH /{id}/attendance/{athlete_id}` (presente + rúbrica) | coach | 200 | 200 | PASS |
-| T1.13 | `PATCH /{id}/attendance/{athlete_id}` (ausente + razon) | coach | 200 o 404 | 404 (atleta no en sesión) | INFO |
-| T1.14 | `PATCH` ausente SIN `excuse_reason` | coach | 422 | 422 | PASS |
-| T1.15 | `PATCH` con `rpe_omni=11` | coach | 422 | 422 | PASS |
+| T1.12 | `PATCH /{id}/attendance/{athlete_id}` (present + rubric) | coach | 200 | 200 | PASS |
+| T1.13 | `PATCH /{id}/attendance/{athlete_id}` (absent + reason) | coach | 200 or 404 | 404 (athlete not in session) | INFO |
+| T1.14 | `PATCH` absent WITHOUT `excuse_reason` | coach | 422 | 422 | PASS |
+| T1.15 | `PATCH` with `rpe_omni=11` | coach | 422 | 422 | PASS |
 | T1.16 | `PATCH /{id}/attendance/{athlete_id}` | parent | 403 | 403 | PASS |
 | T1.17 | `GET /athletes/{id}/attendance` | coach | 200 | 200 | PASS |
-| T1.18 | `GET /athletes/{id}/attendance` (propio atleta) | parent | 200 | 200 | PASS |
-| T1.19 | `GET /athletes/{id_ajeno}/attendance` | parent | 403 | 403 | PASS |
+| T1.18 | `GET /athletes/{id}/attendance` (own athlete) | parent | 200 | 200 | PASS |
+| T1.19 | `GET /athletes/{other_id}/attendance` | parent | 403 | 403 | PASS |
 
-### 1.5 Reportes mensuales
+### 1.5 Monthly reports
 
-| Test | Endpoint | Rol | Esperado | Obtenido | Resultado |
+| Test | Endpoint | Role | Expected | Obtained | Result |
 |---|---|---|---|---|---|
-| T1.22 | `POST /clubs/{id}/monthly-reports` (mes cerrado: marzo) | coach | 201 | 201 | PASS |
-| T1.23 | `POST /clubs/{id}/monthly-reports` (mes futuro) | coach | 422 | 422 | PASS |
-| T1.24 | `POST /clubs/{id}/monthly-reports` (mes actual) | coach | 422 | 422 | PASS |
-| T1.24b | `POST /clubs/{id}/monthly-reports` (abril, < día 28) | coach | 400 | 400 | PASS |
-| T1.25 | Reporte duplicado mismo mes | coach | 409 | 409 | PASS |
-| T1.26 | `GET /clubs/{id}/monthly-reports/{year}/{month}` | parent | 200 (sin `coach_observations`) | 200 (campo `null`) | PASS |
+| T1.22 | `POST /clubs/{id}/monthly-reports` (closed month: March) | coach | 201 | 201 | PASS |
+| T1.23 | `POST /clubs/{id}/monthly-reports` (future month) | coach | 422 | 422 | PASS |
+| T1.24 | `POST /clubs/{id}/monthly-reports` (current month) | coach | 422 | 422 | PASS |
+| T1.24b | `POST /clubs/{id}/monthly-reports` (April, < day 28) | coach | 400 | 400 | PASS |
+| T1.25 | Duplicate report same month | coach | 409 | 409 | PASS |
+| T1.26 | `GET /clubs/{id}/monthly-reports/{year}/{month}` | parent | 200 (without `coach_observations`) | 200 (field `null`) | PASS |
 | T1.27 | `POST /clubs/{id}/monthly-reports` | parent | 403 | 403 | PASS |
 | T1.28 | `POST /clubs/{id}/monthly-reports/{y}/{m}/send` | parent | 403 | 403 | PASS |
 | T1.29 | `POST /clubs/{id}/monthly-reports/{y}/{m}/send` | coach | 200 | 200 | PASS |
 | T1.30 | `GET /parents/training/monthly-summary/{y}/{m}` | parent | 200 | 200 | PASS |
-| T1.31 | `GET /parents/training/monthly-summary/{y}/{m}?athlete_id={ajeno}` | parent | 403 | 403 | PASS |
+| T1.31 | `GET /parents/training/monthly-summary/{y}/{m}?athlete_id={other}` | parent | 403 | 403 | PASS |
 
-### 1.6 Upload de archivos
+### 1.6 File upload
 
-| Test | Escenario | Esperado | Obtenido | Resultado |
+| Test | Scenario | Expected | Obtained | Result |
 |---|---|---|---|---|
-| T1.32 | Upload `.txt` (content-type prohibido) | 400 | 400 | PASS |
-| T1.33 | Upload por parent | 403 | 403 (fallback: 000 curl issue) | PASS |
-| T1.36 | Upload archivo >5 MB (6 MB) | 400/413 | 400 | PASS |
-| T1.37 | Upload GPX con XXE | 400/422 | 500 (**defusedxml no instalado**) | **FAIL** |
-| T1.38 | Upload GPX válido | 200 | 500 (**defusedxml no instalado**) | **FAIL** |
+| T1.32 | Upload `.txt` (prohibited content-type) | 400 | 400 | PASS |
+| T1.33 | Upload by parent | 403 | 403 (fallback: 000 curl issue) | PASS |
+| T1.36 | Upload file >5 MB (6 MB) | 400/413 | 400 | PASS |
+| T1.37 | Upload GPX with XXE | 400/422 | 500 (**defusedxml not installed**) | **FAIL** |
+| T1.38 | Upload valid GPX | 200 | 500 (**defusedxml not installed**) | **FAIL** |
 
 ---
 
@@ -98,137 +98,137 @@
 
 ### Flow A — Coach happy path
 
-| Paso | Descripción | Resultado | Snapshot |
+| Step | Description | Result | Snapshot |
 |---|---|---|---|
-| A1 | Login como coach → redirect a /dashboard | PASS | (login auto) |
-| A2 | Navegar a `/training/sessions` — lista visible con tabla | PASS | `flow-a-02-sessions-list.yml` |
-| A3 | Clic "+ Nueva sesión" → form en `/training/sessions/new` | PASS | — |
-| A4 | Llenar form (U15, fecha futura, lugar, foco, descripción, 1 atleta) | PASS | `flow-a-03-session-form-filled.yml` |
-| A5 | Submit → **500 del backend** (bug lazy loading) | **FAIL** — sesión creada en DB pero respuesta 500. UI no redirige ni muestra error. | — |
-| A6 | Navegar a lista — sesión aparece en estado Planificada | PASS (sesión sí aparece) | — |
-| A7 | Clic "Ver" → detalle. Clic "Marcar ejecutada" → status cambia a Ejecutada | PASS | `flow-a-04-session-executed.yml` |
-| A8 | Tabla de asistencia muestra **error** "No se pudo cargar la lista de asistencia" | **FAIL** — frontend hace GET a endpoint inexistente (`/api/training-sessions/{id}/attendance`) | — |
+| A1 | Login as coach → redirect to /dashboard | PASS | (auto login) |
+| A2 | Navigate to `/training/sessions` — list visible with table | PASS | `flow-a-02-sessions-list.yml` |
+| A3 | Click "+ New session" → form at `/training/sessions/new` | PASS | — |
+| A4 | Fill form (U15, future date, location, focus, description, 1 athlete) | PASS | `flow-a-03-session-form-filled.yml` |
+| A5 | Submit → **500 from backend** (lazy loading bug) | **FAIL** — session created in DB but 500 response. UI does not redirect or show error. | — |
+| A6 | Navigate to list — session appears with Planned status | PASS (session does appear) | — |
+| A7 | Click "View" → detail. Click "Mark as executed" → status changes to Executed | PASS | `flow-a-04-session-executed.yml` |
+| A8 | Attendance table shows **error** "Could not load attendance list" | **FAIL** — frontend makes GET to non-existent endpoint (`/api/training-sessions/{id}/attendance`) | — |
 | A9 | Logout | PASS | — |
 
 ### Flow B — Parent privacy check
 
-| Paso | Descripción | Resultado | Snapshot |
+| Step | Description | Result | Snapshot |
 |---|---|---|---|
-| B1 | Login como parent → redirect a `/my-athletes` | PASS | — |
-| B2 | Navegar a `/parents/training/sessions` → lista vacía (sin sesiones del propio atleta) | PASS | `flow-b-01-parent-sessions.yml` |
-| B3 | Intentar navegar a `/training/sessions` (ruta de coach) → redirect a `/my-athletes` | PASS | `flow-b-02-parent-redirect.yml` |
+| B1 | Login as parent → redirect to `/my-athletes` | PASS | — |
+| B2 | Navigate to `/parents/training/sessions` → empty list (no sessions for own athlete) | PASS | `flow-b-01-parent-sessions.yml` |
+| B3 | Attempt to navigate to `/training/sessions` (coach route) → redirect to `/my-athletes` | PASS | `flow-b-02-parent-redirect.yml` |
 | B4 | API: parent POST monthly-report → 403 | PASS | — |
 
 ### Flow C — Monthly report (coach)
 
-| Paso | Descripción | Resultado |
+| Step | Description | Result |
 |---|---|---|
-| C1 | `POST /api/clubs/2/monthly-reports` (marzo 2026) → 201 | PASS |
-| C2 | `ai_summary` presente y no vacío (237 caracteres approx) | PASS |
-| C3 | AI usa proveedor `fake` (AI_PROVIDER=fake en docker-compose) | INFO — AI funcionó con mock |
+| C1 | `POST /api/clubs/2/monthly-reports` (March 2026) → 201 | PASS |
+| C2 | `ai_summary` present and not empty (approx. 237 characters) | PASS |
+| C3 | AI uses `fake` provider (AI_PROVIDER=fake in docker-compose) | INFO — AI worked with mock |
 | C4 | Re-send report → 200 | PASS |
-| C5 | Reporte duplicado → 409 | PASS |
+| C5 | Duplicate report → 409 | PASS |
 
 ### Flow D — Privacy probes (API)
 
-| Probe | Endpoint | Rol | Esperado | Obtenido | Resultado |
+| Probe | Endpoint | Role | Expected | Obtained | Result |
 |---|---|---|---|---|---|
-| D1 | `GET /api/training-sessions?club_id=99` | parent | 200 vacío (fuerza atletas propios) | 200 vacío | PASS |
-| D2 | `GET /api/training-sessions/{id}` (sin atleta propio) | parent | 403 | 403 | PASS |
-| D3 | `PATCH /api/training-sessions/{id}/attendance/{ajeno}` | parent | 403 | 403 | PASS |
-| D4 | `GET /api/clubs/{id}/monthly-reports` | parent | 200 (design permite) | 200 | PASS |
-| D5 | `GET /api/parents/training/monthly-summary/…?athlete_id={ajeno}` | parent | 403 | 403 | PASS |
+| D1 | `GET /api/training-sessions?club_id=99` | parent | 200 empty (forces own athletes) | 200 empty | PASS |
+| D2 | `GET /api/training-sessions/{id}` (without own athlete) | parent | 403 | 403 | PASS |
+| D3 | `PATCH /api/training-sessions/{id}/attendance/{other}` | parent | 403 | 403 | PASS |
+| D4 | `GET /api/clubs/{id}/monthly-reports` | parent | 200 (design allows) | 200 | PASS |
+| D5 | `GET /api/parents/training/monthly-summary/…?athlete_id={other}` | parent | 403 | 403 | PASS |
 
 ---
 
-## Tier 3 — Resiliencia
+## Tier 3 — Resilience
 
-| Test | Escenario | Resultado |
+| Test | Scenario | Result |
 |---|---|---|
-| T3.1 | POST con fecha pasada → 422 | PASS |
-| T3.2 | UI ante 500 del servidor | **FAIL** — No hay error toast/feedback visible al usuario |
-| T3.3 | Parent PATCH attendance ajena → 403 | PASS |
+| T3.1 | POST with past date → 422 | PASS |
+| T3.2 | UI facing server 500 | **FAIL** — No error toast/feedback visible to user |
+| T3.3 | Parent PATCH other's attendance → 403 | PASS |
 | T3.4 | Parent POST execute → 403 | PASS |
-| T3.5 | Rúbrica en ausente → 422 | PASS |
-| T3.6 | XXE en GPX upload | **FAIL** — 500 por `defusedxml` no instalado (módulo faltante) |
+| T3.5 | Rubric on absent → 422 | PASS |
+| T3.6 | XXE in GPX upload | **FAIL** — 500 due to `defusedxml` not installed (missing module) |
 
 ---
 
 ## Tier 4 — A11y
 
-**Vitest frontend:** 717 tests, 58 archivos — todos PASS.  
-No existen tests específicos de axe-core en el proyecto (el flag `-t a11y` no encontró matches). Los 717 tests existentes cubren comportamiento funcional y ya incluyen tests de componentes de training (SessionFormPage, SessionDetailPage, AttendanceTable, ParentSessionCard, ReadOnlyAttendanceRow, etc.).
+**Frontend vitest:** 717 tests, 58 files — all PASS.  
+No axe-core-specific tests exist in the project (the `-t a11y` flag found no matches). The 717 existing tests cover functional behavior and already include training component tests (SessionFormPage, SessionDetailPage, AttendanceTable, ParentSessionCard, ReadOnlyAttendanceRow, etc.).
 
 ---
 
 ## Backend pytest
 
-Corrido dentro del contenedor Docker (excluyendo `test_document_generator.py` que falla por fixture `mocker` no instalado):
+Run inside the Docker container (excluding `test_document_generator.py` which fails due to missing `mocker` fixture):
 
-- **35 FAIL** — todos relacionados con el módulo de training sessions
-  - **Causa principal 1:** `MissingGreenlet` — bug de lazy loading en `create_session()` (el router llama `session.attendances` sin `selectinload` después de commit)
-  - **Causa principal 2:** `ModuleNotFoundError: No module named 'defusedxml'` — dependencia declarada en código pero ausente en `requirements.txt` y no instalada en el contenedor
-- **624 PASS** — resto del proyecto en buen estado
-- **8 ERROR** — tests de email client con fixtures faltantes (preexistente, no relacionado con este módulo)
+- **35 FAIL** — all related to the training sessions module
+  - **Root cause 1:** `MissingGreenlet` — lazy loading bug in `create_session()` (the router accesses `session.attendances` without `selectinload` after commit)
+  - **Root cause 2:** `ModuleNotFoundError: No module named 'defusedxml'` — dependency declared in code but absent from `requirements.txt` and not installed in the container
+- **624 PASS** — rest of the project in good shape
+- **8 ERROR** — email client tests with missing fixtures (pre-existing, not related to this module)
 
 ---
 
-## Bugs encontrados
+## Bugs found
 
 ### CRITICAL
 
-Ninguno que represente fuga de datos de usuarios. Privacidad estructural evaluada como APROBADA.
+None representing user data leaks. Structural privacy evaluated as APPROVED.
 
 ### HIGH
 
-| ID | Severidad | Componente | Descripción | Impacto |
+| ID | Severity | Component | Description | Impact |
 |---|---|---|---|---|
-| BUG-001 | **HIGH** | Backend | `POST /api/training-sessions` retorna 500 aunque la sesión SÍ se crea en DB. El error ocurre en `_session_to_read()` al acceder `session.attendances` mediante lazy loading en contexto async post-commit. | Pérdida de confianza del usuario (error 500 en operación exitosa), frontend no puede redirigir al detalle, 35 tests del router fallan. |
-| BUG-002 | **HIGH** | Backend | `defusedxml` y `gpxpy` están referenciados en `route_files.py` pero **no están en `requirements.txt`** ni instalados en el contenedor. Todo upload GPX retorna 500 y el XXE check no funciona. | Seguridad: ficheros GPX con XXE no son validados. Funcionalidad de recorridos completamente bloqueada. |
-| BUG-003 | **HIGH** | Frontend | La `AttendanceTable` en el detalle de sesión hace `GET /api/training-sessions/{id}/attendance` que no existe (405 Method Not Allowed). El backend incluye la asistencia en el detalle de sesión como `attendances`, pero el schema de respuesta no expone ese campo. | Tabla de asistencia siempre muestra error. Coach no puede registrar asistencia desde la UI. |
+| BUG-001 | **HIGH** | Backend | `POST /api/training-sessions` returns 500 even though the session IS created in DB. The error occurs in `_session_to_read()` when accessing `session.attendances` via lazy loading in async post-commit context. | Loss of user trust (500 error on successful operation), frontend cannot redirect to detail, 35 router tests fail. |
+| BUG-002 | **HIGH** | Backend | `defusedxml` and `gpxpy` are referenced in `route_files.py` but **are not in `requirements.txt`** nor installed in the container. Every GPX upload returns 500 and the XXE check does not work. | Security: GPX files with XXE are not validated. Route functionality completely blocked. |
+| BUG-003 | **HIGH** | Frontend | The `AttendanceTable` in the session detail makes `GET /api/training-sessions/{id}/attendance` which does not exist (405 Method Not Allowed). The backend includes attendance in the session detail as `attendances`, but the response schema does not expose that field. | Attendance table always shows an error. Coach cannot record attendance from the UI. |
 
 ### MEDIUM
 
-| ID | Severidad | Componente | Descripción | Impacto |
+| ID | Severity | Component | Description | Impact |
 |---|---|---|---|---|
-| BUG-004 | **MEDIUM** | Frontend | Al fallar `POST /api/training-sessions` con 500, la UI no muestra ningún error toast ni feedback al usuario. El formulario permanece tal cual sin indicar que ocurrió un problema. | UX confuso — usuario no sabe si la sesión fue creada o no. |
-| BUG-005 | **MEDIUM** | Backend | El schema `TrainingSessionRead` no expone el campo `attendances` (lista de `SessionAttendance`). Solo expone `attendance_summary` (resumen numérico). El frontend necesita los datos de cada atleta para renderizar la tabla de edición. | Contrato frontend-backend desincronizado. Requiere agregar `attendances: list[AttendanceRead]` al schema o crear un endpoint `GET /{id}/attendance`. |
+| BUG-004 | **MEDIUM** | Frontend | When `POST /api/training-sessions` fails with 500, the UI shows no error toast or feedback to the user. The form remains as-is without indicating that a problem occurred. | Confusing UX — user does not know whether the session was created or not. |
+| BUG-005 | **MEDIUM** | Backend | The `TrainingSessionRead` schema does not expose the `attendances` field (list of `SessionAttendance`). It only exposes `attendance_summary` (numeric summary). The frontend needs each athlete's data to render the edit table. | Frontend-backend contract out of sync. Requires adding `attendances: list[AttendanceRead]` to the schema or creating a `GET /{id}/attendance` endpoint. |
 
 ### LOW
 
-| ID | Severidad | Componente | Descripción |
+| ID | Severity | Component | Description |
 |---|---|---|---|
-| BUG-006 | **LOW** | DB | La fuente de datos `static/uploads/routes/` se monta localmente pero el docker-compose no define un volumen persistente para esa ruta. Los archivos GPX subidos se perderían al reiniciar el contenedor. |
-| BUG-007 | **LOW** | Backend | El test `test_document_generator.py` usa la fixture `mocker` (de `pytest-mock`) que no está en `requirements-dev.txt`. Bloqueó el suite antes de aislar el archivo. |
+| BUG-006 | **LOW** | DB | The `static/uploads/routes/` data source is mounted locally but docker-compose does not define a persistent volume for that path. Uploaded GPX files would be lost on container restart. |
+| BUG-007 | **LOW** | Backend | The `test_document_generator.py` test uses the `mocker` fixture (from `pytest-mock`) which is not in `requirements-dev.txt`. It blocked the suite before the file was isolated. |
 
 ---
 
-## Veredicto de privacidad: **APROBADO**
+## Privacy verdict: **APPROVED**
 
-Todos los controles de privacidad a nivel API funcionan correctamente:
-- Parent no puede ver sesiones de atletas ajenos (403)
-- Parent no puede modificar asistencia (403)  
-- Parent no puede crear/ejecutar sesiones (403)
-- Parent no puede crear reportes (403)
-- `coach_observations` es omitido en respuestas para parent (campo `null`)
-- Parent solo puede acceder al resumen de SUS atletas
-- Datos de asistencia individual (rúbrica, RPE) NO aparecen en reportes agregados del club
-
----
-
-## Recomendación: **BLOQUEAR PR**
-
-El PR no debe mergearse en su estado actual. Los bugs HIGH deben resolverse primero:
-
-1. **BUG-001:** Agregar `selectinload(TrainingSession.attendances)` en `create_session()` después del commit, o recargar la sesión usando `get_session()` antes de retornar.
-2. **BUG-002:** Agregar `defusedxml` y `gpxpy` a `requirements.txt` y reconstruir la imagen.
-3. **BUG-003:** Decidir entre: (a) agregar `attendances: list[AttendanceRead]` al schema `TrainingSessionRead` y asegurar que `get_session()` cargue la relación (ya lo hace con `selectinload`), o (b) crear un endpoint `GET /training-sessions/{id}/attendance`.
-
-Una vez resueltos estos tres bugs, todos los 35 tests de router y servicio deberían pasar y la experiencia de usuario quedaría completa.
+All privacy controls at the API level work correctly:
+- Parent cannot view sessions from other athletes (403)
+- Parent cannot modify attendance (403)  
+- Parent cannot create/execute sessions (403)
+- Parent cannot create reports (403)
+- `coach_observations` is omitted from responses to parent (field `null`)
+- Parent can only access the summary for THEIR athletes
+- Individual attendance data (rubric, RPE) does NOT appear in club aggregated reports
 
 ---
 
-## Rutas de snapshots
+## Recommendation: **BLOCK PR**
+
+The PR must not be merged in its current state. The HIGH bugs must be resolved first:
+
+1. **BUG-001:** Add `selectinload(TrainingSession.attendances)` in `create_session()` after the commit, or reload the session using `get_session()` before returning.
+2. **BUG-002:** Add `defusedxml` and `gpxpy` to `requirements.txt` and rebuild the image.
+3. **BUG-003:** Decide between: (a) add `attendances: list[AttendanceRead]` to the `TrainingSessionRead` schema and ensure `get_session()` loads the relationship (it already does with `selectinload`), or (b) create a `GET /training-sessions/{id}/attendance` endpoint.
+
+Once these three bugs are resolved, all 35 router and service tests should pass and the user experience will be complete.
+
+---
+
+## Snapshot paths
 
 - `docs/09-training-planning/snapshots/flow-a-02-sessions-list.yml`
 - `docs/09-training-planning/snapshots/flow-a-03-session-form-filled.yml`

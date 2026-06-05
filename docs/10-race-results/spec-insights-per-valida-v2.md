@@ -1,79 +1,79 @@
-# Spec — Análisis IA per-válida v2 (Race Insights)
+# Spec — AI Analysis per-round v2 (Race Insights)
 
-## 1. Metadatos
+## 1. Metadata
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| Versión | v2 |
-| Estado | Aprobado |
+| Version | v2 |
+| Status | Approved |
 | Owner | `product-manager` |
-| Aprobador (coach) | Juan Diego (Trocha y Ruta) |
-| Fecha aprobación | 2026-05-25 |
-| Fase | 1.9 — Análisis IA per-válida |
-| Feature flag | n/a — siempre activo (gate único: `AI_ENABLED`) |
-| Reemplaza | Análisis v1 (narrativa global única replicada en N filas) |
-| Dependencias internas | Task #4 `head-coach` (guardrails y veto), Task #3 `data-platform` (schema, scrubbing, política privacidad), Task #5 `family-relations` (email parent, label) |
-| Documentos relacionados | `docs/10-race-results/runbook-v2.md` (devops-engineer), `backend/app/services/race/prompts/race_analyst_v2.md` (fastapi-architect) |
-| Memoria PM | `~/.claude/agent-memory/product-manager/project_race_analysis_v2_spec.md` |
+| Approver (coach) | Juan Diego (Trocha y Ruta) |
+| Approval date | 2026-05-25 |
+| Phase | 1.9 — AI Analysis per-round |
+| Feature flag | n/a — always active (single gate: `AI_ENABLED`) |
+| Replaces | Analysis v1 (single global narrative replicated across N rows) |
+| Internal dependencies | Task #4 `head-coach` (guardrails and veto), Task #3 `data-platform` (schema, scrubbing, privacy policy), Task #5 `family-relations` (parent email, label) |
+| Related documents | `docs/10-race-results/runbook-v2.md` (devops-engineer), `backend/app/services/race/prompts/race_analyst_v2.md` (fastapi-architect) |
+| PM memory | `~/.claude/agent-memory/product-manager/project_race_analysis_v2_spec.md` |
 
-## 2. Problema
+## 2. Problem
 
-La v1 generó una narrativa global única por análisis y la replicó como `analysis_text` en las N filas de `athlete_ai_insight` correspondientes a las N válidas del atleta. Consecuencias observadas:
+v1 generated a single global narrative per analysis and replicated it as `analysis_text` in the N rows of `athlete_ai_insight` corresponding to the N rounds of the athlete. Observed consequences:
 
-- En la UI del coach, los 5 previews de un atleta mostraban texto idéntico, confundiendo al usuario sobre qué válida estaba viendo.
-- El modelo de datos viola 1NF: el mismo string narrativo se almacena duplicado N veces, complicando ediciones puntuales (corregir un análisis de la Válida III obliga a reescribir las 5 filas).
-- La narrativa única no podía a la vez describir cada evento, sintetizar tendencia longitudinal y proyectar hacia adelante: terminó siendo o demasiado genérica o sesgada hacia la última válida.
-- El boletín mensual a padres (Fase 1.8) y el dashboard del coach quedaron acoplados a una narrativa no especializable por audiencia ni por foco temporal.
+- In the coach UI, the 5 previews of an athlete showed identical text, confusing the user about which round they were viewing.
+- The data model violates 1NF: the same narrative string is stored duplicated N times, complicating individual edits (correcting an analysis from Round III requires rewriting all 5 rows).
+- The single narrative could not simultaneously describe each event, synthesize longitudinal trends, and project forward: it ended up being either too generic or biased toward the last round.
+- The monthly newsletter to parents (Phase 1.8) and the coach dashboard were coupled to a narrative that could not be specialized by audience or temporal focus.
 
-## 3. Decisión
+## 3. Decision
 
-Cada análisis IA per-atleta producirá, por cada válida cubierta en el run, **3 secciones independientes** y, opcionalmente, **1 resumen de temporada** generado on-demand:
+Each AI analysis per-athlete will produce, for each round covered in the run, **3 independent sections** and, optionally, **1 season summary** generated on-demand:
 
-1. **Qué pasó (Válida N)** — descriptivo del evento N.
-2. **Recorrido hasta acá** — análisis tendencial V1 → N.
-3. **Hacia dónde va** — prescripción accionable para válidas N+1 a fin de temporada.
-4. **Resumen temporada** — síntesis ejecutiva, generada solo a petición explícita (no en cada run).
+1. **What happened (Round N)** — descriptive of event N.
+2. **Journey so far** — trend analysis V1 → N.
+3. **Where they're heading** — actionable prescriptions for rounds N+1 to end of season.
+4. **Season summary** — executive synthesis, generated only on explicit request (not in every run).
 
-Las 4 filas existentes en `athlete_ai_insight` por atleta-temporada se conservan; cada fila almacenará las 3 secciones en columnas/JSON discretos (no refactor de schema — ver §10).
+The 4 existing rows in `athlete_ai_insight` per athlete-season are preserved; each row will store the 3 sections in discrete columns/JSON (no schema refactor — see §10).
 
-## 4. Contrato por sección
+## 4. Contract per section
 
-| Sección | Max palabras | Tono | Foco temporal | Prohibiciones |
+| Section | Max words | Tone | Temporal focus | Prohibitions |
 |---|---|---|---|---|
-| Qué pasó (válida N) | 120 | Descriptivo, objetivo | Solo evento N | Adjetivos valorativos, comparaciones entre atletas, usar "la deportista" en vez del pseudónimo |
-| Recorrido hasta acá | 120 | Analítico tendencial | V1 → N | Ranking absoluto ("está N° X"), "rivaliza con", lenguaje competitivo entre atletas |
-| Hacia dónde va | 120 | Prescriptivo accionable | N+1 a fin de temporada | "Objetivo podio", prescribir intervalos para <13 años, cualquier frase de la lista de veto duro (§7) |
-| Resumen temporada (on-demand) | 200 | Síntesis ejecutiva | Toda la temporada | Nombres reales, comparativa entre atletas del club |
+| What happened (round N) | 120 | Descriptive, objective | Only event N | Value-laden adjectives, comparisons between athletes, use "the athlete" instead of pseudonym |
+| Journey so far | 120 | Analytical trend | V1 → N | Absolute ranking ("is N° X"), "rivals with", competitive language between athletes |
+| Where they're heading | 120 | Actionable prescriptive | N+1 to end of season | "Goal podium", prescribe intervals for <13 year olds, any phrase from the hard veto list (§7) |
+| Season summary (on-demand) | 200 | Executive synthesis | Entire season | Real names, comparative between club athletes |
 
-Todas las secciones aplican además los guardrails globales: sin nombres reales (usar pseudónimo `forbidden_names`), sin términos médicos sin contexto, sin recomendaciones nutricionales para menores, sin promesas de resultado.
+All sections also apply global guardrails: no real names (use pseudonym `forbidden_names`), no medical terms without context, no nutritional recommendations for minors, no outcome promises.
 
-## 5. Criterios de aceptación
+## 5. Acceptance criteria
 
-| ID | Criterio | Cómo se mide |
+| ID | Criterion | How measured |
 |---|---|---|
-| CA-1 | 0 narrativas idénticas entre las 3 secciones de una misma válida | `hash(text)` distinto en las 3 secciones; assertion en test de integración por cada run |
-| CA-2 | 0 narrativas con similaridad ≥0.85 entre "Qué pasó" de válidas distintas del mismo análisis | Levenshtein normalizado por longitud sobre pares de secciones del mismo análisis |
-| CA-3 | 100% de secciones respetan `max_words + 10%` | Conteo de palabras post-render; truncado o regeneración si excede |
-| CA-4 | 0 ocurrencias de nombre real en cualquier sección | Regex contra `forbidden_names` dinámicos cargados de DB en el momento del run |
-| CA-5 | "Hacia dónde va" contiene ≥1 verbo accionable (priorizar/reducir/mantener/incorporar/ajustar/consolidar) y ≥1 referencia al marco teórico (`docs/01-marco-teorico.md`) | Lint post-generación |
-| CA-6 | "Recorrido hasta acá" referencia ≥N-1 válidas previas cuando N≥2 | Conteo de menciones explícitas a "Válida I/II/III/..." |
-| CA-7 | p95 tiempo de análisis ≤25s en Render Free (4 válidas, 1 atleta) | Métrica en Langfuse + dashboard runbook |
-| CA-8 | Guardrails del Head Coach aprobados (sample 5 análisis) | Visto bueno documentado por `head-coach` en `project_race_analysis_v2_spec.md` |
-| CA-9 | Política de privacidad aprobada por Data Platform (scrubbing 180d, `pii_scrubbed_at`) | Visto bueno documentado por `data-platform` |
-| CA-10 | Coach valida sample de 5 análisis pre-rollout GA | Checklist firmado por Juan Diego antes de Etapa 3 |
+| CA-1 | 0 identical narratives between the 3 sections of the same round | `hash(text)` different in the 3 sections; assertion in integration test per run |
+| CA-2 | 0 narratives with similarity ≥0.85 between "What happened" sections of different rounds in the same analysis | Levenshtein normalized by length over pairs of sections in the same analysis |
+| CA-3 | 100% of sections respect `max_words + 10%` | Word count post-render; truncated or regenerated if exceeded |
+| CA-4 | 0 occurrences of real name in any section | Regex against dynamic `forbidden_names` loaded from DB at run time |
+| CA-5 | "Where they're heading" contains ≥1 actionable verb (prioritize/reduce/maintain/incorporate/adjust/consolidate) and ≥1 reference to the theoretical framework (`docs/01-marco-teorico.md`) | Post-generation lint |
+| CA-6 | "Journey so far" references ≥N-1 prior rounds when N≥2 | Count of explicit mentions of "Round I/II/III/..." |
+| CA-7 | p95 analysis time ≤25s in Render Free (4 rounds, 1 athlete) | Metric in Langfuse + runbook dashboard |
+| CA-8 | Head Coach guardrails approved (sample 5 analyses) | Sign-off documented by `head-coach` in `project_race_analysis_v2_spec.md` |
+| CA-9 | Privacy policy approved by Data Platform (180d scrubbing, `pii_scrubbed_at`) | Sign-off documented by `data-platform` |
+| CA-10 | Coach validates sample of 5 analyses pre-GA rollout | Checklist signed by Juan Diego before Stage 3 |
 
-## 6. Cap 4 válidas por run
+## 6. Cap 4 rounds per run
 
-Cada análisis cubre **máximo 4 válidas por ejecución**, independientemente de cuántas válidas tenga la temporada del atleta.
+Each analysis covers **maximum 4 rounds per execution**, regardless of how many rounds the athlete has in the season.
 
-**Justificación**:
-- Cuota Gemini (`gemini-2.5-flash-lite`) en tier gratuito: la suma de tokens de prompt (estadísticas + contexto + 4 secciones objetivo) y respuesta (≈ 480 palabras + JSON envoltorio por válida) se ajusta dentro de `AI_MAX_TOKENS=8192` sin truncar.
-- p95 ≤25s en Render Free solo se cumple con ≤4 válidas concurrentes en el grafo agentico.
-- Si la temporada tiene >4 válidas cubiertas, el coach selecciona explícitamente cuáles entran en el run; el resto queda con la versión previa y puede regenerarse en un segundo run.
+**Justification**:
+- Gemini quota (`gemini-2.5-flash-lite`) on the free tier: the sum of prompt tokens (statistics + context + 4 target sections) and response (≈ 480 words + JSON wrapper per round) fits within `AI_MAX_TOKENS=8192` without truncation.
+- p95 ≤25s in Render Free is only achievable with ≤4 concurrent rounds in the agentic graph.
+- If the season has >4 covered rounds, the coach explicitly selects which ones enter the run; the rest remain with the prior version and can be regenerated in a second run.
 
-## 7. Frases de veto duro (lista literal cerrada)
+## 7. Hard veto phrases (closed literal list)
 
-Lista cerrada; cualquier ampliación requiere nueva versión del prompt (`prompt_version`). Si el modelo emite cualquiera de estas frases (matching case-insensitive y normalizado), se invalida el output de la sección y se regenera (máx 1 retry):
+Closed list; any expansion requires a new version of the prompt (`prompt_version`). If the model emits any of these phrases (case-insensitive and normalized matching), the section output is invalidated and regenerated (max 1 retry):
 
 - "debe ganar"
 - "tiene que llegar al podio"
@@ -81,45 +81,45 @@ Lista cerrada; cualquier ampliación requiere nueva versión del prompt (`prompt
 - "más intensidad"
 - "trabajo de potencia para superar a"
 
-## 8. Plan de rollout (4 etapas)
+## 8. Rollout plan (4 stages)
 
-v2 se despliega como always-on (sin feature flag). Rollback de emergencia: redeploy del binario anterior en Render Dashboard (ver `runbook-v2.md` §1). Si falla CA-4 (nombre real) en producción: rollback inmediato + post-mortem.
+v2 deploys as always-on (no feature flag). Emergency rollback: redeploy of the previous binary in Render Dashboard (see `runbook-v2.md` §1). If CA-4 fails (real name) in production: immediate rollback + post-mortem.
 
-## 9. Riesgos
+## 9. Risks
 
-| Riesgo | Mitigación |
+| Risk | Mitigation |
 |---|---|
-| Cuota Gemini agotada en horas pico | Cap 4 válidas/run + cola serializada por club + alerta cuando uso mensual supere 70% |
-| Timeout asyncio en grafo agentico bajo carga | Timeout duro 30s por nodo + circuit breaker en `race_analyst_v2` |
-| Loop infinito al regenerar por veto duro | Máx 1 retry por sección; si falla, marcar sección como `manual_review` y notificar coach |
-| Migración no compatible con MySQL Hostinger 8.4 | Probar migración en clon de prod antes de Etapa 2; rollback script preparado |
-| UI de padre muestra badge "v2" por error | El label visible al padre es siempre "Análisis del coach" — el badge `prompt_version` es interno y no se serializa en endpoints parent |
-| Regresión silenciosa de v1 al desplegar v2 | Pruebas de contrato sobre filas v1 leídas (no escritas) durante Etapa 4 |
-| `forbidden_names` con regex laxa que deje pasar variantes (mayúsculas/acentos/diminutivos) | Normalización Unicode + lista expandida con apodos conocidos cargada desde DB en cada run |
+| Gemini quota exhausted in peak hours | Cap 4 rounds/run + serialized queue per club + alert when monthly usage exceeds 70% |
+| asyncio timeout in agentic graph under load | Hard timeout 30s per node + circuit breaker in `race_analyst_v2` |
+| Infinite loop when regenerating due to hard veto | Max 1 retry per section; if fails, mark section as `manual_review` and notify coach |
+| Migration incompatible with MySQL Hostinger 8.4 | Test migration on prod clone before Stage 2; rollback script prepared |
+| Parent UI shows "v2" badge by mistake | The visible label to the parent is always "Coach Analysis" — the `prompt_version` badge is internal and not serialized in parent endpoints |
+| Silent regression from v1 on deploying v2 | Contract tests on v1 rows read (not written) during Stage 4 |
+| `forbidden_names` with loose regex that lets through variants (uppercase/accents/diminutives) | Unicode normalization + expanded list with known nicknames loaded from DB in each run |
 
-## 10. No-objetivos
+## 10. Non-goals
 
-- **NO** comparativa entre atletas del club en ninguna sección.
-- **NO** gráficos generados por IA — se reutilizan las macros SVG ya implementadas (Fase 1.8).
-- **NO** versión "para padres" del análisis: la comunicación a padres vive en el boletín mensual (Fase 1.8) con narrativa propia.
-- **NO** refactor de schema `athlete_ai_insight` en este alcance: las 4 filas por atleta-temporada se mantienen; las 3 secciones viven en columnas/JSON dentro de cada fila.
-- **NO** ampliar la lista de veto duro sin bump de `prompt_version`.
-- **NO** envío de email parent fuera de válidas A (IV, CD, VI).
+- **NO** comparison between club athletes in any section.
+- **NO** AI-generated charts — the already-implemented SVG macros (Phase 1.8) are reused.
+- **NO** "for parents" version of the analysis: parent communication lives in the monthly newsletter (Phase 1.8) with its own narrative.
+- **NO** schema refactor of `athlete_ai_insight` in this scope: the 4 rows per athlete-season are maintained; the 3 sections live in columns/JSON within each row.
+- **NO** expansion of the hard veto list without a `prompt_version` bump.
+- **NO** parent email outside of A rounds (IV, CD, VI).
 
-## 11. Comunicación a familias
+## 11. Family communication
 
-- Email parent: se dispara únicamente para válidas **A** del calendario 2026 (IV Cali 17-may, CD Ginebra 12-jun, VI Roldanillo 12-sep).
-- Label visible al padre: **"Análisis del coach"** (nunca "Análisis IA", nunca el badge `prompt_version`).
-- Cualquier identificador interno (`prompt_version=race_analyst_v2`, IDs de run de Langfuse) se mantiene fuera de los payloads del rol parent.
+- Parent email: triggered only for **A** rounds in the 2026 calendar (IV Cali 17-May, CD Ginebra 12-Jun, VI Roldanillo 12-Sep).
+- Label visible to parent: **"Coach Analysis"** (never "AI Analysis", never the `prompt_version` badge).
+- Any internal identifier (`prompt_version=race_analyst_v2`, Langfuse run IDs) is kept out of parent role payloads.
 
-## 12. Referencias cruzadas
+## 12. Cross-references
 
-- Runbook operacional: `docs/10-race-results/runbook-v2.md` (owner `devops-engineer`).
-- Prompt de sistema y few-shots: `backend/app/services/race/prompts/race_analyst_v2.md` (owner `fastapi-architect`).
-- Decisiones consolidadas del PM: `~/.claude/agent-memory/product-manager/project_race_analysis_v2_spec.md`.
-- Marco teórico (citas para "Hacia dónde va"): `docs/01-marco-teorico.md`.
-- Boletín mensual (audiencia padres): `docs/` Fase 1.8, módulo `AthleteMonthlyNewsletter`.
+- Operational runbook: `docs/10-race-results/runbook-v2.md` (owner `devops-engineer`).
+- System prompt and few-shots: `backend/app/services/race/prompts/race_analyst_v2.md` (owner `fastapi-architect`).
+- PM consolidated decisions: `~/.claude/agent-memory/product-manager/project_race_analysis_v2_spec.md`.
+- Theoretical framework (citations for "Where they're heading"): `docs/01-marco-teorico.md`.
+- Monthly newsletter (parent audience): `docs/` Phase 1.8, `AthleteMonthlyNewsletter` module.
 
-## 13. Calendario de implementación
+## 13. Implementation calendar
 
-Fase 1.9 — Análisis IA per-válida. Arranque tras aprobación del spec; secuencia dependerá del workflow generado por `fastapi-architect` y `devops-engineer` con base en este documento.
+Phase 1.9 — AI Analysis per-round. Start after spec approval; sequence will depend on the workflow generated by `fastapi-architect` and `devops-engineer` based on this document.

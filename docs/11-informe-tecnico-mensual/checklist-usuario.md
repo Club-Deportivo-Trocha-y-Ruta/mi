@@ -1,110 +1,110 @@
-# ✅ Checklist de pruebas manuales — Informe Técnico Mensual
+# ✅ Manual Testing Checklist — Monthly Technical Report
 
-*(vista del entrenador, como usuario final)*
+*(coach's view, as end user)*
 
-Esta es la guía para probar el módulo **a mano, desde la interfaz**, sin nada
-técnico (ni Docker, ni variables de entorno). Para la versión de desarrollo
-(stack levantado, datos sembrados) ver `e2e.md` §3.
+This is the guide for testing the module **by hand, from the interface**, without
+any technical knowledge (no Docker, no environment variables). For the development
+version (stack running, data seeded) see `e2e.md` §3.
 
-## Antes de empezar
+## Before You Start
 
-- [ ] Entrar al app donde esté publicado (Render o local) en el navegador.
-- [ ] Tener tu **cuenta de entrenador** (local seed: `entrenador@trochyruta.com` / `Coach2026!`).
-- [ ] Que exista **un mes con actividad ya registrada**: varias sesiones,
-      asistencia marcada y rúbricas. El informe resume eso; sin datos, sale
-      vacío. Idealmente un mes ya cerrado.
-- [ ] Para la parte de competencia: al menos **una válida de ese mes** con
-      resultados cargados.
+- [ ] Open the app wherever it is published (Render or local) in the browser.
+- [ ] Have your **coach account** (local seed: `entrenador@trochyruta.com` / `Coach2026!`).
+- [ ] Make sure **a month with already-recorded activity exists**: several training sessions,
+      attendance marked, and rubrics. The report summarizes that data; without data, it comes
+      out empty. Ideally a month that is already closed.
+- [ ] For the competition section: at least **one round from that month** with
+      results loaded.
 
-> ⏱ En Render (plan gratis) el primer clic tras ~15 min inactivo tarda ~50s en
-> despertar. No es un error, espera.
+> ⏱ On Render (free plan) the first click after ~15 min of inactivity takes ~50s to
+> wake up. This is not an error — just wait.
 
 ---
 
-## A. Datos del proyecto *(una sola vez por club)*
+## A. Project Data *(once per sports club)*
 
-- [ ] Menú lateral → **Reportes mensuales**.
-- [ ] Clic en **Datos del proyecto**.
-- [ ] Llenar: nombre del proyecto, entidad ejecutora, responsable, propósito,
-      objetivo general, territorio.
-- [ ] Agregar 2-3 **objetivos específicos**; quitar uno para probar.
-- [ ] **Guardar** → confirma mensaje de éxito.
-- [ ] Recargar la página → los datos siguen ahí (se guardó de verdad).
+- [ ] Side menu → **Monthly reports**.
+- [ ] Click on **Project data**.
+- [ ] Fill in: project name, executing entity, responsible person, purpose,
+      general goal, territory.
+- [ ] Add 2-3 **specific goals**; remove one to test.
+- [ ] **Save** → confirm success message.
+- [ ] Reload the page → data is still there (it really saved).
 
-## B. Generar el informe del mes
+## B. Generate the Month's Report
 
-- [ ] En **Reportes mensuales**, botón **+ Generar reporte**.
-- [ ] Elegir **año y mes** del mes cerrado → confirmar.
-- [ ] Te lleva al detalle del informe de ese mes.
-- [ ] En la lista, el informe aparece con badge **Borrador**.
+- [ ] In **Monthly reports**, click **+ Generate report**.
+- [ ] Choose **year and month** of the closed month → confirm.
+- [ ] You are taken to the detail view of that month's report.
+- [ ] In the list, the report appears with a **Draft** badge.
 
-## C. Revisar métricas *(se calculan solas)*
+## C. Review Metrics *(calculated automatically)*
 
-- [ ] Sesiones **ejecutadas** y **canceladas** del mes.
-- [ ] **Asistencia por atleta** (presente / tarde / justificado / ausente / lesionado).
-- [ ] Promedios de **rúbrica** (esfuerzo / actitud / técnica).
-- [ ] **Focos técnicos** trabajados.
-- [ ] Que los números cuadren con lo que registraste ese mes.
+- [ ] Training sessions **executed** and **cancelled** for the month.
+- [ ] **Attendance per athlete** (present / late / excused / absent / injured).
+- [ ] Rubric averages (effort / attitude / technique).
+- [ ] **Technical focus areas** covered.
+- [ ] Verify the numbers match what you recorded that month.
 
-## D. Bloques narrativos *(IA + tu edición)*
+## D. Narrative Blocks *(AI + your editing)*
 
-Aparecen 7 bloques **en este orden**:
+7 blocks appear **in this order**:
 
-1. Objetivo del período
-2. Desarrollo de actividades
-3. Resultados obtenidos
-4. Conclusiones
-5. Apoyos materiales y salidas
-6. Análisis del grupo
-7. Participación en competencia
+1. Period goal
+2. Activity development
+3. Results obtained
+4. Conclusions
+5. Material support and outings
+6. Group analysis
+7. Competition participation
 
-- [ ] En un bloque, **Generar con IA** → aparece texto y el aviso
-      *"Texto generado por IA — revísalo antes de aprobar."*
-- [ ] **Regenerar** el mismo bloque → el texto propuesto cambia.
-- [ ] **Editar** el texto a mano y **Guardar** → el botón pasa a *Guardado*.
-- [ ] Recargar → tu edición persiste.
-- [ ] 🔒 Revisar que el texto IA **no mencione nombres de menores** ni juicios
-      individuales (regla de privacidad). Si aparece un nombre real → reportarlo.
+- [ ] On a block, **Generate with AI** → text appears with the notice
+      *"AI-generated text — review it before approving."*
+- [ ] **Regenerate** the same block → the proposed text changes.
+- [ ] **Edit** the text by hand and **Save** → the button changes to *Saved*.
+- [ ] Reload → your edit persists.
+- [ ] 🔒 Check that the AI text **does not mention minors' names** or individual
+      judgments (privacy rule). If a real name appears → report it.
 
-## E. Aprobar
+## E. Approve
 
-- [ ] Botón **Aprobar**.
-- [ ] El badge cambia a **Aprobado**.
-- [ ] Los bloques quedan **deshabilitados**: ya no se puede editar ni regenerar.
+- [ ] Click **Approve**.
+- [ ] The badge changes to **Approved**.
+- [ ] The blocks become **disabled**: they can no longer be edited or regenerated.
 
 ## F. PDF
 
-- [ ] Botón **Descargar PDF**.
-- [ ] Se descarga `informe-tecnico-AÑO-MES.pdf`.
-- [ ] Abrirlo y comparar con lo de pantalla: portada del proyecto, contexto/
-      territorio, métricas, podios de competencia, bloques narrativos, registro
-      fotográfico.
-- [ ] Pie de página con aviso **Ley 1581** (distribución restringida).
-- [ ] Si descargaste el PDF en **Borrador** (antes de aprobar): debe llevar marca
-      **BORRADOR**.
+- [ ] Click **Download PDF**.
+- [ ] The file `informe-tecnico-AÑO-MES.pdf` downloads.
+- [ ] Open it and compare with what is on screen: institutional cover page, project
+      context/territory, metrics, competition podiums, narrative blocks, photo
+      record.
+- [ ] Footer with **Ley 1581** notice (restricted distribution).
+- [ ] If you downloaded the PDF in **Draft** (before approving): it must carry a
+      **DRAFT** watermark.
 
-## G. Sesiones con tipo y objetivos *(alimenta el informe)*
+## G. Training Sessions with Type and Goals *(feeds the report)*
 
-- [ ] Menú → **Entrenamientos** → crear/editar una sesión.
-- [ ] Verificar campos **Tipo de sesión** y **Objetivos**.
-- [ ] Guardar → esos datos se reflejan luego en el informe del mes.
-
----
-
-## H. 🔒 Privacidad — vista del padre/madre
-
-*(usa una cuenta de padre; local seed: `padre@trochayruta.com` / `Parent2026!`)*
-
-- [ ] El menú del padre **NO** muestra "Reportes mensuales".
-- [ ] Escribir a mano en el navegador la URL del informe
-      (`/training/reports/2026/5`) → te **redirige a tus atletas**
-      (`/my-athletes`). El informe es interno del club.
-- [ ] El padre **no ve** métricas, ni bloques, ni Aprobar, ni Descargar PDF.
+- [ ] Menu → **Training** → create/edit a training session.
+- [ ] Verify the **Session type** and **Goals** fields.
+- [ ] Save → that data is later reflected in the month's report.
 
 ---
 
-## I. Si algo falla, anotar
+## H. 🔒 Privacy — parent/guardian view
 
-- [ ] Qué pantalla, qué botón, qué esperabas vs. qué pasó.
-- [ ] Captura de pantalla.
-- [ ] Hora aproximada (para cruzar con logs).
+*(use a parent account; local seed: `padre@trochayruta.com` / `Parent2026!`)*
+
+- [ ] The parent menu **does NOT** show "Monthly reports".
+- [ ] Type the report URL manually in the browser
+      (`/training/reports/2026/5`) → you are **redirected to your athletes**
+      (`/my-athletes`). The report is internal to the sports club.
+- [ ] The parent **does not see** metrics, blocks, Approve, or Download PDF.
+
+---
+
+## I. If Something Fails, Note Down
+
+- [ ] Which screen, which button, what you expected vs. what happened.
+- [ ] Screenshot.
+- [ ] Approximate time (to cross-reference with logs).
