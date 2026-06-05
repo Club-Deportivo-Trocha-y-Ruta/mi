@@ -1,0 +1,73 @@
+# Baseline snapshot — pre-translation metrics for INV-3 / INV-1
+# Generated: 2026-06-05  branch: 001-translate-claude-files-english
+# Columns (tab-separated): path  headings  table-rows  code-fences
+# headings   = lines matching ^#  (all heading levels)
+# table-rows = lines matching ^|  (includes header and separator rows)
+# code-fences = lines matching ^``` (opening + closing fence lines)
+#
+# Scope: CLAUDE.md + .claude/agents/*.md + docs/**/*.md
+#
+path	headings	table-rows	code-fences
+CLAUDE.md	38	147	10
+.claude/agents/analytics-reporter.md	7	5	2
+.claude/agents/community-content-creator.md	11	0	2
+.claude/agents/competition-strategist.md	6	5	2
+.claude/agents/data-analyst.md	0	0	0
+.claude/agents/data-platform-lead.md	6	6	2
+.claude/agents/data-privacy-guard.md	12	0	2
+.claude/agents/database-architect.md	6	0	2
+.claude/agents/devops-engineer.md	5	0	2
+.claude/agents/engineering-lead.md	6	8	2
+.claude/agents/event-coordinator.md	5	0	2
+.claude/agents/family-relations-lead.md	6	5	2
+.claude/agents/fastapi-architect.md	7	17	2
+.claude/agents/head-coach-lead.md	6	9	2
+.claude/agents/injury-prevention-advisor.md	6	8	2
+.claude/agents/integration-engineer.md	6	9	2
+.claude/agents/mental-performance-coach.md	6	0	4
+.claude/agents/nutrition-advisor.md	6	0	2
+.claude/agents/parent-communicator.md	6	0	2
+.claude/agents/product-manager.md	6	5	2
+.claude/agents/qa-engineer.md	6	0	2
+.claude/agents/react-ui-engineer.md	7	14	2
+.claude/agents/release-manager.md	6	0	2
+.claude/agents/results-analyst.md	6	0	0
+.claude/agents/sports-science-advisor.md	10	0	4
+.claude/agents/technical-writer.md	18	5	8
+.claude/agents/technique-coach.md	6	6	2
+.claude/agents/training-planner.md	9	0	2
+.claude/agents/ux-researcher.md	6	0	6
+docs/01-marco-teorico.md	43	27	0
+docs/02-scaffolding/reference.md	31	108	22
+docs/04-percentiles/research.md	38	119	10
+docs/04-percentiles/workflow.md	47	85	32
+docs/05-design-system/design.md	39	33	0
+docs/06-parents/workflow.md	34	30	32
+docs/07-notifications/workflow.md	28	146	6
+docs/08-onboarding/design.md	41	66	32
+docs/08-onboarding/research.md	25	45	10
+docs/08-onboarding/workflow.md	31	61	8
+docs/09-training-planning/COMPLETION_REPORT.md	21	56	0
+docs/09-training-planning/deploy-checklist.md	18	11	26
+docs/09-training-planning/design.md	35	56	16
+docs/09-training-planning/e2e-test-report.md	25	111	0
+docs/09-training-planning/qa.md	32	0	0
+docs/09-training-planning/workflow.md	56	0	8
+docs/10-race-results/competitions-module.md	22	79	2
+docs/10-race-results/revision-design.md	48	76	32
+docs/10-race-results/revision-workflow.md	94	193	32
+docs/10-race-results/runbook-ops.md	23	6	16
+docs/10-race-results/runbook-v2.md	17	11	10
+docs/10-race-results/spec-insights-per-valida-v2.md	14	40	0
+docs/10-race-results/upload-design.md	58	174	42
+docs/10-race-results/upload-research.md	28	26	4
+docs/10-race-results/upload-workflow.md	100	195	36
+docs/10-race-results/v2-agentic-design.md	125	241	55
+docs/10-race-results/v2-implementation-workflow.md	90	168	24
+docs/11-informe-tecnico-mensual/checklist-usuario.md	11	0	0
+docs/11-informe-tecnico-mensual/design.md	17	50	2
+docs/11-informe-tecnico-mensual/e2e.md	17	22	12
+docs/11-informe-tecnico-mensual/runbook.md	15	0	0
+docs/11-informe-tecnico-mensual/workflow.md	9	26	0
+docs/12-competitions-unification/workflow.md	15	32	2
+docs/README.md	2	13	0

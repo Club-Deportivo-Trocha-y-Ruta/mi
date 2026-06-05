@@ -1,66 +1,66 @@
-# Race Results v2 — Rediseño Agéntico
+# Race Results v2 — Agentic Redesign
 
-**Proyecto:** Club Deportivo Trocha y Ruta — XCO juvenil
-**Módulo:** `services/race/` (Fase 1.7 → 1.8)
-**Fecha:** 2026-05-20
-**Autor:** System Architect agent
-**Estado:** Diseño técnico — pendiente aprobación coach
-**Audiencia:** entrenador (operación), arquitecto/dev (implementación)
+**Project:** Club Deportivo Trocha y Ruta — Youth XCO
+**Module:** `services/race/` (Phase 1.7 → 1.8)
+**Date:** 2026-05-20
+**Author:** System Architect agent
+**Status:** Technical design — pending coach approval
+**Audience:** coach (operation), architect/dev (implementation)
 
 ---
 
-## 1. Resumen ejecutivo
+## 1. Executive Summary
 
-### 1.1 Problema
+### 1.1 Problem
 
-La v1 de race-results (Fase 1.7) entrega un pipeline determinista CLI-only que ingesta PDFs oficiales Copa Valle, normaliza nombres/clubes, persiste resultados en MySQL y expone cuatro analíticas tabulares (`athlete_progression`, `podium_gap`, `club_ranking`, `projection`). Funciona — pero **el entrenador todavía traduce los DataFrames a narrativa** y compara mentalmente cada métrica con principios LTAD del marco teórico. El bottleneck no es el cómputo, es la interpretación.
+The v1 of race-results (Phase 1.7) delivers a CLI-only deterministic pipeline that ingests official Copa Valle PDFs, normalizes names/clubs, persists results in MySQL and exposes four tabular analytics (`athlete_progression`, `podium_gap`, `club_ranking`, `projection`). It works — but **the coach still translates DataFrames into narrative** and mentally compares each metric against LTAD principles from the theoretical framework. The bottleneck is not computation, it's interpretation.
 
-### 1.2 Solución
+### 1.2 Solution
 
-Rediseño **híbrido determinista + agéntico**:
+**Hybrid deterministic + agentic redesign**:
 
-- **Capa determinista (intacta):** parsing, normalización, matching, ingest, queries analíticas. Los 339 tests verdes se preservan.
-- **Capa agéntica (nueva):** un workflow **LangGraph** orquesta los pasos cualitativos — anonimización, retrieval del marco teórico, llamada LLM con memoria por atleta, gates HITL para revisión del coach, persistencia de insights y notificación. La salida es un dashboard markdown renderizado + PDF descargable + chat consultivo.
-- **UI nueva:** ruta `/coach/race-analysis` en el SPA React 19 existente. Polling cada 2 segundos vía **TanStack Query**.
-- **Observability:** Audit primario en MySQL — columnas `cost_usd`, `tokens_in/out`, `latency_ms`, `prompt_version` en `athlete_ai_insights`. **Langfuse self-hosted opcional, diferido a Fase 8** (activar solo si costo Gemini >$10/mes real, o coach pide dashboard visual).
-- **Eval:** golden dataset versionado + LLM-as-judge, bloqueante en CI antes de promover cambios de prompt.
+- **Deterministic layer (intact):** parsing, normalization, matching, ingest, analytics queries. The 339 green tests are preserved.
+- **Agentic layer (new):** a **LangGraph** workflow orchestrates the qualitative steps — anonymization, retrieval from theoretical framework, LLM call with per-athlete memory, HITL gates for coach review, insight persistence and notification. The output is a rendered markdown dashboard + downloadable PDF + consultative chat.
+- **New UI:** route `/coach/race-analysis` in the existing React 19 SPA. Polling every 2 seconds via **TanStack Query**.
+- **Observability:** Primary audit in MySQL — columns `cost_usd`, `tokens_in/out`, `latency_ms`, `prompt_version` in `athlete_ai_insights`. **Langfuse self-hosted optional, deferred to Phase 8** (activate only if Gemini cost >$10/month real, or coach asks for visual dashboard).
+- **Eval:** versioned golden dataset + LLM-as-judge, blocking in CI before promoting prompt changes.
 
-### 1.3 Decisiones cerradas (resumen)
+### 1.3 Closed decisions (summary)
 
-| # | Decisión | Valor |
+| # | Decision | Value |
 |---|---|---|
-| 1 | Modo | Híbrido: determinista para ETL, agéntico para análisis |
-| 2 | Framework agente | LangGraph 1.2.x. Langfuse self-hosted **opcional**, diferido a F8 |
+| 1 | Mode | Hybrid: deterministic for ETL, agentic for analysis |
+| 2 | Agent framework | LangGraph 1.2.x. Langfuse self-hosted **optional**, deferred to F8 |
 | 3 | LLM | Google Gemini 2.5 Flash Lite via `langchain-google-genai` |
-| 4 | UI | React 19 + shadcn dentro del SPA actual, ruta `/coach/race-analysis` |
-| 5 | Streaming | Polling HTTP cada 2s → TanStack Query con refetchInterval |
-| 6 | Memoria | Tabla `athlete_ai_insights` (recall N=3) |
-| 7 | Privacy | Anonimización determinista antes del LLM, re-hidratación en frontend |
-| 8 | HITL | Gates en parse-quality, match TyR <85, antes de email |
-| 9 | Output | Dashboard md + PDF (weasyprint) + chat — sin email a padres en MVP |
-| 10 | Eval | Golden dataset + LLM-as-judge bloqueante en CI |
-| 11 | Modo aprendizaje | Toggle global, mensajes pedagógicos por nodo |
-| 12 | Refactor | In-place, strangler-fig dentro de `services/race/` |
-| 13 | RAG | ChromaDB local sobre `docs/01-marco-teorico.md` |
-| 14 | Notificación | Resend email al coach al terminar análisis |
-| 15 | Prompts | Archivos `.md` versionados en git, render con Jinja2, PR review obligatorio |
+| 4 | UI | React 19 + shadcn inside current SPA, route `/coach/race-analysis` |
+| 5 | Streaming | HTTP polling every 2s → TanStack Query with refetchInterval |
+| 6 | Memory | `athlete_ai_insights` table (recall N=3) |
+| 7 | Privacy | Deterministic anonymization before LLM, re-hydration in frontend |
+| 8 | HITL | Gates on parse-quality, TyR match <85, before email |
+| 9 | Output | Markdown dashboard + PDF (weasyprint) + chat — no parent email in MVP |
+| 10 | Eval | Golden dataset + LLM-as-judge blocking in CI |
+| 11 | Learning mode | Global toggle, pedagogical messages per node |
+| 12 | Refactor | In-place, strangler-fig inside `services/race/` |
+| 13 | RAG | ChromaDB local over `docs/01-marco-teorico.md` |
+| 14 | Notification | Resend email to coach when analysis finishes |
+| 15 | Prompts | Versioned `.md` files in git, rendered with Jinja2, mandatory PR review |
 
-### 1.4 ROI estimado (asunciones)
+### 1.4 Estimated ROI (assumptions)
 
-Asunción: el coach hoy invierte ~45-60 min por válida (4-5 atletas × 10 min de análisis manual cruzando 4 dashboards).
+Assumption: the coach today invests ~45-60 min per round (4-5 athletes × 10 min of manual analysis crossing 4 dashboards).
 
-| Métrica | Hoy (v1 CLI) | Meta v2 | Δ |
+| Metric | Today (v1 CLI) | v2 goal | Δ |
 |---|---|---|---|
-| Tiempo por atleta análisis cualitativo | 10-12 min | 1-2 min (review HITL) | -85 % |
-| Tiempo por válida (5 atletas) | 50-60 min | 8-12 min | -80 % |
-| Trazabilidad decisiones | ninguna | `athlete_ai_insights` (cost, tokens, prompt_version, output completo). Langfuse opcional F8 | +∞ |
-| Reutilización contexto entre válidas | manual | automática (memoria) | +∞ |
-| Calidad pedagógica para el coach | depende | modo `explain` integrado | nuevo |
-| Riesgo violación principios LTAD | medio (mente del coach) | bajo (guardrails + RAG) | ↓ |
+| Time per athlete qualitative analysis | 10-12 min | 1-2 min (HITL review) | -85% |
+| Time per round (5 athletes) | 50-60 min | 8-12 min | -80% |
+| Decision traceability | none | `athlete_ai_insights` (cost, tokens, prompt_version, full output). Langfuse optional F8 | +∞ |
+| Context reuse between rounds | manual | automatic (memory) | +∞ |
+| Pedagogical quality for coach | depends | integrated `explain` mode | new |
+| Risk of LTAD principle violation | medium (coach's mind) | low (guardrails + RAG) | ↓ |
 
-Costo Gemini Flash Lite estimado: ~USD 0.002 por análisis de atleta (input ~3k tokens, output ~1.2k). 7 válidas × 8 atletas × 4 corridas/temporada ≈ **USD 0.45/temporada**. Despreciable.
+Gemini Flash Lite estimated cost: ~USD 0.002 per athlete analysis (input ~3k tokens, output ~1.2k). 7 rounds × 8 athletes × 4 runs/season ≈ **USD 0.45/season**. Negligible.
 
-### 1.5 Diagrama de alto nivel
+### 1.5 High-level diagram
 
 ```mermaid
 flowchart LR
@@ -70,7 +70,7 @@ flowchart LR
     subgraph "Backend FastAPI"
         ROUTER["routers/race_analysis.py<br/>(polling endpoints)"]
         GRAPH["LangGraph<br/>(state machine)"]
-        DET["Capa v1 determinista<br/>(pdf_parser, ingestor, analytics)"]
+        DET["Deterministic v1 layer<br/>(pdf_parser, ingestor, analytics)"]
         RAG["ChromaDB<br/>marco-teorico"]
         MEM["athlete_ai_insights<br/>(MySQL)"]
         ANON["anonymization_mapping<br/>(in-memory + audit)"]
@@ -80,13 +80,13 @@ flowchart LR
     end
     subgraph "Observability (default DB)"
         AUDIT["athlete_ai_insights<br/>cost_usd, tokens, latency_ms"]
-        LF["Langfuse self-hosted<br/>(opcional, F8)"]
+        LF["Langfuse self-hosted<br/>(optional, F8)"]
     end
     subgraph "Storage"
         DB[(MySQL Hostinger)]
     end
 
-    UI -->|HTTP polling cada 2s| ROUTER
+    UI -->|HTTP polling every 2s| ROUTER
     UI -->|HITL approvals POST| ROUTER
     ROUTER --> GRAPH
     GRAPH --> DET
@@ -95,18 +95,18 @@ flowchart LR
     GRAPH --> MEM
     MEM --> DB
     GRAPH --> ANON
-    GRAPH -->|prompts + datos anonimizados| LLM
-    GRAPH -->|métricas| AUDIT
-    GRAPH -.tracing opcional.-> LF
-    LLM -.cost si LF activo.-> LF
+    GRAPH -->|prompts + anonymized data| LLM
+    GRAPH -->|metrics| AUDIT
+    GRAPH -.optional tracing.-> LF
+    LLM -.cost if LF active.-> LF
     GRAPH -->|email Resend| UI
 ```
 
 ---
 
-## 2. Arquitectura del sistema completo
+## 2. Complete system architecture
 
-### 2.1 Diagrama de capas (Mermaid detallado)
+### 2.1 Layers diagram (detailed Mermaid)
 
 ```mermaid
 flowchart TB
@@ -119,7 +119,7 @@ flowchart TB
 
     subgraph BROWSER ["Browser — React 19 + shadcn"]
         DASH["RaceAnalysisDashboard"]:::ui
-        TIMELINE["AnalysisRunTimeline<br/>(consume polling)"]:::ui
+        TIMELINE["AnalysisRunTimeline<br/>(consumes polling)"]:::ui
         HITL_UI["HITLApprovalCard"]:::ui
         REPORT["MarkdownReportViewer"]:::ui
         CHAT["ChatConsole"]:::ui
@@ -143,7 +143,7 @@ flowchart TB
         N5[retrieve_principles<br/>RAG]:::agent
         N6[recall_memory]:::agent
         N7["analyst_agent<br/>(LLM)"]:::agent
-        N8["critic_agent<br/>(LLM, opcional)"]:::agent
+        N8["critic_agent<br/>(LLM, optional)"]:::agent
         N9[hitl_gate_review]:::agent
         N10[persist_insight]:::agent
         N11[rehydrate_names]:::agent
@@ -152,8 +152,8 @@ flowchart TB
         CKPT[(SqliteSaver<br/>checkpoint)]:::data
     end
 
-    subgraph TOOLS ["Tools y helpers (sin LLM)"]
-        QUERIES["queries.py<br/>(extraídas de analytics)"]:::tools
+    subgraph TOOLS ["Tools and helpers (no LLM)"]
+        QUERIES["queries.py<br/>(extracted from analytics)"]:::tools
         ANON_SVC["anonymizer.py<br/>(pseudonyms)"]:::tools
         RAG_SVC["rag/retriever.py<br/>(ChromaDB)"]:::tools
         MEM_SVC["memory/insights.py"]:::tools
@@ -162,16 +162,16 @@ flowchart TB
         V1["v1 services<br/>(pdf_parser, ingestor)"]:::tools
     end
 
-    subgraph DATA ["Persistencia"]
+    subgraph DATA ["Persistence"]
         MYSQL[(MySQL Hostinger<br/>race_* + athlete_ai_insights + agent_runs)]:::data
         CHROMA[(ChromaDB<br/>./data/chroma)]:::data
     end
 
     subgraph OBS ["Observability"]
         AUDIT_DB["athlete_ai_insights / agent_runs<br/>(cost_usd, tokens, latency_ms — default 8A)"]:::obs
-        LF_HOST["Langfuse server<br/>(:3001 — opcional F8B)"]:::obs
-        LF_PG[(Langfuse Postgres — opcional F8B)]:::obs
-        LF_CH[(ClickHouse — opcional F8B)]:::obs
+        LF_HOST["Langfuse server<br/>(:3001 — optional F8B)"]:::obs
+        LF_PG[(Langfuse Postgres — optional F8B)]:::obs
+        LF_CH[(ClickHouse — optional F8B)]:::obs
     end
 
     DASH --> EP_POST
@@ -199,7 +199,7 @@ flowchart TB
     N5 --> RAG_SVC
     N6 --> MEM_SVC
     N7 --> AUDIT_DB
-    N7 -.opcional F8B.-> LF_HOST
+    N7 -.optional F8B.-> LF_HOST
     N10 --> MEM_SVC
     N12 --> PDF_REND
     N13 --> EMAIL
@@ -210,88 +210,88 @@ flowchart TB
     V1 --> MYSQL
     AUDIT_DB --> MYSQL
 
-    LF_HOST -.opcional.-> LF_PG
-    LF_HOST -.opcional.-> LF_CH
+    LF_HOST -.optional.-> LF_PG
+    LF_HOST -.optional.-> LF_CH
 ```
 
-### 2.2 Stack consolidado (versiones mínimas)
+### 2.2 Consolidated stack (minimum versions)
 
-> Versiones validadas con Context7 (mayo 2026) y release notes de cada proyecto. Pin con `>=` permite minor updates compatibles.
+> Versions validated with Context7 (May 2026) and release notes of each project. Pin with `>=` allows compatible minor updates.
 
-| Capa | Tech | Versión mínima | Justificación |
+| Layer | Tech | Minimum version | Justification |
 |---|---|---|---|
-| **Orquestación** | `langgraph` | `>=1.2.0,<2.0` | 1.0 estabilizó la API en oct/2025; 1.2 (mayo 2026) trae `interrupt()` v2 |
-| **Checkpointer** | `langgraph-checkpoint-sqlite` | `>=2.0.5` | Para state machine entre HITL gates; SQLite local en `./data/langgraph/checkpoints.sqlite` |
-| **LLM client** | `langchain-google-genai` | `>=2.0.0` | Soporta `gemini-2.5-flash-lite`, `thinking_budget`, structured output. Asunción: ya en deps tras esta PR |
-| **LangChain core** | `langchain-core` | `>=0.3.40` | Requerido por langgraph 1.x; ya transitivo |
-| **Observability (default)** | nativo MySQL | — | Columnas en `athlete_ai_insights` cubren cost, tokens, latencia, prompt_version |
-| **Observability (opcional F8B)** | `langfuse` | `>=3.0.0` | Solo si se activa F8B. SDK 3.x usa `@observe` y `CallbackHandler` separado |
-| **Langfuse server (opcional F8B)** | `langfuse/langfuse:3` | Docker image tag `3` | Self-hosted compose: server + Postgres 16 + ClickHouse 24 (~2 GB RAM) |
-| **Vector store** | `chromadb` | `>=0.5.20` | `PersistentClient` estable; volumen `./data/chroma/` |
-| **Embeddings** | `sentence-transformers` | `>=3.0.0` | Modelo `paraphrase-multilingual-MiniLM-L12-v2` (español, 384 dims, ~120 MB) — Asunción ver §6 |
-| **PDF render** | `weasyprint` | `>=62.3` | ya en deps |
-| **Template** | `jinja2` | `>=3.1` | ya en deps; prompts y reportes |
-| **Frontend polling** | `@tanstack/react-query` | `^5.0` | ya en deps; `refetchInterval: 2000` para polling, se detiene cuando `state ∈ {done, error}` |
-| **Frontend markdown** | `react-markdown` | `^10.1.0` | ya en deps; render del reporte |
-| **Frontend charts** | `recharts` | `^3.8.1` | ya en deps; visualización gap-podio y proyección |
+| **Orchestration** | `langgraph` | `>=1.2.0,<2.0` | 1.0 stabilized the API in Oct/2025; 1.2 (May 2026) brings `interrupt()` v2 |
+| **Checkpointer** | `langgraph-checkpoint-sqlite` | `>=2.0.5` | For state machine between HITL gates; SQLite local in `./data/langgraph/checkpoints.sqlite` |
+| **LLM client** | `langchain-google-genai` | `>=2.0.0` | Supports `gemini-2.5-flash-lite`, `thinking_budget`, structured output. Assumption: already in deps after this PR |
+| **LangChain core** | `langchain-core` | `>=0.3.40` | Required by langgraph 1.x; already transitive |
+| **Observability (default)** | native MySQL | — | Columns in `athlete_ai_insights` cover cost, tokens, latency, prompt_version |
+| **Observability (optional F8B)** | `langfuse` | `>=3.0.0` | Only if F8B is activated. SDK 3.x uses `@observe` and separate `CallbackHandler` |
+| **Langfuse server (optional F8B)** | `langfuse/langfuse:3` | Docker image tag `3` | Self-hosted compose: server + Postgres 16 + ClickHouse 24 (~2 GB RAM) |
+| **Vector store** | `chromadb` | `>=0.5.20` | Stable `PersistentClient`; volume `./data/chroma/` |
+| **Embeddings** | `sentence-transformers` | `>=3.0.0` | Model `paraphrase-multilingual-MiniLM-L12-v2` (Spanish, 384 dims, ~120 MB) — see §6 Assumption |
+| **PDF render** | `weasyprint` | `>=62.3` | already in deps |
+| **Template** | `jinja2` | `>=3.1` | already in deps; prompts and reports |
+| **Frontend polling** | `@tanstack/react-query` | `^5.0` | already in deps; `refetchInterval: 2000` for polling, stops when `state ∈ {done, error}` |
+| **Frontend markdown** | `react-markdown` | `^10.1.0` | already in deps; render the report |
+| **Frontend charts** | `recharts` | `^3.8.1` | already in deps; podium-gap and projection visualization |
 
-### 2.3 Boundaries v1 (determinista) vs v2 (agéntica)
+### 2.3 v1 (deterministic) vs v2 (agentic) boundaries
 
-| Responsabilidad | Capa | Componente | ¿Toca LLM? |
+| Responsibility | Layer | Component | Calls LLM? |
 |---|---|---|---|
 | Parse PDF | v1 | `pdf_parser.py` | No |
-| Normalize nombres/clubes | v1 | `normalizer.py` | No |
-| Match fuzzy atletas | v1 | `matcher.py` | No |
-| Ingest transaccional | v1 | `ingestor.py` | No |
-| Queries SQL longitudinales | v1 → v2 | `queries.py` (extraído de analytics) | No |
-| Cómputo gaps/deltas/proyección | v1 | `analytics.py` | No |
-| Anonimización pre-LLM | v2 | `services/race/ai/anonymizer.py` | No |
-| Retrieval marco teórico | v2 | `services/race/rag/retriever.py` | No (sólo embeddings) |
-| Recall memoria por atleta | v2 | `services/race/ai/memory.py` | No |
-| Análisis cualitativo + recomendaciones | v2 | `analyst_agent` (LangGraph node) | Sí |
-| Crítica del análisis (opcional) | v2 | `critic_agent` (LangGraph node) | Sí |
+| Normalize names/clubs | v1 | `normalizer.py` | No |
+| Fuzzy match athletes | v1 | `matcher.py` | No |
+| Transactional ingest | v1 | `ingestor.py` | No |
+| Longitudinal SQL queries | v1 → v2 | `queries.py` (extracted from analytics) | No |
+| Gap/delta/projection computation | v1 | `analytics.py` | No |
+| Pre-LLM anonymization | v2 | `services/race/ai/anonymizer.py` | No |
+| Theoretical framework retrieval | v2 | `services/race/rag/retriever.py` | No (embeddings yes) |
+| Per-athlete memory recall | v2 | `services/race/ai/memory.py` | No |
+| Qualitative analysis + recommendations | v2 | `analyst_agent` (LangGraph node) | Yes |
+| Analysis critique (optional) | v2 | `critic_agent` (LangGraph node) | Yes |
 | HITL approval | v2 | `hitl_gate_review` (interrupt) | No |
 | Persist insight | v2 | `persist_insight` | No |
-| Re-hidratación nombres | v2 | `rehydrate_names` | No |
+| Name re-hydration | v2 | `rehydrate_names` | No |
 | Render markdown + PDF | v2 | `render_outputs` + `pdf_renderer.py` | No |
-| Notify coach | v2 | `notification/sender.py` (existente) | No |
-| Chat consultivo | v2 | endpoint separado, mismo RAG + memoria | Sí |
+| Notify coach | v2 | `notification/sender.py` (existing) | No |
+| Consultative chat | v2 | separate endpoint, same RAG + memory | Yes |
 
-**Regla:** la v1 NUNCA llama a la v2. La v2 LLAMA a la v1 (como tool/función determinista). Si v2 falla, v1 sigue operando vía CLI. Esto preserva los 339 tests sin cambios.
+**Rule:** v1 NEVER calls v2. v2 CALLS v1 (as a deterministic tool/function). If v2 fails, v1 continues operating via CLI. This preserves the 339 tests without changes.
 
-### 2.4 Layout de archivos
+### 2.4 File layout
 
 ```
 backend/
 ├── app/
 │   ├── models/
-│   │   ├── ai_explanation.py           # (existente)
-│   │   ├── athlete_ai_insight.py       # NUEVO — memoria agente por atleta
-│   │   ├── agent_run.py                # NUEVO — un registro por ejecución de grafo
-│   │   ├── agent_run_event.py          # NUEVO — un registro por evento de polling emitido
-│   │   ├── anonymization_mapping.py    # NUEVO — auditoría pseudonym ↔ real
-│   │   ├── race_*.py                   # (existente, sin cambios)
-│   │   └── __init__.py                 # MODIFICADO — exportar nuevos
+│   │   ├── ai_explanation.py           # (existing)
+│   │   ├── athlete_ai_insight.py       # NEW — per-athlete agent memory
+│   │   ├── agent_run.py                # NEW — one record per graph execution
+│   │   ├── agent_run_event.py          # NEW — one record per polling event emitted
+│   │   ├── anonymization_mapping.py    # NEW — pseudonym ↔ real audit
+│   │   ├── race_*.py                   # (existing, no changes)
+│   │   └── __init__.py                 # MODIFIED — export new ones
 │   ├── schemas/
-│   │   ├── race.py                     # (existente)
-│   │   └── race_ai.py                  # NUEVO — schemas Pydantic agéntico
+│   │   ├── race.py                     # (existing)
+│   │   └── race_ai.py                  # NEW — agentic Pydantic schemas
 │   ├── routers/
-│   │   ├── race_analysis.py            # NUEVO — endpoints REST + polling
+│   │   ├── race_analysis.py            # NEW — REST endpoints + polling
 │   │   └── ...
 │   ├── services/
-│   │   ├── ai/                         # (existente, no se toca)
+│   │   ├── ai/                         # (existing, not touched)
 │   │   └── race/
-│   │       ├── pdf_parser.py           # (existente)
-│   │       ├── csv_parser.py           # (existente)
-│   │       ├── normalizer.py           # (existente)
-│   │       ├── matcher.py              # (existente)
-│   │       ├── ingestor.py             # (existente)
-│   │       ├── analytics.py            # (existente, eventualmente extraído)
-│   │       ├── queries.py              # NUEVO — queries determinísticas reutilizables
-│   │       ├── ai/                     # NUEVO subpaquete
+│   │       ├── pdf_parser.py           # (existing)
+│   │       ├── csv_parser.py           # (existing)
+│   │       ├── normalizer.py           # (existing)
+│   │       ├── matcher.py              # (existing)
+│   │       ├── ingestor.py             # (existing)
+│   │       ├── analytics.py            # (existing, eventually extracted)
+│   │       ├── queries.py              # NEW — reusable deterministic queries
+│   │       ├── ai/                     # NEW subpackage
 │   │       │   ├── __init__.py
-│   │       │   ├── state.py            # TypedDict del estado del grafo
-│   │       │   ├── graph.py            # Construcción del StateGraph
+│   │       │   ├── state.py            # TypedDict of graph state
+│   │       │   ├── graph.py            # StateGraph construction
 │   │       │   ├── nodes/
 │   │       │   │   ├── __init__.py
 │   │       │   │   ├── validate_input.py
@@ -307,11 +307,11 @@ backend/
 │   │       │   │   ├── rehydrate_names.py
 │   │       │   │   ├── render_outputs.py
 │   │       │   │   └── notify_coach.py
-│   │       │   ├── anonymizer.py       # estrategia pseudonym estable
+│   │       │   ├── anonymizer.py       # stable pseudonym strategy
 │   │       │   ├── memory.py           # recall_recent_insights + persist
-│   │       │   ├── chat_agent.py       # agente conversacional (reusa RAG+mem)
+│   │       │   ├── chat_agent.py       # conversational agent (reuses RAG+mem)
 │   │       │   ├── prompts/
-│   │       │   │   ├── system_principles.md  # extracto del marco teórico
+│   │       │   │   ├── system_principles.md  # excerpt from theoretical framework
 │   │       │   │   ├── analyst_v1.md
 │   │       │   │   ├── critic_v1.md
 │   │       │   │   ├── chat_v1.md
@@ -320,33 +320,33 @@ backend/
 │   │       │   │   │   └── ...
 │   │       │   │   └── eval/
 │   │       │   │       └── judge_v1.md
-│   │       │   └── pdf_renderer.py     # weasyprint + template Jinja2
+│   │       │   └── pdf_renderer.py     # weasyprint + Jinja2 template
 │   │       └── rag/
 │   │           ├── __init__.py
-│   │           ├── ingest.py           # chunking + indexado marco-teorico
-│   │           ├── retriever.py        # API consultar_marco_teorico
+│   │           ├── ingest.py           # chunking + theoretical framework indexing
+│   │           ├── retriever.py        # consultar_marco_teorico API
 │   │           └── citations.py        # Citation dataclass
-│   ├── observability/                  # NUEVO (F8B opcional)
+│   ├── observability/                  # NEW (F8B optional)
 │   │   ├── __init__.py
-│   │   └── langfuse.py                 # init cliente + FakeLangfuse no-op (default disabled)
-│   └── config.py                       # MODIFICADO — settings ChromaDB; Langfuse (F8B opcional)
+│   │   └── langfuse.py                 # client init + FakeLangfuse no-op (default disabled)
+│   └── config.py                       # MODIFIED — ChromaDB settings; Langfuse (F8B optional)
 ├── alembic/versions/
-│   └── 7a8b9c0d1e2f_add_agentic_race_tables.py  # NUEVO — revision 7a8b9c0d1e2f
+│   └── 7a8b9c0d1e2f_add_agentic_race_tables.py  # NEW — revision 7a8b9c0d1e2f
 │                                                  # down_revision: 64c263edd07f
 ├── scripts/
-│   ├── ingest_race.py                  # (existente CLI)
-│   ├── rag_reindex.py                  # NUEVO — reindexa marco-teórico
-│   └── eval_race_analyst.py            # NUEVO — runner golden dataset
+│   ├── ingest_race.py                  # (existing CLI)
+│   ├── rag_reindex.py                  # NEW — re-indexes theoretical framework
+│   └── eval_race_analyst.py            # NEW — golden dataset runner
 ├── evals/
 │   └── race_analyst/
 │       ├── golden/
 │       │   ├── case_001_thiago_progresion.json
 │       │   ├── case_002_inf_a_gap_podio.json
-│       │   └── ...                     # 10-20 casos
-│       ├── judge_prompt_v1.md          # symlink a prompts/eval/
+│       │   └── ...                     # 10-20 cases
+│       ├── judge_prompt_v1.md          # symlink to prompts/eval/
 │       └── runner.py
-├── data/                               # NUEVO — gitignored
-│   ├── chroma/                         # ChromaDB persistente
+├── data/                               # NEW — gitignored
+│   ├── chroma/                         # Persistent ChromaDB
 │   └── langgraph/
 │       └── checkpoints.sqlite
 └── tests/
@@ -355,7 +355,7 @@ backend/
     │   │   └── ai/
     │   │       ├── test_state.py
     │   │       ├── test_anonymizer.py
-    │   │       ├── test_anonymizer_zero_leak.py  # propiedad: 0 nombres reales
+    │   │       ├── test_anonymizer_zero_leak.py  # property: 0 real names
     │   │       ├── test_memory.py
     │   │       ├── test_graph_smoke.py
     │   │       ├── test_nodes_individually.py
@@ -369,11 +369,11 @@ backend/
 frontend/
 ├── src/
 │   ├── api/
-│   │   └── raceAnalysis.ts             # NUEVO — fetch + polling con TanStack Query
+│   │   └── raceAnalysis.ts             # NEW — fetch + polling with TanStack Query
 │   ├── routes/
 │   │   └── coach/
 │   │       └── race-analysis/
-│   │           ├── index.tsx           # NUEVO — page entry
+│   │           ├── index.tsx           # NEW — page entry
 │   │           ├── RunDetailPage.tsx
 │   │           └── InsightsHistoryPage.tsx
 │   ├── components/
@@ -384,177 +384,177 @@ frontend/
 │   │       ├── MarkdownReportViewer.tsx
 │   │       ├── ChatConsole.tsx
 │   │       ├── ExplainModeBanner.tsx
-│   │       └── ProgressionChart.tsx    # recharts existente
+│   │       └── ProgressionChart.tsx    # existing recharts
 │   └── store/
 │       └── explainMode.ts              # zustand toggle
 
-docker-compose.yml                      # MODIFICADO — añade chroma volume (NO toca langfuse)
-docker-compose.langfuse.yml             # NUEVO — compose dedicado OPCIONAL, crear solo en F8B
-.env.example                            # MODIFICADO — vars ChromaDB + Langfuse (default disabled)
+docker-compose.yml                      # MODIFIED — adds chroma volume (does NOT touch langfuse)
+docker-compose.langfuse.yml             # NEW — dedicated OPTIONAL compose, create only in F8B
+.env.example                            # MODIFIED — ChromaDB vars + Langfuse (default disabled)
 
 docs/10-race-results/
-├── design.md                           # (existente, v1)
-├── v2-agentic-design.md                # ESTE DOCUMENTO
-├── learning-plan.md                    # NUEVO — ejercicios progresivos §15
-└── eval-baseline.md                    # NUEVO — golden dataset + scores
+├── design.md                           # (existing, v1)
+├── v2-agentic-design.md                # THIS DOCUMENT
+├── learning-plan.md                    # NEW — progressive exercises §15
+└── eval-baseline.md                    # NEW — golden dataset + scores
 ```
 
 ---
 
-## 3. Modelo de datos (deltas)
+## 3. Data model (deltas)
 
-### 3.1 Tabla `athlete_ai_insights` (NUEVA — memoria agente)
+### 3.1 Table `athlete_ai_insights` (NEW — agent memory)
 
-| Columna | Tipo | Notas |
+| Column | Type | Notes |
 |---|---|---|
 | `id` | int PK | autoincrement |
-| `athlete_id` | int FK→`athletes.id ON DELETE CASCADE` | atleta sujeto del insight |
-| `competitor_id` | int FK→`race_competitors.id` NULL | mapping al competitor de la carrera (NULL si insight cross-temporada) |
-| `season` | smallint | temporada (ej. 2026) |
-| `valida_num` | tinyint NULL | válida que dispara el insight (NULL si es síntesis fin de temporada) |
-| `event_id` | int FK→`race_events.id` NULL | evento puntual (NULL si síntesis) |
+| `athlete_id` | int FK→`athletes.id ON DELETE CASCADE` | subject athlete of the insight |
+| `competitor_id` | int FK→`race_competitors.id` NULL | mapping to the race competitor (NULL if cross-season insight) |
+| `season` | smallint | season (e.g. 2026) |
+| `valida_num` | tinyint NULL | round that triggers the insight (NULL if end-of-season synthesis) |
+| `event_id` | int FK→`race_events.id` NULL | specific event (NULL if synthesis) |
 | `use_case` | varchar(32) | `race_progression`, `race_podium_gap`, `race_projection`, `race_season_summary` |
-| `agent_run_id` | int FK→`agent_runs.id` NULL | trazabilidad al run que lo generó |
-| `summary_text` | text | narrativa final aprobada por coach (post-HITL) |
+| `agent_run_id` | int FK→`agent_runs.id` NULL | traceability to the run that generated it |
+| `summary_text` | text | final narrative approved by coach (post-HITL) |
 | `recommendations_json` | JSON | `[{action, why, priority, principle_refs:[citation_ids]}]` |
-| `metrics_snapshot_json` | JSON | snapshot de inputs determinísticos (gaps, posiciones) — para reproducibilidad |
+| `metrics_snapshot_json` | JSON | snapshot of deterministic inputs (gaps, positions) — for reproducibility |
 | `principles_cited_json` | JSON | `[{doc, section, chunk_id, relevance_score}]` |
-| `confidence` | enum(`low`,`medium`,`high`) | heredado de `analytics.projection` + heurística agente |
+| `confidence` | enum(`low`,`medium`,`high`) | inherited from `analytics.projection` + agent heuristic |
 | `model` | varchar(128) | `gemini-2.5-flash-lite` |
 | `prompt_version` | varchar(32) | `analyst_v1`, `analyst_v2`, ... |
-| `coach_approved` | bool | true si pasó HITL gate |
-| `coach_edits_count` | smallint default 0 | cuántas iteraciones de edición tuvo |
-| `generated_at` | datetime | timestamp generación |
-| `approved_at` | datetime NULL | timestamp aprobación coach |
-| `generated_by_user_id` | int FK→`users.id` | coach que disparó el run |
-| `archived_at` | datetime NULL | soft-delete para insights >2 temporadas |
-| `created_at`, `updated_at` | datetime | auditoría |
+| `coach_approved` | bool | true if passed HITL gate |
+| `coach_edits_count` | smallint default 0 | how many editing iterations it had |
+| `generated_at` | datetime | generation timestamp |
+| `approved_at` | datetime NULL | coach approval timestamp |
+| `generated_by_user_id` | int FK→`users.id` | coach who triggered the run |
+| `archived_at` | datetime NULL | soft-delete for insights >2 seasons |
+| `created_at`, `updated_at` | datetime | audit |
 
-**Índices:**
-- `ix_insights_athlete_season (athlete_id, season DESC, valida_num DESC)` — para `recall_recent_insights(athlete_id, n=3)`
-- `ix_insights_event (event_id)` — análisis por válida
-- `ix_insights_use_case (use_case, generated_at DESC)` — métricas cross-atleta (endpoint `/admin/ai-usage`; también usable por Langfuse si F8B activo)
+**Indexes:**
+- `ix_insights_athlete_season (athlete_id, season DESC, valida_num DESC)` — for `recall_recent_insights(athlete_id, n=3)`
+- `ix_insights_event (event_id)` — analysis by round
+- `ix_insights_use_case (use_case, generated_at DESC)` — cross-athlete metrics (endpoint `/admin/ai-usage`; also usable by Langfuse if F8B active)
 
-**Justificación columnas:**
-- `competitor_id` separado de `athlete_id`: un atleta puede tener varios competitor_ids históricos por re-matching.
-- `recommendations_json` con `principle_refs`: cada recomendación cita la fuente RAG → auditabilidad.
-- `metrics_snapshot_json`: si el LLM cambia, podemos re-correr con mismos inputs y comparar.
-- `prompt_version`: necesario para A/B comparable vía SQL (`GROUP BY prompt_version`); Langfuse lo usa como tag si F8B activo.
-- `coach_approved` + `coach_edits_count`: feedback loop — alto edit count en una versión de prompt → señal de degradación.
-- `archived_at`: soft-delete (GDPR/Ley 1581 — el padre puede pedir borrado).
+**Column justification:**
+- `competitor_id` separate from `athlete_id`: an athlete can have multiple historical competitor_ids due to re-matching.
+- `recommendations_json` with `principle_refs`: each recommendation cites the RAG source → auditability.
+- `metrics_snapshot_json`: if the LLM changes, we can re-run with same inputs and compare.
+- `prompt_version`: needed for comparable A/B via SQL (`GROUP BY prompt_version`); Langfuse uses it as a tag if F8B active.
+- `coach_approved` + `coach_edits_count`: feedback loop — high edit count in one prompt version → signal of degradation.
+- `archived_at`: soft-delete (GDPR/Ley 1581 — a parent can request deletion).
 
-### 3.2 Tabla `agent_runs` (NUEVA — ejecuciones de grafo)
+### 3.2 Table `agent_runs` (NEW — graph executions)
 
-| Columna | Tipo | Notas |
+| Column | Type | Notes |
 |---|---|---|
 | `id` | bigint PK | |
-| `external_run_id` | varchar(64) UNIQUE | UUID expuesto al cliente para polling/HITL — nunca el PK interno |
-| `graph_name` | varchar(64) | `race_analyst_v1` (permite múltiples grafos coexistiendo) |
-| `prompt_version` | varchar(32) | `analyst_v1` activo en el momento |
+| `external_run_id` | varchar(64) UNIQUE | UUID exposed to client for polling/HITL — never the internal PK |
+| `graph_name` | varchar(64) | `race_analyst_v1` (allows multiple graphs coexisting) |
+| `prompt_version` | varchar(32) | `analyst_v1` active at the time |
 | `started_at` | datetime | |
-| `finished_at` | datetime NULL | NULL si en progreso o crashed |
+| `finished_at` | datetime NULL | NULL if in progress or crashed |
 | `status` | enum(`running`,`awaiting_hitl`,`completed`,`rejected`,`failed`,`cancelled`) | |
-| `input_json` | JSON | parámetros de entrada (athlete_id, season, valida_nums) |
-| `final_output_json` | JSON NULL | snapshot del state al `END` (incluye insight_id si committed) |
-| `error_message` | text NULL | si `status=failed` |
-| `langfuse_trace_id` | varchar(128) NULL | link al trace en Langfuse para drill-down (NULL hasta F8B activo) |
-| `requested_by_user_id` | int FK→`users.id` | coach que disparó |
-| `checkpoint_thread_id` | varchar(64) | thread_id pasado a LangGraph SqliteSaver |
-| `explain_mode` | bool default false | si modo aprendizaje estuvo activo |
-| `cost_usd` | decimal(8,5) NULL | calculado tras cada `LLM.ainvoke` desde `usage_metadata` + tabla pricing local. Fuente primaria de cost tracking (Langfuse opcional refleja lo mismo si F8B activo) |
+| `input_json` | JSON | input parameters (athlete_id, season, valida_nums) |
+| `final_output_json` | JSON NULL | state snapshot at `END` (includes insight_id if committed) |
+| `error_message` | text NULL | if `status=failed` |
+| `langfuse_trace_id` | varchar(128) NULL | link to Langfuse trace for drill-down (NULL until F8B active) |
+| `requested_by_user_id` | int FK→`users.id` | coach who triggered |
+| `checkpoint_thread_id` | varchar(64) | thread_id passed to LangGraph SqliteSaver |
+| `explain_mode` | bool default false | if learning mode was active |
+| `cost_usd` | decimal(8,5) NULL | calculated after each `LLM.ainvoke` from `usage_metadata` + local pricing table. Primary cost tracking source (optional Langfuse reflects the same if F8B active) |
 | `created_at`, `updated_at` | datetime | |
 
-**Índices:**
+**Indexes:**
 - `ix_agent_runs_user_started (requested_by_user_id, started_at DESC)`
 - `ix_agent_runs_status (status)`
 - `uq_agent_runs_external (external_run_id)`
 
-**Justificación:** `agent_runs` es el "header" de cada análisis. `external_run_id` evita exponer el autoincrement (mejor práctica seguridad URL). `checkpoint_thread_id` es la clave para resumir desde HITL.
+**Justification:** `agent_runs` is the "header" of each analysis. `external_run_id` avoids exposing the autoincrement (URL security best practice). `checkpoint_thread_id` is the key to resuming from HITL.
 
-### 3.3 Tabla `agent_run_events` (NUEVA — log de eventos de polling)
+### 3.3 Table `agent_run_events` (NEW — polling event log)
 
-| Columna | Tipo | Notas |
+| Column | Type | Notes |
 |---|---|---|
 | `id` | bigint PK | |
 | `run_id` | bigint FK→`agent_runs.id ON DELETE CASCADE` | |
-| `seq` | int | orden monotónico dentro del run (1..N) |
+| `seq` | int | monotonic order within the run (1..N) |
 | `event_type` | enum(`node_start`,`node_end`,`hitl_request`,`hitl_response`,`explain`,`token`,`error`,`done`) | |
-| `node_name` | varchar(64) NULL | nodo emisor (NULL para eventos a nivel grafo) |
-| `payload_json` | JSON | datos del evento (snapshot del state delta, mensaje pedagógico, error...) |
+| `node_name` | varchar(64) NULL | emitting node (NULL for graph-level events) |
+| `payload_json` | JSON | event data (state delta snapshot, pedagogical message, error...) |
 | `created_at` | datetime | |
 
-**Índices:**
+**Indexes:**
 - `ix_run_events_run_seq (run_id, seq)`
 - `ix_run_events_type (event_type)`
 
-**Justificación:** persistimos eventos por dos razones — (1) el cliente que pollinguea puede solicitar `?since=42` y recibir solo eventos nuevos sin replay completo; (2) auditoría retrospectiva y debugging sin abrir Langfuse.
+**Justification:** we persist events for two reasons — (1) the polling client can request `?since=42` and receive only new events without full replay; (2) retrospective auditing and debugging without opening Langfuse.
 
-### 3.4 Tabla `anonymization_mappings` (NUEVA — auditoría privacy)
+### 3.4 Table `anonymization_mappings` (NEW — privacy audit)
 
-| Columna | Tipo | Notas |
+| Column | Type | Notes |
 |---|---|---|
 | `id` | bigint PK | |
 | `run_id` | bigint FK→`agent_runs.id ON DELETE CASCADE` | |
 | `pseudonym` | varchar(64) | `Atleta-PJUV-A-F-001` |
-| `real_competitor_id` | int FK→`race_competitors.id` | mapping inverso (sólo lectura interna) |
-| `real_athlete_id` | int FK→`athletes.id` NULL | si está confirmado match TyR |
-| `salt_used` | varchar(16) | sal para hash si se usa estrategia determinista |
+| `real_competitor_id` | int FK→`race_competitors.id` | reverse mapping (internal read-only) |
+| `real_athlete_id` | int FK→`athletes.id` NULL | if confirmed TyR match |
+| `salt_used` | varchar(16) | salt for hash if deterministic strategy is used |
 | `created_at` | datetime | |
 
-**Índices:**
+**Indexes:**
 - `uq_anon_run_pseudonym (run_id, pseudonym)`
 - `ix_anon_run_athlete (run_id, real_athlete_id)`
 
-**Justificación:** la tabla NO se expone vía API. Sirve para (1) re-hidratar nombres después del LLM call, (2) auditar que ninguna respuesta del LLM contiene PII, (3) cumplir requerimientos Ley 1581 — un padre puede pedir "qué datos de mi hijo fueron enviados a un LLM externo" y respondemos con esta tabla.
+**Justification:** the table is NOT exposed via API. It serves to (1) re-hydrate names after the LLM call, (2) audit that no LLM response contains PII, (3) comply with Ley 1581 requirements — a parent can ask "what data about my child was sent to an external LLM" and we answer with this table.
 
-⚠️ **Decisión requerida:** mantener la tabla persistente vs solo in-memory por run. Persistente da trazabilidad pero acumula PII enlazada a pseudonyms. **Propuesta:** persistente con TTL de 90 días + scheduled cleanup. Asunción: 90 días es suficiente ventana para auditorías retroactivas sin acumular indefinidamente.
+⚠️ **Decision required:** keep the table persistent vs only in-memory per run. Persistent gives traceability but accumulates PII linked to pseudonyms. **Proposal:** persistent with 90-day TTL + scheduled cleanup. Assumption: 90 days is a sufficient window for retrospective audits without accumulating indefinitely.
 
-### 3.5 Migración Alembic
+### 3.5 Alembic migration
 
 ```
 revision: 7a8b9c0d1e2f
 down_revision: 64c263edd07f
-description: Tablas para módulo agéntico race-results (insights, runs, events, anonymization)
+description: Tables for agentic race-results module (insights, runs, events, anonymization)
 ```
 
-**Operaciones up:**
+**Up operations:**
 
-1. `CREATE TABLE agent_runs` (con `external_run_id UNIQUE`)
-2. `CREATE TABLE agent_run_events` (FK a agent_runs)
-3. `CREATE TABLE athlete_ai_insights` (FK a athletes, agent_runs)
-4. `CREATE TABLE anonymization_mappings` (FK a agent_runs)
-5. Crear índices listados arriba.
+1. `CREATE TABLE agent_runs` (with `external_run_id UNIQUE`)
+2. `CREATE TABLE agent_run_events` (FK to agent_runs)
+3. `CREATE TABLE athlete_ai_insights` (FK to athletes, agent_runs)
+4. `CREATE TABLE anonymization_mappings` (FK to agent_runs)
+5. Create indexes listed above.
 
-**Operaciones down:** drop en orden inverso (events → runs → insights → mappings).
+**Down operations:** drop in reverse order (events → runs → insights → mappings).
 
-**Validación post-migración:** script `scripts/verify_agentic_schema.py` que hace `SELECT 1` de cada tabla y valida FKs (sin tocar datos).
+**Post-migration validation:** script `scripts/verify_agentic_schema.py` that does `SELECT 1` on each table and validates FKs (without touching data).
 
 ---
 
-## 4. Workflow LangGraph — el corazón
+## 4. LangGraph workflow — the core
 
-### 4.1 Diagrama del grafo
+### 4.1 Graph diagram
 
 ```mermaid
 stateDiagram-v2
     [*] --> validate_input
-    validate_input --> load_race_data : input válido
-    validate_input --> [*] : input inválido (error)
+    validate_input --> load_race_data : valid input
+    validate_input --> [*] : invalid input (error)
 
-    load_race_data --> anonymize : datos cargados
+    load_race_data --> anonymize : data loaded
     anonymize --> compute_metrics
     compute_metrics --> retrieve_principles
     retrieve_principles --> recall_memory
     recall_memory --> analyst_agent
 
     analyst_agent --> critic_agent : output OK
-    analyst_agent --> hitl_gate_review : output con warnings
+    analyst_agent --> hitl_gate_review : output with warnings
 
-    critic_agent --> hitl_gate_review : revisión OK
+    critic_agent --> hitl_gate_review : review OK
     critic_agent --> analyst_agent : retry (max 2)
 
     hitl_gate_review --> persist_insight : approved
-    hitl_gate_review --> analyst_agent : edited (vuelve con feedback)
+    hitl_gate_review --> analyst_agent : edited (returns with feedback)
     hitl_gate_review --> notify_coach : rejected (skip persist)
 
     persist_insight --> rehydrate_names
@@ -563,10 +563,10 @@ stateDiagram-v2
     notify_coach --> [*]
 
     note right of hitl_gate_review
-        interrupt() pausa el grafo.
-        El coach aprueba/edita/rechaza
-        vía POST /runs/{id}/hitl/{step}.
-        Resume con Command(resume=...).
+        interrupt() pauses the graph.
+        The coach approves/edits/rejects
+        via POST /runs/{id}/hitl/{step}.
+        Resumes with Command(resume=...).
     end note
 ```
 
@@ -575,182 +575,182 @@ stateDiagram-v2
 ```python
 # services/race/ai/state.py
 class RaceAnalystState(TypedDict, total=False):
-    # ---- Input determinístico ----
+    # ---- Deterministic input ----
     run_id: int                         # FK agent_runs.id
     external_run_id: str                # UUID
     athlete_id: int
     season: int
-    valida_nums: list[int]              # ej [3, 4] para analizar V-III + V-IV
+    valida_nums: list[int]              # e.g [3, 4] to analyze V-III + V-IV
     explain_mode: bool
 
-    # ---- Datos cargados ----
+    # ---- Loaded data ----
     competitor_id: int | None
     category_id: int | None
-    race_results_raw: list[dict]        # rows de race_results para el atleta
-    podium_context_raw: list[dict]      # podium times por evento/categoría
+    race_results_raw: list[dict]        # race_results rows for the athlete
+    podium_context_raw: list[dict]      # podium times by event/category
     series_meta: dict
 
-    # ---- Anonimización ----
+    # ---- Anonymization ----
     anonymization_map: dict[int, str]   # {competitor_id: pseudonym}
     reverse_map: dict[str, int]         # {pseudonym: competitor_id}
     salt: str
 
-    # ---- Métricas computadas (determinístico) ----
+    # ---- Computed metrics (deterministic) ----
     progression_df: list[dict]
     podium_gap_df: list[dict]
     projection: dict
 
-    # ---- RAG + memoria ----
+    # ---- RAG + memory ----
     principles_retrieved: list[dict]    # [{chunk_id, content, score, source}]
-    recent_insights: list[dict]         # últimos N insights del atleta
+    recent_insights: list[dict]         # last N athlete insights
 
     # ---- LLM outputs ----
-    analyst_draft: dict | None          # JSON parsed, antes del crítico
-    critic_feedback: list[str]          # observaciones del crítico
+    analyst_draft: dict | None          # JSON parsed, before critic
+    critic_feedback: list[str]          # critic observations
     critic_pass: bool
-    retry_count: int                    # límite 2
+    retry_count: int                    # limit 2
 
     # ---- HITL ----
     hitl_action: str | None             # 'approve'|'edit'|'reject'
-    hitl_edits: dict | None             # coach reemplaza campos del draft
+    hitl_edits: dict | None             # coach replaces draft fields
     hitl_at: str | None                 # ISO datetime
 
-    # ---- Output final ----
-    final_insight: dict                 # snapshot pre-render
+    # ---- Final output ----
+    final_insight: dict                 # pre-render snapshot
     rendered_markdown: str
     pdf_path: str | None
     email_sent: bool
 
-    # ---- Trazabilidad ----
+    # ---- Traceability ----
     langfuse_trace_id: str
-    errors: list[dict]                  # acumulador de fallos no fatales
-    pedagogical_messages: list[dict]    # generados si explain_mode=True
+    errors: list[dict]                  # non-fatal failures accumulator
+    pedagogical_messages: list[dict]    # generated if explain_mode=True
 ```
 
-**Decisión sobre `total=False`:** permite que cada nodo escriba sólo su slice del estado sin tener que inicializar todos los campos. LangGraph mergea automáticamente (last-write-wins por defecto; reducers custom si fuese necesario, ej. `pedagogical_messages: Annotated[list, operator.add]`).
+**Decision on `total=False`:** allows each node to write only its state slice without having to initialize all fields. LangGraph merges automatically (last-write-wins by default; custom reducers if needed, e.g. `pedagogical_messages: Annotated[list, operator.add]`).
 
-### 4.3 Lista de nodos — IO esperado
+### 4.3 Node list — expected I/O
 
-| # | Nodo | Lee del state | Escribe al state | Llama tools | LLM | Pedagogical |
+| # | Node | Reads from state | Writes to state | Calls tools | LLM | Pedagogical |
 |---|---|---|---|---|---|---|
-| 1 | `validate_input` | `athlete_id`, `season`, `valida_nums` | `errors` si falla | `queries.athlete_exists` | No | "Verifico que el atleta exista y tenga resultados..." |
-| 2 | `load_race_data` | `athlete_id`, `season`, `valida_nums` | `race_results_raw`, `series_meta`, `competitor_id`, `category_id` | `queries.fetch_results_for_athlete`, `queries.fetch_podium_context` | No | "Cargo resultados desde MySQL — sin LLM aún..." |
-| 3 | `anonymize` | `race_results_raw`, `podium_context_raw`, `athlete_id` | `anonymization_map`, `reverse_map`, `salt` | `anonymizer.generate_mapping`, persist a `anonymization_mappings` | No | "Reemplazo nombres por pseudónimos antes de hablar con LLM externo..." |
-| 4 | `compute_metrics` | `race_results_raw`, `series_meta` | `progression_df`, `podium_gap_df`, `projection` | `analytics.athlete_progression`, `analytics.podium_gap`, `analytics.projection` | No | "Calculo gaps determinísticamente — el LLM no inventa números..." |
-| 5 | `retrieve_principles` | `progression_df`, `athlete_id` (→ edad → grupo LTAD) | `principles_retrieved` | `rag.retriever.consultar_marco_teorico` con queries derivadas | No (embeddings sí) | "Busco principios LTAD relevantes para este grupo de edad..." |
-| 6 | `recall_memory` | `athlete_id`, `season` | `recent_insights` | `memory.recall_recent_insights(athlete_id, n=3)` | No | "Recupero los 3 últimos insights de este atleta para no repetirme..." |
-| 7 | `analyst_agent` | TODO (datos anonimizados + principios + memoria) | `analyst_draft` | LLM Gemini Flash Lite, prompt `analyst_v1` | Sí | "Pido al LLM que sintetice análisis. Le doy SOLO pseudónimos..." |
-| 8 | `critic_agent` | `analyst_draft`, `principles_retrieved` | `critic_feedback`, `critic_pass` | LLM con prompt `critic_v1` | Sí (opcional) | "Otro LLM revisa que el análisis cite principios reales y no contradiga LTAD..." |
-| 9 | `hitl_gate_review` | `analyst_draft`, `critic_feedback` | `hitl_action`, `hitl_edits`, `hitl_at` | `interrupt()` LangGraph | No | "Pauso aquí — el coach revisa antes de persistir..." |
-| 10 | `persist_insight` | `analyst_draft`, `hitl_edits`, `run_id` | `final_insight` | `memory.persist_insight` | No | "Guardo el insight aprobado para que el próximo análisis lo recuerde..." |
-| 11 | `rehydrate_names` | `final_insight`, `reverse_map` | `final_insight` actualizado con nombres reales | `anonymizer.rehydrate_text` | No | "Reemplazo pseudónimos por nombres reales — esto NO va al LLM..." |
-| 12 | `render_outputs` | `final_insight`, `progression_df`, etc. | `rendered_markdown`, `pdf_path` | `pdf_renderer.render` | No | "Genero markdown + PDF con weasyprint..." |
-| 13 | `notify_coach` | `run_id`, `email_destination` | `email_sent` | `notification.send_race_analysis_ready` (template Resend) | No | "Te envío un email cuando todo termina." |
+| 1 | `validate_input` | `athlete_id`, `season`, `valida_nums` | `errors` if fails | `queries.athlete_exists` | No | "Verifying athlete exists and has results..." |
+| 2 | `load_race_data` | `athlete_id`, `season`, `valida_nums` | `race_results_raw`, `series_meta`, `competitor_id`, `category_id` | `queries.fetch_results_for_athlete`, `queries.fetch_podium_context` | No | "Loading results from MySQL — no LLM yet..." |
+| 3 | `anonymize` | `race_results_raw`, `podium_context_raw`, `athlete_id` | `anonymization_map`, `reverse_map`, `salt` | `anonymizer.generate_mapping`, persist to `anonymization_mappings` | No | "Replacing names with pseudonyms before talking to external LLM..." |
+| 4 | `compute_metrics` | `race_results_raw`, `series_meta` | `progression_df`, `podium_gap_df`, `projection` | `analytics.athlete_progression`, `analytics.podium_gap`, `analytics.projection` | No | "Calculating gaps deterministically — the LLM doesn't invent numbers..." |
+| 5 | `retrieve_principles` | `progression_df`, `athlete_id` (→ age → LTAD group) | `principles_retrieved` | `rag.retriever.consultar_marco_teorico` with derived queries | No (embeddings yes) | "Looking for LTAD principles relevant to this age group..." |
+| 6 | `recall_memory` | `athlete_id`, `season` | `recent_insights` | `memory.recall_recent_insights(athlete_id, n=3)` | No | "Retrieving the 3 most recent insights for this athlete to avoid repetition..." |
+| 7 | `analyst_agent` | ALL (anonymized data + principles + memory) | `analyst_draft` | Gemini Flash Lite LLM, prompt `analyst_v1` | Yes | "Asking the LLM to synthesize analysis. Giving it ONLY pseudonyms..." |
+| 8 | `critic_agent` | `analyst_draft`, `principles_retrieved` | `critic_feedback`, `critic_pass` | LLM with `critic_v1` prompt | Yes (optional) | "Another LLM checks that the analysis cites real principles and doesn't contradict LTAD..." |
+| 9 | `hitl_gate_review` | `analyst_draft`, `critic_feedback` | `hitl_action`, `hitl_edits`, `hitl_at` | LangGraph `interrupt()` | No | "Pausing here — coach reviews before persisting..." |
+| 10 | `persist_insight` | `analyst_draft`, `hitl_edits`, `run_id` | `final_insight` | `memory.persist_insight` | No | "Saving the approved insight so the next analysis remembers it..." |
+| 11 | `rehydrate_names` | `final_insight`, `reverse_map` | `final_insight` updated with real names | `anonymizer.rehydrate_text` | No | "Replacing pseudonyms with real names — this does NOT go to the LLM..." |
+| 12 | `render_outputs` | `final_insight`, `progression_df`, etc. | `rendered_markdown`, `pdf_path` | `pdf_renderer.render` | No | "Generating markdown + PDF with weasyprint..." |
+| 13 | `notify_coach` | `run_id`, `email_destination` | `email_sent` | `notification.send_race_analysis_ready` (Resend template) | No | "Sending you an email when everything is done." |
 
 ### 4.4 Checkpointing
 
-**Decisión:** `langgraph-checkpoint-sqlite` (no Postgres, no MySQL).
+**Decision:** `langgraph-checkpoint-sqlite` (not Postgres, not MySQL).
 
-**Razones:**
-- MySQL no tiene saver oficial (sólo Postgres). Crearlo es over-engineering para single-coach uso.
-- SQLite local en volumen Docker `./data/langgraph/checkpoints.sqlite` es suficiente (<100 runs/mes).
-- Aislamiento del estado del grafo del estado de negocio — el grafo puede corromperse sin afectar `race_*` tables.
+**Reasons:**
+- MySQL has no official saver (only Postgres). Creating one is over-engineering for single-coach use.
+- SQLite local in Docker volume `./data/langgraph/checkpoints.sqlite` is sufficient (<100 runs/month).
+- Isolation of graph state from business state — the graph can corrupt without affecting `race_*` tables.
 
 **Thread strategy:**
-- `checkpoint_thread_id = external_run_id` (UUID). Garantiza unicidad y permite resume vía `Command(resume=...)`.
-- Persistencia indefinida hasta `status in (completed, rejected, failed)`. Cleanup job mensual borra checkpoints terminados >30 días.
+- `checkpoint_thread_id = external_run_id` (UUID). Guarantees uniqueness and allows resume via `Command(resume=...)`.
+- Indefinite persistence until `status in (completed, rejected, failed)`. Monthly cleanup job deletes terminated checkpoints >30 days.
 
-**Tabla SQLite generada por LangGraph:** `checkpoints` con columnas `(thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata)`. No la tocamos directamente.
+**SQLite table generated by LangGraph:** `checkpoints` with columns `(thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata)`. We don't touch it directly.
 
 ### 4.5 Error handling
 
-| Tipo de error | Estrategia | Donde se maneja |
+| Error type | Strategy | Where handled |
 |---|---|---|
-| Validation error (input inválido) | abort temprano, status=`failed`, mensaje claro al frontend | `validate_input` |
-| DB read timeout (load_race_data) | retry exponencial 3x (200ms, 1s, 5s); si falla → status=`failed` | tenacity decorator en `queries.py` |
-| ChromaDB no responde | fallback: `principles_retrieved = []` + warning al coach; continuar | `retrieve_principles` |
-| Gemini rate limit (429) | backoff exponencial 4x con jitter; si persiste 5 min → fallback `gemini-2.0-flash` (modelo previo) | wrapper en `analyst_agent`, `critic_agent` |
-| Gemini timeout (>30s) | abort nodo, marcar `analyst_draft=None`, ir a `hitl_gate_review` con mensaje "LLM caído — coach decide manualmente" | wrapper |
-| Guardrails rechazan output | retry 1x con `critic_feedback` inyectado; si vuelve a fallar → HITL con draft crudo + warning | `analyst_agent` |
-| HITL timeout (>24h sin respuesta del coach) | status=`awaiting_hitl` persistente, no se cancela. Email recordatorio a las 4h | scheduled job `agent_runs_reaper.py` |
-| Persist insight FK violation | rollback, status=`failed`, alerta Sentry | `persist_insight` |
-| PDF render falla (weasyprint) | continuar con sólo markdown + warning; coach descarga PDF luego | `render_outputs` |
+| Validation error (invalid input) | early abort, status=`failed`, clear message to frontend | `validate_input` |
+| DB read timeout (load_race_data) | exponential retry 3x (200ms, 1s, 5s); if fails → status=`failed` | tenacity decorator in `queries.py` |
+| ChromaDB not responding | fallback: `principles_retrieved = []` + warning to coach; continue | `retrieve_principles` |
+| Gemini rate limit (429) | exponential backoff 4x with jitter; if persists 5 min → fallback `gemini-2.0-flash` (previous model) | wrapper in `analyst_agent`, `critic_agent` |
+| Gemini timeout (>30s) | abort node, mark `analyst_draft=None`, go to `hitl_gate_review` with message "LLM down — coach decides manually" | wrapper |
+| Guardrails reject output | retry 1x with injected `critic_feedback`; if fails again → HITL with raw draft + warning | `analyst_agent` |
+| HITL timeout (>24h without coach response) | status=`awaiting_hitl` persistent, not cancelled. Reminder email at 4h | scheduled job `agent_runs_reaper.py` |
+| Persist insight FK violation | rollback, status=`failed`, Sentry alert | `persist_insight` |
+| PDF render fails (weasyprint) | continue with markdown only + warning; coach downloads PDF later | `render_outputs` |
 
-**Dead-letter:** si un run queda `failed` >7 días, se archiva con `error_message` completo y se notifica al coach vía email con link al detalle del run (`/admin/ai-usage/runs/{external_run_id}` desde `agent_runs` + `agent_run_events`). Si F8B activo, el email incluye también el `langfuse_trace_id`.
+**Dead-letter:** if a run stays `failed` >7 days, it is archived with full `error_message` and the coach is notified via email with link to run detail (`/admin/ai-usage/runs/{external_run_id}` from `agent_runs` + `agent_run_events`). If F8B active, the email also includes the `langfuse_trace_id`.
 
 ---
 
-## 5. Sistema de agentes: single vs multi
+## 5. Agent system: single vs multi
 
-### 5.1 Recomendación: **multi-agent con supervisor implícito (lineal)**
+### 5.1 Recommendation: **multi-agent with implicit supervisor (linear)**
 
-No un supervisor pattern formal (que añadiría un nodo extra de routing LLM), sino una composición lineal con tres roles LLM:
+Not a formal supervisor pattern (which would add an extra LLM routing node), but a linear composition with three LLM roles:
 
-1. **`analyst_agent`** — produce el análisis cualitativo + recomendaciones a partir de datos + principios + memoria.
-2. **`critic_agent`** — revisa el output del analyst: ¿cita principios reales? ¿contradice LTAD? ¿incluye nombres reales (PII leak)? ¿menciona números no provistos?
-3. **`chat_agent`** — agente conversacional separado (NO parte del grafo de análisis), expone endpoint `/chat`. Reusa el RAG + memoria del atleta.
+1. **`analyst_agent`** — produces the qualitative analysis + recommendations from data + principles + memory.
+2. **`critic_agent`** — reviews analyst output: does it cite real principles? does it contradict LTAD? does it include real names (PII leak)? does it mention numbers not provided?
+3. **`chat_agent`** — separate conversational agent (NOT part of the analysis graph), exposes endpoint `/chat`. Reuses RAG + athlete memory.
 
-### 5.2 Trade-offs evaluados
+### 5.2 Evaluated trade-offs
 
-| Opción | Pros | Cons | Riesgo |
+| Option | Pros | Cons | Risk |
 |---|---|---|---|
-| **A) Single-agent** (sólo analyst) | Simple, 1 LLM call por run, $ mínimo | Sin segunda opinión → riesgo alucinación pasa al coach | Medio |
-| **B) Multi-agent lineal** (analyst + critic) | +1 LLM call captura inconsistencias antes del HITL → menos churn de edits del coach | 2x costo (~$0.004 vs $0.002 por análisis) | Bajo |
-| **C) Supervisor pattern formal** (LLM enruta nodos) | Máxima flexibilidad, exploración | Sobre-ingeniería para flujo conocido; latencia +2-3s por decisión de routing | Alto |
-| **D) Multi-agent con handoff explícito** (analyst delega a especialistas por tema) | Alta calidad si tópicos son ortogonales | Coordinación compleja, latencia, $ alto | Alto |
+| **A) Single-agent** (analyst only) | Simple, 1 LLM call per run, minimum cost | No second opinion → hallucination risk passes to coach | Medium |
+| **B) Linear multi-agent** (analyst + critic) | +1 LLM call catches inconsistencies before HITL → less coach edit churn | 2x cost (~$0.004 vs $0.002 per analysis) | Low |
+| **C) Formal supervisor pattern** (LLM routes nodes) | Maximum flexibility, exploration | Over-engineering for known flow; latency +2-3s per routing decision | High |
+| **D) Multi-agent with explicit handoff** (analyst delegates to topic specialists) | High quality if topics are orthogonal | Complex coordination, latency, high cost | High |
 
-**Recomendación final:** **B (multi-agent lineal)** para MVP. El `critic_agent` se puede DESACTIVAR vía feature flag `RACE_AGENT_CRITIC_ENABLED=false` si en eval baseline el critic no aporta valor diferencial >5 % en score golden.
+**Final recommendation:** **B (linear multi-agent)** for MVP. The `critic_agent` can be DISABLED via feature flag `RACE_AGENT_CRITIC_ENABLED=false` if in the golden eval baseline the critic doesn't add differential value >5% in score.
 
-⚠️ **Decisión requerida del coach:** ¿activar critic desde el MVP o esperar a baseline? **Propuesta:** activarlo, evaluar después de 5-10 runs reales.
+⚠️ **Required coach decision:** activate critic from MVP or wait for baseline? **Proposal:** activate, evaluate after 5-10 real runs.
 
-### 5.3 Chat consultivo (`chat_agent`)
+### 5.3 Consultative chat (`chat_agent`)
 
-- Endpoint separado `POST /chat` — NO comparte grafo con el flujo de análisis.
-- Sesión conversacional por `session_id` (no thread_id de LangGraph), persistida en memoria del proceso (Redis si escala; para MVP, dict in-memory con TTL 1h).
-- Tools del agente:
+- Separate endpoint `POST /chat` — does NOT share graph with the analysis flow.
+- Conversational session by `session_id` (not LangGraph thread_id), persisted in process memory (Redis if it scales; for MVP, in-memory dict with 1h TTL).
+- Agent tools:
   - `consultar_marco_teorico(query)` (RAG)
-  - `obtener_insights_atleta(athlete_id, n=5)` (memoria)
+  - `obtener_insights_atleta(athlete_id, n=5)` (memory)
   - `fetch_results(athlete_id, season)` (queries.py)
-- Anonimización: si el coach pregunta "¿cómo va Thiago?", el agente internamente convierte `Thiago` → `competitor_id`, anonimiza datos, llama LLM, re-hidrata respuesta.
-- **No HITL** — chat es directo. Coach corrige en próximo turn si quiere.
+- Anonymization: if the coach asks "how is Thiago doing?", the agent internally converts `Thiago` → `competitor_id`, anonymizes data, calls LLM, re-hydrates response.
+- **No HITL** — chat is direct. Coach corrects in next turn if desired.
 
-Asunción: chat no requiere persistencia post-sesión en MVP. Si se quiere historial cross-sesión, escalar después.
+Assumption: chat doesn't require cross-session persistence in MVP. If cross-session history is desired, scale later.
 
 ---
 
-## 6. Capa RAG sobre marco teórico
+## 6. RAG layer over theoretical framework
 
-### 6.1 Estrategia chunking
+### 6.1 Chunking strategy
 
-| Parámetro | Valor | Razón |
+| Parameter | Value | Reason |
 |---|---|---|
-| Estrategia | `RecursiveCharacterTextSplitter` (LangChain) o equivalente nativo | Respeta jerarquía markdown (#, ##, ###, párrafo) |
-| Tamaño chunk | 800 tokens | Balance entre contexto suficiente y precisión retrieval |
-| Overlap | 100 tokens | Evita perder frases que cruzan boundaries |
-| Separadores | `["\n## ", "\n### ", "\n\n", "\n", ". "]` | Prioriza headings |
-| Metadata por chunk | `{doc, h1, h2, h3, chunk_id, source_path, lines}` | Citation tracking |
+| Strategy | `RecursiveCharacterTextSplitter` (LangChain) or native equivalent | Respects markdown hierarchy (#, ##, ###, paragraph) |
+| Chunk size | 800 tokens | Balance between sufficient context and retrieval precision |
+| Overlap | 100 tokens | Avoids losing sentences that cross boundaries |
+| Separators | `["\n## ", "\n### ", "\n\n", "\n", ". "]` | Prioritizes headings |
+| Metadata per chunk | `{doc, h1, h2, h3, chunk_id, source_path, lines}` | Citation tracking |
 
-**Documentos a indexar (Fase MVP):**
-- `docs/01-marco-teorico.md` (290 líneas, ~6k tokens) — ~10-15 chunks
-- Asunción: marco teórico hoy es 1 archivo monolítico. Si en futuro se divide en subdocs (`marco-teorico/`), reindexar todos.
+**Documents to index (MVP Phase):**
+- `docs/01-marco-teorico.md` (290 lines, ~6k tokens) — ~10-15 chunks
+- Assumption: theoretical framework today is 1 monolithic file. If in the future it splits into subdocs (`marco-teorico/`), re-index all.
 
-### 6.2 Embeddings — selección de modelo
+### 6.2 Embeddings — model selection
 
-| Modelo | Dim | Tamaño | Idioma | Costo | Recomendación |
+| Model | Dim | Size | Language | Cost | Recommendation |
 |---|---|---|---|---|---|
-| `text-embedding-3-small` (OpenAI) | 1536 | API | multilingüe (ok español) | $0.02 / 1M tokens | Buena calidad pero +1 vendor |
-| `gemini-embedding-001` (Google) | 768 | API | multilingüe | ~free tier | Consistencia con Gemini LLM; **recomendado** |
-| `paraphrase-multilingual-MiniLM-L12-v2` (HuggingFace) | 384 | 120 MB local | multilingüe | $0 (local) | Más simple, sin red para indexar |
-| `intfloat/multilingual-e5-large` | 1024 | 2.2 GB local | multilingüe top-tier | $0 | Mejor calidad local pero pesado |
+| `text-embedding-3-small` (OpenAI) | 1536 | API | multilingual (ok Spanish) | $0.02 / 1M tokens | Good quality but +1 vendor |
+| `gemini-embedding-001` (Google) | 768 | API | multilingual | ~free tier | Consistency with Gemini LLM; **recommended** |
+| `paraphrase-multilingual-MiniLM-L12-v2` (HuggingFace) | 384 | 120 MB local | multilingual | $0 (local) | Simpler, no network for indexing |
+| `intfloat/multilingual-e5-large` | 1024 | 2.2 GB local | top-tier multilingual | $0 | Best local quality but heavy |
 
-**Recomendación:** **`gemini-embedding-001`** via `langchain-google-genai.GoogleGenerativeAIEmbeddings`. Ventajas:
-- Consistencia con el LLM (mismo provider, misma cuenta).
-- Multilingüe robusto en español.
-- Costo despreciable (texto fuente <10k tokens, una sola indexación + queries esporádicas).
+**Recommendation:** **`gemini-embedding-001`** via `langchain-google-genai.GoogleGenerativeAIEmbeddings`. Advantages:
+- Consistency with the LLM (same provider, same account).
+- Robust Spanish multilingual.
+- Negligible cost (source text <10k tokens, single indexing + sporadic queries).
 
-⚠️ **Fallback si no se quiere depender de Google para embeddings:** `paraphrase-multilingual-MiniLM-L12-v2` local (sentence-transformers). Decidir según preferencia coach por minimizar vendor lock-in.
+⚠️ **Fallback if not wanting to depend on Google for embeddings:** `paraphrase-multilingual-MiniLM-L12-v2` local (sentence-transformers). Decide based on coach preference for minimizing vendor lock-in.
 
-### 6.3 ChromaDB persistencia
+### 6.3 ChromaDB persistence
 
 ```
 data/chroma/
@@ -759,22 +759,22 @@ data/chroma/
     ...
 ```
 
-- Volumen Docker: `./data/chroma:/data/chroma` (gitignored).
+- Docker volume: `./data/chroma:/data/chroma` (gitignored).
 - `PersistentClient(path="./data/chroma")`.
-- Collection: `marco_teorico` (1 sola; futuras: `glosario_xco`, `historial_clinico_agregado`...).
-- HNSW config default (M=16, ef_construction=200) — suficiente para <1000 vectores.
+- Collection: `marco_teorico` (1 only; future: `glosario_xco`, `historial_clinico_agregado`...).
+- Default HNSW config (M=16, ef_construction=200) — sufficient for <1000 vectors.
 
-### 6.4 Reindexado
+### 6.4 Re-indexing
 
-| Trigger | Estrategia | Implementación |
+| Trigger | Strategy | Implementation |
 |---|---|---|
-| Manual (coach edita marco-teórico) | CLI `scripts/rag_reindex.py [--doc=marco-teorico]` | Lee → chunkea → upsert por `chunk_id` determinístico (hash del contenido) |
-| CI hook | GitHub Action en push a `docs/01-marco-teorico.md` → corre reindex en deploy | Asunción: Render deploy script lo dispara |
-| Programado | No (docs cambian raro) | n/a |
+| Manual (coach edits theoretical framework) | CLI `scripts/rag_reindex.py [--doc=marco-teorico]` | Read → chunk → upsert by deterministic `chunk_id` (content hash) |
+| CI hook | GitHub Action on push to `docs/01-marco-teorico.md` → runs reindex on deploy | Assumption: Render deploy script triggers it |
+| Scheduled | No (docs change rarely) | n/a |
 
-**Idempotencia:** `chunk_id = sha256(doc_path + chunk_idx + content)[:16]`. Si el contenido no cambia, upsert es no-op.
+**Idempotency:** `chunk_id = sha256(doc_path + chunk_idx + content)[:16]`. If content doesn't change, upsert is a no-op.
 
-### 6.5 Tool del agente
+### 6.5 Agent tool
 
 ```python
 # services/race/rag/retriever.py
@@ -784,23 +784,23 @@ def consultar_marco_teorico(
     filter_h1: Optional[str] = None,
 ) -> list[Citation]:
     """
-    Retorna chunks relevantes con metadata para citation.
+    Returns relevant chunks with metadata for citation.
     Citation = {chunk_id, doc, section_path, content, score, source_lines}
     """
 ```
 
-Uso en `analyst_agent`:
-- Queries generadas dinámicamente según contexto (ej. si `athlete.age < 13` → query "principios entrenamiento 10-12 años"; si `gap_to_p1_pct > 30` → "técnica antes que potencia").
-- Top-3 por query, max 2-3 queries por análisis → ~6-9 chunks en context window.
-- Cada cita devuelta tiene `chunk_id` que se persiste en `principles_cited_json` → trazabilidad coach-side.
+Usage in `analyst_agent`:
+- Queries generated dynamically based on context (e.g. if `athlete.age < 13` → query "principles training 10-12 years"; if `gap_to_p1_pct > 30` → "technique before power").
+- Top-3 per query, max 2-3 queries per analysis → ~6-9 chunks in context window.
+- Each returned citation has `chunk_id` that is persisted in `principles_cited_json` → coach-side traceability.
 
 ---
 
-## 7. Memoria por atleta
+## 7. Per-athlete memory
 
-### 7.1 Modelo `AthleteAIInsight` (sección 3.1)
+### 7.1 `AthleteAIInsight` model (section 3.1)
 
-### 7.2 Función `recall_recent_insights`
+### 7.2 `recall_recent_insights` function
 
 ```python
 # services/race/ai/memory.py
@@ -811,9 +811,9 @@ async def recall_recent_insights(
     exclude_archived: bool = True,
 ) -> list[InsightMemoryItem]:
     """
-    Retorna los últimos N insights aprobados (coach_approved=True)
-    ordenados por (season DESC, valida_num DESC, generated_at DESC).
-    Excluye archived_at IS NOT NULL si exclude_archived=True.
+    Returns the last N approved insights (coach_approved=True)
+    ordered by (season DESC, valida_num DESC, generated_at DESC).
+    Excludes archived_at IS NOT NULL if exclude_archived=True.
     """
 ```
 
@@ -824,22 +824,22 @@ class InsightMemoryItem(BaseModel):
     season: int
     valida_num: int | None
     use_case: str
-    summary_text: str           # narrativa que el LLM verá
-    key_recommendations: list[str]  # extraídas top-3 de recommendations_json
+    summary_text: str           # narrative the LLM will see
+    key_recommendations: list[str]  # extracted top-3 from recommendations_json
     generated_at: datetime
     confidence: str
 ```
 
-**Inyección en prompt:**
-- El prompt `analyst_v1.md` tiene una sección `{% if recent_insights %}` que renderiza un bloque:
+**Prompt injection:**
+- The `analyst_v1.md` prompt has a `{% if recent_insights %}` section that renders a block:
   ```
-  ## Memoria del atleta (insights previos)
+  ## Athlete memory (prior insights)
   {% for ins in recent_insights %}
-  - Válida {{ins.valida_num}} ({{ins.season}}): {{ins.summary_text[:300]}}...
-    Recomendaciones: {{ins.key_recommendations | join(', ')}}
+  - Round {{ins.valida_num}} ({{ins.season}}): {{ins.summary_text[:300]}}...
+    Recommendations: {{ins.key_recommendations | join(', ')}}
   {% endfor %}
   ```
-- El LLM tiene instrucción: "evita repetir literalmente recomendaciones previas; si el patrón persiste, recoméndalo como urgente".
+- The LLM has the instruction: "avoid literally repeating prior recommendations; if the pattern persists, recommend it as urgent".
 
 ### 7.3 Persist insight
 
@@ -852,77 +852,77 @@ async def persist_insight(
     coach_edits_count: int,
 ) -> AthleteAIInsight:
     """
-    Inserta nuevo registro. Hace flush + commit.
-    Si coach_approved=False, igualmente persiste pero con flag para análisis posterior.
+    Inserts new record. Does flush + commit.
+    If coach_approved=False, still persists but with flag for later analysis.
     """
 ```
 
 ### 7.4 Garbage collection / archive
 
-- Job mensual `scripts/archive_old_insights.py`:
-  - Marca `archived_at = NOW()` insights con `season < current_year - 1` y NO citados en últimos 90 días.
-  - No borra (auditoría); solo excluye de recall.
-- Coach UI: tab "Historial completo" muestra archivados con tag.
+- Monthly job `scripts/archive_old_insights.py`:
+  - Marks `archived_at = NOW()` for insights with `season < current_year - 1` and NOT cited in last 90 days.
+  - Does not delete (audit); only excludes from recall.
+- Coach UI: "Complete history" tab shows archived with tag.
 
-⚠️ **Decisión requerida:** ¿borrado físico tras X años o solo archive indefinido? **Propuesta:** archive indefinido, físico borrado solo si padre solicita explícitamente (Ley 1581 derecho de supresión).
+⚠️ **Required decision:** physical deletion after X years or indefinite archive? **Proposal:** indefinite archive, physical deletion only if parent explicitly requests (Ley 1581 right of suppression).
 
 ---
 
-## 8. Anonimización (privacy by design)
+## 8. Anonymization (privacy by design)
 
-### 8.1 Estrategia elegida: **persistente por run + determinística por hash**
+### 8.1 Chosen strategy: **persistent per run + deterministic by hash**
 
-**Híbrido:**
-- Para cada run, generamos pseudónimos basados en `salt = run.external_run_id` + `competitor_id` → hash determinístico → sufijo formateado.
-- Formato pseudónimo: `Atleta-{CATEGORY_CODE}-{HASH_3DIGITS}` ej. `Atleta-PJUV-A-F-001`.
-- **Salt distinto por run** → mismo competitor tiene pseudónimo distinto entre runs → minimiza correlación cross-run en logs LLM.
-- **Determinístico dentro del run** → si el grafo retry o resume, mapping persiste.
+**Hybrid:**
+- For each run, generate pseudonyms based on `salt = run.external_run_id` + `competitor_id` → deterministic hash → formatted suffix.
+- Pseudonym format: `Atleta-{CATEGORY_CODE}-{HASH_3DIGITS}` e.g. `Atleta-PJUV-A-F-001`.
+- **Different salt per run** → same competitor has different pseudonym between runs → minimizes cross-run correlation in LLM logs.
+- **Deterministic within run** → if the graph retries or resumes, mapping persists.
 
-### 8.2 Implementación (alto nivel — sin código)
+### 8.2 Implementation (high level — no code)
 
 `anonymizer.generate_mapping(run_id, competitor_ids, category_code) -> dict[int, str]`:
-1. Para cada `competitor_id`, computa `hash_id = hmac_sha256(run.salt, str(competitor_id))[:3]`.
-2. Genera `pseudonym = f"Atleta-{category_code}-{hash_id.upper()}"`.
-3. Inserta filas en `anonymization_mappings` (transaction).
-4. Retorna `{competitor_id: pseudonym}` + `{pseudonym: competitor_id}`.
+1. For each `competitor_id`, compute `hash_id = hmac_sha256(run.salt, str(competitor_id))[:3]`.
+2. Generate `pseudonym = f"Atleta-{category_code}-{hash_id.upper()}"`.
+3. Insert rows in `anonymization_mappings` (transaction).
+4. Return `{competitor_id: pseudonym}` + `{pseudonym: competitor_id}`.
 
 `anonymizer.anonymize_payload(data, mapping) -> dict`:
-1. Recorre el payload dict/list recursivamente.
-2. Reemplaza cualquier `competitor_id` o `display_name` por pseudónimo.
-3. Si encuentra texto libre (ej. `notes`), aplica regex de nombres conocidos.
-4. Retorna payload "limpio".
+1. Recursively traverse the dict/list payload.
+2. Replace any `competitor_id` or `display_name` with pseudonym.
+3. If free text found (e.g. `notes`), apply regex of known names.
+4. Return "clean" payload.
 
 `anonymizer.rehydrate_text(llm_output, reverse_map) -> str`:
-1. Recorre el texto markdown.
-2. Reemplaza cada pseudónimo encontrado por `display_name` real.
-3. Retorna texto re-hidratado (sólo para UI; NUNCA se reenvía al LLM).
+1. Traverse the markdown text.
+2. Replace each found pseudonym with the real `display_name`.
+3. Return re-hydrated text (UI only; NEVER sent back to LLM).
 
-### 8.3 Test propiedad: zero leak
+### 8.3 Property test: zero leak
 
 `tests/services/race/ai/test_anonymizer_zero_leak.py`:
 
-- Generar un payload sintético con 5 atletas (nombres reales + apellidos colombianos comunes).
-- Anonimizar con la función.
-- **Aserción de propiedad:** ningún string del listado original (full name, first name, last name, apodo si existe) aparece en el payload anonimizado.
-- Repetir con 1000 inputs random (property-based test con `hypothesis`).
-- Si en algún input la propiedad falla → test rojo → bloquea merge.
+- Generate a synthetic payload with 5 athletes (real names + common Colombian surnames).
+- Anonymize with the function.
+- **Property assertion:** no string from the original list (full name, first name, last name, nickname if exists) appears in the anonymized payload.
+- Repeat with 1000 random inputs (property-based test with `hypothesis`).
+- If property fails on any input → test red → blocks merge.
 
-Adicional:
-- Test que captura `httpx`/`requests` mocks: ningún POST al endpoint Gemini contiene nombres reales (intercept layer).
+Additional:
+- Test that captures `httpx`/`requests` mocks: no POST to the Gemini endpoint contains real names (intercept layer).
 
-### 8.4 Auditoría runtime
+### 8.4 Runtime audit
 
-- Middleware FastAPI en endpoint `/api/race-analysis/runs` registra en log estructurado: `{run_id, anonymized=True, mapping_count=N}`.
-- Logs NUNCA incluyen el mapping ni nombres reales (sólo conteos).
-- Langfuse (si F8B activo): prompt y completion se envían con pseudónimos. Self-hosted en VPS controlado por el club — no externaliza PII. Si nunca se activa Langfuse, la anonimización determinista pre-LLM sigue siendo la defensa primaria.
+- FastAPI middleware on endpoint `/api/race-analysis/runs` logs in structured log: `{run_id, anonymized=True, mapping_count=N}`.
+- Logs NEVER include the mapping or real names (only counts).
+- Langfuse (if F8B active): prompt and completion are sent with pseudonyms. Self-hosted on a VPS controlled by the club — does not externalize PII. If Langfuse is never activated, the deterministic pre-LLM anonymization remains the primary defense.
 
 ---
 
-## 9. API REST (FastAPI endpoints)
+## 9. REST API (FastAPI endpoints)
 
-> Todos los endpoints requieren auth JWT (header `Authorization: Bearer ...`). RBAC: salvo indicación, **coach** + **admin**. Parents NO acceden a este módulo (sus datos los reciben filtrados vía otros módulos).
+> All endpoints require JWT auth (header `Authorization: Bearer ...`). RBAC: unless specified, **coach** + **admin**. Parents do NOT access this module (their data they receive filtered via other modules).
 
-### 9.1 `POST /api/race-analysis/runs` — iniciar análisis
+### 9.1 `POST /api/race-analysis/runs` — start analysis
 
 **Body (Pydantic):**
 ```python
@@ -940,27 +940,27 @@ class StartRunResponse(BaseModel):
     run_id: str             # external_run_id (UUID)
     status: Literal["running"]
     started_at: datetime
-    status_url: str         # ej "/api/race-analysis/runs/{run_id}/status"
-    estimated_seconds: int  # heurística: 15 + 5*len(valida_nums)
+    status_url: str         # e.g "/api/race-analysis/runs/{run_id}/status"
+    estimated_seconds: int  # heuristic: 15 + 5*len(valida_nums)
 ```
 
-**Errores:**
-- `400` athlete no existe o no es TyR confirmado
-- `400` season sin eventos
-- `403` user no es coach/admin
-- `409` ya hay un run activo para (athlete, use_case) (evita concurrencia)
-- `429` >10 runs en cola del usuario (rate limit)
+**Errors:**
+- `400` athlete doesn't exist or is not confirmed TyR
+- `400` season without events
+- `403` user is not coach/admin
+- `409` there's already an active run for (athlete, use_case) (avoids concurrency)
+- `429` >10 runs in user's queue (rate limit)
 
-**Side effects:** crea fila `agent_runs`, dispara LangGraph en background task (`asyncio.create_task` + tracking en in-memory registry), retorna inmediatamente.
+**Side effects:** creates `agent_runs` row, triggers LangGraph in background task (`asyncio.create_task` + tracking in in-memory registry), returns immediately.
 
 ### 9.2 `GET /api/race-analysis/runs/{run_id}/status` — polling
 
-> **Decisión 2026-05-20:** descartado SSE en favor de polling — más simple, funciona en cualquier provider (Render free tier, proxies), sin validar timeouts. Trade-off aceptado: ~2s de lag en UI vs realtime. Aceptable para análisis de ~30s.
+> **Decision 2026-05-20:** SSE discarded in favor of polling — simpler, works in any provider (Render free tier, proxies), without validating timeouts. Accepted trade-off: ~2s UI lag vs realtime. Acceptable for ~30s analysis.
 
 **Query params:**
-- `since` (opcional, int): retorna solo eventos con `seq > since` (evita replay completo en cada poll)
+- `since` (optional, int): returns only events with `seq > since` (avoids full replay on each poll)
 
-**Auth:** requerido (coach owner del run o admin)
+**Auth:** required (run owner coach or admin)
 
 **Response 200:**
 ```json
@@ -973,19 +973,19 @@ class StartRunResponse(BaseModel):
   "estimated_seconds_remaining": 12,
   "new_events": [
     {"seq": 23, "node": "parser", "type": "node_complete", "data": {}, "ts": "..."},
-    {"seq": 24, "node": "anonymize", "type": "explain", "data": {"message": "Reemplazo nombres..."}, "ts": "..."}
+    {"seq": 24, "node": "anonymize", "type": "explain", "data": {"message": "Replacing names..."}, "ts": "..."}
   ]
 }
 ```
 
-**Comportamiento cliente:**
-- Pollinguea cada 2 segundos con `?since=<last_seq_visto>`.
-- Para de pollinguear cuando `state ∈ {done, error}`.
-- Pattern TanStack Query: `refetchInterval: state === 'done' || state === 'error' ? false : 2000`.
+**Client behavior:**
+- Polls every 2 seconds with `?since=<last_seq_seen>`.
+- Stops polling when `state ∈ {done, error}`.
+- TanStack Query pattern: `refetchInterval: state === 'done' || state === 'error' ? false : 2000`.
 
-**RBAC:** sólo el `requested_by_user_id` puede leer. Admin puede leer cualquiera.
+**RBAC:** only the `requested_by_user_id` can read. Admin can read any.
 
-**Optimización:** si el state no cambió desde el último poll, el servidor puede retornar `304 Not Modified` con ETag basado en el último `seq` emitido.
+**Optimization:** if state hasn't changed since last poll, server can return `304 Not Modified` with ETag based on last emitted `seq`.
 
 ### 9.3 `POST /api/race-analysis/runs/{run_id}/hitl/{step_id}` — HITL response
 
@@ -993,7 +993,7 @@ class StartRunResponse(BaseModel):
 ```python
 class HITLResponseBody(BaseModel):
     action: Literal["approve","edit","reject"]
-    edits: dict | None = None        # si action=edit, parcial del analyst_draft
+    edits: dict | None = None        # if action=edit, partial of analyst_draft
     rejection_reason: str | None = None
 ```
 
@@ -1003,17 +1003,17 @@ class HITLResponseAck(BaseModel):
     run_id: str
     step_id: str
     accepted: bool
-    next_step: str | None            # ej "persist_insight" o None si rejected
+    next_step: str | None            # e.g "persist_insight" or None if rejected
 ```
 
-**Errores:**
-- `404` run o step no existe
-- `409` run no está en estado `awaiting_hitl`
-- `422` edits no validan contra schema del draft
+**Errors:**
+- `404` run or step doesn't exist
+- `409` run not in `awaiting_hitl` state
+- `422` edits don't validate against draft schema
 
-**Side effects:** invoca `graph.update_state(...)` + `graph.invoke(Command(resume=...))`. Persiste evento `hitl_response` en `agent_run_events` (visible en próximo poll).
+**Side effects:** invokes `graph.update_state(...)` + `graph.invoke(Command(resume=...))`. Persists `hitl_response` event in `agent_run_events` (visible in next poll).
 
-### 9.4 `GET /api/race-analysis/runs/{run_id}/result` — JSON final
+### 9.4 `GET /api/race-analysis/runs/{run_id}/result` — final JSON
 
 **Response 200:**
 ```python
@@ -1027,33 +1027,33 @@ class RunResult(BaseModel):
     error: str | None
     cost_usd: float | None
     duration_seconds: float
-    langfuse_trace_url: str | None   # solo si user es admin
+    langfuse_trace_url: str | None   # only if user is admin
 ```
 
-### 9.5 `GET /api/race-analysis/runs/{run_id}/pdf` — descarga PDF
+### 9.5 `GET /api/race-analysis/runs/{run_id}/pdf` — PDF download
 
-**Response 200:** `application/pdf` binario. Filename `analisis_<athlete_id>_<season>_v<valida>_<run_id_short>.pdf`.
-**404:** si `pdf_available=false` o aún no completado.
+**Response 200:** binary `application/pdf`. Filename `analisis_<athlete_id>_<season>_v<valida>_<run_id_short>.pdf`.
+**404:** if `pdf_available=false` or not yet completed.
 
-### 9.6 `POST /api/race-analysis/chat` — chat consultivo
+### 9.6 `POST /api/race-analysis/chat` — consultative chat
 
 **Body:**
 ```python
 class ChatRequest(BaseModel):
-    session_id: str | None = None    # null → crea nueva
+    session_id: str | None = None    # null → creates new
     message: str = Field(min_length=1, max_length=2000)
-    context_athlete_id: int | None = None  # opcional, ata sesión a un atleta
+    context_athlete_id: int | None = None  # optional, ties session to an athlete
 ```
 
-**Response 200:** respuesta completa cuando el LLM termina (no streaming). `{full_text, citations, session_id}`. El cliente usa `useQuery` con `refetchInterval` mientras `state === 'pending'`.
+**Response 200:** complete response when LLM finishes (no streaming). `{full_text, citations, session_id}`. Client uses `useQuery` with `refetchInterval` while `state === 'pending'`.
 
 **RBAC:** coach/admin.
 
-### 9.7 `GET /api/race-analysis/athletes/{athlete_id}/insights` — historial
+### 9.7 `GET /api/race-analysis/athletes/{athlete_id}/insights` — history
 
 **Query params:**
-- `season` (opcional)
-- `use_case` (opcional)
+- `season` (optional)
+- `use_case` (optional)
 - `include_archived` (default false)
 - `limit` (default 20, max 100)
 
@@ -1065,13 +1065,13 @@ class InsightsList(BaseModel):
     total: int
 ```
 
-**RBAC:** coach/admin. Parent NO ve (sus datos los recibe vía otros módulos filtrados).
+**RBAC:** coach/admin. Parent does NOT see (their data they receive via other filtered modules).
 
 ---
 
-## 10. Frontend componentes (React)
+## 10. Frontend components (React)
 
-### 10.1 Layout y rutas
+### 10.1 Layout and routes
 
 ```
 /coach/race-analysis                  → RaceAnalysisDashboard (tabs)
@@ -1079,53 +1079,53 @@ class InsightsList(BaseModel):
 /coach/race-analysis/insights         → InsightsHistoryPage
 ```
 
-### 10.2 Componentes
+### 10.2 Components
 
 #### `RaceAnalysisDashboard` (`routes/coach/race-analysis/index.tsx`)
-- Layout principal con `Tabs` shadcn:
-  - **Iniciar análisis** — formulario (athlete, season, valida_nums, use_case, explain_mode toggle) → `POST /runs`
-  - **Runs activos** — lista con badge status (running/awaiting_hitl/completed/failed) — auto-refresh cada 5s
-  - **Insights históricos** — link a `InsightsHistoryPage`
-- Banner permanente `ExplainModeBanner` con toggle global (zustand).
+- Main layout with shadcn `Tabs`:
+  - **Start analysis** — form (athlete, season, valida_nums, use_case, explain_mode toggle) → `POST /runs`
+  - **Active runs** — list with status badge (running/awaiting_hitl/completed/failed) — auto-refresh every 5s
+  - **Historical insights** — link to `InsightsHistoryPage`
+- Permanent `ExplainModeBanner` with global toggle (zustand).
 
-#### `AnalysisRunTimeline` (componente reutilizable)
+#### `AnalysisRunTimeline` (reusable component)
 - Props: `runId: string`
-- Hook: `useQuery` con `refetchInterval: 2000` apuntando a `/api/race-analysis/runs/${runId}/status?since=<last_seq>`. Se detiene al llegar `state ∈ {done, error}`.
-- Renderiza vertical timeline (shadcn `Stepper` o custom):
-  - Cada `node_end` → step ✅
-  - `node_start` sin `node_end` aún → step ⏳ (spinner)
-  - `hitl_request` → step ⏸️ con `HITLApprovalCard` embebido
-  - `error` → step ❌ rojo
-- Si `explainMode=true`, debajo de cada step muestra el `explain` message (panel expandible).
-- Cuando llega `done` → muestra `MarkdownReportViewer` + botón descargar PDF.
+- Hook: `useQuery` with `refetchInterval: 2000` pointing to `/api/race-analysis/runs/${runId}/status?since=<last_seq>`. Stops when `state ∈ {done, error}`.
+- Renders vertical timeline (shadcn `Stepper` or custom):
+  - Each `node_end` → step ✅
+  - `node_start` without `node_end` yet → step ⏳ (spinner)
+  - `hitl_request` → step ⏸️ with embedded `HITLApprovalCard`
+  - `error` → step ❌ red
+- If `explainMode=true`, below each step shows the `explain` message (expandable panel).
+- When `done` arrives → shows `MarkdownReportViewer` + download PDF button.
 
 #### `HITLApprovalCard`
 - Props: `runId`, `stepId`, `draft`, `criticFeedback`, `principlesCited`
 - UI:
-  - Renderiza el `draft.summary_text` en markdown (read-only inicial)
-  - Botón "Editar" → switch a `Textarea` editable
-  - Sección colapsable "Crítico LLM dice:" → lista `criticFeedback`
-  - Sección "Principios citados:" → cards con chunk + score
-  - Tres botones: **Aprobar**, **Aprobar con cambios**, **Rechazar**
-- `onAprove`/`onEdit`/`onReject` → `POST /runs/:id/hitl/:step` con TanStack mutation.
+  - Renders `draft.summary_text` in markdown (initially read-only)
+  - "Edit" button → switch to editable `Textarea`
+  - Collapsible section "Critic LLM says:" → list `criticFeedback`
+  - Section "Cited principles:" → cards with chunk + score
+  - Three buttons: **Approve**, **Approve with changes**, **Reject**
+- `onApprove`/`onEdit`/`onReject` → `POST /runs/:id/hitl/:step` with TanStack mutation.
 
 #### `MarkdownReportViewer`
 - Props: `markdown: string`, `progressionData?: ...`, `podiumGapData?: ...`
-- Render: `react-markdown` con plugins (`remark-gfm` para tablas).
-- Inyección de visualizaciones inline: si markdown contiene `<chart data-type="progression">...`, sustituye por `<ProgressionChart />` (recharts).
-- Footer: botones "Descargar PDF", "Copiar link", "Compartir vía email".
+- Render: `react-markdown` with plugins (`remark-gfm` for tables).
+- Inline visualization injection: if markdown contains `<chart data-type="progression">...`, substitutes with `<ProgressionChart />` (recharts).
+- Footer: "Download PDF", "Copy link", "Share via email" buttons.
 
 #### `ChatConsole`
-- Layout split: chat history (scroll virtualizado) + input bottom.
-- Persistencia sesión: localStorage por `coach_id`, máximo última conversación.
-- Respuesta completa: hook `useChatSend` (mutation TanStack Query) que hace POST y espera respuesta JSON completa. Muestra spinner mientras `isPending`.
-- Cada mensaje del bot muestra "citations" (chunks RAG usados) en footer expandible.
-- Si pregunta nombra atleta, captura `context_athlete_id` y se mantiene en próximos turns.
+- Layout split: chat history (virtualized scroll) + bottom input.
+- Session persistence: localStorage by `coach_id`, maximum last conversation.
+- Complete response: hook `useChatSend` (TanStack Query mutation) that does POST and waits for complete JSON response. Shows spinner while `isPending`.
+- Each bot message shows "citations" (RAG chunks used) in expandable footer.
+- If question names an athlete, captures `context_athlete_id` and maintains it in next turns.
 
 #### `ExplainModeBanner`
-- Sticky top banner amarillo claro.
-- Toggle `🏫 Modo aprendizaje` con tooltip "Activa explicaciones pedagógicas por cada paso del agente".
-- Estado en zustand `useExplainModeStore`, persistido en localStorage.
+- Sticky yellow light top banner.
+- Toggle `🏫 Learning mode` with tooltip "Activates pedagogical explanations for each agent step".
+- State in zustand `useExplainModeStore`, persisted in localStorage.
 
 ### 10.3 TanStack Query hooks
 
@@ -1136,8 +1136,8 @@ useRunStatus(runId)                    // query polling GET /runs/:id/status
 useRunResult(runId)                    // query GET /runs/:id/result
 useRunPdfUrl(runId)                    // memoized URL
 useApproveStep(runId, stepId)          // mutation POST /hitl
-useChatSend(sessionId)                 // mutation POST /chat (respuesta completa)
-useAthleteInsights(athleteId, opts)    // query con paginación
+useChatSend(sessionId)                 // mutation POST /chat (complete response)
+useAthleteInsights(athleteId, opts)    // query with pagination
 ```
 
 ### 10.4 Polling pattern (`useRunStatus`)
@@ -1164,35 +1164,35 @@ function useRunStatus(runId: string) {
 
 ---
 
-## 11. Observability — default DB + Langfuse opcional (F8)
+## 11. Observability — default DB + optional Langfuse (F8)
 
-### 11.0 Default — Audit en MySQL (sin infra extra)
+### 11.0 Default — MySQL Audit (no extra infra)
 
-Para MVP (F0–F7 y F8 opción 8A) el audit completo vive en columnas de `athlete_ai_insights` y `agent_runs`:
+For MVP (F0–F7 and F8 option 8A) the complete audit lives in columns of `athlete_ai_insights` and `agent_runs`:
 
-| Métrica | Columna | Origen |
+| Metric | Column | Source |
 |---|---|---|
-| Costo USD por run | `athlete_ai_insights.cost_usd` | calculado en código tras cada `LLM.ainvoke` con tabla pricing local |
-| Tokens in/out | `athlete_ai_insights.tokens_in`, `tokens_out` | `usage_metadata` de `langchain-google-genai` |
-| Latencia ms | `agent_runs.latency_ms` | `time.perf_counter()` wrap por nodo |
-| Prompt version | `athlete_ai_insights.prompt_version` | tag en config del grafo |
-| Output completo | `athlete_ai_insights.markdown_output` | persistido |
-| Trace LangGraph nodos | `agent_run_events` | eventos por nodo para drill-down |
+| Cost USD per run | `athlete_ai_insights.cost_usd` | calculated in code after each `LLM.ainvoke` with local pricing table |
+| Tokens in/out | `athlete_ai_insights.tokens_in`, `tokens_out` | `usage_metadata` from `langchain-google-genai` |
+| Latency ms | `agent_runs.latency_ms` | `time.perf_counter()` wrap per node |
+| Prompt version | `athlete_ai_insights.prompt_version` | tag in graph config |
+| Full output | `athlete_ai_insights.markdown_output` | persisted |
+| LangGraph node trace | `agent_run_events` | events per node for drill-down |
 
-**Endpoint admin `GET /admin/ai-usage?days=30`** agrega cost total, p50/p95 latencia, run count, fail rate. Coach ve dashboard básico vía frontend admin.
+**Admin endpoint `GET /admin/ai-usage?days=30`** aggregates total cost, p50/p95 latency, run count, fail rate. Coach sees basic dashboard via admin frontend.
 
-**Budget guard:** función `_check_budget()` antes de cada run consulta `SUM(cost_usd) últimos 30d`; si >$20 bloquea + email coach.
+**Budget guard:** function `_check_budget()` before each run queries `SUM(cost_usd) last 30d`; if >$20 blocks + coach email.
 
-`langfuse_trace_id` queda NULL hasta que F8B se active.
+`langfuse_trace_id` remains NULL until F8B is activated.
 
-### 11.1 Setup docker-compose — **OPCIONAL (F8B)**
+### 11.1 Docker Compose setup — **OPTIONAL (F8B)**
 
-Activar solo si una de estas condiciones se cumple post-MVP:
-- Costo Gemini real >$10/mes (justifica VPS Hetzner ~$5/mes)
-- Coach pide dashboard visual de traces
-- Se planea A/B testing serio de prompts
+Activate only if one of these conditions is met post-MVP:
+- Real Gemini cost >$10/month (justifies Hetzner VPS ~$5/month)
+- Coach asks for visual trace dashboard
+- Serious prompt A/B testing is planned
 
-Servicios nuevos en `docker-compose.langfuse.yml` (perfil opcional, crear solo en F8B):
+New services in `docker-compose.langfuse.yml` (optional profile, create only in F8B):
 
 ```yaml
 services:
@@ -1234,56 +1234,56 @@ volumes:
   langfuse_ch_data:
 ```
 
-**RAM estimada:** ~2 GB total (Postgres 200 MB, ClickHouse 700 MB, Server 800 MB, headroom 300 MB).
+**Estimated RAM:** ~2 GB total (Postgres 200 MB, ClickHouse 700 MB, Server 800 MB, headroom 300 MB).
 
-**Producción:** mismo compose deployable en VPS (no Render free tier, no aguanta). Para MVP self-hosted en máquina del coach o droplet pequeño.
+**Production:** same compose deployable on VPS (not Render free tier, can't handle it). For MVP self-hosted on coach's machine or small droplet.
 
-### 11.2 Inicialización en backend
+### 11.2 Backend initialization
 
 `app/observability/langfuse.py`:
 - `init_langfuse()` lazy singleton.
-- Lee env vars: `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
-- **Default `LANGFUSE_ENABLED=false`** → no-op (FakeLangfuse). Stack agéntico funciona idéntico sin Langfuse.
-- Hook FastAPI lifespan: `flush()` al shutdown (no-op si disabled).
+- Reads env vars: `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
+- **Default `LANGFUSE_ENABLED=false`** → no-op (FakeLangfuse). Agentic stack works identically without Langfuse.
+- FastAPI lifespan hook: `flush()` on shutdown (no-op if disabled).
 
-### 11.3 Instrumentación
+### 11.3 Instrumentation
 
-- **Decorador `@observe(as_type="agent", name="<node_name>")`** en cada nodo LangGraph.
-- **`CallbackHandler`** pasado a cada `ChatGoogleGenerativeAI.ainvoke(..., config={"callbacks": [handler]})`.
-- Trace ID = `external_run_id` (mismo del run), para correlación cross-system.
+- **Decorator `@observe(as_type="agent", name="<node_name>")`** on each LangGraph node.
+- **`CallbackHandler`** passed to each `ChatGoogleGenerativeAI.ainvoke(..., config={"callbacks": [handler]})`.
+- Trace ID = `external_run_id` (same as the run), for cross-system correlation.
 
-### 11.4 Tags por trace
+### 11.4 Tags per trace
 
-| Tag | Fuente | Uso |
+| Tag | Source | Use |
 |---|---|---|
-| `valida_num` | input | filtrar runs por válida |
-| `athlete_id` | input (sin nombre) | drill-down sin PII |
-| `prompt_version` | config | A/B y regresión |
-| `coach_id` | request user | atribución |
-| `use_case` | input | comparar costo por tipo de análisis |
-| `explain_mode` | input | latencia con/sin |
-| `critic_enabled` | feature flag | impacto crítico en calidad |
+| `valida_num` | input | filter runs by round |
+| `athlete_id` | input (no name) | drill-down without PII |
+| `prompt_version` | config | A/B and regression |
+| `coach_id` | request user | attribution |
+| `use_case` | input | compare cost by analysis type |
+| `explain_mode` | input | latency with/without |
+| `critic_enabled` | feature flag | critic quality impact |
 
 ### 11.5 Cost tracking
 
-**Default (sin Langfuse):** tras cada `LLM.ainvoke` el código lee `usage_metadata` de `langchain-google-genai`, multiplica por tabla pricing local (`PRICING_PER_1M = {"gemini-2.5-flash-lite": {"in": 0.075, "out": 0.30}}` — mayo 2026) y persiste en `athlete_ai_insights.cost_usd`.
+**Default (without Langfuse):** after each `LLM.ainvoke` the code reads `usage_metadata` from `langchain-google-genai`, multiplies by local pricing table (`PRICING_PER_1M = {"gemini-2.5-flash-lite": {"in": 0.075, "out": 0.30}}` — May 2026) and persists in `athlete_ai_insights.cost_usd`.
 
-**Si F8B activo:** Langfuse 3.x captura tokens automáticamente desde el mismo `usage_metadata` y calcula costo contra tabla pricing actualizable en su UI. Ambas fuentes coinciden por construcción.
+**If F8B active:** Langfuse 3.x captures tokens automatically from the same `usage_metadata` and calculates cost against a pricing table updatable in its UI. Both sources coincide by construction.
 
-### 11.6 Alertas
+### 11.6 Alerts
 
 **Default (8A):**
-- Budget guard runtime: si `SUM(cost_usd) 30d > $20` → bloquea nuevos runs + email coach.
-- Latency: cron diario lee p95 `agent_runs.latency_ms` últimos 7d; si >60s → email DevOps.
-- Eval score drop: si `judge_score_last_5_runs < 0.70` → bloquea próximos deploys (CI integration).
+- Runtime budget guard: if `SUM(cost_usd) 30d > $20` → blocks new runs + coach email.
+- Latency: daily cron reads p95 `agent_runs.latency_ms` last 7d; if >60s → DevOps email.
+- Eval score drop: if `judge_score_last_5_runs < 0.70` → blocks next deploys (CI integration).
 
-**Si F8B activo:** mismas alertas configurables en UI Langfuse como complemento visual.
+**If F8B active:** same alerts configurable in Langfuse UI as visual complement.
 
 ---
 
 ## 12. Eval framework
 
-### 12.1 Estructura golden dataset
+### 12.1 Golden dataset structure
 
 ```
 evals/race_analyst/golden/
@@ -1294,7 +1294,7 @@ evals/race_analyst/golden/
 └── case_020_season_summary_15atletas.json
 ```
 
-**Schema cada caso:**
+**Schema per case:**
 ```json
 {
   "case_id": "case_001",
@@ -1311,420 +1311,420 @@ evals/race_analyst/golden/
   },
   "expected": {
     "must_include_themes": [
-      "habilidad técnica",
-      "categoría pre-juvenil",
-      "ventana entrenabilidad"
+      "technical skill",
+      "pre-youth category",
+      "windows of trainability"
     ],
     "must_cite_principles": ["chunk_id_ltad_pjuv"],
     "forbidden_terms": [
-      "potenciómetro",
-      "suplementos",
-      "creatina",
-      "7 días por semana"
+      "power meter",
+      "supplements",
+      "creatine",
+      "7 days a week"
     ],
     "forbidden_pii": ["Thiago Duque", "Duque"],
     "max_words": 600,
     "min_recommendations": 2
   },
-  "ideal_output": "# Análisis V-IV — Atleta-PJUV-A-001\n..."
+  "ideal_output": "# Analysis V-IV — Atleta-PJUV-A-001\n..."
 }
 ```
 
 ### 12.2 Runner
 
 `scripts/eval_race_analyst.py`:
-- Para cada caso: invoca el grafo con `input + fixtures`, captura output.
-- Aplica checks rule-based (themes, forbidden, word count) → `rule_score 0-1`.
-- Llama LLM-as-judge con prompt `judge_v1.md` → `judge_score 0-1`.
+- For each case: invokes the graph with `input + fixtures`, captures output.
+- Applies rule-based checks (themes, forbidden, word count) → `rule_score 0-1`.
+- Calls LLM-as-judge with prompt `judge_v1.md` → `judge_score 0-1`.
 - `final_score = 0.4 * rule_score + 0.6 * judge_score`.
-- Output: `evals/race_analyst/results/<git_sha>_<timestamp>.json` + tabla resumen en stdout.
+- Output: `evals/race_analyst/results/<git_sha>_<timestamp>.json` + summary table in stdout.
 
 ### 12.3 LLM-as-judge prompt (`prompts/eval/judge_v1.md`)
 
-Estructura:
-- System: "Eres un evaluador experto de análisis deportivo XCO juvenil. Evalúa rigor, alineación con principios LTAD, claridad pedagógica."
-- User template: ideal_output + actual_output → asigna scores de 0-10 en dimensiones (precisión, principios, accionabilidad, tono, longitud), promedio normalizado.
+Structure:
+- System: "You are an expert evaluator of youth XCO sports analysis. Evaluate rigor, alignment with LTAD principles, pedagogical clarity."
+- User template: ideal_output + actual_output → assigns scores of 0-10 in dimensions (precision, principles, actionability, tone, length), normalized average.
 
 ### 12.4 CI integration
 
 - GitHub Action `.github/workflows/eval-race-analyst.yml`:
-  - Trigger: cambios en `services/race/ai/prompts/**` o manual.
-  - Pasos: install deps → run `eval_race_analyst.py --golden` → fail if `avg(final_score) < 0.75`.
-- Resultado en PR como check status + comment con tabla scores por caso.
+  - Trigger: changes in `services/race/ai/prompts/**` or manual.
+  - Steps: install deps → run `eval_race_analyst.py --golden` → fail if `avg(final_score) < 0.75`.
+- Result in PR as check status + comment with scores table per case.
 
-### 12.5 Promoción de prompt versions
+### 12.5 Prompt version promotion
 
 Workflow:
-1. Crear `prompts/analyst_v2.md` (nueva versión).
-2. Eval local: `python scripts/eval_race_analyst.py --prompt-version v2`.
-3. Comparar contra baseline (`v1`) → ¿v2 mejora ≥5 %?
-4. Si sí: PR cambia default `RACE_AGENT_PROMPT_VERSION=analyst_v2`.
-5. CI corre eval con v2 → si pasa threshold → merge.
+1. Create `prompts/analyst_v2.md` (new version).
+2. Local eval: `python scripts/eval_race_analyst.py --prompt-version v2`.
+3. Compare against baseline (`v1`) → does v2 improve ≥5%?
+4. If yes: PR changes default `RACE_AGENT_PROMPT_VERSION=analyst_v2`.
+5. CI runs eval with v2 → if passes threshold → merge.
 
 ---
 
-## 13. Modo aprendizaje (explain mode)
+## 13. Learning mode (explain mode)
 
-### 13.1 Diseño
+### 13.1 Design
 
-- Toggle global UI → guarda en localStorage + zustand store.
-- Cuando coach inicia run con toggle ON → frontend envía `explain_mode: true` en `POST /runs`.
+- Global UI toggle → saves in localStorage + zustand store.
+- When coach starts run with toggle ON → frontend sends `explain_mode: true` in `POST /runs`.
 - Backend: `RaceAnalystState.explain_mode = true`.
-- Cada nodo del grafo tiene atributo `pedagogical_message` opcional (lista de mensajes en español, ej. tabla en §4.3).
-- Cuando un nodo se ejecuta y `state.explain_mode=true`, antes/después de su lógica core persiste un evento en `agent_run_events`:
+- Each graph node has an optional `pedagogical_message` attribute (list of messages in Spanish, e.g. table in §4.3).
+- When a node executes and `state.explain_mode=true`, before/after its core logic it persists an event in `agent_run_events`:
   ```json
   {"seq": N, "node": "...", "type": "explain", "data": {"phase": "before|after", "message": "..."}}
   ```
-  El cliente lo recibe en el próximo poll vía `new_events`.
-- Frontend renderiza en panel lateral colapsable (no interrumpe el flujo principal).
+  The client receives it in the next poll via `new_events`.
+- Frontend renders in a collapsible side panel (doesn't interrupt main flow).
 
-### 13.2 Generación de mensajes
+### 13.2 Message generation
 
-- **Mensajes core estáticos:** definidos en cada `nodes/<name>.py` como constante. Cubren el "qué hace este nodo".
-- **Mensajes dinámicos (futuro fase 2):** un mini-LLM call con prompt "explica al coach por qué este paso devolvió este output" — añade ~1s latencia, $$. **No en MVP.**
+- **Static core messages:** defined in each `nodes/<name>.py` as a constant. Cover the "what this node does".
+- **Dynamic messages (future phase 2):** a mini-LLM call with prompt "explain to the coach why this step returned this output" — adds ~1s latency, $$. **Not in MVP.**
 
-### 13.3 Tour interactivo (propuesta adicional)
+### 13.3 Interactive tour (additional proposal)
 
-> No está en las decisiones cerradas. Propuesta adicional: primer uso del módulo dispara un tour guiado (librería `intro.js` o `react-joyride`) que dispara explain mode automáticamente. Justificación: onboarding más suave para coach que no es ingeniero. Decidir si incluir en MVP o fase 2.
+> Not in the closed decisions. Additional proposal: first use of the module triggers a guided tour (library `intro.js` or `react-joyride`) that automatically fires explain mode. Justification: smoother onboarding for a coach who is not an engineer. Decide whether to include in MVP or phase 2.
 
 ---
 
-## 14. Migración v1 → v2 (refactor in-place)
+## 14. v1 → v2 migration (in-place refactor)
 
-### Fase 0 — Infra base (0.5 día, paralelizable)
+### Phase 0 — Base infra (0.5 day, parallelizable)
 
-**Cambios:**
-- `requirements.txt` += `langgraph`, `langgraph-checkpoint-sqlite`, `langchain-google-genai`, `chromadb`, `sentence-transformers` (si fallback), `langfuse` (SDK presente pero stack apagado por default).
-- `alembic/versions/7a8b9c0d1e2f_add_agentic_race_tables.py` con las 4 tablas (§3). Columna `langfuse_trace_id` permanece NULL hasta F8B.
-- `data/chroma`, `data/langgraph` añadidos a `.gitignore`. `docker-compose.langfuse.yml` **NO se crea en F0** — diferido a F8B opcional.
-- `.env.example` añadidas vars Chroma + AI_MAX_TOKENS=8192 + `LANGFUSE_ENABLED=false` (default).
-- `app/config.py` campos nuevos `chroma_path`, `race_agent_*`. Campos `langfuse_*` presentes pero `langfuse_enabled` default `False`.
+**Changes:**
+- `requirements.txt` += `langgraph`, `langgraph-checkpoint-sqlite`, `langchain-google-genai`, `chromadb`, `sentence-transformers` (if fallback), `langfuse` (SDK present but stack off by default).
+- `alembic/versions/7a8b9c0d1e2f_add_agentic_race_tables.py` with the 4 tables (§3). Column `langfuse_trace_id` remains NULL until F8B.
+- `data/chroma`, `data/langgraph` added to `.gitignore`. `docker-compose.langfuse.yml` **NOT created in F0** — deferred to optional F8B.
+- `.env.example` adds Chroma vars + AI_MAX_TOKENS=8192 + `LANGFUSE_ENABLED=false` (default).
+- `app/config.py` new fields `chroma_path`, `race_agent_*`. Fields `langfuse_*` present but `langfuse_enabled` default `False`.
 
-**Criterio éxito:** `alembic upgrade head` aplica limpio. `pytest backend/tests/` sigue 339 verdes (no se tocó código v1). **No requiere levantar Langfuse**.
+**Success criterion:** `alembic upgrade head` applies cleanly. `pytest backend/tests/` still 339 green (v1 code not touched). **Does not require running Langfuse**.
 
 **Rollback:** `alembic downgrade -1`.
 
-### Fase 1 — Extracción `queries.py` (1 día)
+### Phase 1 — Extract `queries.py` (1 day)
 
-**Cambios:**
-- Crear `services/race/queries.py` con funciones puras: `fetch_results_for_athlete(db, athlete_id, season, valida_nums)`, `fetch_podium_context(db, category_id, event_id)`, `athlete_exists(db, athlete_id)`, etc.
-- Refactor `analytics.py` para usar `queries.py` internamente (mismo output, sin cambio funcional).
+**Changes:**
+- Create `services/race/queries.py` with pure functions: `fetch_results_for_athlete(db, athlete_id, season, valida_nums)`, `fetch_podium_context(db, category_id, event_id)`, `athlete_exists(db, athlete_id)`, etc.
+- Refactor `analytics.py` to use `queries.py` internally (same output, no functional change).
 
-**Criterio éxito:** 339 tests verdes. Coverage `queries.py` >= 95 %. CLI sigue funcionando.
+**Success criterion:** 339 tests green. Coverage `queries.py` >= 95%. CLI still works.
 
-**Rollback:** revert commit, `analytics.py` queda como antes.
+**Rollback:** revert commit, `analytics.py` restored as before.
 
-### Fase 2 — Capa RAG (1 día)
+### Phase 2 — RAG layer (1 day)
 
-**Cambios:**
+**Changes:**
 - `services/race/rag/{ingest.py, retriever.py, citations.py}`.
-- `scripts/rag_reindex.py` ejecutable.
-- Primer indexado de `docs/01-marco-teorico.md`.
+- `scripts/rag_reindex.py` executable.
+- First indexing of `docs/01-marco-teorico.md`.
 - Tests `tests/services/race/rag/`.
 
-**Criterio éxito:** `python scripts/rag_reindex.py` genera ChromaDB en `data/chroma/`. `consultar_marco_teorico("ventana entrenabilidad 12 años")` retorna chunks relevantes con score >0.6.
+**Success criterion:** `python scripts/rag_reindex.py` generates ChromaDB in `data/chroma/`. `consultar_marco_teorico("windows of trainability 12 years")` returns relevant chunks with score >0.6.
 
-**Rollback:** borrar `services/race/rag/` y `data/chroma/`.
+**Rollback:** delete `services/race/rag/` and `data/chroma/`.
 
-### Fase 3 — Agentes core (2-3 días)
+### Phase 3 — Core agents (2-3 days)
 
-**Cambios:**
+**Changes:**
 - `services/race/ai/{state.py, anonymizer.py, memory.py}`.
-- `services/race/ai/nodes/*` (13 nodos).
+- `services/race/ai/nodes/*` (13 nodes).
 - `services/race/ai/prompts/{analyst_v1.md, critic_v1.md, system_principles.md}`.
-- Tests smoke grafo con mock LLM.
-- Test smoke: `tests/services/race/ai/test_graph_smoke.py` invoca el grafo end-to-end con fixtures, sin LLM real (mock `FakeLLMProvider`).
+- Graph smoke tests with mock LLM.
+- Smoke test: `tests/services/race/ai/test_graph_smoke.py` invokes graph end-to-end with fixtures, without real LLM (mock `FakeLLMProvider`).
 
-**Criterio éxito:** grafo compila, smoke test verde, `test_anonymizer_zero_leak.py` verde con 1000 inputs.
+**Success criterion:** graph compiles, smoke test green, `test_anonymizer_zero_leak.py` green with 1000 inputs.
 
-**Rollback:** borrar `services/race/ai/`. Sin impacto en v1.
+**Rollback:** delete `services/race/ai/`. No impact on v1.
 
-### Fase 4 — Grafo + checkpointing (1 día)
+### Phase 4 — Graph + checkpointing (1 day)
 
-**Cambios:**
-- `services/race/ai/graph.py` ensambla `StateGraph` con nodos + edges.
-- Configurar `SqliteSaver(path="./data/langgraph/checkpoints.sqlite")`.
-- Test HITL resume: `test_hitl_resume.py` interrupt → update_state → continue.
+**Changes:**
+- `services/race/ai/graph.py` assembles `StateGraph` with nodes + edges.
+- Configure `SqliteSaver(path="./data/langgraph/checkpoints.sqlite")`.
+- HITL resume test: `test_hitl_resume.py` interrupt → update_state → continue.
 
-**Criterio éxito:** interrupt funciona, resume reanuda desde checkpoint.
+**Success criterion:** interrupt works, resume resumes from checkpoint.
 
-### Fase 5 — Endpoints FastAPI + polling (0.5 días)
+### Phase 5 — FastAPI endpoints + polling (0.5 days)
 
-**Cambios:**
-- `app/routers/race_analysis.py` con 7 endpoints (incluyendo `GET /runs/{id}/status` para polling).
-- `app/schemas/race_ai.py` con Pydantic.
+**Changes:**
+- `app/routers/race_analysis.py` with 7 endpoints (including `GET /runs/{id}/status` for polling).
+- `app/schemas/race_ai.py` with Pydantic.
 - Background task launcher + tracking registry.
 - Tests `tests/routers/test_race_analysis_router.py`.
 
-**Criterio éxito:** `curl http://localhost:8000/api/race-analysis/runs/<id>/status` retorna JSON con estado actualizado. POST/GET retornan códigos correctos. RBAC funciona (parent recibe 403).
+**Success criterion:** `curl http://localhost:8000/api/race-analysis/runs/<id>/status` returns JSON with updated state. POST/GET return correct codes. RBAC works (parent receives 403).
 
-### Fase 6 — Frontend UI (3-4 días)
+### Phase 6 — Frontend UI (3-4 days)
 
-**Cambios:**
-- Componentes `frontend/src/components/race-analysis/*`.
-- Rutas `frontend/src/routes/coach/race-analysis/*`.
+**Changes:**
+- Components `frontend/src/components/race-analysis/*`.
+- Routes `frontend/src/routes/coach/race-analysis/*`.
 - `useRunStatus` hook (TanStack Query + polling) + `raceAnalysis.ts` API client.
-- Tests vitest + accessibility (jest-axe).
+- Vitest tests + accessibility (jest-axe).
 
-**Criterio éxito:** coach puede iniciar run, ver timeline, aprobar HITL, descargar PDF, usar chat — todo desde UI. Tests vitest >= 90 % coverage en código nuevo.
+**Success criterion:** coach can start run, see timeline, approve HITL, download PDF, use chat — all from UI. Vitest tests >= 90% coverage on new code.
 
-### Fase 7 — Eval + golden dataset (2 días)
+### Phase 7 — Eval + golden dataset (2 days)
 
-**Cambios:**
-- `evals/race_analyst/golden/` con 10-20 casos baseline.
+**Changes:**
+- `evals/race_analyst/golden/` with 10-20 baseline cases.
 - `scripts/eval_race_analyst.py` runner.
 - GitHub Action CI.
-- Documentación `docs/10-race-results/eval-baseline.md`.
+- Documentation `docs/10-race-results/eval-baseline.md`.
 
-**Criterio éxito:** runner ejecuta, scores baseline registrados. Threshold inicial 0.75.
+**Success criterion:** runner executes, baseline scores recorded. Initial threshold 0.75.
 
-### Fase 8 — Producción + observability (0.5–1.5 día)
+### Phase 8 — Production + observability (0.5–1.5 day)
 
-> Opción **8A default** (audit DB, 0.5 día) vs opción **8B opcional** (Langfuse self-hosted, +1 día). Ver `v2-implementation-workflow.md` §"Fase 8" tabla de decisión.
+> Option **8A default** (DB audit, 0.5 day) vs option **8B optional** (Langfuse self-hosted, +1 day). See `v2-implementation-workflow.md` §"Phase 8" decision table.
 
-**Cambios opción 8A (default):**
-- Endpoint `/admin/ai-usage` agregando métricas desde `athlete_ai_insights`.
-- Budget guard runtime: bloquea si `SUM(cost_usd) 30d > $20`.
-- Runbook ops básico.
+**Changes option 8A (default):**
+- Endpoint `/admin/ai-usage` aggregating metrics from `athlete_ai_insights`.
+- Runtime budget guard: blocks if `SUM(cost_usd) 30d > $20`.
+- Basic ops runbook.
 
-**Cambios opción 8B (opcional, solo si activado):**
-- Deploy Langfuse server (VPS coach o Hetzner droplet).
-- Configurar `LANGFUSE_HOST` apuntando al server, flip `LANGFUSE_ENABLED=true`.
-- Alertas configuradas en UI Langfuse.
+**Changes option 8B (optional, only if activated):**
+- Deploy Langfuse server (coach VPS or Hetzner droplet).
+- Configure `LANGFUSE_HOST` pointing to the server, flip `LANGFUSE_ENABLED=true`.
+- Alerts configured in Langfuse UI.
 
-**Criterio éxito 8A:** primer run en staging genera fila en `athlete_ai_insights` con cost_usd, tokens, latency_ms. Endpoint admin retorna agregados.
+**Success criterion 8A:** first run in staging generates row in `athlete_ai_insights` with cost_usd, tokens, latency_ms. Admin endpoint returns aggregates.
 
-**Criterio éxito 8B (si activado):** primer run en staging genera trace visible en Langfuse, costo reportado correctamente.
+**Success criterion 8B (if activated):** first run in staging generates visible trace in Langfuse, cost reported correctly.
 
-### Resumen timeline
+### Summary timeline
 
-| Fase | Estimado | Acumulado |
+| Phase | Estimate | Accumulated |
 |---|---|---|
-| 0 — Infra base | 0.5 día | 0.5 |
-| 1 — queries.py | 1 día | 1.5 |
-| 2 — RAG | 1 día | 2.5 |
-| 3 — Agentes core | 3 días | 5.5 |
-| 4 — Grafo + checkpoint | 1 día | 6.5 |
-| 5 — Endpoints + polling | 0.5 días | 7 |
-| 6 — Frontend | 3.5 días | 10.5 |
-| 7 — Eval | 2 días | 12.5 |
-| 8 — Prod (8A default DB / 8B Langfuse opcional) | 0.5–1.5 día | 13–14 |
-| **Total** | **~14 días-dev** (3 semanas a tiempo parcial) | |
+| 0 — Base infra | 0.5 day | 0.5 |
+| 1 — queries.py | 1 day | 1.5 |
+| 2 — RAG | 1 day | 2.5 |
+| 3 — Core agents | 3 days | 5.5 |
+| 4 — Graph + checkpoint | 1 day | 6.5 |
+| 5 — Endpoints + polling | 0.5 days | 7 |
+| 6 — Frontend | 3.5 days | 10.5 |
+| 7 — Eval | 2 days | 12.5 |
+| 8 — Prod (8A default DB / 8B Langfuse optional) | 0.5–1.5 day | 13–14 |
+| **Total** | **~14 dev-days** (3 weeks part-time) | |
 
-Asunción: dev solitario, ~5h/día. Coach revisa al final de cada fase.
-
----
-
-## 15. Plan de aprendizaje en paralelo
-
-> Objetivo: que el usuario (que aspira a AI developer) aprenda LangGraph/LLM agents construyendo este módulo. Cada ejercicio se hace ANTES de la fase correspondiente, en un repo sandbox separado.
-
-### Ej1 — Hello-world LangGraph (1h)
-
-**Prompt para Claude Code:**
-> Crea un script Python que use LangGraph 1.2 con 3 nodos: `greet` (retorna "hola"), `enrich` (añade nombre), `farewell` (retorna mensaje final). State es TypedDict con `name: str`, `message: str`. Compila el grafo, ejecútalo con input `{"name": "Coach"}` y print del state final.
-
-**Criterio aprendizaje:** entender StateGraph, nodes, edges, compile/invoke.
-
-### Ej2 — Agregar HITL gate (1h)
-
-**Prompt:**
-> Toma el grafo del Ej1. Inserta un nodo `confirm` entre `enrich` y `farewell` que use `interrupt()` con mensaje "¿continuar con farewell?". Configura `SqliteSaver` con `./data/ej2.sqlite`. Demuestra el flujo: invoke → recibes interrupt → llama `Command(resume='yes')` → completa.
-
-**Criterio:** entender interrupt, checkpointing, resume.
-
-### Ej3 — Memory in-memory (1.5h)
-
-**Prompt:**
-> Crea un grafo de 2 nodos: `recall` (lee de un dict in-memory, devuelve últimas 3 entradas) y `record` (escribe al dict). Usa `Annotated[list, operator.add]` como reducer del state. Ejecuta 5 invocaciones con el mismo thread_id, demuestra que `recall` ve histórico.
-
-**Criterio:** entender reducers, persistencia state.
-
-### Ej4 — RAG con ChromaDB (2h)
-
-**Prompt:**
-> Crea script que indexe `docs/01-marco-teorico.md` en ChromaDB local usando `langchain-google-genai` para embeddings (o `paraphrase-multilingual-MiniLM-L12-v2` si no quieres API key). Después invoca queries como "principios para 10-12 años" y print top-3 chunks con score. Implementa idempotencia por chunk_id hash.
-
-**Criterio:** entender chunking, embeddings, vector search, idempotencia.
-
-### Ej5 — Langfuse tracing (1.5h) — **OPCIONAL, solo si F8B activado**
-
-**Prompt:**
-> Toma el grafo del Ej4. Añade `@observe` decorator a cada función. Inicializa Langfuse cliente apuntando a `http://localhost:3001` (levanta Langfuse self-hosted con `docker compose -f docker-compose.langfuse.yml up`). Ejecuta 3 queries distintas, abre Langfuse UI, identifica el trace de cada una y screenshot.
-
-**Criterio:** entender tracing, costo tracking, observability.
-
-**Nota:** saltable si F8B no se activa. Cost tracking y observability primaria viven en `athlete_ai_insights` (default 8A). Hacer este ejercicio solo cuando se decida activar Langfuse.
-
-### Ej6 — Multi-agent supervisor (2-3h)
-
-**Prompt:**
-> Crea un grafo con dos agentes LLM (`writer` y `editor`) y un supervisor que enruta. Supervisor (otro LLM call) lee el último mensaje y decide si retorna al writer o termina. Implementa edge condicional con `add_conditional_edges` basado en el output del supervisor. Test: input "Escribe un haiku sobre ciclismo y refínalo 2 veces" → supervisor delega writer → editor → writer → END.
-
-**Criterio:** entender supervisor pattern, conditional edges, handoffs.
-
-### Ej7 — Eval framework (2h)
-
-**Prompt:**
-> Toma el grafo del Ej6. Crea 5 casos golden en JSON con input + ideal_output. Implementa runner que ejecuta cada caso, calcula similitud BLEU/ROUGE vs ideal (o LLM-as-judge si tienes API key). Output: tabla CSV con scores. Threshold: avg score ≥0.7.
-
-**Criterio:** entender eval, golden dataset, judge prompt.
-
-### Ej8 — TanStack Query polling pattern (1h, útil para fase 5+6)
-
-**Prompt:**
-> Crea endpoint FastAPI `/status/{job_id}` que retorna `{state, progress_pct, new_events}`. Crea componente React con `useQuery` + `refetchInterval: 2000` que muestra progreso en tiempo real y se detiene cuando `state === 'done'`. Simula un job que tarda 10 pasos × 1s.
-
-**Criterio:** entender polling con TanStack Query, manejo de `refetchInterval` dinámico, acumulación de eventos incrementales.
-
-### Total tiempo estimado
-
-~12-14 horas de aprendizaje activo + ~30h implementación supervisada = ~45h. Asunción: 4-5 semanas calendario a tiempo parcial.
+Assumption: solo dev, ~5h/day. Coach reviews at end of each phase.
 
 ---
 
-## 16. Riesgos y mitigaciones
+## 15. Parallel learning plan
 
-| # | Riesgo | Probabilidad | Impacto | Mitigación |
+> Goal: have the user (who aspires to be an AI developer) learn LangGraph/LLM agents by building this module. Each exercise is done BEFORE the corresponding phase, in a separate sandbox repo.
+
+### Ex1 — Hello-world LangGraph (1h)
+
+**Prompt for Claude Code:**
+> Create a Python script that uses LangGraph 1.2 with 3 nodes: `greet` (returns "hello"), `enrich` (adds name), `farewell` (returns final message). State is TypedDict with `name: str`, `message: str`. Compile the graph, execute it with input `{"name": "Coach"}` and print the final state.
+
+**Learning criterion:** understand StateGraph, nodes, edges, compile/invoke.
+
+### Ex2 — Add HITL gate (1h)
+
+**Prompt:**
+> Take the graph from Ex1. Insert a `confirm` node between `enrich` and `farewell` that uses `interrupt()` with message "continue to farewell?". Configure `SqliteSaver` with `./data/ej2.sqlite`. Demonstrate the flow: invoke → receive interrupt → call `Command(resume='yes')` → complete.
+
+**Criterion:** understand interrupt, checkpointing, resume.
+
+### Ex3 — In-memory memory (1.5h)
+
+**Prompt:**
+> Create a graph with 2 nodes: `recall` (reads from an in-memory dict, returns last 3 entries) and `record` (writes to the dict). Use `Annotated[list, operator.add]` as state reducer. Run 5 invocations with the same thread_id, demonstrate that `recall` sees history.
+
+**Criterion:** understand reducers, state persistence.
+
+### Ex4 — RAG with ChromaDB (2h)
+
+**Prompt:**
+> Create a script that indexes `docs/01-marco-teorico.md` in local ChromaDB using `langchain-google-genai` for embeddings (or `paraphrase-multilingual-MiniLM-L12-v2` if you don't want an API key). Then invoke queries like "principles for 10-12 year olds" and print top-3 chunks with score. Implement idempotency by chunk_id hash.
+
+**Criterion:** understand chunking, embeddings, vector search, idempotency.
+
+### Ex5 — Langfuse tracing (1.5h) — **OPTIONAL, only if F8B activated**
+
+**Prompt:**
+> Take the graph from Ex4. Add `@observe` decorator to each function. Initialize Langfuse client pointing to `http://localhost:3001` (start Langfuse self-hosted with `docker compose -f docker-compose.langfuse.yml up`). Run 3 different queries, open Langfuse UI, identify the trace for each and screenshot.
+
+**Criterion:** understand tracing, cost tracking, observability.
+
+**Note:** skippable if F8B is not activated. Cost tracking and primary observability live in `athlete_ai_insights` (default 8A). Do this exercise only when deciding to activate Langfuse.
+
+### Ex6 — Multi-agent supervisor (2-3h)
+
+**Prompt:**
+> Create a graph with two LLM agents (`writer` and `editor`) and a supervisor that routes. Supervisor (another LLM call) reads the last message and decides to return to writer or end. Implement conditional edge with `add_conditional_edges` based on supervisor output. Test: input "Write a haiku about cycling and refine it 2 times" → supervisor delegates writer → editor → writer → END.
+
+**Criterion:** understand supervisor pattern, conditional edges, handoffs.
+
+### Ex7 — Eval framework (2h)
+
+**Prompt:**
+> Take the graph from Ex6. Create 5 golden cases in JSON with input + ideal_output. Implement runner that runs each case, calculates BLEU/ROUGE similarity vs ideal (or LLM-as-judge if you have API key). Output: CSV table with scores. Threshold: avg score ≥0.7.
+
+**Criterion:** understand eval, golden dataset, judge prompt.
+
+### Ex8 — TanStack Query polling pattern (1h, useful for phases 5+6)
+
+**Prompt:**
+> Create FastAPI endpoint `/status/{job_id}` that returns `{state, progress_pct, new_events}`. Create React component with `useQuery` + `refetchInterval: 2000` that shows progress in real time and stops when `state === 'done'`. Simulate a job that takes 10 steps × 1s.
+
+**Criterion:** understand polling with TanStack Query, dynamic `refetchInterval` handling, incremental event accumulation.
+
+### Total estimated time
+
+~12-14 hours of active learning + ~30h supervised implementation = ~45h. Assumption: 4-5 calendar weeks part-time.
+
+---
+
+## 16. Risks and mitigations
+
+| # | Risk | Probability | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | Costo LLM explota (loop infinito, retries) | Media | Alto | Cap `retry_count <= 2` en state; budget guard runtime DB bloquea si `SUM(cost_usd) 30d > $20`; hard limit en `max_tokens`. Langfuse alert opcional (F8B) refuerza. |
-| R2 | Gemini rate limits (Tier 1 free) | Alta | Medio | Exponential backoff 4x; fallback `gemini-2.0-flash`; queue de runs cliente-side (max 10 concurrentes) |
-| R3 | LangGraph state corruption | Baja | Alto | Checkpointing SQLite; tests de propiedad sobre invariantes del state; rollback en `persist_insight` |
-| R4 | Privacy leak (nombre real en log Gemini) | Baja | Crítico | Test sentinela en CI (`test_anonymizer_zero_leak`); middleware intercept request body; **anonymization determinista pre-LLM es la defensa primaria — no depende de Langfuse**. Si F8B activo, Langfuse self-hosted refuerza (no externaliza PII). |
-| R5 | Coach no entiende output del agente | Media | Alto | Modo aprendizaje + onboarding; primer run guiado; UI con citation tooltips |
-| R6 | Vendor lock-in Gemini | Media | Medio | Capa abstracción LangChain → cambio provider 1 línea; misma API `ChatModel` para Anthropic/OpenAI |
-| R7 | Polling overhead bajo carga | Baja | Bajo | ~15 requests/30s por run × N runs concurrentes. Mitigación: límite 10 runs concurrentes; ETag/304 si state no cambió |
-| R8 | Marco teórico cambia, RAG desactualizado | Media | Bajo | Reindex automático en CI hook + manual CLI; chunk_id por hash invalida changes |
-| R9 | LLM alucina números | Media | Alto | `analyst_agent` recibe métricas pre-calculadas determinísticamente; `critic_agent` revisa que no haya números inventados |
-| R10 | Coach corrige drásticamente cada vez | Media | Medio | `coach_edits_count` métrica; si >2 promedio → reevaluar prompt; eval mejora prompt antes de redeploy |
-| R11 | ChromaDB index corrupt | Baja | Bajo | `scripts/rag_reindex.py` reconstruye en <30s; backup volumen en docker |
-| R12 | Langfuse server cae | Baja | Bajo (no bloqueante) | SDK Langfuse falla silently si server unreachable; el grafo sigue ejecutando |
-| R13 | Migración Alembic FK violation con datos existentes | Baja | Alto | Migración solo crea tablas nuevas (no toca existentes); test de migración up/down en CI |
-| R14 | Coach espera demasiado el resultado (>60s) | Media | Medio | Polling timeline da feedback cada 2s; `estimated_seconds_remaining` en cada respuesta; fallback "te aviso por email" |
-| R15 | Gemini cambia precios | Alta | Medio | Cost monitoring DB (`athlete_ai_insights.cost_usd`) + budget guard; tabla pricing local versionada en código; abstracción permite swap. Langfuse opcional (F8B) refleja lo mismo. |
+| R1 | LLM cost explodes (infinite loop, retries) | Medium | High | Cap `retry_count <= 2` in state; runtime budget guard DB blocks if `SUM(cost_usd) 30d > $20`; hard limit on `max_tokens`. Langfuse alert optional (F8B) reinforces. |
+| R2 | Gemini rate limits (Tier 1 free) | High | Medium | Exponential backoff 4x; fallback `gemini-2.0-flash`; client-side run queue (max 10 concurrent) |
+| R3 | LangGraph state corruption | Low | High | SQLite checkpointing; property tests on state invariants; rollback in `persist_insight` |
+| R4 | Privacy leak (real name in Gemini log) | Low | Critical | Sentinel test in CI (`test_anonymizer_zero_leak`); request body intercept middleware; **deterministic pre-LLM anonymization is the primary defense — does not depend on Langfuse**. If F8B active, self-hosted Langfuse reinforces (does not externalize PII). |
+| R5 | Coach doesn't understand agent output | Medium | High | Learning mode + onboarding; first guided run; UI with citation tooltips |
+| R6 | Gemini vendor lock-in | Medium | Medium | LangChain abstraction layer → change provider 1 line; same `ChatModel` API for Anthropic/OpenAI |
+| R7 | Polling overhead under load | Low | Low | ~15 requests/30s per run × N concurrent runs. Mitigation: max 10 concurrent runs; ETag/304 if state unchanged |
+| R8 | Theoretical framework changes, RAG outdated | Medium | Low | Automatic reindex in CI hook + manual CLI; chunk_id by hash invalidates changes |
+| R9 | LLM hallucinates numbers | Medium | High | `analyst_agent` receives deterministically pre-calculated metrics; `critic_agent` checks there are no invented numbers |
+| R10 | Coach drastically corrects each time | Medium | Medium | `coach_edits_count` metric; if >2 average → revisit prompt; eval improves prompt before redeploy |
+| R11 | ChromaDB index corrupted | Low | Low | `scripts/rag_reindex.py` rebuilds in <30s; docker volume backup |
+| R12 | Langfuse server goes down | Low | Low (non-blocking) | Langfuse SDK fails silently if server unreachable; graph continues executing |
+| R13 | Alembic migration FK violation with existing data | Low | High | Migration only creates new tables (doesn't touch existing ones); migration up/down test in CI |
+| R14 | Coach waits too long for result (>60s) | Medium | Medium | Polling timeline gives feedback every 2s; `estimated_seconds_remaining` in each response; fallback "I'll notify you by email" |
+| R15 | Gemini changes pricing | High | Medium | DB cost monitoring (`athlete_ai_insights.cost_usd`) + budget guard; local pricing table versioned in code; abstraction allows swap. Langfuse optional (F8B) reflects the same. |
 
 ---
 
-## 17. Criterios de éxito MVP
+## 17. MVP success criteria
 
-### 17.1 Métricas técnicas
+### 17.1 Technical metrics
 
-| Métrica | Target | Verificación |
+| Metric | Target | Verification |
 |---|---|---|
-| p50 latencia análisis 1 atleta (1 use_case) | <30 s | `agent_runs.latency_ms` query p50 (Langfuse si 8B) |
-| p95 latencia | <60 s | `agent_runs.latency_ms` query p95 (Langfuse si 8B) |
-| Coverage tests código nuevo (`services/race/ai/`, `services/race/rag/`, `routers/race_analysis.py`) | >=90 % | `pytest --cov` |
-| Eval golden dataset avg score | >=0.80 | `scripts/eval_race_analyst.py` |
-| 0 PII leaks | 100 % | `test_anonymizer_zero_leak` 1000 inputs verdes |
-| Tests existentes (v1) | 339 verdes (sin regresión) | pytest CI |
+| p50 latency 1 athlete analysis (1 use_case) | <30 s | `agent_runs.latency_ms` query p50 (Langfuse if 8B) |
+| p95 latency | <60 s | `agent_runs.latency_ms` query p95 (Langfuse if 8B) |
+| Coverage new code (`services/race/ai/`, `services/race/rag/`, `routers/race_analysis.py`) | >=90% | `pytest --cov` |
+| Golden dataset eval avg score | >=0.80 | `scripts/eval_race_analyst.py` |
+| 0 PII leaks | 100% | `test_anonymizer_zero_leak` 1000 green inputs |
+| Existing tests (v1) | 339 green (no regression) | pytest CI |
 | UI cross-browser | Chrome + Safari + Firefox | Playwright E2E |
 | Lighthouse mobile score | >=85 perf, >=95 a11y | npm run lighthouse |
 
-### 17.2 Métricas de adopción
+### 17.2 Adoption metrics
 
-| Métrica | Target (mes 1 post-launch) | Medición |
+| Metric | Target (month 1 post-launch) | Measurement |
 |---|---|---|
-| Runs ejecutados | >=10 | `agent_runs` count |
-| % runs `completed` (vs `rejected/failed`) | >=80 % | `agent_runs.status` |
-| Avg `coach_edits_count` por insight | <=1.5 | media de `athlete_ai_insights.coach_edits_count` |
-| Tiempo medio coach por análisis | <12 min | tracking UI o self-report |
-| Costo total LLM | <$5/mes | `SUM(athlete_ai_insights.cost_usd) últimos 30d` (Langfuse dashboard si 8B) |
+| Runs executed | >=10 | `agent_runs` count |
+| % `completed` runs (vs `rejected/failed`) | >=80% | `agent_runs.status` |
+| Avg `coach_edits_count` per insight | <=1.5 | mean of `athlete_ai_insights.coach_edits_count` |
+| Average coach time per analysis | <12 min | UI tracking or self-report |
+| Total LLM cost | <$5/month | `SUM(athlete_ai_insights.cost_usd) last 30d` (Langfuse dashboard if 8B) |
 
-### 17.3 Validación funcional (end-to-end)
+### 17.3 Functional validation (end-to-end)
 
-Checklist coach completa sin tocar terminal:
-- [ ] Login → llega a `/coach/race-analysis`
-- [ ] Click "Nuevo análisis" → form aparece
-- [ ] Selecciona atleta + season + valida(s) + use_case → submit
-- [ ] Timeline aparece, se actualiza cada 2s vía polling
-- [ ] HITL gate dispara → ve draft, edita opcional, aprueba
-- [ ] Reporte markdown se renderiza
-- [ ] Botón "Descargar PDF" produce PDF abrible
-- [ ] Email "✅ Análisis listo" llega a inbox del coach
-- [ ] Próximo análisis del mismo atleta muestra "memoria reciente" inyectada
-- [ ] Chat console responde preguntas con citaciones del marco teórico
+Complete coach checklist without touching terminal:
+- [ ] Login → arrives at `/coach/race-analysis`
+- [ ] Click "New analysis" → form appears
+- [ ] Select athlete + season + round(s) + use_case → submit
+- [ ] Timeline appears, updates every 2s via polling
+- [ ] HITL gate fires → sees draft, optionally edits, approves
+- [ ] Markdown report renders
+- [ ] "Download PDF" button produces openable PDF
+- [ ] "✅ Analysis ready" email arrives in coach's inbox
+- [ ] Next analysis for same athlete shows injected "recent memory"
+- [ ] Chat console answers questions with citations from theoretical framework
 
-### 17.4 Observabilidad
+### 17.4 Observability
 
 **Default (8A) — DB audit:**
-- [ ] `athlete_ai_insights` poblándose con cost_usd, tokens, latency_ms, prompt_version
-- [ ] Endpoint `/admin/ai-usage` retorna agregados
-- [ ] Budget guard activo (bloquea si >$20/30d)
-- [ ] Eval CI bloquea PR con score <0.75
+- [ ] `athlete_ai_insights` being populated with cost_usd, tokens, latency_ms, prompt_version
+- [ ] Endpoint `/admin/ai-usage` returns aggregates
+- [ ] Budget guard active (blocks if >$20/30d)
+- [ ] Eval CI blocks PR with score <0.75
 
-**Opcional (8B) — Langfuse activado:**
-- [ ] Langfuse muestra trace de cada run con todos los nodos
-- [ ] Cost por trace reportado correctamente
-- [ ] Tags `valida_num`, `prompt_version`, `coach_id` filtrables
+**Optional (8B) — Langfuse activated:**
+- [ ] Langfuse shows trace of each run with all nodes
+- [ ] Cost per trace reported correctly
+- [ ] Tags `valida_num`, `prompt_version`, `coach_id` filterable
 
 ---
 
-## 18. Próximos pasos
+## 18. Next steps
 
-### 18.1 Acciones inmediatas (esta semana)
+### 18.1 Immediate actions (this week)
 
-1. **Validar decisiones cerradas con coach** — revisar §1.3 línea por línea, confirmar o ajustar (especialmente: persistencia `anonymization_mappings`, activar `critic_agent` desde MVP, modelo embeddings Gemini vs local).
-2. **Resolver decisiones requeridas marcadas en el doc:**
-   - §3.4 — TTL anonymization_mappings (propuesta: 90 días)
-   - §5.2 — critic agent en MVP (propuesta: sí, eval después de 5 runs)
-   - §6.2 — embeddings Gemini vs local (propuesta: Gemini)
-   - §7.4 — borrado físico insights vs archive (propuesta: archive)
-   - §13.3 — tour interactivo onboarding (propuesta: fase 2)
-3. **Reservar API key Gemini** con cuota adecuada (Tier 1 free → 15 RPM Flash Lite es suficiente para MVP).
-4. **Langfuse:** **NO requerido** para MVP. Diferido a F8B opcional post-launch. Decidir host (VPS Hetzner ~$5/mes vs máquina coach) solo si una de estas condiciones se cumple: costo Gemini real >$10/mes, coach pide dashboard visual, o A/B testing prompts en serio.
-5. **Aprobar timeline 14 días** o ajustar prioridades (ej. saltar critic_agent → -2 días adicionales).
+1. **Validate closed decisions with coach** — review §1.3 line by line, confirm or adjust (especially: persistence of `anonymization_mappings`, activate `critic_agent` from MVP, Gemini vs local embeddings model).
+2. **Resolve required decisions marked in the doc:**
+   - §3.4 — TTL anonymization_mappings (proposal: 90 days)
+   - §5.2 — critic agent in MVP (proposal: yes, eval after 5 runs)
+   - §6.2 — Gemini vs local embeddings (proposal: Gemini)
+   - §7.4 — physical insight deletion vs archive (proposal: archive)
+   - §13.3 — interactive onboarding tour (proposal: phase 2)
+3. **Reserve Gemini API key** with adequate quota (Tier 1 free → 15 RPM Flash Lite is sufficient for MVP).
+4. **Langfuse:** **NOT required** for MVP. Deferred to optional F8B post-launch. Decide host (Hetzner VPS ~$5/month vs coach's machine) only if one of these conditions is met: real Gemini cost >$10/month, coach asks for visual dashboard, or serious prompt A/B testing.
+5. **Approve 14-day timeline** or adjust priorities (e.g. skip critic_agent → -2 additional days).
 
-### 18.2 Kickoff de implementación
+### 18.2 Implementation kickoff
 
-Ejecutar:
+Run:
 ```
 /sc:workflow docs/10-race-results/v2-agentic-design.md
 ```
 
-Esto generará el plan estructurado paso a paso, dispará agentes especializados (backend-architect, quality-engineer, security-engineer, data-analyst, etc.) y producirá los artifacts de cada fase.
+This will generate the structured step-by-step plan, spawn specialized agents (backend-architect, quality-engineer, security-engineer, data-analyst, etc.) and produce artifacts for each phase.
 
-### 18.3 Hitos sugeridos para review
+### 18.3 Suggested review milestones
 
-| Hito | Cuándo | Entregable |
+| Milestone | When | Deliverable |
 |---|---|---|
-| H1: Infra + RAG funcionando | Fin Fase 2 | demo CLI `consultar_marco_teorico("...")` |
-| H2: Grafo end-to-end con fake LLM | Fin Fase 4 | demo CLI invoca grafo, llega a `notify_coach` |
-| H3: Polling funcionando con Gemini real | Fin Fase 5 | demo `watch -n 2 curl http://localhost:8000/api/race-analysis/runs/<id>/status` ve estado actualizarse cada 2s |
-| H4: UI completa | Fin Fase 6 | demo coach hace análisis full sin terminal |
-| H5: Eval baseline establecido | Fin Fase 7 | tabla scores golden, threshold 0.75 acordado |
-| H6: Producción lista | Fin Fase 8 | `athlete_ai_insights` poblándose + `/admin/ai-usage` activo + budget guard (Langfuse opcional 8B) |
+| H1: Infra + RAG working | End Phase 2 | CLI demo `consultar_marco_teorico("...")` |
+| H2: End-to-end graph with fake LLM | End Phase 4 | CLI demo invokes graph, reaches `notify_coach` |
+| H3: Polling working with real Gemini | End Phase 5 | demo `watch -n 2 curl http://localhost:8000/api/race-analysis/runs/<id>/status` sees state updating every 2s |
+| H4: Complete UI | End Phase 6 | demo coach does full analysis without terminal |
+| H5: Baseline eval established | End Phase 7 | golden scores table, 0.75 threshold agreed |
+| H6: Production ready | End Phase 8 | `athlete_ai_insights` being populated + `/admin/ai-usage` active + budget guard (Langfuse optional 8B) |
 
-### 18.4 Métricas a monitorear post-launch
+### 18.4 Metrics to monitor post-launch
 
-- Semana 1: estabilidad (0 crashes), latencia p95
-- Semana 2-4: adopción coach, avg edits, costo real vs estimado
-- Mes 2: re-ejecutar eval golden con prompt v2 si hay edits frecuentes
-- Mes 3: análisis ROI vs estimación §1.4
+- Week 1: stability (0 crashes), p95 latency
+- Weeks 2-4: coach adoption, avg edits, real vs estimated cost
+- Month 2: re-run golden eval with prompt v2 if there are frequent edits
+- Month 3: ROI analysis vs §1.4 estimate
 
 ---
 
-## Apéndice A — Tabla de versiones consolidada para `requirements.txt`
+## Appendix A — Consolidated versions table for `requirements.txt`
 
 ```
-# Nuevas dependencias para v2 agéntico
+# New dependencies for v2 agentic
 langgraph>=1.2.0,<2.0
 langgraph-checkpoint-sqlite>=2.0.5
 langchain-core>=0.3.40
 langchain-google-genai>=2.0.0
 chromadb>=0.5.20
-sentence-transformers>=3.0.0   # opcional, sólo si embeddings local
-langfuse>=3.0.0       # presente en SDK pero stack apagado por default (LANGFUSE_ENABLED=false); flip a true solo en F8B opcional
+sentence-transformers>=3.0.0   # optional, only if local embeddings
+langfuse>=3.0.0       # present in SDK but stack off by default (LANGFUSE_ENABLED=false); flip to true only in optional F8B
 
-# Existentes (no cambian)
+# Existing (no changes)
 fastapi>=0.115
 uvicorn[standard]>=0.40
 sqlalchemy[asyncio]>=2.0
 weasyprint>=62.3
 jinja2>=3.1
-google-genai>=1.0   # ya presente
+google-genai>=1.0   # already present
 ```
 
-## Apéndice B — Variables de entorno nuevas
+## Appendix B — New environment variables
 
 ```
 # === LangGraph / Agentic ===
@@ -1734,14 +1734,14 @@ RACE_AGENT_CRITIC_ENABLED=true
 RACE_AGENT_MAX_RETRIES=2
 LANGGRAPH_CHECKPOINT_PATH=./data/langgraph/checkpoints.sqlite
 
-# === Gemini (override existentes) ===
+# === Gemini (override existing) ===
 AI_PROVIDER=google
 AI_MODEL=gemini-2.5-flash-lite
-AI_MAX_TOKENS=8192       # ↑ desde 1024 para narrativa
-AI_TEMPERATURE=0.3       # ↓ desde 0.4 para reproducibilidad
+AI_MAX_TOKENS=8192       # ↑ from 1024 for narrative
+AI_TEMPERATURE=0.3       # ↓ from 0.4 for reproducibility
 
 # === Langfuse ===
-LANGFUSE_ENABLED=false   # default — flip a true solo si se activa F8B (Langfuse opcional)
+LANGFUSE_ENABLED=false   # default — flip to true only if F8B is activated (optional Langfuse)
 LANGFUSE_HOST=http://localhost:3001
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
@@ -1761,24 +1761,24 @@ RAG_CHUNK_OVERLAP=100
 RAG_TOP_K=3
 ```
 
-## Apéndice C — Asunciones acumuladas (para validar)
+## Appendix C — Accumulated assumptions (to validate)
 
-- **A1** El coach hoy invierte 45-60 min por válida en análisis manual (base para ROI).
-- **A2** Gemini Flash Lite tier free aguanta carga del MVP (15 RPM, 1500 RPD).
-- **A3** 90 días TTL para `anonymization_mappings` es suficiente para auditoría.
-- **A4** Embeddings vía Gemini API es preferible a local (consistencia provider).
-- **A5** Archive indefinido de insights (no borrado físico) cumple Ley 1581 a menos que padre solicite.
-- **A6** SqliteSaver es suficiente para <100 runs/mes (no requiere Postgres).
-- **A7** Coach no necesita acceso shell — toda interacción vía UI web.
-- **A8** ~~Langfuse self-hosted en VPS pequeño~~ — **2026-05-20:** diferido a F8B opcional. Audit primario en columnas DB. Langfuse activable solo si costo real >$10/mes, coach pide UI visual, o A/B testing serio.
-- **A9** 1 docente-dev solitario, 5h/día → 14 días = ~3 semanas calendario.
-- **A10** ~~TanStack Query no necesario para SSE~~ — **Decisión 2026-05-20:** se usa TanStack Query `refetchInterval` para polling. No se usa EventSource. Trade-off: ~2s lag vs complejidad SSE eliminada.
-- **A11** Marco teórico cambia <1 vez/mes (no requiere reindex automático periódico).
-- **A12** Padres NO acceden a este módulo. Sus datos van filtrados vía módulos existentes.
-- **A13** Critic agent activado desde MVP (eval decide si mantener).
-- **A14** Email notificación es Resend (provider existente), no se incorpora Spond.
-- **A15** Modo aprendizaje usa mensajes estáticos por nodo (no genera dinámicamente con LLM en MVP).
+- **A1** The coach today invests 45-60 min per round in manual analysis (base for ROI).
+- **A2** Gemini Flash Lite free tier handles MVP load (15 RPM, 1500 RPD).
+- **A3** 90-day TTL for `anonymization_mappings` is sufficient for auditing.
+- **A4** Embeddings via Gemini API is preferable to local (provider consistency).
+- **A5** Indefinite archive of insights (no physical deletion) complies with Ley 1581 unless parent requests.
+- **A6** SqliteSaver is sufficient for <100 runs/month (does not require Postgres).
+- **A7** Coach does not need shell access — all interaction via web UI.
+- **A8** ~~Langfuse self-hosted on small VPS~~ — **2026-05-20:** deferred to optional F8B. Primary audit in DB columns. Langfuse activatable only if real cost >$10/month, coach asks for UI, or serious A/B testing.
+- **A9** 1 solo dev-teacher, 5h/day → 14 days = ~3 calendar weeks.
+- **A10** ~~TanStack Query not needed for SSE~~ — **Decision 2026-05-20:** TanStack Query `refetchInterval` used for polling. No EventSource. Accepted trade-off: ~2s lag vs eliminated SSE complexity.
+- **A11** Theoretical framework changes <1 time/month (no periodic automatic reindex needed).
+- **A12** Parents do NOT access this module. Their data goes filtered via existing modules.
+- **A13** Critic agent activated from MVP (eval decides whether to keep).
+- **A14** Notification email is Resend (existing provider), Spond not incorporated.
+- **A15** Learning mode uses static messages per node (does not generate dynamically with LLM in MVP).
 
 ---
 
-**Fin del documento.** Total páginas estimadas: ~30 (markdown rendered). Siguiente paso: aprobación coach → `/sc:workflow docs/10-race-results/v2-agentic-design.md`.
+**End of document.** Estimated total pages: ~30 (markdown rendered). Next step: coach approval → `/sc:workflow docs/10-race-results/v2-agentic-design.md`.

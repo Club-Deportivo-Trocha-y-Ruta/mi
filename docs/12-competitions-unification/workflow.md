@@ -1,165 +1,165 @@
-# Unificación `/competitions` + Análisis IA — Workflow
+# `/competitions` + AI Analysis Unification — Workflow
 
-**Fecha:** 2026-06-01
-**Solicitante:** Coach
-**Estado:** PRD aprobado (decisiones cerradas). Pendiente kickoff de PR1.
-**Brainstorm por:** `product-manager` + `refactoring-expert`
+**Date:** 2026-06-01
+**Requestor:** Coach
+**Status:** PRD approved (decisions closed). Pending PR1 kickoff.
+**Brainstorm by:** `product-manager` + `refactoring-expert`
 
 ---
 
-## 1. Contexto
+## 1. Context
 
-Hoy coexisten dos rutas separadas que el coach quiere unificar:
+Two separate routes currently coexist that the coach wants to unify:
 
-| Ruta actual | Responsabilidad | Destino |
+| Current route | Responsibility | Destination |
 |---|---|---|
-| `/competitions` | CRUD válidas Copa Valle (Fase 1.7+/1.8) | **Permanece como hub central** |
-| `/coach/race-analysis` | Landing IA v2 (LangGraph agéntico + HITL) | Absorbido en `/competitions/insights/...` |
-| `/training/races/:raceEventId/club-insights` | IA grupal por carrera | Absorbido en tab `insights` del detalle |
+| `/competitions` | CRUD Copa Valle rounds (Phase 1.7+/1.8) | **Remains as central hub** |
+| `/coach/race-analysis` | AI v2 landing (agentic LangGraph + HITL) | Absorbed into `/competitions/insights/...` |
+| `/training/races/:raceEventId/club-insights` | Group AI per race | Absorbed into `insights` tab of detail view |
 
-**Objetivo coach:** todo centralizado en `/competitions`. CRUD + análisis IA en todas las combinaciones (válida, deportista, club, temporada) + bidireccionalidad con calendario + re-ingesta diff + re-trigger IA.
+**Coach goal:** everything centralized in `/competitions`. CRUD + AI analysis in all combinations (round, athlete, club, season) + bidirectionality with calendar + diff re-ingestion + AI re-trigger.
 
 ---
 
-## 2. Decisiones cerradas (2026-06-01)
+## 2. Closed Decisions (2026-06-01)
 
-| # | Pregunta | Decisión |
+| # | Question | Decision |
 |---|---|---|
-| D1 | Crear `calendar_event` al crear competencia | **ON con opt-out visible** (checkbox marcado por default) |
-| D2 | RBAC para vistas IA cross-válida | **Solo coach/admin**. Parents → 403 |
-| D3 | Boletín mensual ya enviado cuando llega corrección | **Marcar `outdated`**, sin reenvío automático |
-| D4 | Panorama global de temporada en MVP | **Sí**, parte de Ola 2 |
-| D5 | Política re-trigger IA tras re-ingesta | **Siempre manual** con confirmación coach (sin cron) |
-| D6 | Alcance re-ingesta MVP | **UI completa** con `DiffTable` confirmable end-to-end |
-| D7 | Lifespan redirects 301 (`/coach/race-analysis`, `/training/races/:id/club-insights`) | **1 ciclo de release** (~PR1 a PR7), luego 410 en PR7 |
+| D1 | Create `calendar_event` when creating a competition | **ON with visible opt-out** (checkbox checked by default) |
+| D2 | RBAC for cross-round AI views | **Coach/admin only**. Parents → 403 |
+| D3 | Monthly newsletter already sent when a correction arrives | **Mark `outdated`**, no automatic resend |
+| D4 | Global season overview in MVP | **Yes**, part of Wave 2 |
+| D5 | AI re-trigger policy after re-ingestion | **Always manual** with coach confirmation (no cron) |
+| D6 | Re-ingestion scope MVP | **Full UI** with confirmable `DiffTable` end-to-end |
+| D7 | Lifespan 301 redirects (`/coach/race-analysis`, `/training/races/:id/club-insights`) | **1 release cycle** (~PR1 to PR7), then 410 in PR7 |
 
 ---
 
-## 3. Mapa de rutas final
+## 3. Final Route Map
 
 ```
-/competitions                          → lista
-/competitions/new                      → crear válida
-/competitions/import                   → wizard ingest-first
-/competitions/:id                      → detalle (tabs info|results|conditions|athletes|insights)
-/competitions/:id/edit                 → editar metadata
-/competitions/:id/import               → re-ingesta con diff confirmable
-/competitions/:id/insights/:runId      → detalle de un run IA anclado a válida
-/competitions/insights                 → hub análisis (panorama cross-válidas)
-/competitions/insights/athletes/:id    → longitudinal por deportista
-/competitions/insights/club            → grupal/club (absorbe ClubInsightsByRacePage)
-/competitions/insights/season/:year    → panorama por temporada
+/competitions                          → list
+/competitions/new                      → create round
+/competitions/import                   → ingest-first wizard
+/competitions/:id                      → detail (tabs info|results|conditions|athletes|insights)
+/competitions/:id/edit                 → edit metadata
+/competitions/:id/import               → re-ingestion with confirmable diff
+/competitions/:id/insights/:runId      → detail of an AI run anchored to round
+/competitions/insights                 → analysis hub (cross-round overview)
+/competitions/insights/athletes/:id    → longitudinal per athlete
+/competitions/insights/club            → group/club (absorbs ClubInsightsByRacePage)
+/competitions/insights/season/:year    → season overview
 ```
 
-**Redirects 301 (activos durante PR1-PR7):**
+**301 Redirects (active during PR1-PR7):**
 - `/coach/race-analysis` → `/competitions/insights`
 - `/training/races/:raceEventId/club-insights` → `/competitions/:raceEventId?tab=insights`
 
-**PR7:** redirects pasan a 410.
+**PR7:** redirects change to 410.
 
 ---
 
-## 4. Modelo de datos
+## 4. Data Models
 
-**Una sola adición:** columna `stale_since DATETIME NULL` en tabla de runs IA (nombre exacto a confirmar con `database-architect`).
+**A single addition:** `stale_since DATETIME NULL` column in the AI runs table (exact name to confirm with `database-architect`).
 
-- Se puebla cuando una re-ingesta sobre el mismo `race_event_id` detecta SHA256 diferente.
-- Permite ver "análisis desactualizado" sin perder el histórico.
-- Nullable, sin default → migración no bloqueante.
+- Populated when a re-ingestion over the same `race_event_id` detects a different SHA256.
+- Allows seeing "outdated analysis" without losing the history.
+- Nullable, no default → non-blocking migration.
 
-**No se requiere tabla nueva.** `RaceResultRevision` ya existe desde Fase 1.7.
-
----
-
-## 5. Roadmap en 7 PRs incrementales
-
-### Ola 1 — Consolidación de rutas
-
-**PR1 — Codemod rutas + redirects + sidebar único**
-- Líder: `react-ui-engineer`. Soporte: `qa-engineer`.
-- Archivos: `App.tsx`, `AppShell.tsx`, ajuste `MemoryRouter` en tests existentes.
-- DONE: redirects 301 funcionan, sidebar unificado "Competencias", CI verde.
-- Riesgo: bajo.
-
-### Ola 2 — IA centralizada
-
-**PR2 — Tab `insights` en `CompetitionDetailPage` (feature flag)**
-- Líder: `react-ui-engineer`. Soporte: `qa-engineer`.
-- Estrategia strangler: monta `RaceAnalysisPage` dentro del tab vía `VITE_INSIGHTS_IN_COMPETITION=true`. Ruta vieja sigue activa, cero duplicación.
-- Medir bundle delta < 20 KB sobre lazy chunk existente.
-
-**PR3 — Vistas IA cross-válida**
-- Líder: `react-ui-engineer`. Soporte: `data-privacy-guard` (auditoría obligatoria), `fastapi-architect` (endpoint global).
-- 4 subpáginas bajo `/competitions/insights/{,athletes/:id,club,season/:year}`.
-- Mover `components/ai/` + `components/athletes/ai/` a `components/competitions/insights/`. Hooks NO se mueven.
-- **Endpoint nuevo:** `GET /api/race-analysis/insights/season/{year}` — debe usar query agregada con JOIN (sin N+1 en Python). Diseñar con `fastapi-architect` antes de implementar UI.
-- **Privacidad Ola 2:** vista global usa `forbidden_names=[]` → fuerza redacción anónima sin nombres de menores. RBAC: padres → 403 en todas las rutas `/insights/*`.
-
-### Ola 3 — Calendario bidireccional
-
-**PR6 — Checkbox + sincronización**
-- Líder: `react-ui-engineer`. Soporte: `integration-engineer`.
-- `CompetitionFormPage`: checkbox "Crear evento en calendario" (D1 = ON por default).
-- Source-of-truth: `race_event` lidera. Cambio de fecha/nombre/sede propaga a calendar event ligado.
-- Reverso (`?race_event_id=` en `EventForm`) ya existe.
-- Vínculo 1:1 estricto (1 válida ↔ máx 1 calendar event tipo `race`).
-
-### Ola 4 — Re-ingesta + re-trigger IA
-
-**PR4 — Re-ingesta con diff confirmable**
-- Líder: `fastapi-architect`. Soporte: `react-ui-engineer`.
-- Backend: `GET /api/race-analysis/imports/{race_event_id}/diff` (read-only, calcula delta vs última versión).
-- Frontend: `/competitions/:id/import` reutiliza `DiffTable` existente, agrupando cambios por: **Posición** | **Tiempo** | **Gap GC** | **Categoría reclasificada** | **Nuevos/Eliminados**.
-- Catálogo cerrado para `revision_reason` (sin texto libre — privacidad ya implementada).
-- SHA256 idempotente intacto.
-
-**PR5 — Re-trigger IA + flag `stale`**
-- Líder: `fastapi-architect` + `database-architect`. Soporte: `data-privacy-guard`.
-- Migración Alembic: columna `stale_since DATETIME NULL` en runs IA.
-- Endpoint: `POST /api/race-analysis/runs/{run_id}/invalidate` (auto desde ingestor en re-ingesta) + `POST /api/race-analysis/runs/{run_id}/re-execute` (manual coach — D5).
-- UI: badge "Análisis desactualizado" + botón "Re-ejecutar" en cada run stale.
-- **D5 honrado:** todo re-trigger es manual con confirmación. NO cron, NO auto al confirmar diff.
-- **Boletines:** al detectar stale, marcar `AthleteMonthlyNewsletter` afectado como `outdated` (D3). NO reenviar.
-
-### Ola 5 — Limpieza
-
-**PR7 — Deprecación final**
-- Líder: `react-ui-engineer`. Soporte: `qa-engineer`.
-- Eliminar `RaceAnalysisPage.tsx`, `ClubInsightsByRacePage.tsx`, barrel re-exports transitorios.
-- Redirects 301 → 410 (D7).
-- Bundle baseline debe ser ≤ PR2.
+**No new table required.** `RaceResultRevision` already exists from Phase 1.7.
 
 ---
 
-## 6. Riesgos críticos
+## 5. Roadmap in 7 Incremental PRs
 
-| Riesgo | Mitigación | Responsable |
+### Wave 1 — Route Consolidation
+
+**PR1 — Route codemod + redirects + unified sidebar**
+- Lead: `react-ui-engineer`. Support: `qa-engineer`.
+- Files: `App.tsx`, `AppShell.tsx`, adjust `MemoryRouter` in existing tests.
+- DONE: 301 redirects work, unified "Competencias" sidebar, CI green.
+- Risk: low.
+
+### Wave 2 — Centralized AI
+
+**PR2 — `insights` tab in `CompetitionDetailPage` (feature flag)**
+- Lead: `react-ui-engineer`. Support: `qa-engineer`.
+- Strangler strategy: mounts `RaceAnalysisPage` inside the tab via `VITE_INSIGHTS_IN_COMPETITION=true`. Old route stays active, zero duplication.
+- Measure bundle delta < 20 KB over existing lazy chunk.
+
+**PR3 — Cross-round AI views**
+- Lead: `react-ui-engineer`. Support: `data-privacy-guard` (mandatory privacy audit), `fastapi-architect` (global endpoint).
+- 4 sub-pages under `/competitions/insights/{,athletes/:id,club,season/:year}`.
+- Move `components/ai/` + `components/athletes/ai/` to `components/competitions/insights/`. Hooks are NOT moved.
+- **New endpoint:** `GET /api/race-analysis/insights/season/{year}` — must use aggregated query with JOIN (no N+1 in Python). Design with `fastapi-architect` before implementing UI.
+- **Wave 2 Privacy:** global view uses `forbidden_names=[]` → forces anonymous wording without minors' names. RBAC: parents → 403 on all `/insights/*` routes.
+
+### Wave 3 — Bidirectional Calendar
+
+**PR6 — Checkbox + synchronization**
+- Lead: `react-ui-engineer`. Support: `integration-engineer`.
+- `CompetitionFormPage`: checkbox "Create event in calendar" (D1 = ON by default).
+- Source-of-truth: `race_event` leads. Date/name/venue change propagates to linked calendar event.
+- Reverse (`?race_event_id=` in `EventForm`) already exists.
+- Strict 1:1 link (1 round ↔ max 1 `race` type calendar event).
+
+### Wave 4 — Re-ingestion + AI Re-trigger
+
+**PR4 — Re-ingestion with confirmable diff**
+- Lead: `fastapi-architect`. Support: `react-ui-engineer`.
+- Backend: `GET /api/race-analysis/imports/{race_event_id}/diff` (read-only, calculates delta vs last version).
+- Frontend: `/competitions/:id/import` reuses existing `DiffTable`, grouping changes by: **Position** | **Time** | **Gap GC** | **Reclassified Category** | **New/Removed**.
+- Closed catalogue for `revision_reason` (no free text — privacy already implemented).
+- SHA256 idempotency intact.
+
+**PR5 — AI re-trigger + `stale` flag**
+- Lead: `fastapi-architect` + `database-architect`. Support: `data-privacy-guard`.
+- Alembic migration: `stale_since DATETIME NULL` column in AI runs.
+- Endpoint: `POST /api/race-analysis/runs/{run_id}/invalidate` (auto from ingestor on re-ingestion) + `POST /api/race-analysis/runs/{run_id}/re-execute` (manual coach — D5).
+- UI: "Outdated analysis" badge + "Re-execute" button on each stale run.
+- **D5 honored:** all re-triggers are manual with confirmation. NO cron, NO auto on diff confirmation.
+- **Newsletters:** when stale is detected, mark affected `AthleteMonthlyNewsletter` as `outdated` (D3). DO NOT resend.
+
+### Wave 5 — Cleanup
+
+**PR7 — Final deprecation**
+- Lead: `react-ui-engineer`. Support: `qa-engineer`.
+- Remove `RaceAnalysisPage.tsx`, `ClubInsightsByRacePage.tsx`, transitional barrel re-exports.
+- 301 redirects → 410 (D7).
+- Bundle baseline must be ≤ PR2.
+
+---
+
+## 6. Critical Risks
+
+| Risk | Mitigation | Owner |
 |---|---|---|
-| Deep links externos (Spond, emails) rotos | Redirects 301 durante 1 ciclo completo (D7). Telemetría de hits. | `release-manager` |
-| Bundle size en vistas insight nuevas | Lazy chunks por subpágina. Medir delta en PR2 baseline. | `react-ui-engineer` |
-| Endpoint `/insights/season/:year` con N+1 | Query agregada SQL con JOIN o window functions. Benchmark antes de UI. | `fastapi-architect` + `sql-pro` |
-| Privacy R2 en vista global temporada | `forbidden_names=[]` fuerza redacción anónima. Auditoría obligatoria PR3 + PR5. | `data-privacy-guard` |
-| 1682 vitest + 305 race tests | Codemod mecánico de `MemoryRouter` paths. No re-escribir assertions. | `qa-engineer` |
-| Coste IA por re-trigger masivo | D5 = manual con confirmación. Sin auto-trigger. | (cubierto por decisión) |
-| Migración `stale_since` en prod | Nullable, sin default. No bloquea queries existentes. | `database-architect` + `release-manager` |
+| Broken external deep links (Spond, emails) | 301 redirects for 1 full cycle (D7). Hit telemetry. | `release-manager` |
+| Bundle size in new insight views | Lazy chunks per sub-page. Measure delta in PR2 baseline. | `react-ui-engineer` |
+| Endpoint `/insights/season/:year` with N+1 | Aggregated SQL query with JOIN or window functions. Benchmark before UI. | `fastapi-architect` + `sql-pro` |
+| Privacy R2 in global season view | `forbidden_names=[]` forces anonymous wording. Mandatory audit PR3 + PR5. | `data-privacy-guard` |
+| 1682 vitest + 305 race tests | Mechanical `MemoryRouter` paths codemod. Do not rewrite assertions. | `qa-engineer` |
+| AI cost from bulk re-trigger | D5 = manual with confirmation. No auto-trigger. | (covered by decision) |
+| `stale_since` migration in prod | Nullable, no default. Does not block existing queries. | `database-architect` + `release-manager` |
 
 ---
 
-## 7. Anti-patterns explícitos
+## 7. Explicit Anti-patterns
 
-- ❌ NO duplicar hooks IA en nueva ubicación. Imports desde `hooks/ai/` y `hooks/race/` permanecen.
-- ❌ NO mezclar codemod de componentes y lógica nueva en mismo PR.
-- ❌ NO eliminar rutas viejas antes de tener 301 estables por al menos un ciclo de deploy.
-- ❌ NO diseñar endpoint global de temporada como loop en application layer.
-- ❌ NO consolidar PR4 + PR5 en uno solo (contratos de rollback distintos).
-- ❌ NO hacer migración en big-bang. Cada ola debe ser shippable y reversible.
+- ❌ DO NOT duplicate AI hooks in the new location. Imports from `hooks/ai/` and `hooks/race/` remain.
+- ❌ DO NOT mix component codemod and new logic in the same PR.
+- ❌ DO NOT remove old routes before having stable 301s for at least one deploy cycle.
+- ❌ DO NOT design the global season endpoint as a loop in the application layer.
+- ❌ DO NOT consolidate PR4 + PR5 into one (different rollback contracts).
+- ❌ DO NOT do the migration in a big-bang. Each wave must be shippable and reversible.
 
 ---
 
-## 8. Delegación matriz
+## 8. Delegation Matrix
 
-| PR | Líder | Soporte |
-|----|-------|---------|
+| PR | Lead | Support |
+|----|------|---------|
 | PR1 | `react-ui-engineer` | `qa-engineer` |
 | PR2 | `react-ui-engineer` | `qa-engineer` |
 | PR3 | `react-ui-engineer` | `data-privacy-guard`, `fastapi-architect`, `sql-pro` |
@@ -168,16 +168,16 @@ Hoy coexisten dos rutas separadas que el coach quiere unificar:
 | PR6 | `react-ui-engineer` | `integration-engineer` |
 | PR7 | `react-ui-engineer` | `qa-engineer`, `release-manager` |
 
-**Orquestador global:** `engineering-lead` toma este workflow y descompone PR por PR, delegando a especialistas. `head-coach-lead` se consulta solo si surge una decisión deportiva no anticipada.
+**Global orchestrator:** `engineering-lead` takes this workflow and breaks it down PR by PR, delegating to specialists. `head-coach-lead` is consulted only if an unanticipated sports decision arises.
 
 ---
 
-## 9. Próximos pasos
+## 9. Next Steps
 
-1. ✅ PRD aprobado (este documento).
-2. ⏳ Coach aprueba kickoff de PR1.
-3. ⏳ `engineering-lead` toma PRD y emite plan detallado de PR1.
-4. ⏳ `react-ui-engineer` ejecuta PR1 (codemod rutas + redirects + sidebar).
-5. ⏳ Tras PR1 mergeado y deployado, `engineering-lead` arranca PR2.
+1. ✅ PRD approved (this document).
+2. ⏳ Coach approves PR1 kickoff.
+3. ⏳ `engineering-lead` takes PRD and issues detailed plan for PR1.
+4. ⏳ `react-ui-engineer` executes PR1 (route codemod + redirects + sidebar).
+5. ⏳ After PR1 merged and deployed, `engineering-lead` starts PR2.
 
-**Sin avanzar implementación hasta confirmación explícita del coach.**
+**No implementation advances until explicit coach confirmation.**

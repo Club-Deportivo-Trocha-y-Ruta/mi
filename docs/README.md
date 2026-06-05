@@ -1,21 +1,21 @@
-# docs/ — Índice de Documentación
+# docs/ — Documentation Index
 
-Carpetas numeradas por feature en orden cronológico. Archivos internos por tipo: `workflow.md`, `research.md`, `design.md`, `qa.md`, `reference.md`.
+Numbered folders by feature in chronological order. Internal files by type: `workflow.md`, `research.md`, `design.md`, `qa.md`, `reference.md`.
 
-| # | Carpeta / Archivo | Contenido |
+| # | Folder / File | Contents |
 |---|---|---|
-| — | [01-marco-teorico.md](01-marco-teorico.md) | Fundamento científico: LTAD, PHV, fisiología, nutrición, normativa (referencia inviolable) |
-| 02 | [02-scaffolding/](02-scaffolding/) | Decisiones de arquitectura y stack del proyecto |
-| 03 | [03-fase1/](03-fase1/) | Auth, roles, CRUD atletas, antropometría PHV — workflow + plan QA |
-| 04 | [04-percentiles/](04-percentiles/) | Percentiles OMS/CDC: investigación + implementación curvas de crecimiento |
-| 05 | [05-design-system/](05-design-system/) | Sistema visual: paleta, tipografía, componentes, tokens |
-| 06 | [06-parents/](06-parents/) | Módulo padres/acudientes: backend + portal frontend |
-| 07 | [07-notifications/](07-notifications/) | Módulo de notificaciones: email, PDF, DOCX |
-| 08 | [08-onboarding/](08-onboarding/) | Onboarding por invitación: investigación + diseño + implementación |
-| 09 | [09-training-planning/](09-training-planning/) | Sesiones de entrenamiento: planificación, asistencia, rúbrica, reporte mensual con IA |
-| 10 | [10-race-results/](10-race-results/) | Resultados Copa Valle XCO: ingesta de PDFs, normalización fuzzy, analíticas longitudinales (evolución, gap podio, ranking club, proyección). Extensión 2026-05-26: condiciones de carrera en UI (wizard + tarjeta tri-estado + PATCH) — ver `upload-design.md` §14. Extensión 2026-05-27: módulo **Competencias** (CRUD `race_events`, wizard reubicado, tabs URL-driven) — ver `competitions-module.md` |
-| 11 | [11-informe-tecnico-mensual/](11-informe-tecnico-mensual/) | **Informe Técnico Mensual** (Fase 1.9): refactor del reporte mensual del club hacia documento estilo informe a financiador. Perfil de proyecto 1:1, narrativa IA por bloques editable por el coach, podios del mes, PDF de distribución restringida — `workflow.md` + `design.md` + `runbook.md` (guía del coach) |
+| — | [01-marco-teorico.md](01-marco-teorico.md) | Scientific foundation: LTAD, PHV, physiology, nutrition, regulations (non-negotiable reference) |
+| 02 | [02-scaffolding/](02-scaffolding/) | Architecture and stack design decisions |
+| 03 | [03-fase1/](03-fase1/) | Auth, roles, athlete CRUD, PHV anthropometry — workflow + QA plan |
+| 04 | [04-percentiles/](04-percentiles/) | WHO/CDC percentiles: research + implementation of growth curves |
+| 05 | [05-design-system/](05-design-system/) | Visual system: palette, typography, components, tokens |
+| 06 | [06-parents/](06-parents/) | Parent/guardian module: backend + frontend portal |
+| 07 | [07-notifications/](07-notifications/) | Notifications module: email, PDF, DOCX |
+| 08 | [08-onboarding/](08-onboarding/) | Invitation-based onboarding: research + design + implementation |
+| 09 | [09-training-planning/](09-training-planning/) | Training sessions: planning, attendance, rubric, monthly report with AI |
+| 10 | [10-race-results/](10-race-results/) | Copa Valle XCO results: PDF ingestion, fuzzy normalization, longitudinal analytics (progression, podium gap, club ranking, projection). Extension 2026-05-26: race conditions in UI (wizard + tri-state card + PATCH) — see `upload-design.md` §14. Extension 2026-05-27: **Competitions** module (CRUD `race_events`, relocated wizard, URL-driven tabs) — see `competitions-module.md` |
+| 11 | [11-informe-tecnico-mensual/](11-informe-tecnico-mensual/) | **Monthly Technical Report** (Phase 1.9): refactor of the club monthly report into a funder-style report document. 1:1 project profile, coach-editable AI narrative by blocks, podiums of the month, restricted-distribution PDF — `workflow.md` + `design.md` + `runbook.md` (coach guide) |
 
-## Archivo de entrenamiento
+## Training archive
 
-- `Plan_Entrenamiento_XCO_Copa_Valle_2026.docx` — Plan macrociclo 2026
+- `Plan_Entrenamiento_XCO_Copa_Valle_2026.docx` — 2026 macrocycle plan

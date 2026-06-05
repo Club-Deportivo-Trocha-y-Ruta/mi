@@ -1,82 +1,82 @@
-# Upload UI de PDFs Copa Valle — Diseño técnico
+# Copa Valle PDF Upload UI — Technical Design
 
-**Proyecto:** Club Deportivo Trocha y Ruta — XCO juvenil
-**Módulo:** `services/race/` + `routers/race_analysis.py` + `frontend/src/routes/results/`
-**Fecha:** 2026-05-20
-**Autor:** System Architect agent
-**Estado:** Diseño técnico — listo para `/sc:workflow` + `/sc:implement`
-**Audiencia:** entrenador (validación UX), arquitecto/dev (implementación)
-**Entrada autoritativa:** `docs/10-race-results/upload-research.md` (research previo)
-
----
-
-## 0. Resumen ejecutivo
-
-Hoy la ingesta de resultados Copa Valle solo existe vía CLI (`scripts/ingest_race.py`). Esta fase expone el mismo pipeline determinista F1.7 al coach a través de un **wizard de 3 pasos** dentro de `RaceAnalysisPage`, sin tocar la lógica de negocio probada (305 tests verdes, 98% cobertura en `services/race/`).
-
-**Apuesta arquitectónica:** envoltura HTTP delgada sobre `RaceIngestor` + UI guiada que materializa el flujo interactivo del CLI en pasos discretos con preview seguro (dry-run real). Cambios bajo control:
-
-- **Backend:** 3 endpoints REST + 1 columna nueva en `RaceImport` + dry-run en `RaceIngestor` (~30 LOC).
-- **Frontend:** 1 tab nueva ("Cargar resultados") + componente `RaceUploadWizard` con 3 sub-pasos + reuso de patrones existentes.
-- **Storage:** PDFs guardados en SFTP/FTPS Hostinger con UUID en path (fallback local en dev). Retención permanente.
-- **Migración:** Alembic delta sobre `RaceImport` (4 columnas nuevas, todas nullable + default seguro).
-
-**No hace en MVP:** crear atletas inline, editar metadata post-commit sin re-subir, soportar fuente que no sea PDF/CSV oficial Federación, polling/SSE (la ingesta es síncrona <60s).
+**Project:** Club Deportivo Trocha y Ruta — Youth XCO
+**Module:** `services/race/` + `routers/race_analysis.py` + `frontend/src/routes/results/`
+**Date:** 2026-05-20
+**Author:** System Architect agent
+**Status:** Technical design — ready for `/sc:workflow` + `/sc:implement`
+**Audience:** coach (UX validation), architect/dev (implementation)
+**Authoritative input:** `docs/10-race-results/upload-research.md` (prior research)
 
 ---
 
-## 1. Resolución de open questions del research
+## 0. Executive Summary
 
-### 1.1 ¿Guardar PDF en storage tras procesar?
+Today Copa Valle results ingestion exists only via CLI (`scripts/ingest_race.py`). This phase exposes the same deterministic F1.7 pipeline to the coach through a **3-step wizard** inside `RaceAnalysisPage`, without touching the proven business logic (305 green tests, 98% coverage in `services/race/`).
 
-**Decisión:** **SÍ, guardar ambos PDFs en SFTP/FTPS con UUID en path.**
+**Architectural bet:** thin HTTP wrapper over `RaceIngestor` + guided UI that materializes the interactive CLI flow in discrete steps with a safe preview (real dry-run). Changes under control:
 
-**Razón:**
-- Costo marginal (PDF típico = 250 KB; 7 válidas × 2 PDFs × 5 temporadas = ~17 MB total).
-- Desbloquea capacidades de re-procesamiento sin pedir el archivo al coach de nuevo (futuro: re-parser con bug fix, evidence en chat agéntico v2, auditoría retroactiva).
-- Información ya pública (Federación los publica). URL pública sin auth es aceptable + UUID en path mitiga path-guessing.
-- Patrón ya validado y testeado por F1.6 media (`storage_sftp.py` + fallback local).
+- **Backend:** 3 REST endpoints + 1 new column in `RaceImport` + dry-run in `RaceIngestor` (~30 LOC).
+- **Frontend:** 1 new tab ("Load results") + `RaceUploadWizard` component with 3 sub-steps + reuse of existing patterns.
+- **Storage:** PDFs stored in Hostinger SFTP/FTPS with UUID in path (local fallback in dev). Permanent retention.
+- **Migration:** Alembic delta on `RaceImport` (4 new columns, all nullable + safe default).
 
-**Implicaciones:**
-- 2 columnas nuevas en `RaceImport`: `storage_path` y `storage_url`.
-- En entornos dev sin envs SFTP → fallback local en `static/uploads/race-imports/<series_id>/<event_id>/<uuid>.pdf`.
-
-### 1.2 ¿Wizard 3 endpoints vs 1 mega-POST?
-
-**Decisión:** **3 endpoints REST (parse → dry-run → commit).**
-
-**Razón:**
-- Latencia `pdfplumber` con PDF Válida IV completo: 2–5 s en local, hasta 8–10 s en Render free tier tras cold start. Re-parsear en cada paso del wizard es UX inaceptable (el coach esperaría 15 s sólo para corregir un radio button del paso 2).
-- Separación clara de responsabilidades: `parse` extrae datos crudos, `dry-run` simula la ingesta y devuelve `IngestReport` previo, `commit` persiste y guarda PDFs.
-- `parse_id` (UUID server-side asociado a `RaceImport.status=pending`) sobrevive entre pasos sin requerir state en cliente más allá del id.
-- Habilita patrones futuros (retomar wizard si el coach cierra el navegador antes del commit).
-
-**Trade-off aceptado:** complejidad +1 tabla state efímero (`RaceImport.status=pending`) con TTL implícito (cleanup nocturno descrito en §8). El research confirma que la columna `status` ya soporta el enum `pending` desde F1.7.
-
-### 1.3 ¿Soportar `.csv` MVP o solo `.pdf`?
-
-**Decisión:** **Soportar `.pdf` + `.csv` para RESULTADOS; solo `.pdf` para GENERAL.**
-
-**Razón:**
-- El service ya soporta CSV autodispatch por extensión (`scripts/ingest_race.py:247-251`). Costo de incluirlo en el endpoint = trivial (3-4 líneas extra de magic bytes + branch en parser).
-- Cubre el caso real **Sevilla V-I 2026** que solo tiene CSV (fixture `valida_i_2026_sevilla.csv` ya en repo).
-- GENERAL solo se publica en PDF por Federación — sin uso real para CSV.
-
-**Validación:**
-- Magic bytes PDF: `%PDF-` en primeros 5 bytes.
-- Magic bytes CSV: no aplicable (texto plano) → validar que primer chunk decodifique UTF-8 y contenga delimitador esperado (`,` o `;` o `\t`).
-- Extensión whitelist: `.pdf`, `.csv`, `.tsv`, `.txt`.
+**Does not do in MVP:** create athletes inline, edit metadata post-commit without re-uploading, support sources other than official Federation PDF/CSV, polling/SSE (ingestion is synchronous <60s).
 
 ---
 
-## 2. Arquitectura propuesta
+## 1. Resolution of open questions from research
 
-### 2.1 Diagrama end-to-end
+### 1.1 Store PDF in storage after processing?
+
+**Decision:** **YES, store both PDFs in SFTP/FTPS with UUID in path.**
+
+**Reason:**
+- Marginal cost (typical PDF = 250 KB; 7 rounds × 2 PDFs × 5 seasons = ~17 MB total).
+- Unlocks re-processing capabilities without asking the coach for the file again (future: re-parser with bug fix, evidence in v2 agentic chat, retroactive audit).
+- Already public information (the Federation publishes them). Public URL without auth is acceptable + UUID in path mitigates path-guessing.
+- Pattern already validated and tested by F1.6 media (`storage_sftp.py` + local fallback).
+
+**Implications:**
+- 2 new columns in `RaceImport`: `storage_path` and `storage_url`.
+- In dev environments without SFTP envs → local fallback in `static/uploads/race-imports/<series_id>/<event_id>/<uuid>.pdf`.
+
+### 1.2 Wizard 3 endpoints vs 1 mega-POST?
+
+**Decision:** **3 REST endpoints (parse → dry-run → commit).**
+
+**Reason:**
+- `pdfplumber` latency with full Round IV PDF: 2-5s locally, up to 8-10s in Render free tier after cold start. Re-parsing on each wizard step is unacceptable UX (the coach would wait 15s just to correct a radio button in step 2).
+- Clear separation of responsibilities: `parse` extracts raw data, `dry-run` simulates the ingestion and returns prior `IngestReport`, `commit` persists and saves PDFs.
+- `parse_id` (server-side UUID associated with `RaceImport.status=pending`) survives between steps without requiring client state beyond the id.
+- Enables future patterns (resume wizard if the coach closes the browser before commit).
+
+**Accepted trade-off:** complexity +1 ephemeral state table (`RaceImport.status=pending`) with implicit TTL (nightly cleanup described in §8). Research confirms that the `status` column already supports the `pending` enum from F1.7.
+
+### 1.3 Support `.csv` MVP or only `.pdf`?
+
+**Decision:** **Support `.pdf` + `.csv` for RESULTS; only `.pdf` for GENERAL.**
+
+**Reason:**
+- The service already supports CSV autodispatch by extension (`scripts/ingest_race.py:247-251`). Including it in the endpoint = trivial (3-4 extra lines of magic bytes + parser branch).
+- Covers the real case **Sevilla V-I 2026** that only has CSV (fixture `valida_i_2026_sevilla.csv` already in repo).
+- GENERAL is only published in PDF by the Federation — no real CSV use.
+
+**Validation:**
+- PDF magic bytes: `%PDF-` in first 5 bytes.
+- CSV magic bytes: not applicable (plain text) → validate that first chunk decodes UTF-8 and contains expected delimiter (`,` or `;` or `\t`).
+- Extension whitelist: `.pdf`, `.csv`, `.tsv`, `.txt`.
+
+---
+
+## 2. Proposed architecture
+
+### 2.1 End-to-end diagram
 
 ```mermaid
 flowchart TD
     subgraph "Coach UI"
-        T1["Tab: Cargar resultados<br/>(RaceAnalysisPage)"]
+        T1["Tab: Load results<br/>(RaceAnalysisPage)"]
         W1["Step 1: Upload<br/>RaceUploadZone"]
         W2["Step 2: Confirm<br/>EventMetaForm + MatchTable"]
         W3["Step 3: Preview & Commit"]
@@ -87,24 +87,24 @@ flowchart TD
         R1["POST /imports/parse<br/>multipart"]
         R2["POST /imports/{id}/dry-run<br/>JSON"]
         R3["POST /imports/{id}/commit<br/>JSON"]
-        R4["GET /imports/recent<br/>histórico"]
+        R4["GET /imports/recent<br/>history"]
 
-        SVC["RaceImportUploadService<br/>(NUEVO — orquestador HTTP)"]
-        ING["RaceIngestor<br/>(F1.7 intacto)"]
-        PRS["pdf_parser + csv_parser<br/>(F1.7 intacto)"]
-        MCH["matcher.py<br/>(F1.7 intacto)"]
-        STO["storage_sftp<br/>(F1.6 reusado)"]
+        SVC["RaceImportUploadService<br/>(NEW — HTTP orchestrator)"]
+        ING["RaceIngestor<br/>(F1.7 intact)"]
+        PRS["pdf_parser + csv_parser<br/>(F1.7 intact)"]
+        MCH["matcher.py<br/>(F1.7 intact)"]
+        STO["storage_sftp<br/>(F1.6 reused)"]
     end
 
-    subgraph "Persistencia"
+    subgraph "Persistence"
         DB[(MySQL Hostinger)]
-        FS[("SFTP/FTPS Hostinger<br/>fallback local")]
+        FS[("SFTP/FTPS Hostinger<br/>local fallback")]
     end
 
     W1 -->|multipart 2 PDFs| R1
     W2 -->|EventMeta JSON| R2
     W3 -->|match_decisions JSON| R3
-    W3 -->|Histórico tab| R4
+    W3 -->|History tab| R4
 
     R1 --> SVC
     R2 --> SVC
@@ -122,115 +122,115 @@ flowchart TD
     class ING,PRS,MCH,STO reused
 ```
 
-### 2.2 Componentes nuevos vs reusados
+### 2.2 New vs reused components
 
-| Componente | Estado | Ubicación | Responsabilidad |
+| Component | Status | Location | Responsibility |
 |---|---|---|---|
-| `RaceImportUploadService` | **NUEVO** | `backend/app/services/race/importer/upload_service.py` | Orquesta parse→dry-run→commit. Persiste estado intermedio en `RaceImport`. |
-| `pdf_parser.parse_*_pdf` | **REUSADO** | `backend/app/services/race/pdf_parser.py` | Sin cambios. Acepta `Path`; service escribe a tmp y pasa el path. |
-| `csv_parser.parse_results_csv` | **REUSADO** | `backend/app/services/race/csv_parser.py` | Sin cambios. |
-| `RaceIngestor.dry_run_event` | **NUEVO** (~30 LOC) | `backend/app/services/race/ingestor.py` | Mismo flujo que `ingest_event` pero `db.rollback()` al final. Retorna `IngestReport` ficticio. |
-| `RaceIngestor.ingest_event` | **REUSADO** | `backend/app/services/race/ingestor.py` | Sin cambios. |
-| `matcher.match_athletes` | **REUSADO** | `backend/app/services/race/matcher.py` | Llamado desde service para devolver top-3 al wizard. |
-| `storage_sftp.upload_bytes` | **REUSADO** | `backend/app/services/training/storage_sftp.py` | Acepta cualquier `bytes`; PDF funciona igual que JPG. |
-| `routers/race_analysis.py` | **EXTENDIDO** | `backend/app/routers/race_analysis.py` | +4 endpoints bajo `/api/race-analysis/imports/*`. |
-| `RaceUploadWizard` | **NUEVO** | `frontend/src/components/race/RaceUploadWizard.tsx` | Stepper visual + state machine cliente. |
-| `RaceUploadZone` | **NUEVO** | `frontend/src/components/race/RaceUploadZone.tsx` | Clon simplificado de `MediaUploadZone` (sin thumbnails ni consent). |
-| `EventMetaForm` | **NUEVO** | `frontend/src/components/race/EventMetaForm.tsx` | React Hook Form + Zod sobre `EventMeta`. |
-| `MatchDecisionTable` | **NUEVO** | `frontend/src/components/race/MatchDecisionTable.tsx` | Clon visual de `AttendanceTable` con radios para top-3. |
-| `IngestReportCard` | **NUEVO** | `frontend/src/components/race/IngestReportCard.tsx` | Resumen visual de conteos + warnings. |
-| `RaceAnalysisPage` | **EXTENDIDO** | `frontend/src/routes/results/RaceAnalysisPage.tsx` | +1 tab "Cargar resultados". |
-| `api/raceImports.ts` | **NUEVO** | `frontend/src/api/raceImports.ts` | Wrappers axios para los 4 endpoints. |
+| `RaceImportUploadService` | **NEW** | `backend/app/services/race/importer/upload_service.py` | Orchestrates parse→dry-run→commit. Persists intermediate state in `RaceImport`. |
+| `pdf_parser.parse_*_pdf` | **REUSED** | `backend/app/services/race/pdf_parser.py` | No changes. Accepts `Path`; service writes to tmp and passes the path. |
+| `csv_parser.parse_results_csv` | **REUSED** | `backend/app/services/race/csv_parser.py` | No changes. |
+| `RaceIngestor.dry_run_event` | **NEW** (~30 LOC) | `backend/app/services/race/ingestor.py` | Same flow as `ingest_event` but `db.rollback()` at the end. Returns fictitious `IngestReport`. |
+| `RaceIngestor.ingest_event` | **REUSED** | `backend/app/services/race/ingestor.py` | No changes. |
+| `matcher.match_athletes` | **REUSED** | `backend/app/services/race/matcher.py` | Called from service to return top-3 to wizard. |
+| `storage_sftp.upload_bytes` | **REUSED** | `backend/app/services/training/storage_sftp.py` | Accepts any `bytes`; PDF works the same as JPG. |
+| `routers/race_analysis.py` | **EXTENDED** | `backend/app/routers/race_analysis.py` | +4 endpoints under `/api/race-analysis/imports/*`. |
+| `RaceUploadWizard` | **NEW** | `frontend/src/components/race/RaceUploadWizard.tsx` | Visual stepper + client state machine. |
+| `RaceUploadZone` | **NEW** | `frontend/src/components/race/RaceUploadZone.tsx` | Simplified clone of `MediaUploadZone` (without thumbnails or consent). |
+| `EventMetaForm` | **NEW** | `frontend/src/components/race/EventMetaForm.tsx` | React Hook Form + Zod on `EventMeta`. |
+| `MatchDecisionTable` | **NEW** | `frontend/src/components/race/MatchDecisionTable.tsx` | Visual clone of `AttendanceTable` with radios for top-3. |
+| `IngestReportCard` | **NEW** | `frontend/src/components/race/IngestReportCard.tsx` | Visual summary of counts + warnings. |
+| `RaceAnalysisPage` | **EXTENDED** | `frontend/src/routes/results/RaceAnalysisPage.tsx` | +1 tab "Load results". |
+| `api/raceImports.ts` | **NEW** | `frontend/src/api/raceImports.ts` | Axios wrappers for the 4 endpoints. |
 
 ### 2.3 Storage strategy
 
-| Aspecto | Decisión |
+| Aspect | Decision |
 |---|---|
-| Backend storage | `storage_sftp.upload_bytes` (FTPS Hostinger en prod, local en dev) |
+| Backend storage | `storage_sftp.upload_bytes` (FTPS Hostinger in prod, local in dev) |
 | Path convention | `race-imports/{series_id}/{event_id_or_pending}/{uuid}.{ext}` |
-| Filename original | Preservado en `RaceImport.filename` (200 chars). Nunca usado para construir path (anti path traversal). |
-| Retención | **Permanente** (sin TTL). Volumen estimado <50 MB para 5 temporadas. |
-| URL pública | Sí (igual que media de sesiones). Mitigación: UUID en path → path-guessing inviable. |
-| Cleanup PDFs huérfanos | Sólo aplica a `RaceImport.status=pending` con `created_at < NOW() - 24h` (ver §8). |
-| Cleanup en `dry-run` o `commit` fallido | NO eliminar PDF — útil para troubleshoot post-mortem. |
+| Original filename | Preserved in `RaceImport.filename` (200 chars). Never used to build path (anti path traversal). |
+| Retention | **Permanent** (no TTL). Estimated volume <50 MB for 5 seasons. |
+| Public URL | Yes (same as training session media). Mitigation: UUID in path → path-guessing unfeasible. |
+| Orphan PDF cleanup | Only applies to `RaceImport.status=pending` with `created_at < NOW() - 24h` (see §8). |
+| Cleanup on failed `dry-run` or `commit` | Do NOT delete PDF — useful for post-mortem troubleshooting. |
 
-### 2.4 Idempotencia: re-upload del mismo PDF
+### 2.4 Idempotency: re-uploading same PDF
 
-| Escenario | Status final | Comportamiento UI |
+| Scenario | Final status | UI behavior |
 |---|---|---|
-| SHA nuevo, parse OK | `pending` → `committed` | Wizard completa normal |
-| SHA ya existente en estado `committed` (mismo PDF, mismo coach o distinto) | **`parse` detecta en paso 1 y bloquea** | Banner amarillo: "Este PDF fue ingestado el YYYY-MM-DD por <coach>. ¿Forzar re-procesar?" (checkbox explícito; default off; requiere admin role para activar) |
-| SHA ya existente en estado `pending` (wizard abandonado) | Reutiliza el `RaceImport` existente | Wizard reanuda en paso 2 con datos persistidos |
-| SHA ya existente en estado `failed` | Permite re-intentar | Nuevo flujo desde paso 1 (no bloquea) |
-| PDF corregido (mismo válida, distinto sha) | Crea `RaceImport` nuevo; `RaceResult` skipea filas duplicadas vía UNIQUE | Wizard completa; banner informativo "Se encontraron N resultados ya existentes que no se actualizaron" |
+| New SHA, parse OK | `pending` → `committed` | Wizard completes normally |
+| SHA already existing with `committed` status (same PDF, same or different coach) | **`parse` detects in step 1 and blocks** | Yellow banner: "This PDF was ingested on YYYY-MM-DD by <coach>. Force re-process?" (explicit checkbox; default off; requires admin role to activate) |
+| SHA already existing with `pending` status (abandoned wizard) | Reuses existing `RaceImport` | Wizard resumes in step 2 with persisted data |
+| SHA already existing with `failed` status | Allows retry | New flow from step 1 (does not block) |
+| Corrected PDF (same round, different sha) | Creates new `RaceImport`; `RaceResult` skips duplicate rows via UNIQUE | Wizard completes; informational banner "N already-existing results were found and not updated" |
 
-**Nota clave:** la lógica de idempotencia ya está en `RaceIngestor.ingest_event` (ingestor.py:220-238). El nuevo `upload_service` solo añade el chequeo SHA en `parse` para UX temprana (evitar que el coach complete los 3 pasos si su PDF es duplicado).
+**Key note:** the idempotency logic is already in `RaceIngestor.ingest_event` (`ingestor.py:220-238`). The new `upload_service` only adds the SHA check in `parse` for early UX (avoid the coach completing all 3 steps if their PDF is a duplicate).
 
 ---
 
-## 3. Schema DB delta
+## 3. DB schema delta
 
-### 3.1 Migración Alembic necesaria
+### 3.1 Alembic migration needed
 
-**Sí.** Una migración delta sobre `race_imports`, todas las columnas **nullable o con default seguro** para no romper los 3 imports existentes de F1.7.
+**Yes.** A delta migration on `race_imports`, all columns **nullable or with safe default** to not break the 3 existing F1.7 imports.
 
-### 3.2 Columnas nuevas en `race_imports`
+### 3.2 New columns in `race_imports`
 
-| Columna | Tipo | Nullable | Default | Propósito |
+| Column | Type | Nullable | Default | Purpose |
 |---|---|---|---|---|
-| `event_id` | INT FK→`race_events.id ON DELETE SET NULL` | YES | NULL | Enlace directo al evento ingestado (evita JOIN indirecto vía `RaceResult.imported_from_id`). NULL para imports F1.7 legacy. |
-| `kind` | ENUM(`results`, `general`) | NO | `'results'` | Discrimina qué tipo de PDF (hoy un import puede tener ambos archivos asociados — ver §3.3 sobre estrategia 1-fila vs 2-filas). Default `results` para imports legacy. |
-| `storage_path` | VARCHAR(500) | YES | NULL | Path interno relativo en el backend storage. NULL para imports legacy. |
-| `storage_url` | VARCHAR(500) | YES | NULL | URL pública del PDF guardado. NULL para imports legacy. |
-| `general_filename` | VARCHAR(255) | YES | NULL | Filename original del GENERAL (si existe). NULL si solo se subió RESULTADOS. |
-| `general_sha256` | CHAR(64) | YES | NULL | SHA256 del GENERAL para deduplicación. NULL si no aplica. |
-| `general_storage_path` | VARCHAR(500) | YES | NULL | Path interno del GENERAL. |
-| `general_storage_url` | VARCHAR(500) | YES | NULL | URL pública del GENERAL. |
-| `parse_meta_json` | JSON | YES | NULL | Snapshot del `EventMeta` detectado/editado + matches preview, para reanudar wizard interrumpido. NULL post-commit. |
+| `event_id` | INT FK→`race_events.id ON DELETE SET NULL` | YES | NULL | Direct link to the ingested event (avoids indirect JOIN via `RaceResult.imported_from_id`). NULL for F1.7 legacy imports. |
+| `kind` | ENUM(`results`, `general`) | NO | `'results'` | Discriminates PDF type (today one import can have both files associated — see §3.3 on 1-row vs 2-rows strategy). Default `results` for legacy imports. |
+| `storage_path` | VARCHAR(500) | YES | NULL | Internal relative path in the backend storage. NULL for legacy imports. |
+| `storage_url` | VARCHAR(500) | YES | NULL | Public URL of the stored PDF. NULL for legacy imports. |
+| `general_filename` | VARCHAR(255) | YES | NULL | Original filename of GENERAL (if it exists). NULL if only RESULTS was uploaded. |
+| `general_sha256` | CHAR(64) | YES | NULL | SHA256 of GENERAL for deduplication. NULL if not applicable. |
+| `general_storage_path` | VARCHAR(500) | YES | NULL | Internal path of GENERAL. |
+| `general_storage_url` | VARCHAR(500) | YES | NULL | Public URL of GENERAL. |
+| `parse_meta_json` | JSON | YES | NULL | Snapshot of the detected/edited `EventMeta` + matches preview, to resume interrupted wizard. NULL post-commit. |
 
-**Decisión 1-fila vs 2-filas:** **1 fila por ingesta**, con columnas duplicadas `general_*` para el segundo archivo opcional. Razón: el dominio es "una ingesta = un evento + dos PDFs relacionados", no "una ingesta = un archivo". Esto evita JOINs adicionales para mostrar el histórico en UI y mantiene la transaccionalidad simple (1 commit = 1 fila).
+**1-row vs 2-rows decision:** **1 row per ingestion**, with duplicated `general_*` columns for the optional second file. Reason: the domain is "one ingestion = one event + two related PDFs", not "one ingestion = one file". This avoids additional JOINs to display history in UI and keeps transactionality simple (1 commit = 1 row).
 
-### 3.3 Índices nuevos
+### 3.3 New indexes
 
-| Índice | Columnas | Propósito |
+| Index | Columns | Purpose |
 |---|---|---|
-| `ix_race_imports_event` | `event_id` | Listar imports de un evento puntual (útil para auditoría) |
-| `ix_race_imports_general_sha` | `general_sha256` | Deduplicación del PDF GENERAL |
-| `ix_race_imports_status_created` | `(status, created_at DESC)` | Cleanup de `pending` viejos (ver §8) |
+| `ix_race_imports_event` | `event_id` | List imports of a specific event (useful for audit) |
+| `ix_race_imports_general_sha` | `general_sha256` | Deduplication of GENERAL PDF |
+| `ix_race_imports_status_created` | `(status, created_at DESC)` | Cleanup of old `pending` (see §8) |
 
-### 3.4 Migración Alembic — outline
+### 3.4 Alembic migration — outline
 
 ```
 revision: 8b9c0d1e2f3a
-down_revision: 64c263edd07f   # head F1.7
-description: Upload UI race PDFs — extender race_imports con event_id, kind, storage, general_*, parse_meta
+down_revision: 64c263edd07f   # F1.7 head
+description: Upload UI race PDFs — extend race_imports with event_id, kind, storage, general_*, parse_meta
 ```
 
-**Operaciones up:**
+**Up operations:**
 1. `ADD COLUMN event_id INT NULL, ADD CONSTRAINT fk_race_imports_event FOREIGN KEY (event_id) REFERENCES race_events(id) ON DELETE SET NULL`
 2. `ADD COLUMN kind ENUM('results','general') NOT NULL DEFAULT 'results'`
 3. `ADD COLUMN storage_path VARCHAR(500) NULL, storage_url VARCHAR(500) NULL`
 4. `ADD COLUMN general_filename VARCHAR(255) NULL, general_sha256 CHAR(64) NULL, general_storage_path VARCHAR(500) NULL, general_storage_url VARCHAR(500) NULL`
 5. `ADD COLUMN parse_meta_json JSON NULL`
-6. Crear índices listados.
+6. Create listed indexes.
 
-**Operaciones down:** drop columnas en orden inverso + drop FK + drop índices.
+**Down operations:** drop columns in reverse order + drop FK + drop indexes.
 
-**Compatibilidad legacy:** imports F1.7 quedan con `event_id=NULL`, `kind='results'`, todos los `storage_*` y `general_*` NULL. La UI de histórico (§4 endpoint 4) los muestra como "Import legacy" (sin link a descarga PDF).
+**Legacy compatibility:** F1.7 imports remain with `event_id=NULL`, `kind='results'`, all `storage_*` and `general_*` NULL. The history UI (§4 endpoint 4) shows them as "Legacy import" (without PDF download link).
 
 ---
 
-## 4. Contratos API
+## 4. API contracts
 
-Todos bajo prefix `/api/race-analysis/imports/` (coherente con `raceAnalysis.ts:24-32`).
+All under prefix `/api/race-analysis/imports/` (consistent with `raceAnalysis.ts:24-32`).
 
 ### 4.1 `POST /api/race-analysis/imports/parse`
 
-Sube los archivos, valida formato/tamaño/magic bytes, parsea, retorna preview + ID intermedio.
+Uploads files, validates format/size/magic bytes, parses, returns preview + intermediate ID.
 
 **Request:** `multipart/form-data`
-- `results_file: File` (requerido) — PDF o CSV
-- `general_file: File` (opcional) — PDF únicamente
+- `results_file: File` (required) — PDF or CSV
+- `general_file: File` (optional) — PDF only
 
 **Response 200:** `ImportParseResponse`
 ```python
@@ -241,62 +241,62 @@ class ImportParseResponse(BaseModel):
     results_filename: str
     general_filename: str | None
     detected_header: EventHeaderPreview | None  # valida_num + location + date
-    categories_found: list[str]  # ej. ["INF-A-M", "PJUV-B-F", ...]
+    categories_found: list[str]  # e.g. ["INF-A-M", "PJUV-B-F", ...]
     total_rows_results: int
     total_rows_general: int | None
     warnings: list[ParseWarning]
-    duplicate_warning: DuplicateImportInfo | None  # si SHA ya commited
+    duplicate_warning: DuplicateImportInfo | None  # if SHA already committed
 ```
 
 **RBAC:** `Depends(require_role([UserRole.admin, UserRole.coach]))`
 
-**Errores:**
-| Código | Razón |
+**Errors:**
+| Code | Reason |
 |---|---|
-| 400 | Archivo vacío, extensión no soportada, mismo SHA en results y general |
-| 403 | Rol parent o no autenticado |
-| 413 | Archivo > 8 MB (settings `race_max_pdf_mb`) |
-| 415 | Content-type no aceptado o magic bytes inválidos (`%PDF-` no encontrado / CSV no UTF-8) |
-| 422 | PDF malformado: parser no extrae categorías reconocibles |
-| 500 | Fallo storage o BD |
+| 400 | Empty file, unsupported extension, same SHA in results and general |
+| 403 | Parent role or not authenticated |
+| 413 | File > 8 MB (settings `race_max_pdf_mb`) |
+| 415 | Unaccepted content-type or invalid magic bytes (`%PDF-` not found / CSV not UTF-8) |
+| 422 | Malformed PDF: parser extracts no recognizable categories |
+| 500 | Storage or DB failure |
 
 ### 4.2 `POST /api/race-analysis/imports/{parse_id}/dry-run`
 
-Ejecuta `RaceIngestor.dry_run_event` con la metadata + decisiones del coach. Rollbacks al final, retorna `IngestReport` previo.
+Executes `RaceIngestor.dry_run_event` with metadata + coach decisions. Rolls back at end, returns prior `IngestReport`.
 
 **Request:** `application/json`
 ```python
 class ImportDryRunRequest(BaseModel):
-    event_meta: EventMeta  # schema existente de F1.7
+    event_meta: EventMeta  # existing schema from F1.7
     match_decisions: dict[str, int | None]  # {"BIB-42": 17, "BIB-99": None, ...}
-    force_reingest: bool = False  # solo admin puede setear true
+    force_reingest: bool = False  # only admin can set true
 ```
 
 **Response 200:** `ImportDryRunResponse`
 ```python
 class ImportDryRunResponse(BaseModel):
     parse_id: int
-    report: IngestReport  # esquema existente: competitors_*, results_*, tyr_count, warnings
-    matches_preview: list[MatchPreview]  # snapshot final de decisiones para confirmar
+    report: IngestReport  # existing schema: competitors_*, results_*, tyr_count, warnings
+    matches_preview: list[MatchPreview]  # final decisions snapshot to confirm
     will_create_event: bool
     will_update_event_id: int | None
 ```
 
-**RBAC:** `Depends(require_role([UserRole.admin, UserRole.coach]))` + verificar `parse_id` pertenece al user (o role admin).
+**RBAC:** `Depends(require_role([UserRole.admin, UserRole.coach]))` + verify `parse_id` belongs to user (or admin role).
 
-**Errores:**
-| Código | Razón |
+**Errors:**
+| Code | Reason |
 |---|---|
-| 400 | `EventMeta` inválido (valida_num fuera de rango, temperature fuera de rango) |
-| 403 | `parse_id` pertenece a otro coach |
-| 404 | `parse_id` no existe o ya está `committed`/`failed` |
-| 409 | SHA duplicado y `force_reingest=False` |
-| 422 | Categoría desconocida en seed (bloqueante) |
-| 500 | Fallo BD |
+| 400 | Invalid `EventMeta` (valida_num out of range, temperature out of range) |
+| 403 | `parse_id` belongs to another coach |
+| 404 | `parse_id` doesn't exist or already `committed`/`failed` |
+| 409 | SHA duplicate and `force_reingest=False` |
+| 422 | Unknown category in seed (blocking) |
+| 500 | DB failure |
 
 ### 4.3 `POST /api/race-analysis/imports/{parse_id}/commit`
 
-Ejecuta `RaceIngestor.ingest_event` definitivo + sube ambos PDFs a storage + actualiza `RaceImport` con `event_id`, `storage_*`, `status=committed`.
+Executes `RaceIngestor.ingest_event` definitively + uploads both PDFs to storage + updates `RaceImport` with `event_id`, `storage_*`, `status=committed`.
 
 **Request:** `application/json`
 ```python
@@ -304,7 +304,7 @@ class ImportCommitRequest(BaseModel):
     event_meta: EventMeta
     match_decisions: dict[str, int | None]
     force_reingest: bool = False
-    confirm: bool  # debe ser True; guarda contra commits accidentales
+    confirm: bool  # must be True; guard against accidental commits
 ```
 
 **Response 200:** `ImportCommitResponse`
@@ -314,30 +314,30 @@ class ImportCommitResponse(BaseModel):
     event_id: int
     series_id: int
     report: IngestReport
-    storage_url_results: str | None  # NULL si fallback local en dev
+    storage_url_results: str | None  # NULL if local fallback in dev
     storage_url_general: str | None
 ```
 
-**RBAC:** mismo que dry-run + verificar `confirm=True`.
+**RBAC:** same as dry-run + verify `confirm=True`.
 
-**Errores:**
-| Código | Razón |
+**Errors:**
+| Code | Reason |
 |---|---|
-| 400 | `confirm=False` o request schema inválido |
-| 403 | `parse_id` no pertenece al user |
-| 404 | `parse_id` no existe |
-| 409 | SHA duplicado y `force_reingest=False` |
-| 422 | Validación BD (categoría desconocida) |
-| 500 | Fallo storage (con rollback de la transacción de ingesta) |
+| 400 | `confirm=False` or invalid request schema |
+| 403 | `parse_id` doesn't belong to user |
+| 404 | `parse_id` doesn't exist |
+| 409 | SHA duplicate and `force_reingest=False` |
+| 422 | DB validation (unknown category) |
+| 500 | Storage failure (with ingestion transaction rollback) |
 
-**Comportamiento crítico:** si el upload a storage falla **después** del `db.commit()`, el endpoint retorna 500 pero los datos quedan en BD. Mitigación: subir PDFs **antes** del commit final del ingestor; si storage falla, abortar antes de commit BD (ver flujo §4.5).
+**Critical behavior:** if storage upload fails **after** `db.commit()`, the endpoint returns 500 but data remains in DB. Mitigation: upload PDFs **before** the ingestor's final commit; if storage fails, abort before DB commit (see flow §4.5).
 
 ### 4.4 `GET /api/race-analysis/imports/recent`
 
-Lista de imports recientes para el tab histórico.
+List of recent imports for the history tab.
 
 **Query params:**
-- `series_id: int | None` (default = series activa 2026)
+- `series_id: int | None` (default = active series 2026)
 - `limit: int = 20` (max 100)
 - `status: RaceImportStatus | None` (default = `committed`)
 
@@ -346,7 +346,7 @@ Lista de imports recientes para el tab histórico.
 class ImportListItem(BaseModel):
     id: int
     event_id: int | None
-    event_name: str | None  # ej. "Válida IV — Cali"
+    event_name: str | None  # e.g. "Round IV — Cali"
     valida_num: int | None
     event_date: date | None
     status: RaceImportStatus
@@ -357,14 +357,14 @@ class ImportListItem(BaseModel):
     imported_by_user_id: int
     imported_by_name: str
     imported_at: datetime
-    stats: dict | None  # snapshot de IngestReport
+    stats: dict | None  # snapshot of IngestReport
 ```
 
 **RBAC:** `Depends(require_role([UserRole.admin, UserRole.coach]))`.
 
-**Errores:** estándar (400 query inválida, 403 sin rol, 500 BD).
+**Errors:** standard (400 invalid query, 403 no role, 500 DB).
 
-### 4.5 Flujo interno orquestador (commit endpoint)
+### 4.5 Internal orchestrator flow (commit endpoint)
 
 ```mermaid
 sequenceDiagram
@@ -378,19 +378,19 @@ sequenceDiagram
     FE->>API: POST /imports/{id}/commit
     API->>SVC: commit(parse_id, event_meta, decisions)
     SVC->>DB: SELECT RaceImport WHERE id=... AND status=pending
-    SVC->>SVC: re-parsea desde storage_path o tmp si no hay (idempotente)
+    SVC->>SVC: re-parses from storage_path or tmp if not available (idempotent)
     SVC->>STO: upload_bytes(results_pdf, "race-imports/{series_id}/{uuid}.pdf")
     STO-->>SVC: (storage_path, storage_url)
-    alt general_pdf existe
+    alt general_pdf exists
         SVC->>STO: upload_bytes(general_pdf, ...)
     end
     SVC->>ING: ingest_event(meta, results, general, decisions, shas, user_id)
     ING->>DB: BEGIN
     ING->>DB: upsert series, event, competitors, results
-    ING->>DB: INSERT RaceImport con storage_*, event_id, status=committed
+    ING->>DB: INSERT RaceImport with storage_*, event_id, status=committed
     ING->>DB: COMMIT
     ING-->>SVC: IngestReport
-    alt error en cualquier paso ING
+    alt error in any ING step
         ING->>DB: ROLLBACK
         SVC->>STO: delete_object(storage_path) (best-effort)
         SVC-->>API: 500
@@ -399,177 +399,177 @@ sequenceDiagram
     API-->>FE: 200
 ```
 
-**Nota clave:** los PDFs se suben **antes** del `db.commit()` final. Si BD falla, el service intenta `delete_object` (best-effort, log si falla). Si storage falla, abortamos antes de tocar BD. Esto evita inconsistencias storage⇆BD del 99% de los casos; el 1% restante (storage delete falla post-rollback) queda como huérfano detectable en cleanup nocturno.
+**Key note:** PDFs are uploaded **before** the final `db.commit()`. If DB fails, the service attempts `delete_object` (best-effort, log if fails). If storage fails, abort before touching DB. This avoids storage⇆DB inconsistencies 99% of the time; the remaining 1% (storage delete fails post-rollback) remains as an orphan detectable in the nightly cleanup.
 
 ---
 
-## 5. UI / UX flow detallado
+## 5. Detailed UI/UX flow
 
-### 5.1 Ubicación: tab nueva en `RaceAnalysisPage`
+### 5.1 Location: new tab in `RaceAnalysisPage`
 
-Insertar como **segunda tab** entre "Nuevo análisis" y "Runs activos":
+Insert as **second tab** between "New analysis" and "Active runs":
 
-| Pos | Tab actual | Cambio |
+| Pos | Current tab | Change |
 |---|---|---|
-| 1 | Nuevo análisis (`new`) | Sin cambios |
-| 2 | **Cargar resultados (`upload`)** | **NUEVA** |
-| 3 | Runs activos (`active`) | Sin cambios |
-| 4 | Histórico (`history`) | Sin cambios MVP. Futuro: integrar tabla `RaceImport` aquí. |
+| 1 | New analysis (`new`) | No changes |
+| 2 | **Load results (`upload`)** | **NEW** |
+| 3 | Active runs (`active`) | No changes |
+| 4 | History (`history`) | No changes MVP. Future: integrate `RaceImport` table here. |
 
-**Razón:** la carga es el paso lógicamente previo al análisis. Mantener tabs separados (no submenu) preserva navegación con teclado y deep-link (`?tab=upload`).
+**Reason:** loading is the logically prior step to analysis. Maintaining separate tabs (not submenu) preserves keyboard navigation and deep-link (`?tab=upload`).
 
-### 5.2 Wizard 3 pasos — mockups ASCII
+### 5.2 Wizard 3 steps — ASCII mockups
 
-**Paso 1 — Upload**
+**Step 1 — Upload**
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║ Cargar resultados Copa Valle                                 ║
-║ Paso 1 de 3: Selecciona los archivos                         ║
+║ Load Copa Valle results                                      ║
+║ Step 1 of 3: Select files                                    ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
-║  RESULTADOS (PDF o CSV)                          [requerido] ║
+║  RESULTS (PDF or CSV)                           [required]   ║
 ║  ┌────────────────────────────────────────────────────────┐  ║
 ║  │                                                        │  ║
-║  │     [+] Arrastra el archivo o haz clic                 │  ║
-║  │         Máximo 8 MB · .pdf .csv .tsv                   │  ║
+║  │     [+] Drag file or click                             │  ║
+║  │         Maximum 8 MB · .pdf .csv .tsv                  │  ║
 ║  │                                                        │  ║
 ║  └────────────────────────────────────────────────────────┘  ║
 ║                                                              ║
-║  GENERAL (solo PDF)                              [opcional]  ║
+║  GENERAL (PDF only)                             [optional]   ║
 ║  ┌────────────────────────────────────────────────────────┐  ║
 ║  │                                                        │  ║
-║  │     [+] Arrastra el archivo o haz clic                 │  ║
-║  │         Máximo 8 MB · .pdf                             │  ║
+║  │     [+] Drag file or click                             │  ║
+║  │         Maximum 8 MB · .pdf                            │  ║
 ║  │                                                        │  ║
 ║  └────────────────────────────────────────────────────────┘  ║
 ║                                                              ║
-║                                  [Analizar archivos →]       ║
+║                                  [Analyze files →]           ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-**Estado post-parse (success):**
+**Post-parse state (success):**
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║ Paso 1 de 3: Archivos analizados ✓                           ║
+║ Step 1 of 3: Files analyzed ✓                                ║
 ╠══════════════════════════════════════════════════════════════╣
-║  ✓ RESULTADOS: valida_iv_2026_resultados.pdf (246 KB)        ║
+║  ✓ RESULTS: valida_iv_2026_resultados.pdf (246 KB)           ║
 ║    SHA: 7f3a...b2c1                                          ║
-║    26 categorías · 227 corredores                            ║
+║    26 categories · 227 riders                                ║
 ║                                                              ║
 ║  ✓ GENERAL: valida_iv_2026_general.pdf (160 KB)              ║
-║    SHA: 9b8c...4f0e · 339 filas                              ║
+║    SHA: 9b8c...4f0e · 339 rows                               ║
 ║                                                              ║
-║  ℹ Header detectado: Válida IV · Cali · 17 may 2026          ║
+║  ℹ Header detected: Round IV · Cali · 17 May 2026            ║
 ║                                                              ║
-║  [Cambiar archivos]                  [Continuar al paso 2 →] ║
+║  [Change files]                  [Continue to step 2 →]      ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-**Estado SHA duplicado:**
+**SHA duplicate state:**
 ```
-║  ⚠ Este PDF ya fue ingestado el 2026-05-12 por entrenador.   ║
-║    Resultado: 224 inserciones, 3 skipped.                    ║
-║    Re-procesar generará 0 inserciones nuevas (idempotente).  ║
+║  ⚠ This PDF was already ingested on 2026-05-12 by coach.    ║
+║    Result: 224 insertions, 3 skipped.                        ║
+║    Re-processing will generate 0 new insertions (idempotent).║
 ║                                                              ║
-║    [ ] Forzar re-ingesta (solo admin, requiere confirmación) ║
+║    [ ] Force re-ingestion (admin only, requires confirmation)║
 ║                                                              ║
-║  [Cambiar archivos]                  [Continuar al paso 2 →] ║
+║  [Change files]                  [Continue to step 2 →]      ║
 ```
 
-**Paso 2 — Confirmar metadata + matches**
+**Step 2 — Confirm metadata + matches**
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║ Paso 2 de 3: Confirma datos del evento                       ║
+║ Step 2 of 3: Confirm event data                              ║
 ╠══════════════════════════════════════════════════════════════╣
-║  DATOS DEL EVENTO                                            ║
+║  EVENT DATA                                                  ║
 ║  ┌────────────────────────────────────────────────────────┐  ║
-║  │ Válida #   [IV  ▼]   Fecha [2026-05-17]                │  ║
-║  │ Ciudad     [Cali_______________________]               │  ║
-║  │ Clima      [Soleado ▼]   Temp °C  [24]                 │  ║
-║  │ Superficie [Seca    ▼]   Altitud [1000] msnm           │  ║
-║  │ Notas      [_____________________________________]     │  ║
+║  │ Round #   [IV  ▼]   Date [2026-05-17]                  │  ║
+║  │ City       [Cali_______________________]               │  ║
+║  │ Weather    [Sunny ▼]   Temp °C  [24]                   │  ║
+║  │ Surface    [Dry    ▼]   Altitude [1000] masl            │  ║
+║  │ Notes      [_____________________________________]     │  ║
 ║  └────────────────────────────────────────────────────────┘  ║
 ║                                                              ║
-║  ATLETAS TYR — Confirma matches (3 detectados)               ║
+║  TYR ATHLETES — Confirm matches (3 detected)                 ║
 ║  ┌──────┬──────────────────────┬──────────────────────────┐  ║
-║  │ Bib  │ Nombre PDF           │ Match propuesto          │  ║
+║  │ Bib  │ Name in PDF          │ Proposed match           │  ║
 ║  ├──────┼──────────────────────┼──────────────────────────┤  ║
 ║  │ 042  │ JUAN PEREZ MORA      │ ● Juan Pérez (PJUV-B)    │  ║
-║  │      │ PJUV-B-M             │   score: 95 · edad 13.2  │  ║
+║  │      │ PJUV-B-M             │   score: 95 · age 13.2   │  ║
 ║  │      │                      │ ○ Juan Pérez R (INF-A)   │  ║
-║  │      │                      │ ○ No es atleta TyR       │  ║
+║  │      │                      │ ○ Not a TyR athlete      │  ║
 ║  ├──────┼──────────────────────┼──────────────────────────┤  ║
-║  │ 089  │ MARIA GONZALEZ TAPIA │ ○ Sin coincidencia       │  ║
-║  │      │ INF-A-F              │ ● Pendiente — crear      │  ║
-║  │      │                      │   atleta después         │  ║
+║  │ 089  │ MARIA GONZALEZ TAPIA │ ○ No match               │  ║
+║  │      │ INF-A-F              │ ● Pending — create       │  ║
+║  │      │                      │   athlete later          │  ║
 ║  └──────┴──────────────────────┴──────────────────────────┘  ║
 ║                                                              ║
-║  WARNINGS DEL PARSER (no bloqueantes)                        ║
-║  ⚠ 2 tiempos anómalos (<25 min en INF-A) — revisar manual    ║
+║  PARSER WARNINGS (non-blocking)                              ║
+║  ⚠ 2 anomalous times (<25 min in INF-A) — check manually     ║
 ║                                                              ║
-║                          [← Atrás]   [Vista previa final →]  ║
+║                          [← Back]   [Final preview →]        ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-**Paso 3 — Preview & commit**
+**Step 3 — Preview & commit**
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║ Paso 3 de 3: Vista previa del registro                       ║
+║ Step 3 of 3: Record preview                                  ║
 ╠══════════════════════════════════════════════════════════════╣
-║  📊 RESUMEN PREVIO (no se ha guardado nada todavía)          ║
+║  📊 PRIOR SUMMARY (nothing has been saved yet)               ║
 ║  ┌────────────────────────────────────────────────────────┐  ║
-║  │ Evento:           Válida IV — Cali (NUEVO)             │  ║
-║  │ Categorías:       26 (todas reconocidas)               │  ║
-║  │ Competidores:                                          │  ║
-║  │   • Nuevos a crear:        198                         │  ║
-║  │   • Existentes actualizar:  29                         │  ║
-║  │ Resultados:                                            │  ║
-║  │   • A insertar:            225                         │  ║
-║  │   • Skipped (duplicados):    2                         │  ║
-║  │ Atletas TyR vinculados:      3 / 5                     │  ║
-║  │   (2 quedan sin atleta — el coach las creará después)  │  ║
+║  │ Event:             Round IV — Cali (NEW)               │  ║
+║  │ Categories:        26 (all recognized)                 │  ║
+║  │ Competitors:                                           │  ║
+║  │   • New to create:         198                         │  ║
+║  │   • Existing to update:     29                         │  ║
+║  │ Results:                                               │  ║
+║  │   • To insert:             225                         │  ║
+║  │   • Skipped (duplicates):    2                         │  ║
+║  │ Linked TyR athletes:         3 / 5                     │  ║
+║  │   (2 remain without athlete — coach will create later) │  ║
 ║  └────────────────────────────────────────────────────────┘  ║
 ║                                                              ║
-║  ⚠ Esta acción es irreversible vía UI. Para corregir         ║
-║    necesitarás ejecutar SQL manual o re-subir PDF corregido. ║
+║  ⚠ This action is irreversible via UI. To correct            ║
+║    you will need to run manual SQL or re-upload fixed PDF.   ║
 ║                                                              ║
-║  [✓] Confirmo que los datos son correctos                    ║
+║  [✓] I confirm the data is correct                           ║
 ║                                                              ║
-║                  [← Editar paso 2]   [Confirmar e ingestar]  ║
+║                  [← Edit step 2]   [Confirm and ingest]      ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-**Estado post-commit (success):**
+**Post-commit state (success):**
 ```
-║  ✓ Ingesta completada                                        ║
+║  ✓ Ingestion complete                                        ║
 ║                                                              ║
-║  Evento creado: Válida IV — Cali (ID 4)                      ║
-║  198 competidores · 225 resultados · 3 atletas TyR           ║
+║  Event created: Round IV — Cali (ID 4)                       ║
+║  198 competitors · 225 results · 3 TyR athletes              ║
 ║                                                              ║
-║  📄 Descargar PDF guardado:                                  ║
-║     • [Resultados.pdf]    • [General.pdf]                    ║
+║  📄 Download stored PDF:                                     ║
+║     • [Results.pdf]    • [General.pdf]                       ║
 ║                                                              ║
-║  [Cargar otro archivo]    [Ir a Nuevo análisis →]            ║
+║  [Load another file]    [Go to New analysis →]               ║
 ```
 
-### 5.3 Decisión: dónde resolver matches ambiguos
+### 5.3 Decision: where to resolve ambiguous matches
 
-**Decisión:** **inline en paso 2 del wizard**, no en modal separado.
+**Decision:** **inline in wizard step 2**, not in a separate modal.
 
-**Razón:**
-- Los matches ambiguos son raros (typical: 0-2 por válida). Modal sería overkill.
-- Mantener contexto visual (bib + nombre PDF + score) sin saltar de pantalla.
-- Patrón visual `AttendanceTable` ya validado con coach (F1.5).
+**Reason:**
+- Ambiguous matches are rare (typical: 0-2 per round). Modal would be overkill.
+- Maintain visual context (bib + PDF name + score) without switching screens.
+- Visual pattern `AttendanceTable` already validated with coach (F1.5).
 
-**Excepción:** si hay >10 matches ambiguos (escenario edge si una válida tiene muchos atletas TyR nuevos), la tabla scrollea internamente y se agrega un filtro "Solo pendientes" — sin abrir modal.
+**Exception:** if there are >10 ambiguous matches (edge scenario if a round has many new TyR athletes), the table scrolls internally and a "Only pending" filter is added — without opening a modal.
 
-### 5.4 Componente `RaceUploadZone` vs reusar `MediaUploadZone`
+### 5.4 Component `RaceUploadZone` vs reusing `MediaUploadZone`
 
-**Decisión:** **crear `RaceUploadZone` específico**.
+**Decision:** **create specific `RaceUploadZone`**.
 
-**Razón:** `MediaUploadZone` tiene branching para photo/video/route con campos extras (caption, athlete_ids, consent_ack) que no aplican a PDFs. Forzar su reuso introduce flags booleanos y código muerto. Mejor crear un componente simplificado (estimado 60 LOC vs 280 de MediaUploadZone) y compartir solo el patrón de drag&drop + `data-testid` conventions.
+**Reason:** `MediaUploadZone` has branching for photo/video/route with extra fields (caption, athlete_ids, consent_ack) that don't apply to PDFs. Forcing its reuse introduces boolean flags and dead code. Better to create a simplified component (estimated 60 LOC vs 280 of MediaUploadZone) and share only the drag&drop pattern + `data-testid` conventions.
 
-### 5.5 State machine cliente del wizard
+### 5.5 Client state machine for wizard
 
 ```mermaid
 stateDiagram-v2
@@ -578,13 +578,13 @@ stateDiagram-v2
     Step1Parsing --> Step1Error: 4xx/5xx
     Step1Error --> Step1Idle: retry
     Step1Parsing --> Step1Success: parse OK
-    Step1Success --> Step1Duplicate: SHA duplicado
-    Step1Duplicate --> Step2: forzar=true (admin)
+    Step1Success --> Step1Duplicate: SHA duplicate
+    Step1Duplicate --> Step2: force=true (admin)
     Step1Success --> Step2: next
     Step2 --> Step2Validating: dry-run
     Step2Validating --> Step2Success: OK
     Step2Validating --> Step2Error: 4xx
-    Step2Error --> Step2: editar
+    Step2Error --> Step2: edit
     Step2Success --> Step3
     Step3 --> Step3Committing: confirm
     Step3Committing --> Done: 200
@@ -597,23 +597,23 @@ stateDiagram-v2
 
 ## 6. Security checklist
 
-Estado de cada hallazgo del research en el diseño propuesto:
+State of each research finding in the proposed design:
 
-| Control | Estado | Cómo se cumple |
+| Control | Status | How it's covered |
 |---|---|---|
-| **Magic bytes PDF** | ✅ Cubierto | Service valida `bytes[0:5] == b"%PDF-"` antes de escribir a tmp. Reject 415 si no coincide. |
-| **Magic bytes CSV** | ✅ Cubierto | Validar `bytes.decode('utf-8')` exitoso + primera línea contiene delimitador esperado (`,`, `;`, o `\t`). Reject 415. |
-| **Tamaño máx PDF** | ✅ Cubierto | `settings.race_max_pdf_mb = 8` (default). Enforced en endpoint via `raw = await file.read(max_bytes + 1)` (patrón validado `training_sessions.py:740-755`). Reject 413. |
-| **Anti-XXE** | ⚠️ Aceptado | `pdfplumber`/`pdfminer` procesan PDF binario, no XML externo. Riesgo XXE indirecto bajo. Documentar como riesgo aceptado en `risk-register`. |
-| **Path traversal en filename** | ✅ Cubierto | Filename original guardado en `RaceImport.filename`. Path construido server-side: `race-imports/{series_id}/{uuid}.{ext}`. Nunca se usa `file.filename` para construir paths. |
-| **RBAC** | ✅ Cubierto | Todos los endpoints: `Depends(require_role([UserRole.admin, UserRole.coach]))`. `force_reingest=True` adicional `Depends(require_role([UserRole.admin]))`. |
-| **Ownership cross-coach** | ✅ Cubierto | Dry-run y commit verifican `RaceImport.imported_by_user_id == current_user.id` salvo admin. Reject 403. |
-| **Rate limiting** | ⚠️ Opcional MVP | No hay middleware global. Upload es operación poco frecuente (1-2/mes). Sugerencia post-MVP: in-memory cap de 5 parses/min por user_id (patrón notificaciones). Riesgo aceptable sin esto. |
-| **Sandbox parsing** | ⚠️ Aceptado | `pdfplumber` corre in-process. Mitigación: try/except amplio en service + timeout `asyncio.wait_for(..., timeout=30)` en parse (fallar como 422 "PDF demasiado complejo"). |
-| **Auditoría del subidor** | ✅ Cubierto | `RaceImport.imported_by_user_id` ya existe + log estructurado: `logger.info("race_pdf_uploaded user_id=%d sha=%s kind=%s", ...)` sin PII. |
-| **Logs sin PII** | ✅ Cubierto | Service usa `bib + cat_code` para warnings, nunca nombres. Sigue convención inviolable CLAUDE.md. |
-| **HTTPS** | ✅ Cubierto | Render free tier expone TLS por default. Storage SFTP usa FTPS (TLS sin verificación, aceptado por proyecto). |
-| **Forzar re-ingesta solo admin** | ✅ Cubierto | `force_reingest=True` requiere `require_role([UserRole.admin])` adicional en endpoint dry-run y commit. |
+| **Magic bytes PDF** | ✅ Covered | Service validates `bytes[0:5] == b"%PDF-"` before writing to tmp. Reject 415 if doesn't match. |
+| **Magic bytes CSV** | ✅ Covered | Validate `bytes.decode('utf-8')` successful + first line contains expected delimiter (`,`, `;`, or `\t`). Reject 415. |
+| **Max PDF size** | ✅ Covered | `settings.race_max_pdf_mb = 8` (default). Enforced in endpoint via `raw = await file.read(max_bytes + 1)` (validated pattern `training_sessions.py:740-755`). Reject 413. |
+| **Anti-XXE** | ⚠️ Accepted | `pdfplumber`/`pdfminer` process PDF binary, not external XML. Low indirect XXE risk. Document as accepted risk in `risk-register`. |
+| **Path traversal in filename** | ✅ Covered | Original filename stored in `RaceImport.filename`. Path built server-side: `race-imports/{series_id}/{uuid}.{ext}`. `file.filename` is never used to build paths. |
+| **RBAC** | ✅ Covered | All endpoints: `Depends(require_role([UserRole.admin, UserRole.coach]))`. Additional `Depends(require_role([UserRole.admin]))` for `force_reingest=True`. |
+| **Cross-coach ownership** | ✅ Covered | Dry-run and commit verify `RaceImport.imported_by_user_id == current_user.id` unless admin. Reject 403. |
+| **Rate limiting** | ⚠️ Optional MVP | No global middleware. Upload is an infrequent operation (1-2/month). Suggestion post-MVP: in-memory cap of 5 parses/min per user_id (notifications pattern). Acceptable risk without it. |
+| **Parsing sandbox** | ⚠️ Accepted | `pdfplumber` runs in-process. Mitigation: broad try/except in service + timeout `asyncio.wait_for(..., timeout=30)` on parse (fail as 422 "PDF too complex"). |
+| **Upload auditor** | ✅ Covered | `RaceImport.imported_by_user_id` already exists + structured log: `logger.info("race_pdf_uploaded user_id=%d sha=%s kind=%s", ...)` without PII. |
+| **Logs without PII** | ✅ Covered | Service uses `bib + cat_code` for warnings, never names. Follows inviolable CLAUDE.md convention. |
+| **HTTPS** | ✅ Covered | Render free tier exposes TLS by default. Storage SFTP uses FTPS (TLS without verification, accepted by project). |
+| **Force re-ingestion admin only** | ✅ Covered | `force_reingest=True` requires additional `require_role([UserRole.admin])` in dry-run and commit endpoints. |
 
 ---
 
@@ -621,76 +621,76 @@ Estado de cada hallazgo del research en el diseño propuesto:
 
 ### 7.1 Backend — pytest
 
-**Cobertura target:** ≥90% en `services/race/importer/upload_service.py`, ≥85% en endpoints nuevos de `routers/race_analysis.py`.
+**Coverage target:** ≥90% in `services/race/importer/upload_service.py`, ≥85% in new endpoints of `routers/race_analysis.py`.
 
 **Test plan:**
 
-| Categoría | Tests | Fixtures |
+| Category | Tests | Fixtures |
 |---|---|---|
-| `upload_service` happy path | parse → dry-run → commit con PDFs reales | `valida_iv_2026_resultados.pdf`, `valida_iv_2026_general.pdf` (ya existen) |
-| `upload_service` magic bytes | rejection de archivo `.pdf` con contenido HTML; rejection CSV con caracteres no-UTF-8 | `fixtures/race/fake_pdf.txt`, `fixtures/race/fake_csv.bin` (a crear) |
-| `upload_service` size cap | rejection cuando body > `race_max_pdf_mb + 1` | PDF inflado a 9 MB (generar in-memory) |
-| `upload_service` idempotencia | re-parse mismo SHA → retorna `duplicate_warning` no-bloqueante; commit con `force=false` rejects 409 | fixture reusada |
-| `upload_service` dry-run rollback | mock `db.commit` para detectar que NO se llama; validar `db.rollback` sí se llama | `FakeAsyncSession` existente |
-| `upload_service` storage failure | mock `storage_sftp.upload_bytes` lanza `RuntimeError` → 500 + rollback BD | mock pytest |
-| `upload_service` reanudar pending | iniciar parse, abandonar; re-parse mismo SHA → reusa `RaceImport.id=pending` | fixture |
-| Endpoints — RBAC | parent rol → 403 en los 4 endpoints; coach distinto → 403 en dry-run/commit con `parse_id` ajeno | TestClient con tokens dummy |
-| Endpoints — happy path | TestClient flujo completo con dependency override sobre `RaceIngestor` | `valida_iv_2026_*.pdf` |
-| Endpoints — error mapping | cada código HTTP del contrato corresponde a su trigger | mocks |
-| Endpoints — cleanup pending | scheduled task elimina `RaceImport.status='pending' AND created_at < NOW()-24h` | freezegun |
+| `upload_service` happy path | parse → dry-run → commit with real PDFs | `valida_iv_2026_resultados.pdf`, `valida_iv_2026_general.pdf` (already exist) |
+| `upload_service` magic bytes | rejection of `.pdf` file with HTML content; rejection of CSV with non-UTF-8 characters | `fixtures/race/fake_pdf.txt`, `fixtures/race/fake_csv.bin` (to create) |
+| `upload_service` size cap | rejection when body > `race_max_pdf_mb + 1` | PDF inflated to 9 MB (generate in-memory) |
+| `upload_service` idempotency | re-parse same SHA → returns non-blocking `duplicate_warning`; commit with `force=false` rejects 409 | reused fixture |
+| `upload_service` dry-run rollback | mock `db.commit` to detect it is NOT called; validate `db.rollback` IS called | Existing `FakeAsyncSession` |
+| `upload_service` storage failure | mock `storage_sftp.upload_bytes` raises `RuntimeError` → 500 + DB rollback | pytest mock |
+| `upload_service` resume pending | start parse, abandon; re-parse same SHA → reuses `RaceImport.id=pending` | fixture |
+| Endpoints — RBAC | parent role → 403 on all 4 endpoints; different coach → 403 on dry-run/commit with foreign `parse_id` | TestClient with dummy tokens |
+| Endpoints — happy path | TestClient full flow with dependency override on `RaceIngestor` | `valida_iv_2026_*.pdf` |
+| Endpoints — error mapping | each HTTP code from contract corresponds to its trigger | mocks |
+| Endpoints — cleanup pending | scheduled task deletes `RaceImport.status='pending' AND created_at < NOW()-24h` | freezegun |
 
-**Fixtures nuevos a crear:**
-- `tests/fixtures/race/fake_pdf.txt` (200 bytes, primera línea NO `%PDF-`)
-- `tests/fixtures/race/fake_csv.bin` (200 bytes binarios, no decodificable UTF-8)
-- `tests/fixtures/race/oversized.pdf.gz` (8.5 MB descomprimido — generado on-the-fly en fixture)
+**New fixtures to create:**
+- `tests/fixtures/race/fake_pdf.txt` (200 bytes, first line NOT `%PDF-`)
+- `tests/fixtures/race/fake_csv.bin` (200 binary bytes, not UTF-8 decodable)
+- `tests/fixtures/race/oversized.pdf.gz` (8.5 MB decompressed — generated on-the-fly in fixture)
 
 ### 7.2 Frontend — vitest + RTL
 
-**Cobertura target:** ≥85% statements en componentes nuevos.
+**Coverage target:** ≥85% statements in new components.
 
 **Test plan:**
 
-| Categoría | Tests | Mocks |
+| Category | Tests | Mocks |
 |---|---|---|
-| `RaceUploadZone` | render dropzone idle; drag-over visual; click → file picker; validación extensión + tamaño cliente | `File` constructor + mock event |
-| `EventMetaForm` | render con datos pre-fill desde paso 1; validación Zod (valida_num 1-7 ∪ 99, temp -10/50); submit ejecuta callback con payload válido | RHF + Zod en tiempo real |
-| `MatchDecisionTable` | render N filas; cambiar radio actualiza state; "Solo pendientes" filtra correctamente | datos sintéticos `MatchPreview[]` |
-| `IngestReportCard` | render conteos; warnings expanded/collapsed | datos sintéticos `IngestReport` |
-| `RaceUploadWizard` | state machine: idle→parsing→step2→step3→done; reset al "Cargar otro"; back/forward preserva state | mock axios responses |
-| `api/raceImports.ts` | helpers serializan multipart correctamente; mapean 4xx a error messages traducidos | vitest mock fetch |
-| `RaceAnalysisPage` integración | switch a tab "upload" muestra wizard; deep-link `?tab=upload` funciona | router test utils |
-| Accessibility | 0 violations axe-core en cada paso del wizard | `vitest-axe` |
+| `RaceUploadZone` | render idle dropzone; drag-over visual; click → file picker; extension + client size validation | `File` constructor + mock event |
+| `EventMetaForm` | render with pre-fill data from step 1; Zod validation (valida_num 1-7 ∪ 99, temp -10/50); submit executes callback with valid payload | RHF + Zod in real time |
+| `MatchDecisionTable` | render N rows; changing radio updates state; "Only pending" filters correctly | synthetic `MatchPreview[]` data |
+| `IngestReportCard` | render counts; warnings expanded/collapsed | synthetic `IngestReport` data |
+| `RaceUploadWizard` | state machine: idle→parsing→step2→step3→done; reset on "Load another"; back/forward preserves state | mock axios responses |
+| `api/raceImports.ts` | helpers serialize multipart correctly; map 4xx to translated error messages | vitest mock fetch |
+| `RaceAnalysisPage` integration | switch to "upload" tab shows wizard; deep-link `?tab=upload` works | router test utils |
+| Accessibility | 0 axe-core violations in each wizard step | `vitest-axe` |
 
 ### 7.3 E2E — playwright-cli
 
 **Happy path:**
-1. Login coach → navigate `/coach/race-analysis?tab=upload`.
+1. Coach login → navigate `/coach/race-analysis?tab=upload`.
 2. Upload `valida_iv_2026_resultados.pdf` + `valida_iv_2026_general.pdf`.
-3. Esperar parse success.
-4. Editar metadata (cambiar clima a "Lluvia").
-5. Confirmar matches (3 radios).
-6. Avanzar a paso 3 → checkbox confirm → commit.
-7. Assert response success + datos en BD vía query directa.
+3. Wait for parse success.
+4. Edit metadata (change weather to "Rain").
+5. Confirm matches (3 radios).
+6. Advance to step 3 → confirm checkbox → commit.
+7. Assert success response + data in DB via direct query.
 
 **Error paths:**
-- Upload archivo > 8 MB → assert toast 413.
-- Upload PDF no oficial → assert toast 422 con mensaje accionable.
-- Coach intenta forzar re-ingesta → assert checkbox no visible (sin rol admin).
+- Upload file > 8 MB → assert 413 toast.
+- Upload unofficial PDF → assert 422 toast with actionable message.
+- Coach tries to force re-ingestion → assert checkbox not visible (without admin role).
 
-**Cobertura E2E:** 2 tests (1 happy + 1 error). Runtime estimado <90s con `--reporter=line`.
+**E2E coverage:** 2 tests (1 happy + 1 error). Estimated runtime <90s with `--reporter=line`.
 
-### 7.4 Test data y privacidad
+### 7.4 Test data and privacy
 
-- Los PDFs fixture `valida_iv_2026_*` ya están auditados (Paso 8 F1.7) — políticas documentadas en `docs/10-race-results/snapshots/privacy-audit.md`.
-- Nuevos fixtures sintéticos no contienen PII.
+- PDF fixtures `valida_iv_2026_*` are already audited (Step 8 F1.7) — policies documented in `docs/10-race-results/snapshots/privacy-audit.md`.
+- New synthetic fixtures contain no PII.
 
 ---
 
-## 8. Plan de migración
+## 8. Migration plan
 
-### 8.1 Migración Alembic reversible
+### 8.1 Reversible Alembic migration
 
-**Sí.** Todas las columnas nuevas son nullable o tienen default seguro. Downgrade testeado en sandbox local antes de aplicar a prod:
+**Yes.** All new columns are nullable or have safe defaults. Downgrade tested in local sandbox before applying to prod:
 
 ```bash
 cd backend
@@ -699,130 +699,130 @@ alembic downgrade -1           # rollback
 alembic upgrade head           # re-apply
 ```
 
-### 8.2 Datos existentes F1.7
+### 8.2 Existing F1.7 data
 
-Hay 3 imports existentes (los 3 commits de Válida IV durante desarrollo F1.7). Defaults:
+There are 3 existing imports (the 3 Round IV commits during F1.7 development). Defaults:
 
-| Columna | Valor para legacy |
+| Column | Value for legacy |
 |---|---|
-| `event_id` | NULL (sin link directo; sigue infiriéndose vía `RaceResult.imported_from_id`) |
-| `kind` | `'results'` (default ENUM) |
-| `storage_path`, `storage_url` | NULL (el PDF original no se guardó en F1.7) |
-| `general_*` | NULL (idem) |
+| `event_id` | NULL (no direct link; still inferred via `RaceResult.imported_from_id`) |
+| `kind` | `'results'` (ENUM default) |
+| `storage_path`, `storage_url` | NULL (original PDF not saved in F1.7) |
+| `general_*` | NULL (same) |
 | `parse_meta_json` | NULL |
 
-**UI:** la tabla de histórico (`GET /imports/recent`) muestra estos imports como "Import legacy (sin PDF descargable)" — sin link de descarga, sin acción de re-procesar.
+**UI:** the history table (`GET /imports/recent`) shows these imports as "Legacy import (no PDF download)" — no download link, no re-process action.
 
-### 8.3 Cleanup de `pending` huérfanos
+### 8.3 Orphan `pending` cleanup
 
-**Scheduled task** (a configurar en `app/services/scheduled/cleanup.py` — si no existe, crear):
+**Scheduled task** (to configure in `app/services/scheduled/cleanup.py` — if the module doesn't exist, create with APScheduler or similar registered in `main.py` lifespan):
 
 ```
-Frecuencia: diaria (cron 03:00 UTC)
-Lógica: DELETE FROM race_imports WHERE status='pending' AND created_at < NOW() - INTERVAL 24 HOUR
+Frequency: daily (cron 03:00 UTC)
+Logic: DELETE FROM race_imports WHERE status='pending' AND created_at < NOW() - INTERVAL 24 HOUR
 Side effect: storage_sftp.delete_object(storage_path) best-effort
 ```
 
-**Justificación:** un wizard abandonado deja un `RaceImport.status=pending`. Sin cleanup acumularían. 24h es ventana suficiente para que el coach retome el wizard (escenario típico: dejar a medias, terminar al día siguiente).
+**Justification:** an abandoned wizard leaves a `RaceImport.status=pending`. Without cleanup they accumulate. 24h is a sufficient window for the coach to resume the wizard (typical scenario: leave halfway, finish the next day).
 
-### 8.4 Compatibilidad CLI
+### 8.4 CLI compatibility
 
-`scripts/ingest_race.py` **sigue funcionando sin cambios**. La nueva columna `kind` tiene default `'results'`, y los nuevos campos opcionales `event_id`/`storage_*` quedan NULL al ingerir vía CLI. Esto preserva el flow operacional del coach que prefiera CLI para casos batch o troubleshooting.
+`scripts/ingest_race.py` **continues working without changes**. The new `kind` column has default `'results'`, and the new optional fields `event_id`/`storage_*` remain NULL when ingesting via CLI. This preserves the operational flow for coaches who prefer CLI for batch cases or troubleshooting.
 
-### 8.5 Variables de entorno nuevas
+### 8.5 New environment variables
 
-| Variable | Default | Notas |
+| Variable | Default | Notes |
 |---|---|---|
-| `RACE_MAX_PDF_MB` | `8` | Cap por archivo (results y general independientes). |
-| `RACE_PARSE_TIMEOUT_SECONDS` | `30` | Timeout `asyncio.wait_for` alrededor de `parse_results_pdf`. |
-| `RACE_PENDING_TTL_HOURS` | `24` | Para cleanup nocturno. |
+| `RACE_MAX_PDF_MB` | `8` | Cap per file (results and general independent). |
+| `RACE_PARSE_TIMEOUT_SECONDS` | `30` | `asyncio.wait_for` timeout around `parse_results_pdf`. |
+| `RACE_PENDING_TTL_HOURS` | `24` | For nightly cleanup. |
 
-`HOSTINGER_SFTP_*` y `HOSTINGER_PUBLIC_BASE_URL` ya existen (de F1.6) — **bloqueador operativo silencioso**: si no están configuradas en Render, los PDFs caerán a `static/uploads/` que es efímero en free tier. ⚠️ Coordinar con `CLAUDE.md` F1.6 paso 9 pendiente.
+`HOSTINGER_SFTP_*` and `HOSTINGER_PUBLIC_BASE_URL` already exist (from F1.6) — **silent operational blocker**: if not configured in Render, PDFs will fall to `static/uploads/` which is ephemeral in free tier. ⚠️ Coordinate with `CLAUDE.md` F1.6 step 9 pending.
 
 ---
 
 ## 9. Risk register
 
-| # | Riesgo | Prob | Impacto | Mitigación |
+| # | Risk | Prob | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | Envs `HOSTINGER_SFTP_*` no configuradas en Render → PDFs efímeros, se pierden tras redeploy | Alta | Alto | Coordinar deploy F1.6 paso 9 antes de mergear esta fase. Health check al iniciar app que verifica si storage_sftp está en modo fallback y logguea WARNING. |
-| R2 | `pdfplumber` cuelga con PDF malicioso/corrupto | Baja | Medio | `asyncio.wait_for(parse, timeout=30)` → 422 si excede. Try/except amplio en service. |
-| R3 | Storage upload exitoso pero BD commit falla → PDF huérfano en SFTP | Baja | Bajo | `delete_object` best-effort en except del service. Cleanup nocturno detecta huérfanos por `storage_path NOT IN (SELECT storage_path FROM race_imports)`. |
-| R4 | Coach abandona wizard tras paso 1 → `RaceImport.status=pending` acumula | Media | Bajo | Cleanup nocturno con TTL 24h (§8.3). |
-| R5 | Coach sube PDF de una serie/temporada distinta a 2026 (futuro: 2027) sin que sistema lo detecte | Baja | Medio | `EventMeta.season` validado en `EventMetaForm` (Zod). Service NO infiere season automáticamente; siempre lee de form input. |
-| R6 | `force_reingest` mal usado por admin → duplicación de competitor counts | Baja | Alto | Confirmation modal extra antes de submit. Banner explicativo del comportamiento idempotente (UNIQUE en `RaceResult` skipea, pero `competitors_created` puede inflarse). Log estructurado. |
-| R7 | Cold start Render >60s → wizard timeout en commit | Media | Medio | Documentar en banner del paso 3 "El primer commit del día puede tardar hasta 60s. Por favor no cierres esta ventana." Loader explícito. Aceptado como limitación free tier. |
-| R8 | Coach sube PDF gigante (>8 MB) | Baja | Bajo | 413 al cliente con mensaje "Archivo demasiado grande. Máximo 8 MB. PDFs Federación típicos = 250 KB." |
-| R9 | XSS via `EventMeta.weather_notes` campo libre | Baja | Medio | Sanitización Zod (max 500 chars). Frontend nunca renderiza `dangerouslySetInnerHTML` con este campo. Backend escapa al persistir. |
-| R10 | Race condition: 2 coaches suben mismo PDF simultáneamente | Muy baja | Bajo | UNIQUE implícito en `(sha256, status='committed')` — la segunda ingesta detecta duplicado y aborta limpiamente. Comportamiento ya validado en F1.7. |
-| R11 | `defusedxml` desalineado: pdfplumber/pdfminer puede invocar XML interno con CVE | Baja | Alto | Documentado como aceptado. Mitigación posible F2: aislar parser en subprocess con seccomp. No MVP. |
-| R12 | Coach ingresa decisión de match para bib que no existe en PDF | Baja | Bajo | `RaceIngestor` ya valida (warning si bib no en RESULTADOS). UI rechaza submit si `match_decisions` tiene keys inválidas. |
+| R1 | `HOSTINGER_SFTP_*` envs not configured in Render → ephemeral PDFs, lost after redeploy | High | High | Coordinate F1.6 step 9 deploy before merging this phase. App startup health check logs WARNING if storage_sftp is in fallback mode. |
+| R2 | `pdfplumber` hangs with malicious/corrupt PDF | Low | Medium | `asyncio.wait_for(parse, timeout=30)` → 422 if exceeded. Broad try/except in service. |
+| R3 | Storage upload successful but DB commit fails → orphan PDF in SFTP | Low | Low | Best-effort `delete_object` in service except. Nightly cleanup detects orphans by `storage_path NOT IN (SELECT storage_path FROM race_imports)`. |
+| R4 | Coach abandons wizard after step 1 → `RaceImport.status=pending` accumulates | Medium | Low | Nightly cleanup with TTL 24h (§8.3). |
+| R5 | Coach uploads PDF from a different series/season (future: 2027) without system detecting it | Low | Medium | `EventMeta.season` validated in `EventMetaForm` (Zod). Service does NOT infer season automatically; always reads from form input. |
+| R6 | `force_reingest` misused by admin → inflated competitor counts | Low | High | Extra confirmation modal before submit. Explanatory banner of idempotent behavior (UNIQUE in `RaceResult` skips, but `competitors_created` can inflate). Structured log. |
+| R7 | Render cold start >60s → wizard timeout in commit | Medium | Medium | Document in step 3 banner "The first commit of the day may take up to 60s. Please do not close this window." Explicit loader. Accepted as free tier limitation. |
+| R8 | Coach uploads giant PDF (>8 MB) | Low | Low | 413 to client with message "File too large. Maximum 8 MB. Typical Federation PDFs = 250 KB." |
+| R9 | XSS via `EventMeta.weather_notes` free field | Low | Medium | Zod sanitization (max 500 chars). Frontend never renders `dangerouslySetInnerHTML` with this field. Backend escapes on persist. |
+| R10 | Race condition: 2 coaches upload same PDF simultaneously | Very low | Low | UNIQUE implicit in `(sha256, status='committed')` — second ingestion detects duplicate and aborts cleanly. Behavior already validated in F1.7. |
+| R11 | `defusedxml` misaligned: pdfplumber/pdfminer may invoke internal XML with CVE | Low | High | Documented as accepted. Possible F2 mitigation: isolate parser in subprocess with seccomp. Not MVP. |
+| R12 | Coach enters match decision for bib that doesn't exist in PDF | Low | Low | `RaceIngestor` already validates (warning if bib not in RESULTS). UI rejects submit if `match_decisions` has invalid keys. |
 
 ---
 
-## 10. Decisiones cerradas para el workflow
+## 10. Decisions closed for the workflow
 
-`/sc:workflow` y `/sc:implement` deben respetar las siguientes decisiones SIN re-consultar:
+`/sc:workflow` and `/sc:implement` must respect the following decisions WITHOUT re-consulting:
 
-1. **3 endpoints REST** (parse, dry-run, commit) + 1 listado (recent). No mega-POST.
-2. **Wizard 3 pasos** en tab nueva "Cargar resultados" dentro de `RaceAnalysisPage`. No modal global.
-3. **Guardar PDFs en storage** con UUID en path. Retención permanente.
-4. **Soportar `.pdf` + `.csv`/`.tsv`/`.txt`** para RESULTADOS. Solo `.pdf` para GENERAL.
-5. **Migración Alembic delta sobre `race_imports`** con 9 columnas nuevas (4 indexadas). Reversible.
-6. **`RaceIngestor.dry_run_event` nuevo** (~30 LOC), espejo de `ingest_event` con `db.rollback()` final.
-7. **`RaceImportUploadService` nuevo** como orquestador HTTP. NO modificar `RaceIngestor.ingest_event` ni `pdf_parser` ni `matcher` ni `normalizer`.
-8. **`pdf_parser` sigue aceptando `Path`**: el service escribe a `tempfile.NamedTemporaryFile` antes de pasarlo. NO refactorizar a `BinaryIO`.
-9. **Magic bytes obligatorios**: `%PDF-` para PDF, decodificación UTF-8 + delimitador para CSV.
-10. **Size cap 8 MB** vía nueva env `RACE_MAX_PDF_MB`.
-11. **Timeout 30s** en parse vía `asyncio.wait_for` + nueva env `RACE_PARSE_TIMEOUT_SECONDS`.
-12. **RBAC**: admin + coach en todos los endpoints. `force_reingest=True` requiere admin.
-13. **Ownership cross-coach** validado en dry-run/commit (parse_id pertenece a current_user salvo admin).
-14. **Sin SSE ni polling**: la ingesta es síncrona <60s. UI muestra loader simple.
-15. **Sin email a padres** post-commit (consistente con decisión MVP race-results v1).
-16. **Sin creación inline de athletes**: matches sin candidato quedan como "Pendiente — crear después", link a CRUD existente.
-17. **`RaceUploadZone` componente nuevo** (no reusar `MediaUploadZone`). Estimado 60 LOC.
-18. **Cleanup nocturno** de `pending` huérfanos con TTL 24h (env `RACE_PENDING_TTL_HOURS`).
-19. **Storage upload ANTES de db.commit** + `delete_object` best-effort en rollback. Inconsistencia residual aceptada.
-20. **Imports F1.7 legacy** quedan visibles en histórico marcados "sin PDF descargable" (event_id NULL, storage_* NULL).
-21. **No polling de status**: el commit retorna síncrono. Si Render free tier impide esto en algún caso edge, escalar a F2.
-22. **Tests obligatorios antes de mergear**: backend ≥90% en upload_service + ≥85% en endpoints; frontend ≥85% en componentes nuevos; E2E happy path + 1 error path.
-23. **Migración compatible con CLI**: `scripts/ingest_race.py` sigue funcionando sin cambios (columnas nuevas opcionales).
+1. **3 REST endpoints** (parse, dry-run, commit) + 1 listing (recent). No mega-POST.
+2. **Wizard 3 steps** in new tab "Load results" inside `RaceAnalysisPage`. No global modal.
+3. **Store PDFs in storage** with UUID in path. Permanent retention.
+4. **Support `.pdf` + `.csv`/`.tsv`/`.txt`** for RESULTS. Only `.pdf` for GENERAL.
+5. **Alembic delta migration on `race_imports`** with 9 new columns (4 indexed). Reversible.
+6. **New `RaceIngestor.dry_run_event`** (~30 LOC), mirror of `ingest_event` with final `db.rollback()`.
+7. **New `RaceImportUploadService`** as HTTP orchestrator. Do NOT modify `RaceIngestor.ingest_event` or `pdf_parser` or `matcher` or `normalizer`.
+8. **`pdf_parser` continues accepting `Path`**: the service writes to `tempfile.NamedTemporaryFile` before passing it. Do NOT refactor to `BinaryIO`.
+9. **Magic bytes mandatory**: `%PDF-` for PDF, UTF-8 decoding + delimiter for CSV.
+10. **Size cap 8 MB** via new env `RACE_MAX_PDF_MB`.
+11. **Timeout 30s** on parse via `asyncio.wait_for` + new env `RACE_PARSE_TIMEOUT_SECONDS`.
+12. **RBAC**: admin + coach on all endpoints. `force_reingest=True` requires admin.
+13. **Cross-coach ownership** validated in dry-run/commit (parse_id belongs to current_user unless admin).
+14. **No SSE or polling**: ingestion is synchronous <60s. UI shows simple loader.
+15. **No email to parents** post-commit (consistent with MVP race-results v1 decision).
+16. **No inline athlete creation**: matches without candidate remain as "Pending — create later", link to existing CRUD.
+17. **New `RaceUploadZone` component** (not reusing `MediaUploadZone`). Estimated 60 LOC.
+18. **Nightly cleanup** of orphan `pending` with TTL 24h (env `RACE_PENDING_TTL_HOURS`).
+19. **Storage upload BEFORE db.commit** + best-effort `delete_object` on rollback. Residual inconsistency accepted.
+20. **F1.7 legacy imports** remain visible in history marked "no PDF download" (event_id NULL, storage_* NULL).
+21. **No status polling**: commit returns synchronously. If Render free tier prevents this in some edge case, escalate to F2.
+22. **Tests required before merging**: backend ≥90% in upload_service + ≥85% in endpoints; frontend ≥85% in new components; E2E happy path + 1 error path.
+23. **CLI-compatible migration**: `scripts/ingest_race.py` continues working without changes (new optional columns).
 
 ---
 
-## 11. Asunciones a validar (⚠️ requieren input del coach o admin)
+## 11. Assumptions to validate (⚠️ require input from coach or admin)
 
-| # | Asunción | Acción si falsa |
+| # | Assumption | Action if false |
 |---|---|---|
-| A1 | El coach está OK con re-subir el mismo PDF si necesita corregir clima/temperatura tras commit (re-upload con SHA distinto o forzar) | Diseñar endpoint "editar metadata sin re-subir" en F2 |
-| A2 | Cap 8 MB cubre todos los casos reales (fixtures actuales 246 KB y 160 KB; 32x margen) | Subir a 16 MB |
-| A3 | Retención permanente de PDFs en storage es aceptable (volumen estimado <50 MB / 5 temporadas) | Implementar TTL ej. 2 temporadas |
-| A4 | "Forzar re-ingesta" solo para admin es restricción aceptable (coach común no puede) | Permitir coach con confirmación doble |
-| A5 | Wizard 3 pasos vs modal único con secciones colapsables — coach prefiere wizard | Convertir a modal único |
-| A6 | Cleanup nocturno con TTL 24h en `pending` no genera fricción si el coach abandona y retoma >24h después | Subir TTL a 7 días o no auto-cleanup |
-| A7 | El campo libre `weather_notes` no necesita rich text editor (solo texto plano) | Integrar editor markdown F2 |
-| A8 | `force_reingest=True` se documenta como "operación de emergencia, contactar dev" — no UX guiada | Crear flow dedicado "Re-procesar import" como tab separado |
+| A1 | Coach is OK with re-uploading the same PDF if they need to correct weather/temperature after commit (re-upload with different SHA or force) | Design "edit metadata without re-uploading" endpoint in F2 |
+| A2 | 8 MB cap covers all real cases (current fixtures 246 KB and 160 KB; 32x margin) | Raise to 16 MB |
+| A3 | Permanent PDF storage retention is acceptable (estimated volume <50 MB / 5 seasons) | Implement TTL e.g. 2 seasons |
+| A4 | "Force re-ingestion" admin-only restriction is acceptable (common coach cannot) | Allow coach with double confirmation |
+| A5 | Wizard 3 steps vs single modal with collapsible sections — coach prefers wizard | Convert to single modal |
+| A6 | Nightly cleanup TTL 24h on `pending` doesn't cause friction if coach abandons and resumes >24h later | Raise TTL to 7 days or no auto-cleanup |
+| A7 | Free text `weather_notes` field doesn't need rich text editor (plain text only) | Integrate markdown editor F2 |
+| A8 | `force_reingest=True` is documented as "emergency operation, contact dev" — no guided UX | Create dedicated "Re-process import" flow as separate tab |
 
 ---
 
-## 12. Apéndice — Pseudocódigo del orquestador
+## 12. Appendix — Orchestrator pseudocode
 
-Pseudocódigo de `RaceImportUploadService.parse()` para guiar `/sc:implement` (no es código final):
+Pseudocode of `RaceImportUploadService.parse()` to guide `/sc:implement` (not final code):
 
 ```
 async def parse(results_file, general_file, current_user) -> ImportParseResponse:
-    # 1. Validar size + extension + magic bytes (ambos archivos)
+    # 1. Validate size + extension + magic bytes (both files)
     results_bytes = await read_with_cap(results_file, max_mb=8)
     validate_magic(results_bytes, ext=ext_of(results_file.filename))
     general_bytes = await read_with_cap(general_file, max_mb=8) if general_file else None
     if general_bytes:
         validate_magic(general_bytes, ext="pdf")
 
-    # 2. SHA256 + check duplicado
+    # 2. SHA256 + check duplicate
     results_sha = sha256(results_bytes)
     duplicate = await find_committed_import(results_sha)
 
-    # 3. Escribir a tmp para pasar Path al parser existente
+    # 3. Write to tmp to pass Path to existing parser
     with tempfile.NamedTemporaryFile(suffix=ext_of(results_file.filename)) as tmp_r:
         tmp_r.write(results_bytes)
         tmp_r.flush()
@@ -833,11 +833,11 @@ async def parse(results_file, general_file, current_user) -> ImportParseResponse
             )
             header = parse_event_header(Path(tmp_r.name)) if ext == 'pdf' else None
         except asyncio.TimeoutError:
-            raise HTTPException(422, "PDF demasiado complejo (>30s parse)")
+            raise HTTPException(422, "PDF too complex (>30s parse)")
         except ParseError as e:
-            raise HTTPException(422, f"Formato no oficial: {e}")
+            raise HTTPException(422, f"Non-official format: {e}")
 
-    # idem general
+    # same for general
     if general_bytes:
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_g:
             tmp_g.write(general_bytes)
@@ -847,7 +847,7 @@ async def parse(results_file, general_file, current_user) -> ImportParseResponse
                 timeout=settings.race_parse_timeout_seconds,
             )
 
-    # 4. Persistir RaceImport status=pending con parse_meta_json
+    # 4. Persist RaceImport status=pending with parse_meta_json
     race_import = RaceImport(
         sha256=results_sha,
         filename=results_file.filename,
@@ -855,7 +855,7 @@ async def parse(results_file, general_file, current_user) -> ImportParseResponse
         general_sha256=sha256(general_bytes) if general_bytes else None,
         status=RaceImportStatus.pending,
         imported_by_user_id=current_user.id,
-        kind="results",  # default; aún no diferenciamos por kind en MVP
+        kind="results",  # default; not differentiating by kind in MVP yet
         parse_meta_json={
             "header": header.dict() if header else None,
             "categories_found": list(parsed_results.keys()),
@@ -881,64 +881,64 @@ async def parse(results_file, general_file, current_user) -> ImportParseResponse
     )
 ```
 
-`dry_run` y `commit` siguen patrón similar: cargar `RaceImport` por id, validar ownership, re-cargar bytes (de tmp si todavía existe, o re-cargar de storage si ya subió, o re-procesar desde memoria si lo conservamos en `parse_meta_json` — decisión de implementación), llamar `RaceIngestor.dry_run_event` o `ingest_event`, devolver report.
+`dry_run` and `commit` follow a similar pattern: load `RaceImport` by id, validate ownership, reload bytes (from tmp if still exists, or reload from storage if already uploaded, or re-process from memory if we conserved it in `parse_meta_json` — implementation decision), call `RaceIngestor.dry_run_event` or `ingest_event`, return report.
 
-⚠️ **Open implementation question** (no bloqueante para diseño): ¿conservar bytes de PDFs entre parse y commit en memoria/tmp, o re-subir al storage en parse y volver a descargar en commit? Recomendación: **subir al storage en parse** (path con prefix `pending/`), mover a path definitivo `race-imports/{series_id}/{event_id}/` en commit. Esto evita pérdida de bytes si el proceso uvicorn se reinicia entre parse y commit.
+⚠️ **Open implementation question** (not blocking for design): conserve PDF bytes between parse and commit in memory/tmp, or re-upload to storage on parse and download again on commit? Recommendation: **upload to storage on parse** (path with `pending/` prefix), move to final path `race-imports/{series_id}/{event_id}/` on commit. This avoids byte loss if the uvicorn process restarts between parse and commit.
 
 ---
 
-## 14. Extensión — Condiciones de carrera en UI (2026-05-26)
+## 14. Extension — Race conditions in UI (2026-05-26)
 
-> Entregado y verde en tests; pendiente de commit + deploy. Documentado aquí como extensión cerrada del diseño original §4-§5.
+> Delivered and green in tests; pending commit + deploy. Documented here as a closed extension of the original design §4-§5.
 
-### 14.1 Motivación
+### 14.1 Motivation
 
-Las analíticas longitudinales del módulo Race Results (`services/race/analytics.py`: `athlete_progression`, `podium_gap`, `projection`) necesitan contexto ambiental para interpretar diferencias de rendimiento entre válidas. Una misma posición en Roldanillo (950 msnm, seco) vs La Cumbre (1581 msnm, lluvia) no se compara igual.
+The longitudinal analytics of the Race Results module (`services/race/analytics.py`: `athlete_progression`, `podium_gap`, `projection`) need environmental context to interpret performance differences between rounds. The same position in Roldanillo (950 masl, dry) vs La Cumbre (1581 masl, rain) is not comparable.
 
-Los PDFs oficiales de la Federación **no incluyen** clima, temperatura, condición del trazado ni altitud. La única fuente confiable es el coach al momento de subir el PDF (memoria fresca) o post-ingest (corrección/complemento).
+Official Federation PDFs **do not include** weather, temperature, track condition or altitude. The only reliable source is the coach at the time of uploading the PDF (fresh memory) or post-ingest (correction/supplement).
 
-Las columnas ambientales ya existen en `race_events` desde la migración delta Paso 2 Fase 1.7 (`64c263edd07f`): `climate`, `temperature_c`, `surface_condition`, `altitude_msnm`, `weather_notes`. Esta extensión expone la captura en la UI sin tocar el modelo de datos.
+The environmental columns already exist in `race_events` since the Phase 1.7 delta migration (`64c263edd07f`): `climate`, `temperature_c`, `surface_condition`, `altitude_msnm`, `weather_notes`. This extension exposes the capture in the UI without touching the data model.
 
-### 14.2 Flujo de captura
+### 14.2 Capture flow
 
-**Wizard Step 1 — durante la ingesta (opcional).**
+**Wizard Step 1 — during ingestion (optional).**
 
-`backend/app/routers/race_imports.py::parse_import` acepta 5 form fields opcionales adicionales en el multipart del `POST /api/race-analysis/imports/parse`:
+`backend/app/routers/race_imports.py::parse_import` accepts 5 additional optional form fields in the `POST /api/race-analysis/imports/parse` multipart:
 
-| Campo | Tipo | Rango / Validación |
+| Field | Type | Range / Validation |
 |---|---|---|
-| `climate` | `str` | máx 60 chars |
-| `temperature_c` | `Decimal` | 0 ≤ x ≤ 50, un decimal |
+| `climate` | `str` | max 60 chars |
+| `temperature_c` | `Decimal` | 0 ≤ x ≤ 50, one decimal |
 | `surface_condition` | enum | `seca` \| `humeda` \| `barro` \| `lluvia` \| `mixta` |
 | `altitude_msnm` | `int` | 0 ≤ x ≤ 5000 |
-| `weather_notes` | `str` | máx 2000 chars |
+| `weather_notes` | `str` | max 2000 chars |
 
-Validados por `ImportParseRequestFields` (Pydantic, `str_strip_whitespace=True`). FastAPI no aplica Pydantic automáticamente a `Form()` individuales, así que el handler construye el modelo explícitamente para mantener invariantes idénticos al PATCH B3. Las condiciones se persisten en `RaceImport.parse_meta_json["conditions"]` y se aplican al `RaceEvent` durante el commit.
+Validated by `ImportParseRequestFields` (Pydantic, `str_strip_whitespace=True`). FastAPI does not apply Pydantic automatically to individual `Form()` fields, so the handler explicitly builds the model to maintain identical invariants to the PATCH B3. Conditions are persisted in `RaceImport.parse_meta_json["conditions"]` and applied to the `RaceEvent` during commit.
 
-**Edición post-ingest (PATCH).**
+**Post-ingest editing (PATCH).**
 
-`backend/app/routers/race_events.py::update_race_event_conditions` expone:
+`backend/app/routers/race_events.py::update_race_event_conditions` exposes:
 
 ```
 PATCH /api/race-analysis/race-events/{race_event_id}/conditions
 ```
 
-- **RBAC:** `require_role([UserRole.admin, UserRole.coach])` — padres reciben 403.
-- **Body:** `RaceEventConditionsUpdate` con `extra="forbid"` (rechaza atributos no esperados).
-- **Semántica:** actualización parcial vía `model_dump(exclude_unset=True)`. Body vacío retorna estado actual sin tocar DB.
-- **Respuesta:** `RaceEventConditionsRead` (5 campos + `updated_at`).
-- **Códigos:** 200 ok / 404 evento no existe / 422 fuera de rango / 403 sin rol.
-- **Log:** solo claves modificadas (`sorted(campos_actualizados.keys())`), nunca valores — `weather_notes` es texto libre.
+- **RBAC:** `require_role([UserRole.admin, UserRole.coach])` — parents receive 403.
+- **Body:** `RaceEventConditionsUpdate` with `extra="forbid"` (rejects unexpected attributes).
+- **Semantics:** partial update via `model_dump(exclude_unset=True)`. Empty body returns current state without touching DB.
+- **Response:** `RaceEventConditionsRead` (5 fields + `updated_at`).
+- **Codes:** 200 ok / 404 event doesn't exist / 422 out of range / 403 no role.
+- **Log:** only modified keys (`sorted(updated_fields.keys())`), never values — `weather_notes` is free text.
 
-Frontend equivalente:
+Frontend equivalent:
 - `frontend/src/api/raceEvents.ts::updateRaceEventConditions`
-- `frontend/src/hooks/race/useRaceEventConditions.ts::useUpdateRaceEventConditions` (mutation con invalidación de query).
+- `frontend/src/hooks/race/useRaceEventConditions.ts::useUpdateRaceEventConditions` (mutation with query invalidation).
 
-### 14.3 Catálogo `VENUE_ALTITUDES`
+### 14.3 `VENUE_ALTITUDES` catalog
 
-`frontend/src/types/raceEvents.types.ts` exporta el catálogo de altitudes aproximadas (msnm) para las 7 sedes habituales de la Copa Valle XCO:
+`frontend/src/types/raceEvents.types.ts` exports the approximate altitude catalog (masl) for the 7 usual Copa Valle XCO venues:
 
-| Sede | msnm |
+| Venue | masl |
 |---|---|
 | Sevilla | 1340 |
 | Ginebra | 1080 |
@@ -948,83 +948,83 @@ Frontend equivalente:
 | Yumbo | 1021 |
 | La Cumbre | 1581 |
 
-**Razón:** evitar typos en datos que luego alimentan analíticas (un `2000` accidental sesga el cálculo de proyección por altitud). El wizard precarga el campo `altitude_msnm` al detectar coincidencia exacta en `location`, reduciendo fricción cuando el coach está subiendo el PDF post-evento y solo recuerda la sede. El coach puede sobreescribir el valor.
+**Reason:** avoid typos in data that later feed analytics (an accidental `2000` biases the altitude projection calculation). The wizard pre-loads the `altitude_msnm` field when it detects an exact match in `location`, reducing friction when the coach is uploading the PDF post-event and only remembers the venue. The coach can overwrite the value.
 
-### 14.4 Decisión UX — ToggleGroup chips ≥48 px
+### 14.4 UX decision — ToggleGroup chips ≥48 px
 
-Para `surface_condition` se descartó el select nativo (`<select>`) en favor de `ToggleGroup` chips:
+For `surface_condition` the native select (`<select>`) was discarded in favor of `ToggleGroup` chips:
 
-- **Contexto de uso real:** el coach sube PDFs desde tablet en zonas de carrera/eventos con sol directo. Los selects nativos en iOS/Android pierden contraste y obligan a un tap extra que confunde.
-- **Tamaño táctil:** `min-h-[48px]` en cada `ToggleGroupItem` cumple guía WCAG / Apple HIG (44 px mín, 48 px recomendado) — un toque preciso evita selecciones erradas con dedos húmedos.
-- **Visibilidad de opciones:** las 5 condiciones (Seca / Húmeda / Barro / Lluvia / Mixta) caben en una fila wrap; el coach las ve todas sin abrir menú.
-- **Implementación:** `ImportWizard.tsx:771-794` con `aria-label` por chip y `data-testid` para Playwright.
+- **Real usage context:** the coach uploads PDFs from tablet in race areas with direct sunlight. Native selects on iOS/Android lose contrast and require an extra tap that causes confusion.
+- **Touch size:** `min-h-[48px]` on each `ToggleGroupItem` meets WCAG / Apple HIG guidance (44 px min, 48 px recommended) — a precise tap avoids wrong selections with wet fingers.
+- **Option visibility:** the 5 conditions (Dry / Wet / Mud / Rain / Mixed) fit in one wrap row; the coach sees them all without opening a menu.
+- **Implementation:** `ImportWizard.tsx:771-794` with `aria-label` per chip and `data-testid` for Playwright.
 
-Bug colateral resuelto: se agregó `noValidate` al `<form>` (`ImportWizard.tsx:572`) para que la validación HTML5 nativa no se dispare antes que Zod — antes bloqueaba el botón "Siguiente" con mensajes en inglés del navegador en lugar de los errores Zod en español.
+Collateral bug fixed: `noValidate` was added to the `<form>` (`ImportWizard.tsx:572`) so that native HTML5 validation doesn't fire before Zod — previously it blocked the "Next" button with browser messages in English instead of Zod errors in Spanish.
 
-### 14.5 Tarjeta tri-estado sin lenguaje warning
+### 14.5 Tri-state card without warning language
 
-`frontend/src/components/race/RaceConditionsCard.tsx` muestra el estado de las condiciones en la página de detalle del evento con tres modos basados en `countFilledFields(c)`:
+`frontend/src/components/race/RaceConditionsCard.tsx` shows the state of conditions on the event detail page with three modes based on `countFilledFields(c)`:
 
-| Campos llenos | Estado | UI | Botón coach/admin |
+| Fields filled | Status | UI | Coach/admin button |
 |---|---|---|---|
-| 0 | Vacío | Card colapsada con placeholder | "Agregar" |
-| 1-3 | Parcial | Faltantes en `text-[rgba(34,42,53,0.35)]` con leyenda `— sin registro —` | "Completar" |
-| ≥4 | Completo | Grilla normal con valores formateados | "Editar" |
+| 0 | Empty | Collapsed card with placeholder | "Add" |
+| 1-3 | Partial | Missing in `text-[rgba(34,42,53,0.35)]` with legend `— no record —` | "Complete" |
+| ≥4 | Complete | Normal grid with formatted values | "Edit" |
 
-**Decisión inviolable:** sin iconos warning, sin colores amarillo/rojo, sin badges "Incompleto". Los datos ambientales son enriquecimiento opcional — el coach no debe sentir que la app lo regaña por no haberlos llenado. El placeholder gris neutro comunica ausencia sin moralizar.
+**Inviolable decision:** no warning icons, no yellow/red colors, no "Incomplete" badges. Environmental data is optional enrichment — the coach must not feel that the app is scolding them for not filling it out. The neutral gray placeholder communicates absence without moralizing.
 
-El `EmptyPlaceholder` lleva `aria-label="Sin registro de {label}"` para que lectores de pantalla anuncien la ausencia explícitamente.
+The `EmptyPlaceholder` has `aria-label="No record of {label}"` so screen readers explicitly announce the absence.
 
-Edición vía `EditConditionsDialog.tsx` (Sheet lateral, lazy-loaded para no inflar el chunk del wizard): precarga con `RaceEventConditions` actuales, valida con RHF + Zod, llama `useUpdateRaceEventConditions` al guardar. Solo visible si `currentUser.role ∈ {coach, admin}` (verificado por `useAuthStore`); padres ven la card readonly sin botones.
+Editing via `EditConditionsDialog.tsx` (side Sheet, lazy-loaded to not inflate the wizard chunk): pre-loads with current `RaceEventConditions`, validates with RHF + Zod, calls `useUpdateRaceEventConditions` on save. Only visible if `currentUser.role ∈ {coach, admin}` (verified by `useAuthStore`); parents see the read-only card without buttons.
 
-### 14.6 Toast neutral en wizard
+### 14.6 Neutral toast in wizard
 
-Si el coach intenta avanzar del Step 1 sin llenar ninguna condición, se muestra un toast (`data-testid="wizard-conditions-toast"`, auto-oculta a 5 s) con el texto:
+If the coach tries to advance from Step 1 without filling any condition, a toast is shown (`data-testid="wizard-conditions-toast"`, auto-hides at 5s) with text:
 
-> "Condiciones sin registrar — podrás agregarlas después desde el evento."
+> "Conditions not recorded — you can add them later from the event."
 
-No es un error ni un warning: es un recordatorio informativo de que la edición post-ingest existe. No bloquea el avance.
+This is not an error or a warning: it is an informational reminder that post-ingest editing exists. Does not block the advance.
 
-### 14.7 Privacidad
+### 14.7 Privacy
 
-- El placeholder de `weather_notes` (textarea) incluye guía explícita: *"Condiciones generales del trazado y clima — evite incluir nombres de atletas o información médica"*.
-- Los logs del PATCH registran únicamente las **claves** modificadas, nunca los valores (un `weather_notes` mal usado podría incluir un nombre que no debe persistir en logs estructurados).
-- La auditoría privacidad X1 detectó y corrigió 3 placeholders preexistentes:
-  - 1 ALTO: nombre real "Andrés Mejía" hardcoded en `revision_reason` de fixtures (reemplazado por placeholder ficticio marcado).
-  - 2 MEDIO: placeholders de `weather_notes` sin la guía de privacidad anterior.
+- The `weather_notes` placeholder (textarea) includes explicit guidance: *"General track and weather conditions — avoid including athlete names or medical information"*.
+- PATCH logs record only the **keys** modified, never the values (a misused `weather_notes` could include a name that should not persist in structured logs).
+- The X1 privacy audit detected and corrected 3 pre-existing placeholders:
+  - 1 HIGH: real name "Andrés Mejía" hardcoded in `revision_reason` fixtures (replaced by fictional marked placeholder).
+  - 2 MEDIUM: `weather_notes` placeholders without the previous privacy guidance.
 
-### 14.8 Cobertura de tests
+### 14.8 Test coverage
 
-- **Backend:** 27 tests nuevos (16 PATCH `/race-events/{id}/conditions` + 11 `POST /imports/parse` extendido). Incluye regresión del bug Decimal serialization (HTTP 500 → 422) que ocurría cuando `temperature_c` inválido propagaba un `Decimal` no-JSON-serializable a través de `ValidationError.errors()[i]["input"]`. Solución: pasar `errors()` por `jsonable_encoder` antes de devolver el 422.
-- **Frontend:** 55 tests nuevos (vitest + 5 a11y con jest-axe). Cubren wizard (ToggleGroup, auto-altitud, toast, `noValidate`), `RaceConditionsCard` (tri-estado + visibilidad por rol), `EditConditionsDialog` (precarga + validación + mutation), API client y hook.
+- **Backend:** 27 new tests (16 PATCH `/race-events/{id}/conditions` + 11 `POST /imports/parse` extended). Includes regression of the Decimal serialization bug (HTTP 500 → 422) that occurred when invalid `temperature_c` propagated a non-JSON-serializable `Decimal` through `ValidationError.errors()[i]["input"]`. Solution: pass `errors()` through `jsonable_encoder` before returning the 422.
+- **Frontend:** 55 new tests (vitest + 5 a11y with jest-axe). Cover wizard (ToggleGroup, auto-altitude, toast, `noValidate`), `RaceConditionsCard` (tri-state + role visibility), `EditConditionsDialog` (pre-load + validation + mutation), API client and hook.
 
-### 14.9 Compatibilidad
+### 14.9 Compatibility
 
-- `scripts/ingest_race.py` (CLI) no requiere cambios: los nuevos campos son opcionales en `parse_meta_json` y el commit antiguo sigue funcionando sin condiciones.
-- Imports F1.7 ya commiteados quedan sin condiciones (NULL) — la tarjeta los muestra en estado "Vacío" con botón "Agregar" para coach/admin.
-- Sin migración Alembic: las columnas ya existen desde `64c263edd07f`.
-
----
-
-## 13. Próximos pasos
-
-1. **Validar asunciones A1-A8 con coach** (estimado 15 min de conversación).
-2. **`/sc:workflow upload-design.md`** para generar plan de implementación detallado.
-3. **`/sc:implement`** por fase: backend (migración + service + endpoints + tests) → frontend (componentes + wizard + tests) → E2E.
-4. **Coordinar con F1.6 paso 9** (envs `HOSTINGER_SFTP_*` en Render) — bloqueador operativo.
-5. **Code review** antes de mergear a `main`.
+- `scripts/ingest_race.py` (CLI) requires no changes: the new fields are optional in `parse_meta_json` and the old commit still works without conditions.
+- F1.7 already-committed imports remain without conditions (NULL) — the card shows them in "Empty" state with "Add" button for coach/admin.
+- No Alembic migration: the columns already exist from `64c263edd07f`.
 
 ---
 
-## Apéndice — Variables de entorno nuevas
+## 13. Next steps
+
+1. **Validate assumptions A1-A8 with coach** (estimated 15 min conversation).
+2. **`/sc:workflow upload-design.md`** to generate a detailed implementation plan.
+3. **`/sc:implement`** by phase: backend (migration + service + endpoints + tests) → frontend (components + wizard + tests) → E2E.
+4. **Coordinate with F1.6 step 9** (`HOSTINGER_SFTP_*` envs in Render) — operational blocker.
+5. **Code review** before merging to `main`.
+
+---
+
+## Appendix — New environment variables
 
 ```env
-# Upload UI race PDFs (esta fase)
+# Upload UI race PDFs (this phase)
 RACE_MAX_PDF_MB=8
 RACE_PARSE_TIMEOUT_SECONDS=30
 RACE_PENDING_TTL_HOURS=24
 
-# Heredadas de F1.6 (deben estar configuradas en Render)
+# Inherited from F1.6 (must be configured in Render)
 HOSTINGER_SFTP_HOST=<...>
 HOSTINGER_SFTP_PORT=21
 HOSTINGER_SFTP_USER=<...>
@@ -1035,4 +1035,4 @@ HOSTINGER_PUBLIC_BASE_URL=<...>
 
 ---
 
-**Fin del documento.**
+**End of document.**

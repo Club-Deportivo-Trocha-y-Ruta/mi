@@ -1,84 +1,84 @@
-# Design — Módulo de Sesiones de Entrenamiento
+# Design — Training Sessions Module
 
-**Fecha:** 2026-05-06
-**Estado:** Diseño aprobado — pendiente implementación
-**Origen:** Brainstorm respondido por el entrenador (Q1-Q7)
+**Date:** 2026-05-06
+**Status:** Design approved — implementation pending
+**Origin:** Brainstorm answered by the coach (Q1-Q7)
 
 ---
 
-## 1. Contexto
+## 1. Context
 
-El club no tiene módulo digital para registrar entrenamientos. Vacío vs marco teórico §2-§5 (capacidades, técnica, periodización). El entrenador trabaja con cuaderno + planilla suelta. Se requiere:
+The club has no digital module to record training sessions. Gap vs. theoretical framework §2-§5 (capacities, technique, periodization). The coach works with a notebook and loose spreadsheets. Required:
 
-- Plan + ejecución de sesiones por grupo de edad (10-12 / 13-15).
-- Asistencia con estados y razones.
-- Retroalimentación estructurada por atleta (rúbrica + RPE + comentario).
-- Recorrido: texto, link Strava del entrenador, upload `.gpx`/`.fit`.
-- Reporte mensual al club con resumen generado por IA.
-- Acceso lectura para padres a las sesiones de su atleta.
-- Notificación a padres cuando se programa sesión futura (Q7).
+- Planning + execution of sessions by age group (10-12 / 13-15).
+- Attendance with states and reasons.
+- Structured feedback per athlete (rubric + RPE + comment).
+- Route: text, coach's Strava link, `.gpx`/`.fit` upload.
+- Monthly report to the club with an AI-generated summary.
+- Read access for parents to their athlete's sessions.
+- Notification to parents when a future session is scheduled (Q7).
 
-### Respuestas confirmadas del entrenador
+### Confirmed coach answers
 
-| Q | Respuesta | Implicación |
+| Q | Answer | Implication |
 |---|---|---|
-| Q1 | (b) una sesión por grupo de edad | `age_group` enum en sesión |
-| Q2 | (b)+(c) estados + razón texto | `AttendanceStatus` enum + `excuse_reason` |
-| Q3 | (c) rúbrica 3 sliders 1-5 + comentario + RPE | Campos estructurados + libre |
-| Q4 | (a)+(b)+(c) texto + Strava link + upload | `route_text`, `strava_url`, `route_file` |
-| Q5 | Reporte mensual con módulo IA | Nuevo `MonthlyReportGenerator` use case |
-| Q6 | (a)+(b) padre ve sesiones + descripción | RBAC parent: read sesión + filter por atleta |
-| Q7 | (b) plan + ejecución + notificación | Estado `planned/executed/cancelled` + email padres |
+| Q1 | (b) one session per age group | `age_group` enum on session |
+| Q2 | (b)+(c) states + text reason | `AttendanceStatus` enum + `excuse_reason` |
+| Q3 | (c) rubric 3 sliders 1-5 + comment + RPE | Structured + free-text fields |
+| Q4 | (a)+(b)+(c) text + Strava link + upload | `route_text`, `strava_url`, `route_file` |
+| Q5 | Monthly report with AI module | New `MonthlyReportGenerator` use case |
+| Q6 | (a)+(b) parent views sessions + description | RBAC parent: read session + filter by athlete |
+| Q7 | (b) plan + execution + notification | State `planned/executed/cancelled` + parent email |
 
-### Restricción Strava (research previo)
+### Strava restriction (prior research)
 
-- ToS Nov 2024: app de terceros no puede mostrar datos de atleta a otra persona. **Coach NO lee Strava de atletas.**
-- Edad mínima Strava 13 (16 EU). Atletas 10-12 fuera.
-- Único uso permitido: link manual a actividad pública del entrenador como referencia de recorrido.
-- Upload `.gpx`/`.fit` propio del coach: 100% legal, sin OAuth, age-agnóstico.
-
----
-
-## 2. Decisiones de diseño
-
-### 2.1 Modelo: planificación + ejecución unificadas
-Una entidad `TrainingSession` que pasa por estados `planned → executed → cancelled`. Evita duplicación entre tabla "plan" y "log". Al ejecutar, el coach completa los campos de ejecución sobre el mismo registro.
-
-### 2.2 Asistencia como tabla puente (`SessionAttendance`)
-Relación N:N entre `TrainingSession` y `Athlete` con metadata: estado, razón, RPE, rúbrica, comentario. Permite que la lista de atletas convocados se materialice al planificar y se completen los campos de ejecución después.
-
-### 2.3 Retroalimentación: rúbrica de 3 ejes
-Acordada con el entrenador alineada a marco teórico §6:
-1. **Esfuerzo** (RPE → derivado, no manual; OMNI 0-10) — convertido también a 1-5 para reporte.
-2. **Actitud** (1-5) — disposición, respeto, trabajo en equipo.
-3. **Técnica** (1-5) — ejecución del foco técnico de la sesión.
-
-Comentario texto libre ≤500 chars.
-
-> **Privacidad:** la rúbrica individual NUNCA va al reporte agregado del club. Solo la ve coach + padre del atleta.
-
-### 2.4 Reporte mensual con IA — anti-suplantación de juicio
-- IA genera **resumen narrativo agregado** (no juicio individual).
-- Inputs: # sesiones del mes, % asistencia por atleta, focos técnicos cubiertos, observaciones generales del coach.
-- Output: 2-3 párrafos para el club + tabla de asistencia.
-- **Nunca** generar feedback individual con IA — eso lo escribe el coach.
-- Reusa `services/ai/use_cases/` (mismo patrón de `phv_explainer.py`).
-
-### 2.5 Notificación a padres (Q7)
-Cuando coach crea sesión `planned` → email a padres de atletas convocados con: fecha/hora, lugar, foco técnico, qué llevar. Reusa `services/notification/`. Plantilla nueva `training_session_invite`.
-
-### 2.6 Recorrido: trío opcional, validación al guardar
-- `route_text` (free text, máx 500 chars) — siempre.
-- `strava_url` (validar regex `https://www.strava.com/activities/\d+`) — opcional.
-- `route_file` (`.gpx`, `.fit`, máx 5 MB) — opcional, almacenamiento local primero, S3/R2 luego.
-
-Renderizado de `.gpx` en frontend con `leaflet` + `leaflet-gpx`. `.fit` se convierte a `.gpx` server-side en una segunda fase (out of MVP).
+- ToS Nov 2024: third-party apps cannot show athlete data to another person. **Coach does NOT read athletes' Strava.**
+- Minimum Strava age 13 (16 in EU). Athletes 10-12 excluded.
+- Only permitted use: manual link to a public activity of the coach as a route reference.
+- Coach's own `.gpx`/`.fit` upload: 100% legal, no OAuth, age-agnostic.
 
 ---
 
-## 3. Modelo de datos
+## 2. Design decisions
 
-### 3.1 Diagrama ER
+### 2.1 Model: planning + execution unified
+A single `TrainingSession` entity that passes through states `planned → executed → cancelled`. Avoids duplication between a "plan" table and a "log". When executing, the coach fills in the execution fields on the same record.
+
+### 2.2 Attendance as a bridge table (`SessionAttendance`)
+N:N relationship between `TrainingSession` and `Athlete` with metadata: state, reason, RPE, rubric, comment. Allows the list of called-up athletes to be materialized at planning time and the execution fields to be filled in afterwards.
+
+### 2.3 Feedback: 3-axis rubric
+Agreed with the coach, aligned to theoretical framework §6:
+1. **Effort** (RPE → derived, not manual; OMNI 0-10) — also converted to 1-5 for the report.
+2. **Attitude** (1-5) — disposition, respect, teamwork.
+3. **Technique** (1-5) — execution of the session's technical focus.
+
+Free-text comment ≤500 chars.
+
+> **Privacy:** the individual rubric NEVER goes into the club's aggregated report. Only the coach + the athlete's parent can see it.
+
+### 2.4 Monthly report with AI — anti-impersonation of judgment
+- AI generates an **aggregated narrative summary** (no individual judgment).
+- Inputs: # sessions in the month, % attendance per athlete, technical focuses covered, general coach observations.
+- Output: 2-3 paragraphs for the club + attendance table.
+- **Never** generate individual feedback with AI — the coach writes that.
+- Reuses `services/ai/use_cases/` (same pattern as `phv_explainer.py`).
+
+### 2.5 Parent notification (Q7)
+When the coach creates a `planned` session → email to the parents of called-up athletes with: date/time, location, technical focus, what to bring. Reuses `services/notification/`. New template `training_session_invite`.
+
+### 2.6 Route: optional trio, validation on save
+- `route_text` (free text, max 500 chars) — always available.
+- `strava_url` (validate regex `https://www.strava.com/activities/\d+`) — optional.
+- `route_file` (`.gpx`, `.fit`, max 5 MB) — optional, local storage first, S3/R2 later.
+
+Rendering `.gpx` on the frontend with `leaflet` + `leaflet-gpx`. `.fit` will be converted to `.gpx` server-side in a second phase (out of MVP).
+
+---
+
+## 3. Data model
+
+### 3.1 ER diagram
 
 ```mermaid
 erDiagram
@@ -139,12 +139,12 @@ erDiagram
     }
 ```
 
-### 3.2 Enums nuevos (Python)
+### 3.2 New enums (Python)
 
 ```python
 class AgeGroup(str, Enum):
-    U12 = "u12"   # 10-12 años
-    U15 = "u15"   # 13-15 años
+    U12 = "u12"   # 10-12 years old
+    U15 = "u15"   # 13-15 years old
 
 class SessionStatus(str, Enum):
     PLANNED = "planned"
@@ -159,59 +159,59 @@ class AttendanceStatus(str, Enum):
     LESIONADO = "lesionado"
 ```
 
-### 3.3 Reglas e invariantes
+### 3.3 Rules and invariants
 
-- `scheduled_date` no puede ser pasada al crear con `status=planned`.
-- `executed_at` solo se setea cuando `status=executed`.
-- `rpe_omni`, rubric_*, `individual_feedback` solo válidos cuando attendance.status ∈ {presente, tarde}.
-- `excuse_reason` requerido cuando attendance.status ∈ {ausente, justificado, lesionado}.
-- `MonthlyReport (club_id, year, month)` único.
-- Borrado de sesión: soft delete (`status=cancelled`), nunca hard delete con asistencia registrada.
+- `scheduled_date` cannot be in the past when creating with `status=planned`.
+- `executed_at` is only set when `status=executed`.
+- `rpe_omni`, rubric_*, `individual_feedback` are only valid when attendance.status ∈ {presente, tarde}.
+- `excuse_reason` required when attendance.status ∈ {ausente, justificado, lesionado}.
+- `MonthlyReport (club_id, year, month)` unique.
+- Session deletion: soft delete (`status=cancelled`), never hard delete with recorded attendance.
 
-### 3.4 Índices clave
+### 3.4 Key indexes
 
-- `training_session(club_id, scheduled_date)` — listar mes
-- `training_session(club_id, age_group, scheduled_date)` — filtrar grupo
-- `session_attendance(session_id, athlete_id)` UNIQUE — un registro por atleta por sesión
-- `session_attendance(athlete_id, created_at)` — historial atleta
+- `training_session(club_id, scheduled_date)` — list by month
+- `training_session(club_id, age_group, scheduled_date)` — filter by group
+- `session_attendance(session_id, athlete_id)` UNIQUE — one record per athlete per session
+- `session_attendance(athlete_id, created_at)` — athlete history
 - `monthly_report(club_id, year, month)` UNIQUE
 
 ---
 
-## 4. Contrato de API (REST)
+## 4. API contract (REST)
 
-Convención existente del proyecto: `/api/v1/...`, JWT Bearer, RBAC vía `services/permissions.py`.
+Existing project convention: `/api/v1/...`, JWT Bearer, RBAC via `services/permissions.py`.
 
-### 4.1 Sesiones
+### 4.1 Sessions
 
-| Método | Endpoint | Roles | Descripción |
+| Method | Endpoint | Roles | Description |
 |---|---|---|---|
-| `POST` | `/training-sessions` | coach, admin | Crear sesión (planned). Dispara notif padres. |
-| `GET` | `/training-sessions` | coach, admin, parent | Listar. Query: `from`, `to`, `age_group`, `status`, `athlete_id` (parent → forzado a sus atletas) |
-| `GET` | `/training-sessions/{id}` | coach, admin, parent (si su atleta convocado) | Detalle |
-| `PATCH` | `/training-sessions/{id}` | coach, admin | Actualizar (incl. cambio status) |
-| `POST` | `/training-sessions/{id}/execute` | coach, admin | Marca `executed`, congela `executed_at` |
+| `POST` | `/training-sessions` | coach, admin | Create session (planned). Triggers parent notification. |
+| `GET` | `/training-sessions` | coach, admin, parent | List. Query: `from`, `to`, `age_group`, `status`, `athlete_id` (parent → forced to their athletes) |
+| `GET` | `/training-sessions/{id}` | coach, admin, parent (if their athlete was called up) | Detail |
+| `PATCH` | `/training-sessions/{id}` | coach, admin | Update (including status change) |
+| `POST` | `/training-sessions/{id}/execute` | coach, admin | Marks `executed`, freezes `executed_at` |
 | `DELETE` | `/training-sessions/{id}` | coach, admin | Soft delete → `cancelled` |
 | `POST` | `/training-sessions/{id}/route-file` | coach, admin | Upload `.gpx`/`.fit` (multipart) |
 
-### 4.2 Asistencia
+### 4.2 Attendance
 
-| Método | Endpoint | Roles | Descripción |
+| Method | Endpoint | Roles | Description |
 |---|---|---|---|
-| `PUT` | `/training-sessions/{id}/attendance` | coach, admin | Bulk upsert convocatoria (lista de athlete_ids) |
-| `PATCH` | `/training-sessions/{id}/attendance/{athlete_id}` | coach, admin | Actualiza estado/razón/rúbrica/feedback de UN atleta |
-| `GET` | `/athletes/{id}/attendance` | coach, admin, parent (su atleta) | Historial asistencia atleta |
+| `PUT` | `/training-sessions/{id}/attendance` | coach, admin | Bulk upsert call-up (list of athlete_ids) |
+| `PATCH` | `/training-sessions/{id}/attendance/{athlete_id}` | coach, admin | Update state/reason/rubric/feedback for ONE athlete |
+| `GET` | `/athletes/{id}/attendance` | coach, admin, parent (their athlete) | Athlete attendance history |
 
-### 4.3 Reporte mensual
+### 4.3 Monthly report
 
-| Método | Endpoint | Roles | Descripción |
+| Method | Endpoint | Roles | Description |
 |---|---|---|---|
-| `POST` | `/clubs/{id}/monthly-reports` | coach, admin | Genera reporte mes (body: `year`, `month`). Dispara IA + notif. |
-| `GET` | `/clubs/{id}/monthly-reports` | coach, admin | Lista |
-| `GET` | `/clubs/{id}/monthly-reports/{year}/{month}` | coach, admin, parent (agregado, sin individual) | Detalle |
-| `POST` | `/clubs/{id}/monthly-reports/{id}/send` | coach, admin | Re-envía email |
+| `POST` | `/clubs/{id}/monthly-reports` | coach, admin | Generate month report (body: `year`, `month`). Triggers AI + notification. |
+| `GET` | `/clubs/{id}/monthly-reports` | coach, admin | List |
+| `GET` | `/clubs/{id}/monthly-reports/{year}/{month}` | coach, admin, parent (aggregated, no individual) | Detail |
+| `POST` | `/clubs/{id}/monthly-reports/{id}/send` | coach, admin | Re-send email |
 
-### 4.4 Schemas Pydantic (resumen)
+### 4.4 Pydantic schemas (summary)
 
 ```python
 class TrainingSessionCreate(BaseModel):
@@ -239,17 +239,17 @@ class AttendanceUpdate(BaseModel):
     def _validate_consistency(self) -> "AttendanceUpdate":
         present = self.status in (AttendanceStatus.PRESENTE, AttendanceStatus.TARDE)
         if not present and (self.rpe_omni is not None or any(...)):
-            raise ValueError("rúbrica/RPE solo si presente o tarde")
+            raise ValueError("rubric/RPE only if present or late")
         if not present and not self.excuse_reason:
-            raise ValueError("razón requerida si no asiste")
+            raise ValueError("reason required if not attending")
         return self
 ```
 
 ---
 
-## 5. Flujos clave
+## 5. Key flows
 
-### 5.1 Coach planifica sesión → notificación a padres
+### 5.1 Coach plans session → parent notification
 
 ```mermaid
 sequenceDiagram
@@ -262,152 +262,152 @@ sequenceDiagram
     NotifService-->>Parents: email
 ```
 
-### 5.2 Coach ejecuta sesión + feedback individual
+### 5.2 Coach executes session + individual feedback
 
 ```mermaid
 sequenceDiagram
     Coach->>API: POST /training-sessions/{id}/execute
     API->>DB: UPDATE status=executed, executed_at=now
-    Coach->>API: PATCH /attendance/{athlete_id} (rúbrica + feedback)
+    Coach->>API: PATCH /attendance/{athlete_id} (rubric + feedback)
     API->>DB: UPDATE attendance
     API-->>Coach: 200 OK
-    Note over Coach,API: Feedback individual NO genera notificación automática<br/>(decisión: padre ve cuando entra al portal)
+    Note over Coach,API: Individual feedback does NOT trigger automatic notification<br/>(decision: parent sees it when they log into the portal)
 ```
 
-### 5.3 Reporte mensual con IA
+### 5.3 Monthly report with AI
 
 ```mermaid
 sequenceDiagram
     Coach->>API: POST /clubs/{id}/monthly-reports {year, month}
-    API->>DB: SELECT sessions, attendance, athletes del mes
-    API->>API: Compute metrics (% asistencia, sesiones, focos)
+    API->>DB: SELECT sessions, attendance, athletes for the month
+    API->>API: Compute metrics (% attendance, sessions, focuses)
     API->>AIService: generate_monthly_summary(metrics_snapshot)
     AIService->>LLM: prompt jinja2 'monthly_report.j2'
     LLM-->>AIService: narrative
     AIService-->>API: ai_summary
     API->>DB: INSERT monthly_report
-    API->>NotifService: send to club admins (PDF adjunto)
+    API->>NotifService: send to club admins (PDF attachment)
     API-->>Coach: 201 Created
 ```
 
 ---
 
-## 6. Permisos (RBAC)
+## 6. Permissions (RBAC)
 
-Extender `services/permissions.py` con:
+Extend `services/permissions.py` with:
 
-| Acción | Admin | Coach (mismo club) | Parent (atleta convocado) | Athlete |
+| Action | Admin | Coach (same club) | Parent (athlete called up) | Athlete |
 |---|---|---|---|---|
-| Crear sesión | ✅ | ✅ | ❌ | ❌ |
-| Editar sesión | ✅ | ✅ | ❌ | ❌ |
-| Ver sesión (detalle general) | ✅ | ✅ | ✅ (si su atleta convocado) | ❌ |
-| Ver feedback individual atleta X | ✅ | ✅ | ✅ (solo su atleta) | ❌ |
-| Marcar asistencia / rúbrica | ✅ | ✅ | ❌ | ❌ |
-| Generar reporte mensual | ✅ | ✅ | ❌ | ❌ |
-| Ver reporte mensual (agregado) | ✅ | ✅ | ✅ | ❌ |
+| Create session | ✅ | ✅ | ❌ | ❌ |
+| Edit session | ✅ | ✅ | ❌ | ❌ |
+| View session (general detail) | ✅ | ✅ | ✅ (if their athlete called up) | ❌ |
+| View individual feedback for athlete X | ✅ | ✅ | ✅ (their athlete only) | ❌ |
+| Record attendance / rubric | ✅ | ✅ | ❌ | ❌ |
+| Generate monthly report | ✅ | ✅ | ❌ | ❌ |
+| View monthly report (aggregated) | ✅ | ✅ | ✅ | ❌ |
 
-> Atletas (10-15) NO entran al sistema directo (CLAUDE.md: `can_login=false` por defecto).
+> Athletes (10-15) do NOT log in to the system directly (CLAUDE.md: `can_login=false` by default).
 
 ---
 
-## 7. Integración módulo IA (Q5)
+## 7. AI module integration (Q5)
 
-### 7.1 Nuevo use case
+### 7.1 New use case
 
 ```
 backend/app/services/ai/use_cases/monthly_report.py
 backend/app/services/ai/prompts/monthly_report.j2
 ```
 
-Patrón idéntico a `phv_explainer.py`:
-1. `ContextBuilder` construye `MonthlyReportContext` desde DB (privacy-safe: sin nombres en prompt si feature flag).
-2. `Prompt` jinja2 con `system_principles.md` + datos agregados.
-3. `Provider` (OpenAI/Anthropic, ya configurado en `factory.py`).
-4. `Guardrails` valida output (no juicio individual, máx 500 palabras, sin recomendaciones médicas).
-5. Persiste en `ai_explanations` (modelo existente) con `kind='monthly_report'`.
+Identical pattern to `phv_explainer.py`:
+1. `ContextBuilder` builds `MonthlyReportContext` from DB (privacy-safe: no athlete names in prompt if feature flag).
+2. Jinja2 `Prompt` with `system_principles.md` + aggregated data.
+3. `Provider` (OpenAI/Anthropic, already configured in `factory.py`).
+4. `Guardrails` validates output (no individual judgment, max 500 words, no medical recommendations).
+5. Persists in `ai_explanations` (existing model) with `kind='monthly_report'`.
 
-### 7.2 Privacidad (CLAUDE.md)
+### 7.2 Privacy (CLAUDE.md)
 
-- Prompt usa **edades** (no DOB), **iniciales o IDs anonimizados** (no nombres completos), **agregados** (no historiales clínicos).
-- Output revisado por guardrails antes de persistir.
-- Logs de prompts NUNCA con datos PII.
+- Prompt uses **ages** (not DOB), **initials or anonymized IDs** (not full names), **aggregates** (not clinical histories).
+- Output reviewed by guardrails before persisting.
+- Prompt logs NEVER contain PII data.
 
 ---
 
-## 8. Frontend (resumen, detalle en workflow)
+## 8. Frontend (summary, detail in workflow)
 
-Rutas nuevas:
+New routes:
 ```
-/training/sessions                 (coach: lista + filtros)
-/training/sessions/new             (coach: form planificación)
-/training/sessions/:id             (coach: detalle + asistencia)
-/training/sessions/:id/edit        (coach: editar)
-/training/reports                  (coach: lista reportes mes)
-/training/reports/:year/:month     (coach: detalle reporte)
+/training/sessions                 (coach: list + filters)
+/training/sessions/new             (coach: planning form)
+/training/sessions/:id             (coach: detail + attendance)
+/training/sessions/:id/edit        (coach: edit)
+/training/reports                  (coach: monthly report list)
+/training/reports/:year/:month     (coach: report detail)
 
-/parents/training/sessions         (parent: lista sesiones de sus atletas)
-/parents/training/sessions/:id     (parent: detalle filtrado)
+/parents/training/sessions         (parent: list of their athletes' sessions)
+/parents/training/sessions/:id     (parent: filtered detail)
 ```
 
-Componentes clave:
-- `SessionForm` (RHF + Zod) — planificar/editar
-- `AttendanceTable` — bulk edit asistencia con keyboard shortcuts
+Key components:
+- `SessionForm` (RHF + Zod) — plan/edit
+- `AttendanceTable` — bulk edit attendance with keyboard shortcuts
 - `RubricSliders` — 3 sliders + RPE + textarea
-- `RouteViewer` — leaflet con `.gpx`
-- `MonthlyReportView` — tabla métricas + narrativa IA
-- `ParentSessionList` — vista solo lectura
+- `RouteViewer` — leaflet with `.gpx`
+- `MonthlyReportView` — metrics table + AI narrative
+- `ParentSessionList` — read-only view
 
 ---
 
-## 9. Atributos no funcionales
+## 9. Non-functional attributes
 
-| Atributo | Decisión |
+| Attribute | Decision |
 |---|---|
-| Performance | Listado mes < 200ms con índice `(club_id, scheduled_date)` |
-| Almacenamiento `.gpx`/`.fit` | Local `static/uploads/routes/` MVP. R2/S3 fase 2. |
-| Tamaño máx archivo | 5 MB |
-| Privacidad | Feedback individual NUNCA en reporte agregado. IA nunca recibe nombres completos. |
-| Idempotencia | `MonthlyReport` UNIQUE (club, year, month) — POST repetido = 409 |
-| Auditoría | `created_at`/`updated_at` en todas las tablas. Considerar tabla audit log fase 2. |
-| Tests | pytest (backend) + vitest + RTL (frontend). Cobertura mínima 80% en services. |
+| Performance | Monthly listing < 200ms with index `(club_id, scheduled_date)` |
+| `.gpx`/`.fit` storage | Local `static/uploads/routes/` MVP. R2/S3 phase 2. |
+| Max file size | 5 MB |
+| Privacy | Individual feedback NEVER in aggregated report. AI never receives full names. |
+| Idempotence | `MonthlyReport` UNIQUE (club, year, month) — repeated POST = 409 |
+| Audit | `created_at`/`updated_at` on all tables. Consider audit log table in phase 2. |
+| Tests | pytest (backend) + vitest + RTL (frontend). Minimum coverage 80% on services. |
 
 ---
 
-## 10. Riesgos y mitigaciones
+## 10. Risks and mitigations
 
-| Riesgo | Severidad | Mitigación |
+| Risk | Severity | Mitigation |
 |---|---|---|
-| Coach olvida marcar asistencia → reporte mensual incompleto | ALTA | Cron diario que avise sesiones executed sin asistencia completa |
-| IA genera juicio individual en reporte | ALTA | Guardrails + prompt explícito + revisión coach antes de enviar |
-| Padre ve datos de otro atleta | CRÍTICA | RBAC con tests exhaustivos (`test_session_privacy.py`) |
-| Strava cambia ToS o rate limits | MEDIA | Strava solo es link opcional, no fuente de datos |
-| `.gpx` malicioso (XXE) | MEDIA | Parser seguro `gpxpy` con `defusedxml` |
-| Notificación masiva spam padres | MEDIA | Throttle 1 email/atleta/día. Preferencias opt-out. |
-| Reporte IA cuesta tokens cada mes | BAJA | Cache resultado en `monthly_report.ai_summary`. Solo regenera si re-solicita. |
+| Coach forgets to record attendance → incomplete monthly report | HIGH | Daily cron that alerts on executed sessions with incomplete attendance |
+| AI generates individual judgment in report | HIGH | Guardrails + explicit prompt + coach review before sending |
+| Parent sees another athlete's data | CRITICAL | RBAC with exhaustive tests (`test_session_privacy.py`) |
+| Strava changes ToS or rate limits | MEDIUM | Strava is only an optional link, not a data source |
+| Malicious `.gpx` (XXE) | MEDIUM | Secure parser `gpxpy` with `defusedxml` |
+| Mass notification spam to parents | MEDIUM | Throttle 1 email/athlete/day. Opt-out preferences. |
+| AI report consumes tokens each month | LOW | Cache result in `monthly_report.ai_summary`. Only regenerates if re-requested. |
 
 ---
 
-## 11. Out of scope (MVP — Fase 1 de este módulo)
+## 11. Out of scope (MVP — Phase 1 of this module)
 
-- Conversión `.fit` → `.gpx` server-side (postponed sprint 2)
-- Integración Intervals.icu (sprint 3)
-- Vista calendario tipo agenda (lista + filtros suficiente MVP)
-- Edición masiva sesiones (recurrentes)
-- Adjuntos foto/video sesión
-- Push notifications móvil (solo email)
-- Plantillas de sesión reutilizables ("favoritos")
+- `.fit` → `.gpx` server-side conversion (postponed sprint 2)
+- Intervals.icu integration (sprint 3)
+- Calendar-style agenda view (list + filters sufficient for MVP)
+- Bulk session editing (recurring)
+- Session photo/video attachments
+- Mobile push notifications (email only)
+- Reusable session templates ("favorites")
 
 ---
 
 ## 12. Open questions
 
-- ¿Qué proveedor LLM se usa actualmente en `factory.py`? (validar costo mensual estimado).
-- ¿Padres reciben PDF del reporte o solo lectura web? (asumido: solo web para MVP).
-- ¿Lugar/sede tiene catálogo cerrado o texto libre? (asumido: texto libre).
-- ¿Sesiones recurrentes (todos los martes) en MVP o sprint 2? (asumido: sprint 2).
+- Which LLM provider is currently used in `factory.py`? (validate estimated monthly cost).
+- Do parents receive a PDF report or only web reading? (assumed: web-only for MVP).
+- Does venue/location have a closed catalog or free text? (assumed: free text).
+- Recurring sessions (every Tuesday) in MVP or sprint 2? (assumed: sprint 2).
 
 ---
 
-## 13. Próximo paso
+## 13. Next step
 
-Ver `workflow.md` en esta misma carpeta para plan de implementación paso a paso.
+See `workflow.md` in this same folder for the step-by-step implementation plan.

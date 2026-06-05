@@ -1,42 +1,37 @@
 <!--
 Sync Impact Report
 ==================
-Version change: TEMPLATE (uninitialized placeholders) → 1.0.0
-Rationale: Initial ratification. Project transitions from unfilled template to first
-adopted constitution; semver baseline begins at 1.0.0 per governance policy.
+Version change: 1.0.0 → 1.1.0
+Rationale: MINOR amendment. Principle III expanded with an explicit, non-contradictory
+language policy that distinguishes product end-user copy (Spanish) from the AI
+development assistant's working language and instruction corpus (English). No principle
+removed or redefined incompatibly; the existing Spanish guarantee for product copy is
+preserved in substance, so the change is additive/clarifying → MINOR.
 
-Modified principles:
-  - [PRINCIPLE_1_NAME] → I. Code Quality & Maintainability
-  - [PRINCIPLE_2_NAME] → II. Testing Standards (NON-NEGOTIABLE)
-  - [PRINCIPLE_3_NAME] → III. User Experience Consistency
-  - [PRINCIPLE_4_NAME] → IV. Performance Requirements
-  - [PRINCIPLE_5_NAME] → REMOVED (user scoped to four principles)
+Amendment 2026-06-05 (1.0.0 → 1.1.0):
+  - III. User Experience Consistency → language clause split into "product end-user
+    copy = español neutro (Colombia)" and "AI dev-assistant working language +
+    instruction corpus (CLAUDE.md, .claude/agents/*, docs/**) = English". Resolves the
+    contradiction surfaced by feature 001-translate-claude-files-english.
 
-Added sections:
-  - Quality Gates & Compliance Constraints (privacy, stack, accessibility, security)
-  - Development Workflow & Review Process
-  - Governance
-
-Removed sections:
-  - Fifth principle slot (intentionally omitted per user scope)
+Initial ratification 2026-06-01 (TEMPLATE → 1.0.0):
+  - Principles I–IV adopted (I. Code Quality, II. Testing NON-NEGOTIABLE,
+    III. UX Consistency, IV. Performance). Fifth principle slot intentionally omitted.
+  - Added sections: Quality Gates & Compliance Constraints; Development Workflow &
+    Review Process; Governance.
 
 Templates requiring updates:
-  - ✅ .specify/templates/plan-template.md — "Constitution Check" section will be
-    populated by /speckit-plan against these four principles. No structural edit
-    required; the gate placeholder remains generic and will reference this file.
-  - ✅ .specify/templates/spec-template.md — Aligned. Success Criteria section
-    already supports measurable, technology-agnostic outcomes required by
-    Principle IV.
-  - ✅ .specify/templates/tasks-template.md — Aligned. "Tests" guidance in this
-    template marks tests OPTIONAL; Principle II overrides this for code that
-    ships, requiring tests for any merged change. The template's optionality
-    refers to whether to include a separate Test phase, not whether to test.
-  - ✅ CLAUDE.md (project) — No edit required; existing CLAUDE.md already
-    encodes stricter operational policies (privacy, accessibility, stack)
-    that act as informative context complementing this constitution.
+  - ✅ .specify/templates/plan-template.md — generic "Constitution Check" gate; no edit
+    needed (references this file).
+  - ✅ .specify/templates/spec-template.md — aligned; no edit needed.
+  - ✅ .specify/templates/tasks-template.md — aligned; no edit needed.
+  - ⚠ CLAUDE.md (project) — its "Idioma" section still says "responder siempre en
+    español"; it will be rewritten to the English working-language policy by feature
+    001 (task T009) so it mirrors this amended Principle III. Pending until that task.
 
 Follow-up TODOs:
-  - None. All placeholders resolved with concrete values.
+  - CLAUDE.md "Idioma"/"Language" section to be updated by feature 001 (T009) to match
+    Principle III. Tracked in specs/001-translate-claude-files-english/tasks.md.
 -->
 
 # Club Deportivo Trocha y Ruta Constitution
@@ -95,8 +90,16 @@ incident from happening twice.
 The product serves two distinct users — coaches (tablet, on the field) and parents
 (mobile Android, intermittent 3G/4G). Consistency across both surfaces is mandatory.
 
-- All user-facing copy MUST be in español neutro (Colombia), with full diacritics, and
-  MUST avoid clinical or judgmental language about minors.
+- **Language policy**: A single, non-contradictory policy governs language across the
+  project. **Product end-user copy** — anything a coach or parent reads in the running
+  product (frontend UI strings, backend Jinja email/PDF templates, notification bodies)
+  — MUST be in español neutro (Colombia), with full diacritics, and MUST avoid clinical
+  or judgmental language about minors. **The AI development assistant's working
+  language** — the assistant's reasoning and replies to the developer, plus the
+  AI-facing instruction and documentation corpus (`CLAUDE.md`, `.claude/agents/*`,
+  `docs/**`) — is **English**, to maximize prompt-engineering quality. Translating that
+  instruction corpus to English MUST NOT change the language of any product end-user
+  copy.
 - UI components MUST be sourced from the shared `shadcn/ui` + Tailwind system already
   in `frontend/src/components`. Introducing a new component pattern requires a written
   justification in the PR description and a reusable location under `components/`.
@@ -213,4 +216,4 @@ non-negotiables in `CLAUDE.md`.
   guidance file for AI-assisted development and is informative-but-binding alongside
   this constitution.
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-01 | **Last Amended**: 2026-06-01
+**Version**: 1.1.0 | **Ratified**: 2026-06-01 | **Last Amended**: 2026-06-05

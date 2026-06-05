@@ -1,53 +1,53 @@
-# Runbook operativo — race-analyst v2 (F8A)
+# Operational Runbook — race-analyst v2 (F8A)
 
-> **Audiencia**: coach, admin, on-call.
-> **Alcance**: módulo agéntico race-results v2 (LangGraph + Gemini) en producción.
-> **Default MVP**: observabilidad via audit DB (`athlete_ai_insights`, `agent_runs`,
-> `agent_run_events`) + endpoint admin `/api/race-analysis/admin/ai-usage`.
-> Langfuse self-hosted está diferido a F8B opcional.
+> **Audience**: coach, admin, on-call.
+> **Scope**: agentic race-results v2 module (LangGraph + Gemini) in production.
+> **Default MVP**: observability via audit DB (`athlete_ai_insights`, `agent_runs`,
+> `agent_run_events`) + admin endpoint `/api/race-analysis/admin/ai-usage`.
+> Langfuse self-hosted is deferred to optional F8B.
 
 ---
 
-## 1. Acceso
+## 1. Access
 
-### 1.1 Render (backend FastAPI)
+### 1.1 Render (FastAPI backend)
 
-- URL dashboard: <https://dashboard.render.com>
-- Servicio: `mi-2yzi` (Oregon, free tier, Docker).
-- Logs en tiempo real: pestaña **Logs** del servicio (búsqueda full-text).
-- Shell remoto: pestaña **Shell** (no apto para queries — usar MySQL client).
-- Variables sensibles: pestaña **Environment** (todas listadas en
-  `CLAUDE.md` del proyecto).
+- Dashboard URL: <https://dashboard.render.com>
+- Service: `mi-2yzi` (Oregon, free tier, Docker).
+- Real-time logs: **Logs** tab of the service (full-text search).
+- Remote shell: **Shell** tab (not suitable for queries — use MySQL client).
+- Sensitive variables: **Environment** tab (all listed in
+  project `CLAUDE.md`).
 
-### 1.2 MySQL Hostinger (base de datos)
+### 1.2 MySQL Hostinger (database)
 
-- Host: ver variable `MYSQL_HOST` en Render env.
-- Cliente recomendado: `mysql` CLI o DBeaver con SSL.
-- Credenciales: `MYSQL_USER` / `MYSQL_PASS` en Render env.
-- Conexión rápida desde local:
+- Host: see `MYSQL_HOST` variable in Render env.
+- Recommended client: `mysql` CLI or DBeaver with SSL.
+- Credentials: `MYSQL_USER` / `MYSQL_PASS` in Render env.
+- Quick connection from local:
 
   ```bash
   mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p "$MYSQL_DB"
   ```
 
-> Hostinger Shared tiene IP allowlist en algunos planes; si la
-> conexión falla con `Host '...' is not allowed`, el coach debe agregar
-> la IP saliente desde el panel hPanel → MySQL Remoto.
+> Hostinger Shared has an IP allowlist on some plans; if the
+> connection fails with `Host '...' is not allowed`, the coach must add
+> the outgoing IP from hPanel → MySQL Remote.
 
 ### 1.3 Render — login
 
-1. Cuenta Render: usar `juadigab@gmail.com` (compartida con admin del proyecto).
-2. Si está dormido, primer request del frontend tarda ~50s en cold start.
+1. Render account: use `juadigab@gmail.com` (shared with project admin).
+2. If sleeping, first frontend request takes ~50s on cold start.
 
 ---
 
-## 2. Métricas clave
+## 2. Key metrics
 
-### 2.1 Endpoint admin
+### 2.1 Admin endpoint
 
-`GET /api/race-analysis/admin/ai-usage?days=30` — requiere JWT con rol `admin`.
+`GET /api/race-analysis/admin/ai-usage?days=30` — requires JWT with `admin` role.
 
-Devuelve:
+Returns:
 
 ```json
 {
@@ -63,12 +63,12 @@ Devuelve:
 }
 ```
 
-Es la **fuente operativa principal** — coincide con la lógica del
-budget guard (ambos leen `metrics_snapshot_json.aggregate.cost_usd_total`).
+This is the **primary operational source** — matches the logic of the
+budget guard (both read `metrics_snapshot_json.aggregate.cost_usd_total`).
 
-### 2.2 Queries SQL crudas
+### 2.2 Raw SQL queries
 
-Costos y latencias últimos 7 días por run (drill-down):
+Costs and latencies last 7 days per run (drill-down):
 
 ```sql
 SELECT
@@ -84,7 +84,7 @@ ORDER BY generated_at DESC
 LIMIT 100;
 ```
 
-Runs activos / fallidos últimos 7 días:
+Active / failed runs last 7 days:
 
 ```sql
 SELECT status, COUNT(*) AS n
@@ -93,7 +93,7 @@ WHERE started_at >= NOW() - INTERVAL 7 DAY
 GROUP BY status;
 ```
 
-Runs colgados (>30 min sin terminar):
+Hung runs (>30 min without finishing):
 
 ```sql
 SELECT external_run_id, status, started_at, requested_by_user_id
@@ -103,7 +103,7 @@ WHERE status IN ('running', 'awaiting_hitl')
 ORDER BY started_at;
 ```
 
-Eventos de un run específico (debugging):
+Events of a specific run (debugging):
 
 ```sql
 SELECT seq, event_type, node_name,
@@ -115,37 +115,37 @@ ORDER BY seq;
 
 ---
 
-## 3. Alertas comunes
+## 3. Common alerts
 
-### 3.1 LLM (Gemini) caído
+### 3.1 LLM (Gemini) down
 
-**Síntomas**:
-- `fail_rate` en `/ai-usage` > 0.20.
-- Logs de Render con muchos `agent run XXX falló: APIError` o similar.
+**Symptoms**:
+- `fail_rate` in `/ai-usage` > 0.20.
+- Render logs with many `agent run XXX failed: APIError` or similar.
 
-**Diagnóstico**:
-1. Verificar status de Google AI: <https://status.cloud.google.com>.
-2. Confirmar que `AI_API_KEY` no expiró (Google AI Studio dashboard).
-3. Si Google está OK, revisar cuotas (rate limits del modelo `gemini-2.5-flash-lite`).
+**Diagnosis**:
+1. Check Google AI status: <https://status.cloud.google.com>.
+2. Confirm `AI_API_KEY` hasn't expired (Google AI Studio dashboard).
+3. If Google is OK, review quotas (rate limits of model `gemini-2.5-flash-lite`).
 
-**Mitigación**:
-- **Disable temporal**: setear `AI_ENABLED=false` en Render → Save → auto-redeploy.
-  Esto hace que `POST /runs` responda 503 con mensaje "AI no disponible" — el
-  coach ve un toast claro y deja de spawn runs que fallarán.
-- **Fallback**: el grafo tiene nodo `fallback.py` que genera análisis básico
-  determinista si el LLM falla; los runs degradan pero no se pierden.
+**Mitigation**:
+- **Temporary disable**: set `AI_ENABLED=false` in Render → Save → auto-redeploy.
+  This makes `POST /runs` respond 503 with message "AI not available" — the
+  coach sees a clear toast and stops spawning runs that will fail.
+- **Fallback**: the graph has a `fallback.py` node that generates basic
+  deterministic analysis if the LLM fails; runs degrade but are not lost.
 
-### 3.2 Run colgado >30 min
+### 3.2 Hung run >30 min
 
-**Síntoma**: query del §2.2 devuelve filas.
+**Symptom**: query from §2.2 returns rows.
 
-**Causa común**:
-- Worker de FastAPI fue reiniciado (Render redeploy) mientras un run
-  estaba activo — el checkpointer LangGraph en SQLite local del worker
-  se pierde y no hay continuación.
+**Common cause**:
+- FastAPI worker was restarted (Render redeploy) while a run
+  was active — the LangGraph SQLite-local checkpointer in the worker
+  is lost and there is no continuation.
 
-**Mitigación**:
-1. Cancelar manualmente (impacto cero para usuarios — el coach reintenta):
+**Mitigation**:
+1. Cancel manually (zero impact for users — the coach retries):
 
    ```sql
    UPDATE agent_runs
@@ -155,90 +155,90 @@ ORDER BY seq;
    WHERE external_run_id = 'XXX' AND status IN ('running', 'awaiting_hitl');
    ```
 
-2. Si pasa frecuentemente, considerar migrar el checkpointer a Redis
-   (TODO documentado en `app/services/race/ai/runner.py`).
+2. If this happens frequently, consider migrating the checkpointer to Redis
+   (TODO documented in `app/services/race/ai/runner.py`).
 
-### 3.3 Eval falla en CI
+### 3.3 Eval fails in CI
 
-**Síntoma**: pipeline GitHub Actions con eval framework (F7) en rojo.
+**Symptom**: GitHub Actions pipeline with eval framework (F7) in red.
 
-**Diagnóstico**:
-1. Revisar `evals/race_analyst/results/last_run.md` — muestra qué fixtures
-   golden divergieron.
-2. Comparar con baseline (commit anterior) para identificar el cambio
-   responsable (prompt, weights, model version bump de Gemini).
+**Diagnosis**:
+1. Check `evals/race_analyst/results/last_run.md` — shows which golden
+   fixtures diverged.
+2. Compare with baseline (prior commit) to identify the responsible change
+   (prompt, weights, Gemini model version bump).
 
-**Mitigación**:
-- Si la divergencia es esperada (mejora intencional): actualizar
-  baseline + documentar en PR.
-- Si es regresión: revertir el commit del prompt o ajustar.
+**Mitigation**:
+- If the divergence is expected (intentional improvement): update
+  baseline + document in PR.
+- If it's a regression: revert the prompt commit or adjust.
 
-### 3.4 Costo se dispara — budget guard activo
+### 3.4 Cost spikes — budget guard active
 
-**Síntoma**:
-- Coach reporta error 503 "Presupuesto mensual de IA excedido: $X de $Y".
-- Logs de Render contienen `ERROR ... race_ai_budget_exceeded: ...`.
+**Symptom**:
+- Coach reports 503 error "Monthly AI budget exceeded: $X of $Y".
+- Render logs contain `ERROR ... race_ai_budget_exceeded: ...`.
 
-**Diagnóstico**:
-1. Confirmar gasto real:
+**Diagnosis**:
+1. Confirm real spending:
 
    ```bash
    curl -H "Authorization: Bearer $ADMIN_JWT" \
      "https://mi-2yzi.onrender.com/api/race-analysis/admin/ai-usage?days=30"
    ```
-2. Drill-down por prompt_version para ver qué versión consume:
-   ver campo `by_prompt_version` del response.
+2. Drill-down by prompt_version to see which version consumes:
+   see `by_prompt_version` field in response.
 
-**Mitigación** (en orden de preferencia):
-1. **Esperar**: si el gasto se debe a tráfico legítimo y queda poco para
-   que la ventana 30d se rotule, simplemente esperar.
-2. **Subir el threshold temporalmente**: setear
-   `RACE_AI_BUDGET_USD_30D=40` en Render → redeploy (toma ~1 min).
-3. **Investigar fuga**: si el costo subió 10x sin más usuarios, revisar:
-   - ¿Hay un loop de retries por alguna feature flag?
-   - ¿Aumentó `AI_MAX_TOKENS`? (verificar en env var)
-   - ¿Un atleta tiene cientos de competidores por GROUP que infla el prompt?
+**Mitigation** (in order of preference):
+1. **Wait**: if spending is due to legitimate traffic and little time remains before
+   the 30d window rolls over, just wait.
+2. **Temporarily raise the threshold**: set
+   `RACE_AI_BUDGET_USD_30D=40` in Render → redeploy (takes ~1 min).
+3. **Investigate leak**: if cost jumped 10x without more users, check:
+   - Is there a retry loop from some feature flag?
+   - Did `AI_MAX_TOKENS` increase? (check in env var)
+   - Does an athlete have hundreds of competitors per GROUP that inflates the prompt?
 
-> **Cooldown**: el guard sólo loggea/notifica 1 vez por hora aunque haya
-> 100 requests rechazados. Si necesitas resetear el cooldown (debugging),
-> reinicia el servicio (`Manual Deploy`).
+> **Cooldown**: the guard only logs/notifies once per hour even if there are
+> 100 rejected requests. If you need to reset the cooldown (debugging),
+> restart the service (`Manual Deploy`).
 
-### 3.5 PII leak detectado
+### 3.5 PII leak detected
 
-> **Crítico**: datos personales de menores expuestos en cualquier output
+> **Critical**: personal data of minors exposed in any output
 > (logs, frontend, email, exports).
 
-**Procedimiento**:
-1. **Contención inmediata**: setear `AI_LOG_PROMPTS=false` (debe estar
-   en `false` siempre en prod; el validator de Settings lo enforces).
-2. **Auditar logs**: descargar logs de Render últimos 7 días y grep por
-   patrones de nombre/apellido completo. Borrar logs si Render lo
-   permite (free tier no permite delete — escalar a paid si necesario).
-3. **Invalidar caché de insights afectados**:
+**Procedure**:
+1. **Immediate containment**: set `AI_LOG_PROMPTS=false` (must always be
+   `false` in prod; the Settings validator enforces this).
+2. **Audit logs**: download Render logs from the last 7 days and grep for
+   full name/surname patterns. Delete logs if Render allows it
+   (free tier does not allow delete — escalate to paid if necessary).
+3. **Invalidate cache of affected insights**:
 
    ```sql
    UPDATE athlete_ai_insights
    SET archived_at = NOW()
-   WHERE athlete_id = <ID afectado>;
+   WHERE athlete_id = <affected_ID>;
    ```
-4. **Notificar afectados**: contactar al coach + padres del/los atleta(s)
-   por canal directo (no email automático — el contenido es sensible).
-5. **Post-mortem**: documentar en `docs/10-race-results/` y agregar test
-   de regresión que cubra el path del leak.
+4. **Notify affected parties**: contact the coach + parents of the affected athlete(s)
+   via direct channel (not automatic email — the content is sensitive).
+5. **Post-mortem**: document in `docs/10-race-results/` and add a
+   regression test that covers the leak path.
 
 ---
 
 ## 4. Restart procedure
 
-### 4.1 Producción (Render)
+### 4.1 Production (Render)
 
-- **Restart limpio**: Render Dashboard → servicio `mi-2yzi` → Manual Deploy
-  → "Deploy latest commit". Tarda ~3-5 min (build + migración Alembic + start).
-- **Auto-deploy**: cada push a `main` dispara redeploy automático.
-- **Rollback rápido**: Dashboard → Deploys → click en deploy anterior →
-  "Redeploy". NOTE: Alembic migrations no se revierten automáticamente
-  — si el rollback cruza una migración nueva, hay que `alembic downgrade`
-  manualmente vía Shell.
+- **Clean restart**: Render Dashboard → service `mi-2yzi` → Manual Deploy
+  → "Deploy latest commit". Takes ~3-5 min (build + Alembic migration + start).
+- **Auto-deploy**: every push to `main` triggers automatic redeploy.
+- **Quick rollback**: Dashboard → Deploys → click on previous deploy →
+  "Redeploy". NOTE: Alembic migrations are not automatically reverted
+  — if the rollback crosses a new migration, run `alembic downgrade`
+  manually via Shell.
 
 ### 4.2 Local (docker compose)
 
@@ -247,8 +247,8 @@ docker compose down
 docker compose up --build
 ```
 
-`entrypoint.sh` corre `alembic upgrade head` antes de arrancar uvicorn.
-En entorno `development` también corre el seed.
+`entrypoint.sh` runs `alembic upgrade head` before starting uvicorn.
+In `development` environment the seed also runs.
 
 ---
 
@@ -256,11 +256,11 @@ En entorno `development` también corre el seed.
 
 ### 5.1 Hostinger MySQL
 
-- **Backup automático**: Hostinger hace backup diario completo de la DB
-  (retención 7 días en plan compartido).
-- **Restore**: panel hPanel → MySQL → Backups → Restore. ATENCIÓN: el
-  restore reemplaza la DB completa.
-- **Backup manual antes de cambios críticos**:
+- **Automatic backup**: Hostinger performs daily full DB backup
+  (7 days retention on shared plan).
+- **Restore**: hPanel → MySQL → Backups → Restore. CAUTION: the
+  restore replaces the entire DB.
+- **Manual backup before critical changes**:
 
   ```bash
   mysqldump -h "$MYSQL_HOST" -u "$MYSQL_USER" -p \
@@ -268,18 +268,18 @@ En entorno `development` también corre el seed.
     "$MYSQL_DB" > backup_$(date +%Y%m%d_%H%M).sql
   ```
 
-### 5.2 Criticidad por tabla
+### 5.2 Criticality by table
 
-| Tabla | Criticidad | Recuperación |
+| Table | Criticality | Recovery |
 |---|---|---|
-| `athlete_ai_insights` | **Alta** — datos para coach + auditoría de IA. | Restore desde backup. |
-| `agent_runs` | Media — historial de runs; se puede regenerar (con costo). | Restore + advisorio al coach. |
-| `agent_run_events` | **Baja (efímera)** — solo polling/SSE. Crece rápido; archivar/truncate >90d. | No requiere restore. |
-| `anonymization_mappings` | Media — borrar = perder traceability. | Restore. |
+| `athlete_ai_insights` | **High** — data for coach + AI audit. | Restore from backup. |
+| `agent_runs` | Medium — run history; can be regenerated (with cost). | Restore + advisory to coach. |
+| `agent_run_events` | **Low (ephemeral)** — only polling/SSE. Grows fast; archive/truncate >90d. | No restore needed. |
+| `anonymization_mappings` | Medium — deleting = losing traceability. | Restore. |
 
-### 5.3 Tarea recurrente recomendada
+### 5.3 Recommended recurring task
 
-Truncate de `agent_run_events` >90 días, mensual:
+Truncate `agent_run_events` >90 days, monthly:
 
 ```sql
 DELETE FROM agent_run_events
@@ -288,9 +288,9 @@ WHERE created_at < NOW() - INTERVAL 90 DAY;
 
 ---
 
-## 6. Smoke test post-deploy
+## 6. Post-deploy smoke test
 
-Después de cada redeploy en Render, correr smoke E2E (script
+After each Render redeploy, run E2E smoke (script
 `backend/scripts/smoke_test_prod.py`):
 
 ```bash
@@ -306,25 +306,25 @@ python -m scripts.smoke_test_prod \
 ```
 
 Exit codes:
-- `0` — OK (run ejecutado + insight persistido + cost_usd > 0).
-- `1` — fallo (timeout, error de red, validación, cost==0).
+- `0` — OK (run executed + insight persisted + cost_usd > 0).
+- `1` — failure (timeout, network error, validation, cost==0).
 
-Para `--help` completo: `python -m scripts.smoke_test_prod --help`.
+For full `--help`: `python -m scripts.smoke_test_prod --help`.
 
-> En local con AI fake (`AI_PROVIDER=fake`), correr con `--skip-cost-check`
-> porque el provider mock no acumula costo.
+> In local with fake AI (`AI_PROVIDER=fake`), run with `--skip-cost-check`
+> because the mock provider does not accumulate cost.
 
 ---
 
-## 7. Glosario rápido
+## 7. Quick glossary
 
-- **F8A**: fase 8 opción A — observabilidad audit-only via DB
+- **F8A**: phase 8 option A — audit-only observability via DB
   (default MVP).
-- **F8B**: fase 8 opción B — Langfuse self-hosted (diferido,
-  opcional, ver `v2-agentic-design.md`).
-- **Budget guard**: módulo `app/services/race/ai/budget_guard.py` que
-  bloquea nuevos runs si gasto 30d >= `RACE_AI_BUDGET_USD_30D`.
-- **HITL**: Human-In-The-Loop — nodo `hitl_gate_review` que pausa el
-  grafo esperando aprobación del coach.
-- **Run colgado**: status=`running` o `awaiting_hitl` por >30 min sin
-  evento nuevo en `agent_run_events`.
+- **F8B**: phase 8 option B — Langfuse self-hosted (deferred,
+  optional, see `v2-agentic-design.md`).
+- **Budget guard**: module `app/services/race/ai/budget_guard.py` that
+  blocks new runs if 30d spending >= `RACE_AI_BUDGET_USD_30D`.
+- **HITL**: Human-In-The-Loop — `hitl_gate_review` node that pauses the
+  graph waiting for coach approval.
+- **Hung run**: status=`running` or `awaiting_hitl` for >30 min without
+  new event in `agent_run_events`.

@@ -1,46 +1,46 @@
-# Workflow: Modulo de Padres/Acudientes
+# Workflow: Parents/Guardians Module
 
-**Fuente:** Diseno `/sc:design` + investigacion `/sc:research` (2026-04-15)
-**Estrategia:** Sistematica (backend-first, luego frontend coach, luego portal parent)
-**Generado:** 2026-04-15
-
----
-
-## Resumen de Requerimientos
-
-### Funcionales
-- CRUD de relaciones parent-athlete (coach/admin vincula/desvincula)
-- Portal de padres: ver datos de sus hijos (antropometria, PHV, percentiles)
-- Sistema de invitacion por token para auto-registro de padres
-- Vista reducida de datos sensibles para padres (sin notas del coach, sin comparativas)
-
-### No funcionales
-- Privacidad: Ley 1581/2012 Colombia — datos sensibles de menores
-- RBAC: parent solo accede a atletas vinculados via `parent_athlete`
-- Consentimiento parental registrado antes de almacenar datos
-
-### Fuera de alcance (Fase 2+)
-- Notificaciones push/email a padres
-- Integracion con Spond para comunicacion familiar
-- Portal del atleta (login propio)
-- Modo clinico/familiar toggle en percentiles
+**Source:** Design `/sc:design` + research `/sc:research` (2026-04-15)
+**Strategy:** Systematic (backend-first, then coach frontend, then parent portal)
+**Generated:** 2026-04-15
 
 ---
 
-## Pasos de Implementacion
+## Requirements Summary
 
-### Fase 1: Fundacion Backend
+### Functional
+- CRUD of parent-athlete relationships (coach/admin links/unlinks)
+- Parent portal: view data for their children (anthropometry, PHV, percentiles)
+- Token-based invitation system for parent self-registration
+- Reduced view of sensitive data for parents (no coach notes, no comparisons)
 
-#### Paso 1 — Migracion: tabla `parent_invites` + campo `parental_consent`
-**Tipo:** backend (database)
-**Agentes:** `backend-architect` (schema), `security-engineer` (validacion de campos sensibles)
-**Archivos:**
-- `backend/app/models/parent_invite.py` (nuevo)
-- `backend/app/models/athlete.py` (agregar campo)
-- `backend/app/models/__init__.py` (exportar nuevo modelo)
-- `backend/alembic/versions/xxxx_add_parent_invites_and_consent.py` (migracion)
+### Non-functional
+- Privacy: Ley 1581/2012 Colombia — sensitive data of minors
+- RBAC: parent only accesses athletes linked via `parent_athlete`
+- Parental consent recorded before storing data
 
-**Modelo `ParentInvite`:**
+### Out of scope (Phase 2+)
+- Push/email notifications to parents
+- Integration with Spond for family communication
+- Athlete portal (own login)
+- Clinical/family toggle mode in percentiles
+
+---
+
+## Implementation Steps
+
+### Phase 1: Backend Foundation
+
+#### Step 1 — Migration: `parent_invites` table + `parental_consent` field
+**Type:** backend (database)
+**Agents:** `backend-architect` (schema), `security-engineer` (sensitive field validation)
+**Files:**
+- `backend/app/models/parent_invite.py` (new)
+- `backend/app/models/athlete.py` (add field)
+- `backend/app/models/__init__.py` (export new model)
+- `backend/alembic/versions/xxxx_add_parent_invites_and_consent.py` (migration)
+
+**`ParentInvite` model:**
 ```python
 class ParentInvite(Base):
     __tablename__ = "parent_invites"
@@ -56,27 +56,27 @@ class ParentInvite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=...)
 ```
 
-**Campo nuevo en `Athlete`:**
+**New field in `Athlete`:**
 ```python
 parental_consent_obtained: Mapped[bool] = mapped_column(default=False)
 parental_consent_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 ```
 
-**Depende de:** Nada
-**Complejidad:** Baja
-**Riesgo:** Bajo
-**Criterio de exito:** Migracion aplica sin errores; tablas creadas en MySQL
+**Depends on:** Nothing
+**Complexity:** Low
+**Risk:** Low
+**Success criterion:** Migration applies without errors; tables created in MySQL
 
 ---
 
-#### Paso 2 — Schemas Pydantic para parent-athletes
-**Tipo:** backend (schemas)
-**Agentes:** `backend-architect`
-**Archivos:**
-- `backend/app/schemas/parent_athlete.py` (nuevo)
-- `backend/app/schemas/athlete.py` (agregar `AthleteParentView`)
+#### Step 2 — Pydantic Schemas for parent-athletes
+**Type:** backend (schemas)
+**Agents:** `backend-architect`
+**Files:**
+- `backend/app/schemas/parent_athlete.py` (new)
+- `backend/app/schemas/athlete.py` (add `AthleteParentView`)
 
-**Schemas nuevos:**
+**New schemas:**
 ```
 ParentAthleteCreate    — parent_id, athlete_id, relationship
 ParentAthleteOut       — id, parent_id, athlete_id, relationship, parent_name, parent_email, parent_phone, athlete_name
@@ -84,24 +84,24 @@ ParentAthleteListOut   — items: list[ParentAthleteOut], total: int
 MyAthleteOut           — athlete: AthleteOut, relationship, latest_anthropometry, measurement_status
 ParentInviteCreate     — athlete_id, email
 ParentInviteOut        — id, athlete_id, email, token, expires_at, used, created_at
-AthleteParentView      — Subconjunto de AthleteDetailOut SIN notes, training_implications detallado
-ParentRegisterRequest  — token, first_name, last_name, password, phone (opcional)
+AthleteParentView      — Subset of AthleteDetailOut WITHOUT notes, detailed training_implications
+ParentRegisterRequest  — token, first_name, last_name, password, phone (optional)
 ```
 
-**Depende de:** Paso 1 (modelo ParentInvite)
-**Complejidad:** Baja
-**Riesgo:** Bajo
-**Criterio de exito:** Schemas importables, validaciones Zod-like funcionan
+**Depends on:** Step 1 (ParentInvite model)
+**Complexity:** Low
+**Risk:** Low
+**Success criterion:** Schemas importable, Zod-like validations work
 
 ---
 
-#### Paso 3 — Dependencia `verify_athlete_access`
-**Tipo:** backend (services)
-**Agentes:** `backend-architect`, `security-engineer`
-**Archivos:**
-- `backend/app/dependencies.py` (agregar funcion)
+#### Step 3 — `verify_athlete_access` dependency
+**Type:** backend (services)
+**Agents:** `backend-architect`, `security-engineer`
+**Files:**
+- `backend/app/dependencies.py` (add function)
 
-**Implementacion:**
+**Implementation:**
 ```python
 async def verify_athlete_access(
     athlete_id: int,
@@ -135,165 +135,165 @@ async def verify_athlete_access(
     raise HTTPException(403)
 ```
 
-**Depende de:** Nada (usa modelos existentes)
-**Complejidad:** Media
-**Riesgo:** Medio — afecta endpoints existentes, requiere testing exhaustivo
-**Criterio de exito:** Tests pasan para admin, coach (su club, otro club), parent (su hijo, otro hijo), roles no autorizados
+**Depends on:** Nothing (uses existing models)
+**Complexity:** Medium
+**Risk:** Medium — affects existing endpoints, requires thorough testing
+**Success criterion:** Tests pass for admin, coach (own club, other club), parent (own child, another child), unauthorized roles
 
 ---
 
-#### Paso 4 — Router `parent_athletes.py` (CRUD relaciones)
-**Tipo:** backend (router)
-**Agentes:** `backend-architect`, `security-engineer`
-**Archivos:**
-- `backend/app/routers/parent_athletes.py` (nuevo)
-- `backend/app/main.py` (registrar router)
+#### Step 4 — `parent_athletes.py` router (relationship CRUD)
+**Type:** backend (router)
+**Agents:** `backend-architect`, `security-engineer`
+**Files:**
+- `backend/app/routers/parent_athletes.py` (new)
+- `backend/app/main.py` (register router)
 
 **Endpoints:**
-| Metodo | Ruta | Descripcion | Roles |
+| Method | Path | Description | Roles |
 |--------|------|-------------|-------|
-| `POST` | `/api/parent-athletes` | Vincular parent con athlete | coach, admin |
-| `GET` | `/api/parent-athletes` | Listar relaciones (?athlete_id, ?parent_id) | coach, admin |
-| `DELETE` | `/api/parent-athletes/{id}` | Desvincular | coach, admin |
-| `GET` | `/api/parent-athletes/my-athletes` | Mis hijos (self) | parent |
+| `POST` | `/api/parent-athletes` | Link parent with athlete | coach, admin |
+| `GET` | `/api/parent-athletes` | List relationships (?athlete_id, ?parent_id) | coach, admin |
+| `DELETE` | `/api/parent-athletes/{id}` | Unlink | coach, admin |
+| `GET` | `/api/parent-athletes/my-athletes` | My children (self) | parent |
 
-**Validaciones del POST:**
-- `parent_id` debe tener `role=parent`
-- `athlete_id` debe existir
-- Coach: ambos deben estar en un club del coach
-- Max 3 parents/acudientes por atleta
-- Unique constraint ya existe en BD
+**POST validations:**
+- `parent_id` must have `role=parent`
+- `athlete_id` must exist
+- Coach: both must belong to one of the coach's clubs
+- Max 3 parents/guardians per athlete
+- Unique constraint already exists in DB
 
-**Registrar en main.py:**
+**Register in main.py:**
 ```python
 from app.routers import parent_athletes
 app.include_router(parent_athletes.router, prefix="/api/parent-athletes", tags=["parent-athletes"])
 ```
 
-**Depende de:** Paso 2 (schemas), Paso 3 (verify_athlete_access para my-athletes)
-**Complejidad:** Media
-**Riesgo:** Bajo
-**Criterio de exito:** CRUD funcional, RBAC valido, max 3 parents validado
+**Depends on:** Step 2 (schemas), Step 3 (`verify_athlete_access` for my-athletes)
+**Complexity:** Medium
+**Risk:** Low
+**Success criterion:** CRUD functional, RBAC valid, max 3 parents validated
 
 ---
 
-#### Paso 5 — Sistema de invitaciones (invite-link)
-**Tipo:** backend (router + service)
-**Agentes:** `backend-architect`, `security-engineer`
-**Archivos:**
-- `backend/app/routers/parent_athletes.py` (agregar endpoints de invitacion)
-- `backend/app/routers/auth.py` (agregar endpoint publico de registro)
-- `backend/app/services/invitations.py` (nuevo — logica de tokens)
+#### Step 5 — Invitation system (invite-link)
+**Type:** backend (router + service)
+**Agents:** `backend-architect`, `security-engineer`
+**Files:**
+- `backend/app/routers/parent_athletes.py` (add invitation endpoints)
+- `backend/app/routers/auth.py` (add public registration endpoint)
+- `backend/app/services/invitations.py` (new — token logic)
 
-**Endpoints nuevos en parent-athletes:**
-| Metodo | Ruta | Descripcion | Roles |
+**New endpoints in parent-athletes:**
+| Method | Path | Description | Roles |
 |--------|------|-------------|-------|
-| `POST` | `/api/parent-athletes/invite` | Generar invitacion | coach, admin |
-| `GET` | `/api/parent-athletes/invites?athlete_id=X` | Listar invitaciones de un atleta | coach, admin |
+| `POST` | `/api/parent-athletes/invite` | Generate invitation | coach, admin |
+| `GET` | `/api/parent-athletes/invites?athlete_id=X` | List invitations for an athlete | coach, admin |
 
-**Endpoint publico en auth:**
-| Metodo | Ruta | Descripcion | Roles |
+**Public endpoint in auth:**
+| Method | Path | Description | Roles |
 |--------|------|-------------|-------|
-| `POST` | `/api/auth/parent-register` | Auto-registro con token | publico |
-| `GET` | `/api/auth/invite/{token}` | Validar token (pre-render form) | publico |
+| `POST` | `/api/auth/parent-register` | Self-registration with token | public |
+| `GET` | `/api/auth/invite/{token}` | Validate token (pre-render form) | public |
 
-**Servicio `invitations.py`:**
+**`invitations.py` service:**
 - `generate_invite_token()` — `secrets.token_urlsafe(32)`, expiry 72h
-- `validate_invite_token()` — verifica existencia, no usado, no expirado
-- `consume_invite()` — crea usuario parent, vincula con athlete, marca token como usado
+- `validate_invite_token()` — verifies existence, not used, not expired
+- `consume_invite()` — creates parent user, links with athlete, marks token as used
 
-**Depende de:** Paso 1 (modelo ParentInvite), Paso 4 (router base)
-**Complejidad:** Media-Alta
-**Riesgo:** Medio — endpoint publico requiere proteccion contra abuso (rate limit, token single-use)
-**Criterio de exito:** Flujo completo: coach invita → token valido → parent se registra → queda vinculado
+**Depends on:** Step 1 (ParentInvite model), Step 4 (base router)
+**Complexity:** Medium-High
+**Risk:** Medium — public endpoint requires protection against abuse (rate limit, single-use token)
+**Success criterion:** Complete flow: coach invites → valid token → parent registers → gets linked
 
 ---
 
-#### Paso 6 — Modificar endpoints existentes para acceso parent
-**Tipo:** backend (refactor)
-**Agentes:** `backend-architect`, `security-engineer`
-**Archivos:**
-- `backend/app/routers/athletes.py` (GET /{id} y GET /alerts)
+#### Step 6 — Modify existing endpoints for parent access
+**Type:** backend (refactor)
+**Agents:** `backend-architect`, `security-engineer`
+**Files:**
+- `backend/app/routers/athletes.py` (GET /{id} and GET /alerts)
 - `backend/app/routers/anthropometry.py` (GET /{id}/anthropometry)
 
-**Cambios:**
+**Changes:**
 
-1. **`GET /api/athletes/{athlete_id}`** — Ampliar `require_role` para incluir `UserRole.parent`. Usar `verify_athlete_access` en vez de logica inline. Retornar `AthleteParentView` si el rol es parent (sin notes, sin training_implications detallado).
+1. **`GET /api/athletes/{athlete_id}`** — Expand `require_role` to include `UserRole.parent`. Use `verify_athlete_access` instead of inline logic. Return `AthleteParentView` if role is parent (no notes, no detailed training_implications).
 
-2. **`GET /api/athletes/{athlete_id}/anthropometry`** — Ampliar a parent. Filtrar campo `notes` en respuesta si `current_user.role == parent`.
+2. **`GET /api/athletes/{athlete_id}/anthropometry`** — Expand to parent. Filter `notes` field in response if `current_user.role == parent`.
 
-3. **Eliminar `_get_athlete_or_403`** duplicado en anthropometry.py — usar `verify_athlete_access` centralizado.
+3. **Remove duplicate `_get_athlete_or_403`** in anthropometry.py — use centralized `verify_athlete_access`.
 
-**Depende de:** Paso 3 (verify_athlete_access)
-**Complejidad:** Media
-**Riesgo:** Alto — modifica endpoints en produccion. Requiere tests de regresion.
-**Criterio de exito:** Endpoints existentes siguen funcionando para coach/admin. Parent accede solo a sus hijos. Notes filtradas para parent.
+**Depends on:** Step 3 (`verify_athlete_access`)
+**Complexity:** Medium
+**Risk:** High — modifies endpoints in production. Requires regression tests.
+**Success criterion:** Existing endpoints continue working for coach/admin. Parent accesses only their children. Notes filtered for parent.
 
 ---
 
-#### Paso 7 — Seed data: usuario parent + vinculacion
-**Tipo:** backend (seed)
-**Agentes:** `backend-architect`
-**Archivos:**
-- `backend/app/seed.py` o script de seed existente
+#### Step 7 — Seed data: parent user + link
+**Type:** backend (seed)
+**Agents:** `backend-architect`
+**Files:**
+- `backend/app/seed.py` or existing seed script
 
-**Datos:**
-| Rol | Email | Contrasena | Nombre |
-|-----|-------|------------|--------|
+**Data:**
+| Role | Email | Password | Name |
+|------|-------|----------|------|
 | Parent | `padre@trochyruta.com` | `Parent2026!` | Carlos Garcia |
 
-- Vincular con 1-2 atletas existentes del seed
-- Relacion: "padre"
-- Tambien crear una invitacion de ejemplo (usada)
+- Link with 1-2 existing athletes from seed
+- Relationship: "padre"
+- Also create a sample invitation (used)
 
-**Depende de:** Paso 1, Paso 4
-**Complejidad:** Baja
-**Riesgo:** Bajo
-**Criterio de exito:** `docker compose up` crea parent con relaciones; login funcional
-
----
-
-#### Paso 8 — Tests backend
-**Tipo:** backend (testing)
-**Agentes:** `quality-engineer`
-**Archivos:**
-- `backend/tests/test_parent_athletes.py` (nuevo)
-- `backend/tests/test_parent_register.py` (nuevo)
-- `backend/tests/test_athletes.py` (agregar tests de acceso parent)
-- `backend/tests/test_anthropometry.py` (agregar tests de acceso parent)
-
-**Casos de prueba criticos:**
-1. Coach vincula parent con athlete de su club — 201
-2. Coach vincula parent con athlete de otro club — 403
-3. Coach intenta vincular usuario no-parent — 422
-4. Max 3 parents por athlete — 409
-5. Parent lista sus hijos (my-athletes) — 200 con datos correctos
-6. Parent accede a atleta no vinculado — 403
-7. Parent ve anthropometry sin notes — 200 (notes=null)
-8. Invite: generar token — 201
-9. Invite: registrar con token valido — 201 + vinculacion automatica
-10. Invite: token expirado — 410
-11. Invite: token ya usado — 410
-12. Invite: token inexistente — 404
-13. Regresion: coach sigue accediendo normalmente — 200
-
-**Depende de:** Pasos 4, 5, 6, 7
-**Complejidad:** Media-Alta
-**Riesgo:** Bajo
-**Criterio de exito:** Todos los tests pasan; cobertura de RBAC completa
+**Depends on:** Step 1, Step 4
+**Complexity:** Low
+**Risk:** Low
+**Success criterion:** `docker compose up` creates parent with relationships; login functional
 
 ---
 
-### Fase 2: Frontend — Vista Coach
+#### Step 8 — Backend tests
+**Type:** backend (testing)
+**Agents:** `quality-engineer`
+**Files:**
+- `backend/tests/test_parent_athletes.py` (new)
+- `backend/tests/test_parent_register.py` (new)
+- `backend/tests/test_athletes.py` (add parent access tests)
+- `backend/tests/test_anthropometry.py` (add parent access tests)
 
-#### Paso 9 — Tipos TypeScript y enum `FamilyRelationship`
-**Tipo:** frontend (types)
-**Agentes:** Ninguno (tarea simple)
-**Archivos:**
-- `frontend/src/types/parent.types.ts` (nuevo)
-- `frontend/src/types/enums.ts` (agregar FamilyRelationship)
+**Critical test cases:**
+1. Coach links parent with athlete from their club — 201
+2. Coach links parent with athlete from another club — 403
+3. Coach attempts to link non-parent user — 422
+4. Max 3 parents per athlete — 409
+5. Parent lists their children (my-athletes) — 200 with correct data
+6. Parent accesses unlinked athlete — 403
+7. Parent views anthropometry without notes — 200 (notes=null)
+8. Invite: generate token — 201
+9. Invite: register with valid token — 201 + automatic linking
+10. Invite: expired token — 410
+11. Invite: already used token — 410
+12. Invite: non-existent token — 404
+13. Regression: coach still accesses normally — 200
 
-**Tipos:**
+**Depends on:** Steps 4, 5, 6, 7
+**Complexity:** Medium-High
+**Risk:** Low
+**Success criterion:** All tests pass; complete RBAC coverage
+
+---
+
+### Phase 2: Frontend — Coach View
+
+#### Step 9 — TypeScript types and `FamilyRelationship` enum
+**Type:** frontend (types)
+**Agents:** None (simple task)
+**Files:**
+- `frontend/src/types/parent.types.ts` (new)
+- `frontend/src/types/enums.ts` (add FamilyRelationship)
+
+**Types:**
 ```typescript
 // enums.ts
 export enum FamilyRelationship {
@@ -310,24 +310,24 @@ export interface MyAthleteOut { athlete: AthleteOut; relationship: FamilyRelatio
 export interface ParentInviteOut { id: number; athlete_id: number; email: string; expires_at: string; used: boolean; created_at: string; }
 ```
 
-**Depende de:** Nada
-**Complejidad:** Baja
-**Riesgo:** Bajo
+**Depends on:** Nothing
+**Complexity:** Low
+**Risk:** Low
 
 ---
 
-#### Paso 10 — API service y hooks de padres
-**Tipo:** frontend (api + hooks)
-**Agentes:** Ninguno (sigue patron existente)
-**Archivos:**
-- `frontend/src/api/parents.ts` (nuevo)
-- `frontend/src/hooks/parents/useParents.ts` (nuevo)
-- `frontend/src/hooks/parents/useParentAthletes.ts` (nuevo)
-- `frontend/src/hooks/parents/useCreateParentAthlete.ts` (nuevo)
-- `frontend/src/hooks/parents/useDeleteParentAthlete.ts` (nuevo)
-- `frontend/src/hooks/parents/useParentInvites.ts` (nuevo)
+#### Step 10 — Parent API service and hooks
+**Type:** frontend (api + hooks)
+**Agents:** None (follows existing pattern)
+**Files:**
+- `frontend/src/api/parents.ts` (new)
+- `frontend/src/hooks/parents/useParents.ts` (new)
+- `frontend/src/hooks/parents/useParentAthletes.ts` (new)
+- `frontend/src/hooks/parents/useCreateParentAthlete.ts` (new)
+- `frontend/src/hooks/parents/useDeleteParentAthlete.ts` (new)
+- `frontend/src/hooks/parents/useParentInvites.ts` (new)
 
-**API service (patron identico a athletes.ts):**
+**API service (identical pattern to athletes.ts):**
 ```typescript
 // api/parents.ts
 export async function getParents(params?: { club_id?: number }) { ... }
@@ -338,111 +338,111 @@ export async function sendParentInvite(payload: { athlete_id: number; email: str
 export async function getParentInvites(athleteId: number) { ... }
 ```
 
-**Hooks (patron identico a useAthletes):**
+**Hooks (identical pattern to useAthletes):**
 ```typescript
-// Ejemplo: useParentAthletes.ts
+// Example: useParentAthletes.ts
 export function useParentAthletes(filters?: { athlete_id?: number; parent_id?: number }) {
   return useQuery({ queryKey: ["parent-athletes", filters], queryFn: () => getParentAthletes(filters) });
 }
 ```
 
-**Depende de:** Paso 9 (tipos)
-**Complejidad:** Baja
-**Riesgo:** Bajo
-**Criterio de exito:** Hooks importables, queryKeys correctos, invalidacion en mutations
+**Depends on:** Step 9 (types)
+**Complexity:** Low
+**Risk:** Low
+**Success criterion:** Hooks importable, correct queryKeys, invalidation on mutations
 
 ---
 
-#### Paso 11 — ParentsListPage + ParentsTable
-**Tipo:** frontend (page + component)
-**Agentes:** `react-ui-engineer`
-**Archivos:**
-- `frontend/src/routes/parents/ParentsListPage.tsx` (nuevo)
-- `frontend/src/components/parents/ParentsTable.tsx` (nuevo)
+#### Step 11 — ParentsListPage + ParentsTable
+**Type:** frontend (page + component)
+**Agents:** `react-ui-engineer`
+**Files:**
+- `frontend/src/routes/parents/ParentsListPage.tsx` (new)
+- `frontend/src/components/parents/ParentsTable.tsx` (new)
 
-**Funcionalidades:**
-- Lista de usuarios con `role=parent` del club del coach (usa `GET /api/users?role=parent`)
-- Busqueda por nombre (debounced, patron de AthletesListPage)
-- Columnas: Nombre, Email, Telefono, Hijos vinculados (count), Acciones (ver)
-- Boton "+ Nuevo padre" que abre dialog de creacion
-- Link a `/parents/{id}` en cada fila
+**Features:**
+- List of users with `role=parent` from the coach's club (uses `GET /api/users?role=parent`)
+- Search by name (debounced, AthletesListPage pattern)
+- Columns: Name, Email, Phone, Linked children (count), Actions (view)
+- "+ New parent" button that opens creation dialog
+- Link to `/parents/{id}` on each row
 
-**Depende de:** Paso 10 (hooks)
-**Complejidad:** Media
-**Riesgo:** Bajo
-**Criterio de exito:** Lista funcional con busqueda, navegacion a detalle
+**Depends on:** Step 10 (hooks)
+**Complexity:** Medium
+**Risk:** Low
+**Success criterion:** Functional list with search, navigation to detail
 
 ---
 
-#### Paso 12 — ParentDetailPage + ParentAthleteAssignment
-**Tipo:** frontend (page + components)
-**Agentes:** `react-ui-engineer`
-**Archivos:**
-- `frontend/src/routes/parents/ParentDetailPage.tsx` (nuevo)
-- `frontend/src/components/parents/ParentAthleteAssignment.tsx` (nuevo)
-- `frontend/src/components/parents/ParentContactInfo.tsx` (nuevo)
-- `frontend/src/components/parents/ParentInviteManager.tsx` (nuevo)
+#### Step 12 — ParentDetailPage + ParentAthleteAssignment
+**Type:** frontend (page + components)
+**Agents:** `react-ui-engineer`
+**Files:**
+- `frontend/src/routes/parents/ParentDetailPage.tsx` (new)
+- `frontend/src/components/parents/ParentAthleteAssignment.tsx` (new)
+- `frontend/src/components/parents/ParentContactInfo.tsx` (new)
+- `frontend/src/components/parents/ParentInviteManager.tsx` (new)
 
 **Layout:**
 ```
 ┌─────────────────────┐ ┌──────────────────────┐
-│ Datos de Contacto   │ │ Hijos Vinculados     │
-│ (ParentContactInfo) │ │ (tabla + asignar)    │
-└─────────────────────┘ │ [+ Vincular atleta]  │
-                        │ [Enviar invitacion]  │
+│ Contact Data        │ │ Linked Children      │
+│ (ParentContactInfo) │ │ (table + assign)     │
+└─────────────────────┘ │ [+ Link athlete]     │
+                        │ [Send invitation]    │
                         └──────────────────────┘
 ```
 
 **ParentAthleteAssignment (dialog):**
-- Select de atletas del club sin este parent asignado
-- Select de relacion (padre/madre/acudiente)
-- Boton vincular → POST /api/parent-athletes
-- Boton desvincular (icono X) → DELETE /api/parent-athletes/{id}
+- Select of athletes from the club without this parent assigned
+- Select of relationship (padre/madre/acudiente)
+- Link button → POST /api/parent-athletes
+- Unlink button (X icon) → DELETE /api/parent-athletes/{id}
 
 **ParentInviteManager:**
-- Mostrar estado de invitacion (pendiente/usada/expirada)
-- Boton "Reenviar invitacion" si expirada
-- Input de email si no hay invitacion
+- Show invitation status (pending/used/expired)
+- "Resend invitation" button if expired
+- Email input if there is no invitation
 
-**Depende de:** Pasos 10, 11
-**Complejidad:** Media-Alta
-**Riesgo:** Bajo
-**Criterio de exito:** Vinculacion/desvinculacion funcional; invitaciones enviadas
+**Depends on:** Steps 10, 11
+**Complexity:** Medium-High
+**Risk:** Low
+**Success criterion:** Linking/unlinking functional; invitations sent
 
 ---
 
-#### Paso 13 — Rutas y navegacion coach
-**Tipo:** frontend (routing)
-**Agentes:** Ninguno
-**Archivos:**
-- `frontend/src/App.tsx` (agregar rutas)
-- `frontend/src/components/layout/AppShell.tsx` (agregar nav link)
+#### Step 13 — Coach routes and navigation
+**Type:** frontend (routing)
+**Agents:** None
+**Files:**
+- `frontend/src/App.tsx` (add routes)
+- `frontend/src/components/layout/AppShell.tsx` (add nav link)
 
-**Rutas nuevas:**
+**New routes:**
 ```tsx
 <Route path="/parents" element={<ProtectedRoute allowedRoles={[UserRole.coach]}><ParentsListPage /></ProtectedRoute>} />
 <Route path="/parents/:id" element={<ProtectedRoute allowedRoles={[UserRole.coach]}><ParentDetailPage /></ProtectedRoute>} />
 ```
 
-**Navegacion (AppShell):**
+**Navigation (AppShell):**
 ```tsx
-{isCoach && <NavLink to="/parents">Padres</NavLink>}
+{isCoach && <NavLink to="/parents">Parents</NavLink>}
 ```
 
-**Depende de:** Pasos 11, 12
-**Complejidad:** Baja
-**Riesgo:** Bajo
-**Criterio de exito:** Navegacion visible para coach, rutas protegidas
+**Depends on:** Steps 11, 12
+**Complexity:** Low
+**Risk:** Low
+**Success criterion:** Navigation visible for coach, protected routes
 
 ---
 
-### Fase 3: Frontend — Portal de Padres
+### Phase 3: Frontend — Parent Portal
 
-#### Paso 14 — API service y hooks del portal parent
-**Tipo:** frontend (api + hooks)
-**Archivos:**
-- `frontend/src/api/parents.ts` (agregar `getMyAthletes`)
-- `frontend/src/hooks/parents/useMyAthletes.ts` (nuevo)
+#### Step 14 — Parent portal API service and hooks
+**Type:** frontend (api + hooks)
+**Files:**
+- `frontend/src/api/parents.ts` (add `getMyAthletes`)
+- `frontend/src/hooks/parents/useMyAthletes.ts` (new)
 
 ```typescript
 export async function getMyAthletes(): Promise<MyAthleteOut[]> {
@@ -451,196 +451,196 @@ export async function getMyAthletes(): Promise<MyAthleteOut[]> {
 }
 ```
 
-**Depende de:** Paso 9 (tipos)
-**Complejidad:** Baja
-**Riesgo:** Bajo
+**Depends on:** Step 9 (types)
+**Complexity:** Low
+**Risk:** Low
 
 ---
 
-#### Paso 15 — ParentDashboardPage + ChildCard
-**Tipo:** frontend (page + component)
-**Agentes:** `react-ui-engineer`
-**Archivos:**
-- `frontend/src/routes/parents/ParentDashboardPage.tsx` (nuevo)
-- `frontend/src/components/parents/portal/ChildCard.tsx` (nuevo)
+#### Step 15 — ParentDashboardPage + ChildCard
+**Type:** frontend (page + component)
+**Agents:** `react-ui-engineer`
+**Files:**
+- `frontend/src/routes/parents/ParentDashboardPage.tsx` (new)
+- `frontend/src/components/parents/portal/ChildCard.tsx` (new)
 
 **Layout:**
 ```
 ┌─────────────────────────┐ ┌──────────────────┐
 │ 🚴 Juan Garcia          │ │ 🚴 Ana Garcia    │
-│ Edad: 12.3 anios        │ │ Edad: 10.8       │
+│ Age: 12.3 years         │ │ Age: 10.8        │
 │ Cat: Infantil A         │ │ Cat: Pre-Infantil│
-│ PHV: "Crecimiento       │ │ PHV: "Desarrollo │
-│  temprano" (🔵)         │ │  temprano" (🔵)  │
-│ Talla: 148.5 cm         │ │ ⚠ Sin medicion   │
-│ Ult. medicion: 12 mar   │ │                  │
-│         [Ver detalle →] │ │  [Ver detalle →] │
+│ PHV: "Early development │ │ PHV: "Early      │
+│  stage" (🔵)            │ │  development" (🔵│
+│ Height: 148.5 cm        │ │ ⚠ No measurement │
+│ Last measurement: 12 mar│ │                  │
+│         [View detail →] │ │  [View detail →] │
 └─────────────────────────┘ └──────────────────┘
 ```
 
-**Lenguaje contextual para PHV (research finding):**
-- Pre-PHV → "En etapa de desarrollo temprano"
-- Circa-PHV → "En pico de crecimiento — etapa clave para desarrollo tecnico"
-- Post-PHV → "Crecimiento estabilizandose — puede iniciar entrenamiento mas estructurado"
+**Contextual language for PHV (research finding):**
+- Pre-PHV → "In early development stage"
+- Circa-PHV → "In growth spurt — key stage for technical development"
+- Post-PHV → "Growth stabilizing — can begin more structured training"
 
-**Depende de:** Paso 14
-**Complejidad:** Media
-**Riesgo:** Bajo
-**Criterio de exito:** Cards muestran datos de hijos con lenguaje apropiado
-
----
-
-#### Paso 16 — MyAthleteDetailPage (vista parent)
-**Tipo:** frontend (page)
-**Agentes:** `react-ui-engineer`
-**Archivos:**
-- `frontend/src/routes/parents/MyAthleteDetailPage.tsx` (nuevo)
-
-**Reutiliza componentes existentes en modo lectura:**
-- `AthleteInfoCard` — datos basicos (sin boton editar)
-- `AnthropometryHistory` — historial (sin notas del coach)
-- `GrowthCharts` — curvas de crecimiento
-- `PercentileCurves` — percentiles CDC
-
-**NO incluye:**
-- Formulario de antropometria (solo coach puede medir)
-- `TrainingReadiness` (informacion de entrenamiento interna)
-- `ResearchReferences` (demasiado tecnico para padres)
-- Campo `notes` en historial
-
-**Depende de:** Paso 15, componentes existentes
-**Complejidad:** Media
-**Riesgo:** Bajo — reutiliza componentes probados
-**Criterio de exito:** Parent ve datos de su hijo en modo lectura; no ve datos de entrenamiento internos
+**Depends on:** Step 14
+**Complexity:** Medium
+**Risk:** Low
+**Success criterion:** Cards show children's data with appropriate language
 
 ---
 
-#### Paso 17 — Rutas y navegacion parent
-**Tipo:** frontend (routing)
-**Archivos:**
-- `frontend/src/App.tsx` (agregar rutas parent)
-- `frontend/src/components/layout/AppShell.tsx` (agregar nav condicional)
-- `frontend/src/routes/ProtectedRoute.tsx` (verificar soporte de UserRole.parent)
+#### Step 16 — MyAthleteDetailPage (parent view)
+**Type:** frontend (page)
+**Agents:** `react-ui-engineer`
+**Files:**
+- `frontend/src/routes/parents/MyAthleteDetailPage.tsx` (new)
 
-**Rutas:**
+**Reuses existing components in read-only mode:**
+- `AthleteInfoCard` — basic data (no edit button)
+- `AnthropometryHistory` — history (no coach notes)
+- `GrowthCharts` — growth curves
+- `PercentileCurves` — CDC percentiles
+
+**Does NOT include:**
+- Anthropometry form (only coach can measure)
+- `TrainingReadiness` (internal training information)
+- `ResearchReferences` (too technical for parents)
+- `notes` field in history
+
+**Depends on:** Step 15, existing components
+**Complexity:** Medium
+**Risk:** Low — reuses tested components
+**Success criterion:** Parent views their child's data in read-only mode; does not see internal training data
+
+---
+
+#### Step 17 — Parent routes and navigation
+**Type:** frontend (routing)
+**Files:**
+- `frontend/src/App.tsx` (add parent routes)
+- `frontend/src/components/layout/AppShell.tsx` (add conditional nav)
+- `frontend/src/routes/ProtectedRoute.tsx` (verify UserRole.parent support)
+
+**Routes:**
 ```tsx
 <Route path="/my-athletes" element={<ProtectedRoute allowedRoles={[UserRole.parent]}><ParentDashboardPage /></ProtectedRoute>} />
 <Route path="/my-athletes/:id" element={<ProtectedRoute allowedRoles={[UserRole.parent]}><MyAthleteDetailPage /></ProtectedRoute>} />
 ```
 
-**Navegacion:**
+**Navigation:**
 ```tsx
-{isParent && <NavLink to="/my-athletes">Mis Atletas</NavLink>}
+{isParent && <NavLink to="/my-athletes">My Athletes</NavLink>}
 ```
 
-**Redirect por rol al login:**
+**Role-based redirect at login:**
 - Coach → `/dashboard`
 - Parent → `/my-athletes`
 - Admin → `/dashboard`
 
-**Depende de:** Pasos 15, 16
-**Complejidad:** Baja
-**Riesgo:** Bajo
-**Criterio de exito:** Parent logueado ve sidebar con "Mis Atletas"; coach no ve rutas de parent
+**Depends on:** Steps 15, 16
+**Complexity:** Low
+**Risk:** Low
+**Success criterion:** Logged-in parent sees sidebar with "My Athletes"; coach does not see parent routes
 
 ---
 
-#### Paso 18 — Pagina publica de registro parent (invite flow)
-**Tipo:** frontend (page)
-**Agentes:** `react-ui-engineer`
-**Archivos:**
-- `frontend/src/routes/auth/ParentRegisterPage.tsx` (nuevo)
-- `frontend/src/App.tsx` (agregar ruta publica)
+#### Step 18 — Public parent registration page (invite flow)
+**Type:** frontend (page)
+**Agents:** `react-ui-engineer`
+**Files:**
+- `frontend/src/routes/auth/ParentRegisterPage.tsx` (new)
+- `frontend/src/App.tsx` (add public route)
 
-**Flujo:**
+**Flow:**
 1. URL: `/registro-padre?token=xxx`
-2. GET `/api/auth/invite/{token}` — valida token, retorna email + nombre del atleta
-3. Si valido: formulario con email (pre-rellenado, readonly), nombre, apellido, contrasena, telefono
-4. Submit: POST `/api/auth/parent-register` → crea cuenta + vinculacion
-5. Exito: redirige a `/login` con mensaje de confirmacion
-6. Token invalido/expirado: mensaje de error con instruccion de contactar al entrenador
+2. GET `/api/auth/invite/{token}` — validates token, returns email + athlete name
+3. If valid: form with email (pre-filled, readonly), first name, last name, password, phone
+4. Submit: POST `/api/auth/parent-register` → creates account + link
+5. Success: redirects to `/login` with confirmation message
+6. Invalid/expired token: error message with instruction to contact the coach
 
-**Depende de:** Paso 5 (backend invite), Paso 9 (tipos)
-**Complejidad:** Media
-**Riesgo:** Medio — pagina publica, debe ser segura
-**Criterio de exito:** Flujo completo funcional; token single-use; UX clara para padres no tecnicos
+**Depends on:** Step 5 (backend invite), Step 9 (types)
+**Complexity:** Medium
+**Risk:** Medium — public page, must be secure
+**Success criterion:** Complete flow functional; single-use token; clear UX for non-technical parents
 
 ---
 
-### Fase 4: Calidad
+### Phase 4: Quality
 
-#### Paso 19 — Tests frontend
-**Tipo:** frontend (testing)
-**Agentes:** `quality-engineer`
-**Archivos:**
+#### Step 19 — Frontend tests
+**Type:** frontend (testing)
+**Agents:** `quality-engineer`
+**Files:**
 - `frontend/src/components/parents/__tests__/ParentsTable.test.tsx`
 - `frontend/src/components/parents/portal/__tests__/ChildCard.test.tsx`
 - `frontend/src/hooks/parents/__tests__/useParentAthletes.test.ts`
 
-**Casos:**
-1. ParentsTable renderiza filas correctamente
-2. ChildCard muestra lenguaje contextual de PHV
-3. ParentAthleteAssignment: vincular/desvincular
-4. MyAthleteDetailPage: no muestra notas del coach
-5. ParentRegisterPage: token invalido muestra error
-6. Navegacion condicional por rol en AppShell
+**Cases:**
+1. ParentsTable renders rows correctly
+2. ChildCard shows contextual PHV language
+3. ParentAthleteAssignment: link/unlink
+4. MyAthleteDetailPage: does not show coach notes
+5. ParentRegisterPage: invalid token shows error
+6. Conditional navigation by role in AppShell
 
-**Depende de:** Todos los pasos anteriores
-**Complejidad:** Media
-**Riesgo:** Bajo
-**Criterio de exito:** Tests pasan; cobertura de componentes criticos
-
----
-
-#### Paso 20 — Test E2E del flujo completo
-**Tipo:** e2e (playwright)
-**Agentes:** `quality-engineer`
-**Archivos:**
-- `frontend/e2e/parents.spec.ts` (nuevo)
-
-**Flujo E2E:**
-1. Login como coach → navegar a Padres → crear parent → vincular con atleta
-2. Coach genera invitacion → (simular) parent se registra con token
-3. Login como parent → ver dashboard → ver detalle de hijo → verificar que no hay notas
-4. Login como parent → intentar acceder a `/athletes` → redirect o 403
-
-**Depende de:** Todos los pasos + servidor corriendo
-**Complejidad:** Alta
-**Riesgo:** Bajo
-**Criterio de exito:** Flujo completo sin errores
+**Depends on:** All previous steps
+**Complexity:** Medium
+**Risk:** Low
+**Success criterion:** Tests pass; coverage of critical components
 
 ---
 
-## Grafo de Dependencias
+#### Step 20 — Full flow E2E test
+**Type:** e2e (playwright)
+**Agents:** `quality-engineer`
+**Files:**
+- `frontend/e2e/parents.spec.ts` (new)
+
+**E2E flow:**
+1. Login as coach → navigate to Parents → create parent → link with athlete
+2. Coach generates invitation → (simulate) parent registers with token
+3. Login as parent → view dashboard → view child detail → verify no notes
+4. Login as parent → attempt to access `/athletes` → redirect or 403
+
+**Depends on:** All steps + running server
+**Complexity:** High
+**Risk:** Low
+**Success criterion:** Complete flow without errors
+
+---
+
+## Dependency Graph
 
 ```mermaid
 graph TD
-    P1[1: Migracion DB] --> P2[2: Schemas Pydantic]
+    P1[1: DB Migration] --> P2[2: Pydantic Schemas]
     P1 --> P7[7: Seed data]
-    P2 --> P4[4: Router parent-athletes]
+    P2 --> P4[4: parent-athletes router]
     P3[3: verify_athlete_access] --> P4
-    P3 --> P6[6: Modificar endpoints existentes]
-    P4 --> P5[5: Sistema invitaciones]
+    P3 --> P6[6: Modify existing endpoints]
+    P4 --> P5[5: Invitation system]
     P4 --> P7
-    P5 --> P8[8: Tests backend]
+    P5 --> P8[8: Backend tests]
     P6 --> P8
     P7 --> P8
 
-    P9[9: Tipos TS] --> P10[10: API + hooks]
+    P9[9: TS Types] --> P10[10: API + hooks]
     P10 --> P11[11: ParentsListPage]
     P10 --> P12[12: ParentDetailPage]
-    P11 --> P13[13: Rutas coach]
+    P11 --> P13[13: Coach routes]
     P12 --> P13
 
-    P9 --> P14[14: API portal parent]
+    P9 --> P14[14: Parent portal API]
     P14 --> P15[15: ParentDashboard]
     P15 --> P16[16: MyAthleteDetail]
-    P16 --> P17[17: Rutas parent]
+    P16 --> P17[17: Parent routes]
 
-    P5 --> P18[18: Registro publico]
+    P5 --> P18[18: Public registration]
     P9 --> P18
 
-    P13 --> P19[19: Tests frontend]
+    P13 --> P19[19: Frontend tests]
     P17 --> P19
     P18 --> P19
     P19 --> P20[20: E2E]
@@ -667,37 +667,37 @@ graph TD
     style P20 fill:#e8f5e9
 ```
 
-**Leyenda:** 🔵 Bajo riesgo | 🟠 Riesgo medio | 🔴 Riesgo alto | 🟢 Testing
+**Legend:** 🔵 Low risk | 🟠 Medium risk | 🔴 High risk | 🟢 Testing
 
 ---
 
-## Registro de Riesgos
+## Risk Register
 
-| Riesgo | Pasos Afectados | Mitigacion |
-|--------|-----------------|------------|
-| Endpoint publico `/auth/parent-register` expuesto a abuso | 5, 18 | Token single-use + expiracion 72h + rate limiting (Fase 2) |
-| Modificar endpoints existentes rompe flujo coach | 6 | Tests de regresion exhaustivos en Paso 8 |
-| Datos sensibles de PHV mal comunicados a padres | 15, 16 | Lenguaje contextual validado con entrenador antes de deploy |
-| Parents sin email no pueden usar invite-link | 5, 18 | Fallback: coach crea cuenta directamente (flujo existente ya soportado) |
-| Lazy loading en SQLAlchemy async | 3, 4 | Usar `selectinload` o EXISTS explicito — nunca lazy load |
+| Risk | Affected Steps | Mitigation |
+|------|----------------|------------|
+| Public endpoint `/auth/parent-register` exposed to abuse | 5, 18 | Single-use token + 72h expiry + rate limiting (Phase 2) |
+| Modifying existing endpoints breaks coach flow | 6 | Thorough regression tests in Step 8 |
+| Sensitive PHV data poorly communicated to parents | 15, 16 | Contextual language validated with coach before deployment |
+| Parents without email cannot use invite-link | 5, 18 | Fallback: coach creates account directly (existing flow already supported) |
+| Lazy loading in SQLAlchemy async | 3, 4 | Use `selectinload` or explicit EXISTS — never lazy load |
 
 ---
 
-## Oportunidades de Paralelismo
+## Parallelism Opportunities
 
-| Paralelo | Pasos | Condicion |
+| Parallel | Steps | Condition |
 |----------|-------|-----------|
-| Backend Fase 1 | 1 + 3 | Independientes |
-| Frontend types + backend schemas | 9 + 2 | Independientes |
-| Vista coach + portal parent | 11-13 + 14-17 | Ambos dependen de Paso 10, luego divergen |
-| Registro publico + portal parent | 18 + 15-17 | Independientes post Paso 9 |
+| Backend Phase 1 | 1 + 3 | Independent |
+| Frontend types + backend schemas | 9 + 2 | Independent |
+| Coach view + parent portal | 11-13 + 14-17 | Both depend on Step 10, then diverge |
+| Public registration + parent portal | 18 + 15-17 | Independent after Step 9 |
 
 ---
 
-## Recomendaciones de Ejecucion
+## Execution Recommendations
 
-1. **MVP entregable despues del Paso 13:** Coach puede gestionar padres y vincularlos con atletas. No requiere portal de padres.
-2. **Paso 6 es el mas delicado** — modificar endpoints en produccion. Hacer en rama aparte con tests de regresion antes de merge.
-3. **Pasos 1 + 3 en paralelo** con agentes `backend-architect` + `security-engineer`.
-4. **Pasos 9-13 (frontend coach) y 14-17 (frontend parent)** pueden desarrollarse en paralelo una vez que Paso 10 este listo.
-5. **Paso 18 (registro publico)** puede hacerse al final — el fallback de "coach crea cuenta" ya funciona.
+1. **Deliverable MVP after Step 13:** Coach can manage parents and link them with athletes. Does not require the parent portal.
+2. **Step 6 is the most delicate** — modifying endpoints in production. Do in a separate branch with regression tests before merge.
+3. **Steps 1 + 3 in parallel** with `backend-architect` + `security-engineer` agents.
+4. **Steps 9-13 (coach frontend) and 14-17 (parent frontend)** can be developed in parallel once Step 10 is ready.
+5. **Step 18 (public registration)** can be done last — the "coach creates account" fallback already works.

@@ -1,102 +1,101 @@
-# Pruebas E2E — Módulo Informe Técnico Mensual
+# E2E Tests — Monthly Technical Report Module
 
-Este documento describe las pruebas end-to-end (E2E) del módulo **Informe Técnico
-Mensual** (refactor del reporte mensual del club), cómo ejecutarlas y cuándo usar
-cada modalidad.
+This document describes the end-to-end (E2E) tests for the **Monthly Technical
+Report** module (refactor of the monthly club report), how to run them, and when
+to use each mode.
 
-Hay dos modalidades de E2E para este módulo:
+There are two E2E modes for this module:
 
-1. **E2E mockeados (Playwright + `page.route`)** — sin backend, sin red, rápidos
-   y deterministas. Son los que viven en `frontend/e2e/monthly-technical-report-*.spec.ts`.
-2. **E2E full-stack (manual, contra backend real)** — Docker Compose + seed +
-   `AI_PROVIDER=fake`. Checklist al final de este documento.
+1. **Mocked E2E (Playwright + `page.route`)** — no backend, no network, fast
+   and deterministic. These live in `frontend/e2e/monthly-technical-report-*.spec.ts`.
+2. **Full-stack E2E (manual, against real backend)** — Docker Compose + seed +
+   `AI_PROVIDER=fake`. Checklist at the end of this document.
 
 ---
 
-## 1. E2E mockeados (Playwright)
+## 1. Mocked E2E (Playwright)
 
-### Archivos
+### Files
 
-| Archivo | Cobertura |
+| File | Coverage |
 |---|---|
-| `frontend/e2e/monthly-technical-report-coach.spec.ts` | Vista coach: lista, detalle (7 bloques, métricas, competición), editar+guardar bloque (PATCH), regenerar bloque (POST), aprobar (PATCH status), descargar PDF (GET blob), project profile (PUT). |
-| `frontend/e2e/monthly-technical-report-parent.spec.ts` | Privacidad: el padre **no** accede a la ruta del informe (`[coach, admin]`); por URL directa es redirigido a `/my-athletes` y no ve métricas, editores, Aprobar, PDF ni competición. |
+| `frontend/e2e/monthly-technical-report-coach.spec.ts` | Coach view: list, detail (7 blocks, metrics, competition), edit+save block (PATCH), regenerate block (POST), approve (PATCH status), download PDF (GET blob), project profile (PUT). |
+| `frontend/e2e/monthly-technical-report-parent.spec.ts` | Privacy: the parent **cannot** access the report route (`[coach, admin]`); via direct URL they are redirected to `/my-athletes` and cannot see metrics, editors, Approve, PDF, or competition. |
 
-### Cómo funcionan
+### How They Work
 
-- **Sin backend real.** Todos los endpoints `**/api/...` se interceptan con
-  `page.route(...)` y devuelven fixtures deterministas. Un objeto `state` mutable
-  cuenta llamadas (`patchCalls`, `regenerateCalls`, `pdfCalls`, `putCalls`) y
-  muta el recurso (p.ej. al aprobar, `status` pasa a `"approved"`; al regenerar,
-  el `ai_draft` cambia).
-- **Sesión inyectada.** `setupAuth(page)` escribe la sesión Zustand en
-  `sessionStorage` bajo la clave `"auth-session"` (formato
+- **No real backend.** All `**/api/...` endpoints are intercepted with
+  `page.route(...)` and return deterministic fixtures. A mutable `state` object
+  counts calls (`patchCalls`, `regenerateCalls`, `pdfCalls`, `putCalls`) and
+  mutates the resource (e.g. on approve, `status` changes to `"approved"`; on
+  regenerate, `ai_draft` changes).
+- **Injected session.** `setupAuth(page)` writes the Zustand session to
+  `sessionStorage` under the key `"auth-session"` (format
   `{state:{accessToken,refreshToken,user,isAuthenticated,isLoading},version:0}`),
-  evitando el flujo de login por UI. El usuario coach tiene `role:"coach"` y
-  `club_ids:[1]`; el padre `role:"parent"` y `club_ids:[1]`.
-- **Fixtures sin datos reales de menores.** Nombres ficticios tipo
-  "Valentina Garcia" / "Mateo Lopez" / "Madre Ficticia". Ningún dato real de
-  atletas TyR.
-- **Contrato de privacidad del padre.** El Informe Técnico Mensual es un
-  documento **interno** del equipo técnico (coach/admin). La ruta
-  `/training/reports/:year/:month` está protegida con `allowedRoles
-  [coach, admin]` y el link del sidebar tampoco se muestra a padres, así que un
-  padre que entre por URL directa es redirigido a `/my-athletes` (ver
-  `ProtectedRoute`). El E2E del padre valida esa expulsión + la ausencia total de
-  UI del informe. El mock del padre se conserva como red defensiva por si el SPA
-  prefetchea antes de resolver el guard.
+  bypassing the UI login flow. The coach user has `role:"coach"` and
+  `club_ids:[1]`; the parent has `role:"parent"` and `club_ids:[1]`.
+- **Fixtures without real minors' data.** Fictional names such as
+  "Valentina Garcia" / "Mateo Lopez" / "Madre Ficticia". No real TyR athlete data.
+- **Parent privacy contract.** The Monthly Technical Report is an **internal**
+  document for the technical team (coach/admin). The route
+  `/training/reports/:year/:month` is protected with `allowedRoles
+  [coach, admin]` and the sidebar link is also hidden from parents, so a
+  parent who enters via direct URL is redirected to `/my-athletes` (see
+  `ProtectedRoute`). The parent E2E validates that expulsion + the total
+  absence of report UI. The parent mock is kept as a defensive net in case
+  the SPA prefetches before resolving the guard.
 
-  > Nota (2026-06-03): `ReportDetailPage` ya **no** tiene una vista de padre. La
-  > rama parent (`ParentReadOnlyView`) era inalcanzable por routing/nav y se
-  > eliminó; el fallback del entry point ahora es un estado neutro "Informe no
-  > disponible" para el único caso defensivo real (coach/admin sin club
-  > asignado). Su unit test del camino muerto se sustituyó por uno del nuevo
-  > fallback.
+  > Note (2026-06-03): `ReportDetailPage` no longer has a parent view. The
+  > parent branch (`ParentReadOnlyView`) was unreachable due to routing/nav and
+  > was removed; the entry point fallback is now a neutral "Report not
+  > available" state for the only real defensive case (coach/admin with no
+  > assigned sports club). Its dead-path unit test was replaced with one for the
+  > new fallback.
 
-### Requisitos para ejecutar (entorno con red)
+### Requirements to Run (network environment)
 
-El navegador (Chromium) debe estar instalado. En este repositorio el binario
-**no** está versionado y el contenedor de CI/sandbox sin red **no** puede
-descargarlo. Para ejecutarlos en un entorno con red:
+The browser (Chromium) must be installed. In this repository the binary is
+**not** versioned and the CI/sandbox container without network **cannot**
+download it. To run in a networked environment:
 
 ```bash
 cd frontend
-npx playwright install chromium    # descarga el shell de Chromium (requiere red)
-npm run test:e2e                    # corre toda la carpeta e2e/
+npx playwright install chromium    # downloads the Chromium shell (requires network)
+npm run test:e2e                    # runs the entire e2e/ folder
 ```
 
-El `webServer` de `playwright.config.ts` arranca automáticamente
-`npm run dev -- --port 5173` (Vite dev en `http://localhost:5173`, que es el
-`baseURL`). **No** hace falta levantar Vite a mano: Playwright lo gestiona y
-reusa una instancia existente fuera de CI (`reuseExistingServer`).
+The `webServer` in `playwright.config.ts` automatically starts
+`npm run dev -- --port 5173` (Vite dev at `http://localhost:5173`, which is the
+`baseURL`). **No need** to start Vite manually: Playwright manages it and
+reuses an existing instance outside CI (`reuseExistingServer`).
 
-Para correr solo este módulo:
+To run only this module:
 
 ```bash
 cd frontend
 npx playwright test e2e/monthly-technical-report-coach.spec.ts e2e/monthly-technical-report-parent.spec.ts
 ```
 
-Para apuntar a un Chromium del sistema sin descargar (entorno restringido):
+To point to a system Chromium without downloading (restricted environment):
 
 ```bash
-PLAYWRIGHT_CHROMIUM_PATH=/ruta/a/chromium npm run test:e2e
+PLAYWRIGHT_CHROMIUM_PATH=/path/to/chromium npm run test:e2e
 ```
 
-(`playwright.config.ts` usa `executablePath` cuando esa variable está definida.)
+(`playwright.config.ts` uses `executablePath` when that variable is defined.)
 
-### Validación rápida sin navegador (smoke offline)
+### Quick Validation Without Browser (offline smoke)
 
-Como chequeo veloz —o en un entorno sin Chromium— se puede verificar que los
-specs compilan y colectan (TypeScript + parsing de Playwright) sin lanzar el
-navegador:
+As a fast check — or in an environment without Chromium — you can verify that
+the specs compile and collect (TypeScript + Playwright parsing) without
+launching the browser:
 
 ```bash
 cd frontend
 npx playwright test --list e2e/monthly-technical-report-*.spec.ts
 ```
 
-Salida esperada (8 tests, 2 archivos):
+Expected output (8 tests, 2 files):
 
 ```
 Listing tests:
@@ -111,146 +110,146 @@ Listing tests:
 Total: 8 tests in 2 files
 ```
 
-### Mapa de escenarios
+### Scenario Map
 
-| ID | Rol | Escenario |
+| ID | Role | Scenario |
 |---|---|---|
-| ITR-001 | coach | Lista muestra badge de estado + enlace "Datos del proyecto". |
-| ITR-002 | coach | Detalle: 7 editores en orden, tabla de métricas, tabla de competición. |
-| ITR-003 | coach | Editar `final_text` + Guardar → `PATCH .../blocks` (cuenta + body). |
-| ITR-004 | coach | Regenerar bloque → `POST .../regenerate` (cuenta + `ai_draft` cambia). |
-| ITR-005 | coach | Aprobar → `PATCH status=approved`; badge "Aprobado"; editores deshabilitados. |
-| ITR-006 | coach | Descargar PDF → `GET .../pdf` blob `application/pdf`; sin romper UI. |
-| ITR-007 | coach | Project profile: llenar, agregar/quitar objetivo, Guardar → `PUT`. |
-| ITR-008 | parent | Privacidad: por URL directa es redirigido a `/my-athletes`; sin métricas, sin editores, sin Aprobar, sin PDF, sin competición. |
+| ITR-001 | coach | List shows status badge + "Project data" link. |
+| ITR-002 | coach | Detail: 7 editors in order, metrics table, competition table. |
+| ITR-003 | coach | Edit `final_text` + Save → `PATCH .../blocks` (count + body). |
+| ITR-004 | coach | Regenerate block → `POST .../regenerate` (count + `ai_draft` changes). |
+| ITR-005 | coach | Approve → `PATCH status=approved`; "Approved" badge; editors disabled. |
+| ITR-006 | coach | Download PDF → `GET .../pdf` blob `application/pdf`; no UI break. |
+| ITR-007 | coach | Project profile: fill in, add/remove goal, Save → `PUT`. |
+| ITR-008 | parent | Privacy: via direct URL redirected to `/my-athletes`; no metrics, no editors, no Approve, no PDF, no competition. |
 
 ---
 
-## 2. Diferencia con los E2E full-stack del repo y cuándo usar cada uno
+## 2. Difference from Full-Stack E2E and When to Use Each
 
-| | E2E mockeados (`page.route`) | E2E full-stack (Docker + seed) |
+| | Mocked E2E (`page.route`) | Full-stack E2E (Docker + seed) |
 |---|---|---|
-| **Backend** | Ninguno. Endpoints interceptados. | FastAPI real (`docker compose up`). |
-| **DB** | Ninguna. | MySQL con datos sembrados (seed). |
-| **IA** | Respuestas fijas en el fixture. | `AI_PROVIDER=fake` (o real bajo control). |
-| **Red** | No requiere. | Requiere stack levantado. |
-| **Velocidad / flake** | Rápidos y deterministas. | Más lentos; sensibles a estado de DB. |
-| **Qué validan** | Wiring rutas + UI + contrato de API (forma de request/response) + invariantes de privacidad en la UI. | El sistema real de punta a punta: cálculo de métricas, generación IA con guardrails, persistencia, RBAC en el backend, PDF real. |
+| **Backend** | None. Endpoints intercepted. | Real FastAPI (`docker compose up`). |
+| **DB** | None. | MySQL with seeded data (seed). |
+| **AI** | Fixed responses in fixture. | `AI_PROVIDER=fake` (or real under control). |
+| **Network** | Not required. | Requires stack running. |
+| **Speed / flakiness** | Fast and deterministic. | Slower; sensitive to DB state. |
+| **What they validate** | Route wiring + UI + API contract (request/response shape) + privacy invariants in the UI. | The real system end-to-end: metrics calculation, AI generation with guardrails, persistence, RBAC in the backend, real PDF. |
 
-**Cuándo usar cuál:**
+**When to use which:**
 
-- **Mockeados** — en cada PR / CI del frontend. Verifican que la UI llama a los
-  endpoints correctos con los payloads correctos y que renderiza/oculta lo que
-  debe según rol. Son la primera línea de defensa contra regresiones de UI y
-  contra fugas de privacidad en la vista del padre.
-- **Full-stack manual** — antes de un deploy del módulo, o tras cambios en el
-  backend (servicio de métricas, builder de bloques, generación IA, PDF). Validan
-  que los datos reales fluyen correctamente y que el PDF generado coincide con el
-  informe objetivo. Usar el checklist de la sección 3.
+- **Mocked** — on every PR / frontend CI. Verify that the UI calls the correct
+  endpoints with the correct payloads and renders/hides what it should based on
+  role. These are the first line of defense against UI regressions and against
+  privacy leaks in the parent view.
+- **Full-stack manual** — before a module deployment, or after changes to the
+  backend (metrics service, block builder, AI generation, PDF). Validate that
+  real data flows correctly and that the generated PDF matches the target report.
+  Use the checklist in section 3.
 
-> Importante: los E2E mockeados **no** sustituyen a los tests unitarios (vitest)
-> ni a los tests backend (pytest). Cobertura de contratos, RBAC negativo y
-> guardrails de IA viven allí; el E2E mockeado valida el ensamblaje de UI.
+> Important: mocked E2E tests **do not** replace unit tests (vitest) or backend
+> tests (pytest). Contract coverage, negative RBAC, and AI guardrails live there;
+> the mocked E2E validates UI assembly.
 
 ---
 
-## 3. Checklist de E2E MANUAL (full-stack contra backend real)
+## 3. MANUAL E2E Checklist (full-stack against real backend)
 
-Objetivo: validar el módulo de punta a punta con datos sembrados de **un mes
-cerrado** (todas las sesiones del período ya ejecutadas/registradas).
+Goal: validate the module end-to-end with seeded data from **a closed month**
+(all sessions from the period already executed/recorded).
 
-### Preparación del entorno
+### Environment Preparation
 
-- [ ] Levantar el stack: `docker compose up` (aplica migraciones + seed).
-- [ ] Confirmar `APP_ENV=development` para que corra el seed.
-- [ ] Configurar `AI_PROVIDER=fake` (o `AI_ENABLED=false` para validar el camino
-      sin IA) — **no** usar la API real de Gemini en pruebas manuales rutinarias.
-- [ ] Verificar `AI_LOG_PROMPTS=false` y `NOTIFICATION_LOG_BODIES=false`
-      (obligatorio: privacidad de menores).
-- [ ] Login como coach (`entrenador@trochyruta.com` / `Coach2026!`).
+- [ ] Start the stack: `docker compose up` (applies migrations + seed).
+- [ ] Confirm `APP_ENV=development` so the seed runs.
+- [ ] Set `AI_PROVIDER=fake` (or `AI_ENABLED=false` to validate the path
+      without AI) — **do not** use the real Gemini API in routine manual testing.
+- [ ] Verify `AI_LOG_PROMPTS=false` and `NOTIFICATION_LOG_BODIES=false`
+      (mandatory: minors privacy).
+- [ ] Log in as coach (`entrenador@trochyruta.com` / `Coach2026!`).
 
-### Sembrar datos de un mes cerrado (vía UI o seed)
+### Seed Data for a Closed Month (via UI or seed)
 
-- [ ] Capturar varias **sesiones** del mes con `session_kind` y `objectives`.
-- [ ] Registrar **asistencia** por atleta (presente/tarde/justificado/ausente/lesionado).
-- [ ] Registrar **rúbricas** (esfuerzo / actitud / técnica) en sesiones ejecutadas.
-- [ ] Subir al menos una **foto consentida** a una sesión (`consent_ack`).
-- [ ] Registrar el **resultado de una válida** del mes (Copa Valle) para tener
+- [ ] Record several **training sessions** for the month with `session_kind` and `objectives`.
+- [ ] Record **attendance** per athlete (present/late/excused/absent/injured).
+- [ ] Record **rubrics** (effort / attitude / technique) for executed sessions.
+- [ ] Upload at least one **consented photo** to a session (`consent_ack`).
+- [ ] Record the **result of a round** from the month (Copa Valle) to have
       `competition_results`.
 
-### Datos del proyecto
+### Project Data
 
-- [ ] Ir a **/training/reports → "Datos del proyecto"**.
-- [ ] Llenar nombre, entidad ejecutora, responsable, propósito, objetivo general,
-      territorio.
-- [ ] Agregar 2-3 **objetivos específicos**; quitar uno; reordenar mentalmente.
-- [ ] Guardar → confirmar mensaje de éxito y que persiste tras recargar (PUT OK).
+- [ ] Go to **/training/reports → "Project data"**.
+- [ ] Fill in name, executing entity, responsible person, purpose, general goal,
+      territory.
+- [ ] Add 2-3 **specific goals**; remove one; mentally reorder.
+- [ ] Save → confirm success message and that it persists after reloading (PUT OK).
 
-### Generar el informe
+### Generate the Report
 
-- [ ] En **/training/reports**, "Generar reporte" del mes cerrado (año/mes).
-- [ ] Confirmar redirección al detalle `/training/reports/{year}/{month}`.
-- [ ] Verificar **métricas**: sesiones ejecutadas/canceladas, asistencia por
-      atleta, totales por estado, promedios de rúbrica, focos técnicos.
-- [ ] Verificar que aparecen los **7 bloques narrativos** en orden:
+- [ ] In **/training/reports**, "Generate report" for the closed month (year/month).
+- [ ] Confirm redirect to detail `/training/reports/{year}/{month}`.
+- [ ] Verify **metrics**: executed/cancelled sessions, attendance per
+      athlete, totals by status, rubric averages, technical focus areas.
+- [ ] Verify that the **7 narrative blocks** appear in order:
       objetivo, desarrollo, resultados, conclusiones, apoyos_materiales,
       analisis_grupo, competencia.
-- [ ] Verificar **tabla de competición** con el resultado de la válida.
+- [ ] Verify the **competition table** with the round result.
 
-### Editar / regenerar / aprobar bloques
+### Edit / Regenerate / Approve Blocks
 
-- [ ] Editar el `final_text` de un bloque y **Guardar** → confirmar "Guardado".
-- [ ] **Regenerar** un bloque con IA → confirmar que el `ai_draft` cambia y que
-      el banner "Texto generado por IA — revísalo antes de aprobar" aparece.
-- [ ] Confirmar guardrails de IA: sin nombres propios de menores en el texto,
-      sin juicios individuales, dentro del límite de longitud.
-- [ ] **Aprobar** el informe → badge pasa a "Aprobado"; los editores quedan
-      deshabilitados (no se puede editar ni regenerar tras aprobar).
+- [ ] Edit the `final_text` of a block and **Save** → confirm "Saved".
+- [ ] **Regenerate** a block with AI → confirm that `ai_draft` changes and that
+      the banner "AI-generated text — review it before approving" appears.
+- [ ] Confirm AI guardrails: no proper names of minors in the text,
+      no individual judgments, within the length limit.
+- [ ] **Approve** the report → badge changes to "Approved"; editors become
+      disabled (cannot edit or regenerate after approving).
 
 ### PDF
 
-- [ ] **Descargar PDF** desde el detalle → confirmar `Content-Type: application/pdf`.
-- [ ] Abrir el PDF y **compararlo con el informe objetivo**: header del proyecto,
-      métricas, bloques narrativos, antropometría (si aplica) solo en el PDF,
-      resultados de competencia, footer Ley 1581.
-- [ ] Confirmar que el nombre del archivo es `informe-tecnico-{year}-{MM}.pdf`.
+- [ ] **Download PDF** from the detail view → confirm `Content-Type: application/pdf`.
+- [ ] Open the PDF and **compare it with the target report**: project header,
+      metrics, narrative blocks, anthropometry (if applicable) only in the PDF,
+      competition results, Ley 1581 footer.
+- [ ] Confirm the file name is `informe-tecnico-{year}-{MM}.pdf`.
 
-### Privacidad — vista del padre
+### Privacy — Parent View
 
-- [ ] Logout y login como padre (`padre@trochayruta.com` / `Parent2026!`).
-- [ ] Confirmar que el sidebar del padre **no** muestra el acceso a Informes /
+- [ ] Logout and log in as parent (`padre@trochayruta.com` / `Parent2026!`).
+- [ ] Confirm the parent sidebar **does not** show access to Reports /
       `/training/reports`.
-- [ ] Intentar entrar por URL directa a `/training/reports/{year}/{month}` →
-      confirmar **redirección a `/my-athletes`** (el informe es interno del club).
-- [ ] Confirmar que el padre **NO ve** nada del informe: métricas, editores de
-      bloque, botón Aprobar, descarga de PDF ni tabla de competición.
-- [ ] (Defensa en profundidad del backend) Si se consulta el endpoint del reporte
-      como padre, confirmar que `narrative_blocks` y `competition_results` llegan
-      `null` y que solo se exponen métricas de sus propios atletas.
+- [ ] Try to enter via direct URL `/training/reports/{year}/{month}` →
+      confirm **redirect to `/my-athletes`** (the report is internal to the sports club).
+- [ ] Confirm the parent **does NOT see** anything from the report: metrics, block
+      editors, Approve button, PDF download, or competition table.
+- [ ] (Backend defense in depth) If the report endpoint is queried as a parent,
+      confirm that `narrative_blocks` and `competition_results` arrive as
+      `null` and that only their own athletes' metrics are exposed.
 
 ---
 
-## 4. Estado de validación
+## 4. Validation Status
 
-Los 8 specs **se ejecutan de verdad** con Chromium contra el Vite dev server
-(`webServer` de `playwright.config.ts`, sin backend real): **8/8 en verde**
-(~2.5s). `npx tsc --noEmit` permanece limpio.
+All 8 specs **actually run** with Chromium against the Vite dev server
+(`webServer` in `playwright.config.ts`, without a real backend): **8/8 green**
+(~2.5s). `npx tsc --noEmit` remains clean.
 
-La primera ejecución real (que la validación previa por solo `--list` no podía
-detectar) reveló **2 fallos de selector/premisa**, ya corregidos:
+The first real run (which the prior `--list`-only validation could not detect)
+revealed **2 selector/premise failures**, already fixed:
 
-- **ITR-001** — `getByText("Borrador").first()` tomaba la primera coincidencia
-  del DOM, que es la card mobile (`ul md:hidden`), oculta en el viewport por
-  defecto (1280px). Corregido con `.filter({ visible: true }).first()` para
-  apuntar a la variante visible (tabla desktop).
-- **ITR-008** — el spec asumía que el padre veía un `ParentReadOnlyView` con
-  métricas en `/training/reports/:year/:month`. En realidad el app bloquea a los
-  padres de esa ruta de forma consistente (guard `[coach, admin]` + link de nav
-  oculto) y los redirige a `/my-athletes`. Reescrito para afirmar esa expulsión
-  como invariante de privacidad (sin cambiar el app). Ver la nota de código
-  muerto sobre `ParentReadOnlyView` en la sección 1.
+- **ITR-001** — `getByText("Borrador").first()` was picking the first DOM match,
+  which is the mobile card (`ul md:hidden`), hidden in the viewport by
+  default (1280px). Fixed with `.filter({ visible: true }).first()` to
+  target the visible variant (desktop table).
+- **ITR-008** — the spec assumed the parent saw a `ParentReadOnlyView` with
+  metrics at `/training/reports/:year/:month`. In reality the app blocks parents
+  from that route consistently (guard `[coach, admin]` + hidden nav link)
+  and redirects them to `/my-athletes`. Rewritten to assert that expulsion
+  as a privacy invariant (without changing the app). See the dead-code note
+  about `ParentReadOnlyView` in section 1.
 
-Para reproducir:
+To reproduce:
 
 ```bash
 cd frontend

@@ -1,102 +1,102 @@
-# Implementation Workflow — Upload UI de PDFs Copa Valle
+# Implementation Workflow — Copa Valle PDF Upload UI
 
-**Source:** `docs/10-race-results/upload-design.md` (920 líneas, 23 decisiones cerradas) + `docs/10-race-results/upload-research.md`
+**Source:** `docs/10-race-results/upload-design.md` (920 lines, 23 closed decisions) + `docs/10-race-results/upload-research.md`
 **Strategy:** Systematic
 **Depth:** Deep
 **Generated:** 2026-05-20
-**Estimated total:** 6.5–8 días-dev (1 backend + 1 frontend en paralelo) | **secuencial:** ~10 días
-**Status:** Listo para ejecutar (23 decisiones cerradas, 8 asunciones a validar pre-arranque)
-**Branch sugerido:** `race-results-v2-foundation` (continuar) o feature branch dedicado `feat/race-upload-ui`
+**Estimated total:** 6.5–8 dev-days (1 backend + 1 frontend in parallel) | **sequential:** ~10 days
+**Status:** Ready to execute (23 closed decisions, 8 assumptions to validate pre-start)
+**Suggested branch:** `race-results-v2-foundation` (continue) or dedicated feature branch `feat/race-upload-ui`
 
 ---
 
 ## Requirements summary
 
-### Funcionales (extraídos del design §1, §4, §5)
+### Functional (extracted from design §1, §4, §5)
 
-- Coach sube PDFs RESULTADOS (+ opcional GENERAL) desde UI web sin terminal.
-- Wizard 3 pasos: **Upload → Confirmar metadata + matches → Preview & Commit**.
-- Soporte multi-formato: `.pdf` / `.csv` / `.tsv` / `.txt` para RESULTADOS, solo `.pdf` para GENERAL.
-- Dry-run real server-side: el wizard muestra `IngestReport` previo al commit con rollback transparente.
-- Resolución inline de matches ambiguos top-3 (radio buttons en la misma vista, no modal separado).
-- Idempotencia visible al usuario: SHA duplicado detectado en paso 1 con banner accionable + opción admin `force_reingest`.
-- Histórico ingestas: `GET /imports/recent` listable desde UI con download de PDFs originales.
-- RBAC: solo coach + admin. `force_reingest=True` requiere admin.
-- Pipeline determinista F1.7 **intacto** — toda la lógica probada (305 tests) se envuelve, no se modifica.
-- Storage de PDFs en SFTP/FTPS Hostinger con UUID en path (fallback local en dev). Retención permanente.
+- Coach uploads RESULTS PDFs (+ optional GENERAL) from the web UI without terminal.
+- Wizard 3 steps: **Upload → Confirm metadata + matches → Preview & Commit**.
+- Multi-format support: `.pdf` / `.csv` / `.tsv` / `.txt` for RESULTS, only `.pdf` for GENERAL.
+- Real server-side dry-run: the wizard shows `IngestReport` prior to commit with transparent rollback.
+- Inline resolution of top-3 ambiguous matches (radio buttons in the same view, not a separate modal).
+- Idempotency visible to user: SHA duplicate detected in step 1 with actionable banner + admin `force_reingest` option.
+- Ingestion history: `GET /imports/recent` listable from UI with download of original PDFs.
+- RBAC: coach + admin only. `force_reingest=True` requires admin.
+- Deterministic F1.7 pipeline **intact** — all proven logic (305 tests) is wrapped, not modified.
+- PDF storage in Hostinger SFTP/FTPS with UUID in path (local fallback in dev). Permanent retention.
 
-### No-funcionales
+### Non-functional
 
-| Atributo | Target |
+| Attribute | Target |
 |---|---|
-| p50 parse PDF típico (250 KB) | <3s local, <8s Render free tier (cold) |
-| p95 commit completo (parse + storage + DB) | <60s incl. cold start |
-| Coverage backend `upload_service.py` | ≥90% |
-| Coverage endpoints `race_analysis` upload | ≥85% |
-| Coverage frontend componentes nuevos | ≥85% |
-| Cap tamaño PDF | 8 MB (env `RACE_MAX_PDF_MB`) |
-| Timeout parse | 30s (env `RACE_PARSE_TIMEOUT_SECONDS`) |
-| TTL `RaceImport` pending | 24h (env `RACE_PENDING_TTL_HOURS`) |
-| Tests F1.7 existentes | 305/305 verdes durante toda la migración |
-| Accesibilidad UI | 0 violaciones axe-core por step del wizard |
-| Browsers soportados | Chrome, Safari, Firefox |
-| 0 fugas PII en logs | sentinela inviolable (CLAUDE.md) |
+| p50 parse typical PDF (250 KB) | <3s local, <8s Render free tier (cold) |
+| p95 complete commit (parse + storage + DB) | <60s incl. cold start |
+| Backend coverage `upload_service.py` | ≥90% |
+| Backend coverage `race_analysis` upload endpoints | ≥85% |
+| Frontend coverage new components | ≥85% |
+| PDF size cap | 8 MB (env `RACE_MAX_PDF_MB`) |
+| Parse timeout | 30s (env `RACE_PARSE_TIMEOUT_SECONDS`) |
+| `RaceImport` pending TTL | 24h (env `RACE_PENDING_TTL_HOURS`) |
+| Existing F1.7 tests | 305/305 green throughout migration |
+| UI accessibility | 0 axe-core violations per wizard step |
+| Supported browsers | Chrome, Safari, Firefox |
+| 0 PII leaks in logs | inviolable sentinel (CLAUDE.md) |
 
 ### Out of scope MVP
 
-- ❌ Crear atletas inline desde el wizard (link al CRUD existente).
-- ❌ Editar metadata post-commit sin re-subir PDF (diferido F2).
-- ❌ Rich text editor en `weather_notes` (texto plano).
-- ❌ Polling / SSE para commit (síncrono <60s).
-- ❌ Email automático al subir resultados (consistente con MVP race-results v1).
-- ❌ Rate limiting en endpoints upload (operación poco frecuente, riesgo aceptado).
-- ❌ Sandbox parser subprocess (mitigación por timeout suficiente para MVP).
-- ❌ Multi-coach edición concurrente del mismo `parse_id` (ownership cross-coach bloquea).
+- ❌ Create athletes inline from wizard (link to existing CRUD).
+- ❌ Edit metadata post-commit without re-uploading PDF (deferred F2).
+- ❌ Rich text editor in `weather_notes` (plain text).
+- ❌ Polling / SSE for commit (synchronous <60s).
+- ❌ Automatic email on uploading results (consistent with MVP race-results v1).
+- ❌ Rate limiting on upload endpoints (infrequent operation, accepted risk).
+- ❌ Parser subprocess sandbox (timeout mitigation sufficient for MVP).
+- ❌ Concurrent multi-coach editing of same `parse_id` (cross-coach ownership blocks).
 
 ---
 
-## Roadmap visual
+## Visual roadmap
 
 ```mermaid
 gantt
-    title Upload UI PDFs Copa Valle — Roadmap implementación
+    title Upload UI PDFs Copa Valle — Implementation roadmap
     dateFormat YYYY-MM-DD
     axisFormat %m-%d
 
-    section Pre-requisitos
+    section Prerequisites
     F-UP0 Pre-reqs            :up0, 2026-05-21, 0.5d
 
     section Backend
-    F-UP1 Migración DB        :up1, after up0, 0.5d
+    F-UP1 DB migration        :up1, after up0, 0.5d
     F-UP2 Dry-run RaceIngestor:up2, after up1, 0.5d
     F-UP3 Endpoints           :up3, after up2, 1.5d
-    F-UP4 Storage integración :up4, after up2, 0.5d
+    F-UP4 Storage integration :up4, after up2, 0.5d
 
     section Frontend
     F-UP5 UI wizard           :up5, after up3, 2.5d
 
-    section Validación
-    F-UP6 E2E + integración   :up6, after up5, 1d
+    section Validation
+    F-UP6 E2E + integration   :up6, after up5, 1d
 
-    section Cierre
-    F-UP7 Producción + docs   :up7, after up6, 0.5d
+    section Closure
+    F-UP7 Production + docs   :up7, after up6, 0.5d
 ```
 
 ---
 
-## DAG de dependencias
+## Dependency DAG
 
 ```mermaid
 graph TD
-    UP0[F-UP0: Pre-reqs<br/>envs + asunciones + deps] --> UP1[F-UP1: Migración DB<br/>9 columnas + 3 índices]
-    UP0 --> UP4[F-UP4: Storage integración<br/>reuso storage_sftp]
-    UP1 --> UP2[F-UP2: Dry-run service<br/>~30 LOC en RaceIngestor]
+    UP0[F-UP0: Pre-reqs<br/>envs + assumptions + deps] --> UP1[F-UP1: DB migration<br/>9 columns + 3 indexes]
+    UP0 --> UP4[F-UP4: Storage integration<br/>reuse storage_sftp]
+    UP1 --> UP2[F-UP2: Dry-run service<br/>~30 LOC in RaceIngestor]
     UP2 --> UP3[F-UP3: Endpoints<br/>4 endpoints + RBAC + schemas]
     UP4 --> UP3
     UP3 --> UP5[F-UP5: UI Wizard<br/>tab + 3 steps + hooks]
-    UP3 --> UP6[F-UP6: E2E + integración<br/>playwright + TestClient full-stack]
+    UP3 --> UP6[F-UP6: E2E + integration<br/>playwright + TestClient full-stack]
     UP5 --> UP6
-    UP6 --> UP7[F-UP7: Producción + docs<br/>smoke + CLAUDE.md + README]
+    UP6 --> UP7[F-UP7: Production + docs<br/>smoke + CLAUDE.md + README]
 
     style UP0 fill:#e1f5fe
     style UP1 fill:#fff9c4
@@ -106,97 +106,97 @@ graph TD
     style UP7 fill:#c8e6c9
 ```
 
-**Camino crítico:** F-UP0 → F-UP1 → F-UP2 → F-UP3 → F-UP5 → F-UP6 → F-UP7 (~7 días secuencial).
+**Critical path:** F-UP0 → F-UP1 → F-UP2 → F-UP3 → F-UP5 → F-UP6 → F-UP7 (~7 sequential days).
 
-**Oportunidades paralelización:**
-- **F-UP4 (storage)** y **F-UP2 (dry-run)** corren en paralelo tras F-UP1 (archivos distintos, agentes distintos).
-- **F-UP5 (frontend)** puede arrancar con **mocks de endpoints** mientras F-UP3 termina sus tests (estimado: ahorro 1 día si dev backend y frontend distintos).
-- **F-UP6 backend integration tests** se prepara mientras F-UP5 avanza componentes UI (quality-engineer corre en background con fixtures ya disponibles).
+**Parallelization opportunities:**
+- **F-UP4 (storage)** and **F-UP2 (dry-run)** run in parallel after F-UP1 (different files, different agents).
+- **F-UP5 (frontend)** can start with **endpoint mocks** while F-UP3 finishes its tests (estimated: 1 day saving if backend and frontend are different devs).
+- **F-UP6 backend integration tests** are prepared while F-UP5 advances UI components (quality-engineer runs in background with fixtures already available).
 
-**Reducción real con paralelización 1 backend + 1 frontend:** ~6.5 días (vs 10 secuencial).
+**Real reduction with parallelization 1 backend + 1 frontend:** ~6.5 days (vs 10 sequential).
 
 ---
 
-## Fase F-UP0 — Pre-requisitos
+## Phase F-UP0 — Prerequisites
 
-**Tiempo:** 0.5 día | **Riesgo:** Medio (bloqueador silencioso si envs no se confirman) | **Bloquea:** todo lo demás
+**Time:** 0.5 day | **Risk:** Medium (silent blocker if envs not confirmed) | **Blocks:** everything else
 
-### Prerequisitos
+### Prerequisites
 
-- [x] Branch `race-results-v2-foundation` activo
-- [x] F1.7 race results completo y verde (305 tests, 98% cobertura)
-- [x] Design `upload-design.md` aprobado (23 decisiones)
-- [ ] Validar 8 asunciones del design §11 con coach (o documentarlas como aceptadas)
-- [ ] Confirmar status de envs `HOSTINGER_SFTP_*` en Render (bloqueador R1 del design)
+- [x] Branch `race-results-v2-foundation` active
+- [x] F1.7 race results complete and green (305 tests, 98% coverage)
+- [x] Design `upload-design.md` approved (23 decisions)
+- [ ] Validate 8 design §11 assumptions with coach (or document them as accepted)
+- [ ] Confirm status of `HOSTINGER_SFTP_*` envs in Render (R1 blocker from design)
 
-### Tareas atómicas
+### Atomic tasks
 
-| # | Tarea | Agente | Comando | Deliverable |
+| # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
-| 0.1 | Verificar `HOSTINGER_SFTP_HOST/PORT/USER/PASS/REMOTE_DIR` + `HOSTINGER_PUBLIC_BASE_URL` en Render dashboard. Si missing → agregarlos antes de continuar | devops-architect | manual (consulta Render dashboard) | Screenshot/checklist de envs configuradas; o ticket abierto si falta acción del coach |
-| 0.2 | Validar 8 asunciones design §11 con coach (sesión 15 min). Documentar resultados en `docs/10-race-results/upload-design.md` §11 actualizando estado a "aceptada" o registrando refinamiento | system-architect | manual (sesión coach) | Tabla §11 actualizada con campo "Estado: aceptada YYYY-MM-DD" o "refinada → ver decisión D-X" |
-| 0.3 | Verificar deps Python ya presentes: `pdfplumber`, `defusedxml>=0.7`, `gpxpy`, `Pillow`, `paramiko` (de F1.6), `python-multipart` (FastAPI uploads) | backend-architect | `grep -E "pdfplumber\|defusedxml\|paramiko\|python-multipart" backend/requirements.txt` | Output positivo de grep; añadir si missing |
-| 0.4 | Agregar nuevas envs al `.env.example`: `RACE_MAX_PDF_MB=8`, `RACE_PARSE_TIMEOUT_SECONDS=30`, `RACE_PENDING_TTL_HOURS=24` | devops-architect | manual | `.env.example` actualizado + doc en CLAUDE.md sección "Variables de entorno en producción" |
-| 0.5 | Suite race actual sigue verde post-cambios `.env.example` (sanity check) | quality-engineer | `cd backend && pytest tests/services/race/ -x` | 305/305 verdes en ≤30s |
-| 0.6 | Crear fixtures sintéticos negativos para tests futuros: `tests/fixtures/race/fake_pdf.txt` (200 bytes sin `%PDF-`), `tests/fixtures/race/fake_csv.bin` (200 bytes binarios no decodificables UTF-8) | quality-engineer | manual | 2 archivos en repo |
+| 0.1 | Verify `HOSTINGER_SFTP_HOST/PORT/USER/PASS/REMOTE_DIR` + `HOSTINGER_PUBLIC_BASE_URL` in Render dashboard. If missing → add them before continuing | devops-architect | manual (query Render dashboard) | Screenshot/checklist of configured envs; or open ticket if coach action needed |
+| 0.2 | Validate 8 design §11 assumptions with coach (15 min session). Document results in `docs/10-race-results/upload-design.md` §11 updating status to "accepted" or recording refinement | system-architect | manual (coach session) | Table §11 updated with field "Status: accepted YYYY-MM-DD" or "refined → see decision D-X" |
+| 0.3 | Verify Python deps already present: `pdfplumber`, `defusedxml>=0.7`, `gpxpy`, `Pillow`, `paramiko` (from F1.6), `python-multipart` (FastAPI uploads) | backend-architect | `grep -E "pdfplumber\|defusedxml\|paramiko\|python-multipart" backend/requirements.txt` | Positive grep output; add if missing |
+| 0.4 | Add new envs to `.env.example`: `RACE_MAX_PDF_MB=8`, `RACE_PARSE_TIMEOUT_SECONDS=30`, `RACE_PENDING_TTL_HOURS=24` | devops-architect | manual | Updated `.env.example` + documentation in CLAUDE.md "Production environment variables" section |
+| 0.5 | Current race suite still green post `.env.example` changes (sanity check) | quality-engineer | `cd backend && pytest tests/services/race/ -x` | 305/305 green in ≤30s |
+| 0.6 | Create negative synthetic fixtures for future tests: `tests/fixtures/race/fake_pdf.txt` (200 bytes without `%PDF-`), `tests/fixtures/race/fake_csv.bin` (200 non-UTF-8-decodable binary bytes) | quality-engineer | manual | 2 files in repo |
 
-### Criterio de éxito
+### Success criterion
 
 ```bash
-# Verificación end-to-end F-UP0:
-grep "RACE_MAX_PDF_MB" backend/.env.example                       # output: 1 línea
-grep "HOSTINGER_SFTP_HOST" backend/.env.example                   # output: ya presente F1.6
-ls tests/fixtures/race/fake_pdf.txt tests/fixtures/race/fake_csv.bin  # ambos existen
-cd backend && pytest tests/services/race/ -x                       # 305/305 verdes
-# Envs Render confirmadas vía dashboard o issue abierto explícito si falta acción
+# End-to-end F-UP0 verification:
+grep "RACE_MAX_PDF_MB" backend/.env.example                       # output: 1 line
+grep "HOSTINGER_SFTP_HOST" backend/.env.example                   # output: already present F1.6
+ls tests/fixtures/race/fake_pdf.txt tests/fixtures/race/fake_csv.bin  # both exist
+cd backend && pytest tests/services/race/ -x                       # 305/305 green
+# Render envs confirmed via dashboard or explicit open issue if action needed
 ```
 
 ### Rollback
 
-- Sin cambios destructivos. Si una asunción §11 resulta falsa → re-plantear fase específica antes de seguir.
-- `git checkout -- .env.example` para revertir si necesario.
+- No destructive changes. If a §11 assumption turns out false → reassess specific phase before continuing.
+- `git checkout -- .env.example` to revert if necessary.
 
-### Decisiones tácticas del workflow
+### Workflow tactical decisions
 
-- **DT-1:** Si una env `HOSTINGER_SFTP_*` está vacía en Render al cierre de F-UP0, **bloquear F-UP4** y proceder con resto del workflow en modo "dev-only". Marcar UP7 como WIP hasta resolver.
-- **DT-2:** Si asunción A3 (retención permanente) se refina a TTL, agregar tarea adicional en F-UP1 para columna `retention_until DATETIME NULL` (esfuerzo +0.25 día).
+- **DT-1:** If a `HOSTINGER_SFTP_*` env is empty in Render at F-UP0 close, **block F-UP4** and proceed with rest of workflow in "dev-only" mode. Mark UP7 as WIP until resolved.
+- **DT-2:** If assumption A3 (permanent retention) is refined to TTL, add additional task in F-UP1 for column `retention_until DATETIME NULL` (effort +0.25 day).
 
-### Agente principal: **devops-architect** (coordinación) + **system-architect** (validación asunciones)
+### Primary agent: **devops-architect** (coordination) + **system-architect** (assumptions validation)
 
-⚠️ **Bloqueador potencial:** envs `HOSTINGER_SFTP_*` (R1 del design). Sin estos, F-UP4 cae a fallback local efímero en Render free tier.
+⚠️ **Potential blocker:** `HOSTINGER_SFTP_*` envs (R1 from design). Without these, F-UP4 falls to ephemeral local fallback in Render free tier.
 
 ---
 
-## Fase F-UP1 — Migración DB + modelo `RaceImport`
+## Phase F-UP1 — DB migration + `RaceImport` model
 
-**Tiempo:** 0.5 día | **Riesgo:** Bajo (todas las columnas nullable) | **Depende de:** F-UP0
+**Time:** 0.5 day | **Risk:** Low (all columns nullable) | **Depends on:** F-UP0
 
-### Prerequisitos
+### Prerequisites
 
-- F-UP0 completo
-- Pre-flight: snapshot dev DB antes de migrar (`mysqldump` local) para rollback rápido
+- F-UP0 complete
+- Pre-flight: dev DB snapshot before migrating (`mysqldump` local) for quick rollback
 
-### Tareas atómicas
+### Atomic tasks
 
-| # | Tarea | Agente | Comando | Deliverable |
+| # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
-| 1.1 | Crear migración Alembic `8b9c0d1e2f3a` delta sobre `race_imports` (down_revision = `64c263edd07f` head F1.7) según design §3.4 | backend-architect | `cd backend && alembic revision -m "upload UI race PDFs delta"` | `backend/alembic/versions/8b9c0d1e2f3a_upload_ui_race_pdfs_delta.py` con 9 columnas + 3 índices + FK reversible |
-| 1.2 | Actualizar modelo `backend/app/models/race_import.py` con 9 atributos nuevos (`event_id`, `kind`, `storage_path`, `storage_url`, `general_filename`, `general_sha256`, `general_storage_path`, `general_storage_url`, `parse_meta_json`) | backend-architect | `/sc:implement` | Modelo SQLAlchemy 2 con tipos correctos + relación `event: Mapped[Optional["RaceEvent"]] = relationship(...)` |
-| 1.3 | Aplicar migración local y verificar `DESCRIBE race_imports` | backend-architect | `cd backend && alembic upgrade head` | Output `DESCRIBE` confirma 9 columnas nuevas |
-| 1.4 | Probar downgrade reversible | quality-engineer | `cd backend && alembic downgrade -1 && alembic upgrade head` | Idempotente, sin errores |
-| 1.5 | Tests unitarios modelo: instanciación con/sin campos opcionales, defaults correctos | quality-engineer | `/sc:test` | `tests/models/test_race_import.py` ≥5 tests verdes |
-| 1.6 | Suite race F1.7 sigue verde post-migración | quality-engineer | `cd backend && pytest tests/services/race/` | 305/305 verdes |
-| 1.7 | Verificar imports F1.7 legacy quedan correctamente con defaults (`event_id=NULL`, `kind='results'`) | quality-engineer | `cd backend && python -c "import asyncio; from app.database import async_session; async def chk():\n  async with async_session() as s:\n    rs = await s.execute('SELECT id, event_id, kind, storage_path FROM race_imports'); print(rs.fetchall())\nasyncio.run(chk())"` | Output: 3 imports legacy con `event_id=NULL`, `kind='results'`, `storage_path=NULL` |
+| 1.1 | Create Alembic migration `8b9c0d1e2f3a` delta on `race_imports` (down_revision = `64c263edd07f` F1.7 head) per design §3.4 | backend-architect | `cd backend && alembic revision -m "upload UI race PDFs delta"` | `backend/alembic/versions/8b9c0d1e2f3a_upload_ui_race_pdfs_delta.py` with 9 columns + 3 indexes + reversible FK |
+| 1.2 | Update model `backend/app/models/race_import.py` with 9 new attributes (`event_id`, `kind`, `storage_path`, `storage_url`, `general_filename`, `general_sha256`, `general_storage_path`, `general_storage_url`, `parse_meta_json`) | backend-architect | `/sc:implement` | SQLAlchemy 2 model with correct types + relationship `event: Mapped[Optional["RaceEvent"]] = relationship(...)` |
+| 1.3 | Apply migration locally and verify `DESCRIBE race_imports` | backend-architect | `cd backend && alembic upgrade head` | `DESCRIBE` output confirms 9 new columns |
+| 1.4 | Test reversible downgrade | quality-engineer | `cd backend && alembic downgrade -1 && alembic upgrade head` | Idempotent, no errors |
+| 1.5 | Model unit tests: instantiation with/without optional fields, correct defaults | quality-engineer | `/sc:test` | `tests/models/test_race_import.py` ≥5 green tests |
+| 1.6 | F1.7 race suite still green post-migration | quality-engineer | `cd backend && pytest tests/services/race/` | 305/305 green |
+| 1.7 | Verify F1.7 legacy imports remain correctly with defaults (`event_id=NULL`, `kind='results'`) | quality-engineer | `cd backend && python -c "import asyncio; from app.database import async_session; async def chk():\n  async with async_session() as s:\n    rs = await s.execute('SELECT id, event_id, kind, storage_path FROM race_imports'); print(rs.fetchall())\nasyncio.run(chk())"` | Output: 3 legacy imports with `event_id=NULL`, `kind='results'`, `storage_path=NULL` |
 
-### Criterio de éxito
+### Success criterion
 
 ```bash
 cd backend
-alembic upgrade head                                     # sin errores
+alembic upgrade head                                     # no errors
 alembic downgrade -1                                     # reversible
 alembic upgrade head                                     # re-apply OK
-pytest tests/models/test_race_import.py -x               # ≥5 tests verdes
-pytest tests/services/race/ -x                           # 305/305 verdes
+pytest tests/models/test_race_import.py -x               # ≥5 green tests
+pytest tests/services/race/ -x                           # 305/305 green
 ```
 
 ### Rollback
@@ -204,88 +204,88 @@ pytest tests/services/race/ -x                           # 305/305 verdes
 ```bash
 cd backend
 alembic downgrade 64c263edd07f
-git revert <commit-fase-up1>
-mysql -e "DESCRIBE race_imports"   # confirmar estructura original
+git revert <commit-phase-up1>
+mysql -e "DESCRIBE race_imports"   # confirm original structure
 ```
 
-### Agente principal: **backend-architect** + **quality-engineer** (regresión)
+### Primary agent: **backend-architect** + **quality-engineer** (regression)
 
 ---
 
-## Fase F-UP2 — Service layer: dry-run real en `RaceIngestor`
+## Phase F-UP2 — Service layer: real dry-run in `RaceIngestor`
 
-**Tiempo:** 0.5 día | **Riesgo:** Bajo (~30 LOC, espejo de método existente) | **Depende de:** F-UP1
+**Time:** 0.5 day | **Risk:** Low (~30 LOC, mirror of existing method) | **Depends on:** F-UP1
 
-### Prerequisitos
+### Prerequisites
 
-- Modelo `RaceImport` actualizado (F-UP1)
-- Estudio de `ingestor.py:138-402` para entender flujo `ingest_event` antes de espejar
+- `RaceImport` model updated (F-UP1)
+- Study `ingestor.py:138-402` to understand `ingest_event` flow before mirroring
 
-### Tareas atómicas
+### Atomic tasks
 
-| # | Tarea | Agente | Comando | Deliverable |
+| # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
-| 2.1 | Implementar `RaceIngestor.dry_run_event(...)` espejo de `ingest_event` con `await self.db.rollback()` al final en lugar de `commit()` | backend-architect | `/sc:implement` | Método en `backend/app/services/race/ingestor.py` con misma signature + retorna `IngestReport` ficticio con `warnings` enriquecido con `"DRY_RUN: no se persistieron cambios"` |
-| 2.2 | Refactor mínimo: extraer cuerpo común de `ingest_event` y `dry_run_event` a método privado `_execute_ingest_flow(commit: bool = True)` si DRY (Don't Repeat Yourself) lo justifica. Si no, duplicación aceptada por simplicidad | refactoring-expert | `/sc:improve` | Refactor opcional; ambos métodos siguen pasando tests |
-| 2.3 | Tests unitarios dry-run: mock `db.commit` para verificar que NO se llama; `db.rollback` SÍ se llama; `IngestReport` retornado tiene mismos conteos que `ingest_event` real | quality-engineer | `/sc:test` | `tests/services/race/test_dry_run.py` ≥6 tests verdes con `FakeAsyncSession` |
-| 2.4 | Tests integración: ejecutar `dry_run_event` con PDF real `valida_iv_2026_resultados.pdf` → verificar 0 filas en `race_results` tras llamada | quality-engineer | `/sc:test` | Test verifica `SELECT COUNT(*) FROM race_results WHERE event_id=<dry_event_id>` == 0 |
-| 2.5 | Suite race F1.7 sigue verde | quality-engineer | `cd backend && pytest tests/services/race/` | 305 + nuevos = ≥311 verdes |
+| 2.1 | Implement `RaceIngestor.dry_run_event(...)` mirror of `ingest_event` with `await self.db.rollback()` at end instead of `commit()` | backend-architect | `/sc:implement` | Method in `backend/app/services/race/ingestor.py` with same signature + returns `IngestReport` with `warnings` enriched with `"DRY_RUN: no changes persisted"` |
+| 2.2 | Minimal refactor: extract common body of `ingest_event` and `dry_run_event` to private method `_execute_ingest_flow(commit: bool = True)` if DRY justifies it. If not, accepted duplication for simplicity | refactoring-expert | `/sc:improve` | Optional refactor; both methods still pass tests |
+| 2.3 | Dry-run unit tests: mock `db.commit` to verify it is NOT called; `db.rollback` IS called; returned `IngestReport` has same counts as real `ingest_event` | quality-engineer | `/sc:test` | `tests/services/race/test_dry_run.py` ≥6 green tests with `FakeAsyncSession` |
+| 2.4 | Integration tests: execute `dry_run_event` with real PDF `valida_iv_2026_resultados.pdf` → verify 0 rows in `race_results` after call | quality-engineer | `/sc:test` | Test verifies `SELECT COUNT(*) FROM race_results WHERE event_id=<dry_event_id>` == 0 |
+| 2.5 | F1.7 race suite still green | quality-engineer | `cd backend && pytest tests/services/race/` | 305 + new = ≥311 green |
 
-### Criterio de éxito
+### Success criterion
 
 ```bash
 cd backend
-pytest tests/services/race/test_dry_run.py -x                    # ≥6 verdes
-pytest tests/services/race/ -x                                    # ≥311 totales verdes
+pytest tests/services/race/test_dry_run.py -x                    # ≥6 green
+pytest tests/services/race/ -x                                    # ≥311 total green
 pytest tests/services/race/test_dry_run.py --cov=app.services.race.ingestor --cov-report=term-missing
-# Coverage ingestor.py ≥95% (mantenido del baseline F1.7 98%)
+# Coverage ingestor.py ≥95% (maintained from F1.7 baseline 98%)
 ```
 
 ### Rollback
 
-`git revert <commit-fase-up2>` — sin cambios DB ni storage, totalmente reversible.
+`git revert <commit-phase-up2>` — no DB or storage changes, fully reversible.
 
-### Agente principal: **backend-architect**
+### Primary agent: **backend-architect**
 
 ---
 
-## Fase F-UP3 — Endpoints backend (4 endpoints + RBAC + schemas + tests)
+## Phase F-UP3 — Backend endpoints (4 endpoints + RBAC + schemas + tests)
 
-**Tiempo:** 1.5 días | **Riesgo:** Medio (multipart, magic bytes, ownership cross-coach, idempotencia) | **Depende de:** F-UP2 + F-UP4 (storage)
+**Time:** 1.5 days | **Risk:** Medium (multipart, magic bytes, cross-coach ownership, idempotency) | **Depends on:** F-UP2 + F-UP4 (storage)
 
-### Prerequisitos
+### Prerequisites
 
-- Dry-run en `RaceIngestor` funcional (F-UP2)
-- `storage_sftp.upload_bytes` validado (F-UP4 paralelo)
-- Patrón router multipart de referencia: `routers/training_sessions.py:690-786`
+- Dry-run in `RaceIngestor` functional (F-UP2)
+- `storage_sftp.upload_bytes` validated (F-UP4 parallel)
+- Reference multipart router pattern: `routers/training_sessions.py:690-786`
 
-### Tareas atómicas
+### Atomic tasks
 
-| # | Tarea | Agente | Comando | Deliverable |
+| # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
-| 3.1 | Schemas Pydantic en `backend/app/schemas/race_imports.py`: `ImportParseResponse`, `ImportDryRunRequest`, `ImportDryRunResponse`, `ImportCommitRequest`, `ImportCommitResponse`, `ImportListItem`, `EventHeaderPreview`, `MatchPreview`, `ParseWarning`, `DuplicateImportInfo` según design §4 | backend-architect | `/sc:implement` | 10 schemas Pydantic v2 con `model_config = ConfigDict(from_attributes=True)` |
-| 3.2 | Service `backend/app/services/race/importer/upload_service.py` con clase `RaceImportUploadService` y métodos `parse(...)`, `dry_run(...)`, `commit(...)`, `list_recent(...)` según design §12 pseudocódigo | backend-architect | `/sc:implement` | Orquestador async, ≤400 LOC; reusa `pdf_parser`, `csv_parser`, `matcher`, `RaceIngestor`, `storage_sftp` |
-| 3.3 | Helper `_validate_upload(file, allowed_exts, max_mb) -> bytes` con magic bytes + cap + ext whitelist (patrón `training_sessions.py:740-765`) | backend-architect | `/sc:implement` | Función reutilizable en service. PDF: `%PDF-` en bytes[0:5]. CSV: `.decode('utf-8')` + delimitador esperado en primera línea |
-| 3.4 | Helper `_compute_sha256(content: bytes) -> str` | backend-architect | `/sc:implement` | Función trivial pero centralizada para tests |
-| 3.5 | Helper `_check_duplicate(sha256, db) -> DuplicateImportInfo | None` | backend-architect | `/sc:implement` | Consulta `RaceImport` WHERE sha256=X AND status='committed' |
-| 3.6 | Endpoint `POST /api/race-analysis/imports/parse` (multipart) en `backend/app/routers/race_analysis.py` | backend-architect | `/sc:implement` | RBAC `Depends(require_role([UserRole.admin, UserRole.coach]))`, retorna `ImportParseResponse` |
-| 3.7 | Endpoint `POST /api/race-analysis/imports/{parse_id}/dry-run` (JSON body) | backend-architect | `/sc:implement` | Verifica ownership + status=pending, ejecuta `service.dry_run` |
-| 3.8 | Endpoint `POST /api/race-analysis/imports/{parse_id}/commit` (JSON body con `confirm: bool` obligatorio) | backend-architect | `/sc:implement` | Subir PDFs antes de `db.commit()` final; `delete_object` best-effort en rollback (design §4.5) |
-| 3.9 | Endpoint `GET /api/race-analysis/imports/recent?series_id=&limit=&status=` | backend-architect | `/sc:implement` | Lista paginada con join a `User.full_name` y `RaceEvent.name` |
-| 3.10 | RBAC adicional `force_reingest=True` requiere admin role (validar en service, retornar 403 si coach intenta setearlo) | security-engineer | `/sc:implement` | Check explícito en `service.dry_run` y `service.commit` |
-| 3.11 | Anti path-traversal: filename original solo se guarda en `RaceImport.filename`; storage_path se construye `race-imports/{series_id}/{uuid}.{ext}` server-side (design §6) | security-engineer | `/sc:implement` | Verificado en code review + test con filename `"../../etc/passwd.pdf"` |
-| 3.12 | Timeout 30s en parse con `asyncio.wait_for(asyncio.to_thread(parse_results_pdf, path), timeout=settings.race_parse_timeout_seconds)` | backend-architect | `/sc:implement` | Excepción `TimeoutError` mapeada a HTTP 422 con mensaje "PDF demasiado complejo" |
-| 3.13 | Tests TestClient backend `tests/routers/test_race_imports.py` (≥18 tests cubriendo: happy path, RBAC parent 403, RBAC coach cross-ownership 403, 400 archivo vacío, 413 oversized, 415 magic bytes, 422 PDF malformado, 409 SHA duplicado, 404 parse_id inexistente, idempotencia re-parse, dry-run rollback verificado, commit happy con storage mock, storage failure rollback BD) | quality-engineer | `/sc:test` | `tests/routers/test_race_imports.py` ≥18 verdes, coverage endpoints ≥85% |
-| 3.14 | Tests unitarios service `tests/services/race/test_upload_service.py` (≥12 tests cubriendo magic bytes validation, sha256 computation, duplicate detection, reanudar pending, ownership check) | quality-engineer | `/sc:test` | ≥12 verdes, coverage `upload_service.py` ≥90% |
-| 3.15 | Test fixture: PDF inflado a 9 MB on-the-fly para test 413 | quality-engineer | `/sc:test` | Fixture pytest `oversized_pdf` (BytesIO con padding) |
-| 3.16 | Smoke test manual con `curl` o `httpie` (3 endpoints + listado) | quality-engineer | manual | Screenshots/log en PR description |
+| 3.1 | Pydantic schemas in `backend/app/schemas/race_imports.py`: `ImportParseResponse`, `ImportDryRunRequest`, `ImportDryRunResponse`, `ImportCommitRequest`, `ImportCommitResponse`, `ImportListItem`, `EventHeaderPreview`, `MatchPreview`, `ParseWarning`, `DuplicateImportInfo` per design §4 | backend-architect | `/sc:implement` | 10 Pydantic v2 schemas with `model_config = ConfigDict(from_attributes=True)` |
+| 3.2 | Service `backend/app/services/race/importer/upload_service.py` with class `RaceImportUploadService` and methods `parse(...)`, `dry_run(...)`, `commit(...)`, `list_recent(...)` per design §12 pseudocode | backend-architect | `/sc:implement` | Async orchestrator, ≤400 LOC; reuses `pdf_parser`, `csv_parser`, `matcher`, `RaceIngestor`, `storage_sftp` |
+| 3.3 | Helper `_validate_upload(file, allowed_exts, max_mb) -> bytes` with magic bytes + cap + ext whitelist (pattern `training_sessions.py:740-765`) | backend-architect | `/sc:implement` | Reusable function in service. PDF: `%PDF-` in bytes[0:5]. CSV: `.decode('utf-8')` + expected delimiter in first line |
+| 3.4 | Helper `_compute_sha256(content: bytes) -> str` | backend-architect | `/sc:implement` | Trivial but centralized function for tests |
+| 3.5 | Helper `_check_duplicate(sha256, db) -> DuplicateImportInfo | None` | backend-architect | `/sc:implement` | Query `RaceImport` WHERE sha256=X AND status='committed' |
+| 3.6 | Endpoint `POST /api/race-analysis/imports/parse` (multipart) in `backend/app/routers/race_analysis.py` | backend-architect | `/sc:implement` | RBAC `Depends(require_role([UserRole.admin, UserRole.coach]))`, returns `ImportParseResponse` |
+| 3.7 | Endpoint `POST /api/race-analysis/imports/{parse_id}/dry-run` (JSON body) | backend-architect | `/sc:implement` | Verifies ownership + status=pending, executes `service.dry_run` |
+| 3.8 | Endpoint `POST /api/race-analysis/imports/{parse_id}/commit` (JSON body with mandatory `confirm: bool`) | backend-architect | `/sc:implement` | Upload PDFs before final `db.commit()`; best-effort `delete_object` on rollback (design §4.5) |
+| 3.9 | Endpoint `GET /api/race-analysis/imports/recent?series_id=&limit=&status=` | backend-architect | `/sc:implement` | Paginated list with join to `User.full_name` and `RaceEvent.name` |
+| 3.10 | Additional RBAC `force_reingest=True` requires admin role (validate in service, return 403 if coach tries to set it) | security-engineer | `/sc:implement` | Explicit check in `service.dry_run` and `service.commit` |
+| 3.11 | Anti path-traversal: original filename only stored in `RaceImport.filename`; storage_path built `race-imports/{series_id}/{uuid}.{ext}` server-side (design §6) | security-engineer | `/sc:implement` | Verified in code review + test with filename `"../../etc/passwd.pdf"` |
+| 3.12 | Timeout 30s on parse with `asyncio.wait_for(asyncio.to_thread(parse_results_pdf, path), timeout=settings.race_parse_timeout_seconds)` | backend-architect | `/sc:implement` | `TimeoutError` exception mapped to HTTP 422 with message "PDF too complex" |
+| 3.13 | TestClient backend tests `tests/routers/test_race_imports.py` (≥18 tests covering: happy path, RBAC parent 403, RBAC cross-coach ownership 403, 400 empty file, 413 oversized, 415 magic bytes, 422 malformed PDF, 409 SHA duplicate, 404 non-existent parse_id, idempotency re-parse, dry-run rollback verified, commit happy with storage mock, storage failure DB rollback) | quality-engineer | `/sc:test` | `tests/routers/test_race_imports.py` ≥18 green, endpoint coverage ≥85% |
+| 3.14 | Service unit tests `tests/services/race/test_upload_service.py` (≥12 tests covering magic bytes validation, sha256 computation, duplicate detection, resume pending, ownership check) | quality-engineer | `/sc:test` | ≥12 green, coverage `upload_service.py` ≥90% |
+| 3.15 | Test fixture: PDF inflated to 9 MB on-the-fly for 413 test | quality-engineer | `/sc:test` | pytest fixture `oversized_pdf` (BytesIO with padding) |
+| 3.16 | Manual smoke test with `curl` or `httpie` (3 endpoints + listing) | quality-engineer | manual | Screenshots/log in PR description |
 
-### Criterio de éxito
+### Success criterion
 
 ```bash
 cd backend
-pytest tests/routers/test_race_imports.py -x                                        # ≥18 verdes
-pytest tests/services/race/test_upload_service.py -x                                # ≥12 verdes
+pytest tests/routers/test_race_imports.py -x                                        # ≥18 green
+pytest tests/services/race/test_upload_service.py -x                                # ≥12 green
 pytest --cov=app.services.race.importer.upload_service \
        --cov=app.routers.race_analysis \
        --cov-report=term-missing tests/                                              # service ≥90%, router ≥85%
@@ -299,254 +299,254 @@ curl -X POST http://localhost:8000/api/race-analysis/imports/parse \
 
 ### Rollback
 
-`git revert <commits-fase-up3>` — endpoints aislados, no afecta routers existentes. Service nuevo en archivo nuevo.
+`git revert <commits-phase-up3>` — isolated endpoints, does not affect existing routers. New service in new file.
 
-### Decisiones tácticas del workflow
+### Workflow tactical decisions
 
-- **DT-3:** Estructura `upload_service.py` como **clase con DI de session + storage** (no función suelta) para facilitar mocks en tests sin monkey-patching agresivo.
-- **DT-4:** PDFs se suben a `race-imports/pending/{parse_id}/{uuid}.{ext}` en `parse`; en `commit` se mueven (rename SFTP) a `race-imports/{series_id}/{event_id}/{uuid}.{ext}`. Mitigación a "open implementation question" del design §12 apéndice.
+- **DT-3:** Structure `upload_service.py` as a **class with session + storage DI** (not a standalone function) to facilitate mocks in tests without aggressive monkey-patching.
+- **DT-4:** PDFs uploaded to `race-imports/pending/{parse_id}/{uuid}.{ext}` in `parse`; in `commit` moved (SFTP rename) to `race-imports/{series_id}/{event_id}/{uuid}.{ext}`. Mitigation of the "open implementation question" from design §12 appendix.
 
-### Agente principal: **backend-architect** + **security-engineer** (RBAC + path traversal + ownership) + **quality-engineer** (tests)
+### Primary agent: **backend-architect** + **security-engineer** (RBAC + path traversal + ownership) + **quality-engineer** (tests)
 
 ---
 
-## Fase F-UP4 — Storage integración (PDFs en SFTP/FTPS)
+## Phase F-UP4 — Storage integration (PDFs in SFTP/FTPS)
 
-**Tiempo:** 0.5 día | **Riesgo:** Bajo (reuso de wrapper F1.6 validado en producción) | **Depende de:** F-UP0 (envs verificadas)
+**Time:** 0.5 day | **Risk:** Low (reuse of F1.6 wrapper validated in production) | **Depends on:** F-UP0 (envs verified)
 
-### Prerequisitos
+### Prerequisites
 
-- F-UP0 completo (envs `HOSTINGER_SFTP_*` confirmadas en Render o fallback documentado)
-- `services/training/storage_sftp.py` revisado (research §Storage SFTP)
+- F-UP0 complete (`HOSTINGER_SFTP_*` envs confirmed in Render or fallback documented)
+- `services/training/storage_sftp.py` reviewed (research §Storage SFTP)
 
-### Tareas atómicas
+### Atomic tasks
 
-| # | Tarea | Agente | Comando | Deliverable |
+| # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
-| 4.1 | Identificar puntos de uso en `upload_service.py` y crear helper `_upload_pdf_to_storage(bytes, series_id, parse_id, ext) -> tuple[storage_path, storage_url]` que delega a `storage_sftp.upload_bytes` con path strategy `race-imports/{series_id_or_pending}/{parse_id}/{uuid}.{ext}` | backend-architect | `/sc:implement` | Helper en `upload_service.py` |
-| 4.2 | Verificar que `storage_sftp.delete_object(storage_path)` se invoca best-effort en rollback de commit (design §4.5) | backend-architect | `/sc:implement` | Try/except en cleanup; log warning si delete falla |
-| 4.3 | Tests con mock SFTP: `tests/services/race/test_upload_storage.py` (≥8 tests cubriendo upload success, delete success, upload failure, delete best-effort sin raise) | quality-engineer | `/sc:test` | ≥8 verdes |
-| 4.4 | Tests fallback local: temporalmente unset envs SFTP, verificar que upload usa `static/uploads/race-imports/` correctamente | quality-engineer | `/sc:test` | Test verifica fallback escribe a filesystem local |
-| 4.5 | Verificar que `static/uploads/race-imports/` está incluido en mount estático de `main.py` (si no está, agregar a config equivalente al F1.6) | backend-architect | `/sc:implement` | `main.py` mount confirmado o extendido |
-| 4.6 | Documentar en CLAUDE.md sección "Variables de entorno en producción" que `HOSTINGER_SFTP_*` ahora son **compartidas** entre F1.6 media y F-UP race imports | devops-architect | `/sc:document` | Sección actualizada |
+| 4.1 | Identify usage points in `upload_service.py` and create helper `_upload_pdf_to_storage(bytes, series_id, parse_id, ext) -> tuple[storage_path, storage_url]` delegating to `storage_sftp.upload_bytes` with path strategy `race-imports/{series_id_or_pending}/{parse_id}/{uuid}.{ext}` | backend-architect | `/sc:implement` | Helper in `upload_service.py` |
+| 4.2 | Verify that `storage_sftp.delete_object(storage_path)` is invoked best-effort on commit rollback (design §4.5) | backend-architect | `/sc:implement` | try/except in cleanup; log warning if delete fails |
+| 4.3 | Tests with mock SFTP: `tests/services/race/test_upload_storage.py` (≥8 tests covering upload success, delete success, upload failure, best-effort delete without raise) | quality-engineer | `/sc:test` | ≥8 green |
+| 4.4 | Local fallback tests: temporarily unset SFTP envs, verify upload uses `static/uploads/race-imports/` correctly | quality-engineer | `/sc:test` | Test verifies fallback writes to local filesystem |
+| 4.5 | Verify `static/uploads/race-imports/` is included in static mount in `main.py` (if not, add to equivalent config from F1.6) | backend-architect | `/sc:implement` | `main.py` mount confirmed or extended |
+| 4.6 | Document in CLAUDE.md "Production environment variables" section that `HOSTINGER_SFTP_*` are now **shared** between F1.6 media and F-UP race imports | devops-architect | `/sc:document` | Updated section |
 
-### Criterio de éxito
+### Success criterion
 
 ```bash
 cd backend
-pytest tests/services/race/test_upload_storage.py -x        # ≥8 verdes
-# Smoke local fallback
+pytest tests/services/race/test_upload_storage.py -x        # ≥8 green
+# Local fallback smoke
 unset HOSTINGER_SFTP_HOST
 pytest tests/services/race/test_upload_storage.py::test_fallback_local -x
-ls static/uploads/race-imports/                              # archivo PDF creado en fallback
+ls static/uploads/race-imports/                              # PDF file created in fallback
 ```
 
 ### Rollback
 
-`git revert <commit-fase-up4>` — sin estructura nueva, solo helpers en `upload_service.py`.
+`git revert <commit-phase-up4>` — no new structure, only helpers in `upload_service.py`.
 
-### Agente principal: **backend-architect** (con devops-architect para verificar envs)
+### Primary agent: **backend-architect** (with devops-architect to verify envs)
 
-⚠️ **Bloqueado por asunción A-1 si A1 dispara TTL en lugar de retención permanente:** agregar cleanup task adicional, no es bloqueador real para esta fase.
+⚠️ **Blocked by assumption A-1 if A1 triggers TTL instead of permanent retention:** add additional cleanup task, not a real blocker for this phase.
 
 ---
 
-## Fase F-UP5 — Frontend UI wizard (tab + 3 steps + hooks)
+## Phase F-UP5 — Frontend UI wizard (tab + 3 steps + hooks)
 
-**Tiempo:** 2.5 días | **Riesgo:** Medio (state machine wizard, UX HITL matches, polling de status post-commit no aplica acá pero parse puede ser percibido lento) | **Depende de:** F-UP3
+**Time:** 2.5 days | **Risk:** Medium (wizard state machine, UX HITL matches, polling of status post-commit not applicable here but parse may feel slow) | **Depends on:** F-UP3
 
-### Prerequisitos
+### Prerequisites
 
-- Endpoints backend funcionando (F-UP3) o mocks JSON listos
-- Frontend Fase 1 actual operativo
-- shadcn/ui + Tailwind + TanStack Query + React Hook Form + Zod ya disponibles
+- Backend endpoints working (F-UP3) or JSON mocks ready
+- Current Phase 1 frontend operational
+- shadcn/ui + Tailwind + TanStack Query + React Hook Form + Zod already available
 
-### Tareas atómicas
+### Atomic tasks
 
-| # | Tarea | Agente | Comando | Deliverable |
+| # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
-| 5.1 | API client `frontend/src/api/raceImports.ts` con 4 funciones axios: `parseImport(filesFormData)`, `dryRunImport(parseId, body)`, `commitImport(parseId, body)`, `listRecentImports(params)` | react-ui-engineer | `/sc:implement` | Wrappers tipados con interfaces TS generadas desde schemas Pydantic |
-| 5.2 | Hooks TanStack Query: `useImportParse()` (mutation), `useImportDryRun(parseId)` (mutation), `useImportCommit(parseId)` (mutation), `useImportsHistory(params)` (query) | react-ui-engineer | `/sc:implement` | `frontend/src/hooks/raceImports.ts` |
-| 5.3 | Componente `RaceUploadZone` (≤60 LOC) en `frontend/src/components/race/RaceUploadZone.tsx` — dropzone PDF/CSV con drag&drop + validación cliente (ext + tamaño 8 MB) + estado idle/drag/preview | react-ui-engineer | `/sc:implement` | Clon simplificado de `MediaUploadZone` SIN thumbnails/consent/athlete_chips. `data-testid="race-upload-dropzone"` |
-| 5.4 | Componente `EventMetaForm` con React Hook Form + Zod en `frontend/src/components/race/EventMetaForm.tsx` (validación `valida_num ∈ [1..7] ∪ {99}`, `temp ∈ [-10,50]`, `altitude ∈ [0,6000]`, `surface_condition` enum) | react-ui-engineer | `/sc:implement` | Form pre-rellenado desde `detected_header` con campos editables |
-| 5.5 | Componente `MatchDecisionTable` en `frontend/src/components/race/MatchDecisionTable.tsx` — tabla con bib + nombre PDF + radios top-3 + "skip" + "crear después" (clon visual `AttendanceTable.tsx`) | react-ui-engineer | `/sc:implement` | Soporta filtro "Solo pendientes" + scroll interno si >10 filas |
-| 5.6 | Componente `IngestReportCard` en `frontend/src/components/race/IngestReportCard.tsx` — resumen visual conteos + warnings colapsables | react-ui-engineer | `/sc:implement` | Render `IngestReport` con cards shadcn |
-| 5.7 | Componente principal `RaceUploadWizard` en `frontend/src/components/race/RaceUploadWizard.tsx` con state machine de 3 pasos según design §5.5 | react-ui-engineer | `/sc:implement` | Stepper visual + back/forward preserva state + idle/parsing/success/error/duplicate states |
-| 5.8 | Tab nueva "Cargar resultados" en `frontend/src/routes/results/RaceAnalysisPage.tsx` como **segunda tab** (entre "Nuevo análisis" y "Runs activos"). Deep-link `?tab=upload` funcional | react-ui-engineer | `/sc:implement` | Tab + integración con wizard + URL state sync |
-| 5.9 | Manejo de estados error: 413 toast "Archivo demasiado grande", 415 toast "Formato no oficial", 422 banner expanded "Detalles parser", 409 banner amarillo SHA duplicado + checkbox `force_reingest` (visible solo si admin) | react-ui-engineer | `/sc:implement` | Casos cubiertos en wizard state machine |
-| 5.10 | UX cold-start: banner "El primer commit del día puede tardar hasta 60s" en step 3 + loader explícito durante commit (mitigación R7 design) | react-ui-engineer | `/sc:implement` | Banner condicional + spinner shadcn |
-| 5.11 | Componente `ImportHistoryTable` en `frontend/src/components/race/ImportHistoryTable.tsx` — lista imports recientes con links download PDF, marca legacy si `event_id IS NULL` | react-ui-engineer | `/sc:implement` | Tabla shadcn debajo del wizard en mismo tab |
-| 5.12 | Tests vitest + RTL: cada componente nuevo + state machine wizard + hooks + `RaceAnalysisPage` integración + accessibility con jest-axe | quality-engineer | `/sc:test` | `frontend/tests/race-upload/*.test.tsx` ≥35 tests verdes, coverage ≥85% statements, 0 violaciones axe |
-| 5.13 | Mock service worker (msw) o vitest mocks para axios responses en tests de hooks | quality-engineer | `/sc:test` | Mock fixtures en `frontend/tests/race-upload/__fixtures__/` |
+| 5.1 | API client `frontend/src/api/raceImports.ts` with 4 axios functions: `parseImport(filesFormData)`, `dryRunImport(parseId, body)`, `commitImport(parseId, body)`, `listRecentImports(params)` | react-ui-engineer | `/sc:implement` | Typed wrappers with TS interfaces generated from Pydantic schemas |
+| 5.2 | TanStack Query hooks: `useImportParse()` (mutation), `useImportDryRun(parseId)` (mutation), `useImportCommit(parseId)` (mutation), `useImportsHistory(params)` (query) | react-ui-engineer | `/sc:implement` | `frontend/src/hooks/raceImports.ts` |
+| 5.3 | `RaceUploadZone` component (≤60 LOC) in `frontend/src/components/race/RaceUploadZone.tsx` — PDF/CSV dropzone with drag&drop + client validation (ext + 8 MB size) + idle/drag/preview state | react-ui-engineer | `/sc:implement` | Simplified clone of `MediaUploadZone` WITHOUT thumbnails/consent/athlete_chips. `data-testid="race-upload-dropzone"` |
+| 5.4 | `EventMetaForm` component with React Hook Form + Zod in `frontend/src/components/race/EventMetaForm.tsx` (validation `valida_num ∈ [1..7] ∪ {99}`, `temp ∈ [-10,50]`, `altitude ∈ [0,6000]`, `surface_condition` enum) | react-ui-engineer | `/sc:implement` | Form pre-filled from `detected_header` with editable fields |
+| 5.5 | `MatchDecisionTable` component in `frontend/src/components/race/MatchDecisionTable.tsx` — table with bib + PDF name + top-3 radios + "skip" + "create later" (visual clone `AttendanceTable.tsx`) | react-ui-engineer | `/sc:implement` | Supports "Only pending" filter + internal scroll if >10 rows |
+| 5.6 | `IngestReportCard` component in `frontend/src/components/race/IngestReportCard.tsx` — visual summary of counts + collapsible warnings | react-ui-engineer | `/sc:implement` | Renders `IngestReport` with shadcn cards |
+| 5.7 | Main `RaceUploadWizard` component in `frontend/src/components/race/RaceUploadWizard.tsx` with 3-step state machine per design §5.5 | react-ui-engineer | `/sc:implement` | Visual stepper + back/forward preserves state + idle/parsing/success/error/duplicate states |
+| 5.8 | New "Load results" tab in `frontend/src/routes/results/RaceAnalysisPage.tsx` as **second tab** (between "New analysis" and "Active runs"). Functional deep-link `?tab=upload` | react-ui-engineer | `/sc:implement` | Tab + wizard integration + URL state sync |
+| 5.9 | Error state handling: 413 toast "File too large", 415 toast "Unofficial format", 422 expanded banner "Parser details", 409 yellow SHA duplicate banner + `force_reingest` checkbox (visible only if admin) | react-ui-engineer | `/sc:implement` | Cases covered in wizard state machine |
+| 5.10 | Cold-start UX: banner "The first commit of the day may take up to 60s" in step 3 + explicit loader during commit (mitigation R7 design) | react-ui-engineer | `/sc:implement` | Conditional banner + shadcn spinner |
+| 5.11 | `ImportHistoryTable` component in `frontend/src/components/race/ImportHistoryTable.tsx` — list of recent imports with PDF download links, marks legacy if `event_id IS NULL` | react-ui-engineer | `/sc:implement` | shadcn table below wizard in same tab |
+| 5.12 | Vitest + RTL tests: each new component + wizard state machine + hooks + `RaceAnalysisPage` integration + accessibility with jest-axe | quality-engineer | `/sc:test` | `frontend/tests/race-upload/*.test.tsx` ≥35 green tests, coverage ≥85% statements, 0 axe violations |
+| 5.13 | Mock service worker (msw) or vitest mocks for axios responses in hook tests | quality-engineer | `/sc:test` | Mock fixtures in `frontend/tests/race-upload/__fixtures__/` |
 
-### Criterio de éxito
+### Success criterion
 
 ```bash
 cd frontend
-npm run test -- race-upload                           # ≥35 verdes
+npm run test -- race-upload                           # ≥35 green
 npm run test:coverage -- src/components/race        # ≥85% statements
 # Manual smoke
 npm run dev   # localhost:5173 → /coach/race-analysis?tab=upload
-# Arrastra valida_iv_2026_resultados.pdf → wizard avanza paso 1 → paso 2 → paso 3
+# Drag valida_iv_2026_resultados.pdf → wizard advances step 1 → step 2 → step 3
 ```
 
 ### Rollback
 
-`git revert <commits-fase-up5>` — tab nueva desaparece, resto SPA intacto.
+`git revert <commits-phase-up5>` — new tab disappears, rest of SPA intact.
 
-### Decisiones tácticas del workflow
+### Workflow tactical decisions
 
-- **DT-5:** State del wizard vive en componente `RaceUploadWizard` (useState/useReducer), **no en Zustand global**. El wizard es scoped al tab; navegar fuera y volver reinicia. Si necesitamos persistencia → diferir F2.
-- **DT-6:** Stepper visual con shadcn `Tabs` con `disabled` en pasos no alcanzados (no instalar nuevo componente Stepper si no existe en registry).
+- **DT-5:** Wizard state lives in `RaceUploadWizard` component (useState/useReducer), **not in global Zustand**. The wizard is scoped to the tab; navigating away and back resets it. If persistence is needed → defer F2.
+- **DT-6:** Visual stepper with shadcn `Tabs` with `disabled` on unreached steps (do not install new Stepper component if it doesn't exist in registry).
 
-### Agente principal: **react-ui-engineer** + **quality-engineer**
+### Primary agent: **react-ui-engineer** + **quality-engineer**
 
 ---
 
-## Fase F-UP6 — E2E playwright-cli + integración full-stack
+## Phase F-UP6 — E2E playwright-cli + full-stack integration
 
-**Tiempo:** 1 día | **Riesgo:** Medio (orquestación múltiples sistemas en E2E) | **Depende de:** F-UP5
+**Time:** 1 day | **Risk:** Medium (orchestration of multiple systems in E2E) | **Depends on:** F-UP5
 
-### Prerequisitos
+### Prerequisites
 
-- Backend desplegado en local con `docker compose up`
-- Frontend en dev mode (`npm run dev`)
-- PDFs fixture en `docs/10-race-results/snapshots/`
-- `playwright-cli` skill disponible
+- Backend deployed locally with `docker compose up`
+- Frontend in dev mode (`npm run dev`)
+- PDF fixtures in `docs/10-race-results/snapshots/`
+- `playwright-cli` skill available
 
-### Tareas atómicas
+### Atomic tasks
 
-| # | Tarea | Agente | Comando | Deliverable |
+| # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
-| 6.1 | Setup playwright config `frontend/playwright.config.ts` (si no existe) con baseURL local, browser chromium, video/screenshot on failure | quality-engineer | `/sc:test` | Config + browsers instalados |
-| 6.2 | Test E2E happy path: `frontend/tests/e2e/race-upload-happy.spec.ts` (login coach → tab upload → upload 2 PDFs → wait parse → editar EventMeta → confirm matches → step 3 → checkbox confirm → submit → assert success + verificar `RaceImport.status=committed` en DB) | quality-engineer | `playwright test race-upload-happy --headed` | 1 test E2E verde, screenshots cada paso |
-| 6.3 | Test E2E error path 1: upload archivo > 8 MB → assert toast 413 | quality-engineer | `playwright test race-upload-oversized` | Verde |
-| 6.4 | Test E2E error path 2: upload PDF no oficial (fixture `fake_pdf.txt` renombrado a `.pdf`) → assert toast 415/422 | quality-engineer | `playwright test race-upload-invalid` | Verde |
-| 6.5 | Test E2E RBAC: login coach sin admin → checkbox `force_reingest` NO visible en banner SHA duplicado | quality-engineer | `playwright test race-upload-rbac` | Verde |
-| 6.6 | Test integración full-stack TestClient + FakeSFTP en `backend/tests/integration/test_race_upload_full_stack.py` — invoca `/parse` → `/dry-run` → `/commit` end-to-end sin mock de service, valida fila persistida en BD + storage_url poblado | quality-engineer | `pytest tests/integration/test_race_upload_full_stack.py` | ≥3 tests verdes |
-| 6.7 | Smoke test concurrency: 3 coaches paralelos suben mismo PDF → solo 1 ingresa, los otros 2 reciben 409 | quality-engineer | `pytest tests/integration/test_race_upload_concurrency.py` | Test verde |
-| 6.8 | Screenshots formato markdown en `docs/10-race-results/upload-screenshots.md` para documentación coach | quality-engineer | manual | 1 archivo .md con 5-7 screenshots embed |
+| 6.1 | Setup playwright config `frontend/playwright.config.ts` (if it doesn't exist) with local baseURL, chromium browser, video/screenshot on failure | quality-engineer | `/sc:test` | Config + browsers installed |
+| 6.2 | E2E happy path test: `frontend/tests/e2e/race-upload-happy.spec.ts` (coach login → upload tab → upload 2 PDFs → wait parse → edit EventMeta → confirm matches → step 3 → confirm checkbox → submit → assert success + verify `RaceImport.status=committed` in DB) | quality-engineer | `playwright test race-upload-happy --headed` | 1 green E2E test, screenshots per step |
+| 6.3 | E2E error path 1: upload file > 8 MB → assert 413 toast | quality-engineer | `playwright test race-upload-oversized` | Green |
+| 6.4 | E2E error path 2: upload unofficial PDF (fixture `fake_pdf.txt` renamed to `.pdf`) → assert 415/422 toast | quality-engineer | `playwright test race-upload-invalid` | Green |
+| 6.5 | E2E RBAC: coach login without admin → `force_reingest` checkbox NOT visible in SHA duplicate banner | quality-engineer | `playwright test race-upload-rbac` | Green |
+| 6.6 | Full-stack integration test TestClient + FakeSFTP in `backend/tests/integration/test_race_upload_full_stack.py` — invokes `/parse` → `/dry-run` → `/commit` end-to-end without service mock, validates persisted row in DB + populated storage_url | quality-engineer | `pytest tests/integration/test_race_upload_full_stack.py` | ≥3 green tests |
+| 6.7 | Concurrency smoke test: 3 parallel coaches upload same PDF → only 1 ingests, the other 2 receive 409 | quality-engineer | `pytest tests/integration/test_race_upload_concurrency.py` | Green test |
+| 6.8 | Markdown format screenshots in `docs/10-race-results/upload-screenshots.md` for coach documentation | quality-engineer | manual | 1 .md file with 5-7 embedded screenshots |
 
-### Criterio de éxito
+### Success criterion
 
 ```bash
 cd frontend
-npx playwright test race-upload                       # 4 E2E verdes
+npx playwright test race-upload                       # 4 green E2E
 cd ../backend
-pytest tests/integration/test_race_upload_full_stack.py tests/integration/test_race_upload_concurrency.py -x   # ≥4 verdes
+pytest tests/integration/test_race_upload_full_stack.py tests/integration/test_race_upload_concurrency.py -x   # ≥4 green
 ```
 
 ### Rollback
 
-E2E tests no afectan código de prod. `git revert <commits-fase-up6>` si necesario.
+E2E tests don't affect prod code. `git revert <commits-phase-up6>` if necessary.
 
-### Decisiones tácticas del workflow
+### Workflow tactical decisions
 
-- **DT-7:** Si playwright-cli skill no está pre-configurado, usar el skill `playwright-cli` disponible (system reminder) para generar el scaffolding inicial.
-- **DT-8:** E2E corren contra **docker compose local**, no contra Render staging. Esto evita flakiness por cold-start free tier. Smoke prod en F-UP7.
+- **DT-7:** If playwright-cli skill is not pre-configured, use the available `playwright-cli` skill (system reminder) to generate initial scaffolding.
+- **DT-8:** E2E run against **local docker compose**, not against Render staging. This avoids free tier cold-start flakiness. Prod smoke in F-UP7.
 
-### Agente principal: **quality-engineer**
+### Primary agent: **quality-engineer**
 
 ---
 
-## Fase F-UP7 — Producción + documentación
+## Phase F-UP7 — Production + documentation
 
-**Tiempo:** 0.5 día | **Riesgo:** Bajo | **Depende de:** F-UP6
+**Time:** 0.5 day | **Risk:** Low | **Depends on:** F-UP6
 
-### Prerequisitos
+### Prerequisites
 
-- F-UP6 verde
-- Envs `HOSTINGER_SFTP_*` configuradas en Render (resuelto en F-UP0 o issue abierto pre-deploy)
-- PR aprobado y mergeado a `main`
+- F-UP6 green
+- `HOSTINGER_SFTP_*` envs configured in Render (resolved in F-UP0 or open issue pre-deploy)
+- PR approved and merged to `main`
 
-### Tareas atómicas
+### Atomic tasks
 
-| # | Tarea | Agente | Comando | Deliverable |
+| # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
-| 7.1 | Actualizar `CLAUDE.md` sección "Estado de implementación" agregando nueva tabla "Módulo Upload UI race-results (Fase 1.7+)" con paso 1-7 marcados ✅ | devops-architect | `/sc:document` | CLAUDE.md actualizado |
-| 7.2 | Actualizar README/index docs race-results (`docs/10-race-results/README.md` o similar) eliminando instrucción CLI manual del coach, moviéndola a apéndice "Para devs / batch operations" | devops-architect | `/sc:document` | README rediseñado: flujo principal = UI; CLI = avanzado |
-| 7.3 | Verificar deploy auto a Render tras merge a `main` (auto-deploy activado) | devops-architect | manual (Render dashboard) | Build OK, app responde 200 en `/health` |
-| 7.4 | Smoke test producción: subir 1 PDF real (Válida IV ya ingestada → SHA duplicado esperado → banner accionable) | quality-engineer | manual desde browser prod | Screenshots de wizard funcional |
-| 7.5 | Verificar PDFs subidos quedan accesibles en `HOSTINGER_PUBLIC_BASE_URL/race-imports/...` | devops-architect | manual (curl URL pública del fixture subido) | HTTP 200 + content-type `application/pdf` |
-| 7.6 | Schedule task de cleanup `pending` 24h en `app/services/scheduled/cleanup.py` (si no existe el módulo, crear con APScheduler o similar registrado en `main.py` lifespan) | devops-architect | `/sc:implement` | Cron 03:00 UTC diario, log estructurado |
-| 7.7 | Actualizar `docs/10-race-results/upload-design.md` §11 marcando todas las asunciones como "validada YYYY-MM-DD" o "refinada en workflow DT-X" | system-architect | manual | Doc auditable |
-| 7.8 | Commit final con changelog en `docs/10-race-results/upload-completion-report.md` (resumen métricas reales vs estimado, decisiones tácticas activas, lessons learned) | system-architect | manual | 1 archivo nuevo |
+| 7.1 | Update `CLAUDE.md` implementation status section adding new table "Upload UI race-results Module (Phase 1.7+)" with steps 1-7 marked ✅ | devops-architect | `/sc:document` | Updated CLAUDE.md |
+| 7.2 | Update README/index docs race-results (`docs/10-race-results/README.md` or similar) removing manual CLI instruction for coach, moving it to appendix "For devs / batch operations" | devops-architect | `/sc:document` | Redesigned README: main flow = UI; CLI = advanced |
+| 7.3 | Verify auto-deploy to Render after merge to `main` (auto-deploy activated) | devops-architect | manual (Render dashboard) | Build OK, app responds 200 on `/health` |
+| 7.4 | Production smoke test: upload 1 real PDF (Round IV already ingested → SHA duplicate expected → actionable banner) | quality-engineer | manual from prod browser | Screenshots of functional wizard |
+| 7.5 | Verify uploaded PDFs are accessible at `HOSTINGER_PUBLIC_BASE_URL/race-imports/...` | devops-architect | manual (curl public URL of uploaded fixture) | HTTP 200 + content-type `application/pdf` |
+| 7.6 | Schedule cleanup task for `pending` 24h in `app/services/scheduled/cleanup.py` (if module doesn't exist, create with APScheduler or similar registered in `main.py` lifespan) | devops-architect | `/sc:implement` | Daily cron 03:00 UTC, structured log |
+| 7.7 | Update `docs/10-race-results/upload-design.md` §11 marking all assumptions as "validated YYYY-MM-DD" or "refined in workflow DT-X" | system-architect | manual | Auditable doc |
+| 7.8 | Final commit with changelog in `docs/10-race-results/upload-completion-report.md` (real metrics summary vs estimated, active tactical decisions, lessons learned) | system-architect | manual | 1 new file |
 
-### Criterio de éxito
+### Success criterion
 
 ```bash
-# Verificación end-to-end post-deploy
+# End-to-end post-deploy verification
 curl https://mi-2yzi.onrender.com/health                          # 200 OK
-# Login coach → /coach/race-analysis?tab=upload (browser)
-# Subir PDF → wizard completo → fila persistida en MySQL Hostinger
+# Coach login → /coach/race-analysis?tab=upload (browser)
+# Upload PDF → complete wizard → row persisted in MySQL Hostinger
 mysql -h <hostinger> -e "SELECT id, status, storage_url, event_id FROM race_imports ORDER BY id DESC LIMIT 1"
-# → status=committed, storage_url poblada
+# → status=committed, storage_url populated
 ```
 
 ### Rollback
 
-- Code: `git revert <merge-commit>` + redeploy manual desde Render.
-- DB: `alembic downgrade 64c263edd07f` (deja columnas legacy F1.7 intactas; los 3 imports F1.7 originales no se ven afectados; los imports nuevos quedan huérfanos pero recuperables).
-- Storage: PDFs en SFTP permanecen como huérfanos detectables (sin filas BD que los referencien). Cleanup nocturno los detectará por discrepancia.
+- Code: `git revert <merge-commit>` + manual redeploy from Render.
+- DB: `alembic downgrade 64c263edd07f` (leaves F1.7 legacy columns intact; the 3 original F1.7 imports are unaffected; new imports remain as orphans but are recoverable).
+- Storage: PDFs on SFTP remain as detectable orphans (without DB rows referencing them). Nightly cleanup will detect them by discrepancy.
 
-### Agente principal: **devops-architect** + **system-architect** (documentación final)
+### Primary agent: **devops-architect** + **system-architect** (final documentation)
 
 ---
 
 ## Risk register
 
-| # | Riesgo | Fase | Prob | Impacto | Mitigación |
+| # | Risk | Phase | Prob | Impact | Mitigation |
 |---|---|---|---|---|---|
-| R1 | Envs `HOSTINGER_SFTP_*` no configuradas en Render → PDFs efímeros en free tier | F-UP0, F-UP4, F-UP7 | Alta | Alto | Coordinar antes de F-UP4. Health check al iniciar app logguea WARNING si modo fallback. Documentado como bloqueador silencioso en design R1. |
-| R2 | `pdfplumber` cuelga con PDF malicioso/corrupto | F-UP3 | Baja | Medio | `asyncio.wait_for(..., timeout=30)` → 422 + try/except amplio. Settings env `RACE_PARSE_TIMEOUT_SECONDS`. |
-| R3 | Storage upload OK pero BD commit falla → PDF huérfano en SFTP | F-UP3 | Baja | Bajo | `delete_object` best-effort en except del service. Cleanup nocturno detecta huérfanos. |
-| R4 | Coach abandona wizard tras paso 1 → `RaceImport.status=pending` acumula | F-UP3, F-UP7 | Media | Bajo | Cleanup nocturno con TTL 24h (F-UP7.6). |
-| R5 | Coach sube PDF de temporada futura sin que sistema lo detecte | F-UP5 | Baja | Medio | `EventMeta.season` validado en `EventMetaForm` (Zod). Backend no infiere season automáticamente. |
-| R6 | `force_reingest` mal usado por admin → duplicación inflada `competitors_created` | F-UP5 | Baja | Alto | Confirmation modal extra + banner explicativo comportamiento idempotente. Log estructurado. |
-| R7 | Cold start Render >60s → wizard timeout en commit | F-UP5, F-UP6 | Media | Medio | Banner explícito en step 3. Loader visible. Aceptado como limitación free tier (F-UP5.10). |
-| R8 | Coach sube PDF >8 MB | F-UP3, F-UP5 | Baja | Bajo | Cap cliente + servidor 8 MB. Toast 413 con mensaje accionable. |
-| R9 | XSS via `weather_notes` campo libre | F-UP3, F-UP5 | Baja | Medio | Zod max 500 chars. Frontend nunca renderiza con `dangerouslySetInnerHTML`. |
-| R10 | Race condition: 2 coaches suben mismo PDF simultáneamente | F-UP3 | Muy baja | Bajo | UNIQUE implícito `(sha256, status='committed')`. Segunda ingesta detecta duplicado y aborta. Cubierto F-UP6.7. |
-| R11 | `defusedxml` desalineado: pdfplumber/pdfminer puede invocar XML interno con CVE | F-UP3 | Baja | Alto | Aceptado MVP. Mitigación F2: subprocess seccomp. |
-| R12 | UX matches ambiguos confunde coach (typical 0-2 por válida pero edge cases con muchos atletas TyR nuevos) | F-UP5, F-UP6 | Media | Medio | Filtro "Solo pendientes" + scroll interno + tour interactivo opcional (post-MVP). E2E happy path valida. |
-| R13 | Asunción A3 falsa (retención permanente no aceptable) → necesidad de TTL retroactivo | F-UP0, F-UP7 | Baja | Medio | Documentado en DT-2: si A3 cambia, +0.25 día migración para `retention_until`. |
-| R14 | Tests playwright flaky por timing wizard | F-UP6 | Media | Bajo | Usar `expect.poll` + `waitForResponse` en lugar de `waitForTimeout`. |
+| R1 | `HOSTINGER_SFTP_*` envs not configured in Render → ephemeral PDFs in free tier | F-UP0, F-UP4, F-UP7 | High | High | Coordinate before F-UP4. App startup health check logs WARNING if in fallback mode. Documented as silent blocker in design R1. |
+| R2 | `pdfplumber` hangs with malicious/corrupt PDF | F-UP3 | Low | Medium | `asyncio.wait_for(..., timeout=30)` → 422 + broad try/except. Settings env `RACE_PARSE_TIMEOUT_SECONDS`. |
+| R3 | Storage upload OK but DB commit fails → orphan PDF in SFTP | F-UP3 | Low | Low | Best-effort `delete_object` in service except. Nightly cleanup detects orphans. |
+| R4 | Coach abandons wizard after step 1 → `RaceImport.status=pending` accumulates | F-UP3, F-UP7 | Medium | Low | Nightly cleanup with TTL 24h (F-UP7.6). |
+| R5 | Coach uploads PDF from future season without system detecting it | F-UP5 | Low | Medium | `EventMeta.season` validated in `EventMetaForm` (Zod). Backend does not infer season automatically. |
+| R6 | `force_reingest` misused by admin → inflated `competitors_created` | F-UP5 | Low | High | Extra confirmation modal + explanatory banner of idempotent behavior. Structured log. |
+| R7 | Render cold start >60s → wizard timeout in commit | F-UP5, F-UP6 | Medium | Medium | Explicit banner in step 3. Visible loader. Accepted as free tier limitation (F-UP5.10). |
+| R8 | Coach uploads PDF >8 MB | F-UP3, F-UP5 | Low | Low | Client + server 8 MB cap. 413 toast with actionable message. |
+| R9 | XSS via free `weather_notes` field | F-UP3, F-UP5 | Low | Medium | Zod max 500 chars. Frontend never renders with `dangerouslySetInnerHTML`. |
+| R10 | Race condition: 2 coaches upload same PDF simultaneously | F-UP3 | Very low | Low | Implicit UNIQUE `(sha256, status='committed')`. Second ingestion detects duplicate and aborts cleanly. Covered F-UP6.7. |
+| R11 | `defusedxml` misaligned: pdfplumber/pdfminer may invoke internal XML with CVE | F-UP3 | Low | High | Accepted MVP. F2 mitigation: subprocess seccomp. |
+| R12 | Ambiguous match UX confuses coach (typical 0-2 per round but edge cases with many new TyR athletes) | F-UP5, F-UP6 | Medium | Medium | "Only pending" filter + internal scroll + optional interactive tour (post-MVP). E2E happy path validates. |
+| R13 | Assumption A3 false (permanent retention not acceptable) → need for retroactive TTL | F-UP0, F-UP7 | Low | Medium | Documented in DT-2: if A3 changes, +0.25 day migration for `retention_until`. |
+| R14 | playwright tests flaky due to wizard timing | F-UP6 | Medium | Low | Use `expect.poll` + `waitForResponse` instead of `waitForTimeout`. |
 
 ---
 
-## Quality gates entre fases
+## Quality gates between phases
 
-| Gate | Antes de | Criterio | Responsable |
+| Gate | Before | Criterion | Responsible |
 |---|---|---|---|
-| QG1 | F-UP0 → F-UP1 | Envs `HOSTINGER_SFTP_*` confirmadas (o issue abierto explícito) + asunciones validadas | devops-architect + system-architect |
-| QG2 | F-UP1 → F-UP2 | Migración aplicada y reversible + 305 tests F1.7 verdes + ≥5 tests modelo nuevos | quality-engineer |
-| QG3 | F-UP2 → F-UP3 | Dry-run rollback verificado en tests + 0 efecto en BD post-llamada | quality-engineer |
-| QG4 | F-UP3 → F-UP5 | ≥18 tests TestClient verdes + ≥12 tests service verdes + coverage ≥90% service / ≥85% router + smoke curl OK | quality-engineer + security-engineer (RBAC tests) |
-| QG5 | F-UP4 → F-UP3 | Tests mock SFTP + fallback local verdes | quality-engineer |
-| QG6 | F-UP5 → F-UP6 | ≥35 tests vitest + 0 axe violations + smoke manual wizard 3 pasos | quality-engineer |
-| QG7 | F-UP6 → F-UP7 | 4 E2E playwright verdes + integración full-stack verde + concurrency test verde | quality-engineer |
-| QG8 | F-UP7 → CLOSED | Smoke prod + PDF accesible URL pública + cleanup task corriendo + docs actualizados | devops-architect + system-architect |
+| QG1 | F-UP0 → F-UP1 | `HOSTINGER_SFTP_*` envs confirmed (or explicit open issue) + assumptions validated | devops-architect + system-architect |
+| QG2 | F-UP1 → F-UP2 | Migration applied and reversible + 305 F1.7 tests green + ≥5 new model tests | quality-engineer |
+| QG3 | F-UP2 → F-UP3 | Dry-run rollback verified in tests + 0 DB effect post-call | quality-engineer |
+| QG4 | F-UP3 → F-UP5 | ≥18 green TestClient tests + ≥12 green service tests + coverage ≥90% service / ≥85% router + smoke curl OK | quality-engineer + security-engineer (RBAC tests) |
+| QG5 | F-UP4 → F-UP3 | Mock SFTP tests + local fallback green | quality-engineer |
+| QG6 | F-UP5 → F-UP6 | ≥35 vitest tests + 0 axe violations + manual 3-step wizard smoke | quality-engineer |
+| QG7 | F-UP6 → F-UP7 | 4 green playwright E2E + full-stack integration green + concurrency test green | quality-engineer |
+| QG8 | F-UP7 → CLOSED | Prod smoke + PDF accessible public URL + cleanup task running + docs updated | devops-architect + system-architect |
 
 ---
 
-## Tests strategy completa
+## Complete tests strategy
 
 ### Backend — pytest
 
-| Categoría | Archivo | # tests | Threshold |
+| Category | File | # tests | Threshold |
 |---|---|---|---|
-| Modelos | `tests/models/test_race_import.py` | ≥5 | — |
+| Models | `tests/models/test_race_import.py` | ≥5 | — |
 | Dry-run service | `tests/services/race/test_dry_run.py` | ≥6 | coverage ingestor ≥95% |
 | Upload service | `tests/services/race/test_upload_service.py` | ≥12 | coverage service ≥90% |
 | Storage integration | `tests/services/race/test_upload_storage.py` | ≥8 | — |
 | Endpoints (TestClient) | `tests/routers/test_race_imports.py` | ≥18 | coverage router ≥85% |
-| Integración full-stack | `tests/integration/test_race_upload_full_stack.py` | ≥3 | — |
+| Full-stack integration | `tests/integration/test_race_upload_full_stack.py` | ≥3 | — |
 | Concurrency | `tests/integration/test_race_upload_concurrency.py` | ≥1 | — |
-| Regresión F1.7 | `tests/services/race/` | 305 | sin cambios |
+| F1.7 regression | `tests/services/race/` | 305 | no changes |
 | **Total backend** | | **≥358** | — |
 
 ```bash
-# Comando único:
+# Single command:
 cd backend
 pytest tests/models/test_race_import.py \
        tests/services/race/test_dry_run.py \
@@ -563,7 +563,7 @@ pytest tests/models/test_race_import.py \
 
 ### Frontend — vitest + RTL
 
-| Categoría | Archivo | # tests | Threshold |
+| Category | File | # tests | Threshold |
 |---|---|---|---|
 | `RaceUploadZone` | `frontend/tests/race-upload/RaceUploadZone.test.tsx` | ≥5 | — |
 | `EventMetaForm` | `frontend/tests/race-upload/EventMetaForm.test.tsx` | ≥6 | — |
@@ -571,9 +571,9 @@ pytest tests/models/test_race_import.py \
 | `IngestReportCard` | `frontend/tests/race-upload/IngestReportCard.test.tsx` | ≥3 | — |
 | `RaceUploadWizard` (state machine) | `frontend/tests/race-upload/RaceUploadWizard.test.tsx` | ≥8 | — |
 | `api/raceImports.ts` | `frontend/tests/race-upload/api.test.ts` | ≥4 | — |
-| `RaceAnalysisPage` integración | `frontend/tests/race-upload/RaceAnalysisPage.test.tsx` | ≥3 | — |
+| `RaceAnalysisPage` integration | `frontend/tests/race-upload/RaceAnalysisPage.test.tsx` | ≥3 | — |
 | `ImportHistoryTable` | `frontend/tests/race-upload/ImportHistoryTable.test.tsx` | ≥3 | — |
-| Accessibility (axe) | en cada archivo via `expect(container).toHaveNoViolations()` | — | 0 violaciones |
+| Accessibility (axe) | in each file via `expect(container).toHaveNoViolations()` | — | 0 violations |
 | **Total frontend** | | **≥37** | coverage ≥85% statements |
 
 ```bash
@@ -584,143 +584,143 @@ npm run test:coverage -- src/components/race src/hooks/raceImports.ts src/api/ra
 
 ### E2E — playwright-cli
 
-| Test | Archivo | Comando | Cobertura |
+| Test | File | Command | Coverage |
 |---|---|---|---|
-| Happy path completo | `frontend/tests/e2e/race-upload-happy.spec.ts` | `npx playwright test race-upload-happy` | Login → upload 2 PDFs → editar meta → confirm matches → commit → assert DB |
+| Complete happy path | `frontend/tests/e2e/race-upload-happy.spec.ts` | `npx playwright test race-upload-happy` | Login → upload 2 PDFs → edit meta → confirm matches → commit → assert DB |
 | Oversized | `frontend/tests/e2e/race-upload-oversized.spec.ts` | `npx playwright test race-upload-oversized` | 413 toast |
 | Invalid PDF | `frontend/tests/e2e/race-upload-invalid.spec.ts` | `npx playwright test race-upload-invalid` | 415/422 toast |
-| RBAC coach | `frontend/tests/e2e/race-upload-rbac.spec.ts` | `npx playwright test race-upload-rbac` | force_reingest oculto |
+| RBAC coach | `frontend/tests/e2e/race-upload-rbac.spec.ts` | `npx playwright test race-upload-rbac` | force_reingest hidden |
 | **Total E2E** | | **4 tests** | Runtime ≤90s |
 
 ```bash
 cd frontend
 npx playwright test race-upload --reporter=line
-# Screenshots/videos en frontend/test-results/
+# Screenshots/videos in frontend/test-results/
 ```
 
-### Comandos exactos playwright para flow upload
+### Exact playwright commands for upload flow
 
 ```bash
-# Setup inicial (1 vez)
+# Initial setup (1 time)
 cd frontend
 npx playwright install chromium
 
-# Ejecutar todos los E2E race-upload
+# Run all race-upload E2E
 npx playwright test race-upload --headed --workers=1
 
-# Solo happy path con video debug
+# Only happy path with video debug
 npx playwright test race-upload-happy --headed --debug
 
-# Generar report HTML
+# Generate HTML report
 npx playwright test race-upload
 npx playwright show-report
 ```
 
 ---
 
-## Checklist exit
+## Exit checklist
 
-### Funcionalidad
+### Functionality
 
-- [ ] Coach sube PDFs desde UI sin terminal
-- [ ] Wizard 3 pasos navegable forward/back preserva state
-- [ ] Soporta `.pdf` + `.csv`/`.tsv`/`.txt` para RESULTADOS
-- [ ] Soporta solo `.pdf` para GENERAL (opcional)
-- [ ] Dry-run muestra preview sin escribir BD (verificado en logs)
-- [ ] Matches ambiguos resolvibles inline con radios top-3
-- [ ] SHA duplicado detectado en paso 1 con banner accionable
-- [ ] `force_reingest` solo visible para admin
-- [ ] Histórico ingestas listable + descarga PDFs originales
-- [ ] Imports F1.7 legacy visibles marcados "sin PDF descargable"
+- [ ] Coach uploads PDFs from UI without terminal
+- [ ] 3-step wizard navigable forward/back preserving state
+- [ ] Supports `.pdf` + `.csv`/`.tsv`/`.txt` for RESULTS
+- [ ] Supports only `.pdf` for GENERAL (optional)
+- [ ] Dry-run shows preview without writing DB (verified in logs)
+- [ ] Ambiguous matches resolvable inline with top-3 radios
+- [ ] SHA duplicate detected in step 1 with actionable banner
+- [ ] `force_reingest` only visible to admin
+- [ ] Ingestion history listable + download original PDFs
+- [ ] F1.7 legacy imports visible marked "no PDF download"
 
-### Calidad
+### Quality
 
-- [ ] Coverage backend `upload_service.py` ≥90%
-- [ ] Coverage backend router race_analysis upload ≥85%
-- [ ] Coverage frontend componentes nuevos ≥85% statements
-- [ ] Tests F1.7 (305) siguen verdes
-- [ ] 0 violaciones axe-core en cada paso del wizard
-- [ ] E2E happy path + 3 error paths verdes en chromium
-- [ ] Smoke prod con PDF real OK
-- [ ] Funciona Chrome + Safari + Firefox (test manual)
+- [ ] Backend coverage `upload_service.py` ≥90%
+- [ ] Backend coverage router race_analysis upload ≥85%
+- [ ] Frontend coverage new components ≥85% statements
+- [ ] F1.7 tests (305) still green
+- [ ] 0 axe-core violations in each wizard step
+- [ ] E2E happy path + 3 error paths green in chromium
+- [ ] Prod smoke with real PDF OK
+- [ ] Works Chrome + Safari + Firefox (manual test)
 
 ### Performance
 
 - [ ] p50 parse PDF <3s local, <8s Render
-- [ ] p95 commit completo <60s incl. cold start
-- [ ] Timeout 30s parse activado (verificado con PDF artificial >30s)
-- [ ] Backpressure NO requerido MVP (operación poco frecuente)
+- [ ] p95 complete commit <60s incl. cold start
+- [ ] 30s parse timeout activated (verified with artificial PDF >30s)
+- [ ] Backpressure NOT required MVP (infrequent operation)
 
-### Seguridad
+### Security
 
-- [ ] Magic bytes obligatorios PDF + CSV
-- [ ] Cap 8 MB enforced cliente + servidor
-- [ ] Anti path traversal (test con filename `../../etc/passwd.pdf`)
-- [ ] RBAC coach + admin en todos endpoints
-- [ ] Ownership cross-coach validado (test 403)
-- [ ] Logs sin PII (auditoría manual con grep)
+- [ ] Mandatory magic bytes PDF + CSV
+- [ ] 8 MB cap enforced client + server
+- [ ] Anti path traversal (test with filename `../../etc/passwd.pdf`)
+- [ ] RBAC coach + admin on all endpoints
+- [ ] Cross-coach ownership validated (403 test)
+- [ ] Logs without PII (manual audit with grep)
 
 ### Observability
 
-- [ ] Logs estructurados con `user_id`, `sha256`, `kind` (sin nombres)
-- [ ] Cleanup nocturno `pending` >24h activo
-- [ ] PDFs en SFTP accesibles vía `HOSTINGER_PUBLIC_BASE_URL`
+- [ ] Structured logs with `user_id`, `sha256`, `kind` (without names)
+- [ ] Nightly cleanup `pending` >24h active
+- [ ] PDFs on SFTP accessible via `HOSTINGER_PUBLIC_BASE_URL`
 
-### Documentación
+### Documentation
 
-- [ ] CLAUDE.md actualizado con tabla nueva "Módulo Upload UI race-results"
-- [ ] README race-results rediseñado (UI = flujo principal, CLI = apéndice)
-- [ ] `upload-completion-report.md` con métricas reales vs estimadas + lessons learned
-- [ ] `upload-design.md` §11 asunciones marcadas validadas
-- [ ] Screenshots wizard en `upload-screenshots.md` para coach
+- [ ] CLAUDE.md updated with new "Upload UI race-results Module" table
+- [ ] Race-results README redesigned (UI = main flow, CLI = appendix)
+- [ ] `upload-completion-report.md` with real vs estimated metrics + lessons learned
+- [ ] `upload-design.md` §11 assumptions marked validated
+- [ ] Wizard screenshots in `upload-screenshots.md` for coach
 
 ---
 
 ## Execution recommendations
 
-### Orden ejecutivo recomendado
+### Recommended executive order
 
 ```
-Día 1 mañana:  F-UP0 (pre-reqs + envs Render + asunciones coach)
-Día 1 tarde:   F-UP1 (migración) + F-UP4 paralelo (storage helpers)
-Día 2:         F-UP2 (dry-run) + arrancar F-UP3 schemas/service
-Día 3:         F-UP3 endpoints + tests (cierre backend)
-Día 4-5:       F-UP5 frontend (componentes + wizard + hooks + tests vitest)
-Día 6 mañana:  F-UP5 cierre (ImportHistoryTable + integración tab)
-Día 6 tarde:   F-UP6 E2E playwright + integration full-stack
-Día 7:         F-UP7 deploy + smoke prod + docs
+Day 1 morning:  F-UP0 (pre-reqs + Render envs + coach assumptions)
+Day 1 afternoon: F-UP1 (migration) + F-UP4 parallel (storage helpers)
+Day 2:          F-UP2 (dry-run) + start F-UP3 schemas/service
+Day 3:          F-UP3 endpoints + tests (backend closes)
+Days 4-5:       F-UP5 frontend (components + wizard + hooks + vitest tests)
+Day 6 morning:  F-UP5 closure (ImportHistoryTable + tab integration)
+Day 6 afternoon: F-UP6 E2E playwright + full-stack integration
+Day 7:          F-UP7 deploy + prod smoke + docs
 ```
 
-### Paralelización 1 backend + 1 frontend
+### Parallelization 1 backend + 1 frontend
 
 ```
-Día 1:    F-UP0 (ambos colaboran)
-Día 2:    Backend: F-UP1 + F-UP2  |  Frontend: estudio design + mocks API
-Día 3:    Backend: F-UP3 + F-UP4  |  Frontend: F-UP5 componentes base con mocks
-Día 4:    Backend: cierre tests + smoke   |  Frontend: F-UP5 wizard + tests
-Día 5:    Frontend: F-UP5 cierre + integración real endpoints
-Día 6:    F-UP6 ambos (E2E es responsabilidad compartida)
-Día 7:    F-UP7 (devops + system-architect)
+Day 1:    F-UP0 (both collaborate)
+Day 2:    Backend: F-UP1 + F-UP2  |  Frontend: design study + API mocks
+Day 3:    Backend: F-UP3 + F-UP4  |  Frontend: F-UP5 base components with mocks
+Day 4:    Backend: tests closure + smoke   |  Frontend: F-UP5 wizard + tests
+Day 5:    Frontend: F-UP5 closure + real endpoints integration
+Day 6:    F-UP6 both (E2E is shared responsibility)
+Day 7:    F-UP7 (devops + system-architect)
 ```
 
-**Ahorro estimado:** ~3 días vs secuencial. Total: **~6.5 días**.
+**Estimated saving:** ~3 days vs sequential. Total: **~6.5 days**.
 
-### Comandos `/sc:` por fase
+### `/sc:` commands by phase
 
-| Fase | Comandos recomendados |
+| Phase | Recommended commands |
 |---|---|
-| F-UP0 | `/sc:document` (asunciones) + manual envs |
+| F-UP0 | `/sc:document` (assumptions) + manual envs |
 | F-UP1 | `/sc:implement` + `/sc:test` |
 | F-UP2 | `/sc:implement` + `/sc:test` |
-| F-UP3 | `/sc:implement` + `/sc:test` + `/sc:analyze` (security review post) |
+| F-UP3 | `/sc:implement` + `/sc:test` + `/sc:analyze` (post security review) |
 | F-UP4 | `/sc:implement` + `/sc:test` |
-| F-UP5 | `/sc:implement` + `/sc:test` + `/sc:design` (revisión UX si dudas) |
-| F-UP6 | `/sc:test` con playwright-cli skill |
+| F-UP5 | `/sc:implement` + `/sc:test` + `/sc:design` (UX review if doubts) |
+| F-UP6 | `/sc:test` with playwright-cli skill |
 | F-UP7 | `/sc:document` + manual deploy |
 
-### Cuándo usar agentes específicos
+### When to use specific agents
 
-- **F-UP0:** `devops-architect` (envs) + `system-architect` (asunciones)
+- **F-UP0:** `devops-architect` (envs) + `system-architect` (assumptions)
 - **F-UP1:** `backend-architect` + `quality-engineer`
 - **F-UP2:** `backend-architect`
 - **F-UP3:** `backend-architect` + `security-engineer` (RBAC + path traversal) + `quality-engineer`
@@ -729,70 +729,70 @@ Día 7:    F-UP7 (devops + system-architect)
 - **F-UP6:** `quality-engineer`
 - **F-UP7:** `devops-architect` + `system-architect`
 
-### Próximo paso inmediato
+### Immediate next step
 
-**Arrancar F-UP0** con la siguiente orden:
+**Start F-UP0** with the following order:
 
 ```
-/sc:implement F-UP0 race-upload: verificar envs HOSTINGER_SFTP_*
-en Render dashboard, validar 8 asunciones design §11 con coach,
-agregar RACE_MAX_PDF_MB=8, RACE_PARSE_TIMEOUT_SECONDS=30,
-RACE_PENDING_TTL_HOURS=24 al .env.example, crear fixtures
-sintéticos tests/fixtures/race/fake_pdf.txt + fake_csv.bin.
-Verificar que pytest tests/services/race/ sigue 305/305 verde.
+/sc:implement F-UP0 race-upload: verify HOSTINGER_SFTP_*
+envs in Render dashboard, validate 8 design §11 assumptions with coach,
+add RACE_MAX_PDF_MB=8, RACE_PARSE_TIMEOUT_SECONDS=30,
+RACE_PENDING_TTL_HOURS=24 to .env.example, create synthetic
+fixtures tests/fixtures/race/fake_pdf.txt + fake_csv.bin.
+Verify pytest tests/services/race/ remains 305/305 green.
 ```
 
-En paralelo: abrir sesión con coach para validación rápida de asunciones A1-A8 (15 min).
+In parallel: open session with coach for quick assumptions validation A1-A8 (15 min).
 
 ---
 
-## Métricas tracking durante implementación
+## Metrics tracking during implementation
 
-| Métrica | Cómo medir | Cadencia |
+| Metric | How to measure | Cadence |
 |---|---|---|
-| Tests verdes backend | `pytest tests/` exit 0 | Cada commit |
-| Tests verdes frontend | `npm run test` exit 0 | Cada commit |
-| Coverage backend nuevo | `pytest --cov=app.services.race.importer --cov=app.routers.race_analysis` | Cierre cada fase |
-| Coverage frontend nuevo | `npm run test:coverage -- src/components/race` | Cierre cada fase |
-| Tiempo implementación real vs estimado | Track manual por fase | End of cada fase |
-| Axe violations | `npm run test -- --reporter=verbose` (jest-axe inline) | Cierre F-UP5 |
-| E2E runtime | `npx playwright test race-upload --reporter=line` | Cierre F-UP6 |
-| p50 parse PDF | log estructurado `logger.info("parse_duration_ms=...")` | Smoke F-UP3 + prod F-UP7 |
+| Backend green tests | `pytest tests/` exit 0 | Every commit |
+| Frontend green tests | `npm run test` exit 0 | Every commit |
+| Backend new coverage | `pytest --cov=app.services.race.importer --cov=app.routers.race_analysis` | At phase closure |
+| Frontend new coverage | `npm run test:coverage -- src/components/race` | At phase closure |
+| Real vs estimated implementation time | Manual tracking per phase | End of each phase |
+| Axe violations | `npm run test -- --reporter=verbose` (jest-axe inline) | F-UP5 closure |
+| E2E runtime | `npx playwright test race-upload --reporter=line` | F-UP6 closure |
+| p50 parse PDF | structured log `logger.info("parse_duration_ms=...")` | Smoke F-UP3 + prod F-UP7 |
 
 ---
 
-## Decisiones tácticas del workflow (resumen)
+## Workflow tactical decisions (summary)
 
-Estas decisiones son adicionales a las 23 del design y se aplican durante implementación:
+These decisions are additional to the 23 from the design and apply during implementation:
 
-| # | Decisión | Fase | Justificación |
+| # | Decision | Phase | Justification |
 |---|---|---|---|
-| DT-1 | Si envs `HOSTINGER_SFTP_*` missing al cierre F-UP0 → bloquear F-UP4 y marcar F-UP7 WIP | F-UP0 | Evita deploy prod inconsistente |
-| DT-2 | Si asunción A3 cambia a TTL → +0.25 día F-UP1 para `retention_until` | F-UP0 | Plan B documentado |
-| DT-3 | `RaceImportUploadService` como **clase con DI**, no función suelta | F-UP3 | Facilita mocks sin monkey-patch |
-| DT-4 | PDFs en `race-imports/pending/{parse_id}/` durante parse, mueven a `race-imports/{series_id}/{event_id}/` en commit | F-UP3, F-UP4 | Resuelve open question §12 apéndice design |
-| DT-5 | State wizard en `useState/useReducer` local, no Zustand global | F-UP5 | Scope limitado, persistencia diferida F2 |
-| DT-6 | Stepper con shadcn `Tabs disabled`, no instalar nuevo componente | F-UP5 | Reuso sin nueva dep |
-| DT-7 | Usar skill `playwright-cli` disponible si scaffolding no existe | F-UP6 | Aprovecha skill instalado |
-| DT-8 | E2E contra docker compose local, smoke prod en F-UP7 | F-UP6 | Evita flakiness cold-start Render |
+| DT-1 | If `HOSTINGER_SFTP_*` envs missing at F-UP0 close → block F-UP4 and mark F-UP7 WIP | F-UP0 | Avoids inconsistent prod deploy |
+| DT-2 | If assumption A3 changes to TTL → +0.25 day F-UP1 for `retention_until` | F-UP0 | Plan B documented |
+| DT-3 | `RaceImportUploadService` as **class with DI**, not standalone function | F-UP3 | Facilitates mocks without monkey-patch |
+| DT-4 | PDFs in `race-imports/pending/{parse_id}/` during parse, moved to `race-imports/{series_id}/{event_id}/` on commit | F-UP3, F-UP4 | Resolves open question §12 design appendix |
+| DT-5 | Wizard state in `useState/useReducer` local, not global Zustand | F-UP5 | Limited scope, persistence deferred F2 |
+| DT-6 | Stepper with shadcn `Tabs disabled`, do not install new component | F-UP5 | Reuse without new dep |
+| DT-7 | Use `playwright-cli` skill available if scaffolding doesn't exist | F-UP6 | Leverages installed skill |
+| DT-8 | E2E against local docker compose, prod smoke in F-UP7 | F-UP6 | Avoids Render cold-start flakiness |
 
 ---
 
-## Open questions / assumptions a re-validar mid-workflow
+## Open questions / assumptions to re-validate mid-workflow
 
-| # | Asunción (origen design §11) | Validar en fase | Riesgo si falla |
+| # | Assumption (from design §11) | Validate in phase | Risk if fails |
 |---|---|---|---|
-| A1 | Coach OK con re-subir PDF para corregir clima post-commit | F-UP5 UX review | Diseñar endpoint "editar metadata" F2 (+0.5 día) |
-| A2 | Cap 8 MB cubre casos reales | F-UP3 smoke con PDFs históricos | Subir a 16 MB env (trivial) |
-| A3 | Retención permanente aceptable | F-UP7 coach | TTL retroactivo (+0.5 día F2) |
-| A4 | `force_reingest` solo admin | F-UP5 UX | Permitir coach con confirmación doble (re-trabajo UI +0.25 día) |
-| A5 | Wizard 3 pasos preferido vs modal único | F-UP5 mockup coach | Re-diseño modal (+1 día UI) |
-| A6 | TTL 24h pending OK | F-UP7 ops | Subir TTL a 7d (trivial env) |
-| A7 | `weather_notes` texto plano suficiente | F-UP7 coach | Markdown editor F2 (+1 día) |
-| A8 | `force_reingest` doc "operación emergencia" sin UX guiada | F-UP7 coach | Flow dedicado "Re-procesar" tab separado (+1 día F2) |
+| A1 | Coach OK with re-uploading PDF to correct weather post-commit | F-UP5 UX review | Design "edit metadata" endpoint F2 (+0.5 day) |
+| A2 | 8 MB cap covers real cases | F-UP3 smoke with historical PDFs | Raise to 16 MB env (trivial) |
+| A3 | Permanent retention acceptable | F-UP7 coach | Retroactive TTL (+0.5 day F2) |
+| A4 | `force_reingest` admin only | F-UP5 UX | Allow coach with double confirmation (UI rework +0.25 day) |
+| A5 | Wizard 3 steps preferred vs single modal | F-UP5 mockup coach | Redesign as modal (+1 day UI) |
+| A6 | TTL 24h pending OK | F-UP7 ops | Raise TTL to 7d (trivial env) |
+| A7 | `weather_notes` plain text sufficient | F-UP7 coach | Markdown editor F2 (+1 day) |
+| A8 | `force_reingest` doc "emergency operation" without guided UX | F-UP7 coach | Dedicated "Re-process" flow separate tab (+1 day F2) |
 
 ---
 
-**Documento generado por spec-panel agent — `systematic` strategy, `deep` depth, alineado con formato `v2-implementation-workflow.md`.**
+**Document generated by spec-panel agent — `systematic` strategy, `deep` depth, aligned with `v2-implementation-workflow.md` format.**
 
-**Próximo paso ejecutivo:** confirmar arranque F-UP0 + sesión coach 15 min para asunciones.
+**Next executive step:** confirm start of F-UP0 + 15 min coach session for assumptions.

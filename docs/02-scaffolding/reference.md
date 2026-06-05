@@ -1,17 +1,17 @@
-# Scaffolding del Proyecto — Club Deportivo Trocha y Ruta
+# Project Scaffolding — Club Deportivo Trocha y Ruta
 
-**Fecha de investigacion:** 2026-04-14
-**Profundidad:** Exhaustiva (5 agentes de investigacion en paralelo)
-
----
-
-## Resumen ejecutivo
-
-Este documento define el stack tecnologico, versiones estables, arquitectura de microservicios y scaffolding para la plataforma de gestion del Club Deportivo Trocha y Ruta. El sistema cubre: gestion de atletas juveniles XCO (10-15 anos), planes de entrenamiento, competencias Copa Valle 2026, bienestar, e integraciones con Intervals.icu, Strava, Spond y Google Sheets.
+**Research date:** 2026-04-14
+**Depth:** Exhaustive (5 research agents in parallel)
 
 ---
 
-## 1. Arquitectura general
+## Executive Summary
+
+This document defines the technology stack, stable versions, microservices architecture, and scaffolding for the management platform of Club Deportivo Trocha y Ruta. The system covers: management of youth XCO athletes (10-15 years old), training plans, Copa Valle 2026 races, wellness, and integrations with Intervals.icu, Strava, Spond, and Google Sheets.
+
+---
+
+## 1. General Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -35,7 +35,7 @@ Este documento define el stack tecnologico, versiones estables, arquitectura de 
                 │                   │
          ┌──────┴──────┐    ┌──────┴──────┐
          │   MySQL 8.4 │    │ Redis/Kafka │
-         │    (LTS)    │    │  (eventos)  │
+         │    (LTS)    │    │  (events)   │
          └─────────────┘    └─────────────┘
                                     │
                     ┌───────────────┼───────────────┐
@@ -50,25 +50,25 @@ Este documento define el stack tecnologico, versiones estables, arquitectura de 
 
 ---
 
-## 2. Stack tecnologico — Versiones estables
+## 2. Technology Stack — Stable Versions
 
 ### 2.1 Frontend
 
-| Componente | Tecnologia | Version | Justificacion |
+| Component | Technology | Version | Justification |
 |---|---|---|---|
-| Framework UI | **React** | 19.2.5 | Estable desde dic 2024; Actions, `use()` nativos |
-| Build tool | **Vite** | 8.0.8 | Estandar de la industria para SPAs; CRA deprecado |
-| Lenguaje | **TypeScript** | 6.0.2 | Strict mode desde el inicio |
-| Estado global | **Zustand** | 5.0.12 | Minimalista, sin boilerplate, TS nativo |
-| Server state | **TanStack Query** | 5.99.0 | Cache, retry, sincronizacion de datos del servidor |
-| UI Library | **shadcn/ui** | CLI 4.2.0 | Componentes copiados al proyecto, Tailwind nativo, sin vendor-lock |
-| Routing | **React Router** | 7.14.0 | Maduro, docs excelentes |
-| Formularios | **React Hook Form** | 7.72.1 | Rendimiento superior a Formik |
-| Validacion | **Zod** | 4.3.6 | v4 con mejora significativa de performance |
-| Graficas | **Recharts** | 3.8.1 | Componentes React nativos, ideal para dashboards de metricas |
-| Package manager | **pnpm** | 10.33.0 | 2-3x mas rapido que npm, ahorro de espacio |
+| UI Framework | **React** | 19.2.5 | Stable since Dec 2024; Actions, native `use()` |
+| Build tool | **Vite** | 8.0.8 | Industry standard for SPAs; CRA deprecated |
+| Language | **TypeScript** | 6.0.2 | Strict mode from the start |
+| Global state | **Zustand** | 5.0.12 | Minimalist, no boilerplate, native TS |
+| Server state | **TanStack Query** | 5.99.0 | Cache, retry, server data synchronization |
+| UI Library | **shadcn/ui** | CLI 4.2.0 | Components copied into project, native Tailwind, no vendor-lock |
+| Routing | **React Router** | 7.14.0 | Mature, excellent docs |
+| Forms | **React Hook Form** | 7.72.1 | Superior performance to Formik |
+| Validation | **Zod** | 4.3.6 | v4 with significant performance improvement |
+| Charts | **Recharts** | 3.8.1 | Native React components, ideal for metrics dashboards |
+| Package manager | **pnpm** | 10.33.0 | 2-3x faster than npm, disk space savings |
 
-**Comando de scaffolding:**
+**Scaffolding command:**
 
 ```bash
 pnpm create vite@latest trocha-ruta-frontend -- --template react-ts
@@ -78,36 +78,36 @@ pnpm add -D @hookform/resolvers @types/react @types/react-dom
 pnpm dlx shadcn@latest init
 ```
 
-> **Nota:** Next.js descartado — el proyecto es una SPA con API en FastAPI; SSR/SSG no aporta beneficio y agrega complejidad de servidor.
+> **Note:** Next.js discarded — the project is a SPA with API in FastAPI; SSR/SSG provides no benefit and adds server complexity.
 
 ### 2.2 Backend
 
-| Componente | Tecnologia | Version | Justificacion |
+| Component | Technology | Version | Justification |
 |---|---|---|---|
-| Lenguaje | **Python** | 3.13.13 | Ultima estable (abr 2026) |
-| Framework | **FastAPI** | 0.128.0 | Async nativo, ideal para microservicios + Kafka |
-| Servidor ASGI | **uvicorn** | 0.40.0 | Alto rendimiento, hot reload en dev |
-| ORM | **SQLAlchemy 2** | 2.0.49 | Async nativo, production-ready, Alembic compatible |
-| Migraciones | **Alembic** | 1.17.2 | Del mismo autor de SQLAlchemy, maduro |
-| Validacion | **Pydantic v2** | 2.13.0 | Integrado nativamente en FastAPI |
-| Background tasks | **Celery** | 5.6.3 | Con Redis como broker; para syncs periodicos |
-| JWT | **PyJWT** | 2.12.1 | `python-jose` esta **abandonado** — no usar |
-| HTTP client | **httpx** | (ultima) | Async nativo para integraciones externas |
+| Language | **Python** | 3.13.13 | Latest stable (Apr 2026) |
+| Framework | **FastAPI** | 0.128.0 | Native async, ideal for microservices + Kafka |
+| ASGI server | **uvicorn** | 0.40.0 | High performance, hot reload in dev |
+| ORM | **SQLAlchemy 2** | 2.0.49 | Native async, production-ready, Alembic compatible |
+| Migrations | **Alembic** | 1.17.2 | Same author as SQLAlchemy, mature |
+| Validation | **Pydantic v2** | 2.13.0 | Natively integrated in FastAPI |
+| Background tasks | **Celery** | 5.6.3 | With Redis as broker; for periodic syncs |
+| JWT | **PyJWT** | 2.12.1 | `python-jose` is **abandoned** — do not use |
+| HTTP client | **httpx** | (latest) | Native async for external integrations |
 
-> **FastAPI > Django** para este caso: microservicios + Kafka + integraciones async. Si se necesita panel admin para CRUD directo, considerar un microservicio Django pequeno solo para eso.
+> **FastAPI > Django** for this case: microservices + Kafka + async integrations. If a direct CRUD admin panel is needed, consider a small Django microservice just for that.
 
-> **SQLAlchemy > SQLModel**: SQLModel 0.0.38 sigue en pre-1.0, desarrollo lento. SQLAlchemy 2.0 directo es la opcion production-ready.
+> **SQLAlchemy > SQLModel**: SQLModel 0.0.38 is still pre-1.0, slow development. SQLAlchemy 2.0 directly is the production-ready option.
 
-### 2.3 Base de datos
+### 2.3 Database
 
-| Componente | Tecnologia | Version | Notas |
+| Component | Technology | Version | Notes |
 |---|---|---|---|
-| Motor | **MySQL** | 8.4.8 LTS | MySQL 8.0 llega a EOL abr 2026; 9.x es Innovation (no prod) |
-| Driver async | **aiomysql** | 0.3.2 | Mantenimiento activo bajo aio-libs |
-| Driver sync | **mysqlclient** | 2.2.8 | Para scripts y herramientas CLI |
-| Testing | **testcontainers** | 4.14.2 | MySQL real en contenedor por sesion de test |
+| Engine | **MySQL** | 8.4.8 LTS | MySQL 8.0 reaches EOL Apr 2026; 9.x is Innovation (not prod) |
+| Async driver | **aiomysql** | 0.3.2 | Active maintenance under aio-libs |
+| Sync driver | **mysqlclient** | 2.2.8 | For scripts and CLI tools |
+| Testing | **testcontainers** | 4.14.2 | Real MySQL in container per test session |
 
-**Configuracion de connection pool para FastAPI:**
+**Connection pool configuration for FastAPI:**
 
 ```python
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -117,36 +117,36 @@ engine = create_async_engine(
     "mysql+aiomysql://user:pass@host/db",
     pool_size=10,
     max_overflow=20,
-    pool_pre_ping=True,      # importante para Hostinger
-    pool_recycle=3600,        # previene "MySQL server has gone away"
+    pool_pre_ping=True,      # important for Hostinger
+    pool_recycle=3600,        # prevents "MySQL server has gone away"
 )
 
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 ```
 
-**Estrategia de migracion con BD existente:**
+**Migration strategy with existing database:**
 
 ```bash
 alembic init alembic
-# Configurar alembic.ini y env.py apuntando a la BD existente
+# Configure alembic.ini and env.py pointing to the existing database
 alembic revision --autogenerate -m "reflect_existing_schema"
-# REVISAR MANUALMENTE la migracion generada
-alembic stamp head  # si los modelos coinciden exactamente
+# MANUALLY REVIEW the generated migration
+alembic stamp head  # if models match exactly
 ```
 
-### 2.4 Mensajeria / Eventos
+### 2.4 Messaging / Events
 
-| Componente | Tecnologia | Version | Notas |
+| Component | Technology | Version | Notes |
 |---|---|---|---|
-| **Recomendado inicial** | **Redis Streams** | (parte de Redis 7.x) | Ya esta en el stack (broker de Celery); cero infra extra |
-| Alternativa robusta | **RabbitMQ** | 4.2.5 | Si se necesita routing complejo o dead-letter queues |
-| Para escalar despues | **Apache Kafka** | 4.0.0 | KRaft mode (ZooKeeper eliminado); solo si se necesita replay de eventos |
-| Cliente Kafka Python | **confluent-kafka** | 2.14.0 | Async nativo desde v2.13; mejor rendimiento (C-backed) |
-| Monitoring Kafka | **AKHQ** | 0.27.0 | Mejor opcion open-source |
+| **Recommended initial** | **Redis Streams** | (part of Redis 7.x) | Already in the stack (Celery broker); zero extra infra |
+| Robust alternative | **RabbitMQ** | 4.2.5 | If complex routing or dead-letter queues are needed |
+| For scaling later | **Apache Kafka** | 4.0.0 | KRaft mode (ZooKeeper removed); only if event replay is needed |
+| Kafka Python client | **confluent-kafka** | 2.14.0 | Native async since v2.13; better performance (C-backed) |
+| Kafka Monitoring | **AKHQ** | 0.27.0 | Best open-source option |
 
-> **Recomendacion honesta:** Kafka es overkill para el volumen actual (~10-20 atletas, eventos moderados). **Empezar con Redis Streams** y migrar a Kafka cuando se necesite replay de eventos o Schema Registry. Disenar los eventos con compatibilidad Kafka desde el inicio (naming conventions, abstraccion de producers/consumers).
+> **Honest recommendation:** Kafka is overkill for the current volume (~10-20 athletes, moderate events). **Start with Redis Streams** and migrate to Kafka when event replay or Schema Registry is needed. Design events with Kafka compatibility from the start (naming conventions, producer/consumer abstraction).
 
-**Convencion de nombres de topics (compatible Kafka):**
+**Topic naming convention (Kafka-compatible):**
 
 ```
 trocha.athlete.synced
@@ -156,31 +156,31 @@ trocha.competition.result-recorded
 trocha.dashboard.refresh-requested
 ```
 
-### 2.5 Infraestructura Docker
+### 2.5 Docker Infrastructure
 
-| Componente | Imagen | Version |
+| Component | Image | Version |
 |---|---|---|
 | Docker Engine | — | v29.x |
 | Docker Compose | — | v2.40 |
 | Python base | `python:3.13-slim` | Debian Trixie (~41 MB) |
 | Node base (dev) | `node:22-bookworm-slim` | Node 22 LTS "Jod" |
-| Nginx (prod) | `nginx:1.27-alpine` | Serving estatico post-build |
-| MySQL | `mysql:8.4` | LTS, tag `lts` en Docker Hub |
-| Kafka (si se usa) | `confluentinc/confluent-local:8.2` | Zero-config KRaft, ideal para dev |
-| Redis | `redis:7-alpine` | Broker Celery + Streams |
-| Reverse proxy | `traefik:v3.6` | Auto-descubre containers via labels |
+| Nginx (prod) | `nginx:1.27-alpine` | Static serving post-build |
+| MySQL | `mysql:8.4` | LTS, `lts` tag on Docker Hub |
+| Kafka (if used) | `confluentinc/confluent-local:8.2` | Zero-config KRaft, ideal for dev |
+| Redis | `redis:7-alpine` | Celery broker + Streams |
+| Reverse proxy | `traefik:v3.6` | Auto-discovers containers via labels |
 
 ---
 
-## 3. Estructura de carpetas del proyecto
+## 3. Project Folder Structure
 
 ```
 trocha-y-ruta/
-├── docker-compose.yml              # Base: servicios compartidos
+├── docker-compose.yml              # Base: shared services
 ├── docker-compose.override.yml     # Dev: hot reload, volumes, debug ports
-├── docker-compose.prod.yml         # Prod: builds, sin volumes, limites
-├── .env                            # Variables de entorno (NUNCA commitear)
-├── .env.example                    # Template de variables
+├── docker-compose.prod.yml         # Prod: builds, no volumes, limits
+├── .env                            # Environment variables (NEVER commit)
+├── .env.example                    # Variables template
 │
 ├── frontend/                       # React SPA
 │   ├── Dockerfile
@@ -205,8 +205,8 @@ trocha-y-ruta/
 │   │   └── types/                  # TypeScript interfaces
 │   └── public/
 │
-├── services/                       # Backend microservicios
-│   ├── athletes/                   # Servicio de atletas
+├── services/                       # Backend microservices
+│   ├── athletes/                   # Athletes service
 │   │   ├── Dockerfile
 │   │   ├── main.py                 # FastAPI app
 │   │   ├── models.py               # SQLAlchemy models
@@ -217,7 +217,7 @@ trocha-y-ruta/
 │   │   ├── tasks.py                # Celery tasks
 │   │   └── requirements.txt
 │   │
-│   ├── training/                   # Planes, sesiones, workouts
+│   ├── training/                   # Plans, sessions, workouts
 │   │   ├── Dockerfile
 │   │   ├── main.py
 │   │   ├── models.py
@@ -227,14 +227,14 @@ trocha-y-ruta/
 │   │       ├── sessions.py
 │   │       └── workouts.py
 │   │
-│   ├── competitions/               # Calendario, resultados
+│   ├── competitions/               # Calendar, results
 │   │   ├── Dockerfile
 │   │   ├── main.py
 │   │   ├── models.py
 │   │   ├── schemas.py
 │   │   └── routers/
 │   │
-│   ├── wellness/                   # Bienestar diario, Google Sheets sync
+│   ├── wellness/                   # Daily wellness, Google Sheets sync
 │   │   ├── Dockerfile
 │   │   ├── main.py
 │   │   ├── models.py
@@ -246,21 +246,21 @@ trocha-y-ruta/
 │       ├── main.py
 │       ├── intervals_sync.py
 │       ├── strava_sync.py
-│       └── event_publisher.py      # Publica eventos a Redis Streams
+│       └── event_publisher.py      # Publishes events to Redis Streams
 │
-├── shared/                         # Codigo compartido entre servicios
+├── shared/                         # Code shared across services
 │   ├── db.py                       # SQLAlchemy async engine
 │   ├── auth.py                     # PyJWT helpers
 │   ├── config.py                   # pydantic-settings
-│   ├── events.py                   # Abstraccion de pub/sub (Redis Streams)
-│   └── models_base.py              # Base declarativa SQLAlchemy
+│   ├── events.py                   # pub/sub abstraction (Redis Streams)
+│   └── models_base.py              # SQLAlchemy declarative base
 │
-├── migrations/                     # Alembic (centralizado)
+├── migrations/                     # Alembic (centralized)
 │   ├── alembic.ini
 │   ├── env.py
 │   └── versions/
 │
-├── scripts/                        # Scripts utilitarios existentes
+├── scripts/                        # Existing utility scripts
 │   ├── init_database.sql
 │   ├── sync_intervals.py
 │   └── import_wellness.py
@@ -271,12 +271,12 @@ trocha-y-ruta/
 └── docs/
     ├── marco-teorico.md
     ├── plan-entrenamiento-2026.md
-    └── scaffolding-proyecto.md     # Este documento
+    └── scaffolding-proyecto.md     # This document
 ```
 
 ---
 
-## 4. Docker Compose — Esqueleto base
+## 4. Docker Compose — Base Skeleton
 
 ```yaml
 # docker-compose.yml
@@ -289,7 +289,7 @@ services:
       - --providers.docker.exposedbydefault=false
     ports:
       - "80:80"
-      - "8080:8080"    # Dashboard Traefik
+      - "8080:8080"    # Traefik Dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [frontend, backend]
@@ -398,7 +398,7 @@ volumes:
 ```
 
 ```yaml
-# docker-compose.override.yml (dev — cargado automaticamente)
+# docker-compose.override.yml (dev — loaded automatically)
 services:
   frontend:
     volumes:
@@ -422,7 +422,7 @@ services:
 
   mysql:
     ports:
-      - "3306:3306"    # Acceso directo para GUI (DBeaver, etc.)
+      - "3306:3306"    # Direct access for GUI (DBeaver, etc.)
 
   redis:
     ports:
@@ -431,7 +431,7 @@ services:
 
 ---
 
-## 5. Health checks
+## 5. Health Checks
 
 ```yaml
 # MySQL
@@ -464,24 +464,24 @@ healthcheck:
 ```
 ┌─────────────┐
 │  frontend   │ ← React, Traefik
-│  network    │ ← APIs (exposicion publica)
+│  network    │ ← APIs (public exposure)
 └──────┬──────┘
        │
 ┌──────┴──────┐
 │  backend    │ ← APIs, MySQL, Redis, Celery
-│  network    │ ← Integraciones
+│  network    │ ← Integrations
 └─────────────┘
 ```
 
-- Servicios se comunican por **nombre de servicio** como hostname (`http://athletes-api:8000`)
-- Solo exponer puertos al host para acceso directo en desarrollo (MySQL GUI, Redis CLI)
-- Nunca usar `network_mode: host`
+- Services communicate by **service name** as hostname (`http://athletes-api:8000`)
+- Only expose ports to the host for direct access in development (MySQL GUI, Redis CLI)
+- Never use `network_mode: host`
 
 ---
 
-## 7. Estrategia de eventos — Fase inicial vs Escalada
+## 7. Events Strategy — Initial Phase vs Scaling
 
-### Fase 1: Redis Streams (ahora)
+### Phase 1: Redis Streams (now)
 
 ```
                     Redis Streams
@@ -497,44 +497,44 @@ healthcheck:
                     └──────────┘
 ```
 
-- **Sin infraestructura adicional** — Redis ya esta como broker de Celery
-- Consumer groups para procesamiento distribuido
-- Persistencia y replayabilidad basica
+- **No additional infrastructure** — Redis is already in the stack as Celery broker
+- Consumer groups for distributed processing
+- Basic persistence and replayability
 
-### Fase 2: Kafka (cuando escalar)
+### Phase 2: Kafka (when scaling)
 
-**Migrar a Kafka cuando se necesite:**
-- Replay de semanas de historial de bienestar en un nuevo servicio de analytics
-- Schema Registry para contratos multi-servicio
-- Exactamente-una-vez (exactly-once) semantics
-- Mas de ~10k eventos/dia consistentemente
+**Migrate to Kafka when needed:**
+- Replay weeks of wellness history in a new analytics service
+- Schema Registry for multi-service contracts
+- Exactly-once semantics
+- More than ~10k events/day consistently
 
-**Stack Kafka:**
-- Apache Kafka 4.0.0 (KRaft, sin ZooKeeper)
-- confluent-kafka 2.14.0 (async nativo)
-- JSON Schema (simple, legible, suficiente para equipo Python)
+**Kafka Stack:**
+- Apache Kafka 4.0.0 (KRaft, no ZooKeeper)
+- confluent-kafka 2.14.0 (native async)
+- JSON Schema (simple, readable, sufficient for Python team)
 - AKHQ 0.27.0 (monitoring UI)
 
 ---
 
 ## 8. Testing
 
-| Nivel | Herramienta | Estrategia |
+| Level | Tool | Strategy |
 |---|---|---|
-| Unit (frontend) | Vitest + Testing Library | Componentes, hooks, stores |
-| Unit (backend) | pytest + pytest-asyncio | Schemas, logica de negocio |
-| Integracion (DB) | testcontainers 4.14.2 | MySQL real en contenedor por sesion |
-| E2E | Playwright | Flujos criticos (CRUD atletas, registro bienestar) |
-| API | httpx + pytest | Endpoints FastAPI con TestClient |
+| Unit (frontend) | Vitest + Testing Library | Components, hooks, stores |
+| Unit (backend) | pytest + pytest-asyncio | Schemas, business logic |
+| Integration (DB) | testcontainers 4.14.2 | Real MySQL in container per session |
+| E2E | Playwright | Critical flows (CRUD athletes, wellness logging) |
+| API | httpx + pytest | FastAPI endpoints with TestClient |
 
-> **No usar SQLite como fallback** para tests — los dialectos difieren (JSON, ENUM, TINYINT) y generan falsa confianza.
+> **Do not use SQLite as fallback** for tests — dialects differ (JSON, ENUM, TINYINT) and generate false confidence.
 
 ---
 
-## 9. Resumen de versiones — Referencia rapida
+## 9. Version Summary — Quick Reference
 
 ### Frontend
-| Paquete | Version |
+| Package | Version |
 |---|---|
 | React | 19.2.5 |
 | Vite | 8.0.8 |
@@ -549,7 +549,7 @@ healthcheck:
 | pnpm | 10.33.0 |
 
 ### Backend
-| Paquete | Version |
+| Package | Version |
 |---|---|
 | Python | 3.13.13 |
 | FastAPI | 0.128.0 |
@@ -563,8 +563,8 @@ healthcheck:
 | mysqlclient | 2.2.8 |
 | testcontainers | 4.14.2 |
 
-### Infraestructura
-| Componente | Version/Imagen |
+### Infrastructure
+| Component | Version/Image |
 |---|---|
 | Docker Engine | v29.x |
 | Docker Compose | v2.40 |
@@ -575,33 +575,33 @@ healthcheck:
 | Nginx (prod) | `nginx:1.27-alpine` |
 | Traefik | `traefik:v3.6` |
 
-### Mensajeria (si se escala a Kafka)
-| Componente | Version |
+### Messaging (if scaling to Kafka)
+| Component | Version |
 |---|---|
 | Apache Kafka | 4.0.0 (KRaft) |
 | confluent-kafka | 2.14.0 |
-| RabbitMQ (alternativa) | 4.2.5 |
+| RabbitMQ (alternative) | 4.2.5 |
 | AKHQ (monitoring) | 0.27.0 |
 
 ---
 
-## 10. Decisiones clave y justificaciones
+## 10. Key Decisions and Justifications
 
-| Decision | Elegido | Descartado | Por que |
+| Decision | Chosen | Discarded | Why |
 |---|---|---|---|
-| Frontend build | Vite | CRA, Next.js | CRA deprecado; Next.js agrega SSR innecesario para SPA |
-| Backend framework | FastAPI | Django + DRF | Async nativo, ideal para microservicios + integraciones |
-| ORM | SQLAlchemy 2.0 | SQLModel, Django ORM | SQLModel pre-1.0; Django ORM requiere Django completo |
-| Mensajeria inicial | Redis Streams | Kafka, RabbitMQ | Ya en el stack (Celery broker); Kafka overkill para ~20 atletas |
-| MySQL version | 8.4 LTS | 9.x Innovation | Estabilidad en produccion; 8.0 llega a EOL |
-| JWT | PyJWT | python-jose | python-jose esta abandonado con vulnerabilidades |
-| Driver MySQL async | aiomysql | asyncmy | Mantenimiento activo bajo aio-libs; asyncmy menos activo |
-| Python base image | slim (Debian) | alpine | Alpine incompatible con wheels glibc, builds 50x mas lentos |
-| Kafka mode | KRaft | ZooKeeper | ZooKeeper eliminado en Kafka 4.0 |
+| Frontend build | Vite | CRA, Next.js | CRA deprecated; Next.js adds unnecessary SSR for a SPA |
+| Backend framework | FastAPI | Django + DRF | Native async, ideal for microservices + integrations |
+| ORM | SQLAlchemy 2.0 | SQLModel, Django ORM | SQLModel pre-1.0; Django ORM requires full Django |
+| Initial messaging | Redis Streams | Kafka, RabbitMQ | Already in the stack (Celery broker); Kafka overkill for ~20 athletes |
+| MySQL version | 8.4 LTS | 9.x Innovation | Production stability; 8.0 reaches EOL |
+| JWT | PyJWT | python-jose | python-jose is abandoned with vulnerabilities |
+| MySQL async driver | aiomysql | asyncmy | Active maintenance under aio-libs; asyncmy less active |
+| Python base image | slim (Debian) | alpine | Alpine incompatible with glibc wheels, builds 50x slower |
+| Kafka mode | KRaft | ZooKeeper | ZooKeeper removed in Kafka 4.0 |
 
 ---
 
-## 11. Fuentes
+## 11. Sources
 
 - React 19.2.5 — [GitHub Releases](https://github.com/facebook/react/releases)
 - Vite 8.0.8 — [npm](https://www.npmjs.com/package/vite)

@@ -1,50 +1,50 @@
-# Workflow — Modulo de Notificaciones y Generacion de Documentos
+# Workflow — Notifications and Document Generation Module
 
-**Fecha:** 2026-04-15
-**Contexto:** Modulo configurable de email, PDF y DOCX para Club Trocha y Ruta
-**Estrategia:** Sistematica (incremental, cada paso entregable independiente)
-**Prerequisito:** Fase 1 completa (auth, clubs, athletes, anthropometry)
-
----
-
-## Resumen de requisitos
-
-### Funcionales
-- Envio de emails HTML con plantillas Jinja2 e interpolacion de variables
-- Generacion de PDF desde plantillas HTML (WeasyPrint + CSS Paged Media)
-- Generacion de DOCX editables desde plantillas docxtpl (Jinja2 en Word)
-- Adjuntar documentos generados a emails
-- Template registry centralizado con validacion de contexto
-- Servicio configurable reutilizable por cualquier funcionalidad
-
-### No funcionales
-- Privacidad: datos de menores nunca en logs (solo IDs opacos)
-- Async: no bloquear event loop FastAPI (WeasyPrint/docxtpl sync via executor)
-- Swapeable: SMTP (dev) / Resend (prod) sin cambiar logica de negocio
-- Migrable: BackgroundTasks ahora, ARQ+Redis despues sin tocar servicio
-
-### Fuera de alcance (Fase 2+)
-- Cola de mensajes persistente (ARQ+Redis)
-- Notificaciones push / SMS
-- Editor de templates en UI
-- Almacenamiento historico de documentos generados (S3/MinIO)
+**Date:** 2026-04-15
+**Context:** Configurable email, PDF, and DOCX module for Club Trocha y Ruta
+**Strategy:** Systematic (incremental, each step independently deliverable)
+**Prerequisite:** Phase 1 complete (auth, clubs, athletes, anthropometry)
 
 ---
 
-## Stack seleccionado
+## Requirements Summary
 
-| Capa | Libreria | Version min |
+### Functional
+- HTML email sending with Jinja2 templates and variable interpolation
+- PDF generation from HTML templates (WeasyPrint + CSS Paged Media)
+- Editable DOCX generation from docxtpl templates (Jinja2 in Word)
+- Attach generated documents to emails
+- Centralized template registry with context validation
+- Configurable service reusable by any feature
+
+### Non-functional
+- Privacy: minors' data never in logs (opaque IDs only)
+- Async: do not block FastAPI event loop (WeasyPrint/docxtpl sync via executor)
+- Swappable: SMTP (dev) / Resend (prod) without changing business logic
+- Migratable: BackgroundTasks now, ARQ+Redis later without touching the service
+
+### Out of scope (Phase 2+)
+- Persistent message queue (ARQ+Redis)
+- Push / SMS notifications
+- Template editor in UI
+- Historical storage of generated documents (S3/MinIO)
+
+---
+
+## Selected Stack
+
+| Layer | Library | Min version |
 |---|---|---|
-| Transporte email (dev) | aiosmtplib | >=3.0.1 |
-| Transporte email (prod) | resend | >=0.8.0 |
+| Email transport (dev) | aiosmtplib | >=3.0.1 |
+| Email transport (prod) | resend | >=0.8.0 |
 | CSS inlining | premailer | >=3.10.0 |
-| PDF desde HTML | weasyprint | >=62.3 |
-| DOCX con Jinja2 | docxtpl | >=0.16.7 |
-| Templates | Jinja2 | (ya incluido con FastAPI) |
+| PDF from HTML | weasyprint | >=62.3 |
+| DOCX with Jinja2 | docxtpl | >=0.16.7 |
+| Templates | Jinja2 | (already included with FastAPI) |
 
 ---
 
-## Estructura de directorios objetivo
+## Target Directory Structure
 
 ```
 backend/
@@ -52,21 +52,21 @@ backend/
 │   ├── services/
 │   │   └── notification/
 │   │       ├── __init__.py
-│   │       ├── service.py              # NotificationService (orquestador)
+│   │       ├── service.py              # NotificationService (orchestrator)
 │   │       ├── email_client.py         # BaseEmailClient + SMTP + Resend
-│   │       ├── template_registry.py    # Specs + validacion de contexto
+│   │       ├── template_registry.py    # Specs + context validation
 │   │       ├── document_generator.py   # PDF (WeasyPrint) + DOCX (docxtpl)
 │   │       └── task_dispatcher.py      # BackgroundTasks abstraction
 │   ├── schemas/
 │   │   └── notification.py             # Pydantic models
 │   ├── routers/
-│   │   └── reports.py                  # Endpoints de descarga/envio
+│   │   └── reports.py                  # Download/send endpoints
 │   └── config.py                       # + EmailSettings
 │
 ├── templates/
 │   ├── email/
 │   │   ├── base/
-│   │   │   └── layout.html             # Master layout email
+│   │   │   └── layout.html             # Master email layout
 │   │   ├── welcome_athlete.html
 │   │   ├── anthropometry_alert.html
 │   │   └── monthly_report.html
@@ -77,7 +77,7 @@ backend/
 │       │   ├── anthropometry_report.html
 │       │   └── monthly_progress.html
 │       └── docx/
-│           └── medical_clearance.docx  # Template binario docxtpl
+│           └── medical_clearance.docx  # Binary docxtpl template
 │
 └── static/
     └── email/
@@ -87,481 +87,481 @@ backend/
 
 ---
 
-## Pasos de implementacion
+## Implementation Steps
 
-### Paso 0 — Configuracion y dependencias
+### Step 0 — Configuration and Dependencies
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | Dependencias instaladas, EmailSettings en config.py, .env.example actualizado |
-| **Dominio** | infra / config |
-| **Depende de** | — |
-| **Complejidad** | Baja |
-| **Riesgo** | Medio (WeasyPrint necesita libs de sistema: libpango, libcairo, libgdk-pixbuf) |
-| **Agente** | `fastapi-architect` |
+| **Deliverable** | Dependencies installed, EmailSettings in config.py, .env.example updated |
+| **Domain** | infra / config |
+| **Depends on** | — |
+| **Complexity** | Low |
+| **Risk** | Medium (WeasyPrint requires system libs: libpango, libcairo, libgdk-pixbuf) |
+| **Agent** | `fastapi-architect` |
 
-**Tareas:**
-1. Agregar dependencias a `requirements.txt`: aiosmtplib, resend, premailer, weasyprint, docxtpl
-2. Ampliar `Settings` en `config.py` con seccion `EmailSettings` (provider, SMTP host/port/user/pass, Resend API key, flags de control)
-3. Actualizar `.env.example` con variables de email
-4. Actualizar `Dockerfile` con libs de sistema para WeasyPrint
-5. Crear directorio `backend/templates/` y `backend/static/email/`
+**Tasks:**
+1. Add dependencies to `requirements.txt`: aiosmtplib, resend, premailer, weasyprint, docxtpl
+2. Extend `Settings` in `config.py` with an `EmailSettings` section (provider, SMTP host/port/user/pass, Resend API key, control flags)
+3. Update `.env.example` with email variables
+4. Update `Dockerfile` with system libs for WeasyPrint
+5. Create directories `backend/templates/` and `backend/static/email/`
 
-**Criterios de aceptacion:**
-- `pip install -r requirements.txt` sin errores
-- `from app.config import settings` carga EmailSettings
-- `docker compose build` exitoso con WeasyPrint disponible
+**Acceptance criteria:**
+- `pip install -r requirements.txt` with no errors
+- `from app.config import settings` loads EmailSettings
+- `docker compose build` succeeds with WeasyPrint available
 
 ---
 
-### Paso 1 — Schemas Pydantic de notificacion
+### Step 1 — Notification Pydantic Schemas
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | `app/schemas/notification.py` con todos los modelos |
-| **Dominio** | backend / schemas |
-| **Depende de** | Paso 0 |
-| **Complejidad** | Baja |
-| **Riesgo** | Bajo |
-| **Agente** | `fastapi-architect` |
+| **Deliverable** | `app/schemas/notification.py` with all models |
+| **Domain** | backend / schemas |
+| **Depends on** | Step 0 |
+| **Complexity** | Low |
+| **Risk** | Low |
+| **Agent** | `fastapi-architect` |
 
-**Tareas:**
-1. Crear enums: `NotificationTemplate`, `DocumentTemplate`, `DocumentFormat`
-2. Crear modelos: `NotificationRecipient`, `GeneratedDocument`, `NotificationRequest`, `DocumentRequest`, `NotificationResult`
-3. Validar que `GeneratedDocument.data` sea `bytes` (no base64 string)
+**Tasks:**
+1. Create enums: `NotificationTemplate`, `DocumentTemplate`, `DocumentFormat`
+2. Create models: `NotificationRecipient`, `GeneratedDocument`, `NotificationRequest`, `DocumentRequest`, `NotificationResult`
+3. Validate that `GeneratedDocument.data` is `bytes` (not base64 string)
 
-**Criterios de aceptacion:**
-- Todos los modelos son importables
-- `NotificationRequest` valida recipient.email como EmailStr
-- `DocumentRequest` requiere template + context
+**Acceptance criteria:**
+- All models are importable
+- `NotificationRequest` validates recipient.email as EmailStr
+- `DocumentRequest` requires template + context
 
 ---
 
-### Paso 2 — Template Registry
+### Step 2 — Template Registry
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | `app/services/notification/template_registry.py` |
-| **Dominio** | backend / services |
-| **Depende de** | Paso 1 |
-| **Complejidad** | Media |
-| **Riesgo** | Bajo |
-| **Agente** | `fastapi-architect` |
+| **Deliverable** | `app/services/notification/template_registry.py` |
+| **Domain** | backend / services |
+| **Depends on** | Step 1 |
+| **Complexity** | Medium |
+| **Risk** | Low |
+| **Agent** | `fastapi-architect` |
 
-**Tareas:**
-1. Definir dataclasses `EmailTemplateSpec` y `DocumentTemplateSpec`
-2. Crear diccionarios `EMAIL_TEMPLATES` y `DOCUMENT_TEMPLATES` con specs para cada template
-3. Implementar `TemplateRegistry` con metodos: `get_email_spec()`, `get_document_spec()`, `validate_email_context()`, `validate_document_context()`
-4. Validar existencia de archivos de template en disco
+**Tasks:**
+1. Define dataclasses `EmailTemplateSpec` and `DocumentTemplateSpec`
+2. Create dictionaries `EMAIL_TEMPLATES` and `DOCUMENT_TEMPLATES` with specs for each template
+3. Implement `TemplateRegistry` with methods: `get_email_spec()`, `get_document_spec()`, `validate_email_context()`, `validate_document_context()`
+4. Validate existence of template files on disk
 
-**Templates a registrar:**
+**Templates to register:**
 - Email: `welcome_athlete`, `anthropometry_alert`, `monthly_report`
-- Documento PDF: `anthropometry_report`, `monthly_progress`
-- Documento DOCX: `medical_clearance`
+- PDF Document: `anthropometry_report`, `monthly_progress`
+- DOCX Document: `medical_clearance`
 
-**Criterios de aceptacion:**
-- `registry.validate_email_context("welcome_athlete", {"athlete_first_name": "X", ...})` no lanza error
-- `registry.validate_email_context("welcome_athlete", {})` lanza ValueError con claves faltantes
-- `registry.get_email_spec("nonexistent")` lanza ValueError
-
----
-
-### Paso 3 — Email Client (SMTP + Resend)
-
-| Campo | Valor |
-|---|---|
-| **Entregable** | `app/services/notification/email_client.py` |
-| **Dominio** | backend / services |
-| **Depende de** | Paso 0 |
-| **Complejidad** | Media |
-| **Riesgo** | Medio (Resend SDK sincrono, necesita `run_in_executor`) |
-| **Agente** | `fastapi-architect` |
-
-**Tareas:**
-1. Definir `OutboundEmail` dataclass (to_email, to_name, subject, html_body, attachments)
-2. Definir `BaseEmailClient` ABC con metodo `async send(OutboundEmail) -> NotificationResult`
-3. Implementar `SmtpEmailClient` con `aiosmtplib.send()` — async nativo
-4. Implementar `ResendEmailClient` con `resend.Emails.send()` — wrapeado en `run_in_executor`
-5. Factory `create_email_client(settings)` que retorna implementacion segun `EMAIL_PROVIDER`
-
-**Reglas de privacidad en logging:**
-- NUNCA loguear `to_email`, `to_name`, ni `html_body`
-- Solo loguear `template_ref` (primeros 20 chars de subject) y `message_id`
-
-**Criterios de aceptacion:**
-- `SmtpEmailClient` envia email a Mailtrap/MailHog en Docker
-- `ResendEmailClient` wrapeado correctamente (no bloquea event loop)
-- Factory retorna SMTP cuando `EMAIL_PROVIDER=smtp`, Resend cuando `EMAIL_PROVIDER=resend`
-- Logs no contienen PII
+**Acceptance criteria:**
+- `registry.validate_email_context("welcome_athlete", {"athlete_first_name": "X", ...})` does not raise
+- `registry.validate_email_context("welcome_athlete", {})` raises ValueError with missing keys
+- `registry.get_email_spec("nonexistent")` raises ValueError
 
 ---
 
-### Paso 4 — Document Generator (PDF + DOCX)
+### Step 3 — Email Client (SMTP + Resend)
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | `app/services/notification/document_generator.py` |
-| **Dominio** | backend / services |
-| **Depende de** | Paso 2 |
-| **Complejidad** | Alta |
-| **Riesgo** | Medio (WeasyPrint CSS rendering, fonts en Docker) |
-| **Agente** | `fastapi-architect` |
+| **Deliverable** | `app/services/notification/email_client.py` |
+| **Domain** | backend / services |
+| **Depends on** | Step 0 |
+| **Complexity** | Medium |
+| **Risk** | Medium (Resend SDK is synchronous, requires `run_in_executor`) |
+| **Agent** | `fastapi-architect` |
 
-**Tareas:**
-1. Inicializar `Jinja2 Environment` con `FileSystemLoader` apuntando a `templates/`
-2. Implementar `_generate_pdf(spec, context)`:
+**Tasks:**
+1. Define `OutboundEmail` dataclass (to_email, to_name, subject, html_body, attachments)
+2. Define `BaseEmailClient` ABC with method `async send(OutboundEmail) -> NotificationResult`
+3. Implement `SmtpEmailClient` with `aiosmtplib.send()` — natively async
+4. Implement `ResendEmailClient` with `resend.Emails.send()` — wrapped in `run_in_executor`
+5. Factory `create_email_client(settings)` returning the implementation based on `EMAIL_PROVIDER`
+
+**Privacy logging rules:**
+- NEVER log `to_email`, `to_name`, or `html_body`
+- Only log `template_ref` (first 20 chars of subject) and `message_id`
+
+**Acceptance criteria:**
+- `SmtpEmailClient` sends email to Mailtrap/MailHog in Docker
+- `ResendEmailClient` correctly wrapped (does not block event loop)
+- Factory returns SMTP when `EMAIL_PROVIDER=smtp`, Resend when `EMAIL_PROVIDER=resend`
+- Logs contain no PII
+
+---
+
+### Step 4 — Document Generator (PDF + DOCX)
+
+| Field | Value |
+|---|---|
+| **Deliverable** | `app/services/notification/document_generator.py` |
+| **Domain** | backend / services |
+| **Depends on** | Step 2 |
+| **Complexity** | High |
+| **Risk** | Medium (WeasyPrint CSS rendering, fonts in Docker) |
+| **Agent** | `fastapi-architect` |
+
+**Tasks:**
+1. Initialize `Jinja2 Environment` with `FileSystemLoader` pointing to `templates/`
+2. Implement `_generate_pdf(spec, context)`:
    - Render Jinja2 HTML template
-   - Pasar a `HTML(string=html, base_url=TEMPLATES_ROOT).write_pdf(optimize_images=True)`
-   - Retornar `GeneratedDocument` con bytes
-3. Implementar `_generate_docx(spec, context)`:
+   - Pass to `HTML(string=html, base_url=TEMPLATES_ROOT).write_pdf(optimize_images=True)`
+   - Return `GeneratedDocument` with bytes
+3. Implement `_generate_docx(spec, context)`:
    - `DocxTemplate(path).render(context)`
-   - Guardar en `BytesIO`, retornar bytes
-4. Metodo publico `generate(DocumentRequest) -> GeneratedDocument` que despacha por formato
-5. Enriquecer contexto automaticamente: `generated_at`, `club_name`
+   - Save to `BytesIO`, return bytes
+4. Public method `generate(DocumentRequest) -> GeneratedDocument` that dispatches by format
+5. Automatically enrich context: `generated_at`, `club_name`
 
-**Nota:** Ambos metodos son **sincronos**. Se ejecutan via `run_in_executor` desde NotificationService.
+**Note:** Both methods are **synchronous**. They are executed via `run_in_executor` from NotificationService.
 
-**Criterios de aceptacion:**
-- `generate(PDF request)` retorna bytes PDF validos (magic bytes `%PDF`)
-- `generate(DOCX request)` retorna bytes DOCX validos (magic bytes `PK`)
-- Contexto incompleto lanza ValueError
-- Nombre de archivo generado incluye apellido atleta + fecha
-
----
-
-### Paso 5 — Task Dispatcher
-
-| Campo | Valor |
-|---|---|
-| **Entregable** | `app/services/notification/task_dispatcher.py` |
-| **Dominio** | backend / services |
-| **Depende de** | — |
-| **Complejidad** | Baja |
-| **Riesgo** | Bajo |
-| **Agente** | `fastapi-architect` |
-
-**Tareas:**
-1. Implementar `TaskDispatcher` que recibe `BackgroundTasks` opcional
-2. Metodo `dispatch(func, *args, **kwargs)` que agrega tarea a BackgroundTasks
-3. Documentar interfaz futura `ArqDispatcher` como comentario (no implementar)
-
-**Criterios de aceptacion:**
-- Con `BackgroundTasks` inyectado: despacha en background
-- Sin `BackgroundTasks`: ejecuta sincrono (para tests)
+**Acceptance criteria:**
+- `generate(PDF request)` returns valid PDF bytes (magic bytes `%PDF`)
+- `generate(DOCX request)` returns valid DOCX bytes (magic bytes `PK`)
+- Incomplete context raises ValueError
+- Generated filename includes athlete's last name + date
 
 ---
 
-### Paso 6 — NotificationService (orquestador) [COMPLETADO]
+### Step 5 — Task Dispatcher
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | `app/services/notification/service.py` + `__init__.py` |
-| **Dominio** | backend / services |
-| **Depende de** | Pasos 2, 3, 4, 5 |
-| **Complejidad** | Alta |
-| **Riesgo** | Bajo (composicion de componentes ya testeados) |
-| **Agente** | `fastapi-architect` |
+| **Deliverable** | `app/services/notification/task_dispatcher.py` |
+| **Domain** | backend / services |
+| **Depends on** | — |
+| **Complexity** | Low |
+| **Risk** | Low |
+| **Agent** | `fastapi-architect` |
 
-**Tareas:**
-1. Constructor recibe: `email_client`, `registry`, `document_generator`, `settings`
-2. Metodo `send(NotificationRequest, dispatcher?)`:
-   - Validar contexto via registry
-   - Renderizar subject (Jinja2 string)
-   - Renderizar body HTML (Jinja2 template)
-   - Aplicar premailer CSS inlining
-   - Generar adjuntos si se solicitan (via executor para no bloquear)
-   - Enviar via email_client
-3. Metodo `generate_document_only(DocumentRequest)` para descargas directas sin email
-4. `__init__.py` re-exporta NotificationService y create_email_client
+**Tasks:**
+1. Implement `TaskDispatcher` that receives optional `BackgroundTasks`
+2. Method `dispatch(func, *args, **kwargs)` that adds a task to BackgroundTasks
+3. Document future `ArqDispatcher` interface as a comment (do not implement)
 
-**Criterios de aceptacion:**
-- `send()` con `send_async=True` retorna inmediatamente con `message_id="queued"`
-- `send()` con `send_async=False` espera y retorna resultado real
-- `generate_document_only()` retorna `GeneratedDocument` sin enviar email
-- Flag `NOTIFICATION_SEND_EMAILS=false` cortocircuita sin enviar
+**Acceptance criteria:**
+- With `BackgroundTasks` injected: dispatches in background
+- Without `BackgroundTasks`: executes synchronously (for tests)
 
 ---
 
-### Paso 7 — Dependency Injection [COMPLETADO]
+### Step 6 — NotificationService (orchestrator) [COMPLETE]
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | Funciones DI agregadas a `dependencies.py` existente |
-| **Dominio** | backend / config |
-| **Depende de** | Paso 6 |
-| **Complejidad** | Baja |
-| **Riesgo** | Bajo |
-| **Agente** | `fastapi-architect` |
+| **Deliverable** | `app/services/notification/service.py` + `__init__.py` |
+| **Domain** | backend / services |
+| **Depends on** | Steps 2, 3, 4, 5 |
+| **Complexity** | High |
+| **Risk** | Low (composition of already-tested components) |
+| **Agent** | `fastapi-architect` |
 
-**Tareas:**
+**Tasks:**
+1. Constructor receives: `email_client`, `registry`, `document_generator`, `settings`
+2. Method `send(NotificationRequest, dispatcher?)`:
+   - Validate context via registry
+   - Render subject (Jinja2 string)
+   - Render HTML body (Jinja2 template)
+   - Apply premailer CSS inlining
+   - Generate attachments if requested (via executor to avoid blocking)
+   - Send via email_client
+3. Method `generate_document_only(DocumentRequest)` for direct downloads without email
+4. `__init__.py` re-exports NotificationService and create_email_client
+
+**Acceptance criteria:**
+- `send()` with `send_async=True` returns immediately with `message_id="queued"`
+- `send()` with `send_async=False` waits and returns the real result
+- `generate_document_only()` returns `GeneratedDocument` without sending email
+- Flag `NOTIFICATION_SEND_EMAILS=false` short-circuits without sending
+
+---
+
+### Step 7 — Dependency Injection [COMPLETE]
+
+| Field | Value |
+|---|---|
+| **Deliverable** | DI functions added to existing `dependencies.py` |
+| **Domain** | backend / config |
+| **Depends on** | Step 6 |
+| **Complexity** | Low |
+| **Risk** | Low |
+| **Agent** | `fastapi-architect` |
+
+**Tasks:**
 1. `get_email_settings()` — `@lru_cache`
 2. `get_template_registry()` — `@lru_cache`
 3. `get_document_generator(registry)` — `Depends`
 4. `get_notification_service(settings, registry, generator)` — `Depends`
 5. `get_task_dispatcher(background_tasks)` — `Depends`
 
-**Criterios de aceptacion:**
-- Inyeccion funciona en endpoint de prueba
-- Registry y settings son singleton (lru_cache)
+**Acceptance criteria:**
+- Injection works in a test endpoint
+- Registry and settings are singletons (lru_cache)
 
 ---
 
-### Paso 8 — Templates HTML (email + PDF) [COMPLETADO]
+### Step 8 — HTML Templates (email + PDF) [COMPLETE]
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | Archivos HTML en `templates/email/` y `templates/documents/pdf/` |
-| **Dominio** | frontend / templates |
-| **Depende de** | Paso 2 (specs definen required_context_keys) |
-| **Complejidad** | Media |
-| **Riesgo** | Medio (CSS email compatibility, responsive) |
-| **Agente** | `react-ui-engineer` (HTML/CSS) + `data-privacy-guard` (revision) |
+| **Deliverable** | HTML files in `templates/email/` and `templates/documents/pdf/` |
+| **Domain** | frontend / templates |
+| **Depends on** | Step 2 (specs define required_context_keys) |
+| **Complexity** | Medium |
+| **Risk** | Medium (CSS email compatibility, responsive) |
+| **Agent** | `react-ui-engineer` (HTML/CSS) + `data-privacy-guard` (review) |
 
-**Tareas:**
-1. `templates/email/base/layout.html` — Master layout con header logo, content block, footer confidencialidad
-2. `templates/email/welcome_athlete.html` — Bienvenida, lista de items para primera sesion
-3. `templates/email/anthropometry_alert.html` — Alerta de medicion al coach (SIN nombre de atleta)
-4. `templates/email/monthly_report.html` — Resumen mensual para padres
-5. `templates/documents/pdf/base/layout.html` — CSS @page con header, footer, numeracion
-6. `templates/documents/pdf/anthropometry_report.html` — Tabla de mediciones + badge PHV
-7. `templates/documents/pdf/monthly_progress.html` — Progreso mensual con tendencias
+**Tasks:**
+1. `templates/email/base/layout.html` — Master layout with logo header, content block, confidentiality footer
+2. `templates/email/welcome_athlete.html` — Welcome, list of items for the first training session
+3. `templates/email/anthropometry_alert.html` — Measurement alert to coach (WITHOUT athlete name)
+4. `templates/email/monthly_report.html` — Monthly summary for parents/guardians
+5. `templates/documents/pdf/base/layout.html` — CSS @page with header, footer, numbering
+6. `templates/documents/pdf/anthropometry_report.html` — Measurements table + PHV badge
+7. `templates/documents/pdf/monthly_progress.html` — Monthly progress with trends
 
-**Colores del club:** header `#2d5016` (verde bosque), badges PHV con colores semanticos
+**Club colors:** header `#2d5016` (forest green), PHV badges with semantic colors
 
-**Reglas de privacidad:**
-- Email alert al coach: NO incluir nombre atleta en body (solo en dashboard)
-- PDF reporte: SI incluir nombre completo (documento formal descargado)
-- Footer en todos: "Documento confidencial — datos de menor de edad protegidos"
+**Privacy rules:**
+- Email alert to coach: DO NOT include athlete name in body (only in dashboard)
+- PDF report: DO include full name (formal downloaded document)
+- Footer on all: "Confidential document — minors' data protected"
 
-**Criterios de aceptacion:**
-- Layouts renderizan correctamente en Jinja2 sin errores
-- CSS inlineado por premailer produce HTML funcional
-- PDF genera con header/footer/numeracion de paginas
-- Ningun template expone datos sensibles innecesariamente
+**Acceptance criteria:**
+- Layouts render correctly in Jinja2 without errors
+- CSS inlined by premailer produces functional HTML
+- PDF generates with header/footer/page numbering
+- No template exposes sensitive data unnecessarily
 
 ---
 
-### Paso 9 — Template DOCX (autorizacion medica) [COMPLETADO]
+### Step 9 — DOCX Template (medical clearance) [COMPLETE]
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | `templates/documents/docx/medical_clearance.docx` |
-| **Dominio** | documentos |
-| **Depende de** | Paso 2 |
-| **Complejidad** | Baja |
-| **Riesgo** | Bajo |
-| **Agente** | `fastapi-architect` (genera programaticamente con python-docx) |
+| **Deliverable** | `templates/documents/docx/medical_clearance.docx` |
+| **Domain** | documents |
+| **Depends on** | Step 2 |
+| **Complexity** | Low |
+| **Risk** | Low |
+| **Agent** | `fastapi-architect` (generates programmatically with python-docx) |
 
-**Tareas:**
-1. Crear template .docx con variables docxtpl: `{{ athlete_first_name }}`, `{{ athlete_last_name }}`, `{{ birth_date }}`, `{{ club_name }}`, `{{ season_year }}`
-2. Incluir seccion de condiciones medicas con loop `{%tr for condition in medical_conditions %}`
-3. Espacio para firma del padre/tutor y firma del medico
+**Tasks:**
+1. Create .docx template with docxtpl variables: `{{ athlete_first_name }}`, `{{ athlete_last_name }}`, `{{ birth_date }}`, `{{ club_name }}`, `{{ season_year }}`
+2. Include medical conditions section with loop `{%tr for condition in medical_conditions %}`
+3. Space for parent/guardian signature and doctor signature
 
-**Criterios de aceptacion:**
-- docxtpl renderiza sin errores con contexto completo
-- Documento resultante abre correctamente en Word/LibreOffice
-- Variables reemplazadas con valores reales
+**Acceptance criteria:**
+- docxtpl renders without errors with complete context
+- Resulting document opens correctly in Word/LibreOffice
+- Variables replaced with real values
 
 ---
 
-### Paso 10 — Router reports.py + registro en main.py [COMPLETADO]
+### Step 10 — Router reports.py + registration in main.py [COMPLETE]
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | `app/routers/reports.py` con 3 endpoints, registrado en `main.py` |
-| **Dominio** | backend / routers |
-| **Depende de** | Pasos 6, 7 |
-| **Complejidad** | Media |
-| **Riesgo** | Bajo |
-| **Agente** | `fastapi-architect` |
+| **Deliverable** | `app/routers/reports.py` with 3 endpoints, registered in `main.py` |
+| **Domain** | backend / routers |
+| **Depends on** | Steps 6, 7 |
+| **Complexity** | Medium |
+| **Risk** | Low |
+| **Agent** | `fastapi-architect` |
 
 **Endpoints:**
 
-| Metodo | Ruta | Descripcion | Auth |
+| Method | Route | Description | Auth |
 |---|---|---|---|
-| GET | `/athletes/{id}/report/pdf` | Descarga reporte antropometrico PDF | coach, parent (verify_athlete_access) |
-| GET | `/athletes/{id}/clearance/docx` | Descarga autorizacion medica DOCX | coach, parent (verify_athlete_access) |
-| POST | `/athletes/{id}/report/email` | Envia informe mensual por email al padre | coach, admin |
+| GET | `/athletes/{id}/report/pdf` | Download anthropometry PDF report | coach, parent (verify_athlete_access) |
+| GET | `/athletes/{id}/clearance/docx` | Download medical clearance DOCX | coach, parent (verify_athlete_access) |
+| POST | `/athletes/{id}/report/email` | Send monthly report by email to parent/guardian | coach, admin |
 
-**Tareas:**
-1. Implementar 3 endpoints con dependency injection
-2. Usar `verify_athlete_access` existente para permisos
-3. Retornar `Response` con `Content-Disposition: attachment` para descargas
-4. Registrar router en `main.py`
+**Tasks:**
+1. Implement 3 endpoints with dependency injection
+2. Use existing `verify_athlete_access` for permissions
+3. Return `Response` with `Content-Disposition: attachment` for downloads
+4. Register router in `main.py`
 
-**Criterios de aceptacion:**
-- GET PDF retorna `application/pdf` con header de descarga
-- GET DOCX retorna content-type correcto
-- POST email retorna `{"queued": true}` en modo async
-- 403 si usuario no tiene acceso al atleta
-- 404 si atleta no existe
-
----
-
-### Paso 11 — Integrar envio en routers existentes [COMPLETADO]
-
-| Campo | Valor |
-|---|---|
-| **Entregable** | Emails disparados desde `athletes.py` y `anthropometry.py` existentes |
-| **Dominio** | backend / integracion |
-| **Depende de** | Pasos 6, 7, 8 |
-| **Complejidad** | Media |
-| **Riesgo** | Medio (no romper endpoints existentes) |
-| **Agente** | `fastapi-architect` |
-
-**Tareas:**
-1. En `POST /athletes/` — enviar email de bienvenida al padre (si tiene email)
-2. En `POST /athletes/{id}/anthropometry/` — disparar alerta al coach si `measurement_alerts` detecta condicion critica
-3. Ambos usan `send_async=True` via dispatcher para no bloquear response
-
-**Criterios de aceptacion:**
-- Crear atleta sin padre con email: no intenta enviar (sin error)
-- Crear atleta con padre con email: email queda en queue
-- Nueva medicion con alerta critica: email al coach en background
-- Endpoints existentes mantienen mismo response schema
+**Acceptance criteria:**
+- GET PDF returns `application/pdf` with download header
+- GET DOCX returns correct content-type
+- POST email returns `{"queued": true}` in async mode
+- 403 if user does not have access to the athlete
+- 404 if athlete does not exist
 
 ---
 
-### Paso 12 — Tests unitarios [COMPLETADO]
+### Step 11 — Integrate sending in existing routers [COMPLETE]
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | Tests para cada componente del modulo |
-| **Dominio** | testing |
-| **Depende de** | Pasos 1-6, 10 |
-| **Complejidad** | Alta |
-| **Riesgo** | Bajo |
-| **Agente** | `quality-engineer` |
+| **Deliverable** | Emails triggered from existing `athletes.py` and `anthropometry.py` |
+| **Domain** | backend / integration |
+| **Depends on** | Steps 6, 7, 8 |
+| **Complexity** | Medium |
+| **Risk** | Medium (must not break existing endpoints) |
+| **Agent** | `fastapi-architect` |
 
-**Archivos de test:**
+**Tasks:**
+1. In `POST /athletes/` — send welcome email to parent/guardian (if they have an email)
+2. In `POST /athletes/{id}/anthropometry/` — trigger alert to coach if `measurement_alerts` detects a critical condition
+3. Both use `send_async=True` via dispatcher to avoid blocking the response
+
+**Acceptance criteria:**
+- Create athlete without parent/guardian with email: does not attempt to send (no error)
+- Create athlete with parent/guardian with email: email is queued
+- New measurement with critical alert: email to coach in background
+- Existing endpoints maintain the same response schema
+
+---
+
+### Step 12 — Unit Tests [COMPLETE]
+
+| Field | Value |
+|---|---|
+| **Deliverable** | Tests for each module component |
+| **Domain** | testing |
+| **Depends on** | Steps 1–6, 10 |
+| **Complexity** | High |
+| **Risk** | Low |
+| **Agent** | `quality-engineer` |
+
+**Test files:**
 ```
 tests/
-├── test_template_registry.py     # Validacion contexto, specs, errores
+├── test_template_registry.py     # Context validation, specs, errors
 ├── test_email_client.py          # Mock SMTP, mock Resend, factory
-├── test_document_generator.py    # PDF bytes validos, DOCX bytes validos
-├── test_notification_service.py  # Orquestacion send + generate
-└── test_reports_router.py        # Endpoints HTTP, permisos, responses
+├── test_document_generator.py    # Valid PDF bytes, valid DOCX bytes
+├── test_notification_service.py  # Orchestration send + generate
+└── test_reports_router.py        # HTTP endpoints, permissions, responses
 ```
 
-**Tareas:**
-1. Mock de aiosmtplib para SMTP tests
-2. Mock de resend SDK para Resend tests
-3. Test PDF generation con template real (verificar magic bytes `%PDF`)
-4. Test DOCX generation (verificar magic bytes `PK`)
-5. Test NotificationService con todos los mocks
-6. Test router endpoints con TestClient + auth fixtures existentes
-7. Test de privacidad: verificar que logs no contienen PII
+**Tasks:**
+1. Mock aiosmtplib for SMTP tests
+2. Mock resend SDK for Resend tests
+3. Test PDF generation with real template (verify magic bytes `%PDF`)
+4. Test DOCX generation (verify magic bytes `PK`)
+5. Test NotificationService with all mocks
+6. Test router endpoints with TestClient + existing auth fixtures
+7. Privacy test: verify that logs do not contain PII
 
-**Criterios de aceptacion:**
-- `pytest tests/test_notification*.py tests/test_reports*.py` pasa
-- Cobertura >80% en modulo notification
-- Zero PII en captured logs durante tests
-
----
-
-### Paso 13 — Docker + dev environment
-
-| Campo | Valor |
-|---|---|
-| **Entregable** | MailHog en docker-compose, Dockerfile actualizado |
-| **Dominio** | devops / infra |
-| **Depende de** | Paso 0 |
-| **Complejidad** | Baja |
-| **Riesgo** | Bajo |
-| **Agente** | `devops-architect` |
-
-**Tareas:**
-1. Agregar servicio `mailhog` a `docker-compose.yml` (puerto 1025 SMTP, 8025 UI)
-2. Configurar `.env` de dev con `EMAIL_PROVIDER=smtp`, `SMTP_HOST=mailhog`, `SMTP_PORT=1025`
-3. Agregar libs de sistema WeasyPrint al Dockerfile (`libpango`, `libcairo`, `libgdk-pixbuf`)
-4. Verificar que `docker compose up` levanta todo correctamente
-
-**Criterios de aceptacion:**
-- `docker compose up` levanta MySQL + API + MailHog sin errores
-- MailHog UI accesible en `localhost:8025`
-- Email enviado desde API aparece en MailHog
+**Acceptance criteria:**
+- `pytest tests/test_notification*.py tests/test_reports*.py` passes
+- Coverage >80% in notification module
+- Zero PII in captured logs during tests
 
 ---
 
-### Paso 14 — Auditoria de privacidad
+### Step 13 — Docker + dev environment
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| **Entregable** | Reporte de auditoria, correcciones si necesarias |
-| **Dominio** | seguridad / privacidad |
-| **Depende de** | Pasos 1-11 (todo implementado) |
-| **Complejidad** | Media |
-| **Riesgo** | Alto (datos de menores) |
-| **Agente** | `data-privacy-guard` + `security-engineer` |
+| **Deliverable** | MailHog in docker-compose, updated Dockerfile |
+| **Domain** | devops / infra |
+| **Depends on** | Step 0 |
+| **Complexity** | Low |
+| **Risk** | Low |
+| **Agent** | `devops-architect` |
+
+**Tasks:**
+1. Add `mailhog` service to `docker-compose.yml` (port 1025 SMTP, 8025 UI)
+2. Configure dev `.env` with `EMAIL_PROVIDER=smtp`, `SMTP_HOST=mailhog`, `SMTP_PORT=1025`
+3. Add WeasyPrint system libs to Dockerfile (`libpango`, `libcairo`, `libgdk-pixbuf`)
+4. Verify that `docker compose up` starts everything correctly
+
+**Acceptance criteria:**
+- `docker compose up` starts MySQL + API + MailHog without errors
+- MailHog UI accessible at `localhost:8025`
+- Email sent from API appears in MailHog
+
+---
+
+### Step 14 — Privacy Audit
+
+| Field | Value |
+|---|---|
+| **Deliverable** | Audit report, corrections if necessary |
+| **Domain** | security / privacy |
+| **Depends on** | Steps 1–11 (everything implemented) |
+| **Complexity** | Medium |
+| **Risk** | High (minors' data) |
+| **Agent** | `data-privacy-guard` + `security-engineer` |
 
 **Checklist:**
-- [ ] Ningun log contiene email, nombre o datos medicos de atletas
-- [ ] Templates de email alert no exponen nombre de atleta
-- [ ] PDFs generados en memoria (BytesIO), no persistidos en disco
-- [ ] RESEND_API_KEY no esta en ningun archivo commiteado
-- [ ] `NOTIFICATION_LOG_BODIES=false` por defecto
-- [ ] `.env` en `.gitignore`
-- [ ] Endpoints protegidos con `verify_athlete_access`
+- [ ] No log contains email, name, or medical data of athletes
+- [ ] Email alert templates do not expose athlete name
+- [ ] PDFs generated in memory (BytesIO), not persisted to disk
+- [ ] RESEND_API_KEY is not in any committed file
+- [ ] `NOTIFICATION_LOG_BODIES=false` by default
+- [ ] `.env` in `.gitignore`
+- [ ] Endpoints protected with `verify_athlete_access`
 
-**Criterios de aceptacion:**
-- Auditoria pasa todos los checks
-- Zero PII encontrado en git log de archivos del modulo
+**Acceptance criteria:**
+- Audit passes all checks
+- Zero PII found in git log for module files
 
 ---
 
-## Grafo de dependencias
+## Dependency Graph
 
 ```mermaid
 graph TD
-    P0["Paso 0: Config + deps"] --> P1["Paso 1: Schemas"]
-    P0 --> P3["Paso 3: Email Client"]
-    P0 --> P13["Paso 13: Docker + MailHog"]
-    P1 --> P2["Paso 2: Template Registry"]
-    P2 --> P4["Paso 4: Document Generator"]
-    P2 --> P8["Paso 8: Templates HTML"]
-    P2 --> P9["Paso 9: Template DOCX"]
-    P3 --> P6["Paso 6: NotificationService"]
+    P0["Step 0: Config + deps"] --> P1["Step 1: Schemas"]
+    P0 --> P3["Step 3: Email Client"]
+    P0 --> P13["Step 13: Docker + MailHog"]
+    P1 --> P2["Step 2: Template Registry"]
+    P2 --> P4["Step 4: Document Generator"]
+    P2 --> P8["Step 8: HTML Templates"]
+    P2 --> P9["Step 9: DOCX Template"]
+    P3 --> P6["Step 6: NotificationService"]
     P4 --> P6
-    P5["Paso 5: Task Dispatcher"] --> P6
-    P6 --> P7["Paso 7: Dependency Injection"]
-    P7 --> P10["Paso 10: Router reports.py"]
-    P7 --> P11["Paso 11: Integrar en routers existentes"]
+    P5["Step 5: Task Dispatcher"] --> P6
+    P6 --> P7["Step 7: Dependency Injection"]
+    P7 --> P10["Step 10: Router reports.py"]
+    P7 --> P11["Step 11: Integrate in existing routers"]
     P8 --> P11
-    P6 --> P12["Paso 12: Tests"]
+    P6 --> P12["Step 12: Tests"]
     P10 --> P12
-    P11 --> P14["Paso 14: Auditoria privacidad"]
+    P11 --> P14["Step 14: Privacy audit"]
     P12 --> P14
 ```
 
-## Oportunidades de paralelismo
+## Parallelism Opportunities
 
-| Grupo paralelo | Pasos | Condicion |
+| Parallel group | Steps | Condition |
 |---|---|---|
-| A | 1, 3, 5, 13 | Todos dependen solo de Paso 0 (o nada) |
-| B | 2, 8, 9 | Dependen de Paso 1 o 2, independientes entre si |
-| C | 10, 11 | Ambos dependen de Paso 7, independientes entre si |
+| A | 1, 3, 5, 13 | All depend only on Step 0 (or nothing) |
+| B | 2, 8, 9 | Depend on Step 1 or 2, independent of each other |
+| C | 10, 11 | Both depend on Step 7, independent of each other |
 
-## Registro de riesgos
+## Risk Register
 
-| Riesgo | Pasos afectados | Mitigacion |
+| Risk | Affected steps | Mitigation |
 |---|---|---|
-| WeasyPrint libs de sistema en Docker | 0, 4, 13 | Agregar al Dockerfile; testar build temprano |
-| Resend SDK sincrono bloquea event loop | 3, 6 | Envolver en `run_in_executor` siempre |
-| CSS email incompatible entre clientes | 8 | Usar premailer + testear en MailHog; considerar MJML futuro |
-| Fonts diferentes en Docker vs local | 4 | Incluir fonts en static/ o usar fonts web |
-| Docxtpl tags cruzando parrafos | 9 | Testar template con datos reales antes de integrar |
-| PII en logs de desarrollo | 3, 6, 11 | Regla de logging estricta; auditoria paso 14 |
+| WeasyPrint system libs in Docker | 0, 4, 13 | Add to Dockerfile; test build early |
+| Resend SDK synchronous blocks event loop | 3, 6 | Always wrap in `run_in_executor` |
+| CSS email incompatible across clients | 8 | Use premailer + test in MailHog; consider MJML in future |
+| Different fonts in Docker vs local | 4 | Include fonts in static/ or use web fonts |
+| Docxtpl tags crossing paragraphs | 9 | Test template with real data before integrating |
+| PII in development logs | 3, 6, 11 | Strict logging rule; audit in step 14 |
 
-## MVP despues de paso
+## MVP after step
 
-**Paso 10 completo = MVP funcional.** Coach puede descargar PDF y DOCX desde API. Paso 11 agrega automatizacion (emails en eventos). Paso 12-14 son calidad y seguridad.
+**Step 10 complete = functional MVP.** Coach can download PDF and DOCX from the API. Step 11 adds automation (emails on events). Steps 12–14 are quality and security.
 
-## Ruta de migracion futura: BackgroundTasks a ARQ
+## Future migration path: BackgroundTasks to ARQ
 
-Cuando se necesite persistencia de tareas:
-1. Instalar `arq>=0.25.0`, `redis>=5.0.0`
-2. Agregar Redis a docker-compose
-3. Implementar `ArqDispatcher` (misma interfaz que `TaskDispatcher`)
-4. Registrar funciones en `WorkerSettings`
-5. Agregar `REDIS_URL` a config
-6. **Zero cambios** en NotificationService ni routers
+When task persistence is needed:
+1. Install `arq>=0.25.0`, `redis>=5.0.0`
+2. Add Redis to docker-compose
+3. Implement `ArqDispatcher` (same interface as `TaskDispatcher`)
+4. Register functions in `WorkerSettings`
+5. Add `REDIS_URL` to config
+6. **Zero changes** in NotificationService or routers
