@@ -31,6 +31,9 @@ class NotificationTemplate(str, Enum):
     # Solo se dispara para válidas tier A o CD (Campeonato Departamental).
     # Las tier B/C quedan en notificación in-app + boletín mensual.
     RACE_INSIGHT_PUBLISHED = "race_insight_published"
+    # Restablecimiento de contraseña (specs/003-password-reset-login).
+    PASSWORD_RESET = "password_reset"
+    PASSWORD_CHANGED = "password_changed"
 
 
 class DocumentTemplate(str, Enum):

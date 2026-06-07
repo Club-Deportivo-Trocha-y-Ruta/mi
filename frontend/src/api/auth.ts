@@ -2,6 +2,10 @@ import { apiClient } from "@/api/client";
 import type {
   LoginRequest,
   MeResponse,
+  PasswordResetConfirm,
+  PasswordResetMessage,
+  PasswordResetRequest,
+  PasswordResetValidate,
   RefreshRequest,
   TokenResponse,
 } from "@/types/auth.types";
@@ -42,6 +46,36 @@ export async function registerParent(
 ): Promise<ParentRegisterOut> {
   const response = await apiClient.post<ParentRegisterOut>(
     "/api/auth/parent-register",
+    payload,
+  );
+  return response.data;
+}
+
+export async function requestPasswordReset(
+  payload: PasswordResetRequest,
+): Promise<PasswordResetMessage> {
+  const response = await apiClient.post<PasswordResetMessage>(
+    "/api/auth/password-reset/request",
+    payload,
+  );
+  return response.data;
+}
+
+export async function validateResetToken(
+  token: string,
+): Promise<PasswordResetValidate> {
+  const response = await apiClient.get<PasswordResetValidate>(
+    "/api/auth/password-reset/validate",
+    { params: { token } },
+  );
+  return response.data;
+}
+
+export async function confirmPasswordReset(
+  payload: PasswordResetConfirm,
+): Promise<PasswordResetMessage> {
+  const response = await apiClient.post<PasswordResetMessage>(
+    "/api/auth/password-reset/confirm",
     payload,
   );
   return response.data;

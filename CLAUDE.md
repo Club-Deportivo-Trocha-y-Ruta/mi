@@ -272,6 +272,27 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 
 > Deployment pending user approval. Migration verified in SQLite via tests.
 
+## Implementation status — Password Reset Module (specs/003-password-reset-login)
+
+> Self-service password recovery from the login page. URL token by email, stored
+> SHA-256-hashed, single-use, 1h expiry. Enumeration-safe (identical neutral message +
+> async email for constant timing), per-email rate limit (no Redis), no auto-login,
+> confirmation email. OWASP Forgot Password Cheat Sheet alignment. No new dependencies.
+> Spec/plan/research/tasks under `specs/003-password-reset-login/`.
+
+| Step | Description | Status |
+|---|---|---|
+| 1 | `PasswordResetToken` model (`token_hash` unique, `used_at`, `expires_at`) + migration `a1b2c3d4e5f8` (head `d4e5f6a7b8c9`) + 3 settings | ✅ Complete 2026-06-07 |
+| 2 | `services/password_reset.py` (request/validate/consume, hashed tokens, rate-limit, sibling invalidation, logs ids-only) | ✅ Complete 2026-06-07 |
+| 3 | 3 endpoints in `routers/auth.py` (`/password-reset/request|validate|confirm`), neutral responses, async email dispatch, no JWT on confirm | ✅ Complete 2026-06-07 |
+| 4 | Email templates `password_reset.html` + `password_changed.html` (español, no names) + `NotificationTemplate` enum + registry specs | ✅ Complete 2026-06-07 |
+| 5 | Frontend: `ForgotPasswordPage`, `ResetPasswordPage`, login link, 2 public routes, api client + types (RHF+Zod, `noValidate`, full state set) | ✅ Complete 2026-06-07 |
+| 6 | Tests: 18 backend (service + router + privacy invariants) + 10 frontend vitest (5 a11y axe, 0 violations); clean `tsc` + `ruff` | ✅ Complete 2026-06-07 |
+| 7 | Deploy to Render | ⏳ Pending |
+
+> Deployment pending user approval. Backend MySQL-dependent tests not run here (no DB in
+> container); password-reset suite verified on SQLite. Migration verified single-head.
+
 ## Development credentials (seed data)
 
 > For local / Docker dev environment only. Never use in production.

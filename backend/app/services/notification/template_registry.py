@@ -301,6 +301,33 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
             "Antropometría NO incluida en el email — solo en el PDF adjunto."
         ),
     ),
+    NotificationTemplate.PASSWORD_RESET: EmailTemplateSpec(
+        template_id=NotificationTemplate.PASSWORD_RESET,
+        # Subject sin nombre ni rol (visible en previews/servidores intermedios).
+        subject_template="Restablece tu contraseña — {{ club_name }}",
+        body_path="email/password_reset.html",
+        required_context_keys=frozenset(
+            {
+                "reset_url",
+                "club_name",
+                "ttl_minutes",
+            }
+        ),
+        description=(
+            "Enlace de un solo uso para restablecer la contraseña. No contiene "
+            "datos del titular ni de menores. specs/003-password-reset-login."
+        ),
+    ),
+    NotificationTemplate.PASSWORD_CHANGED: EmailTemplateSpec(
+        template_id=NotificationTemplate.PASSWORD_CHANGED,
+        subject_template="Tu contraseña fue actualizada — {{ club_name }}",
+        body_path="email/password_changed.html",
+        required_context_keys=frozenset({"club_name"}),
+        description=(
+            "Confirmación de cambio de contraseña. Nunca incluye credenciales. "
+            "specs/003-password-reset-login."
+        ),
+    ),
 }
 
 # ---------------------------------------------------------------------------
