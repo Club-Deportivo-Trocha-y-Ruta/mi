@@ -435,5 +435,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 ## Active Spec Kit feature
 
-- **004-user-profile** — Implementation plan: `specs/004-user-profile/plan.md`
+- **005-session-create-edit-ux** — Implementation plan: `specs/005-session-create-edit-ux/plan.md`
 <!-- SPECKIT END -->
