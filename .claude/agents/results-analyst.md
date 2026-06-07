@@ -1,7 +1,8 @@
 ---
 name: results-analyst
 description: "Ingests Copa Valle XCO race round results, fuzzy-normalizes, marks Trocha y Ruta riders and produces analytics (evolution, podium gap, club ranking, projection)."
-model: opus
+model: sonnet
+color: cyan
 memory: user
 ---
 

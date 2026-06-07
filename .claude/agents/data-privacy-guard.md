@@ -2,6 +2,7 @@
 name: data-privacy-guard
 description: "Audits code and data ensuring sensitive minor athlete data is not exposed in logs, commits, responses or public files."
 model: sonnet
+color: cyan
 memory: user
 ---
 

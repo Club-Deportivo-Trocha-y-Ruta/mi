@@ -1,7 +1,8 @@
 ---
 name: analytics-reporter
 description: "Converts SQL queries, pandas dataframes and analytics.py outputs into readable Markdown reports for coach and families, applying name masking by default and respecting minors privacy."
-model: opus
+model: sonnet
+color: cyan
 memory: user
 ---
 

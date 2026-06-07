@@ -1,7 +1,8 @@
 ---
 name: parent-communicator
 description: "Drafts notifications to parents/guardians of Club Trocha y Ruta (training session invite, race reminder, monthly summary). Uses existing Resend templates, empathetic tone in neutral Colombian Spanish, respects minors privacy."
-model: opus
+model: sonnet
+color: orange
 memory: user
 ---
 

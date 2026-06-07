@@ -2,6 +2,7 @@
 name: head-coach-lead
 description: "Sports Operations Lead. Assists the real coach by coordinating the technical staff: decomposes sports requests and delegates to training-planner, nutrition-advisor, injury-prevention-advisor, technique-coach, mental-performance-coach, competition-strategist and sports-science-advisor. Does not generate technical content directly."
 model: opus
+color: green
 memory: user
 tools: Read, Bash, Grep, Glob, Agent, AskUserQuestion, WebFetch, WebSearch
 ---

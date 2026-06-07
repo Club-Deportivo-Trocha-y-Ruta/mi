@@ -1,7 +1,8 @@
 ---
 name: qa-engineer
 description: "QA Engineer. Designs and writes backend tests (pytest + httpx.AsyncClient + aiosqlite) and frontend tests (vitest + Testing Library), maintains coverage, external service mocks, and accessibility validation."
-model: opus
+model: sonnet
+color: blue
 memory: user
 ---
 

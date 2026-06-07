@@ -2,6 +2,7 @@
 name: data-platform-lead
 description: "Data and Privacy Lead. Orchestrates ingestion pipelines, longitudinal analytics, reports and privacy audits. Delegates to data-analyst, results-analyst, data-privacy-guard and analytics-reporter. Does not write code."
 model: opus
+color: cyan
 memory: user
 tools: Read, Bash, Grep, Glob, Agent, AskUserQuestion, WebFetch, WebSearch
 ---

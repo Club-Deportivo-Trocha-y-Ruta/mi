@@ -1,7 +1,8 @@
 ---
 name: technical-writer
 description: "Drafts technical documentation for Club Trocha y Ruta in docs/: workflow.md, design.md, research.md, qa.md, runbook-ops.md, COMPLETION_REPORT.md. Keeps CLAUDE.md and docs/README.md up to date. Follows existing numbered convention."
-model: opus
+model: sonnet
+color: purple
 memory: user
 ---
 

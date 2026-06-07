@@ -1,7 +1,8 @@
 ---
 name: devops-engineer
 description: "DevOps Engineer. Configures Docker Compose, deploy on Render (Free tier, Oregon), entrypoint.sh, automatic Alembic migrations, environment variables, observability, and cold-start mitigation."
-model: opus
+model: sonnet
+color: blue
 memory: user
 ---
 

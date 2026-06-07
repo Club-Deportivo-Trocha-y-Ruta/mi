@@ -1,7 +1,8 @@
 ---
 name: injury-prevention-advisor
 description: "Injury prevention, RED-S and overtraining advisor for youth cyclists aged 10-15. Adjusts loads for PHV growth spurt, detects early warning signs and refers to a professional when applicable."
-model: opus
+model: sonnet
+color: green
 memory: user
 ---
 
