@@ -127,8 +127,8 @@ Web app: `backend/app/**`, `backend/tests/**`, `frontend/src/**`, `frontend/test
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T028 [P] [US4] Frontend test `frontend/test/training/sessionRouteNotes.test.tsx`: invalid Strava URL shows shared-rule error; route file picked then auto-uploaded after create; upload failure keeps saved session + shows retry; coach notes submitted.
-- [ ] T029 [P] [US4] Frontend test `frontend/test/training/notifyOutcome.test.tsx`: Review-step notify choice → success toast / failure-retry / no-recipients states rendered distinctly (no silent failure).
+- [X] T028 [P] [US4] Frontend test `frontend/test/training/sessionRouteNotes.test.tsx`: invalid Strava URL shows shared-rule error; route file picked then auto-uploaded after create; upload failure keeps saved session + shows retry; coach notes submitted.
+- [X] T029 [P] [US4] Frontend test `frontend/test/training/notifyOutcome.test.tsx`: Review-step notify choice → success toast / failure-retry / no-recipients states rendered distinctly (no silent failure).
 
 ### Implementation for User Story 4
 

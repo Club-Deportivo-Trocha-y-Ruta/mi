@@ -49,9 +49,8 @@ export const trainingSessionCreateSchema = z.object({
     .or(z.literal("")),
   strava_url: z
     .string()
-    .regex(STRAVA_ACTIVITY_RE, "URL de Strava no válida")
     .optional()
-    .or(z.literal("")),
+    .refine((v) => !v || STRAVA_ACTIVITY_RE.test(v), "URL de Strava no válida"),
   coach_notes: z
     .string()
     .max(2000, "Máximo 2000 caracteres")
