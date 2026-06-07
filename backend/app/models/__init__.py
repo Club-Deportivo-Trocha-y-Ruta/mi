@@ -5,6 +5,7 @@ from app.models.athlete import Athlete, ParentAthlete, Sex, FamilyRelationship
 from app.models.anthropometry import AnthropometricRecord, MaturationStatus, NutritionalStatus
 from app.models.growth import GrowthReferenceLms, GrowthIndicator, GrowthSource
 from app.models.parent_invite import ParentInvite
+from app.models.password_reset_token import PasswordResetToken
 from app.models.privacy_policy import PrivacyPolicy
 from app.models.parental_consent import ParentalConsent
 from app.models.ai_explanation import AthleteAIExplanation
@@ -72,6 +73,7 @@ __all__ = [
     "GrowthIndicator",
     "GrowthSource",
     "ParentInvite",
+    "PasswordResetToken",
     "PrivacyPolicy",
     "ParentalConsent",
     "AthleteAIExplanation",

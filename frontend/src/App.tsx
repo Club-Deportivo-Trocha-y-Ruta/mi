@@ -41,6 +41,8 @@ import { ParentDetailPage } from "@/routes/parents/ParentDetailPage";
 import { ParentDashboardPage } from "@/routes/parents/ParentDashboardPage";
 import { MyAthleteDetailPage } from "@/routes/parents/MyAthleteDetailPage";
 import { OnboardingPage } from "@/routes/auth/OnboardingPage";
+import { ForgotPasswordPage } from "@/routes/auth/ForgotPasswordPage";
+import { ResetPasswordPage } from "@/routes/auth/ResetPasswordPage";
 import { PrivacyPage } from "@/routes/PrivacyPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
 import { GonePage } from "@/routes/GonePage";
@@ -91,6 +93,8 @@ export default function App() {
       <TooltipProvider delayDuration={200} skipDelayDuration={300}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/recuperar-contrasena" element={<ForgotPasswordPage />} />
+        <Route path="/restablecer-contrasena" element={<ResetPasswordPage />} />
         <Route
           path="/"
           element={

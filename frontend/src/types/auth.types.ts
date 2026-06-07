@@ -15,6 +15,23 @@ export interface RefreshRequest {
   refresh_token: string;
 }
 
+export interface PasswordResetRequest {
+  email: string;
+}
+
+export interface PasswordResetConfirm {
+  token: string;
+  new_password: string;
+}
+
+export interface PasswordResetMessage {
+  message: string;
+}
+
+export interface PasswordResetValidate {
+  valid: boolean;
+}
+
 export interface MeResponse {
   id: number;
   email: string | null;
