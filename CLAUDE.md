@@ -335,6 +335,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 - `ParentAthlete.relationship_type` — the Python attribute is named `relationship_type` (column alias for `relationship`) to avoid collision with `sqlalchemy.orm.relationship`
 - `MaturationStatus` uses `values_callable` to store `Pre-PHV`/`Circa-PHV`/`Post-PHV` instead of enum names
 - `RPE_LABELS` in `RubricSliders.tsx` uses the validated OMNI 0–10 mapping (Reposo→Máximo, "Moderado" at index 5 = midpoint); frontend-only refactor, no backend/schema/migration change (2026-06-05)
+- Session create/edit is a multi-step wizard (`components/training/session-wizard/`, feature 005). `session_kind`/`objectives` are now persisted end-to-end (were silently dropped by `TrainingSessionCreate/Update` + `create_session`); no migration (columns existed since `d4e5f6a7b8c9`). Drafts autosave to `localStorage` key `tyr:session-draft:v1:{userId}:{new|<id>}`, cleared on save/discard. Route file auto-uploads to the existing `/route-file` endpoint after create. See `docs/09-training-planning/session-wizard.md` (2026-06-07)
 
 ## Development commands
 
