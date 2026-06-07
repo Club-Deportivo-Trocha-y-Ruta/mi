@@ -112,6 +112,7 @@ export interface TrainingSessionCreate {
   description: string;
   route_text?: string | null;
   strava_url?: string | null;
+  coach_notes?: string | null;
   convocados_athlete_ids: number[];
   send_notification?: boolean;
   session_kind?: SessionKind;
