@@ -2,6 +2,18 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+// Profile module (lazy — all authenticated roles)
+const ProfilePage = lazy(() =>
+  import("@/routes/profile/ProfilePage").then((m) => ({
+    default: m.ProfilePage,
+  })),
+);
+const ConfirmEmailChangePage = lazy(() =>
+  import("@/routes/profile/ConfirmEmailChangePage").then((m) => ({
+    default: m.ConfirmEmailChangePage,
+  })),
+);
+
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
 import { setQueryClient } from "@/lib/queryClientHandle";
 import { landingPathForRole } from "@/lib/landing";
@@ -480,6 +492,40 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <GonePage />
             </ProtectedRoute>
+          }
+        />
+
+        {/* ── Perfil de usuario (todos los roles autenticados) ── */}
+        <Route
+          path="/perfil"
+          element={
+            <ProtectedRoute>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando perfil...
+                  </div>
+                }
+              >
+                <ProfilePage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Confirmación de cambio de correo (pública) ── */}
+        <Route
+          path="/confirmar-correo"
+          element={
+            <Suspense
+              fallback={
+                <div className="flex min-h-screen items-center justify-center text-sm text-mid-gray">
+                  Verificando enlace...
+                </div>
+              }
+            >
+              <ConfirmEmailChangePage />
+            </Suspense>
           }
         />
 

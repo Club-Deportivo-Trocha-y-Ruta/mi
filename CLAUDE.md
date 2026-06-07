@@ -293,6 +293,31 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 > Deployment pending user approval. Backend MySQL-dependent tests not run here (no DB in
 > container); password-reset suite verified on SQLite. Migration verified single-head.
 
+## Implementation status — User Profile & Account Settings Module (specs/004-user-profile)
+
+> Self-service "Mi perfil / Ajustes de cuenta" for every login-capable user (admin,
+> coach, parent): edit basic info, change password in-session (current-password re-auth +
+> confirmation email), and change email via verify-new-email-before-apply (single-use
+> hashed token to the new address, alert to the old address). OWASP-aligned (reuses the
+> password-reset token pattern). No new dependency. Spec/plan/research/data-model/
+> contracts/tasks under `specs/004-user-profile/`.
+
+| Step | Description | Status |
+|---|---|---|
+| 1 | `EmailChangeRequest` model (`token_hash` unique, `new_email`, `used_at`, `expires_at`) + 3 settings (`email_change_*`) | ✅ Complete 2026-06-07 |
+| 2 | `services/profile.py` (basic info; change_password w/ re-auth; request/confirm email change — hashed tokens, rate-limit, sibling invalidation, anti-enumeration, ids-only logs) | ✅ Complete 2026-06-07 |
+| 3 | `routers/profile.py` 5 endpoints (`/api/profile/me`, `/basic`, `/change-password`, `/change-email/request`, `/change-email/confirm` public), self-only RBAC via `get_current_user` | ✅ Complete 2026-06-07 |
+| 4 | Email templates `email_change_verify.html` (to new addr) + `email_changed_notice.html` (to old addr) + `NotificationTemplate` enum + registry specs | ✅ Complete 2026-06-07 |
+| 5 | Frontend: `ProfilePage` (3 RHF+Zod sections) + public `ConfirmEmailChangePage`, `/perfil` + `/confirmar-correo` routes, "Mi perfil" menu link, api/types/hooks | ✅ Complete 2026-06-07 |
+| 6 | Migration `b4c5d6e7f8a9` — creates `email_change_requests` AND merges the 3 prior Alembic heads into one (`8c1d2e3f4a5b`, `a1b2c3d4e5f7`, `a1b2c3d4e5f8`) | ✅ Complete 2026-06-07 |
+| 7 | Tests: 37 backend (service + router + privacy invariants, SQLite) + 25 frontend vitest (a11y axe, 0 violations); clean `tsc` + `ruff` | ✅ Complete 2026-06-07 |
+| 8 | Deploy to Render | ⏳ Pending |
+
+> Deployment pending user approval. Known gap (documented in plan Complexity Tracking):
+> no session/refresh-token revocation after credential change (stateless JWT). Backend
+> MySQL-dependent tests not run here; profile suite verified on SQLite. Migration verified
+> single-head (3-way merge).
+
 ## Development credentials (seed data)
 
 > For local / Docker dev environment only. Never use in production.
@@ -406,3 +431,9 @@ Athlete data for minors is sensitive. Never expose personal data (DOB, medical d
 ## When compressing context
 
 Always preserve: competition calendar, current macrocycle phase, non-negotiable principles, and the Phase 1 data model.
+
+<!-- SPECKIT START -->
+## Active Spec Kit feature
+
+- **004-user-profile** — Implementation plan: `specs/004-user-profile/plan.md`
+<!-- SPECKIT END -->
