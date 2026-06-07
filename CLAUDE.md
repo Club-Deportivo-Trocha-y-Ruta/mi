@@ -435,5 +435,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 ## Active Spec Kit feature
 
-- **004-user-profile** — Implementation plan: `specs/004-user-profile/plan.md`
+- **005-subagent-model-tiers** — Implementation plan: `specs/005-subagent-model-tiers/plan.md`
 <!-- SPECKIT END -->
