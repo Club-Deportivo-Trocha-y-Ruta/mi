@@ -8,6 +8,18 @@
 
 **Input**: User description: "Improve flow, ui/ux to create, edit session."
 
+## Clarifications
+
+### Session 2026-06-07
+
+- Q: Which structure should the create/edit flow use? → A: Stepped wizard (multi-step,
+  reusing the existing ImportWizard stepper pattern; each step validates before advancing)
+- Q: What is the scope of the P3 nice-to-haves (clone session, smart prefills, pre-submit
+  review summary) for this feature? → A: Defer all P3 to a follow-up spec; ship P1+P2 only
+- Q: How should the route file (.gpx/.fit) be attached "in one pass" given the backend
+  only accepts it after the session exists? → A: Client auto-uploads the file to the
+  existing endpoint immediately after the session is created (no new backend contract)
+
 ## User Scenarios & Testing *(mandatory)*
 
 The two product users of this flow are the **coach** (and admin), who plans and edits
@@ -56,11 +68,12 @@ draft is restored. Delivers a reliable, complete create experience on its own.
 
 ### User Story 2 - A guided, mobile-friendly flow with clear validation (Priority: P1)
 
-A coach completes the create/edit flow on a tablet or phone with a clear sense of
-progress and what is required. Required fields are obvious, errors appear inline as the
-coach works (not only as a jarring jump on submit), a persistent summary shows what still
-blocks saving, and all inputs — dates, times, textareas, choice chips, athlete selection —
-are comfortable to use with a finger (≥48 px targets) outdoors.
+A coach completes the create/edit flow on a tablet or phone as a guided, multi-step
+wizard (e.g. General → Athletes → Route & Notes → Review) with a clear sense of progress
+and what is required. Required fields are obvious, errors appear inline as the coach works
+(not only as a jarring jump on submit), each step validates before advancing, a persistent
+summary shows what still blocks saving, and all inputs — dates, times, textareas, choice
+chips, athlete selection — are comfortable to use with a finger (≥48 px targets) outdoors.
 
 **Why this priority**: The flow's clarity and field-usability determine whether a coach
 can actually complete a session at the trailhead. A complete-but-confusing form fails the
@@ -80,9 +93,9 @@ usable mobile/tablet experience independently of the draft and persistence work.
 2. **Given** required fields are still empty or invalid, **When** the coach attempts to
    save, **Then** a persistent, scannable summary lists exactly what remains and focuses/
    reveals the relevant field on selection.
-3. **Given** the flow uses a stepped or progressively disclosed structure, **When** the
-   coach moves between steps/sections, **Then** their orientation (where they are, what's
-   left) is always visible.
+3. **Given** the flow is a multi-step wizard, **When** the coach moves between steps,
+   **Then** their orientation (which step they are on, what's left) is always visible and
+   the current step's required fields are validated before advancing.
 4. **Given** any touch surface, **When** the coach interacts with dates, times,
    textareas, choice chips, and the save/next controls, **Then** every interactive
    target is at least 48×48 px and operable by keyboard with visible focus.
@@ -144,8 +157,9 @@ independently.
 **Acceptance Scenarios**:
 
 1. **Given** the create flow, **When** the coach adds route notes, a Strava link, a route
-   file, and private coach notes, **Then** all are saved with the session in one pass
-   (no mandatory "save first, then attach" round-trip).
+   file, and private coach notes, **Then** all are saved with the session in one pass from
+   the coach's perspective (the route file is auto-uploaded immediately after the session
+   is created, with no manual "save first, then attach" round-trip).
 2. **Given** an invalid Strava link or an unsupported/oversized route file, **When** the
    coach tries to attach it, **Then** a clear localized error explains the problem and
    the rest of the form is preserved.
@@ -159,31 +173,22 @@ independently.
 
 ---
 
-### User Story 5 - Reuse past sessions to plan faster (Priority: P3)
+### Out of Scope (deferred to a follow-up spec)
 
-A coach starting a recurring session can clone a previous session to pre-seed the new one
-(kind, duration, location, focus, called-up athletes, etc.) and adjust, and benefits from
-sensible prefills (e.g. recently used duration/location) and a brief review summary before
-committing a large multi-athlete session.
+The following "reuse past sessions" quality-of-life capabilities were considered but are
+**deferred** (see Clarifications 2026-06-07) so this feature stays focused on the P1/P2
+core and ships sooner. They are valuable for recurring weekly patterns but are not
+required for a correct, complete, usable flow:
 
-**Why this priority**: Pure time-saver / quality-of-life. Valuable for recurring weekly
-patterns but not required for a correct, complete, usable flow. P3 / nice-to-have.
+- **Clone session**: pre-seed a new draft from a previous session (kind, duration,
+  location, focus, called-up athletes), excluding execution/attendance results.
+- **Smart prefills**: offer easily-overridden defaults (e.g. last-used duration/location)
+  when starting a new session.
+- **Pre-submit review summary**: a concise confirmation (date, kind, athlete count,
+  notification choice) before committing a session with many called-up athletes.
 
-**Independent Test**: From an existing session, clone it, confirm fields are pre-seeded
-and editable, adjust, and save as a new session; confirm a review summary appears before
-final submit for a many-athlete session. Delivers planning speed-ups independently.
-
-**Acceptance Scenarios**:
-
-1. **Given** an existing session, **When** the coach chooses "clone", **Then** a new
-   draft is pre-seeded from it (without copying execution/attendance results) and is
-   fully editable before saving.
-2. **Given** the coach has planned recent sessions, **When** they start a new one,
-   **Then** sensible prefills (e.g. last-used duration/location) are offered and easily
-   overridden.
-3. **Given** a session with many called-up athletes, **When** the coach saves, **Then** a
-   concise review summary (date, kind, count of athletes, notification choice) is shown
-   for confirmation before the session is committed.
+These will be captured in a separate follow-up specification and are intentionally not
+included in this feature's requirements or success criteria.
 
 ---
 
@@ -227,9 +232,10 @@ final submit for a many-athlete session. Delivers planning speed-ups independent
   corresponding draft.
 - **FR-005**: Drafts MUST be scoped per user and per flow target (new session vs. a
   specific session id) so they never bleed across users or across unrelated sessions.
-- **FR-006**: The flow MUST present clear progress orientation (a guided/stepped layout
-  or equivalent progressive disclosure) so the coach always knows where they are and what
-  remains.
+- **FR-006**: The flow MUST be a guided, multi-step wizard (reusing the existing
+  ImportWizard stepper pattern) with clear progress orientation so the coach always knows
+  which step they are on and what remains; each step MUST validate its required fields
+  before the coach can advance.
 - **FR-007**: Validation MUST be inline and localized (español neutro, Colombia),
   surfacing errors as the coach progresses rather than only on submit, and MUST NOT let
   native HTML5 validation compete with the form's own validation on the same field.
@@ -249,9 +255,12 @@ final submit for a many-athlete session. Delivers planning speed-ups independent
 - **FR-013**: The flow MUST allow recording route notes and a Strava link, and MUST
   validate the Strava link with a single, consistent rule shared between client and
   server (no divergent rules producing inconsistent acceptance).
-- **FR-014**: The flow MUST allow attaching a route file (e.g. .gpx/.fit) during the same
-  create pass, validating type by content (magic bytes, not extension) and size, and
-  reporting clear errors without losing other form data.
+- **FR-014**: The flow MUST allow attaching a route file (e.g. .gpx/.fit) during the
+  create pass as a single coach action; the file is auto-uploaded to the existing
+  upload endpoint immediately after the session is created (no new create-with-file
+  backend contract). Type MUST be validated by content (magic bytes, not extension) and
+  by size, and any upload error MUST be reported clearly without losing the saved session
+  or other form data.
 - **FR-015**: At save, the coach MUST be able to choose whether to notify parents, and
   the system MUST report clearly whether the notification was sent, distinguishing
   success, send failure (with a retry path), and "no deliverable recipients".
@@ -273,14 +282,9 @@ final submit for a many-athlete session. Delivers planning speed-ups independent
 - **FR-022**: All end-user copy introduced by this flow MUST be in español neutro
   (Colombia) with full diacritics and MUST avoid clinical or judgmental language about
   minors.
-- **FR-023** *(nice-to-have)*: The system SHOULD let a coach clone an existing session to
-  pre-seed a new draft (excluding execution/attendance results), fully editable before
-  saving.
-- **FR-024** *(nice-to-have)*: The system SHOULD offer sensible, easily-overridden
-  prefills (e.g. last-used duration/location) when starting a new session.
-- **FR-025** *(nice-to-have)*: The system SHOULD present a concise review summary (date,
-  kind, athlete count, notification choice) before committing a session with many
-  called-up athletes.
+> Note: The previously listed nice-to-haves (clone session, smart prefills, pre-submit
+> review summary) are **deferred to a follow-up spec** (see Clarifications 2026-06-07 and
+> the "Out of Scope" subsection) and are intentionally not requirements of this feature.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -346,7 +350,12 @@ final submit for a many-athlete session. Delivers planning speed-ups independent
   template content beyond keeping it in español neutro.
 - Drafts are stored on the coach's own device for interruption recovery only; they are not
   synced to the server and are not a substitute for saving.
-- "Clone session", prefills, and the pre-submit review summary are nice-to-haves that may
-  ship after the P1/P2 stories without blocking the core improvement.
+- "Clone session", prefills, and the pre-submit review summary are out of scope for this
+  feature and will be specified separately (see Clarifications 2026-06-07); this feature
+  delivers the P1/P2 stories only.
+- The guided flow is implemented as a multi-step wizard reusing the existing ImportWizard
+  stepper pattern (rather than an enhanced single page or a per-device adaptive layout).
+- The route file is uploaded via the existing upload endpoint immediately after the
+  session is created; no new "create with file" backend endpoint is introduced.
 - Coach and admin are the only roles that can create/edit sessions; parent access remains
   read-only and filtered.
