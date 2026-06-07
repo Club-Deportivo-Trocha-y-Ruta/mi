@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, Link } from "react-router-dom";
 
 import { AthleteSwitcher } from "@/components/parents/AthleteSwitcher";
 import { useAuthStore } from "@/store/auth.store";
@@ -236,13 +236,20 @@ export function AppShell({ children }: AppShellProps) {
             </p>
           </div>
 
-          {/* Right: athlete switcher (parent only) + logout */}
+          {/* Right: athlete switcher (parent only) + Mi perfil + logout */}
           <div className="flex items-center gap-2">
             {isParent && <AthleteSwitcher />}
+            <Link
+              to="/perfil"
+              className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            >
+              Mi perfil
+            </Link>
             <button
               type="button"
               onClick={logout}
-              className="ml-1 shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+              className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
               style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
             >
               Cerrar sesión

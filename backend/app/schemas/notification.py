@@ -34,6 +34,9 @@ class NotificationTemplate(str, Enum):
     # Restablecimiento de contraseña (specs/003-password-reset-login).
     PASSWORD_RESET = "password_reset"
     PASSWORD_CHANGED = "password_changed"
+    # Cambio de correo del perfil (specs/004-user-profile).
+    EMAIL_CHANGE_VERIFY = "email_change_verify"
+    EMAIL_CHANGED_NOTICE = "email_changed_notice"
 
 
 class DocumentTemplate(str, Enum):

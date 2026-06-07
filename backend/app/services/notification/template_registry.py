@@ -328,6 +328,33 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
             "specs/003-password-reset-login."
         ),
     ),
+    NotificationTemplate.EMAIL_CHANGE_VERIFY: EmailTemplateSpec(
+        template_id=NotificationTemplate.EMAIL_CHANGE_VERIFY,
+        # Subject sin nombre ni rol del titular.
+        subject_template="Confirma tu nuevo correo — {{ club_name }}",
+        body_path="email/email_change_verify.html",
+        required_context_keys=frozenset(
+            {
+                "confirm_url",
+                "club_name",
+                "ttl_minutes",
+            }
+        ),
+        description=(
+            "Enlace de un solo uso para confirmar el cambio de correo, enviado a "
+            "la NUEVA dirección. No contiene datos de menores. specs/004-user-profile."
+        ),
+    ),
+    NotificationTemplate.EMAIL_CHANGED_NOTICE: EmailTemplateSpec(
+        template_id=NotificationTemplate.EMAIL_CHANGED_NOTICE,
+        subject_template="Tu correo de acceso fue actualizado — {{ club_name }}",
+        body_path="email/email_changed_notice.html",
+        required_context_keys=frozenset({"club_name"}),
+        description=(
+            "Aviso a la dirección ANTERIOR de que el correo de la cuenta cambió. "
+            "Nunca incluye credenciales ni datos de menores. specs/004-user-profile."
+        ),
+    ),
 }
 
 # ---------------------------------------------------------------------------
