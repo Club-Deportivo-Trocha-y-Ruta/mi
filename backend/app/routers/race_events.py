@@ -2,20 +2,23 @@
 
 Endpoints implementados:
 
-- ``GET    /``                              — listado filtrado con flags derivados.
-- ``GET    /{race_event_id}/results``       — resultados por categoría (coach/admin/parent).
-- ``GET    /{race_event_id}/standings``     — clasificación de temporada (coach/admin/parent).
-- ``POST   /``                             — crea evento vacío (coach + admin).
-- ``PATCH  /{race_event_id}``              — edita metadata (coach + admin).
-- ``DELETE /{race_event_id}``              — borra evento limpio (admin only).
-- ``PATCH  /{race_event_id}/conditions``   — actualiza condiciones de carrera (coach + admin).
+- ``GET    /``                                       — listado filtrado con flags derivados.
+- ``GET    /{race_event_id}/results``                — resultados por categoría (coach/admin/parent).
+- ``GET    /{race_event_id}/standings``              — clasificación de temporada (coach/admin/parent).
+- ``GET    /{race_event_id}/roster``                 — nómina de convocados (coach/admin; parent → solo propios hijos).
+- ``POST   /``                                      — crea evento vacío (coach + admin).
+- ``POST   /{race_event_id}/roster``                — añade atleta a la nómina (coach + admin).
+- ``PATCH  /{race_event_id}``                       — edita metadata (coach + admin).
+- ``PATCH  /{race_event_id}/roster/{entry_id}``     — actualiza entrada de nómina (coach + admin).
+- ``DELETE /{race_event_id}``                       — borra evento limpio (admin only).
+- ``DELETE /{race_event_id}/roster/{entry_id}``     — elimina entrada de nómina (coach + admin).
+- ``PATCH  /{race_event_id}/conditions``            — actualiza condiciones de carrera (coach + admin).
 
 Convenciones:
-- RBAC: coach + admin en escritura. Admin exclusivo para DELETE.
+- RBAC: coach + admin en escritura. Admin exclusivo para DELETE de evento.
 - Parent en lectura con scope reducido a sus propios hijos (FR-030).
 - Update parcial con ``exclude_unset=True``.
-- Sin migración Alembic: todas las columnas ya existen.
-- Privacidad: logs contienen solo IDs — nunca nombres de atletas.
+- Privacidad: logs contienen solo IDs — nunca nombres de atletas (Ley 1581).
 """
 from __future__ import annotations
 
@@ -37,8 +40,10 @@ from app.schemas.race_event import (
 )
 from app.schemas.race_imports import RaceEventConditionsRead, RaceEventConditionsUpdate
 from app.schemas.race_results import EventResultsRead, EventStandingsRead
+from app.schemas.race_roster import RosterEntryCreate, RosterEntryRead, RosterEntryUpdate, RosterRead
 import app.services.race_events as race_events_svc
 import app.services.race.results_read as results_svc
+import app.services.race.roster as roster_svc
 import app.services.race.standings as standings_svc
 from app.services.permissions import allowed_athlete_ids_for
 
@@ -204,6 +209,177 @@ async def get_race_event_standings(
         current_user.id,
     )
     return payload
+
+
+# ---------------------------------------------------------------------------
+# GET /{race_event_id}/roster — Nómina de convocados
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{race_event_id}/roster",
+    response_model=RosterRead,
+    summary="Nómina de convocados para un evento de carrera",
+)
+async def get_race_event_roster(
+    race_event_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role([UserRole.admin, UserRole.coach, UserRole.parent])
+    ),
+) -> RosterRead:
+    """Retorna la nómina de convocados del evento con reconciliación.
+
+    La reconciliación compara la nómina contra los resultados ingestados:
+
+    - ``called_up_no_result``: atletas convocados sin resultado en la válida.
+    - ``result_not_called_up``: atletas con resultado pero no en la nómina.
+
+    Parent: solo ve las entradas de sus propios hijos; reconciliación vacía
+    (FR-030, Ley 1581 — no se expone información de otros menores).
+
+    Códigos de respuesta:
+    - 200: nómina (puede tener ``entries=[]`` si no hay convocados).
+    - 404: evento no existe.
+    - 403: usuario sin rol coach, admin o parent.
+    """
+    scoped = await allowed_athlete_ids_for(current_user, db)
+    payload = await roster_svc.get_roster(
+        db,
+        race_event_id,
+        allowed_athlete_ids=scoped,
+    )
+    logger.info(
+        "race_events_roster_get race_event_id=%s user_id=%s",
+        race_event_id,
+        current_user.id,
+    )
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# POST /{race_event_id}/roster — Añadir atleta a la nómina
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{race_event_id}/roster",
+    response_model=RosterEntryRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Añadir atleta a la nómina de convocados",
+)
+async def add_race_event_roster_entry(
+    race_event_id: int,
+    body: RosterEntryCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> RosterEntryRead:
+    """Añade un atleta del club a la nómina de convocados del evento.
+
+    El atleta debe existir en la tabla ``athletes`` (pertenecer a un club).
+    No puede añadirse el mismo atleta dos veces para el mismo evento.
+
+    Códigos de respuesta:
+    - 201: entrada creada.
+    - 404: evento no existe.
+    - 409: el atleta ya está en la nómina para este evento.
+    - 422: el atleta no existe o no pertenece a ningún club.
+    - 403: usuario sin rol coach o admin.
+    """
+    entry = await roster_svc.add_roster_entry(
+        db,
+        race_event_id,
+        payload=body,
+        created_by_user_id=current_user.id,
+    )
+    logger.info(
+        "race_events_roster_add race_event_id=%s entry_id=%s user_id=%s",
+        race_event_id,
+        entry.id,
+        current_user.id,
+    )
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# PATCH /{race_event_id}/roster/{entry_id} — Actualizar entrada de nómina
+# ---------------------------------------------------------------------------
+
+
+@router.patch(
+    "/{race_event_id}/roster/{entry_id}",
+    response_model=RosterEntryRead,
+    summary="Actualizar una entrada de la nómina",
+)
+async def update_race_event_roster_entry(
+    race_event_id: int,
+    entry_id: int,
+    body: RosterEntryUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> RosterEntryRead:
+    """Actualización parcial del estado y/o nota de una entrada de nómina.
+
+    Solo los campos presentes en el body se aplican; los ausentes conservan
+    su valor.
+
+    Códigos de respuesta:
+    - 200: actualización exitosa.
+    - 404: entrada o evento no existe.
+    - 422: valor fuera de rango.
+    - 403: usuario sin rol coach o admin.
+    """
+    entry = await roster_svc.update_roster_entry(
+        db,
+        race_event_id,
+        entry_id=entry_id,
+        payload=body,
+    )
+    logger.info(
+        "race_events_roster_update race_event_id=%s entry_id=%s user_id=%s",
+        race_event_id,
+        entry_id,
+        current_user.id,
+    )
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{race_event_id}/roster/{entry_id} — Eliminar entrada de nómina
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/{race_event_id}/roster/{entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar entrada de la nómina",
+)
+async def delete_race_event_roster_entry(
+    race_event_id: int,
+    entry_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> None:
+    """Elimina un atleta de la nómina de convocados del evento.
+
+    Coach y admin pueden eliminar entradas.
+
+    Códigos de respuesta:
+    - 204: eliminado correctamente (sin body).
+    - 404: entrada o evento no existe.
+    - 403: usuario sin rol coach o admin.
+    """
+    await roster_svc.delete_roster_entry(
+        db,
+        race_event_id,
+        entry_id=entry_id,
+    )
+    logger.info(
+        "race_events_roster_delete race_event_id=%s entry_id=%s user_id=%s",
+        race_event_id,
+        entry_id,
+        current_user.id,
+    )
 
 
 # ---------------------------------------------------------------------------

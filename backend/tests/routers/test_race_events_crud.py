@@ -68,7 +68,6 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Optional
 
 import pytest
 import pytest_asyncio
@@ -141,6 +140,7 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.race_category import RaceCategory as _C  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
     from app.models.race_event import RaceEvent as _E  # noqa: F401
+    from app.models.race_event_roster import RaceEventRoster as _RER  # noqa: F401
     from app.models.race_import import RaceImport as _I  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
     from app.models.race_series import RaceSeries as _S  # noqa: F401
@@ -160,6 +160,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_categories",
             "race_competitors",
             "race_results",
+            "race_event_roster",
         )
     ]
     async with engine.begin() as conn:

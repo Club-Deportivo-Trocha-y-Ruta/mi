@@ -40,6 +40,7 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.calendar_event import CalendarEvent
+    from app.models.race_event_roster import RaceEventRoster
     from app.models.race_import import RaceImport
     from app.models.race_result import RaceResult
     from app.models.race_series import RaceSeries
@@ -156,4 +157,10 @@ class RaceEvent(Base):
         primaryjoin="RaceEvent.id == RaceResult.event_id",
         secondaryjoin="RaceResult.imported_from_id == RaceImport.id",
         viewonly=True,
+    )
+    roster_entries: Mapped[list["RaceEventRoster"]] = relationship(
+        "RaceEventRoster",
+        back_populates="race_event",
+        foreign_keys="[RaceEventRoster.race_event_id]",
+        cascade="all, delete-orphan",
     )
