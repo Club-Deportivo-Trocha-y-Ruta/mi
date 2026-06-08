@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, RotateCcw } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, RotateCcw, Sparkles } from "lucide-react";
 
 import {
   bulkSetConvocatoria,
@@ -27,6 +27,7 @@ import type {
   TrainingSessionUpdate,
 } from "@/types/trainingSession.types";
 
+import { clearDirtySeeds, type SeededFieldName } from "./ai-assistant/aiSeededFields";
 import { SessionStepper, type WizardStep } from "./SessionStepper";
 import { SessionErrorSummary, type ErrorSummaryItem } from "./SessionErrorSummary";
 import { StepGeneral } from "./StepGeneral";
@@ -70,6 +71,10 @@ export interface SessionWizardProps {
   loadedUpdatedAt?: string;
   /** Solo en edición: ids convocados al cargar (para diff de convocatoria). */
   initialAthleteIds?: number[];
+  /** Campos pre-rellenados por el asistente IA; se muestra un marcador hasta que el entrenador los edite. */
+  aiSeededFields?: Set<string>;
+  /** Justificación generada por el asistente IA (solo lectura); se muestra como aviso informativo. */
+  draftNotes?: string | null;
 }
 
 type SubmitOutcome =
@@ -124,6 +129,8 @@ export function SessionWizard({
   sessionId,
   loadedUpdatedAt,
   initialAthleteIds = [],
+  aiSeededFields,
+  draftNotes,
 }: SessionWizardProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -141,14 +148,39 @@ export function SessionWizard({
     getValues,
     watch,
     reset,
-    formState: { errors },
+    formState: { errors, dirtyFields },
   } = useForm<TrainingSessionFormValues>({
     resolver: zodResolver(trainingSessionCreateSchema),
     mode: "onTouched",
     defaultValues,
   });
 
+  // Track AI-seeded fields; clear markers as the coach edits each field.
+  const [activeSeededFields, setActiveSeededFields] = useState<Set<string>>(
+    aiSeededFields ?? new Set(),
+  );
+  // Keep a stable ref to compare with the previous dirtyFields so we don't
+  // update state on every render — only when something actually becomes dirty.
+  const prevDirtyRef = useRef<typeof dirtyFields>({});
+  useEffect(() => {
+    if (activeSeededFields.size === 0) return;
+    // dirtyFields changes reference on each render but we only care about
+    // new keys being added (coach edits). Compare keys.
+    const prevKeys = Object.keys(prevDirtyRef.current);
+    const currKeys = Object.keys(dirtyFields);
+    if (currKeys.length !== prevKeys.length) {
+      prevDirtyRef.current = dirtyFields;
+      setActiveSeededFields((prev) =>
+        clearDirtySeeds(
+          prev as Set<SeededFieldName>,
+          dirtyFields as Partial<Record<SeededFieldName, unknown>>,
+        ),
+      );
+    }
+  }, [dirtyFields, activeSeededFields.size]);
+
   const [step, setStep] = useState(1);
+  const [notesDismissed, setNotesDismissed] = useState(false);
   const [routeFile, setRouteFile] = useState<File | null>(null);
   const [routeFileError, setRouteFileError] = useState<string | null>(null);
   const [notify, setNotify] = useState(false);
@@ -389,6 +421,30 @@ export function SessionWizard({
         onStepClick={(idx) => setStep(idx)}
       />
 
+      {draftNotes && !notesDismissed && (
+        <div
+          className="mb-4 flex flex-wrap items-start justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900"
+          role="note"
+          aria-label="Justificación del asistente IA"
+          data-testid="assistant-notes-banner"
+        >
+          <div className="flex items-start gap-2">
+            <Sparkles size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>
+              <span className="font-semibold">Sugerencia de la IA:</span>{" "}
+              {draftNotes}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotesDismissed(true)}
+            className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-violet-900 ring-1 ring-violet-200 hover:bg-violet-100"
+          >
+            Entendido
+          </button>
+        </div>
+      )}
+
       {showRestoreBanner && (
         <div
           className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900"
@@ -431,7 +487,12 @@ export function SessionWizard({
           }}
         >
           {step === 1 && (
-            <StepGeneral register={register} control={control} errors={errors} />
+            <StepGeneral
+              register={register}
+              control={control}
+              errors={errors}
+              aiSeededFields={activeSeededFields}
+            />
           )}
           {step === 2 && <StepAthletes control={control} errors={errors} />}
           {step === 3 && (

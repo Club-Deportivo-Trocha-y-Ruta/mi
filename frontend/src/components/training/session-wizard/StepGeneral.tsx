@@ -18,19 +18,38 @@ const inputClass =
 const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 const errorClass = "mt-1 text-xs text-red-600";
 
+/** Small "IA" badge rendered next to a field label when AI pre-filled it. */
+function AiMarker() {
+  return (
+    <span
+      className="ml-1.5 inline-block rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 align-middle"
+      data-testid="ai-marker"
+      aria-label="Sugerido por IA"
+      title="Sugerido por el asistente IA. Edita el campo para personalizar."
+    >
+      IA
+    </span>
+  );
+}
+
 interface StepGeneralProps {
   register: UseFormRegister<TrainingSessionFormValues>;
   control: Control<TrainingSessionFormValues>;
   errors: FieldErrors<TrainingSessionFormValues>;
+  /** Fields pre-filled by the AI assistant; shows a marker that clears on edit. */
+  aiSeededFields?: Set<string>;
 }
 
-export function StepGeneral({ register, control, errors }: StepGeneralProps) {
+export function StepGeneral({ register, control, errors, aiSeededFields }: StepGeneralProps) {
+  const seeded = aiSeededFields ?? new Set<string>();
+
   return (
     <div className="space-y-4" data-testid="session-step-general">
       <div className="grid gap-4 sm:grid-cols-[180px_180px] justify-start">
         <div>
           <label htmlFor="scheduled_date-input" className={labelClass}>
             Fecha
+            {seeded.has("scheduled_date") && <AiMarker />}
           </label>
           <input
             id="scheduled_date-input"
@@ -50,6 +69,7 @@ export function StepGeneral({ register, control, errors }: StepGeneralProps) {
         <div>
           <label htmlFor="scheduled_start_time-input" className={labelClass}>
             Hora de inicio
+            {seeded.has("scheduled_start_time") && <AiMarker />}
           </label>
           <input
             id="scheduled_start_time-input"
@@ -72,6 +92,12 @@ export function StepGeneral({ register, control, errors }: StepGeneralProps) {
 
       <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-start">
         <div className="sm:max-w-[260px]">
+          {seeded.has("duration_min") && (
+            <div className="mb-0.5 flex items-center gap-1">
+              <AiMarker />
+              <span className="sr-only">Campo sugerido por el asistente IA</span>
+            </div>
+          )}
           <Controller
             name="duration_min"
             control={control}
@@ -87,6 +113,7 @@ export function StepGeneral({ register, control, errors }: StepGeneralProps) {
         <div>
           <label htmlFor="location-input" className={labelClass}>
             Lugar
+            {seeded.has("location") && <AiMarker />}
           </label>
           <input
             id="location-input"
@@ -109,6 +136,7 @@ export function StepGeneral({ register, control, errors }: StepGeneralProps) {
       <div>
         <label htmlFor="technical_focus-input" className={labelClass}>
           Foco técnico
+          {seeded.has("technical_focus") && <AiMarker />}
         </label>
         <input
           id="technical_focus-input"
@@ -130,6 +158,7 @@ export function StepGeneral({ register, control, errors }: StepGeneralProps) {
       <div>
         <label htmlFor="description-input" className={labelClass}>
           Descripción
+          {seeded.has("description") && <AiMarker />}
         </label>
         <textarea
           id="description-input"
@@ -152,6 +181,7 @@ export function StepGeneral({ register, control, errors }: StepGeneralProps) {
       <div>
         <span className={labelClass} id="session_kind-label">
           Tipo de sesión
+          {seeded.has("session_kind") && <AiMarker />}
         </span>
         <Controller
           name="session_kind"
@@ -186,6 +216,7 @@ export function StepGeneral({ register, control, errors }: StepGeneralProps) {
         <label htmlFor="objectives-input" className={labelClass}>
           Objetivos de la sesión{" "}
           <span className="font-normal text-mid-gray">(opcional)</span>
+          {seeded.has("objectives") && <AiMarker />}
         </label>
         <textarea
           id="objectives-input"

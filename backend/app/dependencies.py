@@ -259,3 +259,23 @@ def get_anthropometric_record_explainer_use_case(
         context_builder=AthleteAIContextBuilder(),
     )
 
+
+def get_session_clarify_use_case(
+    provider=Depends(get_llm_provider),
+    registry=Depends(get_prompt_registry),
+):
+    """Construye el use case para generar preguntas de clarificación de sesión (feature 006)."""
+    from app.services.ai.use_cases.session_assistant import SessionClarifyUseCase
+
+    return SessionClarifyUseCase(provider=provider, registry=registry)
+
+
+def get_session_draft_use_case(
+    provider=Depends(get_llm_provider),
+    registry=Depends(get_prompt_registry),
+):
+    """Construye el use case para generar borrador de sesión (feature 006)."""
+    from app.services.ai.use_cases.session_assistant import SessionDraftUseCase
+
+    return SessionDraftUseCase(provider=provider, registry=registry)
+
