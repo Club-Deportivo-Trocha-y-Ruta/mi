@@ -193,6 +193,11 @@ async def get_roster(
 
     entries = [_entry_to_read(e) for e in entries_orm]
 
+    # Privacy (Ley 1581): the free-text `note` is a coach planning field that
+    # could mention another athlete. Parents (scoped reads) never receive it.
+    if allowed_athlete_ids is not None:
+        entries = [e.model_copy(update={"note": None}) for e in entries]
+
     # Reconciliation is only meaningful for the full (coach/admin) view.
     if allowed_athlete_ids is None:
         roster_ids = {e.athlete_id for e in entries_orm}

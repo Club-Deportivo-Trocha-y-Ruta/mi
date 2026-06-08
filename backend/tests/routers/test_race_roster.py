@@ -520,6 +520,27 @@ async def test_get_roster_parent_other_child_filtered(parent_client_roster):
     assert 21 not in ids  # athlete 21 belongs to no parent user=5
 
 
+@pytest.mark.asyncio
+async def test_get_roster_parent_note_stripped(parent_client_roster, db_session_factory):
+    """Privacy (Ley 1581): the coach planning `note` is never exposed to a parent,
+    even on the parent's own child — a coach could mention another athlete there."""
+    from sqlalchemy import update as _update
+
+    async with db_session_factory() as session:
+        await session.execute(
+            _update(RaceEventRoster)
+            .where(RaceEventRoster.athlete_id == 20)
+            .values(note="dato sensible del coach")
+        )
+        await session.commit()
+
+    resp = await parent_client_roster.get(_ROSTER_URL.format(event_id=100))
+    assert resp.status_code == 200
+    own = [e for e in resp.json()["entries"] if e["athlete_id"] == 20]
+    assert len(own) == 1
+    assert own[0]["note"] is None  # stripped for parent scope
+
+
 # ---------------------------------------------------------------------------
 # Test: POST /roster
 # ---------------------------------------------------------------------------
