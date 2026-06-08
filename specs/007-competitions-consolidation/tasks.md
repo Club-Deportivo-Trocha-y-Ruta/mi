@@ -150,12 +150,12 @@ description: "Task list for 007-competitions-consolidation"
 **Independent Test**: All insight scopes reachable inside `/competitions`; parent 403; no minor names in output; old links return 410; no orphaned pages.
 
 ### Tests
-- [ ] T048 [P] [US6] **Property/privacy** test: AI narratives (round/club/season) contain no minor names (`forbidden_names` enforced; `[]` for global) — @data-privacy-guard
-- [ ] T049 [P] [US6] vitest: legacy routes now 410; bundle baseline ≤ Wave-B chunk — @qa-engineer
+- [X] T048 [P] [US6] **Property/privacy** test: AI narratives (round/club/season) contain no minor names (`forbidden_names` enforced; `[]` for global) — @data-privacy-guard
+- [X] T049 [P] [US6] vitest: legacy routes now 410; bundle baseline ≤ Wave-B chunk — @qa-engineer
 
 ### Implementation
-- [ ] T050 [US6] Finalize `InsightsTab` + `/competitions/insights/{athletes/:id,club,season/:year}` placement (reuse hooks, no duplication) — @react-ui-engineer
-- [ ] T051 [US6] Remove `RaceAnalysisPage.tsx` + `ClubInsightsByRacePage.tsx` + transitional barrels; switch redirects 301→410 — @react-ui-engineer
+- [X] T050 [US6] Finalize `InsightsTab` + `/competitions/insights/{athletes/:id,club,season/:year}` placement (reuse hooks, no duplication) — @react-ui-engineer
+- [X] T051 [US6] Remove `RaceAnalysisPage.tsx` + `ClubInsightsByRacePage.tsx` + transitional barrels; switch redirects 301→410 — @react-ui-engineer
 
 **Checkpoint**: All stories functional; single module.
 
