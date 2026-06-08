@@ -27,6 +27,7 @@ import type {
   TrainingSessionUpdate,
 } from "@/types/trainingSession.types";
 
+import { clearDirtySeeds, type SeededFieldName } from "./ai-assistant/aiSeededFields";
 import { SessionStepper, type WizardStep } from "./SessionStepper";
 import { SessionErrorSummary, type ErrorSummaryItem } from "./SessionErrorSummary";
 import { StepGeneral } from "./StepGeneral";
@@ -70,6 +71,8 @@ export interface SessionWizardProps {
   loadedUpdatedAt?: string;
   /** Solo en edición: ids convocados al cargar (para diff de convocatoria). */
   initialAthleteIds?: number[];
+  /** Campos pre-rellenados por el asistente IA; se muestra un marcador hasta que el entrenador los edite. */
+  aiSeededFields?: Set<string>;
 }
 
 type SubmitOutcome =
@@ -124,6 +127,7 @@ export function SessionWizard({
   sessionId,
   loadedUpdatedAt,
   initialAthleteIds = [],
+  aiSeededFields,
 }: SessionWizardProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -141,12 +145,36 @@ export function SessionWizard({
     getValues,
     watch,
     reset,
-    formState: { errors },
+    formState: { errors, dirtyFields },
   } = useForm<TrainingSessionFormValues>({
     resolver: zodResolver(trainingSessionCreateSchema),
     mode: "onTouched",
     defaultValues,
   });
+
+  // Track AI-seeded fields; clear markers as the coach edits each field.
+  const [activeSeededFields, setActiveSeededFields] = useState<Set<string>>(
+    aiSeededFields ?? new Set(),
+  );
+  // Keep a stable ref to compare with the previous dirtyFields so we don't
+  // update state on every render — only when something actually becomes dirty.
+  const prevDirtyRef = useRef<typeof dirtyFields>({});
+  useEffect(() => {
+    if (activeSeededFields.size === 0) return;
+    // dirtyFields changes reference on each render but we only care about
+    // new keys being added (coach edits). Compare keys.
+    const prevKeys = Object.keys(prevDirtyRef.current);
+    const currKeys = Object.keys(dirtyFields);
+    if (currKeys.length !== prevKeys.length) {
+      prevDirtyRef.current = dirtyFields;
+      setActiveSeededFields((prev) =>
+        clearDirtySeeds(
+          prev as Set<SeededFieldName>,
+          dirtyFields as Partial<Record<SeededFieldName, unknown>>,
+        ),
+      );
+    }
+  }, [dirtyFields, activeSeededFields.size]);
 
   const [step, setStep] = useState(1);
   const [routeFile, setRouteFile] = useState<File | null>(null);
@@ -431,7 +459,12 @@ export function SessionWizard({
           }}
         >
           {step === 1 && (
-            <StepGeneral register={register} control={control} errors={errors} />
+            <StepGeneral
+              register={register}
+              control={control}
+              errors={errors}
+              aiSeededFields={activeSeededFields}
+            />
           )}
           {step === 2 && <StepAthletes control={control} errors={errors} />}
           {step === 3 && (

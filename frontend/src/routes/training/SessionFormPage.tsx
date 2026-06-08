@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useLocation } from "react-router-dom";
 
 import { SessionWizard } from "@/components/training/session-wizard/SessionWizard";
 import {
@@ -7,6 +7,7 @@ import {
   useTrainingSession,
 } from "@/api/trainingSessions";
 import type { TrainingSessionFormValues } from "@/schemas/trainingSession.schema";
+import type { AssistantDraftState } from "@/routes/training/SessionAssistantPage";
 
 interface SessionFormPageProps {
   mode: "create" | "edit";
@@ -29,8 +30,15 @@ const EMPTY_DEFAULTS: TrainingSessionFormValues = {
 
 export function SessionFormPage({ mode }: SessionFormPageProps) {
   const { id } = useParams();
+  const location = useLocation();
   const sessionId = Number(id);
   const isEdit = mode === "edit";
+
+  // AI assistant draft handoff via router state
+  const assistantState =
+    !isEdit && (location.state as AssistantDraftState | null)?.fromAssistant
+      ? (location.state as AssistantDraftState)
+      : null;
 
   const sessionQuery = useTrainingSession(sessionId, isEdit);
   const attendanceQuery = useSessionAttendance(sessionId, isEdit);
@@ -39,6 +47,8 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
     !isEdit || (!!sessionQuery.data && !!attendanceQuery.data);
 
   const defaults = useMemo<TrainingSessionFormValues>(() => {
+    // AI assistant draft takes priority for create mode
+    if (assistantState) return assistantState.draftValues;
     if (!isEdit || !sessionQuery.data) return EMPTY_DEFAULTS;
     const s = sessionQuery.data;
     return {
@@ -55,7 +65,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
       coach_notes: s.coach_notes ?? "",
       convocados_athlete_ids: (attendanceQuery.data ?? []).map((a) => a.athlete_id),
     };
-  }, [isEdit, sessionQuery.data, attendanceQuery.data]);
+  }, [isEdit, sessionQuery.data, attendanceQuery.data, assistantState]);
 
   if (isEdit && (sessionQuery.isLoading || attendanceQuery.isLoading)) {
     return (
@@ -110,6 +120,11 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
           sessionId={isEdit ? sessionId : undefined}
           loadedUpdatedAt={isEdit ? sessionQuery.data?.updated_at : undefined}
           initialAthleteIds={defaults.convocados_athlete_ids}
+          aiSeededFields={
+            assistantState
+              ? new Set(assistantState.seededFields)
+              : undefined
+          }
         />
       )}
     </section>

@@ -14,6 +14,13 @@ const ConfirmEmailChangePage = lazy(() =>
   })),
 );
 
+// AI Session Assistant (lazy — coach/admin only)
+const SessionAssistantPage = lazy(() =>
+  import("@/routes/training/SessionAssistantPage").then((m) => ({
+    default: m.SessionAssistantPage,
+  })),
+);
+
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
 import { setQueryClient } from "@/lib/queryClientHandle";
 import { landingPathForRole } from "@/lib/landing";
@@ -200,6 +207,22 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <SessionsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/sessions/assistant"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando asistente IA...
+                  </div>
+                }
+              >
+                <SessionAssistantPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
