@@ -342,6 +342,22 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 > (no DB-dependent paths). Provider-native structured output and multi-round clarification
 > deliberately out of scope (fast-follows).
 
+## Implementation status — Unified Competitions Module (specs/007-competitions-consolidation)
+
+> Consolidates `/competitions` CRUD and `/coach/race-analysis` AI module into one `/competitions` area. Adds read endpoints for per-event results and season standings, call-up roster (`race_event_roster`), stale-analysis marking on re-ingest, bidirectional 1:1 calendar sync, and AI insights relocation. Delivered in 6 independently shippable waves. Technical detail in `docs/12-competitions-unification/` and `specs/007-competitions-consolidation/`.
+
+| Step | Description | Status |
+|---|---|---|
+| Wave A | `GET /api/race-events/{id}/results` + `/standings` (per-event finishing table + season standings from `season_standings` view; `is_our_club` highlight; parent row-scoping); `ResultsTab` + `StandingsTab` with shadcn Table primitive, category filter, "solo mi club" toggle | ✅ Complete 2026-06-08 |
+| Wave B | Single "Competencias" sidebar; AI analysis reachable only inside `/competitions/*`; `<Navigate>` redirects for `/coach/race-analysis` → `/competitions/insights` and `/training/races/:id/club-insights` → `/competitions/:id?tab=insights` (410 flip deferred post-deploy) | ✅ Complete 2026-06-08 |
+| Wave C | `race_event_roster` table + migration `e5f6a7b8c9d0` (status enum `called_up\|confirmed\|withdrawn`, UNIQUE per event+athlete); 4 roster endpoints on `race_events` router; `RosterPanel` with reconciliation (called-up-no-result / result-not-called-up) | ✅ Complete 2026-06-08 |
+| Wave D | On changed-PDF re-ingest: sets `agent_runs.stale_since`; marks `AthleteMonthlyNewsletter` outdated; no auto re-run/resend; `StaleAnalysisBadge` surfaced in frontend | ✅ Complete 2026-06-08 |
+| Wave E | `calendar_sync` service (`create_linked` / `propagate` / `link_existing`); `create_calendar_event` checkbox on create (default on); PATCH propagation (date/name/location/cancellation); `POST /{id}/calendar-link`; BigInteger.with_variant SQLite fix for calendar PK | ✅ Complete 2026-06-08 |
+| Wave F | AI privacy invariant tests; confirmed no duplicate insights pages; insights placement finalized inside `/competitions/*` | ✅ Complete 2026-06-08 |
+| Deploy | Deploy to Render + 410 flip for legacy redirects | ⏳ Pending |
+
+> Deployment pending coach approval. 410 flip for legacy redirects is a post-deploy follow-up (one release cycle, per D7).
+
 ## Development credentials (seed data)
 
 > For local / Docker dev environment only. Never use in production.
