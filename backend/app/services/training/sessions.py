@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import enum
 import hashlib
 import logging
 from datetime import date, datetime, time, timedelta, timezone
@@ -64,6 +65,8 @@ _FIELD_LABELS: dict[str, str] = {
     "location": "Lugar",
     "technical_focus": "Foco técnico",
     "description": "Descripción",
+    "session_kind": "Tipo de sesión",
+    "objectives": "Objetivos",
     "route_text": "Recorrido",
     "strava_url": "Link Strava",
     "coach_notes": "Notas del entrenador",
@@ -74,6 +77,8 @@ def _humanize(value: Any) -> str:
     """Convierte un valor del modelo a texto legible para el email."""
     if value is None or value == "":
         return "—"
+    if isinstance(value, enum.Enum):
+        return str(value.value)
     if isinstance(value, date) and not isinstance(value, datetime):
         return value.strftime("%d/%m/%Y")
     if isinstance(value, time):
@@ -127,7 +132,12 @@ async def create_session(
         route_text=payload.route_text,
         strava_url=str(payload.strava_url) if payload.strava_url else None,
         coach_notes=payload.coach_notes,
+        objectives=payload.objectives,
     )
+    # session_kind tiene server_default en el modelo; solo lo fijamos si el
+    # coach lo envió explícitamente, para no pisar el default con None.
+    if payload.session_kind is not None:
+        session.session_kind = payload.session_kind
     db.add(session)
     await db.flush()  # obtener session.id antes de crear asistencias
 

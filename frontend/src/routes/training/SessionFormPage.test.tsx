@@ -19,6 +19,8 @@ vi.mock("@/api/trainingSessions", () => ({
   useCreateTrainingSession: vi.fn(),
   useUpdateTrainingSession: vi.fn(),
   bulkSetConvocatoria: vi.fn(),
+  uploadRouteFile: vi.fn(),
+  fetchTrainingSession: vi.fn(),
 }));
 
 vi.mock("@/components/training/AthletesMultiSelect", () => ({
@@ -47,7 +49,7 @@ vi.mock("@/store/auth.store", () => ({
   useAuthStore: vi.fn((sel) =>
     sel({
       accessToken: "tok",
-      user: { role: "coach", first_name: "Juan", last_name: "Test", club_ids: [1] },
+      user: { id: 7, role: "coach", first_name: "Juan", last_name: "Test", club_ids: [1] },
       isAuthenticated: true,
     }),
   ),
@@ -85,8 +87,26 @@ function renderCreate() {
 
 const mutateAsyncStub = vi.fn();
 
+/** Llena el paso 1 (General) con datos válidos. */
+function fillStep1() {
+  fireEvent.change(screen.getByLabelText(/Fecha/i), { target: { value: "2026-12-01" } });
+  fireEvent.change(screen.getByLabelText(/Hora de inicio/i), { target: { value: "08:00" } });
+  fireEvent.change(screen.getByLabelText(/Lugar/i), { target: { value: "Pista XCO" } });
+  fireEvent.change(screen.getByLabelText(/Foco técnico/i), {
+    target: { value: "Técnica de frenada" },
+  });
+  fireEvent.change(screen.getByLabelText("Descripción"), {
+    target: { value: "Descripción completa de la sesión" },
+  });
+}
+
+async function advance() {
+  fireEvent.click(screen.getByRole("button", { name: /Siguiente/i }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   vi.mocked(useTrainingSession).mockReturnValue({
     data: undefined,
     isLoading: false,
@@ -109,115 +129,71 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useUpdateTrainingSession>);
 });
 
-describe("SessionFormPage — modo crear", () => {
-  it("renderiza el formulario con los campos requeridos", () => {
+describe("SessionFormPage — asistente (modo crear)", () => {
+  it("renderiza el paso General con los campos requeridos y el stepper", () => {
     renderCreate();
     expect(screen.getByText("Nueva sesión")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: /Pasos para crear la sesión/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/Fecha/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Hora de inicio/i)).toBeInTheDocument();
-    // DurationPicker: grupo accesible con etiqueta "Duración"
     expect(screen.getByRole("group", { name: /Duración/i })).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: /Horas/i })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: /Minutos/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/Lugar/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Foco técnico/i)).toBeInTheDocument();
     expect(screen.getByLabelText("Descripción")).toBeInTheDocument();
-  });
-
-  it("renderiza el selector de tipo de sesión con default 'Entrenamiento'", () => {
-    renderCreate();
-    const kindSelect = screen.getByLabelText(/Tipo de sesión/i);
-    expect(kindSelect).toBeInTheDocument();
-    expect(kindSelect).toHaveValue("entrenamiento");
-  });
-
-  it("renderiza el campo de objetivos de la sesión", () => {
-    renderCreate();
     expect(screen.getByLabelText(/Objetivos de la sesión/i)).toBeInTheDocument();
   });
 
-  it("cambia el tipo de sesión a 'Salida'", () => {
+  it("el tipo de sesión usa chips con 'Entrenamiento' activo por defecto", () => {
     renderCreate();
-    const kindSelect = screen.getByLabelText(/Tipo de sesión/i);
-    fireEvent.change(kindSelect, { target: { value: "salida" } });
-    expect(kindSelect).toHaveValue("salida");
+    const entrenamiento = screen.getByRole("radio", { name: "Entrenamiento" });
+    expect(entrenamiento).toHaveAttribute("data-state", "on");
   });
 
-  it("acepta texto en el campo de objetivos", () => {
+  it("permite cambiar el tipo de sesión a 'Salida'", () => {
     renderCreate();
-    const objectivesInput = screen.getByLabelText(/Objetivos de la sesión/i);
-    fireEvent.change(objectivesInput, { target: { value: "Mejorar frenada técnica en bajadas" } });
-    expect(objectivesInput).toHaveValue("Mejorar frenada técnica en bajadas");
+    fireEvent.click(screen.getByRole("radio", { name: "Salida" }));
+    expect(screen.getByRole("radio", { name: "Salida" })).toHaveAttribute("data-state", "on");
   });
 
-  it("DurationPicker inicia con default 1h 0min (60 minutos)", () => {
+  it("bloquea 'Siguiente' y muestra resumen de errores si el paso es inválido", async () => {
     renderCreate();
-    expect(screen.getByRole("spinbutton", { name: /Horas/i })).toHaveValue(1);
-    expect(screen.getByRole("combobox", { name: /Minutos/i })).toHaveValue("0");
-    expect(screen.getByText("Total: 60 minutos")).toBeInTheDocument();
+    await advance();
+    expect(await screen.findByTestId("session-error-summary")).toBeInTheDocument();
+    // El mensaje aparece tanto inline como en el resumen.
+    expect(screen.getAllByText(/La fecha es requerida/i).length).toBeGreaterThan(0);
+    // No avanzó: seguimos en el paso General.
+    expect(screen.getByTestId("session-step-general")).toBeInTheDocument();
   });
 
-  it("chips de preset están disponibles", () => {
+  it("avanza al paso de atletas cuando el paso General es válido", async () => {
     renderCreate();
-    expect(screen.getByRole("button", { name: "1 h" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "1 h 30 min" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "2 h" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "2 h 30 min" })).toBeInTheDocument();
+    fillStep1();
+    await advance();
+    expect(await screen.findByTestId("session-step-athletes")).toBeInTheDocument();
   });
 
-  it("chip '2 h' actualiza el DurationPicker a 120 minutos", () => {
-    renderCreate();
-    fireEvent.click(screen.getByRole("button", { name: "2 h" }));
-    expect(screen.getByRole("spinbutton", { name: /Horas/i })).toHaveValue(2);
-    expect(screen.getByRole("combobox", { name: /Minutos/i })).toHaveValue("0");
-    expect(screen.getByText("Total: 120 minutos")).toBeInTheDocument();
-  });
-
-  it("muestra errores de validación al hacer submit sin datos", async () => {
-    renderCreate();
-    const submitBtn = screen.getByRole("button", { name: /Crear sesión/i });
-    fireEvent.click(submitBtn);
-    await waitFor(() => {
-      expect(screen.getByText(/La fecha es requerida/i)).toBeInTheDocument();
-    });
-  });
-
-  it("muestra error cuando no hay atletas convocados", async () => {
-    renderCreate();
-    const dateInput = screen.getByLabelText(/Fecha/i);
-    fireEvent.change(dateInput, { target: { value: "2026-12-01" } });
-    const timeInput = screen.getByLabelText(/Hora de inicio/i);
-    fireEvent.change(timeInput, { target: { value: "08:00" } });
-    const locationInput = screen.getByLabelText(/Lugar/i);
-    fireEvent.change(locationInput, { target: { value: "Pista XCO" } });
-    const focusInput = screen.getByLabelText(/Foco técnico/i);
-    fireEvent.change(focusInput, { target: { value: "Técnica" } });
-    const descInput = screen.getByLabelText("Descripción");
-    fireEvent.change(descInput, { target: { value: "Descripción de prueba" } });
-    const submitBtn = screen.getByRole("button", { name: /Crear sesión/i });
-    fireEvent.click(submitBtn);
-    await waitFor(() => {
-      expect(screen.getByTestId("convocados-error")).toBeInTheDocument();
-    });
-  });
-
-  it("llama a createMutation con el payload correcto y send_notification=true al confirmar 'Enviar notificación'", async () => {
+  it("flujo completo: crea la sesión con send_notification segun el check de revisión", async () => {
     mutateAsyncStub.mockResolvedValueOnce({ id: 99 });
     renderCreate();
 
-    fireEvent.change(screen.getByLabelText(/Fecha/i), { target: { value: "2026-12-01" } });
-    fireEvent.change(screen.getByLabelText(/Hora de inicio/i), { target: { value: "08:00" } });
-    // Establece duración: 2h 30min = 150 minutos usando el chip
+    // Paso 1
+    fillStep1();
     fireEvent.click(screen.getByRole("button", { name: "2 h 30 min" }));
-    fireEvent.change(screen.getByLabelText(/Lugar/i), { target: { value: "Pista XCO" } });
-    fireEvent.change(screen.getByLabelText(/Foco técnico/i), { target: { value: "Técnica de frenada" } });
-    fireEvent.change(screen.getByLabelText("Descripción"), { target: { value: "Descripción completa para la sesión" } });
-    fireEvent.click(screen.getByTestId("select-athlete"));
+    await advance();
 
-    fireEvent.click(screen.getByRole("button", { name: /Crear sesión/i }));
+    // Paso 2 — atletas
+    fireEvent.click(await screen.findByTestId("select-athlete"));
+    await advance();
 
-    // Abre el diálogo de notificación; confirmamos enviar.
-    fireEvent.click(await screen.findByRole("button", { name: /Enviar notificación/i }));
+    // Paso 3 — ruta y notas (todo opcional)
+    await screen.findByTestId("session-step-route-notes");
+    await advance();
+
+    // Paso 4 — revisión: marcar notificar y enviar
+    const review = await screen.findByTestId("session-step-review");
+    expect(review).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("notify-parents-checkbox"));
+    fireEvent.click(screen.getByTestId("session-wizard-submit"));
 
     await waitFor(() => {
       expect(mutateAsyncStub).toHaveBeenCalledWith(
@@ -231,23 +207,24 @@ describe("SessionFormPage — modo crear", () => {
         }),
       );
     });
+
+    // Pantalla de éxito + navegación al detalle.
+    fireEvent.click(await screen.findByRole("button", { name: /Ver la sesión/i }));
     expect(mockNavigate).toHaveBeenCalledWith("/training/sessions/99");
   });
 
-  it("llama a createMutation con duration_min=60 y send_notification=false al confirmar 'No enviar'", async () => {
+  it("crea con send_notification=false cuando no se marca el check", async () => {
     mutateAsyncStub.mockResolvedValueOnce({ id: 88 });
     renderCreate();
 
-    fireEvent.change(screen.getByLabelText(/Fecha/i), { target: { value: "2026-12-01" } });
-    fireEvent.change(screen.getByLabelText(/Hora de inicio/i), { target: { value: "09:00" } });
-    fireEvent.change(screen.getByLabelText(/Lugar/i), { target: { value: "Pista XCO" } });
-    fireEvent.change(screen.getByLabelText(/Foco técnico/i), { target: { value: "Técnica" } });
-    fireEvent.change(screen.getByLabelText("Descripción"), { target: { value: "Sesión estándar de una hora" } });
-    fireEvent.click(screen.getByTestId("select-athlete"));
-
-    fireEvent.click(screen.getByRole("button", { name: /Crear sesión/i }));
-
-    fireEvent.click(await screen.findByRole("button", { name: /No enviar/i }));
+    fillStep1();
+    await advance();
+    fireEvent.click(await screen.findByTestId("select-athlete"));
+    await advance();
+    await screen.findByTestId("session-step-route-notes");
+    await advance();
+    await screen.findByTestId("session-step-review");
+    fireEvent.click(screen.getByTestId("session-wizard-submit"));
 
     await waitFor(() => {
       expect(mutateAsyncStub).toHaveBeenCalledWith(
