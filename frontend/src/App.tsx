@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Profile module (lazy — all authenticated roles)
@@ -64,7 +64,6 @@ import { ForgotPasswordPage } from "@/routes/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/routes/auth/ResetPasswordPage";
 import { PrivacyPage } from "@/routes/PrivacyPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
-import { GonePage } from "@/routes/GonePage";
 import { SessionsListPage } from "@/routes/training/SessionsListPage";
 import { SessionFormPage } from "@/routes/training/SessionFormPage";
 import { SessionDetailPage } from "@/routes/training/SessionDetailPage";
@@ -100,6 +99,16 @@ const queryClient = new QueryClient({
 // auth store (Zustand) pueda invocar `queryClient.clear()` en logout()
 // y evitar fugas de cache entre cuentas en máquinas compartidas.
 setQueryClient(queryClient);
+
+/** Wave B — redirect 301: /training/races/:raceEventId/club-insights
+ *  → /competitions/:raceEventId?tab=insights
+ *  Wave F sustituirá esto por GonePage (410). */
+function ClubInsightsRedirect() {
+  const { raceEventId } = useParams<{ raceEventId: string }>();
+  return (
+    <Navigate to={`/competitions/${raceEventId}?tab=insights`} replace />
+  );
+}
 
 function RootRedirect() {
   const user = useAuthStore((s) => s.user);
@@ -358,15 +367,12 @@ export default function App() {
           }
         />
 
-        {/* ── PR7 (D7): legacy club-insights deprecado definitivamente (410).
-              Tras un ciclo completo con redirect 301, ahora muestra GonePage. ── */}
+        {/* ── Wave B (D7): /training/races/:id/club-insights → redirect 301.
+              Permanece activo durante la transición (Wave B – Wave F);
+              en Wave F se sustituirá por GonePage (410). ── */}
         <Route
           path="/training/races/:raceEventId/club-insights"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <GonePage />
-            </ProtectedRoute>
-          }
+          element={<ClubInsightsRedirect />}
         />
 
         {/* ── Competencias (coach/admin) ── */}
@@ -507,15 +513,12 @@ export default function App() {
           }
         />
 
-        {/* ── PR7 (D7): ruta legacy del módulo IA deprecada definitivamente (410).
-              Tras un ciclo completo con redirect 301, ahora muestra GonePage. ── */}
+        {/* ── Wave B (D7): /coach/race-analysis → redirect 301 hacia el hub IA.
+              Permanece activo durante la transición (Wave B – Wave F);
+              en Wave F se sustituirá por GonePage (410). ── */}
         <Route
           path="/coach/race-analysis"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <GonePage />
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/competitions/insights" replace />}
         />
 
         {/* ── Perfil de usuario (todos los roles autenticados) ── */}

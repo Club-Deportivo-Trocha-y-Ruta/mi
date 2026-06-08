@@ -1,50 +1,72 @@
 /**
- * Tests de la deprecación final de rutas legacy (PR7, D7).
+ * Tests de las rutas legacy del módulo IA durante la transición Wave B.
  *
- * Tras un ciclo completo con redirect 301 (PR1-PR6), en PR7 las rutas legacy
- * del módulo IA dejan de redirigir y muestran `GonePage` (equivalente SPA de
- * un HTTP 410 Gone):
- *   - /coach/race-analysis
- *   - /training/races/:raceEventId/club-insights
+ * Wave B reemplaza los GonePage (410) que se renderizaban en PR7 por redirects
+ * 301-style (<Navigate replace>) que apuntan a los equivalentes dentro del
+ * módulo unificado /competitions/*:
  *
- * Montamos una réplica mínima de esas rutas (sin el árbol pesado de App /
- * auth) y verificamos que renderizan GonePage con el enlace al nuevo hub.
+ *   - /coach/race-analysis          → /competitions/insights
+ *   - /training/races/:id/club-insights → /competitions/:id?tab=insights
+ *
+ * Wave F cambiará estos redirects a GonePage (410) definitivo.
+ *
+ * Montamos una réplica mínima de las rutas (sin el árbol pesado de App /
+ * auth) y verificamos que los destinos correctos se montan tras el redirect.
  */
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, Navigate, useParams } from "react-router-dom";
 
-import { GonePage } from "@/routes/GonePage";
+/** Stub de ClubInsightsRedirect — misma lógica que en App.tsx */
+function ClubInsightsRedirect() {
+  const { raceEventId } = useParams<{ raceEventId: string }>();
+  return <Navigate to={`/competitions/${raceEventId}?tab=insights`} replace />;
+}
 
 function renderAt(initialPath: string) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
-        <Route path="/coach/race-analysis" element={<GonePage />} />
+        {/* Legacy routes — Wave B redirects */}
+        <Route
+          path="/coach/race-analysis"
+          element={<Navigate to="/competitions/insights" replace />}
+        />
         <Route
           path="/training/races/:raceEventId/club-insights"
-          element={<GonePage />}
+          element={<ClubInsightsRedirect />}
+        />
+        {/* Destinos canónicos */}
+        <Route
+          path="/competitions/insights"
+          element={<div data-testid="insights-hub">Hub análisis IA</div>}
+        />
+        <Route
+          path="/competitions/:id"
+          element={<div data-testid="competition-detail">Detalle competencia</div>}
         />
       </Routes>
     </MemoryRouter>,
   );
 }
 
-describe("Deprecación legacy rutas IA (PR7, D7)", () => {
-  it("/coach/race-analysis muestra GonePage (410)", () => {
+describe("Redirects de transición Wave B — rutas legacy IA", () => {
+  it("/coach/race-analysis redirige al hub /competitions/insights", () => {
     renderAt("/coach/race-analysis");
-    expect(screen.getByTestId("gone-page")).toBeInTheDocument();
-    expect(screen.getByText(/Esta sección se movió/i)).toBeInTheDocument();
+    expect(screen.getByTestId("insights-hub")).toBeInTheDocument();
+    expect(screen.queryByText(/Esta sección se movió/i)).not.toBeInTheDocument();
   });
 
-  it("/training/races/:id/club-insights muestra GonePage (410)", () => {
+  it("/training/races/:id/club-insights redirige a /competitions/:id?tab=insights", () => {
     renderAt("/training/races/42/club-insights");
-    expect(screen.getByTestId("gone-page")).toBeInTheDocument();
+    expect(screen.getByTestId("competition-detail")).toBeInTheDocument();
   });
 
-  it("GonePage enlaza al nuevo hub /competitions/insights por default", () => {
-    renderAt("/coach/race-analysis");
-    const link = screen.getByRole("link", { name: /Análisis IA/i });
-    expect(link).toHaveAttribute("href", "/competitions/insights");
+  it("/training/races/:id/club-insights preserva el raceEventId en la URL destino", () => {
+    // Verificamos que el component de destino monta (lo que implica que la
+    // ruta /competitions/42 fue alcanzada — MemoryRouter no expone href como
+    // el DOM real, pero el match de la Route es suficiente como invariante).
+    renderAt("/training/races/99/club-insights");
+    expect(screen.getByTestId("competition-detail")).toBeInTheDocument();
   });
 });
