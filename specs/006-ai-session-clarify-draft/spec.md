@@ -16,6 +16,7 @@
 - Q: Which wizard fields does the draft pre-fill? → A: Everything — training content (focus, objectives, structured description, duration, session kind), inferable logistics (location, and date/time when stated in the intent), and a proposed athlete call-up. Privacy constraint preserved: the AI proposes athletes only by non-identifying criterion (e.g., age group or "todos los convocados"), which the system resolves to specific athletes locally; the AI never receives or emits any minor's name. The coach reviews and edits every pre-filled field, including the athlete selection.
 - Q: In what language does the assistant produce coach-facing output? → A: Español neutro (Colombia) for all coach-facing assistant output — clarifying questions, option labels and descriptions, and the generated draft text — consistent with the constitution's product-copy language policy. The coach's free-text intent may be written in any language.
 - Q: How long does the coach wait before the assistant fails over to manual entry? → A: Cap each assistant call at the configured AI timeout (~30 s), showing a clear "pensando…" waiting state plus an "iniciando el servidor" message during cold start; on timeout/error, surface a recoverable message and let the coach continue manually. This is a deliberate, documented budget exception for AI endpoints (the constitution's standard p95 write budget does not apply to AI calls).
+- Q: How is AI-seeded content disclosed in the wizard? → A: Per-field subtle markers on each field the AI pre-filled (rather than a single top-of-wizard banner), so the coach can see exactly which values came from the assistant; the marker clears once the coach edits that field. This reinforces coach responsibility for final content in a minors' training context.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -201,6 +202,10 @@ no prohibited content reaches the coach.
   "iniciando el servidor" / cold-start message when applicable) and MUST be bounded by
   the configured AI timeout (~30 s); on timeout or error the system MUST present a
   recoverable message rather than an unbounded spinner or raw error text.
+- **FR-019**: When a draft pre-fills the wizard, the system MUST visibly mark each field
+  that was AI-seeded with a subtle per-field indicator; the indicator MUST clear once
+  the coach edits that field. This communicates which values came from the assistant and
+  reinforces that the coach is responsible for the final content.
 - **FR-015**: The system MUST handle partial input — missing intent, unanswered
   questions, or zero returned questions — by using reasonable defaults and still
   producing a usable draft.
