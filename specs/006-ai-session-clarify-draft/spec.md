@@ -15,6 +15,7 @@
 - Q: Where does the assistant live in the session-creation flow? → A: A pre-wizard launch — an "Asistente IA" entry point shown before/at the start of session creation; on finishing the conversation it opens the existing wizard pre-filled.
 - Q: Which wizard fields does the draft pre-fill? → A: Everything — training content (focus, objectives, structured description, duration, session kind), inferable logistics (location, and date/time when stated in the intent), and a proposed athlete call-up. Privacy constraint preserved: the AI proposes athletes only by non-identifying criterion (e.g., age group or "todos los convocados"), which the system resolves to specific athletes locally; the AI never receives or emits any minor's name. The coach reviews and edits every pre-filled field, including the athlete selection.
 - Q: In what language does the assistant produce coach-facing output? → A: Español neutro (Colombia) for all coach-facing assistant output — clarifying questions, option labels and descriptions, and the generated draft text — consistent with the constitution's product-copy language policy. The coach's free-text intent may be written in any language.
+- Q: How long does the coach wait before the assistant fails over to manual entry? → A: Cap each assistant call at the configured AI timeout (~30 s), showing a clear "pensando…" waiting state plus an "iniciando el servidor" message during cold start; on timeout/error, surface a recoverable message and let the coach continue manually. This is a deliberate, documented budget exception for AI endpoints (the constitution's standard p95 write budget does not apply to AI calls).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -196,6 +197,10 @@ no prohibited content reaches the coach.
   unreachable, slow, or returns unusable output, the coach MUST see a clear,
   non-technical message and MUST be able to continue creating the session manually with
   no loss of any data they already entered.
+- **FR-018**: Each assistant call MUST show a clear waiting state (including an
+  "iniciando el servidor" / cold-start message when applicable) and MUST be bounded by
+  the configured AI timeout (~30 s); on timeout or error the system MUST present a
+  recoverable message rather than an unbounded spinner or raw error text.
 - **FR-015**: The system MUST handle partial input — missing intent, unanswered
   questions, or zero returned questions — by using reasonable defaults and still
   producing a usable draft.
@@ -237,6 +242,10 @@ no prohibited content reaches the coach.
   points rather than discarded.
 - **SC-007**: Every field pre-filled by a draft is editable by the coach, verified for
   100% of draftable fields.
+- **SC-008**: The coach is never left without feedback: a waiting state appears within 1
+  second of each assistant request, and within the configured AI timeout (~30 s) the
+  coach either sees a result or a recoverable message offering to continue manually —
+  no unbounded waits.
 
 ## Assumptions
 
