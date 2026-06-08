@@ -40,9 +40,7 @@ import {
   useRaceEvent,
   useUpdateRaceEvent,
 } from "@/hooks/race/useRaceEvents";
-import { useCreateCalendarEventFromRace } from "@/hooks/race/useCreateCalendarEventFromRace";
 import { VENUE_ALTITUDES } from "@/types/raceEvents.types";
-import type { EventCreatePayload } from "@/types/calendar.types";
 
 // ---------------------------------------------------------------------------
 // Estilos compartidos (patrón del proyecto)
@@ -95,11 +93,11 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
 
   const createMutation = useCreateRaceEvent();
   const updateMutation = useUpdateRaceEvent();
-  // PR6: creación bidireccional del evento de calendario ligado.
-  const calendarFromRace = useCreateCalendarEventFromRace();
 
-  // PR6 (D1): "Crear evento en calendario" — ON por default (opt-out visible).
-  // Solo aplica en modo create.
+  // FR-024 (D1): "Crear evento en calendario" — ON por default (opt-out visible).
+  // El valor se pasa al backend como `create_calendar_event` en el payload de
+  // creación. El backend gestiona la creación del calendar_event de forma
+  // transaccional. Solo aplica en modo create.
   const [createCalendarEvent, setCreateCalendarEvent] = useState(true);
 
   // Estado de la sede: "predefined" | "custom"
@@ -186,7 +184,12 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
     }
   }, [watchedSequence, watchedLocation, watchedName, setValue]);
 
-  function buildPayload(values: CompetitionEventFormValues) {
+  /**
+   * Construye el payload para crear una nueva válida.
+   * Incluye `create_calendar_event` para que el backend cree el calendar_event
+   * ligado de forma transaccional (FR-024).
+   */
+  function buildCreatePayload(values: CompetitionEventFormValues) {
     return {
       series_id: values.series_id,
       sequence_number: values.sequence_number,
@@ -195,59 +198,38 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
       location: values.location || null,
       is_championship: values.is_championship,
       status: values.status,
+      create_calendar_event: createCalendarEvent,
     };
   }
 
-  // PR6: construye el payload del calendar_event ligado a la válida recién
-  // creada. Evento all-day en la fecha de la válida; la válida es source-of-
-  // truth, así que título/sede/fecha se copian. El coach puede refinar la
-  // categoría de carrera (A/B/C) luego desde el calendario.
-  function buildCalendarPayload(
-    raceEventId: number,
-    values: CompetitionEventFormValues,
-  ): EventCreatePayload {
-    const date = values.event_date; // YYYY-MM-DD
+  /**
+   * Construye el payload para actualizar una válida existente.
+   * No incluye `create_calendar_event` — en modo edit el calendario se
+   * auto-propaga desde el backend cuando cambian fecha/nombre/sede/estado.
+   */
+  function buildUpdatePayload(values: CompetitionEventFormValues) {
     return {
-      event_type: "competition",
-      title: values.name,
-      location: values.location || undefined,
-      start_at: `${date}T00:00:00`,
-      end_at: `${date}T23:59:59`,
-      all_day: true,
-      race_event_id: raceEventId,
-      event_data: {
-        city: values.location || "",
-        race_category: "A",
-        is_departmental: values.is_championship,
-      },
-      audiences: [
-        { audience_type: "all_club", audience_value: {} as Record<string, never> },
-      ],
+      name: values.name,
+      event_date: values.event_date,
+      location: values.location ?? null,
+      sequence_number: values.sequence_number,
+      status: values.status,
+      is_championship: values.is_championship,
     };
   }
 
-  async function onSubmit(values: CompetitionEventFormValues) {
+  function onSubmit(values: CompetitionEventFormValues) {
     setGlobalError(null);
     setSeqError(null);
 
     if (!isEdit) {
+      // FR-024: `create_calendar_event` va en el payload — el backend crea el
+      // calendar_event transaccionalmente. El coach puede usar "Asociar a
+      // calendario" en el detalle si eligió opt-out aquí.
       createMutation.mutate(
-        { body: buildPayload(values) },
+        { body: buildCreatePayload(values) },
         {
-          onSuccess: async (created) => {
-            // PR6 (D1): si el checkbox está activo, crea el calendar_event
-            // ligado. Best-effort: si falla, navega igual (el coach puede
-            // reintentar vía "Asociar a calendario" en el detalle).
-            if (createCalendarEvent) {
-              try {
-                await calendarFromRace.createWithRaceEvent(
-                  buildCalendarPayload(created.id, values),
-                  created.id,
-                );
-              } catch {
-                // Silencioso: la válida ya existe; el vínculo es opcional.
-              }
-            }
+          onSuccess: (created) => {
             const dest = returnTo ?? `/competitions/${created.id}`;
             navigate(dest);
           },
@@ -275,18 +257,10 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
 
     if (!eventId) return;
 
+    // FR-026: al editar, fecha/nombre/sede/estado se propagan automáticamente
+    // al calendar_event vinculado — el backend es la fuente de verdad.
     updateMutation.mutate(
-      {
-        id: eventId,
-        body: {
-          name: values.name,
-          event_date: values.event_date,
-          location: values.location ?? null,
-          sequence_number: values.sequence_number,
-          status: values.status,
-          is_championship: values.is_championship,
-        },
-      },
+      { id: eventId, body: buildUpdatePayload(values) },
       {
         onSuccess: () => {
           const dest = returnTo ?? `/competitions/${eventId}`;
@@ -655,7 +629,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
           </div>
         </div>
 
-        {/* Sección 4: Calendario (solo en create) — PR6 D1 */}
+        {/* Sección 4: Calendario (solo en create) — FR-024 */}
         {!isEdit && (
           <div className={sectionClass} style={sectionStyle}>
             <h2 className="text-base font-semibold text-charcoal">Calendario</h2>
@@ -670,9 +644,10 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
               <span>
                 Crear evento en el calendario del club
                 <span className="mt-0.5 block text-xs font-normal text-mid-gray">
-                  Se creará un evento ligado a esta válida. Si luego cambias
-                  fecha, nombre o sede, el calendario se actualizará
-                  automáticamente.
+                  Se creará un evento ligado automáticamente. Si luego cambias
+                  fecha, nombre o sede, el calendario se actualizará de forma
+                  automática. Puedes asociar un evento existente más tarde desde
+                  el detalle de la válida.
                 </span>
               </span>
             </label>

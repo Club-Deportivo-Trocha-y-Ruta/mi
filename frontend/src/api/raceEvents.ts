@@ -13,6 +13,8 @@
  */
 import { apiClient } from "@/api/client";
 import type {
+  RaceEventCalendarLinkBody,
+  RaceEventCalendarLinkResponse,
   RaceEventConditions,
   RaceEventConditionsUpdate,
   RaceEventCreate,
@@ -128,6 +130,30 @@ export async function getRaceEvent(
   const response = await apiClient.get<RaceEventRead>(`${BASE}/${id}`, {
     signal: options?.signal,
   });
+  return response.data;
+}
+
+/**
+ * POST /api/race-analysis/race-events/{id}/calendar-link
+ *
+ * Asocia un `calendar_event` ya existente a una válida cuando la válida
+ * aún no tiene ningún vínculo (`has_calendar_event === false`).
+ * RBAC: coach + admin.
+ *
+ * 409 si la válida ya está vinculada (1:1 estricto) o si el calendar_event
+ * ya está ligado a otra válida.
+ * 404 si el `calendar_event_id` no existe.
+ */
+export async function linkCalendarEvent(
+  raceEventId: number,
+  body: RaceEventCalendarLinkBody,
+  options?: { signal?: AbortSignal },
+): Promise<RaceEventCalendarLinkResponse> {
+  const response = await apiClient.post<RaceEventCalendarLinkResponse>(
+    `${BASE}/${raceEventId}/calendar-link`,
+    body,
+    { signal: options?.signal },
+  );
   return response.data;
 }
 
