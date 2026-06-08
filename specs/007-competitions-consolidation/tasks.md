@@ -89,18 +89,18 @@ description: "Task list for 007-competitions-consolidation"
 **Independent Test**: Build a roster on a result-less round; confirm an ambiguous match; after import, see reconciliation (called-up vs results).
 
 ### Tests
-- [ ] T026 [P] [US3] Migration test: `race_event_roster` table + enum created, chained single-head, upgrade/downgrade on SQLite — @qa-engineer
-- [ ] T027 [P] [US3] Router tests roster CRUD (happy; 409 dup; 422 non-club athlete; 404) in `backend/tests/routers/test_race_roster.py` — @qa-engineer
-- [ ] T028 [P] [US3] Reconciliation service test (called_up_no_result / result_not_called_up) — @qa-engineer
+- [X] T026 [P] [US3] Migration test: `race_event_roster` table + enum created, chained single-head, upgrade/downgrade on SQLite — @qa-engineer
+- [X] T027 [P] [US3] Router tests roster CRUD (happy; 409 dup; 422 non-club athlete; 404) in `backend/tests/routers/test_race_roster.py` — @qa-engineer
+- [X] T028 [P] [US3] Reconciliation service test (called_up_no_result / result_not_called_up) — @qa-engineer
 - [ ] T029 [P] [US3] **Privacy**: parent roster read scoped to own child; vitest+axe for `RosterPanel` — @data-privacy-guard
 - [ ] T030 [P] [US3] vitest+axe for roster + match-confirm UI — @qa-engineer
 
 ### Implementation
-- [ ] T031 [US3] `RaceEventRoster` model + `raceeventrosterstatus` enum in `backend/app/models/race_event_roster.py` (per data-model.md) — @database-architect
-- [ ] T032 [US3] Alembic migration (new table + enum), chained to current head, in `backend/alembic/versions/` — @database-architect
-- [ ] T033 [P] [US3] Schemas in `backend/app/schemas/race_roster.py` — @fastapi-architect
-- [ ] T034 [US3] `roster.py` service (CRUD + reconciliation) in `backend/app/services/race/roster.py` (depends T031) — @fastapi-architect
-- [ ] T035 [US3] Roster endpoints (GET/POST/PATCH/DELETE) on `backend/app/routers/race_events.py` (RBAC) — @fastapi-architect
+- [X] T031 [US3] `RaceEventRoster` model + `raceeventrosterstatus` enum in `backend/app/models/race_event_roster.py` (per data-model.md) — @database-architect
+- [X] T032 [US3] Alembic migration (new table + enum), chained to current head, in `backend/alembic/versions/` — @database-architect
+- [X] T033 [P] [US3] Schemas in `backend/app/schemas/race_roster.py` — @fastapi-architect
+- [X] T034 [US3] `roster.py` service (CRUD + reconciliation) in `backend/app/services/race/roster.py` (depends T031) — @fastapi-architect
+- [X] T035 [US3] Roster endpoints (GET/POST/PATCH/DELETE) on `backend/app/routers/race_events.py` (RBAC) — @fastapi-architect
 - [ ] T036 [P] [US3] api/types/hooks `frontend/src/api/raceRoster.ts`, `hooks/race/useRaceRoster.ts` — @react-ui-engineer
 - [ ] T037 [US3] `RosterPanel.tsx` + integrate into `AthletesTab.tsx` (roster + existing match-confirm/link); include designed loading/empty/error states (FR-032) — @react-ui-engineer
 
