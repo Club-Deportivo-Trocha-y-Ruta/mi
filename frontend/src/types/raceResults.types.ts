@@ -71,10 +71,22 @@ export interface RaceResultCategory {
 
 /**
  * Respuesta del endpoint GET /race-events/{id}/results.
+ *
+ * Los campos opcionales `event_name`, `event_date`, `location`, `status`
+ * son incluidos por el backend para que el frontend pueda mostrar el header
+ * del evento sin una segunda llamada (Wave A + FR-030 parent view).
  */
 export interface RaceEventResultsResponse {
   race_event_id: number;
   categories: RaceResultCategory[];
+  /** Nombre del evento (ej. "Copa Valle IV — Cali"). */
+  event_name?: string;
+  /** Fecha del evento en formato ISO date (YYYY-MM-DD). */
+  event_date?: string;
+  /** Municipio/sede del evento. */
+  location?: string;
+  /** Estado del evento (ej. "completed", "scheduled"). */
+  status?: string;
 }
 
 /**
@@ -130,10 +142,22 @@ export interface StandingCategory {
 
 /**
  * Respuesta del endpoint GET /race-events/{id}/standings.
+ *
+ * Los campos opcionales `event_name`, `event_date`, `location`, `status`
+ * son incluidos por el backend para que el frontend pueda mostrar el header
+ * del evento sin una segunda llamada (Wave A + FR-030 parent view).
  */
 export interface RaceEventStandingsResponse {
   race_event_id: number;
   categories: StandingCategory[];
+  /** Nombre del evento (ej. "Copa Valle IV — Cali"). */
+  event_name?: string;
+  /** Fecha del evento en formato ISO date (YYYY-MM-DD). */
+  event_date?: string;
+  /** Municipio/sede del evento. */
+  location?: string;
+  /** Estado del evento (ej. "completed", "scheduled"). */
+  status?: string;
 }
 
 /**

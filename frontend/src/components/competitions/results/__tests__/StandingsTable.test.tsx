@@ -242,6 +242,46 @@ describe("StandingsTable — toggle solo mi club", () => {
 });
 
 // ---------------------------------------------------------------------------
+// hideClubFilter prop
+// ---------------------------------------------------------------------------
+
+describe("StandingsTable — hideClubFilter", () => {
+  it("el toggle 'Solo mi club' NO se renderiza cuando hideClubFilter=true", () => {
+    const data = makeRaceEventStandingsResponse();
+    render(
+      <MemoryRouter>
+        <StandingsTable data={data} hideClubFilter />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.queryByTestId("standings-club-only-toggle"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("standings-club-only-label"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("el toggle 'Solo mi club' SÍ se renderiza cuando hideClubFilter=false (default)", () => {
+    renderStandingsTable();
+    expect(
+      screen.getByTestId("standings-club-only-toggle"),
+    ).toBeInTheDocument();
+  });
+
+  it("el selector de categoría sigue presente con hideClubFilter=true", () => {
+    const data = makeRaceEventStandingsResponse();
+    render(
+      <MemoryRouter>
+        <StandingsTable data={data} hideClubFilter />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByTestId("standings-category-select"),
+    ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Ordenación
 // ---------------------------------------------------------------------------
 

@@ -123,6 +123,106 @@ export function makeStandingRowRival(
 // ---------------------------------------------------------------------------
 
 /**
+ * Crea una respuesta de resultados para padre (solo 1 fila — el hijo propio).
+ * Incluye los campos opcionales de cabecera (event_name, event_date, location).
+ */
+export function makeParentRaceEventResultsResponse(
+  overrides?: Partial<RaceEventResultsResponse>,
+): RaceEventResultsResponse {
+  return {
+    race_event_id: 1,
+    event_name: "Copa Valle IV — Cali",
+    event_date: "2026-05-17",
+    location: "Cali",
+    status: "completed",
+    categories: [
+      {
+        category_id: 1,
+        code: "INF_M",
+        label: "Infantil Masculino",
+        rows: [
+          makeRaceResultRow({
+            competitor_id: 101,
+            display_name: "Mi Hijo",
+            athlete_id: 55,
+            is_our_club: true,
+            position: 3,
+            race_time_ms: 3_720_000,
+          }),
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * Crea una respuesta de standings para padre (solo 1 fila — el hijo propio).
+ * Incluye los campos opcionales de cabecera.
+ */
+export function makeParentRaceEventStandingsResponse(
+  overrides?: Partial<RaceEventStandingsResponse>,
+): RaceEventStandingsResponse {
+  return {
+    race_event_id: 1,
+    event_name: "Copa Valle IV — Cali",
+    event_date: "2026-05-17",
+    location: "Cali",
+    status: "completed",
+    categories: [
+      {
+        category_id: 1,
+        code: "INF_M",
+        label: "Infantil Masculino",
+        rows: [
+          makeStandingRow({
+            competitor_id: 101,
+            display_name: "Mi Hijo",
+            athlete_id: 55,
+            is_our_club: true,
+            rank: 5,
+            total_points: 48,
+          }),
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * MSW handler: GET /results → respuesta de padre (1 fila propia, con header).
+ */
+export const parentResultsHandler = http.get(
+  `${BASE}/:id/results`,
+  ({ params }) => {
+    const id = Number(params.id);
+    return HttpResponse.json(
+      makeParentRaceEventResultsResponse({ race_event_id: id }),
+    );
+  },
+);
+
+/**
+ * MSW handler: GET /standings → respuesta de padre (1 fila propia, con header).
+ */
+export const parentStandingsHandler = http.get(
+  `${BASE}/:id/standings`,
+  ({ params }) => {
+    const id = Number(params.id);
+    return HttpResponse.json(
+      makeParentRaceEventStandingsResponse({ race_event_id: id }),
+    );
+  },
+);
+
+/** Handlers felices para el escenario de padre. */
+export const parentRaceResultsHandlers = [
+  parentResultsHandler,
+  parentStandingsHandler,
+];
+
+/**
  * Crea una respuesta de resultados con 2 categorías y 3 corredores.
  */
 export function makeRaceEventResultsResponse(

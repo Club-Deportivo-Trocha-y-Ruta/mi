@@ -79,6 +79,7 @@ import { CalendarPage } from "@/routes/calendar/CalendarPage";
 import { EventFormPage } from "@/routes/calendar/EventFormPage";
 import { ParentCalendarPage } from "@/routes/parents/calendar/ParentCalendarPage";
 import { ParentEventDetailPage } from "@/routes/parents/calendar/ParentEventDetailPage";
+import { ParentCompetitionResultsPage } from "@/routes/parents/competitions/ParentCompetitionResultsPage";
 import { CompetitionsListPage } from "@/routes/competitions/CompetitionsListPage";
 import { CompetitionFormPage } from "@/routes/competitions/CompetitionFormPage";
 import { CompetitionDetailPage } from "@/routes/competitions/CompetitionDetailPage";
@@ -363,6 +364,16 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
               <ParentEventDetailPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Resultados de competencia (parent) ── */}
+        <Route
+          path="/parents/competitions/:raceEventId"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.parent]}>
+              <ParentCompetitionResultsPage />
             </ProtectedRoute>
           }
         />

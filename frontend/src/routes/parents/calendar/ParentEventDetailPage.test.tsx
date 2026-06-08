@@ -206,6 +206,76 @@ describe("ParentEventDetailPage", () => {
     expect(link).toHaveAttribute("href", "/parents/training/sessions/33");
   });
 
+  describe("Enlace a resultados de competencia", () => {
+    it("muestra el enlace 'Ver resultados' cuando race_event_id está presente", () => {
+      (useMyAthletes as any).mockReturnValue({
+        data: [makeAthlete(42)],
+        isLoading: false,
+        isError: false,
+      });
+      vi.mocked(useCalendarEvent).mockReturnValue({
+        data: makeCalendarEventRead({
+          id: 5,
+          event_type: "competition",
+          race_event_id: 7,
+        }),
+        isLoading: false,
+        isError: false,
+      } as ReturnType<typeof useCalendarEvent>);
+
+      renderPage("5");
+      const link = screen.getByTestId("competition-results-link");
+      expect(link).toBeInTheDocument();
+      expect(link).toHaveAttribute("href", "/parents/competitions/7");
+      expect(link).toHaveTextContent(/Ver resultados de la competencia/i);
+    });
+
+    it("NO muestra el enlace 'Ver resultados' cuando race_event_id es null", () => {
+      (useMyAthletes as any).mockReturnValue({
+        data: [makeAthlete(42)],
+        isLoading: false,
+        isError: false,
+      });
+      vi.mocked(useCalendarEvent).mockReturnValue({
+        data: makeCalendarEventRead({
+          id: 5,
+          event_type: "club_event",
+          race_event_id: null,
+        }),
+        isLoading: false,
+        isError: false,
+      } as ReturnType<typeof useCalendarEvent>);
+
+      renderPage("5");
+      expect(
+        screen.queryByTestId("competition-results-link"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("NO muestra el enlace 'Ver resultados' para eventos de entrenamiento", () => {
+      (useMyAthletes as any).mockReturnValue({
+        data: [makeAthlete(42)],
+        isLoading: false,
+        isError: false,
+      });
+      vi.mocked(useCalendarEvent).mockReturnValue({
+        data: makeCalendarEventRead({
+          id: 5,
+          event_type: "training_session",
+          race_event_id: null,
+          event_data: { training_session_id: 33 },
+        }),
+        isLoading: false,
+        isError: false,
+      } as ReturnType<typeof useCalendarEvent>);
+
+      renderPage("5");
+      expect(
+        screen.queryByTestId("competition-results-link"),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   describe("Privacidad", () => {
     it("NO muestra coach_notes ni campos internos del entrenador", () => {
       (useMyAthletes as any).mockReturnValue({

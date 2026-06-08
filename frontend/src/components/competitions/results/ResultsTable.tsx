@@ -175,13 +175,20 @@ function sortRows(rows: RaceResultRow[], sort: SortState): RaceResultRow[] {
 
 export interface ResultsTableProps {
   data: RaceEventResultsResponse;
+  /**
+   * Cuando es `true`, el toggle "Solo mi club" no se renderiza.
+   * Usar para la vista de padres donde el backend ya filtra solo los propios hijos
+   * y el toggle carece de sentido.
+   * @default false
+   */
+  hideClubFilter?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ResultsTable({ data }: ResultsTableProps) {
+export function ResultsTable({ data, hideClubFilter = false }: ResultsTableProps) {
   const categories = data.categories;
 
   // ── Categorías únicas para el selector ──────────────────────────────────
@@ -264,21 +271,23 @@ export function ResultsTable({ data }: ResultsTableProps) {
           </select>
         </div>
 
-        {/* Toggle Solo mi club */}
-        <label
-          className="flex cursor-pointer items-center gap-2 text-sm text-charcoal"
-          data-testid="results-club-only-label"
-        >
-          <input
-            type="checkbox"
-            checked={clubOnly}
-            onChange={(e) => setClubOnly(e.target.checked)}
-            className="h-4 w-4 cursor-pointer rounded border-[rgba(34,42,53,0.2)] accent-primary"
-            data-testid="results-club-only-toggle"
-            aria-label="Solo mi club"
-          />
-          Solo mi club
-        </label>
+        {/* Toggle Solo mi club — oculto cuando hideClubFilter=true (vista padres) */}
+        {!hideClubFilter && (
+          <label
+            className="flex cursor-pointer items-center gap-2 text-sm text-charcoal"
+            data-testid="results-club-only-label"
+          >
+            <input
+              type="checkbox"
+              checked={clubOnly}
+              onChange={(e) => setClubOnly(e.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded border-[rgba(34,42,53,0.2)] accent-primary"
+              data-testid="results-club-only-toggle"
+              aria-label="Solo mi club"
+            />
+            Solo mi club
+          </label>
+        )}
 
         {/* Contador */}
         {totalRows > 0 && (

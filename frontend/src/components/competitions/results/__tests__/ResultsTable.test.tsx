@@ -392,6 +392,44 @@ describe("ResultsTable — campo completo 26 categorías", () => {
 });
 
 // ---------------------------------------------------------------------------
+// hideClubFilter prop
+// ---------------------------------------------------------------------------
+
+describe("ResultsTable — hideClubFilter", () => {
+  it("el toggle 'Solo mi club' NO se renderiza cuando hideClubFilter=true", () => {
+    const data = makeRaceEventResultsResponse();
+    render(
+      <MemoryRouter>
+        <ResultsTable data={data} hideClubFilter />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.queryByTestId("results-club-only-toggle"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("results-club-only-label"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("el toggle 'Solo mi club' SÍ se renderiza cuando hideClubFilter=false (default)", () => {
+    renderResultsTable();
+    expect(screen.getByTestId("results-club-only-toggle")).toBeInTheDocument();
+  });
+
+  it("el selector de categoría sigue presente con hideClubFilter=true", () => {
+    const data = makeRaceEventResultsResponse();
+    render(
+      <MemoryRouter>
+        <ResultsTable data={data} hideClubFilter />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByTestId("results-category-select"),
+    ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Formato de tiempo
 // ---------------------------------------------------------------------------
 

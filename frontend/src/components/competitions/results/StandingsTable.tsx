@@ -122,13 +122,20 @@ function sortRows(rows: StandingRow[], sort: SortState): StandingRow[] {
 
 export interface StandingsTableProps {
   data: RaceEventStandingsResponse;
+  /**
+   * Cuando es `true`, el toggle "Solo mi club" no se renderiza.
+   * Usar para la vista de padres donde el backend ya filtra solo los propios hijos
+   * y el toggle carece de sentido.
+   * @default false
+   */
+  hideClubFilter?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function StandingsTable({ data }: StandingsTableProps) {
+export function StandingsTable({ data, hideClubFilter = false }: StandingsTableProps) {
   const categories = data.categories;
 
   // ── Categorías para el selector ──────────────────────────────────────────
@@ -207,21 +214,23 @@ export function StandingsTable({ data }: StandingsTableProps) {
           </select>
         </div>
 
-        {/* Toggle Solo mi club */}
-        <label
-          className="flex cursor-pointer items-center gap-2 text-sm text-charcoal"
-          data-testid="standings-club-only-label"
-        >
-          <input
-            type="checkbox"
-            checked={clubOnly}
-            onChange={(e) => setClubOnly(e.target.checked)}
-            className="h-4 w-4 cursor-pointer rounded border-[rgba(34,42,53,0.2)] accent-primary"
-            data-testid="standings-club-only-toggle"
-            aria-label="Solo mi club"
-          />
-          Solo mi club
-        </label>
+        {/* Toggle Solo mi club — oculto cuando hideClubFilter=true (vista padres) */}
+        {!hideClubFilter && (
+          <label
+            className="flex cursor-pointer items-center gap-2 text-sm text-charcoal"
+            data-testid="standings-club-only-label"
+          >
+            <input
+              type="checkbox"
+              checked={clubOnly}
+              onChange={(e) => setClubOnly(e.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded border-[rgba(34,42,53,0.2)] accent-primary"
+              data-testid="standings-club-only-toggle"
+              aria-label="Solo mi club"
+            />
+            Solo mi club
+          </label>
+        )}
 
         {/* Contador */}
         {totalRows > 0 && (
