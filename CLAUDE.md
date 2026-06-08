@@ -438,4 +438,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 
 - **005-subagent-model-tiers** — Implementation plan: `specs/005-subagent-model-tiers/plan.md`
 - **005-session-create-edit-ux** — Implementation plan: `specs/005-session-create-edit-ux/plan.md`
+- **006-ai-session-clarify-draft** — Implementation plan: `specs/006-ai-session-clarify-draft/plan.md`
 <!-- SPECKIT END -->
