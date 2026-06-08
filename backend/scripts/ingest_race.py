@@ -71,7 +71,7 @@ from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
 from app.schemas.race import EventMeta, IngestReport
 from app.services.race.ingestor import RaceIngestor
-from app.services.race.matcher import MatchCandidate, match_athletes
+from app.services.race.matcher import match_athletes
 from app.services.race.normalizer import is_trocha_y_ruta
 from app.services.race.csv_parser import (
     parse_event_header_csv,
@@ -436,6 +436,30 @@ async def _ingest_impl(
             pdf_general_sha256=sha_general,
             ingested_by_user_id=ingester_uid,
         )
+
+        # PR5 (FR-018): on a confirmed revision (changed SHA), mark downstream
+        # AI runs and newsletters as outdated.  No automatic re-run (D5).
+        if report.is_revision and report.event_id is not None:
+            from app.services.race.run_staleness import invalidate_runs_for_event
+
+            try:
+                stale_counts = await invalidate_runs_for_event(
+                    db, int(report.event_id)
+                )
+                await db.commit()
+                logger.info(
+                    "cli_revision_staleness_ok event_id=%s runs_marked=%d "
+                    "newsletters_outdated=%d",
+                    report.event_id,
+                    stale_counts.get("runs_marked", 0),
+                    stale_counts.get("newsletters_outdated", 0),
+                )
+            except Exception as exc:  # noqa: BLE001 — best-effort, no blocking
+                logger.warning(
+                    "cli_revision_staleness_failed event_id=%s err=%s",
+                    report.event_id,
+                    type(exc).__name__,
+                )
 
     _print_ingest_report(report)
 
