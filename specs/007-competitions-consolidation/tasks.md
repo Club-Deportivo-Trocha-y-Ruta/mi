@@ -92,8 +92,8 @@ description: "Task list for 007-competitions-consolidation"
 - [X] T026 [P] [US3] Migration test: `race_event_roster` table + enum created, chained single-head, upgrade/downgrade on SQLite — @qa-engineer
 - [X] T027 [P] [US3] Router tests roster CRUD (happy; 409 dup; 422 non-club athlete; 404) in `backend/tests/routers/test_race_roster.py` — @qa-engineer
 - [X] T028 [P] [US3] Reconciliation service test (called_up_no_result / result_not_called_up) — @qa-engineer
-- [ ] T029 [P] [US3] **Privacy**: parent roster read scoped to own child; vitest+axe for `RosterPanel` — @data-privacy-guard
-- [ ] T030 [P] [US3] vitest+axe for roster + match-confirm UI — @qa-engineer
+- [X] T029 [P] [US3] **Privacy**: parent roster read scoped to own child; vitest+axe for `RosterPanel` — @data-privacy-guard
+- [X] T030 [P] [US3] vitest+axe for roster + match-confirm UI — @qa-engineer
 
 ### Implementation
 - [X] T031 [US3] `RaceEventRoster` model + `raceeventrosterstatus` enum in `backend/app/models/race_event_roster.py` (per data-model.md) — @database-architect
@@ -101,8 +101,8 @@ description: "Task list for 007-competitions-consolidation"
 - [X] T033 [P] [US3] Schemas in `backend/app/schemas/race_roster.py` — @fastapi-architect
 - [X] T034 [US3] `roster.py` service (CRUD + reconciliation) in `backend/app/services/race/roster.py` (depends T031) — @fastapi-architect
 - [X] T035 [US3] Roster endpoints (GET/POST/PATCH/DELETE) on `backend/app/routers/race_events.py` (RBAC) — @fastapi-architect
-- [ ] T036 [P] [US3] api/types/hooks `frontend/src/api/raceRoster.ts`, `hooks/race/useRaceRoster.ts` — @react-ui-engineer
-- [ ] T037 [US3] `RosterPanel.tsx` + integrate into `AthletesTab.tsx` (roster + existing match-confirm/link); include designed loading/empty/error states (FR-032) — @react-ui-engineer
+- [X] T036 [P] [US3] api/types/hooks `frontend/src/api/raceRoster.ts`, `hooks/race/useRaceRoster.ts` — @react-ui-engineer
+- [X] T037 [US3] `RosterPanel.tsx` + integrate into `AthletesTab.tsx` (roster + existing match-confirm/link); include designed loading/empty/error states (FR-032) — @react-ui-engineer
 
 **Checkpoint**: US1–US3 independently functional.
 
