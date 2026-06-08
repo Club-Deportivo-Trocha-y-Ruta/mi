@@ -49,7 +49,7 @@ description: "Task list for 007-competitions-consolidation"
 - [ ] T009 [P] [US1] Contract+integration test `GET /race-events/{id}/standings` (happy; 404 no series) in `backend/tests/routers/test_race_standings_read.py` — @qa-engineer
 - [ ] T010 [P] [US1] **Privacy invariant** test: parent gets only own child rows; another minor never present in results/standings payload — @data-privacy-guard
 - [ ] T011 [P] [US1] Query-count/N+1 test asserting results & standings reads are single aggregated queries — @qa-engineer
-- [ ] T012 [P] [US1] vitest + axe for `ResultsTable`/`StandingsTable` (sort, category filter, club highlight, empty state) in `frontend/src/components/competitions/results/__tests__/` — @qa-engineer
+- [ ] T012 [P] [US1] vitest + axe for `ResultsTable`/`StandingsTable` (sort, category filter, club highlight, empty state) **plus a full-field render check using a 26-category fixture to guard SC-007 mobile responsiveness** in `frontend/src/components/competitions/results/__tests__/` — @qa-engineer
 
 ### Implementation
 - [ ] T013 [US1] Implement `results_read.py` service (finishing order per `(category, position)`, exclude `deleted_at`, mark `is_our_club`) in `backend/app/services/race/results_read.py` — @fastapi-architect
@@ -77,7 +77,7 @@ description: "Task list for 007-competitions-consolidation"
 ### Implementation
 - [ ] T023 [US2] Unify sidebar in `frontend/src/components/layout/AppShell.tsx` to a single "Competencias" entry — @react-ui-engineer
 - [ ] T024 [US2] In `App.tsx`, mount insights pages under `/competitions/insights/*` and add 301-style redirects for `/coach/race-analysis` and `/training/races/:id/club-insights` (transition window) — @react-ui-engineer
-- [ ] T025 [US2] Mechanical `MemoryRouter` path codemod in affected existing tests (no assertion rewrites) — @qa-engineer
+- [ ] T025 [US2] Mechanical `MemoryRouter` path codemod in affected existing tests (no assertion rewrites); confirm pre-existing competition list filters (FR-008) and admin delete-guard (FR-007) regression-pass post-consolidation — @qa-engineer
 
 **Checkpoint**: US1 + US2 work; one destination.
 
@@ -102,7 +102,7 @@ description: "Task list for 007-competitions-consolidation"
 - [ ] T034 [US3] `roster.py` service (CRUD + reconciliation) in `backend/app/services/race/roster.py` (depends T031) — @fastapi-architect
 - [ ] T035 [US3] Roster endpoints (GET/POST/PATCH/DELETE) on `backend/app/routers/race_events.py` (RBAC) — @fastapi-architect
 - [ ] T036 [P] [US3] api/types/hooks `frontend/src/api/raceRoster.ts`, `hooks/race/useRaceRoster.ts` — @react-ui-engineer
-- [ ] T037 [US3] `RosterPanel.tsx` + integrate into `AthletesTab.tsx` (roster + existing match-confirm/link) — @react-ui-engineer
+- [ ] T037 [US3] `RosterPanel.tsx` + integrate into `AthletesTab.tsx` (roster + existing match-confirm/link); include designed loading/empty/error states (FR-032) — @react-ui-engineer
 
 **Checkpoint**: US1–US3 independently functional.
 
@@ -138,7 +138,7 @@ description: "Task list for 007-competitions-consolidation"
 ### Implementation
 - [ ] T045 [US5] `calendar_sync.py` service (create/link/propagate/cancel, race_event source-of-truth) in `backend/app/services/race/calendar_sync.py` — @integration-engineer
 - [ ] T046 [US5] Extend `POST /race-events` (`create_calendar_event` flag) + `PATCH /race-events/{id}` propagation + `POST /race-events/{id}/calendar-link` in router — @fastapi-architect
-- [ ] T047 [US5] Frontend: calendar checkbox in `CompetitionFormPage`, associate button in detail; use `invalidatePaired()` (T006) — @react-ui-engineer
+- [ ] T047 [US5] Frontend: calendar checkbox in `CompetitionFormPage`, associate button in detail; use `invalidatePaired()` (T006); include designed loading/error states (FR-032) — @react-ui-engineer
 
 **Checkpoint**: US1–US5 work.
 
