@@ -20,9 +20,9 @@ description: "Task list for 007-competitions-consolidation"
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 [P] Add shadcn `Table` primitive at `frontend/src/components/ui/table.tsx` (local component, no new dep) — @react-ui-engineer
-- [ ] T002 [P] Add `components/competitions/results/` and `components/competitions/roster/` folders with index barrels — @react-ui-engineer
-- [ ] T003 [P] Confirm `season_standings` view + `analytics.club_ranking` are queryable from `aiosqlite` test setup; add a view-or-fallback shim for SQLite tests in `backend/tests/conftest.py` — @qa-engineer
+- [X] T001 [P] Add shadcn `Table` primitive at `frontend/src/components/ui/table.tsx` (local component, no new dep) — @react-ui-engineer
+- [X] T002 [P] Add `components/competitions/results/` and `components/competitions/roster/` folders with index barrels — @react-ui-engineer
+- [X] T003 [P] Confirm `season_standings` view + `analytics.club_ranking` are queryable from `aiosqlite` test setup; add a view-or-fallback shim for SQLite tests in `backend/tests/conftest.py` — @qa-engineer
 
 ---
 
@@ -30,10 +30,10 @@ description: "Task list for 007-competitions-consolidation"
 
 **⚠️ Must complete before US1/US3 work.**
 
-- [ ] T004 Add club/parent scoping helper `resolve_our_club_and_children(user)` in `backend/app/services/permissions.py` (coach/admin → club; parent → own children athlete_ids) with docstring — @fastapi-architect
-- [ ] T005 [P] Add shared read schema base in `backend/app/schemas/race_results.py` (`ResultRow`, `CategoryResults`, `StandingRow` with `is_our_club`) — @fastapi-architect
-- [ ] T006 [P] Add centralized cross-invalidation helper `invalidatePaired()` in `frontend/src/hooks/race/invalidation.ts` (raceEvents ↔ calendar ↔ results/standings/competitors/race-analysis keys) — @react-ui-engineer
-- [ ] T007 [P] Tests for T004 scoping helper (coach→club, parent→children, admin→all) in `backend/tests/services/test_permissions_scoping.py` — @qa-engineer
+- [X] T004 Add club/parent scoping helper `resolve_our_club_and_children(user)` in `backend/app/services/permissions.py` (coach/admin → club; parent → own children athlete_ids) with docstring — @fastapi-architect
+- [X] T005 [P] Add shared read schema base in `backend/app/schemas/race_results.py` (`ResultRow`, `CategoryResults`, `StandingRow` with `is_our_club`) — @fastapi-architect
+- [X] T006 [P] Add centralized cross-invalidation helper `invalidatePaired()` in `frontend/src/hooks/race/invalidation.ts` (raceEvents ↔ calendar ↔ results/standings/competitors/race-analysis keys) — @react-ui-engineer
+- [X] T007 [P] Tests for T004 scoping helper (coach→club, parent→children, admin→all) in `backend/tests/services/test_permissions_scoping.py` — @qa-engineer
 
 **Checkpoint**: Foundation ready.
 
@@ -45,21 +45,21 @@ description: "Task list for 007-competitions-consolidation"
 **Independent Test**: Import a round with RESULTADOS + GENERAL, open it, see both tables with club rows highlighted and a working category filter + "solo mi club" toggle.
 
 ### Tests (write first, must fail)
-- [ ] T008 [P] [US1] Contract+integration test `GET /race-events/{id}/results` (happy: grouped by category; negative: 404; filter by category; soft-deleted excluded) in `backend/tests/routers/test_race_results_read.py` — @qa-engineer
-- [ ] T009 [P] [US1] Contract+integration test `GET /race-events/{id}/standings` (happy; 404 no series) in `backend/tests/routers/test_race_standings_read.py` — @qa-engineer
-- [ ] T010 [P] [US1] **Privacy invariant** test: parent gets only own child rows; another minor never present in results/standings payload — @data-privacy-guard
-- [ ] T011 [P] [US1] Query-count/N+1 test asserting results & standings reads are single aggregated queries — @qa-engineer
-- [ ] T012 [P] [US1] vitest + axe for `ResultsTable`/`StandingsTable` (sort, category filter, club highlight, empty state) **plus a full-field render check using a 26-category fixture to guard SC-007 mobile responsiveness** in `frontend/src/components/competitions/results/__tests__/` — @qa-engineer
+- [X] T008 [P] [US1] Contract+integration test `GET /race-events/{id}/results` (happy: grouped by category; negative: 404; filter by category; soft-deleted excluded) in `backend/tests/routers/test_race_results_read.py` — @qa-engineer
+- [X] T009 [P] [US1] Contract+integration test `GET /race-events/{id}/standings` (happy; 404 no series) in `backend/tests/routers/test_race_standings_read.py` — @qa-engineer
+- [X] T010 [P] [US1] **Privacy invariant** test: parent gets only own child rows; another minor never present in results/standings payload — @data-privacy-guard
+- [X] T011 [P] [US1] Query-count/N+1 test asserting results & standings reads are single aggregated queries — @qa-engineer
+- [X] T012 [P] [US1] vitest + axe for `ResultsTable`/`StandingsTable` (sort, category filter, club highlight, empty state) **plus a full-field render check using a 26-category fixture to guard SC-007 mobile responsiveness** in `frontend/src/components/competitions/results/__tests__/` — @qa-engineer
 
 ### Implementation
-- [ ] T013 [US1] Implement `results_read.py` service (finishing order per `(category, position)`, exclude `deleted_at`, mark `is_our_club`) in `backend/app/services/race/results_read.py` — @fastapi-architect
-- [ ] T014 [US1] Implement `standings.py` service reading `season_standings` view scoped to the event's series/season in `backend/app/services/race/standings.py` — @fastapi-architect
-- [ ] T015 [US1] Add `GET /race-events/{id}/results` and `GET /race-events/{id}/standings` to `backend/app/routers/race_events.py` (RBAC + parent scoping via T004) — @fastapi-architect
-- [ ] T016 [P] [US1] TS types + api clients `frontend/src/api/raceResults.ts`, `raceStandings.ts` + `types/raceResults.types.ts` — @react-ui-engineer
-- [ ] T017 [P] [US1] Hooks `useRaceResults(id, filters)`, `useRaceStandings(id, filters)` in `frontend/src/hooks/race/` — @react-ui-engineer
-- [ ] T018 [US1] `ResultsTable.tsx` + `StandingsTable.tsx` (shadcn table, client sort/filter, club highlight, ≥48px targets) — @react-ui-engineer
-- [ ] T019 [US1] Replace placeholder `ResultsTab.tsx` with real table; add `StandingsTab.tsx`; wire into `CompetitionDetailPage` tabs (`?tab=results|standings`), lazy-loaded — @react-ui-engineer
-- [ ] T020 [US1] Empty/loading/error + cold-start states for both tabs (FR-013/032) — @react-ui-engineer
+- [X] T013 [US1] Implement `results_read.py` service (finishing order per `(category, position)`, exclude `deleted_at`, mark `is_our_club`) in `backend/app/services/race/results_read.py` — @fastapi-architect
+- [X] T014 [US1] Implement `standings.py` service reading `season_standings` view scoped to the event's series/season in `backend/app/services/race/standings.py` — @fastapi-architect
+- [X] T015 [US1] Add `GET /race-events/{id}/results` and `GET /race-events/{id}/standings` to `backend/app/routers/race_events.py` (RBAC + parent scoping via T004) — @fastapi-architect
+- [X] T016 [P] [US1] TS types + api clients `frontend/src/api/raceResults.ts`, `raceStandings.ts` + `types/raceResults.types.ts` — @react-ui-engineer
+- [X] T017 [P] [US1] Hooks `useRaceResults(id, filters)`, `useRaceStandings(id, filters)` in `frontend/src/hooks/race/` — @react-ui-engineer
+- [X] T018 [US1] `ResultsTable.tsx` + `StandingsTable.tsx` (shadcn table, client sort/filter, club highlight, ≥48px targets) — @react-ui-engineer
+- [X] T019 [US1] Replace placeholder `ResultsTab.tsx` with real table; add `StandingsTab.tsx`; wire into `CompetitionDetailPage` tabs (`?tab=results|standings`), lazy-loaded — @react-ui-engineer
+- [X] T020 [US1] Empty/loading/error + cold-start states for both tabs (FR-013/032) — @react-ui-engineer
 
 **Checkpoint**: US1 fully functional & shippable (MVP).
 
