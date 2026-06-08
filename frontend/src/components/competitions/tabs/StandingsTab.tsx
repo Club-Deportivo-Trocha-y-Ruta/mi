@@ -1,35 +1,28 @@
 /**
- * ResultsTab — tabla de resultados de la válida (tabla de llegada).
+ * StandingsTab — clasificación general de temporada.
  *
  * Estado de la tabla:
- *   - loading   → skeleton de filas + anuncio sr-only
+ *   - loading   → skeleton de filas
  *   - error     → banner con detección de cold-start de Render Free (~50 s)
- *   - vacío     → estado diseñado con CTA "Importar resultados"
- *   - con datos → ResultsTable (lazy chunk) con filtros y ordenación
+ *   - vacío     → estado diseñado (la temporada puede no tener standings todavía)
+ *   - con datos → StandingsTable (lazy chunk)
  *
- * Lazy-loading:
- *   ResultsTable se importa con React.lazy para mantener el chunk del tab
- *   dentro del presupuesto de 150 KB gzipped (constitution IV.5).
+ * Lazy-loading: StandingsTable se importa con React.lazy.
  *
  * Props:
- *   - `raceEventId: number` — ID del evento.
- *   - `hasResults?: boolean` — hint del padre (si es false, muestra CTA
- *     antes de la llamada; si es undefined, no bloquea la query).
- *   - `onNavigateToInsights?: () => void` — callback para navegar al tab Insights.
+ *   - `raceEventId: number` — ID del evento para determinar la temporada/serie.
  */
 import { lazy, Suspense } from "react";
-import { Link } from "react-router-dom";
-import { AlertCircle, Loader2, RefreshCw, Upload } from "lucide-react";
+import { AlertCircle, BarChart2, Loader2, RefreshCw } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { buttonVariants } from "@/components/ui/button";
-import { useRaceResults } from "@/hooks/race/useRaceResults";
+import { useRaceStandings } from "@/hooks/race/useRaceStandings";
 
-// ResultsTable — lazy chunk (tablas pesadas con 26 categorías)
-const ResultsTable = lazy(() =>
+// StandingsTable — lazy chunk
+const StandingsTable = lazy(() =>
   import(
-    "@/components/competitions/results/ResultsTable"
-  ).then((m) => ({ default: m.ResultsTable })),
+    "@/components/competitions/results/StandingsTable"
+  ).then((m) => ({ default: m.StandingsTable })),
 );
 
 // ---------------------------------------------------------------------------
@@ -37,8 +30,6 @@ const ResultsTable = lazy(() =>
 // ---------------------------------------------------------------------------
 
 function isColdStart(err: unknown): boolean {
-  // Render Free cold-start: primera petición tarda ~50 s y puede devolver
-  // un error de red (ECONNABORTED / ERR_NETWORK) o 503/502.
   if (typeof err === "object" && err !== null) {
     const e = err as { code?: string; response?: { status?: number } };
     if (e.code === "ECONNABORTED" || e.code === "ERR_NETWORK") return true;
@@ -52,17 +43,15 @@ function isColdStart(err: unknown): boolean {
 // Sub-componentes de estado
 // ---------------------------------------------------------------------------
 
-function ResultsTableSkeleton() {
+function StandingsTableSkeleton() {
   return (
     <div
       className="space-y-2"
       role="status"
       aria-busy="true"
-      aria-label="Cargando resultados"
+      aria-label="Cargando clasificación"
     >
-      {/* Header skeleton */}
       <Skeleton className="h-9 w-full" />
-      {/* Rows skeleton */}
       {Array.from({ length: 8 }).map((_, i) => (
         <Skeleton key={i} className="h-12 w-full" />
       ))}
@@ -70,29 +59,22 @@ function ResultsTableSkeleton() {
   );
 }
 
-function EmptyState({ raceEventId }: { raceEventId: number }) {
+function EmptyState() {
   return (
     <div
       className="flex min-h-[28vh] flex-col items-center justify-center gap-4 rounded-xl bg-white p-8 text-center ring-1 ring-[rgba(34,42,53,0.08)]"
-      data-testid="results-tab-empty"
+      data-testid="standings-tab-empty"
     >
-      <Upload size={36} className="text-mid-gray" aria-hidden="true" />
+      <BarChart2 size={36} className="text-mid-gray" aria-hidden="true" />
       <div className="space-y-1">
         <p className="text-sm font-semibold text-charcoal">
-          Sin resultados importados
+          Sin clasificación disponible
         </p>
         <p className="text-xs text-mid-gray">
-          Importa el PDF oficial de la Copa Valle para ver los resultados de
-          esta válida.
+          La clasificación general de la temporada estará disponible cuando se
+          hayan importado los resultados de al menos una válida.
         </p>
       </div>
-      <Link
-        to={`/competitions/${raceEventId}/import`}
-        className={buttonVariants({ variant: "default" })}
-        data-testid="results-tab-import-cta"
-      >
-        Importar resultados
-      </Link>
     </div>
   );
 }
@@ -112,7 +94,7 @@ function ErrorState({
     <div
       className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-4"
       role="alert"
-      data-testid="results-tab-error"
+      data-testid="standings-tab-error"
     >
       <AlertCircle
         className="mt-0.5 h-5 w-5 shrink-0 text-red-500"
@@ -122,7 +104,7 @@ function ErrorState({
         <p className="text-sm font-medium text-red-700">
           {coldStart
             ? "El servidor está iniciando…"
-            : "No se pudieron cargar los resultados."}
+            : "No se pudo cargar la clasificación."}
         </p>
         <p className="text-xs text-red-600">
           {coldStart
@@ -136,7 +118,7 @@ function ErrorState({
         disabled={isFetching}
         className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50"
         style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-        data-testid="results-tab-retry"
+        data-testid="standings-tab-retry"
       >
         {isFetching ? (
           <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -153,41 +135,24 @@ function ErrorState({
 // Props
 // ---------------------------------------------------------------------------
 
-export interface ResultsTabProps {
+export interface StandingsTabProps {
   raceEventId: number;
-  hasResults?: boolean;
-  onNavigateToInsights?: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ResultsTab({
-  raceEventId,
-  hasResults,
-  onNavigateToInsights: _onNavigateToInsights,
-}: ResultsTabProps) {
-  // Si el padre garantiza que no hay resultados, mostramos CTA de inmediato.
-  if (hasResults === false) {
-    return <EmptyState raceEventId={raceEventId} />;
-  }
-
-  return <ResultsTabInner raceEventId={raceEventId} />;
-}
-
-// Inner component que hace la query (separado para que el early-return
-// de arriba no viole las reglas de hooks).
-function ResultsTabInner({ raceEventId }: { raceEventId: number }) {
+export function StandingsTab({ raceEventId }: StandingsTabProps) {
   const { data, isLoading, isError, isFetching, error, refetch } =
-    useRaceResults(raceEventId);
+    useRaceStandings(raceEventId);
 
-  // ── Cargando ───────────────────────────────────────────────────────────
+  // ── Cargando ─────────────────────────────────────────────────────────────
   if (isLoading) {
-    return <ResultsTableSkeleton />;
+    return <StandingsTableSkeleton />;
   }
 
-  // ── Error ──────────────────────────────────────────────────────────────
+  // ── Error ─────────────────────────────────────────────────────────────────
   if (isError) {
     return (
       <ErrorState
@@ -198,19 +163,19 @@ function ResultsTabInner({ raceEventId }: { raceEventId: number }) {
     );
   }
 
-  // ── Sin datos (categorías vacías o respuesta vacía) ────────────────────
+  // ── Sin datos ─────────────────────────────────────────────────────────────
   if (
     !data ||
     data.categories.length === 0 ||
     data.categories.every((c) => c.rows.length === 0)
   ) {
-    return <EmptyState raceEventId={raceEventId} />;
+    return <EmptyState />;
   }
 
-  // ── Con datos ──────────────────────────────────────────────────────────
+  // ── Con datos ─────────────────────────────────────────────────────────────
   return (
-    <Suspense fallback={<ResultsTableSkeleton />}>
-      <ResultsTable data={data} />
+    <Suspense fallback={<StandingsTableSkeleton />}>
+      <StandingsTable data={data} />
     </Suspense>
   );
 }
