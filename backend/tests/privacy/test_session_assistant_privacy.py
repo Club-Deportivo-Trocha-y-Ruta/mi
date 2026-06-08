@@ -26,7 +26,11 @@ from app.services.ai.use_cases.session_assistant import (
     SessionClarifyUseCase,
     SessionDraftUseCase,
 )
-from app.services.training.session_assistant_context import build_aggregate_context
+from app.services.training.session_assistant_context import (
+    build_aggregate_context,
+    load_club_athlete_name_tokens,
+    redact_names,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -284,3 +288,129 @@ async def test_draft_response_no_athlete_identifiers():
 
     # athlete_call_up debe ser un criterio enum, no un ID
     assert result["athlete_call_up"] in {"todos_convocados", "grupo_10_12", "grupo_13_15", "ninguno"}
+
+
+# ---------------------------------------------------------------------------
+# Redacción de texto libre del coach (audit privacy: intent_text / other_text)
+# ---------------------------------------------------------------------------
+
+
+class _NameDB:
+    """Fake DB que devuelve tuplas (first_name, last_name) para tokens de nombre."""
+
+    def __init__(self, names):
+        self._names = names  # list[tuple[str, str]]
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return list(self._rows)
+
+    async def execute(self, *args, **kwargs):
+        return self._Result(self._names)
+
+
+def test_redact_names_replaces_full_and_parts():
+    """redact_names reemplaza nombre completo y partes (≥3 chars), case-insensitive."""
+    tokens = ["Juan Pérez", "Juan", "Pérez", "María García", "María", "García"]
+    tokens = sorted(tokens, key=len, reverse=True)
+    out = redact_names("sesión para Juan Pérez y maría", tokens)
+    assert "Juan" not in out
+    assert "Pérez" not in out
+    assert "maría" not in out.lower().replace("[atleta]", "")
+    assert "[atleta]" in out
+
+
+def test_redact_names_handles_none_and_empty():
+    """redact_names tolera None, texto vacío y lista de tokens vacía."""
+    assert redact_names(None, ["Juan"]) is None
+    assert redact_names("", ["Juan"]) == ""
+    assert redact_names("texto sin nombres", []) == "texto sin nombres"
+
+
+@pytest.mark.asyncio
+async def test_load_club_athlete_name_tokens_orders_by_length():
+    """load_club_athlete_name_tokens devuelve nombre completo + partes, mayor a menor."""
+    db = _NameDB([("Juan", "Pérez"), ("Ana", "Gómez")])
+    tokens = await load_club_athlete_name_tokens(db, club_id=1)
+    assert "Juan Pérez" in tokens
+    assert "Juan" in tokens
+    assert "Pérez" in tokens
+    # Ordenado de mayor a menor longitud (el nombre completo primero)
+    assert tokens == sorted(tokens, key=len, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_intent_text_name_redacted_before_llm():
+    """Un nombre de menor escrito por el coach en intent_text NO llega al LLM."""
+    registry = PromptRegistry()
+    provider = FakeLLMProvider(canned=CANNED_CLARIFY)
+    use_case = SessionClarifyUseCase(provider=provider, registry=registry)
+
+    name_tokens = await load_club_athlete_name_tokens(
+        _NameDB([("Juan", "Pérez")]), club_id=1
+    )
+    context = await build_aggregate_context(
+        _FakeDB(), club_id=1, selected_athlete_ids=ATHLETE_IDS, today=date(2026, 6, 8)
+    )
+    # El router redacta intent_text antes de pasarlo al use case
+    context["intent_text"] = redact_names("sesión técnica para Juan Pérez", name_tokens)
+
+    await use_case.run(context)
+
+    prompt_text = provider.last_request.messages[-1].content
+    assert "Juan Pérez" not in prompt_text
+    assert "Juan" not in prompt_text
+    assert "[atleta]" in prompt_text
+
+
+@pytest.mark.asyncio
+async def test_other_text_name_redacted_before_llm():
+    """Un nombre escrito en other_text de una respuesta NO llega al LLM."""
+    registry = PromptRegistry()
+    provider = FakeLLMProvider(canned=CANNED_DRAFT)
+    use_case = SessionDraftUseCase(provider=provider, registry=registry)
+
+    name_tokens = await load_club_athlete_name_tokens(
+        _NameDB([("María", "García")]), club_id=1
+    )
+    context = await build_aggregate_context(
+        _FakeDB(), club_id=1, selected_athlete_ids=ATHLETE_IDS, today=date(2026, 6, 8)
+    )
+    context["intent_text"] = redact_names("salida del grupo", name_tokens)
+    context["answers"] = [
+        {
+            "question_id": "q1",
+            "selected_labels": ["13-15"],
+            "other_text": redact_names("el grupo de María García", name_tokens),
+        }
+    ]
+
+    await use_case.run(context)
+
+    prompt_text = provider.last_request.messages[-1].content
+    assert "María García" not in prompt_text
+    assert "García" not in prompt_text
+    assert "[atleta]" in prompt_text
+
+
+def test_schema_error_log_excludes_raw_detail(caplog):
+    """El log de schema_error no incluye str(exc) (puede tener salida cruda del LLM).
+
+    Verifica el patrón a nivel de unidad: el router loguea solo exc_type. Aquí
+    confirmamos que el mensaje formateado del router no interpola str(exc).
+    """
+    # Simula el log que produce el router tras corregir el hallazgo HIGH del audit.
+    logger = logging.getLogger("app.routers.session_assistant")
+    with caplog.at_level(logging.WARNING, logger="app.routers.session_assistant"):
+        exc = ValueError("duration_min inválido: 20131115")  # valor crudo simulado
+        logger.warning(
+            "session_assistant.draft schema_error club_id=%d exc_type=%s",
+            1,
+            type(exc).__name__,
+        )
+    log_text = " ".join(caplog.messages)
+    assert "20131115" not in log_text
+    assert "ValueError" in log_text

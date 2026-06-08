@@ -14,6 +14,7 @@ sin tapering).
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date
 from typing import Any
 
@@ -24,6 +25,10 @@ from app.models.athlete import Athlete
 from app.services.category import compute_age_decimal
 
 logger = logging.getLogger(__name__)
+
+# Marcador con el que se reemplaza cualquier nombre de atleta detectado en el
+# texto libre del coach antes de enviarlo al LLM (defensa en profundidad).
+_REDACTION_PLACEHOLDER = "[atleta]"
 
 # ---------------------------------------------------------------------------
 # Calendario Copa Valle 2026
@@ -119,6 +124,62 @@ def _season_phase(today: date) -> str:
     if today <= date(2026, 9, 30):
         return "mesociclo de desarrollo (tercer trimestre)"
     return "mesociclo de mantenimiento (cuarto trimestre)"
+
+
+# ---------------------------------------------------------------------------
+# Redacción de nombres en texto libre del coach (privacidad, defensa en profundidad)
+# ---------------------------------------------------------------------------
+
+
+async def load_club_athlete_name_tokens(
+    db: AsyncSession,
+    club_id: int,
+) -> list[str]:
+    """Carga los tokens de nombre de los atletas del club para redacción.
+
+    PRIVACIDAD: los nombres se cargan SOLO para redactarlos del texto libre del
+    coach antes de enviarlo al LLM; nunca se incluyen en el contexto del prompt.
+
+    Devuelve nombre completo + cada parte (≥3 chars), ordenados de mayor a menor
+    longitud para que los nombres completos se redacten antes que sus partes.
+    """
+    result = await db.execute(
+        select(Athlete.first_name, Athlete.last_name).where(
+            Athlete.club_id == club_id
+        )
+    )
+    tokens: set[str] = set()
+    for first, last in result.all():
+        first = (first or "").strip()
+        last = (last or "").strip()
+        full = f"{first} {last}".strip()
+        if len(full) >= 3:
+            tokens.add(full)
+        for part in (first, last):
+            if len(part) >= 3:
+                tokens.add(part)
+    return sorted(tokens, key=len, reverse=True)
+
+
+def redact_names(text: str | None, tokens: list[str]) -> str | None:
+    """Redacta del ``text`` cualquier token de nombre (whole-word, sin acentos sensibles).
+
+    Reemplaza coincidencias de palabra completa (``\\b``) case-insensitive por
+    ``[atleta]``. Es una defensa en profundidad contra el error del coach de
+    escribir el nombre de un menor en el texto libre; el invariante principal
+    (ningún dato derivado de BD llega al LLM) ya se cumple en el contexto agregado.
+    """
+    if not text or not tokens:
+        return text
+    redacted = text
+    for tok in tokens:
+        redacted = re.sub(
+            rf"\b{re.escape(tok)}\b",
+            _REDACTION_PLACEHOLDER,
+            redacted,
+            flags=re.IGNORECASE,
+        )
+    return redacted
 
 
 # ---------------------------------------------------------------------------

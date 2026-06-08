@@ -42,7 +42,11 @@ from app.schemas.session_assistant import (
 from app.services.ai.errors import LLMSchemaError
 from app.services.ai.use_cases.session_assistant import SessionAssistantLLMTimeout
 from app.services.permissions import user_club_role
-from app.services.training.session_assistant_context import build_aggregate_context
+from app.services.training.session_assistant_context import (
+    build_aggregate_context,
+    load_club_athlete_name_tokens,
+    redact_names,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +133,10 @@ async def clarify_session(
         club_id=club_id,
         selected_athlete_ids=body.selected_athlete_ids,
     )
-    # Añadir intent_text al contexto del prompt (no se persiste ni se loguea con ai_log_prompts)
-    context["intent_text"] = body.intent_text
+    # Redactar nombres de atletas del texto libre del coach antes de enviarlo al
+    # LLM (defensa en profundidad — el coach podría escribir el nombre de un menor).
+    name_tokens = await load_club_athlete_name_tokens(db, club_id)
+    context["intent_text"] = redact_names(body.intent_text, name_tokens)
 
     try:
         result = await clarify_use_case.run(
@@ -144,7 +150,13 @@ async def clarify_session(
             detail=_MSG_503,
         )
     except LLMSchemaError as exc:
-        logger.warning("session_assistant.clarify schema_error club_id=%d: %s", club_id, exc)
+        # No se loguea str(exc): puede contener fragmentos crudos de la salida del
+        # LLM. Solo el tipo de excepción (privacidad Ley 1581).
+        logger.warning(
+            "session_assistant.clarify schema_error club_id=%d exc_type=%s",
+            club_id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=_MSG_422_AI,
@@ -192,14 +204,17 @@ async def draft_session(
         club_id=club_id,
         selected_athlete_ids=body.selected_athlete_ids,
     )
-    context["intent_text"] = body.intent_text
+    # Redactar nombres del texto libre del coach (intent_text + other_text de cada
+    # respuesta) antes de enviarlo al LLM (defensa en profundidad).
+    name_tokens = await load_club_athlete_name_tokens(db, club_id)
+    context["intent_text"] = redact_names(body.intent_text, name_tokens)
 
-    # Serializar las respuestas para el template
+    # Serializar las respuestas para el template (other_text redactado)
     context["answers"] = [
         {
             "question_id": ans.question_id,
             "selected_labels": ans.selected_labels,
-            "other_text": ans.other_text,
+            "other_text": redact_names(ans.other_text, name_tokens),
         }
         for ans in body.answers
     ]
@@ -216,7 +231,13 @@ async def draft_session(
             detail=_MSG_503,
         )
     except LLMSchemaError as exc:
-        logger.warning("session_assistant.draft schema_error club_id=%d: %s", club_id, exc)
+        # No se loguea str(exc): puede contener fragmentos crudos de la salida del
+        # LLM. Solo el tipo de excepción (privacidad Ley 1581).
+        logger.warning(
+            "session_assistant.draft schema_error club_id=%d exc_type=%s",
+            club_id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=_MSG_422_AI,

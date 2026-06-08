@@ -334,8 +334,8 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 | 4 | `SessionClarifyUseCase` + `SessionDraftUseCase` (BaseUseCase + safe JSON parse + guardrail scrub + Pydantic) | ✅ Complete 2026-06-08 |
 | 5 | Router `/api/clubs/{id}/session-assistant/{clarify,draft}` — coach/admin RBAC, 503/422 mapping + DI providers | ✅ Complete 2026-06-08 |
 | 6 | Frontend: `SessionAssistantPanel`, `ClarifyQuestionCard` (ToggleGroup single/multiple + "Otro"), pre-wizard route, `reset(keepDirtyValues)` prefill, per-field "IA" markers | ✅ Complete 2026-06-08 |
-| 7 | Tests: 58 backend (use case + router + context + privacy invariants) + 31 frontend vitest (a11y axe 0); full FE suite 1817 green; `tsc` clean, `ruff` clean on new files | ✅ Complete 2026-06-08 |
-| 8 | Privacy audit (data-privacy-guard) | 🔄 In review 2026-06-08 |
+| 7 | Tests: 64 backend (use case + router + context + privacy invariants) + 31 frontend vitest (a11y axe 0); full FE suite 1817 green; `tsc` clean, `ruff` clean on new files | ✅ Complete 2026-06-08 |
+| 8 | Privacy audit (data-privacy-guard): 0 critical, 1 HIGH + 2 MEDIUM remediated — schema-error logs now `exc_type` only (no raw LLM output), and coach free-text (`intent_text`/`other_text`) is redacted against club athlete names before reaching the LLM (+6 privacy tests) | ✅ Complete 2026-06-08 |
 | 9 | Deploy to Render | ⏳ Pending |
 
 > Deployment pending user approval. Backend session-assistant suite verified on SQLite

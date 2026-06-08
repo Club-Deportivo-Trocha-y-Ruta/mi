@@ -130,11 +130,11 @@ wizard works with no data loss; verify no name/id in context or logs.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T041 [P] Run `data-privacy-guard` audit over the feature (context builder, prompts, router, logs); resolve any finding before deploy.
+- [X] T041 [P] Run `data-privacy-guard` audit over the feature (context builder, prompts, router, logs); resolve any finding before deploy.
 - [X] T042 [P] Lint/type gates green: `cd backend && ruff check . && mypy app/services/ai app/routers/session_assistant.py`; `cd frontend && npx tsc --noEmit && npx eslint src/...`.
 - [X] T043 [P] Docs: add `docs/09-training-planning/session-ai-assistant.md` (flow, privacy contract, endpoints) and update `docs/README.md`; add a CLAUDE.md implementation-status block for feature 006.
 - [X] T044 Full targeted suites green: backend `pytest tests/services/ai tests/routers/test_session_assistant.py tests/privacy/test_session_assistant_privacy.py tests/services/training/test_session_assistant_context.py -q`; frontend `npx vitest run src/components/training/session-wizard -q` (a11y 0 violations).
-- [ ] T045 Update `specs/006-ai-session-clarify-draft/checklists/requirements.md` if any scope drifted; confirm spec ↔ implementation consistency for `/speckit-analyze`.
+- [X] T045 Update `specs/006-ai-session-clarify-draft/checklists/requirements.md` if any scope drifted; confirm spec ↔ implementation consistency for `/speckit-analyze`.
 
 ---
 
