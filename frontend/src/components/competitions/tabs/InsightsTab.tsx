@@ -13,6 +13,7 @@ import { Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StaleAnalysisBadge } from "@/components/competitions/insights/StaleAnalysisBadge";
 import { useClubInsightsByRace } from "@/hooks/athletes/useClubInsightsByRace";
 import { formatDateTimeCompact } from "@/lib/datetime";
 import {
@@ -55,82 +56,100 @@ function InsightCard({ item, onNavigate }: InsightCardProps) {
   }
 
   return (
-    <div
-      className={[
-        "rounded-xl bg-white p-4 transition-colors",
-        isClickable
-          ? "cursor-pointer hover:ring-2 hover:ring-charcoal/20"
-          : "opacity-60 cursor-default",
-      ].join(" ")}
-      style={{ boxShadow: cardShadow }}
-      onClick={handleClick}
-      role={isClickable ? "button" : undefined}
-      tabIndex={isClickable ? 0 : undefined}
-      onKeyDown={
-        isClickable
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                handleClick();
-              }
-            }
-          : undefined
-      }
-      aria-label={
-        isClickable
-          ? `Ver análisis de ${item.athlete_display_name}`
-          : undefined
-      }
-      data-testid={`insights-tab-card-${item.athlete_id}`}
+    // Contenedor article: evita nesting de controles interactivos (axe
+    // nested-interactive). El card clickable y el badge stale son hermanos
+    // dentro del article, no padre-hijo.
+    <article
+      className="flex flex-col gap-2"
+      aria-label={item.athlete_display_name}
     >
-      {/* Header: avatar + nombre */}
-      <div className="mb-3 flex items-center gap-3">
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-charcoal text-sm font-bold text-white"
-          aria-hidden="true"
-        >
-          {initials || <Users size={14} />}
+      <div
+        className={[
+          "rounded-xl bg-white p-4 transition-colors",
+          isClickable
+            ? "cursor-pointer hover:ring-2 hover:ring-charcoal/20"
+            : "opacity-60 cursor-default",
+        ].join(" ")}
+        style={{ boxShadow: cardShadow }}
+        onClick={handleClick}
+        role={isClickable ? "button" : undefined}
+        tabIndex={isClickable ? 0 : undefined}
+        onKeyDown={
+          isClickable
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleClick();
+                }
+              }
+            : undefined
+        }
+        aria-label={
+          isClickable
+            ? `Ver análisis de ${item.athlete_display_name}`
+            : undefined
+        }
+        data-testid={`insights-tab-card-${item.athlete_id}`}
+      >
+        {/* Header: avatar + nombre */}
+        <div className="mb-3 flex items-center gap-3">
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-charcoal text-sm font-bold text-white"
+            aria-hidden="true"
+          >
+            {initials || <Users size={14} />}
+          </div>
+          <p className="line-clamp-2 text-sm font-semibold leading-tight text-charcoal">
+            {item.athlete_display_name}
+          </p>
         </div>
-        <p className="line-clamp-2 text-sm font-semibold leading-tight text-charcoal">
-          {item.athlete_display_name}
-        </p>
-      </div>
 
-      {item.insight_id === null ? (
-        <div className="space-y-1">
-          <Badge variant="secondary" className="text-xs">
-            Sin análisis
-          </Badge>
-          <p className="text-xs text-mid-gray">El análisis está pendiente.</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-1.5">
+        {item.insight_id === null ? (
+          <div className="space-y-1">
             <Badge variant="secondary" className="text-xs">
-              {validaLabel(item.valida_num)}
+              Sin análisis
             </Badge>
-            {item.confidence !== null && (
-              <Badge
-                variant={confidenceVariant(item.confidence)}
-                className="text-xs"
-              >
-                {confidenceLabel(item.confidence)}
+            <p className="text-xs text-mid-gray">El análisis está pendiente.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="secondary" className="text-xs">
+                {validaLabel(item.valida_num)}
               </Badge>
+              {item.confidence !== null && (
+                <Badge
+                  variant={confidenceVariant(item.confidence)}
+                  className="text-xs"
+                >
+                  {confidenceLabel(item.confidence)}
+                </Badge>
+              )}
+            </div>
+            {item.summary_excerpt !== null && (
+              <p className="line-clamp-3 text-sm leading-relaxed text-charcoal">
+                {item.summary_excerpt}
+              </p>
+            )}
+            {item.generated_at !== null && (
+              <p className="text-xs text-mid-gray">
+                {formatDateTimeCompact(item.generated_at)}
+              </p>
             )}
           </div>
-          {item.summary_excerpt !== null && (
-            <p className="line-clamp-3 text-sm leading-relaxed text-charcoal">
-              {item.summary_excerpt}
-            </p>
-          )}
-          {item.generated_at !== null && (
-            <p className="text-xs text-mid-gray">
-              {formatDateTimeCompact(item.generated_at)}
-            </p>
-          )}
+        )}
+      </div>
+
+      {/* FR-018 / PR5: badge hermano del card (no anidado) para evitar
+          nested-interactive (axe). La re-ejecución es manual (D5/FR-029). */}
+      {item.stale_run_id != null && (
+        <div
+          data-testid={`insights-tab-stale-badge-${item.athlete_id}`}
+        >
+          <StaleAnalysisBadge runId={item.stale_run_id} />
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
