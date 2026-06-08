@@ -1,3 +1,3 @@
 // Roster module — Wave C (athlete association + roster).
-// Reserved for RosterPanel and related components.
-export {};
+export { RosterPanel } from "./RosterPanel";
+export type { RosterPanelProps } from "./RosterPanel";
