@@ -69,11 +69,19 @@ async def get_event_results(
     ``EventResultsRead`` when the event exists (categories may be empty lists
     if there are no non-deleted results), or ``None`` if the event does not exist.
     """
-    # 1. Verify the event exists — single lightweight check.
-    event_exists = await db.execute(
-        select(RaceEvent.id).where(RaceEvent.id == race_event_id)
-    )
-    if event_exists.scalar_one_or_none() is None:
+    # 1. Verify the event exists and fetch metadata — single lightweight check.
+    event_row = (
+        await db.execute(
+            select(
+                RaceEvent.id,
+                RaceEvent.name,
+                RaceEvent.event_date,
+                RaceEvent.location,
+                RaceEvent.status,
+            ).where(RaceEvent.id == race_event_id)
+        )
+    ).mappings().one_or_none()
+    if event_row is None:
         return None
 
     # 2. Build the aggregated query: results → competitors → categories.
@@ -121,7 +129,14 @@ async def get_event_results(
         # Parent scope: only show their own children's rows.
         if not allowed_athlete_ids:
             # Empty set → no results for this parent.
-            return EventResultsRead(race_event_id=race_event_id, categories=[])
+            return EventResultsRead(
+                race_event_id=race_event_id,
+                event_name=event_row["name"],
+                event_date=event_row["event_date"],
+                location=event_row["location"],
+                status=event_row["status"].value if hasattr(event_row["status"], "value") else str(event_row["status"]),
+                categories=[],
+            )
         stmt = stmt.where(RaceResult.athlete_id.in_(allowed_athlete_ids))
 
     rows = (await db.execute(stmt)).mappings().all()
@@ -163,4 +178,11 @@ async def get_event_results(
         len(rows),
     )
 
-    return EventResultsRead(race_event_id=race_event_id, categories=category_list)
+    return EventResultsRead(
+        race_event_id=race_event_id,
+        event_name=event_row["name"],
+        event_date=event_row["event_date"],
+        location=event_row["location"],
+        status=event_row["status"].value if hasattr(event_row["status"], "value") else str(event_row["status"]),
+        categories=category_list,
+    )

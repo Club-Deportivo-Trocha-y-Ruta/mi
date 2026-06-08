@@ -340,6 +340,13 @@ class TestGetEventResults:
         body = r.json()
 
         assert body["race_event_id"] == 100
+
+        # Event metadata fields must be present and correct (non-sensitive).
+        assert body["event_name"] == "VALIDA IV CALI"
+        assert body["event_date"] == "2026-05-17"
+        assert body["location"] == "Cali"
+        assert body["status"] == "completed"
+
         cats = body["categories"]
         assert len(cats) == 2
 

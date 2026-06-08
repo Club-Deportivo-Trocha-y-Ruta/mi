@@ -75,11 +75,15 @@ async def get_event_standings(
     ``EventStandingsRead`` when the event and its series exist, or ``None``
     when the event does not exist or has no series.
     """
-    # 1. Resolve event → series → season in one query.
+    # 1. Resolve event → series → season in one query; also fetch event metadata.
     evt_row = (
         await db.execute(
             select(
                 RaceEvent.id,
+                RaceEvent.name,
+                RaceEvent.event_date,
+                RaceEvent.location,
+                RaceEvent.status,
                 RaceEvent.series_id,
                 RaceSeries.season_year,
             )
@@ -93,11 +97,23 @@ async def get_event_standings(
 
     series_id: int = evt_row["series_id"]
     season_year: int = evt_row["season_year"]
+    event_name: str = evt_row["name"]
+    event_date = evt_row["event_date"]
+    event_location = evt_row["location"]
+    event_status: str = (
+        evt_row["status"].value
+        if hasattr(evt_row["status"], "value")
+        else str(evt_row["status"])
+    )
 
     # 2. Parent-scope early exit.
     if allowed_athlete_ids is not None and not allowed_athlete_ids:
         return EventStandingsRead(
             race_event_id=race_event_id,
+            event_name=event_name,
+            event_date=event_date,
+            location=event_location,
+            status=event_status,
             series_id=series_id,
             season_year=season_year,
             categories=[],
@@ -234,6 +250,10 @@ async def get_event_standings(
 
     return EventStandingsRead(
         race_event_id=race_event_id,
+        event_name=event_name,
+        event_date=event_date,
+        location=event_location,
+        status=event_status,
         series_id=series_id,
         season_year=season_year,
         categories=categories,

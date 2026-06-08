@@ -261,6 +261,13 @@ class TestGetEventStandings:
         body = r.json()
 
         assert body["race_event_id"] == 100
+
+        # Event metadata fields must be present and correct (non-sensitive).
+        assert body["event_name"] == "VALIDA I"
+        assert body["event_date"] == "2026-01-31"
+        assert body["location"] == "Sevilla"
+        assert body["status"] == "completed"
+
         assert body["series_id"] == 1
         assert body["season_year"] == 2026
 
@@ -292,6 +299,13 @@ class TestGetEventStandings:
         body = r.json()
 
         assert body["race_event_id"] == 101
+
+        # Metadata reflects the anchor event (101), not event 100.
+        assert body["event_name"] == "VALIDA II"
+        assert body["event_date"] == "2026-02-28"
+        assert body["location"] == "Ginebra"
+        assert body["status"] == "completed"
+
         rows = body["categories"][0]["rows"]
         # Total points per competitor = 40+35 = 75 each.
         for row in rows:

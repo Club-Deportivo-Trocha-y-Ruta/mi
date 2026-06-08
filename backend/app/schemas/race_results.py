@@ -13,6 +13,7 @@ Privacidad Ley 1581:
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -74,9 +75,16 @@ class EventResultsRead(BaseModel):
 
     Categories are ordered by ``RaceCategory.sort_order``; within each
     category rows are ordered by (position ASC NULLS LAST, competitor_id ASC).
+
+    Event metadata fields allow the frontend to render a page header without
+    a separate coach-only detail call (no minor PII included).
     """
 
     race_event_id: int
+    event_name: str = Field(..., description="Official name of the race event.")
+    event_date: date = Field(..., description="Date the race was held.")
+    location: Optional[str] = Field(None, description="Municipality / venue of the race.")
+    status: str = Field(..., description="RaceEventStatus value (scheduled/completed/cancelled).")
     categories: list[CategoryResults]
 
 
@@ -126,9 +134,16 @@ class EventStandingsRead(BaseModel):
     Categories are ordered by ``RaceCategory.sort_order``; within each
     category rows are ordered by rank ASC (ties broken by podiums DESC,
     then best_position ASC).
+
+    Event metadata fields allow the frontend to render a page header without
+    a separate coach-only detail call (no minor PII included).
     """
 
     race_event_id: int
+    event_name: str = Field(..., description="Official name of the anchor race event.")
+    event_date: date = Field(..., description="Date the anchor race was held.")
+    location: Optional[str] = Field(None, description="Municipality / venue of the anchor race.")
+    status: str = Field(..., description="RaceEventStatus value of the anchor event.")
     series_id: int
     season_year: int
     categories: list[CategoryStandings]
