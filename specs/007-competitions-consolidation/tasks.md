@@ -114,11 +114,11 @@ description: "Task list for 007-competitions-consolidation"
 **Independent Test**: Re-upload corrected PDF → confirm diff → applied atomically; identical SHA256 = no-op; affected `agent_runs.stale_since` set; "outdated" badge + manual re-execute.
 
 ### Tests
-- [ ] T038 [P] [US4] Service test: re-ingest with changed SHA256 sets `agent_runs.stale_since` + marks affected newsletters outdated; identical = no-op — @qa-engineer
+- [X] T038 [P] [US4] Service test: re-ingest with changed SHA256 sets `agent_runs.stale_since` + marks affected newsletters outdated; identical = no-op — @qa-engineer
 - [ ] T039 [P] [US4] vitest+axe: diff confirm flow + "outdated/Re-ejecutar" badge in `/competitions/:id/import` — @qa-engineer
 
 ### Implementation
-- [ ] T040 [US4] Wire `stale_since` marking + newsletter `outdated` into ingestor re-ingest path in `backend/app/services/race/ingestor.py` (or invalidate endpoint) — @fastapi-architect
+- [X] T040 [US4] Wire `stale_since` marking + newsletter `outdated` into ingestor re-ingest path in `backend/app/services/race/ingestor.py` (or invalidate endpoint) — @fastapi-architect
 - [ ] T041 [US4] Ensure `/competitions/:id/import` reuses existing `DiffTable` + revision-reason catalog; add "outdated" badge + manual re-execute button (no auto-trigger) — @react-ui-engineer
 
 **Checkpoint**: US1–US4 work.
