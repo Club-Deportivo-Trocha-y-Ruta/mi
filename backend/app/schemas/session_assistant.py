@@ -11,7 +11,7 @@ from __future__ import annotations
 import enum
 from datetime import date, time
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------

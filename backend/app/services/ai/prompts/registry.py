@@ -159,6 +159,49 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
             "Sin nombres reales. Máx 3 frases por bloque."
         ),
     ),
+    "session_clarify": PromptSpec(
+        template_id="session_clarify",
+        template_path="session_clarify.j2",
+        required_keys=frozenset(
+            {
+                "today",
+                "age_mix",
+                "total_athletes",
+                "season_phase",
+                "days_to_next_race",
+                "next_race_priority",
+                "intent_text",
+            }
+        ),
+        version=1,
+        description=(
+            "Genera 0–4 preguntas de clarificación para planificar una sesión XCO. "
+            "Salida JSON: {questions: [...]}. Sin nombres ni IDs de atletas. "
+            "Condicionado por age_mix (conteos) y proximidad a válida."
+        ),
+    ),
+    "session_draft": PromptSpec(
+        template_id="session_draft",
+        template_path="session_draft.j2",
+        required_keys=frozenset(
+            {
+                "today",
+                "age_mix",
+                "total_athletes",
+                "season_phase",
+                "days_to_next_race",
+                "next_race_priority",
+                "intent_text",
+                "answers",
+            }
+        ),
+        version=1,
+        description=(
+            "Genera un borrador editable de sesión de entrenamiento XCO. "
+            "Salida JSON con campos de TrainingSession (sin ids/nombres de atletas). "
+            "athlete_call_up es criterio no identificante; el frontend lo resuelve a IDs."
+        ),
+    ),
 }
 
 

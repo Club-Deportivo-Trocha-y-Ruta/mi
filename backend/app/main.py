@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, reports, training_sessions
+from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
 from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
@@ -51,6 +52,7 @@ app.include_router(athlete_race_analysis.router, prefix="/api/athletes", tags=["
 app.include_router(athlete_newsletters_router, prefix="/api/athletes", tags=["athlete-newsletters"])
 app.include_router(newsletter_clubs_router, prefix="/api/clubs", tags=["athlete-newsletters"])
 app.include_router(club_race_insights_router, prefix="/api/races", tags=["club-race-insights"])
+app.include_router(session_assistant_router, prefix="/api/clubs", tags=["session-assistant"])
 
 
 # Boot: configurar db_factory del grafo race-AI (F4) para que los nodos
