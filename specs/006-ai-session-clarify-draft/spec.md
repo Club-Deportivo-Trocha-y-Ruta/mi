@@ -13,6 +13,7 @@
 ### Session 2026-06-08
 
 - Q: Where does the assistant live in the session-creation flow? → A: A pre-wizard launch — an "Asistente IA" entry point shown before/at the start of session creation; on finishing the conversation it opens the existing wizard pre-filled.
+- Q: Which wizard fields does the draft pre-fill? → A: Everything — training content (focus, objectives, structured description, duration, session kind), inferable logistics (location, and date/time when stated in the intent), and a proposed athlete call-up. Privacy constraint preserved: the AI proposes athletes only by non-identifying criterion (e.g., age group or "todos los convocados"), which the system resolves to specific athletes locally; the AI never receives or emits any minor's name. The coach reviews and edits every pre-filled field, including the athlete selection.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -157,7 +158,14 @@ no prohibited content reaches the coach.
   free text) and return a complete proposed session draft.
 - **FR-006**: The generated draft MUST include, at minimum, a technical focus,
   objectives, a structured description covering warm-up / main set / cool-down, a
-  duration, and a session kind, in a form that pre-fills the existing session wizard.
+  duration, and a session kind, and MAY additionally pre-fill logistics it can
+  confidently infer from the intent (location, and date/time when stated) and a proposed
+  athlete call-up, in a form that pre-fills the existing session wizard.
+- **FR-016**: When the draft proposes an athlete call-up, it MUST express the proposal as
+  a non-identifying criterion (e.g., an age group or "todos los convocados") that the
+  system resolves to specific athletes locally; the assistant MUST NOT receive or emit
+  any individual athlete name or personal datum to produce this proposal. The coach MUST
+  be able to review and change the resulting athlete selection before saving.
 - **FR-007**: The system MUST treat all generated content as an editable draft: every
   pre-filled field MUST remain editable and nothing MUST be persisted until the coach
   explicitly saves through the normal flow.
