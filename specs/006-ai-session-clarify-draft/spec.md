@@ -14,6 +14,7 @@
 
 - Q: Where does the assistant live in the session-creation flow? → A: A pre-wizard launch — an "Asistente IA" entry point shown before/at the start of session creation; on finishing the conversation it opens the existing wizard pre-filled.
 - Q: Which wizard fields does the draft pre-fill? → A: Everything — training content (focus, objectives, structured description, duration, session kind), inferable logistics (location, and date/time when stated in the intent), and a proposed athlete call-up. Privacy constraint preserved: the AI proposes athletes only by non-identifying criterion (e.g., age group or "todos los convocados"), which the system resolves to specific athletes locally; the AI never receives or emits any minor's name. The coach reviews and edits every pre-filled field, including the athlete selection.
+- Q: In what language does the assistant produce coach-facing output? → A: Español neutro (Colombia) for all coach-facing assistant output — clarifying questions, option labels and descriptions, and the generated draft text — consistent with the constitution's product-copy language policy. The coach's free-text intent may be written in any language.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -166,6 +167,9 @@ no prohibited content reaches the coach.
   system resolves to specific athletes locally; the assistant MUST NOT receive or emit
   any individual athlete name or personal datum to produce this proposal. The coach MUST
   be able to review and change the resulting athlete selection before saving.
+- **FR-017**: All coach-facing assistant output — clarifying questions, option labels and
+  descriptions, and the generated draft text — MUST be in español neutro (Colombia). The
+  coach's free-text intent MAY be provided in any language.
 - **FR-007**: The system MUST treat all generated content as an editable draft: every
   pre-filled field MUST remain editable and nothing MUST be persisted until the coach
   explicitly saves through the normal flow.
