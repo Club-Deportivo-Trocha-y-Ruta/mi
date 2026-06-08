@@ -3,6 +3,8 @@
 Endpoints implementados:
 
 - ``GET    /``                              — listado filtrado con flags derivados.
+- ``GET    /{race_event_id}/results``       — resultados por categoría (coach/admin/parent).
+- ``GET    /{race_event_id}/standings``     — clasificación de temporada (coach/admin/parent).
 - ``POST   /``                             — crea evento vacío (coach + admin).
 - ``PATCH  /{race_event_id}``              — edita metadata (coach + admin).
 - ``DELETE /{race_event_id}``              — borra evento limpio (admin only).
@@ -10,9 +12,10 @@ Endpoints implementados:
 
 Convenciones:
 - RBAC: coach + admin en escritura. Admin exclusivo para DELETE.
+- Parent en lectura con scope reducido a sus propios hijos (FR-030).
 - Update parcial con ``exclude_unset=True``.
 - Sin migración Alembic: todas las columnas ya existen.
-- Privacidad: body de condiciones NO se loguea (policy conservadora).
+- Privacidad: logs contienen solo IDs — nunca nombres de atletas.
 """
 from __future__ import annotations
 
@@ -33,7 +36,11 @@ from app.schemas.race_event import (
     RaceEventUpdate,
 )
 from app.schemas.race_imports import RaceEventConditionsRead, RaceEventConditionsUpdate
+from app.schemas.race_results import EventResultsRead, EventStandingsRead
 import app.services.race_events as race_events_svc
+import app.services.race.results_read as results_svc
+import app.services.race.standings as standings_svc
+from app.services.permissions import allowed_athlete_ids_for
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +86,124 @@ async def list_race_events(
         location=location,
     )
     return RaceEventListResponse(items=items, total=len(items))
+
+
+# ---------------------------------------------------------------------------
+# GET /{race_event_id}/results — Resultados por categoría
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{race_event_id}/results",
+    response_model=EventResultsRead,
+    summary="Resultados del evento por categoría",
+)
+async def get_race_event_results(
+    race_event_id: int,
+    category_id: Optional[int] = Query(
+        default=None,
+        description="Filtrar por categoría.",
+    ),
+    club_only: bool = Query(
+        default=False,
+        description="Solo mostrar resultados de atletas del club (con athlete_id confirmado).",
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role([UserRole.admin, UserRole.coach, UserRole.parent])
+    ),
+) -> EventResultsRead:
+    """Retorna el orden de llegada del evento agrupado por categoría.
+
+    - Filas ordenadas por ``category.sort_order`` y luego ``position ASC NULLS LAST``.
+    - Excluye resultados con ``deleted_at IS NOT NULL``.
+    - ``is_our_club = True`` cuando ``athlete_id IS NOT NULL`` (atleta TyR confirmado).
+    - Parent: solo ve las filas de sus propios hijos (FR-030).
+
+    Códigos de respuesta:
+    - 200: resultados (puede tener ``categories=[]`` si no hay datos ingestados).
+    - 404: evento no existe.
+    - 403: usuario sin rol coach, admin o parent.
+    """
+    scoped = await allowed_athlete_ids_for(current_user, db)
+
+    payload = await results_svc.get_event_results(
+        db,
+        race_event_id,
+        category_id=category_id,
+        club_only=club_only,
+        allowed_athlete_ids=scoped,
+    )
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Evento de carrera con id={race_event_id} no existe.",
+        )
+    logger.info(
+        "race_events_results_get race_event_id=%s user_id=%s",
+        race_event_id,
+        current_user.id,
+    )
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# GET /{race_event_id}/standings — Clasificación de temporada
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{race_event_id}/standings",
+    response_model=EventStandingsRead,
+    summary="Clasificación acumulada de la temporada",
+)
+async def get_race_event_standings(
+    race_event_id: int,
+    category_id: Optional[int] = Query(
+        default=None,
+        description="Filtrar por categoría.",
+    ),
+    club_only: bool = Query(
+        default=False,
+        description="Solo mostrar clasificados del club.",
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role([UserRole.admin, UserRole.coach, UserRole.parent])
+    ),
+) -> EventStandingsRead:
+    """Retorna la clasificación acumulada de la temporada para la serie del evento.
+
+    - Agrega ``SUM(points_awarded)``, ``COUNT``, podios y mejor posición
+      directamente desde ``race_results`` (no usa la vista ``season_standings``).
+    - Ranking por ``total_points DESC``, desempate por podios DESC, mejor posición ASC.
+    - Parent: solo ve sus propios hijos (FR-030).
+
+    Códigos de respuesta:
+    - 200: clasificación (puede tener ``categories=[]`` si no hay resultados aún).
+    - 404: evento no existe o no tiene serie asociada.
+    - 403: usuario sin rol coach, admin o parent.
+    """
+    scoped = await allowed_athlete_ids_for(current_user, db)
+
+    payload = await standings_svc.get_event_standings(
+        db,
+        race_event_id,
+        category_id=category_id,
+        club_only=club_only,
+        allowed_athlete_ids=scoped,
+    )
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Evento de carrera con id={race_event_id} no existe o no tiene serie.",
+        )
+    logger.info(
+        "race_events_standings_get race_event_id=%s user_id=%s",
+        race_event_id,
+        current_user.id,
+    )
+    return payload
 
 
 # ---------------------------------------------------------------------------
