@@ -225,11 +225,26 @@ autoincrement incompatibility in tests. No MySQL schema change.
 
 ---
 
+## Privacy audit (T052) outcome
+
+`data-privacy-guard` audited the 34 new/changed surfaces. Status: **APPROVED WITH CONDITIONS**.
+
+- **HIGH — resolved.** The coach roster `note` (free text, could mention another
+  athlete) is now stripped from parent-scoped roster reads (`services/race/roster.py`);
+  parents already only receive their own child's entry. Covered by
+  `test_get_roster_parent_note_stripped`.
+- Checks passed: server-side parent scoping enforced on all three new read paths
+  (results / standings / roster) via `allowed_athlete_ids_for`; reconciliation empty for
+  parents; ids-only logs; no minor names to the AI model; `AI_LOG_PROMPTS` guard intact;
+  fictional test fixtures; no PII in error messages or commit history.
+
 ## Deferred items
 
 | Item | Reason | Follow-up |
 |---|---|---|
 | 410 flip for `/coach/race-analysis` and `/training/races/:id/club-insights` | Requires one full release cycle with redirects active before removing them (D7). | Post-deploy PR, after first deploy of 007. |
+| Parent-facing results view (FR-030 / US1 scenario 5) | Backend results/standings/roster reads already support parent scoping, but the competition detail route is coach/admin-only, so no parent UI path consumes them yet (pre-existing frontend gating). | Follow-up: add a parent-scoped results route/page. |
+| v1 AI insight persistence stores rehydrated names (MEDIUM, pre-existing) | Out of scope for 007; the v2 path already persists pseudonyms and `pii_scrubbed_at` retention exists. | Align v1 persist path to store the pseudonym draft. |
 | Real MySQL ingest and deploy | Pending coach approval. | Same as all other pending deploys. |
 
 ---

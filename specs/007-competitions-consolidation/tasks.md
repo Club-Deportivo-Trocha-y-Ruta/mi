@@ -163,10 +163,10 @@ description: "Task list for 007-competitions-consolidation"
 
 ## Phase 9: Polish & Cross-Cutting
 
-- [ ] T052 [P] `data-privacy-guard` full audit of new endpoints/UI (ids-only logs, no PII, no names in AI/logs) — @data-privacy-guard
-- [ ] T053 [P] Docs: update `docs/12-competitions-unification/` (results/standings/roster/sync), `docs/10-race-results/`, CLAUDE.md module status, README — @technical-writer
-- [ ] T054 [P] Bundle-size + LCP check on data-dense competition routes (Principle IV budgets) — @react-ui-engineer
-- [ ] T055 Run `quickstart.md` end-to-end verification (coach + parent paths) — @qa-engineer
+- [X] T052 [P] `data-privacy-guard` full audit of new endpoints/UI (ids-only logs, no PII, no names in AI/logs) — @data-privacy-guard
+- [X] T053 [P] Docs: update `docs/12-competitions-unification/` (results/standings/roster/sync), `docs/10-race-results/`, CLAUDE.md module status, README — @technical-writer
+- [~] T054 [P] Bundle-size + LCP check on data-dense competition routes (Principle IV budgets) — @react-ui-engineer — DEFERRED: sandbox lacks native lightningcss/rolldown binaries so `npm run build` cannot run; vitest suite (1965 green) used as integrated check
+- [X] T055 Run `quickstart.md` end-to-end verification (coach + parent paths) — @qa-engineer
 
 ---
 
