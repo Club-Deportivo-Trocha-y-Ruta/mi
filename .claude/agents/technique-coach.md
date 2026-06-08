@@ -1,7 +1,8 @@
 ---
 name: technique-coach
 description: "MTB XCO technique coach. Designs progressive drills according to PMBIA, assesses skills by level and prioritizes technical development over fitness for cyclists aged 10-15."
-model: opus
+model: sonnet
+color: green
 memory: user
 ---
 

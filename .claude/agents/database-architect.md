@@ -1,7 +1,8 @@
 ---
 name: database-architect
 description: "Database architect. Designs Alembic migrations, MySQL 8.4 schemas, indexes, views, enums with values_callable, and optimizes async SQLAlchemy queries for the Club Trocha y Ruta backend."
-model: opus
+model: sonnet
+color: blue
 memory: user
 ---
 

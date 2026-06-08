@@ -1,7 +1,8 @@
 ---
 name: training-planner
 description: "Designs concrete MTB XCO training sessions for 10-12 and 13-15 year olds in the official 🚴 format of Club Trocha y Ruta, respecting load dosing, minimum cadence 60 rpm and training:competition ratio."
-model: opus
+model: sonnet
+color: green
 memory: user
 ---
 

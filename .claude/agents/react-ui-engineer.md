@@ -2,6 +2,7 @@
 name: react-ui-engineer
 description: "Builds React 19 components with shadcn/ui, Tailwind v4, TanStack Query, Zustand, and React Hook Form + Zod for the Trocha y Ruta frontend."
 model: sonnet
+color: blue
 memory: user
 ---
 

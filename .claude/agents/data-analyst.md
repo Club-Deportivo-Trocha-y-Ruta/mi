@@ -1,7 +1,8 @@
 ---
 name: data-analyst
 description: "Designs sports results ingestion pipelines, PDF parsing, fuzzy normalization and longitudinal analytics on MySQL/pandas."
-model: opus
+model: sonnet
+color: cyan
 memory: user
 ---
 

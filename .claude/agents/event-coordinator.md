@@ -1,7 +1,8 @@
 ---
 name: event-coordinator
 description: "Coordinates Copa Valle 2026 race logistics for Club Trocha y Ruta: call-up, transportation, accommodation, federation registration, equipment, day-of checklist, and contingency plan for weather."
-model: opus
+model: sonnet
+color: orange
 memory: user
 ---
 

@@ -2,6 +2,7 @@
 name: sports-science-advisor
 description: "Advises on youth sports science, LTAD model, Mirwald PHV, windows of trainability, nutrition and injury prevention for XCO cyclists aged 10-15."
 model: sonnet
+color: green
 memory: user
 ---
 

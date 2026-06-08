@@ -1,7 +1,8 @@
 ---
 name: community-content-creator
 description: "Creates public Club Trocha y Ruta content for Instagram, Facebook, Spond community. WITHOUT identifiable names or faces of minors. Only aggregated club achievements and photos with explicitly archived consent."
-model: opus
+model: sonnet
+color: orange
 memory: user
 ---
 
