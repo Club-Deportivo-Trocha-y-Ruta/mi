@@ -243,7 +243,7 @@ autoincrement incompatibility in tests. No MySQL schema change.
 | Item | Reason | Follow-up |
 |---|---|---|
 | 410 flip for `/coach/race-analysis` and `/training/races/:id/club-insights` | Requires one full release cycle with redirects active before removing them (D7). | Post-deploy PR, after first deploy of 007. |
-| Parent-facing results view (FR-030 / US1 scenario 5) | Backend results/standings/roster reads already support parent scoping, but the competition detail route is coach/admin-only, so no parent UI path consumes them yet (pre-existing frontend gating). | Follow-up: add a parent-scoped results route/page. |
+| Parent-facing results view (FR-030 / US1 scenario 5) | — | ✅ **Done.** `/parents/competitions/:raceEventId` shows results + standings scoped to the parent's own child; reachable from the parent calendar event detail. Backend reads now carry event header fields. |
 | v1 AI insight persistence stores rehydrated names (MEDIUM, pre-existing) | Out of scope for 007; the v2 path already persists pseudonyms and `pii_scrubbed_at` retention exists. | Align v1 persist path to store the pseudonym draft. |
 | Real MySQL ingest and deploy | Pending coach approval. | Same as all other pending deploys. |
 
