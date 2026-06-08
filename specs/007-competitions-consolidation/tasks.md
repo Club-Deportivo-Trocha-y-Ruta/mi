@@ -133,12 +133,12 @@ description: "Task list for 007-competitions-consolidation"
 ### Tests
 - [X] T042 [P] [US5] Service tests: create-with-calendar; propagate date/name/venue/status; 1:1 guard (409 on double-link); opt-out creates none — @qa-engineer
 - [X] T043 [P] [US5] **Regression** test: editing competition keeps linked calendar event in sync — @qa-engineer
-- [ ] T044 [P] [US5] vitest: create form calendar checkbox (default-on) + "Asociar a calendario" button when `has_calendar_event=false` — @qa-engineer
+- [X] T044 [P] [US5] vitest: create form calendar checkbox (default-on) + "Asociar a calendario" button when `has_calendar_event=false` — @qa-engineer
 
 ### Implementation
 - [X] T045 [US5] `calendar_sync.py` service (create/link/propagate/cancel, race_event source-of-truth) in `backend/app/services/race/calendar_sync.py` — @integration-engineer
 - [X] T046 [US5] Extend `POST /race-events` (`create_calendar_event` flag) + `PATCH /race-events/{id}` propagation + `POST /race-events/{id}/calendar-link` in router — @fastapi-architect
-- [ ] T047 [US5] Frontend: calendar checkbox in `CompetitionFormPage`, associate button in detail; use `invalidatePaired()` (T006); include designed loading/error states (FR-032) — @react-ui-engineer
+- [X] T047 [US5] Frontend: calendar checkbox in `CompetitionFormPage`, associate button in detail; use `invalidatePaired()` (T006); include designed loading/error states (FR-032) — @react-ui-engineer
 
 **Checkpoint**: US1–US5 work.
 
