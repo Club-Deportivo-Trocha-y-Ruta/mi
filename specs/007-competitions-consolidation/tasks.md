@@ -71,13 +71,13 @@ description: "Task list for 007-competitions-consolidation"
 **Independent Test**: One race entry in nav; old `/coach/race-analysis` + `/training/races/:id/club-insights` redirect into the module; no duplicate pages.
 
 ### Tests
-- [ ] T021 [P] [US2] vitest: single sidebar "Competencias" entry; legacy paths render `<Navigate>` to new locations (`MemoryRouter`) in `frontend/src/__tests__/competitions-routing.test.tsx` — @qa-engineer
-- [ ] T022 [P] [US2] vitest: parent role → 403 on `/competitions/insights/*` — @data-privacy-guard
+- [X] T021 [P] [US2] vitest: single sidebar "Competencias" entry; legacy paths render `<Navigate>` to new locations (`MemoryRouter`) in `frontend/src/__tests__/competitions-routing.test.tsx` — @qa-engineer
+- [X] T022 [P] [US2] vitest: parent role → 403 on `/competitions/insights/*` — @data-privacy-guard
 
 ### Implementation
-- [ ] T023 [US2] Unify sidebar in `frontend/src/components/layout/AppShell.tsx` to a single "Competencias" entry — @react-ui-engineer
-- [ ] T024 [US2] In `App.tsx`, mount insights pages under `/competitions/insights/*` and add 301-style redirects for `/coach/race-analysis` and `/training/races/:id/club-insights` (transition window) — @react-ui-engineer
-- [ ] T025 [US2] Mechanical `MemoryRouter` path codemod in affected existing tests (no assertion rewrites); confirm pre-existing competition list filters (FR-008) and admin delete-guard (FR-007) regression-pass post-consolidation — @qa-engineer
+- [X] T023 [US2] Unify sidebar in `frontend/src/components/layout/AppShell.tsx` to a single "Competencias" entry — @react-ui-engineer
+- [X] T024 [US2] In `App.tsx`, mount insights pages under `/competitions/insights/*` and add 301-style redirects for `/coach/race-analysis` and `/training/races/:id/club-insights` (transition window) — @react-ui-engineer
+- [X] T025 [US2] Mechanical `MemoryRouter` path codemod in affected existing tests (no assertion rewrites); confirm pre-existing competition list filters (FR-008) and admin delete-guard (FR-007) regression-pass post-consolidation — @qa-engineer
 
 **Checkpoint**: US1 + US2 work; one destination.
 
