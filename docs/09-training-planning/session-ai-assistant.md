@@ -18,7 +18,9 @@
 4. Frontend maps the draft to `TrainingSessionFormValues`, resolving `athlete_call_up`
    against the local roster, and prefills the wizard via
    `reset(values, { keepDirtyValues: true })`. AI-seeded fields show a subtle "IA" marker
-   that clears once the coach edits the field.
+   that clears once the coach edits the field. The draft's `notes` (AI rationale, e.g.
+   tapering guidance) is shown as a read-only, dismissible "Sugerencia de la IA" banner at
+   the top of the wizard.
 5. Coach edits and saves through the normal session flow.
 
 ## Endpoints

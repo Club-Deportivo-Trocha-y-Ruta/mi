@@ -125,6 +125,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
               ? new Set(assistantState.seededFields)
               : undefined
           }
+          draftNotes={assistantState?.draftNotes ?? undefined}
         />
       )}
     </section>
