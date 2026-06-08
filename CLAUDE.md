@@ -318,6 +318,30 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 > MySQL-dependent tests not run here; profile suite verified on SQLite. Migration verified
 > single-head (3-way merge).
 
+## Implementation status — AI Session Clarify & Draft (specs/006-ai-session-clarify-draft)
+
+> Pre-wizard "Asistente IA": single-round clarifying questions (single/multi-select +
+> free-text "Otro") then an editable draft that prefills the session wizard. Stateless,
+> no DB changes. AI receives aggregate-only context (age-mix counts + Copa Valle race
+> proximity); athlete call-up is a criterion resolved client-side — no minor PII to the
+> model. Docs: `docs/09-training-planning/session-ai-assistant.md`.
+
+| Step | Description | Status |
+|---|---|---|
+| 1 | Schemas `session_assistant.py` (Clarify/Draft req/resp + `AthleteCallUpCriterion`, count/length validators) | ✅ Complete 2026-06-08 |
+| 2 | Prompts `session_clarify.j2` + `session_draft.j2` (JSON-only, español, non-negotiables) + registry specs | ✅ Complete 2026-06-08 |
+| 3 | `services/training/session_assistant_context.py` — aggregate-only context + `COPA_VALLE_2026` race proximity (no ids/names) | ✅ Complete 2026-06-08 |
+| 4 | `SessionClarifyUseCase` + `SessionDraftUseCase` (BaseUseCase + safe JSON parse + guardrail scrub + Pydantic) | ✅ Complete 2026-06-08 |
+| 5 | Router `/api/clubs/{id}/session-assistant/{clarify,draft}` — coach/admin RBAC, 503/422 mapping + DI providers | ✅ Complete 2026-06-08 |
+| 6 | Frontend: `SessionAssistantPanel`, `ClarifyQuestionCard` (ToggleGroup single/multiple + "Otro"), pre-wizard route, `reset(keepDirtyValues)` prefill, per-field "IA" markers | ✅ Complete 2026-06-08 |
+| 7 | Tests: 58 backend (use case + router + context + privacy invariants) + 31 frontend vitest (a11y axe 0); full FE suite 1817 green; `tsc` clean, `ruff` clean on new files | ✅ Complete 2026-06-08 |
+| 8 | Privacy audit (data-privacy-guard) | 🔄 In review 2026-06-08 |
+| 9 | Deploy to Render | ⏳ Pending |
+
+> Deployment pending user approval. Backend session-assistant suite verified on SQLite
+> (no DB-dependent paths). Provider-native structured output and multi-round clarification
+> deliberately out of scope (fast-follows).
+
 ## Development credentials (seed data)
 
 > For local / Docker dev environment only. Never use in production.
