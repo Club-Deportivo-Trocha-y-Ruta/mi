@@ -115,11 +115,11 @@ description: "Task list for 007-competitions-consolidation"
 
 ### Tests
 - [X] T038 [P] [US4] Service test: re-ingest with changed SHA256 sets `agent_runs.stale_since` + marks affected newsletters outdated; identical = no-op — @qa-engineer
-- [ ] T039 [P] [US4] vitest+axe: diff confirm flow + "outdated/Re-ejecutar" badge in `/competitions/:id/import` — @qa-engineer
+- [X] T039 [P] [US4] vitest+axe: diff confirm flow + "outdated/Re-ejecutar" badge in `/competitions/:id/import` — @qa-engineer
 
 ### Implementation
 - [X] T040 [US4] Wire `stale_since` marking + newsletter `outdated` into ingestor re-ingest path in `backend/app/services/race/ingestor.py` (or invalidate endpoint) — @fastapi-architect
-- [ ] T041 [US4] Ensure `/competitions/:id/import` reuses existing `DiffTable` + revision-reason catalog; add "outdated" badge + manual re-execute button (no auto-trigger) — @react-ui-engineer
+- [X] T041 [US4] Ensure `/competitions/:id/import` reuses existing `DiffTable` + revision-reason catalog; add "outdated" badge + manual re-execute button (no auto-trigger) — @react-ui-engineer
 
 **Checkpoint**: US1–US4 work.
 
@@ -131,13 +131,13 @@ description: "Task list for 007-competitions-consolidation"
 **Independent Test**: Create competition (checkbox on) → linked event; edit date/venue → event updates; cancel → event cancelled; associate existing event; 1:1 guard rejects double-link.
 
 ### Tests
-- [ ] T042 [P] [US5] Service tests: create-with-calendar; propagate date/name/venue/status; 1:1 guard (409 on double-link); opt-out creates none — @qa-engineer
-- [ ] T043 [P] [US5] **Regression** test: editing competition keeps linked calendar event in sync — @qa-engineer
+- [X] T042 [P] [US5] Service tests: create-with-calendar; propagate date/name/venue/status; 1:1 guard (409 on double-link); opt-out creates none — @qa-engineer
+- [X] T043 [P] [US5] **Regression** test: editing competition keeps linked calendar event in sync — @qa-engineer
 - [ ] T044 [P] [US5] vitest: create form calendar checkbox (default-on) + "Asociar a calendario" button when `has_calendar_event=false` — @qa-engineer
 
 ### Implementation
-- [ ] T045 [US5] `calendar_sync.py` service (create/link/propagate/cancel, race_event source-of-truth) in `backend/app/services/race/calendar_sync.py` — @integration-engineer
-- [ ] T046 [US5] Extend `POST /race-events` (`create_calendar_event` flag) + `PATCH /race-events/{id}` propagation + `POST /race-events/{id}/calendar-link` in router — @fastapi-architect
+- [X] T045 [US5] `calendar_sync.py` service (create/link/propagate/cancel, race_event source-of-truth) in `backend/app/services/race/calendar_sync.py` — @integration-engineer
+- [X] T046 [US5] Extend `POST /race-events` (`create_calendar_event` flag) + `PATCH /race-events/{id}` propagation + `POST /race-events/{id}/calendar-link` in router — @fastapi-architect
 - [ ] T047 [US5] Frontend: calendar checkbox in `CompetitionFormPage`, associate button in detail; use `invalidatePaired()` (T006); include designed loading/error states (FR-032) — @react-ui-engineer
 
 **Checkpoint**: US1–US5 work.
