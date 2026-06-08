@@ -33,6 +33,8 @@ from app.dependencies import get_db, require_role
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.user import User, UserRole
 from app.schemas.race_event import (
+    CalendarLinkRead,
+    CalendarLinkRequest,
     RaceEventCreate,
     RaceEventListResponse,
     RaceEventRead,
@@ -458,6 +460,12 @@ async def create_race_event(
         payload=body,
         user_id=current_user.id,
     )
+
+    # FR-024: create a linked CalendarEvent unless the caller opts out.
+    if body.create_calendar_event:
+        from app.services.race.calendar_sync import create_linked_calendar_event
+        await create_linked_calendar_event(db=db, race_event=event, user=current_user)
+
     return RaceEventRead.model_validate(event)
 
 
@@ -529,6 +537,63 @@ async def delete_race_event(
     - 403: usuario sin rol admin.
     """
     await race_events_svc.delete_race_event(db=db, race_event_id=race_event_id)
+
+
+# ---------------------------------------------------------------------------
+# POST /{race_event_id}/calendar-link — Vincular CalendarEvent existente (FR-025)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{race_event_id}/calendar-link",
+    response_model=CalendarLinkRead,
+    status_code=status.HTTP_200_OK,
+    summary="Vincular un CalendarEvent existente a una válida",
+)
+async def link_calendar_event(
+    race_event_id: int,
+    body: CalendarLinkRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> CalendarLinkRead:
+    """Asocia un ``CalendarEvent`` de tipo *competition* ya existente con esta válida.
+
+    Establece el vínculo 1:1 en ambas FKs:
+    - ``race_events.calendar_event_id = body.calendar_event_id``
+    - ``calendar_events.race_event_id = race_event_id``
+
+    Códigos de respuesta:
+    - 200: vinculado correctamente.
+    - 404: la válida o el evento de calendario no existen.
+    - 409: cualquiera de los dos lados ya está vinculado (strict 1:1).
+    - 403: usuario sin rol coach o admin.
+    """
+    from sqlalchemy import select as sa_select
+
+    # Load the race_event — 404 if missing
+    result = await db.execute(sa_select(RaceEvent).where(RaceEvent.id == race_event_id))
+    event: Optional[RaceEvent] = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Evento de carrera con id={race_event_id} no existe.",
+        )
+
+    from app.services.race.calendar_sync import link_existing_calendar_event
+    cal = await link_existing_calendar_event(
+        db=db,
+        race_event=event,
+        calendar_event_id=body.calendar_event_id,
+        user=current_user,
+    )
+
+    logger.info(
+        "race_events_calendar_link race_event_id=%s cal_id=%s user_id=%s",
+        race_event_id,
+        cal.id,
+        current_user.id,
+    )
+    return CalendarLinkRead(race_event_id=race_event_id, calendar_event_id=cal.id)
 
 
 # ---------------------------------------------------------------------------
