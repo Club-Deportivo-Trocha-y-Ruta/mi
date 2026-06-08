@@ -8,6 +8,12 @@
 
 **Input**: User description: "AI-assisted session clarify-and-draft for the training session wizard. The AI asks a short batch of clarifying questions with selectable options (single/multi-select + free-text 'Other') before drafting the session, then prefills the editable session wizard. Coach always reviews and edits; nothing is auto-saved."
 
+## Clarifications
+
+### Session 2026-06-08
+
+- Q: Where does the assistant live in the session-creation flow? → A: A pre-wizard launch — an "Asistente IA" entry point shown before/at the start of session creation; on finishing the conversation it opens the existing wizard pre-filled.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Clarify then draft a session from a short intent (Priority: P1)
@@ -135,9 +141,10 @@ no prohibited content reaches the coach.
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST let a coach open an AI assistant from the session-creation
-  experience and optionally provide a short free-text description of the intended
-  session.
+- **FR-001**: The system MUST provide a pre-wizard "Asistente IA" launch point at the
+  start of session creation, from which a coach opens the assistant and optionally
+  provides a short free-text description of the intended session; on finishing the
+  conversation, the assistant opens the existing wizard pre-filled.
 - **FR-002**: The system MUST return a single batch of 2–4 clarifying questions per
   request, where each question includes a short label, the question text, an indicator
   of whether multiple answers are allowed, an indicator of whether a free-text answer is
