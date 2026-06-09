@@ -141,6 +141,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 | AI Session Clarify & Draft | specs/006-ai-session-clarify-draft | ✅ Complete — deploy pending |
 | Unified Competitions Module | specs/007-competitions-consolidation | ✅ Complete — deploy pending |
 | One-click Associate Competition to Calendar | specs/008-associate-competition-calendar | ✅ Complete — deploy pending |
+| Cleanup Duplicate Competition | specs/009-cleanup-duplicate-competition | ✅ Complete — deploy pending |
 
 ## Development credentials (seed data)
 
@@ -261,5 +262,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 ## Active Spec Kit feature
 
-**008-associate-competition-calendar** — One-click associate a competition (válida) to the calendar. Plan: [`specs/008-associate-competition-calendar/plan.md`](specs/008-associate-competition-calendar/plan.md). Adds coach-only `POST /api/race-analysis/race-events/{id}/calendar-event` (delegates to `create_linked_calendar_event(..., all_day=True)`) and a split frontend action (one-click + "edit details first" prefilled `EventForm`). No migration. Status: planned.
+**009-cleanup-duplicate-competition** — Coach removes a **no-results** duplicate competition together with its linked calendar event in one confirmed action. Plan: [`specs/009-cleanup-duplicate-competition/plan.md`](specs/009-cleanup-duplicate-competition/plan.md). Adds coach-only `DELETE /api/race-analysis/race-events/{id}/cleanup` (new service `cleanup_duplicate_race_event`: null race-side FK → delete CalendarEvent (cascades audiences/attendances) → delete RaceEvent, one transaction). Calendar event is **deleted, not unlinked** (CHECK `ck_calendar_competition_race_event` + FK RESTRICT forbid NULL race_event_id on competition events). Existing admin-only `DELETE /{id}` unchanged (FR-010). Competitions with results stay protected (409). Frontend: "Eliminar duplicado" kebab action (coach + `!has_results`) reusing `ConfirmDeleteDialog`. No migration. Status: planned.
 <!-- SPECKIT END -->

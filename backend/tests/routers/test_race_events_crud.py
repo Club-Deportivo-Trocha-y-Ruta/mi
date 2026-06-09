@@ -65,6 +65,7 @@ GET /
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -84,7 +85,13 @@ from sqlalchemy.pool import StaticPool
 from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
-from app.models.calendar_event import CalendarEvent, EventStatus, EventType
+from app.models.calendar_event import (
+    AudienceType,
+    CalendarEvent,
+    EventAudience,
+    EventStatus,
+    EventType,
+)
 from app.models.club import Club, ClubMember, ClubRole
 from app.models.race_category import CategoryGender, RaceCategory
 from app.models.race_competitor import RaceCompetitor
@@ -144,6 +151,7 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.race_import import RaceImport as _I  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
     from app.models.race_series import RaceSeries as _S  # noqa: F401
+    from app.models.training_session import TrainingSession as _TS  # noqa: F401
     from app.models.user import User as _U  # noqa: F401
 
     tables = [
@@ -158,6 +166,10 @@ async def sqlite_engine() -> AsyncEngine:
             "calendar_events",
             # event_audiences: needed by create_linked_calendar_event (ALL_CLUB row)
             "event_audiences",
+            # event_attendances: cascada ORM al borrar un CalendarEvent (feature 009 cleanup)
+            "event_attendances",
+            # training_sessions: relación CalendarEvent.training_session (cargada al borrar)
+            "training_sessions",
             "race_imports",
             "race_categories",
             "race_competitors",
@@ -1628,3 +1640,135 @@ class TestCalendarPropagation:
             assert cal.location == "Nuevo Lugar"
             assert cal.start_at.date() == date(2026, 6, 1)
             assert cal.status == EventStatus.CANCELLED
+
+
+# ===========================================================================
+# Feature 009 — DELETE /{id}/cleanup (coach-only: borra duplicado + calendario)
+# ===========================================================================
+
+_CLEANUP_URL = "/api/race-analysis/race-events/{event_id}/cleanup"
+
+
+class TestCleanupDuplicateRaceEvent:
+    """Feature 009 — coach borra un duplicado sin resultados + su calendario."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_coach_borra_valida_y_calendario(
+        self, coach_client_with_calendar, db_session_factory
+    ):
+        """US1 happy path: válida 100 (sin resultados) con calendar 500 + audiencia.
+
+        → 204; race_event, calendar_event y event_audiences eliminados.
+        """
+        # Añadir una audiencia al calendar 500 para verificar la cascada ORM.
+        async with db_session_factory() as s:
+            s.add(
+                EventAudience(
+                    event_id=500,
+                    audience_type=AudienceType.ALL_CLUB,
+                    audience_value={},
+                )
+            )
+            await s.commit()
+
+        r = await coach_client_with_calendar.delete(_CLEANUP_URL.format(event_id=100))
+        assert r.status_code == 204, r.text
+        assert r.content == b""
+
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == 100))
+            ).scalar_one_or_none()
+            assert evt is None, "la válida debe haberse eliminado"
+
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 500))
+            ).scalar_one_or_none()
+            assert cal is None, "el evento de calendario debe haberse eliminado"
+
+            audiencias = (
+                await s.execute(
+                    select(EventAudience).where(EventAudience.event_id == 500)
+                )
+            ).scalars().all()
+            assert audiencias == [], "las audiencias deben eliminarse en cascada"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_coach_sin_calendario(
+        self, coach_client, db_session_factory
+    ):
+        """US1 sin calendario: válida 101 (sin resultados, sin calendar) → 204.
+
+        Solo se elimina la válida; no hay calendario que tocar.
+        """
+        r = await coach_client.delete(_CLEANUP_URL.format(event_id=101))
+        assert r.status_code == 204, r.text
+
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == 101))
+            ).scalar_one_or_none()
+            assert evt is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_no_filtra_pii_en_logs(
+        self, coach_client, caplog
+    ):
+        """US1 privacidad (Ley 1581): el log de cleanup solo lleva IDs, sin email/nombre."""
+        with caplog.at_level(logging.INFO):
+            r = await coach_client.delete(_CLEANUP_URL.format(event_id=101))
+        assert r.status_code == 204
+        assert "race_event_cleanup" in caplog.text
+        # No debe filtrarse PII del usuario en los logs.
+        assert "@test" not in caplog.text
+        assert "Coach" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_cleanup_con_resultados_da_409(
+        self, coach_client_with_result, db_session_factory
+    ):
+        """US2 protección: válida 100 tiene un RaceResult → 409 y nada se elimina."""
+        r = await coach_client_with_result.delete(_CLEANUP_URL.format(event_id=100))
+        assert r.status_code == 409, r.text
+        assert "resultados" in r.json()["detail"].lower()
+
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == 100))
+            ).scalar_one_or_none()
+            assert evt is not None, "la válida con resultados NO debe eliminarse"
+            n_results = (
+                await s.execute(
+                    select(RaceResult).where(RaceResult.event_id == 100)
+                )
+            ).scalars().all()
+            assert len(n_results) == 1, "los resultados deben permanecer intactos"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_parent_forbidden(self, parent_client, db_session_factory):
+        """US2 RBAC: parent → 403 (coach only) y nada se elimina."""
+        r = await parent_client.delete(_CLEANUP_URL.format(event_id=101))
+        assert r.status_code == 403
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == 101))
+            ).scalar_one_or_none()
+            assert evt is not None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_admin_forbidden(self, admin_client, db_session_factory):
+        """US2 RBAC: admin → 403 (este endpoint es coach only; admin usa DELETE /{id})."""
+        r = await admin_client.delete(_CLEANUP_URL.format(event_id=101))
+        assert r.status_code == 403
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == 101))
+            ).scalar_one_or_none()
+            assert evt is not None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_race_event_inexistente(self, coach_client):
+        """US2 edge: id inexistente (lista desactualizada) → 404."""
+        r = await coach_client.delete(_CLEANUP_URL.format(event_id=9999))
+        assert r.status_code == 404
+        assert "9999" in r.json()["detail"]
