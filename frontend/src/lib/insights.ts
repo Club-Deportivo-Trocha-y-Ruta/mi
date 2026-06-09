@@ -11,6 +11,7 @@
  * componentes que consumen estas utilidades.
  */
 import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
+import type { ProgressionAssessment } from "@/types/raceAnalysis.types";
 
 export const PROMPT_VERSION_V2 = "race_analyst_v2";
 
@@ -53,6 +54,36 @@ export function extractSection(markdown: string, headerText: string): string {
     }
   }
   return collected.join("\n").trim();
+}
+
+/**
+ * Extrae el contenido de la sección "## Contexto de temporada" cuando está
+ * presente en el summary_text (insights v2 generados a partir de US-2 / FR-007).
+ * Devuelve null cuando la sección no existe — así los insights legacy no se ven
+ * afectados.
+ */
+export function extractSeasonContext(summaryText: string): string | null {
+  const content = extractSection(summaryText, "Contexto de temporada");
+  return content.length > 0 ? content : null;
+}
+
+/**
+ * Mapa de ProgressionAssessment a etiquetas en español colombiano (es-CO).
+ * Usado en la insignia de progresión del detalle del insight.
+ */
+export function progressionLabel(assessment: ProgressionAssessment): string {
+  switch (assessment) {
+    case "improving":
+      return "Mejorando";
+    case "stable":
+      return "Estable";
+    case "declining":
+      return "En descenso";
+    case "mixed":
+      return "Mixto";
+    case "first_reference":
+      return "Primera referencia de la temporada";
+  }
 }
 
 /**

@@ -5,10 +5,16 @@
  * Es la misma vista que ClubInsightsByRacePage pero incrustada dentro
  * de un tab (sin header propio, sin botón "Volver").
  *
- * Props: `raceEventId: number`
+ * Props: `raceEventId: number`, `hasResults?: boolean`, `isCoachOrAdmin?: boolean`
+ *
+ * T011 (feature 010): GroupAnalysisPanel se monta sobre el grid,
+ * visible únicamente para coach/admin (isCoachOrAdmin prop).
  */
 import { useNavigate } from "react-router-dom";
 import { Users } from "lucide-react";
+
+import { GroupAnalysisPanel } from "@/components/competitions/insights/GroupAnalysisPanel";
+import { CompetitionChatPanel } from "@/components/competitions/chat/CompetitionChatPanel";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -184,13 +190,31 @@ function SkeletonGrid() {
 
 export interface InsightsTabProps {
   raceEventId: number;
+  /** true cuando la competencia tiene resultados importados (para GroupAnalysisPanel). */
+  hasResults?: boolean;
+  /** true cuando el usuario es coach o admin (controla visibilidad del panel IA). */
+  isCoachOrAdmin?: boolean;
 }
 
 /**
  * InsightsTab — grid de análisis IA por atleta scopeado a la válida.
+ * Cuando el usuario es coach/admin muestra el GroupAnalysisPanel encima del grid.
  */
-export function InsightsTab({ raceEventId }: InsightsTabProps) {
-  return <ClubInsightsGrid raceEventId={raceEventId} />;
+export function InsightsTab({ raceEventId, hasResults = false, isCoachOrAdmin = false }: InsightsTabProps) {
+  return (
+    <div className="space-y-4" data-testid="insights-tab-root">
+      {isCoachOrAdmin && (
+        <GroupAnalysisPanel
+          raceEventId={raceEventId}
+          hasResults={hasResults}
+        />
+      )}
+      <ClubInsightsGrid raceEventId={raceEventId} />
+      {isCoachOrAdmin && (
+        <CompetitionChatPanel raceEventId={raceEventId} />
+      )}
+    </div>
+  );
 }
 
 /**

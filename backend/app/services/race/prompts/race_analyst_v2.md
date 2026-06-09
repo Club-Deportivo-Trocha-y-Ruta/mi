@@ -14,6 +14,9 @@
 {#   principles (str)                 — citas RAG formateadas [1] [2] ...      #}
 {#   explain_mode (bool)              — narra '¿por qué hago X?'               #}
 {#   forbidden_names (list[str])      — nombres reales PROHIBIDOS (no al LLM)  #}
+{#   season_comparative (list[dict])  — datos de válidas previas (T014)        #}
+{#   progression_assessment (str)     — improving|stable|declining|mixed|      #}
+{#                                      first_reference (T014)                 #}
 {# -------------------------------------------------------------------------- #}
 # Rol
 
@@ -155,6 +158,39 @@ Para que el critic pueda validar, cada recomendación debe ir como bullet con su
 - **Cita siempre.** Una recomendación sin `[n]` es una recomendación sospechosa.
 - No menciones marcas, dorsales, ni ningún dato personal más allá de edad y grupo LTAD.
 - Si los datos provistos son insuficientes (<2 resultados), señálalo y recomienda esperar más datos antes de cambios mayores.
+
+{% if progression_assessment is defined and season_comparative is defined %}
+
+# Contexto de temporada (T014 — comparativos previos)
+
+**Dirección de progresión calculada:** `{{ progression_assessment }}`
+
+## Instrucciones obligatorias para el análisis
+
+{% if progression_assessment == "first_reference" %}
+**REGLA ANTI-FABRICACIÓN — primera referencia de la temporada:**
+Esta es la **primera referencia de la temporada** del atleta. NO existe historial previo.
+
+- Declara explícitamente en la sección "Recorrido hasta acá": "Esta es la primera referencia de la temporada."
+- **PROHIBIDO** hacer cualquier comparación cross-race. No menciones válidas previas que no existen.
+- **PROHIBIDO** afirmar tendencias, evolución, progreso, retroceso o patrones temporales.
+{% else %}
+**Datos de válidas previas (calculados por el sistema — úsalos tal cual, sin inventar nada):**
+
+| Válida anterior | Posición previa | Tiempo previo | Δ posición | Δ tiempo |
+| --- | --- | --- | --- | --- |
+{% for c in season_comparative -%}
+| {{ c.event_label }} (V{{ c.valida_num }}) | {{ c.position if c.position is not none else "—" }} | {{ c.race_time if c.race_time else "—" }} | {{ c.delta_position if c.delta_position is not none else "—" }} | {{ c.delta_time if c.delta_time else "—" }} |
+{% endfor %}
+
+**OBLIGATORIO en la sección "Recorrido hasta acá":**
+1. Declara la dirección de progresión con exactamente una de estas etiquetas: **mejora** (`improving`), **estable** (`stable`), **declive** (`declining`), **mixto** (`mixed`). Usa la etiqueta que corresponde a `{{ progression_assessment }}`.
+2. Fundamenta la declaración con los datos de la tabla anterior. Solo cita números que aparezcan en la tabla.
+3. **PROHIBIDO** inventar posiciones, tiempos o comparaciones no presentes en la tabla.
+4. Si Δ posición es "—" para alguna válida (tiempo no disponible — abandono, etc.), no inferas el tiempo.
+{% endif %}
+
+{% endif %}
 
 {% if not is_first_in_season and season_progression and season_progression|length >= 2 %}
 

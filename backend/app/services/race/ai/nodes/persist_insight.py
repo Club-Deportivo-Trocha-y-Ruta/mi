@@ -242,6 +242,11 @@ async def persist_insight(state: dict) -> dict[str, Any]:
         "aggregate": aggregate,
         "risks": risks,
         "category_stats": {},
+        # Season context (T015 — feature 010): additive fields, old insights
+        # that lack these keys remain valid (MetricsSnapshotV1 defaults to
+        # empty list / None for both fields).
+        "season_comparative": state.get("season_comparative") or [],
+        "progression_assessment": state.get("progression_assessment"),
     }
 
     confidence_value = state.get("confidence") or InsightConfidence.medium

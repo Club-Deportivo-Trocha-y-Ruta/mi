@@ -16,14 +16,27 @@
  *   - `hasResults?: boolean` — hint del padre (si es false, muestra CTA
  *     antes de la llamada; si es undefined, no bloquea la query).
  *   - `onNavigateToInsights?: () => void` — callback para navegar al tab Insights.
+ *   - `isCoachOrAdmin?: boolean` — activa la acción "Analizar con IA" por fila.
+ *
+ * Season/validaNum sourcing:
+ *   useRaceEvent(raceEventId) retorna `event_date` (YYYY-MM-DD) y
+ *   `sequence_number` (= número de válida). El año se extrae de `event_date`.
+ *   Esto evita una prop perforante desde CompetitionDetailPage y mantiene
+ *   ResultsTab autónomo dado que raceEventId ya está en caché (el padre
+ *   lo fetched para el header). Si el evento aún no está en caché, la query
+ *   se dispara en paralelo con la de resultados sin bloquear el render.
  */
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { AlertCircle, Loader2, RefreshCw, Upload } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { buttonVariants } from "@/components/ui/button";
 import { useRaceResults } from "@/hooks/race/useRaceResults";
+import { useRaceEvent } from "@/hooks/race/useRaceEvents";
+import { useClubInsightsByRace } from "@/hooks/athletes/useClubInsightsByRace";
+import { useAuthStore } from "@/store/auth.store";
+import { UserRole } from "@/types/enums";
 
 // ResultsTable — lazy chunk (tablas pesadas con 26 categorías)
 const ResultsTable = lazy(() =>
@@ -157,6 +170,12 @@ export interface ResultsTabProps {
   raceEventId: number;
   hasResults?: boolean;
   onNavigateToInsights?: () => void;
+  /**
+   * Cuando true, activa la acción "Analizar con IA" en las filas elegibles.
+   * CompetitionDetailPage lo puede pasar; si se omite, ResultsTab lo deriva
+   * del store de auth directamente.
+   */
+  isCoachOrAdmin?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,20 +186,64 @@ export function ResultsTab({
   raceEventId,
   hasResults,
   onNavigateToInsights: _onNavigateToInsights,
+  isCoachOrAdmin: isCoachOrAdminProp,
 }: ResultsTabProps) {
+  // Derive role if not supplied by parent.
+  const user = useAuthStore((s) => s.user);
+  const isCoachOrAdmin =
+    isCoachOrAdminProp ??
+    (user?.role === UserRole.coach || user?.role === UserRole.admin);
+
   // Si el padre garantiza que no hay resultados, mostramos CTA de inmediato.
   if (hasResults === false) {
     return <EmptyState raceEventId={raceEventId} />;
   }
 
-  return <ResultsTabInner raceEventId={raceEventId} />;
+  return (
+    <ResultsTabInner
+      raceEventId={raceEventId}
+      isCoachOrAdmin={isCoachOrAdmin}
+    />
+  );
 }
 
 // Inner component que hace la query (separado para que el early-return
 // de arriba no viole las reglas de hooks).
-function ResultsTabInner({ raceEventId }: { raceEventId: number }) {
+function ResultsTabInner({
+  raceEventId,
+  isCoachOrAdmin,
+}: {
+  raceEventId: number;
+  isCoachOrAdmin: boolean;
+}) {
   const { data, isLoading, isError, isFetching, error, refetch } =
     useRaceResults(raceEventId);
+
+  // Fetch event metadata for season/validaNum — runs in parallel with results.
+  // Already in cache when CompetitionDetailPage rendered the header.
+  const { data: raceEvent } = useRaceEvent(raceEventId);
+  const season = raceEvent?.event_date
+    ? parseInt(raceEvent.event_date.slice(0, 4), 10)
+    : undefined;
+  const validaNum = raceEvent?.sequence_number;
+
+  // Fetch club insights freshness for the per-row AI launch button.
+  // Only fetched when coach/admin is viewing (RBAC: parent gets 403 or filtered data).
+  const insightsQuery = useClubInsightsByRace(
+    isCoachOrAdmin ? raceEventId : null,
+    { latestOnly: true },
+  );
+  // Build map: athlete_id → stale_run_id (null=fresh, string=stale, absent=no insight)
+  const insightFreshnessMap = useMemo<Map<number, string | null>>(() => {
+    const m = new Map<number, string | null>();
+    if (!insightsQuery.data) return m;
+    for (const item of insightsQuery.data.items) {
+      if (item.athlete_id > 0) {
+        m.set(item.athlete_id, item.stale_run_id ?? null);
+      }
+    }
+    return m;
+  }, [insightsQuery.data]);
 
   // ── Cargando ───────────────────────────────────────────────────────────
   if (isLoading) {
@@ -210,7 +273,13 @@ function ResultsTabInner({ raceEventId }: { raceEventId: number }) {
   // ── Con datos ──────────────────────────────────────────────────────────
   return (
     <Suspense fallback={<ResultsTableSkeleton />}>
-      <ResultsTable data={data} />
+      <ResultsTable
+        data={data}
+        season={season}
+        validaNum={validaNum}
+        isCoachOrAdmin={isCoachOrAdmin}
+        insightFreshnessMap={insightFreshnessMap}
+      />
     </Suspense>
   );
 }

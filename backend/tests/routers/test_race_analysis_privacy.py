@@ -22,7 +22,6 @@ inyectan en payloads de eventos y verificamos el contrato del router.
 
 from __future__ import annotations
 
-import json
 
 import pytest
 
@@ -134,7 +133,14 @@ class TestPIISentinel:
         from app.services.race.schemas import ChatResponse
 
         class CleanAgent:
-            async def chat(self, session_id, query, athlete_id=None):
+            async def chat(
+                self,
+                session_id,
+                query,
+                athlete_id=None,
+                race_event_id=None,
+                event_scope=None,
+            ):
                 # Respuesta segura: solo pseudónimo.
                 return ChatResponse(
                     answer="El atleta (pseudónimo: AzulZorro) progresa.",

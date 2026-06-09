@@ -19,15 +19,10 @@ Convenciones:
 from __future__ import annotations
 
 import asyncio
-import json
-import uuid
-from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 import pytest
 
 from app.main import app
-from app.routers.race_analysis import _admin_only, _coach_or_admin
 from app.services.race.schemas import ChatResponse
 
 pytestmark = pytest.mark.asyncio
@@ -335,7 +330,7 @@ class TestChat:
         from app.routers.race_analysis import get_race_chat_agent
 
         class FakeChatAgent:
-            async def chat(self, session_id, query, athlete_id=None):
+            async def chat(self, session_id, query, athlete_id=None, **kwargs):
                 return ChatResponse(
                     answer=f"Respuesta a: {query}",
                     citations_used=["1"],
@@ -359,7 +354,7 @@ class TestChat:
         from app.routers.race_analysis import get_race_chat_agent
 
         class FailAgent:
-            async def chat(self, session_id, query, athlete_id=None):
+            async def chat(self, session_id, query, athlete_id=None, **kwargs):
                 raise RuntimeError("Gemini caído")
 
         app.dependency_overrides[get_race_chat_agent] = lambda: FailAgent()
@@ -371,6 +366,116 @@ class TestChat:
             assert resp.status_code == 502
         finally:
             app.dependency_overrides.pop(get_race_chat_agent, None)
+
+    async def test_race_event_id_pasa_scope_al_agente(self, coach_client, ai_enabled, monkeypatch):
+        """race_event_id válido → el agente recibe event_scope resuelto."""
+        import app.services.race.group_launch as _gl
+        from app.routers.race_analysis import get_race_chat_agent
+
+        received: dict = {}
+
+        class ScopedFakeAgent:
+            async def chat(
+                self,
+                session_id,
+                query,
+                athlete_id=None,
+                race_event_id=None,
+                event_scope=None,
+            ):
+                received["race_event_id"] = race_event_id
+                received["event_scope"] = event_scope
+                return ChatResponse(
+                    answer="Respuesta de válida 3",
+                    citations_used=[],
+                    tools_called=[],
+                )
+
+        async def _fake_resolve(db, race_event_id):
+            return (2026, 3)
+
+        monkeypatch.setattr(_gl, "resolve_event_scope", _fake_resolve)
+
+        app.dependency_overrides[get_race_chat_agent] = lambda: ScopedFakeAgent()
+        try:
+            resp = await coach_client.post(
+                "/api/race-analysis/chat",
+                json={
+                    "session_id": "sess-scope",
+                    "query": "resultados de esta válida",
+                    "race_event_id": 42,
+                },
+            )
+            assert resp.status_code == 200
+            assert received["race_event_id"] == 42
+            assert received["event_scope"] is not None
+            scope_season, scope_valida_num, event_label = received["event_scope"]
+            assert scope_season == 2026
+            assert scope_valida_num == 3
+            assert "3" in event_label and "2026" in event_label
+        finally:
+            app.dependency_overrides.pop(get_race_chat_agent, None)
+
+    async def test_race_event_id_desconocido_retorna_404(self, coach_client, ai_enabled, monkeypatch):
+        """race_event_id que no existe en DB → 404 con detail 'Competencia no encontrada.'"""
+        import app.services.race.group_launch as _gl
+        from app.services.race.group_launch import RaceEventNotFoundError
+
+        async def _not_found(db, race_event_id):
+            raise RaceEventNotFoundError(race_event_id)
+
+        monkeypatch.setattr(_gl, "resolve_event_scope", _not_found)
+
+        resp = await coach_client.post(
+            "/api/race-analysis/chat",
+            json={"session_id": "sess-404", "query": "hola", "race_event_id": 9999},
+        )
+        assert resp.status_code == 404
+        assert "Competencia no encontrada" in resp.json()["detail"]
+
+    async def test_sin_race_event_id_comportamiento_identico(self, coach_client, ai_enabled):
+        """Omitir race_event_id → comportamiento byte-for-byte idéntico al legacy."""
+        from app.routers.race_analysis import get_race_chat_agent
+
+        received: dict = {}
+
+        class LegacyFakeAgent:
+            async def chat(
+                self,
+                session_id,
+                query,
+                athlete_id=None,
+                race_event_id=None,
+                event_scope=None,
+            ):
+                received["race_event_id"] = race_event_id
+                received["event_scope"] = event_scope
+                return ChatResponse(
+                    answer=f"Legacy: {query}",
+                    citations_used=[],
+                    tools_called=[],
+                )
+
+        app.dependency_overrides[get_race_chat_agent] = lambda: LegacyFakeAgent()
+        try:
+            resp = await coach_client.post(
+                "/api/race-analysis/chat",
+                json={"session_id": "sess-legacy", "query": "principios LTAD"},
+            )
+            assert resp.status_code == 200
+            assert received["race_event_id"] is None
+            assert received["event_scope"] is None
+            assert "Legacy" in resp.json()["answer"]
+        finally:
+            app.dependency_overrides.pop(get_race_chat_agent, None)
+
+    async def test_403_parent_no_puede_usar_chat(self, parent_client, ai_enabled):
+        """Parent no tiene acceso al endpoint de chat (RBAC)."""
+        resp = await parent_client.post(
+            "/api/race-analysis/chat",
+            json={"session_id": "sess-parent", "query": "hola"},
+        )
+        assert resp.status_code == 403
 
 
 # ===========================================================================

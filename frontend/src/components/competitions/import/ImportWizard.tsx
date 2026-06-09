@@ -18,7 +18,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   ArrowLeft,
@@ -26,7 +26,10 @@ import {
   CheckCircle2,
   Loader2,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { launchGroupAnalysis } from "@/api/raceAnalysis";
 import { z } from "zod";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
@@ -256,6 +259,33 @@ function getErrMsg(err: unknown, fallback: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// T019 — error messages for launchGroupAnalysis (FR-004 feature 010)
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps HTTP error codes from POST /race-events/{id}/runs to es-CO copy.
+ *
+ *   503 → presupuesto mensual agotado
+ *   429 → límite de concurrencia
+ *   422 → sin resultados importados
+ *   other → genérico
+ */
+function getLaunchGroupErrMsg(err: unknown): string {
+  if (typeof err === "object" && err !== null) {
+    const e = err as { response?: { status?: number } };
+    switch (e.response?.status) {
+      case 503:
+        return "Presupuesto mensual de IA agotado. Los análisis se reactivan el próximo ciclo.";
+      case 429:
+        return "Límite de análisis simultáneos alcanzado. Intenta de nuevo en unos minutos.";
+      case 422:
+        return "La competencia no tiene resultados importados.";
+    }
+  }
+  return "No se pudo lanzar el análisis. Intenta de nuevo.";
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -286,6 +316,7 @@ type MatchResolution =
   | { decision: "no_match"; athleteId: null };
 
 export function ImportWizard({ onCompleted }: ImportWizardProps) {
+  const navigate = useNavigate();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [parseResult, setParseResult] = useState<ImportParseResponse | null>(
     null,
@@ -310,6 +341,15 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   const parseMutation = useImportParse();
   const dryRunMutation = useImportDryRun();
   const commitMutation = useImportCommit();
+
+  // T019 — lanzar análisis grupal de IA post-commit (FR-004 feature 010).
+  const launchGroupMutation = useMutation({
+    mutationFn: (raceEventId: number) =>
+      launchGroupAnalysis(raceEventId, {}),
+    onSuccess: (_data, raceEventId) => {
+      navigate(`/competitions/${raceEventId}?tab=insights`);
+    },
+  });
 
   // ---------------- Step 1 form
   const {
@@ -1453,6 +1493,29 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                 </Link>
                 <button
                   type="button"
+                  disabled={launchGroupMutation.isPending}
+                  onClick={() =>
+                    launchGroupMutation.mutate(
+                      commitMutation.data.race_event_id,
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  data-testid="wizard-step3-launch-ai"
+                >
+                  {launchGroupMutation.isPending ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+                      Lanzando análisis…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={12} aria-hidden="true" />
+                      Analizar con IA ahora
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
                   onClick={reset}
                   className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal ring-1 ring-light-gray hover:bg-light-gray"
                   data-testid="wizard-step3-new"
@@ -1460,6 +1523,15 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                   Cargar otro
                 </button>
               </div>
+              {launchGroupMutation.isError && (
+                <p
+                  className="mt-2 text-xs text-red-700"
+                  role="alert"
+                  data-testid="wizard-step3-ai-error"
+                >
+                  {getLaunchGroupErrMsg(launchGroupMutation.error)}
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-sm text-mid-gray">Procesando…</p>

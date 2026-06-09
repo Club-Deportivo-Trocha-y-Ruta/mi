@@ -24,16 +24,13 @@ import asyncio
 import logging
 import re
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Tuple
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.race.agents._llm import build_chat_llm, extract_text, extract_usage
-from app.services.race.agents.pricing import (
-    PROMPT_VERSION_CHAT,
-    compute_cost_usd,
-)
+from app.services.race.agents._llm import build_chat_llm, extract_text
+from app.services.race.agents.pricing import PROMPT_VERSION_CHAT
 from app.services.race.prompts import render_prompt
 from app.services.race.queries import fetch_results_for_athlete
 from app.services.race.rag.tools import consultar_marco_teorico
@@ -57,13 +54,22 @@ _CITE_RE = re.compile(r"\[(\d+)\]")
 # ---------------------------------------------------------------------------
 
 
-def _build_obtener_insights_atleta_tool(db_factory: Optional[Callable[[], AsyncSession]] = None):
+def _build_obtener_insights_atleta_tool(
+    db_factory: Optional[Callable[[], AsyncSession]] = None,
+    *,
+    scope_season: Optional[int] = None,
+    scope_valida_num: Optional[int] = None,
+):
     """Fábrica del tool ``obtener_insights_atleta``.
 
     Args:
         db_factory: callable que retorna una ``AsyncSession`` (real o
             fake). Si ``None``, el tool falla con mensaje claro — útil
             en MVP que aún no integra con el grafo.
+        scope_season: cuando se provee junto a ``scope_valida_num``, el
+            tool filtra insights restringidos a esa (season, valida_num).
+            Permite que el LLM no tenga que conocer el contexto de evento.
+        scope_valida_num: ver ``scope_season``.
     """
     from langchain_core.tools import tool
 
@@ -83,10 +89,32 @@ def _build_obtener_insights_atleta_tool(db_factory: Optional[Callable[[], AsyncS
         n = max(1, min(int(n), 10))
         db = db_factory()
         try:
-            # Query plana — el modelo AthleteAIInsight aún no existe (sprint
-            # F3 solo persiste schema vía migración); usamos SQL crudo.
-            result = await db.execute(
-                text(
+            # Build query with optional event scope filter.
+            if scope_season is not None and scope_valida_num is not None:
+                # Constrained to a specific (season, valida_num) — the
+                # comparative context includes the same season broadly.
+                query_sql = text(
+                    """
+                    SELECT id, season, valida_num, use_case, summary_text,
+                           confidence, generated_at
+                    FROM athlete_ai_insights
+                    WHERE athlete_id = :aid
+                      AND coach_approved = 1
+                      AND archived_at IS NULL
+                      AND season = :season
+                      AND valida_num = :valida_num
+                    ORDER BY generated_at DESC
+                    LIMIT :n
+                    """
+                )
+                bind_params: dict[str, Any] = {
+                    "aid": athlete_id,
+                    "n": n,
+                    "season": scope_season,
+                    "valida_num": scope_valida_num,
+                }
+            else:
+                query_sql = text(
                     """
                     SELECT id, season, valida_num, use_case, summary_text,
                            confidence, generated_at
@@ -97,9 +125,11 @@ def _build_obtener_insights_atleta_tool(db_factory: Optional[Callable[[], AsyncS
                     ORDER BY season DESC, valida_num DESC, generated_at DESC
                     LIMIT :n
                     """
-                ),
-                {"aid": athlete_id, "n": n},
-            )
+                )
+                bind_params = {"aid": athlete_id, "n": n}
+            # Query plana — el modelo AthleteAIInsight aún no existe (sprint
+            # F3 solo persiste schema vía migración); usamos SQL crudo.
+            result = await db.execute(query_sql, bind_params)
             rows = result.fetchall() if hasattr(result, "fetchall") else result.all()
         except Exception as exc:  # pragma: no cover - defensa runtime
             logger.warning("Error consultando insights: %s", exc)
@@ -124,8 +154,21 @@ def _build_obtener_insights_atleta_tool(db_factory: Optional[Callable[[], AsyncS
     return obtener_insights_atleta
 
 
-def _build_fetch_results_tool(db_factory: Optional[Callable[[], AsyncSession]] = None):
-    """Fábrica del tool ``fetch_results``."""
+def _build_fetch_results_tool(
+    db_factory: Optional[Callable[[], AsyncSession]] = None,
+    *,
+    scope_season: Optional[int] = None,
+    scope_valida_num: Optional[int] = None,
+):
+    """Fábrica del tool ``fetch_results``.
+
+    Args:
+        db_factory: callable que retorna una ``AsyncSession``.
+        scope_season: cuando se provee junto a ``scope_valida_num``,
+            el tool ignora el argumento ``season`` del LLM y usa el
+            season del evento activo, filtrando por ``valida_num``.
+        scope_valida_num: ver ``scope_season``.
+    """
     from langchain_core.tools import tool
 
     @tool("fetch_results")
@@ -139,7 +182,16 @@ def _build_fetch_results_tool(db_factory: Optional[Callable[[], AsyncSession]] =
             return "(tool no configurado: db_factory faltante)"
         db = db_factory()
         try:
-            results = await fetch_results_for_athlete(db, athlete_id, season)
+            # When scoped to a specific event, override season and filter by
+            # valida_num so results are constrained to that válida only.
+            effective_season = scope_season if scope_season is not None else season
+            effective_validas = [scope_valida_num] if scope_valida_num is not None else None
+            results = await fetch_results_for_athlete(
+                db,
+                athlete_id,
+                effective_season,
+                valida_nums=effective_validas,
+            )
         except Exception as exc:  # pragma: no cover
             logger.warning("Error en fetch_results: %s", exc)
             return f"(error consultando resultados: {type(exc).__name__})"
@@ -237,17 +289,30 @@ class RaceChatAgent:
         session_store: Optional[_SessionStore] = None,
     ) -> None:
         self._llm = llm
+        self._db_factory = db_factory
         self._tools = tools if tools is not None else self._default_tools(db_factory)
         self._tools_by_name = {t.name: t for t in self._tools}
         self._store = session_store or _DEFAULT_STORE
         self._prompt_version = PROMPT_VERSION_CHAT
 
     @staticmethod
-    def _default_tools(db_factory: Optional[Callable[[], AsyncSession]]) -> list[Any]:
+    def _default_tools(
+        db_factory: Optional[Callable[[], AsyncSession]],
+        scope_season: Optional[int] = None,
+        scope_valida_num: Optional[int] = None,
+    ) -> list[Any]:
         return [
             consultar_marco_teorico,
-            _build_obtener_insights_atleta_tool(db_factory),
-            _build_fetch_results_tool(db_factory),
+            _build_obtener_insights_atleta_tool(
+                db_factory,
+                scope_season=scope_season,
+                scope_valida_num=scope_valida_num,
+            ),
+            _build_fetch_results_tool(
+                db_factory,
+                scope_season=scope_season,
+                scope_valida_num=scope_valida_num,
+            ),
         ]
 
     @property
@@ -259,6 +324,8 @@ class RaceChatAgent:
         session_id: str,
         query: str,
         athlete_id: Optional[int] = None,
+        race_event_id: Optional[int] = None,
+        event_scope: Optional[Tuple[int, int, str]] = None,
     ) -> ChatResponse:
         """Procesa un turn conversacional.
 
@@ -268,20 +335,50 @@ class RaceChatAgent:
             athlete_id: si se provee, se inyecta al system prompt como
                 contexto activo (no se filtra automáticamente a los
                 tools — el LLM decide cuándo usarlo).
+            race_event_id: id del evento activo (feature 010). Cuando se
+                provee junto a ``event_scope``, las tools se restringen a
+                ese evento y la sesión se siembra con la etiqueta del evento.
+            event_scope: tupla ``(season, valida_num, event_label)`` ya
+                resuelta por el router. Evita que el agente haga una DB
+                lookup adicional. Sólo se usa cuando ``race_event_id`` es
+                not None.
         """
         from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+
+        # Determine effective tools: if an event scope is provided, build
+        # scoped tool variants (closed over season + valida_num) so that the
+        # LLM never needs to guess the event context. The default self._tools
+        # are used when no scope is active (backward-compatible path).
+        if race_event_id is not None and event_scope is not None:
+            scope_season, scope_valida_num, event_label = event_scope
+            scoped_tools = self._default_tools(
+                self._db_factory,
+                scope_season=scope_season,
+                scope_valida_num=scope_valida_num,
+            )
+            effective_tools = scoped_tools
+            effective_tools_by_name = {t.name: t for t in effective_tools}
+        else:
+            event_label = None
+            effective_tools = self._tools
+            effective_tools_by_name = self._tools_by_name
 
         llm = self._llm or build_chat_llm()
 
         # Bind tools si el LLM soporta — en tests con FakeLLM, asumimos
         # que ya viene bindeado o no necesita.
-        bound_llm = llm.bind_tools(self._tools) if hasattr(llm, "bind_tools") else llm
+        bound_llm = llm.bind_tools(effective_tools) if hasattr(llm, "bind_tools") else llm
 
         history = await self._store.get(session_id)
         if not history:
+            prompt_ctx: dict[str, Any] = {}
+            if athlete_id:
+                prompt_ctx["athlete_id"] = athlete_id
+            if event_label:
+                prompt_ctx["event_label"] = event_label
             system_prompt = render_prompt(
                 "race_chat_v1",
-                {"athlete_id": athlete_id} if athlete_id else {},
+                prompt_ctx,
                 strict=False,
             )
             history = [SystemMessage(content=system_prompt)]
@@ -310,12 +407,12 @@ class RaceChatAgent:
                     if isinstance(tc, dict)
                     else getattr(tc, "id", None) or "call_0"
                 )
-                if not name or name not in self._tools_by_name:
+                if not name or name not in effective_tools_by_name:
                     tool_output = f"(tool desconocida: {name})"
                 else:
                     tools_called.append(name)
                     try:
-                        tool = self._tools_by_name[name]
+                        tool = effective_tools_by_name[name]
                         result = await tool.ainvoke(args or {})
                         tool_output = str(result)
                         if name == "consultar_marco_teorico":
