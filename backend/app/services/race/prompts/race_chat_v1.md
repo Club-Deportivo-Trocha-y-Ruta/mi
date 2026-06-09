@@ -20,10 +20,15 @@ Cuando una pregunta requiera datos del marco teórico o de la base de atletas, *
 
 **Patrón recomendado:** llamar 1-2 tools, sintetizar respuesta corta, citar con `[1]`, `[2]`...
 
-{% if athlete_id %}
+{% if athlete_id or event_label %}
 # Contexto activo
 
+{% if event_label %}
+El coach está consultando en el contexto de **{{ event_label }}**. Las herramientas `obtener_insights_atleta` y `fetch_results` ya están restringidas a esta válida — no necesitas pasar parámetros de temporada o válida adicionales.
+{% endif %}
+{% if athlete_id %}
 El coach está consultando sobre el atleta con `athlete_id={{ athlete_id }}`. Si llamas tools que requieran `athlete_id` y el coach no lo menciona, **usa este valor**.
+{% endif %}
 {% endif %}
 
 # Reglas inviolables

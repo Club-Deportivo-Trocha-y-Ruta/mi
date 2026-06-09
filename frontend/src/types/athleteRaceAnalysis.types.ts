@@ -103,6 +103,9 @@ export interface InsightParsedSections {
   journey_so_far?: string;
   looking_ahead?: string;
   season_summary?: string;
+  /** Presente solo en insights v2 generados con US-2 (FR-007): sección
+   * "## Contexto de temporada". Ausente (undefined) en insights legacy. */
+  season_context?: string;
 }
 
 export interface AthleteInsightOut {

@@ -11,6 +11,10 @@
  *   - Ordenación client-side por posición (default), nombre o tiempo.
  *   - `race_time_ms` formateado como mm:ss.mmm.
  *   - Lazy-loaded por el padre vía React.lazy.
+ *   - Acción "Analizar con IA" por fila (coach/admin, filas is_our_club con
+ *     athlete_id vinculado). Confirma si ya existe un análisis fresco; lanza
+ *     directamente si no hay insight previo. Requiere `season` y `validaNum`
+ *     para construir el body del run.
  *
  * Accesibilidad:
  *   - <table> semántico con <caption> y scope en <th>.
@@ -19,9 +23,13 @@
  *
  * Props:
  *   - `data: RaceEventResultsResponse` — respuesta del endpoint ya cargada.
+ *   - `season?: number` — año de la temporada (necesario para lanzar análisis).
+ *   - `validaNum?: number` — número de válida (sequence_number del evento).
+ *   - `isCoachOrAdmin?: boolean` — muestra el botón "Analizar con IA".
  */
 import { useMemo, useState } from "react";
-import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { ChevronUp, ChevronDown, ChevronsUpDown, BrainCircuit, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 import {
   Table,
@@ -33,6 +41,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
 import type {
   RaceEventResultsResponse,
   RaceResultCategory,
@@ -182,14 +192,52 @@ export interface ResultsTableProps {
    * @default false
    */
   hideClubFilter?: boolean;
+  /**
+   * Año de temporada (ej. 2026). Necesario para la acción "Analizar con IA".
+   * Si es undefined, el botón de análisis no se muestra aunque `isCoachOrAdmin` sea true.
+   */
+  season?: number;
+  /**
+   * Número de válida (sequence_number del RaceEventRead). Necesario para la
+   * acción "Analizar con IA". Si es undefined, el botón no se muestra.
+   */
+  validaNum?: number;
+  /**
+   * true cuando el usuario autenticado es coach o admin. Activa el botón
+   * "Analizar con IA" en las filas elegibles (is_our_club && athlete_id != null).
+   * @default false
+   */
+  isCoachOrAdmin?: boolean;
+  /**
+   * Mapa athlete_id → stale_run_id construido por el padre a partir de
+   * `useClubInsightsByRace`. El padre (ResultsTabInner) lo hace para mantener
+   * ResultsTable libre de hooks de server state (patrón establecido).
+   *
+   * Semántica del valor:
+   *   - key ausente / `undefined` → no hay insight previo → launch directo.
+   *   - `null`    → insight fresco (stale_run_id == null) → pedir confirmación.
+   *   - `string`  → stale run_id → launch directo (análisis desactualizado).
+   */
+  insightFreshnessMap?: Map<number, string | null>;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ResultsTable({ data, hideClubFilter = false }: ResultsTableProps) {
+export function ResultsTable({
+  data,
+  hideClubFilter = false,
+  season,
+  validaNum,
+  isCoachOrAdmin = false,
+  insightFreshnessMap,
+}: ResultsTableProps) {
   const categories = data.categories;
+
+  // Whether the "Analizar con IA" button should be shown per row.
+  // Requires coach/admin role, plus season + validaNum to build the run body.
+  const canLaunch = isCoachOrAdmin && season != null && validaNum != null;
 
   // ── Categorías únicas para el selector ──────────────────────────────────
   const categoryOptions = useMemo<{ id: number; label: string }[]>(
@@ -361,11 +409,27 @@ export function ResultsTable({ data, hideClubFilter = false }: ResultsTableProps
                     <TableHead className="hidden lg:table-cell text-right">
                       Dorsal
                     </TableHead>
+                    {/* Acciones — solo visible para coach/admin */}
+                    {canLaunch && (
+                      <TableHead className="w-10 text-right" aria-label="Acciones" />
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {cat.rows.map((row) => (
-                    <ResultRow key={row.competitor_id} row={row} sort={sort} />
+                    <ResultRow
+                      key={row.competitor_id}
+                      row={row}
+                      sort={sort}
+                      canLaunch={canLaunch}
+                      season={season}
+                      validaNum={validaNum}
+                      insightFreshness={
+                        row.athlete_id != null
+                          ? insightFreshnessMap?.get(row.athlete_id)
+                          : undefined
+                      }
+                    />
                   ))}
                 </TableBody>
               </Table>
@@ -379,14 +443,189 @@ export function ResultsTable({ data, hideClubFilter = false }: ResultsTableProps
 // ResultRow — fila individual de resultado
 // ---------------------------------------------------------------------------
 
+/**
+ * Error codes from the backend for AI analysis.
+ * 429 = concurrency limit; 503 = budget exhausted.
+ */
+const AI_ERROR_MESSAGES: Record<number, string> = {
+  503: "Presupuesto mensual de IA agotado. Los análisis se reactivan el próximo ciclo.",
+  429: "Límite de análisis simultáneos alcanzado. Intenta de nuevo en unos minutos.",
+};
+
+function getAiErrorMessage(err: unknown): string {
+  if (typeof err === "object" && err !== null) {
+    const e = err as { response?: { status?: number } };
+    const status = e.response?.status;
+    if (status != null && status in AI_ERROR_MESSAGES) {
+      return AI_ERROR_MESSAGES[status];
+    }
+  }
+  return "No se pudo iniciar el análisis. Intenta de nuevo.";
+}
+
+/**
+ * Button and confirmation logic for the per-row AI launch action.
+ * Self-contained: manages its own confirm modal state, launch mutation,
+ * success/error inline feedback, and the freshness check.
+ */
+function AnalyzeButton({
+  athleteId,
+  season,
+  validaNum,
+  insightFreshness,
+  displayName,
+}: {
+  athleteId: number;
+  season: number;
+  validaNum: number;
+  /**
+   * undefined = no insight yet → launch directly.
+   * null     = fresh insight (stale_run_id == null) → confirm before re-run.
+   * string   = stale run_id → treat as "needs rerun", launch directly (stale).
+   */
+  insightFreshness: string | null | undefined;
+  displayName: string;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [successRunId, setSuccessRunId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [, setSearchParams] = useSearchParams();
+
+  const launch = useLaunchAthleteAnalysis(athleteId);
+
+  // A fresh insight exists when the map has a null stale_run_id entry.
+  const hasFreshInsight = insightFreshness === null;
+
+  function doLaunch() {
+    setErrorMsg(null);
+    launch.mutate(
+      { season, valida_nums: [validaNum] },
+      {
+        onSuccess: (res) => {
+          setSuccessRunId(res.run_id);
+          setConfirmOpen(false);
+        },
+        onError: (err) => {
+          setErrorMsg(getAiErrorMessage(err));
+          setConfirmOpen(false);
+        },
+      },
+    );
+  }
+
+  function handleButtonClick() {
+    setErrorMsg(null);
+    setSuccessRunId(null);
+    if (hasFreshInsight) {
+      setConfirmOpen(true);
+    } else {
+      doLaunch();
+    }
+  }
+
+  function navigateToInsights() {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", "insights");
+      return next;
+    });
+  }
+
+  if (successRunId) {
+    return (
+      <div
+        className="flex items-center gap-1.5 text-xs text-emerald-700"
+        data-testid={`ai-launch-success-${athleteId}`}
+      >
+        <CheckCircle2 size={13} aria-hidden="true" />
+        <button
+          type="button"
+          onClick={navigateToInsights}
+          className="underline underline-offset-2 hover:opacity-80"
+          data-testid={`ai-launch-insights-link-${athleteId}`}
+        >
+          Ver progreso en Insights
+        </button>
+      </div>
+    );
+  }
+
+  if (errorMsg) {
+    return (
+      <div
+        className="flex max-w-[200px] items-start gap-1.5 text-xs text-red-600"
+        data-testid={`ai-launch-error-${athleteId}`}
+        role="alert"
+      >
+        <AlertCircle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>{errorMsg}</span>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={handleButtonClick}
+        disabled={launch.isPending}
+        className={cn(
+          "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+          "text-mid-gray hover:bg-charcoal/8 hover:text-charcoal",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+        )}
+        aria-label={`Analizar con IA a ${displayName}`}
+        data-testid={`ai-launch-btn-${athleteId}`}
+      >
+        {launch.isPending ? (
+          <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+        ) : (
+          <BrainCircuit size={13} aria-hidden="true" />
+        )}
+        <span className="hidden sm:inline">Analizar</span>
+      </button>
+
+      <ConfirmModal
+        open={confirmOpen}
+        title="Re-ejecutar análisis"
+        body="Ya existe un análisis para este deportista. ¿Deseas re-ejecutarlo?"
+        confirmLabel="Re-ejecutar"
+        isPending={launch.isPending}
+        onCancel={() => {
+          if (!launch.isPending) setConfirmOpen(false);
+        }}
+        onConfirm={doLaunch}
+      />
+    </>
+  );
+}
+
 function ResultRow({
   row,
   sort: _sort,
+  canLaunch = false,
+  season,
+  validaNum,
+  insightFreshness,
 }: {
   row: RaceResultRow;
   sort: SortState;
+  canLaunch?: boolean;
+  season?: number;
+  validaNum?: number;
+  /** undefined = no insight; null = fresh insight; string = stale run_id */
+  insightFreshness?: string | null;
 }) {
   const isOurClub = row.is_our_club;
+  // Show per-row AI button: coach/admin only, our-club row, athlete_id linked,
+  // and season + validaNum available.
+  const showAnalyzeBtn =
+    canLaunch &&
+    isOurClub &&
+    row.athlete_id != null &&
+    season != null &&
+    validaNum != null;
 
   return (
     <TableRow
@@ -490,6 +729,21 @@ function ResultRow({
       <TableCell className="hidden lg:table-cell text-right font-mono text-xs text-mid-gray">
         {row.bib_number !== null ? `#${row.bib_number}` : "—"}
       </TableCell>
+
+      {/* Acción "Analizar con IA" — solo cuando canLaunch=true */}
+      {canLaunch && (
+        <TableCell className="text-right">
+          {showAnalyzeBtn ? (
+            <AnalyzeButton
+              athleteId={row.athlete_id!}
+              season={season!}
+              validaNum={validaNum!}
+              insightFreshness={insightFreshness}
+              displayName={row.display_name}
+            />
+          ) : null}
+        </TableCell>
+      )}
     </TableRow>
   );
 }

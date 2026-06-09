@@ -274,3 +274,19 @@
 | Deploy | Deploy to Render | ⏳ Pending |
 
 > All tests green: backend 707 passed (ruff clean); frontend 114 passed in competitions + race hooks suites, `tsc --noEmit` clean. No Alembic migration.
+
+## Implementation status — Competitions AI Insights (specs/010-competitions-ai-insights)
+
+| Step | Scope | Status |
+|---|---|---|
+| T001–T004 | Harness check; `GroupRun*`/`RaceEventRuns*` schemas + `ChatRequest.race_event_id` + `ProgressionAssessment`; `services/race/group_launch.py`; TS type mirrors | ✅ Complete 2026-06-09 |
+| T005–T012 (US1) | `POST/GET /api/race-analysis/race-events/{id}/runs` (group fan-out via `submit_run`, typed per-athlete outcomes, refresh recovery); `useGroupAnalysis` hook; `GroupAnalysisPanel`/`GroupRunRow` in InsightsTab with HITL reuse; 19 backend + 12 frontend tests | ✅ Complete 2026-06-09 |
+| T013–T018 (US2) | `season_comparative` + `progression_assessment` computed in `compute_metrics` (Python, not LLM); `race_analyst_v2.md` "Contexto de temporada" + no-fabrication rule; persisted in `metrics_snapshot_json` (additive); season section + progression badge in InsightsTimeline; 21 unit tests | ✅ Complete 2026-06-09 |
+| T019–T020 (US3) | "Analizar con IA ahora" in ImportWizard post-commit panel (route-level RBAC); 7 tests | ✅ Complete 2026-06-09 |
+| T021–T022 (US4) | Per-athlete launch action in ResultsTable (freshness check → ConfirmModal; season/valida from cached `useRaceEvent`); 14 tests | ✅ Complete 2026-06-09 |
+| T023–T026 (US5) | `ChatRequest.race_event_id` scoping (insights + results tools constrained to the válida, event label seeded); `CompetitionChatPanel` (per-competition session, collapsible, 503-aware); 5 backend + 12 frontend tests | ✅ Complete 2026-06-09 |
+| T027 | Privacy audit (data-privacy-guard): APPROVED — 1 HIGH log finding fixed (`athlete_id` → `run_id` in exception log) | ✅ Complete 2026-06-09 |
+| T028 | Quality gates: ruff clean on feature files; backend race suites 87 passed; `tsc --noEmit` clean; full-suite failures verified pre-existing on `main` (see specs/010-…/notes.md) | ✅ Complete 2026-06-09 |
+| Deploy | Deploy to Render | ⏳ Pending |
+
+> No Alembic migration. AI provider/model unchanged (Gemini); Claude Fable 5 support deferred to a future spec at the coach's request.

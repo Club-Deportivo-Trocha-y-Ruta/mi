@@ -702,6 +702,20 @@ class RaceAnalystAgent:
                     "gap_pct": r.get("gap_pct"),
                 })
 
+        # Season context (T014): build the comparative table for the prompt.
+        # Format race_time_ms values for human readability.
+        season_comparative_prompt: list[dict[str, Any]] = []
+        for entry in input_.season_comparative:
+            season_comparative_prompt.append({
+                "valida_num": entry.get("valida_num"),
+                "event_label": entry.get("event_label"),
+                "position": entry.get("position"),
+                "race_time": _format_ms_hhmmss(entry.get("race_time_ms")),
+                "field_size": entry.get("field_size"),
+                "delta_position": entry.get("delta_position"),
+                "delta_time": _format_ms_hhmmss(entry.get("delta_time_ms")),
+            })
+
         return {
             "athlete_pseudonym": input_.athlete_pseudonym,
             "age": input_.age,
@@ -717,6 +731,9 @@ class RaceAnalystAgent:
             "principles": principles_block,
             "explain_mode": input_.explain_mode,
             "is_season_summary": is_season_summary,
+            # Season context (T014 — feature 010):
+            "season_comparative": season_comparative_prompt,
+            "progression_assessment": input_.progression_assessment,
         }
 
 

@@ -138,6 +138,8 @@ export interface ChatRequestBody {
   session_id: string;
   query: string;
   athlete_id?: number | null;
+  /** Cuando se indica, las herramientas de chat limitan resultados/insights a este evento. */
+  race_event_id?: number | null;
 }
 
 export interface ChatResponse {
@@ -145,6 +147,75 @@ export interface ChatResponse {
   citations_used: string[];
   tools_called: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Group run launch
+// ---------------------------------------------------------------------------
+
+/** Resultado por deportista en un lanzamiento grupal. */
+export type GroupRunOutcome =
+  | "started"
+  | "backpressure"
+  | "budget_exceeded"
+  | "already_running"
+  | "no_results"
+  | "error";
+
+export interface GroupRunLaunchRequest {
+  /** Subconjunto opcional de deportistas (retry de fallidos/pendientes). null = todos con resultados en el evento. */
+  athlete_ids?: number[] | null;
+  explain_mode?: boolean;
+}
+
+export interface GroupRunItem {
+  athlete_id: number;
+  athlete_display_name: string;
+  /** Seteado cuando el run se inició. */
+  run_id: string | null;
+  outcome: GroupRunOutcome;
+  /** Mensaje en es-CO para outcomes no-started. */
+  detail: string | null;
+}
+
+export interface GroupRunLaunchResponse {
+  race_event_id: number;
+  season: number;
+  valida_num: number;
+  started_count: number;
+  skipped_count: number;
+  items: GroupRunItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Race-event runs (refresh recovery)
+// ---------------------------------------------------------------------------
+
+export interface RaceEventRunItem {
+  run_id: string;
+  athlete_id: number;
+  athlete_display_name: string;
+  state: RunState;
+  /** ISO timestamp. */
+  started_at: string;
+  stale: boolean;
+}
+
+export interface RaceEventRunsResponse {
+  race_event_id: number;
+  runs: RaceEventRunItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Progression assessment
+// ---------------------------------------------------------------------------
+
+/** Derivado de posiciones en válidas anteriores vs la actual. */
+export type ProgressionAssessment =
+  | "improving"
+  | "stable"
+  | "declining"
+  | "mixed"
+  | "first_reference";
 
 /** Mensaje almacenado localmente en el ChatConsole. */
 export interface ChatMessage {

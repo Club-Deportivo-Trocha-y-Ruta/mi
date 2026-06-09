@@ -41,6 +41,14 @@ __all__ = [
     "AIUsageByPromptVersion",
     "MetricsSnapshotV1",
     "MetricsSnapshotStatus",
+    # Feature 010 — group launch + season analysis
+    "GroupRunOutcome",
+    "GroupRunLaunchRequest",
+    "GroupRunItem",
+    "GroupRunLaunchResponse",
+    "RaceEventRunItem",
+    "RaceEventRunsResponse",
+    "ProgressionAssessment",
 ]
 
 
@@ -211,7 +219,10 @@ class ChatRequest(BaseModel):
 
     ``session_id`` lo genera el frontend (uuid v4 estable por
     conversación). ``athlete_id`` es contexto opcional; el LLM decide
-    si usarlo via tools.
+    si usarlo via tools. ``race_event_id`` (feature 010) es contexto
+    opcional de evento; cuando se pasa, las tools del chat limitan
+    resultados/insights a ese evento y siembran la sesión con la
+    etiqueta del evento.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -219,6 +230,14 @@ class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=64)
     query: str = Field(..., min_length=1, max_length=2_000)
     athlete_id: Optional[int] = Field(default=None, ge=1)
+    race_event_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Contexto de evento (feature 010). Cuando se incluye, el chat "
+            "restringe resultados e insights al evento indicado."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +304,13 @@ class MetricsSnapshotV1(BaseModel):
       milisegundos (convención ``parse_time`` en ``services/race/normalizer.py``).
     - ``category_*`` agregados se nullan cuando ``status != finished``
       o cuando la categoría tiene n<2 (no hay distribución).
+
+    Season context fields (T015 — feature 010):
+    - ``season_comparative``: per-prior-válida comparison entries as stored
+      by compute_metrics. Optional so old snapshots (without this key)
+      remain valid — defaults to empty list.
+    - ``progression_assessment``: ProgressionAssessment string value.
+      Optional so old snapshots remain valid — defaults to None.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -332,6 +358,22 @@ class MetricsSnapshotV1(BaseModel):
     category_time_min_ms: Optional[int] = Field(default=None, ge=0)
     category_time_max_ms: Optional[int] = Field(default=None, ge=0)
 
+    # --- Season context (T015 — feature 010) — additive, old snapshots stay valid ---
+    season_comparative: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Per-prior-válida comparison entries as produced by compute_metrics. "
+            "Empty list for old insights or first_reference athletes."
+        ),
+    )
+    progression_assessment: Optional[str] = Field(
+        default=None,
+        description=(
+            "ProgressionAssessment value: improving | stable | declining | "
+            "mixed | first_reference. None for old insights without this data."
+        ),
+    )
+
     # --- Extensibilidad por use_case --------------------------------------
     extras: dict[str, Any] = Field(
         default_factory=dict,
@@ -346,3 +388,126 @@ class MetricsSnapshotV1(BaseModel):
     def _normalize_category_code(cls, v: str) -> str:
         # Normalizamos a uppercase sin espacios (consistente con services/race).
         return v.strip().upper()
+
+
+# ---------------------------------------------------------------------------
+# Feature 010 — Group launch + event runs
+# ---------------------------------------------------------------------------
+
+
+class GroupRunOutcome(str, Enum):
+    """Resultado individual de un intento de lanzamiento de análisis.
+
+    - ``started``: run lanzado exitosamente.
+    - ``backpressure``: semáforo de concurrencia lleno (MAX_CONCURRENT_RUNS).
+    - ``budget_exceeded``: presupuesto 30d excedido antes de lanzar.
+    - ``already_running``: ya existe un run activo para (atleta, season, valida).
+    - ``no_results``: el atleta no tiene resultados en este evento.
+    - ``error``: error inesperado por atleta (los demás continúan).
+    """
+
+    started = "started"
+    backpressure = "backpressure"
+    budget_exceeded = "budget_exceeded"
+    already_running = "already_running"
+    no_results = "no_results"
+    error = "error"
+
+
+class GroupRunLaunchRequest(BaseModel):
+    """Body para ``POST /api/race-analysis/race-events/{id}/runs``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    athlete_ids: Optional[list[int]] = Field(
+        default=None,
+        description=(
+            "Subset de atletas a analizar. None = todos los atletas del club "
+            "con resultados en el evento (lanzamiento completo)."
+        ),
+    )
+    explain_mode: bool = Field(
+        default=False,
+        description="Si True, activa modo aprendizaje + HITL siempre en cada run.",
+    )
+
+
+class GroupRunItem(BaseModel):
+    """Resultado individual de lanzamiento de un análisis dentro del grupo."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    athlete_id: int
+    athlete_display_name: str
+    run_id: Optional[str] = Field(
+        default=None,
+        description="external_run_id asignado al run. Solo presente si outcome=started.",
+    )
+    outcome: GroupRunOutcome
+    detail: Optional[str] = Field(
+        default=None,
+        description="Mensaje en español (Colombia) para outcomes no-started.",
+    )
+
+
+class GroupRunLaunchResponse(BaseModel):
+    """Response 200 de ``POST /api/race-analysis/race-events/{id}/runs``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    race_event_id: int
+    season: int
+    valida_num: int
+    started_count: int = Field(..., ge=0)
+    skipped_count: int = Field(..., ge=0)
+    items: list[GroupRunItem]
+
+
+class RaceEventRunItem(BaseModel):
+    """Un run de análisis asociado a un evento de carrera."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    athlete_id: int
+    athlete_display_name: str
+    state: RunState
+    started_at: datetime
+    stale: bool = Field(
+        description="True si el run fue marcado como desactualizado (stale_since IS NOT NULL)."
+    )
+
+
+class RaceEventRunsResponse(BaseModel):
+    """Response 200 de ``GET /api/race-analysis/race-events/{id}/runs``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    race_event_id: int
+    runs: list[RaceEventRunItem]
+
+
+# ---------------------------------------------------------------------------
+# Feature 010 — Season progression assessment
+# ---------------------------------------------------------------------------
+
+
+class ProgressionAssessment(str, Enum):
+    """Evaluación de progresión de un atleta a lo largo de la temporada.
+
+    Derivación (datos: posiciones en válidas previas vs. válida actual):
+    - ``improving``: posición estrictamente mejor en válida actual vs. todas las previas.
+    - ``stable``: posición igual (delta ±0) en todas las válidas comparables.
+    - ``declining``: posición estrictamente peor en válida actual vs. todas las previas.
+    - ``mixed``: combinación de mejoras y retrocesos sin tendencia clara.
+    - ``first_reference``: no hay válidas previas para comparar — primera carrera del atleta.
+
+    El nodo analyst_agent NUNCA debe inventar comparaciones cuando el valor
+    es ``first_reference`` (FR-007, SC-002).
+    """
+
+    improving = "improving"
+    stable = "stable"
+    declining = "declining"
+    mixed = "mixed"
+    first_reference = "first_reference"

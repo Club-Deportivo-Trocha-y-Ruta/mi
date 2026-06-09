@@ -76,6 +76,12 @@ def _build_input(state: dict, progression_records: list | None = None) -> Analys
     principles = state.get("principles") or []
     memory = state.get("memory") or []
 
+    # Season context (T014): inject comparative data computed by compute_metrics.
+    season_comparative: list = state.get("season_comparative") or []
+    progression_assessment: str = (
+        state.get("progression_assessment") or "first_reference"
+    )
+
     return AnalysisInput(
         athlete_pseudonym=pseudonym,
         age=_resolve_age(state),
@@ -85,6 +91,8 @@ def _build_input(state: dict, progression_records: list | None = None) -> Analys
         memory_recent_insights=memory[:10],
         principles_citations=principles,
         explain_mode=bool(state.get("explain_mode", False)),
+        season_comparative=season_comparative,
+        progression_assessment=progression_assessment,
         athlete_id=state["athlete_id"],
         season=state["season"],
     )

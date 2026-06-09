@@ -37,21 +37,24 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import StreamingResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_current_user, get_db, require_role
+from app.dependencies import get_db, require_role
 from app.models.athlete import Athlete
 from app.models.user import User, UserRole
 from app.schemas.race_ai import (
     AIUsageByPromptVersion,
     AIUsageResponse,
     ChatRequest,
+    GroupRunLaunchRequest,
+    GroupRunLaunchResponse,
+    GroupRunOutcome,
     HITLDecision,
     HITLDecisionRequest,
     HITLDecisionResponse,
+    RaceEventRunsResponse,
     RunEvent,
     RunState,
     RunStatusResponse,
@@ -1122,6 +1125,7 @@ async def get_run_pdf(
     responses={
         200: {"model": ChatResponse},
         403: {"description": "Rol no permitido."},
+        404: {"description": "Competencia no encontrada."},
         503: {"description": "AI deshabilitada."},
     },
 )
@@ -1129,11 +1133,17 @@ async def chat(
     body: ChatRequest,
     current_user: User = Depends(_coach_or_admin),
     chat_agent=Depends(get_race_chat_agent),
+    db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
     """Chat consultivo con tools (RAG + insights + resultados).
 
     Sin streaming — respuesta completa JSON. Sesiones in-memory con TTL
     de 1h (ver :mod:`app.services.race.agents.chat`).
+
+    Cuando ``race_event_id`` se incluye en el body, el router valida que
+    el evento exista (404 si no) y pasa el scope ``(season, valida_num,
+    event_label)`` al agente para que los tools queden restringidos a ese
+    evento y la sesión se siembre con la etiqueta del evento.
     """
     if not settings.ai_enabled:
         raise HTTPException(
@@ -1143,13 +1153,61 @@ async def chat(
 
     import asyncio as _asyncio
 
+    # Resolve event scope when race_event_id is provided.
+    event_scope = None
+    if body.race_event_id is not None:
+        from app.services.race.group_launch import (
+            EventNotAnalyzableError,
+            RaceEventNotFoundError,
+            resolve_event_scope,
+        )
+        from app.models.race_event import RaceEvent
+
+        try:
+            scope_season, scope_valida_num = await resolve_event_scope(db, body.race_event_id)
+        except RaceEventNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Competencia no encontrada.",
+            )
+        except EventNotAnalyzableError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La competencia no tiene número de válida asignado.",
+            )
+
+        # Build a human-readable event label for the system prompt.
+        # Best-effort: load the event name/date; fall back to generic label.
+        event_label = f"Válida {scope_valida_num} ({scope_season})"
+        try:
+            _ev_result = await db.execute(
+                select(RaceEvent).where(RaceEvent.id == body.race_event_id)
+            )
+            _ev = _ev_result.scalar_one_or_none()
+            if _ev is not None:
+                loc = getattr(_ev, "location", None) or ""
+                ev_date = getattr(_ev, "event_date", None)
+                date_str = ev_date.strftime("%d/%m/%Y") if ev_date else ""
+                parts = [f"Válida {scope_valida_num} {scope_season}"]
+                if loc:
+                    parts.append(loc)
+                if date_str:
+                    parts.append(date_str)
+                event_label = " — ".join(parts)
+        except Exception:  # noqa: BLE001 — label is informational only
+            pass
+
+        event_scope = (scope_season, scope_valida_num, event_label)
+
     try:
         response = await chat_agent.chat(
             session_id=body.session_id,
             query=body.query,
             athlete_id=body.athlete_id,
+            race_event_id=body.race_event_id,
+            event_scope=event_scope,
         )
-    except (TimeoutError, _asyncio.TimeoutError) as exc:
+    except (TimeoutError, _asyncio.TimeoutError):
         logger.exception("chat endpoint failed (timeout) for session=%s", body.session_id)
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
@@ -1558,6 +1616,150 @@ async def re_execute_run(
     # Delegar al launcher canónico (valida AI_ENABLED, budget, backpressure).
     # El run viejo conserva su marca stale; el nuevo run lo supersede.
     return await start_run(body=body, db=db, current_user=current_user)
+
+
+# ---------------------------------------------------------------------------
+# T005: POST /race-events/{race_event_id}/runs — group analysis launch
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/race-events/{race_event_id}/runs",
+    response_model=GroupRunLaunchResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"model": GroupRunLaunchResponse},
+        403: {"description": "Rol no permitido."},
+        404: {"description": "Evento no encontrado."},
+        422: {"description": "Evento sin resultados importados o sin válida asignada."},
+        429: {"description": "Todos los análisis bloqueados por backpressure."},
+        503: {"description": "AI deshabilitada o presupuesto excedido."},
+    },
+)
+async def launch_race_event_group(
+    race_event_id: int,
+    body: GroupRunLaunchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+) -> Any:
+    """Lanza análisis agéntico para todos (o un subset) de los atletas de un evento.
+
+    Retorna inmediatamente con el estado de cada intento de lanzamiento.
+    HTTP 200 incluso con starts parciales; 429 sólo cuando CERO pudieron iniciar
+    por backpressure; 503 cuando el presupuesto mensual está agotado.
+    """
+    if not settings.ai_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de IA no disponible (AI_ENABLED=false)",
+        )
+
+    # Budget guard — single up-front check (the service never calls it).
+    try:
+        await check_budget(db)
+    except BudgetExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"Presupuesto mensual de IA excedido: "
+                f"${exc.current_usd:.4f} de ${exc.budget_usd:.2f}. "
+                "Reintenta más tarde o contacta al administrador."
+            ),
+        )
+
+    from app.services.race.group_launch import (
+        EventHasNoResultsError,
+        EventNotAnalyzableError,
+        RaceEventNotFoundError,
+        launch_group,
+    )
+
+    try:
+        response = await launch_group(
+            db=db,
+            race_event_id=race_event_id,
+            athlete_ids=body.athlete_ids,
+            explain_mode=body.explain_mode,
+            requested_by_user_id=current_user.id,
+        )
+    except RaceEventNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evento de carrera no encontrado.",
+        )
+    except EventNotAnalyzableError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La competencia no tiene número de válida asignado.",
+        )
+    except EventHasNoResultsError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La competencia no tiene resultados importados.",
+        )
+
+    # All-backpressure → 429.
+    if (
+        response.started_count == 0
+        and response.items
+        and all(i.outcome == GroupRunOutcome.backpressure for i in response.items)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Límite de análisis simultáneos alcanzado. Intenta de nuevo en unos minutos.",
+        )
+
+    return response
+
+
+# ---------------------------------------------------------------------------
+# T006: GET /race-events/{race_event_id}/runs — list runs for refresh recovery
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/race-events/{race_event_id}/runs",
+    response_model=RaceEventRunsResponse,
+    responses={
+        200: {"model": RaceEventRunsResponse},
+        403: {"description": "Rol no permitido."},
+        404: {"description": "Evento no encontrado."},
+    },
+)
+async def list_race_event_runs(
+    race_event_id: int,
+    active_only: bool = Query(
+        default=True,
+        description=(
+            "Si True (default), sólo retorna runs activos (running/awaiting_hitl). "
+            "Si False, incluye también runs terminales de los últimos 7 días."
+        ),
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+) -> RaceEventRunsResponse:
+    """Lista los runs de análisis asociados a un evento de carrera.
+
+    Útil para recuperar el estado tras recargar la UI (refresh recovery).
+    """
+    from app.services.race.group_launch import (
+        EventNotAnalyzableError,
+        RaceEventNotFoundError,
+        list_event_runs,
+    )
+
+    try:
+        return await list_event_runs(db=db, race_event_id=race_event_id, active_only=active_only)
+    except RaceEventNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evento de carrera no encontrado.",
+        )
+    except EventNotAnalyzableError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evento de carrera no encontrado.",
+        )
 
 
 __all__ = ["router"]

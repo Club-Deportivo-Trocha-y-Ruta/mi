@@ -254,4 +254,168 @@ describe("InsightsTimeline — v2 (race_analyst_v2)", () => {
     const card = screen.getByTestId("insight-card-1");
     expect(within(card).getByText(/resumen del desempeño/i)).toBeInTheDocument();
   });
+
+  // -------------------------------------------------------------------------
+  // T017 / T018 — progression badge (FR-007, FR-013)
+  // -------------------------------------------------------------------------
+
+  it("muestra progression badge 'Mejorando' cuando metrics_snapshot tiene progression_assessment=improving", async () => {
+    mswServer.use(
+      singleV2InsightHandler,
+      http.get(
+        "*/api/athletes/:athleteId/race-analysis/insights/:insightId",
+        ({ params }) =>
+          HttpResponse.json(
+            mockInsightV2Detail({
+              id: Number(params.insightId),
+              metrics_snapshot: {
+                schema_version: 1,
+                season: 2026,
+                progression_assessment: "improving",
+              } as never,
+            }),
+          ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("insight-card-1001")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId("insight-card-1001"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("progression-badge")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("progression-badge")).toHaveTextContent(/mejorando/i);
+  });
+
+  it("muestra progression badge 'En descenso' cuando assessment=declining", async () => {
+    mswServer.use(
+      singleV2InsightHandler,
+      http.get(
+        "*/api/athletes/:athleteId/race-analysis/insights/:insightId",
+        ({ params }) =>
+          HttpResponse.json(
+            mockInsightV2Detail({
+              id: Number(params.insightId),
+              metrics_snapshot: {
+                schema_version: 1,
+                season: 2026,
+                progression_assessment: "declining",
+              } as never,
+            }),
+          ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("insight-card-1001")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId("insight-card-1001"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("progression-badge")).toHaveTextContent(/en descenso/i);
+    });
+  });
+
+  it("NO muestra progression badge cuando metrics_snapshot no tiene progression_assessment (insight legacy)", async () => {
+    mswServer.use(
+      singleV2InsightHandler,
+      http.get(
+        "*/api/athletes/:athleteId/race-analysis/insights/:insightId",
+        ({ params }) =>
+          HttpResponse.json(
+            mockInsightV2Detail({
+              id: Number(params.insightId),
+              // metrics_snapshot sin progression_assessment (formato legacy v1)
+              metrics_snapshot: {
+                schema_version: 1,
+                season: 2026,
+              } as never,
+            }),
+          ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("insight-card-1001")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId("insight-card-1001"));
+
+    await waitFor(() =>
+      expect(screen.getByText(/detalle del análisis/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("progression-badge")).not.toBeInTheDocument();
+  });
+
+  it("muestra sección 'Contexto de temporada' en detalle v2 cuando está en el summary_text", async () => {
+    const summaryWithContext = [
+      "## Qué pasó",
+      "Avanzó en frenada y curvas cerradas.",
+      "",
+      "## Recorrido hasta aquí",
+      "Progreso técnico consistente.",
+      "",
+      "## Hacia dónde va",
+      "Foco en cadencia sostenida.",
+      "",
+      "## Resumen de temporada",
+      "Temporada de aprendizaje.",
+      "",
+      "## Contexto de temporada",
+      "Lleva 3 válidas disputadas de 7 en la Copa Valle 2026.",
+    ].join("\n");
+
+    mswServer.use(
+      singleV2InsightHandler,
+      http.get(
+        "*/api/athletes/:athleteId/race-analysis/insights/:insightId",
+        ({ params }) =>
+          HttpResponse.json(
+            mockInsightV2Detail({
+              id: Number(params.insightId),
+              summary_text: summaryWithContext,
+            }),
+          ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("insight-card-1001")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId("insight-card-1001"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/contexto de temporada/i)).toBeInTheDocument();
+    });
+  });
+
+  it("NO muestra sección 'Contexto de temporada' para insights sin esa sección (legacy compat)", async () => {
+    // El mockInsightV2Detail por defecto usa buildV2Markdown() que NO incluye
+    // la sección de contexto de temporada.
+    mswServer.use(singleV2InsightHandler, v2InsightDetailHandler);
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("insight-card-1001")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId("insight-card-1001"));
+
+    await waitFor(() =>
+      expect(screen.getByText(/detalle del análisis/i)).toBeInTheDocument(),
+    );
+    // Las 4 secciones clásicas deben seguir renderizándose.
+    expect(screen.getByText(/qué pasó/i)).toBeInTheDocument();
+    // La sección nueva NO debe aparecer.
+    expect(screen.queryByText(/contexto de temporada/i)).not.toBeInTheDocument();
+  });
 });

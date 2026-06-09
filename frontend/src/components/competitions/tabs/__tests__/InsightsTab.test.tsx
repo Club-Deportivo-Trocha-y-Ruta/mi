@@ -9,6 +9,8 @@
  *  - Renderiza el grid scopeado (data-testid="insights-tab") con cards.
  *  - Click en una card navega al perfil del atleta scopeado (no al hub).
  *  - Empty state cuando la válida no tiene insights.
+ *  - T011 (feature 010): GroupAnalysisPanel visible para coach/admin,
+ *    oculto para parent.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -31,12 +33,39 @@ vi.mock("@/hooks/athletes/useClubInsightsByRace", () => ({
     mockUseClubInsightsByRace(...args),
 }));
 
+// GroupAnalysisPanel — mock to isolate from its hook dependencies.
+vi.mock(
+  "@/components/competitions/insights/GroupAnalysisPanel",
+  () => ({
+    GroupAnalysisPanel: ({ raceEventId }: { raceEventId: number }) => (
+      <div data-testid="group-analysis-panel" data-race-event-id={raceEventId} />
+    ),
+  }),
+);
+
+// CompetitionChatPanel — mock to isolate from its API dependencies.
+vi.mock(
+  "@/components/competitions/chat/CompetitionChatPanel",
+  () => ({
+    CompetitionChatPanel: ({ raceEventId }: { raceEventId: number }) => (
+      <div data-testid="competition-chat-panel" data-race-event-id={raceEventId} />
+    ),
+  }),
+);
+
 import { InsightsTab } from "@/components/competitions/tabs/InsightsTab";
 
-function renderTab(raceEventId = 5) {
+function renderTab(
+  raceEventId = 5,
+  opts: { hasResults?: boolean; isCoachOrAdmin?: boolean } = {},
+) {
   return render(
     <MemoryRouter>
-      <InsightsTab raceEventId={raceEventId} />
+      <InsightsTab
+        raceEventId={raceEventId}
+        hasResults={opts.hasResults ?? false}
+        isCoachOrAdmin={opts.isCoachOrAdmin ?? false}
+      />
     </MemoryRouter>,
   );
 }
@@ -119,5 +148,44 @@ describe("InsightsTab (siempre grid scopeado, sin flag)", () => {
     expect(
       screen.getByText(/No hay insights generados para esta válida/i),
     ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T011 (feature 010) — GroupAnalysisPanel visibility by role
+// ---------------------------------------------------------------------------
+
+describe("InsightsTab — GroupAnalysisPanel visibilidad por rol (T011)", () => {
+  beforeEach(() => {
+    // Use a non-empty response so the grid renders without errors.
+    mockUseClubInsightsByRace.mockReturnValue({
+      data: { race_event_id: 5, total_athletes: 0, items: [] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+  });
+
+  it("coach ve el GroupAnalysisPanel", () => {
+    renderTab(5, { isCoachOrAdmin: true, hasResults: true });
+    expect(screen.getByTestId("group-analysis-panel")).toBeInTheDocument();
+  });
+
+  it("admin ve el GroupAnalysisPanel", () => {
+    renderTab(5, { isCoachOrAdmin: true, hasResults: false });
+    expect(screen.getByTestId("group-analysis-panel")).toBeInTheDocument();
+  });
+
+  it("parent NO ve el GroupAnalysisPanel", () => {
+    renderTab(5, { isCoachOrAdmin: false });
+    expect(
+      screen.queryByTestId("group-analysis-panel"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("GroupAnalysisPanel recibe el raceEventId correcto", () => {
+    renderTab(42, { isCoachOrAdmin: true, hasResults: true });
+    const panel = screen.getByTestId("group-analysis-panel");
+    expect(panel).toHaveAttribute("data-race-event-id", "42");
   });
 });

@@ -657,7 +657,11 @@ export function CompetitionDetailPage() {
         {/* ── Tab: Insights ────────────────────────────────────────── */}
         <TabsPrimitive.Content value="insights" className="mt-4">
           <Suspense fallback={<TabFallback />}>
-            <InsightsTab raceEventId={raceEventId} />
+            <InsightsTab
+              raceEventId={raceEventId}
+              hasResults={isCompleted}
+              isCoachOrAdmin={isCoach || isAdmin}
+            />
           </Suspense>
         </TabsPrimitive.Content>
       </TabsPrimitive.Root>

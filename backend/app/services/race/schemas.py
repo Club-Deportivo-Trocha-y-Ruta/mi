@@ -26,7 +26,7 @@ propios DTOs.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -168,6 +168,14 @@ class AnalysisInput(BaseModel):
       audit; el agente NO debe re-emitirlo en el output.
     - ``progression_df_records`` y ``podium_context`` ya vienen
       anonimizados desde el nodo ``anonymize`` del grafo.
+
+    Season context (T014 — feature 010):
+    - ``season_comparative``: per-prior-válida comparison table, computed in
+      Python by compute_metrics. The LLM must ground every comparative claim
+      exclusively in this table and never invent history.
+    - ``progression_assessment``: ProgressionAssessment enum value string,
+      also computed in Python. When "first_reference", the LLM must state
+      "primera referencia de la temporada" and make no cross-race comparison.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -195,6 +203,22 @@ class AnalysisInput(BaseModel):
     explain_mode: bool = Field(
         False,
         description="Si True, el agente narra '¿por qué hago X?' (modo aprendizaje).",
+    )
+    # Season context fields (T014) — injected into the v2 prompt template.
+    season_comparative: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Per-prior-válida comparison entries. Each dict: "
+            "{valida_num, event_label, position, race_time_ms, field_size, "
+            "delta_position, delta_time_ms}. Empty when first_reference."
+        ),
+    )
+    progression_assessment: str = Field(
+        default="first_reference",
+        description=(
+            "ProgressionAssessment value computed by compute_metrics. "
+            "Values: improving | stable | declining | mixed | first_reference."
+        ),
     )
     # Audit-only — NO se inyecta al prompt:
     athlete_id: int = Field(..., ge=1)

@@ -169,3 +169,58 @@ export async function reExecuteRun(
   );
   return response.data;
 }
+
+// ---------------------------------------------------------------------------
+// Group runs — Feature 010 (US1: launch group analysis from Insights tab)
+// ---------------------------------------------------------------------------
+
+import type {
+  GroupRunLaunchRequest,
+  GroupRunLaunchResponse,
+  RaceEventRunsResponse,
+} from "@/types/raceAnalysis.types";
+
+/**
+ * POST /race-events/{id}/runs — lanza análisis grupal para todos los
+ * deportistas del club con resultados en esa válida. Puede filtrar por
+ * athlete_ids (retry de fallidos).
+ *
+ * Códigos de respuesta:
+ *   200  → parcial o completo (GroupRunLaunchResponse)
+ *   422  → sin resultados importados
+ *   429  → límite de análisis simultáneos
+ *   503  → presupuesto mensual agotado
+ */
+export async function launchGroupAnalysis(
+  raceEventId: number,
+  body: GroupRunLaunchRequest,
+  options?: { signal?: AbortSignal },
+): Promise<GroupRunLaunchResponse> {
+  const response = await apiClient.post<GroupRunLaunchResponse>(
+    `${BASE}/race-events/${raceEventId}/runs`,
+    body,
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+/**
+ * GET /race-events/{id}/runs?active_only=true — recupera runs activos
+ * para un evento (útil para restaurar estado tras refresh de página).
+ */
+export async function getRaceEventRuns(
+  raceEventId: number,
+  opts?: { activeOnly?: boolean },
+  options?: { signal?: AbortSignal },
+): Promise<RaceEventRunsResponse> {
+  const response = await apiClient.get<RaceEventRunsResponse>(
+    `${BASE}/race-events/${raceEventId}/runs`,
+    {
+      params: opts?.activeOnly !== undefined
+        ? { active_only: opts.activeOnly }
+        : undefined,
+      signal: options?.signal,
+    },
+  );
+  return response.data;
+}

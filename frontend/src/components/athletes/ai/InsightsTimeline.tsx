@@ -16,8 +16,8 @@
  *   - El detalle abre como modal con foco trapado (Radix lo da).
  *   - El estado de loading expone ``role="status" aria-busy``.
  */
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, History, Medal, Sparkles, Trophy } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { ChevronRight, History, Medal, Sparkles, Trophy, TrendingDown, TrendingUp, Minus, GitBranch } from "lucide-react";
 
 import { MarkdownReportViewer } from "@/components/ai/MarkdownReportViewer";
 import { InsightN1Banner } from "./InsightN1Banner";
@@ -46,17 +46,21 @@ import {
   confidenceLabel,
   confidenceVariant,
   extractSection,
+  extractSeasonContext,
   getCarreraTier,
   getV2Preview,
+  progressionLabel,
   PROMPT_VERSION_V2,
   validaLabel,
 } from "@/lib/insights";
 import { cn } from "@/lib/utils";
 import type {
+  AthleteInsightDetailOut,
   AthleteInsightOut,
   InsightLink,
   InsightParsedSections,
 } from "@/types/athleteRaceAnalysis.types";
+import type { ProgressionAssessment } from "@/types/raceAnalysis.types";
 
 // ---------------------------------------------------------------------------
 // Helpers locales — parsing v2 (parseV2Sections usa extractSection de lib)
@@ -70,11 +74,68 @@ function parseV2Sections(summaryText: string): InsightParsedSections {
     looking_ahead: extractSection(summaryText, "Hacia dónde va") || undefined,
     season_summary:
       extractSection(summaryText, "Resumen de temporada") || undefined,
+    season_context: extractSeasonContext(summaryText) || undefined,
   };
 }
 
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
+
+// ---------------------------------------------------------------------------
+// Progression assessment helpers
+// ---------------------------------------------------------------------------
+
+const VALID_PROGRESSION_ASSESSMENTS: ReadonlySet<string> = new Set<ProgressionAssessment>([
+  "improving",
+  "stable",
+  "declining",
+  "mixed",
+  "first_reference",
+]);
+
+/**
+ * Extrae ``progression_assessment`` del campo ``metrics_snapshot`` del detalle
+ * del insight. Devuelve null cuando el campo no existe (insights legacy) para
+ * garantizar compatibilidad hacia atrás.
+ */
+function extractProgressionAssessment(
+  insight: AthleteInsightDetailOut,
+): ProgressionAssessment | null {
+  const snapshot = insight.metrics_snapshot;
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const val = (snapshot as Record<string, unknown>)["progression_assessment"];
+  if (typeof val === "string" && VALID_PROGRESSION_ASSESSMENTS.has(val)) {
+    return val as ProgressionAssessment;
+  }
+  return null;
+}
+
+/** Icono + variante de Badge para cada assessment. */
+const PROGRESSION_CONFIG: Record<
+  ProgressionAssessment,
+  { variant: "success" | "warning" | "destructive" | "secondary" | "outline"; Icon: React.ElementType }
+> = {
+  improving: { variant: "success", Icon: TrendingUp },
+  stable: { variant: "secondary", Icon: Minus },
+  declining: { variant: "destructive", Icon: TrendingDown },
+  mixed: { variant: "warning", Icon: GitBranch },
+  first_reference: { variant: "outline", Icon: Sparkles },
+};
+
+function ProgressionBadge({ assessment }: { assessment: ProgressionAssessment }) {
+  const { variant, Icon } = PROGRESSION_CONFIG[assessment];
+  return (
+    <Badge
+      variant={variant}
+      className="gap-1"
+      data-testid="progression-badge"
+      aria-label={`Progresión: ${progressionLabel(assessment)}`}
+    >
+      <Icon size={11} aria-hidden="true" />
+      {progressionLabel(assessment)}
+    </Badge>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -477,6 +538,7 @@ function InsightDetailDrawer({
     const insight = detailQuery.data;
     const isV2 = insight.prompt_version === PROMPT_VERSION_V2;
     const sections = isV2 ? parseV2Sections(insight.summary_text) : null;
+    const progression = extractProgressionAssessment(insight);
 
     return (
       <div className="space-y-4">
@@ -489,6 +551,9 @@ function InsightDetailDrawer({
               </Badge>
               <Badge variant="outline">v{insight.prompt_version}</Badge>
             </>
+          )}
+          {progression !== null && (
+            <ProgressionBadge assessment={progression} />
           )}
         </div>
 
@@ -576,6 +641,7 @@ const SECTION_LABELS: Record<
   journey_so_far: { coach: "Recorrido hasta aquí", parent: "Recorrido" },
   looking_ahead: { coach: "Hacia dónde va", parent: "Hacia dónde va" },
   season_summary: { coach: "Resumen de temporada", parent: "Resumen temporada" },
+  season_context: { coach: "Contexto de temporada", parent: "Contexto de temporada" },
 };
 
 const SECTION_ORDER: Array<keyof InsightParsedSections> = [
@@ -583,6 +649,7 @@ const SECTION_ORDER: Array<keyof InsightParsedSections> = [
   "journey_so_far",
   "looking_ahead",
   "season_summary",
+  "season_context",
 ];
 
 interface InsightV2SectionsProps {
