@@ -15,6 +15,11 @@ Numbered folders by feature in chronological order. Internal files by type: `wor
 | 09 | [09-training-planning/](09-training-planning/) | Training sessions: planning, attendance, rubric, monthly report with AI |
 | 10 | [10-race-results/](10-race-results/) | Copa Valle XCO results: PDF ingestion, fuzzy normalization, longitudinal analytics (progression, podium gap, club ranking, projection). Extension 2026-05-26: race conditions in UI (wizard + tri-state card + PATCH) — see `upload-design.md` §14. Extension 2026-05-27: **Competitions** module (CRUD `race_events`, relocated wizard, URL-driven tabs) — see `competitions-module.md` |
 | 11 | [11-informe-tecnico-mensual/](11-informe-tecnico-mensual/) | **Monthly Technical Report** (Phase 1.9): refactor of the club monthly report into a funder-style report document. 1:1 project profile, coach-editable AI narrative by blocks, podiums of the month, restricted-distribution PDF — `workflow.md` + `design.md` + `runbook.md` (coach guide) |
+| 12 | [12-competitions-unification/](12-competitions-unification/) | **Unified Competitions Module** (007): consolidates `/competitions` CRUD and `/coach/race-analysis` into one module; adds results/standings read endpoints, call-up roster (`race_event_roster`), stale-analysis marking, bidirectional 1:1 calendar sync — `workflow.md` (PRD) + `implementation-notes.md` (as-built) |
+
+## Status
+
+- [implementation-status.md](implementation-status.md) — Full per-module implementation history (step tables for every phase/spec). Summarized in `CLAUDE.md`.
 
 ## Training archive
 

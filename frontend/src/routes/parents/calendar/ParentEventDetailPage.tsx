@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { MapPin, Clock, CalendarDays, ArrowLeft } from "lucide-react";
+import { MapPin, Clock, CalendarDays, ArrowLeft, Trophy } from "lucide-react";
 
 import { EventTypeChip } from "@/components/calendar/EventTypeChip";
 import { ParentRSVPInline } from "@/components/parents/ParentRSVPInline";
@@ -213,6 +213,17 @@ export function ParentEventDetailPage() {
             {STATUS_LABELS[event.status] ?? event.status}
           </span>
         </div>
+        {/* Enlace a resultados de competencia — solo cuando hay race_event_id */}
+        {event.race_event_id != null && (
+          <Link
+            to={`/parents/competitions/${event.race_event_id}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-charcoal underline-offset-2 hover:underline"
+            data-testid="competition-results-link"
+          >
+            <Trophy size={14} aria-hidden="true" />
+            Ver resultados de la competencia
+          </Link>
+        )}
       </div>
 
       {/* Fecha y hora */}

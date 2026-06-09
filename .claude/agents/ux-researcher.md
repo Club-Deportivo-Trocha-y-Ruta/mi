@@ -1,7 +1,8 @@
 ---
 name: ux-researcher
 description: "Researches and evaluates usability for coach (tablet in the field) and parents (Android mobile, intermittent 3G/4G connectivity). Applies Nielsen heuristics, WCAG AA accessibility and validates against Club Trocha y Ruta design criteria."
-model: opus
+model: sonnet
+color: purple
 memory: user
 ---
 

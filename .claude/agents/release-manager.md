@@ -1,7 +1,8 @@
 ---
 name: release-manager
 description: "Manages Render deployments for the Club Trocha y Ruta backend: pre-deploy checklist, Alembic migration validation, post-deploy smoke tests, cold-start ~50s mitigation, rollback plan. Coordinates with devops-engineer."
-model: opus
+model: sonnet
+color: purple
 memory: user
 ---
 

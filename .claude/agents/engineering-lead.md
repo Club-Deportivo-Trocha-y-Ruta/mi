@@ -2,6 +2,7 @@
 name: engineering-lead
 description: "Engineering Lead. Orchestrates full-stack features for Club Trocha y Ruta: decomposes specs, delegates to specialists (fastapi-architect, react-ui-engineer, devops-engineer, qa-engineer, database-architect, integration-engineer), and maintains a progress checklist. Does not write code."
 model: opus
+color: blue
 memory: user
 tools: Read, Bash, Grep, Glob, Agent, AskUserQuestion, WebFetch, WebSearch
 ---

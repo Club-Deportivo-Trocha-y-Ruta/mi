@@ -5,6 +5,8 @@ from app.models.athlete import Athlete, ParentAthlete, Sex, FamilyRelationship
 from app.models.anthropometry import AnthropometricRecord, MaturationStatus, NutritionalStatus
 from app.models.growth import GrowthReferenceLms, GrowthIndicator, GrowthSource
 from app.models.parent_invite import ParentInvite
+from app.models.password_reset_token import PasswordResetToken
+from app.models.email_change_request import EmailChangeRequest
 from app.models.privacy_policy import PrivacyPolicy
 from app.models.parental_consent import ParentalConsent
 from app.models.ai_explanation import AthleteAIExplanation
@@ -40,6 +42,7 @@ from app.models.race_competitor_link_audit import (
     RaceCompetitorLinkAudit,
 )
 from app.models.race_event import RaceEvent, RaceEventStatus, SurfaceCondition
+from app.models.race_event_roster import RaceEventRoster, RaceEventRosterStatus
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_points_scheme import RacePointsScheme
 from app.models.race_result import RaceResult, ResultStatus
@@ -72,6 +75,8 @@ __all__ = [
     "GrowthIndicator",
     "GrowthSource",
     "ParentInvite",
+    "PasswordResetToken",
+    "EmailChangeRequest",
     "PrivacyPolicy",
     "ParentalConsent",
     "AthleteAIExplanation",
@@ -103,6 +108,8 @@ __all__ = [
     "RaceEvent",
     "RaceEventStatus",
     "SurfaceCondition",
+    "RaceEventRoster",
+    "RaceEventRosterStatus",
     "RaceCompetitor",
     "CompetitorSex",
     "RaceCompetitorLinkAudit",

@@ -1,7 +1,8 @@
 ---
 name: competition-strategist
 description: "Copa Valle XCO competition strategist. Designs tapering (5-7d Race A, 3-4d B, no tapering C), race tactics, course reconnaissance, tire/pressure selection and standardized warm-up."
-model: opus
+model: sonnet
+color: green
 memory: user
 ---
 

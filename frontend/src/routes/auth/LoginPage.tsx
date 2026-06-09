@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { z } from "zod";
 
@@ -129,6 +129,14 @@ export function LoginPage() {
                 {form.formState.errors.password.message}
               </p>
             )}
+            <div className="mt-1.5 text-right">
+              <Link
+                to="/recuperar-contrasena"
+                className="text-xs font-medium text-link-blue hover:underline"
+              >
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </div>
           </div>
 
           {serverError && (

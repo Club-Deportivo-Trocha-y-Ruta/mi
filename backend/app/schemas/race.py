@@ -141,3 +141,8 @@ class IngestReport(BaseModel):
     results_skipped: int = 0
     tyr_count: int = 0
     warnings: list[str] = Field(default_factory=list)
+    # PR5 (FR-018): True when a different-SHA commit replaces already-committed
+    # results for the same race_event.  Callers use this flag to trigger
+    # invalidate_runs_for_event without re-running anything automatically (D5).
+    # False for first-ever ingests and for identical-SHA no-ops.
+    is_revision: bool = False

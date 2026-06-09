@@ -55,6 +55,11 @@ const InsightsTab = lazy(() =>
     default: m.InsightsTab,
   })),
 );
+const StandingsTab = lazy(() =>
+  import("@/components/competitions/tabs/StandingsTab").then((m) => ({
+    default: m.StandingsTab,
+  })),
+);
 
 // Tabs livianos — importados directamente (no lazy)
 import { InfoTab } from "@/components/competitions/tabs/InfoTab";
@@ -65,11 +70,18 @@ import { ResultsTab } from "@/components/competitions/tabs/ResultsTab";
 // Constantes
 // ---------------------------------------------------------------------------
 
-type TabValue = "info" | "results" | "conditions" | "athletes" | "insights";
+type TabValue =
+  | "info"
+  | "results"
+  | "standings"
+  | "conditions"
+  | "athletes"
+  | "insights";
 
 const TAB_VALUES: TabValue[] = [
   "info",
   "results",
+  "standings",
   "conditions",
   "athletes",
   "insights",
@@ -78,6 +90,7 @@ const TAB_VALUES: TabValue[] = [
 const TAB_LABELS: Record<TabValue, string> = {
   info: "Información",
   results: "Resultados",
+  standings: "Clasificación",
   conditions: "Condiciones",
   athletes: "Atletas",
   insights: "Insights IA",
@@ -489,6 +502,13 @@ export function CompetitionDetailPage() {
             hasResults={isCompleted}
             onNavigateToInsights={() => handleTabChange("insights")}
           />
+        </TabsPrimitive.Content>
+
+        {/* ── Tab: Clasificación general ───────────────────────────── */}
+        <TabsPrimitive.Content value="standings" className="mt-4">
+          <Suspense fallback={<TabFallback />}>
+            <StandingsTab raceEventId={raceEventId} />
+          </Suspense>
         </TabsPrimitive.Content>
 
         {/* ── Tab: Condiciones ─────────────────────────────────────── */}

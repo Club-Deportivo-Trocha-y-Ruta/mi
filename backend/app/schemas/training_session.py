@@ -5,7 +5,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
-from app.models.training_session import AttendanceStatus, MonthlyReportStatus, SessionStatus
+from app.models.training_session import (
+    AttendanceStatus,
+    MonthlyReportStatus,
+    SessionKind,
+    SessionStatus,
+)
 from app.schemas.session_media import SessionMediaRead, SessionMediaReadParent
 
 
@@ -38,6 +43,11 @@ class TrainingSessionCreate(BaseModel):
     location: str = Field(max_length=200)
     technical_focus: str = Field(max_length=200)
     description: str | None = Field(default=None, max_length=2000)
+    session_kind: SessionKind | None = Field(
+        default=None,
+        description="Tipo de sesión. Si se omite, el modelo usa 'entrenamiento'.",
+    )
+    objectives: str | None = Field(default=None, max_length=1000)
     route_text: str | None = Field(default=None, max_length=500)
     strava_url: HttpUrl | None = None
     coach_notes: str | None = Field(default=None, max_length=2000)
@@ -70,6 +80,8 @@ class TrainingSessionUpdate(BaseModel):
     location: str | None = Field(default=None, max_length=200)
     technical_focus: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
+    session_kind: SessionKind | None = None
+    objectives: str | None = Field(default=None, max_length=1000)
     route_text: str | None = Field(default=None, max_length=500)
     strava_url: HttpUrl | None = None
     coach_notes: str | None = Field(default=None, max_length=2000)
@@ -135,6 +147,8 @@ class TrainingSessionRead(BaseModel):
     location: str
     technical_focus: str
     description: str | None
+    session_kind: SessionKind | None = None
+    objectives: str | None = None
     route_text: str | None
     strava_url: str | None
     route_file_path: str | None
@@ -162,6 +176,8 @@ class TrainingSessionReadParent(BaseModel):
     location: str
     technical_focus: str
     description: str | None
+    session_kind: SessionKind | None = None
+    objectives: str | None = None
     route_text: str | None
     strava_url: str | None
     created_at: datetime

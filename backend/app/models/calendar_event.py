@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.sqlite import INTEGER as SQLITE_INTEGER
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -90,7 +91,11 @@ class CalendarEvent(Base):
         Index("ix_calendar_events_race_event_id", "race_event_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(SQLITE_INTEGER(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     club_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("clubs.id", ondelete="RESTRICT"),
@@ -185,7 +190,11 @@ class EventAudience(Base):
         Index("idx_audience_event", "event_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(SQLITE_INTEGER(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     event_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("calendar_events.id", ondelete="CASCADE"),
@@ -213,7 +222,11 @@ class EventAttendance(Base):
         UniqueConstraint("event_id", "athlete_id", name="uq_event_attendance"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(SQLITE_INTEGER(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     event_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("calendar_events.id", ondelete="CASCADE"),

@@ -2,6 +2,7 @@
 name: fastapi-architect
 description: "Designs FastAPI endpoints, Pydantic schemas, async SQLAlchemy models, Alembic migrations, and RBAC patterns for the Trocha y Ruta backend."
 model: sonnet
+color: blue
 memory: user
 ---
 

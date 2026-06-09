@@ -122,171 +122,24 @@ Auto-deploy enabled on every push to `main`. For manual deploy: Render Dashboard
 
 Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on startup. Seed **does not run** in production (`APP_ENV != development`).
 
-## Implementation status (Phase 1)
+## Implementation status
 
-| Step | Description | Status |
+> Full per-module step history lives in **[`docs/implementation-status.md`](docs/implementation-status.md)**.
+> This summary is intentionally short to keep the always-loaded project memory lean.
+
+| Module | Phase / Spec | Status |
 |---|---|---|
-| 1 | FastAPI monolith scaffolding | ✅ Complete |
-| 2 | SQLAlchemy models + Alembic migration + seed | ✅ Complete |
-| 3 | JWT authentication | ✅ Complete |
-| 4 | CRUD clubs and users | ✅ Complete |
-| 5 | CRUD athletes + PHV Mirwald | ✅ Complete |
-| 6-8 | React frontend | ⏳ Pending |
-| 9 | Docker Compose | ✅ Complete (together with Step 2) |
-| 10 | Tests | ⏳ Pending |
-
-## Implementation status — Training Sessions Module (Phase 1.5)
-
-> Backend + Frontend + Tests + AI: complete. Deployment pending user approval.
-
-| Step | Description | Status |
-|---|---|---|
-| 1 | SQLAlchemy models: TrainingSession, SessionAttendance, MonthlyReport + 3 enums | ✅ Complete 2026-05-06 |
-| 2 | Pydantic schemas + RBAC permissions (`can_view_session`, `can_edit_session`, etc.) | ✅ Complete 2026-05-06 |
-| 3 | Service layer: sessions, attendance, metrics, reports, route_files | ✅ Complete 2026-05-06 |
-| 4 | Session CRUD routers (7 endpoints /training-sessions/*) | ✅ Complete 2026-05-06 |
-| 5 | Attendance endpoints + .gpx upload (gpxpy + defusedxml anti-XXE) | ✅ Complete 2026-05-06 |
-| 6 | Backend tests: models, service, router, privacy, notifications (669 collected) | ✅ Complete 2026-05-06 |
-| 7 | Parent notification when planning a session (template training_session_invite) | ✅ Complete 2026-05-06 |
-| 8 | AI monthly report use case (guardrails: no names, max 500 words, no individual judgment) | ✅ Complete 2026-05-06 |
-| 9 | Monthly report endpoint + email to club (4 endpoints /clubs/{id}/monthly-reports) | ✅ Complete 2026-05-06 |
-| 10 | Coach frontend: session list + form (SessionsListPage, SessionFormPage) | ✅ Complete 2026-05-06 |
-| 11 | Coach frontend: detail + attendance + rubric (AttendanceTable, RubricSliders, RouteViewer) | ✅ Complete 2026-05-06 |
-| 12 | Coach frontend: monthly report UI (ReportsListPage, ReportDetailPage, AI banner) | ✅ Complete 2026-05-06 |
-| 13 | Parent frontend: filtered session read + own monthly summary (no other athletes' data) | ✅ Complete 2026-05-06 |
-| 14 | Frontend tests: 717 vitest tests (58 files, 0 a11y violations) | ✅ Complete 2026-05-06 |
-| 15 | E2E checklist + deploy artifacts + docs + Alembic fork fix | ✅ Complete 2026-05-06 |
-
-## Implementation status — Session Media Module (Phase 1.6)
-
-> Photo and video upload to sessions. Storage on Hostinger SFTP (local fallback in dev). Privacy filtering for parents by intersection with tagged athletes.
-
-| Step | Description | Status |
-|---|---|---|
-| 1 | `SessionMedia` model + M:N `session_media_athlete` + `MediaType` enum | ✅ Complete 2026-05-16 |
-| 2 | Pydantic schemas with mandatory `consent_ack` + restricted parent view | ✅ Complete 2026-05-16 |
-| 3 | `media_files.py` service: magic bytes, strip EXIF (Pillow), thumbnails; `storage_sftp.py` Paramiko wrapper + local fallback | ✅ Complete 2026-05-16 |
-| 4 | 4 CRUD media endpoints with RBAC + called-up athlete validation | ✅ Complete 2026-05-16 |
-| 5 | Permissions: `can_view_session_media` + `filter_media_for_parent` | ✅ Complete 2026-05-16 |
-| 6 | Alembic migration `d7f1a2b3c4e5` (2 tables + enum + indexes) | ✅ Complete 2026-05-16 |
-| 7 | Frontend: `MediaGallery` + `MediaUploadZone` with Ley 1581 banner + integration in coach/parent detail pages | ✅ Complete 2026-05-16 |
-| 8 | Tests: 21 backend (magic bytes, EXIF strip, schemas, filtering) + 10 frontend (API + UploadZone) | ✅ Complete 2026-05-16 |
-| 9 | Deploy: configure `HOSTINGER_SFTP_*` and `HOSTINGER_PUBLIC_BASE_URL` in Render | ⏳ Pending |
-
-## Implementation status — Copa Valle Results Module (Phase 1.7)
-
-> Ingestion and analysis pipeline for official Copa Valle XCO PDFs (RESULTADOS + GENERAL). Fuzzy normalization of names/clubs, transactional persistence in MySQL, longitudinal analytics (progression, podium gap, club ranking, projection). CLI operation via `scripts/ingest_race.py` orchestrated by `results-analyst` agent (Opus).
-
-| Step | Description | Status |
-|---|---|---|
-| 0 | Bootstrap: `data-analyst` agent, `services/race/` and `docs/10-race-results/snapshots/` folders, deps (`pdfplumber`, `rapidfuzz`, `pandas`, `Unidecode`, `typer`) | ✅ Complete 2026-05-19 |
-| 1 | Closed technical design: 26 categories mapped, edge cases documented, TyR Válida IV oracle | ✅ Complete 2026-05-19 |
-| 2 | SQLAlchemy models: `race_event` (+weather), `race_category`, `rider`, `race_result`, `race_series`, `race_points_scheme`, `race_import`, `race_result_revision` + 8 enums + delta migration `64c263edd07f` + `season_standings` view + 26-category seed | ✅ Complete 2026-05-19 |
-| 3 | `pdf_parser.py` + `normalizer.py` (`is_trocha_y_ruta` with length guard for `partial_ratio`, `parse_time` returns ms, not seconds) | ✅ Complete 2026-05-19 |
-| 4 | `matcher.py` (rapidfuzz top-3 with category boost) + `ingestor.py` (transactional, idempotent via SHA256 in `RaceImport`) + `FakeAsyncSession` for tests | ✅ Complete 2026-05-19 |
-| 5 | `analytics.py`: 4 functions (`athlete_progression`, `podium_gap`, `club_ranking`, `projection`) — flat queries + pandas, confidence:low if n<5 | ✅ Complete 2026-05-19 |
-| 6 | Typer CLI `scripts/ingest_race.py`: 3 subapps (`ingest`, `analyze`, `riders`), 7 subcommands, privacy mask by default, centralized `_open_session` for monkeypatching | ✅ Complete 2026-05-19 |
-| 7 | Test plan + Válida IV PDF fixtures: 305 green tests in 25.25s, 98% coverage in `services/race/` | ✅ Complete 2026-05-19 |
-| 8 | Minors privacy audit: 0 critical/high findings, fixture policy documented, conservative CLI default | ✅ Complete 2026-05-19 |
-| 9 | Válida IV dry-run backfill (V-I/II/III pending coach PDFs) + operational `results-analyst.md` agent | ✅ Complete 2026-05-19 |
-| 10 | Docs + completion report + CLAUDE.md/README docs update | ✅ Complete 2026-05-19 |
-
-> V-I/II/III backfill pending official PDFs; real ingest against MySQL Hostinger pending coach approval.
-
-### UI Extension — Race conditions (2026-05-26)
-
-> Optional environmental capture (weather, temperature, surface, altitude, notes) in the UI. No Alembic migration: columns already exist in `race_events` since Step 2 (`64c263edd07f`). Technical detail in `docs/10-race-results/upload-design.md` §14.
-
-| Step | Description | Status |
-|---|---|---|
-| E1 | Schemas: `RaceEventConditionsUpdate`, `RaceEventConditionsRead`, `ImportParseRequestFields` (5 optional fields) in `app/schemas/race_imports.py` | ✅ Complete 2026-05-26 |
-| E2 | `POST /api/race-analysis/imports/parse` extended with 5 optional form fields; Decimal bug in `ValidationError.errors()` fixed (HTTP 500 → 422) via `jsonable_encoder` | ✅ Complete 2026-05-26 |
-| E3 | New endpoint `PATCH /api/race-analysis/race-events/{race_event_id}/conditions` (RBAC coach+admin, partial update with `exclude_unset=True`, log keys only) | ✅ Complete 2026-05-26 |
-| E4 | Frontend wizard Step 1: "Race conditions (Optional)" section with ToggleGroup chips (≥48px), auto-altitude from `VENUE_ALTITUDES` (7 Copa Valle venues), neutral toast if proceeding empty, `noValidate` on form (fix HTML5 vs Zod) | ✅ Complete 2026-05-26 |
-| E5 | `RaceConditionsCard` (tri-state: Complete ≥4 / Partial 1-3 / Empty 0, no warning language) + `EditConditionsDialog` (lazy lateral Sheet, RHF+Zod, PATCH on save) | ✅ Complete 2026-05-26 |
-| E6 | TS types + API client + hook: `raceEvents.types.ts`, `api/raceEvents.ts::updateRaceEventConditions`, `hooks/race/useRaceEventConditions.ts::useUpdateRaceEventConditions` (mutation with invalidation) | ✅ Complete 2026-05-26 |
-| E7 | Tests: 27 backend (16 PATCH + 11 extended parse) + 55 frontend (vitest + 5 a11y axe) | ✅ Complete 2026-05-26 |
-| E8 | Privacy audit X1 — APPROVED WITH CONDITIONS: 3 placeholders corrected (1 HIGH real name `revision_reason` pre-existing + 2 MEDIUM `weather_notes` placeholders without privacy guidance) | ✅ Complete 2026-05-26 |
-| E9 | Commit + deploy Render | ⏳ Pending |
-
-### Competitions Module (Phase 1.7+/1.8) (2026-05-27)
-
-> CRUD for `race_events` to manage the Copa Valle rounds lifecycle: plan before the PDF, edit metadata, associate with calendar, launch import wizard, and cancel. No Alembic migration (`RaceEventStatus.CANCELLED` and all columns already existed). Technical detail in `docs/10-race-results/competitions-module.md`.
-
-| Step | Description | Status |
-|---|---|---|
-| CB1 | Backend: 5 endpoints in `app/routers/race_events.py` (GET list with filters + derived flags, GET detail with `has_calendar_event`, POST create empty, PATCH metadata, DELETE admin-only with dependency guards). Endpoint `PATCH /{id}/conditions` already existed (Phase 1.7+). | ✅ Complete 2026-05-27 |
-| CB2 | Pydantic v2 schemas in `app/schemas/race_event.py` (Create/Update/Read/ListItem/ListResponse + `ConditionsCompleteness` Literal) + `app/services/race_events.py` service with 422/409 guards + 32 tests in `tests/routers/test_race_events_crud.py` (0 regressions, 834 total green race tests) | ✅ Complete 2026-05-27 |
-| CF1 | Codemod: `components/ai/ImportWizard.tsx` → `components/competitions/import/ImportWizard.tsx` (+ `RaceUploadZone`, `DiffTable`, tests). 4 imports updated | ✅ Complete 2026-05-27 |
-| CF2 | `api/raceEvents.ts` extended (get/create/update/delete/list) + `hooks/race/useRaceEvents.ts` with query keys + cross-invalidations raceEvents↔calendar + `test/msw/raceEventsHandlers.ts` | ✅ Complete 2026-05-27 |
-| CF3 | "Competitions" sidebar between Newsletters and AI Analysis. 6 routes in `App.tsx` (`/competitions`, `/new`, `/import`, `/:id`, `/:id/edit`, `/:id/import`) with `ProtectedRoute allowedRoles=[coach, admin]` (parent → 403) | ✅ Complete 2026-05-27 |
-| CF4 | `CompetitionsListPage` (desktop table + mobile cards, filters, tri-state badges, kebab actions, DELETE admin-only) + `CompetitionFormPage` (RHF+Zod, create/edit, auto-altitude `VENUE_ALTITUDES`, 409 inline, `?returnTo`) + `CompetitionFiltersBar` + `CompetitionStatusBadges` | ✅ Complete 2026-05-27 |
-| CF5 | `CompetitionDetailPage` with header + 5 URL-driven tabs (`?tab=info|results|conditions|athletes|insights`) in `components/competitions/tabs/`. Lazy `AthletesTab` and `InsightsTab`. Mechanical refactor without touching `RaceAnalysisPage` or `ClubInsightsByRacePage` | ✅ Complete 2026-05-27 |
-| CF6 | `CompetitionImportPage` with mounted wizard (with/without `:id`) + `EventForm` with `prefillRaceEventId` + inline "Create new round" link + `EventFormPage` reads `?race_event_id` + "Associate to calendar" button in detail when `has_calendar_event=false` | ✅ Complete 2026-05-27 |
-| CF7 | Frontend tests: 69 new vitest (1682 total) + 4 a11y axe (0 violations). 2 post-CF7 fixes: URL `/calendar/new` → `/calendar/events/new`, `navigate` in `useEffect` (avoids setState during React 19 render) | ✅ Complete 2026-05-27 |
-| CX1 | Competitions module privacy audit | ✅ APPROVED with 1 correction (open-redirect `?returnTo`) 2026-05-27 |
-| CX2 | Docs (`competitions-module.md` + CLAUDE.md + README) | ✅ Complete 2026-05-27 |
-| CX3 | Commit + deploy Render | ⏳ Pending |
-
-## Implementation status — Individual Monthly Newsletter Module (Phase 1.8)
-
-> Monthly delivery to parents (HTML email + PDF attachment) with longitudinal metrics, AI coach narrative, and anthropometry. Multi-child: groups newsletters for multiple children in a single email with N PDFs. Full anthropometry ONLY in the PDF (never in the email body).
-
-| Step | Description | Status |
-|---|---|---|
-| 1 | SQLAlchemy models: `AthleteMonthlyNewsletter`, `AthleteBadge`, M:N `parent_athlete_newsletter` + 3 enums (`NewsletterStatus`, `BadgeType`, `BadgeSource`) + migration `a1b2c3d4e5f7` | ✅ Complete 2026-05-24 |
-| 2 | Pydantic schemas with strict privacy contract: `sent_to`/`pdf_only_blocks`/`pdf_storage_url` NEVER in response; replaced by `has_pdf: bool` | ✅ Complete 2026-05-24 |
-| 3 | `badge_evaluator`: attendance thresholds (100/≥90/≥75) + competitive badges (first podium, MTP, Top 10), idempotent by period | ✅ Complete 2026-05-24 |
-| 4 | `newsletter_builder`: orchestrates 10 data blocks, strictly separates `email_blocks` (no anthropometry) vs `pdf_only_blocks` (with anthropometry) | ✅ Complete 2026-05-24 |
-| 5 | AI use case `athlete_monthly_newsletter_v1` with guardrails (dynamic forbidden_names from DB, MAX_WORDS per block, medical term wording). Property tests verify real name never appears in output | ✅ Complete 2026-05-24 |
-| 6 | `assert_ai_consent_for_newsletter` (Ley 1581 Art. 9): blocks generation with HTTP 409 if consent is missing | ✅ Complete 2026-05-24 |
-| 7 | 4 Jinja SVG macros for longitudinal charts (positions, gap%, cumulative points, projection with confidence band) + A4 PDF template with header, anthropometry, charts, and Ley 1581 footer | ✅ Complete 2026-05-24 |
-| 8 | `newsletter_dispatcher`: groups by parent, attaches N PDFs, idempotent, blocks send if sibling is still draft (escape `force_individual`) | ✅ Complete 2026-05-24 |
-| 9 | Router with 8 endpoints + batch creation (`/api/athletes/{id}/monthly-newsletters/*` and `/api/clubs/{id}/monthly-newsletters/batch`), RBAC coach/admin, controlled state transitions | ✅ Complete 2026-05-24 |
-| 10 | Privacy audit: 3 HIGH findings resolved (`error_message` closed catalog, `pdf_storage_url` removed from schema, email subject without minor's name) + 2 MEDIUM (email regex in dispatcher, anthropometry defense) | ✅ Complete 2026-05-24 |
-| 11 | Backend tests: 137 green (123 functional + 14 privacy invariants consolidated in `test_newsletter_privacy.py`) | ✅ Complete 2026-05-24 |
-| 12 | TS types + API client + 8 TanStack Query hooks with `userId` in query keys (Privacy R2) + MSW handlers and fixtures | ✅ Complete 2026-05-24 |
-| 13 | Frontend dashboard `/training/athlete-newsletters`: month/year selector, badge × status grid, filters, batch generate modal with created/skipped/failed summary | ✅ Complete 2026-05-24 |
-| 14 | Frontend detail `/training/athlete-newsletters/:athleteId/:newsletterId`: 2-column layout, `NewsletterPreviewBlocks`, `NewsletterNarrativeEditor` (RHF+Zod, 500 chars, confidence tooltip), approve/send/download PDF buttons, sibling-blocking dialog with `force_individual` | ✅ Complete 2026-05-24 |
-| 15 | Frontend tests: 1295 green tests (81 new from module + 6 a11y with jest-axe, 0 violations). `BadgesBlockView` hides the block when there are no badges (do not reinforce negative comparisons in minors) | ✅ Complete 2026-05-24 |
-| 16 | Deploy to Render | ⏳ Pending |
-
-> Deployment pending coach approval and merge to `main`. Alembic migration verified in SQLite via tests (chained to `f9a0b1c2d3e4`).
-
-### Newsletter improvements — feature 003 (2026-06-05)
-
-> Branch `003-improve-individual-newsletter-pdf`. Fixes + quality raise on the per-athlete newsletter (email + PDF + preview). **No new tables/columns/endpoints.** Docs: `docs/04-percentiles/003-lms-seed-and-backfill.md`, `docs/06-parents/003-newsletter-improvements.md`.
-
-| Step | Description | Status |
-|---|---|---|
-| US1 | Anthropometry data integrity: BMI **decoupled** from LMS (always computed on capture); vendored CDC LMS CSVs (`backend/app/data/cdc_lms/`) + **offline idempotent seed**; idempotent `app/scripts/backfill_anthropometry.py`; plain-language `n/d` reason for genuinely-missing cells. Anthropometry stays PDF-only | ✅ Complete 2026-06-05 |
-| US2 | Clean PDF pagination: heading+content wrapped in WeasyPrint `break-inside: avoid` blocks; removed forced `page-break-before`; `widows/orphans`; **removed Ley 1581 boxed notice** (FR-019, ⚠️ flagged for legal review; running footer kept) | ✅ Complete 2026-06-05 |
-| US3 | Parent insight: AI `block_captions` + `month_highlights` under existing guardrails + **deterministic static fallback** (`newsletter_static_copy.py`) so the newsletter renders without consent; legacy coach narrative stays consent-gated | ✅ Complete 2026-06-05 |
-| US4 | Modern UX/UI: responsive single-column inline-CSS email (`lang="es-CO"`, `role="presentation"`, ≥16px, dark-mode-safe); PDF + React preview on shared brand tokens; WCAG AA, status not by color alone; zero anthropometry in email/preview | ✅ Complete 2026-06-05 |
-| Layout | Anthropometry table switched to `table-layout: fixed` + `<colgroup>`; data cells `white-space: nowrap` (no mid-token wrap), headers may wrap; regression test asserts no overflow past the A4 right edge | ✅ Complete 2026-06-05 |
-| Tests | 95+ new backend feature tests + frontend (NewsletterPreviewBlocks a11y 0 violations, `tsc` clean); 159 pre-existing newsletter/notification/training tests still green; `entrypoint.sh` runs seed + backfill idempotently | ✅ Complete 2026-06-05 |
-| Deploy | Render (seed + backfill on boot) | ⏳ Pending coach approval |
-
-> `seed_growth_data.py` upsert is dialect-aware (MySQL `ON DUPLICATE KEY UPDATE` / SQLite `ON CONFLICT`). Implemented via a dynamic multi-agent workflow per the spec. Privacy audit: APPROVED-WITH-CONDITIONS (0 critical/high; 1 medium = Ley 1581 box removal flagged for legal review).
-
-## Implementation status — Monthly Technical Report Module (Phase 1.9)
-
-> Refactor of the "Club Monthly Report" (Phase 1.5) into a **Monthly Technical Report** styled as a funder report. Structured document by chapters with club project profile (1:1), AI pre-drafted narrative by blocks that the coach edits and approves, month's podiums (Copa Valle), and restricted-distribution PDF (coach/admin). High-Performance Group only; "Population Served" section OMITTED; no program segmentation. Technical detail in `docs/11-informe-tecnico-mensual/`. Migration chained to head `c6d7e8f9a0b1` → `d4e5f6a7b8c9`.
-
-| Step | Description | Status |
-|---|---|---|
-| 1 | `ClubProjectProfile` model (1:1 club) + `monthly_reports` columns (`narrative_blocks` JSON, `competition_results` JSON, `status` draft/approved) + `training_sessions` (`session_kind` enum, `objectives`) + `SessionKind`/`MonthlyReportStatus` enums + migration `d4e5f6a7b8c9` | ✅ Complete 2026-06-03 |
-| 2 | Pydantic schemas (`ClubProjectProfile*`, `NarrativeBlock`, `CompetitionResultItem`, `MonthlyReportBlocksUpdate`, `ALLOWED_BLOCK_KEYS`) + `reports.py` services (update/regenerate blocks) + `competition_results.py` helper (club's month podiums, degrades to `[]`) | ✅ Complete 2026-06-03 |
-| 3 | AI per block: `MonthlyReportBlocksUseCase` + `monthly_report_blocks.j2` prompt (6 narrative blocks, word limits per block, independent fallback per block). Reuses `MonthlyReportGuardrails` (no real names, no medical terms); AI never receives names or `competition_results` | ✅ Complete 2026-06-03 |
-| 4 | Router: `project-profile` CRUD (GET/PUT/PATCH), `PATCH .../monthly-reports/{year}/{month}/blocks`, `POST .../blocks/{block_key}/regenerate`, `GET .../pdf` with technical template. RBAC coach/admin; parent view without blocks/competition | ✅ Complete 2026-06-03 |
-| 5 | PDF: `training_monthly_technical_report.html` template (institutional cover page, context, territory, group activities, competition+podiums, joint activities, material support, group analysis, conclusions, photographic record) + `TRAINING_MONTHLY_TECHNICAL_REPORT` registration. DRAFT banner if `draft` + Ley 1581 restricted distribution notice | ✅ Complete 2026-06-03 |
-| 6 | Frontend: `ReportDetailPage` block editor (generate/regenerate AI, edit, approve, download PDF) + `ProjectProfilePage` + status badges + `session_kind`/`objectives` fields in session form + types/API/hooks (`useProjectProfile`, `useUpsertProjectProfile`, `useUpdateReportBlocks`, `useRegenerateBlock`) | ✅ Complete 2026-06-03 |
-| 7 | Privacy: AI never emits names; parents do not receive `narrative_blocks`/`competition_results`; minors' names in PDF (podiums/attendance) as deliberate exception for controlled external document, gated by RBAC + approval + notice | ✅ Complete 2026-06-03 |
-| 8 | Tests: 52 targeted green backend + 1742 green frontend vitest + clean `tsc` | ✅ Complete 2026-06-03 |
-| 9 | Docs: `docs/11-informe-tecnico-mensual/` (`workflow.md`, `design.md`, `runbook.md`) + CLAUDE.md + README docs | ✅ Complete 2026-06-03 |
-| 10 | Deploy to Render | ⏳ Pending |
-
-> Deployment pending user approval. Migration verified in SQLite via tests.
+| Core backend (auth, clubs, users, athletes, PHV) | Phase 1 | ✅ Built; frontend (6-8) + tests (10) pending |
+| Training Sessions (sessions, attendance, rubric, AI monthly report) | Phase 1.5 | ✅ Complete — deploy pending |
+| Session Media (photo/video, SFTP, EXIF strip) | Phase 1.6 | ✅ Complete — deploy pending (SFTP env vars) |
+| Copa Valle Results (PDF ingest, analytics) + Race conditions UI | Phase 1.7 / 1.7+ | ✅ Complete — deploy pending |
+| Competitions Module (`race_events` CRUD, tabs, wizard) | Phase 1.7+/1.8 | ✅ Complete — deploy pending |
+| Individual Monthly Newsletter (parent email + PDF) | Phase 1.8 | ✅ Complete — deploy pending |
+| Monthly Technical Report (funder-style report) | Phase 1.9 | ✅ Complete — deploy pending |
+| Password Reset | specs/003-password-reset-login | ✅ Complete — deploy pending |
+| User Profile & Account Settings | specs/004-user-profile | ✅ Complete — deploy pending |
+| AI Session Clarify & Draft | specs/006-ai-session-clarify-draft | ✅ Complete — deploy pending |
+| Unified Competitions Module | specs/007-competitions-consolidation | ✅ Complete — deploy pending |
 
 ## Development credentials (seed data)
 
@@ -305,6 +158,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 - `ParentAthlete.relationship_type` — the Python attribute is named `relationship_type` (column alias for `relationship`) to avoid collision with `sqlalchemy.orm.relationship`
 - `MaturationStatus` uses `values_callable` to store `Pre-PHV`/`Circa-PHV`/`Post-PHV` instead of enum names
 - `RPE_LABELS` in `RubricSliders.tsx` uses the validated OMNI 0–10 mapping (Reposo→Máximo, "Moderado" at index 5 = midpoint); frontend-only refactor, no backend/schema/migration change (2026-06-05)
+- Session create/edit is a multi-step wizard (`components/training/session-wizard/`, feature 005). `session_kind`/`objectives` are now persisted end-to-end (were silently dropped by `TrainingSessionCreate/Update` + `create_session`); no migration (columns existed since `d4e5f6a7b8c9`). Drafts autosave to `localStorage` key `tyr:session-draft:v1:{userId}:{new|<id>}`, cleared on save/discard. Route file auto-uploads to the existing `/route-file` endpoint after create. See `docs/09-training-planning/session-wizard.md` (2026-06-07)
 
 ## Development commands
 
@@ -401,3 +255,10 @@ Athlete data for minors is sensitive. Never expose personal data (DOB, medical d
 ## When compressing context
 
 Always preserve: competition calendar, current macrocycle phase, non-negotiable principles, and the Phase 1 data model.
+
+<!-- Do not edit the block below by hand — it is regenerated by `/speckit-agent-context-update`. -->
+<!-- SPECKIT START -->
+## Active Spec Kit feature
+
+_None active. Completed specs are tracked in [`docs/implementation-status.md`](docs/implementation-status.md); their folders remain under `specs/`._
+<!-- SPECKIT END -->

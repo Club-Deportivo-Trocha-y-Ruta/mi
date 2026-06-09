@@ -11,6 +11,32 @@ from app.models.training_session import SessionAttendance, TrainingSession
 from app.models.user import User, UserRole
 
 
+async def allowed_athlete_ids_for(
+    user: User,
+    db: AsyncSession,
+) -> set[int] | None:
+    """Return the set of athlete IDs the *user* is permitted to see in race results.
+
+    Semantics:
+    - ``None``  → no restriction (coach / admin may see every competitor row).
+    - ``set``   → parent scope; only rows whose ``athlete_id`` is in this set
+                  should be returned.  An empty set means the parent has no linked
+                  children and therefore sees zero rows.
+
+    This helper is the single authoritative gate for the parent-scoping rule
+    (FR-030 / Ley 1581) in the results and standings read paths.
+    """
+    if user.role in {UserRole.admin, UserRole.coach}:
+        return None
+
+    if user.role == UserRole.parent:
+        ids = await parent_athlete_ids(db, user.id)
+        return set(ids)
+
+    # Any other role gets an empty set (no access to any athlete row).
+    return set()
+
+
 def require_role(user_role: UserRole, allowed_roles: list[UserRole]) -> None:
     """Verifica que el rol del usuario este en la lista de roles permitidos."""
     if user_role not in allowed_roles:

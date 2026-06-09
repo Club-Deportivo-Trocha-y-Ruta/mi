@@ -153,6 +153,15 @@ const deleteHandler = http.delete(`${BASE}/:id`, () => {
   return new HttpResponse(null, { status: 204 });
 });
 
+/**
+ * POST /race-events/:id/calendar-link → 200 con {id, has_calendar_event:true}.
+ * Escenario feliz: la válida queda vinculada al calendar_event recibido.
+ */
+const calendarLinkHandler = http.post(`${BASE}/:id/calendar-link`, ({ params }) => {
+  const id = Number(params.id);
+  return HttpResponse.json({ id, has_calendar_event: true });
+});
+
 /** Conjunto de handlers del escenario feliz — registrar en setup global. */
 export const raceEventsHandlers = [
   listHandler,
@@ -160,6 +169,7 @@ export const raceEventsHandlers = [
   createHandler,
   updateHandler,
   deleteHandler,
+  calendarLinkHandler,
 ];
 
 // ---------------------------------------------------------------------------
@@ -239,3 +249,33 @@ export const raceEventsCreateConflictHandler = http.post(`${BASE}/`, () => {
     { status: 409 },
   );
 });
+
+/**
+ * POST /:id/calendar-link 409 — la válida ya está vinculada a un calendar_event
+ * (1:1 estricto). Usar en tests que validan el mensaje de error de conflicto.
+ */
+export const raceEventsCalendarLinkConflictHandler = http.post(
+  `${BASE}/:id/calendar-link`,
+  () => {
+    return HttpResponse.json(
+      {
+        detail:
+          "La válida ya tiene un calendar_event asociado. Desvincula el actual antes de asociar uno nuevo.",
+      },
+      { status: 409 },
+    );
+  },
+);
+
+/**
+ * POST /:id/calendar-link 404 — el calendar_event_id proporcionado no existe.
+ */
+export const raceEventsCalendarLinkNotFoundHandler = http.post(
+  `${BASE}/:id/calendar-link`,
+  () => {
+    return HttpResponse.json(
+      { detail: "Evento de calendario no encontrado." },
+      { status: 404 },
+    );
+  },
+);

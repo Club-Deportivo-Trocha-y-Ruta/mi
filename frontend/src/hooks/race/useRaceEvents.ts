@@ -24,15 +24,20 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
+import { invalidatePaired } from "@/hooks/race/invalidation";
+
 import {
   createRaceEvent,
   deleteRaceEvent,
   getRaceEvent,
+  linkCalendarEvent,
   listRaceEvents,
   updateRaceEvent,
 } from "@/api/raceEvents";
 import { useAuthStore } from "@/store/auth.store";
 import type {
+  RaceEventCalendarLinkBody,
+  RaceEventCalendarLinkResponse,
   RaceEventCreate,
   RaceEventListFilters,
   RaceEventListResponse,
@@ -214,6 +219,52 @@ export function useDeleteRaceEvent() {
       });
       void queryClient.invalidateQueries({
         queryKey: CALENDAR_AVAILABLE_ROOT,
+      });
+    },
+  });
+}
+
+export interface UseLinkCalendarEventVariables {
+  raceEventId: number;
+  body: RaceEventCalendarLinkBody;
+}
+
+/**
+ * Mutation para asociar un `calendar_event` existente a una válida.
+ * `POST /api/race-analysis/race-events/{id}/calendar-link`
+ * RBAC: coach + admin.
+ *
+ * Casos de uso:
+ *   - La válida fue creada con `create_calendar_event=false` y el coach
+ *     posteriormente quiere vincularla a un calendar_event existente.
+ *   - La validación 1:1 la hace el backend (409 si ya vinculada).
+ *
+ * On success invalida:
+ *   - `raceEventKeys.detail(id)` → refresca `has_calendar_event` en el header
+ *   - `raceEventKeys.lists()` → actualiza la lista (badge "En calendario")
+ *   - El árbol de calendario completo vía `invalidatePaired({ includeCalendar: true })`
+ */
+export function useLinkCalendarEvent() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    RaceEventCalendarLinkResponse,
+    unknown,
+    UseLinkCalendarEventVariables
+  >({
+    mutationKey: ["raceEvents", "calendarLink"],
+    mutationFn: ({ raceEventId, body }) => linkCalendarEvent(raceEventId, body),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: raceEventKeys.detail(variables.raceEventId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: raceEventKeys.lists(),
+      });
+      // Refresca el calendario y available-for-calendar
+      invalidatePaired(queryClient, {
+        raceEventId: variables.raceEventId,
+        includeCalendar: true,
       });
     },
   });

@@ -129,6 +129,16 @@ export interface RaceEventCreate {
   location?: string | null;
   is_championship?: boolean;
   status?: RaceEventStatus;
+  /**
+   * Si es `true` (default del backend), el backend crea un `calendar_event`
+   * ligado 1:1 a esta válida en el mismo request. Si es `false`, no se crea
+   * ningún calendar_event (el coach puede asociarlo después vía
+   * `POST /{id}/calendar-link`).
+   *
+   * FR-024: "When creating a competition, the system MUST offer a default-on
+   * option to create a linked calendar event, with a visible opt-out."
+   */
+  create_calendar_event?: boolean;
   // Condiciones opcionales — heredan validaciones de _ConditionsFields backend
   climate?: string | null;
   /** El backend almacena Decimal; acepta string o number desde el form. */
@@ -137,6 +147,26 @@ export interface RaceEventCreate {
   altitude_msnm?: number | null;
   weather_notes?: string | null;
 }
+
+/**
+ * Payload para asociar un `calendar_event` ya existente a una válida.
+ * `POST /api/race-analysis/race-events/{id}/calendar-link`
+ *
+ * 409 si alguna de las dos entidades ya tiene un vínculo activo (1:1 estricto).
+ * 404 si el `calendar_event_id` no existe.
+ */
+export interface RaceEventCalendarLinkBody {
+  calendar_event_id: number;
+}
+
+/**
+ * Respuesta mínima del endpoint calendar-link.
+ * El backend retorna el `RaceEventRead` actualizado (con `has_calendar_event=true`).
+ */
+export type RaceEventCalendarLinkResponse = Pick<
+  RaceEventRead,
+  "id" | "has_calendar_event"
+>;
 
 /**
  * Payload de actualización parcial de un evento de carrera.

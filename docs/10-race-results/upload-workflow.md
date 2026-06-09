@@ -464,7 +464,7 @@ E2E tests don't affect prod code. `git revert <commits-phase-up6>` if necessary.
 | # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
 | 7.1 | Update `CLAUDE.md` implementation status section adding new table "Upload UI race-results Module (Phase 1.7+)" with steps 1-7 marked ✅ | devops-architect | `/sc:document` | Updated CLAUDE.md |
-| 7.2 | Update README/index docs race-results (`docs/10-race-results/README.md` or similar) removing manual CLI instruction for coach, moving it to appendix "For devs / batch operations" | devops-architect | `/sc:document` | Redesigned README: main flow = UI; CLI = advanced |
+| 7.2 | Update README/index docs race-results (`docs/10-race-results/README.md` or similar) documenting the web UI as the ingestion flow | devops-architect | `/sc:document` | Redesigned README: main flow = UI |
 | 7.3 | Verify auto-deploy to Render after merge to `main` (auto-deploy activated) | devops-architect | manual (Render dashboard) | Build OK, app responds 200 on `/health` |
 | 7.4 | Production smoke test: upload 1 real PDF (Round IV already ingested → SHA duplicate expected → actionable banner) | quality-engineer | manual from prod browser | Screenshots of functional wizard |
 | 7.5 | Verify uploaded PDFs are accessible at `HOSTINGER_PUBLIC_BASE_URL/race-imports/...` | devops-architect | manual (curl public URL of uploaded fixture) | HTTP 200 + content-type `application/pdf` |
@@ -669,7 +669,7 @@ npx playwright show-report
 ### Documentation
 
 - [ ] CLAUDE.md updated with new "Upload UI race-results Module" table
-- [ ] Race-results README redesigned (UI = main flow, CLI = appendix)
+- [ ] Race-results README redesigned (UI = main flow)
 - [ ] `upload-completion-report.md` with real vs estimated metrics + lessons learned
 - [ ] `upload-design.md` §11 assumptions marked validated
 - [ ] Wizard screenshots in `upload-screenshots.md` for coach

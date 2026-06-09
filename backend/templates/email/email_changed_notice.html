@@ -1,0 +1,27 @@
+{% extends "email/base/layout.html" %}
+
+{% block title %}Tu correo de acceso fue actualizado — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1>Tu correo de acceso fue actualizado</h1>
+
+<p>Hola,</p>
+
+<p>
+  Te avisamos que el correo de acceso de tu cuenta en
+  <strong>{{ club_name }}</strong> fue cambiado. A partir de ahora deberás
+  iniciar sesión con la nueva dirección.
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #aaaaaa;">
+  Si no reconoces este cambio, comunícate de inmediato con el equipo del club
+  para revisar la seguridad de tu cuenta.
+</p>
+
+<p>
+  Saludos,<br>
+  <strong>Equipo técnico — {{ club_name }}</strong>
+</p>
+{% endblock %}

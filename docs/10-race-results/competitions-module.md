@@ -12,7 +12,7 @@
 
 The **Competitions** module is the **management** layer for Copa Valle XCO rounds. It allows the coach and administrator to plan rounds before having official PDFs (pre-tapering, call-up, calendar), associate them with calendar events, and trigger the results import workflow.
 
-Until this phase, a round was only created when the official PDF was ingested (`scripts/ingest_race.py` → `RaceIngestor`). The coach could not plan a future round or edit metadata after ingestion. This release opens the full lifecycle of `RaceEvent`: create empty → plan → import PDF → analyze → eventually cancel.
+Until this phase, a round was only created when the official PDF was ingested (via `RaceIngestor`). The coach could not plan a future round or edit metadata after ingestion. This release opens the full lifecycle of `RaceEvent`: create empty → plan → import PDF → analyze → eventually cancel.
 
 **Architectural bet:** thin HTTP CRUD layer over `RaceEvent`, reusing the existing model and enums. No schema changes in MySQL: the columns and the `RaceEventStatus.CANCELLED` enum already existed from migration `64c263edd07f`.
 
@@ -256,4 +256,4 @@ The internal `EventForm` of the wizard has a **"Create new round"** link that op
 - `frontend/src/hooks/race/useRaceEvents.ts` — query keys + invalidations.
 - `frontend/src/types/raceEvents.types.ts` — TS types + `VENUE_ALTITUDES`.
 - `docs/10-race-results/upload-design.md` — ingestion technical design (Phase 1.7) + conditions extension (§14).
-- `docs/10-race-results/runbook-ops.md` — CLI `scripts/ingest_race.py` operation.
+- `docs/10-race-results/runbook-ops.md` — race module operations (DB, smoke test).

@@ -638,7 +638,6 @@ const step2Mode: 'matches' | 'diff' =
 20. **Tests required before merging:** backend new ≥90% in `diff.py` + `commit_revision`; frontend new components ≥85% including DiffTable virtualization; E2E happy revision (re-upload modified Round IV) + 1 error path (deletes without reason).
 21. **No new endpoint** `GET /imports/{id}/revisions` in MVP. Deferred F2.
 22. **No per-row override** in DiffTable MVP. Deferred F2.
-23. **CLI compatibility:** `scripts/ingest_race.py` continues working without changes. Revision is an exclusive UI wizard feature. If CLI detects `(series, round)` committed with different SHA → legacy behavior (logs informational warning, aborts without error). Document.
 
 ---
 

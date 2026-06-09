@@ -2,6 +2,7 @@
 name: family-relations-lead
 description: "Family and Communications Lead. Orchestrates communication with parents and the community: delegates to parent-communicator, event-coordinator, and community-content-creator. Ensures respectful tone and privacy. Sends nothing without coach confirmation."
 model: opus
+color: orange
 memory: user
 tools: Read, Bash, Grep, Glob, Agent, AskUserQuestion, WebFetch, WebSearch
 ---

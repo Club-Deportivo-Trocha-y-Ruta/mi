@@ -1,6 +1,25 @@
 import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+// Profile module (lazy — all authenticated roles)
+const ProfilePage = lazy(() =>
+  import("@/routes/profile/ProfilePage").then((m) => ({
+    default: m.ProfilePage,
+  })),
+);
+const ConfirmEmailChangePage = lazy(() =>
+  import("@/routes/profile/ConfirmEmailChangePage").then((m) => ({
+    default: m.ConfirmEmailChangePage,
+  })),
+);
+
+// AI Session Assistant (lazy — coach/admin only)
+const SessionAssistantPage = lazy(() =>
+  import("@/routes/training/SessionAssistantPage").then((m) => ({
+    default: m.SessionAssistantPage,
+  })),
+);
 
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
 import { setQueryClient } from "@/lib/queryClientHandle";
@@ -41,9 +60,10 @@ import { ParentDetailPage } from "@/routes/parents/ParentDetailPage";
 import { ParentDashboardPage } from "@/routes/parents/ParentDashboardPage";
 import { MyAthleteDetailPage } from "@/routes/parents/MyAthleteDetailPage";
 import { OnboardingPage } from "@/routes/auth/OnboardingPage";
+import { ForgotPasswordPage } from "@/routes/auth/ForgotPasswordPage";
+import { ResetPasswordPage } from "@/routes/auth/ResetPasswordPage";
 import { PrivacyPage } from "@/routes/PrivacyPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
-import { GonePage } from "@/routes/GonePage";
 import { SessionsListPage } from "@/routes/training/SessionsListPage";
 import { SessionFormPage } from "@/routes/training/SessionFormPage";
 import { SessionDetailPage } from "@/routes/training/SessionDetailPage";
@@ -59,6 +79,7 @@ import { CalendarPage } from "@/routes/calendar/CalendarPage";
 import { EventFormPage } from "@/routes/calendar/EventFormPage";
 import { ParentCalendarPage } from "@/routes/parents/calendar/ParentCalendarPage";
 import { ParentEventDetailPage } from "@/routes/parents/calendar/ParentEventDetailPage";
+import { ParentCompetitionResultsPage } from "@/routes/parents/competitions/ParentCompetitionResultsPage";
 import { CompetitionsListPage } from "@/routes/competitions/CompetitionsListPage";
 import { CompetitionFormPage } from "@/routes/competitions/CompetitionFormPage";
 import { CompetitionDetailPage } from "@/routes/competitions/CompetitionDetailPage";
@@ -80,6 +101,16 @@ const queryClient = new QueryClient({
 // y evitar fugas de cache entre cuentas en máquinas compartidas.
 setQueryClient(queryClient);
 
+/** Wave B — redirect 301: /training/races/:raceEventId/club-insights
+ *  → /competitions/:raceEventId?tab=insights
+ *  Wave F sustituirá esto por GonePage (410). */
+function ClubInsightsRedirect() {
+  const { raceEventId } = useParams<{ raceEventId: string }>();
+  return (
+    <Navigate to={`/competitions/${raceEventId}?tab=insights`} replace />
+  );
+}
+
 function RootRedirect() {
   const user = useAuthStore((s) => s.user);
   return <Navigate to={landingPathForRole(user?.role)} replace />;
@@ -91,6 +122,8 @@ export default function App() {
       <TooltipProvider delayDuration={200} skipDelayDuration={300}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/recuperar-contrasena" element={<ForgotPasswordPage />} />
+        <Route path="/restablecer-contrasena" element={<ResetPasswordPage />} />
         <Route
           path="/"
           element={
@@ -184,6 +217,22 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <SessionsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/sessions/assistant"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando asistente IA...
+                  </div>
+                }
+              >
+                <SessionAssistantPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -319,15 +368,22 @@ export default function App() {
           }
         />
 
-        {/* ── PR7 (D7): legacy club-insights deprecado definitivamente (410).
-              Tras un ciclo completo con redirect 301, ahora muestra GonePage. ── */}
+        {/* ── Resultados de competencia (parent) ── */}
         <Route
-          path="/training/races/:raceEventId/club-insights"
+          path="/parents/competitions/:raceEventId"
           element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <GonePage />
+            <ProtectedRoute allowedRoles={[UserRole.parent]}>
+              <ParentCompetitionResultsPage />
             </ProtectedRoute>
           }
+        />
+
+        {/* ── Wave B (D7): /training/races/:id/club-insights → redirect 301.
+              Permanece activo durante la transición (Wave B – Wave F);
+              en Wave F se sustituirá por GonePage (410). ── */}
+        <Route
+          path="/training/races/:raceEventId/club-insights"
+          element={<ClubInsightsRedirect />}
         />
 
         {/* ── Competencias (coach/admin) ── */}
@@ -468,14 +524,45 @@ export default function App() {
           }
         />
 
-        {/* ── PR7 (D7): ruta legacy del módulo IA deprecada definitivamente (410).
-              Tras un ciclo completo con redirect 301, ahora muestra GonePage. ── */}
+        {/* ── Wave B (D7): /coach/race-analysis → redirect 301 hacia el hub IA.
+              Permanece activo durante la transición (Wave B – Wave F);
+              en Wave F se sustituirá por GonePage (410). ── */}
         <Route
           path="/coach/race-analysis"
+          element={<Navigate to="/competitions/insights" replace />}
+        />
+
+        {/* ── Perfil de usuario (todos los roles autenticados) ── */}
+        <Route
+          path="/perfil"
           element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <GonePage />
+            <ProtectedRoute>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando perfil...
+                  </div>
+                }
+              >
+                <ProfilePage />
+              </Suspense>
             </ProtectedRoute>
+          }
+        />
+
+        {/* ── Confirmación de cambio de correo (pública) ── */}
+        <Route
+          path="/confirmar-correo"
+          element={
+            <Suspense
+              fallback={
+                <div className="flex min-h-screen items-center justify-center text-sm text-mid-gray">
+                  Verificando enlace...
+                </div>
+              }
+            >
+              <ConfirmEmailChangePage />
+            </Suspense>
           }
         />
 

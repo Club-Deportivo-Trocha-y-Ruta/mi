@@ -12,9 +12,9 @@
 
 ## 0. Executive Summary
 
-Today Copa Valle results ingestion exists only via CLI (`scripts/ingest_race.py`). This phase exposes the same deterministic F1.7 pipeline to the coach through a **3-step wizard** inside `RaceAnalysisPage`, without touching the proven business logic (305 green tests, 98% coverage in `services/race/`).
+This phase exposes the deterministic F1.7 ingestion pipeline to the coach through a **3-step wizard** inside `RaceAnalysisPage`, without touching the proven business logic (305 green tests, 98% coverage in `services/race/`).
 
-**Architectural bet:** thin HTTP wrapper over `RaceIngestor` + guided UI that materializes the interactive CLI flow in discrete steps with a safe preview (real dry-run). Changes under control:
+**Architectural bet:** thin HTTP wrapper over `RaceIngestor` + guided UI that materializes the ingestion flow in discrete steps with a safe preview (real dry-run). Changes under control:
 
 - **Backend:** 3 REST endpoints + 1 new column in `RaceImport` + dry-run in `RaceIngestor` (~30 LOC).
 - **Frontend:** 1 new tab ("Load results") + `RaceUploadWizard` component with 3 sub-steps + reuse of existing patterns.
@@ -58,7 +58,7 @@ Today Copa Valle results ingestion exists only via CLI (`scripts/ingest_race.py`
 **Decision:** **Support `.pdf` + `.csv` for RESULTS; only `.pdf` for GENERAL.**
 
 **Reason:**
-- The service already supports CSV autodispatch by extension (`scripts/ingest_race.py:247-251`). Including it in the endpoint = trivial (3-4 extra lines of magic bytes + parser branch).
+- The service already supports CSV autodispatch by extension (`services/race/csv_parser.py`). Including it in the endpoint = trivial (3-4 extra lines of magic bytes + parser branch).
 - Covers the real case **Sevilla V-I 2026** that only has CSV (fixture `valida_i_2026_sevilla.csv` already in repo).
 - GENERAL is only published in PDF by the Federation — no real CSV use.
 
@@ -725,11 +725,7 @@ Side effect: storage_sftp.delete_object(storage_path) best-effort
 
 **Justification:** an abandoned wizard leaves a `RaceImport.status=pending`. Without cleanup they accumulate. 24h is a sufficient window for the coach to resume the wizard (typical scenario: leave halfway, finish the next day).
 
-### 8.4 CLI compatibility
-
-`scripts/ingest_race.py` **continues working without changes**. The new `kind` column has default `'results'`, and the new optional fields `event_id`/`storage_*` remain NULL when ingesting via CLI. This preserves the operational flow for coaches who prefer CLI for batch cases or troubleshooting.
-
-### 8.5 New environment variables
+### 8.4 New environment variables
 
 | Variable | Default | Notes |
 |---|---|---|
@@ -786,7 +782,6 @@ Side effect: storage_sftp.delete_object(storage_path) best-effort
 20. **F1.7 legacy imports** remain visible in history marked "no PDF download" (event_id NULL, storage_* NULL).
 21. **No status polling**: commit returns synchronously. If Render free tier prevents this in some edge case, escalate to F2.
 22. **Tests required before merging**: backend ≥90% in upload_service + ≥85% in endpoints; frontend ≥85% in new components; E2E happy path + 1 error path.
-23. **CLI-compatible migration**: `scripts/ingest_race.py` continues working without changes (new optional columns).
 
 ---
 
@@ -1000,7 +995,6 @@ This is not an error or a warning: it is an informational reminder that post-ing
 
 ### 14.9 Compatibility
 
-- `scripts/ingest_race.py` (CLI) requires no changes: the new fields are optional in `parse_meta_json` and the old commit still works without conditions.
 - F1.7 already-committed imports remain without conditions (NULL) — the card shows them in "Empty" state with "Add" button for coach/admin.
 - No Alembic migration: the columns already exist from `64c263edd07f`.
 

@@ -119,6 +119,26 @@ class Settings(BaseSettings):
     # (wizard abandonado). Cleanup nocturno descrito en upload-design.md §8.3.
     race_pending_ttl_hours: int = 24
 
+    # -----------------------------------------------------------------------
+    # Restablecimiento de contraseña (specs/003-password-reset-login)
+    # -----------------------------------------------------------------------
+    # Vigencia del enlace de restablecimiento. OWASP: rara vez > 1 hora.
+    password_reset_token_ttl_minutes: int = 60
+    # Máximo de solicitudes por correo dentro de la ventana (anti-flooding).
+    password_reset_max_per_window: int = 3
+    # Ventana móvil (minutos) para el conteo de rate-limit por correo.
+    password_reset_window_minutes: int = 15
+
+    # -----------------------------------------------------------------------
+    # Cambio de correo del perfil (specs/004-user-profile)
+    # -----------------------------------------------------------------------
+    # Vigencia del enlace de confirmación enviado a la NUEVA dirección.
+    email_change_token_ttl_minutes: int = 60
+    # Máximo de solicitudes de cambio por usuario dentro de la ventana.
+    email_change_max_per_window: int = 3
+    # Ventana móvil (minutos) para el rate-limit de cambio de correo.
+    email_change_window_minutes: int = 15
+
     @field_validator("hostinger_public_base_url")
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:

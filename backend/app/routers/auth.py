@@ -1,19 +1,44 @@
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_current_user, get_db
+from app.config import settings
+from app.dependencies import (
+    get_current_user,
+    get_db,
+    get_notification_service,
+    get_task_dispatcher,
+)
 from app.models.athlete import Athlete, ParentAthlete
 from app.models.parent_invite import ParentInvite
 from app.models.user import User
 from app.schemas.auth import LoginRequest, MeResponse, RefreshRequest, TokenResponse
+from app.schemas.notification import (
+    NotificationRecipient,
+    NotificationRequest,
+    NotificationTemplate,
+)
 from app.schemas.parent_invite import (
     ParentInviteTokenValidation,
     ParentRegisterOut,
     ParentRegisterRequest,
 )
+from app.schemas.password_reset import (
+    PasswordResetConfirm,
+    PasswordResetMessage,
+    PasswordResetRequest,
+    PasswordResetValidate,
+)
+from app.services import password_reset as password_reset_service
 from app.services.auth import (
     create_access_token,
     create_refresh_token,
@@ -241,4 +266,105 @@ async def parent_register(
         email=new_user.email or "",
         first_name=new_user.first_name,
         last_name=new_user.last_name,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Restablecimiento de contraseña (specs/003-password-reset-login)
+# ---------------------------------------------------------------------------
+
+# Mensaje neutral compartido: idéntico exista o no la cuenta (anti-enumeración).
+_RESET_REQUEST_MESSAGE = (
+    "Si el correo está registrado, te enviamos un enlace para restablecer "
+    "tu contraseña."
+)
+
+
+@router.post("/password-reset/request", response_model=PasswordResetMessage)
+async def password_reset_request(
+    body: PasswordResetRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    notification_service=Depends(get_notification_service),
+) -> PasswordResetMessage:
+    """Solicita un enlace de restablecimiento (endpoint público).
+
+    Responde SIEMPRE 200 con el mismo mensaje neutral, exista o no la cuenta
+    (prevención de enumeración, OWASP). El correo se despacha en background, por
+    lo que el tiempo de respuesta no depende de si la cuenta existe (evita el
+    canal lateral de timing).
+    """
+    client_ip = request.client.host if request.client else None
+    result = await password_reset_service.request_reset(body.email, db, client_ip)
+
+    if result is not None:
+        user, reset_url = result
+        dispatcher = get_task_dispatcher(background_tasks)
+        await notification_service.send(
+            NotificationRequest(
+                recipient=NotificationRecipient(
+                    email=user.email or body.email,
+                    name=user.first_name or "Usuario",
+                ),
+                template=NotificationTemplate.PASSWORD_RESET,
+                context={
+                    "reset_url": reset_url,
+                    "club_name": settings.club_name,
+                    "ttl_minutes": settings.password_reset_token_ttl_minutes,
+                },
+                send_async=True,
+            ),
+            dispatcher=dispatcher,
+        )
+
+    return PasswordResetMessage(message=_RESET_REQUEST_MESSAGE)
+
+
+@router.get("/password-reset/validate", response_model=PasswordResetValidate)
+async def password_reset_validate(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+) -> PasswordResetValidate:
+    """Valida un token de restablecimiento para la página de reset.
+
+    Lanza 404 (desconocido) o 410 (usado/expirado) con mensajes genéricos.
+    """
+    await password_reset_service.validate_token(token, db)
+    return PasswordResetValidate(valid=True)
+
+
+@router.post("/password-reset/confirm", response_model=PasswordResetMessage)
+async def password_reset_confirm(
+    body: PasswordResetConfirm,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    notification_service=Depends(get_notification_service),
+) -> PasswordResetMessage:
+    """Aplica la nueva contraseña usando un token válido (endpoint público).
+
+    No emite JWT (sin auto-login, OWASP). Envía un correo de confirmación
+    "tu contraseña fue actualizada" en background.
+    """
+    user = await password_reset_service.consume_token(
+        body.token, body.new_password, db
+    )
+
+    if user.email:
+        dispatcher = get_task_dispatcher(background_tasks)
+        await notification_service.send(
+            NotificationRequest(
+                recipient=NotificationRecipient(
+                    email=user.email,
+                    name=user.first_name or "Usuario",
+                ),
+                template=NotificationTemplate.PASSWORD_CHANGED,
+                context={"club_name": settings.club_name},
+                send_async=True,
+            ),
+            dispatcher=dispatcher,
+        )
+
+    return PasswordResetMessage(
+        message="Tu contraseña fue actualizada. Ya puedes iniciar sesión."
     )

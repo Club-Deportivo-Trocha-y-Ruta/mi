@@ -111,12 +111,15 @@ describe("AppShell", () => {
       expect(link).toHaveAttribute("href", "/training/athlete-newsletters");
     });
 
-    // PR1 unificación /competitions: la entrada IA se consolida bajo el hub
-    // /competitions/insights. No deben quedar enlaces a la ruta legacy.
-    it("'Análisis IA carreras' debería apuntar a /competitions/insights", () => {
+    // Wave B unificación /competitions: la entrada separada "Análisis IA
+    // carreras" se eliminó del sidebar. El análisis IA es accesible solo
+    // desde dentro del módulo /competitions (tab insights en el detalle y
+    // hub /competitions/insights). Un único enlace "Competencias" basta.
+    it("NO debería mostrar el NavLink 'Análisis IA carreras' (Wave B — entrada fusionada)", () => {
       renderShell(UserRole.coach);
-      const link = screen.getByRole("link", { name: "Análisis IA carreras" });
-      expect(link).toHaveAttribute("href", "/competitions/insights");
+      expect(
+        screen.queryByRole("link", { name: "Análisis IA carreras" }),
+      ).not.toBeInTheDocument();
     });
 
     it("NO debería quedar ningún enlace a la ruta legacy /coach/race-analysis", () => {
@@ -124,6 +127,16 @@ describe("AppShell", () => {
       const legacy = screen
         .queryAllByRole("link")
         .filter((el) => el.getAttribute("href") === "/coach/race-analysis");
+      expect(legacy).toHaveLength(0);
+    });
+
+    it("NO debería quedar ningún enlace a /competitions/insights en el sidebar", () => {
+      renderShell(UserRole.coach);
+      // El hub de insights sigue siendo una ruta válida; solo no debe existir
+      // un NavLink directo en el sidebar — el coach llega desde /competitions.
+      const legacy = screen
+        .queryAllByRole("link")
+        .filter((el) => el.getAttribute("href") === "/competitions/insights");
       expect(legacy).toHaveLength(0);
     });
 

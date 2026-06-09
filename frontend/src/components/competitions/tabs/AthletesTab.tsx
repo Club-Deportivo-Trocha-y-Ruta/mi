@@ -1,9 +1,12 @@
 /**
  * AthletesTab — atletas de Trocha y Ruta en esta válida con sus resultados.
  *
- * Reutiliza `useClubInsightsByRace` para obtener el estado de análisis IA
- * de cada atleta del club para la válida. Las cards muestran nombre (display),
- * categoría implícita en `valida_num`, estado del insight y excerpt.
+ * Secciones:
+ *   1. RosterPanel — convocatoria de la válida (FR-022 / FR-023, Wave C).
+ *      - Coach/admin: lectura + escritura (agregar, editar estado, retirar).
+ *      - Padre: solo su propio hijo (el backend filtra; se pasa isReadOnly=true).
+ *   2. Análisis IA por atleta — grid de cards con estado de insight por atleta
+ *      (sección preexistente, mantenida sin cambios).
  *
  * Props: `raceEventId: number`
  */
@@ -13,12 +16,15 @@ import { Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RosterPanel } from "@/components/competitions/roster/RosterPanel";
 import { useClubInsightsByRace } from "@/hooks/athletes/useClubInsightsByRace";
+import { useAuthStore } from "@/store/auth.store";
 import {
   confidenceLabel,
   confidenceVariant,
   validaLabel,
 } from "@/lib/insights";
+import { UserRole } from "@/types/enums";
 import type { ClubInsightByRaceItem } from "@/types/athleteRaceAnalysis.types";
 
 // ---------------------------------------------------------------------------
@@ -164,70 +170,85 @@ export interface AthletesTabProps {
 
 export function AthletesTab({ raceEventId }: AthletesTabProps) {
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
   const { data, isLoading, isError, refetch } = useClubInsightsByRace(
     raceEventId,
     { latestOnly: true, limit: 50 },
   );
 
+  // El padre solo puede ver su propio hijo → RosterPanel en modo solo lectura
+  const isParent = user?.role === UserRole.parent;
+
   function handleNavigate(athleteId: number, insightId: number) {
     navigate(`/athletes/${athleteId}?tab=ai_analysis&insight=${insightId}`);
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4" data-testid="athletes-tab">
-        <SkeletonGrid />
-      </div>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <div
-        className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6"
-        style={{ boxShadow: cardShadow }}
-        data-testid="athletes-tab"
-      >
-        <p className="text-sm text-mid-gray">
-          No se pudo cargar la información de atletas.
-        </p>
-        <Button variant="outline" size="sm" onClick={() => void refetch()}>
-          Reintentar
-        </Button>
-      </div>
-    );
-  }
-
-  if (data.items.length === 0) {
-    return (
-      <div
-        className="flex min-h-[20vh] items-center justify-center rounded-xl bg-white p-6 text-center"
-        style={{ boxShadow: cardShadow }}
-        data-testid="athletes-tab"
-      >
-        <p className="text-sm text-mid-gray">
-          No hay atletas de Trocha y Ruta con resultados en esta válida.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-4" data-testid="athletes-tab">
-      <p className="text-sm text-mid-gray">
-        {data.total_athletes}{" "}
-        {data.total_athletes === 1 ? "atleta" : "atletas"} del club en esta
-        válida
-      </p>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {data.items.map((item) => (
-          <AthleteInsightCard
-            key={`${item.athlete_id}-${item.insight_id ?? "none"}`}
-            item={item}
-            onNavigate={handleNavigate}
-          />
-        ))}
-      </div>
+    <div className="space-y-8" data-testid="athletes-tab">
+      {/* ── Sección 1: Convocatoria (Roster) ───────────────────────────── */}
+      <section aria-labelledby="roster-section-title">
+        <h2
+          id="roster-section-title"
+          className="mb-4 text-sm font-semibold uppercase tracking-wide text-mid-gray"
+        >
+          Convocatoria
+        </h2>
+        <RosterPanel
+          raceEventId={raceEventId}
+          isReadOnly={isParent}
+        />
+      </section>
+
+      {/* ── Sección 2: Análisis IA por atleta ───────────────────────────── */}
+      <section aria-labelledby="insights-section-title">
+        <h2
+          id="insights-section-title"
+          className="mb-4 text-sm font-semibold uppercase tracking-wide text-mid-gray"
+        >
+          Análisis IA
+        </h2>
+        {isLoading ? (
+          <SkeletonGrid />
+        ) : isError || !data ? (
+          <div
+            className="flex min-h-[16vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6"
+            style={{ boxShadow: cardShadow }}
+          >
+            <p className="text-sm text-mid-gray">
+              No se pudo cargar la información de atletas.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Reintentar
+            </Button>
+          </div>
+        ) : data.items.length === 0 ? (
+          <div
+            className="flex min-h-[16vh] items-center justify-center rounded-xl bg-white p-6 text-center"
+            style={{ boxShadow: cardShadow }}
+          >
+            <p className="text-sm text-mid-gray">
+              No hay atletas de Trocha y Ruta con resultados en esta válida.
+            </p>
+          </div>
+        ) : (
+          <>
+            <p className="mb-3 text-sm text-mid-gray">
+              {data.total_athletes}{" "}
+              {data.total_athletes === 1 ? "atleta" : "atletas"} del club en
+              esta válida
+            </p>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {data.items.map((item) => (
+                <AthleteInsightCard
+                  key={`${item.athlete_id}-${item.insight_id ?? "none"}`}
+                  item={item}
+                  onNavigate={handleNavigate}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }

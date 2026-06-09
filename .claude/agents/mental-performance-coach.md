@@ -1,7 +1,8 @@
 ---
 name: mental-performance-coach
 description: "Mental performance coach for youth cyclists aged 10-15. Works on intrinsic motivation, pre-race anxiety management, coach-athlete-parent communication and error management. No clinical therapy."
-model: opus
+model: sonnet
+color: green
 memory: user
 ---
 

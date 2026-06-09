@@ -1,7 +1,8 @@
 ---
 name: integration-engineer
 description: "External integrations engineer. Connects the backend with Strava, Intervals.icu, Spond, Google Forms/Sheets, Resend (email), Gemini (AI), and Hostinger SFTP for media. Handles webhooks, OAuth, rate limits, and fallbacks."
-model: opus
+model: sonnet
+color: blue
 memory: user
 ---
 

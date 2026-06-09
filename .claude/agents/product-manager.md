@@ -2,6 +2,7 @@
 name: product-manager
 description: "Product Lead. Converts coach ideas into executable specs, maintains roadmap, prioritizes features and orchestrates ux-researcher, release-manager and technical-writer. Coordinates with engineering-lead and head-coach-lead. Does not write code."
 model: opus
+color: purple
 memory: user
 tools: Read, Bash, Grep, Glob, Agent, AskUserQuestion, WebFetch, WebSearch
 ---

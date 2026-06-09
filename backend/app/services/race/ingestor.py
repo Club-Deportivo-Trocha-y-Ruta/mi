@@ -219,6 +219,8 @@ class RaceIngestor:
         results_skipped = 0
         tyr_count = 0
 
+        is_revision = False  # PR5 (FR-018): set True on confirmed revision commit
+
         try:
             # --- 1. Upsert RaceSeries por (name, season_year) ----------
             series = await self._upsert_series(meta.season)
@@ -251,7 +253,20 @@ class RaceIngestor:
                         results_skipped=0,
                         tyr_count=0,
                         warnings=warnings,
+                        # Identical SHA → no-op, never a revision (FR-017).
+                        is_revision=False,
                     )
+
+                # PR5 (FR-018): detect revision — a different SHA being committed
+                # for an event that already has prior committed results.  We check
+                # this AFTER the identical-SHA abort above, so we only flag a true
+                # content change.  The flag is recorded now but only set on the
+                # returned report after the commit succeeds (not in dry_run).
+                prior_committed = await self._find_any_committed_import_for_event(
+                    event.id
+                )
+                if prior_committed is not None and not dry_run:
+                    is_revision = True
 
                 # F-UP2: en dry_run buscamos un RaceImport pending previo (creado
                 # por el endpoint /parse). Si existe, lo reusamos sin promoverlo.
@@ -426,13 +441,14 @@ class RaceIngestor:
                 await self.db.commit()
                 logger.info(
                     "race_ingest_ok event_id=%s series_id=%s results_inserted=%d "
-                    "results_skipped=%d tyr_count=%d warnings=%d",
+                    "results_skipped=%d tyr_count=%d warnings=%d is_revision=%s",
                     event_id_snapshot,
                     series_id_snapshot,
                     results_inserted,
                     results_skipped,
                     tyr_count,
                     len(warnings),
+                    is_revision,
                 )
             return IngestReport(
                 event_id=event_id_snapshot,
@@ -443,6 +459,10 @@ class RaceIngestor:
                 results_skipped=results_skipped,
                 tyr_count=tyr_count,
                 warnings=warnings,
+                # PR5 (FR-018): True only on a real commit of a different SHA for
+                # an event that already had prior committed results.  Never True in
+                # dry_run or for identical-SHA no-ops (FR-017).
+                is_revision=is_revision,
             )
 
         except Exception:
@@ -544,6 +564,27 @@ class RaceIngestor:
             )
         )
         return result.scalar_one_or_none()
+
+    async def _find_any_committed_import_for_event(
+        self, event_id: int
+    ) -> Optional[RaceImport]:
+        """Retorna cualquier ``RaceImport`` committed vinculado a este ``event_id``.
+
+        Usado por el detector de revisiones (PR5/FR-018): si el evento ya tiene
+        un import committed, la nueva ingesta con SHA distinto es una revisión.
+        Retorna el más reciente para minimizar lecturas. No hace distinción de
+        SHA — el caller ya verificó que el nuevo SHA no coincide (paso 3a).
+        """
+        result = await self.db.execute(
+            select(RaceImport)
+            .where(
+                RaceImport.event_id == event_id,
+                RaceImport.status == RaceImportStatus.committed,
+            )
+            .order_by(RaceImport.id.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
 
     async def _find_pending_import(self, sha256: str) -> Optional[RaceImport]:
         """Busca un ``RaceImport`` con ``status=pending`` y sha256 dado (F-UP2).

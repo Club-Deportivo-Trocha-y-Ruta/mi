@@ -1,0 +1,46 @@
+{% extends "email/base/layout.html" %}
+
+{% block title %}Confirma tu nuevo correo — {{ club_name }}{% endblock %}
+
+{% block content %}
+<h1>Confirma tu nuevo correo</h1>
+
+<p>Hola,</p>
+
+<p>
+  Recibimos una solicitud para cambiar el correo de acceso de tu cuenta en
+  <strong>{{ club_name }}</strong> a esta dirección. Para completar el cambio,
+  confirma que este buzón te pertenece haciendo clic en el botón.
+</p>
+
+<!-- Botón CTA -->
+<div class="btn-wrapper">
+  <a href="{{ confirm_url }}" class="btn">
+    Confirmar nuevo correo
+  </a>
+</div>
+
+<!-- Nota de expiración -->
+<p style="font-size: 13px; color: #898989; text-align: center; margin: 8px 0 24px 0;">
+  Este enlace es válido por <strong style="color: #333333;">{{ ttl_minutes }} minutos</strong>
+  y solo puede usarse una vez.
+</p>
+
+<!-- URL de respaldo para clientes que bloquean botones -->
+<p style="font-size: 12px; color: #898989; word-break: break-all;">
+  Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
+  <span style="color: #1a96a4;">{{ confirm_url }}</span>
+</p>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #aaaaaa;">
+  Si no solicitaste este cambio, puedes ignorar este mensaje con tranquilidad:
+  tu correo actual seguirá funcionando y el enlace expirará automáticamente.
+</p>
+
+<p>
+  Saludos,<br>
+  <strong>Equipo técnico — {{ club_name }}</strong>
+</p>
+{% endblock %}

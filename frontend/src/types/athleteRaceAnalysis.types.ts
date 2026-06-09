@@ -246,6 +246,14 @@ export interface ClubInsightByRaceItem {
   summary_excerpt: string | null;
   generated_at: string | null;
   confidence: InsightConfidence | null;
+  /**
+   * PR5 / FR-018 — external_run_id del run cuyo `stale_since` no es null.
+   * Presente solo cuando el run del que proviene el insight fue marcado como
+   * desactualizado (la revisión de resultados lo invalidó automáticamente).
+   * El frontend renderiza el `StaleAnalysisBadge` cuando este campo no es null.
+   * Backend: campo opcional — null/ausente cuando el run está vigente.
+   */
+  stale_run_id?: string | null;
 }
 
 export interface ClubInsightsByRaceResponse {

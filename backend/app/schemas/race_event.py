@@ -106,6 +106,16 @@ class RaceEventCreate(_ConditionsFields):
         description="Estado inicial del evento. Por defecto: scheduled.",
     )
 
+    # Calendar sync (FR-024): create a linked CalendarEvent on competition creation.
+    # Default ON per decision D1 in docs/12-competitions-unification/workflow.md.
+    create_calendar_event: bool = Field(
+        default=True,
+        description=(
+            "Si True (default), crea automáticamente un evento de calendario "
+            "vinculado (event_type=competition) al persistir la válida."
+        ),
+    )
+
     @field_validator("sequence_number")
     @classmethod
     def _validate_championship_sequence(cls, v: int, info) -> int:
@@ -217,3 +227,31 @@ class RaceEventListResponse(BaseModel):
 
     items: list[RaceEventListItem]
     total: int
+
+
+# ---------------------------------------------------------------------------
+# Calendar link — POST /{id}/calendar-link  (FR-025)
+# ---------------------------------------------------------------------------
+
+
+class CalendarLinkRequest(BaseModel):
+    """Body para ``POST /api/race-analysis/race-events/{id}/calendar-link``.
+
+    Asocia un ``CalendarEvent`` existente (id entero positivo) con la
+    válida indicada.  Vínculo estricto 1:1; lanza 409 si cualquiera de los
+    dos lados ya está vinculado.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    calendar_event_id: int = Field(
+        gt=0,
+        description="ID del CalendarEvent existente a vincular con esta válida.",
+    )
+
+
+class CalendarLinkRead(BaseModel):
+    """Respuesta de ``POST /{id}/calendar-link``: IDs de los dos lados del vínculo."""
+
+    race_event_id: int
+    calendar_event_id: int

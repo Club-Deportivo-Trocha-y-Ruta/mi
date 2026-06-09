@@ -68,7 +68,6 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Optional
 
 import pytest
 import pytest_asyncio
@@ -86,7 +85,7 @@ from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
 from app.models.calendar_event import CalendarEvent, EventStatus, EventType
-from app.models.club import Club
+from app.models.club import Club, ClubMember, ClubRole
 from app.models.race_category import CategoryGender, RaceCategory
 from app.models.race_competitor import RaceCompetitor
 from app.models.race_event import RaceEvent, RaceEventStatus, SurfaceCondition
@@ -141,6 +140,7 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.race_category import RaceCategory as _C  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
     from app.models.race_event import RaceEvent as _E  # noqa: F401
+    from app.models.race_event_roster import RaceEventRoster as _RER  # noqa: F401
     from app.models.race_import import RaceImport as _I  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
     from app.models.race_series import RaceSeries as _S  # noqa: F401
@@ -156,10 +156,13 @@ async def sqlite_engine() -> AsyncEngine:
             "race_series",
             "race_events",
             "calendar_events",
+            # event_audiences: needed by create_linked_calendar_event (ALL_CLUB row)
+            "event_audiences",
             "race_imports",
             "race_categories",
             "race_competitors",
             "race_results",
+            "race_event_roster",
         )
     ]
     async with engine.begin() as conn:
@@ -273,9 +276,17 @@ async def seed_minimal(db_session_factory):
             status=RaceEventStatus.CANCELLED,
             created_by_user_id=10,
         )
+        # ClubMember: required so create_linked_calendar_event can resolve club_id.
+        coach_membership = ClubMember(
+            club_id=1, user_id=10, role_in_club=ClubRole.coach,
+        )
+        admin_membership = ClubMember(
+            club_id=1, user_id=1, role_in_club=ClubRole.admin,
+        )
         session.add_all(
             [coach, admin, parent, club, series_2026, series_2025,
-             evt_completo, evt_vacio, evt_otra_temp]
+             evt_completo, evt_vacio, evt_otra_temp,
+             coach_membership, admin_membership]
         )
         await session.commit()
     yield
@@ -1085,3 +1096,535 @@ class TestListRaceEvents:
         """Padres no acceden al listado de eventos administrativos."""
         r = await parent_client.get(_COLLECTION_URL)
         assert r.status_code == 403
+
+
+# ===========================================================================
+# T042 — POST / calendar sync + POST /{id}/calendar-link
+# ===========================================================================
+
+_CALENDAR_LINK_URL = "/api/race-analysis/race-events/{event_id}/calendar-link"
+
+
+@pytest_asyncio.fixture
+async def seed_for_link(db_session_factory):
+    """Seed for calendar-link tests.
+
+    - Users: coach (10) with ClubMember, admin (1) with ClubMember.
+    - Club id=1.
+    - Series id=1 (2026).
+    - RaceEvent id=200 (no calendar_event_id — free to link).
+    - RaceEvent id=201 (calendar_event_id already set → 409 on create_linked).
+    - CalendarEvent id=600 (type=competition, race_event_id=NULL → free to link).
+    - CalendarEvent id=601 (type=competition, race_event_id=201 → already linked).
+    - CalendarEvent id=602 (type=club_event → not competition → 409).
+    """
+    async with db_session_factory() as session:
+        coach = User(
+            id=10, email="coach@test.com", hashed_password="x",
+            first_name="Coach", last_name="Ten",
+            role=UserRole.coach, is_active=True, can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        admin = User(
+            id=1, email="admin@test.com", hashed_password="x",
+            first_name="Admin", last_name="User",
+            role=UserRole.admin, is_active=True, can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        club = Club(id=1, name="Club Trocha y Ruta", code="TYR")
+        coach_m = ClubMember(club_id=1, user_id=10, role_in_club=ClubRole.coach)
+        admin_m = ClubMember(club_id=1, user_id=1, role_in_club=ClubRole.admin)
+        series = RaceSeries(
+            id=1, name="Copa Valle 2026", season_year=2026,
+            organizer="Liga", points_scheme_code="copa_valle_2026",
+        )
+        # Race event without a calendar link
+        # Two race events:
+        # - id=200: no calendar_event_id yet (free to link)
+        # - id=201: already linked to cal id=601
+        evt_free = RaceEvent(
+            id=200, series_id=1, sequence_number=6,
+            name="VALIDA VI ROLDANILLO", event_date=date(2026, 9, 12),
+            location="Roldanillo", is_championship=False,
+            status=RaceEventStatus.SCHEDULED,
+            created_by_user_id=10,
+        )
+        evt_already = RaceEvent(
+            id=201, series_id=1, sequence_number=7,
+            name="VALIDA VII YUMBO", event_date=date(2026, 10, 18),
+            location="Yumbo", is_championship=False,
+            status=RaceEventStatus.SCHEDULED,
+            created_by_user_id=10,
+        )
+        session.add_all([coach, admin, club, coach_m, admin_m, series, evt_free, evt_already])
+        await session.flush()
+
+        # CalendarEvent id=600 with race_event_id=200 (same target race_event).
+        # race_event 200 still has calendar_event_id=NULL so the happy-path
+        # link call will complete the 1:1 ring (idempotent link is allowed when
+        # cal.race_event_id == race_event.id already).
+        # CHECK ck_calendar_competition_race_event: competition MUST have race_event_id.
+        cal_free = CalendarEvent(
+            id=600, club_id=1, event_type=EventType.COMPETITION,
+            status=EventStatus.SCHEDULED, title="Roldanillo cal",
+            start_at=datetime(2026, 9, 12, 7, 0), end_at=datetime(2026, 9, 12, 12, 0),
+            race_event_id=200, created_by_user_id=10,
+        )
+        # CalendarEvent id=601 already linked to race_event 201 (both sides).
+        cal_prelinked = CalendarEvent(
+            id=601, club_id=1, event_type=EventType.COMPETITION,
+            status=EventStatus.SCHEDULED, title="Pre-linked cal",
+            start_at=datetime(2026, 10, 18, 7, 0), end_at=datetime(2026, 10, 18, 12, 0),
+            race_event_id=201, created_by_user_id=10,
+        )
+        session.add_all([cal_free, cal_prelinked])
+        await session.flush()
+
+        # Close the 1:1 ring for evt_already ↔ cal_prelinked
+        evt_already.calendar_event_id = 601
+
+        # Non-competition CalendarEvent (no race_event_id needed)
+        cal_club = CalendarEvent(
+            id=602, club_id=1, event_type=EventType.CLUB_EVENT,
+            status=EventStatus.SCHEDULED, title="Club social",
+            start_at=datetime(2026, 9, 12, 7, 0), end_at=datetime(2026, 9, 12, 12, 0),
+            race_event_id=None, created_by_user_id=10,
+        )
+        session.add(cal_club)
+        await session.commit()
+    yield
+
+
+@pytest_asyncio.fixture
+async def coach_client_link(sqlite_engine, db_session_factory, seed_for_link):
+    app.dependency_overrides[get_db] = _override_db_factory(db_session_factory)
+    app.dependency_overrides[get_current_user] = lambda: _make_user(
+        UserRole.coach, user_id=10
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+class TestCalendarSync:
+    """T042 — create-with-calendar, opt-out, and link endpoint."""
+
+    # ------------------------------------------------------------------
+    # POST / — create_calendar_event=True (default)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_post_default_creates_linked_calendar_event(
+        self, coach_client, db_session_factory
+    ):
+        """Default POST (create_calendar_event omitted = True) → exactly one
+        CalendarEvent is created with both FK sides set.
+        """
+        payload = {
+            "series_id": 1,
+            "sequence_number": 6,
+            "name": "VALIDA VI ROLDANILLO",
+            "event_date": "2026-09-12",
+            "location": "Roldanillo",
+        }
+        r = await coach_client.post(_COLLECTION_URL, json=payload)
+        assert r.status_code == 201, r.text
+        race_event_id = r.json()["id"]
+
+        async with db_session_factory() as s:
+            # race_events.calendar_event_id must be set
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == race_event_id))
+            ).scalar_one()
+            assert evt.calendar_event_id is not None, (
+                "race_event.calendar_event_id should be set after default POST"
+            )
+            cal_id = evt.calendar_event_id
+
+            # Exactly one CalendarEvent linked to this race_event
+            rows = (
+                await s.execute(
+                    select(CalendarEvent).where(
+                        CalendarEvent.race_event_id == race_event_id
+                    )
+                )
+            ).scalars().all()
+            assert len(rows) == 1, "Exactly one CalendarEvent should be created"
+            cal = rows[0]
+            assert cal.id == cal_id
+            assert cal.event_type == EventType.COMPETITION
+            assert cal.title == "VALIDA VI ROLDANILLO"
+            assert cal.location == "Roldanillo"
+            # start_at should be on the event_date
+            assert cal.start_at.date() == date(2026, 9, 12)
+
+    @pytest.mark.asyncio
+    async def test_post_explicit_true_creates_linked_calendar_event(
+        self, coach_client, db_session_factory
+    ):
+        """Explicitly passing create_calendar_event=true also creates one event."""
+        payload = {
+            "series_id": 1,
+            "sequence_number": 6,
+            "name": "VALIDA VI ROLDANILLO",
+            "event_date": "2026-09-12",
+            "create_calendar_event": True,
+        }
+        r = await coach_client.post(_COLLECTION_URL, json=payload)
+        assert r.status_code == 201, r.text
+        race_event_id = r.json()["id"]
+
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == race_event_id))
+            ).scalar_one()
+            assert evt.calendar_event_id is not None
+
+    @pytest.mark.asyncio
+    async def test_post_opt_out_creates_no_calendar_event(
+        self, coach_client, db_session_factory
+    ):
+        """create_calendar_event=false → no CalendarEvent is created."""
+        payload = {
+            "series_id": 1,
+            "sequence_number": 6,
+            "name": "VALIDA VI ROLDANILLO",
+            "event_date": "2026-09-12",
+            "create_calendar_event": False,
+        }
+        r = await coach_client.post(_COLLECTION_URL, json=payload)
+        assert r.status_code == 201, r.text
+        race_event_id = r.json()["id"]
+
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == race_event_id))
+            ).scalar_one()
+            assert evt.calendar_event_id is None, (
+                "No CalendarEvent should be created when opt-out"
+            )
+            rows = (
+                await s.execute(
+                    select(CalendarEvent).where(
+                        CalendarEvent.race_event_id == race_event_id
+                    )
+                )
+            ).scalars().all()
+            assert len(rows) == 0
+
+    # ------------------------------------------------------------------
+    # POST /{id}/calendar-link
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_calendar_link_happy_path(
+        self, coach_client_link, db_session_factory
+    ):
+        """Link CalendarEvent id=600 to race_event id=200 → 200 + both FK sides set.
+
+        cal id=600 already has race_event_id=200 in seed (required by CHECK constraint
+        in SQLite; on MySQL a true NULL-race_event_id competition event would also work).
+        race_event 200 has calendar_event_id=NULL, so the link endpoint completes the
+        1:1 ring by setting race_event.calendar_event_id=600.
+        """
+        r = await coach_client_link.post(
+            _CALENDAR_LINK_URL.format(event_id=200),
+            json={"calendar_event_id": 600},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["race_event_id"] == 200
+        assert body["calendar_event_id"] == 600
+
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == 200))
+            ).scalar_one()
+            assert evt.calendar_event_id == 600, "race_event.calendar_event_id must be set"
+
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 600))
+            ).scalar_one()
+            assert cal.race_event_id == 200, "calendar_event.race_event_id must remain 200"
+
+    @pytest.mark.asyncio
+    async def test_calendar_link_409_race_event_already_linked(
+        self, coach_client_link
+    ):
+        """race_event id=201 already has calendar_event_id=601 set → 409.
+
+        cal id=600 points to race_event 200, not 201, so the service will
+        detect that race_event 201 already has a link and raise 409.
+        """
+        r = await coach_client_link.post(
+            _CALENDAR_LINK_URL.format(event_id=201),
+            json={"calendar_event_id": 600},
+        )
+        assert r.status_code == 409, r.text
+        assert "201" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_calendar_link_409_calendar_already_linked(
+        self, coach_client_link
+    ):
+        """CalendarEvent id=601 is already linked to race_event 201 → 409."""
+        r = await coach_client_link.post(
+            _CALENDAR_LINK_URL.format(event_id=200),
+            json={"calendar_event_id": 601},
+        )
+        assert r.status_code == 409, r.text
+
+    @pytest.mark.asyncio
+    async def test_calendar_link_409_not_competition_type(
+        self, coach_client_link
+    ):
+        """CalendarEvent id=602 is club_event, not competition → 409."""
+        r = await coach_client_link.post(
+            _CALENDAR_LINK_URL.format(event_id=200),
+            json={"calendar_event_id": 602},
+        )
+        assert r.status_code == 409, r.text
+        assert "competition" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_calendar_link_404_missing_calendar_event(
+        self, coach_client_link
+    ):
+        """calendar_event_id=9999 does not exist → 404."""
+        r = await coach_client_link.post(
+            _CALENDAR_LINK_URL.format(event_id=200),
+            json={"calendar_event_id": 9999},
+        )
+        assert r.status_code == 404, r.text
+        assert "9999" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_calendar_link_404_missing_race_event(
+        self, coach_client_link
+    ):
+        """race_event_id=9999 does not exist → 404."""
+        r = await coach_client_link.post(
+            _CALENDAR_LINK_URL.format(event_id=9999),
+            json={"calendar_event_id": 600},
+        )
+        assert r.status_code == 404, r.text
+
+
+# ===========================================================================
+# T043 — REGRESSION: PATCH propagates to linked CalendarEvent (+ status)
+# ===========================================================================
+
+
+@pytest_asyncio.fixture
+async def seed_with_calendar_for_propagation(db_session_factory):
+    """Seed for propagation regression tests.
+
+    Race event id=300 linked to CalendarEvent id=700.
+    - event_date 2026-05-17, start 07:00, end 12:00 (5h duration).
+    - status=scheduled.
+    """
+    async with db_session_factory() as session:
+        coach = User(
+            id=10, email="coach@test.com", hashed_password="x",
+            first_name="Coach", last_name="Ten",
+            role=UserRole.coach, is_active=True, can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        admin = User(
+            id=1, email="admin@test.com", hashed_password="x",
+            first_name="Admin", last_name="User",
+            role=UserRole.admin, is_active=True, can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        club = Club(id=1, name="Club Trocha y Ruta", code="TYR")
+        coach_m = ClubMember(club_id=1, user_id=10, role_in_club=ClubRole.coach)
+        admin_m = ClubMember(club_id=1, user_id=1, role_in_club=ClubRole.admin)
+        series = RaceSeries(
+            id=1, name="Copa Valle 2026", season_year=2026,
+            organizer="Liga", points_scheme_code="copa_valle_2026",
+        )
+        evt = RaceEvent(
+            id=300, series_id=1, sequence_number=4,
+            name="VALIDA IV CALI", event_date=date(2026, 5, 17),
+            location="Cali", is_championship=False,
+            status=RaceEventStatus.SCHEDULED,
+            created_by_user_id=10,
+        )
+        session.add_all([coach, admin, club, coach_m, admin_m, series, evt])
+        await session.flush()
+
+        cal = CalendarEvent(
+            id=700, club_id=1, event_type=EventType.COMPETITION,
+            status=EventStatus.SCHEDULED,
+            title="VALIDA IV CALI",
+            location="Cali",
+            start_at=datetime(2026, 5, 17, 7, 0, 0),
+            end_at=datetime(2026, 5, 17, 12, 0, 0),
+            race_event_id=300,
+            created_by_user_id=10,
+        )
+        session.add(cal)
+        await session.flush()
+
+        # Close the 1:1 ring
+        evt.calendar_event_id = 700
+        await session.commit()
+    yield
+
+
+@pytest_asyncio.fixture
+async def coach_client_propagation(
+    sqlite_engine, db_session_factory, seed_with_calendar_for_propagation
+):
+    app.dependency_overrides[get_db] = _override_db_factory(db_session_factory)
+    app.dependency_overrides[get_current_user] = lambda: _make_user(
+        UserRole.coach, user_id=10
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+class TestCalendarPropagation:
+    """T043 — PATCH field changes propagate to linked CalendarEvent."""
+
+    @pytest.mark.asyncio
+    async def test_patch_name_propagates(
+        self, coach_client_propagation, db_session_factory
+    ):
+        """Changing name propagates to CalendarEvent.title."""
+        r = await coach_client_propagation.patch(
+            _DETAIL_URL.format(event_id=300),
+            json={"name": "VALIDA IV CALI (reprogramada)"},
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as s:
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 700))
+            ).scalar_one()
+            assert cal.title == "VALIDA IV CALI (reprogramada)"
+
+    @pytest.mark.asyncio
+    async def test_patch_location_propagates(
+        self, coach_client_propagation, db_session_factory
+    ):
+        """Changing location propagates to CalendarEvent.location."""
+        r = await coach_client_propagation.patch(
+            _DETAIL_URL.format(event_id=300),
+            json={"location": "Cali Centro"},
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as s:
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 700))
+            ).scalar_one()
+            assert cal.location == "Cali Centro"
+
+    @pytest.mark.asyncio
+    async def test_patch_event_date_propagates_preserving_time(
+        self, coach_client_propagation, db_session_factory
+    ):
+        """Changing event_date moves start_at/end_at preserving time and duration.
+
+        Original: 2026-05-17 07:00 → 12:00 (5h). New date: 2026-05-24.
+        """
+        r = await coach_client_propagation.patch(
+            _DETAIL_URL.format(event_id=300),
+            json={"event_date": "2026-05-24"},
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as s:
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 700))
+            ).scalar_one()
+            assert cal.start_at == datetime(2026, 5, 24, 7, 0, 0)
+            assert cal.end_at == datetime(2026, 5, 24, 12, 0, 0)
+
+    @pytest.mark.asyncio
+    async def test_patch_cancel_propagates_event_status(
+        self, coach_client_propagation, db_session_factory
+    ):
+        """Cancelling a race_event propagates EventStatus.CANCELLED to the CalendarEvent."""
+        r = await coach_client_propagation.patch(
+            _DETAIL_URL.format(event_id=300),
+            json={"status": "cancelled"},
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as s:
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 700))
+            ).scalar_one()
+            assert cal.status == EventStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_patch_completed_propagates_event_status(
+        self, coach_client_propagation, db_session_factory
+    ):
+        """Marking a race_event as completed propagates EventStatus.COMPLETED."""
+        r = await coach_client_propagation.patch(
+            _DETAIL_URL.format(event_id=300),
+            json={"status": "completed"},
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as s:
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 700))
+            ).scalar_one()
+            assert cal.status == EventStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_patch_no_propagatable_field_does_not_update_calendar(
+        self, coach_client_propagation, db_session_factory
+    ):
+        """Changing only sequence_number (non-propagatable) leaves calendar untouched."""
+        async with db_session_factory() as s:
+            cal_before = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 700))
+            ).scalar_one()
+            title_before = cal_before.title
+            location_before = cal_before.location
+
+        r = await coach_client_propagation.patch(
+            _DETAIL_URL.format(event_id=300),
+            json={"sequence_number": 8},
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as s:
+            cal_after = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 700))
+            ).scalar_one()
+            assert cal_after.title == title_before
+            assert cal_after.location == location_before
+
+    @pytest.mark.asyncio
+    async def test_patch_multiple_fields_propagated_together(
+        self, coach_client_propagation, db_session_factory
+    ):
+        """Changing name + location + event_date + status all propagate in one call."""
+        r = await coach_client_propagation.patch(
+            _DETAIL_URL.format(event_id=300),
+            json={
+                "name": "NUEVA VALIDA",
+                "location": "Nuevo Lugar",
+                "event_date": "2026-06-01",
+                "status": "cancelled",
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as s:
+            cal = (
+                await s.execute(select(CalendarEvent).where(CalendarEvent.id == 700))
+            ).scalar_one()
+            assert cal.title == "NUEVA VALIDA"
+            assert cal.location == "Nuevo Lugar"
+            assert cal.start_at.date() == date(2026, 6, 1)
+            assert cal.status == EventStatus.CANCELLED
