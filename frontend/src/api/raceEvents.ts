@@ -13,6 +13,7 @@
  */
 import { apiClient } from "@/api/client";
 import type {
+  CalendarAutoCreateResponse,
   RaceEventCalendarLinkBody,
   RaceEventCalendarLinkResponse,
   RaceEventConditions,
@@ -152,6 +153,33 @@ export async function linkCalendarEvent(
   const response = await apiClient.post<RaceEventCalendarLinkResponse>(
     `${BASE}/${raceEventId}/calendar-link`,
     body,
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+/**
+ * POST /api/race-analysis/race-events/{raceEventId}/calendar-event
+ *
+ * Crea y vincula un CalendarEvent all-day desde los datos propios de la válida
+ * (nombre, fecha, ubicación). Sin cuerpo de petición — todo se toma del backend.
+ * RBAC: coach only (FR-008).
+ *
+ * 201 → evento creado y vinculado (CalendarAutoCreateResponse).
+ * 409 → la válida ya tiene un calendar_event asociado (1:1 estricto).
+ * 404 → la válida no existe.
+ * 403 → el usuario no tiene rol coach.
+ *
+ * US2 (feature 008 Phase 4): para abrir el formulario pre-rellenado antes de
+ * crear, navegar a `/calendar/events/new?race_event_id={raceEventId}`.
+ */
+export async function createCalendarEventForRaceEvent(
+  raceEventId: number,
+  options?: { signal?: AbortSignal },
+): Promise<CalendarAutoCreateResponse> {
+  const response = await apiClient.post<CalendarAutoCreateResponse>(
+    `${BASE}/${raceEventId}/calendar-event`,
+    null,
     { signal: options?.signal },
   );
   return response.data;

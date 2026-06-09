@@ -40,6 +40,15 @@ interface EventFormProps {
    * Solo aplica en mode=create (ignorado en edit).
    */
   prefillRaceEventId?: number;
+  /**
+   * US2 (feature 008 Phase 4): datos de la válida para pre-rellenar el formulario.
+   * Solo aplican en mode=create cuando vienen del EventFormPage vía useRaceEvent.
+   * Son ignorados si initialData está presente (modo edición).
+   */
+  prefillTitle?: string;
+  prefillStartDate?: string; // YYYY-MM-DD
+  prefillLocation?: string;
+  prefillAllDay?: boolean;
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -143,6 +152,10 @@ function buildDefaultValues(
   initialData?: CalendarEventRead,
   prefillDate?: string,
   prefillRaceEventId?: number,
+  prefillTitle?: string,
+  prefillStartDate?: string,
+  prefillLocation?: string,
+  prefillAllDay?: boolean,
 ): CalendarEventFormValues {
   if (initialData) {
     const start = new Date(initialData.start_at);
@@ -184,6 +197,7 @@ function buildDefaultValues(
 
   const now = new Date();
   const defaultDate =
+    prefillStartDate ??
     prefillDate ??
     now.toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
   const hours = String(now.getHours()).padStart(2, "0");
@@ -194,13 +208,13 @@ function buildDefaultValues(
 
   return {
     event_type: hasPrefillRace ? "competition" : "training_session",
-    title: "",
+    title: prefillTitle ?? "",
     description: "",
-    location: "",
+    location: prefillLocation ?? "",
     start_date: defaultDate,
     start_time: `${hours}:${mins}`,
     duration_min: 90,
-    all_day: false,
+    all_day: prefillAllDay ?? false,
     color_hex: "",
     race_event_id: hasPrefillRace ? prefillRaceEventId : null,
     audiences: [{ audience_type: "all_club", audience_value: {} as Record<string, never> }],
@@ -212,6 +226,10 @@ export function EventForm({
   initialData,
   prefillDate,
   prefillRaceEventId,
+  prefillTitle,
+  prefillStartDate,
+  prefillLocation,
+  prefillAllDay,
   onSuccess,
   onCancel,
 }: EventFormProps) {
@@ -231,7 +249,7 @@ export function EventForm({
     CalendarEventFormValues
   >({
     resolver: zodResolver(calendarEventSchema),
-    defaultValues: buildDefaultValues(initialData, prefillDate, prefillRaceEventId) as z.input<typeof calendarEventSchema>,
+    defaultValues: buildDefaultValues(initialData, prefillDate, prefillRaceEventId, prefillTitle, prefillStartDate, prefillLocation, prefillAllDay) as z.input<typeof calendarEventSchema>,
   });
 
   const selectedType = useWatch({ control, name: "event_type" });

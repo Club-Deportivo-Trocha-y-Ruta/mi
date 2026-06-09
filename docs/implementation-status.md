@@ -239,3 +239,21 @@
 | Deploy | Deploy to Render + 410 flip for legacy redirects | ⏳ Pending |
 
 > Deployment pending coach approval. 410 flip for legacy redirects is a post-deploy follow-up (one release cycle, per D7).
+
+## Implementation status — One-click Associate Competition to Calendar (specs/008-associate-competition-calendar)
+
+> Single-action button that creates an all-day calendar event and links it to an existing `race_event` (1:1, idempotent — 409 if already linked). Coach-only. No new model; reuses `calendar_sync` service from Wave E of specs/007. Technical detail in `specs/008-associate-competition-calendar/`.
+
+| Step | Description | Status |
+|---|---|---|
+| T001 | Backend: `POST /api/race-events/{id}/associate-calendar` endpoint (coach-only RBAC, 409 on duplicate, 422 if event not found) | ✅ Complete 2026-06-09 |
+| T002 | Service: `calendar_sync.create_linked` called from new endpoint; idempotency guard in service layer | ✅ Complete 2026-06-09 |
+| T003 | Schemas: `AssociateCalendarResponse` (calendar event id + `race_event_id`) | ✅ Complete 2026-06-09 |
+| T004 | Frontend: "Asociar al calendario" button in `CompetitionDetailPage` header (visible only when `has_calendar_event=false`, coach/admin only) | ✅ Complete 2026-06-09 |
+| T005 | API client + TanStack Query mutation `useAssociateCalendar` with `raceEvents` + `calendar` key invalidation | ✅ Complete 2026-06-09 |
+| T006 | Backend tests: 409 duplicate guard, 422 not-found, success path, RBAC (parent blocked) | ✅ Complete 2026-06-09 |
+| T007 | Frontend tests: vitest + Testing Library (button hidden when linked, success toast, error state, a11y axe) | ✅ Complete 2026-06-09 |
+| T017 | Docs: `docs/implementation-status.md` + `CLAUDE.md` status table updated | ✅ Complete 2026-06-09 |
+| Deploy | Deploy to Render | ⏳ Pending |
+
+> Deployment pending user approval. All tests green on SQLite. No Alembic migration (reuses existing `calendar_events` + `race_events` tables and the `calendar_sync` service).

@@ -25,6 +25,7 @@
 import { http, HttpResponse } from "msw";
 
 import type {
+  CalendarAutoCreateResponse,
   RaceEventListItem,
   RaceEventListResponse,
   RaceEventRead,
@@ -162,6 +163,23 @@ const calendarLinkHandler = http.post(`${BASE}/:id/calendar-link`, ({ params }) 
   return HttpResponse.json({ id, has_calendar_event: true });
 });
 
+/**
+ * POST /race-events/:id/calendar-event → 201 CalendarAutoCreateResponse.
+ * US1: crea y vincula un CalendarEvent all-day desde los datos de la válida.
+ */
+const calendarAutoCreateHandler = http.post(
+  `${BASE}/:id/calendar-event`,
+  ({ params }) => {
+    const id = Number(params.id);
+    const payload: CalendarAutoCreateResponse = {
+      race_event_id: id,
+      calendar_event_id: 100 + id,
+      has_calendar_event: true,
+    };
+    return HttpResponse.json(payload, { status: 201 });
+  },
+);
+
 /** Conjunto de handlers del escenario feliz — registrar en setup global. */
 export const raceEventsHandlers = [
   listHandler,
@@ -170,6 +188,7 @@ export const raceEventsHandlers = [
   updateHandler,
   deleteHandler,
   calendarLinkHandler,
+  calendarAutoCreateHandler,
 ];
 
 // ---------------------------------------------------------------------------
@@ -276,6 +295,23 @@ export const raceEventsCalendarLinkNotFoundHandler = http.post(
     return HttpResponse.json(
       { detail: "Evento de calendario no encontrado." },
       { status: 404 },
+    );
+  },
+);
+
+/**
+ * POST /:id/calendar-event 409 — la válida ya tiene un calendar_event (1:1 estricto).
+ * Usar en tests que validan el mensaje de error al intentar crear un duplicado.
+ */
+export const raceEventsCalendarAutoCreateConflictHandler = http.post(
+  `${BASE}/:id/calendar-event`,
+  ({ params }) => {
+    const id = Number(params.id);
+    return HttpResponse.json(
+      {
+        detail: `La válida id=${id} ya está vinculada al evento de calendario id=42`,
+      },
+      { status: 409 },
     );
   },
 );
