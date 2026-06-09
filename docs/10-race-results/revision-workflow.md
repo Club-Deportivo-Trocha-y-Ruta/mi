@@ -21,7 +21,6 @@
 - Apply revision transactionally with complete audit trail in `RaceResultRevision`.
 - Soft-delete (`deleted_at`) of removed results. NEVER hard-delete.
 - `revision_reason` required if there are deletes (app-level validation).
-- CLI compatibility: `scripts/ingest_race.py` continues working (aborts cleanly if revision detected, does not process it).
 
 ### Non-functional
 
@@ -457,7 +456,6 @@ E2E tests don't affect prod. `git revert` if necessary.
 | 7.5 | Production smoke test with coach: re-upload real Round IV PDF with minor change (1 position) → wizard detects revision → commit → verify audit in DB | quality-engineer | manual from prod browser | Screenshots + mysql Hostinger query |
 | 7.6 | Update `docs/10-race-results/revision-design.md` §9 marking open questions as "validated YYYY-MM-DD" | system-architect | manual | Final doc |
 | 7.7 | Completion report `docs/10-race-results/revision-completion-report.md` with real metrics vs estimate, active tactical decisions, lessons learned | system-architect | manual | New file |
-| 7.8 | Verify `scripts/ingest_race.py` CLI still works + add warning if CLI detects revision (doesn't abort, only logs) | backend-architect | `/sc:implement` | CLI with warning + test |
 
 ### Success criterion
 
@@ -466,10 +464,6 @@ curl https://mi-2yzi.onrender.com/health                       # 200 OK
 # Production browser smoke: upload revision → audit in DB
 mysql -h <hostinger> -e "SELECT COUNT(*) FROM race_result_revisions WHERE changed_at > NOW() - INTERVAL 1 HOUR"
 # → counts match commit response stats
-
-# CLI compat
-cd backend && python -m scripts.ingest_race ingest results valida_iv_2026_resultados.pdf --series-id 1 --valida 4
-# → if revision detected (prior committed): log warning + clean abort "Use wizard UI for revisions"
 ```
 
 ### Rollback
@@ -479,7 +473,7 @@ cd backend && python -m scripts.ingest_race ingest results valida_iv_2026_result
 - Storage: PDFs uploaded before rollback remain as orphans (no referencing rows); nightly F-UP cleanup detects them.
 - **Revert of revision applied in prod:** via SQL documented in runbook.
 
-### Primary agent: **devops-architect** + **system-architect** + **backend-architect** (CLI compat)
+### Primary agent: **devops-architect** + **system-architect**
 
 ---
 
@@ -495,7 +489,6 @@ cd backend && python -m scripts.ingest_race ingest results valida_iv_2026_result
 | R6 | Audit trail `RaceResultRevision` grows without control (each revision × N results) | REV1+ | Very low | Low | Estimated: 7 rounds × 250 results × 3 average revisions = 5250 rows/year. Harmless for MySQL. No cleanup. |
 | R7 | Alembic migration fails in prod (Hostinger MySQL 8 quirks with self-ref FK) | REV1, REV7 | Low | High | Test reversibility locally before deploying. `mysqldump` backup pre-deploy. Rollback plan documented in §REV7. |
 | R8 | Existing F-UP tests break after behavior change in `POST /parse` (409 → 200 with will_be_revision) | REV2 | Medium | Medium | Existing tests assume 409. Update F-UP tests to reflect new behavior (not a regression, it's a feature change). |
-| R9 | CLI `scripts/ingest_race.py` breaks if it calls `ingest_event` with revision flow without handling | REV7 | Low | Medium | CLI maintains legacy behavior: aborts cleanly with warning. Documented in runbook as design. |
 | R10 | Coach expects to see revision history of a competitor in UI but MVP doesn't include it | REV7 | Medium | Low | Document as "Upcoming improvements" in runbook. Coach can query via direct SQL in sandbox. |
 | R11 | Revision applies changes but RaceImport.status remains `pending` due to bug → wizard believes it wasn't committed | REV3, REV4 | Low | Medium | Specific test verifies `status==committed` post-commit_revision. Manual prod smoke confirms. |
 | R12 | `revision_reason` accepted with special characters that break SQL (SQL injection) | REV4 | Very low | High | SQLAlchemy parameterized queries (default). Pydantic max_length=300. React auto-escape output sanitization in UI. |
@@ -513,7 +506,7 @@ cd backend && python -m scripts.ingest_race ingest results valida_iv_2026_result
 | QGR5 | REV4 → REV5 | Extended endpoints ≥10 new tests + log sanitization verified + smoke curl OK | quality-engineer + security-engineer |
 | QGR6 | REV5 → REV6 | ≥25 vitest tests + 0 axe violations + manual wizard diff mode smoke | quality-engineer |
 | QGR7 | REV6 → REV7 | 3 green E2E playwright + full-stack integration + concurrency test green | quality-engineer |
-| QGR8 | REV7 → CLOSED | Smoke prod OK + audit in DB verifiable + runbook published + CLI compat verified | devops-architect + system-architect |
+| QGR8 | REV7 → CLOSED | Smoke prod OK + audit in DB verifiable + runbook published | devops-architect + system-architect |
 
 ---
 
@@ -600,7 +593,6 @@ npx playwright test race-revision --reporter=line
 - [ ] "Show only changes" filter active by default
 - [ ] Yellow banner if `fuzzy_matches > 0` or `cross_category_moves > 0`
 - [ ] Step 3 success shows counts + reason
-- [ ] CLI still works, aborts cleanly if revision detected
 
 ### Quality
 
@@ -678,7 +670,7 @@ Day 6 afternoon: REV7 (docs + prod smoke + runbook)
 - **REV4:** `backend-architect` + `security-engineer` + `quality-engineer`
 - **REV5:** `react-ui-engineer` + `quality-engineer`
 - **REV6:** `quality-engineer`
-- **REV7:** `devops-architect` + `system-architect` + `backend-architect` (CLI compat)
+- **REV7:** `devops-architect` + `system-architect`
 
 ### Immediate next step — spawn F-UP-REV1
 

@@ -7,7 +7,7 @@ Funciones sin DB ni I/O. Toda la inteligencia de extracción textual está aquí
 - Parseo de status `DNF` / `DSQ` / `DNS` / `(-N VUELTA[S])`.
 - Mapping `CAT: <NOMBRE>` → code interno del catálogo (`HEADER_TO_CODE`).
 
-Origen: módulo F1.7 (CLI ingest_race). Decisiones de mapping y edge cases
+Origen: módulo F1.7 (race results). Decisiones de mapping y edge cases
 documentadas históricamente; consultar `git log -- backend/app/services/race/`
 para audit trail.
 """
