@@ -114,7 +114,10 @@ async def get_event_results(
         )
         .order_by(
             asc(RaceCategory.sort_order),
-            asc(RaceResult.position).nulls_last(),
+            # MySQL/MariaDB has no NULLS LAST: order by the IS NULL flag first
+            # (False=0 sorts before True=1) so NULL positions land last.
+            asc(RaceResult.position.is_(None)),
+            asc(RaceResult.position),
             asc(RaceResult.competitor_id),  # stable tie-break
         )
     )
