@@ -22,6 +22,12 @@ Sonnet). It is intentionally expressed in role terms so it survives model rename
 > Opus-tier lead's review. Model tier is not the safety control — the written
 > guardrails and the minors'-privacy rules in `CLAUDE.md` / the constitution are.
 
+> Reasoning-heavy authoring workers may be promoted to `opus` even without
+> delegating to sub-agents. `speckit-spec-author` is on `opus` because crafting a
+> high-quality, WHAT/WHY feature description is a planning/clarification task on par
+> with `product-manager`, and the seed description bounds the quality of the whole
+> Spec Kit run.
+
 ## Teams (one color per team)
 
 Every agent belongs to exactly one team and carries that team's `color`. The lead and
@@ -33,7 +39,7 @@ its workers share the color, so a team reads as one unit ("teams at the same lev
 | **Sports / Head-Coach** | `green` | `head-coach-lead` | `training-planner`, `nutrition-advisor`, `injury-prevention-advisor`, `technique-coach`, `mental-performance-coach`, `competition-strategist`, `sports-science-advisor` |
 | **Data-Platform** | `cyan` | `data-platform-lead` | `data-analyst`, `data-privacy-guard`, `analytics-reporter` |
 | **Family / Communications** | `orange` | `family-relations-lead` | `parent-communicator`, `event-coordinator`, `community-content-creator` |
-| **Product** | `purple` | `product-manager` | `ux-researcher`, `release-manager`, `technical-writer` |
+| **Product** | `purple` | `product-manager` | `ux-researcher`, `release-manager`, `technical-writer`, `speckit-spec-author` |
 
 ## Adding a new agent
 

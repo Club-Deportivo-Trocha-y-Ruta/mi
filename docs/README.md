@@ -17,6 +17,10 @@ Numbered folders by feature in chronological order. Internal files by type: `wor
 | 11 | [11-informe-tecnico-mensual/](11-informe-tecnico-mensual/) | **Monthly Technical Report** (Phase 1.9): refactor of the club monthly report into a funder-style report document. 1:1 project profile, coach-editable AI narrative by blocks, podiums of the month, restricted-distribution PDF — `workflow.md` + `design.md` + `runbook.md` (coach guide) |
 | 12 | [12-competitions-unification/](12-competitions-unification/) | **Unified Competitions Module** (007): consolidates `/competitions` CRUD and `/coach/race-analysis` into one module; adds results/standings read endpoints, call-up roster (`race_event_roster`), stale-analysis marking, bidirectional 1:1 calendar sync — `workflow.md` (PRD) + `implementation-notes.md` (as-built) |
 
+## Status
+
+- [implementation-status.md](implementation-status.md) — Full per-module implementation history (step tables for every phase/spec). Summarized in `CLAUDE.md`.
+
 ## Training archive
 
 - `Plan_Entrenamiento_XCO_Copa_Valle_2026.docx` — 2026 macrocycle plan
