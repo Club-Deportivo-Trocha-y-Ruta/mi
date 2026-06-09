@@ -233,6 +233,27 @@ export interface RaceEventListItem {
   conditions_completeness: "complete" | "partial" | "empty";
 }
 
+// ---------------------------------------------------------------------------
+// Response del POST /race-events/{id}/calendar-event (008-associate-competition-calendar)
+// ---------------------------------------------------------------------------
+
+/**
+ * Respuesta del endpoint que crea y vincula automáticamente un CalendarEvent
+ * de tipo "all-day" a partir de los datos de la propia válida.
+ *
+ * `POST /api/race-analysis/race-events/{id}/calendar-event`
+ * RBAC: coach only (FR-008).
+ *
+ * 201 → evento creado y vinculado.
+ * 409 → la válida ya tiene un calendar_event (1:1 estricto).
+ */
+export interface CalendarAutoCreateResponse {
+  race_event_id: number;
+  calendar_event_id: number;
+  /** Siempre `true` en la respuesta 201. */
+  has_calendar_event: true;
+}
+
 /**
  * Response paginado del GET /race-events/.
  */

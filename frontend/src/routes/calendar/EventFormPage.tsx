@@ -2,6 +2,7 @@ import { useNavigate, useParams, useSearchParams, Link } from "react-router-dom"
 
 import { EventForm } from "@/components/calendar/EventForm";
 import { useCalendarEvent } from "@/api/calendar";
+import { useRaceEvent } from "@/hooks/race/useRaceEvents";
 
 interface EventFormPageProps {
   mode: "create" | "edit";
@@ -23,12 +24,29 @@ export function EventFormPage({ mode }: EventFormPageProps) {
   const isEdit = mode === "edit";
   const eventQuery = useCalendarEvent(isEdit ? eventId : null);
 
+  // US2 (feature 008 Phase 4): cuando viene prefillRaceEventId, cargamos la
+  // válida para pre-rellenar el formulario con su nombre, fecha y ubicación.
+  // Solo activo en modo create.
+  const raceEventQuery = useRaceEvent(!isEdit ? prefillRaceEventId : undefined);
+
   function handleSuccess() {
     navigate("/calendar");
   }
 
   function handleCancel() {
     navigate("/calendar");
+  }
+
+  // Mientras carga la válida para pre-rellenar, mostramos el skeleton.
+  // Bounded spinner: si hay error en la carga de la válida, continuamos
+  // sin pre-rellenar (modo create vacío) — no bloqueamos al usuario.
+  if (!isEdit && prefillRaceEventId != null && raceEventQuery.isLoading) {
+    return (
+      <section className="space-y-3">
+        <div className="h-6 w-52 animate-pulse rounded bg-light-gray" />
+        <div className="h-80 animate-pulse rounded-xl bg-light-gray" />
+      </section>
+    );
   }
 
   if (isEdit && eventQuery.isLoading) {
@@ -113,6 +131,10 @@ export function EventFormPage({ mode }: EventFormPageProps) {
           initialData={isEdit ? eventQuery.data : undefined}
           prefillDate={!isEdit ? prefillDate : undefined}
           prefillRaceEventId={!isEdit ? prefillRaceEventId : undefined}
+          prefillTitle={!isEdit ? raceEventQuery.data?.name : undefined}
+          prefillStartDate={!isEdit ? raceEventQuery.data?.event_date : undefined}
+          prefillLocation={!isEdit ? (raceEventQuery.data?.location ?? undefined) : undefined}
+          prefillAllDay={!isEdit && prefillRaceEventId != null ? true : undefined}
           onSuccess={handleSuccess}
           onCancel={handleCancel}
         />

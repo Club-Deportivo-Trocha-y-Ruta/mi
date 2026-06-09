@@ -194,6 +194,8 @@ describe("EventFormPage — query param race_event_id", () => {
     );
     const user = userEvent.setup();
     renderEventFormPage("/calendar/events/new?race_event_id=42");
+    // Espera a que el skeleton de carga desaparezca y el formulario esté visible
+    await screen.findByText("Datos específicos");
     await user.click(screen.getByText("Datos específicos"));
 
     await waitFor(() => {

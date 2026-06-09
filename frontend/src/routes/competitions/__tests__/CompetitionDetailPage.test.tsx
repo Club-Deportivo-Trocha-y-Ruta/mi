@@ -127,7 +127,7 @@ describe("CompetitionDetailPage — tabs URL-driven", () => {
 });
 
 describe("CompetitionDetailPage — CF6 calendar CTA", () => {
-  it("has_calendar_event=false → botón 'Asociar a calendario' con href correcto", async () => {
+  it("has_calendar_event=false → botón 'Asociar a calendario' visible (US1 one-click)", async () => {
     mswServer.use(
       http.get("*/api/race-analysis/race-events/:id", () =>
         HttpResponse.json(
@@ -142,10 +142,9 @@ describe("CompetitionDetailPage — CF6 calendar CTA", () => {
     mockAuthAs("coach");
     renderDetail(7);
     const btn = await screen.findByTestId("btn-associate-calendar");
-    expect(btn).toHaveAttribute(
-      "href",
-      "/calendar/events/new?race_event_id=7",
-    );
+    // US1: es un <button>, no un <Link> — el href vive en getCalendarNewUrl() para US2
+    expect(btn.tagName).toBe("BUTTON");
+    expect(btn).not.toBeDisabled();
   });
 
   it("has_calendar_event=true → badge 'En calendario' sin botón", async () => {

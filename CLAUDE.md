@@ -140,6 +140,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 | User Profile & Account Settings | specs/004-user-profile | ✅ Complete — deploy pending |
 | AI Session Clarify & Draft | specs/006-ai-session-clarify-draft | ✅ Complete — deploy pending |
 | Unified Competitions Module | specs/007-competitions-consolidation | ✅ Complete — deploy pending |
+| One-click Associate Competition to Calendar | specs/008-associate-competition-calendar | ✅ Complete — deploy pending |
 
 ## Development credentials (seed data)
 
@@ -260,5 +261,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 ## Active Spec Kit feature
 
-_None active. Completed specs are tracked in [`docs/implementation-status.md`](docs/implementation-status.md); their folders remain under `specs/`._
+**008-associate-competition-calendar** — One-click associate a competition (válida) to the calendar. Plan: [`specs/008-associate-competition-calendar/plan.md`](specs/008-associate-competition-calendar/plan.md). Adds coach-only `POST /api/race-analysis/race-events/{id}/calendar-event` (delegates to `create_linked_calendar_event(..., all_day=True)`) and a split frontend action (one-click + "edit details first" prefilled `EventForm`). No migration. Status: planned.
 <!-- SPECKIT END -->

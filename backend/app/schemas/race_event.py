@@ -255,3 +255,14 @@ class CalendarLinkRead(BaseModel):
 
     race_event_id: int
     calendar_event_id: int
+
+
+class CalendarAutoCreateRead(CalendarLinkRead):
+    """Respuesta de ``POST /{id}/calendar-event``: crea y vincula un all-day event.
+
+    Extiende ``CalendarLinkRead`` con el flag derivado ``has_calendar_event``
+    para que el frontend pueda actualizar el estado del componente sin necesidad
+    de un segundo fetch.
+    """
+
+    has_calendar_event: bool = True

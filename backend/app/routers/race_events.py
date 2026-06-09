@@ -33,6 +33,7 @@ from app.dependencies import get_db, require_role
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.user import User, UserRole
 from app.schemas.race_event import (
+    CalendarAutoCreateRead,
     CalendarLinkRead,
     CalendarLinkRequest,
     RaceEventCreate,
@@ -594,6 +595,73 @@ async def link_calendar_event(
         current_user.id,
     )
     return CalendarLinkRead(race_event_id=race_event_id, calendar_event_id=cal.id)
+
+
+# ---------------------------------------------------------------------------
+# POST /{race_event_id}/calendar-event — Crear y vincular all-day CalendarEvent (FR-008)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{race_event_id}/calendar-event",
+    response_model=CalendarAutoCreateRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear y vincular evento de calendario all-day para una válida",
+)
+async def create_calendar_event_for_race_event(
+    race_event_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.coach])),
+) -> CalendarAutoCreateRead:
+    """Crea un ``CalendarEvent`` all-day de tipo *competition* y lo vincula a la válida.
+
+    El evento se construye automáticamente con los datos de la válida
+    (``name`` → ``title``, ``location``, ``event_date`` → all-day en America/Bogota).
+    No requiere body — el coach solo hace clic en «Asociar».
+
+    Estricto 1:1: si la válida ya tiene un calendario vinculado → 409.
+
+    Códigos de respuesta:
+    - 201: evento creado y vinculado. Body: ``{race_event_id, calendar_event_id, has_calendar_event: true}``.
+    - 404: ``race_event_id`` no existe.
+    - 409: la válida ya tiene un evento de calendario vinculado.
+    - 403: usuario sin rol coach.
+    """
+    result = await db.execute(select(RaceEvent).where(RaceEvent.id == race_event_id))
+    event: Optional[RaceEvent] = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Evento de carrera con id={race_event_id} no existe.",
+        )
+
+    if event.calendar_event_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"La válida id={race_event_id} ya está vinculada al evento de calendario id={event.calendar_event_id}.",
+        )
+
+    from app.services.race.calendar_sync import create_linked_calendar_event
+
+    cal = await create_linked_calendar_event(
+        db=db,
+        race_event=event,
+        user=current_user,
+        all_day=True,
+    )
+    await db.commit()
+
+    logger.info(
+        "race_events_calendar_autocreate race_event_id=%s cal_id=%s user_id=%s",
+        race_event_id,
+        cal.id,
+        current_user.id,
+    )
+    return CalendarAutoCreateRead(
+        race_event_id=race_event_id,
+        calendar_event_id=cal.id,
+        has_calendar_event=True,
+    )
 
 
 # ---------------------------------------------------------------------------

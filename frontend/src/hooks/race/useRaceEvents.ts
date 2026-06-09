@@ -24,9 +24,10 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
-import { invalidatePaired } from "@/hooks/race/invalidation";
+import { invalidatePaired, calendarQueryRoot } from "@/hooks/race/invalidation";
 
 import {
+  createCalendarEventForRaceEvent,
   createRaceEvent,
   deleteRaceEvent,
   getRaceEvent,
@@ -36,6 +37,7 @@ import {
 } from "@/api/raceEvents";
 import { useAuthStore } from "@/store/auth.store";
 import type {
+  CalendarAutoCreateResponse,
   RaceEventCalendarLinkBody,
   RaceEventCalendarLinkResponse,
   RaceEventCreate,
@@ -266,6 +268,57 @@ export function useLinkCalendarEvent() {
         raceEventId: variables.raceEventId,
         includeCalendar: true,
       });
+    },
+  });
+}
+
+export interface UseCreateCalendarEventForRaceEventVariables {
+  raceEventId: number;
+}
+
+/**
+ * Mutation que crea y vincula un CalendarEvent all-day a partir de los datos
+ * propios de la válida (nombre, fecha, ubicación). Un click — cero re-entrada.
+ *
+ * `POST /api/race-analysis/race-events/{id}/calendar-event`
+ * RBAC: coach only (FR-008).
+ *
+ * On success invalida:
+ *   - `raceEventKeys.detail(id)` → refresca `has_calendar_event` en el header/badge
+ *   - `raceEventKeys.lists()` → actualiza badges de la lista
+ *   - `calendarQueryRoot` (`["calendar"]`) → refresca el calendario y
+ *     available-for-calendar. Asociar un evento NO cambia resultados,
+ *     standings, competidores ni análisis IM de la válida, así que no
+ *     invalidamos ese árbol (evita refetches innecesarios).
+ *
+ * El toast de éxito/error vive en el componente consumidor
+ * (patrón establecido en useUnlinkedCompetitors.ts).
+ *
+ * US2 (feature 008 Phase 4): la ruta secundaria "Editar detalles primero"
+ * se implementa en CompetitionDetailPage navegando a
+ * `/calendar/events/new?race_event_id={id}`.
+ */
+export function useCreateCalendarEventForRaceEvent() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    CalendarAutoCreateResponse,
+    unknown,
+    UseCreateCalendarEventForRaceEventVariables
+  >({
+    mutationKey: ["raceEvents", "calendarAutoCreate"],
+    mutationFn: ({ raceEventId }) =>
+      createCalendarEventForRaceEvent(raceEventId),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: raceEventKeys.detail(variables.raceEventId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: raceEventKeys.lists(),
+      });
+      // Refresca el calendario y available-for-calendar (no el árbol de
+      // resultados/standings/competidores/análisis, que no cambian al asociar).
+      void queryClient.invalidateQueries({ queryKey: calendarQueryRoot });
     },
   });
 }

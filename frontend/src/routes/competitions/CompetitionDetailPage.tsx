@@ -11,7 +11,7 @@
  *
  * URL: /competitions/:id?tab=info|results|conditions|athletes|insights
  */
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Link,
   useNavigate,
@@ -21,22 +21,35 @@ import {
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
   Edit2,
   Link2,
   Loader2,
   RefreshCw,
   Trophy,
   Upload,
+  X,
 } from "lucide-react";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
 import { buttonVariants } from "@/components/ui/button";
 import {
   getRaceEventErrorMessage,
+  useCreateCalendarEventForRaceEvent,
   useDeleteRaceEvent,
   useRaceEvent,
 } from "@/hooks/race/useRaceEvents";
+import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
 import type { RaceEventStatus } from "@/types/raceEvents.types";
@@ -117,6 +130,19 @@ function formatDate(iso: string): string {
   });
 }
 
+/**
+ * US2 (feature 008 Phase 4) — "Editar detalles primero".
+ *
+ * Construye la URL del formulario de calendario pre-rellenado con los datos de
+ * la válida. T014 deberá añadir un split button / dropdown que dispare
+ * `navigate(getCalendarNewUrl(raceEventId))` junto a la acción primaria.
+ *
+ * @param raceEventId — ID de la válida a pre-rellenar en el formulario.
+ */
+export function getCalendarNewUrl(raceEventId: number): string {
+  return `/calendar/events/new?race_event_id=${raceEventId}`;
+}
+
 function isBeforeToday(iso: string): boolean {
   const eventDate = new Date(iso + "T00:00:00");
   const now = new Date();
@@ -189,6 +215,7 @@ export function CompetitionDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === UserRole.admin;
+  const isCoach = user?.role === UserRole.coach;
 
   const raceEventId = Number(id);
 
@@ -222,6 +249,48 @@ export function CompetitionDetailPage() {
   const deleteMutation = useDeleteRaceEvent();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Associate to calendar (US1 — one-click)
+  const associateMutation = useCreateCalendarEventForRaceEvent();
+  const [calendarToast, setCalendarToast] = useState<ToastState | null>(null);
+  const calendarToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showCalendarToast(variant: "success" | "error", message: string) {
+    if (calendarToastTimer.current) clearTimeout(calendarToastTimer.current);
+    setCalendarToast({ variant, message });
+    calendarToastTimer.current = setTimeout(() => {
+      setCalendarToast(null);
+      calendarToastTimer.current = null;
+    }, 6_000);
+  }
+
+  // Limpia el timer del toast al desmontar (evita setState tras unmount).
+  useEffect(
+    () => () => {
+      if (calendarToastTimer.current) clearTimeout(calendarToastTimer.current);
+    },
+    [],
+  );
+
+  function handleAssociateCalendar() {
+    associateMutation.mutate(
+      { raceEventId },
+      {
+        onSuccess: () => {
+          showCalendarToast("success", "Competencia asociada al calendario.");
+        },
+        onError: (err) => {
+          showCalendarToast(
+            "error",
+            getRaceEventErrorMessage(
+              err,
+              "No se pudo asociar al calendario. Intenta de nuevo.",
+            ),
+          );
+        },
+      },
+    );
+  }
 
   function handleDeleteConfirm() {
     setDeleteError(null);
@@ -326,7 +395,15 @@ export function CompetitionDetailPage() {
   // que NO hay calendar_event asociado (has_calendar_event === false).
   // Si el campo no viene del backend (undefined), no mostramos el botón
   // (comportamiento conservador: evitar duplicados).
-  const showCalendarCTA = event.has_calendar_event === false && !isCancelled;
+  // Solo coach (FR-008: el endpoint es coach-only; no mostramos un botón que
+  // daría 403 a admin). Se oculta tras un éxito —aunque el refetch de
+  // `has_calendar_event` aún esté en vuelo— para evitar un segundo click que
+  // chocaría con el 409 de "ya vinculada".
+  const showCalendarCTA =
+    isCoach &&
+    event.has_calendar_event === false &&
+    !isCancelled &&
+    !associateMutation.isSuccess;
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 px-4 py-6">
@@ -411,16 +488,62 @@ export function CompetitionDetailPage() {
               </span>
             )}
 
-            {/* CF6: botón "Asociar a calendario" cuando no tiene calendar_event */}
+            {/* CF6 / US1+US2: split button "Asociar a calendario".
+                - Acción primaria (izquierda): one-click, cero re-entrada.
+                - Acción secundaria (chevron dropdown): "Editar detalles primero"
+                  navega a /calendar/events/new?race_event_id=N pre-rellenado.
+                Oculto cuando ya está en calendario o la competencia está cancelada. */}
             {showCalendarCTA && (
-              <Link
-                to={`/calendar/events/new?race_event_id=${raceEventId}`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-                data-testid="btn-associate-calendar"
-              >
-                <Link2 size={14} aria-hidden="true" />
-                Asociar a calendario
-              </Link>
+              <div className="flex" role="group" aria-label="Opciones de calendario">
+                {/* Botón principal — one-click associate */}
+                <button
+                  type="button"
+                  onClick={handleAssociateCalendar}
+                  disabled={associateMutation.isPending}
+                  aria-label="Asociar competencia al calendario del club"
+                  className={cn(
+                    buttonVariants({ variant: "default", size: "sm" }),
+                    "min-h-12 min-w-12 rounded-r-none border-r border-r-white/20",
+                    associateMutation.isPending && "opacity-70",
+                  )}
+                  data-testid="btn-associate-calendar"
+                >
+                  {associateMutation.isPending ? (
+                    <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Link2 size={14} aria-hidden="true" />
+                  )}
+                  Asociar a calendario
+                </button>
+
+                {/* Chevron — abre el dropdown con la acción secundaria */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Más opciones de calendario"
+                      disabled={associateMutation.isPending}
+                      className={cn(
+                        buttonVariants({ variant: "default", size: "sm" }),
+                        "min-h-12 w-9 rounded-l-none px-0",
+                        associateMutation.isPending && "opacity-70",
+                      )}
+                      data-testid="btn-associate-calendar-chevron"
+                    >
+                      <ChevronDown size={14} aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onSelect={() => navigate(getCalendarNewUrl(raceEventId))}
+                      data-testid="btn-edit-details-first"
+                    >
+                      <Edit2 size={14} aria-hidden="true" className="mr-2" />
+                      Editar detalles primero
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
 
             {isAdmin && (
@@ -474,6 +597,14 @@ export function CompetitionDetailPage() {
           </div>
         )}
       </header>
+
+      {/* ── Toast de acción de calendario ───────────────────────────── */}
+      {calendarToast && (
+        <ToastBanner
+          toast={calendarToast}
+          onDismiss={() => setCalendarToast(null)}
+        />
+      )}
 
       {/* ── Tabs ─────────────────────────────────────────────────────── */}
       <TabsPrimitive.Root
@@ -548,6 +679,54 @@ export function CompetitionDetailPage() {
         }}
         onConfirm={handleDeleteConfirm}
       />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Toast banner local (sin librería externa — patrón establecido en UnlinkedCompetitorsTab)
+// ---------------------------------------------------------------------------
+
+type ToastVariant = "success" | "error";
+
+interface ToastState {
+  variant: ToastVariant;
+  message: string;
+}
+
+function ToastBanner({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastState | null;
+  onDismiss: () => void;
+}) {
+  if (!toast) return null;
+  const palette =
+    toast.variant === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : "border-red-200 bg-red-50 text-red-800";
+  const Icon = toast.variant === "success" ? CheckCircle2 : AlertTriangle;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      data-testid={`toast-${toast.variant}`}
+      className={cn(
+        "flex items-start gap-2 rounded-xl border px-4 py-3 text-sm",
+        palette,
+      )}
+    >
+      <Icon size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+      <span className="flex-1">{toast.message}</span>
+      <button
+        type="button"
+        aria-label="Cerrar notificación"
+        onClick={onDismiss}
+        className="shrink-0 rounded p-0.5 transition-colors hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+      >
+        <X size={14} aria-hidden="true" />
+      </button>
     </div>
   );
 }

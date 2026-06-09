@@ -19,7 +19,8 @@ Privacy (Ley 1581):
 from __future__ import annotations
 
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
@@ -107,9 +108,32 @@ def _build_start_end(event_date, existing_cal: CalendarEvent | None):
         end = start + duration
     else:
         start = datetime.combine(event_date, _DEFAULT_START_TIME)
-        from datetime import timedelta
         end = start + timedelta(hours=_DEFAULT_DURATION_HOURS)
     return start, end
+
+
+def _build_all_day_start_end(event_date):
+    """Derive start_at / end_at for an all-day CalendarEvent in America/Bogota.
+
+    Returns a (start_at, end_at) pair where:
+    - start_at is midnight (00:00:00) on event_date in America/Bogota.
+    - end_at   is end-of-day (23:59:59) on event_date in America/Bogota.
+
+    Both are returned as naive datetimes (consistent with the rest of the
+    calendar_events rows, which store naive timestamps interpreted as Bogota
+    local time per the ``timezone`` column).
+    """
+    bogota = ZoneInfo("America/Bogota")
+    start_aware = datetime(
+        event_date.year, event_date.month, event_date.day,
+        0, 0, 0, tzinfo=bogota,
+    )
+    end_aware = datetime(
+        event_date.year, event_date.month, event_date.day,
+        23, 59, 59, tzinfo=bogota,
+    )
+    # Store as naive (strip tzinfo) — consistent with existing calendar rows.
+    return start_aware.replace(tzinfo=None), end_aware.replace(tzinfo=None)
 
 
 # ---------------------------------------------------------------------------
@@ -121,20 +145,37 @@ async def create_linked_calendar_event(
     db: AsyncSession,
     race_event: RaceEvent,
     user: "User",
+    *,
+    all_day: bool = False,
 ) -> CalendarEvent:
     """Create a COMPETITION CalendarEvent and establish a strict 1:1 link.
 
-    - Creates ``calendar_events`` row (event_type=competition, audiences=ALL_CLUB).
-    - Sets ``calendar_events.race_event_id = race_event.id``.
-    - Sets ``race_events.calendar_event_id = <new_cal.id>``.
+    Inputs:
+      db         — async SQLAlchemy session (within caller's transaction).
+      race_event — the RaceEvent that will own the new CalendarEvent.
+      user       — the authenticated user performing the action (used to
+                   resolve ``club_id`` and set ``created_by_user_id``).
+      all_day    — when ``True``, creates an all-day event: ``all_day=True``,
+                   ``start_at`` = event_date 00:00:00, ``end_at`` =
+                   event_date 23:59:59, both in America/Bogota (stored as
+                   naive datetimes).  When ``False`` (default), uses the
+                   legacy 07:00 start + 5-hour duration (preserving the
+                   existing race-creation flow exactly).
+
+    Outputs:
+      The newly created and flushed ``CalendarEvent`` instance.
+
+    Side effects:
+      - Inserts one ``calendar_events`` row (event_type=competition,
+        audiences=ALL_CLUB).
+      - Inserts one ``event_audiences`` row (ALL_CLUB).
+      - Sets ``race_events.calendar_event_id`` to the new cal's id.
+      - Calls ``db.flush()`` twice (after the CalendarEvent insert and after
+        setting the race_event FK); does NOT commit.
 
     Raises:
       HTTP 409 — if the race_event already has a calendar_event_id set.
-
-    The new CalendarEvent is added to the session but NOT committed; the
-    caller owns the transaction boundary.
-
-    Audience default: ALL_CLUB (single row in event_audiences).
+      HTTP 422 — if the acting user has no club membership.
     """
     if race_event.calendar_event_id is not None:
         raise HTTPException(
@@ -146,7 +187,12 @@ async def create_linked_calendar_event(
         )
 
     club_id = await _resolve_club_id(db, user)
-    start_at, end_at = _build_start_end(race_event.event_date, None)
+
+    if all_day:
+        start_at, end_at = _build_all_day_start_end(race_event.event_date)
+    else:
+        start_at, end_at = _build_start_end(race_event.event_date, None)
+
     event_status = _race_status_to_event_status(race_event.status)
 
     # IDs are assigned by the database (autoincrement) on both MySQL and
@@ -159,6 +205,7 @@ async def create_linked_calendar_event(
         location=race_event.location,
         start_at=start_at,
         end_at=end_at,
+        all_day=all_day,
         race_event_id=race_event.id,
         created_by_user_id=user.id,
     )

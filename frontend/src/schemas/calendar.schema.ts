@@ -214,13 +214,25 @@ export type CalendarEventFormValues = z.output<typeof calendarEventSchema>;
 // ─── Helpers to build API payload from form values ───────────────────────────
 
 export function buildEventPayload(values: CalendarEventFormValues) {
-  // When all_day=true, normalize time to midnight so the backend receives
-  // a clean date boundary regardless of what the time input held.
-  const timeToUse = values.all_day ? "00:00" : (values.start_time ?? "00:00");
-  const start = new Date(`${values.start_date}T${timeToUse}:00`);
-  const end = values.all_day
-    ? new Date(`${values.start_date}T23:59:59`)
-    : new Date(start.getTime() + values.duration_min * 60_000);
+  // start_at / end_at se envían como strings ISO.
+  let startAt: string;
+  let endAt: string;
+  if (values.all_day) {
+    // all_day: límites de día como datetimes naive en hora local
+    // (00:00:00 / 23:59:59 del start_date), SIN convertir a UTC. El backend
+    // almacena timestamps naive interpretados como America/Bogota, y la ruta
+    // "one-click" (create_linked_calendar_event) produce exactamente estos
+    // mismos valores. Usar toISOString() aquí desplazaría la hora (y el día)
+    // según la zona del navegador, divergiendo de esa ruta.
+    startAt = `${values.start_date}T00:00:00`;
+    endAt = `${values.start_date}T23:59:59`;
+  } else {
+    const timeToUse = values.start_time ?? "00:00";
+    const start = new Date(`${values.start_date}T${timeToUse}:00`);
+    const end = new Date(start.getTime() + values.duration_min * 60_000);
+    startAt = start.toISOString();
+    endAt = end.toISOString();
+  }
 
   const eventDataMap: Record<string, unknown> = {
     training_session: values.data_training_session ?? {},
@@ -244,8 +256,8 @@ export function buildEventPayload(values: CalendarEventFormValues) {
     title: values.title,
     description: values.description || undefined,
     location: values.location || undefined,
-    start_at: start.toISOString(),
-    end_at: end.toISOString(),
+    start_at: startAt,
+    end_at: endAt,
     all_day: values.all_day,
     color_hex: values.color_hex || undefined,
     event_data: eventDataMap[values.event_type] ?? {},
