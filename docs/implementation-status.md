@@ -290,3 +290,27 @@
 | Deploy | Deploy to Render | ⏳ Pending |
 
 > No Alembic migration. AI provider/model unchanged (Gemini); Claude Fable 5 support deferred to a future spec at the coach's request.
+
+## Implementation status — Faithful, Grounded AI Insights (specs/011-ai-insights-grounding)
+
+> The competitions AI pipeline (feature 010) fabricated race conditions, analyzed
+> every athlete as Pre-PHV/Bambino, reviewed only the first draft of a batch, and
+> persisted a hardcoded "medium" confidence. Feature 011 grounds the pipeline in
+> real data with no schema change (additive JSON in `metrics_snapshot_json`).
+
+| Step | Scope | Status |
+|---|---|---|
+| T003–T004 | `AnalysisInput.race_meta` + `maturation_status` fields; `queries.fetch_event_conditions(db, season, valida_nums)` (all-None entry for unrecorded events) | ✅ Complete 2026-06-09 |
+| T005–T015 (US1) | Conditions grounding: `load_race_data` emits `event_conditions`; `anonymize` scrubs `weather_notes`; `format_race_meta` + `_build_v2_context` read real `race_meta` (dead `podium_context` reads removed); `race_analyst_v2.md` conditional conditions + anti-fabrication veto; deterministic guardrail `conditions_fabricated` scan; 12 tests | ✅ Complete 2026-06-09 |
+| T016–T022 (US2) | Real maturation + LTAD: `grounding.py` (`ltad_group_from_age`, `latest_maturation_status`); both launch routers inject `ltad_group`/`maturation_status`; prompt renders maturation only when known + no-claim instruction; logged exceptional `_resolve_ltad` fallback; 8 tests | ✅ Complete 2026-06-09 |
+| T023–T031 (US3) | Critic v2: `race_critic_v2.md` (v2 sections + ground-truth contradiction rules); `RaceCriticAgent.invoke_v2`; `critic_agent` iterates `per_valida_drafts` (cap 4) → `per_valida_verdicts`; `hitl_gate_review` blocks on any blocked draft; per-row `critic_verdict` + `grounding` in snapshot; 7 tests | ✅ Complete 2026-06-09 |
+| T032–T035 (US4) | Deterministic `compute_confidence(verdict, completeness)` in `ai/confidence.py`; per-válida confidence computed in the critic node and persisted per row (no more constant `medium`); 11 tests | ✅ Complete 2026-06-09 |
+| T036–T039 (US5) | Chat grounding: `obtener_condiciones_evento` tool (recorded JSON or `{"registro": false}`); `race_chat_v1.md` grounding rule ("no quedó registrado"); 5 tests | ✅ Complete 2026-06-09 |
+| T040–T042 (US6) | Re-generation: backend failure-safety (deprecation only inside approved persist); "Regenerar" affordance on insight rows (coach, per-válida re-launch, loading/error states, ≥48px target, a11y); 3 backend + 5 frontend tests | ✅ Complete 2026-06-09 |
+| T043 | Privacy audit (data-privacy-guard): 2 findings fixed — (HIGH) `forbidden_names` now injected into `initial_state` in both launch routers so `weather_notes` scrubbing is effective; (MEDIUM) `obtener_condiciones_evento` chat tool scrubs `weather_notes` | ✅ Complete 2026-06-09 |
+| T044–T046 | Docs; quality gates (feature suites 784 backend + 154 frontend passed, ruff clean on feature files, `tsc --noEmit` clean); v2 prompt ≈1.9k tokens (< `AI_MAX_TOKENS=8192`) | ✅ Complete 2026-06-09 |
+| Deploy | Deploy to Render | ⏳ Pending |
+
+> No Alembic migration (additive JSON keys + existing `confidence` column). Full-suite
+> failures are pre-existing and environment-only (tests requiring a live MySQL at
+> `localhost:3306` and weasyprint/email system libs not present in this container).

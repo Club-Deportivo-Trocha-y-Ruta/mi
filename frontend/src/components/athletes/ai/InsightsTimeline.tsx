@@ -17,9 +17,10 @@
  *   - El estado de loading expone ``role="status" aria-busy``.
  */
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronRight, History, Medal, Sparkles, Trophy, TrendingDown, TrendingUp, Minus, GitBranch } from "lucide-react";
+import { ChevronRight, History, Loader2, Medal, RefreshCw, Sparkles, Trophy, TrendingDown, TrendingUp, Minus, GitBranch } from "lucide-react";
 
 import { MarkdownReportViewer } from "@/components/ai/MarkdownReportViewer";
+import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
 import { InsightN1Banner } from "./InsightN1Banner";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -346,6 +347,7 @@ export function InsightsTimeline({
                   return (
                     <li key={insight.id}>
                       <InsightCard
+                        athleteId={athleteId}
                         insight={insight}
                         shape={shape}
                         mode={mode}
@@ -380,6 +382,7 @@ export function InsightsTimeline({
 // ---------------------------------------------------------------------------
 
 interface InsightCardProps {
+  athleteId: number;
   insight: AthleteInsightOut;
   shape: InsightShape;
   mode: "coach" | "parent";
@@ -389,6 +392,7 @@ interface InsightCardProps {
 }
 
 function InsightCard({
+  athleteId,
   insight,
   shape,
   mode,
@@ -397,6 +401,22 @@ function InsightCard({
   onToggleSelection,
 }: InsightCardProps) {
   const showCheckbox = mode === "coach" && !!onToggleSelection;
+  // Regenerar (feature 011, US6): solo coach, solo válidas concretas (no el
+  // resumen de temporada, valida_num=0). Re-lanza el análisis de ESA válida; el
+  // backend deprecca el insight viejo al aprobar el nuevo (reemplazo en 1 acción).
+  const canRegenerate =
+    mode === "coach" &&
+    insight.valida_num !== null &&
+    insight.valida_num !== 0;
+  const regenerate = useLaunchAthleteAnalysis(athleteId);
+  const handleRegenerate = () => {
+    if (insight.valida_num === null) return;
+    regenerate.mutate({
+      season: insight.season,
+      valida_nums: [insight.valida_num],
+      explain_mode: false,
+    });
+  };
 
   // Borde izquierdo y ícono según tipo
   const borderCls =
@@ -473,6 +493,40 @@ function InsightCard({
           aria-hidden="true"
         />
       </button>
+
+      {/* Regenerar (solo coach) — re-lanza el análisis de esta válida (US6). */}
+      {canRegenerate && (
+        <div className="flex shrink-0 flex-col items-end justify-center self-stretch">
+          <button
+            type="button"
+            onClick={handleRegenerate}
+            disabled={regenerate.isPending}
+            data-testid={`insight-regenerate-${insight.id}`}
+            aria-label={`Regenerar análisis ${validaLabel(insight.valida_num)}`}
+            className={cn(
+              "flex min-h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-medium",
+              "text-primary transition-colors hover:bg-light-gray/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          >
+            {regenerate.isPending ? (
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw size={16} aria-hidden="true" />
+            )}
+            <span className="hidden sm:inline">Regenerar</span>
+          </button>
+          {regenerate.isError && (
+            <p
+              role="alert"
+              className="mt-1 max-w-28 text-right text-[10px] leading-tight text-red-700"
+            >
+              No se pudo regenerar. Intenta de nuevo.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

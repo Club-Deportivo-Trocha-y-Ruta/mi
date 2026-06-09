@@ -32,7 +32,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.race.agents._llm import build_chat_llm, extract_text
 from app.services.race.agents.pricing import PROMPT_VERSION_CHAT
 from app.services.race.prompts import render_prompt
-from app.services.race.queries import fetch_results_for_athlete
+from app.services.race.queries import (
+    fetch_event_conditions,
+    fetch_results_for_athlete,
+)
 from app.services.race.rag.tools import consultar_marco_teorico
 from app.services.race.schemas import ChatResponse
 
@@ -213,6 +216,87 @@ def _build_fetch_results_tool(
     return fetch_results
 
 
+def _build_obtener_condiciones_evento_tool(
+    db_factory: Optional[Callable[[], AsyncSession]] = None,
+    *,
+    scope_season: Optional[int] = None,
+    scope_valida_num: Optional[int] = None,
+    forbidden_names: Optional[list[str]] = None,
+):
+    """Fábrica del tool ``obtener_condiciones_evento`` (feature 011).
+
+    Devuelve las condiciones REGISTRADAS de una válida o ``{"registro": false}``
+    cuando no hay registro (o todos los campos son NULL). El chat debe responder
+    solo desde este resultado y decir "no quedó registrado" cuando es false.
+
+    Args:
+        db_factory: callable que retorna una ``AsyncSession``.
+        scope_season / scope_valida_num: cuando se proveen, ignoran los args del
+            LLM y restringen al evento activo (mismo patrón que las otras tools).
+    """
+    import json
+
+    from langchain_core.tools import tool
+
+    @tool("obtener_condiciones_evento")
+    async def obtener_condiciones_evento(valida_num: int, season: int) -> str:
+        """Recupera las condiciones registradas de una válida.
+
+        Devuelve un JSON con las condiciones realmente registradas (clima,
+        temperatura, superficie de pista, altitud, notas), o ``{"registro":
+        false}`` si el evento no tiene condiciones registradas. NUNCA inventes
+        condiciones: si ``registro`` es false, responde que no quedó registrado.
+
+        Args:
+            valida_num: número de válida (1..7, 99=CD).
+            season: año de temporada.
+        """
+        if db_factory is None:
+            return '{"registro": false, "error": "tool no configurado"}'
+        effective_season = scope_season if scope_season is not None else season
+        effective_valida = (
+            scope_valida_num if scope_valida_num is not None else valida_num
+        )
+        db = db_factory()
+        try:
+            conds = await fetch_event_conditions(
+                db, effective_season, [int(effective_valida)]
+            )
+        except Exception as exc:  # pragma: no cover - defensa runtime
+            logger.warning("Error en obtener_condiciones_evento: %s", exc)
+            return f'{{"registro": false, "error": "{type(exc).__name__}"}}'
+
+        entry = conds.get(int(effective_valida))
+        if not entry or all(v is None for v in entry.values()):
+            return '{"registro": false}'
+        entry = _scrub_weather_notes(entry, forbidden_names or [])
+        payload = {"registro": True}
+        payload.update({k: v for k, v in entry.items() if v is not None})
+        return json.dumps(payload, ensure_ascii=False)
+
+    return obtener_condiciones_evento
+
+
+def _scrub_weather_notes(entry: dict, forbidden_names: list[str]) -> dict:
+    """Scrub nombres reales del free-text ``weather_notes`` (privacidad menores).
+
+    El campo ``weather_notes`` es el único PII-capable entre las condiciones.
+    Reusa las reglas de nombres prohibidos de los guardrails v2. Sin nombres,
+    devuelve el entry sin cambios.
+    """
+    notes = entry.get("weather_notes")
+    if not notes or not forbidden_names:
+        return entry
+    from app.services.ai.guardrails import build_race_v2_forbidden_names_rules
+
+    scrubbed = notes
+    for rule in build_race_v2_forbidden_names_rules(forbidden_names):
+        scrubbed = rule.pattern.sub(rule.replacement or "", scrubbed)
+    out = dict(entry)
+    out["weather_notes"] = scrubbed
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Sesiones in-memory con TTL
 # ---------------------------------------------------------------------------
@@ -287,10 +371,16 @@ class RaceChatAgent:
         tools: Optional[list[Any]] = None,
         db_factory: Optional[Callable[[], AsyncSession]] = None,
         session_store: Optional[_SessionStore] = None,
+        forbidden_names: Optional[list[str]] = None,
     ) -> None:
         self._llm = llm
         self._db_factory = db_factory
-        self._tools = tools if tools is not None else self._default_tools(db_factory)
+        self._forbidden_names = forbidden_names or []
+        self._tools = (
+            tools
+            if tools is not None
+            else self._default_tools(db_factory, forbidden_names=self._forbidden_names)
+        )
         self._tools_by_name = {t.name: t for t in self._tools}
         self._store = session_store or _DEFAULT_STORE
         self._prompt_version = PROMPT_VERSION_CHAT
@@ -300,6 +390,7 @@ class RaceChatAgent:
         db_factory: Optional[Callable[[], AsyncSession]],
         scope_season: Optional[int] = None,
         scope_valida_num: Optional[int] = None,
+        forbidden_names: Optional[list[str]] = None,
     ) -> list[Any]:
         return [
             consultar_marco_teorico,
@@ -312,6 +403,12 @@ class RaceChatAgent:
                 db_factory,
                 scope_season=scope_season,
                 scope_valida_num=scope_valida_num,
+            ),
+            _build_obtener_condiciones_evento_tool(
+                db_factory,
+                scope_season=scope_season,
+                scope_valida_num=scope_valida_num,
+                forbidden_names=forbidden_names,
             ),
         ]
 
@@ -355,6 +452,7 @@ class RaceChatAgent:
                 self._db_factory,
                 scope_season=scope_season,
                 scope_valida_num=scope_valida_num,
+                forbidden_names=self._forbidden_names,
             )
             effective_tools = scoped_tools
             effective_tools_by_name = {t.name: t for t in effective_tools}

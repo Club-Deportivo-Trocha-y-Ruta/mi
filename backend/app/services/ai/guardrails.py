@@ -461,6 +461,46 @@ def build_race_v2_forbidden_names_rules(names: list[str]) -> tuple[_Rule, ...]:
     return tuple(rules)
 
 
+# ---------------------------------------------------------------------------
+# Veto de fabricación de condiciones de carrera (feature 011)
+# ---------------------------------------------------------------------------
+#
+# Se activa SOLO cuando ``use_case="race_analyst_v2"`` y la válida analizada NO
+# tiene condiciones registradas (``has_recorded_conditions=False``). En ese caso
+# el modelo NO debe mencionar clima/pista/terreno: el prompt ya lo prohíbe, y
+# este guardrail es la defensa determinista. Términos detectados → se marcan
+# como violation ``conditions_fabricated`` y se eliminan del texto.
+
+_RACE_CONDITIONS_TERMS_PATTERN = re.compile(
+    r"("
+    r"\bclim\w*|\bclimátic\w*|"
+    r"\bsolead\w*|\bnublad\w*|\bdespejad\w*|"
+    r"\blluvi\w*|\bllov\w*|\bgaruga?\w*|"
+    r"\bterreno\s+\w+|"
+    r"\bpista\s+(?:seca|h[úu]meda|mojada|mixta|embarrada|resbaladiza|polvorienta)|"
+    r"\bsuperficie\s+(?:seca|h[úu]meda|mojada|mixta|embarrada)|"
+    r"\bbarro\b|\blodo\b|\bpolvo\b|"
+    r"\b\d{1,2}\s*°\s*c\b|\b\d{1,2}\s*grados\b|"
+    r"\baltitud\b|\bmsnm\b|"
+    r"\bviento\w*|"
+    r"\bcalor\b|\bcaluros\w*|\bfr[íi]o\b|\btemperatur\w*"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def check_conditions_fabrication(text: str) -> list[str]:
+    """Detecta menciones de clima/pista/terreno cuando NO hay condiciones.
+
+    Solo debe llamarse cuando la válida no tiene condiciones registradas.
+
+    Returns:
+        Lista de términos detectados (uno por match). Vacía si el texto es
+        conforme (no inventa condiciones).
+    """
+    return [m.group(0) for m in _RACE_CONDITIONS_TERMS_PATTERN.finditer(text)]
+
+
 def check_v2_veto_duro(text: str) -> list[str]:
     """Verifica las 5 frases de veto duro del spec v2.
 
@@ -579,12 +619,17 @@ class Guardrails:
         forbidden_names: list[str] | None = None,
         is_first_in_season: bool = False,
         athlete_age: int | None = None,
+        has_recorded_conditions: bool = True,
     ) -> None:
         self._age_group = age_group
         self._use_case = use_case
         self._forbidden_names: list[str] = forbidden_names or []
         self._is_first_in_season = is_first_in_season
         self._athlete_age = athlete_age
+        # Feature 011: cuando la válida NO tiene condiciones registradas,
+        # activamos el veto determinista anti-fabricación de clima/pista. Default
+        # True → no escanea (retrocompat con season_summary y otros use cases).
+        self._has_recorded_conditions = has_recorded_conditions
 
     def scrub(self, text: str) -> str:
         """Devuelve `text` saneado. Si hubo demasiadas violaciones, lanza."""
@@ -641,6 +686,19 @@ class Guardrails:
                     for v in n1_hits:
                         violations.append(f"veto_n1_{v}")
                         logger.warning("ai.guardrail.veto_n1 verb=%s", v)
+
+            # Veto fabricación de condiciones: si la válida no tiene condiciones
+            # registradas y el modelo menciona clima/pista/terreno, lo marcamos
+            # y eliminamos el término (defensa determinista del FR-003).
+            if not self._has_recorded_conditions:
+                cond_hits = check_conditions_fabrication(sanitized)
+                if cond_hits:
+                    for _ in cond_hits:
+                        violations.append("conditions_fabricated")
+                    logger.warning(
+                        "ai.guardrail.conditions_fabricated count=%d", len(cond_hits)
+                    )
+                    sanitized = _RACE_CONDITIONS_TERMS_PATTERN.sub("", sanitized)
 
             # Word limits por sección (+10% tolerancia).
             section_violations = check_v2_section_word_limits(sanitized)

@@ -30,6 +30,7 @@ from app.services.race.ai.events import with_events
 from app.services.race.ai.retry import with_retry
 from app.services.race.queries import (
     fetch_all_results_for_season,
+    fetch_event_conditions,
     fetch_podium_context,
     fetch_results_for_athlete,
     load_events,
@@ -217,12 +218,33 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         season_validas_count = len(seen_validas)
         is_first_in_season: bool = season_validas_count <= 1
 
+        # ---- Condiciones registradas por válida (feature 011) ----
+        # Una entrada por cada válida lanzada (o, en lanzamiento global, por
+        # cada válida en que el atleta participó). Eventos sin condiciones
+        # registradas producen una entrada con los cinco campos en None.
+        if valida_nums:
+            condition_validas = list(valida_nums)
+        else:
+            events_by_id = {e.id: e for e in await load_events(db)}
+            condition_validas = sorted(
+                {
+                    int(seq)
+                    for r in serialized
+                    if (ev := events_by_id.get(r.get("event_id"))) is not None
+                    and (seq := getattr(ev, "sequence_number", None)) is not None
+                }
+            )
+        event_conditions = await fetch_event_conditions(
+            db, season, condition_validas
+        )
+
         if not serialized:
             return {
                 "raw_data": [],
                 "competitor_id": None,
                 "category_id": None,
                 "podium_context": {},
+                "event_conditions": event_conditions,
                 "full_season_results": full_season_records,
                 "season_validas_count": season_validas_count,
                 "is_first_in_season": is_first_in_season,
@@ -243,6 +265,7 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         "competitor_id": competitor_id,
         "category_id": category_id,
         "podium_context": podium_ctx,
+        "event_conditions": event_conditions,
         "full_season_results": full_season_records,
         "season_validas_count": season_validas_count,
         "is_first_in_season": is_first_in_season,

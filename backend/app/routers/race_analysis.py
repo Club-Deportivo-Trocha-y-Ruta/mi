@@ -630,13 +630,30 @@ async def start_run(
     # Si el atleta no existe (body.athlete_id inválido), continuamos sin edad
     # y el nodo analyst_agent emitirá un warning explícito.
     athlete_age: Optional[int] = None
+    ltad_group_val: Optional[str] = None
+    maturation_status: Optional[str] = None
+    forbidden_names: list[str] = []
     if body.athlete_id is not None:
         _athlete_result = await db.execute(
             select(Athlete).where(Athlete.id == body.athlete_id)
         )
         _athlete = _athlete_result.scalar_one_or_none()
         if _athlete is not None and _athlete.birth_date is not None:
-            athlete_age = int((date.today() - _athlete.birth_date).days / 365.25)
+            # Feature 011: inyectar grupo LTAD + fase madurativa reales (igual
+            # que el path per-atleta) para no caer en defaults Pre-PHV/Bambino.
+            from app.services.race.ai.grounding import (
+                latest_maturation_status,
+                load_forbidden_names,
+                ltad_group_from_age,
+            )
+
+            _age_decimal = (date.today() - _athlete.birth_date).days / 365.25
+            athlete_age = int(_age_decimal)
+            ltad_group_val = ltad_group_from_age(_age_decimal).value
+            maturation_status = await latest_maturation_status(db, body.athlete_id)
+            forbidden_names = await load_forbidden_names(
+                db, body.athlete_id, nickname=getattr(_athlete, "nickname", None)
+            )
         else:
             logger.warning(
                 "start_run: athlete_id=%s no encontrado o sin birth_date; "
@@ -652,9 +669,16 @@ async def start_run(
         "explain_mode": body.explain_mode,
         "run_id": run_id,
         "prompt_version": PROMPT_VERSION_ANALYST_V2,
+        "forbidden_names": forbidden_names,
     }
     if athlete_age is not None:
         initial_state["athlete_age"] = athlete_age
+    if ltad_group_val is not None:
+        initial_state["ltad_group"] = ltad_group_val
+    # maturation_status puede ser None legítimamente (sin registros) — se
+    # inyecta siempre que se haya resuelto el atleta.
+    if body.athlete_id is not None and _athlete is not None:
+        initial_state["maturation_status"] = maturation_status
 
     async def _on_complete(
         rid: str,

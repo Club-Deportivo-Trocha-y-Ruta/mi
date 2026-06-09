@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from app.models.athlete_ai_insight import InsightConfidence
 from app.services.race.schemas import AnalysisOutput, Citation, CriticFeedback
 
 
@@ -53,6 +54,11 @@ class RaceAnalystState(TypedDict, total=False):
     # Edad cronológica del atleta calculada en el router desde birth_date.
     # NULL → fallback warning en analyst_agent + retrieve_principles.
     athlete_age: int | None
+    # Feature 011: grupo LTAD real (derivado de age_decimal en el router) y
+    # fase madurativa real (último registro antropométrico, None si no hay).
+    # Inyectados en initial_state por los routers de lanzamiento.
+    ltad_group: str
+    maturation_status: str | None
 
     # ---- Derivado por nodos ----
     raw_data: list[dict]
@@ -61,6 +67,9 @@ class RaceAnalystState(TypedDict, total=False):
     anonymized_data: dict
     mapping: dict[str, int]  # pseudónimo → id; NUNCA al LLM
     metrics: dict
+    # Feature 011: condiciones registradas por válida {valida_num: {...}}.
+    # Producido por load_race_data; weather_notes scrubeado por anonymize.
+    event_conditions: dict[int, dict]
 
     principles: list[Citation]
     memory: list[str]  # últimos 3 insights del atleta
@@ -68,6 +77,11 @@ class RaceAnalystState(TypedDict, total=False):
     draft_analysis: AnalysisOutput | None
     critic_feedback: CriticFeedback | None
     final_analysis: AnalysisOutput | None
+    # Feature 011: un verdicto por draft (válida) — el critic v2 itera todos
+    # los per_valida_drafts. critic_feedback singular queda como compat v1.
+    per_valida_verdicts: dict[int, CriticFeedback]
+    # Confianza computada determinísticamente por válida (post-critic).
+    confidence: dict[int, InsightConfidence] | InsightConfidence | str | None
 
     # ---- HITL ----
     hitl_decision: dict | None  # poblado por el coach via Command(resume=...)

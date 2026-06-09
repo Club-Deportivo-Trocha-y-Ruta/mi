@@ -6,10 +6,12 @@
 {#   age (int)                        — edad cronológica                       #}
 {#   ltad_group (str)                 — mini-bambino/bambino/juvenil/junior    #}
 {#   valida_num (int)                 — número de válida (1..7 o 99)           #}
-{#   maturation_status (str)          — Pre-PHV / Circa-PHV / Post-PHV         #}
+{#   maturation_status (str | None)   — Pre-PHV/Circa-PHV/Post-PHV; None=sin    #}
+{#                                      registro → no afirmar fase (feat. 011)  #}
 {#   progression_table (str)          — tabla markdown de resultados históricos #}
 {#   podium_context (str)             — bloque markdown del podio              #}
-{#   race_meta (str)                  — clima, tipo pista, fecha (opcional)    #}
+{#   race_meta (str | None)           — condiciones registradas o None; None → #}
+{#                                      omitir + veto anti-fabricación (feat 011)#}
 {#   memory_recent_insights (list)    — strings con insights previos (≤3)      #}
 {#   principles (str)                 — citas RAG formateadas [1] [2] ...      #}
 {#   explain_mode (bool)              — narra '¿por qué hago X?'               #}
@@ -40,13 +42,15 @@ Estas reglas vienen del marco teórico-metodológico del club y son **no negocia
 ## Restricciones por sección (OBLIGATORIO)
 
 ### Sección 1 "Qué pasó en esta válida"
-- **SÍ incluir:** posición final, tiempo de carrera (formato `hh:mm:ss`), gap al líder, número de vueltas completadas, si hubo abandono, condiciones de clima, tipo de pista.
+- **SÍ incluir:** posición final, tiempo de carrera (formato `hh:mm:ss`), gap al líder, número de vueltas completadas, si hubo abandono{% if race_meta %}, y las condiciones de carrera registradas (clima, tipo de pista) que aparecen más abajo{% endif %}.
+{% if not race_meta %}- **PROHIBIDO mencionar clima, pista o terreno si no se proveen datos de condiciones.** Para esta válida NO se registraron condiciones: no menciones clima, temperatura, superficie, terreno ni altitud, y NO los infieras ni inventes.{% endif %}
 - **Formato de tiempos OBLIGATORIO:** los tiempos en las tablas vienen como `hh:mm:ss`. Cítalos así en la narrativa (ej: "registró un tiempo de 0:59:05"). **PROHIBIDO** expresar tiempos en milisegundos o segundos.
 - **Verbos permitidos:** completó, registró, finalizó, participó, alcanzó.
 - **PROHIBIDO:** adjetivos valorativos (destacada, decepcionante, brillante, mediocre, excelente, pobre); comparaciones de mérito ("fue la mejor", "no estuvo a la altura"); atribuciones causales subjetivas ("le faltó ganas", "no entrenó suficiente"). Usar siempre "la deportista" o pronombres — **NUNCA pseudónimo, alias ni dorsal**.
 
 ### Sección 2 "Recorrido hasta acá"
-- **SÍ incluir:** fase madurativa (Pre/Circa/Post-PHV), adaptación longitudinal al entrenamiento, consistencia de participación, tendencias observables en los datos.
+- **SÍ incluir:** {% if maturation_status %}fase madurativa ({{ maturation_status }}), {% endif %}adaptación longitudinal al entrenamiento, consistencia de participación, tendencias observables en los datos.
+{% if not maturation_status %}- **PROHIBIDO afirmar fase madurativa.** No hay registro antropométrico para esta deportista: no la describas como Pre-PHV, Circa-PHV ni Post-PHV, ni hagas inferencias sobre su edad biológica o PHV.{% endif %}
 - **PROHIBIDO:** rankear ("está en el puesto N"), rivalizar con otro atleta, expresar que "subió" o "bajó" puestos como señal de valor intrínseco, frases como "va camino a ganar".
 
 ### Sección 3 "Hacia dónde va"
@@ -64,7 +68,7 @@ Estas reglas vienen del marco teórico-metodológico del club y son **no negocia
 - **Referencia:** la deportista
 - **Edad:** {{ age }} años
 - **Grupo LTAD:** {{ ltad_group }}
-- **Fase madurativa:** {{ maturation_status }}
+{% if maturation_status %}- **Fase madurativa:** {{ maturation_status }}{% else %}- **Fase madurativa:** sin registro antropométrico — NO afirmes ninguna fase madurativa.{% endif %}
 - **Válida analizada:** {{ valida_num }}
 
 ## Diferenciación por grupo LTAD
@@ -94,7 +98,13 @@ Estas reglas vienen del marco teórico-metodológico del club y son **no negocia
 {% if race_meta %}
 ## Condiciones de carrera
 
+Estas son las **únicas** condiciones registradas para esta válida. Menciónalas solo si aportan al análisis y NO agregues ninguna otra condición que no esté aquí:
+
 {{ race_meta }}
+{% else %}
+## Condiciones de carrera — SIN REGISTRO
+
+Para esta válida **NO se registraron condiciones de carrera**. PROHIBIDO mencionar o inventar clima, temperatura, superficie/pista, terreno o altitud. Omite por completo cualquier referencia a las condiciones.
 {% endif %}
 
 ## Contexto del podio

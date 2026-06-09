@@ -40,8 +40,14 @@ def _always_hitl() -> bool:
 def _should_interrupt(state: dict) -> bool:
     fb = state.get("critic_feedback")
     must_block = bool(getattr(fb, "must_block", False)) if fb else False
+    # Feature 011: en v2 se revisan N drafts → interrumpir si CUALQUIER verdicto
+    # por válida exige bloqueo (no solo el singular de compat v1).
+    per_valida_verdicts = state.get("per_valida_verdicts") or {}
+    any_blocked = any(
+        bool(getattr(v, "must_block", False)) for v in per_valida_verdicts.values()
+    )
     explain = bool(state.get("explain_mode", False))
-    return must_block or explain or _always_hitl()
+    return must_block or any_blocked or explain or _always_hitl()
 
 
 @with_events(NODE_NAME)

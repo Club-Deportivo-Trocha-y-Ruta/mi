@@ -143,6 +143,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 | One-click Associate Competition to Calendar | specs/008-associate-competition-calendar | ✅ Complete — deploy pending |
 | Cleanup Duplicate Competition | specs/009-cleanup-duplicate-competition | ✅ Complete — deploy pending |
 | Competitions AI Insights (group launch, season context, chat) | specs/010-competitions-ai-insights | ✅ Complete — deploy pending |
+| Faithful, Grounded AI Insights (real conditions/maturation, per-draft critic, computed confidence, chat grounding, regenerate) | specs/011-ai-insights-grounding | ✅ Complete — deploy pending |
 
 ## Development credentials (seed data)
 

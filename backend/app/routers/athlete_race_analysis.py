@@ -509,7 +509,24 @@ async def start_athlete_run(
             detail=f"No se pudo crear el run: {type(exc).__name__}",
         )
 
-    athlete_age = int((date.today() - athlete.birth_date).days / 365.25)
+    age_decimal = (date.today() - athlete.birth_date).days / 365.25
+    athlete_age = int(age_decimal)
+
+    # Feature 011: grupo LTAD y fase madurativa reales → al grafo. Sin estos,
+    # el analista trataba a todas como Pre-PHV/Bambino por default.
+    from app.services.race.ai.grounding import (
+        latest_maturation_status,
+        load_forbidden_names,
+        ltad_group_from_age,
+    )
+
+    ltad_group_val = ltad_group_from_age(age_decimal)
+    maturation_status = await latest_maturation_status(db, athlete.id)
+    # Privacidad (feature 011): nombres reales para scrubear weather_notes y
+    # blindar guardrails. NUNCA van al prompt.
+    forbidden_names = await load_forbidden_names(
+        db, athlete.id, nickname=getattr(athlete, "nickname", None)
+    )
 
     initial_state = {
         "athlete_id": athlete.id,
@@ -520,6 +537,9 @@ async def start_athlete_run(
         "run_id": run_id,
         "prompt_version": PROMPT_VERSION_ANALYST_V2,
         "athlete_age": athlete_age,
+        "ltad_group": ltad_group_val.value,
+        "maturation_status": maturation_status,
+        "forbidden_names": forbidden_names,
     }
 
     # Reusar el closure de finalize del router race_analysis (idéntica lógica

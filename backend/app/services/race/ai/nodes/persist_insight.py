@@ -135,6 +135,31 @@ async def _compute_category_stats(
     return stats
 
 
+def _resolve_per_valida_confidence(state: dict) -> dict[int, InsightConfidence]:
+    """Extrae la confianza computada por válida (feature 011, US4).
+
+    ``state["confidence"]`` puede ser un dict ``{valida_num: InsightConfidence}``
+    (v2) o un escalar/None (v1). Devuelve sólo el mapping por válida; vacío si
+    no hay confianza por válida.
+    """
+    raw = state.get("confidence")
+    out: dict[int, InsightConfidence] = {}
+    if isinstance(raw, dict):
+        for vn, val in raw.items():
+            try:
+                key = int(vn)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(val, InsightConfidence):
+                out[key] = val
+            elif isinstance(val, str):
+                try:
+                    out[key] = InsightConfidence(val)
+                except ValueError:
+                    continue
+    return out
+
+
 def _resolve_valida_nums_to_persist(state: dict, use_case: str) -> list[int]:
     """Determina la lista de ``valida_num`` a persistir.
 
@@ -249,14 +274,19 @@ async def persist_insight(state: dict) -> dict[str, Any]:
         "progression_assessment": state.get("progression_assessment"),
     }
 
-    confidence_value = state.get("confidence") or InsightConfidence.medium
-    if isinstance(confidence_value, str):
+    # Default/scalar confidence (v1 o fallback). En v2 la confianza real va por
+    # válida (ver _resolve_per_valida_confidence); este enum es el respaldo.
+    confidence_value = state.get("confidence")
+    if isinstance(confidence_value, InsightConfidence):
+        confidence_enum = confidence_value
+    elif isinstance(confidence_value, str):
         try:
             confidence_enum = InsightConfidence(confidence_value)
         except ValueError:
             confidence_enum = InsightConfidence.medium
     else:
-        confidence_enum = confidence_value
+        # None o dict (per-válida) → respaldo medium.
+        confidence_enum = InsightConfidence.medium
 
     now = _now()
 
@@ -277,6 +307,9 @@ async def persist_insight(state: dict) -> dict[str, Any]:
 
             if is_v2:
                 # v2: una fila por válida con summary_text DISTINTO.
+                per_valida_verdicts = state.get("per_valida_verdicts") or {}
+                event_conditions = state.get("event_conditions") or {}
+                per_valida_confidence = _resolve_per_valida_confidence(state)
                 for vn_num, vn_summary, vn_recs, _vn_draft in v2_pairs:
                     previous_id: Optional[int] = None
                     is_active_value: Optional[int] = None
@@ -291,6 +324,24 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                         )
                         is_active_value = 1
 
+                    # Snapshot por fila (feature 011): claves aditivas grounding
+                    # + critic_verdict de ESTA válida. Insights viejos sin estas
+                    # claves siguen siendo válidos.
+                    row_snapshot = dict(metrics_snapshot)
+                    row_snapshot["grounding"] = {
+                        "event_conditions_used": event_conditions.get(vn_num),
+                        "maturation_status_used": state.get("maturation_status"),
+                        "ltad_group_used": state.get("ltad_group"),
+                    }
+                    _verdict = per_valida_verdicts.get(vn_num)
+                    row_snapshot["critic_verdict"] = (
+                        _serializable(_verdict) if _verdict is not None else None
+                    )
+
+                    # Confianza por válida (feature 011, US4): si la hay, usar la
+                    # computada; si no, el default compartido.
+                    row_confidence = per_valida_confidence.get(vn_num, confidence_enum)
+
                     new_row = AthleteAiInsight(
                         athlete_id=athlete_id,
                         competitor_id=competitor_id,
@@ -302,9 +353,9 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                         use_case=use_case,
                         summary_text=vn_summary,  # DISTINTO por válida (v2)
                         recommendations_json=vn_recs,
-                        metrics_snapshot_json=metrics_snapshot,
+                        metrics_snapshot_json=row_snapshot,
                         principles_cited_json=principles,
-                        confidence=confidence_enum,
+                        confidence=row_confidence,
                         model="gemini-2.5-flash-lite",
                         prompt_version=prompt_version,
                         coach_approved=approved,
