@@ -31,7 +31,7 @@ its workers share the color, so a team reads as one unit ("teams at the same lev
 |---|---|---|---|
 | **Engineering** | `blue` | `engineering-lead` | `fastapi-architect`, `react-ui-engineer`, `devops-engineer`, `qa-engineer`, `database-architect`, `integration-engineer` |
 | **Sports / Head-Coach** | `green` | `head-coach-lead` | `training-planner`, `nutrition-advisor`, `injury-prevention-advisor`, `technique-coach`, `mental-performance-coach`, `competition-strategist`, `sports-science-advisor` |
-| **Data-Platform** | `cyan` | `data-platform-lead` | `data-analyst`, `results-analyst`, `data-privacy-guard`, `analytics-reporter` |
+| **Data-Platform** | `cyan` | `data-platform-lead` | `data-analyst`, `data-privacy-guard`, `analytics-reporter` |
 | **Family / Communications** | `orange` | `family-relations-lead` | `parent-communicator`, `event-coordinator`, `community-content-creator` |
 | **Product** | `purple` | `product-manager` | `ux-researcher`, `release-manager`, `technical-writer` |
 

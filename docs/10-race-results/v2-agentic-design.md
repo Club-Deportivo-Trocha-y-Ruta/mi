@@ -13,7 +13,7 @@
 
 ### 1.1 Problem
 
-The v1 of race-results (Phase 1.7) delivers a CLI-only deterministic pipeline that ingests official Copa Valle PDFs, normalizes names/clubs, persists results in MySQL and exposes four tabular analytics (`athlete_progression`, `podium_gap`, `club_ranking`, `projection`). It works — but **the coach still translates DataFrames into narrative** and mentally compares each metric against LTAD principles from the theoretical framework. The bottleneck is not computation, it's interpretation.
+The v1 of race-results (Phase 1.7) delivers a deterministic pipeline that ingests official Copa Valle PDFs, normalizes names/clubs, persists results in MySQL and exposes four tabular analytics (`athlete_progression`, `podium_gap`, `club_ranking`, `projection`). It works — but **the coach still translates DataFrames into narrative** and mentally compares each metric against LTAD principles from the theoretical framework. The bottleneck is not computation, it's interpretation.
 
 ### 1.2 Solution
 
@@ -49,7 +49,7 @@ The v1 of race-results (Phase 1.7) delivers a CLI-only deterministic pipeline th
 
 Assumption: the coach today invests ~45-60 min per round (4-5 athletes × 10 min of manual analysis crossing 4 dashboards).
 
-| Metric | Today (v1 CLI) | v2 goal | Δ |
+| Metric | Today (v1) | v2 goal | Δ |
 |---|---|---|---|
 | Time per athlete qualitative analysis | 10-12 min | 1-2 min (HITL review) | -85% |
 | Time per round (5 athletes) | 50-60 min | 8-12 min | -80% |
@@ -257,7 +257,7 @@ flowchart TB
 | Notify coach | v2 | `notification/sender.py` (existing) | No |
 | Consultative chat | v2 | separate endpoint, same RAG + memory | Yes |
 
-**Rule:** v1 NEVER calls v2. v2 CALLS v1 (as a deterministic tool/function). If v2 fails, v1 continues operating via CLI. This preserves the 339 tests without changes.
+**Rule:** v1 NEVER calls v2. v2 CALLS v1 (as a deterministic tool/function). If v2 fails, v1 continues operating through the web import path. This preserves the 339 tests without changes.
 
 ### 2.4 File layout
 
@@ -334,7 +334,6 @@ backend/
 │   └── 7a8b9c0d1e2f_add_agentic_race_tables.py  # NEW — revision 7a8b9c0d1e2f
 │                                                  # down_revision: 64c263edd07f
 ├── scripts/
-│   ├── ingest_race.py                  # (existing CLI)
 │   ├── rag_reindex.py                  # NEW — re-indexes theoretical framework
 │   └── eval_race_analyst.py            # NEW — golden dataset runner
 ├── evals/
@@ -1410,7 +1409,7 @@ Workflow:
 - Create `services/race/queries.py` with pure functions: `fetch_results_for_athlete(db, athlete_id, season, valida_nums)`, `fetch_podium_context(db, category_id, event_id)`, `athlete_exists(db, athlete_id)`, etc.
 - Refactor `analytics.py` to use `queries.py` internally (same output, no functional change).
 
-**Success criterion:** 339 tests green. Coverage `queries.py` >= 95%. CLI still works.
+**Success criterion:** 339 tests green. Coverage `queries.py` >= 95%. Web import path still works.
 
 **Rollback:** revert commit, `analytics.py` restored as before.
 

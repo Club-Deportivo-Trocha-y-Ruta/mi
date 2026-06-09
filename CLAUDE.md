@@ -175,7 +175,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 
 ## Implementation status — Copa Valle Results Module (Phase 1.7)
 
-> Ingestion and analysis pipeline for official Copa Valle XCO PDFs (RESULTADOS + GENERAL). Fuzzy normalization of names/clubs, transactional persistence in MySQL, longitudinal analytics (progression, podium gap, club ranking, projection). CLI operation via `scripts/ingest_race.py` orchestrated by `results-analyst` agent (Opus).
+> Ingestion and analysis pipeline for official Copa Valle XCO PDFs (RESULTADOS + GENERAL). Fuzzy normalization of names/clubs, transactional persistence in MySQL, longitudinal analytics (progression, podium gap, club ranking, projection). Ingestion is operated through the web Import Wizard (Competitions module, `/api/race-analysis/imports/*`).
 
 | Step | Description | Status |
 |---|---|---|
@@ -185,10 +185,10 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 | 3 | `pdf_parser.py` + `normalizer.py` (`is_trocha_y_ruta` with length guard for `partial_ratio`, `parse_time` returns ms, not seconds) | ✅ Complete 2026-05-19 |
 | 4 | `matcher.py` (rapidfuzz top-3 with category boost) + `ingestor.py` (transactional, idempotent via SHA256 in `RaceImport`) + `FakeAsyncSession` for tests | ✅ Complete 2026-05-19 |
 | 5 | `analytics.py`: 4 functions (`athlete_progression`, `podium_gap`, `club_ranking`, `projection`) — flat queries + pandas, confidence:low if n<5 | ✅ Complete 2026-05-19 |
-| 6 | Typer CLI `scripts/ingest_race.py`: 3 subapps (`ingest`, `analyze`, `riders`), 7 subcommands, privacy mask by default, centralized `_open_session` for monkeypatching | ✅ Complete 2026-05-19 |
+| 6 | ~~Typer CLI `scripts/ingest_race.py`~~ — **removed**; ingestion runs through the web Import Wizard (`routers/race_imports.py`: `parse → dry-run → commit`) over the same `services/race/` layer | ✅ Superseded 2026-06-09 |
 | 7 | Test plan + Válida IV PDF fixtures: 305 green tests in 25.25s, 98% coverage in `services/race/` | ✅ Complete 2026-05-19 |
-| 8 | Minors privacy audit: 0 critical/high findings, fixture policy documented, conservative CLI default | ✅ Complete 2026-05-19 |
-| 9 | Válida IV dry-run backfill (V-I/II/III pending coach PDFs) + operational `results-analyst.md` agent | ✅ Complete 2026-05-19 |
+| 8 | Minors privacy audit: 0 critical/high findings, fixture policy documented, conservative privacy default | ✅ Complete 2026-05-19 |
+| 9 | Válida IV dry-run backfill (V-I/II/III pending coach PDFs) | ✅ Complete 2026-05-19 |
 | 10 | Docs + completion report + CLAUDE.md/README docs update | ✅ Complete 2026-05-19 |
 
 > V-I/II/III backfill pending official PDFs; real ingest against MySQL Hostinger pending coach approval.
