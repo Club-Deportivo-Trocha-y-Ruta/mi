@@ -38,7 +38,7 @@ import {
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { CompetitionsListPage } from "@/routes/competitions/CompetitionsListPage";
 
-function mockAuthAs(role: "admin" | "coach") {
+function mockAuthAs(role: "admin" | "coach" | "parent") {
   const state = {
     accessToken: "test-token",
     user: { id: 1, role, first_name: "User", last_name: "Test" },
@@ -452,6 +452,146 @@ describe("CompetitionsListPage — delete admin", () => {
         /resultados importados o está vinculado al calendario/i,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("CompetitionsListPage — cleanup duplicado (feature 009)", () => {
+  it("coach: 'Eliminar duplicado' visible en válida sin resultados → confirma → DELETE /cleanup", async () => {
+    let cleanupCalled = false;
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/", () =>
+        HttpResponse.json({
+          items: [
+            makeRaceEventListItem({
+              id: 77,
+              name: "Duplicado Cali",
+              has_results: false,
+              has_calendar_event: true,
+            }),
+          ],
+          total: 1,
+        }),
+      ),
+      http.delete("*/api/race-analysis/race-events/77/cleanup", () => {
+        cleanupCalled = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    mockAuthAs("coach");
+    const user = userEvent.setup();
+    renderWithProviders(<CompetitionsListPage />);
+    await waitFor(() =>
+      expect(inTable().getByText("Duplicado Cali")).toBeInTheDocument(),
+    );
+    await user.click(
+      inTable().getByRole("button", { name: /Acciones para Duplicado Cali/i }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: /Eliminar duplicado/i }),
+    );
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: /Eliminar competencia duplicada/i,
+      }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /Eliminar duplicado/i }),
+    );
+    await waitFor(() => expect(cleanupCalled).toBe(true));
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("coach: 'Eliminar duplicado' NO aparece en válida con resultados (protegida)", async () => {
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/", () =>
+        HttpResponse.json({
+          items: [
+            makeRaceEventListItem({
+              id: 78,
+              name: "Válida protegida 78",
+              has_results: true,
+            }),
+          ],
+          total: 1,
+        }),
+      ),
+    );
+    mockAuthAs("coach");
+    const user = userEvent.setup();
+    renderWithProviders(<CompetitionsListPage />);
+    await waitFor(() =>
+      expect(inTable().getByText("Válida protegida 78")).toBeInTheDocument(),
+    );
+    await user.click(
+      inTable().getByRole("button", { name: /Acciones para Válida protegida 78/i }),
+    );
+    await screen.findByText("Editar metadata");
+    expect(screen.queryByText(/Eliminar duplicado/i)).not.toBeInTheDocument();
+  });
+
+  it("parent: nunca ve 'Eliminar duplicado' aunque la válida no tenga resultados", async () => {
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/", () =>
+        HttpResponse.json({
+          items: [
+            makeRaceEventListItem({
+              id: 79,
+              name: "Válida parent 79",
+              has_results: false,
+            }),
+          ],
+          total: 1,
+        }),
+      ),
+    );
+    mockAuthAs("parent");
+    const user = userEvent.setup();
+    renderWithProviders(<CompetitionsListPage />);
+    await waitFor(() =>
+      expect(inTable().getByText("Válida parent 79")).toBeInTheDocument(),
+    );
+    await user.click(
+      inTable().getByRole("button", { name: /Acciones para Válida parent 79/i }),
+    );
+    await screen.findByText("Editar metadata");
+    expect(screen.queryByText(/Eliminar duplicado/i)).not.toBeInTheDocument();
+  });
+
+  it("0 violaciones jest-axe con el dialog de cleanup abierto", async () => {
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/", () =>
+        HttpResponse.json({
+          items: [
+            makeRaceEventListItem({
+              id: 80,
+              name: "Duplicado a11y",
+              has_results: false,
+              has_calendar_event: true,
+            }),
+          ],
+          total: 1,
+        }),
+      ),
+    );
+    mockAuthAs("coach");
+    const user = userEvent.setup();
+    const { container } = renderWithProviders(<CompetitionsListPage />);
+    await waitFor(() =>
+      expect(inTable().getByText("Duplicado a11y")).toBeInTheDocument(),
+    );
+    await user.click(
+      inTable().getByRole("button", { name: /Acciones para Duplicado a11y/i }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: /Eliminar duplicado/i }),
+    );
+    await screen.findByRole("alertdialog", {
+      name: /Eliminar competencia duplicada/i,
+    });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });
 

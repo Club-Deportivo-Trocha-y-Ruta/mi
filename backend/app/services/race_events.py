@@ -234,6 +234,77 @@ async def delete_race_event(db: AsyncSession, race_event_id: int) -> None:
     logger.info("race_event_deleted event_id=%s", race_event_id)
 
 
+async def cleanup_duplicate_race_event(db: AsyncSession, race_event_id: int) -> None:
+    """Elimina una válida **duplicada sin resultados** junto con su evento de calendario.
+
+    Pensado para que el coach limpie un duplicado (mismo evento real cargado dos
+    veces) en un solo paso. A diferencia de :func:`delete_race_event` (admin-only,
+    rechaza si hay calendario vinculado), esta función **borra** el evento de
+    calendario asociado y luego la válida, dentro de una sola transacción.
+
+    Motivo del borrado (no "desvincular"): ``calendar_events.race_event_id`` usa
+    ``ON DELETE RESTRICT`` y el CHECK ``ck_calendar_competition_race_event`` prohíbe
+    dejar ``race_event_id = NULL`` en un evento de tipo *competition*. Por tanto la
+    única forma de romper el 1:1 de una competencia es eliminar el calendario.
+
+    Verificaciones / orden:
+    1. Existe la válida → 404 si no.
+    2. NO tiene resultados ingestados en ``race_results`` → 409 (protegida). Se
+       re-evalúa aquí para cubrir el caso "se importaron resultados entre abrir el
+       menú y confirmar".
+    3. Se libera la FK del lado válida (``calendar_event_id = NULL``).
+    4. Se borran los ``CalendarEvent`` que referencian la válida (cascada ORM sobre
+       ``event_audiences`` / ``event_attendances``).
+    5. Se borra la válida (ya nada la referencia → RESTRICT satisfecho).
+
+    No hace ``commit`` (lo hace ``get_db``). Logs solo con IDs (Ley 1581).
+    """
+    result = await db.execute(select(RaceEvent).where(RaceEvent.id == race_event_id))
+    event: Optional[RaceEvent] = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Evento de carrera con id={race_event_id} no existe.",
+        )
+
+    tiene_resultados = await db.execute(
+        select(exists().where(RaceResult.event_id == race_event_id))
+    )
+    if tiene_resultados.scalar():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede eliminar: tiene resultados ingestados.",
+        )
+
+    # Liberar la FK del lado válida antes de borrar el calendario (mantiene la
+    # sesión ORM consistente; la DB también haría SET NULL).
+    if event.calendar_event_id is not None:
+        event.calendar_event_id = None
+        await db.flush()
+
+    # Buscar el/los calendar_event por la FK inversa (autoritativa) — cubre el caso
+    # en que solo el lado calendario tenga la referencia.
+    cal_rows = (
+        await db.execute(
+            select(CalendarEvent).where(CalendarEvent.race_event_id == race_event_id)
+        )
+    ).scalars().all()
+    cal_ids = [cal.id for cal in cal_rows]
+    for cal in cal_rows:
+        await db.delete(cal)
+    if cal_rows:
+        await db.flush()
+
+    await db.delete(event)
+    await db.flush()
+
+    logger.info(
+        "race_event_cleanup event_id=%s calendar_event_ids=%s",
+        race_event_id,
+        cal_ids,
+    )
+
+
 async def list_race_events(
     db: AsyncSession,
     season: Optional[int] = None,

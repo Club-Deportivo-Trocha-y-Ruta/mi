@@ -11,6 +11,7 @@ Endpoints implementados:
 - ``PATCH  /{race_event_id}``                       — edita metadata (coach + admin).
 - ``PATCH  /{race_event_id}/roster/{entry_id}``     — actualiza entrada de nómina (coach + admin).
 - ``DELETE /{race_event_id}``                       — borra evento limpio (admin only).
+- ``DELETE /{race_event_id}/cleanup``               — borra válida duplicada sin resultados + su calendario (coach only).
 - ``DELETE /{race_event_id}/roster/{entry_id}``     — elimina entrada de nómina (coach + admin).
 - ``PATCH  /{race_event_id}/conditions``            — actualiza condiciones de carrera (coach + admin).
 
@@ -538,6 +539,42 @@ async def delete_race_event(
     - 403: usuario sin rol admin.
     """
     await race_events_svc.delete_race_event(db=db, race_event_id=race_event_id)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{race_event_id}/cleanup — Eliminar válida duplicada + su calendario (coach)
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/{race_event_id}/cleanup",
+    status_code=204,
+    summary="Eliminar válida duplicada (sin resultados) y su evento de calendario",
+)
+async def cleanup_duplicate_race_event(
+    race_event_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.coach])),
+) -> None:
+    """Elimina una válida **duplicada sin resultados** junto con su evento de calendario.
+
+    Acción del coach para limpiar un duplicado (el mismo evento real cargado dos
+    veces). A diferencia del ``DELETE /{id}`` general (admin only, que rechaza si hay
+    calendario vinculado), aquí el evento de calendario asociado se **borra** en la
+    misma operación. Las válidas con resultados quedan protegidas (409).
+
+    Códigos de respuesta:
+    - 204: eliminado correctamente (sin body). La válida y su calendario ya no existen.
+    - 404: la válida no existe (p. ej. ya eliminada — lista desactualizada).
+    - 409: la válida tiene resultados ingestados → protegida, no se puede eliminar.
+    - 403: usuario sin rol coach.
+    """
+    await race_events_svc.cleanup_duplicate_race_event(db=db, race_event_id=race_event_id)
+    logger.info(
+        "race_event_cleanup_request race_event_id=%s user_id=%s",
+        race_event_id,
+        current_user.id,
+    )
 
 
 # ---------------------------------------------------------------------------

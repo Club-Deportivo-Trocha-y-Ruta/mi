@@ -23,6 +23,7 @@ import {
   Loader2,
   MoreHorizontal,
   RefreshCw,
+  Trash2,
   Trophy,
   Upload,
 } from "lucide-react";
@@ -48,6 +49,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   getRaceEventErrorMessage,
+  useCleanupDuplicateRaceEvent,
   useDeleteRaceEvent,
   useRaceEventsList,
 } from "@/hooks/race/useRaceEvents";
@@ -101,6 +103,7 @@ const cardStyle = {
 export function CompetitionsListPage() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === UserRole.admin;
+  const isCoach = user?.role === UserRole.coach;
 
   // Filtros que van al backend
   const [filters, setFilters] = useState<RaceEventListFilters>({ season: 2026 });
@@ -109,9 +112,14 @@ export function CompetitionsListPage() {
 
   const { data, isLoading, isError, refetch, isFetching } = useRaceEventsList(filters);
   const deleteMutation = useDeleteRaceEvent();
+  const cleanupMutation = useCleanupDuplicateRaceEvent();
 
   const [deleteTarget, setDeleteTarget] = useState<RaceEventListItem | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Feature 009: limpieza de válida duplicada (coach) — flujo separado del DELETE admin.
+  const [cleanupTarget, setCleanupTarget] = useState<RaceEventListItem | null>(null);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
 
   // Aplicar filtros client-side
   const items = useMemo(() => {
@@ -135,8 +143,24 @@ export function CompetitionsListPage() {
     );
   }
 
+  function handleCleanupConfirm() {
+    if (!cleanupTarget) return;
+    setCleanupError(null);
+    cleanupMutation.mutate(
+      { id: cleanupTarget.id },
+      {
+        onSuccess: () => setCleanupTarget(null),
+        onError: (err) => setCleanupError(getRaceEventErrorMessage(err)),
+      },
+    );
+  }
+
   const canDelete = (item: RaceEventListItem) =>
     isAdmin && !item.has_results && !item.has_calendar_event;
+
+  // Feature 009: el coach puede limpiar un duplicado sin resultados (con o sin
+  // calendario asociado). Las válidas con resultados quedan protegidas.
+  const canCleanup = (item: RaceEventListItem) => isCoach && !item.has_results;
 
   const deleteDisabledReason = (item: RaceEventListItem): string | null => {
     if (!isAdmin) return "Solo administradores pueden eliminar válidas.";
@@ -306,6 +330,11 @@ export function CompetitionsListPage() {
                       setDeleteError(null);
                       setDeleteTarget(item);
                     }}
+                    canCleanup={canCleanup(item)}
+                    onCleanup={() => {
+                      setCleanupError(null);
+                      setCleanupTarget(item);
+                    }}
                   />
                 ))}
               </tbody>
@@ -324,6 +353,11 @@ export function CompetitionsListPage() {
                 onDelete={() => {
                   setDeleteError(null);
                   setDeleteTarget(item);
+                }}
+                canCleanup={canCleanup(item)}
+                onCleanup={() => {
+                  setCleanupError(null);
+                  setCleanupTarget(item);
                 }}
               />
             ))}
@@ -355,6 +389,24 @@ export function CompetitionsListPage() {
         }}
         onConfirm={handleDeleteConfirm}
       />
+
+      {/* Dialog de confirmación de limpieza de duplicado (feature 009, coach) */}
+      <ConfirmDeleteDialog
+        open={cleanupTarget !== null}
+        title="Eliminar competencia duplicada"
+        subject={cleanupTarget?.name ?? ""}
+        description="Esta acción es irreversible. Se eliminarán permanentemente la competencia duplicada y su evento de calendario asociado. Úsala solo para limpiar duplicados sin resultados."
+        confirmLabel="Eliminar duplicado"
+        isPending={cleanupMutation.isPending}
+        errorMessage={cleanupError}
+        onCancel={() => {
+          if (!cleanupMutation.isPending) {
+            setCleanupTarget(null);
+            setCleanupError(null);
+          }
+        }}
+        onConfirm={handleCleanupConfirm}
+      />
     </section>
   );
 }
@@ -369,6 +421,8 @@ interface RowProps {
   canDelete: boolean;
   deleteDisabledReason: string | null;
   onDelete: () => void;
+  canCleanup: boolean;
+  onCleanup: () => void;
 }
 
 function CompetitionTableRow({
@@ -377,6 +431,8 @@ function CompetitionTableRow({
   canDelete,
   deleteDisabledReason,
   onDelete,
+  canCleanup,
+  onCleanup,
 }: RowProps) {
   const navigate = useNavigate();
   return (
@@ -416,6 +472,8 @@ function CompetitionTableRow({
           canDelete={canDelete}
           deleteDisabledReason={deleteDisabledReason}
           onDelete={onDelete}
+          canCleanup={canCleanup}
+          onCleanup={onCleanup}
         />
       </td>
     </tr>
@@ -432,6 +490,8 @@ function CompetitionCard({
   canDelete,
   deleteDisabledReason,
   onDelete,
+  canCleanup,
+  onCleanup,
 }: RowProps) {
   const navigate = useNavigate();
   return (
@@ -465,6 +525,8 @@ function CompetitionCard({
             canDelete={canDelete}
             deleteDisabledReason={deleteDisabledReason}
             onDelete={onDelete}
+            canCleanup={canCleanup}
+            onCleanup={onCleanup}
           />
         </div>
       </div>
@@ -489,6 +551,8 @@ interface ActionsKebabProps {
   canDelete: boolean;
   deleteDisabledReason: string | null;
   onDelete: () => void;
+  canCleanup: boolean;
+  onCleanup: () => void;
 }
 
 function ActionsKebab({
@@ -497,6 +561,8 @@ function ActionsKebab({
   canDelete,
   deleteDisabledReason,
   onDelete,
+  canCleanup,
+  onCleanup,
 }: ActionsKebabProps) {
   return (
     <DropdownMenu>
@@ -545,6 +611,20 @@ function ActionsKebab({
               Asociar a calendario
             </Link>
           </DropdownMenuItem>
+        )}
+
+        {/* Eliminar duplicado — solo coach, válida sin resultados (feature 009) */}
+        {canCleanup && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-red-600 focus:bg-red-50 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700"
+              onSelect={onCleanup}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              Eliminar duplicado
+            </DropdownMenuItem>
+          </>
         )}
 
         {/* Separador + Eliminar — solo admin */}

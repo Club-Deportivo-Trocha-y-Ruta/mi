@@ -8,6 +8,7 @@
  *   - POST   /                 → createRaceEvent            (CF3, coach+admin)
  *   - PATCH  /{id}             → updateRaceEvent            (CF3, coach+admin)
  *   - DELETE /{id}             → deleteRaceEvent            (CF3, admin only)
+ *   - DELETE /{id}/cleanup     → cleanupDuplicateRaceEvent  (009, coach only)
  *   - GET    /                 → listRaceEvents             (CF3, todos)
  *   - GET    /{id}             → getRaceEvent               (CF5, todos)
  */
@@ -113,6 +114,27 @@ export async function deleteRaceEvent(
   options?: { signal?: AbortSignal },
 ): Promise<void> {
   await apiClient.delete(`${BASE}/${id}`, { signal: options?.signal });
+}
+
+/**
+ * DELETE /api/race-analysis/race-events/{id}/cleanup
+ *
+ * Elimina una válida **duplicada sin resultados** junto con su evento de
+ * calendario asociado, en una sola operación. Retorna 204 sin body.
+ * RBAC: coach only (feature 009).
+ *
+ * A diferencia de `deleteRaceEvent` (admin only, que rechaza si hay calendario
+ * vinculado), este endpoint borra el calendario asociado como parte de la
+ * limpieza. Las válidas con resultados quedan protegidas:
+ *   - 409 → la válida tiene resultados ingestados (protegida).
+ *   - 404 → la válida no existe (lista desactualizada).
+ *   - 403 → el usuario no tiene rol coach.
+ */
+export async function cleanupDuplicateRaceEvent(
+  id: number,
+  options?: { signal?: AbortSignal },
+): Promise<void> {
+  await apiClient.delete(`${BASE}/${id}/cleanup`, { signal: options?.signal });
 }
 
 /**

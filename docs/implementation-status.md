@@ -257,3 +257,20 @@
 | Deploy | Deploy to Render | ⏳ Pending |
 
 > Deployment pending user approval. All tests green on SQLite. No Alembic migration (reuses existing `calendar_events` + `race_events` tables and the `calendar_sync` service).
+
+## Implementation status — Cleanup Duplicate Competition (specs/009-cleanup-duplicate-competition)
+
+> Coach removes a **no-results** duplicate competition together with its linked calendar event in one confirmed action. The calendar event is **deleted, not unlinked** (CHECK `ck_calendar_competition_race_event` + FK `RESTRICT` forbid a NULL `race_event_id` on competition events). Existing admin-only `DELETE /{id}` is untouched (FR-010); competitions with results stay protected (409). No new model, no migration. Technical detail in `specs/009-cleanup-duplicate-competition/`.
+
+| Step | Description | Status |
+|---|---|---|
+| T002–T003 | Service `cleanup_duplicate_race_event` (null race-side FK → delete CalendarEvent w/ cascade audiences+attendances → delete RaceEvent, one transaction; 404/409 guards) | ✅ Complete 2026-06-09 |
+| T004 | Endpoint `DELETE /api/race-analysis/race-events/{id}/cleanup` (coach-only RBAC, 204/403/404/409) | ✅ Complete 2026-06-09 |
+| T005–T007 | Backend tests: happy path with/without calendar event, cascade of audiences, privacy (IDs-only logs) | ✅ Complete 2026-06-09 |
+| T008–T009 | Frontend: `cleanupDuplicateRaceEvent` API client + `useCleanupDuplicateRaceEvent` mutation (invalidates lists + calendar tree) | ✅ Complete 2026-06-09 |
+| T010 | Frontend: "Eliminar duplicado" kebab action (coach + `!has_results`) reusing `ConfirmDeleteDialog` | ✅ Complete 2026-06-09 |
+| T013–T015 | Tests: results-protected 409, RBAC (parent/admin 403), 404, UI gating (coach/parent), a11y axe on dialog | ✅ Complete 2026-06-09 |
+| T016–T017 | Docs: router + API client inventory comments; `docs/implementation-status.md` + `CLAUDE.md` updated | ✅ Complete 2026-06-09 |
+| Deploy | Deploy to Render | ⏳ Pending |
+
+> All tests green: backend 707 passed (ruff clean); frontend 114 passed in competitions + race hooks suites, `tsc --noEmit` clean. No Alembic migration.

@@ -7,6 +7,7 @@
  *   - `useCreateRaceEvent()`        → mutation POST /race-events/
  *   - `useUpdateRaceEvent()`        → mutation PATCH /race-events/{id}
  *   - `useDeleteRaceEvent()`        → mutation DELETE /race-events/{id} (admin)
+ *   - `useCleanupDuplicateRaceEvent()` → DELETE /race-events/{id}/cleanup (coach, feature 009)
  *
  * Invalidaciones cruzadas:
  *   - `raceEventKeys.lists()` → afecta todas las variantes de lista (filtros)
@@ -27,6 +28,7 @@ import {
 import { invalidatePaired, calendarQueryRoot } from "@/hooks/race/invalidation";
 
 import {
+  cleanupDuplicateRaceEvent,
   createCalendarEventForRaceEvent,
   createRaceEvent,
   deleteRaceEvent,
@@ -222,6 +224,44 @@ export function useDeleteRaceEvent() {
       void queryClient.invalidateQueries({
         queryKey: CALENDAR_AVAILABLE_ROOT,
       });
+    },
+  });
+}
+
+export interface UseCleanupDuplicateRaceEventVariables {
+  id: number;
+}
+
+/**
+ * Mutation para eliminar una válida **duplicada sin resultados** junto con su
+ * evento de calendario asociado (feature 009).
+ * `DELETE /api/race-analysis/race-events/{id}/cleanup`
+ * RBAC: coach only.
+ *
+ * El backend retorna 409 si la válida tiene resultados (protegida), 404 si no
+ * existe y 403 si el usuario no es coach. El componente maneja el error con
+ * `getRaceEventErrorMessage`.
+ *
+ * On success invalida:
+ *   - `raceEventKeys.lists()` → la válida desaparece de la lista
+ *   - `CALENDAR_AVAILABLE_ROOT` → dropdown de disponibles para calendario
+ *   - `calendarQueryRoot` (`["calendar"]`) → el calendario, porque la limpieza
+ *     borra el evento de calendario asociado
+ */
+export function useCleanupDuplicateRaceEvent() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, unknown, UseCleanupDuplicateRaceEventVariables>({
+    mutationKey: ["raceEvents", "cleanupDuplicate"],
+    mutationFn: ({ id }) => cleanupDuplicateRaceEvent(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: raceEventKeys.lists(),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: CALENDAR_AVAILABLE_ROOT,
+      });
+      void queryClient.invalidateQueries({ queryKey: calendarQueryRoot });
     },
   });
 }
