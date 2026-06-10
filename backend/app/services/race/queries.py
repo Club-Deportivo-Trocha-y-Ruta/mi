@@ -265,6 +265,63 @@ async def fetch_all_results_for_season(
     ]
 
 
+async def fetch_event_conditions(
+    db: AsyncSession,
+    season: int,
+    valida_nums: list[int],
+) -> dict[int, dict[str, Any]]:
+    """Condiciones registradas por válida para una temporada (feature 011).
+
+    Devuelve las cinco condiciones de carrera (``climate``, ``temperature_c``,
+    ``surface_condition``, ``altitude_msnm``, ``weather_notes``) para cada
+    ``valida_num`` solicitado. Reutiliza los caches de ``load_events`` /
+    ``load_series`` (cero round-trips extra cuando ``load_race_data`` ya los
+    cargó en la misma sesión).
+
+    Invariante (contracts/graph-state.md): cada ``valida_num`` resuelto a un
+    evento aparece como clave; un evento SIN condiciones registradas produce
+    una entrada cuyos cinco campos son ``None`` (la ausencia debe ser
+    representable — FR-003). Una válida sin evento en la temporada no aparece.
+
+    Args:
+        db: Sesión async.
+        season: año de temporada (vía ``RaceSeries.season_year``).
+        valida_nums: números de válida a resolver (``sequence_number``).
+
+    Returns:
+        ``{valida_num: {climate, temperature_c, surface_condition,
+        altitude_msnm, weather_notes}}``.
+    """
+    if not valida_nums:
+        return {}
+
+    events = await load_events(db)
+    series = await load_series(db)
+
+    series_ids_in_season = {s.id for s in series if s.season_year == season}
+    valida_set = set(valida_nums)
+
+    out: dict[int, dict[str, Any]] = {}
+    for e in events:
+        if e.series_id not in series_ids_in_season:
+            continue
+        seq = e.sequence_number
+        if seq not in valida_set or seq in out:
+            continue
+        surface = getattr(e, "surface_condition", None)
+        temp = getattr(e, "temperature_c", None)
+        out[int(seq)] = {
+            "climate": getattr(e, "climate", None),
+            "temperature_c": float(temp) if temp is not None else None,
+            "surface_condition": (
+                surface.value if hasattr(surface, "value") else surface
+            ),
+            "altitude_msnm": getattr(e, "altitude_msnm", None),
+            "weather_notes": getattr(e, "weather_notes", None),
+        }
+    return out
+
+
 async def fetch_podium_context(
     db: AsyncSession, category_id: int, event_id: int
 ) -> dict[str, Any]:

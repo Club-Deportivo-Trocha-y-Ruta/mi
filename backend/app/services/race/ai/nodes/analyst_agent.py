@@ -48,6 +48,14 @@ def _resolve_ltad(state: dict) -> LTADGroup:
             return LTADGroup(raw)
         except ValueError:
             pass
+    # Fallback excepcional (feature 011): los routers ahora inyectan ltad_group
+    # real desde age_decimal. Llegar aquí significa que initial_state no lo trajo
+    # → log de warning para detectarlo, sin romper el grafo.
+    logger.warning(
+        "analyst_agent: ltad_group ausente o inválido en state (valor=%r); "
+        "usando fallback=bambino. Verificar que el router inyecta 'ltad_group'.",
+        raw,
+    )
     return LTADGroup.BAMBINO
 
 
@@ -64,8 +72,18 @@ def _resolve_age(state: dict) -> int:
     return 12
 
 
-def _build_input(state: dict, progression_records: list | None = None) -> AnalysisInput:
-    """Construye AnalysisInput desde el state del grafo."""
+def _build_input(
+    state: dict,
+    progression_records: list | None = None,
+    race_meta: str | None = None,
+) -> AnalysisInput:
+    """Construye AnalysisInput desde el state del grafo.
+
+    Feature 011: ``race_meta`` (condiciones formateadas de ESTA válida) y
+    ``maturation_status`` (fase madurativa real, leída del state) se inyectan
+    explícitamente. Ambos pueden ser ``None`` (sin condiciones / sin registro
+    antropométrico) y en ese caso el prompt no afirma esos hechos.
+    """
     anon = state.get("anonymized_data") or {}
     pseudonym = anon.get("pseudonym") or "AtletaAnonimo"
     metrics = state.get("metrics") or {}
@@ -82,6 +100,8 @@ def _build_input(state: dict, progression_records: list | None = None) -> Analys
         state.get("progression_assessment") or "first_reference"
     )
 
+    maturation_status = state.get("maturation_status")
+
     return AnalysisInput(
         athlete_pseudonym=pseudonym,
         age=_resolve_age(state),
@@ -93,6 +113,8 @@ def _build_input(state: dict, progression_records: list | None = None) -> Analys
         explain_mode=bool(state.get("explain_mode", False)),
         season_comparative=season_comparative,
         progression_assessment=progression_assessment,
+        race_meta=race_meta,
+        maturation_status=maturation_status,
         athlete_id=state["athlete_id"],
         season=state["season"],
     )
@@ -171,6 +193,12 @@ async def _analyst_agent_v2(state: dict) -> dict[str, Any]:
     # Progresión completa de la temporada (para "Recorrido hasta acá").
     full_season_results: list[dict] | None = state.get("full_season_results")
 
+    # Condiciones registradas por válida (feature 011) — formateadas a un
+    # bloque markdown o None (omisión + veto anti-fabricación).
+    from app.services.race.agents.analyst import format_race_meta
+
+    event_conditions: dict[int, dict] = state.get("event_conditions") or {}
+
     # Construir pares (valida_num, AnalysisInput) filtrando por válida.
     pairs: list[tuple[int, AnalysisInput]] = []
     for vn in valida_nums:
@@ -178,7 +206,10 @@ async def _analyst_agent_v2(state: dict) -> dict[str, Any]:
             r for r in progression_all
             if r.get("valida_num") == vn or vn == 0
         ]
-        inp = _build_input(state, progression_records=records_for_vn)
+        race_meta = format_race_meta(event_conditions.get(vn))
+        inp = _build_input(
+            state, progression_records=records_for_vn, race_meta=race_meta
+        )
         pairs.append((vn, inp))
 
     if not pairs:

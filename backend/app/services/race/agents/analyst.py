@@ -304,6 +304,55 @@ def _progression_to_md(records: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# Etiquetas de display para SurfaceCondition (valores enum en minúscula).
+_SURFACE_LABELS: dict[str, str] = {
+    "seca": "Seca",
+    "humeda": "Húmeda",
+    "barro": "Barro",
+    "lluvia": "Lluvia",
+    "mixta": "Mixta",
+}
+
+
+def format_race_meta(conditions: dict[str, Any] | None) -> str | None:
+    """Formatea las condiciones registradas de una válida → bloque markdown.
+
+    Feature 011: la fuente de verdad son las condiciones realmente registradas
+    en ``race_events``. Reglas:
+
+    - Devuelve ``None`` cuando NO hay ningún campo registrado (todos None/vacío).
+      La ausencia se propaga como ``None`` — NUNCA un string vacío — para que el
+      prompt active el veto anti-fabricación (no inventar clima/pista).
+    - Solo lista los campos efectivamente registrados (no rellena con "—").
+    """
+    if not conditions:
+        return None
+
+    climate = conditions.get("climate")
+    temperature_c = conditions.get("temperature_c")
+    surface = conditions.get("surface_condition")
+    altitude = conditions.get("altitude_msnm")
+    notes = conditions.get("weather_notes")
+
+    lines: list[str] = []
+    if climate and str(climate).strip():
+        lines.append(f"- Clima: {str(climate).strip()}")
+    if temperature_c is not None:
+        temp_str = f"{float(temperature_c):.1f}".rstrip("0").rstrip(".")
+        lines.append(f"- Temperatura: {temp_str} °C")
+    if surface and str(surface).strip():
+        label = _SURFACE_LABELS.get(str(surface).lower(), str(surface))
+        lines.append(f"- Superficie de la pista: {label}")
+    if altitude is not None:
+        lines.append(f"- Altitud: {altitude} msnm")
+    if notes and str(notes).strip():
+        lines.append(f"- Notas: {str(notes).strip()}")
+
+    if not lines:
+        return None
+    return "\n".join(lines)
+
+
 def _podium_to_md(podium: dict[str, Any]) -> str:
     """Bloque markdown corto con el podio."""
     if not podium or not podium.get("podium"):
@@ -450,6 +499,7 @@ class RaceAnalystAgent:
                 forbidden_names=forbidden_names,
                 is_first_in_season=is_first_in_season,
                 athlete_age=athlete_age,
+                has_recorded_conditions=bool(context.get("race_meta")),
             )
             report = guardrails.scrub_with_report(call.text)
             vetos = check_v2_veto_duro(report.text)
@@ -723,10 +773,15 @@ class RaceAnalystAgent:
             "valida_num": valida_num,
             "is_first_in_season": is_first_in_season,
             "season_progression": compact_season,
-            "maturation_status": input_.podium_context.get("maturation_status", "Pre-PHV"),
+            # Feature 011: valores reales por válida desde AnalysisInput.
+            # `maturation_status=None` → el prompt no afirma fase madurativa
+            # (ya no se usa el default "Pre-PHV" del dead read en podium_context).
+            "maturation_status": input_.maturation_status,
             "progression_table": progression_md,
             "podium_context": podium_md,
-            "race_meta": input_.podium_context.get("race_meta", ""),
+            # `race_meta=None` → el prompt omite las condiciones y activa el veto
+            # anti-fabricación (ya no se lee el dead key podium_context["race_meta"]).
+            "race_meta": input_.race_meta,
             "memory_recent_insights": input_.memory_recent_insights,
             "principles": principles_block,
             "explain_mode": input_.explain_mode,

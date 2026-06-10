@@ -220,6 +220,26 @@ class AnalysisInput(BaseModel):
             "Values: improving | stable | declining | mixed | first_reference."
         ),
     )
+    # Grounding fields (feature 011) — per-válida real data threaded from the
+    # graph state. Both are anonymized/derived upstream; never defaulted to a
+    # plausible-but-false value.
+    race_meta: str | None = Field(
+        default=None,
+        description=(
+            "Pre-formatted, anonymized recorded-conditions block for THE "
+            "válida this input analyzes (clima/temperatura/superficie/altitud/"
+            "notas). None → the prompt omits the conditions section entirely "
+            "and the anti-fabrication veto activates. NEVER an empty string."
+        ),
+    )
+    maturation_status: str | None = Field(
+        default=None,
+        description=(
+            "Real maturation phase from the athlete's latest anthropometric "
+            "record (Pre-PHV/Circa-PHV/Post-PHV). None → no maturation-phase "
+            "claim is made in the analysis (no Pre-PHV default)."
+        ),
+    )
     # Audit-only — NO se inyecta al prompt:
     athlete_id: int = Field(..., ge=1)
     season: int = Field(..., ge=2000, le=2100)

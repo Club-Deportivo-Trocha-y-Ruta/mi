@@ -31,7 +31,10 @@ import re
 from typing import Any, Optional
 
 from app.services.race.agents._llm import LLMCallResult, build_chat_llm, call_llm
-from app.services.race.agents.pricing import PROMPT_VERSION_CRITIC
+from app.services.race.agents.pricing import (
+    PROMPT_VERSION_CRITIC,
+    PROMPT_VERSION_CRITIC_V2,
+)
 from app.services.race.prompts import render_prompt
 from app.services.race.schemas import (
     AnalysisOutput,
@@ -222,5 +225,41 @@ class RaceCriticAgent:
             latency_ms=call.latency_ms,
             cost_usd=call.cost_usd,
             prompt_version=self._prompt_version,
+        )
+        return feedback, metrics
+
+    async def invoke_v2(
+        self, draft: AnalysisOutput, ground_truth: str
+    ) -> tuple[CriticFeedback, RunMetrics]:
+        """Revisa un draft v2 con la verdad de campo (feature 011).
+
+        Renderiza ``race_critic_v2.md`` (estructura v2 + ground truth) y reusa
+        el parseo JSON defensivo de v1. Si la flag está OFF, pasa-todo.
+
+        Args:
+            draft: el :class:`AnalysisOutput` v2 a revisar.
+            ground_truth: bloque markdown ya formateado con las condiciones
+                registradas (o "sin condiciones registradas"), la fila de
+                resultado del atleta y los tiempos de podio para esta válida.
+        """
+        if not _critic_enabled():
+            return _bypass_feedback(), _zero_metrics()
+
+        llm = self._llm or build_chat_llm()
+        prompt = render_prompt(
+            "race_critic_v2",
+            {"draft_analysis": draft.raw_markdown, "ground_truth": ground_truth},
+            strict=False,
+        )
+
+        call: LLMCallResult = await call_llm(llm, prompt)
+        feedback = _parse_feedback(call.text)
+
+        metrics = RunMetrics(
+            tokens_in=call.tokens_in,
+            tokens_out=call.tokens_out,
+            latency_ms=call.latency_ms,
+            cost_usd=call.cost_usd,
+            prompt_version=PROMPT_VERSION_CRITIC_V2,
         )
         return feedback, metrics

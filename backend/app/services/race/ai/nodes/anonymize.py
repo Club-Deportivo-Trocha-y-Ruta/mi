@@ -93,13 +93,49 @@ async def anonymize(state: dict) -> dict[str, Any]:
             cleaned["pseudonym"] = pseudonym
         anonymized_rows.append(cleaned)
 
-    return {
+    update: dict[str, Any] = {
         "anonymized_data": {
             "pseudonym": pseudonym,
             "rows": anonymized_rows,
         },
         "mapping": mapping,
     }
+
+    # Scrub free-text `weather_notes` de las condiciones de carrera antes de
+    # que lleguen al LLM (feature 011). Es el único campo PII-capable entre las
+    # cinco condiciones; los campos estructurados (enum/numérico) no llevan PII.
+    event_conditions = state.get("event_conditions")
+    if event_conditions:
+        forbidden_names: list[str] = list(state.get("forbidden_names") or [])
+        scrubbed_conditions = _scrub_event_conditions(event_conditions, forbidden_names)
+        update["event_conditions"] = scrubbed_conditions
+
+    return update
+
+
+def _scrub_event_conditions(
+    event_conditions: dict[int, dict[str, Any]],
+    forbidden_names: list[str],
+) -> dict[int, dict[str, Any]]:
+    """Devuelve una copia de ``event_conditions`` con ``weather_notes`` saneado.
+
+    Reusa las reglas dinámicas de nombres prohibidos de los guardrails v2
+    (``build_race_v2_forbidden_names_rules``). Si no hay nombres prohibidos,
+    las notas pasan sin cambios.
+    """
+    from app.services.ai.guardrails import build_race_v2_forbidden_names_rules
+
+    rules = build_race_v2_forbidden_names_rules(forbidden_names) if forbidden_names else ()
+    out: dict[int, dict[str, Any]] = {}
+    for valida_num, cond in event_conditions.items():
+        new_cond = dict(cond)
+        notes = new_cond.get("weather_notes")
+        if notes and rules:
+            for rule in rules:
+                notes = rule.pattern.sub(rule.replacement or "", notes)
+            new_cond["weather_notes"] = notes
+        out[valida_num] = new_cond
+    return out
 
 
 __all__ = ["anonymize", "NODE_NAME"]

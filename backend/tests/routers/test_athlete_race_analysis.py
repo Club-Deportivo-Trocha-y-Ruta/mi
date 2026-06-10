@@ -111,6 +111,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_competitors",
             "race_results",
             "athlete_ai_insights",
+            "anthropometric_records",
         )
     ]
     async with eng.begin() as conn:
@@ -515,6 +516,47 @@ async def test_post_runs_as_coach_inyects_athlete_id(
     # El estado inicial contiene athlete_id inyectado del path.
     assert initial_state["athlete_id"] == 144
     assert initial_state["season"] == 2026
+
+
+@pytest.mark.asyncio
+async def test_post_runs_injects_ltad_and_maturation(client_factory, monkeypatch):
+    """Feature 011 US2: initial_state carries real ltad_group + maturation_status.
+
+    On unfixed code these keys were never injected → analyst defaulted to
+    Pre-PHV/Bambino for everyone. Athlete 144 was born 2014 → bambino; no
+    anthropometric record table here → maturation_status is None (no default).
+    """
+    from app.routers import athlete_race_analysis as router_mod
+
+    submit_calls: list[tuple] = []
+
+    async def _fake_submit_run(run_id, initial_state, on_complete=None):
+        submit_calls.append((run_id, initial_state, on_complete))
+
+    async def _fake_check_budget(db):
+        return None
+
+    monkeypatch.setattr(router_mod, "submit_run", _fake_submit_run)
+    monkeypatch.setattr(router_mod, "check_budget", _fake_check_budget)
+    monkeypatch.setattr(settings, "ai_enabled", True)
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    body = {"season": 2026, "valida_nums": [1, 2], "explain_mode": False}
+    async with client_factory(user=coach) as ac:
+        resp = await ac.post(
+            "/api/athletes/144/race-analysis/runs",
+            json=body,
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 201, resp.text
+    _, initial_state, _ = submit_calls[0]
+    assert initial_state["ltad_group"] == "bambino"
+    assert "maturation_status" in initial_state
+    assert initial_state["maturation_status"] is None
+    # Privacy (feature 011): forbidden_names injected so weather_notes scrubbing
+    # is not a no-op in the graph path.
+    assert "forbidden_names" in initial_state
+    assert isinstance(initial_state["forbidden_names"], list)
 
 
 @pytest.mark.asyncio
