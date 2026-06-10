@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, Navigate, useNavigate } from "react-router-dom";
@@ -6,6 +6,8 @@ import axios from "axios";
 import { z } from "zod";
 
 import { useAuthStore } from "@/store/auth.store";
+import { warmUp } from "@/api/client";
+import { ServerWakingBanner } from "@/components/layout/ServerWakingBanner";
 import { landingPathForRole } from "@/lib/landing";
 
 const loginSchema = z.object({
@@ -30,6 +32,12 @@ export function LoginPage() {
       password: "",
     },
   });
+
+  // Feature 012, US2: el login es la entrada típica tras el cold start.
+  // Despertamos el backend mientras el usuario escribe sus credenciales.
+  useEffect(() => {
+    warmUp();
+  }, []);
 
   // Si ya hay una sesión válida, nunca mostrar el formulario de login:
   // la primera vista debe ser el panel del usuario (Dashboard / Mis atletas).
@@ -60,7 +68,9 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white p-4">
+    <>
+      <ServerWakingBanner />
+      <div className="flex min-h-screen items-center justify-center bg-white p-4">
       {/* Login card — shadow Level 2 (ring + soft), 12px radius */}
       <div
         className="w-full max-w-md rounded-xl bg-white p-8"
@@ -156,6 +166,7 @@ export function LoginPage() {
           </button>
         </form>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

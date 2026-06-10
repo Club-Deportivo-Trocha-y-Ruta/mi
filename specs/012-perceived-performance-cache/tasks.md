@@ -32,9 +32,9 @@
 
 **Purpose**: Dependencies and build constants the slices rely on
 
-- [ ] T001 Install runtime deps `@tanstack/react-query-persist-client` and `@tanstack/query-async-storage-persister` (version-locked to `@tanstack/react-query` ^5.99) in frontend/package.json (Agent: react-ui-engineer)
-- [ ] T002 [P] Install dev deps `@stryker-mutator/core` + `@stryker-mutator/vitest-runner` and create frontend/stryker.config.json with `mutate` globs scoped to src/lib/queryPersister.ts, src/lib/persistAllowList.ts, src/store/serverWaking.store.ts and the US3 optimistic hooks (Agent: qa-engineer)
-- [ ] T003 [P] Expose `APP_VERSION` build constant (package version or commit short-SHA) via `define` in frontend/vite.config.ts and declare its type in frontend/src/vite-env.d.ts (Agent: react-ui-engineer)
+- [X] T001 Install runtime deps `@tanstack/react-query-persist-client` and `@tanstack/query-async-storage-persister` (version-locked to `@tanstack/react-query` ^5.99) in frontend/package.json (Agent: react-ui-engineer)
+- [X] T002 [P] Install dev deps `@stryker-mutator/core` + `@stryker-mutator/vitest-runner` and create frontend/stryker.config.json with `mutate` globs scoped to src/lib/queryPersister.ts, src/lib/persistAllowList.ts, src/store/serverWaking.store.ts and the US3 optimistic hooks (Agent: qa-engineer)
+- [X] T003 [P] Expose `APP_VERSION` build constant (package version or commit short-SHA) via `define` in frontend/vite.config.ts and declare its type in frontend/src/vite-env.d.ts (Agent: react-ui-engineer)
 
 ---
 
@@ -54,21 +54,21 @@
 
 ### Tests for User Story 1 (write first, must fail) ⚠️
 
-- [ ] T004 [P] [US1] Unit tests for the allow-list predicate (accepts each allow-listed prefix, default-denies unknown keys, rejects non-success queries) in frontend/src/lib/__tests__/persistAllowList.test.ts (Agent: qa-engineer)
-- [ ] T005 [P] [US1] Unit tests for persister factory: buster composition `APP_VERSION:userId`, wipe helper removes `tyr:rq-cache:v1`, storage read/write/parse failures degrade silently (INV-4) in frontend/src/lib/__tests__/queryPersister.test.ts (Agent: qa-engineer)
-- [ ] T006 [P] [US1] Privacy-invariant integration test (constitution-mandated): exercise athlete-detail and parent flows with MSW, assert storage payload contains zero non-allow-listed keys (INV-1) and is empty after `logout()` (INV-2) in frontend/src/test/integration/persistence-privacy.test.tsx (Agent: qa-engineer)
+- [X] T004 [P] [US1] Unit tests for the allow-list predicate (accepts each allow-listed prefix, default-denies unknown keys, rejects non-success queries) in frontend/src/lib/__tests__/persistAllowList.test.ts (Agent: qa-engineer)
+- [X] T005 [P] [US1] Unit tests for persister factory: buster composition `APP_VERSION:userId`, wipe helper removes `tyr:rq-cache:v1`, storage read/write/parse failures degrade silently (INV-4) in frontend/src/lib/__tests__/queryPersister.test.ts (Agent: qa-engineer)
+- [X] T006 [P] [US1] Privacy-invariant integration test (constitution-mandated): exercise athlete-detail and parent flows with MSW, assert storage payload contains zero non-allow-listed keys (INV-1) and is empty after `logout()` (INV-2) in frontend/src/test/integration/persistence-privacy.test.tsx (Agent: qa-engineer)
 
 ### Implementation for User Story 1
 
-- [ ] T007 [P] [US1] Create frontend/src/lib/persistAllowList.ts — readonly queryKey-prefix registry (calendar events, race events, standings, revision reasons, competition lists, session lists) + `shouldDehydrateQuery` predicate, with docstring documenting the FR-002 exclusions (Agent: react-ui-engineer)
-- [ ] T008 [P] [US1] Create frontend/src/lib/queryPersister.ts — `createAsyncStoragePersister` on localStorage key `tyr:rq-cache:v1`, `buildBuster(userId)`, `wipePersistedCache()`, try/catch graceful degradation (Agent: react-ui-engineer)
-- [ ] T009 [US1] Extend frontend/src/lib/queryClientHandle.ts with a persisted-cache wipe seam (mirrors the existing `queryClient.clear()` singleton pattern) so non-React modules can trigger the wipe; depends on T008 (Agent: react-ui-engineer)
-- [ ] T010 [US1] Wire `logout()` in frontend/src/store/auth.store.ts to wipe the persisted cache via the T009 seam, and update frontend/src/store/auth.store.test.ts accordingly (Agent: react-ui-engineer)
-- [ ] T011 [US1] Swap `QueryClientProvider` → `PersistQueryClientProvider` in frontend/src/App.tsx with `persistOptions` (persister, `maxAge` 24 h, buster, `dehydrateOptions.shouldDehydrateQuery`) and raise default `gcTime` to 24 h (Agent: react-ui-engineer)
+- [X] T007 [P] [US1] Create frontend/src/lib/persistAllowList.ts — readonly queryKey-prefix registry (calendar events, race events, standings, revision reasons, competition lists, session lists) + `shouldDehydrateQuery` predicate, with docstring documenting the FR-002 exclusions (Agent: react-ui-engineer)
+- [X] T008 [P] [US1] Create frontend/src/lib/queryPersister.ts — `createAsyncStoragePersister` on localStorage key `tyr:rq-cache:v1`, `buildBuster(userId)`, `wipePersistedCache()`, try/catch graceful degradation (Agent: react-ui-engineer)
+- [X] T009 [US1] Persisted-cache wipe seam — implemented as `wipePersistedCache()` in `queryPersister.ts`, imported directly by `auth.store` (no dependency cycle existed, so the `queryClientHandle` indirection the task suggested was unnecessary; `queryClientHandle.ts` left untouched) (Agent: react-ui-engineer)
+- [X] T010 [US1] Wire `logout()` in frontend/src/store/auth.store.ts to wipe the persisted cache via the T009 seam, and update frontend/src/store/auth.store.test.ts accordingly (Agent: react-ui-engineer)
+- [X] T011 [US1] Swap `QueryClientProvider` → `PersistQueryClientProvider` in frontend/src/App.tsx with `persistOptions` (persister, `maxAge` 24 h, buster, `dehydrateOptions.shouldDehydrateQuery`) and raise default `gcTime` to 24 h (Agent: react-ui-engineer)
 
 ### Merge gates for User Story 1
 
-- [ ] T012 [US1] Mandatory privacy audit (merge blocker): run `data-privacy-guard` against the P1 diff plus a storage dump captured after coach and parent flows; must confirm guarantees 1–4 of specs/012-perceived-performance-cache/contracts/persistence.md (Agent: data-privacy-guard)
+- [X] T012 [US1] (audit RAN → verdict BLOCK: `["calendar","event"]` leaks `EventDataBirthday.athlete_first_name`; `["training-sessions"]` leaks `media[].athlete_ids` + free-text `coach_notes`. Allow-list narrowed to remove BOTH; standings/results exclusion confirmed correct; tests updated; re-verified.) Mandatory privacy audit (merge blocker): run `data-privacy-guard` against the P1 diff plus a storage dump captured after coach and parent flows; must confirm guarantees 1–4 of specs/012-perceived-performance-cache/contracts/persistence.md (Agent: data-privacy-guard)
 - [ ] T013 [US1] Mutation-testing gate via temporary agent: ephemeral qa-engineer runs `npx stryker run` scoped to frontend/src/lib/persistAllowList.ts + frontend/src/lib/queryPersister.ts; require score ≥ 70 % and zero surviving mutants on the deny path and logout wipe; paste report into the PR (Agent: qa-engineer, temporary instance)
 
 **Checkpoint**: US1 fully functional and independently testable — MVP shippable
@@ -83,17 +83,17 @@
 
 ### Tests for User Story 2 (write first, must fail) ⚠️
 
-- [ ] T014 [P] [US2] Store unit tests with fake timers: IDLE→PENDING→WAKING at exactly 3 000 ms, settle clears to IDLE, multiple overlapping requests tracked via oldest-pending in frontend/src/store/__tests__/serverWaking.store.test.ts (Agent: qa-engineer)
-- [ ] T015 [P] [US2] Banner component tests + jest-axe (zero violations): renders es-CO copy with diacritics, amber/attention tokens, clears when store resets in frontend/src/components/layout/__tests__/ServerWakingBanner.test.tsx (Agent: qa-engineer)
-- [ ] T016 [P] [US2] Warm-up tests: fires at most once per app load, carries no Authorization header, swallows all errors (contracts/health-warmup.md rules 1–3) in frontend/src/routes/auth/__tests__/LoginPage.warmup.test.tsx (Agent: qa-engineer)
+- [X] T014 [P] [US2] Store unit tests with fake timers: IDLE→PENDING→WAKING at exactly 3 000 ms, settle clears to IDLE, multiple overlapping requests tracked via oldest-pending in frontend/src/store/__tests__/serverWaking.store.test.ts (Agent: qa-engineer)
+- [X] T015 [P] [US2] Banner component tests + jest-axe (zero violations): renders es-CO copy with diacritics, amber/attention tokens, clears when store resets in frontend/src/components/layout/__tests__/ServerWakingBanner.test.tsx (Agent: qa-engineer)
+- [X] T016 [P] [US2] Warm-up tests: fires at most once per app load, carries no Authorization header, swallows all errors (contracts/health-warmup.md rules 1–3) in frontend/src/routes/auth/__tests__/LoginPage.warmup.test.tsx (Agent: qa-engineer)
 
 ### Implementation for User Story 2
 
-- [ ] T017 [P] [US2] Create frontend/src/store/serverWaking.store.ts — Zustand store with `pendingCount`, `oldestPendingSince`, `isWaking`, threshold constant 3 000 ms exported for tests/mutation gate (Agent: react-ui-engineer)
-- [ ] T018 [US2] Wire the existing axios interceptors in frontend/src/api/client.ts to register request start/settle into the waking store, and add a deduplicated `warmUp()` helper (`GET /health`, fire-and-forget, no auth, no retries) per contracts/health-warmup.md (Agent: react-ui-engineer)
-- [ ] T019 [US2] Create frontend/src/components/layout/ServerWakingBanner.tsx — shadcn/ui + Tailwind tokens (amber = attention), copy "El servidor está despertando…", 48 px touch targets on any affordance (Agent: react-ui-engineer)
-- [ ] T020 [US2] Mount `ServerWakingBanner` and call `warmUp()` on mount in frontend/src/components/layout/AppShell.tsx (Agent: react-ui-engineer)
-- [ ] T021 [US2] Call `warmUp()` and render the banner on frontend/src/routes/auth/LoginPage.tsx mount (pre-auth cold-start path) (Agent: react-ui-engineer)
+- [X] T017 [P] [US2] Create frontend/src/store/serverWaking.store.ts — Zustand store with `pendingCount`, `oldestPendingSince`, `isWaking`, threshold constant 3 000 ms exported for tests/mutation gate (Agent: react-ui-engineer)
+- [X] T018 [US2] Wire the existing axios interceptors in frontend/src/api/client.ts to register request start/settle into the waking store, and add a deduplicated `warmUp()` helper (`GET /health`, fire-and-forget, no auth, no retries) per contracts/health-warmup.md (Agent: react-ui-engineer)
+- [X] T019 [US2] Create frontend/src/components/layout/ServerWakingBanner.tsx — shadcn/ui + Tailwind tokens (amber = attention), copy "El servidor está despertando…", 48 px touch targets on any affordance (Agent: react-ui-engineer)
+- [X] T020 [US2] Mount `ServerWakingBanner` and call `warmUp()` on mount in frontend/src/components/layout/AppShell.tsx (Agent: react-ui-engineer)
+- [X] T021 [US2] Call `warmUp()` and render the banner on frontend/src/routes/auth/LoginPage.tsx mount (pre-auth cold-start path) (Agent: react-ui-engineer)
 - [ ] T022 [US2] Playwright cold-start smoke: delayed-first-response mock → banner appears at ≥3 s and clears on response; offline route mock after a cached visit → list renders from snapshot, in frontend/e2e/cold-start.spec.ts (Agent: qa-engineer)
 
 ### Merge gates for User Story 2
