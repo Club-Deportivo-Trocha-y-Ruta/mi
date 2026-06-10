@@ -45,10 +45,17 @@ preceding analysis.
 ## D3 — What persists: default-deny allow-list of queryKey prefixes
 
 - **Decision**: A single reviewable module `lib/persistAllowList.ts` exporting
-  the allowed queryKey prefixes (calendar events, race events, standings,
-  revision reasons, competition lists, training-session lists) and a
-  `shouldDehydrateQuery` predicate that (a) requires `query.state.status ===
-  'success'` and (b) matches a prefix; everything else is rejected.
+  the allowed queryKey prefixes and a `shouldDehydrateQuery` predicate that
+  (a) requires `query.state.status === 'success'` and (b) matches a prefix;
+  everything else is rejected.
+- **Audit amendment (2026-06-10, authoritative)**: the `data-privacy-guard`
+  audit BLOCKED the draft list. Final allow-list: `["calendar","events"]`,
+  `["calendar","race-events","available-for-calendar"]`, `["raceEvents"]`,
+  `["revision-reasons"]`. Excluded relative to the draft: standings/results/
+  competitors (`display_name` may be a minor), single calendar-event detail
+  (`EventDataBirthday.athlete_first_name`), and training-session lists
+  (`media[].athlete_ids` + free-text `coach_notes`; re-allow only behind a
+  backend summary schema that strips those fields).
 - **Rationale**: FR-002 demands default-deny with explicit exclusions; one
   module gives the `data-privacy-guard` audit a single review surface; prefix
   matching survives key params (filters, pagination) without enumerating them.

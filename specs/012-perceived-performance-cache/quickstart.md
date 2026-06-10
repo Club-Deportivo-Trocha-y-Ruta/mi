@@ -40,7 +40,7 @@ backend is the most faithful cold-start simulation).
 1. With the backend stopped, open the login page — confirm a single
    `GET /health` fires in the Network tab (no retries, no auth header).
 2. DevTools → Network → throttle or keep backend stopped; trigger any data
-   load: after ~3 s the amber "el servidor está despertando…" banner appears;
+   load: after ~3 s the amber "la aplicación está iniciando…" banner appears;
    when a response arrives it clears without user action.
 
 ### P3 — Navigation polish
@@ -84,3 +84,22 @@ score and surviving-mutant summary into the PR description, then is discarded.
 Run the `data-privacy-guard` agent against the P1 diff + a storage dump
 captured after exercising coach and parent flows; it must confirm contract
 guarantees 1–4 in `contracts/persistence.md`.
+
+## Validation notes (T039 — 2026-06-10, sandbox run)
+
+Recorded against the implementation as merged on `claude/frontend-cache-render-perf-qpnyw1`.
+
+| Quickstart step | How validated | Result |
+|---|---|---|
+| P1 §2 storage contains only allow-listed keys | Automated: `src/test/integration/persistence-privacy.test.tsx` (INV-1, incl. birthday + session-media vectors) + `persistAllowList.test.ts` | ✅ Green |
+| P1 §5 logout wipe / cross-account buster | Automated: `auth.store.persist-wipe.test.ts`, `queryPersister.test.ts` | ✅ Green |
+| P1 §3–4, §6 reload-with-dead-backend, 24 h expiry | E2E-012-3 in `e2e/cold-start.spec.ts` (offline reload restore); expiry covered by persist-client `maxAge` config + unit constant test | ⚠️ e2e written, needs local `npm run test:e2e` (no chromium in sandbox — download blocked by network policy) |
+| P2 §1 single `/health` ping, no auth, no retries | Automated: `client.warmup.test.ts`, `LoginPage.warmup.test.tsx`; E2E-012-1 | ✅ Green (e2e pending local) |
+| P2 §2 banner ≥3 s, auto-clear | Automated: `serverWaking.store.test.ts` (fake timers), banner tests + jest-axe; E2E-012-2 | ✅ Green (e2e pending local) |
+| P3 §1 no empty flash on filter/page change | Automated: `useRaceStandings.keepPrevious.test.tsx` | ✅ Green |
+| P3 §2 hover/touch prefetch | Automated: `usePrefetchOnIntent.test.tsx` (dedupe, fresh-skip) | ✅ Green |
+| P3 §3 optimistic + rollback | Automated: `useRaceRoster.optimistic.test.tsx`; attendance pre-existing optimistic path | ✅ Green |
+
+Note: the banner copy was changed to **"La aplicación está iniciando…"** after the
+ux-researcher validation (T023) — "aplicación" instead of "servidor" for
+non-technical parents. Spec FR-008 was amended accordingly.

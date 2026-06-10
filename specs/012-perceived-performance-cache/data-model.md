@@ -44,7 +44,7 @@ surface for `data-privacy-guard`.
 
 | Field | Type | Notes |
 |---|---|---|
-| `prefixes` | readonly QueryKey-prefix list | Initial: calendar events, race events, standings, revision reasons, competition lists, training-session lists |
+| `prefixes` | readonly QueryKey-prefix list | Final (post-audit 2026-06-10): `["calendar","events"]`, `["calendar","race-events","available-for-calendar"]`, `["raceEvents"]`, `["revision-reasons"]`. Standings/results/competitors, calendar-event detail, and training-session lists were EXCLUDED by the privacy audit (minor-identifying fields). |
 | `shouldDehydrateQuery(query)` | predicate | `status === 'success'` AND prefix match; exported for direct unit/mutation testing |
 
 **Rules**: additions require a privacy review (constitution gate); per-athlete,

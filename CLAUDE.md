@@ -143,6 +143,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 | One-click Associate Competition to Calendar | specs/008-associate-competition-calendar | ✅ Complete — deploy pending |
 | Cleanup Duplicate Competition | specs/009-cleanup-duplicate-competition | ✅ Complete — deploy pending |
 | Competitions AI Insights (group launch, season context, chat) | specs/010-competitions-ai-insights | ✅ Complete — deploy pending |
+| Perceived Performance Cache (persisted allow-list cache, cold-start banner, prefetch) | specs/012-perceived-performance-cache | ✅ Complete — deploy pending (e2e spec pending local run) |
 
 ## Development credentials (seed data)
 
