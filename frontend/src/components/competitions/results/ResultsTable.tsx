@@ -395,7 +395,7 @@ export function ResultsTable({
                       />
                     </TableHead>
                     <TableHead className="hidden sm:table-cell">Club</TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className="whitespace-nowrap text-right">
                       <SortButton
                         field="race_time_ms"
                         label="Tiempo"
@@ -697,7 +697,7 @@ function ResultRow({
       </TableCell>
 
       {/* Tiempo / estado */}
-      <TableCell className="text-right font-mono text-xs">
+      <TableCell className="whitespace-nowrap text-right font-mono text-xs">
         {row.status === "finished" ? (
           <span>{formatRaceTime(row.race_time_ms)}</span>
         ) : (
