@@ -167,20 +167,15 @@ def _build_fetch_results_tool(
 
     Args:
         db_factory: callable que retorna una ``AsyncSession``.
-        scope_season: cuando se provee junto a ``scope_valida_num``,
-            el tool ignora el argumento ``season`` del LLM y usa el
-            season del evento activo, filtrando por ``valida_num``.
+        scope_season: cuando se provee junto a ``scope_valida_num``, el tool
+            scoped NO expone ``season`` en su firma — el schema que ve el LLM
+            no puede contradecir al prompt pidiendo parámetros de evento
+            (causa raíz del bug "¿a qué válida te refieres?").
         scope_valida_num: ver ``scope_season``.
     """
     from langchain_core.tools import tool
 
-    @tool("fetch_results")
-    async def fetch_results(athlete_id: int, season: int) -> str:
-        """Recupera los resultados de carrera de un atleta en una temporada.
-
-        Devuelve string formateado con valida_num, posición y tiempo. Si
-        no hay datos: ``"(sin resultados)"``.
-        """
+    async def _run(athlete_id: int, season: Optional[int]) -> str:
         if db_factory is None:
             return "(tool no configurado: db_factory faltante)"
         db = db_factory()
@@ -213,6 +208,29 @@ def _build_fetch_results_tool(
             out.append(f"- event_id={event_id}, pos={pos}, race_time={time_str}")
         return "\n".join(out)
 
+    if scope_season is not None and scope_valida_num is not None:
+
+        @tool("fetch_results")
+        async def fetch_results_scoped(athlete_id: int) -> str:
+            """Recupera los resultados de carrera de un atleta en la válida activa.
+
+            El evento ya está fijado por el contexto — no requiere temporada
+            ni número de válida. Devuelve string formateado con posición y
+            tiempo. Si no hay datos: ``"(sin resultados)"``.
+            """
+            return await _run(athlete_id, None)
+
+        return fetch_results_scoped
+
+    @tool("fetch_results")
+    async def fetch_results(athlete_id: int, season: int) -> str:
+        """Recupera los resultados de carrera de un atleta en una temporada.
+
+        Devuelve string formateado con valida_num, posición y tiempo. Si
+        no hay datos: ``"(sin resultados)"``.
+        """
+        return await _run(athlete_id, season)
+
     return fetch_results
 
 
@@ -238,19 +256,7 @@ def _build_obtener_condiciones_evento_tool(
 
     from langchain_core.tools import tool
 
-    @tool("obtener_condiciones_evento")
-    async def obtener_condiciones_evento(valida_num: int, season: int) -> str:
-        """Recupera las condiciones registradas de una válida.
-
-        Devuelve un JSON con las condiciones realmente registradas (clima,
-        temperatura, superficie de pista, altitud, notas), o ``{"registro":
-        false}`` si el evento no tiene condiciones registradas. NUNCA inventes
-        condiciones: si ``registro`` es false, responde que no quedó registrado.
-
-        Args:
-            valida_num: número de válida (1..7, 99=CD).
-            season: año de temporada.
-        """
+    async def _run(valida_num: Optional[int], season: Optional[int]) -> str:
         if db_factory is None:
             return '{"registro": false, "error": "tool no configurado"}'
         effective_season = scope_season if scope_season is not None else season
@@ -274,7 +280,131 @@ def _build_obtener_condiciones_evento_tool(
         payload.update({k: v for k, v in entry.items() if v is not None})
         return json.dumps(payload, ensure_ascii=False)
 
+    if scope_season is not None and scope_valida_num is not None:
+
+        @tool("obtener_condiciones_evento")
+        async def obtener_condiciones_evento_scoped() -> str:
+            """Recupera las condiciones registradas de la válida activa.
+
+            El evento ya está fijado por el contexto — no requiere parámetros.
+            Devuelve un JSON con las condiciones realmente registradas (clima,
+            temperatura, superficie de pista, altitud, notas), o ``{"registro":
+            false}`` si el evento no tiene condiciones registradas. NUNCA
+            inventes condiciones: si ``registro`` es false, responde que no
+            quedó registrado.
+            """
+            return await _run(None, None)
+
+        return obtener_condiciones_evento_scoped
+
+    @tool("obtener_condiciones_evento")
+    async def obtener_condiciones_evento(valida_num: int, season: int) -> str:
+        """Recupera las condiciones registradas de una válida.
+
+        Devuelve un JSON con las condiciones realmente registradas (clima,
+        temperatura, superficie de pista, altitud, notas), o ``{"registro":
+        false}`` si el evento no tiene condiciones registradas. NUNCA inventes
+        condiciones: si ``registro`` es false, responde que no quedó registrado.
+
+        Args:
+            valida_num: número de válida (1..7, 99=CD).
+            season: año de temporada.
+        """
+        return await _run(valida_num, season)
+
     return obtener_condiciones_evento
+
+
+def _build_obtener_resultados_evento_tool(
+    db_factory: Optional[Callable[[], AsyncSession]] = None,
+    *,
+    race_event_id: Optional[int] = None,
+):
+    """Fábrica del tool ``obtener_resultados_evento`` (solo chat scoped a evento).
+
+    Responde preguntas grupales («¿cómo estuvieron los muchachos?») devolviendo
+    los resultados de TODOS los atletas del club en el evento activo. Sin este
+    tool, el agente solo dispone de tools por ``athlete_id`` y no tiene ningún
+    camino válido para una pregunta grupal.
+
+    Privacidad: identifica atletas por pseudónimo estable
+    (:func:`make_pseudonym`, mismo salt que el pipeline v2) + ``athlete_id``
+    opaco — NUNCA nombres reales (regla #1 del prompt).
+
+    Args:
+        db_factory: callable que retorna una ``AsyncSession``.
+        race_event_id: PK del evento activo; sin él el tool no se registra
+            (ver :meth:`RaceChatAgent._default_tools`).
+    """
+    from langchain_core.tools import tool
+
+    @tool("obtener_resultados_evento")
+    async def obtener_resultados_evento() -> str:
+        """Recupera los resultados de TODOS los atletas del club en la válida activa.
+
+        Úsala SIEMPRE para preguntas grupales («¿cómo estuvieron los
+        muchachos?», «¿cómo le fue al equipo?», «¿quiénes corrieron?»). No
+        requiere parámetros — el evento ya está fijado por el contexto.
+        Devuelve una línea por atleta (pseudónimo, athlete_id, categoría,
+        posición, tiempo y estado) o ``"(sin resultados importados para este
+        evento)"`` cuando aún no hay resultados.
+        """
+        if db_factory is None or race_event_id is None:
+            return "(tool no configurado: db_factory o evento faltante)"
+        db = db_factory()
+        try:
+            from sqlalchemy import select
+
+            from app.models.race_category import RaceCategory
+            from app.models.race_result import RaceResult
+
+            stmt = (
+                select(RaceResult, RaceCategory)
+                .join(RaceCategory, RaceResult.category_id == RaceCategory.id)
+                .where(
+                    RaceResult.event_id == race_event_id,
+                    RaceResult.athlete_id.is_not(None),
+                    RaceResult.deleted_at.is_(None),
+                )
+                .order_by(RaceCategory.code, RaceResult.position)
+            )
+            result = await db.execute(stmt)
+            rows = result.all()
+        except Exception as exc:  # pragma: no cover - defensa runtime
+            logger.warning("Error en obtener_resultados_evento: %s", exc)
+            return f"(error consultando resultados del evento: {type(exc).__name__})"
+
+        if not rows:
+            return "(sin resultados importados para este evento)"
+
+        from app.services.race.agents.analyst import _format_ms_hhmmss
+        from app.services.race.ai.anonymizer import make_pseudonym
+
+        out: list[str] = []
+        for row in rows:
+            rr, cat = row[0], row[1]
+            aid = getattr(rr, "athlete_id", None)
+            pseudo = make_pseudonym(int(aid)) if aid is not None else "(sin id)"
+            cat_code = getattr(cat, "code", "?")
+            status = getattr(rr, "status", None)
+            status_str = str(getattr(status, "value", status) or "?")
+            pos = getattr(rr, "position", None)
+            time_ms = getattr(rr, "race_time_ms", None)
+            laps_behind = getattr(rr, "laps_behind", None)
+
+            parts = [f"- {pseudo} (athlete_id={aid}, categoría {cat_code}):"]
+            if status_str == "finished":
+                parts.append(f"pos={pos if pos is not None else '—'}")
+                if time_ms is not None:
+                    parts.append(f"tiempo={_format_ms_hhmmss(time_ms)}")
+                if laps_behind:
+                    parts.append(f"-{laps_behind} vuelta(s)")
+            else:
+                parts.append(status_str.upper())
+            out.append(" ".join(parts))
+        return "\n".join(out)
+
+    return obtener_resultados_evento
 
 
 def _scrub_weather_notes(entry: dict, forbidden_names: list[str]) -> dict:
@@ -326,8 +456,15 @@ class _SessionStore:
     async def set(self, session_id: str, messages: list[Any]) -> None:
         async with self._lock:
             self._sweep_locked()
-            # Cap por sesión.
-            self._sessions[session_id] = (time.monotonic(), messages[-MAX_TURNS_PER_SESSION:])
+            # Cap por sesión — preservando el SystemMessage inicial: ahí viven
+            # el contexto del evento activo y las reglas de privacidad, y un
+            # slice plano los descartaría en sesiones largas.
+            if len(messages) > MAX_TURNS_PER_SESSION:
+                from langchain_core.messages import SystemMessage
+
+                head = [messages[0]] if isinstance(messages[0], SystemMessage) else []
+                messages = head + messages[-(MAX_TURNS_PER_SESSION - len(head)):]
+            self._sessions[session_id] = (time.monotonic(), list(messages))
 
     async def clear(self, session_id: str) -> None:
         async with self._lock:
@@ -391,8 +528,9 @@ class RaceChatAgent:
         scope_season: Optional[int] = None,
         scope_valida_num: Optional[int] = None,
         forbidden_names: Optional[list[str]] = None,
+        race_event_id: Optional[int] = None,
     ) -> list[Any]:
-        return [
+        tools = [
             consultar_marco_teorico,
             _build_obtener_insights_atleta_tool(
                 db_factory,
@@ -411,6 +549,16 @@ class RaceChatAgent:
                 forbidden_names=forbidden_names,
             ),
         ]
+        # Tool grupal solo cuando hay un evento activo — fuera de un evento
+        # no hay scope contra el cual listar resultados.
+        if race_event_id is not None:
+            tools.append(
+                _build_obtener_resultados_evento_tool(
+                    db_factory,
+                    race_event_id=race_event_id,
+                )
+            )
+        return tools
 
     @property
     def prompt_version(self) -> str:
@@ -453,6 +601,7 @@ class RaceChatAgent:
                 scope_season=scope_season,
                 scope_valida_num=scope_valida_num,
                 forbidden_names=self._forbidden_names,
+                race_event_id=race_event_id,
             )
             effective_tools = scoped_tools
             effective_tools_by_name = {t.name: t for t in effective_tools}
