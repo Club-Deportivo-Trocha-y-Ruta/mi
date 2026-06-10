@@ -51,23 +51,43 @@ const RACE_EVENTS = {
   total: 1,
 };
 
-/** Mockea login + me + listas mínimas para llegar autenticado a /competitions. */
+/**
+ * Mockea login + me + listas mínimas para llegar autenticado a /competitions.
+ *
+ * IMPORTANT: All route patterns use URL predicates instead of glob strings to
+ * avoid intercepting Vite dev-server source files (port 5173) whose paths
+ * contain the same segments (e.g. src/api/athletes.ts matches the athletes glob,
+ * src/routes/admin/AIHealthPage.tsx matches the health glob). Intercepting those
+ * with JSON responses causes a strict MIME-type error that prevents React from
+ * mounting, leaving the page blank.
+ */
 async function mockAuthenticatedApi(page: Page): Promise<void> {
-  await page.route("**/api/auth/login", (route) =>
-    route.fulfill({ json: TOKENS }),
+  // Only mock backend requests (port 8000), never Vite source files (port 5173).
+  const isBackend = (url: URL) => url.port !== "5173";
+
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/auth/login",
+    (route) => route.fulfill({ json: TOKENS }),
   );
-  await page.route("**/api/auth/me", (route) => route.fulfill({ json: ME }));
-  await page.route("**/api/race-analysis/race-events/?**", (route) =>
-    route.fulfill({ json: RACE_EVENTS }),
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/auth/me",
+    (route) => route.fulfill({ json: ME }),
   );
-  await page.route("**/api/race-analysis/race-events/", (route) =>
-    route.fulfill({ json: RACE_EVENTS }),
+  await page.route(
+    (url) =>
+      isBackend(url) &&
+      url.pathname.startsWith("/api/race-analysis/race-events"),
+    (route) => route.fulfill({ json: RACE_EVENTS }),
   );
-  // Resto de APIs (dashboard, etc.): respuestas vacías inofensivas.
-  await page.route("**/api/athletes**", (route) =>
-    route.fulfill({ json: { items: [], total: 0 } }),
+  // Resto de APIs (dashboard, athletes, etc.): respuestas vacías inofensivas.
+  await page.route(
+    (url) => isBackend(url) && url.pathname.startsWith("/api/athletes"),
+    (route) => route.fulfill({ json: { items: [], total: 0 } }),
   );
-  await page.route("**/health", (route) => route.fulfill({ json: { ok: true } }));
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/health",
+    (route) => route.fulfill({ json: { ok: true } }),
+  );
 }
 
 async function loginAsCoach(page: Page): Promise<void> {
@@ -83,10 +103,14 @@ test("E2E-012-1: GET /health se dispara al montar la página de login", async ({
   page,
 }) => {
   let healthPinged = false;
-  await page.route("**/health", (route) => {
-    healthPinged = true;
-    return route.fulfill({ json: { ok: true } });
-  });
+  // Use URL predicate to avoid intercepting Vite source files like AIHealthPage.tsx
+  await page.route(
+    (url) => url.pathname === "/health" && url.port !== "5173",
+    (route) => {
+      healthPinged = true;
+      return route.fulfill({ json: { ok: true } });
+    },
+  );
 
   await page.goto("/login");
   await expect.poll(() => healthPinged, { timeout: 5_000 }).toBe(true);
@@ -96,16 +120,23 @@ test("E2E-012-1: GET /health se dispara al montar la página de login", async ({
 test("E2E-012-2: espera >3 s muestra el banner de arranque y la respuesta lo limpia", async ({
   page,
 }) => {
-  await page.route("**/health", (route) => route.fulfill({ json: { ok: true } }));
+  // Use URL predicate to avoid intercepting Vite source files like AIHealthPage.tsx
+  await page.route(
+    (url) => url.pathname === "/health" && url.port !== "5173",
+    (route) => route.fulfill({ json: { ok: true } }),
+  );
   // Login tarda ~4.5 s (simula cold start) y luego falla con 401: el banner
   // debe aparecer durante la espera y desaparecer al llegar la respuesta.
-  await page.route("**/api/auth/login", async (route) => {
-    await new Promise((r) => setTimeout(r, 4_500));
-    await route.fulfill({
-      status: 401,
-      json: { detail: "Credenciales inválidas" },
-    });
-  });
+  await page.route(
+    (url) => url.port !== "5173" && url.pathname === "/api/auth/login",
+    async (route) => {
+      await new Promise((r) => setTimeout(r, 4_500));
+      await route.fulfill({
+        status: 401,
+        json: { detail: "Credenciales inválidas" },
+      });
+    },
+  );
 
   await page.goto("/login");
   await page.getByRole("textbox", { name: /correo/i }).fill(ME.email);
@@ -133,7 +164,9 @@ test("E2E-012-3: /competitions recargada sin red muestra la lista persistida", a
   await loginAsCoach(page);
 
   await page.goto("/competitions");
-  await expect(page.getByText("Copa Valle III — La Cumbre")).toBeVisible();
+  await expect(
+    page.getByText("Copa Valle III — La Cumbre").first(),
+  ).toBeVisible();
 
   // Deja que el persister haga throttle-flush a localStorage (1 s).
   await page.waitForTimeout(1_500);
@@ -144,13 +177,20 @@ test("E2E-012-3: /competitions recargada sin red muestra la lista persistida", a
   expect(snapshot).toContain("Copa Valle III");
 
   // Red caída: TODO el API aborta (backend dormido/inalcanzable).
+  // Use URL predicates to only abort backend requests, not Vite source files.
   await page.unrouteAll({ behavior: "ignoreErrors" });
-  await page.route("**/api/**", (route) => route.abort("connectionrefused"));
-  await page.route("**/health", (route) => route.abort("connectionrefused"));
+  await page.route(
+    (url) => url.port !== "5173" && url.pathname.startsWith("/api"),
+    (route) => route.abort("connectionrefused"),
+  );
+  await page.route(
+    (url) => url.port !== "5173" && url.pathname === "/health",
+    (route) => route.abort("connectionrefused"),
+  );
 
   await page.reload();
   // La lista se restaura del snapshot — visible sin esperar al servidor.
-  await expect(page.getByText("Copa Valle III — La Cumbre")).toBeVisible({
-    timeout: 5_000,
-  });
+  await expect(page.getByText("Copa Valle III — La Cumbre").first()).toBeVisible(
+    { timeout: 5_000 },
+  );
 });
