@@ -14,6 +14,11 @@ dist-ssr
 playwright-report/
 test-results/
 
+# Coverage & mutation testing
+coverage/
+reports/
+.stryker-tmp/
+
 # Playwright
 test-results/
 playwright-report/
