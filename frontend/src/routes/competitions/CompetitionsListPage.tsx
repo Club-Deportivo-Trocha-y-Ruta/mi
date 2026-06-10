@@ -49,10 +49,13 @@ import {
 } from "@/components/ui/tooltip";
 import {
   getRaceEventErrorMessage,
+  raceEventKeys,
   useCleanupDuplicateRaceEvent,
   useDeleteRaceEvent,
   useRaceEventsList,
 } from "@/hooks/race/useRaceEvents";
+import { getRaceEvent } from "@/api/raceEvents";
+import { usePrefetchOnIntent } from "@/hooks/usePrefetchOnIntent";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
 import type {
@@ -435,10 +438,20 @@ function CompetitionTableRow({
   onCleanup,
 }: RowProps) {
   const navigate = useNavigate();
+  const prefetch = usePrefetchOnIntent();
+  // Feature 012, US3: prepara el detalle al mostrar intención (hover/touch)
+  // — misma queryKey/fn que useRaceEvent, así abrir la fila no muestra carga.
+  const prefetchDetail = () =>
+    prefetch({
+      queryKey: raceEventKeys.detail(item.id),
+      queryFn: ({ signal }) => getRaceEvent(item.id, { signal }),
+    });
   return (
     <tr
       className="hover:bg-[rgba(34,42,53,0.02)] transition-colors cursor-pointer"
       onClick={() => navigate(`/competitions/${item.id}`)}
+      onMouseEnter={prefetchDetail}
+      onTouchStart={prefetchDetail}
     >
       <td className="px-4 py-3 text-sm font-medium text-charcoal">
         {item.is_championship ? "CD" : `V${item.sequence_number}`}
@@ -494,6 +507,13 @@ function CompetitionCard({
   onCleanup,
 }: RowProps) {
   const navigate = useNavigate();
+  const prefetch = usePrefetchOnIntent();
+  // Feature 012, US3: touch-start en el card móvil prepara el detalle.
+  const prefetchDetail = () =>
+    prefetch({
+      queryKey: raceEventKeys.detail(item.id),
+      queryFn: ({ signal }) => getRaceEvent(item.id, { signal }),
+    });
   return (
     <div
       className="rounded-xl bg-white p-4 space-y-3 cursor-pointer"
@@ -502,6 +522,8 @@ function CompetitionCard({
           "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
       }}
       onClick={() => navigate(`/competitions/${item.id}`)}
+      onMouseEnter={prefetchDetail}
+      onTouchStart={prefetchDetail}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">

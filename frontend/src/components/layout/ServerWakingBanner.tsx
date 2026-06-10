@@ -1,6 +1,7 @@
 /**
- * ServerWakingBanner — explicit "el servidor está despertando…" state
- * (feature 012, US2).
+ * ServerWakingBanner — explicit "la aplicación está iniciando…" state
+ * (feature 012, US2; copy ajustada por revisión ux-researcher: "aplicación"
+ * en lugar de "servidor" para padres no técnicos).
  *
  * Render Free duerme tras ~15 min de inactividad y tarda ~50 s en despertar.
  * Cuando una petición supera el umbral (~3 s) mostramos este aviso en lugar de
@@ -22,10 +23,12 @@ export function ServerWakingBanner() {
     >
       <span
         aria-hidden="true"
-        className="mt-1 h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-500"
+        className="mt-1 h-2 w-2 shrink-0 animate-pulse motion-reduce:animate-none rounded-full bg-amber-500"
       />
       <p>
-        <span className="font-medium">El servidor está despertando…</span>{" "}
+        {/* Copy validada por ux-researcher: "aplicación" en lugar de
+            "servidor" — término cotidiano para padres no técnicos. */}
+        <span className="font-medium">La aplicación está iniciando…</span>{" "}
         Esto puede tardar unos segundos la primera vez; tu contenido aparecerá
         en cuanto responda.
       </p>

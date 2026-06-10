@@ -68,9 +68,12 @@ export function LoginPage() {
   };
 
   return (
-    <>
+    // Columna flex: el banner ancla arriba y la tarjeta se centra en el
+    // espacio restante — evita que el CTA caiga bajo el teclado en pantallas
+    // pequeñas cuando el banner está visible (revisión ux-researcher).
+    <div className="flex min-h-screen flex-col bg-white">
       <ServerWakingBanner />
-      <div className="flex min-h-screen items-center justify-center bg-white p-4">
+      <div className="flex flex-1 items-center justify-center p-4">
       {/* Login card — shadow Level 2 (ring + soft), 12px radius */}
       <div
         className="w-full max-w-md rounded-xl bg-white p-8"
@@ -167,6 +170,6 @@ export function LoginPage() {
         </form>
       </div>
       </div>
-    </>
+    </div>
   );
 }

@@ -10,6 +10,7 @@
  * (los analytics dependen de los enlaces).
  */
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -47,6 +48,9 @@ export function useUnlinkedCompetitors(
     queryFn: () => listUnlinkedCompetitors(filters),
     enabled: !!accessToken,
     staleTime: 30_000,
+    // Feature 012, US3: al cambiar filtros, mantiene las filas previas
+    // visibles hasta que llega el nuevo set (sin parpadeo a vacío).
+    placeholderData: keepPreviousData,
   });
 }
 

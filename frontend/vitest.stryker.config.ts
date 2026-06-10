@@ -20,6 +20,7 @@ export default defineConfig({
       "src/test/integration/persistence-privacy.test.tsx",
       "src/store/__tests__/serverWaking.store.test.ts",
       "src/components/layout/__tests__/ServerWakingBanner.test.tsx",
+      "src/hooks/__tests__/usePrefetchOnIntent.test.tsx",
     ],
   },
   resolve: {

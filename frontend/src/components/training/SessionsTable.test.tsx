@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionsTable } from "./SessionsTable";
 import type { TrainingSession } from "@/types/trainingSession.types";
 
@@ -35,10 +36,16 @@ function renderTable(
   onExecute?: (id: number) => void,
   onCancel?: (id: number) => void,
 ) {
+  // QueryClientProvider requerido desde feature 012 (usePrefetchOnIntent).
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
   return render(
-    <MemoryRouter>
-      <SessionsTable items={items} onExecute={onExecute} onCancel={onCancel} />
-    </MemoryRouter>,
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <SessionsTable items={items} onExecute={onExecute} onCancel={onCancel} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

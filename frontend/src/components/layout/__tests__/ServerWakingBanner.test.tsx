@@ -26,7 +26,7 @@ describe("ServerWakingBanner", () => {
     render(<ServerWakingBanner />);
     expect(screen.getByRole("status")).toBeInTheDocument();
     expect(
-      screen.getByText(/El servidor está despertando/),
+      screen.getByText(/La aplicación está iniciando/),
     ).toBeInTheDocument();
   });
 

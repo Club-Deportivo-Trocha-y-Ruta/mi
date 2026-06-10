@@ -2,11 +2,41 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { getMe, login as loginRequest, refreshToken } from "@/api/auth";
+import { getAthletes } from "@/api/athletes";
 import { registerAuthHandlers } from "@/api/client";
+import { getMyAthletes } from "@/api/parents";
 import { getQueryClient } from "@/lib/queryClientHandle";
 import { wipePersistedCache } from "@/lib/queryPersister";
 import { useParentContextStore } from "@/store/parentContext.store";
 import type { MeResponse } from "@/types/auth.types";
+import { UserRole } from "@/types/enums";
+
+/**
+ * Feature 012, US3 (FR-011): tras un login exitoso, pre-carga la query
+ * principal de la página de aterrizaje del rol (Dashboard → ["athletes"],
+ * Mis Atletas → ["my-athletes", userId]) para que abra sin estado de carga.
+ * Fire-and-forget: nunca bloquea ni rompe el flujo de login. Mismas
+ * queryKey/fn autenticadas de los hooks de esas páginas (RBAC sin cambios).
+ */
+function prefetchLandingData(user: MeResponse): void {
+  const qc = getQueryClient();
+  if (!qc) return;
+  try {
+    if (user.role === UserRole.parent) {
+      void qc.prefetchQuery({
+        queryKey: ["my-athletes", user.id],
+        queryFn: getMyAthletes,
+      });
+    } else if (user.role === UserRole.coach || user.role === UserRole.admin) {
+      void qc.prefetchQuery({
+        queryKey: ["athletes"],
+        queryFn: () => getAthletes(),
+      });
+    }
+  } catch {
+    // El prefetch es un mejor-esfuerzo; el aterrizaje carga normal si falla.
+  }
+}
 
 interface AuthState {
   accessToken: string | null;
@@ -121,6 +151,7 @@ export const useAuthStore = create<AuthState>()(
       fetchMe: async () => {
         const me = await getMe();
         set({ user: me, isAuthenticated: true });
+        prefetchLandingData(me);
       },
     }),
     {
