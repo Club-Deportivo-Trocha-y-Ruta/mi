@@ -630,10 +630,11 @@ function ResultRow({
   return (
     <TableRow
       className={cn(
-        isOurClub && [
-          "relative bg-emerald-50/60 hover:bg-emerald-50",
-          "before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-emerald-500",
-        ],
+        // El indicador de club se pinta como box-shadow inset en la primera
+        // celda (no como ::before absoluto): aplicar `position: relative` a un
+        // <tr> rompe la grilla de columnas de la tabla en Chrome (border-collapse)
+        // y desplazaba toda la fila una columna a la derecha.
+        isOurClub && "bg-emerald-50/60 hover:bg-emerald-50",
       )}
       aria-label={
         isOurClub
@@ -644,7 +645,12 @@ function ResultRow({
       data-our-club={isOurClub ? "true" : undefined}
     >
       {/* Posición */}
-      <TableCell className="font-mono text-xs font-medium">
+      <TableCell
+        className={cn(
+          "font-mono text-xs font-medium",
+          isOurClub && "shadow-[inset_4px_0_0_0_var(--color-emerald-500)]",
+        )}
+      >
         {row.position !== null ? (
           <span
             className={cn(
