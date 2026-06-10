@@ -140,13 +140,53 @@ export interface UseUpdateRosterEntryVariables {
  * RBAC: coach + admin.
  */
 export function useUpdateRosterEntry() {
+  const queryClient = useQueryClient();
   const invalidate = useRosterInvalidator();
 
-  return useMutation<RosterEntry, unknown, UseUpdateRosterEntryVariables>({
+  return useMutation<
+    RosterEntry,
+    unknown,
+    UseUpdateRosterEntryVariables,
+    { previous?: RaceRosterResponse }
+  >({
     mutationKey: ["roster", "update"],
     mutationFn: ({ raceEventId, entryId, body }) =>
       updateRosterEntry(raceEventId, entryId, body),
-    onSuccess: (_data, { raceEventId }) => {
+    // Feature 012, US3: optimistic — en día de competencia el coach marca
+    // confirmado/retirado desde el campo y lo ve al instante. Si el backend
+    // rechaza, revertimos y mostramos el error (getRosterErrorMessage).
+    onMutate: async ({ raceEventId, entryId, body }) => {
+      const key = rosterKeys.byEvent(raceEventId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<RaceRosterResponse>(key);
+      if (previous) {
+        queryClient.setQueryData<RaceRosterResponse>(key, {
+          ...previous,
+          entries: previous.entries.map((e) =>
+            e.id === entryId
+              ? {
+                  ...e,
+                  ...(body.status !== undefined
+                    ? { status: body.status }
+                    : {}),
+                  ...(body.note !== undefined ? { note: body.note } : {}),
+                }
+              : e,
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, { raceEventId }, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(
+          rosterKeys.byEvent(raceEventId),
+          context.previous,
+        );
+      }
+    },
+    // Reconcilia con el servidor tras éxito o error (la fuente de verdad).
+    onSettled: (_data, _err, { raceEventId }) => {
       invalidate(raceEventId);
     },
   });

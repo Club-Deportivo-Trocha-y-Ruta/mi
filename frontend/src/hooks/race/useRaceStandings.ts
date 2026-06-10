@@ -15,7 +15,7 @@
  *
  * staleTime: 5 min — mitiga el cold start de Render Free.
  */
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { getRaceStandings } from "@/api/raceStandings";
 import { useAuthStore } from "@/store/auth.store";
@@ -46,5 +46,8 @@ export function useRaceStandings(
       getRaceStandings(raceEventId as number, filters, { signal }),
     enabled,
     staleTime: 5 * 60_000,
+    // Feature 012, US3: al cambiar categoría/filtro o evento, mantiene la
+    // tabla anterior visible hasta que llegan los nuevos datos (sin parpadeo).
+    placeholderData: keepPreviousData,
   });
 }

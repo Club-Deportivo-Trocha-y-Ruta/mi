@@ -1,6 +1,9 @@
 import { Link } from "react-router-dom";
 
+import { fetchTrainingSession } from "@/api/trainingSessions";
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
+import { usePrefetchOnIntent } from "@/hooks/usePrefetchOnIntent";
+import { useAuthStore } from "@/store/auth.store";
 import type { SessionStatus, TrainingSession } from "@/types/trainingSession.types";
 
 interface SessionsTableProps {
@@ -27,6 +30,15 @@ export function SessionsTable({
   executePendingId = null,
   cancelPendingId = null,
 }: SessionsTableProps) {
+  const prefetch = usePrefetchOnIntent();
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  // Feature 012, US3: al mostrar intención sobre una fila/card se prepara el
+  // detalle con la misma queryKey/fn de useTrainingSession (incluye userId).
+  const prefetchSession = (id: number) => () =>
+    prefetch({
+      queryKey: ["training-session", userId, id],
+      queryFn: () => fetchTrainingSession(id),
+    });
   return (
     <>
       {/* Vista mobile: cards */}
@@ -39,6 +51,7 @@ export function SessionsTable({
                 boxShadow:
                   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
               }}
+              onTouchStart={prefetchSession(session.id)}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -146,6 +159,7 @@ export function SessionsTable({
                 key={session.id}
                 className="transition-colors hover:bg-light-gray"
                 style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
+                onMouseEnter={prefetchSession(session.id)}
               >
                 <td className="px-4 py-3 text-charcoal">
                   {formatDate(session.scheduled_date)}

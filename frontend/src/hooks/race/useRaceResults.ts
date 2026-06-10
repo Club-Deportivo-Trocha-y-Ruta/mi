@@ -13,7 +13,7 @@
  * Los filtros forman parte de la query key para que cada combinación tenga
  * su propia entrada de caché.
  */
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { getRaceResults } from "@/api/raceResults";
 import { useAuthStore } from "@/store/auth.store";
@@ -44,5 +44,8 @@ export function useRaceResults(
       getRaceResults(raceEventId as number, filters, { signal }),
     enabled,
     staleTime: 5 * 60_000,
+    // Feature 012, US3: mantiene la tabla anterior visible al cambiar de
+    // filtro/categoría (sin estado vacío intermedio).
+    placeholderData: keepPreviousData,
   });
 }

@@ -1,6 +1,7 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 
 // Profile module (lazy — all authenticated roles)
 const ProfilePage = lazy(() =>
@@ -23,6 +24,12 @@ const SessionAssistantPage = lazy(() =>
 
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
 import { setQueryClient } from "@/lib/queryClientHandle";
+import {
+  buildBuster,
+  createQueryPersister,
+  PERSIST_MAX_AGE,
+} from "@/lib/queryPersister";
+import { shouldDehydrateQuery } from "@/lib/persistAllowList";
 import { landingPathForRole } from "@/lib/landing";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -90,6 +97,10 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
+      // Feature 012: 24 h para que la persistencia conserve datos entre
+      // recargas (la persistencia solo guarda queries que el GC no haya
+      // evacuado; el default de 5 min haría inútil el restore).
+      gcTime: 24 * 60 * 60 * 1000,
       retry: 3,
       retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000),
     },
@@ -100,6 +111,10 @@ const queryClient = new QueryClient({
 // auth store (Zustand) pueda invocar `queryClient.clear()` en logout()
 // y evitar fugas de cache entre cuentas en máquinas compartidas.
 setQueryClient(queryClient);
+
+// Feature 012: persister de localStorage (o null si el almacenamiento no
+// está disponible — modo privado/cuota → degradamos a in-memory).
+const queryPersister = createQueryPersister();
 
 /** Wave B — redirect 301: /training/races/:raceEventId/club-insights
  *  → /competitions/:raceEventId?tab=insights
@@ -117,8 +132,21 @@ function RootRedirect() {
 }
 
 export default function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const persistOptions = useMemo(
+    () =>
+      queryPersister
+        ? {
+            persister: queryPersister,
+            maxAge: PERSIST_MAX_AGE,
+            buster: buildBuster(userId),
+            dehydrateOptions: { shouldDehydrateQuery },
+          }
+        : null,
+    [userId],
+  );
+
+  const content = (
       <TooltipProvider delayDuration={200} skipDelayDuration={300}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -575,6 +603,20 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       </TooltipProvider>
-    </QueryClientProvider>
+  );
+
+  if (!persistOptions) {
+    return (
+      <QueryClientProvider client={queryClient}>{content}</QueryClientProvider>
+    );
+  }
+
+  return (
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={persistOptions}
+    >
+      {content}
+    </PersistQueryClientProvider>
   );
 }

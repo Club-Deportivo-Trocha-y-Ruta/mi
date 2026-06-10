@@ -290,3 +290,19 @@
 | Deploy | Deploy to Render | ⏳ Pending |
 
 > No Alembic migration. AI provider/model unchanged (Gemini); Claude Fable 5 support deferred to a future spec at the coach's request.
+
+## Implementation status — Perceived Performance Cache (specs/012-perceived-performance-cache)
+
+> Frontend-only. Persists an **audited allow-list** of non-sensitive TanStack Query data to `localStorage` (`tyr:rq-cache:v1`) so return visits render instantly while Render Free wakes (~50 s); honest cold-start banner + `/health` warm-up; navigation polish. **No backend change, no migration.**
+
+| Step | Scope | Status |
+|---|---|---|
+| T001–T003 | Deps (`@tanstack/react-query-persist-client` + `query-async-storage-persister` 5.101.0; Stryker dev-only); `__APP_VERSION__` via Vite define; scoped `stryker.config.json` | ✅ Complete 2026-06-10 |
+| T004–T013 (US1) | `persistAllowList` (default-deny) + `queryPersister` (buster `{ver}:{userId}`, 24 h maxAge, logout wipe, graceful degradation) + `PersistQueryClientProvider` in App. **Privacy audit BLOCK → fixed**: excluded standings/results/competitors (minor names), calendar-event detail (birthday name), session lists (`media[].athlete_ids` + `coach_notes`). Mutation gate 72.64 % (allow-list 96.15 %) | ✅ Complete 2026-06-10 |
+| T014–T024 (US2) | `serverWaking.store` (3 s threshold, interceptor-fed) + `ServerWakingBanner` (amber, role=status; copy "La aplicación está iniciando…" per ux-researcher) + deduped `warmUp()` ping on login/shell mount. UX review APPROVED-WITH-RECOMMENDATIONS (top 3 applied) | ✅ Complete 2026-06-10 |
+| T025–T036 (US3) | `keepPreviousData` on standings/results/competitions/sessions/unlinked lists; `usePrefetchOnIntent` wired on competitions + sessions rows; post-login landing prefetch; optimistic roster update w/ rollback (attendance was already optimistic) | ✅ Complete 2026-06-10 |
+| T022 | Playwright e2e `e2e/cold-start.spec.ts` (warm-up, ≥3 s banner, offline-reload restore) — **written + type-checked; unverified in sandbox (no chromium; download blocked)**. Run with `npm run test:e2e` locally | ⚠️ Written, pending local run |
+| Quality gates | Full suite **199 files / 2138 tests green**; `tsc --noEmit` clean; Stryker ≥ 70 % | ✅ Complete 2026-06-10 |
+| Deploy | Cloudflare Pages / production build | ⏳ Pending |
+
+> **Privacy note (authoritative)**: the persistence allow-list is `lib/persistAllowList.ts` — additions require a `data-privacy-guard` review. Session lists / calendar-event detail may only be re-allowed after a backend summary schema strips athlete fields.

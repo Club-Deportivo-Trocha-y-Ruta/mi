@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, Link } from "react-router-dom";
 
 import { AthleteSwitcher } from "@/components/parents/AthleteSwitcher";
+import { ServerWakingBanner } from "@/components/layout/ServerWakingBanner";
+import { warmUp } from "@/api/client";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
 
@@ -21,6 +23,12 @@ export function AppShell({ children }: AppShellProps) {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Feature 012, US2: pre-calienta el backend al montar el shell autenticado
+  // (una sola vez por carga) para acortar el cold start de Render Free.
+  useEffect(() => {
+    warmUp();
+  }, []);
 
   const isAdmin = user?.role === UserRole.admin;
   const isCoach = user?.role === UserRole.coach;
@@ -192,6 +200,8 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* ── Main area ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Aviso de "servidor despertando" (cold start Render Free) */}
+        <ServerWakingBanner />
         {/* Header */}
         <header
           className="sticky top-0 z-50 flex items-center justify-between bg-white px-4 py-3 md:px-6"
