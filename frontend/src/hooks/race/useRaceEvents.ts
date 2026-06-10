@@ -20,6 +20,7 @@
  * en useUnlinkedCompetitors.ts / useUpdateRaceEventConditions.ts).
  */
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -104,6 +105,9 @@ export function useRaceEventsList(filters: RaceEventListFilters = {}) {
     queryFn: () => listRaceEvents(filters),
     enabled: !!accessToken,
     staleTime: 5 * 60_000,
+    // Feature 012, US3: al filtrar la lista de competencias, mantiene las
+    // filas previas visibles hasta que llega el nuevo set.
+    placeholderData: keepPreviousData,
   });
 }
 

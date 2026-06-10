@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import { apiClient } from "@/api/client";
 import { useAuthStore } from "@/store/auth.store";
@@ -82,6 +87,9 @@ export function useTrainingSessions(filters?: SessionFilters) {
     queryKey: ["training-sessions", userId, filters],
     queryFn: () => fetchTrainingSessions(filters),
     enabled: !!accessToken,
+    // Feature 012, US3: al cambiar filtros de la lista de entrenamientos,
+    // mantiene la lista anterior visible (sin parpadeo a vacío).
+    placeholderData: keepPreviousData,
   });
 }
 
