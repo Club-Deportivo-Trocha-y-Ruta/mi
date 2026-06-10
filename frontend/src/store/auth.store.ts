@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { getMe, login as loginRequest, refreshToken } from "@/api/auth";
 import { registerAuthHandlers } from "@/api/client";
 import { getQueryClient } from "@/lib/queryClientHandle";
+import { wipePersistedCache } from "@/lib/queryPersister";
 import { useParentContextStore } from "@/store/parentContext.store";
 import type { MeResponse } from "@/types/auth.types";
 
@@ -65,6 +66,11 @@ export const useAuthStore = create<AuthState>()(
             "[auth.store] logout() sin QueryClient registrado — cache no purgado",
           );
         }
+        // Feature 012: además del cache en memoria, borramos el cache
+        // PERSISTIDO en localStorage. Sin esto, en una tablet compartida los
+        // datos persistidos de una cuenta quedarían en el dispositivo tras el
+        // logout (Ley 1581 — menores).
+        wipePersistedCache();
         // Privacy R4 (Wave 4): además del cache, limpiamos el "athlete
         // activo" persistido del padre. Sin esto, en tablets compartidas
         // el padre B heredaría el activeAthleteId del padre A hasta que

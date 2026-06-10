@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation-testing gate for feature 012 (perceived-performance-cache). Scoped to the new privacy/cache/cold-start modules only — run on demand by the QA agent in the testing step, NOT in CI. Gate: score >= 70 on scoped files; zero surviving mutants on the allow-list deny path and logout wipe.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "reporters": ["html", "clear-text", "progress"],
+  "coverageAnalysis": "perTest",
+  "mutate": [
+    "src/lib/persistAllowList.ts",
+    "src/lib/queryPersister.ts",
+    "src/store/serverWaking.store.ts",
+    "src/hooks/usePrefetchOnIntent.ts"
+  ],
+  "thresholds": {
+    "high": 80,
+    "low": 70,
+    "break": 70
+  }
+}
