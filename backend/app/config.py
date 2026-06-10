@@ -22,6 +22,30 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
 
     # -----------------------------------------------------------------------
+    # Pool de conexiones MySQL (async SQLAlchemy)
+    # -----------------------------------------------------------------------
+    # Reemplaza al antiguo NullPool, que abría UNA conexión por request y
+    # disparaba el límite de Hostinger `max_connections_per_hour` (500). Con
+    # un pool real las conexiones se reutilizan; las nuevas se abren solo al
+    # reciclar/expirar. Todos los valores son override-ables por entorno.
+    #
+    # pool_size + max_overflow es el techo de conexiones CONCURRENTES por
+    # worker. Hostinger no publica `max_user_connections`; el estándar de
+    # hosting compartido ronda ~25 → 5+5=10 deja margen seguro (1 worker).
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+    # pool_recycle DEBE ser menor que el `wait_timeout` del servidor MySQL.
+    # Hostinger no lo publica y en hosting compartido suele ser tan bajo como
+    # 60s → default 30s (defensivo). Subir a 120-180 SOLO tras confirmar un
+    # wait_timeout mayor con `SHOW VARIABLES LIKE 'wait_timeout'`.
+    db_pool_recycle_seconds: int = 30
+    # pool_pre_ping: valida la conexión (SELECT 1) en cada checkout y
+    # reconecta de forma transparente si el servidor la cerró por inactividad.
+    db_pool_pre_ping: bool = True
+    # Segundos a esperar por una conexión libre del pool antes de error.
+    db_pool_timeout: int = 30
+
+    # -----------------------------------------------------------------------
     # Email / Notificaciones
     # -----------------------------------------------------------------------
     # Proveedor: "smtp" (dev/MailHog) | "resend" (producción)

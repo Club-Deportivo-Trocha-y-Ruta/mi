@@ -21,6 +21,7 @@ fuzzy nombre→id queda fuera de este sprint, workflow §"No hagas".)
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import re
 import time
@@ -50,6 +51,25 @@ MAX_TURNS_PER_SESSION = 50
 MAX_TOOL_ITERATIONS = 5
 
 _CITE_RE = re.compile(r"\[(\d+)\]")
+
+
+async def _safe_close(db: Any) -> None:
+    """Cierra la sesión devolviéndola al pool, tras usar el tool.
+
+    CRÍTICO con un pool real (no NullPool): cada tool abre ``db_factory()``;
+    si no se cierra, la conexión queda checked-out hasta el GC y agota el pool
+    (``pool_size + max_overflow``), provocando timeouts. Tolerante a los fakes
+    de test (``object()``, ``_FakeSession``) que no implementan ``close()``.
+    """
+    close = getattr(db, "close", None)
+    if close is None:
+        return
+    try:
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:  # pragma: no cover - cleanup defensivo
+        logger.debug("Error cerrando sesión del chat tool: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +157,8 @@ def _build_obtener_insights_atleta_tool(
         except Exception as exc:  # pragma: no cover - defensa runtime
             logger.warning("Error consultando insights: %s", exc)
             return f"(error consultando insights: {type(exc).__name__})"
+        finally:
+            await _safe_close(db)
 
         if not rows:
             return "(sin insights persistidos para este atleta)"
@@ -193,6 +215,8 @@ def _build_fetch_results_tool(
         except Exception as exc:  # pragma: no cover
             logger.warning("Error en fetch_results: %s", exc)
             return f"(error consultando resultados: {type(exc).__name__})"
+        finally:
+            await _safe_close(db)
 
         if not results:
             return "(sin resultados)"
@@ -271,6 +295,8 @@ def _build_obtener_condiciones_evento_tool(
         except Exception as exc:  # pragma: no cover - defensa runtime
             logger.warning("Error en obtener_condiciones_evento: %s", exc)
             return f'{{"registro": false, "error": "{type(exc).__name__}"}}'
+        finally:
+            await _safe_close(db)
 
         entry = conds.get(int(effective_valida))
         if not entry or all(v is None for v in entry.values()):
@@ -373,6 +399,8 @@ def _build_obtener_resultados_evento_tool(
         except Exception as exc:  # pragma: no cover - defensa runtime
             logger.warning("Error en obtener_resultados_evento: %s", exc)
             return f"(error consultando resultados del evento: {type(exc).__name__})"
+        finally:
+            await _safe_close(db)
 
         if not rows:
             return "(sin resultados importados para este evento)"

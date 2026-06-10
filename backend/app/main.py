@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -5,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.database import engine
 from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, reports, training_sessions
 from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
@@ -12,10 +14,24 @@ from app.routers.consent import consent_router, public_router as consent_public_
 from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
 from app.routers.athlete_monthly_newsletters import router as athlete_newsletters_router, clubs_router as newsletter_clubs_router
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Ciclo de vida de la app.
+
+    Al apagar (incluido el spin-down de Render free tier) cerramos el pool de
+    conexiones limpiamente con ``engine.dispose()``. Evita el ruido
+    ``RuntimeError: Event loop is closed`` de ``__del__`` y libera las
+    conexiones contra Hostinger de forma ordenada.
+    """
+    yield
+    await engine.dispose()
+
+
 app = FastAPI(
     title="Trocha y Ruta API",
     description="API del Club Deportivo Trocha y Ruta — Fase 1",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
