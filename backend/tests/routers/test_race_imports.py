@@ -1972,3 +1972,197 @@ class TestParseConditionsValidation:
             "/api/race-analysis/imports/parse", data=form, files=files
         )
         assert r.status_code == 422
+
+
+# ===========================================================================
+# Plan 002 — SELECT FOR UPDATE locking on commit path
+# ===========================================================================
+
+
+class TestCommitLocking:
+    """Tests para Plan 002: serialización de commits con SELECT FOR UPDATE.
+
+    NOTE: SQLite (aiosqlite) silently omits FOR UPDATE from compiled SQL, so
+    these tests cannot verify actual lock contention. Instead they verify the
+    ORM-level plumbing: that commit calls _load_pending_import with
+    for_update=True and that dry-run does NOT. Lock contention behavior is
+    only exercised in production MySQL InnoDB.
+    """
+
+    @pytest.mark.asyncio
+    async def test_commit_locks_import_row(
+        self, coach_client, stub_parsers, stub_ingestor, monkeypatch
+    ):
+        """commit_import debe llamar _load_pending_import con for_update=True.
+
+        SQLite ignora FOR UPDATE en SQL compilado, por lo que la verificación
+        se hace al nivel ORM: interceptamos _load_pending_import y registramos
+        el valor de for_update. Ver Plan 002 §Step 5 para contexto completo.
+        """
+        from app.routers import race_imports as router_mod
+        from app.services.race.normalizer import normalize_name
+
+        # Crear el pending import via parse
+        files = {"resultados_pdf": _pdf_file(b"lock test content")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse",
+            data=_parse_form(), files=files,
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        # Spy: wrap _load_pending_import para capturar el kwarg for_update
+        calls: list[dict] = []
+        _original = router_mod._load_pending_import
+
+        async def _spy(db, pid, user, *, for_update=False):
+            calls.append({"for_update": for_update})
+            return await _original(db, pid, user, for_update=for_update)
+
+        monkeypatch.setattr(router_mod, "_load_pending_import", _spy)
+
+        match_norm = normalize_name("Sebastian Yule Mendoza")
+        r = await coach_client.post(
+            f"/api/race-analysis/imports/{parse_id}/commit",
+            json={
+                "resolved_matches": [
+                    {"competitor_normalized_name": match_norm, "athlete_id": None}
+                ]
+            },
+        )
+        assert r.status_code == 200, r.text
+        assert len(calls) >= 1, "commit did not call _load_pending_import"
+        assert calls[0]["for_update"] is True, (
+            f"Expected for_update=True in commit call, got {calls[0]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_dry_run_does_not_lock(
+        self, coach_client, stub_parsers, stub_ingestor, monkeypatch
+    ):
+        """dry_run_import NO debe solicitar el lock (for_update=False).
+
+        Un dry-run con lock bloquearía un commit concurrente durante el tiempo
+        de descarga + parseo del PDF (hasta 30s). Plan 002 §Critical nuance.
+        """
+        from app.routers import race_imports as router_mod
+
+        # Crear el pending import via parse
+        files = {"resultados_pdf": _pdf_file(b"dry-run lock test content")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse",
+            data=_parse_form(), files=files,
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        calls: list[dict] = []
+        _original = router_mod._load_pending_import
+
+        async def _spy(db, pid, user, *, for_update=False):
+            calls.append({"for_update": for_update})
+            return await _original(db, pid, user, for_update=for_update)
+
+        monkeypatch.setattr(router_mod, "_load_pending_import", _spy)
+
+        r = await coach_client.post(
+            f"/api/race-analysis/imports/{parse_id}/dry-run"
+        )
+        assert r.status_code == 200, r.text
+        assert len(calls) >= 1, "dry-run did not call _load_pending_import"
+        assert calls[0]["for_update"] is False, (
+            f"dry-run must NOT request FOR UPDATE lock, got {calls[0]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_commit_integrity_error_returns_409(
+        self, coach_client, stub_parsers, monkeypatch, db_session_factory
+    ):
+        """Se ingest_event lanza IntegrityError, commit_import debe retornar 409
+        con el mensaje de conflicto en español.
+
+        Cubre el caso de dos imports distintos para el mismo evento/categorías
+        que escaparían al lock (solo serializa el mismo parse_id).
+        """
+        from sqlalchemy.exc import IntegrityError as SAIntegrityError
+        from app.services.race import ingestor as ingestor_mod
+
+        # Crear el pending import via parse
+        files = {"resultados_pdf": _pdf_file(b"integrity error test")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse",
+            data=_parse_form(), files=files,
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        # Monkeypatch ingestor para lanzar IntegrityError
+        async def _raise_integrity(self, meta, results_by_category, **kwargs):
+            raise SAIntegrityError("stmt", {}, Exception("dup key"))
+
+        monkeypatch.setattr(
+            ingestor_mod.RaceIngestor, "ingest_event", _raise_integrity
+        )
+
+        from app.services.race.normalizer import normalize_name
+        match_norm = normalize_name("Sebastian Yule Mendoza")
+        r = await coach_client.post(
+            f"/api/race-analysis/imports/{parse_id}/commit",
+            json={
+                "resolved_matches": [
+                    {"competitor_normalized_name": match_norm, "athlete_id": None}
+                ]
+            },
+        )
+        assert r.status_code == 409, r.text
+        detail = r.json()["detail"]
+        assert "ya fueron registrados" in detail, (
+            f"Expected Spanish conflict message, got: {detail}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_second_commit_after_committed_is_rejected(
+        self, coach_client, stub_parsers, stub_ingestor, db_session_factory
+    ):
+        """Un segundo commit sobre el mismo parse_id (ya committed) debe
+        retornar 404 con el mensaje 'no está en estado pending'.
+
+        Verifica que el contrato existente se preserva: cuando el segundo
+        request adquiere el lock tras el primero, re-lee status=committed y
+        _load_pending_import lanza HTTPException 404.
+        """
+        from app.services.race.normalizer import normalize_name
+
+        # 1. Parse
+        files = {"resultados_pdf": _pdf_file(b"second commit test")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse",
+            data=_parse_form(), files=files,
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        match_norm = normalize_name("Sebastian Yule Mendoza")
+        commit_body = {
+            "resolved_matches": [
+                {"competitor_normalized_name": match_norm, "athlete_id": None}
+            ]
+        }
+
+        # 2. First commit — should succeed
+        r = await coach_client.post(
+            f"/api/race-analysis/imports/{parse_id}/commit",
+            json=commit_body,
+        )
+        assert r.status_code == 200, r.text
+
+        # 3. Second commit — must be rejected with 404 (no longer pending)
+        r = await coach_client.post(
+            f"/api/race-analysis/imports/{parse_id}/commit",
+            json=commit_body,
+        )
+        assert r.status_code == 404, r.text
+        detail = r.json()["detail"]
+        assert "no está en estado pending" in detail, (
+            f"Expected 'no está en estado pending' in detail, got: {detail}"
+        )
