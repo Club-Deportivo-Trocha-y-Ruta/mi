@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-BACKEND_DIR = Path("/home/user/mi/backend")
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 SERVICES_DIR = BACKEND_DIR / "app" / "services"
 
 # Map: module_path -> test_files_to_run
@@ -47,6 +47,9 @@ MODULE_TEST_MAP = {
     "app/services/privacy.py": [
         "tests/test_privacy.py",
         "tests/test_consent_endpoints.py",
+    ],
+    "app/services/race/standings.py": [
+        "tests/services/race/test_standings_service.py",
     ],
 }
 
@@ -137,6 +140,8 @@ def generate_source_mutations(source: str, module_name: str) -> list[dict]:
         mutations.extend(_password_reset_mutations(source))
     elif "privacy.py" in module_name:
         mutations.extend(_privacy_mutations(source))
+    elif "standings.py" in module_name:
+        mutations.extend(_standings_mutations(source))
 
     return mutations
 
@@ -327,6 +332,43 @@ def _privacy_mutations(source: str) -> list[dict]:
         ('training_tracking=False', 'training_tracking=True', "training_tracking flip"),
         # append-only: superseded marking
         ('previous.withdrawn_at = now_utc', 'pass  # skipping previous.withdrawn_at', "skip withdrawn_at update"),
+    ]
+    for old, new, desc in replacements:
+        if old in source:
+            mutations.append({"old": old, "new": new, "description": desc})
+    return mutations
+
+
+def _standings_mutations(source: str) -> list[dict]:
+    """Mutations for standings.py - sort-key signs, sentinel, podium bound, defaults, filters."""
+    mutations = []
+    replacements = [
+        # Sort-key sign for total_points: DESC (negative) → ASC (positive)
+        ("-(r[\"total_points\"] or 0)", "(r[\"total_points\"] or 0)", "total_points sort: DESC to ASC"),
+        # Sort-key sign for podiums: DESC (negative) → ASC (positive)
+        ("-(r[\"podiums\"] or 0)", "(r[\"podiums\"] or 0)", "podiums sort: DESC to ASC"),
+        # NULL best_position sentinel: 9999 → 0 (would make NULL positions rank first)
+        ("if r[\"best_position\"] is not None else 9999", "if r[\"best_position\"] is not None else 0", "sentinel 9999 to 0"),
+        # Podium bound: <= 3 → < 3 (excludes position 3 from podiums)
+        ("RaceResult.position <= 3", "RaceResult.position < 3", "podium bound <= to <"),
+        # Podium bound: <= 3 → <= 4 (includes position 4 in podiums)
+        ("RaceResult.position <= 3", "RaceResult.position <= 4", "podium bound <= 3 to <= 4"),
+        # total_points or 0 default → or 1 (changes zero-points display)
+        ("total_points=row[\"total_points\"] or 0", "total_points=row[\"total_points\"] or 1", "total_points default 0 to 1"),
+        # podiums or 0 default → or 1
+        ("podiums=row[\"podiums\"] or 0", "podiums=row[\"podiums\"] or 1", "podiums default 0 to 1"),
+        # races_run or 0 default → or 1
+        ("races_run=row[\"races_run\"] or 0", "races_run=row[\"races_run\"] or 1", "races_run default 0 to 1"),
+        # deleted_at filter: is_(None) → is_not(None) — include deleted, exclude live
+        ("RaceResult.deleted_at.is_(None)", "RaceResult.deleted_at.is_not(None)", "deleted_at filter inversion"),
+        # club_only filter: is_not(None) → is_(None) — invert link check
+        ("RaceResult.athlete_id.is_not(None)", "RaceResult.athlete_id.is_(None)", "club_only filter inversion"),
+        # is_our_club derivation: is not None → is None
+        ("is_our_club=(row[\"athlete_id\"] is not None)", "is_our_club=(row[\"athlete_id\"] is None)", "is_our_club inversion"),
+        # Early exit for empty allowed_athlete_ids: not allowed_athlete_ids → allowed_athlete_ids
+        ("allowed_athlete_ids is not None and not allowed_athlete_ids",
+         "allowed_athlete_ids is not None and allowed_athlete_ids",
+         "empty-set early-exit inversion"),
     ]
     for old, new, desc in replacements:
         if old in source:

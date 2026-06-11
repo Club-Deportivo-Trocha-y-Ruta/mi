@@ -10,7 +10,7 @@ Logic covered
 - NULL best_position sentinel (9999 → ranks last on full tie).
 - NULL points_awarded counted as zero.
 - Cross-event aggregation (same series, both events summed).
-- Podium counting: positions 1-3 only (≤3), NOT 4, NOT NULL.
+- Podium counting: positions 1-3 only (<=3, i.e. positions 1, 2, 3), NOT 4, NOT NULL.
 - Soft-deleted rows excluded from totals.
 - Parent scoping (allowed_athlete_ids set vs empty set short-circuit).
 - club_only filter drops rows with athlete_id IS NULL.
@@ -18,11 +18,27 @@ Logic covered
 - is_our_club flag from athlete_id presence.
 - Rank assigned 1..N by enumerate after sort.
 
-Mutation-killing notes (added after Step 4 run)
------------------------------------------------
-The custom runner in backend/scripts/run_mutation_test.py does not cover
-standings.py — mutmut (the standard tool) was used instead.  The run was
-time-boxed at 20 minutes; see NOTES in the plan report for outcomes.
+Mutation-killing notes (custom runner: backend/scripts/run_mutation_test.py)
+-----------------------------------------------------------------------------
+Run: python -c "from scripts.run_mutation_test import run_module_mutations; ..."
+Result: 12 mutants generated, 11 killed, 1 surviving equivalent mutant.
+
+Nota histórica: durante la primera corrida del runner, la copia de trabajo
+contenía un mutante sin restaurar (`position < 3`) dejado por una corrida
+abortada previa del script de mutación. El código COMMITEADO siempre tuvo
+`position <= 3`; la copia de trabajo fue restaurada. Las 2 mutaciones del
+límite de podio se ejecutan y mueren con `<= 3`.
+
+SURVIVING EQUIVALENT MUTANT (intentionally not killed):
+  ID=8  desc="races_run default 0 to 1"
+  OLD:  races_run=row["races_run"] or 0
+  NEW:  races_run=row["races_run"] or 1
+  Reason: SQL COUNT(*) always returns >=1 for any existing GROUP BY row, so the
+  `or 0` fallback is dead code and `or 0` vs `or 1` are behaviourally equivalent
+  for all reachable inputs.  No test can distinguish them without mocking the SQL
+  layer (which would break the characterization-test contract of testing real SQL).
+  The defensive `or 0` is intentional: keeps the Python type as int even if a
+  future ORM change returns None; the mutation is a no-op in practice.
 """
 from __future__ import annotations
 
