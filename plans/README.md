@@ -20,7 +20,7 @@ isn't forgotten and isn't re-audited as a discovery.
 | 003 | Password-reset atomic token consume | P2 | S | — | DONE |
 | 004 | Standings characterization tests + mutation on standings.py | P2 | M | — | DONE |
 | 005 | Opt-in MySQL dialect test lane for raw-SQL race modules | P3 | M–L | — | DONE |
-| 006 | INVESTIGATION: RaceImport/RaceEvent responsibility map; verify specs 007–009 consolidation | P3 | M | — | TODO |
+| 006 | INVESTIGATION: RaceImport/RaceEvent responsibility map; verify specs 007–009 consolidation | P3 | M | — | DONE — verdict: bounded gap, see plans/006-report.md |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
