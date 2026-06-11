@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -236,6 +236,22 @@ class Settings(BaseSettings):
                 "(privacidad de menores)."
             )
         return v
+
+    @model_validator(mode="after")
+    def _forbid_default_jwt_secret_in_prod(self) -> "Settings":
+        if self.app_env == "production" and self.jwt_secret_key == "cambiar-en-produccion":
+            raise ValueError(
+                "JWT_SECRET_KEY usa el valor por defecto en producción. "
+                "Generar con: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        if self.app_env == "production" and "*" in self.cors_origin_list:
+            import warnings
+            warnings.warn(
+                "CORS_ORIGINS='*' en producción. Restringir al dominio real del "
+                "frontend (Cloudflare Pages) en cuanto exista.",
+                stacklevel=2,
+            )
+        return self
 
     @property
     def database_url(self) -> str:

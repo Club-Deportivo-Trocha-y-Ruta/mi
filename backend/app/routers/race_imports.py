@@ -256,9 +256,10 @@ async def _parse_results_with_timeout(
             ),
         )
     except Exception as exc:  # noqa: BLE001
+        logger.exception("race_import_parse RESULTADOS failed")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Error parseando RESULTADOS: {type(exc).__name__}: {exc}",
+            detail="No se pudo procesar el PDF RESULTADOS. Verifique que sea el formato oficial de la Federación.",
         )
 
 
@@ -278,9 +279,10 @@ async def _parse_general_with_timeout(path: PathLib) -> dict[str, list]:
             detail="GENERAL demasiado complejo (parse > timeout).",
         )
     except Exception as exc:  # noqa: BLE001
+        logger.exception("race_import_parse GENERAL failed")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Error parseando GENERAL: {type(exc).__name__}: {exc}",
+            detail="No se pudo procesar el PDF GENERAL. Verifique que sea el formato oficial de la Federación.",
         )
 
 
