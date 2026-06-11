@@ -11,6 +11,9 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+import sqlalchemy
+from sqlalchemy import update
+
 from app.config import settings
 from app.models.base import Base
 from app.models.password_reset_token import PasswordResetToken
@@ -157,3 +160,99 @@ async def test_validate_token_expired_410(session):
     with pytest.raises(HTTPException) as exc:
         await svc.validate_token(raw_token, session)
     assert exc.value.status_code == 410
+
+
+@pytest.mark.asyncio
+async def test_consume_token_is_single_use(session):
+    """Un token consumido no puede usarse una segunda vez (410)."""
+    await _mk_user(session, password="OldPass123")
+    result = await svc.request_reset("coach@test.local", session)
+    raw_token = result[1].split("token=")[1]
+
+    # Primera llamada: éxito.
+    user = await svc.consume_token(raw_token, "NewPass456!", session)
+    assert verify_password("NewPass456!", user.hashed_password)
+
+    # Segunda llamada con el mismo token → 410.
+    with pytest.raises(HTTPException) as exc:
+        await svc.consume_token(raw_token, "AnotherPass789!", session)
+    assert exc.value.status_code == 410
+
+
+@pytest.mark.asyncio
+async def test_consume_claim_race_returns_410(session, monkeypatch):
+    """Simula la condición de carrera: validate pasa, pero el token ya fue
+    consumido por otro request antes de que el UPDATE atómico se ejecute.
+    Verifica que el segundo request recibe 410 y la contraseña NO cambia."""
+    await _mk_user(session, password="OldPass123")
+    result = await svc.request_reset("coach@test.local", session)
+    raw_token = result[1].split("token=")[1]
+
+    # Obtener la fila real para pasársela al validate_token falso.
+    row = await svc._get_token_row(raw_token, session)
+    original_hash = row.token_hash
+
+    # Pre-stampar used_at en la DB (emula al "ganador" de la carrera).
+    await session.execute(
+        update(PasswordResetToken)
+        .where(PasswordResetToken.id == row.id)
+        .values(used_at=datetime.now(timezone.utc))
+    )
+    await session.flush()
+
+    # Monkeypatch validate_token para que devuelva la fila sin lanzar 410
+    # (simula que la validación ocurrió ANTES del stamped en DB).
+    async def _fake_validate(raw: str, db: AsyncSession) -> PasswordResetToken:
+        return row
+
+    monkeypatch.setattr(svc, "validate_token", _fake_validate)
+
+    # El UPDATE atómico en consume_token verá rowcount == 0 → 410.
+    with pytest.raises(HTTPException) as exc:
+        await svc.consume_token(raw_token, "ShouldNotSet!", session)
+    assert exc.value.status_code == 410
+
+    # La contraseña del usuario NO debe haber cambiado.
+    user_after = await session.get(User, row.user_id)
+    assert user_after is not None
+    assert verify_password("OldPass123", user_after.hashed_password)
+    assert not verify_password("ShouldNotSet!", user_after.hashed_password)
+
+
+@pytest.mark.asyncio
+async def test_consume_success_path_unchanged(session):
+    """Happy path: devuelve el usuario, contraseña actualizada, tokens hermanos
+    invalidados."""
+    await _mk_user(session, password="OldPass123")
+
+    # Emitir dos tokens para el mismo usuario (el segundo invalida al primero
+    # según request_reset, pero aquí los creamos manualmente para controlar).
+    # En su lugar: emitimos dos reset requests seguidos y usamos el segundo.
+    r1 = await svc.request_reset("coach@test.local", session)
+    assert r1 is not None
+    sibling_token_raw = r1[1].split("token=")[1]
+
+    # El segundo request invalida el primero y emite uno nuevo.
+    r2 = await svc.request_reset("coach@test.local", session)
+    assert r2 is not None
+    active_token_raw = r2[1].split("token=")[1]
+
+    # Crear manualmente un tercer token hermano vigente para verificar
+    # que _invalidate_user_tokens lo marca como usado.
+    sibling_row = PasswordResetToken(
+        user_id=1,
+        token_hash=svc._hash_token("sibling-manual-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    session.add(sibling_row)
+    await session.flush()
+
+    # Consumir el token activo.
+    user = await svc.consume_token(active_token_raw, "NewPass789!", session)
+    assert user is not None
+    assert verify_password("NewPass789!", user.hashed_password)
+    assert not verify_password("OldPass123", user.hashed_password)
+
+    # El token hermano manual también debe quedar invalidado.
+    await session.refresh(sibling_row)
+    assert sibling_row.used_at is not None
