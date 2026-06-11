@@ -44,4 +44,5 @@ testpaths = ["tests"]
 markers = [
     "integration: integration tests que llaman APIs externas (Gemini real). Excluidos por default; correr con `-m integration`.",
     "golden: eval bloqueante del RaceAnalystAgent contra golden dataset. Requiere AI_API_KEY. Excluidos por default; correr con `-m golden`.",
+    "mysql: tests contra MySQL real (TEST_DATABASE_URL). Excluidos por default; correr con -m mysql.",
 ]
