@@ -19,7 +19,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -167,8 +167,24 @@ async def consume_token(
             detail="El enlace ha expirado o ya fue utilizado. Solicita uno nuevo.",
         )
 
+    # Reclama el token atómicamente antes de modificar la contraseña.
+    # Si otro request ya lo consumió (doble submit / race), rowcount == 0.
+    claim = await db.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.id == row.id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=_now())
+    )
+    if claim.rowcount != 1:
+        # Otro request consumió el token entre validate y claim (doble submit).
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="El enlace ha expirado o ya fue utilizado. Solicita uno nuevo.",
+        )
+
     user.hashed_password = hash_password(new_password)
-    row.used_at = _now()
     await _invalidate_user_tokens(user.id, db)
     await db.flush()
     logger.info("password_reset: contraseña actualizada | user_id=%s", user.id)
