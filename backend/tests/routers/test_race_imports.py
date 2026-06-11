@@ -1980,24 +1980,34 @@ class TestParseConditionsValidation:
 
 
 class TestCommitLocking:
-    """Tests para Plan 002: serialización de commits con SELECT FOR UPDATE.
+    """Tests para Plan 002: serialización de commits con SELECT FOR UPDATE (diseño two-phase).
+
+    El diseño de bloqueo es two-phase:
+    1. Carga inicial con FOR UPDATE — reclama la fila brevemente.
+    2. commit temprano — libera la conexión MySQL durante SFTP+parse (slow phase).
+    3. Re-verificación con FOR UPDATE justo antes del ingest — si otro commit
+       ganó la carrera durante el parse, _load_pending_import lanza 404.
 
     NOTE: SQLite (aiosqlite) silently omits FOR UPDATE from compiled SQL, so
     these tests cannot verify actual lock contention. Instead they verify the
     ORM-level plumbing: that commit calls _load_pending_import with
-    for_update=True and that dry-run does NOT. Lock contention behavior is
-    only exercised in production MySQL InnoDB.
+    for_update=True (twice) and that dry-run does NOT. Lock contention behavior
+    is only exercised in production MySQL InnoDB.
     """
 
     @pytest.mark.asyncio
     async def test_commit_locks_import_row(
         self, coach_client, stub_parsers, stub_ingestor, monkeypatch
     ):
-        """commit_import debe llamar _load_pending_import con for_update=True.
+        """commit_import debe llamar _load_pending_import con for_update=True DOS veces.
+
+        Diseño two-phase: carga inicial con lock → commit temprano (libera
+        conexión durante SFTP+parse) → re-verificación con lock justo antes
+        del ingest para rechazar commits que ganaron la carrera durante el parse.
 
         SQLite ignora FOR UPDATE en SQL compilado, por lo que la verificación
         se hace al nivel ORM: interceptamos _load_pending_import y registramos
-        el valor de for_update. Ver Plan 002 §Step 5 para contexto completo.
+        el valor de for_update en cada llamada. Ver Plan 002 §Step 5 + revisión.
         """
         from app.routers import race_imports as router_mod
         from app.services.race.normalizer import normalize_name
@@ -2031,9 +2041,8 @@ class TestCommitLocking:
             },
         )
         assert r.status_code == 200, r.text
-        assert len(calls) >= 1, "commit did not call _load_pending_import"
-        assert calls[0]["for_update"] is True, (
-            f"Expected for_update=True in commit call, got {calls[0]}"
+        assert len(calls) >= 2 and all(c["for_update"] is True for c in calls), (
+            f"Expected >= 2 calls all with for_update=True (two-phase lock), got {calls}"
         )
 
     @pytest.mark.asyncio
@@ -2166,3 +2175,76 @@ class TestCommitLocking:
         assert "no está en estado pending" in detail, (
             f"Expected 'no está en estado pending' in detail, got: {detail}"
         )
+
+    @pytest.mark.asyncio
+    async def test_commit_recheck_rejects_when_no_longer_pending(
+        self, coach_client, stub_parsers, monkeypatch, db_session_factory
+    ):
+        """La re-verificación two-phase rechaza el commit si el import ya no es pending.
+
+        Simula la carrera perdida: entre la carga inicial y el ingest, otra
+        operación marcó el import como committed. El spy sobre
+        _load_pending_import cambia el status a committed en la DB justo antes
+        de la segunda llamada (re-verificación), forzando que ésta lance 404.
+        Se verifica también que RaceIngestor.ingest_event NUNCA fue invocado.
+        """
+        from app.models.race_import import RaceImportStatus
+        from app.routers import race_imports as router_mod
+        from app.services.race import ingestor as ingestor_mod
+        from app.services.race.normalizer import normalize_name
+
+        # 1. Parse
+        files = {"resultados_pdf": _pdf_file(b"recheck reject test")}
+        r = await coach_client.post(
+            "/api/race-analysis/imports/parse",
+            data=_parse_form(), files=files,
+        )
+        assert r.status_code == 200, r.text
+        parse_id = r.json()["parse_id"]
+
+        # 2. Spy: on the SECOND call (re-check), flip status to committed so
+        #    _load_pending_import raises 404 (no longer pending).
+        call_count = {"n": 0}
+        _original = router_mod._load_pending_import
+
+        async def _spy_flip(db, pid, user, *, for_update=False):
+            call_count["n"] += 1
+            if call_count["n"] >= 2 and for_update:
+                # Simulate the lost race: mark the row as committed before the
+                # original loader reads it — _load_pending_import will then
+                # raise HTTPException 404 because status != pending.
+                from sqlalchemy import update as sa_update
+                from app.models.race_import import RaceImport as RaceImportModel
+                await db.execute(
+                    sa_update(RaceImportModel)
+                    .where(RaceImportModel.id == pid)
+                    .values(status=RaceImportStatus.committed)
+                )
+                await db.commit()
+            return await _original(db, pid, user, for_update=for_update)
+
+        monkeypatch.setattr(router_mod, "_load_pending_import", _spy_flip)
+
+        # 3. Recorder for ingest_event — must never be called
+        ingest_called = {"n": 0}
+
+        async def _recorder(self, meta, results_by_category, **kwargs):
+            ingest_called["n"] += 1
+            raise AssertionError("ingest_event must not be called after failed recheck")
+
+        monkeypatch.setattr(ingestor_mod.RaceIngestor, "ingest_event", _recorder)
+
+        match_norm = normalize_name("Sebastian Yule Mendoza")
+        r = await coach_client.post(
+            f"/api/race-analysis/imports/{parse_id}/commit",
+            json={
+                "resolved_matches": [
+                    {"competitor_normalized_name": match_norm, "athlete_id": None}
+                ]
+            },
+        )
+        assert r.status_code == 404, (
+            f"Expected 404 when import no longer pending at recheck, got {r.status_code}: {r.text}"
+        )
+        assert "no está en estado pending" in r.json()["detail"], r.json()
+        assert ingest_called["n"] == 0, "ingest_event was called despite failed recheck"

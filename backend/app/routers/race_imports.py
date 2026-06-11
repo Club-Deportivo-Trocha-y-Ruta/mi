@@ -967,6 +967,12 @@ async def commit_import(
         if bib is not None:
             match_decisions[bib] = rm.athlete_id
 
+    # Re-adquirir el lock y re-verificar status justo antes de mutar:
+    # el commit temprano (liberar conexión durante SFTP+parse) soltó el lock
+    # de la carga inicial. Si otro commit ganó la carrera durante el parse,
+    # esta re-verificación lanza 404 (ya no está pending).
+    imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
+
     # Snapshot attrs antes del ingest: el ingestor hace commit/rollback sobre la
     # misma session, lo que expira el ORM `imp` (MissingGreenlet en lazy-load).
     imp_sha256 = imp.sha256
