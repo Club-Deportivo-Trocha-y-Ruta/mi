@@ -17,7 +17,7 @@ isn't forgotten and isn't re-audited as a discovery.
 |------|-------|----------|--------|------------|--------|
 | 001 | Prod config hardening (JWT default hard-fail, CORS `*` warning, parser error sanitization) | P1 | S | — | DONE |
 | 002 | Race-import commit row locking (double-submit IntegrityError) | P1 | S–M | — | DONE |
-| 003 | Password-reset atomic token consume | P2 | S | — | TODO |
+| 003 | Password-reset atomic token consume | P2 | S | — | DONE |
 | 004 | Standings characterization tests + mutation on standings.py | P2 | M | — | TODO |
 | 005 | Opt-in MySQL dialect test lane for raw-SQL race modules | P3 | M–L | — | TODO |
 | 006 | INVESTIGATION: RaceImport/RaceEvent responsibility map; verify specs 007–009 consolidation | P3 | M | — | TODO |
