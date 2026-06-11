@@ -32,9 +32,36 @@ source_paths = ["app/services"]
 do_not_mutate = [
     "app/services/ai/*",
     "app/services/notification/*",
-    "app/services/race/*",
     "app/services/calendar/*",
     "app/services/training/*",
+    # race subpackages (all excluded — complex AI/agentic code)
+    "app/services/race/agents/*",
+    "app/services/race/ai/*",
+    "app/services/race/eval/*",
+    "app/services/race/prompts/*",
+    "app/services/race/rag/*",
+    # race sibling modules (excluded — keep standings.py un-excluded for mutation)
+    "app/services/race/__init__.py",
+    "app/services/race/analytics.py",
+    "app/services/race/analytics_charts.py",
+    "app/services/race/calendar_sync.py",
+    "app/services/race/club_insights.py",
+    "app/services/race/competitor_linking.py",
+    "app/services/race/csv_parser.py",
+    "app/services/race/group_launch.py",
+    "app/services/race/ingestor.py",
+    "app/services/race/insights_history.py",
+    "app/services/race/matcher.py",
+    "app/services/race/normalizer.py",
+    "app/services/race/pdf_parser.py",
+    "app/services/race/queries.py",
+    "app/services/race/results_read.py",
+    "app/services/race/revision.py",
+    "app/services/race/revision_diff_view.py",
+    "app/services/race/roster.py",
+    "app/services/race/run_staleness.py",
+    "app/services/race/schemas.py",
+    "app/services/race/season_panorama.py",
 ]
 
 [tool.pytest.ini_options]
