@@ -44,6 +44,9 @@ export function makeRaceResultRow(
   overrides?: Partial<RaceResultRow>,
 ): RaceResultRow {
   return {
+    result_id: 1001,
+    coach_note: null,
+    coach_note_updated_at: null,
     position: 1,
     competitor_id: 101,
     display_name: "Corredor A",
@@ -63,6 +66,9 @@ export function makeRaceResultRowRival(
   overrides?: Partial<RaceResultRow>,
 ): RaceResultRow {
   return {
+    result_id: 1002,
+    coach_note: null,
+    coach_note_updated_at: null,
     position: 2,
     competitor_id: 202,
     display_name: "Corredor B",

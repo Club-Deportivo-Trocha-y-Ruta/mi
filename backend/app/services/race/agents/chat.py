@@ -184,6 +184,7 @@ def _build_fetch_results_tool(
     *,
     scope_season: Optional[int] = None,
     scope_valida_num: Optional[int] = None,
+    forbidden_names: Optional[list[str]] = None,
 ):
     """Fábrica del tool ``fetch_results``.
 
@@ -194,8 +195,12 @@ def _build_fetch_results_tool(
             no puede contradecir al prompt pidiendo parámetros de evento
             (causa raíz del bug "¿a qué válida te refieres?").
         scope_valida_num: ver ``scope_season``.
+        forbidden_names: nombres reales a scrubear del coach_note antes de
+            exponerlo al LLM (T022 — privacidad menores).
     """
     from langchain_core.tools import tool
+
+    _forbidden: list[str] = forbidden_names or []
 
     async def _run(athlete_id: int, season: Optional[int]) -> str:
         if db_factory is None:
@@ -229,7 +234,18 @@ def _build_fetch_results_tool(
             time_ms = getattr(r, "race_time_ms", None)
             time_str = _format_ms_hhmmss(time_ms)
             event_id = getattr(r, "event_id", "?")
-            out.append(f"- event_id={event_id}, pos={pos}, race_time={time_str}")
+            # T022 — include scrubbed coach_note when present so chat answers
+            # can incorporate it. Raw note is scrubbed before reaching the LLM;
+            # when absent, no placeholder is emitted (FR-009).
+            raw_note = getattr(r, "coach_note", None)
+            if raw_note is not None:
+                note_str = _scrub_coach_note_for_chat(raw_note, _forbidden)
+                out.append(
+                    f"- event_id={event_id}, pos={pos}, race_time={time_str},"
+                    f" nota_entrenador={note_str}"
+                )
+            else:
+                out.append(f"- event_id={event_id}, pos={pos}, race_time={time_str}")
         return "\n".join(out)
 
     if scope_season is not None and scope_valida_num is not None:
@@ -455,6 +471,24 @@ def _scrub_weather_notes(entry: dict, forbidden_names: list[str]) -> dict:
     return out
 
 
+def _scrub_coach_note_for_chat(note: str, forbidden_names: list[str]) -> str:
+    """Scrub nombres reales del ``coach_note`` antes de exponerlo al LLM (T022).
+
+    Privacidad: NUNCA registrar el contenido en logs. Reutiliza las mismas
+    reglas de guardrails v2 que ``_scrub_weather_notes`` y ``_scrub_note``
+    (en anonymize.py) para consistencia. Sin nombres prohibidos, el texto
+    pasa sin cambios.
+    """
+    if not note or not forbidden_names:
+        return note
+    from app.services.ai.guardrails import build_race_v2_forbidden_names_rules
+
+    scrubbed = note
+    for rule in build_race_v2_forbidden_names_rules(forbidden_names):
+        scrubbed = rule.pattern.sub(rule.replacement or "", scrubbed)
+    return scrubbed
+
+
 # ---------------------------------------------------------------------------
 # Sesiones in-memory con TTL
 # ---------------------------------------------------------------------------
@@ -569,6 +603,7 @@ class RaceChatAgent:
                 db_factory,
                 scope_season=scope_season,
                 scope_valida_num=scope_valida_num,
+                forbidden_names=forbidden_names,
             ),
             _build_obtener_condiciones_evento_tool(
                 db_factory,

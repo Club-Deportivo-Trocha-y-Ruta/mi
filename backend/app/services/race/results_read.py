@@ -100,6 +100,8 @@ async def get_event_results(
             RaceResult.points_awarded,
             RaceResult.bib_number,
             RaceResult.category_id,
+            RaceResult.coach_note,
+            RaceResult.coach_note_updated_at,
             RaceCompetitor.display_name,
             RaceCompetitor.club_text,
             RaceCategory.code.label("category_code"),
@@ -156,8 +158,14 @@ async def get_event_results(
                 "label": row["category_label"],
                 "rows": [],
             }
+        # FR-005 / SC-005: coach_note is coach/admin-only. When
+        # allowed_athlete_ids is a set (parent scope), suppress it so
+        # parents never see the coach's private qualitative note, even
+        # for their own child's result row.
+        is_parent_scope = allowed_athlete_ids is not None
         categories_map[cat_id]["rows"].append(
             ResultRow(
+                result_id=row["id"],
                 position=row["position"],
                 competitor_id=row["competitor_id"],
                 display_name=row["display_name"],
@@ -169,6 +177,8 @@ async def get_event_results(
                 laps_behind=row["laps_behind"],
                 points_awarded=row["points_awarded"] if row["points_awarded"] is not None else 0,
                 bib_number=row["bib_number"],
+                coach_note=None if is_parent_scope else row["coach_note"],
+                coach_note_updated_at=None if is_parent_scope else row["coach_note_updated_at"],
             )
         )
 

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     CheckConstraint,
@@ -132,6 +132,12 @@ class RaceResult(Base):
         ForeignKey("race_imports.id", ondelete="SET NULL"), nullable=True
     )
     notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Coach qualitative note — separate from importer-owned `notes` (never overwritten on re-import).
+    coach_note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    coach_note_author_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    coach_note_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
@@ -173,6 +179,10 @@ class RaceResult(Base):
     creator: Mapped["User"] = relationship(
         "User",
         foreign_keys="[RaceResult.created_by_user_id]",
+    )
+    coach_note_author: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys="[RaceResult.coach_note_author_id]",
     )
     revisions: Mapped[list["RaceResultRevision"]] = relationship(
         "RaceResultRevision",

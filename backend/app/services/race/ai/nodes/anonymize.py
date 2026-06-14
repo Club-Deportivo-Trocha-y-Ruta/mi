@@ -80,6 +80,12 @@ async def anonymize(state: dict) -> dict[str, Any]:
             type(exc).__name__,
         )
 
+    # T020 — load forbidden names once; reused for both coach_note and
+    # weather_notes scrubbing.  We read from state first (populated by
+    # validate_input / load_race_data upstream); if absent we fall back to an
+    # empty list so the scrub still runs (notes pass through unchanged).
+    forbidden_names: list[str] = list(state.get("forbidden_names") or [])
+
     # Anonimiza raw_data: filtra athlete_id real, pseudónimo se aplica
     # solo al atleta objetivo. competitor_id se mantiene (es un opaque ID
     # que no permite identificación sin acceso a la DB).
@@ -91,6 +97,12 @@ async def anonymize(state: dict) -> dict[str, Any]:
         # de podio mantienen su competitor_id opaco.
         if row.get("athlete_id") == athlete_id:
             cleaned["pseudonym"] = pseudonym
+            # T020 — scrub coach_note in-place for the target athlete's rows.
+            # When coach_note is absent (key not present), leave it absent —
+            # no placeholder is injected (FR-009: no fabricated context).
+            raw_note = cleaned.get("coach_note")
+            if raw_note is not None:
+                cleaned["coach_note"] = _scrub_note(raw_note, forbidden_names)
         anonymized_rows.append(cleaned)
 
     update: dict[str, Any] = {
@@ -106,11 +118,44 @@ async def anonymize(state: dict) -> dict[str, Any]:
     # cinco condiciones; los campos estructurados (enum/numérico) no llevan PII.
     event_conditions = state.get("event_conditions")
     if event_conditions:
-        forbidden_names: list[str] = list(state.get("forbidden_names") or [])
         scrubbed_conditions = _scrub_event_conditions(event_conditions, forbidden_names)
         update["event_conditions"] = scrubbed_conditions
 
+    # T020/T021 — scrub {valida_num: raw_coach_note} built by load_race_data.
+    # Produces {valida_num: scrubbed_note} that analyst_agent reads from state.
+    # Keys with None notes are preserved so analyst_agent can detect absence
+    # (FR-009: no fabricated context when note is absent).
+    raw_notes_by_valida: dict[int, str | None] = state.get("coach_notes_by_valida") or {}
+    if raw_notes_by_valida:
+        scrubbed_notes: dict[int, str | None] = {}
+        for vn, raw_note in raw_notes_by_valida.items():
+            scrubbed_notes[vn] = (
+                _scrub_note(raw_note, forbidden_names)
+                if raw_note is not None
+                else None
+            )
+        update["coach_notes_by_valida"] = scrubbed_notes
+
     return update
+
+
+def _scrub_note(text: str, forbidden_names: list[str]) -> str:
+    """Elimina nombres reales de un campo de texto libre usando los guardrails v2.
+
+    Reutiliza ``build_race_v2_forbidden_names_rules`` — la misma lógica que
+    aplica ``_scrub_event_conditions`` al campo ``weather_notes``. Cuando no
+    hay nombres prohibidos, el texto pasa sin cambios.
+
+    Privacidad: NUNCA registrar el contenido del texto en logs.
+    """
+    if not text or not forbidden_names:
+        return text
+    from app.services.ai.guardrails import build_race_v2_forbidden_names_rules
+
+    scrubbed = text
+    for rule in build_race_v2_forbidden_names_rules(forbidden_names):
+        scrubbed = rule.pattern.sub(rule.replacement or "", scrubbed)
+    return scrubbed
 
 
 def _scrub_event_conditions(

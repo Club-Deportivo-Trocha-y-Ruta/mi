@@ -14,6 +14,8 @@ Endpoints implementados:
 - ``DELETE /{race_event_id}/cleanup``               — borra válida duplicada sin resultados + su calendario (coach only).
 - ``DELETE /{race_event_id}/roster/{entry_id}``     — elimina entrada de nómina (coach + admin).
 - ``PATCH  /{race_event_id}/conditions``            — actualiza condiciones de carrera (coach + admin).
+- ``PUT    /race-results/{result_id}/coach-note``   — escribe/reemplaza nota del entrenador (coach + admin).
+- ``DELETE /race-results/{result_id}/coach-note``   — elimina nota del entrenador (coach + admin).
 
 Convenciones:
 - RBAC: coach + admin en escritura. Admin exclusivo para DELETE de evento.
@@ -24,6 +26,7 @@ Convenciones:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -32,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
 from app.models.race_event import RaceEvent, RaceEventStatus
+from app.models.race_result import RaceResult
 from app.models.user import User, UserRole
 from app.schemas.race_event import (
     CalendarAutoCreateRead,
@@ -43,7 +47,7 @@ from app.schemas.race_event import (
     RaceEventUpdate,
 )
 from app.schemas.race_imports import RaceEventConditionsRead, RaceEventConditionsUpdate
-from app.schemas.race_results import EventResultsRead, EventStandingsRead
+from app.schemas.race_results import CoachNoteUpdate, EventResultsRead, EventStandingsRead, ResultRow
 from app.schemas.race_roster import RosterEntryCreate, RosterEntryRead, RosterEntryUpdate, RosterRead
 import app.services.race_events as race_events_svc
 import app.services.race.results_read as results_svc
@@ -784,3 +788,152 @@ async def update_race_event_conditions(
         weather_notes=event.weather_notes,
         updated_at=event.updated_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# PUT /race-results/{result_id}/coach-note  — T006
+# ---------------------------------------------------------------------------
+
+
+def _result_row_from_orm(row: RaceResult) -> ResultRow:
+    """Serialize a ``RaceResult`` ORM instance to ``ResultRow``.
+
+    Used by the coach-note PUT/DELETE handlers where we already hold
+    the ORM object (no extra query needed).
+    """
+    return ResultRow(
+        result_id=row.id,
+        position=row.position,
+        competitor_id=row.competitor_id,
+        display_name=row.competitor.display_name,
+        club_text=row.competitor.club_text,
+        athlete_id=row.athlete_id,
+        is_our_club=(row.athlete_id is not None),
+        status=row.status.value if hasattr(row.status, "value") else str(row.status),
+        race_time_ms=row.race_time_ms,
+        laps_behind=row.laps_behind,
+        points_awarded=row.points_awarded if row.points_awarded is not None else 0,
+        bib_number=row.bib_number,
+        coach_note=row.coach_note,
+        coach_note_updated_at=row.coach_note_updated_at,
+    )
+
+
+@router.put(
+    "/race-results/{result_id}/coach-note",
+    response_model=ResultRow,
+    summary="Escribir o reemplazar nota del entrenador para un resultado de carrera",
+)
+async def set_race_result_coach_note(
+    result_id: int,
+    body: CoachNoteUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> ResultRow:
+    """Escribe (o reemplaza) la nota cualitativa del entrenador para un resultado.
+
+    La nota es exclusiva del coach/admin — no proviene del proceso de ingest
+    del PDF y nunca se sobreescribe en reimportaciones.
+
+    Solo se puede anotar resultados de atletas del club (``athlete_id IS NOT NULL``).
+    El campo ``coach_note`` del body ya llega limpio (strip + validación de longitud).
+
+    Códigos de respuesta:
+    - 200: nota guardada. Body: ``ResultRow`` actualizado.
+    - 404: resultado no existe o fue eliminado (soft-delete).
+    - 409: el resultado no pertenece a un atleta del club.
+    - 422: nota vacía o excede 500 caracteres.
+    - 403: usuario sin rol coach o admin.
+    """
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(RaceResult)
+        .options(selectinload(RaceResult.competitor))
+        .where(RaceResult.id == result_id, RaceResult.deleted_at.is_(None))
+    )
+    race_result: Optional[RaceResult] = result.scalar_one_or_none()
+    if race_result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Resultado de carrera con id={result_id} no existe.",
+        )
+
+    if race_result.athlete_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"El resultado id={result_id} pertenece a un competidor externo "
+                "sin atleta del club vinculado. No se puede anotar."
+            ),
+        )
+
+    race_result.coach_note = body.coach_note
+    race_result.coach_note_author_id = current_user.id
+    race_result.coach_note_updated_at = datetime.now(timezone.utc)
+
+    await db.flush()
+
+    logger.info(
+        "race_result_coach_note_set result_id=%s athlete_id=%s user_id=%s",
+        result_id,
+        race_result.athlete_id,
+        current_user.id,
+    )
+
+    return _result_row_from_orm(race_result)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /race-results/{result_id}/coach-note  — T007
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/race-results/{result_id}/coach-note",
+    response_model=ResultRow,
+    summary="Eliminar nota del entrenador para un resultado de carrera",
+)
+async def clear_race_result_coach_note(
+    result_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> ResultRow:
+    """Elimina la nota cualitativa del entrenador de un resultado.
+
+    La operación es idempotente: si la nota ya es ``None`` se retorna
+    el ``ResultRow`` sin modificar la BD.
+
+    Códigos de respuesta:
+    - 200: nota eliminada (o ya era nula). Body: ``ResultRow`` actualizado.
+    - 404: resultado no existe o fue eliminado (soft-delete).
+    - 403: usuario sin rol coach o admin.
+    """
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(RaceResult)
+        .options(selectinload(RaceResult.competitor))
+        .where(RaceResult.id == result_id, RaceResult.deleted_at.is_(None))
+    )
+    race_result: Optional[RaceResult] = result.scalar_one_or_none()
+    if race_result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Resultado de carrera con id={result_id} no existe.",
+        )
+
+    if race_result.coach_note is not None:
+        race_result.coach_note = None
+        race_result.coach_note_author_id = None
+        race_result.coach_note_updated_at = None
+        await db.flush()
+
+    logger.info(
+        "race_result_coach_note_clear result_id=%s athlete_id=%s user_id=%s",
+        result_id,
+        race_result.athlete_id,
+        current_user.id,
+    )
+
+    return _result_row_from_orm(race_result)

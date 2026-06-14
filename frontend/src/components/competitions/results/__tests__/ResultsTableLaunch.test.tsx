@@ -72,6 +72,9 @@ function makeQueryClient() {
 /** Base row for our club with a linked athlete. */
 function makeOurClubRow(overrides?: Partial<RaceResultRow>): RaceResultRow {
   return {
+    result_id: 1001,
+    coach_note: null,
+    coach_note_updated_at: null,
     position: 1,
     competitor_id: 101,
     display_name: "Isabel Quiñones",
@@ -90,6 +93,9 @@ function makeOurClubRow(overrides?: Partial<RaceResultRow>): RaceResultRow {
 /** Rival row — different club, no athlete_id. */
 function makeRivalRow(overrides?: Partial<RaceResultRow>): RaceResultRow {
   return {
+    result_id: 1002,
+    coach_note: null,
+    coach_note_updated_at: null,
     position: 2,
     competitor_id: 202,
     display_name: "Corredor Rival",

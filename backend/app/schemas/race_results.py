@@ -13,10 +13,10 @@ Privacidad Ley 1581:
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 class ResultRow(BaseModel):
     """One competitor's result in a single event / category."""
 
+    result_id: int = Field(..., description="PK of the race_results row.")
     position: Optional[int] = Field(
         None,
         description="Finishing position (1-based). None for DNF/DNS/DSQ.",
@@ -57,8 +58,42 @@ class ResultRow(BaseModel):
     )
     points_awarded: int = Field(..., description="Points credited to the competitor.")
     bib_number: Optional[int] = Field(None, description="Race bib number.")
+    coach_note: Optional[str] = Field(
+        None,
+        description="Coach qualitative note for this result (max 500 chars). None if not set.",
+    )
+    coach_note_updated_at: Optional[datetime] = Field(
+        None,
+        description="UTC timestamp of the last coach note update. None if no note set.",
+    )
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Coach note mutation schemas
+# ---------------------------------------------------------------------------
+
+
+class CoachNoteUpdate(BaseModel):
+    """Request body for PUT /race-results/{result_id}/coach-note."""
+
+    coach_note: str = Field(
+        ...,
+        description="Coach qualitative note for the result (1–500 characters, stripped).",
+    )
+
+    @field_validator("coach_note")
+    @classmethod
+    def validate_coach_note(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("coach_note must not be empty or whitespace-only.")
+        if len(stripped) > 500:
+            raise ValueError(
+                f"coach_note exceeds 500 characters (got {len(stripped)})."
+            )
+        return stripped
 
 
 class CategoryResults(BaseModel):

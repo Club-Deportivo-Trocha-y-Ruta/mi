@@ -306,3 +306,19 @@
 | Deploy | Cloudflare Pages / production build | ⏳ Pending |
 
 > **Privacy note (authoritative)**: the persistence allow-list is `lib/persistAllowList.ts` — additions require a `data-privacy-guard` review. Session lists / calendar-event detail may only be re-allowed after a backend summary schema strips athlete fields.
+
+## Implementation status — Coach Per-Athlete Race Notes (specs/013-race-result-athlete-notes)
+
+> Coach/admin can attach a short free-text qualitative note per club rider per válida from the Competition results view; the note is fed (after the same real-name scrub + pseudonymization as `weather_notes`) to BOTH the automatic per-athlete AI insight AND the coach-only competition chat. Parents/athletes never see it.
+
+| Step | Scope | Status |
+|---|---|---|
+| Foundational (T002–T004) | `coach_note` (String 500) + `coach_note_author_id` (FK users, SET NULL) + `coach_note_updated_at` on `race_results`; migration `a3b4c5d6e7f8` (revises `f9a0b1c2d3e4`); legacy importer `notes` column untouched | ✅ Complete 2026-06-14 |
+| US1 backend (T005–T008) | `ResultRow` exposes `result_id`/`coach_note`/`coach_note_updated_at`; `CoachNoteUpdate` (strip + 1..500); `PUT`/`DELETE /api/race-analysis/race-events/race-results/{id}/coach-note` (coach/admin RBAC, 404/409/422); results read round-trips fields | ✅ Complete 2026-06-14 |
+| US1/US2 frontend (T009–T013, T016) | `RaceResultRow` types; `setResultCoachNote`/`clearResultCoachNote` API; optimistic `useSetResultCoachNote`/`useClearResultCoachNote`; `EditResultNoteDialog` (RHF+Zod, español, a11y); `ResultsTable` note preview + add/edit affordance (coach/admin, club rows only) | ✅ Complete 2026-06-14 |
+| US3 AI (T019–T022) | `_serialize_result` carries `coach_note`; `anonymize` scrubs per-row + `coach_notes_by_valida`; `analyst_agent` injects scrubbed note into `race_meta`; chat `fetch_results` tool returns scrubbed `nota_entrenador`; null note → unchanged behaviour (FR-009) | ✅ Complete 2026-06-14 |
+| Privacy (T024) | **CRITICAL fixed**: `results_read.py` now suppresses `coach_note`/`coach_note_updated_at` for parent-scoped reads (parents must not see the coach's private note about their child). 13 privacy-invariant tests lock real-name scrub + parent suppression + no-note-logging | ✅ Complete 2026-06-14 |
+| Quality gates | Feature tests: backend 57 (router 25 + AI 14 + privacy 18); broader race suites 65; frontend vitest 132; `tsc --noEmit` clean; ruff clean on changed files. Full backend suite failures verified environmental (no MySQL on :3306 / missing PDF+email libs), not regressions | ✅ Complete 2026-06-14 |
+| Deploy | Deploy to Render (migration runs via `entrypoint.sh`) | ⏳ Pending |
+
+> Frontend integration fix during gates: coach-note client path corrected to `/api/race-analysis/race-events/race-results/{id}/coach-note` (router mounted under `/race-events`). Pre-existing second Alembic head `e5f6a7b8c9d0` (feature 007) is unrelated and would need a separate merge migration.

@@ -232,6 +232,9 @@ describe("ResultsTable — toggle solo mi club", () => {
           label: "Infantil Masculino",
           rows: [
             {
+              result_id: 9001,
+              coach_note: null,
+              coach_note_updated_at: null,
               position: 1,
               competitor_id: 999,
               display_name: "Solo Rival",

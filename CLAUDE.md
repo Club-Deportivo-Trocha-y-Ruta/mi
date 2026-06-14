@@ -144,6 +144,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 | Cleanup Duplicate Competition | specs/009-cleanup-duplicate-competition | ✅ Complete — deploy pending |
 | Competitions AI Insights (group launch, season context, chat) | specs/010-competitions-ai-insights | ✅ Complete — deploy pending |
 | Perceived Performance Cache (persisted allow-list cache, cold-start banner, prefetch) | specs/012-perceived-performance-cache | ✅ Complete — deploy pending (e2e spec pending local run) |
+| Coach Per-Athlete Race Notes (coach_note on race_results, PUT/DELETE, fed to AI insight + chat with name scrub) | specs/013-race-result-athlete-notes | ✅ Complete — deploy pending (migration a3b4c5d6e7f8) |
 
 ## Development credentials (seed data)
 
@@ -265,5 +266,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/012-perceived-performance-cache/plan.md
+at specs/013-race-result-athlete-notes/plan.md
 <!-- SPECKIT END -->
