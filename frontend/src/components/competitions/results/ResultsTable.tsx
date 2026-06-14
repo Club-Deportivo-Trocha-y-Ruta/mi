@@ -29,7 +29,7 @@
  */
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronUp, ChevronDown, ChevronsUpDown, BrainCircuit, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, BrainCircuit, Loader2, CheckCircle2, AlertCircle, MessageSquarePlus, MessageSquare } from "lucide-react";
 
 import {
   Table,
@@ -40,13 +40,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
+import { EditResultNoteDialog } from "@/components/race/EditResultNoteDialog";
 import type {
   RaceEventResultsResponse,
   RaceResultCategory,
   RaceResultRow,
+  RaceResultsFilters,
 } from "@/types/raceResults.types";
 
 // ---------------------------------------------------------------------------
@@ -219,6 +227,11 @@ export interface ResultsTableProps {
    *   - `string`  → stale run_id → launch directo (análisis desactualizado).
    */
   insightFreshnessMap?: Map<number, string | null>;
+  /**
+   * Filtros activos en esta tabla. Se pasan a EditResultNoteDialog para que
+   * la invalidación optimista apunte a la query key exacta.
+   */
+  activeFilters?: RaceResultsFilters;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +245,7 @@ export function ResultsTable({
   validaNum,
   isCoachOrAdmin = false,
   insightFreshnessMap,
+  activeFilters = {},
 }: ResultsTableProps) {
   const categories = data.categories;
 
@@ -289,6 +303,7 @@ export function ResultsTable({
     totalRows === 0 && (clubOnly || selectedCategoryId !== "all");
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div className="space-y-4" data-testid="results-table-root">
       {/* ── Barra de controles ─────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3">
@@ -410,7 +425,7 @@ export function ResultsTable({
                       Dorsal
                     </TableHead>
                     {/* Acciones — solo visible para coach/admin */}
-                    {canLaunch && (
+                    {isCoachOrAdmin && (
                       <TableHead className="w-10 text-right" aria-label="Acciones" />
                     )}
                   </TableRow>
@@ -422,6 +437,7 @@ export function ResultsTable({
                       row={row}
                       sort={sort}
                       canLaunch={canLaunch}
+                      isCoachOrAdmin={isCoachOrAdmin}
                       season={season}
                       validaNum={validaNum}
                       insightFreshness={
@@ -429,6 +445,8 @@ export function ResultsTable({
                           ? insightFreshnessMap?.get(row.athlete_id)
                           : undefined
                       }
+                      raceEventId={data.race_event_id}
+                      activeFilters={activeFilters}
                     />
                   ))}
                 </TableBody>
@@ -436,6 +454,7 @@ export function ResultsTable({
             </div>
           ))}
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -605,19 +624,26 @@ function ResultRow({
   row,
   sort: _sort,
   canLaunch = false,
+  isCoachOrAdmin = false,
   season,
   validaNum,
   insightFreshness,
+  raceEventId,
+  activeFilters = {},
 }: {
   row: RaceResultRow;
   sort: SortState;
   canLaunch?: boolean;
+  isCoachOrAdmin?: boolean;
   season?: number;
   validaNum?: number;
   /** undefined = no insight; null = fresh insight; string = stale run_id */
   insightFreshness?: string | null;
+  raceEventId: number;
+  activeFilters?: RaceResultsFilters;
 }) {
   const isOurClub = row.is_our_club;
+
   // Show per-row AI button: coach/admin only, our-club row, athlete_id linked,
   // and season + validaNum available.
   const showAnalyzeBtn =
@@ -627,129 +653,198 @@ function ResultRow({
     season != null &&
     validaNum != null;
 
+  // Show note button: coach/admin only, our-club row, athlete_id linked.
+  const showNoteBtn = isCoachOrAdmin && isOurClub && row.athlete_id != null;
+
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+
   return (
-    <TableRow
-      className={cn(
-        // El indicador de club se pinta como box-shadow inset en la primera
-        // celda (no como ::before absoluto): aplicar `position: relative` a un
-        // <tr> rompe la grilla de columnas de la tabla en Chrome (border-collapse)
-        // y desplazaba toda la fila una columna a la derecha.
-        isOurClub && "bg-emerald-50/60 hover:bg-emerald-50",
-      )}
-      aria-label={
-        isOurClub
-          ? `${row.display_name} — corredor de nuestro club`
-          : undefined
-      }
-      data-testid={`results-row-${row.competitor_id}`}
-      data-our-club={isOurClub ? "true" : undefined}
-    >
-      {/* Posición */}
-      <TableCell
+    <>
+      <TableRow
         className={cn(
-          "font-mono text-xs font-medium",
-          isOurClub && "shadow-[inset_4px_0_0_0_var(--color-emerald-500)]",
+          // El indicador de club se pinta como box-shadow inset en la primera
+          // celda (no como ::before absoluto): aplicar `position: relative` a un
+          // <tr> rompe la grilla de columnas de la tabla en Chrome (border-collapse)
+          // y desplazaba toda la fila una columna a la derecha.
+          isOurClub && "bg-emerald-50/60 hover:bg-emerald-50",
         )}
+        aria-label={
+          isOurClub
+            ? `${row.display_name} — corredor de nuestro club`
+            : undefined
+        }
+        data-testid={`results-row-${row.competitor_id}`}
+        data-our-club={isOurClub ? "true" : undefined}
       >
-        {row.position !== null ? (
-          <span
-            className={cn(
-              row.position <= 3
-                ? "text-amber-700 font-bold"
-                : "text-charcoal",
-            )}
-          >
-            {row.position}
-          </span>
-        ) : (
-          <span className="text-mid-gray">
-            {STATUS_LABELS[row.status] ?? row.status}
-          </span>
-        )}
-      </TableCell>
-
-      {/* Nombre + badge club en mobile */}
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <span className={cn("text-sm", isOurClub && "font-medium text-charcoal")}>
-            {row.display_name}
-          </span>
-          {isOurClub && (
+        {/* Posición */}
+        <TableCell
+          className={cn(
+            "font-mono text-xs font-medium",
+            isOurClub && "shadow-[inset_4px_0_0_0_var(--color-emerald-500)]",
+          )}
+        >
+          {row.position !== null ? (
             <span
-              className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 sm:hidden"
-              aria-label="Corredor de nuestro club"
+              className={cn(
+                row.position <= 3
+                  ? "text-amber-700 font-bold"
+                  : "text-charcoal",
+              )}
             >
-              Club
+              {row.position}
+            </span>
+          ) : (
+            <span className="text-mid-gray">
+              {STATUS_LABELS[row.status] ?? row.status}
             </span>
           )}
-        </div>
-        {/* Club visible en mobile (hidden en sm+) */}
-        <p className="mt-0.5 text-xs text-mid-gray sm:hidden">{row.club_text}</p>
-      </TableCell>
-
-      {/* Club (desktop) */}
-      <TableCell className="hidden sm:table-cell text-mid-gray">
-        <div className="flex items-center gap-1.5">
-          {isOurClub && (
-            <span
-              className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
-              aria-label="Corredor de nuestro club"
-            >
-              Club
-            </span>
-          )}
-          <span className="text-sm">{row.club_text}</span>
-        </div>
-      </TableCell>
-
-      {/* Tiempo / estado */}
-      <TableCell className="whitespace-nowrap text-right font-mono text-xs">
-        {row.status === "finished" ? (
-          <span>{formatRaceTime(row.race_time_ms)}</span>
-        ) : (
-          <span className="text-mid-gray">
-            {statusLabel(row.status, row.laps_behind, row.position)}
-          </span>
-        )}
-        {row.status === "finished" &&
-          row.laps_behind !== null &&
-          row.laps_behind > 0 && (
-            <span className="ml-1 text-xs text-mid-gray">
-              +{row.laps_behind}v
-            </span>
-          )}
-      </TableCell>
-
-      {/* Puntos (desktop md+) */}
-      <TableCell className="hidden md:table-cell text-right text-sm">
-        {row.points_awarded !== null ? (
-          <span className={cn(isOurClub && "font-semibold text-emerald-700")}>
-            {row.points_awarded}
-          </span>
-        ) : (
-          <span className="text-mid-gray">—</span>
-        )}
-      </TableCell>
-
-      {/* Dorsal (desktop lg+) */}
-      <TableCell className="hidden lg:table-cell text-right font-mono text-xs text-mid-gray">
-        {row.bib_number !== null ? `#${row.bib_number}` : "—"}
-      </TableCell>
-
-      {/* Acción "Analizar con IA" — solo cuando canLaunch=true */}
-      {canLaunch && (
-        <TableCell className="text-right">
-          {showAnalyzeBtn ? (
-            <AnalyzeButton
-              athleteId={row.athlete_id!}
-              season={season!}
-              validaNum={validaNum!}
-              insightFreshness={insightFreshness}
-              displayName={row.display_name}
-            />
-          ) : null}
         </TableCell>
+
+        {/* Nombre + badge club en mobile */}
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <span className={cn("text-sm", isOurClub && "font-medium text-charcoal")}>
+              {row.display_name}
+            </span>
+            {isOurClub && (
+              <span
+                className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 sm:hidden"
+                aria-label="Corredor de nuestro club"
+              >
+                Club
+              </span>
+            )}
+          </div>
+          {/* Club visible en mobile (hidden en sm+) */}
+          <p className="mt-0.5 text-xs text-mid-gray sm:hidden">{row.club_text}</p>
+          {/* Nota del entrenador — preview inline en mobile para coach/admin */}
+          {isCoachOrAdmin && isOurClub && row.coach_note && (
+            <p className="mt-1 line-clamp-2 text-xs italic text-mid-gray sm:hidden">
+              {row.coach_note}
+            </p>
+          )}
+        </TableCell>
+
+        {/* Club (desktop) */}
+        <TableCell className="hidden sm:table-cell text-mid-gray">
+          <div className="flex items-center gap-1.5">
+            {isOurClub && (
+              <span
+                className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+                aria-label="Corredor de nuestro club"
+              >
+                Club
+              </span>
+            )}
+            <span className="text-sm">{row.club_text}</span>
+          </div>
+          {/* Nota del entrenador — preview inline en desktop para coach/admin */}
+          {isCoachOrAdmin && isOurClub && row.coach_note && (
+            <p className="mt-1 line-clamp-2 max-w-[22ch] text-xs italic text-mid-gray">
+              {row.coach_note}
+            </p>
+          )}
+        </TableCell>
+
+        {/* Tiempo / estado */}
+        <TableCell className="whitespace-nowrap text-right font-mono text-xs">
+          {row.status === "finished" ? (
+            <span>{formatRaceTime(row.race_time_ms)}</span>
+          ) : (
+            <span className="text-mid-gray">
+              {statusLabel(row.status, row.laps_behind, row.position)}
+            </span>
+          )}
+          {row.status === "finished" &&
+            row.laps_behind !== null &&
+            row.laps_behind > 0 && (
+              <span className="ml-1 text-xs text-mid-gray">
+                +{row.laps_behind}v
+              </span>
+            )}
+        </TableCell>
+
+        {/* Puntos (desktop md+) */}
+        <TableCell className="hidden md:table-cell text-right text-sm">
+          {row.points_awarded !== null ? (
+            <span className={cn(isOurClub && "font-semibold text-emerald-700")}>
+              {row.points_awarded}
+            </span>
+          ) : (
+            <span className="text-mid-gray">—</span>
+          )}
+        </TableCell>
+
+        {/* Dorsal (desktop lg+) */}
+        <TableCell className="hidden lg:table-cell text-right font-mono text-xs text-mid-gray">
+          {row.bib_number !== null ? `#${row.bib_number}` : "—"}
+        </TableCell>
+
+        {/* Acciones — solo cuando isCoachOrAdmin=true */}
+        {isCoachOrAdmin && (
+          <TableCell className="text-right">
+            <div className="flex items-center justify-end gap-1">
+              {/* Nota del entrenador */}
+              {showNoteBtn && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setNoteDialogOpen(true)}
+                      className={cn(
+                        "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                        row.coach_note
+                          ? "text-blue-600 hover:bg-blue-50"
+                          : "text-mid-gray hover:bg-charcoal/8 hover:text-charcoal",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+                        "min-h-[36px] min-w-[36px]",
+                      )}
+                      aria-label={
+                        row.coach_note
+                          ? `Editar nota de ${row.display_name}`
+                          : `Agregar nota para ${row.display_name}`
+                      }
+                      data-testid={`note-btn-${row.competitor_id}`}
+                    >
+                      {row.coach_note ? (
+                        <MessageSquare size={13} aria-hidden="true" />
+                      ) : (
+                        <MessageSquarePlus size={13} aria-hidden="true" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">
+                    {row.coach_note ? "Editar nota" : "Agregar nota"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {/* Analizar con IA */}
+              {showAnalyzeBtn ? (
+                <AnalyzeButton
+                  athleteId={row.athlete_id!}
+                  season={season!}
+                  validaNum={validaNum!}
+                  insightFreshness={insightFreshness}
+                  displayName={row.display_name}
+                />
+              ) : null}
+            </div>
+          </TableCell>
+        )}
+      </TableRow>
+
+      {/* Note dialog — mounted outside the <tr> to avoid DOM nesting issues */}
+      {showNoteBtn && (
+        <EditResultNoteDialog
+          resultId={row.result_id}
+          displayName={row.display_name}
+          currentNote={row.coach_note}
+          raceEventId={raceEventId}
+          filters={activeFilters}
+          open={noteDialogOpen}
+          onOpenChange={setNoteDialogOpen}
+        />
       )}
-    </TableRow>
+    </>
   );
 }

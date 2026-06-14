@@ -199,6 +199,13 @@ async def _analyst_agent_v2(state: dict) -> dict[str, Any]:
 
     event_conditions: dict[int, dict] = state.get("event_conditions") or {}
 
+    # T021 — scrubbed per-válida coach notes (already scrubbed by anonymize).
+    # Key present → coach wrote a note for that válida.
+    # Key absent or value None → no note; do NOT fabricate context (FR-009).
+    coach_notes_by_valida: dict[int, str | None] = (
+        state.get("coach_notes_by_valida") or {}
+    )
+
     # Construir pares (valida_num, AnalysisInput) filtrando por válida.
     pairs: list[tuple[int, AnalysisInput]] = []
     for vn in valida_nums:
@@ -207,6 +214,15 @@ async def _analyst_agent_v2(state: dict) -> dict[str, Any]:
             if r.get("valida_num") == vn or vn == 0
         ]
         race_meta = format_race_meta(event_conditions.get(vn))
+
+        # T021 — append scrubbed coach note to race_meta so the analyst
+        # has qualitative coach context alongside race conditions.
+        # When note is absent/None, race_meta is unchanged (FR-009).
+        coach_note = coach_notes_by_valida.get(vn)
+        if coach_note:
+            note_line = f"- Nota del entrenador: {coach_note.strip()}"
+            race_meta = f"{race_meta}\n{note_line}" if race_meta else note_line
+
         inp = _build_input(
             state, progression_records=records_for_vn, race_meta=race_meta
         )

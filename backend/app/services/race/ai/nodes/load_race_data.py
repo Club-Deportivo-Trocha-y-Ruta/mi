@@ -47,7 +47,7 @@ _NON_FINISH_STATUSES = {"dns", "dnf", "dsq"}
 
 def _serialize_result(r: Any) -> dict[str, Any]:
     """Convierte un RaceResult ORM a dict JSON-serializable."""
-    return {
+    row: dict[str, Any] = {
         "result_id": getattr(r, "id", None),
         "event_id": getattr(r, "event_id", None),
         "category_id": getattr(r, "category_id", None),
@@ -58,6 +58,13 @@ def _serialize_result(r: Any) -> dict[str, Any]:
         "points_awarded": getattr(r, "points_awarded", None),
         "status": getattr(r.status, "value", None) if getattr(r, "status", None) else None,
     }
+    # T019 — include raw coach note (scrubbing happens later in anonymize).
+    # Key is only present when the note is not None so that downstream code
+    # can detect absence with a simple `.get("coach_note")` check.
+    note = getattr(r, "coach_note", None)
+    if note is not None:
+        row["coach_note"] = note
+    return row
 
 
 def _build_winner_map(all_results: list[Any]) -> dict[int, int | None]:
@@ -238,6 +245,23 @@ async def load_race_data(state: dict) -> dict[str, Any]:
             db, season, condition_validas
         )
 
+        # T019/T021 — build {valida_num: raw_coach_note} from the serialized
+        # rows so that anonymize can scrub and analyst_agent can inject.
+        # Requires the event_id → valida_num mapping from the events table.
+        # events_by_id may already be built above (global launch path); rebuild
+        # only when needed (valida_nums path) — cheap since load_events is cached.
+        _events_by_id: dict[int, Any] = {e.id: e for e in await load_events(db)}
+        coach_notes_by_valida: dict[int, str | None] = {}
+        for row in serialized:
+            note = row.get("coach_note")
+            raw_event_id = row.get("event_id")
+            ev = _events_by_id.get(int(raw_event_id)) if raw_event_id is not None else None
+            seq = getattr(ev, "sequence_number", None) if ev is not None else None
+            if seq is not None:
+                # Last writer wins for multi-result edge cases; notes are per-event.
+                if note is not None or seq not in coach_notes_by_valida:
+                    coach_notes_by_valida[int(seq)] = note
+
         if not serialized:
             return {
                 "raw_data": [],
@@ -245,6 +269,7 @@ async def load_race_data(state: dict) -> dict[str, Any]:
                 "category_id": None,
                 "podium_context": {},
                 "event_conditions": event_conditions,
+                "coach_notes_by_valida": coach_notes_by_valida,
                 "full_season_results": full_season_records,
                 "season_validas_count": season_validas_count,
                 "is_first_in_season": is_first_in_season,
@@ -266,6 +291,7 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         "category_id": category_id,
         "podium_context": podium_ctx,
         "event_conditions": event_conditions,
+        "coach_notes_by_valida": coach_notes_by_valida,
         "full_season_results": full_season_records,
         "season_validas_count": season_validas_count,
         "is_first_in_season": is_first_in_season,

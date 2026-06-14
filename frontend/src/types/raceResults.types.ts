@@ -36,6 +36,8 @@ export type RaceResultStatus = "finished" | "dnf" | "dns" | "dsq";
  * Mirror de `RaceResultRow` del backend.
  */
 export interface RaceResultRow {
+  /** Primary key of the race_results row — required to address coach-note endpoints. */
+  result_id: number;
   position: number | null;
   competitor_id: number;
   /** Nombre normalizado del corredor (puede ser menor — solo coach/admin). */
@@ -55,6 +57,17 @@ export interface RaceResultRow {
   points_awarded: number | null;
   /** Número de dorsal. */
   bib_number: number | null;
+  /**
+   * Nota cualitativa del entrenador sobre el desempeño del corredor en la
+   * válida. Solo visible para coach/admin (RBAC en el backend).
+   * null cuando no hay nota registrada.
+   */
+  coach_note: string | null;
+  /**
+   * ISO 8601 timestamp de la última actualización de la nota del entrenador.
+   * null cuando coach_note es null.
+   */
+  coach_note_updated_at: string | null;
 }
 
 /**
