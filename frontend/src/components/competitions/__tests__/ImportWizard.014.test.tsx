@@ -285,4 +285,62 @@ describe("ImportWizard spec-014 — US3: type-aware series kind", () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  // Regression del bug de producción: al importar un campeonato, "Continuar"
+  // no hacía nada. Causa: el campo `valida_num` oculto quedaba en `NaN`
+  // (valueAsNumber sobre input vacío), el schema base lo rechazaba y el error
+  // —invisible por estar el campo oculto— bloqueaba `handleSubmit` en silencio.
+  // Este test verifica que un submit de campeonato SÍ dispara el parse.
+  it("campeonato: 'Continuar' dispara el parse y avanza (no se bloquea en silencio)", async () => {
+    const user = userEvent.setup();
+    let parseCalled = false;
+    mswServer.use(
+      http.post("*/api/race-analysis/imports/parse", () => {
+        parseCalled = true;
+        return HttpResponse.json({
+          parse_id: "1",
+          sha256: "abc",
+          header: {
+            series_name: "Campeonato Departamental 2026",
+            season: 2026,
+            valida_num: 1,
+            event_name: "Departamental XCO",
+            event_date: "2026-06-13",
+            location: "Ginebra",
+          },
+          conditions: null,
+        });
+      }),
+      http.post("*/api/race-analysis/imports/1/dry-run", () =>
+        HttpResponse.json({ matches: [], counts: { confirmed: 0, ambiguous: 0, no_match: 0, total: 0 } }),
+      ),
+    );
+
+    renderWizard();
+
+    await user.selectOptions(
+      await screen.findByTestId("wizard-series-kind"),
+      "championship",
+    );
+    // El campo "Válida #" queda oculto — no lo tocamos (ese era el origen del bug).
+    expect(screen.queryByTestId("wizard-valida-num")).not.toBeInTheDocument();
+
+    await user.type(screen.getByTestId("wizard-series-name"), "Campeonato Departamental 2026");
+    await user.type(screen.getByTestId("wizard-event-name"), "Departamental XCO");
+    const dateInput = screen.getByTestId("wizard-event-date");
+    await user.clear(dateInput);
+    await user.type(dateInput, "2026-06-13");
+    await user.type(screen.getByTestId("wizard-location"), "Ginebra");
+
+    // Adjuntar el archivo de resultados (RaceUploadZone mockeado).
+    const file = new File(["bib,nombre\n1,X"], "resultados.csv", { type: "text/csv" });
+    await user.upload(
+      screen.getByTestId("upload-zone-Resultados (PDF o CSV) *"),
+      file,
+    );
+
+    await user.click(screen.getByTestId("wizard-step1-submit"));
+
+    await waitFor(() => expect(parseCalled).toBe(true));
+  });
 });

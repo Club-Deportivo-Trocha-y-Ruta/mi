@@ -118,7 +118,10 @@ const step1Schema = z
       .min(2020, "Temporada inválida")
       .max(2100, "Temporada inválida"),
     // valida_num: opcional en el schema base; la validación condicional se
-    // aplica en el refinement de abajo según series_kind.
+    // aplica en el refinement de abajo según series_kind. El input usa
+    // `setValueAs` (no `valueAsNumber`) para que un campo vacío sea `undefined`
+    // y no `NaN` — `.optional()` no atrapa `NaN`, así que en campeonato (campo
+    // oculto) el error quedaría invisible y "Continuar" no haría nada.
     valida_num: z
       .number()
       .int()
@@ -727,7 +730,16 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
                   type="number"
                   min={1}
                   max={9}
-                  {...register("valida_num", { valueAsNumber: true })}
+                  {...register("valida_num", {
+                    // Vacío → undefined (no NaN). `valueAsNumber` daría NaN en
+                    // un input vacío, que `.optional()` no atrapa y bloquearía
+                    // el submit en silencio cuando el campo está oculto
+                    // (campeonato). Bug detectado en producción.
+                    setValueAs: (v) =>
+                      v === "" || v === null || v === undefined
+                        ? undefined
+                        : Number(v),
+                  })}
                   className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
                   style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                   data-testid="wizard-valida-num"
