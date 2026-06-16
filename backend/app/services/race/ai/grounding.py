@@ -83,13 +83,13 @@ async def load_forbidden_names(
     """
     names: list[str] = []
     try:
-        from sqlalchemy import select as sa_select
+        from sqlalchemy import select as sa_select, func
 
         from app.models.athlete import Athlete as AthleteModel, ParentAthlete
         from app.models.user import User as UserModel
 
         fn_rows = await db.execute(
-            sa_select(UserModel.full_name).where(
+            sa_select(func.concat(UserModel.first_name, ' ', UserModel.last_name)).where(
                 UserModel.id
                 == (
                     sa_select(AthleteModel.user_id)
@@ -106,7 +106,7 @@ async def load_forbidden_names(
             names.append(str(nickname))
 
         parent_rows = await db.execute(
-            sa_select(UserModel.full_name)
+            sa_select(func.concat(UserModel.first_name, ' ', UserModel.last_name))
             .join(ParentAthlete, UserModel.id == ParentAthlete.parent_id)
             .where(ParentAthlete.athlete_id == athlete_id)
         )
