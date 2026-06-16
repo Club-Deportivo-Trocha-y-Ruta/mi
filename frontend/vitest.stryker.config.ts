@@ -7,7 +7,8 @@ import path from "node:path";
  * concatenates `test.include`, which would re-introduce the full suite and
  * time out Stryker's initial run. Here `include` is restricted to the suites
  * that exercise the mutated modules (persistAllowList, queryPersister,
- * serverWaking.store). Not used by `npm test`.
+ * serverWaking.store, and — feature 015 — useImportPrefill). Not used by
+ * `npm test`.
  */
 export default defineConfig({
   test: {
@@ -21,6 +22,7 @@ export default defineConfig({
       "src/store/__tests__/serverWaking.store.test.ts",
       "src/components/layout/__tests__/ServerWakingBanner.test.tsx",
       "src/hooks/__tests__/usePrefetchOnIntent.test.tsx",
+      "src/hooks/race/__tests__/useImportPrefill.test.ts",
     ],
   },
   resolve: {

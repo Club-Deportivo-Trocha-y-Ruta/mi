@@ -58,13 +58,20 @@ export const raceSeriesKeys = {
  * (Principio III — sin spinner infinito, sin texto crudo de excepción).
  *
  * @param filters - Filtros opcionales. Defaults a {} (sin filtros).
+ * @param options - `enabled` (default true) para apagar la query cuando el
+ *   consumidor no la necesita (p. ej. el wizard standalone — FR-007 feature 015,
+ *   que no debe disparar GET /race-series).
  */
-export function useRaceSeriesList(filters: RaceSeriesListFilters = {}) {
+export function useRaceSeriesList(
+  filters: RaceSeriesListFilters = {},
+  options?: { enabled?: boolean },
+) {
   return useQuery<RaceSeriesListResponse>({
     queryKey: raceSeriesKeys.list(filters),
     queryFn: ({ signal }) => listRaceSeries(filters, { signal }),
     // staleTime razonable: las series no cambian con mucha frecuencia.
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

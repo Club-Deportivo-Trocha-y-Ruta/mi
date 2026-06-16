@@ -347,3 +347,28 @@
 | Deploy | Deploy to Render (migration `b1c2d3e4f5a6` runs via `entrypoint.sh`) | ⏳ Pending |
 
 > Ola A (backend skeleton) complete. Frontend series-type-aware flows (US1–US4) and all pytest suites are the next increment. Migration is idempotent and prod-safe; re-runs and championship-free environments succeed without error.
+
+## Implementation status — Prefill Import from Competition (specs/015-prefill-import-from-competition)
+
+> Frontend-only. Launching the results import **from a competition** (`/competitions/{id}/import`) now opens the wizard prefilled and locked with everything the system knows about that competition (name, date, city, series, type, round). Type and series are derived (no in-flow control); `válida #` is hidden for championships; an "Editar metadata" escape hatch handles genuine corrections; if the series/type can't be determined the import is blocked (FR-009). The standalone `/competitions/import` path is unchanged. No backend change, no migration — the existing `/parse`→`/dry-run`→`/commit` pipeline links to the exact competition because the prefilled values equal the stored `(series_id, sequence_number)`.
+
+| Task | Scope | Status |
+|---|---|---|
+| T001–T002 | Mutation tooling: extended `stryker.config.json` `mutate` + `vitest.stryker.config.ts` include to cover `useImportPrefill.ts`; `test:mutation` script in `package.json` | ✅ Complete 2026-06-16 |
+| T003 | `ImportPrefill` / `ImportPrefillValues` / `ImportPrefillStatus` view-model types in `src/types/raceImports.types.ts` | ✅ Complete 2026-06-16 |
+| T004 | `useImportPrefill(raceEventId)` hook — composes `useRaceEvent` + `useRaceSeriesList`, resolves series by `series_id`, returns `loading\|ready\|blocked\|error`, derives `series_kind`/`valida_num` (null for championship), builds `editMetadataHref` | ✅ Complete 2026-06-16 |
+| T005 | MSW prefill fixtures: `makeChampionshipRaceEventRead` + `prefillCupEventHandler` / `prefillChampionshipEventHandler` / `prefillUnresolvableSeriesEventHandler` (competition metadata only, zero PII) | ✅ Complete 2026-06-16 |
+| T009–T011 (US1) | `raceEventId?` prop on `ImportWizard`; consumes `useImportPrefill`; `reset()` RHF on `ready`; cold-start-aware `PrefillLoadingState`; `CompetitionImportPage` passes `raceEventId` | ✅ Complete 2026-06-16 |
+| T015–T017 (US2) | `PrefillLockedSummary` read-only block (static text + `aria`, not `disabled`); removes in-flow type/series controls when prefilled; "Editar metadata" escape hatch; `PrefillBlockedState` (FR-009) | ✅ Complete 2026-06-16 |
+| T019 (US3) | All prefill/lock logic guarded behind `raceEventId != null`; `useRaceSeriesList({ enabled })` so standalone fires zero new requests; standalone regression test green | ✅ Complete 2026-06-16 |
+| T021 (US4) | `válida #` hidden in the locked summary when `series_kind=championship` (driven by derived value) | ✅ Complete 2026-06-16 |
+| T006–T008, T012–T014, T018, T020 | Vitest + RTL + MSW + jest-axe: hook ready/blocked/error/standalone mapping, locked/derived/escape-hatch/blocked render, championship-hides-válida, standalone regression, a11y zero violations | ✅ Complete 2026-06-16 |
+| T022 | Playwright e2e `e2e/prefill-import-from-competition.spec.ts` (cup prefilled+locked, championship hides válida, standalone unchanged, privacy no-name-before-dry-run; ids discovered from backend) | ✅ Written — pending local run vs live stack |
+| T023 | Privacy audit: prefill payloads/fixtures/logs carry only competition metadata — no minor name/DOB/medical (FR-013) | ✅ Complete 2026-06-16 |
+| T025 | Bundle/perf: `ImportWizard` stays a lazy chunk (10.99 kB gz ≪ 150 KB budget); 2 cached GETs, no N+1; cold-start state surfaced | ✅ Complete 2026-06-16 |
+| Quality gates | `tsc --noEmit` clean; full frontend vitest **2217 passed / 209 files**; `vite build` green | ✅ Complete 2026-06-16 |
+| T024 | Mutation run (`npm run test:mutation`, scoped to `useImportPrefill.ts`) | ⏳ On-demand (per repo convention — not in CI) |
+| T026 | `quickstart.md` manual end-to-end (coach login, cup/championship/standalone/block) | ⏳ Pending live stack |
+| Deploy | Frontend deploy (Cloudflare Pages — pending); no backend/migration | ⏳ Pending |
+
+> Notable decisions: (1) mutation scope limited to `useImportPrefill.ts` rather than the 1600-line `ImportWizard.tsx` — mutating the whole component with only prefill tests would surface false-positive survivors from unrelated steps and tank the shared `break:70` gate. (2) `useRaceSeriesList` gained an optional `{ enabled }` so the standalone wizard makes zero extra requests, honoring FR-007 strictly.

@@ -305,3 +305,67 @@ export interface RaceEventDiffResponse {
   counts: RevisionDiffGroupCounts;
   items: RevisionDiffItem[];
 }
+
+// ---------------------------------------------------------------------------
+// Feature 015 — Prefill import from competition (view-model, frontend-only)
+//
+// Composed by `useImportPrefill(raceEventId)` from the existing race-event and
+// race-series reads. NO new backend field, table, or endpoint (FR-012).
+// Privacidad: solo lleva metadata de competencia ya visible en la tarjeta
+// "Información" del detalle — cero PII de menores (FR-013).
+// ---------------------------------------------------------------------------
+
+/**
+ * Estado del prefill del wizard cuando se lanza desde una competencia.
+ *
+ * - `loading`: se están resolviendo evento + serie.
+ * - `ready`: evento cargado Y serie resuelta desde `series_id` → `values`.
+ * - `blocked`: la serie/tipo no se pudo determinar (FR-009) → se ofrece
+ *   `editMetadataHref` y la importación NO puede continuar.
+ * - `error`: el fetch del evento falló (404 u otro) → UI de error existente.
+ */
+export type ImportPrefillStatus = "loading" | "ready" | "blocked" | "error";
+
+/**
+ * Valores derivados que se precargan y bloquean en el paso 1 del wizard.
+ *
+ * `series_kind` se deriva de `series.kind` y NO es editable en el flujo
+ * (FR-005). `valida_num` es `null` para campeonatos (campo oculto, FR-008).
+ * Las condiciones se precargan pero permanecen editables (comportamiento
+ * actual del wizard).
+ */
+export interface ImportPrefillValues {
+  series_kind: ImportSeriesKind;
+  series_name: string;
+  season: number;
+  valida_num: number | null;
+  event_name: string;
+  event_date: string;
+  location: string;
+  conditions?: {
+    climate?: string;
+    temperature_c?: number;
+    surface_condition?: SurfaceCondition | null;
+    altitude_msnm?: number;
+    weather_notes?: string;
+  };
+}
+
+/** Tipo de serie derivado — espejo del enum de race-series (cup | championship). */
+export type ImportSeriesKind = "cup" | "championship";
+
+/**
+ * View-model del prefill producido por `useImportPrefill(raceEventId)`.
+ *
+ * Cuando el wizard se monta sin `raceEventId` (flujo standalone) este
+ * view-model NO se produce y el wizard se comporta exactamente como hoy
+ * (FR-007).
+ */
+export interface ImportPrefill {
+  status: ImportPrefillStatus;
+  raceEventId: number;
+  /** Presente solo cuando `status === "ready"`. */
+  values?: ImportPrefillValues;
+  /** Presente cuando `status === "blocked"` — destino del escape hatch (FR-009). */
+  editMetadataHref?: string;
+}

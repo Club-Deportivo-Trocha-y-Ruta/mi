@@ -13,7 +13,8 @@
     "test:coverage": "vitest run --coverage",
     "test:training": "vitest run src/routes/training src/routes/parents/training src/components/training src/components/parents src/api/trainingSessions.test.ts src/test/integration",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:mutation": "stryker run"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
