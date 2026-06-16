@@ -29,6 +29,7 @@ import type {
   DistributionResponse,
   EvolutionMetric,
   EvolutionResponse,
+  RaceParticipationResponse,
   SeasonPanoramaResponse,
 } from "@/types/athleteRaceAnalysis.types";
 
@@ -130,11 +131,22 @@ export async function generateSeasonSummary(
 export async function getAthleteDistribution(
   athleteId: number,
   season: number,
-  validaNum: number,
+  eventId: number,
 ): Promise<DistributionResponse> {
   const response = await apiClient.get<DistributionResponse>(
     `${buildBase(athleteId)}/distribution`,
-    { params: { season, valida_num: validaNum } },
+    { params: { season, event_id: eventId } },
+  );
+  return response.data;
+}
+
+export async function getAthleteRaces(
+  athleteId: number,
+  season: number,
+): Promise<RaceParticipationResponse> {
+  const response = await apiClient.get<RaceParticipationResponse>(
+    `${buildBase(athleteId)}/races`,
+    { params: { season } },
   );
   return response.data;
 }

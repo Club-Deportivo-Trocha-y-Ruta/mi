@@ -597,7 +597,7 @@ async def test_get_distribution_coach_receives_display_name(client_factory):
     async with client_factory(user=coach) as ac:
         resp = await ac.get(
             "/api/athletes/144/race-analysis/distribution",
-            params={"season": 2026, "valida_num": 1},
+            params={"season": 2026, "event_id": 1},
             headers={"Authorization": "Bearer fake"},
         )
     assert resp.status_code == 200
@@ -620,7 +620,7 @@ async def test_get_distribution_parent_receives_display_name_none(client_factory
     async with client_factory(user=parent) as ac:
         resp = await ac.get(
             "/api/athletes/144/race-analysis/distribution",
-            params={"season": 2026, "valida_num": 1},
+            params={"season": 2026, "event_id": 1},
             headers={"Authorization": "Bearer fake"},
         )
     assert resp.status_code == 200

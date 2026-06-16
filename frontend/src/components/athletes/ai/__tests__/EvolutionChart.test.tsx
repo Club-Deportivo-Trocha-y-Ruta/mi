@@ -30,6 +30,8 @@ vi.mock("@/store/auth.store", () => ({
 
 // Mock Recharts — devolvemos divs simples con info reflejada en data-*
 // para que los asserts verifiquen el modelo, no el SVG.
+// data-entries: JSON de los datos completos para que T024 inspeccione event_id y label.
+// data-key: dataKey de XAxis (T024 verifica que sea "event_id", no "roman").
 vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="recharts-container">{children}</div>
@@ -41,13 +43,19 @@ vi.mock("recharts", () => ({
     children: React.ReactNode;
     data: unknown[];
   }) => (
-    <div data-testid="line-chart" data-points={data.length}>
+    <div
+      data-testid="line-chart"
+      data-points={data.length}
+      data-entries={JSON.stringify(data)}
+    >
       {children}
     </div>
   ),
   Line: () => <div data-testid="recharts-line" />,
   CartesianGrid: () => <div data-testid="recharts-grid" />,
-  XAxis: () => <div data-testid="recharts-x" />,
+  XAxis: ({ dataKey }: { dataKey?: string }) => (
+    <div data-testid="recharts-x" data-key={dataKey} />
+  ),
   YAxis: () => <div data-testid="recharts-y" />,
   Tooltip: () => <div data-testid="recharts-tooltip" />,
   ReferenceLine: () => <div data-testid="recharts-ref-line" />,
@@ -67,6 +75,8 @@ vi.mock("recharts", () => ({
 
 import { mswServer } from "@/test/setup";
 import {
+  cupAndChampionshipConflictHandler,
+  dnfChampionshipHandler,
   emptyEvolutionHandler,
   lowConfidenceEvolutionHandler,
   mockEvolution,
@@ -177,6 +187,8 @@ describe("EvolutionChart", () => {
                   event_date: "2026-01-31",
                   value: 120_000,
                   unit: "ms",
+                  series_kind: "cup",
+                  label: "Válida I — Sevilla",
                 },
                 {
                   valida_num: 2,
@@ -184,6 +196,8 @@ describe("EvolutionChart", () => {
                   event_date: "2026-02-28",
                   value: null, // DNF
                   unit: "ms",
+                  series_kind: "cup",
+                  label: "Válida II — Ginebra",
                 },
               ],
             }),
@@ -217,5 +231,122 @@ describe("EvolutionChart", () => {
     });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  // ---------------------------------------------------------------------------
+  // T024 — TDD-red: campeonato como punto distinto, etiquetado por label
+  //
+  // ESTADO ESPERADO ANTES DEL FIX (T025–T027):
+  //   - Assertion 1 (dos puntos distintos) → FALLA porque chartData filtra por
+  //     value!==null y ambos pasan, pero el XAxis usa dataKey="roman" y ambos
+  //     tienen roman="I" → se MEZCLAN en la misma categoría del eje.
+  //     El test verifica data-entries del LineChart: los dos puntos tienen
+  //     event_id distintos (91 y 200), lo que ya pasa. La verificación clave es
+  //     que XAxis use dataKey="event_id", no "roman" — eso FALLA en rojo.
+  //   - Assertion 2 (etiqueta del campeonato) → FALLA porque roman="I" se
+  //     imprime como "Válida I" en el tooltip, no como "Cto. Dep. — Ginebra".
+  //   - Assertion 3 (DNF usa label) → FALLA porque la lista DNF renderiza
+  //     romanForValida(1)="I", no el label "Cto. Dep. — Ginebra".
+  //   - Assertion 4 (a11y) → PASA (sin dependencia del fix).
+  //
+  // Una vez aplicados T025–T027 todos deben ser GREEN.
+  // ---------------------------------------------------------------------------
+
+  describe("T024 — campeonato distinto al eje categorical (TDD-red)", () => {
+    it("dos puntos con valida_num=1 pero event_id distintos generan ENTRADAS SEPARADAS en el chart (event_id como clave)", async () => {
+      // La serie tiene Copa Válida I (event_id=91) y Campeonato (event_id=200),
+      // ambos con valida_num=1. El chart TARGET debe keyear por event_id para
+      // NO fusionarlos en la misma categoría.
+      mswServer.use(cupAndChampionshipConflictHandler);
+      renderWithProviders(<EvolutionChart athleteId={42} defaultSeason={2026} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument();
+      });
+
+      // Debe haber exactamente 2 puntos (copa + campeonato).
+      const lineChart = screen.getByTestId("line-chart");
+      expect(lineChart).toHaveAttribute("data-points", "2");
+
+      // Inspeccionar data-entries: los dos puntos deben tener event_id distintos.
+      const rawEntries = lineChart.getAttribute("data-entries");
+      expect(rawEntries).not.toBeNull();
+      const entries = JSON.parse(rawEntries!) as Array<Record<string, unknown>>;
+      const eventIds = entries.map((e) => e["event_id"]);
+      expect(eventIds).toContain(91);
+      expect(eventIds).toContain(200);
+
+      // CLAVE TDD-red: el XAxis debe usar dataKey="event_id", NO "roman".
+      // Actualmente el componente usa dataKey="roman" → este assert FALLA.
+      const xAxis = screen.getByTestId("recharts-x");
+      expect(xAxis).toHaveAttribute("data-key", "event_id");
+    });
+
+    it("el campeonato se etiqueta con su label ('Cto. Dep.') derivado de series_kind, NO de romanForValida", async () => {
+      // TARGET: el eje X (o algún texto visible) muestra "Cto. Dep." para el
+      // campeonato, en lugar de "I" (que colisionaría con la Copa Válida I).
+      // Después del fix T027, el tick del eje usará p.label en lugar de roman.
+      mswServer.use(cupAndChampionshipConflictHandler);
+      renderWithProviders(<EvolutionChart athleteId={42} defaultSeason={2026} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument();
+      });
+
+      // El componente debe exponer los labels del campeonato en el DOM.
+      // T027 los renderizará como ticks del XAxis o como un data-label en el
+      // LineChart. Verificamos que la etiqueta del campeonato sea visible.
+      // Actualmente romanForValida(1)="I" → "Cto. Dep." nunca aparece → FALLA.
+      expect(screen.getByText(/cto\.?\s*dep\./i)).toBeInTheDocument();
+    });
+
+    it("la lista DNF ('No finalizó') usa el campo label del punto, no romanForValida(valida_num)", async () => {
+      // Escenario: Copa Válida I y Válida II tienen valor, el campeonato (valida_num=1)
+      // tiene value=null (DNF). La lista debe mostrar "Cto. Dep. — Ginebra", no "I".
+      mswServer.use(dnfChampionshipHandler);
+      renderWithProviders(<EvolutionChart athleteId={42} defaultSeason={2026} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/no finalizó/i)).toBeInTheDocument();
+      });
+
+      // TARGET: el texto del campeonato DNF debe venir del label, no de roman.
+      // Actualmente romanForValida(1)="I" → aparece "I" en lugar de "Cto. Dep." → FALLA.
+      const dnfSection = screen.getByText(/no finalizó/i).closest("div");
+      expect(dnfSection).toHaveTextContent(/cto\.?\s*dep\./i);
+
+      // Y NO debe mostrar "I" (romano que colisiona con Válida I).
+      // Si hubiera solo "I" en la lista DNF, significaría que se usó romanForValida.
+      // Nota: "Válida II" (event_id=92) sigue en el chart (value≠null), así que
+      // NO aparece en DNF → si vemos "II" en DNF, es otro bug.
+      expect(dnfSection?.textContent).not.toMatch(/^.*\bI\b.*$/);
+    });
+
+    it("no tiene violaciones a11y con copa+campeonato simultáneos (jest-axe)", async () => {
+      // Este test PASA incluso antes del fix — valida que la estructura HTML
+      // actual no rompe accesibilidad en el escenario de colisión.
+      mswServer.use(cupAndChampionshipConflictHandler);
+      const { container } = renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument();
+      });
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it("no tiene violaciones a11y con DNF en campeonato (jest-axe)", async () => {
+      // Este test PASA incluso antes del fix.
+      mswServer.use(dnfChampionshipHandler);
+      const { container } = renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() => {
+        expect(screen.getByText(/no finalizó/i)).toBeInTheDocument();
+      });
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
   });
 });

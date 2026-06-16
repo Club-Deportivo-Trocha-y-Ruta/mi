@@ -23,6 +23,9 @@ export default defineConfig({
       "src/components/layout/__tests__/ServerWakingBanner.test.tsx",
       "src/hooks/__tests__/usePrefetchOnIntent.test.tsx",
       "src/hooks/race/__tests__/useImportPrefill.test.ts",
+      // feature 016 — race-analysis championship charts fix
+      "src/lib/raceOptionLabel.test.ts",
+      "src/hooks/athletes/useAthleteRaces.test.ts",
     ],
   },
   resolve: {

@@ -1,8 +1,9 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "_comment": "Mutation-testing gate for features 012 (perceived-performance-cache) + 015 (prefill-import-from-competition). Scoped to the new privacy/cache/cold-start + prefill modules only — run on demand by the QA agent in the testing step, NOT in CI. Gate: score >= 70 on scoped files; zero surviving mutants on the allow-list deny path, logout wipe, and the prefill block/derive/hide paths.",
+  "_comment": "Mutation-testing gate for features 012 (perceived-performance-cache) + 015 (prefill-import-from-competition) + 016 (race-analysis championship charts fix). Scoped to the new privacy/cache/cold-start + prefill + race-analysis modules only — run on demand by the QA agent in the testing step, NOT in CI. Gate: score >= 70 on scoped files; zero surviving mutants on: the allow-list deny path, logout wipe, and the prefill block/derive/hide paths (012/015); the event_id identity branch (raceOptionValue/parseEventId), the championship/aggregate-sentinel branch (SEASON_AGGREGATE/isAggregateOption) in raceOptionLabel.ts, and the enabled/queryKey logic in useAthleteRaces.ts (016).",
   "packageManager": "npm",
   "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
   "vitest": { "configFile": "vitest.stryker.config.ts" },
   "reporters": ["html", "clear-text", "progress"],
   "coverageAnalysis": "perTest",
@@ -13,7 +14,9 @@
     "src/lib/queryPersister.ts",
     "src/store/serverWaking.store.ts",
     "src/hooks/usePrefetchOnIntent.ts",
-    "src/hooks/race/useImportPrefill.ts"
+    "src/hooks/race/useImportPrefill.ts",
+    "src/lib/raceOptionLabel.ts",
+    "src/hooks/athletes/useAthleteRaces.ts"
   ],
   "thresholds": {
     "high": 80,

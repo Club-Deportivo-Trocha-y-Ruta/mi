@@ -346,7 +346,7 @@ async def test_distribution_coach_receives_display_name_no_competitor_id(
     competitor_id, athlete_id y PKs internas NUNCA viajan."""
     resp = await coach_client.get(
         "/api/athletes/144/race-analysis/distribution",
-        params={"season": 2026, "valida_num": 1},
+        params={"season": 2026, "event_id": 1},
         headers={"Authorization": "Bearer fake"},
     )
     assert resp.status_code == 200
@@ -401,7 +401,7 @@ async def test_distribution_parent_no_real_names(seeded_factory):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.get(
                 "/api/athletes/144/race-analysis/distribution",
-                params={"season": 2026, "valida_num": 1},
+                params={"season": 2026, "event_id": 1},
                 headers={"Authorization": "Bearer fake"},
             )
         assert resp.status_code == 200
@@ -431,6 +431,15 @@ async def test_evolution_response_only_exposes_aggregated_fields(coach_client):
     # Cada punto de la serie debe tener exactamente estos campos: el contrato
     # cerrado de EvolutionPoint (extra="forbid") garantiza esto, pero acá
     # validamos también que no se haya leak-eado nada.
-    expected_keys = {"valida_num", "event_id", "event_date", "value", "unit"}
+    # series_kind y label son datos públicos de federación (T025/T026).
+    expected_keys = {
+        "valida_num",
+        "event_id",
+        "event_date",
+        "value",
+        "unit",
+        "series_kind",
+        "label",
+    }
     for point in body.get("series", []):
         assert set(point.keys()) <= expected_keys

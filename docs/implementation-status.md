@@ -372,3 +372,42 @@
 | Deploy | Frontend deploy (Cloudflare Pages — pending); no backend/migration | ⏳ Pending |
 
 > Notable decisions: (1) mutation scope limited to `useImportPrefill.ts` rather than the 1600-line `ImportWizard.tsx` — mutating the whole component with only prefill tests would surface false-positive survivors from unrelated steps and tank the shared `break:70` gate. (2) `useRaceSeriesList` gained an optional `{ enabled }` so the standalone wizard makes zero extra requests, honoring FR-007 strictly.
+
+## Implementation status — Race-Analysis Championship Charts Fix (specs/016-race-analysis-championship-charts-fix)
+
+> Fixes the athlete AI-analysis Distribution & Evolution charts so they handle the Departmental Championship correctly after feature 014 retired the `valida_num=99` convention. Root cause: both charts identified races by `valida_num`; feature 014 replaced that with `race_series.kind` + dedicated series, so the championship appeared as `sequence_number=1` — colliding with Copa Valle Válida I on the Evolution axis, and producing an HTTP 500 on Distribution (invalid empty `DistributionResponse(category_id=0, category_code="")`). Fix: race identity moved to stable `event_id` throughout. No database migration (reuses feature-014 columns). Out of scope and untouched: AI insight text/chat, results ingestion, ranking, ComparatorPanel, the agentic `valida_num` contract.
+
+**Root causes fixed:**
+
+1. **Distribution HTTP 500 for championship / no-data races** — empty fallback built a schema-violating `DistributionResponse`; replaced by `AthleteDidNotParticipate` → HTTP 404 for a non-participated event, schema-valid no-data 200 for DNF/small-field.
+2. **Evolution championship point merged with Válida I** — `romanForValida(1)="I"` labeled the championship identically to cup round 1; corrected by `event_id`-keyed points with `series_kind`+`label` from the backend, and `ORDER BY event_date ASC` (was `valida_num, event_date`).
+
+**Files introduced / modified:**
+
+| Layer | File | Change |
+|---|---|---|
+| Backend | `backend/app/services/race/race_labels.py` | NEW — pure helper `build_race_label(series_kind, sequence_number, event_date)` |
+| Backend | `backend/app/routers/race_analysis.py` | NEW `GET /api/athletes/{id}/race-analysis/races?season=` endpoint |
+| Backend | `backend/app/services/race/distribution.py` | `valida_num` → `event_id`; deleted invalid empty fallback; raises `AthleteDidNotParticipate` |
+| Backend | `backend/app/schemas/race_analysis.py` | `DistributionResponse.valida_num` → `event_id`; `EvolutionPoint` gains `series_kind`+`label` |
+| Backend | `backend/app/services/race/evolution.py` | `ORDER BY event_date ASC`; propagates `series_kind`+`label` |
+| Frontend | `src/hooks/race/useAthleteRaces.ts` | NEW hook — feeds the distribution picker from `/races` endpoint |
+| Frontend | `src/lib/raceOptionLabel.ts` | NEW helpers — builds "Temporada (todas)" informational entry and per-race labels |
+| Frontend | `src/components/ai/DistributionChart.tsx` | Picker uses `event_id`; labels from new endpoint |
+| Frontend | `src/components/ai/EvolutionChart.tsx` | Points keyed by `event_id`; championship labeled distinctly |
+
+**Tests added:** regression pytest (championship distribution 200, no-data 200, non-participated 404, `/races` list/RBAC/privacy, evolution `series_kind`+`label`+date-order); vitest + jest-axe on both charts and the picker (zero a11y violations); mutation gate extended to `useAthleteRaces.ts` and `raceOptionLabel.ts`; Playwright e2e.
+
+| Step | Scope | Status |
+|---|---|---|
+| B1 | `race_labels.py` pure helper + `GET /races` endpoint (RBAC coach/admin/parent-scoped, privacy: pseudonyms only) | ✅ Complete 2026-06-16 |
+| B2 | `distribution.py`: `valida_num`→`event_id`, invalid empty fallback deleted, `AthleteDidNotParticipate` raised for HTTP 404 | ✅ Complete 2026-06-16 |
+| B3 | `evolution.py`: `ORDER BY event_date ASC`, `series_kind`+`label` propagated per point | ✅ Complete 2026-06-16 |
+| B4 | Schemas updated (`DistributionResponse`, `EvolutionPoint`) | ✅ Complete 2026-06-16 |
+| F1 | `useAthleteRaces` hook + `raceOptionLabel.ts` helpers + "Temporada (todas)" informational entry | ✅ Complete 2026-06-16 |
+| F2 | `DistributionChart` picker uses `event_id` + real labels from new endpoint | ✅ Complete 2026-06-16 |
+| F3 | `EvolutionChart` points keyed by `event_id`; championship labeled distinctly | ✅ Complete 2026-06-16 |
+| QA | Pytest regression suite + vitest + jest-axe + Playwright e2e; mutation gate extended | ✅ Complete 2026-06-16 |
+| Deploy | Frontend + backend read endpoints deploy to Render/Cloudflare Pages | ⏳ Pending |
+
+> No Alembic migration. Reuses `race_series.kind`, `event_id`, `event_date` columns introduced by feature 014. The agentic `valida_num` contract in AI insight/chat is untouched.

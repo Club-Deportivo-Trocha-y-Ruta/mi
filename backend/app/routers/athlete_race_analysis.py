@@ -29,7 +29,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,7 @@ from app.schemas.athlete_race_analysis import (
     EvolutionMetric,
     EvolutionResponse,
     InsightLink,
+    RaceParticipationResponse,
     SeasonSummaryRequest,
     SeasonSummaryResponse,
 )
@@ -59,7 +60,12 @@ from app.schemas.race_ai import (
     StartRunResponse,
 )
 from app.services.race.agents.pricing import PROMPT_VERSION_ANALYST_V2
-from app.services.race.analytics_charts import build_distribution, build_evolution
+from app.services.race.analytics_charts import (
+    AthleteDidNotParticipate,
+    build_distribution,
+    build_evolution,
+    list_athlete_races,
+)
 from app.services.race.ai.budget_guard import BudgetExceededError, check_budget
 from app.services.race.ai.runner import RunBackpressureError, submit_run
 from app.services.race.insights_history import (
@@ -601,7 +607,7 @@ async def start_athlete_run(
 )
 async def get_distribution(
     season: int = Query(..., ge=2020, le=2100),
-    valida_num: int = Query(..., ge=0, le=99),
+    event_id: int = Query(..., ge=1),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     athlete: Athlete = Depends(verify_athlete_access),
@@ -610,13 +616,19 @@ async def get_distribution(
     # a coach/admin; parent ve únicamente pseudónimo para no ver datos de
     # otros menores que no son sus hijos.
     include_display_name = current_user.role in (UserRole.coach, UserRole.admin)
-    return await build_distribution(
-        db,
-        athlete_id=athlete.id,
-        season=season,
-        valida_num=valida_num,
-        include_display_name=include_display_name,
-    )
+    try:
+        return await build_distribution(
+            db,
+            athlete_id=athlete.id,
+            season=season,
+            event_id=event_id,
+            include_display_name=include_display_name,
+        )
+    except AthleteDidNotParticipate:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="El deportista no compitió en esta carrera.",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -641,6 +653,37 @@ async def get_evolution(
         season=season,
         metric=metric,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /races
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{athlete_id}/race-analysis/races",
+    response_model=RaceParticipationResponse,
+)
+async def list_races(
+    season: int = Query(..., ge=2020, le=2100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    athlete: Athlete = Depends(verify_athlete_access),
+) -> RaceParticipationResponse:
+    """Lista de carreras en las que el atleta compitió en la temporada.
+
+    Solo eventos con al menos un result del atleta (incluyendo DNF).
+    Ordenados por event_date ASC. Fuente de verdad para el picker de
+    distribución en el frontend.
+
+    RBAC via ``verify_athlete_access``: admin/coach/padre-de-este-atleta →
+    200; padre de un atleta distinto → 403; atleta no visible → 404.
+
+    Privacidad: el schema ``RaceParticipationResponse`` (extra="forbid") no
+    contiene ``athlete_id`` ni ``competitor_id`` — solo datos públicos de
+    eventos federativos.
+    """
+    return await list_athlete_races(db, athlete_id=athlete.id, season=season)
 
 
 # ---------------------------------------------------------------------------
@@ -768,8 +811,6 @@ async def create_season_summary(
         )
 
     # Construir AnalysisInput con la progresión completa de la temporada.
-    from app.services.race.rag.tools import format_citations
-    from app.services.race.rag.retriever import Citation
 
     # Pseudónimo determinístico para la temporada.
     season_pseudonym = f"Atleta-{athlete.id % 10000:04d}-T{body.season}"
