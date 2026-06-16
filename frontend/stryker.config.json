@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "_comment": "Mutation-testing gate for feature 012 (perceived-performance-cache). Scoped to the new privacy/cache/cold-start modules only — run on demand by the QA agent in the testing step, NOT in CI. Gate: score >= 70 on scoped files; zero surviving mutants on the allow-list deny path and logout wipe.",
+  "_comment": "Mutation-testing gate for features 012 (perceived-performance-cache) + 015 (prefill-import-from-competition). Scoped to the new privacy/cache/cold-start + prefill modules only — run on demand by the QA agent in the testing step, NOT in CI. Gate: score >= 70 on scoped files; zero surviving mutants on the allow-list deny path, logout wipe, and the prefill block/derive/hide paths.",
   "packageManager": "npm",
   "testRunner": "vitest",
   "vitest": { "configFile": "vitest.stryker.config.ts" },
@@ -12,7 +12,8 @@
     "src/lib/persistAllowList.ts",
     "src/lib/queryPersister.ts",
     "src/store/serverWaking.store.ts",
-    "src/hooks/usePrefetchOnIntent.ts"
+    "src/hooks/usePrefetchOnIntent.ts",
+    "src/hooks/race/useImportPrefill.ts"
   ],
   "thresholds": {
     "high": 80,

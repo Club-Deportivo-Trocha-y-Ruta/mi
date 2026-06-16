@@ -80,7 +80,10 @@ export function CompetitionImportPage() {
 
       {/* ── Wizard ──────────────────────────────────────────────────── */}
       <Suspense fallback={<WizardSkeleton />}>
-        <ImportWizard onCompleted={handleCompleted} />
+        <ImportWizard
+          raceEventId={hasExistingEvent ? (raceEventId as number) : undefined}
+          onCompleted={handleCompleted}
+        />
       </Suspense>
     </div>
   );

@@ -25,6 +25,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Loader2,
+  Lock,
+  Pencil,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
@@ -41,6 +43,7 @@ import {
   useImportDryRun,
   useImportParse,
 } from "@/hooks/ai/useRaceImports";
+import { useImportPrefill } from "@/hooks/race/useImportPrefill";
 import { useRevisionReasons } from "@/hooks/race/useRevisionReasons";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -50,6 +53,7 @@ import type {
   ImportDryRunRevisionResponse,
   ImportMatchPreview,
   ImportParseResponse,
+  ImportPrefill,
   ImportResolvedMatch,
 } from "@/types/raceImports.types";
 import {
@@ -312,6 +316,166 @@ function getLaunchGroupErrMsg(err: unknown): string {
 interface ImportWizardProps {
   /** Callback opcional al completar commit. */
   onCompleted?: (response: ImportCommitResponse) => void;
+  /**
+   * Feature 015 — cuando se provee, el wizard corre en modo "prefill desde
+   * competencia": carga el evento + su serie, precarga y BLOQUEA los campos
+   * de identidad, deriva `series_kind` (no editable), oculta "Válida #" en
+   * campeonatos y bloquea con un escape hatch "Editar metadata" si la
+   * serie/tipo no se puede determinar (FR-009). Sin él, el wizard se comporta
+   * exactamente como hoy (standalone) — FR-007.
+   */
+  raceEventId?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Feature 015 — bloques de presentación del prefill (locked / loading / blocked)
+// ---------------------------------------------------------------------------
+
+/** Fila de un dato bloqueado del resumen read-only. */
+function LockedField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium text-mid-gray">{label}</dt>
+      <dd className="mt-0.5 text-sm font-medium text-charcoal">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Resumen read-only de la identidad derivada de la competencia (FR-004/FR-005).
+ *
+ * Render como texto estático (no inputs `disabled`) para preservar
+ * navegabilidad por teclado y lectura de screen-reader (R3, WCAG 2.1 AA).
+ * Los valores reales viven en el estado de RHF (vía `reset`) para el submit.
+ * "Válida #" se muestra SOLO para copa (oculto en campeonato — FR-008).
+ */
+function PrefillLockedSummary({
+  values,
+  editMetadataHref,
+}: {
+  values: NonNullable<ImportPrefill["values"]>;
+  editMetadataHref: string;
+}) {
+  const isChampionship = values.series_kind === "championship";
+  return (
+    <div
+      className="rounded-lg border border-[rgba(34,42,53,0.08)] bg-light-gray/30 p-4"
+      data-testid="prefill-locked-summary"
+      aria-label="Datos de la competencia (bloqueados)"
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Lock size={14} aria-hidden="true" className="text-mid-gray" />
+          <h3 className="text-sm font-semibold text-charcoal">
+            Datos de la competencia
+          </h3>
+          <span className="rounded-full bg-light-gray px-2 py-0.5 text-[11px] font-medium text-mid-gray">
+            Bloqueado
+          </span>
+        </div>
+        <Link
+          to={editMetadataHref}
+          className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-xs font-medium text-blue-700 hover:text-blue-800"
+          data-testid="prefill-edit-metadata"
+        >
+          <Pencil size={12} aria-hidden="true" />
+          Editar metadata
+        </Link>
+      </div>
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <LockedField
+          label="Tipo de competencia"
+          value={isChampionship ? "Campeonato" : "Copa"}
+        />
+        <LockedField label="Nombre de la serie" value={values.series_name} />
+        <LockedField label="Temporada" value={String(values.season)} />
+        {!isChampionship && values.valida_num != null && (
+          <LockedField label="Válida #" value={String(values.valida_num)} />
+        )}
+        <LockedField label="Nombre del evento" value={values.event_name} />
+        <LockedField label="Fecha del evento" value={values.event_date} />
+        <LockedField label="Ciudad" value={values.location} />
+      </dl>
+    </div>
+  );
+}
+
+/** Estado de carga del prefill — cold-start aware, sin spinner infinito (T011). */
+function PrefillLoadingState() {
+  return (
+    <div
+      className="space-y-3"
+      role="status"
+      aria-live="polite"
+      data-testid="prefill-loading"
+    >
+      <p className="text-sm text-mid-gray">
+        Cargando los datos de la competencia… Si el servidor estaba inactivo,
+        esto puede tardar unos segundos.
+      </p>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={i}
+          className="h-12 animate-pulse rounded-lg bg-light-gray"
+          aria-hidden="true"
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Estado bloqueado — serie/tipo indeterminable (FR-009), con escape hatch. */
+function PrefillBlockedState({
+  editMetadataHref,
+}: {
+  editMetadataHref: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900"
+      data-testid="prefill-blocked"
+    >
+      <div className="flex items-start gap-2">
+        <AlertCircle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+        <div>
+          <p className="font-semibold">No se puede importar todavía</p>
+          <p className="mt-1 text-xs">
+            Esta competencia no tiene una serie o tipo definidos, así que no es
+            posible vincular los resultados con seguridad. Asigna la serie/tipo
+            en los datos de la competencia y vuelve a intentar.
+          </p>
+        </div>
+      </div>
+      <Link
+        to={editMetadataHref}
+        className="inline-flex min-h-[44px] items-center gap-1 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+        data-testid="prefill-blocked-edit-metadata"
+      >
+        <Pencil size={12} aria-hidden="true" />
+        Editar metadata
+      </Link>
+    </div>
+  );
+}
+
+/** Estado de error del prefill — el evento no se pudo cargar (404 u otro). */
+function PrefillErrorState() {
+  return (
+    <div
+      role="alert"
+      className="rounded-lg border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800"
+      data-testid="prefill-error"
+    >
+      <div className="flex items-start gap-2">
+        <AlertCircle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+        <span>
+          No se pudo cargar la competencia. Verifica que exista y vuelve a
+          intentar.
+        </span>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -335,8 +499,11 @@ type MatchResolution =
   | { decision: "match"; athleteId: number }
   | { decision: "no_match"; athleteId: null };
 
-export function ImportWizard({ onCompleted }: ImportWizardProps) {
+export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
   const navigate = useNavigate();
+  // Feature 015 — modo prefill cuando el wizard se lanza desde una competencia.
+  const isPrefilled = raceEventId != null;
+  const prefill = useImportPrefill(raceEventId ?? null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [parseResult, setParseResult] = useState<ImportParseResponse | null>(
     null,
@@ -378,6 +545,7 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
     control,
     setValue,
     watch,
+    reset: resetForm,
     formState: { errors },
   } = useForm<Step1Values>({
     resolver: zodResolver(step1Schema),
@@ -414,6 +582,36 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
       setValue("altitude_msnm", String(matched), { shouldDirty: false });
     }
   }, [watchedLocation, watchedAltitude, setValue]);
+
+  // Feature 015 — al resolver el prefill (ready), precarga el form de RHF con
+  // los valores derivados. La identidad se muestra bloqueada (read-only) pero
+  // los valores viven en el estado de RHF para que el submit a /parse resuelva
+  // la MISMA competencia (FR-003). Las condiciones quedan editables.
+  const prefillValues = prefill?.status === "ready" ? prefill.values : undefined;
+  useEffect(() => {
+    if (!prefillValues) return;
+    resetForm({
+      series_kind: prefillValues.series_kind,
+      series_name: prefillValues.series_name,
+      season: prefillValues.season,
+      // Campeonato: valida_num null → undefined (el superRefine no lo exige).
+      valida_num: prefillValues.valida_num ?? undefined,
+      event_name: prefillValues.event_name,
+      event_date: prefillValues.event_date,
+      location: prefillValues.location,
+      temperature_c:
+        prefillValues.conditions?.temperature_c != null
+          ? String(prefillValues.conditions.temperature_c)
+          : "",
+      surface_condition: prefillValues.conditions?.surface_condition ?? null,
+      altitude_msnm:
+        prefillValues.conditions?.altitude_msnm != null
+          ? String(prefillValues.conditions.altitude_msnm)
+          : "",
+      climate: prefillValues.conditions?.climate ?? "",
+      weather_notes: prefillValues.conditions?.weather_notes ?? "",
+    });
+  }, [prefillValues, resetForm]);
 
   const submitStep1 = async (values: Step1Values) => {
     if (!resultadosPdf) {
@@ -637,13 +835,38 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
     >
       <Stepper active={step} />
 
-      {step === 1 && (
+      {/* Feature 015 — estados no-ready del prefill reemplazan el paso 1. */}
+      {step === 1 && isPrefilled && prefill && prefill.status !== "ready" && (
+        <div data-testid="import-wizard-step1-prefill">
+          {prefill.status === "loading" && <PrefillLoadingState />}
+          {prefill.status === "blocked" && (
+            <PrefillBlockedState
+              editMetadataHref={
+                prefill.editMetadataHref ??
+                `/competitions/${raceEventId}/edit`
+              }
+            />
+          )}
+          {prefill.status === "error" && <PrefillErrorState />}
+        </div>
+      )}
+
+      {step === 1 && (!isPrefilled || prefill?.status === "ready") && (
         <form
           onSubmit={handleSubmit(submitStep1)}
           className="space-y-4"
           data-testid="import-wizard-step1"
           noValidate
         >
+          {/* Feature 015 — identidad bloqueada (read-only) cuando hay prefill. */}
+          {isPrefilled && prefillValues && (
+            <PrefillLockedSummary
+              values={prefillValues}
+              editMetadataHref={`/competitions/${raceEventId}/edit`}
+            />
+          )}
+
+          {!isPrefilled && (
           <div className="grid gap-3 sm:grid-cols-2">
             {/* Spec 014: selector de tipo de competencia */}
             <div className="sm:col-span-2">
@@ -832,6 +1055,7 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
               )}
             </div>
           </div>
+          )}
 
           {/* ── F-COND: Sección Condiciones de carrera (opcional) ── */}
           <div className="rounded-lg border border-[rgba(34,42,53,0.08)] p-4">

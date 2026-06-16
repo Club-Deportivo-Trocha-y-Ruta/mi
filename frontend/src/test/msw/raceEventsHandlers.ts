@@ -111,6 +111,28 @@ export function makeRaceEventListResponse(
   };
 }
 
+/**
+ * Feature 015 — evento campeonato para el prefill de importación.
+ *
+ * `series_id: 9` se alinea con `makeChampionshipSeriesRead()` de
+ * raceSeriesHandlers (id 9, kind championship). `is_championship: true`
+ * fuerza que el wizard oculte el "Válida #" (FR-008). Sin PII de menores.
+ */
+export function makeChampionshipRaceEventRead(
+  overrides?: Partial<RaceEventRead>,
+): RaceEventRead {
+  return makeRaceEventRead({
+    id: 15,
+    series_id: 9,
+    sequence_number: 1,
+    is_championship: true,
+    name: "Campeonato Departamental XCO — Ginebra",
+    event_date: "2026-06-12",
+    location: "Ginebra",
+    ...overrides,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Handlers por defecto (escenario feliz)
 // ---------------------------------------------------------------------------
@@ -314,4 +336,53 @@ export const raceEventsCalendarAutoCreateConflictHandler = http.post(
       { status: 409 },
     );
   },
+);
+
+// ---------------------------------------------------------------------------
+// Feature 015 — prefill de importación desde competencia
+//
+// Usar junto con `raceSeriesHandlers` (que aporta la serie copa id 2 y la
+// serie campeonato id 9). Solo metadata de competencia — cero PII (FR-013).
+//
+//   mswServer.use(...raceSeriesHandlers, prefillCupEventHandler);
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /:id → evento copa con `series_id=2` → resuelve a la serie copa de
+ * `makeRaceSeriesRead()` (kind cup). Prefill `ready` con "Válida #" visible.
+ */
+export const prefillCupEventHandler = http.get(`${BASE}/:id`, ({ params }) =>
+  HttpResponse.json(
+    makeRaceEventRead({
+      id: Number(params.id),
+      series_id: 2,
+      is_championship: false,
+      sequence_number: 4,
+      name: "Copa Valle XCO — Válida IV",
+      event_date: "2026-05-17",
+      location: "Cali",
+    }),
+  ),
+);
+
+/**
+ * GET /:id → evento campeonato con `series_id=9` → resuelve a la serie
+ * campeonato (kind championship). Prefill `ready` SIN "Válida #" (FR-008).
+ */
+export const prefillChampionshipEventHandler = http.get(
+  `${BASE}/:id`,
+  ({ params }) =>
+    HttpResponse.json(makeChampionshipRaceEventRead({ id: Number(params.id) })),
+);
+
+/**
+ * GET /:id → evento con `series_id=999`, que NO existe en la lista de series →
+ * el prefill queda `blocked` y ofrece el escape hatch "Editar metadata" (FR-009).
+ */
+export const prefillUnresolvableSeriesEventHandler = http.get(
+  `${BASE}/:id`,
+  ({ params }) =>
+    HttpResponse.json(
+      makeRaceEventRead({ id: Number(params.id), series_id: 999 }),
+    ),
 );
