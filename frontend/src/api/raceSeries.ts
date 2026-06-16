@@ -46,7 +46,10 @@ export async function listRaceSeries(
   if (filters.season != null) params.season = filters.season;
   if (filters.kind != null) params.kind = filters.kind;
 
-  const response = await apiClient.get<RaceSeriesListResponse>(BASE, {
+  // Trailing slash requerido: FastAPI hace 307 sin ella, y el browser pierde
+  // el header Authorization al seguir el redirect a localhost:8000 directamente
+  // (bypass del proxy Vite). Ver bug detectado en E2E cup-vs-championship.spec.ts.
+  const response = await apiClient.get<RaceSeriesListResponse>(BASE + "/", {
     params,
     signal: options?.signal,
   });
@@ -58,7 +61,7 @@ export async function listRaceSeries(
 // ---------------------------------------------------------------------------
 
 /**
- * POST /api/race-analysis/race-series
+ * POST /api/race-analysis/race-series/
  *
  * Crea una nueva serie de competencias. El backend fija `points_scheme_code`
  * en `copa_valle_2026` — el cliente no lo envía (decisión D5, spec 014).
@@ -71,7 +74,8 @@ export async function createRaceSeries(
   body: RaceSeriesCreate,
   options?: { signal?: AbortSignal },
 ): Promise<RaceSeriesRead> {
-  const response = await apiClient.post<RaceSeriesRead>(BASE, body, {
+  // Trailing slash requerido — mismo motivo que listRaceSeries.
+  const response = await apiClient.post<RaceSeriesRead>(BASE + "/", body, {
     signal: options?.signal,
   });
   return response.data;
