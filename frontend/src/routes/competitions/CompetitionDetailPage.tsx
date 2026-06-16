@@ -670,6 +670,8 @@ export function CompetitionDetailPage() {
               raceEventId={raceEventId}
               hasResults={isCompleted}
               isCoachOrAdmin={isCoach || isAdmin}
+              season={parseInt(event.event_date.slice(0, 4), 10)}
+              validaNum={event.sequence_number}
             />
           </Suspense>
         </TabsPrimitive.Content>

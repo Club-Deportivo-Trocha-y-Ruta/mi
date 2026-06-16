@@ -63,16 +63,17 @@ Immediately after the coach commits a results import for a válida, the system o
 
 ### User Story 4 - Launch or re-launch analysis for a single athlete inside the competition (Priority: P4)
 
-From the competition's results list, the coach can launch (or re-launch after a correction) the AI analysis for one specific athlete without navigating to that athlete's profile.
+From the competition's results list **and from each athlete card in the Insights tab**, the coach can launch (or re-launch after a correction) the AI analysis for one specific athlete without navigating to that athlete's profile.
 
 **Why this priority**: Covers the correction loop (a result was fixed, one rider's analysis is stale) without forcing a full group re-run or a context switch to the athlete profile. Lower priority because the existing athlete-profile launcher and the stale-insight re-execute control already cover this with extra navigation.
 
-**Independent Test**: Can be tested by choosing one athlete in the competition's results list, launching their analysis from there, and verifying only that athlete's insight is produced/refreshed.
+**Independent Test**: Can be tested by choosing one athlete in the competition's results list (or their card in the Insights tab), launching their analysis from there, and verifying only that athlete's insight is produced/refreshed.
 
 **Acceptance Scenarios**:
 
 1. **Given** a competition with committed results, **When** the coach uses the per-athlete action on a rider's result row, **Then** an analysis run starts scoped to that athlete and that válida.
 2. **Given** an athlete already has a fresh insight for this válida, **When** the coach triggers the per-athlete action, **Then** the system asks for confirmation before re-running, indicating an analysis already exists.
+3. **Given** the coach is on the Insights tab, **When** they use the per-athlete "Analizar con IA" / "Re-analizar" button on an athlete card, **Then** an analysis run starts scoped to that athlete and that válida (same launch + confirm-on-fresh behavior as the results row action). Masked athlete cards (parent view) expose no launch button.
 
 ---
 

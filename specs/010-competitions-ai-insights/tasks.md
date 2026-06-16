@@ -67,8 +67,10 @@
 
 - [X] T021 [US4] Add coach-gated row action in frontend/src/components/competitions/results/ResultsTable.tsx for rows with `is_our_club && athlete_id != null`: "Analizar con IA" → `startAthleteRun(athleteId, {season, valida_nums:[event.sequence_number]})` (season/valida passed down from CompetitionDetailPage/ResultsTab props); when a fresh insight exists for that terna (from `useClubInsightsByRace`, `stale_run_id == null`) open `ConfirmModal` "Ya existe un análisis para este deportista. ¿Re-ejecutar?" before launching; show run started feedback linking to Insights tab
 - [X] T022 [P] [US4] Vitest test frontend/src/components/competitions/results/__tests__/ResultsTableLaunch.test.tsx: action visibility rules (role, club, linked athlete), confirm-on-fresh, direct launch when none/stale
+- [X] T030 [US4] (post-delivery extension, 2026-06-16) Extract the per-row launch button + error mapping into shared `frontend/src/components/competitions/insights/AnalyzeAthleteButton.tsx` (props: `label`, `alwaysShowLabel`, `showInsightsLink`); ResultsTable consumes it (no behavior change). Add a per-card "Analizar con IA"/"Re-analizar" button on each `InsightCard` in `InsightsTab.tsx` (coach/admin, `athlete_id > 0`, season+validaNum from CompetitionDetailPage props), rendered as a sibling of the clickable card (no nested-interactive). Freshness derived from item: `insight_id===null → undefined`; `stale_run_id==null → null` (confirm); `string → stale`. Extend `useLaunchAthleteAnalysis` invalidation to also drop `club-insights-by-race` so the grid eventually reflects the new run.
+- [X] T031 [P] [US4] Vitest test frontend/src/components/competitions/tabs/__tests__/InsightsTabAnalyze.test.tsx: card-button visibility (role, masked id=0, missing season/validaNum), direct launch vs confirm-on-fresh, "Análisis iniciado" success (no Insights link), button click does not navigate.
 
-**Checkpoint**: correction loop covered without leaving the competition.
+**Checkpoint**: correction loop covered without leaving the competition — from both the results row and the Insights card.
 
 ## Phase 7: User Story 5 — Competition-scoped AI chat (P5)
 

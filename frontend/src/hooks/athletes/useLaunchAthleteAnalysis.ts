@@ -5,6 +5,10 @@
  * para que la UI re-fetchee y muestre el nuevo run. La predicate
  * matchea el athleteId (segundo elemento del queryKey), así otros
  * atletas no son afectados.
+ *
+ * Además invalida ``club-insights-by-race`` (grid cross-atleta del tab
+ * Insights / freshness de ResultsTable): no está keyado por athleteId, así
+ * que se invalida completa para reflejar el nuevo run cuando complete.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -26,6 +30,8 @@ export function useLaunchAthleteAnalysis(athleteId: number) {
           const key = q.queryKey;
           if (!Array.isArray(key)) return false;
           const [base, id] = key;
+          // Grid cross-atleta: no keyado por athleteId → invalidar siempre.
+          if (base === "club-insights-by-race") return true;
           return (
             (base === "athlete-runs" || base === "athlete-insights") &&
             id === athleteId

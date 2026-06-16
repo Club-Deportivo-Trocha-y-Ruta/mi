@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StaleAnalysisBadge } from "@/components/competitions/insights/StaleAnalysisBadge";
+import { AnalyzeAthleteButton } from "@/components/competitions/insights/AnalyzeAthleteButton";
 import { useClubInsightsByRace } from "@/hooks/athletes/useClubInsightsByRace";
 import { formatDateTimeCompact } from "@/lib/datetime";
 import {
@@ -43,9 +44,21 @@ const cardShadow =
 interface InsightCardProps {
   item: ClubInsightByRaceItem;
   onNavigate: (athleteId: number, insightId: number) => void;
+  /** coach/admin → muestra el botón "Analizar con IA" por tarjeta. */
+  canAnalyze?: boolean;
+  /** Año de temporada (necesario para lanzar el análisis). */
+  season?: number;
+  /** Número de válida (sequence_number del evento; necesario para lanzar). */
+  validaNum?: number;
 }
 
-function InsightCard({ item, onNavigate }: InsightCardProps) {
+function InsightCard({
+  item,
+  onNavigate,
+  canAnalyze = false,
+  season,
+  validaNum,
+}: InsightCardProps) {
   const isMasked = item.athlete_id === 0;
   const isClickable = !isMasked && item.insight_id !== null;
   const initials = item.athlete_display_name
@@ -54,6 +67,15 @@ function InsightCard({ item, onNavigate }: InsightCardProps) {
     .map((w) => w[0] ?? "")
     .join("")
     .toUpperCase();
+
+  // Botón de análisis por tarjeta: solo coach/admin, atleta no enmascarado,
+  // con season + validaNum disponibles. Mismo contrato que ResultsTable.
+  const showAnalyze =
+    canAnalyze && !isMasked && item.athlete_id > 0 && season != null && validaNum != null;
+  // Frescura para el botón: undefined=sin insight → launch directo; null=insight
+  // fresco → confirmar; string=stale run_id → launch directo.
+  const insightFreshness =
+    item.insight_id === null ? undefined : (item.stale_run_id ?? null);
 
   function handleClick() {
     if (isClickable) {
@@ -155,6 +177,27 @@ function InsightCard({ item, onNavigate }: InsightCardProps) {
           <StaleAnalysisBadge runId={item.stale_run_id} />
         </div>
       )}
+
+      {/* US4 (per-atleta): botón "Analizar con IA" por tarjeta. Hermano del
+          card clickable (no anidado) para no romper nested-interactive (axe).
+          Solo coach/admin con season + validaNum resueltos. */}
+      {showAnalyze && (
+        <div
+          className="flex justify-end"
+          data-testid={`insights-tab-analyze-${item.athlete_id}`}
+        >
+          <AnalyzeAthleteButton
+            athleteId={item.athlete_id}
+            season={season!}
+            validaNum={validaNum!}
+            insightFreshness={insightFreshness}
+            displayName={item.athlete_display_name}
+            label={item.insight_id === null ? "Analizar con IA" : "Re-analizar"}
+            alwaysShowLabel
+            showInsightsLink={false}
+          />
+        </div>
+      )}
     </article>
   );
 }
@@ -194,13 +237,23 @@ export interface InsightsTabProps {
   hasResults?: boolean;
   /** true cuando el usuario es coach o admin (controla visibilidad del panel IA). */
   isCoachOrAdmin?: boolean;
+  /** Año de temporada (del event_date). Habilita "Analizar con IA" por tarjeta. */
+  season?: number;
+  /** Número de válida (sequence_number del evento). Necesario para lanzar. */
+  validaNum?: number;
 }
 
 /**
  * InsightsTab — grid de análisis IA por atleta scopeado a la válida.
  * Cuando el usuario es coach/admin muestra el GroupAnalysisPanel encima del grid.
  */
-export function InsightsTab({ raceEventId, hasResults = false, isCoachOrAdmin = false }: InsightsTabProps) {
+export function InsightsTab({
+  raceEventId,
+  hasResults = false,
+  isCoachOrAdmin = false,
+  season,
+  validaNum,
+}: InsightsTabProps) {
   return (
     <div className="space-y-4" data-testid="insights-tab-root">
       {isCoachOrAdmin && (
@@ -209,7 +262,12 @@ export function InsightsTab({ raceEventId, hasResults = false, isCoachOrAdmin = 
           hasResults={hasResults}
         />
       )}
-      <ClubInsightsGrid raceEventId={raceEventId} />
+      <ClubInsightsGrid
+        raceEventId={raceEventId}
+        isCoachOrAdmin={isCoachOrAdmin}
+        season={season}
+        validaNum={validaNum}
+      />
       {isCoachOrAdmin && (
         <CompetitionChatPanel raceEventId={raceEventId} />
       )}
@@ -219,8 +277,18 @@ export function InsightsTab({ raceEventId, hasResults = false, isCoachOrAdmin = 
 
 /**
  * ClubInsightsGrid — grid de análisis IA por atleta para una válida concreta.
+ *
+ * season/validaNum: recibidos por props desde CompetitionDetailPage (que ya
+ * tiene el evento cargado para el header). Necesarios para el botón
+ * "Analizar con IA" por tarjeta. Se mantienen como props (no query interna)
+ * para que el grid sea presentacional y testeable sin QueryClient.
  */
-function ClubInsightsGrid({ raceEventId }: InsightsTabProps) {
+function ClubInsightsGrid({
+  raceEventId,
+  isCoachOrAdmin = false,
+  season,
+  validaNum,
+}: InsightsTabProps) {
   const navigate = useNavigate();
   const { data, isLoading, isError, refetch } = useClubInsightsByRace(
     raceEventId,
@@ -283,6 +351,9 @@ function ClubInsightsGrid({ raceEventId }: InsightsTabProps) {
             key={`${item.athlete_id}-${item.insight_id ?? "none"}`}
             item={item}
             onNavigate={handleNavigate}
+            canAnalyze={isCoachOrAdmin}
+            season={season}
+            validaNum={validaNum}
           />
         ))}
       </div>

@@ -28,8 +28,7 @@
  *   - `isCoachOrAdmin?: boolean` — muestra el botón "Analizar con IA".
  */
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { ChevronUp, ChevronDown, ChevronsUpDown, BrainCircuit, Loader2, CheckCircle2, AlertCircle, MessageSquarePlus, MessageSquare } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, MessageSquarePlus, MessageSquare } from "lucide-react";
 
 import {
   Table,
@@ -47,8 +46,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { ConfirmModal } from "@/components/common/ConfirmModal";
-import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
+import { AnalyzeAthleteButton } from "@/components/competitions/insights/AnalyzeAthleteButton";
 import { EditResultNoteDialog } from "@/components/race/EditResultNoteDialog";
 import type {
   RaceEventResultsResponse,
@@ -462,164 +460,6 @@ export function ResultsTable({
 // ResultRow — fila individual de resultado
 // ---------------------------------------------------------------------------
 
-/**
- * Error codes from the backend for AI analysis.
- * 429 = concurrency limit; 503 = budget exhausted.
- */
-const AI_ERROR_MESSAGES: Record<number, string> = {
-  503: "Presupuesto mensual de IA agotado. Los análisis se reactivan el próximo ciclo.",
-  429: "Límite de análisis simultáneos alcanzado. Intenta de nuevo en unos minutos.",
-};
-
-function getAiErrorMessage(err: unknown): string {
-  if (typeof err === "object" && err !== null) {
-    const e = err as { response?: { status?: number } };
-    const status = e.response?.status;
-    if (status != null && status in AI_ERROR_MESSAGES) {
-      return AI_ERROR_MESSAGES[status];
-    }
-  }
-  return "No se pudo iniciar el análisis. Intenta de nuevo.";
-}
-
-/**
- * Button and confirmation logic for the per-row AI launch action.
- * Self-contained: manages its own confirm modal state, launch mutation,
- * success/error inline feedback, and the freshness check.
- */
-function AnalyzeButton({
-  athleteId,
-  season,
-  validaNum,
-  insightFreshness,
-  displayName,
-}: {
-  athleteId: number;
-  season: number;
-  validaNum: number;
-  /**
-   * undefined = no insight yet → launch directly.
-   * null     = fresh insight (stale_run_id == null) → confirm before re-run.
-   * string   = stale run_id → treat as "needs rerun", launch directly (stale).
-   */
-  insightFreshness: string | null | undefined;
-  displayName: string;
-}) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [successRunId, setSuccessRunId] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [, setSearchParams] = useSearchParams();
-
-  const launch = useLaunchAthleteAnalysis(athleteId);
-
-  // A fresh insight exists when the map has a null stale_run_id entry.
-  const hasFreshInsight = insightFreshness === null;
-
-  function doLaunch() {
-    setErrorMsg(null);
-    launch.mutate(
-      { season, valida_nums: [validaNum] },
-      {
-        onSuccess: (res) => {
-          setSuccessRunId(res.run_id);
-          setConfirmOpen(false);
-        },
-        onError: (err) => {
-          setErrorMsg(getAiErrorMessage(err));
-          setConfirmOpen(false);
-        },
-      },
-    );
-  }
-
-  function handleButtonClick() {
-    setErrorMsg(null);
-    setSuccessRunId(null);
-    if (hasFreshInsight) {
-      setConfirmOpen(true);
-    } else {
-      doLaunch();
-    }
-  }
-
-  function navigateToInsights() {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", "insights");
-      return next;
-    });
-  }
-
-  if (successRunId) {
-    return (
-      <div
-        className="flex items-center gap-1.5 text-xs text-emerald-700"
-        data-testid={`ai-launch-success-${athleteId}`}
-      >
-        <CheckCircle2 size={13} aria-hidden="true" />
-        <button
-          type="button"
-          onClick={navigateToInsights}
-          className="underline underline-offset-2 hover:opacity-80"
-          data-testid={`ai-launch-insights-link-${athleteId}`}
-        >
-          Ver progreso en Insights
-        </button>
-      </div>
-    );
-  }
-
-  if (errorMsg) {
-    return (
-      <div
-        className="flex max-w-[200px] items-start gap-1.5 text-xs text-red-600"
-        data-testid={`ai-launch-error-${athleteId}`}
-        role="alert"
-      >
-        <AlertCircle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-        <span>{errorMsg}</span>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={handleButtonClick}
-        disabled={launch.isPending}
-        className={cn(
-          "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-          "text-mid-gray hover:bg-charcoal/8 hover:text-charcoal",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-        )}
-        aria-label={`Analizar con IA a ${displayName}`}
-        data-testid={`ai-launch-btn-${athleteId}`}
-      >
-        {launch.isPending ? (
-          <Loader2 size={13} className="animate-spin" aria-hidden="true" />
-        ) : (
-          <BrainCircuit size={13} aria-hidden="true" />
-        )}
-        <span className="hidden sm:inline">Analizar</span>
-      </button>
-
-      <ConfirmModal
-        open={confirmOpen}
-        title="Re-ejecutar análisis"
-        body="Ya existe un análisis para este deportista. ¿Deseas re-ejecutarlo?"
-        confirmLabel="Re-ejecutar"
-        isPending={launch.isPending}
-        onCancel={() => {
-          if (!launch.isPending) setConfirmOpen(false);
-        }}
-        onConfirm={doLaunch}
-      />
-    </>
-  );
-}
-
 function ResultRow({
   row,
   sort: _sort,
@@ -820,7 +660,7 @@ function ResultRow({
               )}
               {/* Analizar con IA */}
               {showAnalyzeBtn ? (
-                <AnalyzeButton
+                <AnalyzeAthleteButton
                   athleteId={row.athlete_id!}
                   season={season!}
                   validaNum={validaNum!}
