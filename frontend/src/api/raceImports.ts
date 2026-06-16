@@ -43,6 +43,9 @@ export async function parseRaceImport(
   formData.append("event_date", fields.event_date);
   formData.append("location", fields.location);
   if (fields.kind) formData.append("kind", fields.kind);
+  // Spec 014: series_kind para que el backend resuelva/cree la serie por tipo.
+  // Default "cup" para compatibilidad hacia atrás con flujos que no lo envían.
+  if (fields.series_kind) formData.append("series_kind", fields.series_kind);
 
   // F-COND — campos opcionales de condiciones de carrera.
   // Se omiten si son null, undefined o cadena vacía para no contaminar el

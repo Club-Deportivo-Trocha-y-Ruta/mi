@@ -457,11 +457,13 @@ class TestParseEndpointRevisionDetection:
             await session.commit()
             prev_id = committed.id
 
-        # Parse con SHA distinto (contenido único)
+        # Parse con SHA distinto (contenido único).
+        # series_name debe coincidir con el seed para que _get_or_create_series
+        # resuelva la serie id=1 y detect_revision encuentre el committed previo.
         files = {"resultados_pdf": ("r2.pdf", _PDF_HEADER + b"REVISED CONTENT XYZ 123", "application/pdf")}
         r = await coach_client.post(
             "/api/race-analysis/imports/parse",
-            data=_parse_form(valida_num=4), files=files,
+            data=_parse_form(valida_num=4, series_name="Copa Valle de Ciclomontañismo"), files=files,
         )
         assert r.status_code == 200, r.text
         data = r.json()

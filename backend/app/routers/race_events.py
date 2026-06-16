@@ -53,7 +53,9 @@ import app.services.race_events as race_events_svc
 import app.services.race.results_read as results_svc
 import app.services.race.roster as roster_svc
 import app.services.race.standings as standings_svc
+from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.services.permissions import allowed_athlete_ids_for
+from app.services.race.series_rules import assert_championship_single_event, derive_event_fields_for_series
 
 logger = logging.getLogger(__name__)
 
@@ -191,9 +193,12 @@ async def get_race_event_standings(
       directamente desde ``race_results`` (no usa la vista ``season_standings``).
     - Ranking por ``total_points DESC``, desempate por podios DESC, mejor posición ASC.
     - Parent: solo ve sus propios hijos (FR-030).
+    - Para eventos de series tipo ``championship``, el ranking acumulado no aplica;
+      se retorna un payload vacío (``categories=[]``) en lugar de 404.
 
     Códigos de respuesta:
-    - 200: clasificación (puede tener ``categories=[]`` si no hay resultados aún).
+    - 200: clasificación (puede tener ``categories=[]`` si no hay resultados aún o
+      el evento es un campeonato).
     - 404: evento no existe o no tiene serie asociada.
     - 403: usuario sin rol coach, admin o parent.
     """
@@ -212,9 +217,10 @@ async def get_race_event_standings(
             detail=f"Evento de carrera con id={race_event_id} no existe o no tiene serie.",
         )
     logger.info(
-        "race_events_standings_get race_event_id=%s user_id=%s",
+        "race_events_standings_get race_event_id=%s user_id=%s categories=%s",
         race_event_id,
         current_user.id,
+        len(payload.categories),
     )
     return payload
 
@@ -450,20 +456,62 @@ async def create_race_event(
 ) -> RaceEventRead:
     """Crea un nuevo evento de carrera vacío (sin resultados).
 
-    El evento se asocia a una serie existente. Los campos de condiciones
-    de carrera son opcionales y pueden completarse después con
-    ``PATCH /{id}/conditions``.
+    El evento se asocia a una serie existente. El servidor deriva
+    ``sequence_number`` e ``is_championship`` del tipo de la serie (spec 014):
+    - Series tipo ``championship``: ``sequence_number=1``, ``is_championship=True``.
+      Un segundo evento en la misma serie devuelve 409.
+    - Series tipo ``cup``: ``sequence_number`` requerido del cliente,
+      ``is_championship=False``.
+
+    Los campos de condiciones de carrera son opcionales y pueden completarse
+    después con ``PATCH /{id}/conditions``.
 
     Códigos de respuesta:
     - 201: evento creado correctamente.
     - 404: la serie referenciada no existe.
-    - 409: ya existe un evento con la misma ``(series_id, sequence_number)``.
-    - 422: campo fuera de rango o serie no existe.
+    - 409: campeonato con evento ya existente, o duplicado ``(series_id, sequence_number)`` en copa.
+    - 422: campo fuera de rango, serie no existe, o sequence_number ausente en copa.
     - 403: usuario sin rol coach o admin.
     """
+    # Load the target series — 422 if missing (FIX-3: reference validation error,
+    # not a resource-not-found; preserves the test contract in test_race_events_crud.py
+    # test_post_series_id_inexistente which asserts 422).
+    series_result = await db.execute(
+        select(RaceSeries).where(RaceSeries.id == body.series_id)
+    )
+    series: Optional[RaceSeries] = series_result.scalar_one_or_none()
+    if series is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Serie con id={body.series_id} no existe.",
+        )
+
+    # For cups, sequence_number is required
+    if series.kind == RaceSeriesKind.cup and body.sequence_number is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="sequence_number es requerido para series de tipo 'cup'.",
+        )
+
+    # Guard: championship must not already have an event (INV-2)
+    await assert_championship_single_event(db, series)
+
+    # Derive sequence_number and is_championship from series kind (client values ignored)
+    derived_sequence, derived_is_championship = derive_event_fields_for_series(
+        series.kind, body.sequence_number
+    )
+
+    # Build a modified payload with derived values — use model_copy to avoid mutating body
+    derived_body = body.model_copy(
+        update={
+            "sequence_number": derived_sequence,
+            "is_championship": derived_is_championship,
+        }
+    )
+
     event = await race_events_svc.create_race_event(
         db=db,
-        payload=body,
+        payload=derived_body,
         user_id=current_user.id,
     )
 

@@ -149,6 +149,12 @@ function makeValidPdf(name = "resultados.pdf"): File {
 
 /** Fills step 1 fields and submits — mirrors ImportWizard.test.tsx pattern. */
 async function fillStep1AndSubmit(user: ReturnType<typeof userEvent.setup>) {
+  // Spec 014: series_name y valida_num son requeridos para copa (default).
+  await user.type(screen.getByTestId("wizard-series-name"), "Copa Valle");
+  fireEvent.change(screen.getByTestId("wizard-valida-num"), {
+    target: { value: "4" },
+  });
+
   await user.type(screen.getByTestId("wizard-event-name"), "Válida IV — Cali");
   fireEvent.change(screen.getByTestId("wizard-event-date"), {
     target: { value: "2026-05-17" },

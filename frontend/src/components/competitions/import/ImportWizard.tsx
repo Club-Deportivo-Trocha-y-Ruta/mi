@@ -106,63 +106,80 @@ function formatCommittedAt(iso: string | undefined | null): string {
 
 const CURRENT_YEAR = new Date().getFullYear();
 
-const step1Schema = z.object({
-  series_name: z.string().min(2, "Nombre de serie requerido"),
-  season: z
-    .number({ message: "Temporada requerida" })
-    .int()
-    .min(2020, "Temporada inválida")
-    .max(2100, "Temporada inválida"),
-  valida_num: z
-    .number({ message: "Número de válida requerido" })
-    .int()
-    .min(1, "Mínimo 1")
-    .max(9, "Máximo 9"),
-  event_name: z.string().min(2, "Nombre del evento requerido"),
-  event_date: z
-    .string()
-    .min(1, "Fecha requerida")
-    .refine(
-      (v) => /^\d{4}-\d{2}-\d{2}$/.test(v),
-      "Formato YYYY-MM-DD",
-    ),
-  location: z.string().min(2, "Ciudad requerida"),
-  // F-COND — condiciones opcionales (NO bloquean avance)
-  temperature_c: z
-    .string()
-    .optional()
-    .refine(
-      (v) => {
-        if (!v || v.trim() === "") return true;
-        const n = parseFloat(v);
-        return !isNaN(n) && n >= 0 && n <= 50;
-      },
-      { message: "Debe estar entre 0 y 50 °C" },
-    ),
-  surface_condition: z
-    .enum(["seca", "humeda", "barro", "lluvia", "mixta"] as const)
-    .optional()
-    .nullable(),
-  altitude_msnm: z
-    .string()
-    .optional()
-    .refine(
-      (v) => {
-        if (!v || v.trim() === "") return true;
-        const n = parseFloat(v);
-        return !isNaN(n) && n >= 0 && n <= 5000;
-      },
-      { message: "Debe estar entre 0 y 5000 msnm" },
-    ),
-  climate: z
-    .string()
-    .max(60, "Máximo 60 caracteres")
-    .optional(),
-  weather_notes: z
-    .string()
-    .max(2000, "Máximo 2000 caracteres")
-    .optional(),
-});
+const step1Schema = z
+  .object({
+    // Spec 014: tipo de serie (cup | championship). Determina si valida_num
+    // es requerido (copa) u omitido (campeonato).
+    series_kind: z.enum(["cup", "championship"] as const),
+    series_name: z.string().min(2, "Nombre de serie requerido"),
+    season: z
+      .number({ message: "Temporada requerida" })
+      .int()
+      .min(2020, "Temporada inválida")
+      .max(2100, "Temporada inválida"),
+    // valida_num: opcional en el schema base; la validación condicional se
+    // aplica en el refinement de abajo según series_kind.
+    valida_num: z
+      .number()
+      .int()
+      .min(1, "Mínimo 1")
+      .max(9, "Máximo 9")
+      .optional(),
+    event_name: z.string().min(2, "Nombre del evento requerido"),
+    event_date: z
+      .string()
+      .min(1, "Fecha requerida")
+      .refine(
+        (v) => /^\d{4}-\d{2}-\d{2}$/.test(v),
+        "Formato YYYY-MM-DD",
+      ),
+    location: z.string().min(2, "Ciudad requerida"),
+    // F-COND — condiciones opcionales (NO bloquean avance)
+    temperature_c: z
+      .string()
+      .optional()
+      .refine(
+        (v) => {
+          if (!v || v.trim() === "") return true;
+          const n = parseFloat(v);
+          return !isNaN(n) && n >= 0 && n <= 50;
+        },
+        { message: "Debe estar entre 0 y 50 °C" },
+      ),
+    surface_condition: z
+      .enum(["seca", "humeda", "barro", "lluvia", "mixta"] as const)
+      .optional()
+      .nullable(),
+    altitude_msnm: z
+      .string()
+      .optional()
+      .refine(
+        (v) => {
+          if (!v || v.trim() === "") return true;
+          const n = parseFloat(v);
+          return !isNaN(n) && n >= 0 && n <= 5000;
+        },
+        { message: "Debe estar entre 0 y 5000 msnm" },
+      ),
+    climate: z
+      .string()
+      .max(60, "Máximo 60 caracteres")
+      .optional(),
+    weather_notes: z
+      .string()
+      .max(2000, "Máximo 2000 caracteres")
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    // valida_num es requerido SOLO para copas (FR-008, spec 014)
+    if (data.series_kind === "cup" && (data.valida_num == null || isNaN(data.valida_num))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Número de válida requerido",
+        path: ["valida_num"],
+      });
+    }
+  });
 
 type Step1Values = z.infer<typeof step1Schema>;
 
@@ -362,9 +379,11 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
   } = useForm<Step1Values>({
     resolver: zodResolver(step1Schema),
     defaultValues: {
-      series_name: "Copa Valle de Ciclomontañismo",
+      // Spec 014: sin default de Copa Valle — el coach selecciona explícitamente
+      series_kind: "cup" as const,
+      series_name: "",
       season: CURRENT_YEAR,
-      valida_num: 1,
+      valida_num: undefined,
       event_name: "",
       event_date: "",
       location: "",
@@ -376,6 +395,10 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
       weather_notes: "",
     },
   });
+
+  // Spec 014: tipo de serie — determina si valida_num se muestra/requiere
+  const watchedSeriesKind = watch("series_kind");
+  const isChampionship = watchedSeriesKind === "championship";
 
   // F-COND: Auto-rellena altitud cuando location coincide con catálogo Copa Valle.
   // Solo si altitude_msnm está vacío (shouldDirty: false para no marcar dirty).
@@ -430,11 +453,16 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
         fields: {
           series_name: values.series_name,
           season: values.season,
-          valida_num: values.valida_num,
+          // Spec 014: valida_num solo para copa; campeonato omite el campo
+          // (el backend lo ignora y fuerza sequence_number=1)
+          valida_num: values.series_kind === "cup" ? (values.valida_num ?? 1) : 1,
           event_name: values.event_name,
           event_date: values.event_date,
           location: values.location,
           kind: generalPdf ? "both" : "resultados",
+          // Spec 014: enviar el kind de serie para que el backend resuelva
+          // la serie correctamente (no hardcodea Copa Valle)
+          series_kind: values.series_kind,
           // F-COND — condiciones opcionales
           climate: climateVal,
           temperature_c: tempC,
@@ -614,6 +642,26 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
           noValidate
         >
           <div className="grid gap-3 sm:grid-cols-2">
+            {/* Spec 014: selector de tipo de competencia */}
+            <div className="sm:col-span-2">
+              <label
+                htmlFor="series_kind"
+                className="block text-xs font-medium text-mid-gray"
+              >
+                Tipo de competencia
+              </label>
+              <select
+                id="series_kind"
+                {...register("series_kind")}
+                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px]"
+                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                data-testid="wizard-series-kind"
+              >
+                <option value="cup">Copa (con válidas numeradas)</option>
+                <option value="championship">Campeonato (evento único anual)</option>
+              </select>
+            </div>
+
             <div className="sm:col-span-2">
               <label
                 htmlFor="series_name"
@@ -624,6 +672,11 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
               <input
                 id="series_name"
                 type="text"
+                placeholder={
+                  isChampionship
+                    ? "Ej: Campeonato Departamental 2026"
+                    : "Ej: Copa Valle de Ciclomontañismo"
+                }
                 {...register("series_name")}
                 className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
                 style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
@@ -660,29 +713,44 @@ export function ImportWizard({ onCompleted }: ImportWizardProps) {
               )}
             </div>
 
-            <div>
-              <label
-                htmlFor="valida_num"
-                className="block text-xs font-medium text-mid-gray"
+            {/* Spec 014: valida_num visible y requerido SOLO para copa */}
+            {!isChampionship && (
+              <div>
+                <label
+                  htmlFor="valida_num"
+                  className="block text-xs font-medium text-mid-gray"
+                >
+                  Válida #
+                </label>
+                <input
+                  id="valida_num"
+                  type="number"
+                  min={1}
+                  max={9}
+                  {...register("valida_num", { valueAsNumber: true })}
+                  className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  data-testid="wizard-valida-num"
+                />
+                {errors.valida_num && (
+                  <p className="mt-1 text-xs text-red-600" role="alert">
+                    {errors.valida_num.message}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Spec 014: mensaje informativo para campeonato */}
+            {isChampionship && (
+              <div
+                className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                role="status"
+                data-testid="wizard-championship-notice"
               >
-                Válida #
-              </label>
-              <input
-                id="valida_num"
-                type="number"
-                min={1}
-                max={9}
-                {...register("valida_num", { valueAsNumber: true })}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-                data-testid="wizard-valida-num"
-              />
-              {errors.valida_num && (
-                <p className="mt-1 text-xs text-red-600" role="alert">
-                  {errors.valida_num.message}
-                </p>
-              )}
-            </div>
+                Los campeonatos son eventos únicos anuales — no se registra
+                número de válida.
+              </div>
+            )}
 
             <div>
               <label

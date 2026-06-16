@@ -122,7 +122,11 @@ export type RaceEventStatus = "scheduled" | "completed" | "cancelled";
  */
 export interface RaceEventCreate {
   series_id: number;
-  sequence_number: number;
+  /**
+   * Número de válida en la serie. Requerido para series tipo copa.
+   * Omitido para campeonatos — el backend fuerza 1 (spec 014).
+   */
+  sequence_number?: number;
   name: string;
   /** Fecha ISO YYYY-MM-DD (sin hora). */
   event_date: string;

@@ -159,15 +159,38 @@ class TestEventUpdate:
 
     @pytest.mark.asyncio
     async def test_cd_event_flagged_as_championship(self, fake_session):
-        """valida_num=99 → is_championship=True en el RaceEvent."""
+        """Un evento es championship cuando su serie es kind=championship (spec 014).
+
+        La convención legacy valida_num=99 → is_championship está RETIRADA.
+        El campo is_championship ahora se deriva de series.kind via
+        derive_event_fields_for_series: championship → seq=1, is_championship=True.
+        """
+        from app.models.race_series import RaceSeriesKind
+
+        # Seed a championship series directly in the fake store
+        from app.models.race_series import RaceSeries as _RS
+        champ_series = _RS(
+            id=99,
+            name="Campeonato Departamental Valle",
+            season_year=2026,
+            organizer="Liga Vallecaucana de Ciclismo",
+            points_scheme_code="copa_valle_2026",
+            kind=RaceSeriesKind.championship,
+        )
+        fake_session.store.series[champ_series.id] = champ_series
+
         ingestor = RaceIngestor(fake_session)
         report = await ingestor.ingest_event(
-            meta=_meta(valida=99, name="CD Ginebra"),
+            meta=_meta(valida=1, name="CD Ginebra"),
             results_by_category={"ELITE_M": [_row(1, "1", "X", "Club Y", "1:30:00", 40)]},
             ingested_by_user_id=1,
+            series_id=champ_series.id,
         )
         evt = fake_session.store.events[report.event_id]
+        # is_championship derived from series.kind == championship
         assert evt.is_championship is True
+        # For championships, sequence_number is always forced to 1 (not valida_num)
+        assert evt.sequence_number == 1
 
 
 # ===========================================================================

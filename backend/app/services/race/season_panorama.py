@@ -78,6 +78,7 @@ _PANORAMA_SQL = text(
     JOIN race_series AS rs   ON rs.id = re.series_id
     JOIN athletes    AS a    ON a.id = rr.athlete_id
     WHERE rs.season_year = :season
+      AND rs.kind = 'cup'
       AND rr.athlete_id IS NOT NULL
       AND rr.deleted_at IS NULL
       AND (:club_id IS NULL OR a.club_id = :club_id)

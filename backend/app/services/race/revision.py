@@ -197,12 +197,17 @@ async def detect_revision(
     series_name: str,
     season: int,
     valida_num: int,
+    *,
+    series_id: Optional[int] = None,
 ) -> Optional[RevisionContext]:
     """Detecta si una ingesta de `(series, season, valida_num)` es revisión.
 
     Algoritmo (revision-design.md §1.2):
 
-    1. Buscar ``RaceSeries`` por ``(name, season_year)``.
+    1. Buscar ``RaceSeries`` por ``(name, season_year)`` — o usar ``series_id``
+       si ya fue resuelto por el caller (BUG-1 fix: evita divergencia de nombre
+       entre parse y commit cuando ``series_name`` no coincide exactamente con
+       la BD).
     2. Si no existe → ``None`` (primera vez para esta serie).
     3. Buscar ``RaceEvent`` por ``(series_id, sequence_number=valida_num)``.
     4. Si no existe → ``None`` (primera vez para esta válida).
@@ -217,20 +222,29 @@ async def detect_revision(
         series_name: Nombre canónico de la serie (typically Copa Valle).
         season: Año de la temporada.
         valida_num: Número de válida (1..7, 99 = CD).
+        series_id: (keyword-only) ID de serie ya resuelto por el caller. Cuando
+            se provee, se usa directamente en lugar de re-buscar por nombre,
+            garantizando que parse y commit operen sobre la misma serie.
 
     Returns:
         ``RevisionContext`` si es revisión; ``None`` si es primer import.
     """
-    # 1. Buscar serie
     from app.models.race_series import RaceSeries
 
-    series_result = await db.execute(
-        select(RaceSeries).where(
-            RaceSeries.name == series_name,
-            RaceSeries.season_year == season,
+    # 1. Resolver serie: si series_id dado, cargamos directo; si no, por nombre.
+    if series_id is not None:
+        series_result = await db.execute(
+            select(RaceSeries).where(RaceSeries.id == series_id)
         )
-    )
-    series = series_result.scalar_one_or_none()
+        series = series_result.scalar_one_or_none()
+    else:
+        series_result = await db.execute(
+            select(RaceSeries).where(
+                RaceSeries.name == series_name,
+                RaceSeries.season_year == season,
+            )
+        )
+        series = series_result.scalar_one_or_none()
     if series is None:
         return None
 

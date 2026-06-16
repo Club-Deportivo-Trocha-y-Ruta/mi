@@ -43,6 +43,7 @@ import {
   makeRaceEventRead,
   raceEventsHandlers,
 } from "@/test/msw/raceEventsHandlers";
+import { raceSeriesHandlers } from "@/test/msw/raceSeriesHandlers";
 import { CompetitionFormPage } from "@/routes/competitions/CompetitionFormPage";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,6 +84,19 @@ async function fillSubmitAndCaptureBody(): Promise<Record<string, unknown> | nul
   );
 
   const user = userEvent.setup();
+
+  // Spec 014: el picker de serie es requerido. Esperamos que cargue y
+  // seleccionamos la copa (id=2 según raceSeriesHandlers).
+  const seriesSelect = await screen.findByLabelText(/Serie/i);
+  await waitFor(() =>
+    expect(
+      Array.from((seriesSelect as HTMLSelectElement).options).some(
+        (o) => o.value === "2",
+      ),
+    ).toBe(true),
+  );
+  await user.selectOptions(seriesSelect, "2");
+
   await user.selectOptions(screen.getByLabelText("Número de válida"), "4");
   await user.type(screen.getByLabelText("Nombre"), "Válida 4 · Cali");
   // Seleccionar sede en modo predefined (el select tiene label con texto "Sede")
@@ -101,7 +115,9 @@ async function fillSubmitAndCaptureBody(): Promise<Record<string, unknown> | nul
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mswServer.use(...raceEventsHandlers);
+  // Spec 014: el picker de serie es requerido. Registramos los handlers de
+  // race-series para que el select cargue la lista (copa por defecto, id=2).
+  mswServer.use(...raceEventsHandlers, ...raceSeriesHandlers);
 });
 
 // ── Suite ─────────────────────────────────────────────────────────────────────

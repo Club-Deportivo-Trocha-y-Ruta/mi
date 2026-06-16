@@ -77,6 +77,14 @@ class RaceEventCreate(_ConditionsFields):
     Crea un evento vacío (sin resultados) asociado a una serie existente.
     Los campos de condiciones son opcionales y pueden completarse después
     vía ``PATCH /{id}/conditions``.
+
+    Spec 014 (2026-06-15): ``sequence_number`` es ahora opcional.
+    Para series de tipo ``championship``, el servidor ignora el valor del cliente
+    y fuerza ``sequence_number=1`` e ``is_championship=True``; el cliente tampoco
+    necesita enviar ``is_championship``. Para series de tipo ``cup``,
+    ``sequence_number`` sigue siendo requerido (validado en el router).
+    El campo ``is_championship`` del cliente es ignorado en ambos casos — siempre
+    se deriva del ``kind`` de la serie (decisión D2 del spec 014).
     """
 
     model_config = ConfigDict(
@@ -85,10 +93,15 @@ class RaceEventCreate(_ConditionsFields):
     )
 
     series_id: int = Field(gt=0, description="ID de la serie a la que pertenece el evento.")
-    sequence_number: int = Field(
+    sequence_number: Optional[int] = Field(
+        default=None,
         ge=1,
         le=99,
-        description="Número de válida en la serie (1-7 regulares, 99 = Campeonato Departamental).",
+        description=(
+            "Número de válida en la serie. "
+            "Requerido para series tipo 'cup'. "
+            "Ignorado para series tipo 'championship' (el servidor fuerza 1)."
+        ),
     )
     name: str = Field(min_length=1, max_length=200, description="Nombre descriptivo del evento.")
     event_date: date = Field(description="Fecha de la carrera (YYYY-MM-DD).")
@@ -97,9 +110,12 @@ class RaceEventCreate(_ConditionsFields):
         max_length=150,
         description="Municipio o lugar de la carrera.",
     )
-    is_championship: bool = Field(
-        default=False,
-        description="True si es Campeonato Departamental (sequence_number=99 por convención).",
+    is_championship: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Ignorado — se deriva automáticamente del tipo de serie (series.kind). "
+            "Se mantiene en el schema por compatibilidad con clientes anteriores."
+        ),
     )
     status: Optional[RaceEventStatus] = Field(
         default=RaceEventStatus.SCHEDULED,
@@ -115,16 +131,6 @@ class RaceEventCreate(_ConditionsFields):
             "vinculado (event_type=competition) al persistir la válida."
         ),
     )
-
-    @field_validator("sequence_number")
-    @classmethod
-    def _validate_championship_sequence(cls, v: int, info) -> int:
-        """Advierte coherencia entre is_championship y sequence_number=99.
-
-        No bloquea (puede haber campeonatos con numeración distinta en futuros
-        formatos de federación); solo normaliza el valor recibido.
-        """
-        return v
 
 
 # ---------------------------------------------------------------------------

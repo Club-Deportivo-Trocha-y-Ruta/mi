@@ -4,32 +4,42 @@
  * mode="create" → ruta /competitions/new
  * mode="edit"   → ruta /competitions/:id/edit
  *
+ * Spec 014 — Cup vs Championship:
+ *   - Selector "Tipo de competencia" (Copa | Campeonato).
+ *   - Picker de serie dinámico alimentado por useRaceSeriesList, filtrado por
+ *     el tipo seleccionado. Estados loading/empty/error cubiertos.
+ *   - Sin serie por defecto (no asume Copa Valle).
+ *   - Campo "Válida #" visible y requerido SOLO para copa; oculto para campeonato.
+ *   - Para campeonato: permite crear/seleccionar una serie tipo championship.
+ *   - Modo edit: precarga correcta para ambos kinds.
+ *   - Payload de submit deriva los campos correctos:
+ *       Copa: sequence_number enviado, is_championship ignorado (backend deriva).
+ *       Campeonato: sequence_number omitido, is_championship ignorado.
+ *
  * Campos:
- *   - Serie (hardcoded Copa Valle por ahora — CF5+ debería consumir endpoint)
- *   - Número de válida (select 1-7 + CD + "Otro")
- *   - Nombre (auto-sugerido como "Válida N · Sede" si vacío)
- *   - Fecha (input nativo)
- *   - Sede (select del catálogo VENUE_ALTITUDES + "Otra")
- *   - Altitud (readonly autocompletada; botón para editar manualmente)
- *   - Estado (select)
- *   - Campeonato departamental (checkbox — solo visible si sequence_number≠99,
- *     porque 99=CD ya implica is_championship=true)
+ *   - Tipo de competencia (Copa / Campeonato)
+ *   - Serie (picker dinámico según tipo)
+ *   - Número de válida (solo copa)
+ *   - Nombre (auto-sugerido si vacío)
+ *   - Fecha
+ *   - Sede
+ *   - Altitud (readonly, auto-completada)
+ *   - Estado
  *
  * Notas de diseño:
  *   - En modo create, las condiciones climáticas NO se incluyen aquí.
- *     El coach las ingresa después vía RaceConditionsCard en la detail page.
- *   - En modo edit, PATCH solo envía los campos de RaceEventUpdate (extra=forbid).
- *   - Error 422 con sequence_number duplicado muestra mensaje inline.
+ *   - En modo edit, PATCH solo envía campos de RaceEventUpdate (extra=forbid).
+ *   - Error 409 con championship single-event muestra mensaje inline.
  *   - Soporta ?returnTo= para flujo "crear desde calendario".
  */
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 
 import {
   competitionEventSchema,
-  COPA_VALLE_SERIES,
   STATUS_OPTIONS,
   VALIDA_OPTIONS,
   type CompetitionEventFormValues,
@@ -40,7 +50,9 @@ import {
   useRaceEvent,
   useUpdateRaceEvent,
 } from "@/hooks/race/useRaceEvents";
+import { useRaceSeriesList, useCreateRaceSeries } from "@/hooks/race/useRaceSeries";
 import { VENUE_ALTITUDES } from "@/types/raceEvents.types";
+import type { RaceSeriesKind } from "@/types/raceSeries.types";
 
 // ---------------------------------------------------------------------------
 // Estilos compartidos (patrón del proyecto)
@@ -72,7 +84,119 @@ interface CompetitionFormPageProps {
 }
 
 // ---------------------------------------------------------------------------
-// Página
+// Tipo de competencia — UI discriminator
+// ---------------------------------------------------------------------------
+
+const COMPETITION_TYPE_OPTIONS: { value: RaceSeriesKind; label: string }[] = [
+  { value: "cup", label: "Copa (con válidas numeradas)" },
+  { value: "championship", label: "Campeonato (evento único anual)" },
+];
+
+// ---------------------------------------------------------------------------
+// Inline create-series form para campeonatos
+// ---------------------------------------------------------------------------
+
+interface CreateChampionshipSeriesFormProps {
+  season: number;
+  onCreated: (seriesId: number) => void;
+}
+
+function CreateChampionshipSeriesForm({
+  season,
+  onCreated,
+}: CreateChampionshipSeriesFormProps) {
+  const [name, setName] = useState("");
+  const [organizer, setOrganizer] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const createSeries = useCreateRaceSeries();
+
+  function handleCreate() {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setFormError("El nombre de la serie es obligatorio.");
+      return;
+    }
+    setFormError(null);
+    createSeries.mutate(
+      {
+        name: trimmedName,
+        season_year: season,
+        kind: "championship",
+        organizer: organizer.trim() || null,
+      },
+      {
+        onSuccess: (created) => onCreated(created.id),
+        onError: (err) => {
+          if (
+            typeof err === "object" &&
+            err !== null &&
+            (err as { response?: { status?: number } }).response?.status === 409
+          ) {
+            setFormError("Ya existe una serie con ese nombre para la temporada.");
+          } else {
+            setFormError("No se pudo crear la serie. Intenta de nuevo.");
+          }
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-3 rounded-lg border border-blue-100 bg-blue-50 p-4">
+      <p className="text-xs font-semibold text-blue-900">
+        Crear nueva serie de campeonato
+      </p>
+      <div>
+        <label className="block text-xs font-medium text-mid-gray">
+          Nombre de la serie
+        </label>
+        <input
+          type="text"
+          placeholder="Ej: Campeonato Departamental 2026"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px]"
+          style={inputStyle}
+          aria-label="Nombre de la nueva serie de campeonato"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-mid-gray">
+          Organizador{" "}
+          <span className="font-normal text-mid-gray">(opcional)</span>
+        </label>
+        <input
+          type="text"
+          placeholder="Ej: Liga Vallecaucana de Ciclismo"
+          value={organizer}
+          onChange={(e) => setOrganizer(e.target.value)}
+          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px]"
+          style={inputStyle}
+          aria-label="Organizador de la serie"
+        />
+      </div>
+      {formError && (
+        <p className="text-xs text-red-600" role="alert">
+          {formError}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={handleCreate}
+        disabled={createSeries.isPending}
+        className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50 min-h-[44px]"
+      >
+        {createSeries.isPending && (
+          <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+        )}
+        Crear serie
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Página principal
 // ---------------------------------------------------------------------------
 
 export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
@@ -80,7 +204,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   // Sanitizar returnTo: solo se permiten paths internos (inician con /).
-  // Rechaza URLs absolutas o protocolos para evitar open-redirect.
   const rawReturnTo = searchParams.get("returnTo");
   const returnTo =
     rawReturnTo && /^\/[^/\\]/.test(rawReturnTo) ? rawReturnTo : null;
@@ -88,28 +211,24 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
   const eventId = id ? Number(id) : null;
   const isEdit = mode === "edit";
 
-  // En modo edit, cargamos el evento para precargar el formulario
-  const eventQuery = useRaceEvent(isEdit ? eventId : null);
+  // UI state
+  const [seriesKind, setSeriesKind] = useState<RaceSeriesKind>("cup");
+  const [showCreateSeries, setShowCreateSeries] = useState(false);
+  const [locationMode, setLocationMode] = useState<"predefined" | "custom">("predefined");
+  const [altitudeEditable, setAltitudeEditable] = useState(false);
+  const [computedAltitude, setComputedAltitude] = useState<number | null>(null);
+  const [createCalendarEvent, setCreateCalendarEvent] = useState(true);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+  const [seqError, setSeqError] = useState<string | null>(null);
 
+  // Datos
+  const eventQuery = useRaceEvent(isEdit ? eventId : null);
   const createMutation = useCreateRaceEvent();
   const updateMutation = useUpdateRaceEvent();
 
-  // FR-024 (D1): "Crear evento en calendario" — ON por default (opt-out visible).
-  // El valor se pasa al backend como `create_calendar_event` en el payload de
-  // creación. El backend gestiona la creación del calendar_event de forma
-  // transaccional. Solo aplica en modo create.
-  const [createCalendarEvent, setCreateCalendarEvent] = useState(true);
-
-  // Estado de la sede: "predefined" | "custom"
-  const [locationMode, setLocationMode] = useState<"predefined" | "custom">("predefined");
-  // Controla si la altitud es editable manualmente
-  const [altitudeEditable, setAltitudeEditable] = useState(false);
-  // Mensaje de error global (ej. 409 duplicado)
-  const [globalError, setGlobalError] = useState<string | null>(null);
-  // Error específico de sequence_number (409 duplicado)
-  const [seqError, setSeqError] = useState<string | null>(null);
-  // Altitud calculada automáticamente (para mostrar en campo readonly)
-  const [computedAltitude, setComputedAltitude] = useState<number | null>(null);
+  // Series dinámicas filtradas por tipo seleccionado
+  const currentYear = new Date().getFullYear();
+  const seriesListQuery = useRaceSeriesList({ kind: seriesKind, season: currentYear });
 
   const {
     register,
@@ -121,12 +240,12 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
   } = useForm<CompetitionEventFormValues>({
     resolver: zodResolver(competitionEventSchema),
     defaultValues: {
-      series_id: COPA_VALLE_SERIES.id,
+      series_kind: "cup",
+      series_id: 0,
       sequence_number: 1,
       name: "",
       event_date: "",
       location: null,
-      is_championship: false,
       status: "scheduled",
     },
   });
@@ -135,26 +254,63 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
   const watchedLocation = watch("location");
   const watchedName = watch("name");
   const watchedStatus = watch("status");
+  const watchedSeriesId = watch("series_id");
 
   // Precargar en modo edit
   useEffect(() => {
     if (isEdit && eventQuery.data) {
       const ev = eventQuery.data;
-      // Detectar si la sede es del catálogo o personalizada
+      const kind: RaceSeriesKind = ev.is_championship ? "championship" : "cup";
+      setSeriesKind(kind);
+
       const isPredefined = ev.location ? VENUE_KEYS.includes(ev.location) : false;
       setLocationMode(isPredefined ? "predefined" : "custom");
 
-      reset({
-        series_id: ev.series_id,
-        sequence_number: ev.sequence_number,
-        name: ev.name,
-        event_date: ev.event_date,
-        location: ev.location ?? null,
-        is_championship: ev.is_championship,
-        status: ev.status,
-      });
+      if (kind === "cup") {
+        reset({
+          series_kind: "cup",
+          series_id: ev.series_id,
+          sequence_number: ev.sequence_number,
+          name: ev.name,
+          event_date: ev.event_date,
+          location: ev.location ?? null,
+          status: ev.status,
+        });
+      } else {
+        reset({
+          series_kind: "championship",
+          series_id: ev.series_id,
+          sequence_number: undefined,
+          name: ev.name,
+          event_date: ev.event_date,
+          location: ev.location ?? null,
+          status: ev.status,
+        });
+      }
     }
   }, [isEdit, eventQuery.data, reset]);
+
+  // Sincronizar series_kind en el formulario al cambiar el selector externo
+  function handleKindChange(newKind: RaceSeriesKind) {
+    setSeriesKind(newKind);
+    setShowCreateSeries(false);
+    // Reset serie y número al cambiar de tipo
+    if (newKind === "cup") {
+      reset((current) => ({
+        ...current,
+        series_kind: "cup",
+        series_id: 0,
+        sequence_number: 1,
+      }));
+    } else {
+      reset((current) => ({
+        ...current,
+        series_kind: "championship",
+        series_id: 0,
+        sequence_number: undefined,
+      }));
+    }
+  }
 
   // Auto-completar altitud cuando cambia la sede
   useEffect(() => {
@@ -165,57 +321,88 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
     }
   }, [watchedLocation]);
 
-  // Cuando el número de válida es 99 (CD), forzar is_championship=true
+  // Auto-sugerir nombre si está vacío (solo copa)
   useEffect(() => {
-    if (watchedSequence === 99) {
-      setValue("is_championship", true, { shouldDirty: true });
-    }
-  }, [watchedSequence, setValue]);
-
-  // Auto-sugerir nombre si está vacío
-  useEffect(() => {
+    if (seriesKind !== "cup") return;
     if (!watchedName && watchedSequence && watchedLocation) {
-      const label =
-        watchedSequence === 99
-          ? "Campeonato Departamental"
-          : `Válida ${watchedSequence}`;
-      const suggested = `${label} · ${watchedLocation}`;
+      const suggested = `Válida ${watchedSequence} · ${watchedLocation}`;
       setValue("name", suggested, { shouldDirty: true });
     }
-  }, [watchedSequence, watchedLocation, watchedName, setValue]);
+  }, [seriesKind, watchedSequence, watchedLocation, watchedName, setValue]);
 
-  /**
-   * Construye el payload para crear una nueva válida.
-   * Incluye `create_calendar_event` para que el backend cree el calendar_event
-   * ligado de forma transaccional (FR-024).
-   */
+  // Auto-sugerir nombre para campeonato
+  useEffect(() => {
+    if (seriesKind !== "championship") return;
+    if (!watchedName && watchedLocation) {
+      const series = seriesListQuery.data?.items.find((s) => s.id === watchedSeriesId);
+      if (series) {
+        setValue("name", `${series.name} · ${watchedLocation}`, { shouldDirty: true });
+      }
+    }
+  }, [seriesKind, watchedLocation, watchedName, watchedSeriesId, seriesListQuery.data, setValue]);
+
   function buildCreatePayload(values: CompetitionEventFormValues) {
+    if (values.series_kind === "cup") {
+      return {
+        series_id: values.series_id,
+        sequence_number: values.sequence_number,
+        name: values.name,
+        event_date: values.event_date,
+        location: values.location || null,
+        status: values.status,
+        create_calendar_event: createCalendarEvent,
+      };
+    }
+    // championship: omitir sequence_number; backend lo fuerza a 1
     return {
       series_id: values.series_id,
-      sequence_number: values.sequence_number,
       name: values.name,
       event_date: values.event_date,
       location: values.location || null,
-      is_championship: values.is_championship,
       status: values.status,
       create_calendar_event: createCalendarEvent,
     };
   }
 
-  /**
-   * Construye el payload para actualizar una válida existente.
-   * No incluye `create_calendar_event` — en modo edit el calendario se
-   * auto-propaga desde el backend cuando cambian fecha/nombre/sede/estado.
-   */
   function buildUpdatePayload(values: CompetitionEventFormValues) {
+    if (values.series_kind === "cup") {
+      return {
+        name: values.name,
+        event_date: values.event_date,
+        location: values.location ?? null,
+        sequence_number: values.sequence_number,
+        status: values.status,
+      };
+    }
+    // championship: no enviar sequence_number
     return {
       name: values.name,
       event_date: values.event_date,
       location: values.location ?? null,
-      sequence_number: values.sequence_number,
       status: values.status,
-      is_championship: values.is_championship,
     };
+  }
+
+  function handleSubmitError(err: unknown) {
+    const msg = getRaceEventErrorMessage(err);
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      (err as { response?: { status?: number } }).response?.status === 409
+    ) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } }).response?.data?.detail ?? "";
+      // Championship single-event guard
+      if (detail.includes("campeonato") || detail.includes("único evento")) {
+        setGlobalError(detail);
+      } else {
+        setSeqError(
+          "Ya existe una válida con este número en la temporada. Elige otro número.",
+        );
+      }
+    } else {
+      setGlobalError(msg);
+    }
   }
 
   function onSubmit(values: CompetitionEventFormValues) {
@@ -223,9 +410,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
     setSeqError(null);
 
     if (!isEdit) {
-      // FR-024: `create_calendar_event` va en el payload — el backend crea el
-      // calendar_event transaccionalmente. El coach puede usar "Asociar a
-      // calendario" en el detalle si eligió opt-out aquí.
       createMutation.mutate(
         { body: buildCreatePayload(values) },
         {
@@ -233,23 +417,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
             const dest = returnTo ?? `/competitions/${created.id}`;
             navigate(dest);
           },
-          onError: (err) => {
-            const msg = getRaceEventErrorMessage(err);
-            // 409 duplicado de sequence_number
-            if (
-              typeof err === "object" &&
-              err !== null &&
-              (err as { response?: { status?: number } }).response?.status === 409
-            ) {
-              setSeqError(
-                "Ya existe una válida con este número en la temporada. Elige otro número.",
-              );
-            } else {
-              // 422 y resto → muestra detail real del backend si está
-              // disponible (más útil que un mensaje genérico).
-              setGlobalError(msg);
-            }
-          },
+          onError: handleSubmitError,
         },
       );
       return;
@@ -257,8 +425,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
 
     if (!eventId) return;
 
-    // FR-026: al editar, fecha/nombre/sede/estado se propagan automáticamente
-    // al calendar_event vinculado — el backend es la fuente de verdad.
     updateMutation.mutate(
       { id: eventId, body: buildUpdatePayload(values) },
       {
@@ -266,20 +432,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
           const dest = returnTo ?? `/competitions/${eventId}`;
           navigate(dest);
         },
-        onError: (err) => {
-          const msg = getRaceEventErrorMessage(err);
-          if (
-            typeof err === "object" &&
-            err !== null &&
-            (err as { response?: { status?: number } }).response?.status === 409
-          ) {
-            setSeqError(
-              "Ya existe una válida con este número en la temporada. Elige otro número.",
-            );
-          } else {
-            setGlobalError(msg);
-          }
-        },
+        onError: handleSubmitError,
       },
     );
   }
@@ -327,9 +480,16 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
   }
 
   const isPending = createMutation.isPending || updateMutation.isPending;
+  const showCancelledAlert =
+    isEdit && watchedStatus === "cancelled" && eventQuery.data?.status !== "cancelled";
 
-  // Alerta si cambia status a cancelado
-  const showCancelledAlert = isEdit && watchedStatus === "cancelled" && eventQuery.data?.status !== "cancelled";
+  // Helper para describir el estado del picker de series
+  const seriesItems = seriesListQuery.data?.items ?? [];
+  const seriesLoading = seriesListQuery.isLoading;
+  const seriesError = seriesListQuery.isError;
+  const seriesEmpty = !seriesLoading && !seriesError && seriesItems.length === 0;
+
+  const kindLabel = seriesKind === "cup" ? "copa" : "campeonato";
 
   return (
     <section className="max-w-2xl mx-auto space-y-5">
@@ -344,8 +504,8 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
           </h1>
           <p className="mt-0.5 text-sm text-mid-gray">
             {isEdit
-              ? "Actualiza los metadatos de la válida."
-              : "Registra una nueva válida en el sistema."}
+              ? "Actualiza los metadatos de la competencia."
+              : "Registra una nueva competencia en el sistema."}
           </p>
         </div>
         <button
@@ -379,53 +539,162 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         <div className={sectionClass} style={sectionStyle}>
           <h2 className="text-base font-semibold text-charcoal">Identificación</h2>
 
-          {/* Serie */}
+          {/* Tipo de competencia */}
           <div>
-            <label htmlFor="series-id" className={labelClass}>
-              Serie
-            </label>
-            <input
-              id="series-id"
-              type="text"
-              value={COPA_VALLE_SERIES.name}
-              readOnly
-              className={`${inputClass} bg-light-gray cursor-not-allowed`}
-              style={inputStyle}
-            />
-            {/* Campo oculto para el valor real */}
-            <input type="hidden" {...register("series_id", { valueAsNumber: true })} />
-            <p className="mt-1 text-xs text-mid-gray">
-              Serie activa del club. CF5+ permitirá seleccionar otras series.
-            </p>
-          </div>
-
-          {/* Número de válida */}
-          <div>
-            <label htmlFor="sequence-number" className={labelClass}>
-              Número de válida
+            <label htmlFor="competition-kind" className={labelClass}>
+              Tipo de competencia
             </label>
             <select
-              id="sequence-number"
-              {...register("sequence_number", { valueAsNumber: true })}
-              className={inputClass}
+              id="competition-kind"
+              value={seriesKind}
+              onChange={(e) => handleKindChange(e.target.value as RaceSeriesKind)}
+              disabled={isEdit}
+              className={`${inputClass} ${isEdit ? "bg-light-gray cursor-not-allowed" : ""}`}
               style={inputStyle}
-              aria-invalid={!!(errors.sequence_number || seqError)}
-              aria-describedby={
-                errors.sequence_number || seqError ? "sequence-number-error" : undefined
-              }
+              aria-label="Tipo de competencia"
             >
-              {VALIDA_OPTIONS.map((opt) => (
+              {COMPETITION_TYPE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
-            {(errors.sequence_number || seqError) && (
-              <p id="sequence-number-error" className={errorClass}>
-                {seqError ?? errors.sequence_number?.message}
+            {isEdit && (
+              <p className="mt-1 text-xs text-mid-gray">
+                El tipo de competencia no se puede cambiar en modo edición.
               </p>
             )}
           </div>
+
+          {/* Serie — picker dinámico */}
+          <div>
+            <label htmlFor="series-id" className={labelClass}>
+              Serie
+            </label>
+
+            {/* Loading state */}
+            {seriesLoading && (
+              <div className="mt-1 flex items-center gap-2 rounded-lg bg-light-gray px-3 py-2 text-sm text-mid-gray min-h-[44px]">
+                <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                Cargando series…
+              </div>
+            )}
+
+            {/* Error state */}
+            {seriesError && !seriesLoading && (
+              <div
+                className="mt-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+                role="alert"
+              >
+                No se pudieron cargar las series. Recarga la página.
+              </div>
+            )}
+
+            {/* Empty state */}
+            {seriesEmpty && (
+              <div className="mt-1 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                No hay series de {kindLabel} para {currentYear}.
+                {seriesKind === "championship" && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateSeries(true)}
+                    className="ml-1 font-semibold underline hover:no-underline"
+                  >
+                    Crear una nueva serie
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Select when loaded */}
+            {!seriesLoading && !seriesError && seriesItems.length > 0 && (
+              <select
+                id="series-id"
+                {...register("series_id", { valueAsNumber: true })}
+                className={inputClass}
+                style={inputStyle}
+                aria-invalid={!!(errors as { series_id?: { message?: string } }).series_id}
+              >
+                <option value={0} disabled>
+                  Selecciona una serie…
+                </option>
+                {seriesItems.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                    {s.organizer ? ` — ${s.organizer}` : ""}
+                    {s.event_count > 0 ? ` (${s.event_count} ${seriesKind === "cup" ? "válidas" : "evento"})` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Crear serie de campeonato inline */}
+            {seriesKind === "championship" && !seriesLoading && !seriesError && (
+              <div className="mt-2">
+                {!showCreateSeries ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateSeries(true)}
+                    className="text-xs font-medium text-blue-700 hover:underline"
+                  >
+                    + Crear nueva serie de campeonato
+                  </button>
+                ) : (
+                  <CreateChampionshipSeriesForm
+                    season={currentYear}
+                    onCreated={(seriesId) => {
+                      setValue("series_id", seriesId, { shouldDirty: true });
+                      setShowCreateSeries(false);
+                    }}
+                  />
+                )}
+              </div>
+            )}
+
+            {(errors as { series_id?: { message?: string } }).series_id && (
+              <p className={errorClass}>
+                {(errors as { series_id?: { message?: string } }).series_id?.message}
+              </p>
+            )}
+          </div>
+
+          {/* Número de válida — solo para copa */}
+          {seriesKind === "cup" && (
+            <div>
+              <label htmlFor="sequence-number" className={labelClass}>
+                Número de válida
+              </label>
+              <select
+                id="sequence-number"
+                {...register("sequence_number", { valueAsNumber: true })}
+                className={inputClass}
+                style={inputStyle}
+                aria-invalid={
+                  !!(errors as { sequence_number?: { message?: string } }).sequence_number ||
+                  !!seqError
+                }
+                aria-describedby={
+                  (errors as { sequence_number?: { message?: string } }).sequence_number || seqError
+                    ? "sequence-number-error"
+                    : undefined
+                }
+              >
+                {VALIDA_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {((errors as { sequence_number?: { message?: string } }).sequence_number ||
+                seqError) && (
+                <p id="sequence-number-error" className={errorClass}>
+                  {seqError ??
+                    (errors as { sequence_number?: { message?: string } }).sequence_number
+                      ?.message}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Nombre */}
           <div>
@@ -435,7 +704,11 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
             <input
               id="event-name"
               type="text"
-              placeholder="Ej: Válida 1 · Sevilla"
+              placeholder={
+                seriesKind === "cup"
+                  ? "Ej: Válida 1 · Sevilla"
+                  : "Ej: Campeonato Departamental · Ginebra"
+              }
               {...register("name")}
               className={inputClass}
               style={inputStyle}
@@ -448,26 +721,9 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
               </p>
             )}
             <p className="mt-1 text-xs text-mid-gray">
-              Si está vacío, se auto-sugiere al elegir número y sede.
+              Si está vacío, se auto-sugiere al elegir sede.
             </p>
           </div>
-
-          {/* Campeonato Departamental — solo si no es sequence_number=99 */}
-          {watchedSequence !== 99 && (
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-charcoal">
-              <input
-                type="checkbox"
-                {...register("is_championship")}
-                className="h-4 w-4 rounded border-mid-gray"
-              />
-              Campeonato Departamental (CD)
-            </label>
-          )}
-          {watchedSequence === 99 && (
-            <p className="text-xs text-mid-gray italic">
-              Número 99 se reserva automáticamente para el Campeonato Departamental.
-            </p>
-          )}
         </div>
 
         {/* Sección 2: Logística */}
@@ -597,7 +853,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
               />
               <p className="mt-1 text-xs text-mid-gray">
                 Las condiciones climáticas (altitud, temperatura, etc.) se
-                registran en detalle desde la página de la válida.
+                registran en detalle desde la página de la competencia.
               </p>
             </div>
           )}
@@ -608,7 +864,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
           <h2 className="text-base font-semibold text-charcoal">Estado</h2>
           <div>
             <label htmlFor="event-status" className={labelClass}>
-              Estado de la válida
+              Estado de la competencia
             </label>
             <select
               id="event-status"
@@ -647,7 +903,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                   Se creará un evento ligado automáticamente. Si luego cambias
                   fecha, nombre o sede, el calendario se actualizará de forma
                   automática. Puedes asociar un evento existente más tarde desde
-                  el detalle de la válida.
+                  el detalle de la competencia.
                 </span>
               </span>
             </label>

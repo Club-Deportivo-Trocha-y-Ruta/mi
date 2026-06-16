@@ -34,7 +34,6 @@ Privacidad (CLAUDE.md):
 from __future__ import annotations
 
 import hashlib
-import io
 import logging
 import os
 import re
@@ -64,12 +63,11 @@ from app.models.athlete import Athlete
 from app.models.club import ClubMember, ClubRole
 from app.models.race_category import RaceCategory
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
-from app.models.race_series import RaceSeries
+from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.models.user import User, UserRole
 from app.schemas.race import EventMeta
 from app.schemas.race_imports import (
     DryRunCounts,
-    EventHeaderPreview,
     ImportCommitRequest,
     ImportCommitResponse,
     ImportDryRunResponse,
@@ -112,9 +110,6 @@ _FILENAME_SAFE_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
 #: Cabecera CSV Copa Valle. Heurística: cualquier línea con coma/punto-coma/tab
 #: que contenga las palabras clave esperadas. Si no matchea, 415.
 _CSV_DELIMITERS = (",", ";", "\t")
-
-_SERIES_NAME = "Copa Valle de Ciclomontañismo"
-
 
 def _sanitize_filename(raw: Optional[str]) -> str:
     """Devuelve un filename seguro para preservar en BD. Cero path traversal."""
@@ -210,11 +205,27 @@ def _validate_general_magic(content: bytes, filename: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def _get_or_create_series(db: AsyncSession, season: int) -> RaceSeries:
-    """Asegura que exista la serie Copa Valle para la temporada dada."""
+async def _get_or_create_series(
+    db: AsyncSession,
+    series_name: str,
+    season: int,
+    kind: RaceSeriesKind,
+) -> RaceSeries:
+    """Resuelve o crea una serie por (name, season_year), honrando el kind del cliente.
+
+    Bug fix (spec 014 / T017): la versión anterior ignoraba ``series_name`` y
+    siempre usaba el hardcoded ``_SERIES_NAME`` ("Copa Valle de Ciclomontañismo").
+    Esta versión usa el nombre real enviado por el cliente.
+
+    Args:
+        db: Sesión async.
+        series_name: Nombre de la serie (enviado por el cliente en el Form).
+        season: Año de temporada.
+        kind: Tipo de serie (cup | championship).
+    """
     result = await db.execute(
         select(RaceSeries).where(
-            RaceSeries.name == _SERIES_NAME,
+            RaceSeries.name == series_name,
             RaceSeries.season_year == season,
         )
     )
@@ -222,10 +233,11 @@ async def _get_or_create_series(db: AsyncSession, season: int) -> RaceSeries:
     if series is not None:
         return series
     series = RaceSeries(
-        name=_SERIES_NAME,
+        name=series_name,
         season_year=season,
         organizer="Liga Vallecaucana de Ciclismo",
         points_scheme_code="copa_valle_2026",
+        kind=kind,
     )
     db.add(series)
     await db.flush()
@@ -304,6 +316,10 @@ async def parse_import(
         Optional[UploadFile], File(description="PDF GENERAL (opcional)")
     ] = None,
     kind: Annotated[Optional[str], Form()] = None,  # 'resultados'|'general'|'both'
+    series_kind: Annotated[
+        Optional[str],
+        Form(description="Tipo de serie: 'cup' (default) o 'championship'. Retrocompatible."),
+    ] = None,
     # --- Condiciones de carrera (opcionales — no están en el PDF) ---
     climate: Annotated[
         Optional[str],
@@ -335,7 +351,25 @@ async def parse_import(
     opcionales y retrocompatibles: parse sin ellos funciona exactamente igual.
     Se validan vía ``ImportParseRequestFields`` antes de persistir en
     ``parse_meta_json`` para garantizar invariantes (rangos, longitudes).
+
+    El campo ``series_kind`` (default 'cup') indica si los resultados corresponden
+    a una copa con rondas o a un campeonato anual. Retrocompatible: clientes que
+    no envían el campo reciben el comportamiento de copa (existente).
     """
+    # Validar y resolver series_kind
+    resolved_series_kind: RaceSeriesKind = RaceSeriesKind.cup
+    if series_kind is not None:
+        try:
+            resolved_series_kind = RaceSeriesKind(series_kind)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"series_kind inválido: '{series_kind}'. "
+                    "Valores permitidos: cup, championship."
+                ),
+            )
+
     # Validar campos de condiciones mediante el schema Pydantic
     # (FastAPI no aplica validación Pydantic a Form() individuales)
     from pydantic import ValidationError as PydanticValidationError
@@ -439,9 +473,8 @@ async def parse_import(
     )
     general_storage_path: Optional[str] = None
     general_storage_url: Optional[str] = None
-    safe_general_name: Optional[str] = None
     if general_bytes:
-        safe_general_name = _sanitize_filename(general_pdf.filename)  # type: ignore[union-attr]
+        _sanitize_filename(general_pdf.filename)  # type: ignore[union-attr]  # sanitized name preserved for future use
         general_rel = f"race-imports/pending/{parse_uuid}/general.pdf"
         general_storage_path, general_storage_url = await storage_sftp.upload_bytes(
             general_bytes, general_rel
@@ -486,7 +519,7 @@ async def parse_import(
                 pass
 
     # 7. Crear RaceImport status=pending con parse_meta_json
-    series = await _get_or_create_series(db, season)
+    series = await _get_or_create_series(db, series_name, season, resolved_series_kind)
     parse_meta = {
         "header": {
             "series_name": series_name,
@@ -543,12 +576,17 @@ async def parse_import(
     # F-UP-REV2: detección de revisión post-parse
     # Si existe `(series, valida_num)` con committed previo y SHA distinto,
     # marcamos `will_be_revision=true`. SHA byte-exacto ya fue bloqueado arriba
-    # con 409 (línea 322), no llegamos aquí.
+    # con 409, no llegamos aquí.
+    # BUG-1 fix: usamos series.id (ya resuelto arriba) para que detect_revision
+    # opere sobre la misma serie que el ingestor usará en dry-run/commit.
+    # Esto evita la divergencia cuando series_name del cliente no coincide
+    # exactamente con el name persisted (ej. "Copa Valle" vs "Copa Valle...").
     revision_ctx = await detect_revision(
         db,
-        series_name=_SERIES_NAME,
+        series_name=series_name,
         season=season,
         valida_num=valida_num,
+        series_id=series.id,
     )
     will_be_revision = revision_ctx is not None
 
@@ -782,6 +820,7 @@ async def dry_run_import(
     imp_sha256 = imp.sha256
     imp_general_sha256 = imp.general_sha256
     imp_uploader_user_id = imp.imported_by_user_id
+    imp_series_id = imp.series_id  # BUG-1 fix: honor series resolved at /parse
 
     # Ejecutar dry-run real
     ingestor = RaceIngestor(db)
@@ -794,6 +833,7 @@ async def dry_run_import(
             pdf_general_sha256=imp_general_sha256,
             ingested_by_user_id=current_user.id,
             dry_run=True,
+            series_id=imp_series_id,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -963,6 +1003,7 @@ async def commit_import(
     # misma session, lo que expira el ORM `imp` (MissingGreenlet en lazy-load).
     imp_sha256 = imp.sha256
     imp_general_sha256 = imp.general_sha256
+    imp_series_id = imp.series_id  # BUG-1 fix: honor series resolved at /parse
 
     # Ejecutar commit (dry_run=False) — promueve pending → committed
     ingestor = RaceIngestor(db)
@@ -976,6 +1017,7 @@ async def commit_import(
             pdf_general_sha256=imp_general_sha256,
             ingested_by_user_id=current_user.id,
             dry_run=False,
+            series_id=imp_series_id,
         )
     except ValueError as exc:
         # Categoría desconocida u otro error transactional

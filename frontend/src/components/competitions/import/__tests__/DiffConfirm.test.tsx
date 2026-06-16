@@ -194,6 +194,12 @@ async function renderAndGoToRevisionStep2(
   wrap(<ImportWizard />);
 
   // Paso 1: rellenar campos mínimos y subir PDF
+  // Spec 014: series_name y valida_num son requeridos para copa.
+  await user.type(screen.getByTestId("wizard-series-name"), "Copa Valle");
+  fireEvent.change(screen.getByTestId("wizard-valida-num"), {
+    target: { value: "4" },
+  });
+
   await user.type(screen.getByTestId("wizard-event-name"), "Válida IV — Cali");
   fireEvent.change(screen.getByTestId("wizard-event-date"), {
     target: { value: "2026-05-17" },

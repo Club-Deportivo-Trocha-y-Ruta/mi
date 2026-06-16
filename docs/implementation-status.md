@@ -322,3 +322,28 @@
 | Deploy | Deploy to Render (migration runs via `entrypoint.sh`) | ⏳ Pending |
 
 > Frontend integration fix during gates: coach-note client path corrected to `/api/race-analysis/race-events/race-results/{id}/coach-note` (router mounted under `/race-events`). Pre-existing second Alembic head `e5f6a7b8c9d0` (feature 007) is unrelated and would need a separate merge migration.
+
+## Implementation status — Cup vs Championship Series (specs/014-cup-vs-championship-series)
+
+> Adds a `kind` discriminator (`cup` | `championship`) to `race_series` so that single annual championships (e.g., Campeonato Departamental) are modeled as their own series without round numbers or cumulative-points contribution, while existing Copa Valle cup rounds remain unchanged. Reclassifies the existing Departmental Championship 2026 event via an idempotent data migration. No change to `race_events`, `race_results`, or any other table. Technical detail in `specs/014-cup-vs-championship-series/`.
+
+| Step | Scope | Status |
+|---|---|---|
+| T001 | Verify single Alembic head `a3b4c5d6e7f8`; proceed on `main` | ✅ Complete 2026-06-15 |
+| T002 | `RaceSeriesKind(str, enum.Enum)` (`cup`, `championship`) + `kind` mapped column on `race_series` | ✅ Complete 2026-06-15 |
+| T003 | Alembic revision `b1c2d3e4f5a6` (`down_revision=a3b4c5d6e7f8`): `ADD COLUMN kind ENUM`; idempotent data step creates championship series + repoints Departmental event; downgrade restores Copa Valle seq 99 | ✅ Complete 2026-06-15 |
+| T004 | `backend/app/schemas/race_series.py`: `RaceSeriesCreate`, `RaceSeriesRead`, `RaceSeriesListResponse` (with `event_count`, `extra="forbid"`) | ✅ Complete 2026-06-15 |
+| T005 | `backend/app/routers/race_series.py`: `GET /api/race-analysis/race-series?season=&kind=` + `POST` (409 on duplicate `(name, season_year)`); registered in `main.py` | ✅ Complete 2026-06-15 |
+| T006 | `backend/app/services/race/series_rules.py`: `derive_event_fields_for_series` (forces `sequence_number=1`, `is_championship=True` for championships); `assert_championship_single_event` (raises 409 if series already has an event) | ✅ Complete 2026-06-15 |
+| T008 | `sequence_number` optional in `RaceEventCreate`; `create_race_event` applies guards and derives fields from series kind; removes `sequence_number=99` convention | ✅ Complete 2026-06-15 |
+| T009 | `ingestor.py`: honors series kind on event creation (championship → seq 1 / `is_championship=True`) via shared helper | ✅ Complete 2026-06-15 |
+| T017 | `race_imports.py`: `_get_or_create_series` resolves by `(series_name, season, kind)`; removes hardcoded `_SERIES_NAME`; `series_kind` Form field (default `cup`); championship single-event guard on commit | ✅ Complete 2026-06-15 |
+| T023 | `season_panorama.py`: adds `AND rs.kind = 'cup'` to aggregate query (championships excluded from cumulative points/podiums/wins) | ✅ Complete 2026-06-15 |
+| T024 | `standings.py`: guard returns `None` / empty payload when series is not `kind=cup`; standings router updated | ✅ Complete 2026-06-15 |
+| T026 | Migration data step (in T003 file): idempotent upsert of `Campeonato Departamental 2026` series (`Liga Vallecaucana de Ciclismo`, `championship`); guarded `UPDATE` repoints legacy Departmental event (seq 99 / `is_championship=1`) to new series with `sequence_number=1` | ✅ Complete 2026-06-15 |
+| T007, T010, T018, T025, T027 | Backend pytest: foundation, US1 championship single-event guard, US3 import, US5 ranking exclusion, US6 migration idempotency | ⏳ Pending |
+| T011–T016, T019–T022 | Frontend: `CompetitionFormPage` type selector, `ImportWizard` type-aware flow, `CompetitionDetailPage` standings tab guard, series API client + Zod schema, vitest + jest-axe | ⏳ Pending |
+| T028–T031 | Polish gates (`ruff`, `mypy`, `eslint`, `tsc`), privacy audit, docs, quickstart end-to-end | ⏳ Pending |
+| Deploy | Deploy to Render (migration `b1c2d3e4f5a6` runs via `entrypoint.sh`) | ⏳ Pending |
+
+> Ola A (backend skeleton) complete. Frontend series-type-aware flows (US1–US4) and all pytest suites are the next increment. Migration is idempotent and prod-safe; re-runs and championship-free environments succeed without error.

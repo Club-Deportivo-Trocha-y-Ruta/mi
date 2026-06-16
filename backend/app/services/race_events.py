@@ -107,15 +107,18 @@ async def create_race_event(
     2. Que ``(series_id, sequence_number)`` no está duplicado → 409.
     """
     await _check_series_exists(db, payload.series_id)
-    await _check_sequence_unique(db, payload.series_id, payload.sequence_number)
+    # sequence_number is guaranteed non-None at this point (router validates for cups
+    # and forces 1 for championships via derive_event_fields_for_series).
+    seq_num: int = payload.sequence_number  # type: ignore[assignment]
+    await _check_sequence_unique(db, payload.series_id, seq_num)
 
     event = RaceEvent(
         series_id=payload.series_id,
-        sequence_number=payload.sequence_number,
+        sequence_number=seq_num,
         name=payload.name,
         event_date=payload.event_date,
         location=payload.location,
-        is_championship=payload.is_championship,
+        is_championship=bool(payload.is_championship) if payload.is_championship is not None else False,
         status=payload.status or RaceEventStatus.SCHEDULED,
         climate=payload.climate,
         temperature_c=payload.temperature_c,

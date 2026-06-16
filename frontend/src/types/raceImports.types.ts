@@ -49,6 +49,13 @@ export interface ImportParseRequestFields {
   event_date: string; // YYYY-MM-DD
   location: string;
   kind?: "resultados" | "general" | "both";
+  /**
+   * Spec 014 — Cup vs Championship: tipo de la serie a la que pertenece el
+   * evento. El backend lo usa para resolver/crear la serie correctamente y
+   * para omitir el número de válida en campeonatos (fuerza sequence_number=1,
+   * is_championship=true). Default `cup` para compatibilidad hacia atrás.
+   */
+  series_kind?: "cup" | "championship";
   // F-COND — campos opcionales de condiciones de carrera
   /** Descripción corta del clima (máx 60 chars), ej: "Soleado con viento". */
   climate?: string | null;

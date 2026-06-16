@@ -46,6 +46,7 @@ import {
   raceEventsHandlers,
   raceEventsCreateConflictHandler,
 } from "@/test/msw/raceEventsHandlers";
+import { raceSeriesHandlers } from "@/test/msw/raceSeriesHandlers";
 import { CompetitionFormPage } from "@/routes/competitions/CompetitionFormPage";
 
 function renderForm(
@@ -78,7 +79,9 @@ function renderForm(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mswServer.use(...raceEventsHandlers);
+  // Spec 014: el picker de serie es requerido. Registramos los handlers de
+  // race-series para que el select cargue la lista (copa por defecto, id=2).
+  mswServer.use(...raceEventsHandlers, ...raceSeriesHandlers);
 });
 
 describe("CompetitionFormPage — mode=create", () => {
@@ -94,6 +97,18 @@ describe("CompetitionFormPage — mode=create", () => {
     );
     const user = userEvent.setup();
     renderForm("create");
+
+    // Spec 014: el picker de serie es requerido. Esperamos que cargue y
+    // seleccionamos la copa (id=2 según raceSeriesHandlers).
+    const seriesSelect = await screen.findByLabelText(/Serie/i);
+    await waitFor(() =>
+      expect(
+        Array.from((seriesSelect as HTMLSelectElement).options).some(
+          (o) => o.value === "2",
+        ),
+      ).toBe(true),
+    );
+    await user.selectOptions(seriesSelect, "2");
 
     // Llenamos el form (sequence_number=4, name vacio se auto-sugiere)
     await user.selectOptions(screen.getByLabelText("Número de válida"), "4");
@@ -153,6 +168,18 @@ describe("CompetitionFormPage — mode=create", () => {
     const user = userEvent.setup();
     renderForm("create");
 
+    // Spec 014: seleccionar serie (requerida) antes de submit.
+    const seriesSelect = await screen.findByLabelText(/Serie/i);
+    await waitFor(() =>
+      expect(
+        Array.from((seriesSelect as HTMLSelectElement).options).some(
+          (o) => o.value === "2",
+        ),
+      ).toBe(true),
+    );
+    await user.selectOptions(seriesSelect, "2");
+
+    await user.selectOptions(screen.getByLabelText("Número de válida"), "4");
     await user.type(screen.getByLabelText("Nombre"), "Válida X");
     await user.type(screen.getByLabelText("Fecha"), "2026-05-17");
     await user.click(
@@ -178,6 +205,18 @@ describe("CompetitionFormPage — mode=create", () => {
       "/competitions/new?returnTo=/calendar/events/new",
     );
 
+    // Spec 014: seleccionar serie (requerida) antes de submit.
+    const seriesSelect = await screen.findByLabelText(/Serie/i);
+    await waitFor(() =>
+      expect(
+        Array.from((seriesSelect as HTMLSelectElement).options).some(
+          (o) => o.value === "2",
+        ),
+      ).toBe(true),
+    );
+    await user.selectOptions(seriesSelect, "2");
+
+    await user.selectOptions(screen.getByLabelText("Número de válida"), "4");
     await user.type(screen.getByLabelText("Nombre"), "Vuelve al calendario");
     await user.type(screen.getByLabelText("Fecha"), "2026-05-17");
     await user.click(
@@ -241,7 +280,7 @@ describe("CompetitionFormPage — mode=edit", () => {
     await screen.findByLabelText("Nombre");
 
     await user.selectOptions(
-      screen.getByLabelText(/Estado de la válida/i),
+      screen.getByLabelText(/Estado de la competencia/i),
       "cancelled",
     );
 

@@ -39,7 +39,7 @@ from app.models.race_category import RaceCategory
 from app.models.race_competitor import RaceCompetitor
 from app.models.race_event import RaceEvent
 from app.models.race_result import RaceResult
-from app.models.race_series import RaceSeries
+from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.schemas.race_results import CategoryStandings, EventStandingsRead, StandingRow
 
 logger = logging.getLogger(__name__)
@@ -86,6 +86,7 @@ async def get_event_standings(
                 RaceEvent.status,
                 RaceEvent.series_id,
                 RaceSeries.season_year,
+                RaceSeries.kind.label("series_kind"),
             )
             .join(RaceSeries, RaceSeries.id == RaceEvent.series_id)
             .where(RaceEvent.id == race_event_id)
@@ -105,6 +106,33 @@ async def get_event_standings(
         if hasattr(evt_row["status"], "value")
         else str(evt_row["status"])
     )
+
+    # Guard (spec 014 / T024): championships have no cumulative season standings.
+    # Return an empty-categories payload rather than 404 so the frontend can
+    # distinguish "event not found" from "standings not applicable".
+    series_kind_raw = evt_row["series_kind"]
+    series_kind: RaceSeriesKind = (
+        series_kind_raw
+        if isinstance(series_kind_raw, RaceSeriesKind)
+        else RaceSeriesKind(series_kind_raw)
+    )
+    if series_kind != RaceSeriesKind.cup:
+        logger.info(
+            "race_standings_championship_skip event_id=%s series_id=%s kind=%s",
+            race_event_id,
+            series_id,
+            series_kind.value,
+        )
+        return EventStandingsRead(
+            race_event_id=race_event_id,
+            event_name=event_name,
+            event_date=event_date,
+            location=event_location,
+            status=event_status,
+            series_id=series_id,
+            season_year=season_year,
+            categories=[],
+        )
 
     # 2. Parent-scope early exit.
     if allowed_athlete_ids is not None and not allowed_athlete_ids:

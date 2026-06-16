@@ -269,8 +269,13 @@ beforeEach(() => {
 });
 
 async function fillStep1AndSubmit(user: ReturnType<typeof userEvent.setup>) {
-  // event_name + event_date + location + valida_num (los defaults bastan
-  // para series_name y season).
+  // Spec 014: series_kind="cup" (default) requiere series_name y valida_num.
+  // El select ya tiene "cup" por defecto; solo llenamos los campos requeridos.
+  await user.type(screen.getByTestId("wizard-series-name"), "Copa Valle");
+  fireEvent.change(screen.getByTestId("wizard-valida-num"), {
+    target: { value: "4" },
+  });
+
   await user.type(screen.getByTestId("wizard-event-name"), "Válida IV — Cali");
   // event_date type=date acepta YYYY-MM-DD vía fireEvent.change.
   fireEvent.change(screen.getByTestId("wizard-event-date"), {
@@ -299,6 +304,13 @@ describe("ImportWizard — Step 1", () => {
   it("muestra error si se intenta avanzar sin archivo de resultados", async () => {
     const user = userEvent.setup();
     wrap(<ImportWizard />);
+
+    // Spec 014: series_name y valida_num son requeridos para copa; sin ellos
+    // Zod bloquea antes de llegar al onSubmit que muestra wizard-step1-error.
+    await user.type(screen.getByTestId("wizard-series-name"), "Copa Valle");
+    fireEvent.change(screen.getByTestId("wizard-valida-num"), {
+      target: { value: "4" },
+    });
 
     await user.type(
       screen.getByTestId("wizard-event-name"),

@@ -106,10 +106,10 @@ export function InfoTab({ event }: InfoTabProps) {
           <InfoRow label="Tipo">
             {event.is_championship ? (
               <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                Campeonato Departamental
+                Campeonato
               </span>
             ) : (
-              <span>Válida {event.sequence_number} · Copa Valle</span>
+              <span>Válida {event.sequence_number}</span>
             )}
           </InfoRow>
 

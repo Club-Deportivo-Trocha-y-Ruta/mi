@@ -41,13 +41,14 @@ from app.models.race_competitor import CompetitorSex, RaceCompetitor
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_import import RaceImport, RaceImportStatus
 from app.models.race_result import RaceResult, ResultStatus
-from app.models.race_series import RaceSeries
+from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.schemas.race import EventMeta, IngestReport
 from app.services.race.normalizer import (
     is_trocha_y_ruta,
     normalize_name,
     parse_time,
 )
+from app.services.race.series_rules import derive_event_fields_for_series
 
 if TYPE_CHECKING:
     from app.services.race.pdf_parser import GeneralRow, ResultsRow
@@ -175,6 +176,7 @@ class RaceIngestor:
         pdf_general_sha256: Optional[str] = None,
         ingested_by_user_id: int,
         dry_run: bool = False,
+        series_id: Optional[int] = None,
     ) -> IngestReport:
         """Ingest atómico de una válida completa.
 
@@ -223,7 +225,13 @@ class RaceIngestor:
 
         try:
             # --- 1. Upsert RaceSeries por (name, season_year) ----------
-            series = await self._upsert_series(meta.season)
+            # BUG-1 fix: when series_id is given (from the wizard /parse → /commit
+            # flow), load that exact series instead of hardcoding Copa Valle.
+            # When series_id is None (CLI legacy path), fall back to _upsert_series.
+            if series_id is not None:
+                series = await self._get_series_by_id(series_id)
+            else:
+                series = await self._upsert_series(meta.season)
 
             # --- 2. Upsert RaceEvent por (series_id, sequence_number) -
             event = await self._upsert_event(series.id, meta, ingested_by_user_id)
@@ -473,6 +481,24 @@ class RaceIngestor:
     # Helpers internos — series / event / import
     # -------------------------------------------------------------------
 
+    async def _get_series_by_id(self, series_id: int) -> RaceSeries:
+        """Carga una ``RaceSeries`` por PK. Lanza ``ValueError`` si no existe.
+
+        Usado por el wizard (BUG-1 fix): cuando el /parse ya resolvió la serie
+        y persistió ``RaceImport.series_id``, el ingestor debe honrar ESA serie
+        en lugar de hardcodear Copa Valle.
+        """
+        result = await self.db.execute(
+            select(RaceSeries).where(RaceSeries.id == series_id)
+        )
+        series = result.scalar_one_or_none()
+        if series is None:
+            raise ValueError(
+                f"Serie con id={series_id} no encontrada. "
+                "Verifique que el parse_id apunte a una serie válida."
+            )
+        return series
+
     async def _upsert_series(self, season: int) -> RaceSeries:
         """Upsert ``RaceSeries`` por ``(name=_SERIES_NAME, season_year=season)``."""
         result = await self.db.execute(
@@ -502,22 +528,40 @@ class RaceIngestor:
         Actualiza todos los campos de ``meta`` si el evento ya existía — la
         idea es que el coach pueda corregir clima/superficie y reingestar el
         PDF sin tener que tocar SQL.
+
+        Spec 014 (2026-06-15): ``sequence_number`` e ``is_championship`` se derivan
+        del ``kind`` de la serie destino usando ``derive_event_fields_for_series``.
+        Para campeonatos: seq=1, is_championship=True.
+        Para copas: seq=meta.valida_num, is_championship=False.
+        La convención legacy ``sequence_number=99 → is_championship=True`` queda retirada.
         """
+        # Load the series to determine its kind
+        series_result = await self.db.execute(
+            select(RaceSeries).where(RaceSeries.id == series_id)
+        )
+        series = series_result.scalar_one_or_none()
+        series_kind = series.kind if series is not None else RaceSeriesKind.cup
+
+        # Derive sequence_number and is_championship from the series kind
+        derived_sequence, derived_is_championship = derive_event_fields_for_series(
+            series_kind, meta.valida_num
+        )
+
         result = await self.db.execute(
             select(RaceEvent).where(
                 RaceEvent.series_id == series_id,
-                RaceEvent.sequence_number == meta.valida_num,
+                RaceEvent.sequence_number == derived_sequence,
             )
         )
         event = result.scalar_one_or_none()
         if event is None:
             event = RaceEvent(
                 series_id=series_id,
-                sequence_number=meta.valida_num,
+                sequence_number=derived_sequence,
                 name=meta.name,
                 event_date=meta.event_date,
                 location=meta.location,
-                is_championship=(meta.valida_num == 99),
+                is_championship=derived_is_championship,
                 status=RaceEventStatus.COMPLETED,
                 created_by_user_id=user_id,
                 climate=meta.climate,
@@ -536,7 +580,7 @@ class RaceIngestor:
         event.name = meta.name
         event.event_date = meta.event_date
         event.location = meta.location
-        event.is_championship = (meta.valida_num == 99)
+        event.is_championship = derived_is_championship
         event.status = RaceEventStatus.COMPLETED
         if meta.climate is not None:
             event.climate = meta.climate

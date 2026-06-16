@@ -607,8 +607,12 @@ export function CompetitionDetailPage() {
       )}
 
       {/* ── Tabs ─────────────────────────────────────────────────────── */}
+      {/* Spec 014: championships have no season ranking — hide standings tab. */}
       <TabsPrimitive.Root
-        value={activeTab}
+        value={
+          // If URL has ?tab=standings on a championship, fall back to info
+          activeTab === "standings" && event.is_championship ? "info" : activeTab
+        }
         onValueChange={handleTabChange}
         data-testid="competition-tabs"
       >
@@ -616,7 +620,10 @@ export function CompetitionDetailPage() {
           className="flex gap-1 overflow-x-auto rounded-xl bg-light-gray p-1 scrollbar-none"
           aria-label="Secciones de la competencia"
         >
-          {TAB_VALUES.map((tab) => (
+          {TAB_VALUES.filter(
+            // Spec 014: campeonatos no tienen ranking de temporada
+            (tab) => !(tab === "standings" && event.is_championship),
+          ).map((tab) => (
             <TabTrigger key={tab} value={tab} label={TAB_LABELS[tab]} />
           ))}
         </TabsPrimitive.List>
@@ -635,12 +642,14 @@ export function CompetitionDetailPage() {
           />
         </TabsPrimitive.Content>
 
-        {/* ── Tab: Clasificación general ───────────────────────────── */}
-        <TabsPrimitive.Content value="standings" className="mt-4">
-          <Suspense fallback={<TabFallback />}>
-            <StandingsTab raceEventId={raceEventId} />
-          </Suspense>
-        </TabsPrimitive.Content>
+        {/* ── Tab: Clasificación general — solo copas (spec 014) ───── */}
+        {!event.is_championship && (
+          <TabsPrimitive.Content value="standings" className="mt-4">
+            <Suspense fallback={<TabFallback />}>
+              <StandingsTab raceEventId={raceEventId} />
+            </Suspense>
+          </TabsPrimitive.Content>
+        )}
 
         {/* ── Tab: Condiciones ─────────────────────────────────────── */}
         <TabsPrimitive.Content value="conditions" className="mt-4">
