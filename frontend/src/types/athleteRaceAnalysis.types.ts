@@ -186,6 +186,8 @@ export interface EvolutionPoint {
   event_date: string;
   value: number | null;
   unit: string;
+  series_kind: "cup" | "championship";
+  label: string;
 }
 
 export interface EvolutionResponse {
@@ -210,7 +212,7 @@ export interface DistributionCurvePoint {
 
 export interface DistributionResponse {
   season: number;
-  valida_num: number;
+  event_id: number;
   category_id: number;
   category_code: string;
   sample_size: number;
@@ -222,6 +224,21 @@ export interface DistributionResponse {
   points: DistributionPoint[];
   curve: DistributionCurvePoint[];
   confidence: AnalysisConfidence;
+}
+
+export interface RaceParticipationOption {
+  event_id: number;
+  sequence_number: number;
+  series_kind: "cup" | "championship";
+  event_date: string;
+  event_name: string;
+  location: string | null;
+  label: string;
+}
+
+export interface RaceParticipationResponse {
+  season: number;
+  items: RaceParticipationOption[];
 }
 
 // ---------------------------------------------------------------------------

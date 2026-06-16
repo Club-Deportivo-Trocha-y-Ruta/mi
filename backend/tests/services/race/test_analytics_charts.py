@@ -332,7 +332,7 @@ async def test_build_distribution_pseudonymizes_competitors(session):
     await session.commit()
 
     result = await build_distribution(
-        session, athlete_id=144, season=2026, valida_num=1
+        session, athlete_id=144, season=2026, event_id=1
     )
     assert result.sample_size == 6
     assert len(result.points) == 6
@@ -366,7 +366,7 @@ async def test_build_distribution_low_confidence_when_n_less_than_5(session):
     await session.commit()
 
     result = await build_distribution(
-        session, athlete_id=144, season=2026, valida_num=1
+        session, athlete_id=144, season=2026, event_id=1
     )
     assert result.sample_size == 4
     # Points pseudonimizados siempre presentes — la tabla los necesita.
@@ -394,7 +394,7 @@ async def test_build_distribution_self_marker_correctly_flagged(session):
     await session.commit()
 
     result = await build_distribution(
-        session, athlete_id=144, season=2026, valida_num=1
+        session, athlete_id=144, season=2026, event_id=1
     )
     self_points = [p for p in result.points if p.is_self]
     assert len(self_points) == 1
@@ -419,7 +419,7 @@ async def test_build_distribution_athlete_z_score_and_percentile(session):
     await session.commit()
 
     result = await build_distribution(
-        session, athlete_id=144, season=2026, valida_num=1
+        session, athlete_id=144, season=2026, event_id=1
     )
     # mean y stddev calculados sobre 6 puntos (winner..athlete..runners)
     assert result.mean_ms is not None
@@ -465,7 +465,7 @@ async def test_build_distribution_with_include_display_name_populates_field(sess
         session,
         athlete_id=144,
         season=2026,
-        valida_num=1,
+        event_id=1,
         include_display_name=True,
     )
     assert result.sample_size == 6
@@ -495,7 +495,7 @@ async def test_build_distribution_without_include_display_name_is_none(session):
         session,
         athlete_id=144,
         season=2026,
-        valida_num=1,
+        event_id=1,
         include_display_name=False,
     )
     for point in result.points:
@@ -519,7 +519,7 @@ async def test_build_distribution_curve_range_equals_min_max_times(session):
     await session.commit()
 
     result = await build_distribution(
-        session, athlete_id=144, season=2026, valida_num=1
+        session, athlete_id=144, season=2026, event_id=1
     )
     # La curva debe estar activa (n=6 ≥ 5).
     assert len(result.curve) == 60

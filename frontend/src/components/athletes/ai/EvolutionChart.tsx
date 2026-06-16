@@ -8,6 +8,9 @@
  *
  * Si confidence==="low" (serie con n<3) mostramos un disclaimer claro:
  * el atleta tiene muy pocos datos para concluir tendencia.
+ *
+ * Cada punto se keya por event_id para que copa (Válida I) y campeonato
+ * (mismo valida_num=1) nunca colisionen en el eje categorical.
  */
 import { useMemo, useState } from "react";
 import {
@@ -28,22 +31,6 @@ import { EvolutionMetric } from "@/types/athleteRaceAnalysis.types";
 
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-const ROMAN: Record<number, string> = {
-  1: "I",
-  2: "II",
-  3: "III",
-  4: "IV",
-  5: "V",
-  6: "VI",
-  7: "VII",
-};
-
-function romanForValida(num: number): string {
-  if (num === 99) return "CD";
-  if (num === 0) return "Σ";
-  return ROMAN[num] ?? String(num);
-}
 
 function formatMs(ms: number, unit: string): string {
   if (unit === "ms") {
@@ -102,18 +89,25 @@ export function EvolutionChart({
   const query = useAthleteEvolution(athleteId, season, metric);
 
   // Datos: solo puntos finitos (con valor numérico) para el LineChart.
-  // Los puntos con value=null (DNF/DNS/DSQ) se muestran solo en la
-  // leyenda inferior.
+  // Keyed por event_id para que copa y campeonato con mismo valida_num
+  // no colisionen en el eje categorical.
   const chartData = useMemo(() => {
     if (!query.data) return [];
     return query.data.series
       .filter((p) => p.value !== null)
       .map((p) => ({
-        valida_num: p.valida_num,
-        roman: romanForValida(p.valida_num),
+        event_id: p.event_id,
+        label: p.label,
+        series_kind: p.series_kind,
         event_date: p.event_date,
         value: p.value as number,
       }));
+  }, [query.data]);
+
+  // Mapa event_id → label para el tickFormatter del XAxis.
+  const labelByEventId = useMemo(() => {
+    if (!query.data) return new Map<number, string>();
+    return new Map(query.data.series.map((p) => [p.event_id, p.label]));
   }, [query.data]);
 
   const dnfPoints = useMemo(() => {
@@ -218,10 +212,13 @@ export function EvolutionChart({
                 >
                   <CartesianGrid stroke="rgba(34,42,53,0.08)" strokeDasharray="3 3" />
                   <XAxis
-                    dataKey="roman"
+                    dataKey="event_id"
                     tick={{ fontSize: 12, fill: "#5a6172" }}
+                    tickFormatter={(v: number) =>
+                      labelByEventId.get(v) ?? String(v)
+                    }
                     label={{
-                      value: "Válida",
+                      value: "Evento",
                       position: "insideBottom",
                       offset: -4,
                       style: { fontSize: 11, fill: "#5a6172" },
@@ -251,6 +248,28 @@ export function EvolutionChart({
                   />
                 </LineChart>
               </ResponsiveContainer>
+
+              {/* Leyenda accesible de etiquetas del eje X.
+                  Expone los labels en el DOM para accesibilidad y para que
+                  el campeonato ("Cto. Dep.") sea identificable sin depender
+                  del SVG de recharts. */}
+              <ol
+                aria-label="Etiquetas del eje de evolución"
+                className="mt-2 flex flex-wrap gap-x-3 gap-y-1 justify-center"
+              >
+                {chartData.map((entry) => (
+                  <li
+                    key={entry.event_id}
+                    className={cn(
+                      "text-[10px] text-mid-gray",
+                      entry.series_kind === "championship" &&
+                        "font-medium text-amber-700",
+                    )}
+                  >
+                    {entry.label}
+                  </li>
+                ))}
+              </ol>
             </div>
           )}
 
@@ -273,7 +292,7 @@ export function EvolutionChart({
           {dnfPoints.length > 0 && (
             <div className="rounded-lg bg-light-gray/30 px-3 py-2 text-xs text-mid-gray">
               <span className="font-medium">No finalizó:</span>{" "}
-              {dnfPoints.map((p) => romanForValida(p.valida_num)).join(", ")}
+              {dnfPoints.map((p) => p.label).join(", ")}
             </div>
           )}
         </>
@@ -305,7 +324,7 @@ function EvolutionTooltip(
   const { active, payload, unit } = props;
   if (!active || !payload || payload.length === 0) return null;
   const point = payload[0].payload as {
-    roman: string;
+    label: string;
     event_date: string;
     value: number;
   };
@@ -314,7 +333,7 @@ function EvolutionTooltip(
       className="rounded-lg bg-white px-3 py-2 text-xs"
       style={{ boxShadow: "rgba(34, 42, 53, 0.15) 0px 2px 8px" }}
     >
-      <p className="font-semibold text-charcoal">Válida {point.roman}</p>
+      <p className="font-semibold text-charcoal">{point.label}</p>
       <p className="text-mid-gray">{point.event_date}</p>
       <p className="mt-1 text-charcoal">{formatValue(point.value, unit)}</p>
     </div>

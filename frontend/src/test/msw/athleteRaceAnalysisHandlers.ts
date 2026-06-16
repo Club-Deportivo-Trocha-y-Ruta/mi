@@ -22,6 +22,7 @@ import type {
   DistributionResponse,
   EvolutionResponse,
   MetricsSnapshotV1,
+  RaceParticipationResponse,
   SeasonPanoramaResponse,
 } from "@/types/athleteRaceAnalysis.types";
 
@@ -127,6 +128,8 @@ export function mockEvolution(
         event_date: "2026-01-31",
         value: 120_000,
         unit: "ms",
+        series_kind: "cup",
+        label: "Válida I — Sevilla",
       },
       {
         valida_num: 2,
@@ -134,6 +137,8 @@ export function mockEvolution(
         event_date: "2026-02-28",
         value: 95_000,
         unit: "ms",
+        series_kind: "cup",
+        label: "Válida II — Ginebra",
       },
       {
         valida_num: 3,
@@ -141,6 +146,8 @@ export function mockEvolution(
         event_date: "2026-04-19",
         value: 60_000,
         unit: "ms",
+        series_kind: "cup",
+        label: "Válida III — La Cumbre",
       },
       {
         valida_num: 4,
@@ -148,6 +155,8 @@ export function mockEvolution(
         event_date: "2026-05-17",
         value: 45_000,
         unit: "ms",
+        series_kind: "cup",
+        label: "Válida IV — Cali",
       },
     ],
     ...overrides,
@@ -159,7 +168,7 @@ export function mockDistribution(
 ): DistributionResponse {
   return {
     season: 2026,
-    valida_num: 4,
+    event_id: 100,
     category_id: 10,
     category_code: "JUV-M",
     sample_size: 8,
@@ -300,6 +309,8 @@ export const lowConfidenceEvolutionHandler = http.get(
             event_date: "2026-01-31",
             value: 120_000,
             unit: "ms",
+            series_kind: "cup",
+            label: "Válida I — Sevilla",
           },
         ],
       }),
@@ -312,6 +323,101 @@ export const emptyEvolutionHandler = http.get(
   () => {
     return HttpResponse.json(
       mockEvolution({ series: [], confidence: "low" }),
+    );
+  },
+);
+
+/**
+ * Handler T024 — colisión copa vs. campeonato.
+ *
+ * Dos puntos con el mismo valida_num=1 pero event_id distintos:
+ *   - Copa Válida I  (event_id=91, series_kind="cup",          label="Válida I — Sevilla")
+ *   - Campeonato Dep (event_id=200, series_kind="championship", label="Cto. Dep. — Ginebra")
+ *
+ * Los campos series_kind y label NO existen aún en el tipo EvolutionPoint
+ * (T025 los añadirá). Se pasan como unknown para que el mock pueda usarlos
+ * ya — los tests de T024 validan el comportamiento TARGET.
+ *
+ * NOTA PARA T025/T027: cuando se actualice EvolutionPoint, reemplazar el
+ * cast `as unknown as EvolutionPoint` por el tipo correcto.
+ */
+export const cupAndChampionshipConflictHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/evolution",
+  () => {
+    const series: EvolutionResponse["series"] = [
+      {
+        valida_num: 1,
+        event_id: 91,
+        event_date: "2026-01-31",
+        value: 120_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida I — Sevilla",
+      },
+      {
+        valida_num: 1,
+        event_id: 200,
+        event_date: "2026-06-12",
+        value: 98_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Dep. — Ginebra",
+      },
+    ];
+
+    return HttpResponse.json(
+      mockEvolution({
+        confidence: "high",
+        series,
+      }),
+    );
+  },
+);
+
+/**
+ * Handler T024 — DNF en campeonato.
+ * Igual que cupAndChampionshipConflictHandler pero el campeonato tiene
+ * value=null para probar que la lista DNF usa `label` en lugar de
+ * romanForValida(valida_num).
+ */
+export const dnfChampionshipHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/evolution",
+  () => {
+    const series: EvolutionResponse["series"] = [
+      {
+        valida_num: 1,
+        event_id: 91,
+        event_date: "2026-01-31",
+        value: 120_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida I — Sevilla",
+      },
+      {
+        valida_num: 2,
+        event_id: 92,
+        event_date: "2026-02-28",
+        value: 95_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida II — Ginebra",
+      },
+      {
+        valida_num: 1,
+        event_id: 200,
+        event_date: "2026-06-12",
+        value: null, // DNF en el campeonato
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Dep. — Ginebra",
+      },
+    ];
+
+    return HttpResponse.json(
+      mockEvolution({
+        confidence: "high",
+        series,
+      }),
     );
   },
 );
@@ -501,4 +607,53 @@ export const emptySeasonPanoramaHandler = http.get(
 export const errorSeasonPanoramaHandler = http.get(
   "*/api/race-analysis/insights/season/:year",
   () => new HttpResponse(null, { status: 500 }),
+);
+
+// ---------------------------------------------------------------------------
+// T017 — Races participation endpoint (US2)
+// GET /api/athletes/:id/race-analysis/races?season=YYYY
+// ---------------------------------------------------------------------------
+
+/** Lista realista con una válida de copa y el campeonato departamental. */
+export const mockRaceParticipationList = (
+  overrides?: Partial<RaceParticipationResponse>,
+): RaceParticipationResponse => ({
+  season: 2026,
+  items: [
+    {
+      event_id: 91,
+      sequence_number: 1,
+      series_kind: "cup",
+      event_date: "2026-01-31",
+      event_name: "Válida I Sevilla",
+      location: "Sevilla",
+      label: "Válida I — Sevilla",
+    },
+    {
+      event_id: 200,
+      sequence_number: 1,
+      series_kind: "championship",
+      event_date: "2026-06-12",
+      event_name: "Campeonato Departamental",
+      location: "Ginebra",
+      label: "Cto. Dep. — Ginebra",
+    },
+  ],
+  ...overrides,
+});
+
+/** Handler que devuelve una lista con dos carreras (copa + campeonato). */
+export const racesListHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/races",
+  () => HttpResponse.json(mockRaceParticipationList()),
+);
+
+/** Handler de cero carreras: athlete participó en la temporada pero
+ *  ninguna carrera tiene datos aún (o no compitió ninguna). */
+export const emptyRacesListHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/races",
+  () =>
+    HttpResponse.json(
+      mockRaceParticipationList({ items: [] }) satisfies RaceParticipationResponse,
+    ),
 );

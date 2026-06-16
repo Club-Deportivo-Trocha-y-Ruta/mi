@@ -8,10 +8,12 @@
  *  - Reference lines de extremos: display_name real (coach) o pseudónimo (parent).
  *  - Empty state cuando athlete_time_ms===null.
  *  - Loading/error.
+ *  - [T009] Estados amigables no-data y error: sin texto de excepción crudo.
+ *  - [T009] a11y axe en estados no-data y error.
+ *  - [T009/US1 TDD-red] prop defaultEventId y query por event_id.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
 
@@ -62,9 +64,16 @@ vi.mock("recharts", () => ({
 import { mswServer } from "@/test/setup";
 import {
   coachHighConfidenceDistributionHandler,
+  emptyRacesListHandler,
   lowConfidenceDistributionHandler,
   mockDistribution,
+  racesListHandler,
 } from "@/test/msw/athleteRaceAnalysisHandlers";
+import {
+  SEASON_AGGREGATE,
+  aggregateLabel,
+  raceOptionValue,
+} from "@/lib/raceOptionLabel";
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { DistributionChart } from "@/components/athletes/ai/DistributionChart";
 
@@ -73,14 +82,17 @@ describe("DistributionChart", () => {
     vi.clearAllMocks();
   });
 
-  it("renderiza selectores de season y válida", () => {
+  it("renderiza selectores de season y válida", async () => {
+    mswServer.use(racesListHandler);
     renderWithProviders(<DistributionChart athleteId={42} />);
     expect(screen.getByTestId("distribution-season-select")).toBeInTheDocument();
-    expect(screen.getByTestId("distribution-valida-select")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("distribution-valida-select")).toBeInTheDocument();
+    });
   });
 
   it("renderiza chart + reference lines con confidence high (curve presente)", async () => {
-    renderWithProviders(<DistributionChart athleteId={42} />);
+    renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
     await waitFor(() => {
       expect(screen.getByTestId("area-chart")).toBeInTheDocument();
     });
@@ -93,7 +105,7 @@ describe("DistributionChart", () => {
 
   it("muestra tabla simple y disclaimer cuando confidence==='low'", async () => {
     mswServer.use(lowConfidenceDistributionHandler);
-    renderWithProviders(<DistributionChart athleteId={42} />);
+    renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
     await waitFor(() => {
       expect(screen.getByRole("note")).toBeInTheDocument();
     });
@@ -120,7 +132,7 @@ describe("DistributionChart", () => {
           ),
       ),
     );
-    renderWithProviders(<DistributionChart athleteId={42} />);
+    renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
     await waitFor(() => {
       expect(
         screen.getByText(/el deportista no corrió esta válida/i),
@@ -135,7 +147,7 @@ describe("DistributionChart", () => {
         () => new HttpResponse(null, { status: 500 }),
       ),
     );
-    renderWithProviders(<DistributionChart athleteId={42} />);
+    renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
     await waitFor(() => {
       expect(
         screen.getByText(/no pudimos cargar la distribución/i),
@@ -143,7 +155,7 @@ describe("DistributionChart", () => {
     });
   });
 
-  it("cambiar la válida dispara una request con valida_num distinto", async () => {
+  it("con defaultEventId la query envía event_id (no valida_num) al backend", async () => {
     const calls: string[] = [];
     mswServer.use(
       http.get(
@@ -155,23 +167,17 @@ describe("DistributionChart", () => {
         },
       ),
     );
-    const user = userEvent.setup();
-    renderWithProviders(<DistributionChart athleteId={42} />);
+    renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
     await waitFor(() => expect(screen.getByTestId("area-chart")).toBeInTheDocument());
 
-    const validaSelect = screen.getByTestId(
-      "distribution-valida-select",
-    ) as HTMLSelectElement;
-    await user.selectOptions(validaSelect, "4");
-
-    await waitFor(() => {
-      expect(calls.some((s) => s.includes("valida_num=4"))).toBe(true);
-    });
+    // La query debe usar event_id, nunca valida_num
+    expect(calls.some((s) => s.includes("event_id=100"))).toBe(true);
+    expect(calls.some((s) => s.includes("valida_num"))).toBe(false);
   });
 
   it("destaca al atleta en la tabla low-confidence con is_self=true", async () => {
     mswServer.use(lowConfidenceDistributionHandler);
-    renderWithProviders(<DistributionChart athleteId={42} />);
+    renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
     await waitFor(() => {
       expect(screen.getByText(/C0002/)).toBeInTheDocument();
     });
@@ -181,7 +187,7 @@ describe("DistributionChart", () => {
 
   it("no tiene violaciones a11y (high confidence)", async () => {
     const { container } = renderWithProviders(
-      <DistributionChart athleteId={42} />,
+      <DistributionChart athleteId={42} defaultEventId={100} />,
     );
     await waitFor(() => expect(screen.getByTestId("area-chart")).toBeInTheDocument());
     const results = await axe(container);
@@ -191,7 +197,7 @@ describe("DistributionChart", () => {
   it("no tiene violaciones a11y (low confidence / tabla)", async () => {
     mswServer.use(lowConfidenceDistributionHandler);
     const { container } = renderWithProviders(
-      <DistributionChart athleteId={42} />,
+      <DistributionChart athleteId={42} defaultEventId={100} />,
     );
     await waitFor(() => {
       expect(screen.getByRole("note")).toBeInTheDocument();
@@ -202,7 +208,7 @@ describe("DistributionChart", () => {
 
   it("reference lines muestran TODAS las corredoras con display_name (coach)", async () => {
     mswServer.use(coachHighConfidenceDistributionHandler);
-    renderWithProviders(<DistributionChart athleteId={42} />);
+    renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
     await waitFor(() => {
       expect(screen.getByTestId("area-chart")).toBeInTheDocument();
     });
@@ -222,7 +228,7 @@ describe("DistributionChart", () => {
   });
 
   it("reference lines muestran TODOS los pseudónimos cuando display_name es null (parent)", async () => {
-    renderWithProviders(<DistributionChart athleteId={42} />);
+    renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
     await waitFor(() => {
       expect(screen.getByTestId("area-chart")).toBeInTheDocument();
     });
@@ -245,7 +251,7 @@ describe("DistributionChart", () => {
     // mockDistribution default: curve xs = [1_700_000, 1_800_000, 1_900_000, 2_000_000, 2_100_000]
     // rango raw = 400_000 ms → pad = 32_000 ms (8%)
     // domain esperado = [1_668_000, 2_132_000]
-    renderWithProviders(<DistributionChart athleteId={42} />);
+    renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
     await waitFor(() => {
       expect(screen.getByTestId("area-chart")).toBeInTheDocument();
     });
@@ -264,5 +270,410 @@ describe("DistributionChart", () => {
     // El padding debe ser al menos 1 s (1_000 ms) a cada lado
     expect(1_700_000 - lo).toBeGreaterThanOrEqual(1_000);
     expect(hi - 2_100_000).toBeGreaterThanOrEqual(1_000);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T009 — Estados amigables: no-data y error sin texto crudo de excepción
+  // ---------------------------------------------------------------------------
+
+  describe("T009 — estado no-data amigable (athlete_time_ms=null, curve=[], confidence=low)", () => {
+    it("muestra mensaje amigable en español neutro sin texto de excepción crudo", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          () =>
+            HttpResponse.json(
+              mockDistribution({
+                athlete_time_ms: null,
+                athlete_z_score: null,
+                athlete_percentile: null,
+                curve: [],
+                confidence: "low",
+                mean_ms: null,
+                stddev_ms: null,
+                sample_size: 0,
+                points: [],
+                category_id: 3,
+              }),
+            ),
+        ),
+      );
+      renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
+
+      // Espera a que desaparezca el skeleton y aparezca el mensaje
+      await waitFor(() => {
+        expect(
+          screen.getByText(/el deportista no corrió esta válida/i),
+        ).toBeInTheDocument();
+      });
+
+      // No debe haber texto de stack/excepción crudo
+      const container = screen.getByTestId("distribution-chart");
+      const text = container.textContent ?? "";
+      expect(text).not.toMatch(/Error:/i);
+      expect(text).not.toMatch(/TypeError/i);
+      expect(text).not.toMatch(/undefined/i);
+      expect(text).not.toMatch(/null/i);
+      expect(text).not.toMatch(/at\s+\w+\s+\(/); // stack trace lines
+
+      // No se renderiza ningún chart
+      expect(screen.queryByTestId("area-chart")).not.toBeInTheDocument();
+    });
+
+    it("no tiene violaciones a11y en el estado no-data (axe)", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          () =>
+            HttpResponse.json(
+              mockDistribution({
+                athlete_time_ms: null,
+                athlete_z_score: null,
+                athlete_percentile: null,
+                curve: [],
+                confidence: "low",
+                mean_ms: null,
+                stddev_ms: null,
+                sample_size: 0,
+                points: [],
+                category_id: 3,
+              }),
+            ),
+        ),
+      );
+      const { container } = renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
+      await waitFor(() => {
+        expect(
+          screen.getByText(/el deportista no corrió esta válida/i),
+        ).toBeInTheDocument();
+      });
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+  });
+
+  describe("T009 — estado error amigable (sin texto de excepción crudo)", () => {
+    it("muestra role=alert con mensaje amigable y SIN texto crudo de excepción", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          () => new HttpResponse(null, { status: 500 }),
+        ),
+      );
+      renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toBeInTheDocument();
+      });
+
+      const alert = screen.getByRole("alert");
+
+      // El mensaje amigable debe estar presente
+      expect(alert).toHaveTextContent(/no pudimos cargar la distribución/i);
+
+      // Sin texto de stack/excepción crudo en todo el componente
+      const fullText = screen.getByTestId("distribution-chart").textContent ?? "";
+      expect(fullText).not.toMatch(/Error:/i);
+      expect(fullText).not.toMatch(/TypeError/i);
+      expect(fullText).not.toMatch(/500/);
+      expect(fullText).not.toMatch(/Internal Server Error/i);
+      expect(fullText).not.toMatch(/at\s+\w+\s+\(/); // stack trace lines
+    });
+
+    it("no tiene violaciones a11y en el estado de error (axe)", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          () => new HttpResponse(null, { status: 500 }),
+        ),
+      );
+      const { container } = renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toBeInTheDocument();
+      });
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T009/US1 TDD-red — prop defaultEventId y query por event_id
+  // Los tests de esta sección deben FALLAR hasta que se implemente US1:
+  //   1. DistributionChart acepta prop `defaultEventId?: number`
+  //   2. useAthleteDistribution pasa event_id al backend en lugar de valida_num
+  //   3. DistributionResponse incluye campo `event_id`
+  // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // T017 — race picker (US2): TDD-red hasta que T021/T022 implementen el picker
+  // ---------------------------------------------------------------------------
+
+  describe("T017 — race picker (US2)", () => {
+    /**
+     * T017-1: El picker lista cada carrera del backend UNA VEZ con su label
+     * del servidor y prepend "Temporada (todas)".
+     *
+     * TDD-red: el picker actual es un placeholder que no consulta
+     * /race-analysis/races ni renderiza las opciones del backend.
+     */
+    it("lista cada carrera del backend con su label y prepende 'Temporada (todas)'", async () => {
+      mswServer.use(racesListHandler);
+      renderWithProviders(<DistributionChart athleteId={42} />);
+
+      await waitFor(() => {
+        // La opción agregada SIEMPRE debe estar presente
+        expect(
+          screen.getByRole("option", { name: aggregateLabel() }),
+        ).toBeInTheDocument();
+      });
+
+      // Cada carrera del backend aparece exactamente una vez con su label
+      const opt1 = screen.getByRole("option", { name: "Válida I — Sevilla" });
+      const opt2 = screen.getByRole("option", { name: "Cto. Dep. — Ginebra" });
+      expect(opt1).toBeInTheDocument();
+      expect(opt2).toBeInTheDocument();
+
+      // Los valores de las opciones corresponden a sus event_id
+      expect(opt1).toHaveValue(raceOptionValue(91));
+      expect(opt2).toHaveValue(raceOptionValue(200));
+
+      // La opción del campeonato es reconocible por su label (no por valida_num)
+      expect(opt2.textContent).toMatch(/Cto\. Dep\./);
+    });
+
+    /**
+     * T017-2: Seleccionar "Temporada (todas)" muestra mensaje informativo
+     * y NO dispara una petición /distribution.
+     *
+     * TDD-red: el componente actual no tiene este flujo — T022 lo implementará.
+     */
+    it("seleccionar 'Temporada (todas)' muestra mensaje informativo y no dispara /distribution", async () => {
+      const distributionCalls: string[] = [];
+      mswServer.use(
+        racesListHandler,
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          ({ request }) => {
+            distributionCalls.push(request.url);
+            return HttpResponse.json(mockDistribution());
+          },
+        ),
+      );
+
+      renderWithProviders(<DistributionChart athleteId={42} />);
+
+      // Espera a que el picker esté disponible
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("distribution-valida-select"),
+        ).toBeInTheDocument();
+      });
+
+      // Limpiar llamadas previas (el mount puede haber disparado queries)
+      distributionCalls.length = 0;
+
+      // Seleccionar "Temporada (todas)" via fireEvent
+      const picker = screen.getByTestId("distribution-valida-select");
+      fireEvent.change(picker, { target: { value: SEASON_AGGREGATE } });
+
+      // El mensaje informativo debe aparecer y el chart no
+      await waitFor(() => {
+        expect(
+          screen.getByText(/la distribución se calcula por carrera/i),
+        ).toBeInTheDocument();
+        expect(screen.queryByTestId("area-chart")).not.toBeInTheDocument();
+      });
+
+      // NO debe haberse disparado ninguna petición /distribution tras la selección
+      // (si el componente hubiera hecho fetch, ya habría llegado dentro del waitFor)
+      expect(distributionCalls).toHaveLength(0);
+
+      // El chart NO debe estar presente
+      expect(screen.queryByTestId("area-chart")).not.toBeInTheDocument();
+    });
+
+    /**
+     * T017-3: Seleccionar una carrera real envía event_id correcto al backend
+     * (round-trip: opción → event_id → query string).
+     *
+     * TDD-red: el picker actual no usa useAthleteRaces, ergo nunca pide
+     * /distribution con el event_id de una carrera del backend.
+     */
+    it("seleccionar una carrera envía event_id correcto en la query /distribution", async () => {
+      const distributionCalls: string[] = [];
+      mswServer.use(
+        racesListHandler,
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          ({ request }) => {
+            distributionCalls.push(new URL(request.url).search);
+            return HttpResponse.json(mockDistribution({ event_id: 91 }));
+          },
+        ),
+      );
+
+      renderWithProviders(<DistributionChart athleteId={42} />);
+
+      // Esperar a que el picker esté en el DOM
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("distribution-valida-select"),
+        ).toBeInTheDocument();
+      });
+
+      // Seleccionar la Válida I (event_id=91) via fireEvent
+      const picker = screen.getByTestId("distribution-valida-select");
+      fireEvent.change(picker, { target: { value: raceOptionValue(91) } });
+
+      // La query de distribución debe haberse disparado con event_id=91
+      await waitFor(() => {
+        expect(
+          distributionCalls.some((s) => s.includes("event_id=91")),
+          "Se esperaba una petición /distribution con event_id=91",
+        ).toBe(true);
+      });
+
+      // No debe haber enviado valida_num
+      expect(distributionCalls.some((s) => s.includes("valida_num"))).toBe(false);
+    });
+
+    /**
+     * T017-4: Con cero carreras el picker muestra SOLO "Temporada (todas)"
+     * y un estado vacío amigable. No debe haber error.
+     *
+     * TDD-red: el componente actual no consulta /race-analysis/races.
+     */
+    it("cero carreras → picker solo muestra 'Temporada (todas)' + estado vacío amigable", async () => {
+      mswServer.use(emptyRacesListHandler);
+      renderWithProviders(<DistributionChart athleteId={42} />);
+
+      await waitFor(() => {
+        // La opción "Temporada (todas)" debe estar presente
+        expect(
+          screen.getByRole("option", { name: aggregateLabel() }),
+        ).toBeInTheDocument();
+      });
+
+      // No debe haber ninguna otra opción de carrera
+      const allOptions = screen.getAllByRole("option");
+      const raceOptions = allOptions.filter(
+        (opt) => opt.getAttribute("value") !== SEASON_AGGREGATE,
+      );
+      expect(raceOptions).toHaveLength(0);
+
+      // Mensaje de estado vacío amigable
+      expect(
+        screen.getByText(/no hay carreras disponibles/i),
+      ).toBeInTheDocument();
+
+      // No debe haber mensajes de error
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    /**
+     * T017-5: axe — zero a11y violations con el picker poblado.
+     *
+     * Este test puede pasar en verde incluso antes de T022 si el picker
+     * placeholder no introduce violaciones — es un guardia de regresión.
+     */
+    it("zero violaciones a11y con el picker poblado (axe)", async () => {
+      mswServer.use(racesListHandler);
+      const { container } = renderWithProviders(
+        <DistributionChart athleteId={42} />,
+      );
+
+      // Espera a que el picker esté en el DOM (mínimo: options renderizadas)
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("distribution-valida-select"),
+        ).toBeInTheDocument();
+      });
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+  });
+
+  describe("US1 TDD-red — defaultEventId prop y ruta por event_id", () => {
+    it("acepta prop defaultEventId y la usa para hacer la primera query (TDD-red)", async () => {
+      // Capturamos los params de la request
+      const capturedParams: URLSearchParams[] = [];
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          ({ request }) => {
+            capturedParams.push(new URL(request.url).searchParams);
+            return HttpResponse.json(mockDistribution());
+          },
+        ),
+      );
+
+      // Renderizamos con defaultEventId=100 (evento específico, no válida genérica)
+      renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("area-chart")).toBeInTheDocument();
+      });
+
+      // La query DEBE incluir event_id=100, NO valida_num
+      expect(
+        capturedParams.some((p) => p.get("event_id") === "100"),
+        "Se esperaba que la query enviara event_id=100 al backend",
+      ).toBe(true);
+    });
+
+    it("cuando defaultEventId está presente NO envía valida_num en la query (TDD-red)", async () => {
+      const capturedParams: URLSearchParams[] = [];
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          ({ request }) => {
+            capturedParams.push(new URL(request.url).searchParams);
+            return HttpResponse.json(mockDistribution());
+          },
+        ),
+      );
+
+      renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("area-chart")).toBeInTheDocument();
+      });
+
+      // valida_num NO debe estar presente cuando se usa event_id
+      expect(
+        capturedParams.some((p) => p.has("valida_num")),
+        "No se debe enviar valida_num cuando defaultEventId está presente",
+      ).toBe(false);
+    });
+
+    it("el payload de respuesta incluye event_id cuando el backend lo devuelve", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          () =>
+            HttpResponse.json({
+              ...mockDistribution(),
+              event_id: 100,
+            }),
+        ),
+      );
+
+      renderWithProviders(<DistributionChart athleteId={42} defaultEventId={100} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("area-chart")).toBeInTheDocument();
+      });
+
+      // El componente NO debe mostrar texto 500/excepción aunque haya campo extra
+      const text = screen.getByTestId("distribution-chart").textContent ?? "";
+      expect(text).not.toMatch(/Error:/i);
+      expect(text).not.toMatch(/TypeError/i);
+
+      // Verificamos que el campo event_id del payload esté accesible
+      // (el componente lo debería exponer, p.e., en un data-event-id o similar).
+      const section = screen.getByTestId("distribution-chart");
+      expect(section.getAttribute("data-event-id")).toBe("100");
+    });
   });
 });

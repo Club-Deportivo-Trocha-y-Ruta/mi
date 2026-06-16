@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -52,6 +52,8 @@ __all__ = [
     "AnalysisConfidence",
     "ClubInsightByRaceItem",
     "ClubInsightsByRaceResponse",
+    "RaceParticipationOption",
+    "RaceParticipationResponse",
 ]
 
 
@@ -255,7 +257,15 @@ class EvolutionPoint(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    valida_num: int = Field(..., ge=0, le=99)
+    valida_num: int = Field(
+        ...,
+        ge=0,
+        le=99,
+        description=(
+            "Número de válida (back-compat). Preferir ``event_id`` como "
+            "identidad estable del evento. Mantenido para compatibilidad con clientes existentes."
+        ),
+    )
     event_id: int = Field(..., ge=1)
     event_date: date
     value: Optional[float] = Field(
@@ -266,6 +276,27 @@ class EvolutionPoint(BaseModel):
         ),
     )
     unit: str = Field(..., max_length=16)
+    series_kind: Literal["cup", "championship"] = Field(
+        ...,
+        description=(
+            "Tipo de serie a la que pertenece el evento. "
+            "``'cup'`` = Copa (válidas regulares del calendario). "
+            "``'championship'`` = Campeonato (Cto. Departamental u otro título). "
+            "Serializa como string; nunca expone el enum interno."
+        ),
+    )
+    # ``label`` se construye en el servidor mediante ``build_race_label``.
+    # El frontend NO debe re-derivar la identidad del evento a partir de
+    # ``valida_num`` — este campo es la fuente de verdad para mostrar al usuario.
+    label: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Etiqueta legible del evento, construida por el servidor "
+            "vía ``build_race_label``. Ejemplo: ``'Válida 2 — Ginebra'`` o "
+            "``'Cto. Dep. — Ginebra'``. Nunca re-derivar desde el frontend."
+        ),
+    )
 
 
 class EvolutionResponse(BaseModel):
@@ -326,7 +357,14 @@ class DistributionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     season: int = Field(..., ge=2020, le=2100)
-    valida_num: int = Field(..., ge=0, le=99)
+    event_id: int = Field(
+        ...,
+        ge=1,
+        description=(
+            "Identificador estable del evento de competencia (PK de race_events). "
+            "Reemplaza a valida_num como identidad de carrera en la distribución."
+        ),
+    )
     category_id: int = Field(..., ge=1)
     category_code: str = Field(..., min_length=1, max_length=32)
     sample_size: int = Field(..., ge=0)
@@ -338,6 +376,85 @@ class DistributionResponse(BaseModel):
     points: list[DistributionPoint] = Field(default_factory=list)
     curve: list[DistributionCurvePoint] = Field(default_factory=list)
     confidence: AnalysisConfidence
+
+
+# ---------------------------------------------------------------------------
+# Participación en carreras — selector de evento (feature 016)
+# ---------------------------------------------------------------------------
+
+
+class RaceParticipationOption(BaseModel):
+    """Evento de competencia en el que el atleta participó.
+
+    Privacidad (CLAUDE.md §Privacidad):
+    - NO contiene ``athlete_id``, ``competitor_id`` ni ningún identificador
+      de menor. ``event_name`` y ``location`` son datos federativos públicos
+      (publicados por la Federación), no PII del deportista.
+    - El llamador ya conoce al atleta por la ruta ``/athletes/{id}/...``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: int = Field(..., ge=1, description="PK estable del evento (race_events).")
+    sequence_number: int = Field(
+        ...,
+        ge=1,
+        le=99,
+        description=(
+            "Número de ronda/válida. Informativo — usar ``event_id`` como "
+            "identidad estable. Para campeonatos siempre es ``1``."
+        ),
+    )
+    series_kind: Literal["cup", "championship"] = Field(
+        ...,
+        description=(
+            "Tipo de serie. ``'cup'`` = Copa (válidas regulares). "
+            "``'championship'`` = Campeonato departamental u otro título. "
+            "Serializa como string; nunca expone el enum interno."
+        ),
+    )
+    event_date: date = Field(..., description="Fecha de la competencia.")
+    event_name: str = Field(
+        ...,
+        min_length=1,
+        description="Nombre público del evento (fuente: federación).",
+    )
+    location: str | None = Field(
+        default=None,
+        description="Ciudad sede del evento. Nulo si no está disponible.",
+    )
+    label: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Etiqueta legible construida por el servidor vía ``build_race_label``. "
+            "Ejemplo: ``'Válida 2 — Ginebra'`` o ``'Cto. Dep. — Ginebra'``. "
+            "El frontend NO debe re-derivar esta etiqueta."
+        ),
+    )
+
+
+class RaceParticipationResponse(BaseModel):
+    """Respuesta del endpoint ``GET /athletes/{id}/race-analysis/races``.
+
+    Lista los eventos en los que el atleta compitió durante la temporada,
+    ordenados por ``event_date`` ascendente. Solo incluye carreras con
+    participación efectiva (excluye eventos sin resultado registrado).
+
+    Privacidad: no contiene ningún identificador personal del atleta —
+    ver :class:`RaceParticipationOption` para el detalle por evento.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    season: int = Field(..., ge=2020, le=2100, description="Temporada consultada.")
+    items: list[RaceParticipationOption] = Field(
+        default_factory=list,
+        description=(
+            "Eventos con participación real del atleta, ordenados por "
+            "``event_date`` ascendente."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

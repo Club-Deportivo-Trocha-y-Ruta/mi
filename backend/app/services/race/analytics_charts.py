@@ -30,6 +30,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.race_series import RaceSeriesKind
 from app.schemas.athlete_race_analysis import (
     AnalysisConfidence,
     DistributionCurvePoint,
@@ -38,9 +39,25 @@ from app.schemas.athlete_race_analysis import (
     EvolutionMetric,
     EvolutionPoint,
     EvolutionResponse,
+    RaceParticipationOption,
+    RaceParticipationResponse,
 )
+from app.services.race.race_labels import build_race_label
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Excepciones de dominio
+# ---------------------------------------------------------------------------
+
+
+class AthleteDidNotParticipate(Exception):
+    """El atleta no tiene ningún race_result para el event_id solicitado
+    en la temporada indicada (o fue eliminado por soft-delete).
+
+    El router debe mapear esta excepción a HTTPException(404).
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +153,9 @@ async def build_evolution(
                 rr.status,
                 rr.race_time_ms,
                 e.sequence_number AS valida_num,
-                e.event_date
+                e.event_date,
+                s.kind           AS series_kind,
+                e.location       AS location
             FROM race_results rr
             JOIN race_events e   ON e.id = rr.event_id
             JOIN race_series s   ON s.id = e.series_id
@@ -167,12 +186,14 @@ async def build_evolution(
             ar.race_time_ms,
             cs.time_min_ms AS winner_time_ms,
             cs.time_max_ms,
-            cs.cat_size
+            cs.cat_size,
+            ar.series_kind,
+            ar.location
         FROM athlete_results ar
         LEFT JOIN cat_stats cs
           ON cs.event_id    = ar.event_id
          AND cs.category_id = ar.category_id
-        ORDER BY ar.valida_num ASC, ar.event_date ASC
+        ORDER BY ar.event_date ASC
         """
     )
 
@@ -200,6 +221,8 @@ async def build_evolution(
         winner_time_ms = _get("winner_time_ms", 6)
         time_max_ms = _get("time_max_ms", 7)
         cat_size = _get("cat_size", 8)
+        series_kind_raw = _get("series_kind", 9)
+        location_raw = _get("location", 10)
 
         if event_id is None or event_date is None:
             continue
@@ -243,6 +266,21 @@ async def build_evolution(
                         pct = 100.0 * (1.0 - (t - t_min) / (t_max - t_min))
                         value = round(pct)
 
+        # Normalizar series_kind: puede llegar como str ("cup"/"championship")
+        # o como RaceSeriesKind enum según el driver DB (MySQL vs aiosqlite).
+        kind_str = (
+            series_kind_raw.value
+            if isinstance(series_kind_raw, RaceSeriesKind)
+            else str(series_kind_raw)
+        )
+        kind_enum = RaceSeriesKind(kind_str)
+        location_str: str | None = str(location_raw) if location_raw else None
+        event_label = build_race_label(
+            kind_enum,
+            int(valida_num) if valida_num is not None else 0,
+            location_str,
+        )
+
         series.append(
             EvolutionPoint(
                 valida_num=int(valida_num) if valida_num is not None else 0,
@@ -250,6 +288,8 @@ async def build_evolution(
                 event_date=event_date,
                 value=value,
                 unit=unit,
+                series_kind=kind_enum.value,
+                label=event_label,
             )
         )
 
@@ -273,28 +313,37 @@ async def build_distribution(
     *,
     athlete_id: int,
     season: int,
-    valida_num: int,
+    event_id: int,
     include_display_name: bool = False,
 ) -> DistributionResponse:
-    """Distribución de tiempos en la categoría del atleta en una válida.
+    """Distribución de tiempos en la categoría del atleta en un evento específico.
 
     Args:
-        athlete_id: PK del atleta.
-        season: Año de temporada.
-        valida_num: ``sequence_number`` del evento (1..7 / 99 / 0=agregada).
+        athlete_id: PK del atleta (la verificación de acceso vive en el router).
+        season: Año de temporada — filtra vía ``race_series.season_year``.
+        event_id: PK de ``race_events.id`` del evento objetivo. Reemplaza el
+            antiguo ``valida_num`` (``sequence_number``) — identifica el evento
+            de forma inequívoca sin depender del número de válida.
         include_display_name: Si ``True``, popula ``display_name`` en cada
             :class:`DistributionPoint` desde ``race_competitors.display_name``
             (fuente: PDF federativo público). Solo activar para coach/admin.
             Para parent dejar en ``False`` (pseudónimo únicamente).
 
     Returns:
-        :class:`DistributionResponse`. Si ``sample_size < 5`` no se ajusta
-        curva normal (``curve=[]``, ``confidence="low"``) — el cliente cae
-        a tabla de tiempos pseudonimizados. Los ``points`` (pseudónimo +
-        tiempo + is_self) siempre vienen poblados para n≥1.
+        :class:`DistributionResponse` con distribución real de la categoría.
+        Si ``sample_size < 5`` no se ajusta curva normal (``curve=[]``,
+        ``confidence="low"``) — el cliente cae a tabla de tiempos
+        pseudonimizados. Los ``points`` siempre vienen poblados para n≥1.
+
+    Raises:
+        :class:`AthleteDidNotParticipate`: cuando no existe ningún
+            ``race_result`` activo para ``(athlete_id, event_id, season)``.
+            El router debe mapear esta excepción a ``HTTPException(404)``.
 
     Notas SQL:
-        - ``target`` (1 fila) localiza (category_id, event_id) del atleta.
+        - ``target`` (1 fila) localiza ``(category_id, event_id)`` del atleta
+          filtrando directamente por ``rr.event_id = :event_id`` — no usa
+          ``sequence_number`` (que puede repetirse entre series distintas).
         - SELECT principal trae todos los race_results de esa categoría en
           ese evento (FINISHED only para que la curva tenga sentido).
         - JOIN con ``race_competitors`` para tener id estable (pseudonimizar)
@@ -316,7 +365,7 @@ async def build_distribution(
         WHERE rr.athlete_id      = :athlete_id
           AND rr.deleted_at      IS NULL
           AND s.season_year      = :season
-          AND e.sequence_number  = :valida_num
+          AND rr.event_id        = :event_id
         LIMIT 1
         """
     )
@@ -325,28 +374,17 @@ async def build_distribution(
         {
             "athlete_id": athlete_id,
             "season": season,
-            "valida_num": valida_num,
+            "event_id": event_id,
         },
     )
     target_row = (
         target_result.first() if hasattr(target_result, "first") else None
     )
     if target_row is None:
-        # El atleta no compitió esa válida o no hay datos — respuesta vacía pero válida.
-        return DistributionResponse(
-            season=season,
-            valida_num=valida_num,
-            category_id=0,
-            category_code="",
-            sample_size=0,
-            mean_ms=None,
-            stddev_ms=None,
-            athlete_time_ms=None,
-            athlete_z_score=None,
-            athlete_percentile=None,
-            points=[],
-            curve=[],
-            confidence=AnalysisConfidence.low,
+        # El atleta no compitió en este evento en esta temporada.
+        # Señalamos al router para que devuelva 404.
+        raise AthleteDidNotParticipate(
+            f"Sin resultados para event_id={event_id}, season={season}"
         )
 
     tm = target_row._mapping if hasattr(target_row, "_mapping") else None
@@ -484,7 +522,7 @@ async def build_distribution(
 
     return DistributionResponse(
         season=season,
-        valida_num=valida_num,
+        event_id=event_id,
         category_id=category_id,
         category_code=category_code,
         sample_size=sample_size,
@@ -499,4 +537,117 @@ async def build_distribution(
     )
 
 
-__all__ = ["build_evolution", "build_distribution"]
+
+# ---------------------------------------------------------------------------
+# 3. list_athlete_races
+# ---------------------------------------------------------------------------
+
+
+async def list_athlete_races(
+    db: AsyncSession,
+    *,
+    athlete_id: int,
+    season: int,
+) -> RaceParticipationResponse:
+    """Devuelve los eventos en los que el atleta compitió en la temporada.
+
+    Contrato:
+        - Una fila por evento (DISTINCT sobre ``e.id``) en el que exista al
+          menos un ``race_result`` activo para el atleta, en cualquier estado
+          (finished, DNF, DNS, DSQ — participación efectiva).
+        - Orden cronológico ascendente por ``e.event_date``.
+        - Las etiquetas legibles se construyen en el servidor vía
+          ``build_race_label`` — el frontend NO debe recalcularlas.
+        - Sin participación → ``items=[]``, nunca error.
+        - Fuente de verdad para el selector de evento del análisis de carrera.
+
+    Privacidad:
+        - NO incluye ``athlete_id`` ni ``competitor_id`` en la respuesta.
+        - ``event_name`` y ``location`` son datos federativos públicos.
+        - No loguea PII a nivel INFO.
+    """
+    sql = text(
+        """
+        SELECT
+            e.id             AS event_id,
+            e.sequence_number,
+            s.kind           AS series_kind,
+            e.event_date,
+            e.name           AS event_name,
+            e.location
+        FROM race_results rr
+        JOIN race_events e  ON e.id = rr.event_id
+        JOIN race_series s  ON s.id = e.series_id
+        WHERE rr.athlete_id  = :athlete_id
+          AND rr.deleted_at  IS NULL
+          AND s.season_year  = :season
+        GROUP BY
+            e.id,
+            e.sequence_number,
+            s.kind,
+            e.event_date,
+            e.name,
+            e.location
+        ORDER BY e.event_date ASC
+        """
+    )
+
+    result = await db.execute(sql, {"athlete_id": athlete_id, "season": season})
+    rows = result.fetchall() if hasattr(result, "fetchall") else list(result)
+
+    items: list[RaceParticipationOption] = []
+    for row in rows:
+        m = row._mapping if hasattr(row, "_mapping") else {}
+
+        def _get(name: str, idx: int):
+            if m:
+                return m.get(name)
+            try:
+                return row[idx]
+            except Exception:  # noqa: BLE001
+                return None
+
+        event_id_raw   = _get("event_id", 0)
+        seq_num_raw    = _get("sequence_number", 1)
+        series_kind_raw = _get("series_kind", 2)
+        event_date_raw = _get("event_date", 3)
+        event_name_raw = _get("event_name", 4)
+        location_raw   = _get("location", 5)
+
+        if event_id_raw is None or event_date_raw is None or event_name_raw is None:
+            continue
+
+        # Normalizar series_kind: MySQL puede devolver el valor enum como string
+        # ("cup"/"championship"); aiosqlite siempre devuelve string.
+        kind_str = (
+            series_kind_raw.value
+            if isinstance(series_kind_raw, RaceSeriesKind)
+            else str(series_kind_raw)
+        )
+        kind_enum = RaceSeriesKind(kind_str)
+
+        seq_num   = int(seq_num_raw) if seq_num_raw is not None else 1
+        location_str: str | None = str(location_raw) if location_raw else None
+        label = build_race_label(kind_enum, seq_num, location_str)
+
+        items.append(
+            RaceParticipationOption(
+                event_id=int(event_id_raw),
+                sequence_number=seq_num,
+                series_kind=kind_enum.value,
+                event_date=event_date_raw,
+                event_name=str(event_name_raw),
+                location=location_str,
+                label=label,
+            )
+        )
+
+    return RaceParticipationResponse(season=season, items=items)
+
+
+__all__ = [
+    "build_evolution",
+    "build_distribution",
+    "list_athlete_races",
+    "AthleteDidNotParticipate",
+]
