@@ -771,8 +771,7 @@ async def create_season_summary(
     # Cargar forbidden_names dinámicamente desde DB.
     forbidden_names: list[str] = []
     try:
-        from app.models.athlete import Athlete as AthleteModel
-        from app.models.parent_athlete import ParentAthlete
+        from app.models.athlete import Athlete as AthleteModel, ParentAthlete
         from app.models.user import User as UserModel
         from sqlalchemy import select as sa_select
 

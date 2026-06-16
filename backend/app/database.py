@@ -1,6 +1,12 @@
+import logging
+from typing import Any
+
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Pool real (AsyncAdaptedQueuePool, el default async de SQLAlchemy 2.x): las
 # conexiones se reutilizan en vez de abrir una nueva por request.
@@ -29,6 +35,16 @@ engine = create_async_engine(
         "connect_timeout": 10,
     },
 )
+
+@event.listens_for(engine.sync_engine, "handle_error")
+def _uvloop_closed_is_disconnect(ctx: "Any") -> None:
+    err = ctx.original_exception
+    if isinstance(err, RuntimeError) and (
+        "handler is closed" in str(err) or "Event loop is closed" in str(err)
+    ):
+        ctx.is_disconnect = True
+        logger.debug("uvloop RuntimeError clasificado como disconnect; pool descartará la conexión.")
+
 
 AsyncSessionLocal = async_sessionmaker(
     engine,

@@ -85,8 +85,7 @@ async def load_forbidden_names(
     try:
         from sqlalchemy import select as sa_select
 
-        from app.models.athlete import Athlete as AthleteModel
-        from app.models.parent_athlete import ParentAthlete
+        from app.models.athlete import Athlete as AthleteModel, ParentAthlete
         from app.models.user import User as UserModel
 
         fn_rows = await db.execute(
