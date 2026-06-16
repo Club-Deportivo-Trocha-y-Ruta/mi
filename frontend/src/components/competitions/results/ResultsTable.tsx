@@ -664,6 +664,7 @@ function ResultRow({
                   athleteId={row.athlete_id!}
                   season={season!}
                   validaNum={validaNum!}
+                  eventId={raceEventId}
                   insightFreshness={insightFreshness}
                   displayName={row.display_name}
                 />

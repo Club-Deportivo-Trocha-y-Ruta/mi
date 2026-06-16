@@ -56,6 +56,13 @@ export interface AnalyzeAthleteButtonProps {
   season: number;
   validaNum: number;
   /**
+   * Ancla explícita por evento. Cuando el botón vive en una competición concreta
+   * se pasa para desambiguar copa vs campeonato (mismo sequence_number en la
+   * temporada). Si se omite, el backend resuelve por validaNum (puede dar 409 si
+   * la válida es ambigua).
+   */
+  eventId?: number;
+  /**
    * undefined = no insight yet → launch directly.
    * null     = fresh insight (stale_run_id == null) → confirm before re-run.
    * string   = stale run_id → treat as "needs rerun", launch directly (stale).
@@ -77,6 +84,7 @@ export function AnalyzeAthleteButton({
   athleteId,
   season,
   validaNum,
+  eventId,
   insightFreshness,
   displayName,
   label = "Analizar",
@@ -96,7 +104,7 @@ export function AnalyzeAthleteButton({
   function doLaunch() {
     setErrorMsg(null);
     launch.mutate(
-      { season, valida_nums: [validaNum] },
+      { season, valida_nums: [validaNum], event_id: eventId },
       {
         onSuccess: (res) => {
           setSuccessRunId(res.run_id);

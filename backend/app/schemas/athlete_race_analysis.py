@@ -244,6 +244,11 @@ class AthleteStartRunBody(BaseModel):
         default=None,
         max_length=12,
     )
+    # Ancla explícita por evento (feature 014, guard cup vs championship): cuando
+    # el lanzamiento nace de una competición concreta, el frontend envía
+    # ``event_id`` para evitar la ambigüedad de ``valida_num`` (un mismo
+    # ``sequence_number`` puede pertenecer a copa y a campeonato en la temporada).
+    event_id: Optional[int] = Field(default=None, ge=1)
     explain_mode: bool = False
 
 

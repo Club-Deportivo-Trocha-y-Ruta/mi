@@ -50,6 +50,8 @@ interface InsightCardProps {
   season?: number;
   /** Número de válida (sequence_number del evento; necesario para lanzar). */
   validaNum?: number;
+  /** event_id de la competición — desambigua copa vs campeonato al lanzar. */
+  raceEventId?: number;
 }
 
 function InsightCard({
@@ -58,6 +60,7 @@ function InsightCard({
   canAnalyze = false,
   season,
   validaNum,
+  raceEventId,
 }: InsightCardProps) {
   const isMasked = item.athlete_id === 0;
   const isClickable = !isMasked && item.insight_id !== null;
@@ -190,6 +193,7 @@ function InsightCard({
             athleteId={item.athlete_id}
             season={season!}
             validaNum={validaNum!}
+            eventId={raceEventId}
             insightFreshness={insightFreshness}
             displayName={item.athlete_display_name}
             label={item.insight_id === null ? "Analizar con IA" : "Re-analizar"}
@@ -354,6 +358,7 @@ function ClubInsightsGrid({
             canAnalyze={isCoachOrAdmin}
             season={season}
             validaNum={validaNum}
+            raceEventId={raceEventId}
           />
         ))}
       </div>

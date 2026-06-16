@@ -433,6 +433,88 @@ async def list_athlete_runs(
 # ---------------------------------------------------------------------------
 
 
+async def _resolve_events_by_valida(
+    db: AsyncSession,
+    athlete_id: int,
+    season: int,
+    valida_nums: list[int],
+) -> dict[int, list[int]]:
+    """Mapea cada ``valida_num`` (sequence_number) a los ``event_id`` en los que
+    el atleta participó esa temporada.
+
+    Necesario por la colisión cup vs championship (feature 014): desde
+    ``feature 014`` un campeonato es su propia serie con ``sequence_number=1``,
+    igual que la válida 1 de copa. Con ``valida_num`` solo NO se puede saber a
+    qué evento se refiere el lanzamiento. Este helper detecta ambigüedad para
+    que ``start_athlete_run`` pueda exigir desambiguación (HTTP 409) y, cuando
+    resuelve a un único evento, anclar el insight por ``event_id``.
+
+    Returns:
+        dict ``{sequence_number: [event_id, ...]}``. Solo incluye válidas con
+        al menos un resultado del atleta en la temporada.
+    """
+    if not valida_nums:
+        return {}
+
+    from sqlalchemy import bindparam
+
+    stmt = (
+        text(
+            """
+            SELECT re.sequence_number AS seq, re.id AS event_id
+            FROM race_results rr
+            JOIN race_events re ON re.id = rr.event_id
+            JOIN race_series rs ON rs.id = re.series_id
+            WHERE rr.athlete_id = :aid
+              AND rr.deleted_at IS NULL
+              AND rs.season_year = :season
+              AND re.sequence_number IN :seqs
+            GROUP BY re.sequence_number, re.id
+            """
+        ).bindparams(bindparam("seqs", expanding=True))
+    )
+    rows = await db.execute(
+        stmt, {"aid": athlete_id, "season": season, "seqs": list(set(valida_nums))}
+    )
+    mapping: dict[int, list[int]] = {}
+    for seq, event_id in rows.all():
+        mapping.setdefault(int(seq), []).append(int(event_id))
+    return mapping
+
+
+async def _resolve_valida_for_event(
+    db: AsyncSession,
+    athlete_id: int,
+    season: int,
+    event_id: int,
+) -> Optional[int]:
+    """Devuelve el ``sequence_number`` del evento si pertenece a la temporada y
+    el atleta participó en él; ``None`` en caso contrario.
+
+    Usado por el camino anclado-por-evento de ``start_athlete_run``: el frontend
+    pasa ``event_id`` explícito (lanzamiento desde una competición) y el grafo
+    sigue consumiendo ``valida_nums``, así que necesitamos el sequence_number.
+    """
+    row = await db.execute(
+        text(
+            """
+            SELECT re.sequence_number AS seq
+            FROM race_results rr
+            JOIN race_events re ON re.id = rr.event_id
+            JOIN race_series rs ON rs.id = re.series_id
+            WHERE rr.athlete_id = :aid
+              AND rr.deleted_at IS NULL
+              AND rs.season_year = :season
+              AND re.id = :eid
+            LIMIT 1
+            """
+        ),
+        {"aid": athlete_id, "season": season, "eid": event_id},
+    )
+    found = row.first()
+    return int(found[0]) if found else None
+
+
 @router.post(
     "/{athlete_id}/race-analysis/runs",
     response_model=StartRunResponse,
@@ -462,6 +544,61 @@ async def start_athlete_run(
             detail="Cap v2: máximo 4 válidas por lanzamiento. Usa resumen temporada para visión global.",
         )
 
+    # Guard cup vs championship (feature 014): un valida_num (sequence_number)
+    # puede mapear a >1 evento en la misma temporada (válida 1 de copa y un
+    # campeonato comparten sequence_number=1). En ese caso el lanzamiento por
+    # valida_num es ambiguo.
+    #
+    # Camino A — el frontend ancla por event_id (lanzamiento desde una
+    # competición): usamos ese evento directamente, derivamos su valida_num y
+    # NO aplicamos el guard (no hay ambigüedad: el evento es explícito).
+    #
+    # Camino B — lanzamiento solo por valida_num (vista de temporada): si algún
+    # valida_num mapea a >1 evento exigimos desambiguación (409). Cuando una
+    # única válida resuelve a un único evento, anclamos el insight por event_id.
+    resolved_event_id: Optional[int] = None
+    valida_nums = body.valida_nums
+
+    if body.event_id is not None:
+        seq = await _resolve_valida_for_event(
+            db, athlete.id, body.season, body.event_id
+        )
+        if seq is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    "El evento no existe en esta temporada o el deportista no "
+                    "participó en él."
+                ),
+            )
+        resolved_event_id = body.event_id
+        valida_nums = [seq]
+    elif body.valida_nums:
+        events_by_valida = await _resolve_events_by_valida(
+            db, athlete.id, body.season, body.valida_nums
+        )
+        ambiguous = {
+            seq: eids for seq, eids in events_by_valida.items() if len(eids) > 1
+        }
+        if ambiguous:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Válida ambigua: "
+                    + ", ".join(
+                        f"#{seq} → eventos {eids}" for seq, eids in ambiguous.items()
+                    )
+                    + ". Hay copa y campeonato con el mismo número en esta "
+                    "temporada; lanza el análisis desde la competición específica."
+                ),
+            )
+        # Anclar por event_id solo cuando el lanzamiento es de una única válida
+        # con un único evento (el caso común de los botones por deportista).
+        if len(body.valida_nums) == 1:
+            eids = events_by_valida.get(int(body.valida_nums[0]), [])
+            if len(eids) == 1:
+                resolved_event_id = eids[0]
+
     try:
         await check_budget(db)
     except BudgetExceededError as exc:
@@ -479,7 +616,8 @@ async def start_athlete_run(
     input_payload = {
         "athlete_id": athlete.id,
         "season": body.season,
-        "valida_nums": body.valida_nums,
+        "valida_nums": valida_nums,
+        "event_id": resolved_event_id,
         "explain_mode": body.explain_mode,
     }
 
@@ -537,7 +675,8 @@ async def start_athlete_run(
     initial_state = {
         "athlete_id": athlete.id,
         "season": body.season,
-        "valida_nums": body.valida_nums,
+        "valida_nums": valida_nums,
+        "event_id": resolved_event_id,
         "coach_id": current_user.id,
         "explain_mode": body.explain_mode,
         "run_id": run_id,
@@ -585,7 +724,7 @@ async def start_athlete_run(
             detail=str(exc),
         )
 
-    estimated = 15 + 5 * len(body.valida_nums or [])
+    estimated = 15 + 5 * len(valida_nums or [])
 
     return StartRunResponse(
         run_id=run_id,

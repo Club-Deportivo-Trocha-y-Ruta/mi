@@ -173,6 +173,11 @@ export interface AthleteRunListResponse {
 export interface AthleteStartRunBody {
   season: number;
   valida_nums?: number[] | null;
+  /**
+   * Ancla explícita por evento (desambigua copa vs campeonato con el mismo
+   * sequence_number en la temporada). Se envía al lanzar desde una competición.
+   */
+  event_id?: number | null;
   explain_mode?: boolean;
 }
 

@@ -519,6 +519,141 @@ async def test_post_runs_as_coach_inyects_athlete_id(
 
 
 @pytest.mark.asyncio
+async def test_post_runs_ambiguous_valida_returns_409(
+    seeded_factory, client_factory, monkeypatch
+):
+    """Guard cup vs championship (feature 014): si valida_num=1 mapea a >1 evento
+    en la temporada (copa válida 1 + campeonato seq=1), el lanzamiento por
+    deportista es ambiguo → 409, sin disparar el grafo.
+    """
+    from app.routers import athlete_race_analysis as router_mod
+
+    submit_calls: list[tuple] = []
+
+    async def _fake_submit_run(run_id, initial_state, on_complete=None):
+        submit_calls.append((run_id, initial_state, on_complete))
+
+    async def _fake_check_budget(db):
+        return None
+
+    monkeypatch.setattr(router_mod, "submit_run", _fake_submit_run)
+    monkeypatch.setattr(router_mod, "check_budget", _fake_check_budget)
+    monkeypatch.setattr(settings, "ai_enabled", True)
+
+    # Segundo evento con sequence_number=1 (campeonato, su propia serie) donde
+    # el atleta 144 también participó → colisión con la válida 1 de copa.
+    async with seeded_factory() as s:
+        from app.models.race_series import RaceSeriesKind
+
+        await create_race_series(
+            s,
+            series_id=2,
+            season_year=2026,
+            name="Campeonato Departamental",
+            kind=RaceSeriesKind.championship,
+        )
+        await create_race_event(
+            s,
+            event_id=2,
+            series_id=2,
+            sequence_number=1,
+            name="Campeonato",
+            event_date=date(2026, 6, 12),
+        )
+        await create_race_result(
+            s,
+            event_id=2,
+            category_id=100,
+            competitor_id=1002,
+            athlete_id=144,
+            position=2,
+            race_time_ms=1_805_000,
+            bib_number=3,
+        )
+        await s.commit()
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    body = {"season": 2026, "valida_nums": [1], "explain_mode": False}
+    async with client_factory(user=coach) as ac:
+        resp = await ac.post(
+            "/api/athletes/144/race-analysis/runs",
+            json=body,
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 409, resp.text
+    assert len(submit_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_post_runs_with_event_id_disambiguates_and_launches(
+    seeded_factory, client_factory, monkeypatch
+):
+    """Anclar por event_id resuelve la ambigüedad cup vs championship: el
+    lanzamiento desde una competición concreta procede (201), deriva el
+    valida_num del evento y propaga event_id al estado inicial.
+    """
+    from app.routers import athlete_race_analysis as router_mod
+
+    submit_calls: list[tuple] = []
+
+    async def _fake_submit_run(run_id, initial_state, on_complete=None):
+        submit_calls.append((run_id, initial_state, on_complete))
+
+    async def _fake_check_budget(db):
+        return None
+
+    monkeypatch.setattr(router_mod, "submit_run", _fake_submit_run)
+    monkeypatch.setattr(router_mod, "check_budget", _fake_check_budget)
+    monkeypatch.setattr(settings, "ai_enabled", True)
+
+    # Mismo escenario colisión que el test 409: evento 2 (campeonato seq=1).
+    async with seeded_factory() as s:
+        from app.models.race_series import RaceSeriesKind
+
+        await create_race_series(
+            s,
+            series_id=2,
+            season_year=2026,
+            name="Campeonato Departamental",
+            kind=RaceSeriesKind.championship,
+        )
+        await create_race_event(
+            s,
+            event_id=2,
+            series_id=2,
+            sequence_number=1,
+            name="Campeonato",
+            event_date=date(2026, 6, 12),
+        )
+        await create_race_result(
+            s,
+            event_id=2,
+            category_id=100,
+            competitor_id=1002,
+            athlete_id=144,
+            position=2,
+            race_time_ms=1_805_000,
+            bib_number=3,
+        )
+        await s.commit()
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    # event_id=2 (campeonato) → debe anclar a ese evento, NO al de copa (id=1).
+    body = {"season": 2026, "event_id": 2, "valida_nums": [1], "explain_mode": False}
+    async with client_factory(user=coach) as ac:
+        resp = await ac.post(
+            "/api/athletes/144/race-analysis/runs",
+            json=body,
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 201, resp.text
+    assert len(submit_calls) == 1
+    _rid, initial_state, _on = submit_calls[0]
+    assert initial_state["event_id"] == 2
+    assert initial_state["valida_nums"] == [1]
+
+
+@pytest.mark.asyncio
 async def test_post_runs_injects_ltad_and_maturation(client_factory, monkeypatch):
     """Feature 011 US2: initial_state carries real ltad_group + maturation_status.
 
