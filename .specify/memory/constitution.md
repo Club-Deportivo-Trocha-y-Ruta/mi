@@ -1,12 +1,21 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.0.0 → 1.1.0
-Rationale: MINOR amendment. Principle III expanded with an explicit, non-contradictory
-language policy that distinguishes product end-user copy (Spanish) from the AI
-development assistant's working language and instruction corpus (English). No principle
-removed or redefined incompatibly; the existing Spanish guarantee for product copy is
-preserved in substance, so the change is additive/clarifying → MINOR.
+Version change: 1.1.0 → 1.2.0
+Rationale: MINOR amendment. A new domain principle (V. Youth Psychological Assessment
+Safeguards) is ADDED for the Competitive Anxiety Assessment feature (CSAI-2R / SAS-2 /
+CSAI-2). It is additive and does not remove, renumber, or redefine principles I–IV; it
+is fully consistent with the existing minors-privacy and UX constraints → MINOR.
+
+Amendment 2026-06-23 (1.1.0 → 1.2.0):
+  - Added Principle V. Youth Psychological Assessment Safeguards (NON-NEGOTIABLE):
+    age-driven instrument selection (SAS-2 forced/suggested for <13; CSAI-2R default
+    for 13–15; CSAI-2 import-only); wellbeing-not-diagnosis; baseline-anchored
+    interpretation; mastery climate; human-in-the-loop (no auto-messaging to
+    athletes/parents); calendar-tied Race-A administration. Verification gates:
+    item-by-item answer persistence, rule-based interpretation fallback, guardian
+    consent + coach-only access, minors-privacy/data minimization. Sourced from
+    Section 1 of the "Componente Ansiedad Competitiva (CSAI-2R)" Spec Kit package.
 
 Amendment 2026-06-05 (1.0.0 → 1.1.0):
   - III. User Experience Consistency → language clause split into "product end-user
@@ -21,17 +30,17 @@ Initial ratification 2026-06-01 (TEMPLATE → 1.0.0):
     Review Process; Governance.
 
 Templates requiring updates:
-  - ✅ .specify/templates/plan-template.md — generic "Constitution Check" gate; no edit
-    needed (references this file).
+  - ✅ .specify/templates/plan-template.md — generic "Constitution Check" gate; the
+    gate references this file, so Principle V is picked up automatically; no edit needed.
   - ✅ .specify/templates/spec-template.md — aligned; no edit needed.
   - ✅ .specify/templates/tasks-template.md — aligned; no edit needed.
-  - ⚠ CLAUDE.md (project) — its "Idioma" section still says "responder siempre en
-    español"; it will be rewritten to the English working-language policy by feature
-    001 (task T009) so it mirrors this amended Principle III. Pending until that task.
+  - ✅ .claude/agents/mental-performance-coach.md — updated in the same change with the
+    Competitive Anxiety Assessment domain (instruments, scoring, baseline-anchored
+    interpretation, hard safeguards) so the agent enforces Principle V.
 
 Follow-up TODOs:
-  - CLAUDE.md "Idioma"/"Language" section to be updated by feature 001 (T009) to match
-    Principle III. Tracked in specs/001-translate-claude-files-english/tasks.md.
+  - None for this amendment. The CSAI-2R feature spec (Section 2 of the package) is the
+    next step via /speckit.specify.
 -->
 
 # Club Deportivo Trocha y Ruta Constitution
@@ -148,6 +157,48 @@ Android phones over intermittent connections; the backend runs on a free Render 
 that is bandwidth- and CPU-constrained. Without explicit budgets, the product will
 silently degrade for the very users it exists to serve.
 
+### V. Youth Psychological Assessment Safeguards (NON-NEGOTIABLE)
+
+Any feature that administers, scores, stores, or interprets psychological instruments for
+minors — beginning with the Competitive Anxiety Assessment module (CSAI-2R / SAS-2 /
+CSAI-2) — MUST uphold the following. These are domain safety rules; they complement, and
+never override, Principles I–IV.
+
+- **Age-driven instrument selection.** The instrument MUST be selected by the athlete's
+  age band: SAS-2 (15 items) for ages 10–12, CSAI-2R (17 items, default) for ages 13–15,
+  and CSAI-2 (27 items) supported ONLY to import/interpret historical results. The system
+  MUST suggest/force SAS-2 for athletes under 13 and MUST warn when CSAI-2/2R is applied
+  to that age (below its validated range). Item content and the item→subscale key MUST
+  come from the licensed official source — items MUST NOT be invented.
+- **Wellbeing tool, NOT a diagnosis.** No generated output MAY label an athlete with an
+  "anxiety disorder" or any clinical condition. Extreme or persistent signals MUST raise
+  a flag that recommends a conversation and, if it persists, referral to a health
+  professional.
+- **Baseline-anchored interpretation.** The CSAI-2 family measures intensity and has no
+  universal clinical cutoffs. Interpretation MUST be anchored to the athlete's own
+  baseline (established in April) and MAY use perceived direction (facilitative vs.
+  debilitative). Absolute low/moderate/high bands are coarse guidance only and MUST NOT
+  be presented as diagnostic thresholds.
+- **Mastery climate always.** Every generated recommendation and athlete-facing message
+  MUST be framed in process, effort, and coping strategies — never in results/podiums,
+  rankings, or shaming comparisons between athletes.
+- **Human in the loop.** The module informs the coach's conversation only. It MUST NOT
+  send automatic messages to athletes or parents.
+- **Calendar-tied administration.** The instrument is administered ~1–2 h before Race A
+  events (IV Válida–Cali, Departamental–Ginebra, VI Válida–Roldanillo), where competitive
+  pressure is highest.
+- **Verification gates.** Item-by-item answers MUST be persisted (not only subscale
+  scores) so scores can be recomputed; a rule-based interpretation fallback MUST exist
+  for when the LLM is unavailable; access MUST be restricted to the coach and gated by
+  registered guardian consent; minors-privacy and data minimization (Principle-level
+  Quality Gates) apply in full, including to any AI-provider prompt.
+
+**Rationale**: These are children in an identity-development stage, sensitive to social
+comparison and external pressure. A psychological instrument misused as a diagnostic
+label, or interpreted against population cutoffs instead of the child's own trajectory,
+can cause real harm. Encoding these as non-negotiable principles keeps the feature a
+supportive, coach-mediated wellbeing tool rather than an amateur clinical screen.
+
 ## Quality Gates & Compliance Constraints
 
 These constraints apply across all principles and complement the project's existing
@@ -184,9 +235,9 @@ non-negotiables in `CLAUDE.md`.
   emergency fixes and MUST be followed by a retroactive PR description.
 - **Pre-merge gate**: Lint, type-check, backend `pytest`, frontend `vitest`, and
   accessibility tests MUST all pass. A green CI is necessary but not sufficient — a
-  human reviewer MUST also confirm Principles I–IV are upheld.
+  human reviewer MUST also confirm Principles I–V are upheld.
 - **Constitution Check (in `/speckit-plan`)**: Every implementation plan MUST list
-  how it satisfies each of the four principles. Violations MUST be entered in the
+  how it satisfies each of the five principles. Violations MUST be entered in the
   Complexity Tracking table with a justification and an explicitly rejected simpler
   alternative.
 - **Deploys**: Backend auto-deploys to Render on push to `main`. The release MUST
@@ -209,11 +260,11 @@ non-negotiables in `CLAUDE.md`.
   - MINOR: a new principle or section is added, or guidance is materially expanded.
   - PATCH: clarifications, wording, typo fixes, or non-semantic refinements.
 - **Compliance review**: Every PR description MUST contain a one-line statement
-  confirming compliance with the four principles, or list the violations and link
+  confirming compliance with the five principles, or list the violations and link
   to the plan's Complexity Tracking entry. PRs that omit this statement MUST be
   requested-changes by the reviewer.
 - **Runtime guidance**: `CLAUDE.md` at the project root is the authoritative runtime
   guidance file for AI-assisted development and is informative-but-binding alongside
   this constitution.
 
-**Version**: 1.1.0 | **Ratified**: 2026-06-01 | **Last Amended**: 2026-06-05
+**Version**: 1.2.0 | **Ratified**: 2026-06-01 | **Last Amended**: 2026-06-23
