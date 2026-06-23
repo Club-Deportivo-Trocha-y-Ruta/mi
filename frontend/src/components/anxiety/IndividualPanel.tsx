@@ -2,7 +2,10 @@ import { lazy, Suspense } from "react";
 
 import type { AthleteSeries } from "@/types/anxiety.types";
 
-const BaselineChart = lazy(() => import("./BaselineChart"));
+// Recharts es pesado → lazy-load para no penalizar el bundle inicial.
+const SeriesChart = lazy(() =>
+  import("./SeriesChart").then((m) => ({ default: m.SeriesChart })),
+);
 
 interface IndividualPanelProps {
   series: AthleteSeries;
@@ -65,11 +68,7 @@ export function IndividualPanel({ series }: IndividualPanelProps) {
             <p className="text-sm text-slate-400">Cargando gráfica…</p>
           }
         >
-          <BaselineChart
-            points={series.points}
-            baselineCognitive={series.baseline_cognitive}
-            baselineSomatic={series.baseline_somatic}
-          />
+          <SeriesChart series={series} />
         </Suspense>
       )}
 
