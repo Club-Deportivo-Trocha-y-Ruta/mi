@@ -149,7 +149,7 @@ The coach uploads results for athletes already assessed (file format to be defin
 
 **Answering**
 
-- **FR-007**: Athletes MUST be able to answer on a mobile device with a simple, jargon-free, one-question-at-a-time UI using the prompt "responde cómo te sientes ahora mismo".
+- **FR-007**: Athletes MUST be able to answer on a mobile device with a simple, jargon-free, one-question-at-a-time UI using the prompt "responde cómo te sientes ahora mismo". Access is via a **coach-issued one-time link/token** — there is no athlete login or athlete app in this version (athletes remain `can_login=false`). The token MUST be single-use and scoped to one assessment.
 - **FR-008**: System MUST NOT show clinical interpretations to the athlete; at most a short, encouraging message.
 
 **Scoring**
@@ -161,7 +161,7 @@ The coach uploads results for athletes already assessed (file format to be defin
 
 **Interpretation**
 
-- **FR-013**: System MUST generate a per-athlete interpretation containing: a summary of the dominant pattern, a per-dimension reading, 2–3 concrete actionable strategies, a short adaptable coach message, and alert flags — returned in the structured JSON schema (`resumen`, `por_dimension`, `estrategias`, `mensaje_para_el_atleta`, `banderas`).
+- **FR-013**: System MUST generate a per-athlete interpretation containing: a summary of the dominant pattern, a per-dimension reading, 2–3 concrete actionable strategies, a short adaptable coach message, and alert flags — returned in the structured JSON schema (`resumen`, `por_dimension`, `estrategias`, `mensaje_para_el_atleta`, `banderas`). Interpretation MUST be generated **on demand** (coach-triggered "Analizar" action) and the result cached/persisted, not auto-run on every submission. A group-level launch MAY trigger per-athlete interpretations in one action, but each remains an individual cached result.
 - **FR-014**: System MUST anchor interpretation to the athlete's own baseline (relative change) and, when present, to the trend versus previous assessments; absolute low/moderate/high bands are coarse guidance only and MUST NOT be presented as diagnostic thresholds.
 - **FR-015**: System MUST frame all generated text in a mastery climate (process/effort/coping) and MUST NOT emit diagnostic language or reference results, podiums, rankings, or comparisons between athletes.
 - **FR-016**: System MUST provide a rule-based interpretation fallback that returns the same schema when the LLM is unavailable or returns invalid output, and MUST record that the fallback was used.
@@ -175,12 +175,12 @@ The coach uploads results for athletes already assessed (file format to be defin
 **Baseline & history**
 
 - **FR-020**: System MUST treat the first assessment (April) as the athlete's baseline per subscale when none exists, and MUST flag interpretations made without a baseline.
-- **FR-021**: Coaches MUST be able to import historical results, which the system scores and interprets retroactively to build the baseline and time series. (Import file format: see Clarifications.)
+- **FR-021**: Coaches MUST be able to import historical results from a **CSV file with item-by-item answers** (one column per item) plus metadata columns (athlete, instrument, date, event). The system scores and interprets these records retroactively to build the baseline and time series. Per-subscale-only files (without item answers) are out of scope for import.
 - **FR-022**: When an athlete changes age band mid-season (instrument change), System MUST warn that SAS-2 and CSAI-2R series are not directly comparable and MUST NOT merge them into one comparable trend.
 
 **Privacy, access & export**
 
-- **FR-023**: System MUST restrict assessment data access to the coach role and MUST require registered guardian consent before an athlete can be assessed/stored.
+- **FR-023**: System MUST restrict assessment data access to the coach role and MUST require registered guardian consent before an athlete can be assessed/stored. Consent is a **per-athlete record registered by the coach** (guardian identity + date, reusing the `parent_athlete` link); the system MUST block creating or storing an assessment for an athlete without a recorded consent.
 - **FR-024**: System MUST NOT send automatic messages to athletes or parents; the module only informs the coach's conversation.
 - **FR-025**: System MUST keep all athlete- and coach-facing copy in español neutro (Colombia), with technical terms in English in parentheses where helpful.
 - **FR-026**: System MUST allow the coach to export assessment data to CSV/JSON.
@@ -193,7 +193,8 @@ The coach uploads results for athletes already assessed (file format to be defin
 - **Assessment**: one administration to one athlete; attributes: athlete reference, instrument, event reference (calendar FK), A/B/C priority, date/time, item-by-item answers, computed subscale scores, partial flag, generated interpretation, alert flags, fallback-used flag.
 - **Baseline**: per athlete and per subscale, the reference value fixed at the initial (April) assessment.
 - **Interpretation**: the structured reading attached to an assessment (summary, per-dimension reading, strategies, coach message, flags).
-- **Guardian consent**: the record that authorizes assessing/storing a given minor's data.
+- **Guardian consent**: a per-athlete record (registered by the coach) authorizing assessing/storing a given minor's data; attributes: athlete reference, guardian (via `parent_athlete`), consent date. Required before any assessment.
+- **Response access token**: a single-use, assessment-scoped token issued by the coach that lets an athlete open and answer one assessment without logging in.
 - **(Optional) Daily wellness link**: an optional association to the existing daily wellness questionnaire for additional context.
 
 ## Success Criteria *(mandatory)*
@@ -212,8 +213,8 @@ The coach uploads results for athletes already assessed (file format to be defin
 ## Assumptions
 
 - The existing athletes model and competition calendar (`race_events` with A/B/C priority) are reused as the source of athletes and events.
-- Athlete login is constrained (`can_login=false` in the base model); how athletes access their assigned questionnaire (e.g., coach-mediated link/token vs. limited athlete login) is an open item — see Clarifications.
-- The exact historical import file format (CSV columns / JSON shape, item ordering, instrument detection) is deferred to `/speckit-clarify`.
+- Athletes remain `can_login=false`: they access their questionnaire only through a coach-issued one-time, assessment-scoped token. A dedicated athlete app/login is explicitly a future goal, not part of this version.
+- Historical import uses a CSV with item-by-item answers plus metadata columns; exact column naming/ordering and instrument auto-detection are a `/plan` detail, not a scope question.
 - The licensed official scoring keys (Human Kinetics for CSAI-2/2R; validated Spanish CSAI-2R) are available to the team to load as data; the module ships the loader, not invented item text.
 - The LLM interpretation uses the project's existing AI provider configuration (`AI_*` env vars); `AI_LOG_PROMPTS` remains `false` in production. Concrete provider/model wiring is a `/plan` concern, not part of this spec.
 - "April baseline" maps to the season's early diagnostic window (around the La Cumbre III válida timeframe); baseline is per athlete and per subscale.
@@ -226,11 +227,19 @@ The coach uploads results for athletes already assessed (file format to be defin
 - Does not apply CSAI-2/2R to under-13 athletes as a normal flow (SAS-2 only for that group; CSAI-2/2R override is an exception with a warning).
 - Does not use adult load metrics (TSS/IF/NP) and does not link results to rankings.
 - Perceived-direction capture (CSAI-2D) is deferred to a future version.
+- A dedicated athlete app or athlete login is out of scope for this version; athletes answer only via a coach-issued one-time token. (Future goal.)
 
 ## Clarifications
 
-> Resolved in `/speckit-clarify`. Tracked here as open questions that affect scope/UX/privacy.
+### Session 2026-06-23
 
-- **CL-001 (scope/format)**: What is the exact historical import file format (columns/shape, per-item vs. per-subscale data, instrument detection)? Affects FR-021.
-- **CL-002 (UX/privacy)**: How does an athlete access their assigned questionnaire given `can_login=false` — a coach-issued one-time link/token, or limited athlete login? Affects FR-007, FR-023.
-- **CL-003 (privacy)**: What is the guardian-consent capture and verification mechanism (where it is recorded, who registers it, expiry)? Affects FR-023, FR-027.
+- Q: ¿Cómo accede el atleta a su cuestionario, dado que en el modelo base los atletas tienen `can_login=false`? → A: Enlace/token de un solo uso emitido por el entrenador; no hay app/login de atleta por ahora (es un objetivo a futuro).
+- Q: ¿Cómo se captura y verifica el consentimiento del tutor antes de evaluar a un menor? → A: Campo de consentimiento por atleta, registrado por el entrenador (tutor + fecha, reutilizando el vínculo `parent_athlete`); bloquea la evaluación si falta.
+- Q: ¿Qué formato tendrá la importación de resultados históricos? → A: CSV ítem-a-ítem (una columna por ítem) más metadatos (atleta, instrumento, fecha, evento).
+- Q: ¿Cuándo se genera la interpretación asistida por LLM? → A: Bajo demanda del entrenador (botón "Analizar") con caché del resultado.
+
+**Resolved items** (originally open):
+
+- **CL-001 (scope/format)** → Historical import is **CSV with item-by-item answers** (one column per item) plus metadata (athlete, instrument, date, event). Resolves FR-021.
+- **CL-002 (UX/privacy)** → Athlete access is via a **coach-issued one-time link/token**; no athlete login or athlete app in this version (future goal). Resolves FR-007, FR-023.
+- **CL-003 (privacy)** → Guardian consent is a **per-athlete field registered by the coach** (guardian + date, reusing `parent_athlete`); assessment is blocked without it. Resolves FR-023, FR-027.
