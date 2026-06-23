@@ -11,6 +11,19 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 **Tests**: INCLUDED — Constitution Principle II (Testing) is NON-NEGOTIABLE for this minors-data platform.
 
+## Implementation status (`/speckit-implement`, 2026-06-23)
+
+**MVP increment delivered & verified**: the pure-logic core that embodies Constitution Principle V is implemented and **all 20 unit tests pass** (`pytest tests/anxiety --noconftest`):
+
+- ✅ T003 scoring-key fixtures (CSAI-2R / SAS-2 / CSAI-2)
+- ✅ T007 instrument-key loader · ✅ T008 deterministic scoring · ✅ T009 age-driven selection + under-13 guard
+- ✅ T034 rule-based interpretation fallback (mastery climate, no diagnosis, referral flag)
+- ✅ T014 selection tests · ✅ T026 scoring tests · rule-interpreter tests (part of T030)
+
+**Deliberately deferred** (need the Alembic migration + full app wiring + browser/build to verify; not implemented to avoid breaking the existing test suite with half-wired models/relationships): T001–T002 scaffolding remainder, T004–T006 migration/models/schemas, T010–T012 consent gate/router wiring, T015–T025 endpoints + answer flow + UI, T028–T033/T035–T037 scoring/interpretation endpoints + LLM use case + prompt, T038–T048 dashboards + import UI, T049–T053 polish/deploy. These are queued per `(@agent)` for the next implementation pass.
+
+---
+
 **Agent assignment**: each task is tagged `(@agent)` per plan.md Appendix A. `/speckit-implement` (dynamic workflow) dispatches each task to its agent, parallelizing `[P]` tasks and respecting dependencies. Orchestrated by `engineering-lead`; `head-coach-lead` + `mental-performance-coach` review safeguard/clima copy; `data-privacy-guard` audits PII gates.
 
 ## Format: `[ID] [P?] [Story] Description (@agent)`
@@ -25,7 +38,7 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 - [ ] T001 [P] Create backend module scaffolding: `backend/app/services/anxiety/` (package), `backend/app/data/anxiety_keys/` dir, empty `backend/app/routers/anxiety.py`, `backend/app/schemas/anxiety.py` (@fastapi-architect)
 - [ ] T002 [P] Create frontend scaffolding: `frontend/src/components/anxiety/`, `frontend/src/hooks/anxiety/`, `frontend/src/pages/anxiety/`, `frontend/src/api/anxiety.ts` (@react-ui-engineer)
-- [ ] T003 [P] Add scoring-key fixtures `backend/app/data/anxiety_keys/{csai2r,sas2,csai2}.json` (item→subscale map + reverse flags + subscale ranges; item TEXT slots left for licensed provisioning, not invented) (@data-analyst)
+- [X] T003 [P] Add scoring-key fixtures `backend/app/data/anxiety_keys/{csai2r,sas2,csai2}.json` (item→subscale map + reverse flags + subscale ranges; item TEXT slots left for licensed provisioning, not invented) (@data-analyst)
 
 ---
 
@@ -36,9 +49,9 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 - [ ] T004 Alembic migration creating `anxiety_instruments`, `anxiety_assessments`, `anxiety_response_tokens`, `anxiety_baselines` (enums via `values_callable`) and adding `psychological_assessment` boolean to `parental_consents`, in `backend/alembic/versions/` (@database-architect)
 - [ ] T005 [P] SQLAlchemy models `anxiety_instrument.py`, `anxiety_assessment.py`, `anxiety_response_token.py`, `anxiety_baseline.py` in `backend/app/models/` per data-model.md (depends T004) (@fastapi-architect)
 - [ ] T006 [P] Pydantic v2 schemas (create/batch/answer/read/score/interpret/import/export) in `backend/app/schemas/anxiety.py` per contracts (depends T004) (@fastapi-architect)
-- [ ] T007 [P] Instrument-key loader `backend/app/services/anxiety/instrument_keys.py` (reads `data/anxiety_keys/*.json`; never invents items) (@data-analyst)
-- [ ] T008 Deterministic scoring `backend/app/services/anxiety/scoring.py` (subscale sums, (sum/n)×10 for CSAI-2R, reverse flags, partial averaging, self-confidence NOT inverted) (depends T007) (@fastapi-architect)
-- [ ] T009 [P] Age-band selection + under-13 guard `backend/app/services/anxiety/selection.py` (SAS-2 for <13, CSAI-2R default 13–15, override-with-warning) (depends T005) (@fastapi-architect)
+- [X] T007 [P] Instrument-key loader `backend/app/services/anxiety/instrument_keys.py` (reads `data/anxiety_keys/*.json`; never invents items) (@data-analyst)
+- [X] T008 Deterministic scoring `backend/app/services/anxiety/scoring.py` (subscale sums, (sum/n)×10 for CSAI-2R, reverse flags, partial averaging, self-confidence NOT inverted) (depends T007) (@fastapi-architect)
+- [X] T009 [P] Age-band selection + under-13 guard `backend/app/services/anxiety/selection.py` (SAS-2 for <13, CSAI-2R default 13–15, override-with-warning) (depends T005) (@fastapi-architect)
 - [ ] T010 [P] Consent gate + RBAC dependency `backend/app/services/anxiety/consent_gate.py` (blocks assessment unless active `psychological_assessment` consent; coach/admin only) (depends T004) (@fastapi-architect + @data-privacy-guard)
 - [ ] T011 Register `anxiety` router in `backend/app/main.py` and wire dependencies (depends T005, T006) (@fastapi-architect)
 - [ ] T012 [P] Frontend anxiety API client + TanStack Query base in `frontend/src/api/anxiety.ts` (depends T006 contract) (@react-ui-engineer)
@@ -56,7 +69,7 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 ### Tests (write first, must fail)
 
 - [ ] T013 [P] [US1] Contract/router tests for `POST /assessments` and `/assessments/batch` (auth denied, consent-missing 409, under-13 override 422) in `backend/tests/anxiety/test_assessments_create.py` (@qa-engineer)
-- [ ] T014 [P] [US1] Unit tests for `selection.py` (age bands, override) in `backend/tests/anxiety/test_selection.py` (@qa-engineer)
+- [X] T014 [P] [US1] Unit tests for `selection.py` (age bands, override) in `backend/tests/anxiety/test_selection.py` (@qa-engineer)
 
 ### Implementation
 
@@ -100,7 +113,7 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 ### Tests
 
-- [ ] T026 [P] [US3] Scoring unit tests per instrument (CSAI-2R 10–40, CSAI-2 9–36/27–108, SAS-2 key, partial averaging, reverse items, self-confidence not inverted) in `backend/tests/anxiety/test_scoring.py` (@qa-engineer)
+- [X] T026 [P] [US3] Scoring unit tests per instrument (CSAI-2R 10–40, CSAI-2 9–36/27–108, SAS-2 key, partial averaging, reverse items, self-confidence not inverted) in `backend/tests/anxiety/test_scoring.py` (@qa-engineer)
 - [ ] T027 [P] [US3] Recompute endpoint test in `backend/tests/anxiety/test_recompute.py` (@qa-engineer)
 
 ### Implementation
@@ -127,7 +140,7 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 - [ ] T032 [US4] LLM use case `backend/app/services/ai/use_cases/anxiety_interpretation.py` (BaseUseCase; renders prompt; validates JSON; guardrails scrub; pseudonyms) (depends T029) (@integration-engineer)
 - [ ] T033 [P] [US4] Jinja prompt `backend/app/services/ai/prompts/anxiety_interpretation_v1.j2` encoding the club runtime system prompt (no diagnosis, clima de maestría, baseline anchoring, age-appropriate, referral on extreme signals) — content reviewed by (@mental-performance-coach) (@integration-engineer)
-- [ ] T034 [P] [US4] Rule-based fallback `backend/app/services/anxiety/rule_interpreter.py` (coarse bands + pattern→strategy mapping; same JSON schema) (depends T029) (@integration-engineer + @mental-performance-coach)
+- [X] T034 [P] [US4] Rule-based fallback `backend/app/services/anxiety/rule_interpreter.py` (coarse bands + pattern→strategy mapping; same JSON schema) (depends T029) (@integration-engineer + @mental-performance-coach) — implemented standalone (baseline passed as param; no DB dep). Unit tests in `backend/tests/anxiety/test_rule_interpreter.py` (part of T030).
 - [ ] T035 [US4] Endpoints `POST /assessments/{id}/interpret` and `POST /assessments/interpret-group` (cache result + source/model; supersede on regenerate; always succeed via fallback) (depends T032, T034) (@fastapi-architect)
 - [ ] T036 [P] [US4] `InterpretationPanel` + `AnalyzeButton` UI + `useInterpretation` hook in `frontend/src/components/anxiety/` (on-demand, cached, español) (@react-ui-engineer)
 - [ ] T037 [US4] Verify `AI_LOG_PROMPTS=false` path + provider wiring (google/anthropic/fake) for the new use case (@integration-engineer + @devops-engineer)

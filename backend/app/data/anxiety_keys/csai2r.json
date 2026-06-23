@@ -1,0 +1,14 @@
+{
+  "type": "csai2r",
+  "version": "es-andrade-2007",
+  "age_band": "13-15",
+  "item_count": 17,
+  "likert": [1, 4],
+  "scoring_method": "mean_times_10",
+  "subscales": {
+    "somatic": { "items": [1, 4, 6, 9, 12, 15, 17], "reverse": [], "range": [10, 40] },
+    "cognitive": { "items": [2, 5, 8, 11, 14], "reverse": [], "range": [10, 40] },
+    "selfconfidence": { "items": [3, 7, 10, 13, 16], "reverse": [], "range": [10, 40] }
+  },
+  "_note": "Item->subscale map per published CSAI-2R (Cox et al. 2003); Spanish wording validated by Andrade et al. 2007. Item TEXT is provisioned from the licensed source (Human Kinetics), not stored here. Verify against the club's licensed copy before enabling."
+}

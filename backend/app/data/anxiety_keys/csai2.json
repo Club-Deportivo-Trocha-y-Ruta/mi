@@ -1,0 +1,15 @@
+{
+  "type": "csai2",
+  "version": "martens-1990",
+  "age_band": "import",
+  "item_count": 27,
+  "likert": [1, 4],
+  "scoring_method": "sum",
+  "subscales": {
+    "cognitive": { "items": [1, 4, 7, 10, 13, 16, 19, 22, 25], "reverse": [], "range": [9, 36] },
+    "somatic": { "items": [2, 5, 8, 11, 14, 17, 20, 23, 26], "reverse": [14], "range": [9, 36] },
+    "selfconfidence": { "items": [3, 6, 9, 12, 15, 18, 21, 24, 27], "reverse": [], "range": [9, 36] }
+  },
+  "total_range": [27, 108],
+  "_note": "Original CSAI-2 (Martens et al. 1990), import/historical only. Item 14 (somatic, 'My body feels relaxed') is reverse-keyed. Verify per-item reverse flags against the licensed source/dataset before importing."
+}

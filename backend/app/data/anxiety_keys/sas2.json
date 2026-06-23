@@ -1,0 +1,18 @@
+{
+  "type": "sas2",
+  "version": "smith-2006",
+  "age_band": "10-12",
+  "item_count": 15,
+  "likert": [1, 4],
+  "scoring_method": "sum",
+  "subscales": {
+    "somatic": { "items": [2, 6, 10, 12, 14], "reverse": [], "range": [5, 20] },
+    "cognitive": { "items": [1, 3, 4, 5, 7, 8, 9, 11, 13, 15], "reverse": [], "range": [10, 40] },
+    "selfconfidence": null
+  },
+  "_components": {
+    "worry": [3, 5, 9, 11, 15],
+    "concentration_disruption": [1, 4, 7, 8, 13]
+  },
+  "_note": "SAS-2 (Smith, Smoll, Cumming & Grossbard 2006), ages 9+. Cognitive = worry + concentration disruption (kept as one cognitive subscale for the 3-dimension UI). SAS-2 has NO self-confidence subscale (selfconfidence = null). Verify item map against the licensed source."
+}
