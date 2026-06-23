@@ -273,5 +273,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/016-race-analysis-championship-charts-fix/plan.md
+at specs/017-competitive-anxiety-assessment/plan.md
 <!-- SPECKIT END -->
