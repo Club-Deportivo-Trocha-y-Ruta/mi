@@ -440,6 +440,15 @@ parity + alert flag, privacy (real name never in provider payload), dashboards
 (series + group buckets), import (incl. CSAI-2 27-item) + export round-trip,
 baseline seed-once + deltas. No regressions in the existing suite.
 
-**Remaining:** frontend module (React) — dispatched to `@react-ui-engineer`;
-ops/polish verification (privacy audit, perf budget, Render deploy of migration,
-quickstart e2e) pending the running stack.
+**Frontend — ✅ Complete, deploy pending:** `src/api/anxiety.ts` + Zod schemas
+(`schemas/anxiety.schemas.ts`) + types; TanStack Query hooks (`hooks/anxiety/*`);
+components (`Questionnaire`, `AssessmentWizard`, `AnalyzeButton`,
+`InterpretationPanel`, `IndividualPanel` w/ lazy `BaselineChart`, `GroupPanel`,
+`ImportDialog`); public token `AnswerPage` (`/anxiety/responder/:token`) + coach
+`AnxietyDashboardPage` (`/anxiety`); route wiring in `App.tsx` + AppShell nav.
+**8 vitest + jest-axe tests pass** (`vitest run src/components/anxiety`); anxiety
+sources typecheck clean.
+
+**Remaining (ops/review):** UX field review, mobile/3G WCAG pass, privacy audit,
+perf budgets, Render deploy of migration `c2d3e4f5a6b7`, quickstart e2e — all
+pending the running stack / reviewer.

@@ -36,10 +36,18 @@ Done this pass (backend):
 - ✅ T038 dashboard tests · ✅ T040 dashboard endpoints
 - ✅ T044 import test · ✅ T045 export test · ✅ T046 importer · ✅ T047 import/export endpoints
 
-**Remaining**: frontend tasks (T002, T012, T018–T020, T022, T024–T025, T036,
-T039, T041–T043, T048) — dispatched to `@react-ui-engineer`; and ops/polish
-verification tasks (T049 privacy audit, T051 perf, T052 deploy, T053 quickstart
-e2e) that require the running stack / browser. T050 docs done in this pass.
+**Frontend — ✅ implemented** (T002/T012/T018/T019/T022/T024/T036/T039/T041–
+T043/T048): API client + Zod schemas + types, TanStack Query hooks, components
+(`Questionnaire`, `AssessmentWizard`, `AnalyzeButton`, `InterpretationPanel`,
+`IndividualPanel` w/ lazy `BaselineChart`, `GroupPanel`, `ImportDialog`), public
+token `AnswerPage` + coach `AnxietyDashboardPage`, route wiring in `App.tsx` +
+nav entry. **8 vitest + jest-axe tests pass** (`vitest run src/components/anxiety`).
+Anxiety sources typecheck clean (the one `tsc` error is a pre-existing
+`@tanstack/react-query` node_modules version skew at `App.tsx:640`, unrelated).
+
+**Remaining (ops/review, need running stack or reviewer)**: T020 UX review,
+T025 mobile/3G WCAG pass, T049 privacy audit, T051 perf budgets, T052 Render
+deploy of migration, T053 quickstart e2e. T050 docs done.
 
 ---
 
@@ -56,7 +64,7 @@ e2e) that require the running stack / browser. T050 docs done in this pass.
 ## Phase 1: Setup (Shared Infrastructure)
 
 - [X] T001 [P] Create backend module scaffolding: `backend/app/services/anxiety/` (package), `backend/app/data/anxiety_keys/` dir, empty `backend/app/routers/anxiety.py`, `backend/app/schemas/anxiety.py` (@fastapi-architect)
-- [ ] T002 [P] Create frontend scaffolding: `frontend/src/components/anxiety/`, `frontend/src/hooks/anxiety/`, `frontend/src/pages/anxiety/`, `frontend/src/api/anxiety.ts` (@react-ui-engineer)
+- [X] T002 [P] Create frontend scaffolding: `frontend/src/components/anxiety/`, `frontend/src/hooks/anxiety/`, `frontend/src/pages/anxiety/`, `frontend/src/api/anxiety.ts` (@react-ui-engineer)
 - [X] T003 [P] Add scoring-key fixtures `backend/app/data/anxiety_keys/{csai2r,sas2,csai2}.json` (item→subscale map + reverse flags + subscale ranges; item TEXT slots left for licensed provisioning, not invented) (@data-analyst)
 
 ---
@@ -73,7 +81,7 @@ e2e) that require the running stack / browser. T050 docs done in this pass.
 - [X] T009 [P] Age-band selection + under-13 guard `backend/app/services/anxiety/selection.py` (SAS-2 for <13, CSAI-2R default 13–15, override-with-warning) (depends T005) (@fastapi-architect)
 - [X] T010 [P] Consent gate + RBAC dependency `backend/app/services/anxiety/consent_gate.py` (blocks assessment unless active `psychological_assessment` consent; coach/admin only) (depends T004) (@fastapi-architect + @data-privacy-guard)
 - [X] T011 Register `anxiety` router in `backend/app/main.py` and wire dependencies (depends T005, T006) (@fastapi-architect)
-- [ ] T012 [P] Frontend anxiety API client + TanStack Query base in `frontend/src/api/anxiety.ts` (depends T006 contract) (@react-ui-engineer)
+- [X] T012 [P] Frontend anxiety API client + TanStack Query base in `frontend/src/api/anxiety.ts` (depends T006 contract) (@react-ui-engineer)
 
 **Checkpoint**: schema, models, scoring, selection, consent gate, routing ready.
 
@@ -95,8 +103,8 @@ e2e) that require the running stack / browser. T050 docs done in this pass.
 - [X] T015 [US1] Assessment-creation service `backend/app/services/anxiety/assessments.py` (resolve instrument, copy event priority, issue token, enforce consent gate) (depends T008, T009, T010) (@fastapi-architect)
 - [X] T016 [US1] Token service `backend/app/services/anxiety/tokens.py` (hashed, single-use, expiring) (depends T005) (@fastapi-architect)
 - [X] T017 [US1] Endpoints `POST /assessments`, `POST /assessments/batch` in `backend/app/routers/anxiety.py` (depends T015, T016) (@fastapi-architect)
-- [ ] T018 [P] [US1] `AssessmentWizard` config UI in `frontend/src/components/anxiety/AssessmentWizard.tsx` (event picker, group select, instrument auto + override warning) (@react-ui-engineer)
-- [ ] T019 [P] [US1] `useCreateAssessment` / `useCreateBatch` hooks in `frontend/src/hooks/anxiety/` (@react-ui-engineer)
+- [X] T018 [P] [US1] `AssessmentWizard` config UI in `frontend/src/components/anxiety/AssessmentWizard.tsx` (event picker, group select, instrument auto + override warning) (@react-ui-engineer)
+- [X] T019 [P] [US1] `useCreateAssessment` / `useCreateBatch` hooks in `frontend/src/hooks/anxiety/` (@react-ui-engineer)
 - [ ] T020 [US1] UX review of config flow (<2-min group send, tablet/field) + axe on wizard (@ux-researcher)
 
 **Checkpoint**: US1 fully functional and testable.
@@ -112,12 +120,12 @@ e2e) that require the running stack / browser. T050 docs done in this pass.
 ### Tests
 
 - [X] T021 [P] [US2] Router tests `GET/POST /answer/{token}` (valid, consumed→410, partial) in `backend/tests/anxiety/test_answer_token.py` (@qa-engineer)
-- [ ] T022 [P] [US2] Frontend + axe test for questionnaire (one-at-a-time, 48×48, no horizontal scroll) in `frontend/src/components/anxiety/__tests__/Questionnaire.test.tsx` (@qa-engineer)
+- [X] T022 [P] [US2] Frontend + axe test for questionnaire (one-at-a-time, 48×48, no horizontal scroll) in `frontend/src/components/anxiety/__tests__/Questionnaire.test.tsx` (@qa-engineer)
 
 ### Implementation
 
 - [X] T023 [US2] Token-answer endpoints `GET/POST /answer/{token}` in `backend/app/routers/anxiety.py` (unauth, token-gated; computes scores on submit, seeds baseline if first) (depends T016, T008) (@fastapi-architect)
-- [ ] T024 [P] [US2] `Questionnaire` UI + `AnswerPage` (token route) in `frontend/src/components/anxiety/Questionnaire.tsx`, `frontend/src/pages/anxiety/AnswerPage.tsx` (one-question-at-a-time, español, encouraging-only message) (@react-ui-engineer)
+- [X] T024 [P] [US2] `Questionnaire` UI + `AnswerPage` (token route) in `frontend/src/components/anxiety/Questionnaire.tsx`, `frontend/src/pages/anxiety/AnswerPage.tsx` (one-question-at-a-time, español, encouraging-only message) (@react-ui-engineer)
 - [ ] T025 [US2] Mobile/3G usability + WCAG AA pass on answer flow (@ux-researcher)
 
 **Checkpoint**: US1 + US2 work independently (configure → answer loop).
@@ -161,7 +169,7 @@ e2e) that require the running stack / browser. T050 docs done in this pass.
 - [X] T033 [P] [US4] Jinja prompt `backend/app/services/ai/prompts/anxiety_interpretation_v1.j2` encoding the club runtime system prompt (no diagnosis, clima de maestría, baseline anchoring, age-appropriate, referral on extreme signals) — content reviewed by (@mental-performance-coach) (@integration-engineer)
 - [X] T034 [P] [US4] Rule-based fallback `backend/app/services/anxiety/rule_interpreter.py` (coarse bands + pattern→strategy mapping; same JSON schema) (depends T029) (@integration-engineer + @mental-performance-coach) — implemented standalone (baseline passed as param; no DB dep). Unit tests in `backend/tests/anxiety/test_rule_interpreter.py` (part of T030).
 - [X] T035 [US4] Endpoints `POST /assessments/{id}/interpret` and `POST /assessments/interpret-group` (cache result + source/model; supersede on regenerate; always succeed via fallback) (depends T032, T034) (@fastapi-architect)
-- [ ] T036 [P] [US4] `InterpretationPanel` + `AnalyzeButton` UI + `useInterpretation` hook in `frontend/src/components/anxiety/` (on-demand, cached, español) (@react-ui-engineer)
+- [X] T036 [P] [US4] `InterpretationPanel` + `AnalyzeButton` UI + `useInterpretation` hook in `frontend/src/components/anxiety/` (on-demand, cached, español) (@react-ui-engineer)
 - [X] T037 [US4] Verify `AI_LOG_PROMPTS=false` path + provider wiring (google/anthropic/fake) for the new use case (@integration-engineer + @devops-engineer)
 
 **Checkpoint**: actionable, safe interpretation with guaranteed fallback.
@@ -177,14 +185,14 @@ e2e) that require the running stack / browser. T050 docs done in this pass.
 ### Tests
 
 - [X] T038 [P] [US5] Dashboard endpoint tests (series split by instrument family; group triage buckets; N+1 query-count assertion) in `backend/tests/anxiety/test_dashboards.py` (@qa-engineer)
-- [ ] T039 [P] [US5] Frontend + axe tests for `IndividualPanel`/`GroupPanel` in `frontend/src/components/anxiety/__tests__/` (@qa-engineer)
+- [X] T039 [P] [US5] Frontend + axe tests for `IndividualPanel`/`GroupPanel` in `frontend/src/components/anxiety/__tests__/` (@qa-engineer)
 
 ### Implementation
 
 - [X] T040 [US5] Endpoints `GET /athletes/{id}/series` and `GET /groups/by-event/{event_id}` (eager-load via selectinload; dominant-pattern bucketing) in `backend/app/routers/anxiety.py` (depends T029, T035) (@fastapi-architect)
-- [ ] T041 [P] [US5] `IndividualPanel` (scores, baseline evolution chart lazy-loaded, interpretation, flags) in `frontend/src/components/anxiety/IndividualPanel.tsx` (@react-ui-engineer)
-- [ ] T042 [P] [US5] `GroupPanel` (somatic/cognitive/confidence buckets + alerts) in `frontend/src/components/anxiety/GroupPanel.tsx` (@react-ui-engineer)
-- [ ] T043 [US5] `AnxietyDashboardPage` route wiring + navigation in `frontend/src/pages/anxiety/AnxietyDashboardPage.tsx` (@react-ui-engineer)
+- [X] T041 [P] [US5] `IndividualPanel` (scores, baseline evolution chart lazy-loaded, interpretation, flags) in `frontend/src/components/anxiety/IndividualPanel.tsx` (@react-ui-engineer)
+- [X] T042 [P] [US5] `GroupPanel` (somatic/cognitive/confidence buckets + alerts) in `frontend/src/components/anxiety/GroupPanel.tsx` (@react-ui-engineer)
+- [X] T043 [US5] `AnxietyDashboardPage` route wiring + navigation in `frontend/src/pages/anxiety/AnxietyDashboardPage.tsx` (@react-ui-engineer)
 
 **Checkpoint**: race-day triage available.
 
@@ -205,7 +213,7 @@ e2e) that require the running stack / browser. T050 docs done in this pass.
 
 - [X] T046 [US6] CSV importer `backend/app/services/anxiety/importer.py` (parse item columns + metadata, infer instrument, score via scoring.py, seed baselines) (depends T008, T029) (@data-analyst)
 - [X] T047 [US6] Endpoints `POST /import` (multipart) and `GET /export` in `backend/app/routers/anxiety.py` (depends T046) (@fastapi-architect)
-- [ ] T048 [P] [US6] `ImportDialog` UI + `useAnxietyImport` hook (column mapping preview, error report) in `frontend/src/components/anxiety/ImportDialog.tsx` (@react-ui-engineer)
+- [X] T048 [P] [US6] `ImportDialog` UI + `useAnxietyImport` hook (column mapping preview, error report) in `frontend/src/components/anxiety/ImportDialog.tsx` (@react-ui-engineer)
 
 **Checkpoint**: all user stories independently functional.
 
@@ -214,7 +222,7 @@ e2e) that require the running stack / browser. T050 docs done in this pass.
 ## Phase 9: Polish & Cross-Cutting Concerns
 
 - [ ] T049 [P] Minors-privacy audit across logs/commits/AI prompts for the whole module (no name/DOB leakage; pseudonyms only) (@data-privacy-guard)
-- [ ] T050 [P] Docs: `docs/` workflow + runbook for the module; update `docs/implementation-status.md` and CLAUDE.md status table (@technical-writer)
+- [X] T050 [P] Docs: `docs/` workflow + runbook for the module; update `docs/implementation-status.md` and CLAUDE.md status table (@technical-writer)
 - [ ] T051 [P] Performance pass: confirm dashboard p95 + LCP budgets, lazy-load charts, query counts (@react-ui-engineer + @fastapi-architect)
 - [ ] T052 Deploy prep: env vars (`AI_*`), migration on Render, post-deploy smoke of one anxiety endpoint + cold-start UI (@devops-engineer + @release-manager)
 - [ ] T053 Run `quickstart.md` scenarios 1–8 end-to-end and record results (@qa-engineer)
