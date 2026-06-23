@@ -411,3 +411,35 @@
 | Deploy | Frontend + backend read endpoints deploy to Render/Cloudflare Pages | ⏳ Pending |
 
 > No Alembic migration. Reuses `race_series.kind`, `event_id`, `event_date` columns introduced by feature 014. The agentic `valida_num` contract in AI insight/chat is untouched.
+
+---
+
+## Competitive Anxiety Assessment — specs/017-competitive-anxiety-assessment (Phase 2 mental performance)
+
+Coach-facing module to administer/score/interpret state competitive-anxiety
+questionnaires (CSAI-2R default 13–15, SAS-2 10–12, CSAI-2 import-only) for youth
+XCO athletes, anchored to each athlete's own baseline, mastery-climate framed,
+wellbeing-not-diagnosis (Constitution Principle V). See
+[`docs/13-competitive-anxiety/workflow.md`](13-competitive-anxiety/workflow.md).
+
+**Backend — ✅ Complete (migration `c2d3e4f5a6b7`), deploy pending:**
+
+| Layer | File | Change |
+|---|---|---|
+| Migration | `alembic/versions/c2d3e4f5a6b7_anxiety_assessment_module.py` | NEW — 4 `anxiety_*` tables + `parental_consents.psychological_assessment` |
+| Models | `app/models/anxiety_{instrument,assessment,response_token,baseline}.py` | NEW — enums via `values_callable` |
+| Schemas | `app/schemas/anxiety.py` | NEW — create/batch/answer/read/interpret/dashboard/import |
+| Services | `app/services/anxiety/{tokens,consent_gate,baseline,analysis,assessments,submit,interpretation,importer}.py` | NEW (alongside existing `scoring`/`selection`/`instrument_keys`/`rule_interpreter`) |
+| AI | `app/services/ai/use_cases/anxiety_interpretation.py` + `prompts/anxiety_interpretation_v1.j2` | NEW — LLM interpretation, JSON schema, guardrail scrub; rule fallback |
+| Router | `app/routers/anxiety.py` (+ `main.py`, `dependencies.py`, `prompts/registry.py`) | NEW — 11 endpoints under `/api/anxiety` |
+
+**Tests:** `backend/tests/anxiety/` — 51 pass (in-memory SQLite + httpx). Covers
+auth/consent/override (409/422/403), token single-use (410) + partial scoring,
+recompute determinism, interpretation LLM path + invalid-JSON→rule fallback
+parity + alert flag, privacy (real name never in provider payload), dashboards
+(series + group buckets), import (incl. CSAI-2 27-item) + export round-trip,
+baseline seed-once + deltas. No regressions in the existing suite.
+
+**Remaining:** frontend module (React) — dispatched to `@react-ui-engineer`;
+ops/polish verification (privacy audit, perf budget, Render deploy of migration,
+quickstart e2e) pending the running stack.

@@ -49,6 +49,9 @@ class ParentalConsent(Base):
     training_tracking: Mapped[bool] = mapped_column(Boolean, default=False)
     anthropometry: Mapped[bool] = mapped_column(Boolean, default=False)
     third_party_sharing: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Feature 017 — autoriza la evaluación psicológica de ansiedad competitiva.
+    # Bloquea la creación de evaluaciones si no está vigente (FR-023).
+    psychological_assessment: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # None = consentimiento vigente; fecha = consentimiento retirado.
     # Son los únicos campos que pueden actualizarse (no INSERT nuevas filas).

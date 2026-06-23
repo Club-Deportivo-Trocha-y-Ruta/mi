@@ -279,3 +279,15 @@ def get_session_draft_use_case(
 
     return SessionDraftUseCase(provider=provider, registry=registry)
 
+
+def get_anxiety_interpretation_use_case(
+    provider=Depends(get_llm_provider),
+    registry=Depends(get_prompt_registry),
+):
+    """Construye el use case de interpretación de ansiedad competitiva (feature 017)."""
+    from app.services.ai.use_cases.anxiety_interpretation import (
+        AnxietyInterpretationUseCase,
+    )
+
+    return AnxietyInterpretationUseCase(provider=provider, registry=registry)
+

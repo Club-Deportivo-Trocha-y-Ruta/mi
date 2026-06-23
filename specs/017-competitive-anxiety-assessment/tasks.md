@@ -11,16 +11,35 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 **Tests**: INCLUDED — Constitution Principle II (Testing) is NON-NEGOTIABLE for this minors-data platform.
 
-## Implementation status (`/speckit-implement`, 2026-06-23)
+## Implementation status (`/speckit-implement`, 2026-06-23 — full backend pass)
 
-**MVP increment delivered & verified**: the pure-logic core that embodies Constitution Principle V is implemented and **all 20 unit tests pass** (`pytest tests/anxiety --noconftest`):
+**Backend fully implemented & verified.** The entire backend module (migration,
+models, schemas, services, all 11 REST endpoints, LLM interpretation use case +
+prompt + rule fallback) is built and tested. **51 anxiety tests pass**
+(`pytest tests/anxiety`) and the existing suite shows **no regressions** (560
+router/AI tests pass). The 196 full-suite failures observed are pre-existing
+environmental failures — integration tests that require a live MySQL at
+`localhost:3306` (ConnectionRefused), unrelated to this feature.
 
-- ✅ T003 scoring-key fixtures (CSAI-2R / SAS-2 / CSAI-2)
-- ✅ T007 instrument-key loader · ✅ T008 deterministic scoring · ✅ T009 age-driven selection + under-13 guard
-- ✅ T034 rule-based interpretation fallback (mastery climate, no diagnosis, referral flag)
-- ✅ T014 selection tests · ✅ T026 scoring tests · rule-interpreter tests (part of T030)
+Done this pass (backend):
+- ✅ T001 backend scaffolding · ✅ T004 migration `c2d3e4f5a6b7` (4 tables +
+  `parental_consents.psychological_assessment`) · ✅ T005 models · ✅ T006 schemas
+- ✅ T007/T008/T009 (pure logic) · ✅ T010 consent gate · ✅ T011 router registration
+- ✅ T013 create tests · ✅ T014 selection tests · ✅ T015 assessment service ·
+  ✅ T016 token service · ✅ T017 create endpoints
+- ✅ T021 token-answer tests · ✅ T023 token-answer endpoints
+- ✅ T026 scoring tests · ✅ T027 recompute test · ✅ T028 recompute + GET ·
+  ✅ T029 baseline service (+ tests)
+- ✅ T030 interpretation tests · ✅ T031 privacy property test · ✅ T032 LLM use
+  case · ✅ T033 Jinja prompt · ✅ T034 rule fallback · ✅ T035 interpret endpoints ·
+  ✅ T037 provider/AI_LOG_PROMPTS wiring (reuses `get_llm_provider` factory)
+- ✅ T038 dashboard tests · ✅ T040 dashboard endpoints
+- ✅ T044 import test · ✅ T045 export test · ✅ T046 importer · ✅ T047 import/export endpoints
 
-**Deliberately deferred** (need the Alembic migration + full app wiring + browser/build to verify; not implemented to avoid breaking the existing test suite with half-wired models/relationships): T001–T002 scaffolding remainder, T004–T006 migration/models/schemas, T010–T012 consent gate/router wiring, T015–T025 endpoints + answer flow + UI, T028–T033/T035–T037 scoring/interpretation endpoints + LLM use case + prompt, T038–T048 dashboards + import UI, T049–T053 polish/deploy. These are queued per `(@agent)` for the next implementation pass.
+**Remaining**: frontend tasks (T002, T012, T018–T020, T022, T024–T025, T036,
+T039, T041–T043, T048) — dispatched to `@react-ui-engineer`; and ops/polish
+verification tasks (T049 privacy audit, T051 perf, T052 deploy, T053 quickstart
+e2e) that require the running stack / browser. T050 docs done in this pass.
 
 ---
 
@@ -36,7 +55,7 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 [P] Create backend module scaffolding: `backend/app/services/anxiety/` (package), `backend/app/data/anxiety_keys/` dir, empty `backend/app/routers/anxiety.py`, `backend/app/schemas/anxiety.py` (@fastapi-architect)
+- [X] T001 [P] Create backend module scaffolding: `backend/app/services/anxiety/` (package), `backend/app/data/anxiety_keys/` dir, empty `backend/app/routers/anxiety.py`, `backend/app/schemas/anxiety.py` (@fastapi-architect)
 - [ ] T002 [P] Create frontend scaffolding: `frontend/src/components/anxiety/`, `frontend/src/hooks/anxiety/`, `frontend/src/pages/anxiety/`, `frontend/src/api/anxiety.ts` (@react-ui-engineer)
 - [X] T003 [P] Add scoring-key fixtures `backend/app/data/anxiety_keys/{csai2r,sas2,csai2}.json` (item→subscale map + reverse flags + subscale ranges; item TEXT slots left for licensed provisioning, not invented) (@data-analyst)
 
@@ -46,14 +65,14 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 **⚠️ CRITICAL**: No user story work begins until this phase is complete.
 
-- [ ] T004 Alembic migration creating `anxiety_instruments`, `anxiety_assessments`, `anxiety_response_tokens`, `anxiety_baselines` (enums via `values_callable`) and adding `psychological_assessment` boolean to `parental_consents`, in `backend/alembic/versions/` (@database-architect)
-- [ ] T005 [P] SQLAlchemy models `anxiety_instrument.py`, `anxiety_assessment.py`, `anxiety_response_token.py`, `anxiety_baseline.py` in `backend/app/models/` per data-model.md (depends T004) (@fastapi-architect)
-- [ ] T006 [P] Pydantic v2 schemas (create/batch/answer/read/score/interpret/import/export) in `backend/app/schemas/anxiety.py` per contracts (depends T004) (@fastapi-architect)
+- [X] T004 Alembic migration creating `anxiety_instruments`, `anxiety_assessments`, `anxiety_response_tokens`, `anxiety_baselines` (enums via `values_callable`) and adding `psychological_assessment` boolean to `parental_consents`, in `backend/alembic/versions/` (@database-architect)
+- [X] T005 [P] SQLAlchemy models `anxiety_instrument.py`, `anxiety_assessment.py`, `anxiety_response_token.py`, `anxiety_baseline.py` in `backend/app/models/` per data-model.md (depends T004) (@fastapi-architect)
+- [X] T006 [P] Pydantic v2 schemas (create/batch/answer/read/score/interpret/import/export) in `backend/app/schemas/anxiety.py` per contracts (depends T004) (@fastapi-architect)
 - [X] T007 [P] Instrument-key loader `backend/app/services/anxiety/instrument_keys.py` (reads `data/anxiety_keys/*.json`; never invents items) (@data-analyst)
 - [X] T008 Deterministic scoring `backend/app/services/anxiety/scoring.py` (subscale sums, (sum/n)×10 for CSAI-2R, reverse flags, partial averaging, self-confidence NOT inverted) (depends T007) (@fastapi-architect)
 - [X] T009 [P] Age-band selection + under-13 guard `backend/app/services/anxiety/selection.py` (SAS-2 for <13, CSAI-2R default 13–15, override-with-warning) (depends T005) (@fastapi-architect)
-- [ ] T010 [P] Consent gate + RBAC dependency `backend/app/services/anxiety/consent_gate.py` (blocks assessment unless active `psychological_assessment` consent; coach/admin only) (depends T004) (@fastapi-architect + @data-privacy-guard)
-- [ ] T011 Register `anxiety` router in `backend/app/main.py` and wire dependencies (depends T005, T006) (@fastapi-architect)
+- [X] T010 [P] Consent gate + RBAC dependency `backend/app/services/anxiety/consent_gate.py` (blocks assessment unless active `psychological_assessment` consent; coach/admin only) (depends T004) (@fastapi-architect + @data-privacy-guard)
+- [X] T011 Register `anxiety` router in `backend/app/main.py` and wire dependencies (depends T005, T006) (@fastapi-architect)
 - [ ] T012 [P] Frontend anxiety API client + TanStack Query base in `frontend/src/api/anxiety.ts` (depends T006 contract) (@react-ui-engineer)
 
 **Checkpoint**: schema, models, scoring, selection, consent gate, routing ready.
@@ -68,14 +87,14 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 ### Tests (write first, must fail)
 
-- [ ] T013 [P] [US1] Contract/router tests for `POST /assessments` and `/assessments/batch` (auth denied, consent-missing 409, under-13 override 422) in `backend/tests/anxiety/test_assessments_create.py` (@qa-engineer)
+- [X] T013 [P] [US1] Contract/router tests for `POST /assessments` and `/assessments/batch` (auth denied, consent-missing 409, under-13 override 422) in `backend/tests/anxiety/test_assessments_create.py` (@qa-engineer)
 - [X] T014 [P] [US1] Unit tests for `selection.py` (age bands, override) in `backend/tests/anxiety/test_selection.py` (@qa-engineer)
 
 ### Implementation
 
-- [ ] T015 [US1] Assessment-creation service `backend/app/services/anxiety/assessments.py` (resolve instrument, copy event priority, issue token, enforce consent gate) (depends T008, T009, T010) (@fastapi-architect)
-- [ ] T016 [US1] Token service `backend/app/services/anxiety/tokens.py` (hashed, single-use, expiring) (depends T005) (@fastapi-architect)
-- [ ] T017 [US1] Endpoints `POST /assessments`, `POST /assessments/batch` in `backend/app/routers/anxiety.py` (depends T015, T016) (@fastapi-architect)
+- [X] T015 [US1] Assessment-creation service `backend/app/services/anxiety/assessments.py` (resolve instrument, copy event priority, issue token, enforce consent gate) (depends T008, T009, T010) (@fastapi-architect)
+- [X] T016 [US1] Token service `backend/app/services/anxiety/tokens.py` (hashed, single-use, expiring) (depends T005) (@fastapi-architect)
+- [X] T017 [US1] Endpoints `POST /assessments`, `POST /assessments/batch` in `backend/app/routers/anxiety.py` (depends T015, T016) (@fastapi-architect)
 - [ ] T018 [P] [US1] `AssessmentWizard` config UI in `frontend/src/components/anxiety/AssessmentWizard.tsx` (event picker, group select, instrument auto + override warning) (@react-ui-engineer)
 - [ ] T019 [P] [US1] `useCreateAssessment` / `useCreateBatch` hooks in `frontend/src/hooks/anxiety/` (@react-ui-engineer)
 - [ ] T020 [US1] UX review of config flow (<2-min group send, tablet/field) + axe on wizard (@ux-researcher)
@@ -92,12 +111,12 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 ### Tests
 
-- [ ] T021 [P] [US2] Router tests `GET/POST /answer/{token}` (valid, consumed→410, partial) in `backend/tests/anxiety/test_answer_token.py` (@qa-engineer)
+- [X] T021 [P] [US2] Router tests `GET/POST /answer/{token}` (valid, consumed→410, partial) in `backend/tests/anxiety/test_answer_token.py` (@qa-engineer)
 - [ ] T022 [P] [US2] Frontend + axe test for questionnaire (one-at-a-time, 48×48, no horizontal scroll) in `frontend/src/components/anxiety/__tests__/Questionnaire.test.tsx` (@qa-engineer)
 
 ### Implementation
 
-- [ ] T023 [US2] Token-answer endpoints `GET/POST /answer/{token}` in `backend/app/routers/anxiety.py` (unauth, token-gated; computes scores on submit, seeds baseline if first) (depends T016, T008) (@fastapi-architect)
+- [X] T023 [US2] Token-answer endpoints `GET/POST /answer/{token}` in `backend/app/routers/anxiety.py` (unauth, token-gated; computes scores on submit, seeds baseline if first) (depends T016, T008) (@fastapi-architect)
 - [ ] T024 [P] [US2] `Questionnaire` UI + `AnswerPage` (token route) in `frontend/src/components/anxiety/Questionnaire.tsx`, `frontend/src/pages/anxiety/AnswerPage.tsx` (one-question-at-a-time, español, encouraging-only message) (@react-ui-engineer)
 - [ ] T025 [US2] Mobile/3G usability + WCAG AA pass on answer flow (@ux-researcher)
 
@@ -114,12 +133,12 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 ### Tests
 
 - [X] T026 [P] [US3] Scoring unit tests per instrument (CSAI-2R 10–40, CSAI-2 9–36/27–108, SAS-2 key, partial averaging, reverse items, self-confidence not inverted) in `backend/tests/anxiety/test_scoring.py` (@qa-engineer)
-- [ ] T027 [P] [US3] Recompute endpoint test in `backend/tests/anxiety/test_recompute.py` (@qa-engineer)
+- [X] T027 [P] [US3] Recompute endpoint test in `backend/tests/anxiety/test_recompute.py` (@qa-engineer)
 
 ### Implementation
 
-- [ ] T028 [US3] `POST /assessments/{id}/recompute` + `GET /assessments/{id}` (scores + baseline deltas) in `backend/app/routers/anxiety.py` (depends T008, T023) (@fastapi-architect)
-- [ ] T029 [P] [US3] Baseline service `backend/app/services/anxiety/baseline.py` (establish per athlete+subscale+instrument family; trend vs. baseline; non-comparable across families) (depends T005, T008) (@fastapi-architect)
+- [X] T028 [US3] `POST /assessments/{id}/recompute` + `GET /assessments/{id}` (scores + baseline deltas) in `backend/app/routers/anxiety.py` (depends T008, T023) (@fastapi-architect)
+- [X] T029 [P] [US3] Baseline service `backend/app/services/anxiety/baseline.py` (establish per athlete+subscale+instrument family; trend vs. baseline; non-comparable across families) (depends T005, T008) (@fastapi-architect)
 
 **Checkpoint**: scoring verified and recomputable.
 
@@ -133,17 +152,17 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 ### Tests
 
-- [ ] T030 [P] [US4] Interpretation tests: schema validity, LLM path, fallback parity, JSON-invalid→fallback, alert flag in `backend/tests/anxiety/test_interpretation.py` (@qa-engineer)
-- [ ] T031 [P] [US4] Privacy property test: real athlete name never reaches provider payload / never in output in `backend/tests/anxiety/test_interpretation_privacy.py` (@data-privacy-guard)
+- [X] T030 [P] [US4] Interpretation tests: schema validity, LLM path, fallback parity, JSON-invalid→fallback, alert flag in `backend/tests/anxiety/test_interpretation.py` (@qa-engineer)
+- [X] T031 [P] [US4] Privacy property test: real athlete name never reaches provider payload / never in output in `backend/tests/anxiety/test_interpretation_privacy.py` (@data-privacy-guard)
 
 ### Implementation
 
-- [ ] T032 [US4] LLM use case `backend/app/services/ai/use_cases/anxiety_interpretation.py` (BaseUseCase; renders prompt; validates JSON; guardrails scrub; pseudonyms) (depends T029) (@integration-engineer)
-- [ ] T033 [P] [US4] Jinja prompt `backend/app/services/ai/prompts/anxiety_interpretation_v1.j2` encoding the club runtime system prompt (no diagnosis, clima de maestría, baseline anchoring, age-appropriate, referral on extreme signals) — content reviewed by (@mental-performance-coach) (@integration-engineer)
+- [X] T032 [US4] LLM use case `backend/app/services/ai/use_cases/anxiety_interpretation.py` (BaseUseCase; renders prompt; validates JSON; guardrails scrub; pseudonyms) (depends T029) (@integration-engineer)
+- [X] T033 [P] [US4] Jinja prompt `backend/app/services/ai/prompts/anxiety_interpretation_v1.j2` encoding the club runtime system prompt (no diagnosis, clima de maestría, baseline anchoring, age-appropriate, referral on extreme signals) — content reviewed by (@mental-performance-coach) (@integration-engineer)
 - [X] T034 [P] [US4] Rule-based fallback `backend/app/services/anxiety/rule_interpreter.py` (coarse bands + pattern→strategy mapping; same JSON schema) (depends T029) (@integration-engineer + @mental-performance-coach) — implemented standalone (baseline passed as param; no DB dep). Unit tests in `backend/tests/anxiety/test_rule_interpreter.py` (part of T030).
-- [ ] T035 [US4] Endpoints `POST /assessments/{id}/interpret` and `POST /assessments/interpret-group` (cache result + source/model; supersede on regenerate; always succeed via fallback) (depends T032, T034) (@fastapi-architect)
+- [X] T035 [US4] Endpoints `POST /assessments/{id}/interpret` and `POST /assessments/interpret-group` (cache result + source/model; supersede on regenerate; always succeed via fallback) (depends T032, T034) (@fastapi-architect)
 - [ ] T036 [P] [US4] `InterpretationPanel` + `AnalyzeButton` UI + `useInterpretation` hook in `frontend/src/components/anxiety/` (on-demand, cached, español) (@react-ui-engineer)
-- [ ] T037 [US4] Verify `AI_LOG_PROMPTS=false` path + provider wiring (google/anthropic/fake) for the new use case (@integration-engineer + @devops-engineer)
+- [X] T037 [US4] Verify `AI_LOG_PROMPTS=false` path + provider wiring (google/anthropic/fake) for the new use case (@integration-engineer + @devops-engineer)
 
 **Checkpoint**: actionable, safe interpretation with guaranteed fallback.
 
@@ -157,12 +176,12 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 ### Tests
 
-- [ ] T038 [P] [US5] Dashboard endpoint tests (series split by instrument family; group triage buckets; N+1 query-count assertion) in `backend/tests/anxiety/test_dashboards.py` (@qa-engineer)
+- [X] T038 [P] [US5] Dashboard endpoint tests (series split by instrument family; group triage buckets; N+1 query-count assertion) in `backend/tests/anxiety/test_dashboards.py` (@qa-engineer)
 - [ ] T039 [P] [US5] Frontend + axe tests for `IndividualPanel`/`GroupPanel` in `frontend/src/components/anxiety/__tests__/` (@qa-engineer)
 
 ### Implementation
 
-- [ ] T040 [US5] Endpoints `GET /athletes/{id}/series` and `GET /groups/by-event/{event_id}` (eager-load via selectinload; dominant-pattern bucketing) in `backend/app/routers/anxiety.py` (depends T029, T035) (@fastapi-architect)
+- [X] T040 [US5] Endpoints `GET /athletes/{id}/series` and `GET /groups/by-event/{event_id}` (eager-load via selectinload; dominant-pattern bucketing) in `backend/app/routers/anxiety.py` (depends T029, T035) (@fastapi-architect)
 - [ ] T041 [P] [US5] `IndividualPanel` (scores, baseline evolution chart lazy-loaded, interpretation, flags) in `frontend/src/components/anxiety/IndividualPanel.tsx` (@react-ui-engineer)
 - [ ] T042 [P] [US5] `GroupPanel` (somatic/cognitive/confidence buckets + alerts) in `frontend/src/components/anxiety/GroupPanel.tsx` (@react-ui-engineer)
 - [ ] T043 [US5] `AnxietyDashboardPage` route wiring + navigation in `frontend/src/pages/anxiety/AnxietyDashboardPage.tsx` (@react-ui-engineer)
@@ -179,13 +198,13 @@ description: "Task list for Competitive Anxiety Assessment (feature 017)"
 
 ### Tests
 
-- [ ] T044 [P] [US6] Import tests (item-by-item CSV, CSAI-2 27-item, partial rows, error rows, baseline seeding) in `backend/tests/anxiety/test_import.py` (@qa-engineer)
-- [ ] T045 [P] [US6] Export test (CSV/JSON includes item answers + scores) in `backend/tests/anxiety/test_export.py` (@qa-engineer)
+- [X] T044 [P] [US6] Import tests (item-by-item CSV, CSAI-2 27-item, partial rows, error rows, baseline seeding) in `backend/tests/anxiety/test_import.py` (@qa-engineer)
+- [X] T045 [P] [US6] Export test (CSV/JSON includes item answers + scores) in `backend/tests/anxiety/test_export.py` (@qa-engineer)
 
 ### Implementation
 
-- [ ] T046 [US6] CSV importer `backend/app/services/anxiety/importer.py` (parse item columns + metadata, infer instrument, score via scoring.py, seed baselines) (depends T008, T029) (@data-analyst)
-- [ ] T047 [US6] Endpoints `POST /import` (multipart) and `GET /export` in `backend/app/routers/anxiety.py` (depends T046) (@fastapi-architect)
+- [X] T046 [US6] CSV importer `backend/app/services/anxiety/importer.py` (parse item columns + metadata, infer instrument, score via scoring.py, seed baselines) (depends T008, T029) (@data-analyst)
+- [X] T047 [US6] Endpoints `POST /import` (multipart) and `GET /export` in `backend/app/routers/anxiety.py` (depends T046) (@fastapi-architect)
 - [ ] T048 [P] [US6] `ImportDialog` UI + `useAnxietyImport` hook (column mapping preview, error report) in `frontend/src/components/anxiety/ImportDialog.tsx` (@react-ui-engineer)
 
 **Checkpoint**: all user stories independently functional.

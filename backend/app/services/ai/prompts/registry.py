@@ -180,6 +180,35 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
             "Condicionado por age_mix (conteos) y proximidad a válida."
         ),
     ),
+    "anxiety_interpretation_v1": PromptSpec(
+        template_id="anxiety_interpretation_v1",
+        template_path="anxiety_interpretation_v1.j2",
+        required_keys=frozenset(
+            {
+                "instrument_type",
+                "age_group",
+                "event_label",
+                "priority",
+                "is_partial",
+                "cognitive_score",
+                "cognitive_band",
+                "cognitive_baseline",
+                "somatic_score",
+                "somatic_band",
+                "somatic_baseline",
+                "has_selfconfidence",
+                "selfconfidence_score",
+                "selfconfidence_band",
+                "selfconfidence_baseline",
+            }
+        ),
+        version=1,
+        description=(
+            "Interpretación de ansiedad competitiva (feature 017). Salida JSON: "
+            "{resumen, por_dimension, estrategias, mensaje_para_el_atleta, banderas}. "
+            "Sin nombres reales; clima de maestría; anclado a línea base; no diagnóstico."
+        ),
+    ),
     "session_draft": PromptSpec(
         template_id="session_draft",
         template_path="session_draft.j2",

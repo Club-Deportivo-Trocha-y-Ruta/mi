@@ -57,6 +57,25 @@ from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
 from app.models.athlete_badge import AthleteBadge, BadgeType, BadgeSource
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 
+# Feature 017 — Evaluación de ansiedad competitiva
+from app.models.anxiety_instrument import (
+    AnxietyInstrument,
+    InstrumentAgeBand,
+    InstrumentType,
+)
+from app.models.anxiety_assessment import (
+    AnxietyAssessment,
+    AssessmentStatus,
+    EventPriority,
+    InterpretationSource,
+)
+from app.models.anxiety_response_token import AnxietyResponseToken
+from app.models.anxiety_baseline import (
+    AnxietyBaseline,
+    BaselineInstrumentType,
+    BaselineSubscale,
+)
+
 __all__ = [
     "Base",
     "User",
@@ -132,4 +151,16 @@ __all__ = [
     "BadgeSource",
     "AthleteMonthlyNewsletter",
     "NewsletterStatus",
+    # Feature 017 — Evaluación de ansiedad competitiva
+    "AnxietyInstrument",
+    "InstrumentType",
+    "InstrumentAgeBand",
+    "AnxietyAssessment",
+    "AssessmentStatus",
+    "EventPriority",
+    "InterpretationSource",
+    "AnxietyResponseToken",
+    "AnxietyBaseline",
+    "BaselineSubscale",
+    "BaselineInstrumentType",
 ]

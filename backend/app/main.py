@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine
-from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, training_sessions
+from app.routers import ai, alerts, anxiety, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, training_sessions
 from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
@@ -53,6 +53,7 @@ app.include_router(reports.router, prefix="/api/athletes", tags=["reports"])
 app.include_router(growth.router, prefix="/api", tags=["growth"])
 app.include_router(parent_athletes.router, prefix="/api/parent-athletes", tags=["parent-athletes"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(anxiety.router, prefix="/api/anxiety", tags=["anxiety"])
 app.include_router(consent_public_router, prefix="/api/auth", tags=["consent"])
 app.include_router(consent_router, prefix="/api/me/consent", tags=["consent"])
 app.include_router(calendar.router, prefix="/api/calendar/events", tags=["calendar"])
