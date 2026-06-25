@@ -603,3 +603,104 @@ async def test_progress_symmetry_b_does_not_see_a_events(session):
     assert body["history"] == [], (
         "Athlete A's history events must not appear in athlete B's response."
     )
+
+
+# ---------------------------------------------------------------------------
+# Club-scope: coach from a different club must receive 403 (RBAC data-model §8)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_progress_read_cross_club_coach_receives_403(session):
+    """Coach from club 2 must receive 403 when reading an athlete from club 1.
+
+    A coach is scoped to the clubs they belong to (data-model rule 8,
+    Colombian Ley 1581 §data minimization).  Reading the skill-progress of
+    a minor who belongs to a different club is a cross-club data leak.
+    """
+    from datetime import datetime, timezone
+    from app.models.club import Club, ClubMember, ClubRole
+
+    # Seed club 1 + coach 10 (belongs to club 1) + athlete 1 (club 1).
+    await _seed_base(session)
+    await _seed_athlete_a(session)
+
+    # Create club 2 and coach 50 who belongs only to club 2.
+    club2 = Club(
+        id=2,
+        name="Club Ficticio 2 — datos de prueba",
+        code="TST002",
+        location="Valle del Cauca — datos ficticios",
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(club2)
+    await session.flush()
+
+    coach2 = coach_user_obj(user_id=50)
+    session.add(coach2)
+    await session.flush()
+
+    cm2 = ClubMember(
+        club_id=2,
+        user_id=50,
+        role_in_club=ClubRole.coach,
+        joined_at=datetime.now(timezone.utc),
+    )
+    session.add(cm2)
+    await session.flush()
+    await session.commit()
+
+    # Coach 50 (club 2) attempts to read the progress of athlete 1 (club 1).
+    async with make_client(session, user=coach_user_obj(user_id=50)) as client:
+        resp = await client.get(f"{BASE}/athletes/1/progress")
+    assert resp.status_code == 403, (
+        f"Cross-club coach must receive 403; got {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_progress_write_cross_club_coach_receives_403(session):
+    """Coach from club 2 must receive 403 when writing progress for an athlete from club 1."""
+    from datetime import datetime, timezone
+    from app.models.club import Club, ClubMember, ClubRole
+
+    await _seed_base(session)
+    await _seed_athlete_a(session)
+    catalog = await seed_technique_catalog(session)
+
+    club2 = Club(
+        id=2,
+        name="Club Ficticio 2 — datos de prueba",
+        code="TST002",
+        location="Valle del Cauca — datos ficticios",
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(club2)
+    await session.flush()
+
+    coach2 = coach_user_obj(user_id=50)
+    session.add(coach2)
+    await session.flush()
+
+    cm2 = ClubMember(
+        club_id=2,
+        user_id=50,
+        role_in_club=ClubRole.coach,
+        joined_at=datetime.now(timezone.utc),
+    )
+    session.add(cm2)
+    await session.flush()
+    await session.commit()
+
+    skill_id = catalog["skills"]["posicion"].id
+
+    async with make_client(session, user=coach_user_obj(user_id=50)) as client:
+        resp = await client.post(
+            f"{BASE}/athletes/1/progress",
+            json={"skill_id": skill_id, "status": "en_progreso", "season": 2026},
+        )
+    assert resp.status_code == 403, (
+        f"Cross-club coach must receive 403 on write; got {resp.status_code}: {resp.text}"
+    )

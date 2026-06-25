@@ -135,7 +135,7 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 - [X] T039 [US4] `SkillProgressBoard` component (lazy-loaded): current status per skill + season evolution, anchored to biological age, **no comparison/leaderboard UI** (@react-ui-engineer)
 - [X] T040 [US4] `AthleteProgressPage` wiring (coach/admin only) + graceful no-record state (@react-ui-engineer)
 - [X] T041 [P] [US4] Frontend test: `SkillProgressBoard` shows status + history and asserts absence of any comparison element + `jest-axe` (@qa-engineer)
-- [ ] T042 [US4] Minors-privacy audit: no PII in logs, coach-only RBAC, zero comparison surface across views/exports (SC-005/SC-007) (@data-privacy-guard)
+- [X] T042 [US4] Minors-privacy audit: no PII in logs, coach-only RBAC, zero comparison surface across views/exports (SC-005/SC-007) (@data-privacy-guard)
 
 **Checkpoint**: per-athlete technical progress is visible and individual.
 
@@ -164,10 +164,10 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T048 [P] Methodology review: seeded exercises embody the non-negotiables (fun first, skills > fitness, cadence ≥70, **never** <60 rpm, no structured intervals 7–9, mastery climate) (@technique-coach)
-- [ ] T049 [P] Sports-science review: age-band appropriateness and LTAD/PHV framing of progress and difficulty-vs-age warnings (@sports-science-advisor)
-- [ ] T050 [P] Performance pass: query-count test asserting no N+1 on catalog list (selectinload); confirm `SkillProgressBoard` is lazy-loaded and route bundle within budget (@qa-engineer)
-- [ ] T051 [P] Docs: add a module doc under `docs/` cross-linking `docs/14-tecnica-gymkana-7-15/research.md`; add a row to `docs/implementation-status.md` and the CLAUDE.md status table (@technical-writer)
+- [X] T048 [P] Methodology review: seeded exercises embody the non-negotiables (fun first, skills > fitness, cadence ≥70, **never** <60 rpm, no structured intervals 7–9, mastery climate) (@technique-coach)
+- [X] T049 [P] Sports-science review: age-band appropriateness and LTAD/PHV framing of progress and difficulty-vs-age warnings (@sports-science-advisor)
+- [X] T050 [P] Performance pass: query-count test asserting no N+1 on catalog list (selectinload); confirm `SkillProgressBoard` is lazy-loaded and route bundle within budget (@qa-engineer)
+- [X] T051 [P] Docs: add a module doc under `docs/` cross-linking `docs/14-tecnica-gymkana-7-15/research.md`; add a row to `docs/implementation-status.md` and the CLAUDE.md status table (@technical-writer)
 - [ ] T052 Run the seed migration on Render + smoke test (catalog populated, coach-only access, cold-start banner) (@devops-engineer / @release-manager)
 - [ ] T053 Execute quickstart.md end-to-end validation (Scenarios 1–5, SC trace) (@qa-engineer)
 

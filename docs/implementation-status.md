@@ -452,3 +452,37 @@ sources typecheck clean.
 **Remaining (ops/review):** UX field review, mobile/3G WCAG pass, privacy audit,
 perf budgets, Render deploy of migration `c2d3e4f5a6b7`, quickstart e2e — all
 pending the running stack / reviewer.
+
+---
+
+## Implementation status — Technique & Gymkhana Library (specs/018-technique-gymkhana-library)
+
+Coach/admin-facing module: searchable catalog of ~24 pre-seeded technique drills and gymkhana exercises (filterable by skill A–H, age band 7–9/10–12/13–15, difficulty, and available materials), each with a runnable detail card and an illustrative ASCII circuit layout; session assembly through the existing Training Sessions module (no parallel store); per-athlete skill progress tracking (introducido / en_progreso / dominado) as individual growth anchored to biological age — no comparison surface. Seeded from `docs/14-tecnica-gymkana-7-15/research.md`. No AI/LLM. Module design: `docs/15-tecnica-gymkana-modulo/design.md`.
+
+**Privacy fixes applied during audit (2026-06-25):** `_require_athlete_club_scope()` helper added to progress endpoints (cross-club 403); 4 seed-content corrections (mastery-climate label, vosotros→ustedes ×3); Exercise 15 difficulty downgraded `avanzada→media`; PHV-awareness notes added to Exercises 15/16/17; age-band mapping comment expanded with prerequisite-gate guidance.
+
+| Step | Scope | Status |
+|---|---|---|
+| M001 | Alembic migration `e1f2a3b4c5d6`: `technique_skills`, `technique_materials`, `technique_exercises` + 3 join tables (`_age_bands`, `_skills`, `_materials`), `technique_session_exercises`, `athlete_skill_progress`; 4 enums (`AgeBand`, `ExerciseDifficulty`, `SessionSegment`, `SkillProgressStatus`); idempotent seed (A–H skills, 9 materials, ~24 exercises with `how_to` + `layout_ascii` + `layout_alt` in español neutro) | ✅ Complete 2026-06-25 |
+| M002 | SQLAlchemy 2 async models: `TechniqueSkill`, `TechniqueMaterial`, `TechniqueExercise` (+ association tables), `TechniqueSessionExercise`, `AthleteSkillProgress`; `selectinload` on all M2M relationships | ✅ Complete 2026-06-25 |
+| M003 | Pydantic v2 schemas: `ExerciseListItem`, `ExerciseDetail`, `TechniqueSessionCreate`, `TechniqueSessionItem`, `SkillProgressEvent`, `AthleteProgressRead`, `ExerciseCreate/Update`, `VisibilityUpdate` | ✅ Complete 2026-06-25 |
+| M004 | Services: `catalog.py` (filter query with NOT-EXISTS material-subset filter + `sin_material` always-match); `assembler.py` (wraps `training_svc.create_session`, writes session + link rows in one transaction, computes `mixes_age_bands`); `progress.py` (append event, current-per-skill, season history) | ✅ Complete 2026-06-25 |
+| M005 | Router `app/routers/technique.py`: 11 endpoints under `/api/technique` — `GET /exercises`, `GET /skills`, `GET /materials`, `GET /exercises/{id}`, `POST /sessions`, `GET /sessions/{id}/exercises`, `GET /athletes/{id}/progress`, `POST /athletes/{id}/progress`, `POST /exercises`, `PUT /exercises/{id}`, `PATCH /exercises/{id}/visibility`; RBAC coach/admin on all; `_require_athlete_club_scope()` on progress endpoints | ✅ Complete 2026-06-25 |
+| M006 | Seed data module `backend/app/data/technique_catalog.py`: A–H skill taxonomy, 9 materials, 24 exercises with full `how_to` (NICA Dilo→Muéstralo→Háganlo→Revísenlo + mastery-climate paragraph), `layout_ascii` croquis + `layout_alt` screen-reader alternative; confidence tags from research report | ✅ Complete 2026-06-25 |
+| F001 | API client `frontend/src/api/technique.ts` + Zod schemas + TypeScript types | ✅ Complete 2026-06-25 |
+| F002 | TanStack Query hooks: `useTechniqueCatalog`, `useTechniqueExercise`, `useAssembleTechniqueSession`, `useAthleteSkillProgress` (with `useSetSkillProgress` mutation) | ✅ Complete 2026-06-25 |
+| F003 | `CatalogPage`: `FilterBar` (skill/age-band/difficulty/materials chips, 48 px touch targets), `CatalogGrid` (exercise cards), clear empty state (FR-004), cold-start-aware loading state | ✅ Complete 2026-06-25 |
+| F004 | `ExerciseDetailPage`: full detail card + `CircuitLayout` component (`<pre>` monospace + `layout_alt` visually-hidden for screen readers, WCAG 2.1 AA); mastery-climate `how_to` display | ✅ Complete 2026-06-25 |
+| F005 | `SessionBuilderPage`: `SessionAssembler` (warm-up / main / cool-down segments, position ordering); `MixedAgeNotice` banner (FR-014); saves through `POST /api/technique/sessions` → `TrainingSession` appears in existing calendar and session list | ✅ Complete 2026-06-25 |
+| F006 | `AthleteProgressPage` + `SkillProgressBoard`: per-athlete A–H skill grid, current status badges, season event history; no ranking, no comparison, no cross-athlete view (FR-017, SC-005) | ✅ Complete 2026-06-25 |
+| F007 | `CatalogAdminPage` + `ExerciseForm`: create/edit (gymkhana layout required validation), hide/unhide, `include_hidden` view for curators | ✅ Complete 2026-06-25 |
+| QA001 | Backend tests `backend/tests/technique/` — 178 pass: catalog filter (skill/age/difficulty/material subset + sin_material), RBAC (parent 403, cross-club coach 403 on progress), assemble creates real `TrainingSession` in existing module, session exercises survive hide/edit, progress append/current/history, no-comparison invariant, privacy (no PII in response/log), migration idempotency | ✅ Complete 2026-06-25 |
+| QA002 | Performance query tests `test_perf_queries.py`: `list_exercises` emits exactly 4 SELECT statements for 12 exercises (O(1) = main table + 3 selectinloads); `MAX_SELECTS=10` ceiling verified | ✅ Complete 2026-06-25 |
+| QA003 | Frontend vitest + jest-axe — 230 pass: catalog/detail/assembler/progress/curation; `SkillProgressBoard` explicitly asserts absence of ranking/leaderboard/comparison elements; 0 a11y violations | ✅ Complete 2026-06-25 |
+| AUD001 | Privacy audit (data-privacy-guard): PASS_WITH_FIXES — 1 HIGH cross-club progress exposure fixed (`_require_athlete_club_scope()`); 2 new cross-club 403 tests; no PII in responses/logs/schemas confirmed | ✅ Complete 2026-06-25 |
+| AUD002 | Content/language audit (technique-coach + sports-science-advisor): PASS_WITH_FIXES — 4 seed-copy corrections (mastery-climate label in Ex 7; vosotros→ustedes in Ex 8/14/24); no non-negotiable violations found | ✅ Complete 2026-06-25 |
+| AUD003 | Sports-science audit: PASS_WITH_FIXES — Exercise 15 difficulty `avanzada→media`; PHV-awareness notes added to Ex 15/16/17; age-band mapping comment with prerequisite-gate guidance | ✅ Complete 2026-06-25 |
+| AUD004 | Performance audit: PASS — selectinload O(1) query count confirmed by instrumented tests; no N+1 detected | ✅ Complete 2026-06-25 |
+| Deploy | Run migration `e1f2a3b4c5d6` on Render (`alembic upgrade head` via `entrypoint.sh`); deploy backend + frontend | ⏳ Pending |
+
+> Module design and data model in `docs/15-tecnica-gymkana-modulo/design.md`. All 180 technique tests pass (178 backend + 2 performance tests). No new runtime dependency.

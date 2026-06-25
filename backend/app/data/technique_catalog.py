@@ -182,7 +182,15 @@ MATERIALS: list[dict] = [
 #                  10-12 and 13-15; 7-9 excluded because 9 is the boundary
 #                  and the exercise needs developmental readiness)
 #                  "10-15" → ["10-12","13-15"]
-#                  "11-15" → ["10-12","13-15"]
+#                  "11-15" → ["10-12","13-15"]  NOTE: this includes 10-year-olds.
+#                  Per the LTAD/PMBIA skill progression these exercises are
+#                  appropriate for the upper 10-12 sub-range (11-12) under
+#                  direct coaching, provided foundational skills A/C/F are
+#                  solid. The how_to text for physical-consequence exercises
+#                  (15, 17) explicitly gates them on those prerequisites.
+#                  The difficulty field for ex. 15 has been set to "media"
+#                  (not "avanzada") to reflect that the 10-12 entry task is
+#                  the front-wheel lift, not the full manual (which is 13-15).
 #                  "13-15" → ["13-15"]
 #                  "7-13"  → ["7-9","10-12"]
 #                  "8-13"  → ["7-9","10-12"]
@@ -419,7 +427,7 @@ EXERCISES: list[dict] = [
             "siguiente y mostrando la inclinación suave de la bici en cada curva.\n"
             "Háganlo: empieza con conos separados 3-4 m; cuando todos pasen fluido, "
             "acercalos a 1.5 m. Variante ①: libre; ② slalom doble (dos filas, "
-            "carrera de velocidad); ③ con salida en rampa o de pie. Para 13-15: "
+            "duelo lado a lado); ③ con salida en rampa o de pie. Para 13-15: "
             "slalom apretado cronometrado contra marca propia.\n"
             "Revísenlo: '¿Dónde ponían los ojos al entrar en cada curva?'\n"
             "Clima de maestría: el reto es la mejora del tiempo propio; el slalom dual "
@@ -460,8 +468,8 @@ EXERCISES: list[dict] = [
             "Háganlo: empieza con pasillo de 1.5 m de ancho; reduce a 80 cm, 60 cm, "
             "40 cm según el nivel. Materiales: tiza, cuerda o tablones. Para aumentar "
             "la dificultad, añade un codo o giro leve a mitad del pasillo.\n"
-            "Revísenlo: '¿Cuándo os salíais más: cuando mirabais la rueda o cuando "
-            "mirabais el final?'\n"
+            "Revísenlo: '¿Cuándo se salían más: cuando miraban la rueda o cuando "
+            "miraban el final?'\n"
             "Clima de maestría: cada ciclista marca el ancho mínimo que logró y trata "
             "de mejorar su propia marca en la próxima sesión."
         ),
@@ -684,7 +692,7 @@ EXERCISES: list[dict] = [
             "Háganlo: empieza con el tablón en el suelo (sin altura), ancho de ~20 cm. "
             "Cuando sea fluido, eleva uno o ambos extremos sobre un palé. Reduce el "
             "ancho a un tablón más estrecho o usa un tubo de PVC para máxima dificultad.\n"
-            "Revísenlo: '¿Qué os ayudó a mantener el equilibrio: mirar el tablón o "
+            "Revísenlo: '¿Qué les ayudó a mantener el equilibrio: mirar el tablón o "
             "el final?'\n"
             "Clima de maestría: el logro es la longitud del tablón cruzada con "
             "fluidez, y la altura alcanzada. Sin comparaciones."
@@ -721,9 +729,14 @@ EXERCISES: list[dict] = [
             "Revísenlo: '¿En qué momento del movimiento sintieron que la rueda "
             "subió sola?'\n"
             "Clima de maestría: no hay altura mínima; el reto es reproducir el "
-            "gesto con control."
+            "gesto con control.\n"
+            "Nota PHV: si el deportista está en estirón (crecimiento rápido), la "
+            "coordinación puede retroceder temporalmente. Reduce el número de "
+            "repeticiones y trabaja solo la elevación mínima necesaria hasta que el "
+            "cuerpo se adapte. Este es el momento de reforzar la posición neutra (A), "
+            "no de forzar progresión."
         ),
-        "difficulty": "avanzada",
+        "difficulty": "media",
         "is_game": False,
         "is_gymkhana": False,
         "layout_ascii": None,
@@ -755,7 +768,12 @@ EXERCISES: list[dict] = [
             "subido antes la delantera?'\n"
             "Clima de maestría: registra la altura propia de cada sesión; sin "
             "comparar alturas entre compañeros. Aparece como segmento 'BUNNY HOP' "
-            "en la Gymkana Cronometrada 13-15 (circuito 4.3)."
+            "en la Gymkana Cronometrada 13-15 (circuito 4.3).\n"
+            "Nota PHV: durante el estirón los cartílagos de crecimiento son más "
+            "vulnerables al impacto repetitivo. Si hay dolor en rodillas, tobillos "
+            "o talones, suspende el ejercicio y consulta antes de retomar. Trabaja "
+            "solo a la altura mínima y reduce las repeticiones hasta que cese el "
+            "estirón."
         ),
         "difficulty": "avanzada",
         "is_game": False,
@@ -791,12 +809,18 @@ EXERCISES: list[dict] = [
             "bordillo con un pequeño jale de manillar.\n"
             "Háganlo: empieza con tope de 5-10 cm (bajada); cuando sea controlado, "
             "sube a 20-30 cm (rampa de palé). Trabaja bajada y subida por separado "
-            "antes de encadenarlas. Para 13-15: incluye en la Gymkana Cronometrada.\n"
+            "antes de encadenarlas. Para 13-15: incluye en la Gymkana Cronometrada. "
+            "En el grupo 10-12, introduce este ejercicio solo cuando las habilidades "
+            "A (posición), C (frenado) y F (separación cuerpo-bici) estén sólidas.\n"
             "Revísenlo: '¿Cuándo sintieron que la bici 'se fue' hacia adelante? "
             "¿Qué habrían hecho diferente con el cuerpo?'\n"
             "Clima de maestría: la altura de trabajo la elige el ciclista; el logro "
             "es el control, no la altura máxima. Aparece como 'SUBIR/BAJAR TOPE "
-            "(drop)' en la Gymkana Cronometrada 13-15 (circuito 4.3)."
+            "(drop)' en la Gymkana Cronometrada 13-15 (circuito 4.3).\n"
+            "Nota PHV: si el deportista está en estirón, trabaja solo la altura "
+            "mínima (5 cm) y prioriza el control de posición sobre la progresión "
+            "de altura. El cartílago de crecimiento en tobillos y rodillas es "
+            "vulnerable al impacto repetitivo durante el estirón."
         ),
         "difficulty": "media",
         "is_game": False,
@@ -1054,7 +1078,7 @@ EXERCISES: list[dict] = [
             "Háganlo: cada uno intenta 3 veces seguidas; anota su mejor tiempo. "
             "Variante: trackstand en una zona delimitada (cuadro de 50×50 cm). "
             "Solo para 13-15 años (requiere control fino ya desarrollado).\n"
-            "Revísenlo: '¿Qué os ayudó a aguantar más: mirar arriba o mirar abajo?'\n"
+            "Revísenlo: '¿Qué les ayudó a aguantar más: mirar arriba o mirar abajo?'\n"
             "Clima de maestría: cada uno compite con su propio tiempo anterior, nunca "
             "con el compañero. El reto es personal."
         ),

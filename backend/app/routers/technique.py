@@ -35,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
+from app.models.athlete import Athlete
 from app.models.club import ClubMember
 from app.models.technique_exercise import (
     AgeBand,
@@ -391,6 +392,58 @@ async def get_session_exercises(
 
 
 # ---------------------------------------------------------------------------
+# Club-scope guard for progress endpoints (coach must belong to athlete's club)
+# ---------------------------------------------------------------------------
+
+
+async def _require_athlete_club_scope(
+    db: AsyncSession,
+    athlete_id: int,
+    current_user: User,
+) -> None:
+    """Verify that a coach belongs to the same club as the target athlete.
+
+    Admin users pass unconditionally.  Coach users receive 403 when the
+    athlete does not belong to any of the coach's clubs.  The athlete
+    existence check is intentionally opaque: a non-existent athlete_id
+    always raises 404 with no PII in the detail, preserving the same
+    behaviour as the service layer (FR-017, SC-005).
+
+    Args:
+        db:            Active async session.
+        athlete_id:    Path parameter identifying the target athlete.
+        current_user:  Authenticated user (coach or admin — parents are
+                       already blocked upstream by ``_require_coach_or_admin``).
+
+    Raises:
+        HTTPException 404: athlete_id unknown.
+        HTTPException 403: coach does not belong to the athlete's club.
+    """
+    if current_user.role == UserRole.admin:
+        # Admin has unrestricted access to all clubs.
+        return
+
+    # Load athlete to obtain their club_id.
+    result = await db.execute(
+        select(Athlete.club_id).where(Athlete.id == athlete_id)
+    )
+    athlete_club_id = result.scalar_one_or_none()
+    if athlete_club_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Atleta {athlete_id} no encontrado.",
+        )
+
+    # Verify the coach has membership in the athlete's club.
+    club_role = await user_club_role(db, current_user.id, athlete_club_id)
+    if club_role is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes acceso al progreso de este atleta.",
+        )
+
+
+# ---------------------------------------------------------------------------
 # GET /api/technique/athletes/{athlete_id}/progress — progress read (T037)
 # ---------------------------------------------------------------------------
 
@@ -403,7 +456,8 @@ async def get_session_exercises(
         "Devuelve AthleteProgressRead con current (último evento por habilidad) "
         "e history (todos los eventos del atleta, ordenados por fecha). "
         "Coach/admin únicamente — sin PII de menores (FR-017, SC-005). "
-        "404 cuando el athlete_id no existe."
+        "404 cuando el athlete_id no existe. "
+        "403 cuando el coach no pertenece al club del atleta."
     ),
 )
 async def get_athlete_progress(
@@ -412,6 +466,7 @@ async def get_athlete_progress(
     current_user: User = Depends(_require_coach_or_admin),
 ) -> AthleteProgressRead:
     """Return skill progress for a single athlete (SC-005: single-athlete scope)."""
+    await _require_athlete_club_scope(db, athlete_id, current_user)
     try:
         result = await progress_svc.get_athlete_progress(db, athlete_id)
     except ValueError as exc:
@@ -440,7 +495,8 @@ async def get_athlete_progress(
     description=(
         "Añade un evento append-only de SkillProgressStatus para el atleta "
         "(US4, FR-015). Body: ProgressCreate. Respuesta 201: SkillProgressEvent. "
-        "404 cuando el atleta no existe."
+        "404 cuando el atleta no existe. "
+        "403 cuando el coach no pertenece al club del atleta."
     ),
 )
 async def create_athlete_progress(
@@ -450,6 +506,7 @@ async def create_athlete_progress(
     current_user: User = Depends(_require_coach_or_admin),
 ) -> SkillProgressEvent:
     """Append a new skill-progress event for the athlete (append-only, FR-015)."""
+    await _require_athlete_club_scope(db, athlete_id, current_user)
     try:
         event = await progress_svc.add_progress_event(
             db,
