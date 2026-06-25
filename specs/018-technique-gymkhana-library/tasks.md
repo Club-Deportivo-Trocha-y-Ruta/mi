@@ -24,7 +24,7 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 ## Phase 1: Setup (Shared Infrastructure)
 
 - [X] T001 [P] Create backend scaffolding: `backend/app/services/technique/` package (`__init__.py`), empty `backend/app/routers/technique.py`, `backend/app/schemas/technique.py`, `backend/app/data/technique_catalog.py` stub (@fastapi-architect)
-- [ ] T002 [P] Create frontend scaffolding: `frontend/src/routes/technique/`, `frontend/src/components/technique/`, `frontend/src/api/technique.ts`, technique hooks dir (@react-ui-engineer)
+- [X] T002 [P] Create frontend scaffolding: `frontend/src/routes/technique/`, `frontend/src/components/technique/`, `frontend/src/api/technique.ts`, technique hooks dir (@react-ui-engineer)
 - [X] T003 [P] Extract the seed payload from `docs/14-tecnica-gymkana-7-15/research.md` into `backend/app/data/technique_catalog.py`: A–H skill taxonomy (§2 table), materials list (§3 "Materiales base", incl. `sin_material`), the 24-exercise bank (§3 table: name, summary, how_to with NICA 4-step + mastery framing, difficulty, is_game, is_gymkhana, age bands, skill codes, material slugs), and the §4 circuit `layout_ascii` + a plain-language `layout_alt` for each gymkhana — español neutro **verbatim**, no invented content (@data-analyst)
 
 ---
@@ -57,11 +57,11 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 ### Implementation
 
 - [X] T011 [US1] Endpoints in `routers/technique.py`: `GET /exercises` (list+filter via catalog service), `GET /skills`, `GET /materials` (@fastapi-architect)
-- [ ] T012 [P] [US1] API client + `useTechniqueCatalog`/`useSkills`/`useMaterials` TanStack Query hooks in `frontend/src/api/technique.ts` + hooks (aggressive cache; cold-start aware) (@react-ui-engineer)
-- [ ] T013 [P] [US1] `FilterBar` component (skill/age/difficulty/materials) with RHF + localized labels, 48×48 targets in `frontend/src/components/technique/FilterBar.tsx` (@react-ui-engineer)
-- [ ] T014 [US1] `CatalogGrid` + `ExerciseCard` + `CatalogPage` route with loading/empty-filter/error/"servidor iniciando" states in `frontend/src/routes/technique/CatalogPage.tsx` (@react-ui-engineer)
-- [ ] T015 [P] [US1] Frontend tests: `FilterBar` branching + `CatalogGrid` empty state + `jest-axe` (@qa-engineer)
-- [ ] T016 [US1] Lazy route + coach/admin nav entry for `/technique` in `frontend/src/App.tsx` (@react-ui-engineer)
+- [X] T012 [P] [US1] API client + `useTechniqueCatalog`/`useSkills`/`useMaterials` TanStack Query hooks in `frontend/src/api/technique.ts` + hooks (aggressive cache; cold-start aware) (@react-ui-engineer)
+- [X] T013 [P] [US1] `FilterBar` component (skill/age/difficulty/materials) with RHF + localized labels, 48×48 targets in `frontend/src/components/technique/FilterBar.tsx` (@react-ui-engineer)
+- [X] T014 [US1] `CatalogGrid` + `ExerciseCard` + `CatalogPage` route with loading/empty-filter/error/"servidor iniciando" states in `frontend/src/routes/technique/CatalogPage.tsx` (@react-ui-engineer)
+- [X] T015 [P] [US1] Frontend tests: `FilterBar` branching + `CatalogGrid` empty state + `jest-axe` (@qa-engineer)
+- [X] T016 [US1] Lazy route + coach/admin nav entry for `/technique` in `frontend/src/App.tsx` (@react-ui-engineer)
 - [ ] T017 [US1] UX review: filter discoverability and empty/cold-start states on tablet over 3G (@ux-researcher)
 
 **Checkpoint**: US1 independently functional — a usable filterable reference library.
@@ -81,10 +81,10 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 ### Implementation
 
 - [X] T019 [US2] `GET /exercises/{id}` detail endpoint in `routers/technique.py` (@fastapi-architect)
-- [ ] T020 [P] [US2] `useTechniqueExercise(id)` hook + api (@react-ui-engineer)
-- [ ] T021 [US2] `CircuitLayout` component: responsive monospace `<pre>` (horizontal scroll), `role="img"` + visually-hidden `layout_alt`, shared legend in `frontend/src/components/technique/CircuitLayout.tsx` (@react-ui-engineer)
-- [ ] T022 [US2] `ExerciseDetailPage` route rendering skill/age/difficulty/materials/how_to + `CircuitLayout` (@react-ui-engineer)
-- [ ] T023 [P] [US2] Frontend test: `ExerciseDetailPage`/`CircuitLayout` exposes the text alternative + `jest-axe` (@qa-engineer)
+- [X] T020 [P] [US2] `useTechniqueExercise(id)` hook + api (@react-ui-engineer)
+- [X] T021 [US2] `CircuitLayout` component: responsive monospace `<pre>` (horizontal scroll), `role="img"` + visually-hidden `layout_alt`, shared legend in `frontend/src/components/technique/CircuitLayout.tsx` (@react-ui-engineer)
+- [X] T022 [US2] `ExerciseDetailPage` route rendering skill/age/difficulty/materials/how_to + `CircuitLayout` (@react-ui-engineer)
+- [X] T023 [P] [US2] Frontend test: `ExerciseDetailPage`/`CircuitLayout` exposes the text alternative + `jest-axe` (@qa-engineer)
 - [ ] T024 [US2] A11y/legibility review of the layout on small screens (contrast, scroll, font) (@ux-researcher)
 
 **Checkpoint**: US1+US2 deliver a complete field reference.
@@ -106,10 +106,10 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 - [X] T027 [US3] Assembler service `backend/app/services/technique/assembler.py`: reuse `training_svc.create_session`, write join rows in one transaction, compute `mixes_age_bands` (@fastapi-architect)
 - [X] T028 [US3] `POST /sessions` + `GET /sessions/{id}/exercises` endpoints (@fastapi-architect)
-- [ ] T029 [P] [US3] `useAssembleTechniqueSession` hook + api (@react-ui-engineer)
-- [ ] T030 [US3] `SessionAssembler` component: place exercises into calentamiento/principal/vuelta_calma with ordering; `MixedAgeNotice` banner (@react-ui-engineer)
-- [ ] T031 [US3] `SessionBuilderPage`: assemble → save → confirm it shows in the existing session list; keep the flow under 3 minutes (@react-ui-engineer)
-- [ ] T032 [P] [US3] Frontend test: `SessionAssembler` segments + mixed-age notice + `jest-axe` (@qa-engineer)
+- [X] T029 [P] [US3] `useAssembleTechniqueSession` hook + api (@react-ui-engineer)
+- [X] T030 [US3] `SessionAssembler` component: place exercises into calentamiento/principal/vuelta_calma with ordering; `MixedAgeNotice` banner (@react-ui-engineer)
+- [X] T031 [US3] `SessionBuilderPage`: assemble → save → confirm it shows in the existing session list; keep the flow under 3 minutes (@react-ui-engineer)
+- [X] T032 [P] [US3] Frontend test: `SessionAssembler` segments + mixed-age notice + `jest-axe` (@qa-engineer)
 - [ ] T033 [US3] UX review: validate the find-and-assemble flow completes in <3 min on a tablet (SC-001) (@ux-researcher)
 
 **Checkpoint**: P1 MVP complete (US1–US3) — browse, view, and schedule technique sessions.
@@ -131,10 +131,10 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 - [X] T036 [US4] Progress service `backend/app/services/technique/progress.py`: append event; compute current + season history (@fastapi-architect)
 - [X] T037 [US4] `GET`/`POST /athletes/{id}/progress` endpoints, coach/admin only, `404` graceful for no-record (@fastapi-architect)
-- [ ] T038 [P] [US4] `useAthleteSkillProgress` hook + api (@react-ui-engineer)
-- [ ] T039 [US4] `SkillProgressBoard` component (lazy-loaded): current status per skill + season evolution, anchored to biological age, **no comparison/leaderboard UI** (@react-ui-engineer)
-- [ ] T040 [US4] `AthleteProgressPage` wiring (coach/admin only) + graceful no-record state (@react-ui-engineer)
-- [ ] T041 [P] [US4] Frontend test: `SkillProgressBoard` shows status + history and asserts absence of any comparison element + `jest-axe` (@qa-engineer)
+- [X] T038 [P] [US4] `useAthleteSkillProgress` hook + api (@react-ui-engineer)
+- [X] T039 [US4] `SkillProgressBoard` component (lazy-loaded): current status per skill + season evolution, anchored to biological age, **no comparison/leaderboard UI** (@react-ui-engineer)
+- [X] T040 [US4] `AthleteProgressPage` wiring (coach/admin only) + graceful no-record state (@react-ui-engineer)
+- [X] T041 [P] [US4] Frontend test: `SkillProgressBoard` shows status + history and asserts absence of any comparison element + `jest-axe` (@qa-engineer)
 - [ ] T042 [US4] Minors-privacy audit: no PII in logs, coach-only RBAC, zero comparison surface across views/exports (SC-005/SC-007) (@data-privacy-guard)
 
 **Checkpoint**: per-athlete technical progress is visible and individual.
@@ -154,9 +154,9 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 ### Implementation
 
 - [X] T044 [US5] `POST /exercises`, `PUT /exercises/{id}`, `PATCH /exercises/{id}/visibility` endpoints with validation (gymkhana⇒layout, ≥1 age band, ≥1 skill) (@fastapi-architect)
-- [ ] T045 [P] [US5] Curation hooks (create/update/visibility) + api with cache invalidation (@react-ui-engineer)
-- [ ] T046 [US5] `ExerciseForm` (RHF + Zod) + CatalogAdmin actions (add/edit/hide) on the catalog (@react-ui-engineer)
-- [ ] T047 [P] [US5] Frontend test: `ExerciseForm` validation + hide flow + `jest-axe` (@qa-engineer)
+- [X] T045 [P] [US5] Curation hooks (create/update/visibility) + api with cache invalidation (@react-ui-engineer)
+- [X] T046 [US5] `ExerciseForm` (RHF + Zod) + CatalogAdmin actions (add/edit/hide) on the catalog (@react-ui-engineer)
+- [X] T047 [P] [US5] Frontend test: `ExerciseForm` validation + hide flow + `jest-axe` (@qa-engineer)
 
 **Checkpoint**: the catalog is a living, club-specific resource.
 

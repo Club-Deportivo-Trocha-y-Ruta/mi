@@ -106,6 +106,28 @@ const AnxietyAnswerPage = lazy(() =>
   })),
 );
 
+// Technique & Gymkhana Library (feature 018) — coach/admin only (lazy)
+const CatalogPage = lazy(() =>
+  import("@/routes/technique/CatalogPage").then((m) => ({
+    default: m.CatalogPage,
+  })),
+);
+const ExerciseDetailPage = lazy(() =>
+  import("@/routes/technique/ExerciseDetailPage").then((m) => ({
+    default: m.ExerciseDetailPage,
+  })),
+);
+const SessionBuilderPage = lazy(() =>
+  import("@/routes/technique/SessionBuilderPage").then((m) => ({
+    default: m.SessionBuilderPage,
+  })),
+);
+const AthleteProgressPage = lazy(() =>
+  import("@/routes/technique/AthleteProgressPage").then((m) => ({
+    default: m.AthleteProgressPage,
+  })),
+);
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -581,6 +603,72 @@ export default function App() {
         <Route
           path="/coach/race-analysis"
           element={<Navigate to="/competitions/insights" replace />}
+        />
+
+        {/* ── Técnica y gymkhana (feature 018) — coach/admin only ── */}
+        <Route
+          path="/technique"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando biblioteca de técnica…
+                  </div>
+                }
+              >
+                <CatalogPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/technique/exercises/:id"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando ejercicio…
+                  </div>
+                }
+              >
+                <ExerciseDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/technique/sessions/new"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando armador de sesión…
+                  </div>
+                }
+              >
+                <SessionBuilderPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/technique/athletes/:athleteId/progress"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando progreso técnico…
+                  </div>
+                }
+              >
+                <AthleteProgressPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
         />
 
         {/* ── Perfil de usuario (todos los roles autenticados) ── */}

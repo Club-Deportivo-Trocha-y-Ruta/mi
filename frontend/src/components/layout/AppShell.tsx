@@ -117,6 +117,15 @@ export function AppShell({ children }: AppShellProps) {
           Ansiedad competitiva
         </NavLink>
       )}
+      {(isCoach || isAdmin) && (
+        <NavLink
+          to="/technique"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Técnica
+        </NavLink>
+      )}
       {isParent && (
         <NavLink
           to="/my-athletes"
