@@ -51,12 +51,12 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 ### Tests
 
-- [ ] T009 [P] [US1] Backend test `backend/tests/technique/test_catalog_filter.py`: filter matrix (skill, age_band, difficulty, material subset incl. `sin_material`, combined) + empty-filter returns `200` empty list (not 404/500) (@qa-engineer)
-- [ ] T010 [P] [US1] Backend test `backend/tests/technique/test_rbac.py`: catalog read endpoints deny parent/athlete/cross-club (`403`) and allow coach/admin (@qa-engineer)
+- [X] T009 [P] [US1] Backend test `backend/tests/technique/test_catalog_filter.py`: filter matrix (skill, age_band, difficulty, material subset incl. `sin_material`, combined) + empty-filter returns `200` empty list (not 404/500) (@qa-engineer)
+- [X] T010 [P] [US1] Backend test `backend/tests/technique/test_rbac.py`: catalog read endpoints deny parent/athlete/cross-club (`403`) and allow coach/admin (@qa-engineer)
 
 ### Implementation
 
-- [ ] T011 [US1] Endpoints in `routers/technique.py`: `GET /exercises` (list+filter via catalog service), `GET /skills`, `GET /materials` (@fastapi-architect)
+- [X] T011 [US1] Endpoints in `routers/technique.py`: `GET /exercises` (list+filter via catalog service), `GET /skills`, `GET /materials` (@fastapi-architect)
 - [ ] T012 [P] [US1] API client + `useTechniqueCatalog`/`useSkills`/`useMaterials` TanStack Query hooks in `frontend/src/api/technique.ts` + hooks (aggressive cache; cold-start aware) (@react-ui-engineer)
 - [ ] T013 [P] [US1] `FilterBar` component (skill/age/difficulty/materials) with RHF + localized labels, 48×48 targets in `frontend/src/components/technique/FilterBar.tsx` (@react-ui-engineer)
 - [ ] T014 [US1] `CatalogGrid` + `ExerciseCard` + `CatalogPage` route with loading/empty-filter/error/"servidor iniciando" states in `frontend/src/routes/technique/CatalogPage.tsx` (@react-ui-engineer)
@@ -76,11 +76,11 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 ### Tests
 
-- [ ] T018 [P] [US2] Backend test `backend/tests/technique/test_exercise_detail.py`: `GET /exercises/{id}` returns full detail incl. non-null `layout_ascii`/`layout_alt` for gymkhana; `404` unknown id; `sin_material` surfaced (@qa-engineer)
+- [X] T018 [P] [US2] Backend test `backend/tests/technique/test_exercise_detail.py`: `GET /exercises/{id}` returns full detail incl. non-null `layout_ascii`/`layout_alt` for gymkhana; `404` unknown id; `sin_material` surfaced (@qa-engineer)
 
 ### Implementation
 
-- [ ] T019 [US2] `GET /exercises/{id}` detail endpoint in `routers/technique.py` (@fastapi-architect)
+- [X] T019 [US2] `GET /exercises/{id}` detail endpoint in `routers/technique.py` (@fastapi-architect)
 - [ ] T020 [P] [US2] `useTechniqueExercise(id)` hook + api (@react-ui-engineer)
 - [ ] T021 [US2] `CircuitLayout` component: responsive monospace `<pre>` (horizontal scroll), `role="img"` + visually-hidden `layout_alt`, shared legend in `frontend/src/components/technique/CircuitLayout.tsx` (@react-ui-engineer)
 - [ ] T022 [US2] `ExerciseDetailPage` route rendering skill/age/difficulty/materials/how_to + `CircuitLayout` (@react-ui-engineer)
@@ -99,13 +99,13 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 ### Tests
 
-- [ ] T025 [P] [US3] Backend test `backend/tests/technique/test_assemble_session.py`: `POST /sessions` creates a **real `TrainingSession`** (retrievable via existing `/api/training-sessions/{id}`), writes `technique_session_exercises`, returns `mixes_age_bands`; `422` on empty items/unknown exercise (@qa-engineer)
-- [ ] T026 [P] [US3] Backend test `backend/tests/technique/test_session_exercises.py`: `GET /sessions/{id}/exercises` returns ordered items grouped by segment and stays intact after an exercise is later hidden/edited (FR-020) (@qa-engineer)
+- [X] T025 [P] [US3] Backend test `backend/tests/technique/test_assemble_session.py`: `POST /sessions` creates a **real `TrainingSession`** (retrievable via existing `/api/training-sessions/{id}`), writes `technique_session_exercises`, returns `mixes_age_bands`; `422` on empty items/unknown exercise (@qa-engineer)
+- [X] T026 [P] [US3] Backend test `backend/tests/technique/test_session_exercises.py`: `GET /sessions/{id}/exercises` returns ordered items grouped by segment and stays intact after an exercise is later hidden/edited (FR-020) (@qa-engineer)
 
 ### Implementation
 
-- [ ] T027 [US3] Assembler service `backend/app/services/technique/assembler.py`: reuse `training_svc.create_session`, write join rows in one transaction, compute `mixes_age_bands` (@fastapi-architect)
-- [ ] T028 [US3] `POST /sessions` + `GET /sessions/{id}/exercises` endpoints (@fastapi-architect)
+- [X] T027 [US3] Assembler service `backend/app/services/technique/assembler.py`: reuse `training_svc.create_session`, write join rows in one transaction, compute `mixes_age_bands` (@fastapi-architect)
+- [X] T028 [US3] `POST /sessions` + `GET /sessions/{id}/exercises` endpoints (@fastapi-architect)
 - [ ] T029 [P] [US3] `useAssembleTechniqueSession` hook + api (@react-ui-engineer)
 - [ ] T030 [US3] `SessionAssembler` component: place exercises into calentamiento/principal/vuelta_calma with ordering; `MixedAgeNotice` banner (@react-ui-engineer)
 - [ ] T031 [US3] `SessionBuilderPage`: assemble → save → confirm it shows in the existing session list; keep the flow under 3 minutes (@react-ui-engineer)
@@ -124,13 +124,13 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 ### Tests
 
-- [ ] T034 [P] [US4] Backend test `backend/tests/technique/test_progress.py`: `POST` appends an event; `GET` returns current (latest per skill) + season history; `404` when the athlete has no record (graceful 7–9) (@qa-engineer)
-- [ ] T035 [P] [US4] Privacy invariant test `backend/tests/technique/test_progress_privacy.py`: a progress response contains ONLY that athlete (no second athlete/no ranking), no minor PII in logs, and no aggregate/comparison endpoint exists (SC-005/SC-007) (@qa-engineer)
+- [X] T034 [P] [US4] Backend test `backend/tests/technique/test_progress.py`: `POST` appends an event; `GET` returns current (latest per skill) + season history; `404` when the athlete has no record (graceful 7–9) (@qa-engineer)
+- [X] T035 [P] [US4] Privacy invariant test `backend/tests/technique/test_progress_privacy.py`: a progress response contains ONLY that athlete (no second athlete/no ranking), no minor PII in logs, and no aggregate/comparison endpoint exists (SC-005/SC-007) (@qa-engineer)
 
 ### Implementation
 
-- [ ] T036 [US4] Progress service `backend/app/services/technique/progress.py`: append event; compute current + season history (@fastapi-architect)
-- [ ] T037 [US4] `GET`/`POST /athletes/{id}/progress` endpoints, coach/admin only, `404` graceful for no-record (@fastapi-architect)
+- [X] T036 [US4] Progress service `backend/app/services/technique/progress.py`: append event; compute current + season history (@fastapi-architect)
+- [X] T037 [US4] `GET`/`POST /athletes/{id}/progress` endpoints, coach/admin only, `404` graceful for no-record (@fastapi-architect)
 - [ ] T038 [P] [US4] `useAthleteSkillProgress` hook + api (@react-ui-engineer)
 - [ ] T039 [US4] `SkillProgressBoard` component (lazy-loaded): current status per skill + season evolution, anchored to biological age, **no comparison/leaderboard UI** (@react-ui-engineer)
 - [ ] T040 [US4] `AthleteProgressPage` wiring (coach/admin only) + graceful no-record state (@react-ui-engineer)
@@ -149,11 +149,11 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 ### Tests
 
-- [ ] T043 [P] [US5] Backend test `backend/tests/technique/test_curation.py`: create/edit (incl. seeded)/hide; hidden drops from default catalog but is not destroyed; a saved session referencing a hidden exercise remains viewable (FR-019/FR-020) (@qa-engineer)
+- [X] T043 [P] [US5] Backend test `backend/tests/technique/test_curation.py`: create/edit (incl. seeded)/hide; hidden drops from default catalog but is not destroyed; a saved session referencing a hidden exercise remains viewable (FR-019/FR-020) (@qa-engineer)
 
 ### Implementation
 
-- [ ] T044 [US5] `POST /exercises`, `PUT /exercises/{id}`, `PATCH /exercises/{id}/visibility` endpoints with validation (gymkhana⇒layout, ≥1 age band, ≥1 skill) (@fastapi-architect)
+- [X] T044 [US5] `POST /exercises`, `PUT /exercises/{id}`, `PATCH /exercises/{id}/visibility` endpoints with validation (gymkhana⇒layout, ≥1 age band, ≥1 skill) (@fastapi-architect)
 - [ ] T045 [P] [US5] Curation hooks (create/update/visibility) + api with cache invalidation (@react-ui-engineer)
 - [ ] T046 [US5] `ExerciseForm` (RHF + Zod) + CatalogAdmin actions (add/edit/hide) on the catalog (@react-ui-engineer)
 - [ ] T047 [P] [US5] Frontend test: `ExerciseForm` validation + hide flow + `jest-axe` (@qa-engineer)

@@ -10,46 +10,69 @@ belongs to a specific club.  Parents and athletes receive 403 on all routes
 
 Route inventory (contract: specs/018-technique-gymkhana-library/contracts/rest-api.md):
 
-  IMPLEMENTED (T007):
-    GET  /api/technique/skills          — taxonomy list for filter controls
-    GET  /api/technique/materials       — material list for filter controls
-
-  TODO (filled by later tasks):
-    GET  /api/technique/exercises                    — T008 catalog list/filter
-    GET  /api/technique/exercises/{id}               — T008 exercise detail
-    POST /api/technique/sessions                     — T009 session assembly
-    GET  /api/technique/sessions/{training_session_id}/exercises — T009 session read
-    GET  /api/technique/athletes/{athlete_id}/progress   — T010 progress read
-    POST /api/technique/athletes/{athlete_id}/progress   — T010 progress append
-    POST /api/technique/exercises                    — T011 curation create
-    PUT  /api/technique/exercises/{id}               — T011 curation update
-    PATCH /api/technique/exercises/{id}/visibility   — T011 curation hide/unhide
+  GET  /api/technique/skills                              — taxonomy list
+  GET  /api/technique/materials                           — material list
+  GET  /api/technique/exercises                           — catalog list/filter (T011)
+  GET  /api/technique/exercises/{id}                      — exercise detail (T019)
+  POST /api/technique/exercises                           — curation create (T044)
+  PUT  /api/technique/exercises/{id}                      — curation update (T044)
+  PATCH /api/technique/exercises/{id}/visibility          — hide/unhide (T044)
+  POST /api/technique/sessions                            — session assembly (T028)
+  GET  /api/technique/sessions/{training_session_id}/exercises — session read (T028)
+  GET  /api/technique/athletes/{athlete_id}/progress      — progress read (T037)
+  POST /api/technique/athletes/{athlete_id}/progress      — progress append (T037)
 """
 from __future__ import annotations
 
+import logging
+import re as _re
+import time as _time
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
-from app.models.technique_exercise import AgeBand, ExerciseDifficulty
+from app.models.club import ClubMember
+from app.models.technique_exercise import (
+    AgeBand,
+    ExerciseDifficulty,
+    TechniqueExercise,
+    TechniqueExerciseAgeBand,
+)
+from app.models.technique_material import TechniqueMaterial
+from app.models.technique_skill import TechniqueSkill
 from app.models.user import User, UserRole
 from app.schemas.technique import (
+    AssembleSessionRequest,
+    AssembleSessionResponse,
+    AthleteProgressRead,
+    ExerciseCreate,
     ExerciseDetail,
     ExerciseListItem,
+    ExerciseUpdate,
+    ExerciseVisibilityPatch,
+    ExerciseVisibilityRead,
     MaterialRead,
+    ProgressCreate,
+    SkillProgressEvent,
     SkillRead,
+    TechniqueSessionItem,
 )
-from app.services.technique import catalog as catalog_svc
 from app.services.permissions import user_club_role
+from app.services.technique import assembler as assembler_svc
+from app.services.technique import catalog as catalog_svc
+from app.services.technique import progress as progress_svc
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
 # RBAC dependency: coach or admin only (FR-021)
 # ---------------------------------------------------------------------------
 
-# Mirrors the pattern in anxiety.py — a module-level callable that is reused
-# as a Depends() argument across every route in this router.
 _coach_or_admin = require_role([UserRole.admin, UserRole.coach])
 
 
@@ -72,6 +95,100 @@ async def _require_coach_or_admin(
         (skills, materials) are club-agnostic by design.
     """
     return current_user
+
+
+# ---------------------------------------------------------------------------
+# Internal serialization helpers
+# ---------------------------------------------------------------------------
+
+
+def _serialize_exercise_list_item(ex: TechniqueExercise) -> ExerciseListItem:
+    """Map an ORM TechniqueExercise to ExerciseListItem.
+
+    The three relationship collections (skills, materials, age_bands) must
+    already be eagerly loaded by the caller (selectinload).
+    """
+    return ExerciseListItem(
+        id=ex.id,
+        slug=ex.slug,
+        name=ex.name,
+        summary=ex.summary,
+        difficulty=ex.difficulty,
+        is_game=ex.is_game,
+        is_gymkhana=ex.is_gymkhana,
+        age_bands=[ab.age_band for ab in ex.age_bands],
+        skills=[SkillRead.model_validate(s) for s in ex.skills],
+        materials=[MaterialRead.model_validate(m) for m in ex.materials],
+        is_seeded=ex.is_seeded,
+        is_hidden=ex.is_hidden,
+    )
+
+
+def _serialize_exercise_detail(ex: TechniqueExercise) -> ExerciseDetail:
+    """Map an ORM TechniqueExercise to ExerciseDetail."""
+    return ExerciseDetail(
+        id=ex.id,
+        slug=ex.slug,
+        name=ex.name,
+        summary=ex.summary,
+        difficulty=ex.difficulty,
+        is_game=ex.is_game,
+        is_gymkhana=ex.is_gymkhana,
+        age_bands=[ab.age_band for ab in ex.age_bands],
+        skills=[SkillRead.model_validate(s) for s in ex.skills],
+        materials=[MaterialRead.model_validate(m) for m in ex.materials],
+        is_seeded=ex.is_seeded,
+        is_hidden=ex.is_hidden,
+        how_to=ex.how_to,
+        layout_ascii=ex.layout_ascii,
+        layout_alt=ex.layout_alt,
+        confidence=ex.confidence,
+        created_at=ex.created_at,
+        updated_at=ex.updated_at,
+    )
+
+
+def _serialize_session_item(link) -> TechniqueSessionItem:
+    """Map a TechniqueSessionExercise (with eager .exercise) to TechniqueSessionItem."""
+    ex = link.exercise
+    return TechniqueSessionItem(
+        exercise_id=ex.id,
+        name=ex.name,
+        segment=link.segment,
+        position=link.position,
+        age_bands=[ab.age_band for ab in ex.age_bands],
+        skills=[SkillRead.model_validate(s) for s in ex.skills],
+    )
+
+
+def _serialize_progress_event(event) -> SkillProgressEvent:
+    """Map an AthleteSkillProgress ORM row to SkillProgressEvent."""
+    return SkillProgressEvent(
+        id=event.id,
+        skill=SkillRead.model_validate(event.skill),
+        status=event.status,
+        coach_note=event.coach_note,
+        season=event.season,
+        recorded_at=event.recorded_at,
+    )
+
+
+async def _coach_club_id(db: AsyncSession, user: User) -> int:
+    """Return the coach's primary club_id.
+
+    For admin users, returns the first club_id in their memberships.
+    Raises HTTPException 403 when the user has no club membership.
+    """
+    result = await db.execute(
+        select(ClubMember.club_id).where(ClubMember.user_id == user.id).limit(1)
+    )
+    club_id = result.scalar_one_or_none()
+    if club_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El usuario no pertenece a ningún club.",
+        )
+    return club_id
 
 
 # ---------------------------------------------------------------------------
@@ -102,11 +219,7 @@ async def list_skills(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
 ) -> list[SkillListResponse]:
-    """Return all technique skills ordered by progression (sort_order).
-
-    Returns an empty list when the table has not been seeded yet; never
-    returns 404 or 500 for an empty taxonomy (FR-004 analogue).
-    """
+    """Return all technique skills ordered by progression (sort_order)."""
     skills = await catalog_svc.list_skills(db)
     return [SkillListResponse.model_validate(s) for s in skills]
 
@@ -130,265 +243,479 @@ async def list_materials(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
 ) -> list[MaterialRead]:
-    """Return all technique materials including the is_none sentinel row.
-
-    Returns an empty list when the table has not been seeded yet; never
-    returns 404 or 500 for an empty material list.
-    """
+    """Return all technique materials including the is_none sentinel row."""
     materials = await catalog_svc.list_materials(db)
     return [MaterialRead.model_validate(m) for m in materials]
 
 
 # ---------------------------------------------------------------------------
-# TODO (T008): GET /api/technique/exercises — catalog list / filter
+# GET /api/technique/exercises — catalog list / filter (T011)
 # ---------------------------------------------------------------------------
 
 
 @router.get(
     "/exercises",
-    response_model=dict,
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="[TODO T008] Listar y filtrar ejercicios del catálogo",
+    response_model=dict[str, Any],
+    summary="Listar y filtrar ejercicios del catálogo",
     description=(
-        "Implementado por T008. Soporta filtros: skill (slug), age_band, "
-        "difficulty, materials (csv), include_hidden, is_game. "
-        "Respuesta: { items: [ExerciseListItem], total: int }."
+        "Lista y filtra el catálogo. Parámetros opcionales y combinables: "
+        "skill (slug), age_band, difficulty, materials (csv), include_hidden, "
+        "is_game. Respuesta: { items: [ExerciseListItem], total: int }. "
+        "Resultado vacío devuelve 200 { items: [], total: 0 } (FR-004)."
     ),
-    include_in_schema=True,
 )
 async def list_exercises(
     skill: str | None = Query(default=None, description="Slug de habilidad."),
     age_band: AgeBand | None = Query(default=None, description="Banda de edad."),
-    difficulty: ExerciseDifficulty | None = Query(default=None),
-    materials: str | None = Query(default=None, description="CSV de slugs de materiales disponibles."),
-    include_hidden: bool = Query(default=False),
-    is_game: bool | None = Query(default=None),
+    difficulty: ExerciseDifficulty | None = Query(default=None, description="Dificultad."),
+    materials: str | None = Query(
+        default=None,
+        description="CSV de slugs de materiales disponibles hoy.",
+    ),
+    include_hidden: bool = Query(default=False, description="Incluye ejercicios ocultos."),
+    is_game: bool | None = Query(default=None, description="Filtra por juego puro."),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
-) -> dict:
-    # TODO (T008): replace with full implementation.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="GET /exercises — pendiente T008",
+) -> dict[str, Any]:
+    """Return filtered catalog. Empty result is a 200 with items=[] (FR-004)."""
+    materials_list: list[str] | None = None
+    if materials is not None:
+        materials_list = [s.strip() for s in materials.split(",") if s.strip()]
+
+    exercises = await catalog_svc.list_exercises(
+        db,
+        skill=skill,
+        age_band=age_band,
+        difficulty=difficulty,
+        materials=materials_list,
+        include_hidden=include_hidden,
+        is_game=is_game,
     )
+    items = [_serialize_exercise_list_item(ex) for ex in exercises]
+    return {"items": [item.model_dump() for item in items], "total": len(items)}
 
 
 # ---------------------------------------------------------------------------
-# TODO (T008): GET /api/technique/exercises/{id} — exercise detail
+# GET /api/technique/exercises/{id} — exercise detail (T019)
 # ---------------------------------------------------------------------------
 
 
 @router.get(
     "/exercises/{exercise_id}",
     response_model=ExerciseDetail,
-    status_code=status.HTTP_200_OK,
-    summary="[TODO T008] Detalle de un ejercicio",
+    summary="Detalle de un ejercicio",
     description=(
-        "Implementado por T008. Devuelve ExerciseDetail con how_to, "
-        "layout_ascii, layout_alt, confidence (US2). 404 cuando id desconocido."
+        "Devuelve ExerciseDetail con how_to, layout_ascii, layout_alt, confidence "
+        "(US2). Ejercicios ocultos también se devuelven (FR-019). "
+        "404 cuando el id es desconocido."
     ),
-    include_in_schema=True,
 )
 async def get_exercise(
     exercise_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
 ) -> ExerciseDetail:
-    # TODO (T008): replace with full implementation using catalog_svc.get_exercise.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="GET /exercises/{id} — pendiente T008",
-    )
+    """Return exercise detail by id; 404 when not found."""
+    ex = await catalog_svc.get_exercise(db, exercise_id)
+    if ex is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ejercicio {exercise_id} no encontrado.",
+        )
+    return _serialize_exercise_detail(ex)
 
 
 # ---------------------------------------------------------------------------
-# TODO (T009): POST /api/technique/sessions — assemble technique session
+# POST /api/technique/sessions — assemble technique session (T028)
 # ---------------------------------------------------------------------------
 
 
 @router.post(
     "/sessions",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="[TODO T009] Ensamblar sesión de técnica",
+    response_model=AssembleSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Ensamblar sesión de técnica",
     description=(
-        "Implementado por T009. Crea un TrainingSession ordinario via "
-        "training_svc.create_session y guarda technique_session_exercises (US3, "
-        "FR-011). Respuesta 201: AssembleSessionResponse con mixes_age_bands."
+        "Crea una sesión de entrenamiento ordinaria vía training_svc.create_session "
+        "y guarda los ejercicios de técnica (US3, FR-011). "
+        "Respuesta 201: { training_session_id, mixes_age_bands, items }. "
+        "422 cuando items está vacío o contiene exercise_id desconocido."
     ),
-    include_in_schema=True,
 )
 async def assemble_session(
+    payload: AssembleSessionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
-) -> None:
-    # TODO (T009): accept AssembleSessionRequest body, delegate to assembler service.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="POST /sessions — pendiente T009",
+) -> AssembleSessionResponse:
+    """Assemble a technique session. Club scope resolved from coach's membership."""
+    club_id = await _coach_club_id(db, current_user)
+
+    training_session, mixes, link_rows = await assembler_svc.assemble_technique_session(
+        db,
+        payload=payload,
+        current_user=current_user,
+        club_id=club_id,
+    )
+
+    items = [_serialize_session_item(link) for link in link_rows]
+    return AssembleSessionResponse(
+        training_session_id=training_session.id,
+        mixes_age_bands=mixes,
+        items=items,
     )
 
 
 # ---------------------------------------------------------------------------
-# TODO (T009): GET /api/technique/sessions/{training_session_id}/exercises
+# GET /api/technique/sessions/{training_session_id}/exercises — session read (T028)
 # ---------------------------------------------------------------------------
 
 
 @router.get(
     "/sessions/{training_session_id}/exercises",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="[TODO T009] Leer ejercicios ensamblados de una sesión",
+    response_model=list[TechniqueSessionItem],
+    summary="Leer ejercicios ensamblados de una sesión",
     description=(
-        "Implementado por T009. Devuelve la lista ordenada de TechniqueSessionItem "
-        "de la sesión, agrupados por segmento (FR-013, FR-020)."
+        "Devuelve la lista ordenada de TechniqueSessionItem de la sesión, "
+        "agrupados por segmento (FR-013, FR-020). Retorna lista vacía cuando la "
+        "sesión existe pero no tiene ejercicios de técnica vinculados."
     ),
-    include_in_schema=True,
 )
 async def get_session_exercises(
     training_session_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
-) -> None:
-    # TODO (T009): query technique_session_exercises for the given session.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="GET /sessions/{training_session_id}/exercises — pendiente T009",
-    )
+) -> list[TechniqueSessionItem]:
+    """Return the ordered technique exercise list for a session."""
+    link_rows = await assembler_svc.get_session_exercises(db, training_session_id)
+    return [_serialize_session_item(link) for link in link_rows]
 
 
 # ---------------------------------------------------------------------------
-# TODO (T010): GET /api/technique/athletes/{athlete_id}/progress
+# GET /api/technique/athletes/{athlete_id}/progress — progress read (T037)
 # ---------------------------------------------------------------------------
 
 
 @router.get(
     "/athletes/{athlete_id}/progress",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="[TODO T010] Leer progreso de habilidades de un atleta",
+    response_model=AthleteProgressRead,
+    summary="Leer progreso de habilidades de un atleta",
     description=(
-        "Implementado por T010. Devuelve AthleteProgressRead con current "
-        "(último evento por habilidad) e history (eventos de la temporada). "
-        "Coach/admin únicamente — sin PII de menores (FR-017, SC-005)."
+        "Devuelve AthleteProgressRead con current (último evento por habilidad) "
+        "e history (todos los eventos del atleta, ordenados por fecha). "
+        "Coach/admin únicamente — sin PII de menores (FR-017, SC-005). "
+        "404 cuando el athlete_id no existe."
     ),
-    include_in_schema=True,
 )
 async def get_athlete_progress(
     athlete_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
-) -> None:
-    # TODO (T010): verify club scope, then delegate to progress service.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="GET /athletes/{athlete_id}/progress — pendiente T010",
+) -> AthleteProgressRead:
+    """Return skill progress for a single athlete (SC-005: single-athlete scope)."""
+    try:
+        result = await progress_svc.get_athlete_progress(db, athlete_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return AthleteProgressRead(
+        athlete_id=athlete_id,
+        current=[_serialize_progress_event(e) for e in result["current"]],
+        history=[_serialize_progress_event(e) for e in result["history"]],
     )
 
 
 # ---------------------------------------------------------------------------
-# TODO (T010): POST /api/technique/athletes/{athlete_id}/progress
+# POST /api/technique/athletes/{athlete_id}/progress — progress append (T037)
 # ---------------------------------------------------------------------------
 
 
 @router.post(
     "/athletes/{athlete_id}/progress",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="[TODO T010] Registrar evento de progreso de habilidad",
+    response_model=SkillProgressEvent,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar evento de progreso de habilidad",
     description=(
-        "Implementado por T010. Añade un evento append-only de SkillProgressStatus "
-        "para el atleta (US4, FR-015). Body: ProgressCreate. Respuesta 201: "
-        "SkillProgressEvent."
+        "Añade un evento append-only de SkillProgressStatus para el atleta "
+        "(US4, FR-015). Body: ProgressCreate. Respuesta 201: SkillProgressEvent. "
+        "404 cuando el atleta no existe."
     ),
-    include_in_schema=True,
 )
 async def create_athlete_progress(
     athlete_id: int,
+    payload: ProgressCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
-) -> None:
-    # TODO (T010): accept ProgressCreate body, verify club scope, insert row.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="POST /athletes/{athlete_id}/progress — pendiente T010",
+) -> SkillProgressEvent:
+    """Append a new skill-progress event for the athlete (append-only, FR-015)."""
+    try:
+        event = await progress_svc.add_progress_event(
+            db,
+            athlete_id,
+            skill_id=payload.skill_id,
+            status=payload.status,
+            coach_note=payload.coach_note,
+            season=payload.season,
+            recorded_by_user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    await db.commit()
+    await db.refresh(event)
+    return _serialize_progress_event(event)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/technique/exercises — curation create (T044)
+# ---------------------------------------------------------------------------
+
+
+async def _resolve_skills(
+    db: AsyncSession, skill_slugs: list[str]
+) -> list[TechniqueSkill]:
+    """Resolve skill slugs to ORM rows; raises 422 for unknown slugs."""
+    result = await db.execute(
+        select(TechniqueSkill).where(TechniqueSkill.slug.in_(skill_slugs))
     )
+    found = list(result.scalars().all())
+    found_slugs = {s.slug for s in found}
+    missing = [s for s in skill_slugs if s not in found_slugs]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Habilidades no encontradas: {missing}",
+        )
+    return found
 
 
-# ---------------------------------------------------------------------------
-# TODO (T011): POST /api/technique/exercises — curation create
-# ---------------------------------------------------------------------------
+async def _resolve_materials(
+    db: AsyncSession, material_slugs: list[str]
+) -> list[TechniqueMaterial]:
+    """Resolve material slugs to ORM rows; raises 422 for unknown slugs."""
+    if not material_slugs:
+        return []
+    result = await db.execute(
+        select(TechniqueMaterial).where(TechniqueMaterial.slug.in_(material_slugs))
+    )
+    found = list(result.scalars().all())
+    found_slugs = {m.slug for m in found}
+    missing = [s for s in material_slugs if s not in found_slugs]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Materiales no encontrados: {missing}",
+        )
+    return found
+
+
+def _slugify(name: str) -> str:
+    """Derive a URL-safe slug from a display name."""
+    slug = name.lower().strip()
+    slug = _re.sub(r"[áàä]", "a", slug)
+    slug = _re.sub(r"[éèë]", "e", slug)
+    slug = _re.sub(r"[íìï]", "i", slug)
+    slug = _re.sub(r"[óòö]", "o", slug)
+    slug = _re.sub(r"[úùü]", "u", slug)
+    slug = _re.sub(r"[ñ]", "n", slug)
+    slug = _re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+    return slug
 
 
 @router.post(
     "/exercises",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="[TODO T011] Crear ejercicio personalizado",
+    response_model=ExerciseDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear ejercicio personalizado",
     description=(
-        "Implementado por T011. Crea un ejercicio con club_id del coach "
-        "(is_seeded=false). Body: ExerciseCreate. Respuesta 201: ExerciseDetail. "
-        "Validaciones: gymkhana ⇒ layout_ascii; ≥1 age_band; ≥1 skill (FR-019)."
+        "Crea un ejercicio con club_id del coach (is_seeded=false). "
+        "Body: ExerciseCreate. Respuesta 201: ExerciseDetail. "
+        "Validaciones: gymkhana ⇒ layout_ascii requerido; ≥1 age_band; ≥1 skill "
+        "(FR-019). Aparece en browse/filtros de inmediato."
     ),
-    include_in_schema=True,
 )
 async def create_exercise(
+    payload: ExerciseCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
-) -> None:
-    # TODO (T011): accept ExerciseCreate, verify club scope, insert with club_id.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="POST /exercises — pendiente T011",
+) -> ExerciseDetail:
+    """Create a coach-custom exercise scoped to the coach's club."""
+    club_id = await _coach_club_id(db, current_user)
+
+    skills = await _resolve_skills(db, payload.skill_slugs)
+    materials = await _resolve_materials(db, payload.material_slugs)
+
+    base_slug = _slugify(payload.name)
+    # Ensure slug uniqueness by appending club_id when needed.
+    candidate_slug = f"{base_slug}-club{club_id}"
+    existing = await db.execute(
+        select(TechniqueExercise.id).where(TechniqueExercise.slug == candidate_slug)
     )
+    if existing.scalar_one_or_none() is not None:
+        candidate_slug = f"{candidate_slug}-{int(_time.time())}"
+
+    exercise = TechniqueExercise(
+        slug=candidate_slug,
+        name=payload.name,
+        summary=payload.summary,
+        how_to=payload.how_to,
+        difficulty=payload.difficulty,
+        is_game=payload.is_game,
+        is_gymkhana=payload.is_gymkhana,
+        layout_ascii=payload.layout_ascii,
+        layout_alt=payload.layout_alt,
+        confidence=None,
+        is_seeded=False,
+        is_hidden=False,
+        club_id=club_id,
+        created_by_user_id=current_user.id,
+    )
+    exercise.skills = skills
+    exercise.materials = materials
+    db.add(exercise)
+    await db.flush()
+
+    # Insert age band rows.
+    for band in set(payload.age_bands):
+        db.add(TechniqueExerciseAgeBand(exercise_id=exercise.id, age_band=band))
+
+    await db.commit()
+
+    # Reload with all relationships for the response.
+    reloaded = await catalog_svc.get_exercise(db, exercise.id)
+    if reloaded is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al recuperar el ejercicio creado.",
+        )
+    return _serialize_exercise_detail(reloaded)
 
 
 # ---------------------------------------------------------------------------
-# TODO (T011): PUT /api/technique/exercises/{id} — curation update
+# PUT /api/technique/exercises/{id} — curation update (T044)
 # ---------------------------------------------------------------------------
 
 
 @router.put(
     "/exercises/{exercise_id}",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="[TODO T011] Editar ejercicio (incluso seeded)",
+    response_model=ExerciseDetail,
+    summary="Editar ejercicio (incluso seeded)",
     description=(
-        "Implementado por T011. Edición parcial. Body: ExerciseUpdate. "
-        "Respuesta 200: ExerciseDetail. Edits no alteran sesiones ya guardadas "
-        "(FR-020)."
+        "Edición parcial de cualquier ejercicio. Body: ExerciseUpdate. "
+        "Respuesta 200: ExerciseDetail actualizado. Los edits no alteran sesiones "
+        "ya guardadas (FR-020). 404 cuando el id es desconocido."
     ),
-    include_in_schema=True,
 )
 async def update_exercise(
     exercise_id: int,
+    payload: ExerciseUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
-) -> None:
-    # TODO (T011): accept ExerciseUpdate, apply partial update, return ExerciseDetail.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="PUT /exercises/{exercise_id} — pendiente T011",
-    )
+) -> ExerciseDetail:
+    """Apply a partial update to any exercise (seeded or custom)."""
+    ex = await catalog_svc.get_exercise(db, exercise_id)
+    if ex is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ejercicio {exercise_id} no encontrado.",
+        )
+
+    # Cross-field gymkhana/layout_ascii invariant when only one side supplied.
+    effective_is_gymkhana = payload.is_gymkhana if payload.is_gymkhana is not None else ex.is_gymkhana
+    effective_layout = payload.layout_ascii if payload.layout_ascii is not None else ex.layout_ascii
+    if effective_is_gymkhana and not effective_layout:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="layout_ascii es requerido cuando is_gymkhana es True (FR-008).",
+        )
+
+    # Apply scalar fields.
+    if payload.name is not None:
+        ex.name = payload.name
+    if payload.summary is not None:
+        ex.summary = payload.summary
+    if payload.how_to is not None:
+        ex.how_to = payload.how_to
+    if payload.difficulty is not None:
+        ex.difficulty = payload.difficulty
+    if payload.is_game is not None:
+        ex.is_game = payload.is_game
+    if payload.is_gymkhana is not None:
+        ex.is_gymkhana = payload.is_gymkhana
+    if payload.layout_ascii is not None:
+        ex.layout_ascii = payload.layout_ascii
+    if payload.layout_alt is not None:
+        ex.layout_alt = payload.layout_alt
+
+    # Replace M2M relationships when supplied.
+    if payload.skill_slugs is not None:
+        ex.skills = await _resolve_skills(db, payload.skill_slugs)
+    if payload.material_slugs is not None:
+        ex.materials = await _resolve_materials(db, payload.material_slugs)
+
+    # Replace age band rows when supplied (delete-orphan cascade handles removal).
+    if payload.age_bands is not None:
+        # Remove existing age band rows first.
+        await db.execute(
+            sa_delete(TechniqueExerciseAgeBand).where(
+                TechniqueExerciseAgeBand.exercise_id == ex.id
+            )
+        )
+        for band in set(payload.age_bands):
+            db.add(TechniqueExerciseAgeBand(exercise_id=ex.id, age_band=band))
+
+    await db.commit()
+
+    reloaded = await catalog_svc.get_exercise(db, ex.id)
+    if reloaded is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al recuperar el ejercicio actualizado.",
+        )
+    return _serialize_exercise_detail(reloaded)
 
 
 # ---------------------------------------------------------------------------
-# TODO (T011): PATCH /api/technique/exercises/{id}/visibility — hide/unhide
+# PATCH /api/technique/exercises/{id}/visibility — hide/unhide (T044)
 # ---------------------------------------------------------------------------
 
 
 @router.patch(
     "/exercises/{exercise_id}/visibility",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="[TODO T011] Ocultar/mostrar ejercicio",
+    response_model=ExerciseVisibilityRead,
+    summary="Ocultar/mostrar ejercicio",
     description=(
-        "Implementado por T011. Body: ExerciseVisibilityPatch { is_hidden: bool }. "
-        "Respuesta 200: ExerciseVisibilityRead { id, is_hidden }. "
-        "Soft-hide only — RESTRICT FKs previenen borrado real (FR-019/020)."
+        "Cambia el flag is_hidden de un ejercicio (soft-hide). "
+        "Body: { is_hidden: bool }. Respuesta 200: { id, is_hidden }. "
+        "Las filas ocultas no se destruyen (FR-019) y no corrompen sesiones "
+        "guardadas (FR-020). 404 cuando el id es desconocido."
     ),
-    include_in_schema=True,
 )
 async def set_exercise_visibility(
     exercise_id: int,
+    payload: ExerciseVisibilityPatch,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_require_coach_or_admin),
-) -> None:
-    # TODO (T011): accept ExerciseVisibilityPatch, update is_hidden, return read.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="PATCH /exercises/{exercise_id}/visibility — pendiente T011",
+) -> ExerciseVisibilityRead:
+    """Set is_hidden on an exercise; never deletes the row."""
+    result = await db.execute(
+        select(TechniqueExercise).where(TechniqueExercise.id == exercise_id)
     )
+    ex = result.scalar_one_or_none()
+    if ex is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ejercicio {exercise_id} no encontrado.",
+        )
+
+    ex.is_hidden = payload.is_hidden
+    await db.commit()
+    await db.refresh(ex)
+
+    return ExerciseVisibilityRead(id=ex.id, is_hidden=ex.is_hidden)
