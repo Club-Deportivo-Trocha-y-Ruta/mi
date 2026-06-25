@@ -274,5 +274,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/017-competitive-anxiety-assessment/plan.md
+at specs/018-technique-gymkhana-library/plan.md
 <!-- SPECKIT END -->
