@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from app.models.calendar_event import CalendarEvent
     from app.models.club import Club
     from app.models.session_media import SessionMedia
+    from app.models.technique_exercise import TechniqueSessionExercise
     from app.models.user import User
 
 
@@ -138,6 +139,13 @@ class TrainingSession(Base):
         "CalendarEvent",
         back_populates="training_session",
         foreign_keys="[TrainingSession.calendar_event_id]",
+    )
+    # Feature 018 — technique session builder (selectinload in detail reads).
+    technique_exercises: Mapped[list[TechniqueSessionExercise]] = relationship(
+        "TechniqueSessionExercise",
+        back_populates="training_session",
+        cascade="all, delete-orphan",
+        foreign_keys="[TechniqueSessionExercise.training_session_id]",
     )
 
 

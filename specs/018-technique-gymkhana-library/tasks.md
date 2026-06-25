@@ -23,9 +23,9 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 [P] Create backend scaffolding: `backend/app/services/technique/` package (`__init__.py`), empty `backend/app/routers/technique.py`, `backend/app/schemas/technique.py`, `backend/app/data/technique_catalog.py` stub (@fastapi-architect)
+- [X] T001 [P] Create backend scaffolding: `backend/app/services/technique/` package (`__init__.py`), empty `backend/app/routers/technique.py`, `backend/app/schemas/technique.py`, `backend/app/data/technique_catalog.py` stub (@fastapi-architect)
 - [ ] T002 [P] Create frontend scaffolding: `frontend/src/routes/technique/`, `frontend/src/components/technique/`, `frontend/src/api/technique.ts`, technique hooks dir (@react-ui-engineer)
-- [ ] T003 [P] Extract the seed payload from `docs/14-tecnica-gymkana-7-15/research.md` into `backend/app/data/technique_catalog.py`: A–H skill taxonomy (§2 table), materials list (§3 "Materiales base", incl. `sin_material`), the 24-exercise bank (§3 table: name, summary, how_to with NICA 4-step + mastery framing, difficulty, is_game, is_gymkhana, age bands, skill codes, material slugs), and the §4 circuit `layout_ascii` + a plain-language `layout_alt` for each gymkhana — español neutro **verbatim**, no invented content (@data-analyst)
+- [X] T003 [P] Extract the seed payload from `docs/14-tecnica-gymkana-7-15/research.md` into `backend/app/data/technique_catalog.py`: A–H skill taxonomy (§2 table), materials list (§3 "Materiales base", incl. `sin_material`), the 24-exercise bank (§3 table: name, summary, how_to with NICA 4-step + mastery framing, difficulty, is_game, is_gymkhana, age bands, skill codes, material slugs), and the §4 circuit `layout_ascii` + a plain-language `layout_alt` for each gymkhana — español neutro **verbatim**, no invented content (@data-analyst)
 
 ---
 
@@ -33,11 +33,11 @@ description: "Task list for Technique & Gymkhana Library + Session Builder (feat
 
 **⚠️ CRITICAL**: No user story work begins until this phase is complete.
 
-- [ ] T004 Create SQLAlchemy models with `values_callable` enums: `backend/app/models/technique_skill.py`, `technique_material.py`, `technique_exercise.py` (exercise + `technique_exercise_age_bands`, `technique_exercise_skills` & `technique_exercise_materials` secondary tables, `technique_session_exercises`, `athlete_skill_progress`); add a back-ref collection on `TrainingSession`; register in `app/models/__init__.py` (@database-architect)
-- [ ] T005 Alembic migration (down_revision = current head `c2d3e4f5a6b7`): create all `technique_*` tables + `athlete_skill_progress` with FKs (session link CASCADE, exercise/skill RESTRICT), indexes, and an **idempotent data seed** from `technique_catalog.py` (skip if any exercise exists; `is_seeded=true`); mirror `c4d5e6f7a8b9_seed_race_categories.py` (@database-architect)
-- [ ] T006 [P] Pydantic schemas in `backend/app/schemas/technique.py`: `ExerciseListItem`, `ExerciseDetail`, catalog `FilterParams`, `AssembleSessionRequest`/`Response`, `TechniqueSessionItem`, `SkillProgressEvent`/`Read`, curation `ExerciseCreate`/`Update` (gymkhana⇒layout, ≥1 age band, ≥1 skill validators) (@fastapi-architect)
-- [ ] T007 Register `technique` router under `/api/technique` in `app/main.py`; add a coach/admin + club-scope RBAC dependency reusing `services/permissions.py` (@fastapi-architect)
-- [ ] T008 [P] Catalog filter service `backend/app/services/technique/catalog.py`: list/filter by skill/age_band/difficulty + materials **subset** (`NOT EXISTS`, `sin_material` always matches) + `include_hidden`, eager-load skills/materials/age_bands with `selectinload` (@fastapi-architect)
+- [X] T004 Create SQLAlchemy models with `values_callable` enums: `backend/app/models/technique_skill.py`, `technique_material.py`, `technique_exercise.py` (exercise + `technique_exercise_age_bands`, `technique_exercise_skills` & `technique_exercise_materials` secondary tables, `technique_session_exercises`, `athlete_skill_progress`); add a back-ref collection on `TrainingSession`; register in `app/models/__init__.py` (@database-architect)
+- [X] T005 Alembic migration (down_revision = current head `c2d3e4f5a6b7`): create all `technique_*` tables + `athlete_skill_progress` with FKs (session link CASCADE, exercise/skill RESTRICT), indexes, and an **idempotent data seed** from `technique_catalog.py` (skip if any exercise exists; `is_seeded=true`); mirror `c4d5e6f7a8b9_seed_race_categories.py` (@database-architect)
+- [X] T006 [P] Pydantic schemas in `backend/app/schemas/technique.py`: `ExerciseListItem`, `ExerciseDetail`, catalog `FilterParams`, `AssembleSessionRequest`/`Response`, `TechniqueSessionItem`, `SkillProgressEvent`/`Read`, curation `ExerciseCreate`/`Update` (gymkhana⇒layout, ≥1 age band, ≥1 skill validators) (@fastapi-architect)
+- [X] T007 Register `technique` router under `/api/technique` in `app/main.py`; add a coach/admin + club-scope RBAC dependency reusing `services/permissions.py` (@fastapi-architect)
+- [X] T008 [P] Catalog filter service `backend/app/services/technique/catalog.py`: list/filter by skill/age_band/difficulty + materials **subset** (`NOT EXISTS`, `sin_material` always matches) + `include_hidden`, eager-load skills/materials/age_bands with `selectinload` (@fastapi-architect)
 
 **Checkpoint**: schema + models + seed + router foundation ready — user stories can begin.
 

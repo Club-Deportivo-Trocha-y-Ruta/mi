@@ -76,6 +76,22 @@ from app.models.anxiety_baseline import (
     BaselineSubscale,
 )
 
+# Feature 018 — Technique & Gymkhana Library
+from app.models.technique_skill import TechniqueSkill
+from app.models.technique_material import TechniqueMaterial
+from app.models.technique_exercise import (
+    AgeBand,
+    AthleteSkillProgress,
+    ExerciseDifficulty,
+    SessionSegment,
+    SkillProgressStatus,
+    TechniqueExercise,
+    TechniqueExerciseAgeBand,
+    TechniqueSessionExercise,
+    technique_exercise_materials,
+    technique_exercise_skills,
+)
+
 __all__ = [
     "Base",
     "User",
@@ -163,4 +179,17 @@ __all__ = [
     "AnxietyBaseline",
     "BaselineSubscale",
     "BaselineInstrumentType",
+    # Feature 018 — Technique & Gymkhana Library
+    "TechniqueSkill",
+    "TechniqueMaterial",
+    "TechniqueExercise",
+    "TechniqueExerciseAgeBand",
+    "TechniqueSessionExercise",
+    "AthleteSkillProgress",
+    "AgeBand",
+    "ExerciseDifficulty",
+    "SessionSegment",
+    "SkillProgressStatus",
+    "technique_exercise_skills",
+    "technique_exercise_materials",
 ]
