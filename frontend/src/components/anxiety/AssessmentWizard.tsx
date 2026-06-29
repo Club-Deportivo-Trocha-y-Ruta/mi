@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { mapAnxietyError } from "@/api/anxiety";
 import { useCreateAssessment } from "@/hooks/anxiety/useAnxietyAssessments";
+import { useAthletes } from "@/hooks/athletes/useAthletes";
 import type {
   AnxietyInstrumentType,
   AssessmentCreated,
@@ -22,6 +23,8 @@ export function AssessmentWizard() {
   const [created, setCreated] = useState<AssessmentCreated | null>(null);
 
   const mutation = useCreateAssessment();
+  const athletesQuery = useAthletes();
+  const athletes = athletesQuery.data?.items ?? [];
 
   function submit() {
     setError(null);
@@ -58,15 +61,25 @@ export function AssessmentWizard() {
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="text-sm">
           <span className="mb-1 block font-medium text-slate-700">
-            Deportista (ID)
+            Deportista
           </span>
-          <input
-            type="number"
-            inputMode="numeric"
+          <select
             value={athleteId}
             onChange={(e) => setAthleteId(e.target.value)}
+            disabled={athletesQuery.isLoading}
             className="min-h-10 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          >
+            <option value="">
+              {athletesQuery.isLoading
+                ? "Cargando deportistas…"
+                : "Selecciona un deportista"}
+            </option>
+            {athletes.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.first_name} {a.last_name}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label className="text-sm">

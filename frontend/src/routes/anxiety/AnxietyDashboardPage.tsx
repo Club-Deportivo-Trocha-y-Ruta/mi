@@ -8,6 +8,7 @@ import {
   useAthleteSeries,
   useGroupByEvent,
 } from "@/hooks/anxiety/useAnxietyDashboards";
+import { useAthletes } from "@/hooks/athletes/useAthletes";
 import type { AnxietyInstrumentType } from "@/types/anxiety.types";
 
 type Tab = "crear" | "individual" | "grupo" | "importar";
@@ -69,20 +70,33 @@ function IndividualTab() {
   const [instrument, setInstrument] = useState<AnxietyInstrumentType>("csai2r");
   const [submittedId, setSubmittedId] = useState(0);
   const series = useAthleteSeries(submittedId, instrument, submittedId > 0);
+  const athletesQuery = useAthletes();
+  const athletes = athletesQuery.data?.items ?? [];
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-sm">
           <span className="mb-1 block font-medium text-slate-700">
-            Deportista (ID)
+            Deportista
           </span>
-          <input
-            type="number"
+          <select
             value={athleteId}
             onChange={(e) => setAthleteId(e.target.value)}
-            className="min-h-10 w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+            disabled={athletesQuery.isLoading}
+            className="min-h-10 w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">
+              {athletesQuery.isLoading
+                ? "Cargando deportistas…"
+                : "Selecciona un deportista"}
+            </option>
+            {athletes.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.first_name} {a.last_name}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="text-sm">
           <span className="mb-1 block font-medium text-slate-700">Instrumento</span>
