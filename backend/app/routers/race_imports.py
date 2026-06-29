@@ -55,6 +55,7 @@ from fastapi import (
     status,
 )
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -268,9 +269,10 @@ async def _parse_results_with_timeout(
             ),
         )
     except Exception as exc:  # noqa: BLE001
+        logger.exception("race_import_parse RESULTADOS failed")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Error parseando RESULTADOS: {type(exc).__name__}: {exc}",
+            detail="No se pudo procesar el PDF RESULTADOS. Verifique que sea el formato oficial de la Federación.",
         )
 
 
@@ -290,9 +292,10 @@ async def _parse_general_with_timeout(path: PathLib) -> dict[str, list]:
             detail="GENERAL demasiado complejo (parse > timeout).",
         )
     except Exception as exc:  # noqa: BLE001
+        logger.exception("race_import_parse GENERAL failed")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Error parseando GENERAL: {type(exc).__name__}: {exc}",
+            detail="No se pudo procesar el PDF GENERAL. Verifique que sea el formato oficial de la Federación.",
         )
 
 
@@ -631,12 +634,19 @@ async def parse_import(
 
 
 async def _load_pending_import(
-    db: AsyncSession, parse_id: int, current_user: User
+    db: AsyncSession,
+    parse_id: int,
+    current_user: User,
+    *,
+    for_update: bool = False,
 ) -> RaceImport:
     """Carga un RaceImport pending por id + verifica ownership (admin bypass)."""
-    result = await db.execute(
-        select(RaceImport).where(RaceImport.id == parse_id)
-    )
+    stmt = select(RaceImport).where(RaceImport.id == parse_id)
+    if for_update:
+        # Serializa commits concurrentes del mismo parse_id (MySQL InnoDB).
+        # SQLite (tests) ignora FOR UPDATE — no-op inofensivo.
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
     imp = result.scalar_one_or_none()
     if imp is None:
         raise HTTPException(
@@ -950,7 +960,7 @@ async def commit_import(
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> ImportCommitResponse:
     """Endpoint 3 wizard (commit) — promueve pending → committed con resolved matches."""
-    imp = await _load_pending_import(db, parse_id, current_user)
+    imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
     parse_meta = imp.parse_meta_json or {}
 
     # Liberar conexión MySQL antes de SFTP download + pdfplumber parse.
@@ -999,6 +1009,12 @@ async def commit_import(
         if bib is not None:
             match_decisions[bib] = rm.athlete_id
 
+    # Re-adquirir el lock y re-verificar status justo antes de mutar:
+    # el commit temprano (liberar conexión durante SFTP+parse) soltó el lock
+    # de la carga inicial. Si otro commit ganó la carrera durante el parse,
+    # esta re-verificación lanza 404 (ya no está pending).
+    imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
+
     # Snapshot attrs antes del ingest: el ingestor hace commit/rollback sobre la
     # misma session, lo que expira el ORM `imp` (MissingGreenlet en lazy-load).
     imp_sha256 = imp.sha256
@@ -1018,6 +1034,18 @@ async def commit_import(
             ingested_by_user_id=current_user.id,
             dry_run=False,
             series_id=imp_series_id,
+        )
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "race_import_commit integrity_conflict parse_id=%s", parse_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Los resultados de este evento ya fueron registrados por otra "
+                "operación. Refresca la página para ver el estado actual."
+            ),
         )
     except ValueError as exc:
         # Categoría desconocida u otro error transactional
