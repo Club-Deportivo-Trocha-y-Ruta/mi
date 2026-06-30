@@ -1,19 +1,19 @@
 /**
- * CircuitLayout — muestra el diagrama ASCII de una gymkhana junto con su
- * leyenda compartida.
+ * CircuitLayout — muestra el diagrama de circuito de una gymkhana junto con
+ * su leyenda compartida.
  *
- * Criterios de aceptación (T021):
- *  - layout_ascii se renderiza en <pre> monoespaciado, responsive
- *    (overflow-x: auto, white-space: pre) — nunca rompe el layout en móvil.
- *  - El bloque <pre> tiene role="img" y aria-label derivado de layout_alt
- *    (alternativa de texto WCAG 2.1 AA); adicionalmente un <span> visually-
- *    hidden repite layout_alt para lectores de pantalla que ignoran role="img"
- *    en elementos no-img nativos.
- *  - Si el ejercicio NO es gymkhana, o layout_ascii es null/vacío, el
- *    componente retorna null (nada que renderizar).
- *  - La leyenda se renderiza siempre que haya layout (FR-008).
+ * Criterios de aceptación (T018 / T021):
+ *  - Cuando layout_json está presente (feature 019), delega al componente
+ *    <CircuitDiagram> (inline SVG, responsive, a11y WCAG 2.1 AA).
+ *  - Cuando layout_json es null pero layout_ascii no está vacío, mantiene
+ *    el legacy <pre> monoespaciado con role="img" y aria-label (fallback ASCII).
+ *  - Si el ejercicio NO es gymkhana, o no hay ningún layout disponible,
+ *    el componente retorna null (nada que renderizar).
+ *  - La leyenda ASCII solo se renderiza en el camino de fallback; CircuitDiagram
+ *    expone su propia leyenda de elementos vectoriales.
  */
 
+import { CircuitDiagram } from "@/components/technique/CircuitDiagram";
 import type { ExerciseDetail } from "@/types/technique.types";
 
 interface CircuitLayoutProps {
@@ -64,13 +64,21 @@ function CircuitLegend() {
 }
 
 /**
- * Renderiza el layout ASCII de la gymkhana junto con la leyenda compartida.
- * Retorna null si el ejercicio no es gymkhana o no tiene layout.
+ * Renderiza el diagrama de la gymkhana junto con la leyenda compartida.
+ *
+ * Regla de selección de renderer (FR-010):
+ *   1. layout_json presente → <CircuitDiagram> (inline SVG, feature 019).
+ *   2. layout_json null + layout_ascii no vacío → legacy <pre> + CircuitLegend.
+ *   3. Sin ningún layout (o no es gymkhana) → null.
  */
 export function CircuitLayout({ exercise }: CircuitLayoutProps) {
-  const { is_gymkhana, layout_ascii, layout_alt } = exercise;
+  const { is_gymkhana, layout_json, layout_ascii, layout_alt } = exercise;
 
-  if (!is_gymkhana || !layout_ascii?.trim()) {
+  // Guard: solo gymkhana con al menos un layout disponible
+  const hasSvgLayout = Boolean(layout_json);
+  const hasAsciiLayout = Boolean(layout_ascii?.trim());
+
+  if (!is_gymkhana || (!hasSvgLayout && !hasAsciiLayout)) {
     return null;
   }
 
@@ -82,25 +90,35 @@ export function CircuitLayout({ exercise }: CircuitLayoutProps) {
         Diagrama del circuito
       </h3>
 
-      {/* Contenedor con scroll horizontal — evita overflow en pantallas estrechas */}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-950">
-        {/*
-          role="img" convierte el <pre> en una imagen accesible.
-          aria-label provee la descripción textual requerida por WCAG 1.1.1.
-          El <VisuallyHidden> es un fallback para SRs que no honran role="img"
-          en elementos no-img nativos (ej. NVDA + Firefox).
-        */}
-        <pre
-          role="img"
-          aria-label={altText}
-          className="whitespace-pre p-4 font-mono text-xs leading-snug text-slate-100 sm:text-sm"
-        >
-          <VisuallyHidden>{altText}</VisuallyHidden>
-          {layout_ascii}
-        </pre>
-      </div>
+      {/* ── Camino principal: SVG estructurado (feature 019) ────────────── */}
+      {hasSvgLayout && layout_json ? (
+        <CircuitDiagram layout={layout_json} altText={altText} />
+      ) : (
+        /* ── Fallback: ASCII monoespaciado (feature 018) ───────────────── */
+        <>
+          {/* Contenedor con scroll horizontal — evita overflow en pantallas estrechas */}
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-950">
+            {/*
+              role="img" convierte el <pre> en una imagen accesible.
+              aria-label provee la descripción textual requerida por WCAG 1.1.1.
+              El <VisuallyHidden> es un fallback para SRs que no honran role="img"
+              en elementos no-img nativos (ej. NVDA + Firefox).
+            */}
+            <pre
+              role="img"
+              aria-label={altText}
+              className="whitespace-pre p-4 font-mono text-xs leading-snug text-slate-100 sm:text-sm"
+            >
+              <VisuallyHidden>{altText}</VisuallyHidden>
+              {layout_ascii}
+            </pre>
+          </div>
 
-      <CircuitLegend />
+          {/* La leyenda ASCII solo se muestra en el camino de fallback.
+              CircuitDiagram tiene su propia leyenda vectorial integrada. */}
+          <CircuitLegend />
+        </>
+      )}
     </section>
   );
 }

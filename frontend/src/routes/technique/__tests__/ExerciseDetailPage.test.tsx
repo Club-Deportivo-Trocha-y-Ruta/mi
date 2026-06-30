@@ -86,6 +86,7 @@ const EXERCISE_FICTICIO: ExerciseDetail = {
     "Coloca los conos ficticios en línea recta.\nPresiona el freno trasero de forma progresiva.",
   layout_ascii: null,
   layout_alt: null,
+  layout_json: null,
   confidence: null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",

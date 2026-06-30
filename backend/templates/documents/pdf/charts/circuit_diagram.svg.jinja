@@ -1,0 +1,391 @@
+{# Macro SVG: diagrama de circuito de gymkhana (feature 019 — Phase A)
+   Mirrors the React CircuitDiagram.tsx component exactly so the same
+   GymkhanaLayout produces structurally equivalent inline SVG on both
+   the client (React) and server (Jinja/WeasyPrint) renderers (FR-006).
+
+   Inputs:
+     layout   — GymkhanaLayout dict  { width: number, height: number,
+                  elements: [{ kind, x, y, rotation?, style?, label? }, ...] }
+                Elements with unknown kinds are silently skipped (defensive).
+     alt_text — Spanish text alternative; falls back to the generic string.
+                Derive from exercise.layout_alt in the calling template.
+     svg_width — rendered SVG width attr (default 480) — WeasyPrint respects this.
+     svg_height — rendered SVG height attr (default 320).
+
+   Output: <p> caption + inline <svg> + HTML legend table — all print-clean.
+   No external <image>, no canvas, no external fetch (FR-005).
+
+   Accessibility (FR-017): role="img", <title>, <desc> from alt_text.
+   Privacy (FR-019/023): no minor PII; controlled element vocabulary only.
+   Copy (FR-020 / T024): legend labels in español neutro, identical to React.
+#}
+{% macro circuit_diagram(layout, alt_text="Diagrama del circuito de gymkhana", svg_width=480, svg_height=320) %}
+{#
+  ── Canvas dimensions from layout (canvas units, not px).
+  ── The viewBox matches layout.width × layout.height so all element
+  ── coordinates (also in canvas units) land correctly.
+#}
+{%- set lw = layout.width  | float -%}
+{%- set lh = layout.height | float -%}
+
+{#
+  ── R: base radius in canvas units, mirroring CircuitDiagram.tsx:computeR().
+  ── R = clamp(min(width, height) * 0.05, 2.5, 7)
+#}
+{%- set smallest = [lw, lh] | min | float -%}
+{%- set r_raw    = smallest * 0.05 -%}
+{%- set R        = [2.5, [r_raw, 7.0] | min] | max -%}
+
+{#
+  ── Derive alt_text; mirror finalAlt in CircuitDiagram.tsx.
+#}
+{%- set final_alt = alt_text if alt_text else "Diagrama del circuito de gymkhana" -%}
+
+{#
+  ── Collect legend keys present in this layout (ordered, deduplicated).
+  ── Mirrors buildLegendKeys() in CircuitDiagram.tsx.
+  ── 'line' splits into 'line-dashed' / 'line-solid' based on el.style.
+#}
+{%- set legend_ns = namespace(seen=[]) -%}
+{%- for el in layout.elements -%}
+  {%- if el.kind == "line" -%}
+    {%- set lkey = "line-solid" if (el.style | default("dashed")) == "solid" else "line-dashed" -%}
+  {%- elif el.kind in ["cone", "gate", "mine", "beam", "ring", "arrow"] -%}
+    {%- set lkey = el.kind -%}
+  {%- else -%}
+    {%- set lkey = "" -%}
+  {%- endif -%}
+  {%- if lkey and lkey not in legend_ns.seen -%}
+    {%- set legend_ns.seen = legend_ns.seen + [lkey] -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{# ── Section caption (matches sibling chart macros: <p> before <svg>) ── #}
+<p style="margin: 0 0 4pt 0; font-size: 9pt; font-weight: 700; color: #374151;">Circuito de gymkhana</p>
+
+{# ──────────────────────────────────────────────────────────────────────── #}
+{# Main SVG — viewBox uses canvas units; width/height attrs for PDF sizing  #}
+{# ──────────────────────────────────────────────────────────────────────── #}
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 {{ lw }} {{ lh }}"
+     width="{{ svg_width }}" height="{{ svg_height }}"
+     preserveAspectRatio="xMidYMid meet"
+     role="img"
+     aria-label="{{ final_alt }}">
+
+  {# Accessibility: <title> + <desc> mirror CircuitDiagram.tsx ids titleId/descId #}
+  <title>Circuito de gymkhana</title>
+  <desc>{{ final_alt }}</desc>
+
+  {# Canvas background — matches React: fill="#F8FAFC" #}
+  <rect x="0" y="0" width="{{ lw }}" height="{{ lh }}" fill="#F8FAFC"/>
+
+  {# Canvas border — matches React: stroke="#CBD5E1", strokeWidth=R*0.12 #}
+  <rect x="0" y="0" width="{{ lw }}" height="{{ lh }}"
+        fill="none" stroke="#CBD5E1" stroke-width="{{ R * 0.12 | round(3) }}"/>
+
+  {# ── Element layer ── render each element in declaration order (later = top) #}
+  {%- for el in layout.elements -%}
+    {%- set ex       = el.x | float -%}
+    {%- set ey       = el.y | float -%}
+    {%- set rot      = (el.rotation | default(0)) | float -%}
+    {%- set el_style = el.style | default("dashed") -%}
+
+    {%- if el.kind == "cone" -%}
+      {#
+        ▲ Cone — triangle polygon, flat base.
+        Points (centered at origin): 0,{-R*1.45}  {-R},{R*0.65}  {R},{R*0.65}
+        Mirrors ConeShape in CircuitDiagram.tsx.
+        Colors: fill=#F59E0B  stroke=#92400E  (amber)
+      #}
+      {%- set c_pts = "0," ~ (-R * 1.45) | round(3) ~ " " ~ (-R) | round(3) ~ "," ~ (R * 0.65) | round(3) ~ " " ~ R | round(3) ~ "," ~ (R * 0.65) | round(3) -%}
+      <g transform="translate({{ ex }}, {{ ey }}) rotate({{ rot }})">
+        <polygon points="{{ c_pts }}"
+                 fill="#F59E0B" stroke="#92400E"
+                 stroke-width="{{ (R * 0.14) | round(3) }}"
+                 stroke-linejoin="round"/>
+      </g>
+
+    {%- elif el.kind == "line" -%}
+      {#
+        ─ ─  Line segment — dashed (guía/libre) or solid (técnico).
+        Centered at origin; length = R*4.5.
+        Mirrors LineShape in CircuitDiagram.tsx.
+        Color: stroke=#475569 (slate-600)  — pattern (dash) is the SHAPE cue (FR-017).
+      #}
+      {%- set L = R * 4.5 -%}
+      {%- set dash = (R * 1.1) | round(3) ~ "," ~ (R * 0.65) | round(3) -%}
+      <g transform="translate({{ ex }}, {{ ey }}) rotate({{ rot }})">
+        <line x1="{{ (-L / 2) | round(3) }}" y1="0"
+              x2="{{ (L / 2)  | round(3) }}" y2="0"
+              stroke="#475569"
+              stroke-width="{{ (R * 0.38) | round(3) }}"
+              {% if el_style == "dashed" %}stroke-dasharray="{{ dash }}"{% endif %}
+              stroke-linecap="round"/>
+      </g>
+
+    {%- elif el.kind == "gate" -%}
+      {#
+        || Gate — two vertical posts + top crossbar (H shape).
+        Mirrors GateShape in CircuitDiagram.tsx.
+        Colors: fill=#0EA5E9  stroke=#0369A1  (sky)
+        post: w=R*0.45  h=R*2  gap (half)=R*0.75
+      #}
+      {%- set postW  = R * 0.45 -%}
+      {%- set postH  = R * 2.0  -%}
+      {%- set gap    = R * 0.75 -%}
+      {%- set sw_g   = (R * 0.10) | round(3) -%}
+      {%- set rx_g   = (R * 0.10) | round(3) -%}
+      <g transform="translate({{ ex }}, {{ ey }}) rotate({{ rot }})">
+        {# Left post #}
+        <rect x="{{ (-gap - postW) | round(3) }}" y="{{ (-postH / 2) | round(3) }}"
+              width="{{ postW | round(3) }}" height="{{ postH | round(3) }}"
+              fill="#0EA5E9" stroke="#0369A1" stroke-width="{{ sw_g }}" rx="{{ rx_g }}"/>
+        {# Right post #}
+        <rect x="{{ gap | round(3) }}" y="{{ (-postH / 2) | round(3) }}"
+              width="{{ postW | round(3) }}" height="{{ postH | round(3) }}"
+              fill="#0EA5E9" stroke="#0369A1" stroke-width="{{ sw_g }}" rx="{{ rx_g }}"/>
+        {# Top crossbar connecting the two posts #}
+        <line x1="{{ (-gap - postW / 2) | round(3) }}" y1="{{ (-postH / 2) | round(3) }}"
+              x2="{{ (gap  + postW / 2) | round(3) }}" y2="{{ (-postH / 2) | round(3) }}"
+              stroke="#0369A1" stroke-width="{{ (R * 0.25) | round(3) }}"/>
+      </g>
+
+    {%- elif el.kind == "mine" -%}
+      {#
+        ⊗ Mine / hazard — filled circle + X cross (pattern cue, FR-017).
+        Mirrors MineShape in CircuitDiagram.tsx.
+        Colors: circle fill=#F43F5E stroke=#9F1239  X stroke=#FFFFFF  (rose)
+      #}
+      {%- set xr = R * 0.52 -%}
+      {%- set sw_m = (R * 0.32) | round(3) -%}
+      <g transform="translate({{ ex }}, {{ ey }}) rotate({{ rot }})">
+        <circle r="{{ R | round(3) }}"
+                fill="#F43F5E" stroke="#9F1239" stroke-width="{{ (R * 0.12) | round(3) }}"/>
+        {# X arm 1 — top-left to bottom-right #}
+        <line x1="{{ (-xr) | round(3) }}" y1="{{ (-xr) | round(3) }}"
+              x2="{{ xr  | round(3) }}"  y2="{{ xr   | round(3) }}"
+              stroke="#FFFFFF" stroke-width="{{ sw_m }}" stroke-linecap="round"/>
+        {# X arm 2 — top-right to bottom-left #}
+        <line x1="{{ xr  | round(3) }}"  y1="{{ (-xr) | round(3) }}"
+              x2="{{ (-xr) | round(3) }}" y2="{{ xr   | round(3) }}"
+              stroke="#FFFFFF" stroke-width="{{ sw_m }}" stroke-linecap="round"/>
+      </g>
+
+    {%- elif el.kind == "beam" -%}
+      {#
+        ═══ Beam (viga de equilibrio) — wide flat rectangle + diagonal hatches.
+        Flat-bar shape + hatch pattern are the SHAPE cue (FR-017).
+        Mirrors BeamShape in CircuitDiagram.tsx.
+        Colors: fill=#D97706  stroke=#78350F  hatch=#92400E  (amber-dark)
+        Dimensions: w=R*5.2  h=R*0.65  numHatches=5
+      #}
+      {%- set bw   = R * 5.2  -%}
+      {%- set bh   = R * 0.65 -%}
+      {%- set step = bw / 6.0 -%}
+      <g transform="translate({{ ex }}, {{ ey }}) rotate({{ rot }})">
+        {# Beam rectangle #}
+        <rect x="{{ (-bw / 2) | round(3) }}" y="{{ (-bh / 2) | round(3) }}"
+              width="{{ bw | round(3) }}" height="{{ bh | round(3) }}"
+              rx="{{ (R * 0.12) | round(3) }}"
+              fill="#D97706" stroke="#78350F" stroke-width="{{ (R * 0.10) | round(3) }}"/>
+        {# Diagonal hatch lines — numHatches=5, i in [1..5] #}
+        {%- for i in range(1, 6) -%}
+          {%- set hx = -bw / 2 + step * i -%}
+          <line x1="{{ hx | round(3) }}"              y1="{{ (-bh / 2) | round(3) }}"
+                x2="{{ (hx - R * 0.45) | round(3) }}" y2="{{ (bh  / 2) | round(3) }}"
+                stroke="#92400E" stroke-width="{{ (R * 0.14) | round(3) }}"
+                stroke-linecap="round" opacity="0.75"/>
+        {%- endfor -%}
+      </g>
+
+    {%- elif el.kind == "ring" -%}
+      {#
+        ○ Ring (círculo de la muerte) — open circle, stroke only.
+        Open-circle shape distinguishes it from Mine (filled+cross) — FR-017.
+        Mirrors RingShape in CircuitDiagram.tsx.
+        Color: stroke=#7C3AED  (violet)
+      #}
+      <g transform="translate({{ ex }}, {{ ey }}) rotate({{ rot }})">
+        <circle r="{{ (R * 1.15) | round(3) }}"
+                fill="none" stroke="#7C3AED"
+                stroke-width="{{ (R * 0.44) | round(3) }}"/>
+      </g>
+
+    {%- elif el.kind == "arrow" -%}
+      {#
+        ➤ Arrow — chevron polygon (direction of travel).
+        Chevron shape pointing east (right) when rotation=0; parent rotate() steers it.
+        Mirrors ArrowShape in CircuitDiagram.tsx — 7-point polygon.
+        Colors: fill=#10B981  stroke=#065F46  (emerald)
+      #}
+      {%- set a_pts =
+            (-R * 0.55) | round(3) ~ "," ~ (-R * 0.42) | round(3) ~ " " ~
+            ( R * 0.18) | round(3) ~ "," ~ (-R * 0.42) | round(3) ~ " " ~
+            ( R * 0.18) | round(3) ~ "," ~ (-R * 0.82) | round(3) ~ " " ~
+            ( R * 1.15) | round(3) ~ "," ~  0                        ~ " " ~
+            ( R * 0.18) | round(3) ~ "," ~ ( R * 0.82) | round(3) ~ " " ~
+            ( R * 0.18) | round(3) ~ "," ~ ( R * 0.42) | round(3) ~ " " ~
+            (-R * 0.55) | round(3) ~ "," ~ ( R * 0.42) | round(3)
+      -%}
+      <g transform="translate({{ ex }}, {{ ey }}) rotate({{ rot }})">
+        <polygon points="{{ a_pts }}"
+                 fill="#10B981" stroke="#065F46"
+                 stroke-width="{{ (R * 0.10) | round(3) }}"
+                 stroke-linejoin="round"/>
+      </g>
+
+    {%- endif -%}
+  {%- endfor -%}
+
+</svg>{# end SVG #}
+
+{#
+  ── Legend — rendered only when at least one element kind is present
+  ── (suppressed for empty layouts, matching React behaviour).
+  ── Uses HTML table for reliable WeasyPrint rendering.
+  ── Labels in español neutro — MUST match LEGEND_LABELS in CircuitDiagram.tsx
+  ── (FR-004 / FR-020 / T024).
+  ──
+  ── Each row: swatch mini-SVG (36×22 px, same proportions as React SWATCH_*)
+  ──           + Spanish label text.
+#}
+{%- if legend_ns.seen | length > 0 -%}
+{%- set SR = 4.5 -%}
+{%- set SW = 36  -%}
+{%- set SH = 22  -%}
+{%- set SCX = 18.0 -%}
+{%- set SCY = 11.0 -%}
+<div style="margin-top: 6pt; padding: 4pt 6pt; background: #F8FAFC; border: 0.5pt solid #E2E8F0; border-radius: 3pt; page-break-inside: avoid;">
+  <p style="margin: 0 0 3pt 0; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B;">Leyenda del circuito</p>
+  <table style="border-collapse: collapse; width: 100%;">
+    <tbody>
+      {%- for lkey in legend_ns.seen -%}
+      <tr>
+        <td style="padding: 1pt 4pt 1pt 0; vertical-align: middle; width: {{ SW }}pt;">
+          {# ── Swatch SVG — mirrors LegendSwatch in CircuitDiagram.tsx ── #}
+          <svg xmlns="http://www.w3.org/2000/svg"
+               viewBox="0 0 {{ SW }} {{ SH }}"
+               width="{{ SW }}" height="{{ SH }}"
+               aria-hidden="true">
+            {%- if lkey == "cone" -%}
+              {%- set s_pts = "0," ~ (-SR * 1.45) | round(2) ~ " " ~ (-SR) | round(2) ~ "," ~ (SR * 0.65) | round(2) ~ " " ~ SR | round(2) ~ "," ~ (SR * 0.65) | round(2) -%}
+              <g transform="translate({{ SCX }}, {{ SCY }})">
+                <polygon points="{{ s_pts }}"
+                         fill="#F59E0B" stroke="#92400E"
+                         stroke-width="{{ (SR * 0.14) | round(2) }}"
+                         stroke-linejoin="round"/>
+              </g>
+            {%- elif lkey == "line-dashed" -%}
+              {%- set sL = SR * 4.5 -%}
+              <g transform="translate({{ SCX }}, {{ SCY }})">
+                <line x1="{{ (-sL / 2) | round(2) }}" y1="0"
+                      x2="{{ (sL / 2)  | round(2) }}" y2="0"
+                      stroke="#475569"
+                      stroke-width="{{ (SR * 0.38) | round(2) }}"
+                      stroke-dasharray="{{ (SR * 1.1) | round(2) }},{{ (SR * 0.65) | round(2) }}"
+                      stroke-linecap="round"/>
+              </g>
+            {%- elif lkey == "line-solid" -%}
+              {%- set sL = SR * 4.5 -%}
+              <g transform="translate({{ SCX }}, {{ SCY }})">
+                <line x1="{{ (-sL / 2) | round(2) }}" y1="0"
+                      x2="{{ (sL / 2)  | round(2) }}" y2="0"
+                      stroke="#475569"
+                      stroke-width="{{ (SR * 0.38) | round(2) }}"
+                      stroke-linecap="round"/>
+              </g>
+            {%- elif lkey == "gate" -%}
+              {%- set spW = SR * 0.45 -%}
+              {%- set spH = SR * 2.0  -%}
+              {%- set sg  = SR * 0.75 -%}
+              <g transform="translate({{ SCX }}, {{ SCY }})">
+                <rect x="{{ (-sg - spW) | round(2) }}" y="{{ (-spH / 2) | round(2) }}"
+                      width="{{ spW | round(2) }}" height="{{ spH | round(2) }}"
+                      fill="#0EA5E9" stroke="#0369A1"
+                      stroke-width="{{ (SR * 0.10) | round(2) }}" rx="{{ (SR * 0.10) | round(2) }}"/>
+                <rect x="{{ sg | round(2) }}" y="{{ (-spH / 2) | round(2) }}"
+                      width="{{ spW | round(2) }}" height="{{ spH | round(2) }}"
+                      fill="#0EA5E9" stroke="#0369A1"
+                      stroke-width="{{ (SR * 0.10) | round(2) }}" rx="{{ (SR * 0.10) | round(2) }}"/>
+                <line x1="{{ (-sg - spW / 2) | round(2) }}" y1="{{ (-spH / 2) | round(2) }}"
+                      x2="{{ (sg + spW / 2)  | round(2) }}" y2="{{ (-spH / 2) | round(2) }}"
+                      stroke="#0369A1" stroke-width="{{ (SR * 0.25) | round(2) }}"/>
+              </g>
+            {%- elif lkey == "mine" -%}
+              {%- set sxr = SR * 0.52 -%}
+              <g transform="translate({{ SCX }}, {{ SCY }})">
+                <circle r="{{ SR | round(2) }}"
+                        fill="#F43F5E" stroke="#9F1239"
+                        stroke-width="{{ (SR * 0.12) | round(2) }}"/>
+                <line x1="{{ (-sxr) | round(2) }}" y1="{{ (-sxr) | round(2) }}"
+                      x2="{{ sxr | round(2) }}"    y2="{{ sxr | round(2) }}"
+                      stroke="#FFFFFF" stroke-width="{{ (SR * 0.32) | round(2) }}" stroke-linecap="round"/>
+                <line x1="{{ sxr | round(2) }}"    y1="{{ (-sxr) | round(2) }}"
+                      x2="{{ (-sxr) | round(2) }}" y2="{{ sxr | round(2) }}"
+                      stroke="#FFFFFF" stroke-width="{{ (SR * 0.32) | round(2) }}" stroke-linecap="round"/>
+              </g>
+            {%- elif lkey == "beam" -%}
+              {%- set sbw  = SR * 5.2  -%}
+              {%- set sbh  = SR * 0.65 -%}
+              {%- set sstep = sbw / 6.0 -%}
+              <g transform="translate({{ SCX }}, {{ SCY }})">
+                <rect x="{{ (-sbw / 2) | round(2) }}" y="{{ (-sbh / 2) | round(2) }}"
+                      width="{{ sbw | round(2) }}" height="{{ sbh | round(2) }}"
+                      rx="{{ (SR * 0.12) | round(2) }}"
+                      fill="#D97706" stroke="#78350F" stroke-width="{{ (SR * 0.10) | round(2) }}"/>
+                {%- for i in range(1, 6) -%}
+                  {%- set shx = -sbw / 2 + sstep * i -%}
+                  <line x1="{{ shx | round(2) }}"              y1="{{ (-sbh / 2) | round(2) }}"
+                        x2="{{ (shx - SR * 0.45) | round(2) }}" y2="{{ (sbh  / 2) | round(2) }}"
+                        stroke="#92400E" stroke-width="{{ (SR * 0.14) | round(2) }}"
+                        stroke-linecap="round" opacity="0.75"/>
+                {%- endfor -%}
+              </g>
+            {%- elif lkey == "ring" -%}
+              <g transform="translate({{ SCX }}, {{ SCY }})">
+                <circle r="{{ (SR * 1.15) | round(2) }}"
+                        fill="none" stroke="#7C3AED"
+                        stroke-width="{{ (SR * 0.44) | round(2) }}"/>
+              </g>
+            {%- elif lkey == "arrow" -%}
+              {%- set sa_pts =
+                    (-SR * 0.55) | round(2) ~ "," ~ (-SR * 0.42) | round(2) ~ " " ~
+                    ( SR * 0.18) | round(2) ~ "," ~ (-SR * 0.42) | round(2) ~ " " ~
+                    ( SR * 0.18) | round(2) ~ "," ~ (-SR * 0.82) | round(2) ~ " " ~
+                    ( SR * 1.15) | round(2) ~ "," ~  0            ~ " " ~
+                    ( SR * 0.18) | round(2) ~ "," ~ ( SR * 0.82) | round(2) ~ " " ~
+                    ( SR * 0.18) | round(2) ~ "," ~ ( SR * 0.42) | round(2) ~ " " ~
+                    (-SR * 0.55) | round(2) ~ "," ~ ( SR * 0.42) | round(2)
+              -%}
+              <g transform="translate({{ SCX }}, {{ SCY }})">
+                <polygon points="{{ sa_pts }}"
+                         fill="#10B981" stroke="#065F46"
+                         stroke-width="{{ (SR * 0.10) | round(2) }}"
+                         stroke-linejoin="round"/>
+              </g>
+            {%- endif -%}
+          </svg>
+        </td>
+        <td style="padding: 1pt 0; vertical-align: middle; font-size: 8pt; color: #475569;">
+          {#
+            Legend labels — español neutro, must match LEGEND_LABELS in CircuitDiagram.tsx
+            (FR-004 / FR-020 / T024).
+          #}
+          {%- if lkey == "cone"        -%}Cono
+          {%- elif lkey == "line-dashed" -%}Trayecto libre
+          {%- elif lkey == "line-solid"  -%}Trayecto técnico
+          {%- elif lkey == "gate"      -%}Puerta
+          {%- elif lkey == "mine"      -%}Mina
+          {%- elif lkey == "beam"      -%}Equilibrio
+          {%- elif lkey == "ring"      -%}Círculo de la muerte
+          {%- elif lkey == "arrow"     -%}Dirección de recorrido
+          {%- endif -%}
+        </td>
+      </tr>
+      {%- endfor -%}
+    </tbody>
+  </table>
+</div>
+{%- endif -%}
+{% endmacro %}

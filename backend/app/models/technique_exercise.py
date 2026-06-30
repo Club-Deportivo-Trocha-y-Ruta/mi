@@ -22,6 +22,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Table,
     Text,
@@ -155,6 +156,8 @@ class TechniqueExercise(Base):
     layout_ascii: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Plain-language text alternative for screen readers (WCAG AA — research D1).
     layout_alt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Structured SVG circuit layout for feature 019 (Phase A); null until migrated/authored.
+    layout_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Research confidence tag (🟢/🟡/⚪ + refs), informational only.
     confidence: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # True for rows originating from the verified research report (D3).

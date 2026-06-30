@@ -1093,3 +1093,301 @@ EXERCISES: list[dict] = [
         "material_slugs": ["sin_material"],
     },
 ]
+
+# ---------------------------------------------------------------------------
+# GYMKHANA_LAYOUT_BACKFILL — §4 croquis → GymkhanaLayout JSON (Feature 019)
+#
+# Maps each gymkhana slug (is_gymkhana=True AND layout_ascii is not None) to
+# a GymkhanaLayout dict:  { "width": int, "height": int, "elements": [...] }
+#
+# CircuitElement vocabulary (kind values):
+#   cone  — Cono (physical traffic cone on ground)
+#   line  — Trayecto guía (dashed) or trayecto técnico (solid)
+#   gate  — Puerta (pass-through gate / limbo bar)
+#   mine  — Mina (obstacle: bottle, ball, piña — avoid touching)
+#   arrow — Dirección de recorrido (bike movement direction)
+#   beam  — Equilibrio/viga (balance beam) or tope/bordillo/roller feature
+#   ring  — Círculo / llanta tendida (tight ring or flat tyre on ground)
+#
+# Coordinate system:
+#   x: horizontal, 0 = left edge, increases right
+#   y: vertical,   0 = top edge,  increases down  (SVG/screen convention)
+#   rotation: degrees clockwise from east
+#     0   = pointing right / element aligned east–west
+#     90  = pointing down  / element aligned north–south (after 90° CW)
+#     180 = pointing left
+#     270 = pointing up
+#   style: 'dashed' | 'solid'  (line kind only)
+#
+# Fidelity bar (plan.md §Backfill): preserves the MEANING (element
+# placement / sequence) of each ASCII croquis — NOT pixel-perfect.
+# All layouts are top-down, individual-station or segment views.
+# Exception: busqueda-del-tesoro-relevo is a multi-station illustrative
+# representation (see note below).
+#
+# NO free-text label on any element (Phase A FR-023 / O-5 hard rule).
+#
+# Sources:
+#   LAYOUT_41 → circuit 4.1 Iniciación 7-9 (4 rotation stations)
+#   LAYOUT_42 → circuit 4.2 Gymkana de Habilidad 10-12 (continuous)
+#   LAYOUT_43 → circuit 4.3 Gymkana Cronometrada 13-15 (single timed line)
+#   docs/14-tecnica-gymkana-7-15/research.md §4
+#
+# COVERAGE — 13 slugs transcribed:
+#   campo-minado, limbo-en-bici, tiro-al-aro, slalom-de-conos,
+#   entre-las-lineas-pasillo, esquiva-la-roca, ochos-figura-8,
+#   frenado-en-zona, bunny-hop-sobre-tope, subir-bajar-bordillo-drop,
+#   escalera-de-llantas, pump-ondulaciones, busqueda-del-tesoro-relevo
+#
+# Flagged for technique-coach review:
+#   busqueda-del-tesoro-relevo — layout_alt explicitly states "No requiere
+#     layout fijo: puede adaptarse a cualquier circuito disponible." The
+#     JSON below is an ILLUSTRATIVE 4-station representation using LAYOUT_42
+#     as the reference circuit. Coach should confirm or replace before using
+#     as a canonical diagram.
+#
+# Consumed by Alembic revision f1a2b3c4d5e6: UPDATE technique_exercises SET
+# layout_json = <value> WHERE slug = <key> AND layout_json IS NULL.
+# Idempotent: runs safely on a partially-seeded or already-migrated DB.
+# ---------------------------------------------------------------------------
+
+GYMKHANA_LAYOUT_BACKFILL: dict[str, dict] = {
+
+    # ── LAYOUT_41 stations ─────────────────────────────────────────────────
+    # Circuit 4.1 — Iniciación 7-9 (four independent rotation stations)
+
+    "slalom-de-conos": {
+        # Source: LAYOUT_41 [E3] SLALOM SUAVE  (▲▲▲▲ top / ▲▲▲ staggered)
+        # 7 cones alternating left (x=80) and right (x=220); top-down view
+        # with rider entering from the top.  Pattern: 4 left + 3 right,
+        # staggered at ~85-unit intervals — matches ASCII 2-row representation.
+        "width": 300,
+        "height": 620,
+        "elements": [
+            {"kind": "arrow", "x": 150, "y": 30,  "rotation": 90},
+            {"kind": "cone",  "x": 80,  "y": 100},
+            {"kind": "cone",  "x": 220, "y": 185},
+            {"kind": "cone",  "x": 80,  "y": 270},
+            {"kind": "cone",  "x": 220, "y": 355},
+            {"kind": "cone",  "x": 80,  "y": 440},
+            {"kind": "cone",  "x": 220, "y": 510},
+            {"kind": "cone",  "x": 80,  "y": 580},
+            {"kind": "arrow", "x": 150, "y": 600, "rotation": 90},
+        ],
+    },
+
+    "entre-las-lineas-pasillo": {
+        # Source: LAYOUT_41 [E1] PASILLO ANCHO→ANGOSTO  (┅┅┅ top / ┅┅┅ bottom)
+        # Two dashed lines define the corridor walls; rider travels left→right.
+        # A single pair of line elements at y=60 and y=140 represents the
+        # corridor boundaries (width ~80 canvas units ≈ 1.5 m in field).
+        "width": 600,
+        "height": 200,
+        "elements": [
+            {"kind": "line",  "x": 300, "y": 60,  "rotation": 0, "style": "dashed"},
+            {"kind": "line",  "x": 300, "y": 140, "rotation": 0, "style": "dashed"},
+            {"kind": "arrow", "x": 100, "y": 100, "rotation": 0},
+            {"kind": "arrow", "x": 500, "y": 100, "rotation": 0},
+        ],
+    },
+
+    "ochos-figura-8": {
+        # Source: LAYOUT_41 [E2] OCHOS  (▲▲ / ↺ ∞ ↻ / ▲▲)
+        # 4 cones in 2×2 grid; arrows at the centre-crossing show the figure-8
+        # loop direction — up (↺ CCW left loop) and down (↻ CW right loop).
+        "width": 400,
+        "height": 400,
+        "elements": [
+            {"kind": "cone",  "x": 120, "y": 120},
+            {"kind": "cone",  "x": 280, "y": 120},
+            {"kind": "cone",  "x": 120, "y": 280},
+            {"kind": "cone",  "x": 280, "y": 280},
+            {"kind": "arrow", "x": 200, "y": 160, "rotation": 270},  # ↺ upper loop (CCW)
+            {"kind": "arrow", "x": 200, "y": 240, "rotation": 90},   # ↻ lower loop (CW)
+        ],
+    },
+
+    "frenado-en-zona": {
+        # Source: LAYOUT_41 [E4] FRENADO EN ZONA  (▲□▲ caja / ⟵ detente aquí)
+        # 4 cones form a braking box (~2×2 m).  In the 4.1 circuit the rider
+        # arrives from the right going left; the open side faces the entry arrow.
+        "width": 500,
+        "height": 350,
+        "elements": [
+            {"kind": "arrow", "x": 400, "y": 175, "rotation": 180},  # approach right→left
+            {"kind": "cone",  "x": 150, "y": 100},
+            {"kind": "cone",  "x": 280, "y": 100},
+            {"kind": "cone",  "x": 150, "y": 250},
+            {"kind": "cone",  "x": 280, "y": 250},
+        ],
+    },
+
+    # ── LAYOUT_42 stations ─────────────────────────────────────────────────
+    # Circuit 4.2 — Gymkana de Habilidad 10-12 (continuous top-to-bottom course)
+
+    "campo-minado": {
+        # Source: LAYOUT_42 CAMPO MINADO  (✕✕✕ / ✕✕✕ / ✕✕✕)
+        # 9 mines in 3 rows: rows 1 & 3 flush left (x=60,220,380);
+        # row 2 offset right ~½ spacing (x=140,300,440) — matches ASCII indent.
+        # Rider enters top, exits bottom, finding gaps between mines.
+        "width": 500,
+        "height": 400,
+        "elements": [
+            {"kind": "arrow", "x": 250, "y": 30,  "rotation": 90},
+            {"kind": "mine",  "x": 60,  "y": 120},
+            {"kind": "mine",  "x": 220, "y": 120},
+            {"kind": "mine",  "x": 380, "y": 120},
+            {"kind": "mine",  "x": 140, "y": 210},
+            {"kind": "mine",  "x": 300, "y": 210},
+            {"kind": "mine",  "x": 440, "y": 210},
+            {"kind": "mine",  "x": 60,  "y": 300},
+            {"kind": "mine",  "x": 220, "y": 300},
+            {"kind": "mine",  "x": 380, "y": 300},
+            {"kind": "arrow", "x": 250, "y": 370, "rotation": 90},
+        ],
+    },
+
+    "limbo-en-bici": {
+        # Source: LAYOUT_42 LIMBO en bici  (⊓ ▮━━━━━━▮)
+        # Two stakes (represented as cones at ground level) with a horizontal
+        # gate (the limbo bar/crossbar) between them above the ride line.
+        # Rider passes through left→right, ducking under the gate.
+        "width": 500,
+        "height": 250,
+        "elements": [
+            {"kind": "arrow", "x": 60,  "y": 125, "rotation": 0},
+            {"kind": "cone",  "x": 180, "y": 125},                   # left stake
+            {"kind": "gate",  "x": 250, "y": 65,  "rotation": 0},   # limbo bar (above ride line)
+            {"kind": "cone",  "x": 320, "y": 125},                   # right stake
+            {"kind": "arrow", "x": 440, "y": 125, "rotation": 0},
+        ],
+    },
+
+    "tiro-al-aro": {
+        # Source: LAYOUT_42 TIRO AL ARO  (cono ▲ · · · 🌀 tubo)
+        # A target cone sits to the upper-left; the rider follows a dashed
+        # guide path at the lower portion of the canvas (left→right); a second
+        # dashed line approximates the ring-throw arc from rider to cone.
+        "width": 400,
+        "height": 350,
+        "elements": [
+            {"kind": "line",  "x": 250, "y": 275, "rotation": 0,   "style": "dashed"},  # riding path
+            {"kind": "arrow", "x": 100, "y": 275, "rotation": 0},                        # rider direction
+            {"kind": "cone",  "x": 100, "y": 100},                                       # target cone
+            {"kind": "line",  "x": 175, "y": 187, "rotation": 330, "style": "dashed"},  # throw arc
+        ],
+    },
+
+    "escalera-de-llantas": {
+        # Source: LAYOUT_42 ESCALERA DE LLANTAS  (◎ ◎ ◎)
+        # 5 rings in a vertical column represent the tyre ladder (top-down view).
+        # The ASCII shows 3 side-by-side due to text layout; in the field the
+        # tyres are laid sequentially along the direction of travel (top→bottom).
+        "width": 250,
+        "height": 550,
+        "elements": [
+            {"kind": "arrow", "x": 125, "y": 30,  "rotation": 90},
+            {"kind": "ring",  "x": 125, "y": 110},
+            {"kind": "ring",  "x": 125, "y": 200},
+            {"kind": "ring",  "x": 125, "y": 290},
+            {"kind": "ring",  "x": 125, "y": 380},
+            {"kind": "ring",  "x": 125, "y": 470},
+            {"kind": "arrow", "x": 125, "y": 530, "rotation": 90},
+        ],
+    },
+
+    # NOTE — technique-coach review required:
+    # This exercise explicitly has NO fixed layout ("No requiere layout fijo:
+    # puede adaptarse a cualquier circuito disponible" — layout_alt).
+    # The JSON below is an ILLUSTRATIVE 4-station circuit based on LAYOUT_42.
+    # Before using as a canonical diagram, the coach should confirm or replace
+    # with the actual circuit used at the club.
+    "busqueda-del-tesoro-relevo": {
+        # Source: LAYOUT_42 (representative; circuit is freely adaptable)
+        # Simplified 4-station loop: slalom cones → gate/limbo → mine field
+        # → braking-box finish.  Arrows show the inter-station flow.
+        "width": 400,
+        "height": 600,
+        "elements": [
+            {"kind": "arrow", "x": 200, "y": 30,  "rotation": 90},   # entry
+            {"kind": "cone",  "x": 100, "y": 110},                    # station 1: 3 slalom cones
+            {"kind": "cone",  "x": 200, "y": 140},
+            {"kind": "cone",  "x": 300, "y": 110},
+            {"kind": "arrow", "x": 200, "y": 195, "rotation": 90},
+            {"kind": "gate",  "x": 200, "y": 255, "rotation": 0},    # station 2: gate/limbo
+            {"kind": "arrow", "x": 200, "y": 305, "rotation": 90},
+            {"kind": "mine",  "x": 120, "y": 375},                    # station 3: mine field
+            {"kind": "mine",  "x": 280, "y": 375},
+            {"kind": "mine",  "x": 200, "y": 425},
+            {"kind": "arrow", "x": 200, "y": 465, "rotation": 90},
+            {"kind": "cone",  "x": 150, "y": 520},                    # station 4: braking box
+            {"kind": "cone",  "x": 250, "y": 520},
+            {"kind": "cone",  "x": 150, "y": 565},
+            {"kind": "cone",  "x": 250, "y": 565},
+        ],
+    },
+
+    # ── LAYOUT_43 segments ────────────────────────────────────────────────
+    # Circuit 4.3 — Gymkana Cronometrada 13-15 (single timed line, top→bottom)
+
+    "esquiva-la-roca": {
+        # Source: LAYOUT_43 ESQUIVA LA ROCA  (─── recto ───► ═ ◄ golpe)
+        # Rider approaches straight (two arrows); a beam (tope/obstacle) sits
+        # perpendicular to the travel line; the final arrow shows the dodge
+        # manoeuvre (handlebar strike) to pass to one side.
+        "width": 600,
+        "height": 300,
+        "elements": [
+            {"kind": "arrow", "x": 100, "y": 150, "rotation": 0},
+            {"kind": "arrow", "x": 300, "y": 150, "rotation": 0},    # continued approach
+            {"kind": "beam",  "x": 430, "y": 150, "rotation": 90},   # obstacle (perpendicular)
+            {"kind": "arrow", "x": 520, "y": 80,  "rotation": 0},    # dodge exit (north side)
+        ],
+    },
+
+    "bunny-hop-sobre-tope": {
+        # Source: LAYOUT_43 BUNNY HOP  (▮━━━━━━▮ ⟵ salta ambas)
+        # Two stakes (cones at ground level) support a solid horizontal bar
+        # (the jump obstacle); the upward arrow shows the jump arc over the bar.
+        "width": 500,
+        "height": 250,
+        "elements": [
+            {"kind": "arrow", "x": 60,  "y": 125, "rotation": 0},
+            {"kind": "cone",  "x": 180, "y": 125},                                      # left stake
+            {"kind": "line",  "x": 250, "y": 80,  "rotation": 0, "style": "solid"},    # bar to jump
+            {"kind": "cone",  "x": 320, "y": 125},                                      # right stake
+            {"kind": "arrow", "x": 250, "y": 50,  "rotation": 270},                    # jump direction (up/over)
+            {"kind": "arrow", "x": 440, "y": 125, "rotation": 0},
+        ],
+    },
+
+    "subir-bajar-bordillo-drop": {
+        # Source: LAYOUT_43 SUBIR/BAJAR TOPE  (═══════ ↓ peso atrás)
+        # A horizontal beam (tope/bordillo/ramp) spans the riding path;
+        # rider approaches from top and continues downward (weight back).
+        "width": 400,
+        "height": 300,
+        "elements": [
+            {"kind": "arrow", "x": 200, "y": 60,  "rotation": 90},  # approach (down)
+            {"kind": "beam",  "x": 200, "y": 150, "rotation": 0},   # tope/bordillo (horizontal)
+            {"kind": "arrow", "x": 200, "y": 240, "rotation": 90},  # exit (down)
+        ],
+    },
+
+    "pump-ondulaciones": {
+        # Source: LAYOUT_43 PUMP / ONDULACIONES  (∿∿∿∿∿ sin pedalear)
+        # 4 beam elements (rotation=90 = vertical, perpendicular to travel)
+        # represent the rollers/ondulaciones of a pump track; rider travels
+        # left→right, pumping the body without pedalling.
+        "width": 600,
+        "height": 200,
+        "elements": [
+            {"kind": "arrow", "x": 50,  "y": 100, "rotation": 0},
+            {"kind": "beam",  "x": 150, "y": 100, "rotation": 90},   # roller 1
+            {"kind": "beam",  "x": 250, "y": 100, "rotation": 90},   # roller 2
+            {"kind": "beam",  "x": 350, "y": 100, "rotation": 90},   # roller 3
+            {"kind": "beam",  "x": 450, "y": 100, "rotation": 90},   # roller 4
+            {"kind": "arrow", "x": 550, "y": 100, "rotation": 0},
+        ],
+    },
+}

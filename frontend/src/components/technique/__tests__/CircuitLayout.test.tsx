@@ -39,6 +39,7 @@ const BASE_EXERCISE: ExerciseDetail = {
   layout_ascii:
     "S --> [ ] --> ( ) --> F",
   layout_alt: "Circuito de gymkhana: Salida, dos obstáculos, llegada.",
+  layout_json: null,
   confidence: null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",

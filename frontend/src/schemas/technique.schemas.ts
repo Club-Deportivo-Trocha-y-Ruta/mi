@@ -78,6 +78,115 @@ export const catalogListSchema = z
   .strip();
 
 // ---------------------------------------------------------------------------
+// Circuit diagrams — feature 019 (Phase A)
+// ---------------------------------------------------------------------------
+
+/**
+ * Controlled vocabulary for circuit element kinds.
+ * Phase A: no free-text label — elements are identified by kind + optional #n.
+ */
+export const circuitElementKindSchema = z.enum([
+  "cone",
+  "line",
+  "gate",
+  "mine",
+  "arrow",
+  "beam",
+  "ring",
+]);
+
+/**
+ * One element placed on the canvas.
+ * - `style` is semantically meaningful only for `kind = 'line'`; it is accepted
+ *   (and ignored) on other kinds so the server strip-on-write rule is not
+ *   mirrored client-side as a hard error.
+ * - `label` is intentionally ABSENT — Phase A enforces the controlled set only
+ *   (FR-023 / O-5). `.strip()` will remove any `label` that arrives from a
+ *   server response or an untrusted source. The Phase A guard test must keep
+ *   passing (O-6: "never by loosening the Phase A guard").
+ *   Phase B uses circuitElementSchemaPhaseB (below) — a SEPARATE schema.
+ * - Coordinate finiteness and canvas-bounds are enforced at the layout level
+ *   (gymkhanaLayoutSchema.superRefine) because those checks require width/height.
+ */
+export const circuitElementSchema = z
+  .object({
+    kind: circuitElementKindSchema,
+    x: z.number(),
+    y: z.number(),
+    rotation: z.number().optional(),
+    // dashed = guía/libre path; solid = trayecto técnico (precision)
+    style: z.enum(["dashed", "solid"]).optional(),
+  })
+  .strip();
+
+/**
+ * Complete layout document stored in `technique_exercises.layout_json`.
+ *
+ * Invariants enforced here (mirrors Pydantic FR-007):
+ *   width > 0, height > 0, both finite.
+ *   Per element: x/y/rotation finite; 0 ≤ x ≤ width; 0 ≤ y ≤ height.
+ *   Empty `elements` array is valid.
+ */
+export const gymkhanaLayoutSchema = z
+  .object({
+    width: z.number().positive(),
+    height: z.number().positive(),
+    elements: z.array(circuitElementSchema),
+  })
+  .strip()
+  .superRefine((data, ctx) => {
+    if (!Number.isFinite(data.width)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["width"],
+        message: "El ancho debe ser un número finito.",
+      });
+    }
+    if (!Number.isFinite(data.height)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["height"],
+        message: "El alto debe ser un número finito.",
+      });
+    }
+    data.elements.forEach((el, i) => {
+      if (!Number.isFinite(el.x)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["elements", i, "x"],
+          message: "La coordenada x debe ser un número finito.",
+        });
+      } else if (el.x < 0 || el.x > data.width) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["elements", i, "x"],
+          message: `x debe estar entre 0 y ${data.width}.`,
+        });
+      }
+      if (!Number.isFinite(el.y)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["elements", i, "y"],
+          message: "La coordenada y debe ser un número finito.",
+        });
+      } else if (el.y < 0 || el.y > data.height) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["elements", i, "y"],
+          message: `y debe estar entre 0 y ${data.height}.`,
+        });
+      }
+      if (el.rotation !== undefined && !Number.isFinite(el.rotation)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["elements", i, "rotation"],
+          message: "La rotación debe ser un número finito.",
+        });
+      }
+    });
+  });
+
+// ---------------------------------------------------------------------------
 // Exercise detail — server response schema
 // ---------------------------------------------------------------------------
 
@@ -86,7 +195,9 @@ export const exerciseDetailSchema = exerciseListItemSchema
     how_to: z.string(),
     layout_ascii: z.string().nullable(),
     layout_alt: z.string().nullable(),
-    confidence: z.number().nullable(),
+    /** Structured SVG layout (feature 019). Null for non-gymkhana or not-yet-backfilled rows. */
+    layout_json: gymkhanaLayoutSchema.nullable(),
+    confidence: z.string().nullable(),
     created_at: z.string(),
     updated_at: z.string(),
   })
@@ -112,6 +223,9 @@ export const assembleResultSchema = z
     training_session_id: z.number(),
     mixes_age_bands: z.boolean(),
     items: z.array(techniqueSessionItemSchema),
+    // Phase B (O-6): id of the synthetic hidden exercise created/updated for the
+    // combined layout. Null when no combined_layout was provided in the request.
+    combined_exercise_id: z.number().nullable().optional(),
   })
   .strip();
 

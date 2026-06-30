@@ -127,6 +127,12 @@ const AthleteProgressPage = lazy(() =>
     default: m.AthleteProgressPage,
   })),
 );
+// Phase B: Gymkhana circuit composer (react-konva — lazy to keep out of shared bundle)
+const ComposerPage = lazy(() =>
+  import("@/routes/technique/ComposerPage").then((m) => ({
+    default: m.ComposerPage,
+  })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -666,6 +672,23 @@ export default function App() {
                 }
               >
                 <AthleteProgressPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        {/* ── Compositor de gymkhana (feature 019, Phase B) — coach/admin only ── */}
+        <Route
+          path="/technique/composer"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando compositor de gymkhana…
+                  </div>
+                }
+              >
+                <ComposerPage />
               </Suspense>
             </ProtectedRoute>
           }

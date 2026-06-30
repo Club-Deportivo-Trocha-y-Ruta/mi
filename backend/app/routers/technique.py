@@ -126,7 +126,11 @@ def _serialize_exercise_list_item(ex: TechniqueExercise) -> ExerciseListItem:
 
 
 def _serialize_exercise_detail(ex: TechniqueExercise) -> ExerciseDetail:
-    """Map an ORM TechniqueExercise to ExerciseDetail."""
+    """Map an ORM TechniqueExercise to ExerciseDetail.
+
+    layout_json is stored as a raw dict in the JSON column; Pydantic coerces it
+    to GymkhanaLayout on construction (validated on read — feature 019 Phase A).
+    """
     return ExerciseDetail(
         id=ex.id,
         slug=ex.slug,
@@ -143,6 +147,7 @@ def _serialize_exercise_detail(ex: TechniqueExercise) -> ExerciseDetail:
         how_to=ex.how_to,
         layout_ascii=ex.layout_ascii,
         layout_alt=ex.layout_alt,
+        layout_json=ex.layout_json,
         confidence=ex.confidence,
         created_at=ex.created_at,
         updated_at=ex.updated_at,
@@ -159,6 +164,10 @@ def _serialize_session_item(link) -> TechniqueSessionItem:
         position=link.position,
         age_bands=[ab.age_band for ab in ex.age_bands],
         skills=[SkillRead.model_validate(s) for s in ex.skills],
+        # Feature 019 Phase B (O-6): flag the synthetic combined-circuit exercise
+        # so the frontend can identify/skip it among the catalog exercises.
+        is_hidden=ex.is_hidden,
+        is_gymkhana=ex.is_gymkhana,
     )
 
 
@@ -351,7 +360,12 @@ async def assemble_session(
     """Assemble a technique session. Club scope resolved from coach's membership."""
     club_id = await _coach_club_id(db, current_user)
 
-    training_session, mixes, link_rows = await assembler_svc.assemble_technique_session(
+    (
+        training_session,
+        mixes,
+        link_rows,
+        combined_exercise_id,
+    ) = await assembler_svc.assemble_technique_session(
         db,
         payload=payload,
         current_user=current_user,
@@ -363,6 +377,10 @@ async def assemble_session(
         training_session_id=training_session.id,
         mixes_age_bands=mixes,
         items=items,
+        # Feature 019 Phase B (O-6): id of the hidden synthetic exercise that
+        # persists the combined free-form circuit; null when no combined_layout
+        # was sent in the request.
+        combined_exercise_id=combined_exercise_id,
     )
 
 
@@ -627,6 +645,11 @@ async def create_exercise(
         is_gymkhana=payload.is_gymkhana,
         layout_ascii=payload.layout_ascii,
         layout_alt=payload.layout_alt,
+        # Feature 019 Phase A: persist validated GymkhanaLayout as a plain dict
+        # (the JSON column stores raw dicts; Pydantic coerces on read).
+        layout_json=(
+            payload.layout_json.model_dump() if payload.layout_json is not None else None
+        ),
         confidence=None,
         is_seeded=False,
         is_hidden=False,
@@ -709,6 +732,11 @@ async def update_exercise(
         ex.layout_ascii = payload.layout_ascii
     if payload.layout_alt is not None:
         ex.layout_alt = payload.layout_alt
+    # Feature 019 Phase A: persist GymkhanaLayout when included in the payload.
+    # None means "not provided / leave unchanged" (consistent with other nullable
+    # scalar fields on ExerciseUpdate — partial-update convention).
+    if payload.layout_json is not None:
+        ex.layout_json = payload.layout_json.model_dump()
 
     # Replace M2M relationships when supplied.
     if payload.skill_slugs is not None:

@@ -1,4 +1,4 @@
-/** Tipos del módulo Técnica y Gymkhana (feature 018). */
+/** Tipos del módulo Técnica y Gymkhana (feature 018 + 019). */
 
 // ---------------------------------------------------------------------------
 // Enums / literals
@@ -29,6 +29,63 @@ export interface MaterialRead {
   name: string;
   /** true when this represents "sin material". */
   is_none: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Circuit diagrams — feature 019 (Phase A)
+// ---------------------------------------------------------------------------
+
+/**
+ * Controlled vocabulary for gymkhana circuit elements.
+ * Phase A: no free-text label (controlled set only, FR-023 / O-5).
+ */
+export type CircuitElementKind =
+  | "cone"
+  | "line"
+  | "gate"
+  | "mine"
+  | "arrow"
+  | "beam"
+  | "ring";
+
+/**
+ * One element placed on the canvas.
+ * - `rotation` defaults to 0 when absent.
+ * - `style` is meaningful only for `kind === 'line'`:
+ *     'dashed' → trayecto guía / libre
+ *     'solid'  → trayecto técnico (precision)
+ * - `label` is absent in Phase A (controlled set enforced by kind + optional #n).
+ *   Phase B allows a short coach-authored label (non-PII, anti-PII validated).
+ */
+export interface CircuitElement {
+  kind: CircuitElementKind;
+  /** Canvas units; 0 ≤ x ≤ layout.width. */
+  x: number;
+  /** Canvas units; 0 ≤ y ≤ layout.height. */
+  y: number;
+  /** Degrees clockwise from 12 o'clock; default 0. */
+  rotation?: number;
+  /** Line variant only: 'dashed' = guía/libre | 'solid' = técnico. */
+  style?: "dashed" | "solid";
+  /**
+   * Phase B only: short coach-authored label (max 40 chars, non-PII).
+   * Validated client-side by piiGuard and server-side by Pydantic (FR-019).
+   * Phase A: absent (controlled set only — FR-023/O-5).
+   */
+  label?: string;
+}
+
+/**
+ * Complete layout document stored in `technique_exercises.layout_json`.
+ * Persisted as MySQL native JSON; round-trips as JSON-text on SQLite tests.
+ * Empty `elements` array is valid.
+ */
+export interface GymkhanaLayout {
+  /** Canvas width in logical units (> 0). */
+  width: number;
+  /** Canvas height in logical units (> 0). */
+  height: number;
+  elements: CircuitElement[];
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +130,9 @@ export interface ExerciseDetail extends ExerciseListItem {
   how_to: string;
   layout_ascii: string | null;
   layout_alt: string | null;
-  confidence: number | null;
+  /** Structured SVG layout (feature 019). Null for non-gymkhana or not-yet-backfilled rows. */
+  layout_json: GymkhanaLayout | null;
+  confidence: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -97,6 +156,18 @@ export interface AssembleSessionInput {
   objectives: string;
   convocados_athlete_ids: number[];
   items: SessionItemInput[];
+  /**
+   * Phase B (O-6): combined free-form circuit layout.
+   * Persisted in a hidden synthetic technique_exercises row (is_hidden=True,
+   * is_gymkhana=True). Null / absent when no composer circuit is attached.
+   */
+  combined_layout?: GymkhanaLayout | null;
+  /**
+   * Phase B (O-6): re-edit path — id of the existing synthetic exercise to UPDATE.
+   * When absent, a new synthetic exercise is created.
+   * MUST NOT appear in items (server-managed, not a catalog exercise).
+   */
+  combined_exercise_id?: number | null;
 }
 
 export interface TechniqueSessionItem {
@@ -112,6 +183,12 @@ export interface AssembleSessionResult {
   training_session_id: number;
   mixes_age_bands: boolean;
   items: TechniqueSessionItem[];
+  /**
+   * Phase B (O-6): id of the hidden synthetic exercise created (or updated) to
+   * persist the combined GymkhanaLayout. Null when no combined_layout was sent.
+   * Store this to pass back as combined_exercise_id on re-edit.
+   */
+  combined_exercise_id?: number | null;
 }
 
 // ---------------------------------------------------------------------------
