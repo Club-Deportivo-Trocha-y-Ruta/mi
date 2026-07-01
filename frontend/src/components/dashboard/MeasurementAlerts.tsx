@@ -46,9 +46,32 @@ export function MeasurementAlerts() {
 
   if (!data || data.athletes.length === 0) return null;
 
-  const actionable = data.athletes.filter(
-    (a) => a.measurement_status !== "ok"
-  );
+  const STATUS_ORDER: Record<MeasurementStatus, number> = {
+    overdue: 0,
+    due_soon: 1,
+    never: 2,
+    ok: 3,
+  };
+
+  const actionable = data.athletes
+    .filter((a) => a.measurement_status !== "ok")
+    .sort((a, b) => {
+      const statusDiff = STATUS_ORDER[a.measurement_status] - STATUS_ORDER[b.measurement_status];
+      if (statusDiff !== 0) return statusDiff;
+      if (a.measurement_status === "overdue") {
+        return (b.days_overdue ?? 0) - (a.days_overdue ?? 0);
+      }
+      if (a.measurement_status === "due_soon") {
+        const aDays = a.days_overdue === null ? Infinity : Math.abs(a.days_overdue);
+        const bDays = b.days_overdue === null ? Infinity : Math.abs(b.days_overdue);
+        return aDays - bDays;
+      }
+      return 0;
+    });
+
+  const MAX_VISIBLE = 8;
+  const visibleActionable = actionable.slice(0, MAX_VISIBLE);
+  const remainingCount = actionable.length;
 
   const rapidGrowth = data.athletes.filter(
     (a) => a.growth_alerts.includes("rapid_growth")
@@ -98,7 +121,7 @@ export function MeasurementAlerts() {
               <Link to={`/athletes/${a.athlete_id}`} className="font-medium underline">
                 {a.athlete_name}
               </Link>
-              {" — "}{a.growth_velocity_cm_month} cm/mes. Revisar carga de entrenamiento.
+              {" — "}{a.growth_velocity_cm_month} cm/mes. {a.training_implications ?? "Revisar carga de entrenamiento."}
             </p>
           ))}
         </div>
@@ -111,7 +134,7 @@ export function MeasurementAlerts() {
           style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
         >
           <ul>
-            {actionable.map((a, idx) => {
+            {visibleActionable.map((a, idx) => {
               const config = STATUS_CONFIG[a.measurement_status];
               return (
                 <li
@@ -141,6 +164,15 @@ export function MeasurementAlerts() {
             })}
           </ul>
         </div>
+      )}
+
+      {remainingCount > MAX_VISIBLE && (
+        <Link
+          to="/athletes"
+          className="inline-block text-sm font-medium text-primary underline transition-opacity hover:opacity-70"
+        >
+          Ver todas ({remainingCount})
+        </Link>
       )}
     </section>
   );

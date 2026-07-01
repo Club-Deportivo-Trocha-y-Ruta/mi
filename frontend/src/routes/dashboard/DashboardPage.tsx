@@ -3,8 +3,8 @@ import { useDashboardStats } from "@/hooks/athletes/useDashboardStats";
 import { formatDateMedium } from "@/lib/datetime";
 
 export function DashboardPage() {
-  const { total, evaluatedCount, totalCount, lastEvaluation, isLoading, isDetailLoading } =
-    useDashboardStats();
+  const { total, lastEvaluation, phvVigentes, phvTotal, isLoading, isError } = useDashboardStats();
+  const isEmpty = !isLoading && !isError && (total ?? 0) === 0;
 
   return (
     <section className="space-y-6">
@@ -15,6 +15,16 @@ export function DashboardPage() {
         Dashboard
       </h1>
 
+      {isError && (
+        <p className="text-sm text-red-600" role="alert">
+          No pudimos cargar la información del dashboard. Intenta de nuevo más tarde.
+        </p>
+      )}
+
+      {isEmpty && (
+        <p className="text-sm text-mid-gray">No tienes atletas asignados a un club</p>
+      )}
+
       <div className="grid gap-4 md:grid-cols-3">
         {/* Stat card */}
         <article
@@ -23,7 +33,7 @@ export function DashboardPage() {
         >
           <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Total atletas</p>
           <p className="mt-2 text-2xl font-bold text-charcoal">
-            {isLoading ? "…" : (total ?? "--")}
+            {isLoading ? "…" : isError || !total ? "--" : total}
           </p>
         </article>
 
@@ -33,7 +43,11 @@ export function DashboardPage() {
         >
           <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Última evaluación</p>
           <p className="mt-2 text-2xl font-bold text-charcoal">
-            {isDetailLoading ? "…" : lastEvaluation ? formatDateMedium(`${lastEvaluation}T12:00:00`) : "--"}
+            {isLoading
+              ? "…"
+              : !isError && lastEvaluation
+                ? formatDateMedium(`${lastEvaluation}T12:00:00`)
+                : "--"}
           </p>
         </article>
 
@@ -43,10 +57,10 @@ export function DashboardPage() {
         >
           <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">Estado PHV</p>
           <p className="mt-2 text-2xl font-bold text-charcoal">
-            {isDetailLoading
+            {isLoading
               ? "…"
-              : totalCount > 0
-                ? `${evaluatedCount} / ${totalCount} evaluados`
+              : !isError && phvTotal > 0
+                ? `${phvVigentes} de ${phvTotal} con medición vigente`
                 : "--"}
           </p>
         </article>

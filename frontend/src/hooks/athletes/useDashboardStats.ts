@@ -1,39 +1,30 @@
-import { useQuery } from "@tanstack/react-query";
-
-import { getAthlete, getAthletes } from "@/api/athletes";
-import { useAuthStore } from "@/store/auth.store";
+import { useAlerts } from "@/hooks/athletes/useAlerts";
 
 export function useDashboardStats() {
-  const accessToken = useAuthStore((s) => s.accessToken);
+  const alertsQuery = useAlerts();
 
-  const athletesQuery = useQuery({
-    queryKey: ["athletes"],
-    queryFn: () => getAthletes(),
-    enabled: !!accessToken,
-  });
+  const athletes = alertsQuery.data?.athletes ?? [];
 
-  const athleteIds = athletesQuery.data?.items.map((a) => a.id) ?? [];
+  const total = alertsQuery.isPending ? null : athletes.length;
 
-  const detailsQuery = useQuery({
-    queryKey: ["dashboard-athlete-details", athleteIds],
-    queryFn: () => Promise.all(athleteIds.map((id) => getAthlete(id))),
-    enabled: athleteIds.length > 0,
-  });
+  const lastEvaluation: string | null =
+    (athletes
+      .map((a) => a.last_measurement_date)
+      .filter((d): d is string => d !== null)
+      .sort((a, b) => b.localeCompare(a))[0] as string | undefined) ?? null;
 
-  const withAnthropometry =
-    detailsQuery.data?.filter((a) => a.latest_anthropometry !== null) ?? [];
+  const phvVigentes = athletes.filter(
+    (a) => a.measurement_status !== "overdue" && a.measurement_status !== "never",
+  ).length;
 
-  const lastEvaluation =
-    withAnthropometry
-      .map((a) => a.latest_anthropometry!.evaluation_date)
-      .sort((a, b) => b.localeCompare(a))[0] ?? null;
+  const phvTotal = athletes.length;
 
   return {
-    total: athletesQuery.data?.total ?? null,
-    evaluatedCount: withAnthropometry.length,
-    totalCount: athleteIds.length,
+    total,
     lastEvaluation,
-    isLoading: athletesQuery.isPending,
-    isDetailLoading: detailsQuery.isPending && athleteIds.length > 0,
+    phvVigentes,
+    phvTotal,
+    isLoading: alertsQuery.isPending,
+    isError: alertsQuery.isError,
   };
 }
