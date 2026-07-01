@@ -61,14 +61,18 @@ const KonvaCanvas = lazy(() =>
 // Canvas logical dimensions (shared with piiGuard/BackendLayout)
 // ---------------------------------------------------------------------------
 
-const CANVAS_W = 100;
-const CANVAS_H = 60;
+// Exported for tests (T026/T027) — round-trip + a11y harnesses need the same
+// canvas dimensions ComposerPage uses.
+export const CANVAS_W = 100;
+export const CANVAS_H = 60;
 
 // ---------------------------------------------------------------------------
 // Helpers — convert between ComposedElement[] and GymkhanaLayout
 // ---------------------------------------------------------------------------
 
-function toGymkhanaLayout(elements: ComposedElement[]): GymkhanaLayout {
+// Exported for round-trip testing (T026, SC-006) — same helpers ComposerPage
+// uses to build the AssembleSessionInput.combined_layout payload.
+export function toGymkhanaLayout(elements: ComposedElement[]): GymkhanaLayout {
   return {
     width: CANVAS_W,
     height: CANVAS_H,
@@ -76,7 +80,7 @@ function toGymkhanaLayout(elements: ComposedElement[]): GymkhanaLayout {
   };
 }
 
-function fromGymkhanaLayout(layout: GymkhanaLayout): ComposedElement[] {
+export function fromGymkhanaLayout(layout: GymkhanaLayout): ComposedElement[] {
   return layout.elements.map((el) => ({
     ...el,
     _id: crypto.randomUUID(),
@@ -263,6 +267,10 @@ export function ComposerPage() {
       ? `?combinedExerciseId=${result.combined_exercise_id}`
       : "";
 
+    // Phase B (O-6): exclude the hidden synthetic combined-circuit item from
+    // any "real exercise" count/list shown to the coach.
+    const visibleItems = result.items.filter((item) => !item.is_hidden);
+
     return (
       <div className="mx-auto max-w-4xl px-4 py-6">
         <h1 className="mb-1 text-2xl font-semibold text-slate-900">
@@ -295,8 +303,8 @@ export function ComposerPage() {
             Sesión guardada correctamente
           </p>
           <p className="mt-1 text-sm text-emerald-800">
-            Se crearon {result.items.length}{" "}
-            {result.items.length === 1 ? "ejercicio" : "ejercicios"} en la sesión.
+            Se crearon {visibleItems.length}{" "}
+            {visibleItems.length === 1 ? "ejercicio" : "ejercicios"} en la sesión.
             Puedes verla y registrar asistencia desde la lista de sesiones.
           </p>
 

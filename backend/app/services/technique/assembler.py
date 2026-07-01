@@ -497,15 +497,15 @@ async def assemble_technique_session(
 
     await db.commit()
 
-    # Reload link rows so that ORM attributes (id, etc.) are populated.
-    for row in link_rows:
-        await db.refresh(row)
-    # db.refresh() above expires (and lazily-reloads-on-access) the
-    # ``.exercise`` relationship we set in-memory; re-populate the synthetic
-    # link's relationship to avoid a later MissingGreenlet lazy load in the
-    # router's synchronous response serialization.
-    if synthetic_id is not None:
-        synthetic_link.exercise = synthetic
+    # Reload the link rows with `.exercise` (including the synthetic exercise)
+    # plus its `.skills`/`.age_bands` eagerly loaded, ordered by
+    # (segment, position). This replaces an in-place `db.refresh()` loop that
+    # expired `.exercise` on the *component* links (only the synthetic link was
+    # re-populated), causing a MissingGreenlet lazy load during the router's
+    # synchronous response serialization — surfaced by the e2e run against
+    # aiomysql (aiosqlite served the cached relationship without IO, so the
+    # unit tests did not catch it).
+    link_rows = await get_session_exercises(db, training_session.id)
 
     # --- Step 5 (create): compute mixes_age_bands ----------------------------
     mixes = _compute_mixes_age_bands(exercises, item_exercise_ids)

@@ -113,9 +113,19 @@ export const circuitElementSchema = z
     kind: circuitElementKindSchema,
     x: z.number(),
     y: z.number(),
-    rotation: z.number().optional(),
+    // The backend (Pydantic) serializes absent optional fields as explicit
+    // `null`, not omitted — accept `null | undefined` on input, then normalize
+    // `null → undefined` so the parsed type stays `number | undefined` and
+    // matches the canonical CircuitElement TS type.
+    rotation: z
+      .number()
+      .nullish()
+      .transform((v) => v ?? undefined),
     // dashed = guía/libre path; solid = trayecto técnico (precision)
-    style: z.enum(["dashed", "solid"]).optional(),
+    style: z
+      .enum(["dashed", "solid"])
+      .nullish()
+      .transform((v) => v ?? undefined),
   })
   .strip();
 
@@ -176,7 +186,7 @@ export const gymkhanaLayoutSchema = z
           message: `y debe estar entre 0 y ${data.height}.`,
         });
       }
-      if (el.rotation !== undefined && !Number.isFinite(el.rotation)) {
+      if (el.rotation != null && !Number.isFinite(el.rotation)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["elements", i, "rotation"],
@@ -215,6 +225,10 @@ export const techniqueSessionItemSchema = z
     position: z.number(),
     age_bands: z.array(ageBandSchema),
     skills: z.array(skillRefSchema),
+    // Phase B (O-6): identifies the hidden synthetic combined-circuit item so
+    // the UI can exclude it from "real exercise" lists/counts.
+    is_hidden: z.boolean(),
+    is_gymkhana: z.boolean(),
   })
   .strip();
 

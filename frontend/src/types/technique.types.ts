@@ -177,6 +177,13 @@ export interface TechniqueSessionItem {
   position: number;
   age_bands: AgeBand[];
   skills: SkillRef[];
+  /**
+   * Phase B (O-6): true for the hidden synthetic combined-circuit item
+   * (sentinel position 9999). UI lists MUST filter this out — it is not a
+   * real catalog exercise the coach picked.
+   */
+  is_hidden: boolean;
+  is_gymkhana: boolean;
 }
 
 export interface AssembleSessionResult {

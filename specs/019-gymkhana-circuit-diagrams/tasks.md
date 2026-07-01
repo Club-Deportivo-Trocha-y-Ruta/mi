@@ -110,22 +110,22 @@ Web app, extending feature 018: `backend/app/...`, `backend/tests/...`, `backend
 
 ### Phase B setup
 
-- [ ] T025 [US3] Add `react-konva` + `konva` (MIT, peer `react ^19.2.0`) as client deps and ensure the composer route is a **lazy chunk** (budget ≤150 KB gz, out of the shared bundle) in `frontend/package.json` + Vite route config *(react-ui-engineer)*
+- [x] T025 [US3] Add `react-konva` + `konva` (MIT, peer `react ^19.2.0`) as client deps and ensure the composer route is a **lazy chunk** (budget ≤150 KB gz, out of the shared bundle) in `frontend/package.json` + Vite route config *(react-ui-engineer)*
 
 ### Tests for User Story 3 ⚠️ (write first)
 
-- [ ] T026 [P] [US3] Composer round-trip test — build layout → save → reopen → re-render in `<CircuitDiagram>` equivalent (no loss of elements/positions/rotations/labels, SC-006) — in `frontend/src/components/technique/composer/Composer.roundtrip.test.tsx` *(qa-engineer)*
-- [ ] T027 [P] [US3] Keyboard/SR non-drag path test (`jest-axe`) — add/position(nudge)/remove elements without pointer-drag, AA-operable on tablet — in `frontend/src/components/technique/composer/Composer.a11y.test.tsx` *(qa-engineer + ux-researcher)*
-- [ ] T028 [P] [US3] Assemble-creates-real-`TrainingSession` test — saving creates one session via the existing assembler (no parallel/duplicate store), references chosen exercises, re-save updates same session — reuse feature 018's assertion in `backend/tests/test_technique_assemble_combined_gymkhana.py` *(qa-engineer)*
+- [x] T026 [P] [US3] Composer round-trip test — build layout → save → reopen → re-render in `<CircuitDiagram>` equivalent (no loss of elements/positions/rotations/labels, SC-006) — in `frontend/src/components/technique/composer/Composer.roundtrip.test.tsx` *(qa-engineer)*
+- [x] T027 [P] [US3] Keyboard/SR non-drag path test (`jest-axe`) — add/position(nudge)/remove elements without pointer-drag, AA-operable on tablet — in `frontend/src/components/technique/composer/Composer.a11y.test.tsx` *(qa-engineer + ux-researcher)*
+- [x] T028 [P] [US3] Assemble-creates-real-`TrainingSession` test — saving creates one session via the existing assembler (no parallel/duplicate store), references chosen exercises, re-save updates same session — reuse feature 018's assertion in `backend/tests/test_technique_assemble_combined_gymkhana.py` *(qa-engineer)*
 
 ### Implementation for User Story 3
 
-- [ ] T029 [US3] Build the composer subtree `frontend/src/components/technique/composer/` — element palette + `react-konva` canvas with `draggable` nodes + `Transformer` (position/rotate/remove), capturing canvas state as `GymkhanaLayout` (same schema) *(react-ui-engineer)*
-- [ ] T030 [US3] Create the lazy `/technique/composer` route `frontend/src/routes/technique/ComposerPage.tsx` (coach/admin RBAC inherited, cold-start state from feature 012) *(react-ui-engineer)*
-- [ ] T031 [US3] Implement the keyboard/screen-reader accessible non-drag fallback (add element + nudge + remove controls) in the composer (FR-018) *(react-ui-engineer + ux-researcher)*
-- [ ] T032 [US3] Wire composer save → existing `POST /api/technique/sessions/assemble` (reuse `SessionAssembler.tsx` + `services/technique/assembler.py`); arrange exercises into calentamiento/principal/vuelta_calma; surface 018's mixed-age-band notice; edit-updates-same-session (FR-014/015/016) *(react-ui-engineer)*
-- [ ] T033 [US3] Relax the Phase A no-free-text rule for the composer with anti-PII guard — allow `label` but block athlete name/DOB prompts; client validation in composer + server guard in `backend/app/schemas/technique.py` (FR-019/023 Phase B) *(react-ui-engineer + fastapi-architect)*
-- [ ] T034 [US3] Derive the combined circuit at view time from the linked exercises' `layout_json` (no new persistence, no new column, O-3) in the composer/detail view *(react-ui-engineer)*
+- [x] T029 [US3] Build the composer subtree `frontend/src/components/technique/composer/` — element palette + `react-konva` canvas with `draggable` nodes + `Transformer` (position/rotate/remove), capturing canvas state as `GymkhanaLayout` (same schema) *(react-ui-engineer)*
+- [x] T030 [US3] Create the lazy `/technique/composer` route `frontend/src/routes/technique/ComposerPage.tsx` (coach/admin RBAC inherited, cold-start state from feature 012) *(react-ui-engineer)*
+- [x] T031 [US3] Implement the keyboard/screen-reader accessible non-drag fallback (add element + nudge + remove controls) in the composer (FR-018) *(react-ui-engineer + ux-researcher)*
+- [x] T032 [US3] Wire composer save → existing `POST /api/technique/sessions/assemble` (reuse `SessionAssembler.tsx` + `services/technique/assembler.py`); arrange exercises into calentamiento/principal/vuelta_calma; surface 018's mixed-age-band notice; edit-updates-same-session (FR-014/015/016) *(react-ui-engineer)*
+- [x] T033 [US3] Relax the Phase A no-free-text rule for the composer with anti-PII guard — allow `label` but block athlete name/DOB prompts; client validation in composer + server guard in `backend/app/schemas/technique.py` (FR-019/023 Phase B) *(react-ui-engineer + fastapi-architect)*
+- [x] T034 [US3] Derive the combined circuit at view time from the linked exercises' `layout_json` (no new persistence, no new column, O-3) in the composer/detail view *(react-ui-engineer)*
 
 **Checkpoint**: US3 functional — joint gymkhana authoring live, reusing the existing session module.
 
