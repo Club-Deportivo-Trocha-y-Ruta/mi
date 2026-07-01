@@ -4,8 +4,18 @@
  *
  * Inputs:
  *   - season (select de años disponibles)
- *   - valida_nums (grid de checkboxes 1-7 + Cto. Departamental)
+ *   - carreras a analizar (grid de chips poblado con las carreras REALES en las
+ *     que el atleta participó esa temporada — vía useAthleteRaces). Cada chip
+ *     lleva su event_id; el campeonato (series_kind="championship") ya no usa el
+ *     valida_num=99 retirado (feature 014).
  *   - explain_mode (switch HTML nativo)
+ *
+ * Submit (desambiguado por evento):
+ *   - 0 selección → {season, valida_nums: null} → analiza toda la temporada.
+ *   - 1 selección → {season, event_id} → ancla por evento (copa o campeonato),
+ *     sin ambigüedad cup vs championship (mismo sequence_number).
+ *   - >1 selección → {season, valida_nums: [sequence_number...]} (multi-válida
+ *     de copa). Si se mezcla el campeonato el backend puede responder 409.
  *
  * Submit dispara `useLaunchAthleteAnalysis(athleteId)`. Al éxito:
  *   - Invalida runs/insights del atleta (lo hace el hook)
@@ -23,23 +33,13 @@ import { z } from "zod";
 
 import { Badge } from "@/components/ui/badge";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
+import { useAthleteRaces } from "@/hooks/athletes/useAthleteRaces";
 import { cn } from "@/lib/utils";
 
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
 
 const MAX_VALIDA_SELECTION = 4;
-
-const VALIDA_CHOICES: Array<{ value: number; label: string }> = [
-  { value: 1, label: "I" },
-  { value: 2, label: "II" },
-  { value: 3, label: "III" },
-  { value: 4, label: "IV" },
-  { value: 5, label: "V" },
-  { value: 6, label: "VI" },
-  { value: 7, label: "VII" },
-  { value: 99, label: "CD" },
-];
 
 function getDefaultSeason(): number {
   return new Date().getFullYear();
@@ -51,7 +51,9 @@ const launchSchema = z.object({
     .int()
     .min(2020)
     .max(2100),
-  valida_nums: z.array(z.number().int().min(1).max(99)),
+  // Identidad estable por evento (event_id), no por valida_num: evita la
+  // ambigüedad copa vs campeonato (mismo sequence_number en la temporada).
+  event_ids: z.array(z.number().int().positive()),
   explain_mode: z.boolean(),
 });
 
@@ -83,25 +85,43 @@ export function LaunchAnalysisForm({
     resolver: zodResolver(launchSchema),
     defaultValues: {
       season: getDefaultSeason(),
-      valida_nums: [],
+      event_ids: [],
       explain_mode: false,
     },
   });
 
-  const watchedValidaNums = watch("valida_nums");
+  const watchedSeason = watch("season");
+  const watchedEventIds = watch("event_ids");
+
+  // Carreras reales del atleta en la temporada → pueblan los chips. Cada chip
+  // lleva event_id + sequence_number + series_kind.
+  const races = useAthleteRaces(athleteId, watchedSeason);
+  const raceOptions = races.data?.items ?? [];
 
   const onSubmit = async (values: LaunchFormValues) => {
     setSubmitError(null);
+    const selected = raceOptions.filter((r) =>
+      values.event_ids.includes(r.event_id),
+    );
+    // Cuerpo desambiguado: 1 evento → event_id; varios → valida_nums (copa).
+    const body =
+      selected.length === 1
+        ? { season: values.season, event_id: selected[0].event_id }
+        : {
+            season: values.season,
+            valida_nums:
+              selected.length > 0
+                ? selected.map((r) => r.sequence_number)
+                : null,
+          };
     try {
       const result = await mutation.mutateAsync({
-        season: values.season,
-        valida_nums:
-          values.valida_nums.length > 0 ? values.valida_nums : null,
+        ...body,
         explain_mode: values.explain_mode,
       });
       reset({
         season: values.season,
-        valida_nums: [],
+        event_ids: [],
         explain_mode: false,
       });
       onStarted?.(result.run_id);
@@ -114,20 +134,18 @@ export function LaunchAnalysisForm({
     }
   };
 
-  const toggleValida = (value: number) => {
-    const current = watchedValidaNums ?? [];
-    if (current.includes(value)) {
+  const toggleEvent = (eventId: number) => {
+    const current = watchedEventIds ?? [];
+    if (current.includes(eventId)) {
       setValue(
-        "valida_nums",
-        current.filter((v) => v !== value),
+        "event_ids",
+        current.filter((v) => v !== eventId),
         { shouldValidate: true },
       );
     } else {
       // No-op silencioso si ya se alcanzó el cap
       if (current.length >= MAX_VALIDA_SELECTION) return;
-      setValue("valida_nums", [...current, value].sort((a, b) => a - b), {
-        shouldValidate: true,
-      });
+      setValue("event_ids", [...current, eventId], { shouldValidate: true });
     }
   };
 
@@ -180,7 +198,11 @@ export function LaunchAnalysisForm({
             render={({ field }) => (
               <select
                 {...field}
-                onChange={(e) => field.onChange(Number(e.target.value))}
+                onChange={(e) => {
+                  field.onChange(Number(e.target.value));
+                  // Los event_ids son de una temporada concreta.
+                  setValue("event_ids", [], { shouldValidate: true });
+                }}
                 id="launch-season"
                 className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                 style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
@@ -227,52 +249,65 @@ export function LaunchAnalysisForm({
         </div>
       </div>
 
-      {/* Valida nums — grid de chips clickeables */}
+      {/* Carreras a analizar — grid de chips poblado con carreras reales */}
       <fieldset className="space-y-2">
         <legend className="text-xs font-medium text-mid-gray">
-          Válidas a analizar
+          Carreras a analizar
         </legend>
         <p className="text-[11px] text-mid-gray">
-          Deja vacío para analizar todas las válidas disponibles de la
-          temporada. Máximo 4 válidas por lanzamiento.
+          Deja vacío para analizar todas las carreras de la temporada. Máximo 4
+          por lanzamiento.
         </p>
-        <div
-          className="flex flex-wrap gap-2"
-          role="group"
-          aria-label="Selecciona una o más válidas"
-        >
-          {VALIDA_CHOICES.map((c) => {
-            const isChecked = watchedValidaNums?.includes(c.value);
-            const currentLength = watchedValidaNums?.length ?? 0;
-            const isCapReached = !isChecked && currentLength >= MAX_VALIDA_SELECTION;
-            return (
-              <button
-                key={c.value}
-                type="button"
-                onClick={() => toggleValida(c.value)}
-                aria-pressed={isChecked}
-                aria-disabled={isCapReached}
-                disabled={isCapReached}
-                title={
-                  isCapReached
-                    ? "Máximo 4 válidas por lanzamiento (cap v2). Usa resumen temporada para visión global."
-                    : undefined
-                }
-                data-testid={`launch-valida-${c.value}`}
-                className={cn(
-                  "min-h-9 rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-                  isChecked
-                    ? "bg-charcoal text-white"
-                    : "bg-light-gray/40 text-charcoal hover:bg-light-gray/60",
-                  isCapReached && "cursor-not-allowed opacity-50",
-                )}
-              >
-                {c.label}
-              </button>
-            );
-          })}
-        </div>
+        {races.isLoading ? (
+          <p className="text-xs text-mid-gray" data-testid="launch-races-loading">
+            Cargando carreras…
+          </p>
+        ) : raceOptions.length === 0 ? (
+          <p className="text-xs text-mid-gray" data-testid="launch-races-empty">
+            Sin carreras registradas para esta temporada.
+          </p>
+        ) : (
+          <div
+            className="flex flex-wrap gap-2"
+            role="group"
+            aria-label="Selecciona una o más carreras"
+          >
+            {raceOptions.map((r) => {
+              const isChecked = watchedEventIds?.includes(r.event_id);
+              const currentLength = watchedEventIds?.length ?? 0;
+              const isCapReached =
+                !isChecked && currentLength >= MAX_VALIDA_SELECTION;
+              return (
+                <button
+                  key={r.event_id}
+                  type="button"
+                  onClick={() => toggleEvent(r.event_id)}
+                  aria-pressed={isChecked}
+                  aria-disabled={isCapReached}
+                  disabled={isCapReached}
+                  title={
+                    isCapReached
+                      ? "Máximo 4 carreras por lanzamiento (cap v2). Usa resumen temporada para visión global."
+                      : r.label
+                  }
+                  data-testid={`launch-event-${r.event_id}`}
+                  className={cn(
+                    "min-h-9 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+                    isChecked
+                      ? "bg-charcoal text-white"
+                      : "bg-light-gray/40 text-charcoal hover:bg-light-gray/60",
+                    isCapReached && "cursor-not-allowed opacity-50",
+                  )}
+                >
+                  {r.series_kind === "championship"
+                    ? "CD"
+                    : `Válida ${r.sequence_number}`}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </fieldset>
 
       {submitError && (
