@@ -275,5 +275,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/020-dashboard-coach-phase-a/plan.md
+at specs/021-strength-training-library/plan.md
 <!-- SPECKIT END -->
