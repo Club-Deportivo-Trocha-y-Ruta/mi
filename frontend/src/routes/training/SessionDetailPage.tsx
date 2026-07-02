@@ -21,6 +21,7 @@ import { MediaUploadZone } from "@/components/training/MediaUploadZone";
 import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SessionMedia } from "@/types/trainingSession.types";
+import { useDetachBlock, useSessionBlocks } from "@/hooks/strength/useStrength";
 
 const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
@@ -81,6 +82,8 @@ export function SessionDetailPage() {
   const mediaQuery = useSessionMedia(sessionId, !!sessionId);
   const mediaUploadMutation = useUploadSessionMedia(sessionId);
   const mediaDeleteMutation = useDeleteSessionMedia(sessionId);
+  const strengthBlocksQuery = useSessionBlocks(sessionId, !!sessionId);
+  const detachBlockMutation = useDetachBlock();
 
   const session = sessionQuery.data;
 
@@ -374,6 +377,93 @@ export function SessionDetailPage() {
             attendances={attendances}
             disabled={isCancelled}
           />
+        )}
+      </div>
+
+      {/* Bloques de fuerza (feature 021, FR-012/FR-013) */}
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+        <div className="flex items-center justify-between">
+          <h2 className={sectionHeading} style={{ marginBottom: 0 }}>
+            Bloques de fuerza
+          </h2>
+          <Link
+            to="/strength/blocks/new"
+            className="text-sm font-medium text-charcoal underline hover:opacity-70"
+          >
+            Armar bloque de fuerza
+          </Link>
+        </div>
+
+        {strengthBlocksQuery.isLoading && (
+          <div className="h-16 animate-pulse rounded-lg bg-light-gray" />
+        )}
+
+        {strengthBlocksQuery.isError && (
+          <p className="text-sm text-red-600" role="alert">
+            No se pudieron cargar los bloques de fuerza de esta sesión.
+          </p>
+        )}
+
+        {!strengthBlocksQuery.isLoading &&
+          !strengthBlocksQuery.isError &&
+          (strengthBlocksQuery.data?.items.length ?? 0) === 0 && (
+            <p className="text-sm text-mid-gray">
+              Sin bloques de fuerza adjuntos a esta sesión.
+            </p>
+          )}
+
+        {(strengthBlocksQuery.data?.items.length ?? 0) > 0 && (
+          <ul className="space-y-3" data-testid="session-strength-blocks">
+            {strengthBlocksQuery.data?.items.map((block) => (
+              <li
+                key={block.id}
+                className="rounded-lg px-4 py-3"
+                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <Link
+                      to={`/strength/blocks/${block.id}`}
+                      className="text-sm font-semibold text-charcoal hover:underline"
+                    >
+                      {block.name}
+                    </Link>
+                    <p className="mt-0.5 text-xs text-mid-gray">
+                      {block.target_age_band} años · {block.total_duration_min} min ·{" "}
+                      {block.entries.length}{" "}
+                      {block.entries.length === 1 ? "ejercicio" : "ejercicios"}
+                    </p>
+                  </div>
+                  {!isCancelled && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        detachBlockMutation.mutate({
+                          blockId: block.id,
+                          trainingSessionId: sessionId,
+                        })
+                      }
+                      disabled={detachBlockMutation.isPending}
+                      className="text-xs font-medium text-red-700 transition-opacity hover:opacity-70 disabled:opacity-50"
+                    >
+                      Quitar de la sesión
+                    </button>
+                  )}
+                </div>
+                <ul className="mt-2 space-y-1">
+                  {block.entries.map((entry) => (
+                    <li key={entry.id} className="text-xs text-mid-gray">
+                      {entry.exercise.name} — {entry.duration_min} min
+                      {entry.reps ? ` · ${entry.reps}` : ""}
+                      {entry.is_age_override && (
+                        <span className="ml-1 text-amber-700">(excepción de edad)</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 

@@ -134,6 +134,28 @@ const ComposerPage = lazy(() =>
   })),
 );
 
+// Strength & Conditioning Library (feature 021) — coach/admin only (lazy)
+const StrengthCatalogPage = lazy(() =>
+  import("@/routes/strength/CatalogPage").then((m) => ({
+    default: m.CatalogPage,
+  })),
+);
+const StrengthExerciseDetailPage = lazy(() =>
+  import("@/routes/strength/ExerciseDetailPage").then((m) => ({
+    default: m.ExerciseDetailPage,
+  })),
+);
+const StrengthBlockBuilderPage = lazy(() =>
+  import("@/routes/strength/BlockBuilderPage").then((m) => ({
+    default: m.BlockBuilderPage,
+  })),
+);
+const StrengthAthleteProgressPage = lazy(() =>
+  import("@/routes/strength/AthleteProgressPage").then((m) => ({
+    default: m.AthleteProgressPage,
+  })),
+);
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -689,6 +711,88 @@ export default function App() {
                 }
               >
                 <ComposerPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Fuerza y acondicionamiento (feature 021) — coach/admin only ── */}
+        <Route
+          path="/strength"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando biblioteca de fuerza…
+                  </div>
+                }
+              >
+                <StrengthCatalogPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/strength/exercises/:id"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando ejercicio…
+                  </div>
+                }
+              >
+                <StrengthExerciseDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/strength/blocks/new"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando armador de bloque…
+                  </div>
+                }
+              >
+                <StrengthBlockBuilderPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/strength/blocks/:id"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando bloque…
+                  </div>
+                }
+              >
+                <StrengthBlockBuilderPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/strength/athletes/:athleteId/progress"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando progreso de fuerza…
+                  </div>
+                }
+              >
+                <StrengthAthleteProgressPage />
               </Suspense>
             </ProtectedRoute>
           }

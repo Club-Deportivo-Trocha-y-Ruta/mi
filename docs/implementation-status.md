@@ -486,3 +486,11 @@ Coach/admin-facing module: searchable catalog of ~24 pre-seeded technique drills
 | Deploy | Run migration `e1f2a3b4c5d6` on Render (`alembic upgrade head` via `entrypoint.sh`); deploy backend + frontend | ⏳ Pending |
 
 > Module design and data model in `docs/15-tecnica-gymkana-modulo/design.md`. All 180 technique tests pass (178 backend + 2 performance tests). No new runtime dependency.
+
+---
+
+## Implementation status — Strength Training Exercise Library (specs/021-strength-training-library)
+
+Coach/admin-facing module: illustrated catalog of strength-training exercises (own artwork/ASCII diagrams — never licensed third-party photos), filterable by equipment (bodyweight/no-equipment vs. gym-equipment) and age band (10-12 / 13-15), each with execution steps and common-errors guidance; time-boxed strength-block assembly (≤30 min target, running-total within/at/over indicator) attached to existing Training Sessions module (Phase 1.5, no parallel store); age-band safety guardrails encoding club dosing differentiation (10-12 bodyweight-only, 13-15 progressive equipment) with block-then-override-with-recording behavior; per-athlete strength progress notes, coach-only, no cross-athlete comparison. Mirrors specs/018-technique-gymkhana-library conventions.
+
+**Status:** ✅ Complete — deploy pending (migration `a7b8c9d0e1f2`).

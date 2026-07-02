@@ -92,6 +92,19 @@ from app.models.technique_exercise import (
     technique_exercise_skills,
 )
 
+# Feature 021 — Strength Training Exercise Library
+from app.models.strength import (
+    EquipmentKind,
+    MovementCategory,
+    StrengthBlock,
+    StrengthBlockEntry,
+    StrengthExercise,
+    StrengthExerciseAgeBand,
+    StrengthProgressNote,
+    StrengthProgressStatus,
+    StrengthSessionBlock,
+)
+
 __all__ = [
     "Base",
     "User",
@@ -192,4 +205,14 @@ __all__ = [
     "SkillProgressStatus",
     "technique_exercise_skills",
     "technique_exercise_materials",
+    # Feature 021 — Strength Training Exercise Library
+    "StrengthExercise",
+    "StrengthExerciseAgeBand",
+    "StrengthBlock",
+    "StrengthBlockEntry",
+    "StrengthSessionBlock",
+    "StrengthProgressNote",
+    "EquipmentKind",
+    "MovementCategory",
+    "StrengthProgressStatus",
 ]

@@ -1,0 +1,367 @@
+- generic [ref=e3]:
+  - link "Saltar a contenido" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - complementary "Menú de navegación" [ref=e5]:
+    - generic [ref=e6]:
+      - heading "Trocha y Ruta" [level=2] [ref=e7]
+      - paragraph [ref=e8]: Club Ciclismo XCO
+    - navigation [ref=e9]:
+      - link "Dashboard" [ref=e10] [cursor=pointer]:
+        - /url: /dashboard
+      - link "Atletas" [ref=e11] [cursor=pointer]:
+        - /url: /athletes
+      - link "Padres" [ref=e12] [cursor=pointer]:
+        - /url: /parents
+      - link "Calendario" [ref=e13] [cursor=pointer]:
+        - /url: /calendar
+      - link "Entrenamientos" [ref=e14] [cursor=pointer]:
+        - /url: /training/sessions
+      - link "Reportes mensuales" [ref=e15] [cursor=pointer]:
+        - /url: /training/reports
+      - link "Boletines Mensuales" [ref=e16] [cursor=pointer]:
+        - /url: /training/athlete-newsletters
+      - link "Competencias" [ref=e17] [cursor=pointer]:
+        - /url: /competitions
+      - link "Ansiedad competitiva" [ref=e18] [cursor=pointer]:
+        - /url: /anxiety
+      - link "Técnica" [ref=e19] [cursor=pointer]:
+        - /url: /technique
+  - generic [ref=e20]:
+    - banner [ref=e21]:
+      - paragraph [ref=e23]: Juan Diaz
+      - generic [ref=e24]:
+        - link "Mi perfil" [ref=e25] [cursor=pointer]:
+          - /url: /perfil
+        - button "Cerrar sesión" [ref=e26]
+    - main [ref=e27]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - heading "Biblioteca de fuerza y acondicionamiento" [level=1] [ref=e31]
+          - paragraph [ref=e32]: Explora y filtra ejercicios de fortalecimiento ilustrados, con y sin equipo, para armar bloques adaptados a cada grupo de edad.
+        - region "Filtros del catálogo de fuerza" [ref=e34]:
+          - generic [ref=e35]:
+            - generic [ref=e36]:
+              - generic [ref=e37]: Buscar
+              - textbox "Buscar" [ref=e38]:
+                - /placeholder: Nombre o descripción…
+            - generic [ref=e39]:
+              - generic [ref=e40]: Equipo
+              - combobox "Equipo" [ref=e41]:
+                - option "Todos los equipos" [selected]
+                - option "Sin equipo"
+                - option "Equipo de gimnasio"
+            - generic [ref=e42]:
+              - generic [ref=e43]: Franja de edad
+              - combobox "Franja de edad" [ref=e44]:
+                - option "Todas las franjas" [selected]
+                - option "10–12 años"
+                - option "13–15 años"
+            - generic [ref=e45]:
+              - generic [ref=e46]: Categoría de movimiento
+              - combobox "Categoría de movimiento" [ref=e47]:
+                - option "Todas las categorías" [selected]
+                - option "Empuje superior"
+                - option "Tracción superior"
+                - option "Inferior bilateral"
+                - option "Inferior unilateral"
+                - option "Core y estabilidad"
+        - generic [ref=e48]:
+          - paragraph [ref=e49]: 22 ejercicios
+          - 'generic "Catálogo: 22 ejercicios" [ref=e50]':
+            - generic [ref=e52]:
+              - generic [ref=e53]:
+                - link "Plancha frontal" [ref=e54] [cursor=pointer]:
+                  - /url: /strength/exercises/1
+                - generic [ref=e55]: Sin equipo
+              - paragraph [ref=e56]: Sostener el cuerpo en línea recta apoyado en antebrazos y puntas de los pies; activa el core sin mover la columna.
+              - generic [ref=e58]: Core y estabilidad
+              - generic "Franjas de edad" [ref=e59]:
+                - generic [ref=e60]: 10–12 años
+                - generic [ref=e61]: 13–15 años
+              - generic [ref=e62]:
+                - generic [ref=e63]: 4 min
+                - generic [ref=e64]: ·
+                - generic [ref=e65]: 3x20-30 seg
+            - generic [ref=e67]:
+              - generic [ref=e68]:
+                - link "Plancha lateral" [ref=e69] [cursor=pointer]:
+                  - /url: /strength/exercises/2
+                - generic [ref=e70]: Sin equipo
+              - paragraph [ref=e71]: Sostener el cuerpo de lado apoyado en un antebrazo; fortalece los oblicuos y la estabilidad de cadera.
+              - generic [ref=e73]: Core y estabilidad
+              - generic "Franjas de edad" [ref=e74]:
+                - generic [ref=e75]: 10–12 años
+                - generic [ref=e76]: 13–15 años
+              - generic [ref=e77]:
+                - generic [ref=e78]: 4 min
+                - generic [ref=e79]: ·
+                - generic [ref=e80]: 2x15-20 seg por lado
+            - generic [ref=e82]:
+              - generic [ref=e83]:
+                - link "Bird-dog (perro de caza)" [ref=e84] [cursor=pointer]:
+                  - /url: /strength/exercises/3
+                - generic [ref=e85]: Sin equipo
+              - paragraph [ref=e86]: Desde cuadrupedia, extender brazo y pierna opuestos manteniendo la espalda quieta; entrena estabilidad y control lumbo-pélvico.
+              - generic [ref=e88]: Core y estabilidad
+              - generic "Franjas de edad" [ref=e89]:
+                - generic [ref=e90]: 10–12 años
+                - generic [ref=e91]: 13–15 años
+              - generic [ref=e92]:
+                - generic [ref=e93]: 5 min
+                - generic [ref=e94]: ·
+                - generic [ref=e95]: 2x8-10 por lado
+            - generic [ref=e97]:
+              - generic [ref=e98]:
+                - link "Puente de glúteo" [ref=e99] [cursor=pointer]:
+                  - /url: /strength/exercises/4
+                - generic [ref=e100]: Sin equipo
+              - paragraph [ref=e101]: Acostado boca arriba, elevar la cadera apretando glúteos; activa la cadena posterior sin carga en la espalda.
+              - generic [ref=e103]: Inferior bilateral
+              - generic "Franjas de edad" [ref=e104]:
+                - generic [ref=e105]: 10–12 años
+                - generic [ref=e106]: 13–15 años
+              - generic [ref=e107]:
+                - generic [ref=e108]: 4 min
+                - generic [ref=e109]: ·
+                - generic [ref=e110]: 3x12-15
+            - generic [ref=e112]:
+              - generic [ref=e113]:
+                - link "Sentadilla con peso corporal" [ref=e114] [cursor=pointer]:
+                  - /url: /strength/exercises/5
+                - generic [ref=e115]: Sin equipo
+              - paragraph [ref=e116]: Flexionar cadera y rodillas hasta bajar el glúteo como si te fueras a sentar, solo con el propio peso; base de toda la fuerza de piernas.
+              - generic [ref=e118]: Inferior bilateral
+              - generic "Franjas de edad" [ref=e119]:
+                - generic [ref=e120]: 10–12 años
+                - generic [ref=e121]: 13–15 años
+              - generic [ref=e122]:
+                - generic [ref=e123]: 5 min
+                - generic [ref=e124]: ·
+                - generic [ref=e125]: 3x10-15
+            - generic [ref=e127]:
+              - generic [ref=e128]:
+                - link "Sentadilla isométrica en pared (wall sit)" [ref=e129] [cursor=pointer]:
+                  - /url: /strength/exercises/6
+                - generic [ref=e130]: Sin equipo
+              - paragraph [ref=e131]: Sostener la posición de sentadilla con la espalda apoyada en la pared, sin moverse; entrena resistencia isométrica de piernas.
+              - generic [ref=e133]: Inferior bilateral
+              - generic "Franjas de edad" [ref=e134]:
+                - generic [ref=e135]: 10–12 años
+                - generic [ref=e136]: 13–15 años
+              - generic [ref=e137]:
+                - generic [ref=e138]: 4 min
+                - generic [ref=e139]: ·
+                - generic [ref=e140]: 3x20-40 seg
+            - generic [ref=e142]:
+              - generic [ref=e143]:
+                - link "Zancada estática (split squat)" [ref=e144] [cursor=pointer]:
+                  - /url: /strength/exercises/7
+                - generic [ref=e145]: Sin equipo
+              - paragraph [ref=e146]: Dar un paso largo hacia adelante y bajar en línea recta entre las dos piernas; trabaja cada pierna por separado.
+              - generic [ref=e148]: Inferior unilateral
+              - generic "Franjas de edad" [ref=e149]:
+                - generic [ref=e150]: 10–12 años
+                - generic [ref=e151]: 13–15 años
+              - generic [ref=e152]:
+                - generic [ref=e153]: 5 min
+                - generic [ref=e154]: ·
+                - generic [ref=e155]: 2x8-10 por lado
+            - generic [ref=e157]:
+              - generic [ref=e158]:
+                - link "Step-up en banco bajo" [ref=e159] [cursor=pointer]:
+                  - /url: /strength/exercises/8
+                - generic [ref=e160]: Sin equipo
+              - paragraph [ref=e161]: Subir a un banco o escalón bajo con una sola pierna, controlando la bajada; entrena fuerza unilateral funcional.
+              - generic [ref=e163]: Inferior unilateral
+              - generic "Franjas de edad" [ref=e164]:
+                - generic [ref=e165]: 10–12 años
+                - generic [ref=e166]: 13–15 años
+              - generic [ref=e167]:
+                - generic [ref=e168]: 5 min
+                - generic [ref=e169]: ·
+                - generic [ref=e170]: 2x8-10 por lado
+            - generic [ref=e172]:
+              - generic [ref=e173]:
+                - link "Flexión de brazos inclinada (contra banco o pared)" [ref=e174] [cursor=pointer]:
+                  - /url: /strength/exercises/9
+                - generic [ref=e175]: Sin equipo
+              - paragraph [ref=e176]: Flexión de pecho con las manos apoyadas en una superficie elevada (banco/pared), reduciendo la carga para dominar la técnica.
+              - generic [ref=e178]: Empuje superior
+              - generic "Franjas de edad" [ref=e179]:
+                - generic [ref=e180]: 10–12 años
+                - generic [ref=e181]: 13–15 años
+              - generic [ref=e182]:
+                - generic [ref=e183]: 5 min
+                - generic [ref=e184]: ·
+                - generic [ref=e185]: 3x8-12
+            - generic [ref=e187]:
+              - generic [ref=e188]:
+                - link "Remo invertido en barra baja" [ref=e189] [cursor=pointer]:
+                  - /url: /strength/exercises/10
+                - generic [ref=e190]: Sin equipo
+              - paragraph [ref=e191]: Colgarse de una barra baja o pasamanos con el cuerpo inclinado y jalar el pecho hacia la barra; introduce el patrón de tracción sin necesitar dominadas completas.
+              - generic [ref=e193]: Tracción superior
+              - generic "Franjas de edad" [ref=e194]:
+                - generic [ref=e195]: 10–12 años
+                - generic [ref=e196]: 13–15 años
+              - generic [ref=e197]:
+                - generic [ref=e198]: 5 min
+                - generic [ref=e199]: ·
+                - generic [ref=e200]: 3x6-10
+            - generic [ref=e202]:
+              - generic [ref=e203]:
+                - link "Flexión de brazos apoyada en rodillas (progresión)" [ref=e204] [cursor=pointer]:
+                  - /url: /strength/exercises/11
+                - generic [ref=e205]: Sin equipo
+              - paragraph [ref=e206]: Flexión de pecho apoyando rodillas en el piso; progresión hacia la flexión completa para deportistas de 13-15 con buena base.
+              - generic [ref=e208]: Empuje superior
+              - generic "Franjas de edad" [ref=e209]:
+                - generic [ref=e210]: 13–15 años
+              - generic [ref=e211]:
+                - generic [ref=e212]: 5 min
+                - generic [ref=e213]: ·
+                - generic [ref=e214]: 3x10-12
+            - generic [ref=e216]:
+              - generic [ref=e217]:
+                - link "Escalador (mountain climber) en plancha" [ref=e218] [cursor=pointer]:
+                  - /url: /strength/exercises/12
+                - generic [ref=e219]: Sin equipo
+              - paragraph [ref=e220]: Desde posición de plancha, llevar rodillas al pecho alternando rápido; combina core y control de ritmo respiratorio.
+              - generic [ref=e222]: Core y estabilidad
+              - generic "Franjas de edad" [ref=e223]:
+                - generic [ref=e224]: 13–15 años
+              - generic [ref=e225]:
+                - generic [ref=e226]: 4 min
+                - generic [ref=e227]: ·
+                - generic [ref=e228]: 3x20-30 seg
+            - generic [ref=e230]:
+              - generic [ref=e231]:
+                - link "Superman con remo" [ref=e232] [cursor=pointer]:
+                  - /url: /strength/exercises/13
+                - generic [ref=e233]: Sin equipo
+              - paragraph [ref=e234]: Acostado boca abajo, levantar pecho y piernas y simular un jalón de remo; activa toda la cadena posterior sin equipo.
+              - generic [ref=e236]: Tracción superior
+              - generic "Franjas de edad" [ref=e237]:
+                - generic [ref=e238]: 10–12 años
+              - generic [ref=e239]:
+                - generic [ref=e240]: 4 min
+                - generic [ref=e241]: ·
+                - generic [ref=e242]: 3x10-12
+            - generic [ref=e244]:
+              - generic [ref=e245]:
+                - link "Sentadilla goblet con mancuerna ligera" [ref=e246] [cursor=pointer]:
+                  - /url: /strength/exercises/14
+                - generic [ref=e247]: Equipo de gimnasio
+              - paragraph [ref=e248]: Sentadilla sosteniendo una mancuerna ligera contra el pecho; el peso al frente ayuda a mantener el torso erguido.
+              - generic [ref=e250]: Inferior bilateral
+              - generic "Franjas de edad" [ref=e251]:
+                - generic [ref=e252]: 13–15 años
+              - generic [ref=e253]:
+                - generic [ref=e254]: 5 min
+                - generic [ref=e255]: ·
+                - generic [ref=e256]: 3x8-15
+            - generic [ref=e258]:
+              - generic [ref=e259]:
+                - link "Zancada con mancuernas ligeras" [ref=e260] [cursor=pointer]:
+                  - /url: /strength/exercises/15
+                - generic [ref=e261]: Equipo de gimnasio
+              - paragraph [ref=e262]: Zancada estática sosteniendo una mancuerna ligera en cada mano; añade carga controlada al patrón unilateral.
+              - generic [ref=e264]: Inferior unilateral
+              - generic "Franjas de edad" [ref=e265]:
+                - generic [ref=e266]: 13–15 años
+              - generic [ref=e267]:
+                - generic [ref=e268]: 5 min
+                - generic [ref=e269]: ·
+                - generic [ref=e270]: 3x8-12 por lado
+            - generic [ref=e272]:
+              - generic [ref=e273]:
+                - link "Press de hombro con mancuernas ligeras" [ref=e274] [cursor=pointer]:
+                  - /url: /strength/exercises/16
+                - generic [ref=e275]: Equipo de gimnasio
+              - paragraph [ref=e276]: Empujar dos mancuernas ligeras desde los hombros hacia arriba; introduce el patrón de empuje vertical con carga controlada.
+              - generic [ref=e278]: Empuje superior
+              - generic "Franjas de edad" [ref=e279]:
+                - generic [ref=e280]: 13–15 años
+              - generic [ref=e281]:
+                - generic [ref=e282]: 5 min
+                - generic [ref=e283]: ·
+                - generic [ref=e284]: 3x8-12
+            - generic [ref=e286]:
+              - generic [ref=e287]:
+                - link "Remo sentado con banda elástica" [ref=e288] [cursor=pointer]:
+                  - /url: /strength/exercises/17
+                - generic [ref=e289]: Equipo de gimnasio
+              - paragraph [ref=e290]: Sentado con las piernas extendidas, jalar una banda elástica anclada al frente llevando los codos atrás; patrón de tracción horizontal con resistencia progresiva.
+              - generic [ref=e292]: Tracción superior
+              - generic "Franjas de edad" [ref=e293]:
+                - generic [ref=e294]: 13–15 años
+              - generic [ref=e295]:
+                - generic [ref=e296]: 5 min
+                - generic [ref=e297]: ·
+                - generic [ref=e298]: 3x10-15
+            - generic [ref=e300]:
+              - generic [ref=e301]:
+                - link "Plancha con anti-rotación (banda elástica)" [ref=e302] [cursor=pointer]:
+                  - /url: /strength/exercises/18
+                - generic [ref=e303]: Equipo de gimnasio
+              - paragraph [ref=e304]: En plancha alta, jalar una banda elástica anclada al lado sin dejar que el torso rote; entrena el core para resistir fuerzas laterales.
+              - generic [ref=e306]: Core y estabilidad
+              - generic "Franjas de edad" [ref=e307]:
+                - generic [ref=e308]: 13–15 años
+              - generic [ref=e309]:
+                - generic [ref=e310]: 5 min
+                - generic [ref=e311]: ·
+                - generic [ref=e312]: 3x8-10 por lado
+            - generic [ref=e314]:
+              - generic [ref=e315]:
+                - link "Pull-apart con banda elástica" [ref=e316] [cursor=pointer]:
+                  - /url: /strength/exercises/19
+                - generic [ref=e317]: Equipo de gimnasio
+              - paragraph [ref=e318]: Sostener una banda elástica con ambos brazos extendidos al frente y separarla llevándola al pecho; fortalece la espalda alta y mejora la postura.
+              - generic [ref=e320]: Tracción superior
+              - generic "Franjas de edad" [ref=e321]:
+                - generic [ref=e322]: 13–15 años
+              - generic [ref=e323]:
+                - generic [ref=e324]: 4 min
+                - generic [ref=e325]: ·
+                - generic [ref=e326]: 3x12-15
+            - generic [ref=e328]:
+              - generic [ref=e329]:
+                - link "Sentadilla sumo con peso corporal" [ref=e330] [cursor=pointer]:
+                  - /url: /strength/exercises/20
+                - generic [ref=e331]: Sin equipo
+              - paragraph [ref=e332]: Sentadilla con los pies más separados y puntas hacia afuera; enfatiza cadera y muslo interno con el propio peso.
+              - generic [ref=e334]: Inferior bilateral
+              - generic "Franjas de edad" [ref=e335]:
+                - generic [ref=e336]: 13–15 años
+              - generic [ref=e337]:
+                - generic [ref=e338]: 5 min
+                - generic [ref=e339]: ·
+                - generic [ref=e340]: 3x10-15
+            - generic [ref=e342]:
+              - generic [ref=e343]:
+                - link "Elevación de cadera a una pierna" [ref=e344] [cursor=pointer]:
+                  - /url: /strength/exercises/21
+                - generic [ref=e345]: Sin equipo
+              - paragraph [ref=e346]: Puente de glúteo apoyado en una sola pierna; añade exigencia unilateral al mismo patrón de cadera.
+              - generic [ref=e348]: Inferior unilateral
+              - generic "Franjas de edad" [ref=e349]:
+                - generic [ref=e350]: 10–12 años
+                - generic [ref=e351]: 13–15 años
+              - generic [ref=e352]:
+                - generic [ref=e353]: 4 min
+                - generic [ref=e354]: ·
+                - generic [ref=e355]: 2x8-10 por lado
+            - generic [ref=e357]:
+              - generic [ref=e358]:
+                - link "Plancha con toque de hombro" [ref=e359] [cursor=pointer]:
+                  - /url: /strength/exercises/22
+                - generic [ref=e360]: Sin equipo
+              - paragraph [ref=e361]: Desde plancha alta, tocar el hombro contrario con una mano alternando, sin balancear la cadera; desafía la anti-rotación del core.
+              - generic [ref=e363]: Core y estabilidad
+              - generic "Franjas de edad" [ref=e364]:
+                - generic [ref=e365]: 13–15 años
+              - generic [ref=e366]:
+                - generic [ref=e367]: 4 min
+                - generic [ref=e368]: ·
+                - generic [ref=e369]: 3x16-20 toques

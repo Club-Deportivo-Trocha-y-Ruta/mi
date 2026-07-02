@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from app.models.calendar_event import CalendarEvent
     from app.models.club import Club
     from app.models.session_media import SessionMedia
+    from app.models.strength import StrengthSessionBlock
     from app.models.technique_exercise import TechniqueSessionExercise
     from app.models.user import User
 
@@ -146,6 +147,13 @@ class TrainingSession(Base):
         back_populates="training_session",
         cascade="all, delete-orphan",
         foreign_keys="[TechniqueSessionExercise.training_session_id]",
+    )
+    # Feature 021 — strength blocks attached to this session (selectinload in detail reads).
+    strength_blocks: Mapped[list[StrengthSessionBlock]] = relationship(
+        "StrengthSessionBlock",
+        back_populates="training_session",
+        cascade="all, delete-orphan",
+        foreign_keys="[StrengthSessionBlock.training_session_id]",
     )
 
 
