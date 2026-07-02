@@ -126,6 +126,15 @@ export function AppShell({ children }: AppShellProps) {
           Técnica
         </NavLink>
       )}
+      {(isCoach || isAdmin) && (
+        <NavLink
+          to="/strength"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Fuerza
+        </NavLink>
+      )}
       {isParent && (
         <NavLink
           to="/my-athletes"
