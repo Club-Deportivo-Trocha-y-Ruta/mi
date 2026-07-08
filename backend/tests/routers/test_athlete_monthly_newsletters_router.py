@@ -994,3 +994,112 @@ async def test_attach_insights_multiple_invalid_ids_all_reported():
     assert "99" in exc.value.detail
     # 10 era válido, no debe aparecer en el detalle de error
     assert "10" not in exc.value.detail
+
+
+# ---------------------------------------------------------------------------
+# Regresión FR-015 (024) — snapshots pre-024 renderizan sin excepción
+# ---------------------------------------------------------------------------
+#
+# Snapshot "legacy": carece de los campos nuevos de la 024 (focus_groups,
+# weekly_hours_avg/ltad_limit_hours/ltad_status, short_label, streak_sessions)
+# y en su lugar trae la clave vieja `streak_days`. Los templates deben
+# degradar con sus fallbacks (`is defined` / `.get(...)`) sin lanzar.
+
+
+_LEGACY_EMAIL_BLOCKS: dict = {
+    "period": {"year": 2026, "month": 3},
+    "attendance": {
+        "sessions_present": 8,
+        "sessions_total": 10,
+        "attendance_pct": 80.0,
+        "attendance_pct_prev_month": 75.0,
+        "streak_days": 3,  # clave vieja; streak_sessions no existe
+    },
+    "technical": {
+        "focos_tecnicos": ["Frenado"],
+        "avg_rpe": 6.0,
+        "avg_rubric_technique": 3.5,
+        "total_training_hours": 9.0,
+        # sin focus_groups / weekly_hours_avg / ltad_limit_hours / ltad_status
+    },
+    "race_results": {
+        "has_races": True,
+        "results": [
+            {"position": 4, "valida_num": "III", "gap_to_winner_pct": 6.2}
+            # sin "label" ni "short_label"
+        ],
+    },
+    "calendar": {"next_training_sessions": [], "next_race_events": []},
+    "photos": {"count": 0, "items": []},
+    "badges": {"items": [{"badge_type": "attendance_90"}]},
+}
+
+_LEGACY_PDF_ONLY_BLOCKS: dict = {
+    "anthropometry": {"has_records": False},
+    "charts_context": {
+        "has_data": False,
+        "low_confidence": True,
+        "positions": [],
+        "gap_pcts": [],
+        "points_accumulated": [],
+    },
+    "percentile_curves": None,
+}
+
+
+class TestLegacySnapshotBackwardCompat:
+    """FR-015: un snapshot generado antes de la 024 debe renderizar PDF y
+    email sin lanzar excepciones, pese a carecer de los campos nuevos."""
+
+    @pytest.mark.asyncio
+    async def test_legacy_snapshot_renders_pdf_without_raising(self):
+        from app.services.notification.athlete_newsletter_pdf import generate_newsletter_pdf
+        from app.services.notification.document_generator import DocumentGenerator
+        from app.services.notification.template_registry import TemplateRegistry
+
+        generator = DocumentGenerator(TemplateRegistry())
+
+        doc, sha256 = await generate_newsletter_pdf(
+            generator=generator,
+            athlete_first_name="Atleta",
+            athlete_last_name="Legacy",
+            athlete_id=5,
+            year=2026,
+            month=3,
+            email_blocks=_LEGACY_EMAIL_BLOCKS,
+            pdf_only_blocks=_LEGACY_PDF_ONLY_BLOCKS,
+            ai_narrative=None,
+            coach_narrative_overrides=None,
+            db=None,  # sin sesión: photos_render degrada a embeddable_count=0
+        )
+
+        assert len(doc.data) > 0
+        assert len(sha256) == 64
+
+    def test_legacy_snapshot_renders_email_without_raising(self):
+        from app.services.notification.newsletter_dispatcher import _render_email_template
+        from app.services.notification.template_registry import TemplateRegistry
+
+        registry = TemplateRegistry()
+        context = {
+            "club_name": "Trocha y Ruta",
+            "month_label": "Marzo 2026",
+            "season_year": "2026",
+            "children": [
+                {
+                    "athlete_id": 5,
+                    "athlete_first_name": "Atleta",
+                    "email_blocks": _LEGACY_EMAIL_BLOCKS,
+                    "ai_narrative": None,
+                    "coach_narrative_overrides": None,
+                }
+            ],
+        }
+
+        html = _render_email_template(registry, context)
+
+        assert "Atleta" in html
+        # Fallback de streak: usa la clave vieja `streak_days`
+        assert "3 sesiones consecutivas" in html
+        # Fallback de label: usa "Válida <valida_num>" al faltar short_label/label
+        assert "Válida III" in html

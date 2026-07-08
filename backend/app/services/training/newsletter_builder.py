@@ -18,15 +18,20 @@ from __future__ import annotations
 
 import calendar
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.athlete_badge import AthleteBadge
-from app.services.training.badge_evaluator import evaluate_and_persist_badges, get_badges_for_period
+from app.services.category import compute_age_decimal
+from app.services.training.badge_evaluator import (
+    _compute_streak,
+    evaluate_and_persist_badges,
+    get_badges_for_period,
+)
+from app.services.training.focus_grouping import group_focus_texts
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +98,41 @@ def _race_readable_label(
     return f"Válida {valida_num}" if valida_num is not None else "—"
 
 
+async def _lookup_category_labels(
+    db: AsyncSession, category_codes: set[str]
+) -> dict[str, str]:
+    """Resuelve ``race_categories.label`` por ``code`` en una sola consulta batch.
+
+    Códigos no mapeados quedan ausentes del dict resultante (el llamador cae
+    de vuelta al código crudo).
+    """
+    if not category_codes:
+        return {}
+
+    from app.models.race_category import RaceCategory
+
+    result = await db.execute(
+        select(RaceCategory.code, RaceCategory.label).where(
+            RaceCategory.code.in_(category_codes)
+        )
+    )
+    return {code: label for code, label in result.all()}
+
+
+def _derive_athlete_reference(athlete_sex: str | None) -> str:
+    """Deriva el pronombre de referencia en español para el atleta.
+
+    Mismo criterio que ``_derive_athlete_reference`` del use case de IA
+    (``app/services/ai/use_cases/athlete_monthly_newsletter.py``): no se
+    importa desde ahí para no acoplar el servicio de training a la capa de IA.
+    """
+    if athlete_sex == "M":
+        return "su hijo"
+    if athlete_sex == "F":
+        return "su hija"
+    return "su hijo/a"
+
+
 async def build_newsletter_metrics(
     db: AsyncSession,
     athlete_id: int,
@@ -107,12 +147,6 @@ async def build_newsletter_metrics(
         'pdf_only_blocks' contiene antropometría + referencia a gráficos SVG.
     """
     from app.models.athlete import Athlete
-    from app.models.training_session import (
-        AttendanceStatus,
-        SessionAttendance,
-        SessionStatus,
-        TrainingSession,
-    )
 
     athlete_result = await db.execute(
         select(Athlete).where(Athlete.id == athlete_id)
@@ -126,6 +160,14 @@ async def build_newsletter_metrics(
     month_end = date(year, month, last_day)
     month_label = f"{_MONTHS_ES[month - 1]} {year}"
 
+    # Fecha de referencia para cálculos de edad decimal (LTAD, banda de apoyo).
+    # Se usa "hoy" (no el fin de mes) porque el boletín puede generarse tarde.
+    generation_date = date.today()
+    _athlete_sex = getattr(athlete, "sex", None)
+    athlete_reference = _derive_athlete_reference(
+        _athlete_sex.value if hasattr(_athlete_sex, "value") else _athlete_sex
+    )
+
     # -----------------------------------------------------------------------
     # Bloque 1: Asistencia y compromiso
     # -----------------------------------------------------------------------
@@ -137,7 +179,7 @@ async def build_newsletter_metrics(
     # Bloque 2: Carga y desarrollo técnico
     # -----------------------------------------------------------------------
     technical_block = await _build_technical_block(
-        db, athlete, month_start, month_end
+        db, athlete, month_start, month_end, generation_date
     )
 
     # -----------------------------------------------------------------------
@@ -166,7 +208,12 @@ async def build_newsletter_metrics(
     # -----------------------------------------------------------------------
     # Bloque 7: "Cómo apoyar desde casa" (template estático)
     # -----------------------------------------------------------------------
-    support_block = _build_support_block()
+    age_decimal = (
+        compute_age_decimal(athlete.birth_date, generation_date)
+        if athlete.birth_date
+        else None
+    )
+    support_block = _build_support_block(age_decimal, month, athlete_reference)
 
     # -----------------------------------------------------------------------
     # Bloque 8 (pdf_only): Antropometría completa
@@ -268,7 +315,7 @@ async def _build_attendance_block(
             "sessions_present": 0,
             "attendance_pct": 0.0,
             "attendance_pct_prev_month": None,
-            "streak_days": 0,
+            "streak_sessions": 0,
         }
 
     session_ids = [s.id for s in sessions]
@@ -291,7 +338,7 @@ async def _build_attendance_block(
             "sessions_present": 0,
             "attendance_pct": 0.0,
             "attendance_pct_prev_month": None,
-            "streak_days": 0,
+            "streak_sessions": 0,
         }
 
     present = sum(
@@ -307,7 +354,7 @@ async def _build_attendance_block(
         db, athlete, prev_year, prev_month
     )
 
-    # Racha actual (días consecutivos con asistencia PRESENTE)
+    # Racha actual (sesiones consecutivas con asistencia PRESENTE/TARDE)
     streak = _compute_streak(convoked_sessions, attendances)
 
     return {
@@ -315,7 +362,7 @@ async def _build_attendance_block(
         "sessions_present": present,
         "attendance_pct": pct,
         "attendance_pct_prev_month": prev_pct,
-        "streak_days": streak,
+        "streak_sessions": streak,
     }
 
 
@@ -363,34 +410,22 @@ async def _get_prev_month_attendance(
     return round(present / total * 100, 1)
 
 
-def _compute_streak(sessions: list, attendances: list) -> int:
-    """Calcula la racha de días con asistencia presente (simplificado)."""
-    from app.models.training_session import AttendanceStatus
-
-    present_session_ids = {
-        a.session_id
-        for a in attendances
-        if a.status in {AttendanceStatus.PRESENTE, AttendanceStatus.TARDE}
-    }
-    # Ordenar sesiones por fecha desc y contar racha
-    sorted_sessions = sorted(sessions, key=lambda s: s.scheduled_date, reverse=True)
-    streak = 0
-    for s in sorted_sessions:
-        if s.id in present_session_ids:
-            streak += 1
-        else:
-            break
-    return streak
-
-
 async def _build_technical_block(
     db: AsyncSession,
     athlete: Any,
     month_start: date,
     month_end: date,
+    generation_date: date,
 ) -> dict[str, Any]:
     """Carga y desarrollo técnico: rúbrica, focos, RPE, horas vs LTAD."""
     from app.models.training_session import AttendanceStatus, SessionAttendance, SessionStatus, TrainingSession
+
+    ltad_limit_hours = (
+        compute_age_decimal(athlete.birth_date, generation_date)
+        if athlete.birth_date
+        else None
+    )
+    days_in_month = calendar.monthrange(month_start.year, month_start.month)[1]
 
     sessions_result = await db.execute(
         select(TrainingSession).where(
@@ -404,15 +439,24 @@ async def _build_technical_block(
     if not sessions:
         return {
             "focos_tecnicos": [],
+            "focus_groups": [],
             "avg_rpe": None,
             "avg_rubric_effort": None,
             "avg_rubric_attitude": None,
             "avg_rubric_technique": None,
             "total_training_hours": 0.0,
+            "weekly_hours_avg": None,
+            "ltad_limit_hours": ltad_limit_hours,
+            "ltad_status": None,
         }
 
     session_ids = [s.id for s in sessions]
     focos = list({s.technical_focus for s in sessions if s.technical_focus})
+    raw_focus_texts = [s.technical_focus for s in sessions if s.technical_focus]
+    focus_groups = [
+        {"slug": g.slug, "name": g.name, "session_count": g.session_count}
+        for g in group_focus_texts(raw_focus_texts)
+    ]
 
     att_result = await db.execute(
         select(SessionAttendance).where(
@@ -432,7 +476,6 @@ async def _build_technical_block(
     avg_technique = _avg([a.rubric_technique for a in attendances])
 
     # Horas totales de entrenamiento (duración de sesiones con asistencia presente)
-    from app.models.training_session import AttendanceStatus
     present_session_ids = {
         a.session_id
         for a in attendances
@@ -443,14 +486,26 @@ async def _build_technical_block(
         for s in sessions
         if s.id in present_session_ids
     )
+    total_hours = round(total_hours, 1)
+
+    weekly_hours_avg = round(total_hours / (days_in_month / 7.0), 1)
+    ltad_status = (
+        ("ok" if weekly_hours_avg <= ltad_limit_hours else "review")
+        if ltad_limit_hours is not None
+        else None
+    )
 
     return {
         "focos_tecnicos": focos,
+        "focus_groups": focus_groups,
         "avg_rpe": avg_rpe,
         "avg_rubric_effort": avg_effort,
         "avg_rubric_attitude": avg_attitude,
         "avg_rubric_technique": avg_technique,
-        "total_training_hours": round(total_hours, 1),
+        "total_training_hours": total_hours,
+        "weekly_hours_avg": weekly_hours_avg,
+        "ltad_limit_hours": ltad_limit_hours,
+        "ltad_status": ltad_status,
     }
 
 
@@ -467,7 +522,7 @@ async def _build_race_block(
     try:
         import pandas as pd
         from app.models.race_competitor import RaceCompetitor
-        from app.services.race.analytics import athlete_progression, podium_gap, projection
+        from app.services.race.analytics import athlete_progression
 
         comp_result = await db.execute(
             select(RaceCompetitor).where(RaceCompetitor.athlete_id == athlete_id)
@@ -500,18 +555,28 @@ async def _build_race_block(
             & (progression_df["event_date"] <= month_end_str)
         ]
 
+        category_codes = {
+            str(row["category_code"])
+            for _, row in month_results.iterrows()
+            if row["category_code"]
+        }
+        category_labels = await _lookup_category_labels(db, category_codes)
+
         results_serialized = []
         for _, row in month_results.iterrows():
             _valida_num = int(row["valida_num"]) if row["valida_num"] is not None and str(row["valida_num"]) != "<NA>" else None
             _series_kind = _row_str(row, "series_kind") or "cup"
             _series_level = _row_str(row, "series_level") or "departmental"
+            _category_code = str(row["category_code"]) if row["category_code"] else None
             results_serialized.append({
                 "valida_num": _valida_num,
                 "series_kind": _series_kind,
                 "series_level": _series_level,
                 "label": _race_readable_label(_series_kind, _series_level, _valida_num),
+                "short_label": _race_short_label(_series_kind, _series_level, _valida_num),
                 "event_date": str(row["event_date"]) if row["event_date"] else None,
-                "category_code": str(row["category_code"]) if row["category_code"] else None,
+                "category_code": _category_code,
+                "category_label": category_labels.get(_category_code) if _category_code else None,
                 "position": int(row["position"]) if row["position"] is not None and str(row["position"]) != "<NA>" else None,
                 "race_time_ms": int(row["race_time_ms"]) if row["race_time_ms"] is not None and str(row["race_time_ms"]) != "<NA>" else None,
                 "points_awarded": int(row["points_awarded"]) if row["points_awarded"] is not None and str(row["points_awarded"]) != "<NA>" else 0,
@@ -690,50 +755,43 @@ def _serialize_badges(badges: list[AthleteBadge]) -> dict[str, Any]:
     return {"count": len(items), "items": items}
 
 
-def _build_support_block() -> dict[str, Any]:
-    """Bloque estático 'Cómo apoyar desde casa' (sin calorías ni suplementos)."""
+def _build_support_block(
+    age_decimal: float | None,
+    month: int,
+    athlete_reference: str,
+) -> dict[str, Any]:
+    """Bloque 'Cómo apoyar desde casa': banda etaria + rotación mensual (R14).
+
+    Selecciona la banda 10-12 vs 13-15 según ``age_decimal`` (< 13 → 10-12;
+    ``None`` → 13-15 por defecto) y rota deterministamente entre las 2-3
+    variantes de cada categoría según el mes (``month % len(variants)``),
+    de modo que regenerar el mismo boletín produzca el mismo texto.
+    Todas las variantes preservan los no-negociables: cero suplementos, sin
+    conteo calórico, alimentación real como base.
+    """
+    from app.services.training.newsletter_static_copy import (
+        SUPPORT_TIP_TITLES,
+        SUPPORT_TIP_VARIANTS,
+    )
+
+    age_band = "10-12" if age_decimal is not None and age_decimal < 13 else "13-15"
+    variants_by_category = SUPPORT_TIP_VARIANTS[age_band]
+
+    tips = []
+    rotation_index = 0
+    for category, variants in variants_by_category.items():
+        rotation_index = month % len(variants)
+        text = variants[rotation_index].format(ref=athlete_reference)
+        tips.append({
+            "category": category,
+            "title": SUPPORT_TIP_TITLES[category],
+            "text": text,
+        })
+
     return {
-        "tips": [
-            {
-                "category": "hidratacion",
-                "title": "Hidratación",
-                "text": (
-                    "Asegúrate de que tu hijo/a llegue al entrenamiento bien hidratado/a. "
-                    "Durante el día: agua o bebida de fruta natural. "
-                    "Antes del entreno: 500ml en la hora previa. "
-                    "Durante: sorbos cada 15-20 min según la sed."
-                ),
-            },
-            {
-                "category": "sueno",
-                "title": "Sueño",
-                "text": (
-                    "Los atletas de 10-12 años necesitan 9-11 horas por noche; "
-                    "los de 13-15 años, 8-10 horas. "
-                    "El sueño es cuando el cuerpo crece y se recupera. "
-                    "Mantén horarios regulares, especialmente antes de competencia."
-                ),
-            },
-            {
-                "category": "descanso",
-                "title": "Descanso activo",
-                "text": (
-                    "Los días sin entrenamiento son parte del plan. "
-                    "Un paseo en familia, nadar o jugar libremente es ideal. "
-                    "Evitar actividades extenuantes el día antes de competencia."
-                ),
-            },
-            {
-                "category": "nutricion",
-                "title": "Alimentación",
-                "text": (
-                    "Tres comidas principales + snack post-entreno balanceado. "
-                    "Fruta, lácteos, proteína de alimentos naturales. "
-                    "Sin suplementos: a esta edad, la comida real es suficiente. "
-                    "El entrenador no realiza seguimiento calórico — la familia es la guía."
-                ),
-            },
-        ]
+        "tips": tips,
+        "age_band": age_band,
+        "rotation_index": rotation_index,
     }
 
 
@@ -977,8 +1035,15 @@ def _build_charts_context(race_block: dict[str, Any]) -> dict[str, Any]:
     Los gráficos se renderizan en el template PDF a partir de estos datos.
     """
     history = race_block.get("progression_history", [])
+    has_championship = any(row.get("series_kind") == "championship" for row in history)
     if not history:
-        return {"has_data": False, "positions": [], "gap_pcts": [], "points_accumulated": []}
+        return {
+            "has_data": False,
+            "positions": [],
+            "gap_pcts": [],
+            "points_accumulated": [],
+            "has_championship": has_championship,
+        }
 
     positions = []
     gap_pcts = []
@@ -1011,4 +1076,5 @@ def _build_charts_context(race_block: dict[str, Any]) -> dict[str, Any]:
         "positions": positions,
         "gap_pcts": gap_pcts,
         "points_accumulated": points_acc,
+        "has_championship": has_championship,
     }

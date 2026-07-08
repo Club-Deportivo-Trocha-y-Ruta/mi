@@ -18,6 +18,9 @@ El texto será revisado por el entrenador antes de enviarse a la familia.
 - "month_highlights": UNA o DOS frases (10 a 40 palabras) que resuman lo más
   destacado del mes en tono positivo, para mostrar al inicio del boletín.
 - NO menciones nombres propios de atletas ni compañeros del club (en NINGÚN campo).
+- Cuando te refieras al atleta, usa SIEMPRE y textualmente la expresión {{ athlete_reference }}
+  (ej. "su hijo", "su hija") y mantén la concordancia de género en adjetivos y pronombres
+  asociados a esa expresión. NUNCA uses el nombre real del atleta.
 - NO menciones datos médicos, diagnósticos, lesiones, ni suplementos (en NINGÚN campo).
 - NO uses términos comparativos negativos ("peor que", "más lento que", "por debajo de").
 - Tono: positivo, motivador, concreto y respetuoso de la edad biológica (no presionar).
@@ -35,7 +38,7 @@ El texto será revisado por el entrenador antes de enviarse a la familia.
 {% if attendance_pct_prev_month is not none %}
 - Comparativa mes anterior: {{ attendance_pct_prev_month }}%
 {% endif %}
-- Racha actual (sesiones consecutivas): {{ streak_days }}
+- Racha actual (sesiones consecutivas): {{ streak_sessions }}
 
 ## Desarrollo técnico
 - Focos técnicos del mes: {{ focos_tecnicos | join(", ") if focos_tecnicos else "no registrados" }}

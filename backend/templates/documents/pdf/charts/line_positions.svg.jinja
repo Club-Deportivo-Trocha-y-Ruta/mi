@@ -10,7 +10,7 @@
 {%- set valid_points = points | selectattr("y", "ne", none) | list -%}
 {%- set pad_left = 40 -%}
 {%- set pad_right = 20 -%}
-{%- set pad_top = 8 -%}
+{%- set pad_top = 16 -%}
 {%- set pad_bottom = 30 -%}
 {%- set chart_w = width - pad_left - pad_right -%}
 {%- set chart_h = height - pad_top - pad_bottom -%}
@@ -46,7 +46,7 @@
         <line x1="{{ prev_cx.val }}" y1="{{ prev_cy.val }}" x2="{{ cx }}" y2="{{ cy }}" stroke="#2563eb" stroke-width="2"/>
       {%- endif -%}
       <circle cx="{{ cx }}" cy="{{ cy }}" r="4" fill="#2563eb"/>
-      <text x="{{ cx }}" y="{{ cy - 6 }}" text-anchor="middle" font-size="8" fill="#1e40af">{{ pt.y }}</text>
+      <text x="{{ cx }}" y="{{ [pad_top - 2, cy - 6] | max }}" text-anchor="middle" font-size="8" fill="#1e40af">{{ pt.y }}</text>
       <text x="{{ cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#555">{{ pt.label or ('V' ~ pt.x) }}</text>
       {%- set prev_cx.val = cx -%}
       {%- set prev_cy.val = cy -%}
