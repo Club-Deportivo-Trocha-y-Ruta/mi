@@ -1,8 +1,10 @@
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -41,6 +43,23 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Excepciones no manejadas registradas aquí (en vez de dejarlas escapar
+    hasta ServerErrorMiddleware) para que CORSMiddleware sí agregue los
+    headers Access-Control-Allow-* a la respuesta 500 — sin esto el frontend
+    ve un bloqueo CORS en vez del error real.
+    """
+    logger.error(
+        "Excepción no manejada | method=%s path=%s error_type=%s",
+        request.method, request.url.path, type(exc).__name__,
+        exc_info=exc,
+    )
+    return JSONResponse(status_code=500, content={"detail": "Error interno del servidor"})
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
