@@ -68,6 +68,7 @@ from app.services.notification.race_event_tier import (
 )
 
 if TYPE_CHECKING:
+    from app.models.race_series import RaceSeriesLevel
     from app.services.notification.service import NotificationService
     from app.services.notification.task_dispatcher import TaskDispatcher
 
@@ -159,13 +160,30 @@ def _roman_numeral(n: int) -> str:
     return table.get(n, str(n))
 
 
-def _build_valida_label(event: RaceEvent, tier: RaceTier) -> str:
+def _championship_label_es(level: "RaceSeriesLevel | None") -> str:
+    """Etiqueta legible del campeonato según su ámbito territorial.
+
+    ``national`` → "Campeonato Nacional"; cualquier otro valor (incluido
+    ``None`` para snapshots previos a la feature 023) → "Campeonato
+    Departamental" (comportamiento retrocompatible).
+    """
+    from app.models.race_series import RaceSeriesLevel
+
+    if level == RaceSeriesLevel.national:
+        return "Campeonato Nacional"
+    return "Campeonato Departamental"
+
+
+def _build_valida_label(
+    event: RaceEvent, tier: RaceTier, level: "RaceSeriesLevel | None" = None
+) -> str:
     """Construye etiqueta legible para el email/in-app.
 
-    Ejemplos: "IV — Cali", "Campeonato Departamental".
+    Ejemplos: "IV — Cali", "Campeonato Departamental", "Campeonato Nacional".
+    Para campeonatos (``tier == CD``) el ámbito lo determina ``level``.
     """
     if tier == RaceTier.CD:
-        return "Campeonato Departamental"
+        return _championship_label_es(level)
     location = (event.location or "").strip()
     roman = _roman_numeral(int(event.sequence_number or 0))
     if location:
@@ -173,9 +191,9 @@ def _build_valida_label(event: RaceEvent, tier: RaceTier) -> str:
     return roman
 
 
-def _tier_label_es(tier: RaceTier) -> str:
+def _tier_label_es(tier: RaceTier, level: "RaceSeriesLevel | None" = None) -> str:
     if tier == RaceTier.CD:
-        return "Campeonato Departamental"
+        return _championship_label_es(level)
     if tier == RaceTier.A:
         return "Tipo A — máxima prioridad"
     if tier == RaceTier.B:
@@ -545,8 +563,9 @@ async def _send_email_to_parents(
         NotificationTemplate,
     )
 
-    valida_label = _build_valida_label(event, tier)
-    tier_label = _tier_label_es(tier)
+    series_level = getattr(event.series, "level", None) if event.series else None
+    valida_label = _build_valida_label(event, tier, series_level)
+    tier_label = _tier_label_es(tier, series_level)
     valida_date = _format_date_es(event.event_date)
     coach_summary = _safe_summary(insight.summary_text)
     deep_link = f"/athletes/{insight.athlete_id}/race-analysis/insights/{insight.id}"

@@ -27,10 +27,9 @@ Privacidad invariante:
 from __future__ import annotations
 
 import io
-import json
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -605,7 +604,15 @@ class TestRaceSeriesT007:
         r = await coach_client.get(_SERIES_URL)
         assert r.status_code == 200
 
-        allowed_keys = {"id", "name", "season_year", "organizer", "kind", "event_count"}
+        allowed_keys = {
+            "id",
+            "name",
+            "season_year",
+            "organizer",
+            "kind",
+            "level",
+            "event_count",
+        }
         for item in r.json()["items"]:
             extra = set(item.keys()) - allowed_keys
             assert not extra, f"Campos no permitidos en response: {extra}"
@@ -841,7 +848,6 @@ class TestImportChampionshipT018:
         series_kind=None,
         pdf_content=None,
     ):
-        import io
         fields = {
             "series_name": series_name,
             "season": str(season),
@@ -1105,7 +1111,6 @@ class TestSeasonPanoramaStandingsT025:
     async def test_panorama_excluye_resultados_campeonato(self, panorama_factory):
         """SC-002: totales de copa no cambian al agregar un campeonato en la misma temporada."""
         from app.models.athlete import Athlete, Sex
-        from app.models.club import ClubMember, ClubRole
 
         async with panorama_factory() as s:
             # Usuarios
@@ -1263,7 +1268,6 @@ class TestSeasonPanoramaStandingsT025:
     @pytest.mark.asyncio
     async def test_standings_vacio_para_campeonato(self, panorama_factory):
         """standings de un evento campeonato retorna categories=[] (no aplica ranking)."""
-        from app.models.club import ClubMember, ClubRole
 
         async with panorama_factory() as s:
             coach = User(
@@ -1317,7 +1321,6 @@ class TestSeasonPanoramaStandingsT025:
     @pytest.mark.asyncio
     async def test_standings_copa_funciona_normal(self, panorama_factory):
         """Regresión: standings de copa sigue funcionando normalmente."""
-        from app.models.club import ClubMember, ClubRole
 
         async with panorama_factory() as s:
             coach = User(

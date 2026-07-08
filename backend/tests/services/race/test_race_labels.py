@@ -4,7 +4,6 @@ Función pura — sin IO, sin base de datos.  Cubre todos los contratos del
 módulo: copas con numerales romanos, campeonatos (ignorando sequence_number),
 ciudad None/vacía/whitespace y número fuera de rango.
 """
-import pytest
 
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.services.race.race_labels import build_race_label

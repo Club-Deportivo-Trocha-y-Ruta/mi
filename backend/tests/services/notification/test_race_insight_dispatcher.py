@@ -558,7 +558,7 @@ async def test_dispatch_blocks_excerpt_if_name_leaks(caplog):
     deja ``summary_excerpt=None`` y loggea warning."""
     from datetime import date
     from types import SimpleNamespace
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     from app.services.notification.race_insight_dispatcher import (
         dispatch_insight_notification,
@@ -728,7 +728,7 @@ async def _run_championship_dispatch(*, series_level):
     insight tier=CD (is_championship=True) con un ``series.level`` dado."""
     from datetime import date
     from types import SimpleNamespace
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     from app.services.notification.race_insight_dispatcher import (
         dispatch_insight_notification,

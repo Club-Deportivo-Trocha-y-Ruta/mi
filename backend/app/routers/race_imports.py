@@ -289,7 +289,7 @@ async def _parse_results_with_timeout(
                 f"{settings.race_parse_timeout_seconds}s). Verifique formato oficial."
             ),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("race_import_parse RESULTADOS failed")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -312,7 +312,7 @@ async def _parse_general_with_timeout(path: PathLib) -> dict[str, list]:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="GENERAL demasiado complejo (parse > timeout).",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("race_import_parse GENERAL failed")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

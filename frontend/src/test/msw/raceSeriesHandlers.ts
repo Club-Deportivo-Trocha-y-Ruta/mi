@@ -30,6 +30,7 @@ export function makeRaceSeriesRead(
     season_year: 2026,
     organizer: "Liga Vallecaucana de Ciclismo",
     kind: "cup",
+    level: "departmental",
     event_count: 3,
     ...overrides,
   };
@@ -44,6 +45,7 @@ export function makeChampionshipSeriesRead(
     season_year: 2026,
     organizer: "Liga Vallecaucana de Ciclismo",
     kind: "championship",
+    level: "departmental",
     event_count: 1,
     ...overrides,
   };

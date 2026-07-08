@@ -44,7 +44,6 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -54,7 +53,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
-from app.models.athlete import Athlete, ParentAthlete
+from app.models.athlete import Athlete
 from app.models.club import Club
 from app.models.race_category import CategoryGender, RaceCategory
 from app.models.race_competitor import RaceCompetitor

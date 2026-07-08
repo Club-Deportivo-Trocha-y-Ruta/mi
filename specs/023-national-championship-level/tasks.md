@@ -31,7 +31,7 @@
 
 **Purpose**: No project initialization needed — existing web app. Single pre-flight check.
 
-- [ ] T001 Verify Alembic head is `a7b8c9d0e1f2` and working tree separates 022 changes before starting (`cd backend && alembic heads`; `git status`). Agente: `devops-engineer` (haiku)
+- [x] T001 Verify Alembic head is `a7b8c9d0e1f2` and working tree separates 022 changes before starting (`cd backend && alembic heads`; `git status`). Agente: `devops-engineer` (haiku)
 
 ---
 
@@ -39,10 +39,10 @@
 
 **Purpose**: Schema + types every story depends on. **BLOCKS all user stories.**
 
-- [ ] T002 [P] Add `RaceSeriesLevel` enum (`departmental|national`) and `level` column (`values_callable`, `nullable=False`, `default=departmental`) to `backend/app/models/race_series.py`, updating module docstring per data-model.md. Agente: `fastapi-architect` (sonnet)
-- [ ] T003 [P] Create Alembic migration `backend/alembic/versions/d3e4f5a6b7c8_add_race_series_level.py` — revision `d3e4f5a6b7c8`, down_revision `a7b8c9d0e1f2`, additive enum column with `server_default='departmental'`, symmetric downgrade (see data-model.md Migration contract). Agente: `database-architect` (sonnet)
-- [ ] T004 [P] Add `level` to `RaceSeriesCreate` (optional, default departmental) and `RaceSeriesRead` (required) in `backend/app/schemas/race_series.py`. Agente: `fastapi-architect` (sonnet)
-- [ ] T005 [P] Add `RaceSeriesLevel` type and `level` fields to `frontend/src/types/raceSeries.types.ts` (`RaceSeriesCreate.level?`, `RaceSeriesRead.level`) mirroring contracts/api-delta.md §1–2. Agente: `react-ui-engineer` (sonnet)
+- [x] T002 [P] Add `RaceSeriesLevel` enum (`departmental|national`) and `level` column (`values_callable`, `nullable=False`, `default=departmental`) to `backend/app/models/race_series.py`, updating module docstring per data-model.md. Agente: `fastapi-architect` (sonnet)
+- [x] T003 [P] Create Alembic migration `backend/alembic/versions/d3e4f5a6b7c8_add_race_series_level.py` — revision `d3e4f5a6b7c8`, down_revision `a7b8c9d0e1f2`, additive enum column with `server_default='departmental'`, symmetric downgrade (see data-model.md Migration contract). Agente: `database-architect` (sonnet)
+- [x] T004 [P] Add `level` to `RaceSeriesCreate` (optional, default departmental) and `RaceSeriesRead` (required) in `backend/app/schemas/race_series.py`. Agente: `fastapi-architect` (sonnet)
+- [x] T005 [P] Add `RaceSeriesLevel` type and `level` fields to `frontend/src/types/raceSeries.types.ts` (`RaceSeriesCreate.level?`, `RaceSeriesRead.level`) mirroring contracts/api-delta.md §1–2. Agente: `react-ui-engineer` (sonnet)
 
 **Checkpoint**: Column + schemas + types exist; migration applies cleanly (`alembic upgrade head` on local MySQL) — user stories can start.
 
@@ -56,17 +56,17 @@
 
 ### Tests for User Story 1 (write first, must fail pre-implementation)
 
-- [ ] T006 [P] [US1] Backend router tests in `backend/tests/test_race_series_router.py` (extend or create): create championship with `level=national` → 201 echoing level; omit level → 201 `departmental`; invalid level → 422; organizer persisted verbatim (never "Liga Vallecaucana"); GET list includes `level`. Agente: `qa-engineer` (sonnet)
-- [ ] T007 [P] [US1] INV-2 regression for national series in `backend/tests/test_race_events_championship_guard.py` (extend existing guard tests): second event on a `national` championship series → 409. Agente: `qa-engineer` (sonnet)
-- [ ] T008 [P] [US1] Frontend tests `frontend/src/routes/competitions/CompetitionFormPage.test.tsx` (extend): level select visible only when kind=championship, defaults Departamental, submit payload carries `level`; jest-axe on the form. Agente: `qa-engineer` (sonnet)
+- [x] T006 [P] [US1] Backend router tests in `backend/tests/test_race_series_router.py` (extend or create): create championship with `level=national` → 201 echoing level; omit level → 201 `departmental`; invalid level → 422; organizer persisted verbatim (never "Liga Vallecaucana"); GET list includes `level`. Agente: `qa-engineer` (sonnet)
+- [x] T007 [P] [US1] INV-2 regression for national series in `backend/tests/test_race_events_championship_guard.py` (extend existing guard tests): second event on a `national` championship series → 409. Agente: `qa-engineer` (sonnet)
+- [x] T008 [P] [US1] Frontend tests `frontend/src/routes/competitions/CompetitionFormPage.test.tsx` (extend): level select visible only when kind=championship, defaults Departamental, submit payload carries `level`; jest-axe on the form. Agente: `qa-engineer` (sonnet)
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Persist `body.level` in POST handler and include `level` in all `RaceSeriesRead` constructions in `backend/app/routers/race_series.py` (create + list). Agente: `fastapi-architect` (sonnet)
-- [ ] T010 [P] [US1] Create shared label helper `frontend/src/lib/raceSeriesLabels.ts` — `championshipLabel(level)` → "Campeonato Nacional"/"Campeonato Departamental" (+ short forms "Cto. Nal."/"Cto. Dep." for reuse), with unit test `raceSeriesLabels.test.ts`. Agente: `react-ui-engineer` (sonnet)
-- [ ] T011 [US1] Add level `<select>` (Departamental | Nacional, shadcn pattern, español neutro, 48px target) to `CreateChampionshipSeriesForm` in `frontend/src/routes/competitions/CompetitionFormPage.tsx`; send `level` in `useCreateRaceSeries` payload (depends on T005, T010). Agente: `react-ui-engineer` (sonnet)
-- [ ] T012 [US1] Render level-aware championship label in `frontend/src/components/competitions/tabs/InfoTab.tsx` via `championshipLabel` (needs `level` from series data; verify series fields reach the tab — extend the event/series query mapping if absent) + extend `InfoTab` tests. Agente: `react-ui-engineer` (sonnet)
-- [ ] T013 [P] [US1] Update filter option copy in `frontend/src/components/competitions/CompetitionFiltersBar.tsx`: "Campeonatos (CD)" → "Campeonatos" (predicate `kind==championship` untouched, matches both levels — FR-012); adjust its test snapshot. Agente: general-purpose (haiku)
+- [x] T009 [US1] Persist `body.level` in POST handler and include `level` in all `RaceSeriesRead` constructions in `backend/app/routers/race_series.py` (create + list). Agente: `fastapi-architect` (sonnet)
+- [x] T010 [P] [US1] Create shared label helper `frontend/src/lib/raceSeriesLabels.ts` — `championshipLabel(level)` → "Campeonato Nacional"/"Campeonato Departamental" (+ short forms "Cto. Nal."/"Cto. Dep." for reuse), with unit test `raceSeriesLabels.test.ts`. Agente: `react-ui-engineer` (sonnet)
+- [x] T011 [US1] Add level `<select>` (Departamental | Nacional, shadcn pattern, español neutro, 48px target) to `CreateChampionshipSeriesForm` in `frontend/src/routes/competitions/CompetitionFormPage.tsx`; send `level` in `useCreateRaceSeries` payload (depends on T005, T010). Agente: `react-ui-engineer` (sonnet)
+- [x] T012 [US1] Render level-aware championship label in `frontend/src/components/competitions/tabs/InfoTab.tsx` via `championshipLabel` (needs `level` from series data; verify series fields reach the tab — extend the event/series query mapping if absent) + extend `InfoTab` tests. Agente: `react-ui-engineer` (sonnet)
+- [x] T013 [P] [US1] Update filter option copy in `frontend/src/components/competitions/CompetitionFiltersBar.tsx`: "Campeonatos (CD)" → "Campeonatos" (predicate `kind==championship` untouched, matches both levels — FR-012); adjust its test snapshot. Agente: general-purpose (haiku)
 
 **Checkpoint**: US1 fully functional — coach can register the Pereira national championship today. Deployable MVP (migration + this phase).
 
@@ -80,17 +80,17 @@
 
 ### Tests for User Story 2 (write first, must fail pre-implementation)
 
-- [ ] T014 [P] [US2] Extend `backend/tests/test_race_labels.py`: matrix {championship×national → "Cto. Nal. — Pereira", championship×departmental → "Cto. Dep. — Ginebra" (regression), cup unchanged, no-location variants, default-param backward compat}. Agente: `qa-engineer` (sonnet)
-- [ ] T015 [P] [US2] Import tests in `backend/tests/test_race_imports_series_level.py` (new): upload with `series_level=national` creating championship series → organizer NULL (no Valle default), level persisted; cup path keeps Valle organizer default byte-identical; invalid `series_level` → 422. Agente: `qa-engineer` (sonnet)
-- [ ] T016 [P] [US2] Standings/panorama regression in `backend/tests/test_standings_championship_exclusion.py` (extend existing): national championship results present → cumulative standings and season panorama identical to baseline (SC-004). Agente: `qa-engineer` (sonnet)
-- [ ] T017 [P] [US2] Frontend `frontend/src/components/competitions/import/ImportWizard.test.tsx` (extend): level select appears only in new-championship-series branch; zod accepts level; submit forwards `series_level`; prefill (feature 015) path untouched. Agente: `qa-engineer` (sonnet)
+- [x] T014 [P] [US2] Extend `backend/tests/test_race_labels.py`: matrix {championship×national → "Cto. Nal. — Pereira", championship×departmental → "Cto. Dep. — Ginebra" (regression), cup unchanged, no-location variants, default-param backward compat}. Agente: `qa-engineer` (sonnet)
+- [x] T015 [P] [US2] Import tests in `backend/tests/test_race_imports_series_level.py` (new): upload with `series_level=national` creating championship series → organizer NULL (no Valle default), level persisted; cup path keeps Valle organizer default byte-identical; invalid `series_level` → 422. Agente: `qa-engineer` (sonnet)
+- [x] T016 [P] [US2] Standings/panorama regression in `backend/tests/test_standings_championship_exclusion.py` (extend existing): national championship results present → cumulative standings and season panorama identical to baseline (SC-004). Agente: `qa-engineer` (sonnet)
+- [x] T017 [P] [US2] Frontend `frontend/src/components/competitions/import/ImportWizard.test.tsx` (extend): level select appears only in new-championship-series branch; zod accepts level; submit forwards `series_level`; prefill (feature 015) path untouched. Agente: `qa-engineer` (sonnet)
 
 ### Implementation for User Story 2
 
-- [ ] T018 [US2] Add `level` keyword param (default `RaceSeriesLevel.departmental`) to `build_race_label` in `backend/app/services/race/race_labels.py`; national championship → "Cto. Nal.{ — city}"; update module docstring contract. Agente: `fastapi-architect` (sonnet)
-- [ ] T019 [US2] Thread `series.level` into both label call sites: evolution serializer in `backend/app/services/race/analytics_charts.py` and the `GET /races` participation-list serializer (feature 016) — both already join `RaceSeries`, add `level` to the selected columns, zero new queries (depends on T018). Agente: `fastapi-architect` (sonnet)
-- [ ] T020 [US2] In `backend/app/routers/race_imports.py`: accept optional `series_level` Form field (validated to `RaceSeriesLevel`, default departmental); in `_get_or_create_series` persist level and apply organizer default "Liga Vallecaucana de Ciclismo" **only when kind==cup** (research R5). Agente: `fastapi-architect` (sonnet)
-- [ ] T021 [US2] Add level select to the new-championship-series branch of `frontend/src/components/competitions/import/ImportWizard.tsx`: extend zod schema with `series_level`, default departmental, hidden for cups; forward as form field (depends on T005). Agente: `react-ui-engineer` (sonnet)
+- [x] T018 [US2] Add `level` keyword param (default `RaceSeriesLevel.departmental`) to `build_race_label` in `backend/app/services/race/race_labels.py`; national championship → "Cto. Nal.{ — city}"; update module docstring contract. Agente: `fastapi-architect` (sonnet)
+- [x] T019 [US2] Thread `series.level` into both label call sites: evolution serializer in `backend/app/services/race/analytics_charts.py` and the `GET /races` participation-list serializer (feature 016) — both already join `RaceSeries`, add `level` to the selected columns, zero new queries (depends on T018). Agente: `fastapi-architect` (sonnet)
+- [x] T020 [US2] In `backend/app/routers/race_imports.py`: accept optional `series_level` Form field (validated to `RaceSeriesLevel`, default departmental); in `_get_or_create_series` persist level and apply organizer default "Liga Vallecaucana de Ciclismo" **only when kind==cup** (research R5). Agente: `fastapi-architect` (sonnet)
+- [x] T021 [US2] Add level select to the new-championship-series branch of `frontend/src/components/competitions/import/ImportWizard.tsx`: extend zod schema with `series_level`, default departmental, hidden for cups; forward as form field (depends on T005). Agente: `react-ui-engineer` (sonnet)
 
 **Checkpoint**: US1 + US2 — ready for race week: register now, ingest when results publish, charts correct.
 
@@ -104,11 +104,11 @@
 
 ### Tests for User Story 3 (write first, must fail pre-implementation)
 
-- [ ] T022 [P] [US3] Dispatcher tests in `backend/tests/test_race_insight_dispatcher.py` (extend): national championship event → body/labels contain "Campeonato Nacional" and never "Departamental"; departmental event → "Campeonato Departamental" (regression); tier remains `RaceTier.CD` for both (research R4). Agente: `qa-engineer` (sonnet)
+- [x] T022 [P] [US3] Dispatcher tests in `backend/tests/test_race_insight_dispatcher.py` (extend): national championship event → body/labels contain "Campeonato Nacional" and never "Departamental"; departmental event → "Campeonato Departamental" (regression); tier remains `RaceTier.CD` for both (research R4). Agente: `qa-engineer` (sonnet)
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] In `backend/app/services/notification/race_insight_dispatcher.py`: make `_build_valida_label` and `_tier_label_es` level-aware for `RaceTier.CD` (resolve `event.series.level` — extend the dispatcher's event query to eager-load series or pass level explicitly; avoid N+1 per constitution IV); tier derivation in `race_event_tier.py` stays untouched. Agente: `fastapi-architect` (sonnet)
+- [x] T023 [US3] In `backend/app/services/notification/race_insight_dispatcher.py`: make `_build_valida_label` and `_tier_label_es` level-aware for `RaceTier.CD` (resolve `event.series.level` — extend the dispatcher's event query to eager-load series or pass level explicitly; avoid N+1 per constitution IV); tier derivation in `race_event_tier.py` stays untouched. Agente: `fastapi-architect` (sonnet)
 
 **Checkpoint**: All three stories functional independently.
 
@@ -116,10 +116,10 @@
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T024 [P] Run full gates: `cd backend && pytest && ruff check . && mypy app`; `cd frontend && npx vitest run && npx eslint src && npx tsc --noEmit` — zero regressions, zero pre-023 tests modified except deliberate label assertions. Agente: `qa-engineer` (sonnet)
-- [ ] T025 [P] Execute quickstart.md Scenarios 1–5 against local stack (docker compose or venv+MySQL); record outcomes in `specs/023-national-championship-level/quickstart.md` checkboxes or a short results note. Agente: `qa-engineer` (sonnet)
-- [ ] T026 [P] Update `CLAUDE.md` implementation-status row (feature 023, migration `d3e4f5a6b7c8`, deploy pending) and `docs/implementation-status.md`; note R5 cosmetic debt (`points_scheme_code` on championships) where feature docs live. Agente: `technical-writer` (haiku)
-- [ ] T027 Final review pass: verify no remaining hardcoded "Cto. Dep."/"Campeonato Departamental" reachable for national series (`grep -rn "Cto. Dep\|Campeonato Departamental" backend/app frontend/src` — each hit must be level-branched or departmental-only). Agente: `qa-engineer` (sonnet)
+- [x] T024 [P] Run full gates: `cd backend && pytest && ruff check . && mypy app`; `cd frontend && npx vitest run && npx eslint src && npx tsc --noEmit` — zero regressions, zero pre-023 tests modified except deliberate label assertions. Agente: `qa-engineer` (sonnet)
+- [x] T025 [P] Execute quickstart.md Scenarios 1–5 against local stack (docker compose or venv+MySQL); record outcomes in `specs/023-national-championship-level/quickstart.md` checkboxes or a short results note. Agente: `qa-engineer` (sonnet)
+- [x] T026 [P] Update `CLAUDE.md` implementation-status row (feature 023, migration `d3e4f5a6b7c8`, deploy pending) and `docs/implementation-status.md`; note R5 cosmetic debt (`points_scheme_code` on championships) where feature docs live. Agente: `technical-writer` (haiku)
+- [x] T027 Final review pass: verify no remaining hardcoded "Cto. Dep."/"Campeonato Departamental" reachable for national series (`grep -rn "Cto. Dep\|Campeonato Departamental" backend/app frontend/src` — each hit must be level-branched or departmental-only). Agente: `qa-engineer` (sonnet)
 
 ---
 
