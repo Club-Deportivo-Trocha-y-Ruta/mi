@@ -13,6 +13,7 @@ import type {
 
 export async function getAthletes(params?: {
   club_id?: number;
+  sort?: "recent_attendance";
 }): Promise<AthleteListOut> {
   const response = await apiClient.get<AthleteListOut>("/api/athletes", { params });
   return response.data;

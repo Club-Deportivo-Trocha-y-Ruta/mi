@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select, func
@@ -19,6 +19,7 @@ from app.models.anthropometry import AnthropometricRecord
 from app.models.club import Club, ClubMember, ClubRole
 from app.models.parent_invite import ParentInvite
 from app.models.parental_consent import ParentalConsent
+from app.models.training_session import AttendanceStatus, SessionAttendance, TrainingSession
 from app.models.user import User, UserRole
 from app.models.athlete import ParentAthlete
 from app.schemas.athlete import (
@@ -48,6 +49,10 @@ router = APIRouter()
 
 def _coach_club_ids(user: User) -> set[int]:
     return {m.club_id for m in user.club_memberships if m.role_in_club == ClubRole.coach}
+
+
+ATTENDANCE_SORT_WINDOW_DAYS = 90
+_ATTENDED_STATUSES = (AttendanceStatus.PRESENTE, AttendanceStatus.TARDE)
 
 
 def _enrich_athlete(athlete: Athlete) -> AthleteOut:
@@ -160,6 +165,7 @@ async def create_athlete(
 @router.get("", response_model=AthleteListOut)
 async def list_athletes(
     club_id: int | None = Query(default=None),
+    sort: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> AthleteListOut:
@@ -183,7 +189,33 @@ async def list_athletes(
     if scope_clubs is not None:
         filters.append(Athlete.club_id.in_(scope_clubs))
 
-    query = select(Athlete).where(*filters).order_by(Athlete.last_name, Athlete.first_name)
+    if sort == "recent_attendance":
+        cutoff = date.today() - timedelta(days=ATTENDANCE_SORT_WINDOW_DAYS)
+        attendance_counts = (
+            select(
+                SessionAttendance.athlete_id.label("athlete_id"),
+                func.count(SessionAttendance.id).label("cnt"),
+            )
+            .join(TrainingSession, TrainingSession.id == SessionAttendance.session_id)
+            .where(
+                TrainingSession.scheduled_date >= cutoff,
+                SessionAttendance.status.in_(_ATTENDED_STATUSES),
+            )
+            .group_by(SessionAttendance.athlete_id)
+            .subquery()
+        )
+        query = (
+            select(Athlete)
+            .outerjoin(attendance_counts, attendance_counts.c.athlete_id == Athlete.id)
+            .where(*filters)
+            .order_by(
+                func.coalesce(attendance_counts.c.cnt, 0).desc(),
+                Athlete.last_name,
+                Athlete.first_name,
+            )
+        )
+    else:
+        query = select(Athlete).where(*filters).order_by(Athlete.last_name, Athlete.first_name)
     count_query = select(func.count()).select_from(Athlete).where(*filters)
 
     result = await db.execute(query)

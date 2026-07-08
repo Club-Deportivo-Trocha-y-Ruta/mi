@@ -15,7 +15,7 @@ export function AthletesMultiSelect({
   error,
 }: AthletesMultiSelectProps) {
   const [search, setSearch] = useState("");
-  const athletesQuery = useAthletes();
+  const athletesQuery = useAthletes({ sort: "recent_attendance" });
 
   const allAthletes = athletesQuery.data?.items ?? [];
 
@@ -32,7 +32,7 @@ export function AthletesMultiSelect({
     return fullName.includes(search.toLowerCase().trim());
   });
 
-  // Seleccionados primero, luego no seleccionados — ambos ordenados por nombre.
+  // Seleccionados primero, luego no seleccionados — orden de servidor preservado en ambos (asistencia reciente).
   const sortedFiltered = [
     ...filtered.filter((a) => value.includes(a.id)),
     ...filtered.filter((a) => !value.includes(a.id)),

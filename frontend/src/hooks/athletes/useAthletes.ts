@@ -5,6 +5,7 @@ import { useAuthStore } from "@/store/auth.store";
 
 export interface AthleteFilters {
   club_id?: number;
+  sort?: "recent_attendance";
 }
 
 export function useAthletes(filters?: AthleteFilters) {
