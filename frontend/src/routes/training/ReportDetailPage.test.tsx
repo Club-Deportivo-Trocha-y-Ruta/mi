@@ -8,8 +8,21 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { axe, toHaveNoViolations } from "jest-axe";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+expect.extend(toHaveNoViolations);
+
+// axe "region" desactivada: el layout de la página vive dentro del shell de
+// rutas (sin landmarks propios en el árbol renderizado por el test); no es
+// una regresión de accesibilidad real del componente bajo prueba.
+const AXE_OPTIONS = {
+  rules: {
+    region: { enabled: false },
+  },
+} as const;
 
 vi.mock("@/api/client", () => ({
   apiClient: {
@@ -24,6 +37,7 @@ vi.mock("@/api/client", () => ({
 vi.mock("@/api/trainingSessions", () => ({
   useMonthlyReport: vi.fn(),
   useDownloadMonthlyReportPdf: vi.fn(),
+  useDownloadMonthlyReportDocx: vi.fn(),
   useUpdateReportBlocks: vi.fn(),
   useRegenerateBlock: vi.fn(),
 }));
@@ -44,12 +58,33 @@ vi.mock("@/components/training/MonthlyMetricsTable", () => ({
 import {
   useMonthlyReport,
   useDownloadMonthlyReportPdf,
+  useDownloadMonthlyReportDocx,
   useUpdateReportBlocks,
   useRegenerateBlock,
 } from "@/api/trainingSessions";
 import { useAuthStore } from "@/store/auth.store";
 import { ReportDetailPage } from "./ReportDetailPage";
+import {
+  sessionDetailItemSchema,
+  athleteAttendanceStatsAdditiveSchema,
+  competitionResultAdditiveSchema,
+} from "@/schemas/monthlyReport.schema";
 import type { MonthlyReportFull, NarrativeBlockKey } from "@/types/trainingSession.types";
+
+// Orden aprobado de bloques narrativos del Informe Técnico Mensual — debe
+// incluir "plan_entrenamiento" (feature 022). Espejo de `BLOCK_ORDER` en
+// `ReportDetailPage.tsx`; se re-declara aquí (no exportado) para verificar
+// el contrato de render sin acoplar el test a un símbolo interno.
+const BLOCK_ORDER: NarrativeBlockKey[] = [
+  "objetivo",
+  "plan_entrenamiento",
+  "desarrollo",
+  "competencia",
+  "resultados",
+  "conclusiones",
+  "apoyos_materiales",
+  "analisis_grupo",
+];
 
 // ---------------------------------------------------------------------------
 // Stubs
@@ -79,7 +114,7 @@ function makeBlock(overrides?: object) {
 }
 
 const ALL_BLOCK_KEYS: NarrativeBlockKey[] = [
-  "objetivo", "desarrollo", "resultados", "conclusiones",
+  "objetivo", "plan_entrenamiento", "desarrollo", "resultados", "conclusiones",
   "apoyos_materiales", "analisis_grupo", "competencia",
 ];
 
@@ -132,6 +167,9 @@ beforeEach(() => {
   vi.mocked(useDownloadMonthlyReportPdf).mockReturnValue(
     mutationStub as unknown as ReturnType<typeof useDownloadMonthlyReportPdf>,
   );
+  vi.mocked(useDownloadMonthlyReportDocx).mockReturnValue(
+    mutationStub as unknown as ReturnType<typeof useDownloadMonthlyReportDocx>,
+  );
   vi.mocked(useUpdateReportBlocks).mockReturnValue(
     mutationStub as unknown as ReturnType<typeof useUpdateReportBlocks>,
   );
@@ -174,20 +212,32 @@ describe("ReportDetailPage — coach", () => {
     expect(screen.getByTestId("status-badge-approved")).toBeInTheDocument();
   });
 
-  it("renderiza los 7 bloques narrativos editables", () => {
+  it("renderiza los 8 bloques narrativos editables, incl. plan_entrenamiento", () => {
     vi.mocked(useMonthlyReport).mockReturnValue({
       isLoading: false,
       isError: false,
       data: makeReport(),
     } as unknown as ReturnType<typeof useMonthlyReport>);
     renderPage();
-    const blockKeys: NarrativeBlockKey[] = [
-      "objetivo", "desarrollo", "resultados", "conclusiones",
-      "apoyos_materiales", "analisis_grupo", "competencia",
-    ];
-    for (const key of blockKeys) {
+    for (const key of ALL_BLOCK_KEYS) {
       expect(screen.getByTestId(`block-editor-${key}`)).toBeInTheDocument();
     }
+    expect(screen.getByTestId("block-editor-plan_entrenamiento")).toBeInTheDocument();
+  });
+
+  it("BLOCK_ORDER incluye 'plan_entrenamiento' y se renderiza en el orden aprobado", () => {
+    expect(BLOCK_ORDER).toContain("plan_entrenamiento");
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport(),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+    const editors = screen.getAllByTestId(/^block-editor-/);
+    const renderedOrder = editors.map(
+      (el) => el.getAttribute("data-testid")?.replace("block-editor-", ""),
+    );
+    expect(renderedOrder).toEqual(BLOCK_ORDER);
   });
 
   it("el botón 'Aprobar' llama a updateReportBlocks con status=approved", () => {
@@ -272,7 +322,27 @@ describe("ReportDetailPage — coach", () => {
     expect(screen.getByTestId("ai-draft-banner-objetivo")).toBeInTheDocument();
   });
 
-  it("el botón 'Descargar PDF' dispara la mutación con el período correcto", () => {
+  it("el menú de descarga ofrece 'Descargar PDF' y 'Descargar DOCX'", async () => {
+    const user = userEvent.setup();
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport(),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+
+    await user.click(screen.getByTestId("download-menu-trigger"));
+
+    expect(await screen.findByTestId("download-pdf-option")).toHaveTextContent(
+      "Descargar PDF",
+    );
+    expect(screen.getByTestId("download-docx-option")).toHaveTextContent(
+      "Descargar DOCX",
+    );
+  });
+
+  it("la opción 'Descargar PDF' dispara useDownloadMonthlyReportPdf con el período correcto", async () => {
+    const user = userEvent.setup();
     const mutateMock = vi.fn();
     vi.mocked(useDownloadMonthlyReportPdf).mockReturnValue({
       ...mutationStub,
@@ -284,14 +354,46 @@ describe("ReportDetailPage — coach", () => {
       data: makeReport(),
     } as unknown as ReturnType<typeof useMonthlyReport>);
     renderPage();
-    fireEvent.click(screen.getByTestId("download-pdf-button"));
+
+    await user.click(screen.getByTestId("download-menu-trigger"));
+    await user.click(await screen.findByTestId("download-pdf-option"));
+
     expect(mutateMock).toHaveBeenCalledWith(
       { year: 2026, month: 4 },
       expect.anything(),
     );
   });
 
-  it("muestra un banner de error si la descarga falla", () => {
+  it("la opción 'Descargar DOCX' dispara useDownloadMonthlyReportDocx con el período correcto", async () => {
+    const user = userEvent.setup();
+    const mutateMock = vi.fn();
+    vi.mocked(useDownloadMonthlyReportDocx).mockReturnValue({
+      ...mutationStub,
+      mutate: mutateMock,
+    } as unknown as ReturnType<typeof useDownloadMonthlyReportDocx>);
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport(),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+
+    await user.click(screen.getByTestId("download-menu-trigger"));
+    await user.click(await screen.findByTestId("download-docx-option"));
+
+    expect(mutateMock).toHaveBeenCalledWith(
+      { year: 2026, month: 4 },
+      expect.anything(),
+    );
+    // No debe disparar también la mutación de PDF.
+    expect(mutationStub.mutate).not.toHaveBeenCalledWith(
+      { year: 2026, month: 4 },
+      expect.anything(),
+    );
+  });
+
+  it("muestra un banner de error si la descarga de PDF falla", async () => {
+    const user = userEvent.setup();
     const mutateMock = vi.fn((_vars, opts) => opts?.onError?.(new Error("boom")));
     vi.mocked(useDownloadMonthlyReportPdf).mockReturnValue({
       ...mutationStub,
@@ -303,7 +405,30 @@ describe("ReportDetailPage — coach", () => {
       data: makeReport(),
     } as unknown as ReturnType<typeof useMonthlyReport>);
     renderPage();
-    fireEvent.click(screen.getByTestId("download-pdf-button"));
+
+    await user.click(screen.getByTestId("download-menu-trigger"));
+    await user.click(await screen.findByTestId("download-pdf-option"));
+
+    expect(screen.getByTestId("download-error-banner")).toBeInTheDocument();
+  });
+
+  it("muestra un banner de error si la descarga de DOCX falla", async () => {
+    const user = userEvent.setup();
+    const mutateMock = vi.fn((_vars, opts) => opts?.onError?.(new Error("boom")));
+    vi.mocked(useDownloadMonthlyReportDocx).mockReturnValue({
+      ...mutationStub,
+      mutate: mutateMock,
+    } as unknown as ReturnType<typeof useDownloadMonthlyReportDocx>);
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport(),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+
+    await user.click(screen.getByTestId("download-menu-trigger"));
+    await user.click(await screen.findByTestId("download-docx-option"));
+
     expect(screen.getByTestId("download-error-banner")).toBeInTheDocument();
   });
 
@@ -379,6 +504,91 @@ describe("ReportDetailPage — coach", () => {
     renderPage();
     expect(screen.getByTestId("competition-results-empty")).toBeInTheDocument();
   });
+
+  it("agrupa resultados por evento (jornada) y muestra 'Otorga puntos' para una copa", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        competition_results: [
+          {
+            athlete_name: "Juan Pérez",
+            category: "Sub-13",
+            position: 2,
+            points: 15,
+            event_name: "Válida IV — Cali",
+            event_date: "2026-05-17",
+            event_id: 4,
+            series_kind: "cup",
+            awards_points: true,
+          },
+          {
+            athlete_name: "Ana Gómez",
+            category: "Sub-15",
+            position: 1,
+            points: 20,
+            event_name: "Válida IV — Cali",
+            event_date: "2026-05-17",
+            event_id: 4,
+            series_kind: "cup",
+            awards_points: true,
+          },
+        ],
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+    expect(screen.getByText("Válida IV — Cali")).toBeInTheDocument();
+    expect(screen.getByTestId("event-points-note-4")).toHaveTextContent("Otorga puntos");
+    expect(screen.getByText("Juan Pérez")).toBeInTheDocument();
+    expect(screen.getByText("Ana Gómez")).toBeInTheDocument();
+  });
+
+  it("muestra 'No otorga puntos' para un evento de campeonato", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        competition_results: [
+          {
+            athlete_name: "Juan Pérez",
+            category: "Sub-13",
+            position: 1,
+            points: null,
+            event_name: "Campeonato Departamental",
+            event_date: "2026-06-12",
+            event_id: 9,
+            series_kind: "championship",
+            awards_points: false,
+          },
+        ],
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+    expect(screen.getByTestId("event-points-note-9")).toHaveTextContent("No otorga puntos");
+  });
+
+  it("agrupa en un solo bloque sin nota de puntos cuando el informe es antiguo (sin event_id)", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        competition_results: [
+          {
+            athlete_name: "Juan Pérez",
+            category: "Sub-13",
+            position: 2,
+            points: 15,
+            event_name: "Válida IV",
+            event_date: "2026-05-17",
+          },
+        ],
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+    expect(screen.getByText("Válida IV")).toBeInTheDocument();
+    expect(screen.queryByText("Otorga puntos")).not.toBeInTheDocument();
+    expect(screen.queryByText("No otorga puntos")).not.toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -415,6 +625,115 @@ describe("ReportDetailPage — fallback sin club asignado", () => {
     expect(screen.queryByTestId("metrics-table")).not.toBeInTheDocument();
     expect(screen.queryByTestId("block-editor-objetivo")).not.toBeInTheDocument();
     expect(screen.queryByTestId("approve-btn")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("download-pdf-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("download-menu-trigger")).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — campos aditivos (feature 022): deben parsear/renderizar sin
+// lanzar excepción aunque el snapshot persistido sea antiguo (backward
+// compat) o incluya los nuevos campos opcionales.
+// ---------------------------------------------------------------------------
+
+describe("ReportDetailPage — campos aditivos (feature 022)", () => {
+  it("los schemas aditivos parsean payloads que incluyen los nuevos campos sin lanzar", () => {
+    expect(() =>
+      sessionDetailItemSchema.parse({
+        session_date: "2026-06-05",
+        start_time: "08:00:00",
+        technical_focus: "Frenada",
+        location: "Pista XCO",
+        status: "executed",
+        present_count: 6,
+        attendee_total: 7,
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      athleteAttendanceStatsAdditiveSchema.parse({
+        avg_rubric_effort: 4.1,
+        avg_rubric_attitude: null,
+        avg_rubric_technique: undefined,
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      competitionResultAdditiveSchema.parse({
+        event_id: 12,
+        series_kind: "cup",
+        awards_points: true,
+      }),
+    ).not.toThrow();
+
+    // Snapshots antiguos: sin ninguno de los campos aditivos → sigue siendo válido.
+    expect(() => athleteAttendanceStatsAdditiveSchema.parse({})).not.toThrow();
+    expect(() => competitionResultAdditiveSchema.parse({})).not.toThrow();
+  });
+
+  it("renderiza sin lanzar cuando el reporte incluye los campos aditivos nuevos", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        metrics_snapshot: {
+          total_sessions_planned: 8,
+          total_sessions_executed: 7,
+          total_sessions_cancelled: 1,
+          technical_focus_list: ["Frenada"],
+          avg_rpe: 6.5,
+          avg_rubric_effort: 4.2,
+          avg_rubric_attitude: 4.8,
+          avg_rubric_technique: 3.9,
+          total_minutes_planned: 720,
+          total_minutes_executed: 630,
+          avg_hours_per_week: 2.4,
+          attendance_status_totals: { presente: 30, ausente: 5 },
+          session_detail: [
+            {
+              session_date: "2026-04-05",
+              start_time: "08:00:00",
+              technical_focus: "Frenada",
+              location: "Pista XCO",
+              status: "executed",
+              present_count: 6,
+              attendee_total: 7,
+            },
+          ],
+        },
+        competition_results: [
+          {
+            athlete_name: "Juan Pérez",
+            category: "Sub-13",
+            position: 2,
+            points: 15,
+            event_name: "Válida IV",
+            event_date: "2026-05-17",
+            event_id: 12,
+            series_kind: "cup",
+            awards_points: true,
+          },
+        ],
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+
+    expect(() => renderPage()).not.toThrow();
+    expect(screen.getByTestId("block-editor-plan_entrenamiento")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — accesibilidad WCAG 2.1 AA (jest-axe)
+// ---------------------------------------------------------------------------
+
+describe("ReportDetailPage — accesibilidad", () => {
+  it("no tiene violaciones de axe en la vista de coach", async () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport(),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    const { container } = renderPage();
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
   });
 });

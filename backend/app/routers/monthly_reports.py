@@ -56,6 +56,7 @@ from app.services.notification.service import NotificationService
 from app.services.permissions import can_view_monthly_report, user_club_role
 from app.services.training.reports import (
     _month_label,
+    build_report_document_context,
     build_report_photo_evidence,
     generate_monthly_report,
     get_conjoint_sessions,
@@ -103,12 +104,19 @@ def _build_report_read(report: MonthlyReport, is_parent: bool) -> MonthlyReportR
         out.competition_results = None
         out.athlete_names = {}
         # Padres NO reciben attendance_by_athlete: contiene IDs de todos los
-        # atletas del club (categoría ALTA — Ley 1581). Se preservan las métricas
+        # atletas del club (categoría ALTA — Ley 1581). Tampoco reciben
+        # session_detail: expone lugar/hora exactos de cada sesión y conteos
+        # de asistencia por sesión de TODO el club (no solo su atleta), lo
+        # cual excede el alcance de la vista padre. Se preservan las métricas
         # agregadas (totales de sesiones, volumen, rúbrica promedio, focos técnicos)
         # que son suficientes para la vista padre.
-        if isinstance(out.metrics_snapshot, dict) and "attendance_by_athlete" in out.metrics_snapshot:
+        if isinstance(out.metrics_snapshot, dict) and (
+            "attendance_by_athlete" in out.metrics_snapshot
+            or "session_detail" in out.metrics_snapshot
+        ):
             filtered = dict(out.metrics_snapshot)
             filtered.pop("attendance_by_athlete", None)
+            filtered.pop("session_detail", None)
             out.metrics_snapshot = filtered
     return out
 
@@ -335,6 +343,8 @@ async def patch_report_blocks(
         msg = str(exc)
         if "No existe reporte" in msg:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        if "no permitid" in msg:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
     out = MonthlyReportRead.model_validate(report)
@@ -391,6 +401,8 @@ async def regenerate_report_block(
         msg = str(exc)
         if "No existe reporte" in msg:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        if "no permitid" in msg:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
     out = MonthlyReportRead.model_validate(report)
@@ -468,6 +480,7 @@ async def download_monthly_report_pdf(
 
     # Perfil de proyecto del club (puede no existir — degrada a dict vacío)
     project_profile: dict = {}
+    project_profile_obj: ClubProjectProfile | None = None
     try:
         pp_result = await db.execute(
             select(ClubProjectProfile).where(
@@ -480,6 +493,7 @@ async def download_monthly_report_pdf(
             project_profile.pop("_sa_instance_state", None)
     except Exception:  # noqa: BLE001
         project_profile = {}
+        project_profile_obj = None
 
     # Evidencia fotográfica
     photos = await build_report_photo_evidence(db, club_id, year, month)
@@ -500,9 +514,9 @@ async def download_monthly_report_pdf(
     _comp_raw = report.competition_results
     competition_results_raw: list = _comp_raw if isinstance(_comp_raw, list) else []
 
-    from app.models.training_session import MonthlyReportStatus
-    _status = report.status
-    is_draft = not (isinstance(_status, MonthlyReportStatus) and _status == MonthlyReportStatus.APPROVED)
+    # Contexto compartido (fuente única de verdad PDF/DOCX) — header, secciones
+    # narrativas en orden aprobado, is_draft, missing_sections para el banner.
+    doc_context = build_report_document_context(report, project_profile_obj)
 
     doc_request = DocumentRequest(
         template=DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT,
@@ -511,12 +525,19 @@ async def download_monthly_report_pdf(
             "club_name": report.club.name,
             "month_label": _month_label(report.year, report.month),
             "season_year": str(report.year),
-            "is_draft": is_draft,
+            "is_draft": doc_context["is_draft"],
+            "header": doc_context["header"],
+            "sections": doc_context["sections"],
+            "missing_sections": doc_context["missing_sections"],
             "project_profile": project_profile,
             "narrative_blocks": pdf_narrative_blocks,
             "metrics_snapshot": report.metrics_snapshot or {},
             "athlete_names": athlete_names,
             "competition_results": competition_results_raw,
+            "session_detail": doc_context["session_detail"],
+            "attendance_table": doc_context["attendance_table"],
+            "competition_groups": doc_context["competition_groups"],
+            "has_competition_results": doc_context["has_competition_results"],
             "conjoint_sessions": conjoint_sessions,
             "photos": photos,
         },
@@ -530,6 +551,155 @@ async def download_monthly_report_pdf(
         media_type=generated.content_type,
         headers={
             "Content-Disposition": f'attachment; filename="{generated.filename}"',
+            "Content-Length": str(len(generated.data)),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/clubs/{club_id}/monthly-reports/{year}/{month}/docx (nuevo: técnico)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{club_id}/monthly-reports/{year}/{month}/docx",
+    summary="Descargar el Informe Técnico Mensual en DOCX (editable)",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {}
+            },
+            "description": "Archivo DOCX",
+        },
+        403: {"description": "Sin acceso al club"},
+        404: {"description": "Reporte no encontrado"},
+    },
+    tags=["monthly-reports"],
+)
+async def download_monthly_report_docx(
+    club_id: int,
+    year: int,
+    month: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    notification_service: NotificationService = Depends(get_notification_service),
+) -> Response:
+    """Genera y retorna el Informe Técnico Mensual en DOCX editable (coach/admin).
+
+    Mismo contexto que el PDF (`build_report_document_context` — fuente única
+    de verdad). Si el reporte tiene status=draft el DOCX incluye un banner
+    BORRADOR. El DOCX siempre se puede descargar independientemente del status.
+    """
+    club_role = await user_club_role(db, current_user.id, club_id)
+    if current_user.role != UserRole.admin and club_role is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes acceso a este club.",
+        )
+
+    result = await db.execute(
+        select(MonthlyReport)
+        .options(selectinload(MonthlyReport.club))
+        .where(
+            MonthlyReport.club_id == club_id,
+            MonthlyReport.year == year,
+            MonthlyReport.month == month,
+        )
+    )
+    report = result.scalar_one_or_none()
+    if report is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No existe reporte para {year}-{month:02d} en el club {club_id}.",
+        )
+
+    # Nombres reales de atletas
+    athletes_result = await db.execute(
+        select(Athlete).where(Athlete.club_id == club_id)
+    )
+    athlete_names = {
+        str(a.id): f"{a.first_name} {a.last_name}"
+        for a in athletes_result.scalars().all()
+    }
+
+    # Perfil de proyecto del club (puede no existir — degrada a dict vacío)
+    project_profile: dict = {}
+    project_profile_obj: ClubProjectProfile | None = None
+    try:
+        pp_result = await db.execute(
+            select(ClubProjectProfile).where(
+                ClubProjectProfile.club_id == club_id
+            )
+        )
+        project_profile_obj = pp_result.scalar_one_or_none()
+        if project_profile_obj is not None:
+            project_profile = dict(project_profile_obj.__dict__)
+            project_profile.pop("_sa_instance_state", None)
+    except Exception:  # noqa: BLE001
+        project_profile = {}
+        project_profile_obj = None
+
+    # Evidencia fotográfica
+    photos = await build_report_photo_evidence(db, club_id, year, month)
+
+    # Actividades conjuntas/salidas del mes
+    conjoint_sessions = await get_conjoint_sessions(db, club_id, year, month)
+
+    # narrative_blocks: para el DOCX usamos el dict raw (con final_text).
+    # No enviamos ai_draft al template — solo final_text.
+    _raw_nb = report.narrative_blocks
+    raw_nb: dict = _raw_nb if isinstance(_raw_nb, dict) else {}
+    docx_narrative_blocks: dict = {
+        key: {"final_text": (block.get("final_text") or "") if isinstance(block, dict) else ""}
+        for key, block in raw_nb.items()
+    }
+
+    # competition_results: lista raw del JSON
+    _comp_raw = report.competition_results
+    competition_results_raw: list = _comp_raw if isinstance(_comp_raw, list) else []
+
+    # Contexto compartido (fuente única de verdad PDF/DOCX) — header, secciones
+    # narrativas en orden aprobado, is_draft, missing_sections para el banner.
+    doc_context = build_report_document_context(report, project_profile_obj)
+
+    doc_request = DocumentRequest(
+        template=DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT_DOCX,
+        format=DocumentFormat.DOCX,
+        context={
+            "club_name": report.club.name,
+            "month_label": _month_label(report.year, report.month),
+            "season_year": str(report.year),
+            "is_draft": doc_context["is_draft"],
+            "header": doc_context["header"],
+            "sections": doc_context["sections"],
+            "missing_sections": doc_context["missing_sections"],
+            "project_profile": project_profile,
+            "narrative_blocks": docx_narrative_blocks,
+            "metrics_snapshot": report.metrics_snapshot or {},
+            "athlete_names": athlete_names,
+            "competition_results": competition_results_raw,
+            "session_detail": doc_context["session_detail"],
+            "attendance_table": doc_context["attendance_table"],
+            "competition_groups": doc_context["competition_groups"],
+            "has_competition_results": doc_context["has_competition_results"],
+            "conjoint_sessions": conjoint_sessions,
+            "photos": photos,
+        },
+        filename_hint=f"informe_tecnico_{report.year}_{report.month:02d}",
+    )
+
+    generated = await notification_service.generate_document_only(doc_request)
+
+    filename = f"informe-tecnico-{report.year}-{report.month:02d}.docx"
+
+    return Response(
+        content=generated.data,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Length": str(len(generated.data)),
         },
     )

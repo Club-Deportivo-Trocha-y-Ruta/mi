@@ -4,9 +4,19 @@
  * Muestra: nombre, fecha, sede, estado, serie, número de válida,
  * campeonato y datos de auditoría.
  *
- * Props: `event: RaceEventRead` — datos completos del evento.
+ * Props:
+ *   - `event: RaceEventRead` — datos completos del evento.
+ *   - `seriesLevel?: RaceSeriesLevel` — nivel de la serie (feature 023,
+ *     Campeonato Nacional). Solo relevante cuando `event.is_championship`.
+ *     Se resuelve en el padre (`CompetitionDetailPage`) a partir de la lista
+ *     de series ya cargada — no dispara un fetch nuevo aquí. Ausente
+ *     (`undefined`) mientras la serie está cargando o para snapshots
+ *     pre-023 sin nivel resuelto → se asume "Campeonato Departamental"
+ *     (fallback conservador, comportamiento previo).
  */
 import type { RaceEventRead, RaceEventStatus } from "@/types/raceEvents.types";
+import type { RaceSeriesLevel } from "@/types/raceSeries.types";
+import { championshipLabel } from "@/lib/raceSeriesLabels";
 
 // ---------------------------------------------------------------------------
 // Helpers de formato
@@ -68,9 +78,11 @@ function InfoRow({
 
 export interface InfoTabProps {
   event: RaceEventRead;
+  /** Nivel de la serie del campeonato. Ver nota de props arriba. */
+  seriesLevel?: RaceSeriesLevel;
 }
 
-export function InfoTab({ event }: InfoTabProps) {
+export function InfoTab({ event, seriesLevel }: InfoTabProps) {
   return (
     <div className="space-y-4">
       {/* Tarjeta principal */}
@@ -106,7 +118,7 @@ export function InfoTab({ event }: InfoTabProps) {
           <InfoRow label="Tipo">
             {event.is_championship ? (
               <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                Campeonato
+                {championshipLabel(seriesLevel ?? "departmental")}
               </span>
             ) : (
               <span>Válida {event.sequence_number}</span>

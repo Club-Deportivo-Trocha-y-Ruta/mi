@@ -46,6 +46,9 @@ export async function parseRaceImport(
   // Spec 014: series_kind para que el backend resuelva/cree la serie por tipo.
   // Default "cup" para compatibilidad hacia atrás con flujos que no lo envían.
   if (fields.series_kind) formData.append("series_kind", fields.series_kind);
+  // Feature 023: nivel del campeonato (departamental|nacional). El backend
+  // solo lo consulta al CREAR una serie de campeonato nueva.
+  if (fields.series_level) formData.append("series_level", fields.series_level);
 
   // F-COND — campos opcionales de condiciones de carrera.
   // Se omiten si son null, undefined o cadena vacía para no contaminar el

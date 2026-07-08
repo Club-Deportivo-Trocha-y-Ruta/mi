@@ -37,7 +37,7 @@ from app.models.race_category import (
 from app.models.race_competitor import CompetitorSex, RaceCompetitor
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_result import RaceResult, ResultStatus
-from app.models.race_series import RaceSeries, RaceSeriesKind
+from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 
 
@@ -164,6 +164,7 @@ async def create_race_series(
     season_year: int = 2026,
     name: str = "Copa Valle de Ciclomontanismo",
     kind: RaceSeriesKind = RaceSeriesKind.cup,
+    level: RaceSeriesLevel = RaceSeriesLevel.departmental,
 ) -> RaceSeries:
     s = RaceSeries(
         id=series_id,
@@ -172,6 +173,7 @@ async def create_race_series(
         organizer="Liga",
         points_scheme_code=f"copa_valle_{season_year}",
         kind=kind,
+        level=level,
     )
     session.add(s)
     await session.flush()

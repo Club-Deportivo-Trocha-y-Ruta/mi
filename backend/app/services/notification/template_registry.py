@@ -487,6 +487,34 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
             "is_draft=True añade banner BORRADOR al PDF."
         ),
     ),
+    DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT_DOCX: DocumentTemplateSpec(
+        template_id=DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT_DOCX,
+        format=DocumentFormat.DOCX,
+        template_path="documents/docx/training_monthly_technical_report.docx",
+        required_context_keys=frozenset(
+            {
+                "club_name",
+                "month_label",
+                "season_year",
+                "is_draft",
+                "project_profile",
+                "narrative_blocks",
+                "metrics_snapshot",
+                "athlete_names",
+                "competition_results",
+                "conjoint_sessions",
+                "photos",
+            }
+        ),
+        description=(
+            "Variante DOCX editable (docxtpl) del Informe Técnico Mensual — "
+            "Grupo Alto Rendimiento. Mismo contexto que la variante PDF "
+            "(TRAINING_MONTHLY_TECHNICAL_REPORT), construido por un único "
+            "context-builder compartido. Contiene nombres reales de menores "
+            "(tabla de asistencia, competencia). Solo coach/admin del club. "
+            "Distribución restringida. is_draft=True añade banner BORRADOR."
+        ),
+    ),
 }
 
 

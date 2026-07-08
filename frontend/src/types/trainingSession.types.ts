@@ -175,6 +175,21 @@ export interface AthleteAttendanceStats {
   count_injured: number;
   total_sessions: number;
   attendance_pct: number;
+  // SPEC 2 — promedios de rúbrica por atleta (opcional: reportes antiguos
+  // cuyo snapshot no los incluye → render "Pendiente — regenerar informe").
+  avg_rubric_effort?: number | null;
+  avg_rubric_attitude?: number | null;
+  avg_rubric_technique?: number | null;
+}
+
+export interface SessionDetailItem {
+  session_date: string;
+  start_time: string;
+  technical_focus: string;
+  location: string;
+  status: "executed" | "cancelled" | "planned";
+  present_count: number;
+  attendee_total: number;
 }
 
 export interface MonthlyMetricsSnapshot {
@@ -194,6 +209,9 @@ export interface MonthlyMetricsSnapshot {
   total_minutes_executed?: number;
   avg_hours_per_week?: number | null;
   attendance_status_totals?: Record<string, number>;
+  // SPEC 2 — detalle de sesiones del mes (opcional: reportes antiguos cuyo
+  // snapshot no lo incluye → render "Pendiente — regenerar informe").
+  session_detail?: SessionDetailItem[];
 }
 
 // ---------------------------------------------------------------------------
@@ -216,10 +234,16 @@ export interface CompetitionResult {
   points: number | null;
   event_name: string | null;
   event_date: string | null;
+  // SPEC 2 — identidad estable del evento y clasificación (opcional:
+  // reportes antiguos cuyo snapshot no los incluye).
+  event_id?: number;
+  series_kind?: string | null;
+  awards_points?: boolean;
 }
 
 export type NarrativeBlockKey =
   | "objetivo"
+  | "plan_entrenamiento"
   | "desarrollo"
   | "resultados"
   | "conclusiones"

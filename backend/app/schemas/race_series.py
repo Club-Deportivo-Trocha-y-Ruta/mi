@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.race_series import RaceSeriesKind
+from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +55,14 @@ class RaceSeriesCreate(BaseModel):
         max_length=150,
         description="Organizador oficial (ej. 'Liga Vallecaucana de Ciclismo'). Opcional.",
     )
+    level: RaceSeriesLevel = Field(
+        default=RaceSeriesLevel.departmental,
+        description=(
+            "Ámbito territorial: 'departmental' (ej. Valle del Cauca) o 'national' "
+            "(ej. Campeonato Nacional Fedeciclismo). Opcional, por defecto 'departmental'. "
+            "Solo relevante cuando kind='championship'."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +80,9 @@ class RaceSeriesRead(BaseModel):
     season_year: int
     organizer: str | None = None
     kind: RaceSeriesKind
+    level: RaceSeriesLevel = Field(
+        description="Ámbito territorial de la serie: 'departmental' o 'national'.",
+    )
     event_count: int = Field(
         default=0,
         description="Número de eventos (válidas o campeonatos) en la serie.",

@@ -26,6 +26,15 @@
  */
 export type RaceSeriesKind = "cup" | "championship";
 
+/**
+ * Nivel jerárquico de la serie de competencias.
+ *
+ * - `departmental`: Campeonato/Copa de alcance departamental (ej. Copa Valle,
+ *   Campeonato Departamental).
+ * - `national`: Campeonato de alcance nacional (ej. Campeonato Nacional MTB).
+ */
+export type RaceSeriesLevel = "departmental" | "national";
+
 // ---------------------------------------------------------------------------
 // Filtros de lista
 // ---------------------------------------------------------------------------
@@ -56,6 +65,8 @@ export interface RaceSeriesCreate {
   season_year: number;
   kind: RaceSeriesKind;
   organizer?: string | null;
+  /** Nivel de la serie. Omitido → el backend usa `departmental` por defecto. */
+  level?: RaceSeriesLevel;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +83,7 @@ export interface RaceSeriesRead {
   season_year: number;
   organizer: string | null;
   kind: RaceSeriesKind;
+  level: RaceSeriesLevel;
   /** Número de eventos (válidas o campeonatos) en la serie. */
   event_count: number;
 }

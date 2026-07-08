@@ -1,9 +1,10 @@
 """Use case: generación de bloques de narrativa para el Informe Técnico Mensual.
 
-Produce UN borrador de texto por bloque (objetivo, desarrollo, resultados,
-conclusiones, apoyos_materiales, analisis_grupo). Reutiliza el mecanismo de
-privacidad de MonthlyReportUseCase: anonimización de atletas con pseudónimos
-deterministas, guardrails sin nombres reales ni términos médicos/suplementos.
+Produce UN borrador de texto por bloque (objetivo, plan_entrenamiento,
+desarrollo, competencia, resultados, conclusiones, apoyos_materiales,
+analisis_grupo). Reutiliza el mecanismo de privacidad de
+MonthlyReportUseCase: anonimización de atletas con pseudónimos deterministas,
+guardrails sin nombres reales ni términos médicos/suplementos.
 
 PRIVACIDAD: la IA NUNCA recibe ni emite nombres reales de atletas.
 Los nombres solo aparecen en CompetitionResultItem (campo estructurado curado
@@ -30,17 +31,23 @@ logger = logging.getLogger(__name__)
 # Ajustado para encajar en una página A4 con márgenes del template técnico.
 _BLOCK_MAX_WORDS: dict[str, int] = {
     "objetivo": 150,
+    "plan_entrenamiento": 170,
     "desarrollo": 200,
+    "competencia": 150,
     "resultados": 180,
     "conclusiones": 150,
     "apoyos_materiales": 120,
     "analisis_grupo": 220,
 }
 
-# Títulos legibles para cada bloque (español)
+# Títulos legibles para cada bloque (español). Alineados con el orden
+# aprobado del documento (`_APPROVED_NARRATIVE_SECTIONS` en
+# `app.services.training.reports`) — feature 022.
 _BLOCK_TITLES: dict[str, str] = {
     "objetivo": "Objetivo del período",
+    "plan_entrenamiento": "Plan de entrenamiento",
     "desarrollo": "Desarrollo de actividades",
+    "competencia": "Participación en competencia",
     "resultados": "Resultados obtenidos",
     "conclusiones": "Conclusiones y recomendaciones",
     "apoyos_materiales": "Apoyos y recursos materiales",
@@ -54,11 +61,31 @@ _BLOCK_PROMPTS: dict[str, str] = {
         "con el grupo de alto rendimiento: focos técnicos planificados, propósito "
         "formativo y alineación con el plan de temporada. Sin detallar individuos."
     ),
+    "plan_entrenamiento": (
+        "Describe el plan de entrenamiento aplicado durante el mes: distribución "
+        "de los focos técnicos trabajados, cadencia de sesiones (planificadas vs "
+        "ejecutadas) y la lógica de progresión de carga del grupo de alto "
+        "rendimiento, usando el RPE y las rúbricas agregadas de esfuerzo/técnica "
+        "como referencia de intensidad. Vincula el enfoque con el mesociclo "
+        "vigente de la temporada. Tono técnico-formativo, sin detallar individuos."
+    ),
     "desarrollo": (
         "Describe el desarrollo de las sesiones del mes: número de sesiones "
         "ejecutadas vs planificadas, tipos de actividades trabajadas (focos "
         "técnicos), volumen general y dinámica del grupo. Mantén tono de "
         "informe de gestión."
+    ),
+    "competencia": (
+        "Redacta una síntesis cualitativa de la participación del grupo en "
+        "competencias durante el período: nivel de involucramiento, relación "
+        "entrenamiento-competencia y aprendizajes generales observados en el "
+        "grupo de alto rendimiento. Los resultados individuales (posiciones, "
+        "puntos, categorías) se presentan en una tabla aparte del informe — "
+        "NUNCA los menciones aquí ni con nombres reales ni con pseudónimos. Si "
+        "no cuentas con un resumen agregado de competencia en los datos "
+        "recibidos, redacta en términos generales sobre la orientación "
+        "competitiva del período (calendario Copa Valle, proximidad a válidas) "
+        "sin inventar resultados. Sin juicios individuales."
     ),
     "resultados": (
         "Describe los resultados del mes en términos de indicadores agregados: "
@@ -198,8 +225,11 @@ class MonthlyReportBlocksUseCase(MonthlyReportUseCase):
     ) -> list[BlockDraft]:
         """Genera borradores para todos los bloques en paralelo.
 
-        Si `block_keys` es None, genera los 6 bloques estándar (excluye
-        'competencia' — ese bloque es estructurado, no narrativo).
+        Si `block_keys` es None, genera los 8 bloques estándar (incluye
+        'plan_entrenamiento' y 'competencia' — feature 022). El bloque
+        'competencia' es narrativo (síntesis cualitativa, sin resultados
+        individuales); los resultados estructurados con nombres reales viven
+        aparte en `MonthlyReport.competition_results`, nunca en este flujo IA.
 
         Cada bloque falla de forma independiente: un timeout en un bloque
         no afecta los demás. El caller debe comprobar BlockDraft.error.

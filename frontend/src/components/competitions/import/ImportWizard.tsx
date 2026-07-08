@@ -115,6 +115,12 @@ const step1Schema = z
     // Spec 014: tipo de serie (cup | championship). Determina si valida_num
     // es requerido (copa) u omitido (campeonato).
     series_kind: z.enum(["cup", "championship"] as const),
+    // Feature 023: nivel del campeonato (departamental|nacional). Solo se
+    // pide al crear una serie de campeonato nueva desde el wizard standalone
+    // (oculto para copas y para el flujo prefill de feature 015, donde la
+    // serie ya existe y el nivel queda bloqueado). Default "departmental"
+    // preserva compatibilidad con flujos que no lo tocan.
+    series_level: z.enum(["departmental", "national"] as const),
     series_name: z.string().min(2, "Nombre de serie requerido"),
     season: z
       .number({ message: "Temporada requerida" })
@@ -552,6 +558,8 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
     defaultValues: {
       // Spec 014: sin default de Copa Valle — el coach selecciona explícitamente
       series_kind: "cup" as const,
+      // Feature 023: default departamental (backward compatible)
+      series_level: "departmental" as const,
       series_name: "",
       season: CURRENT_YEAR,
       valida_num: undefined,
@@ -592,6 +600,10 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
     if (!prefillValues) return;
     resetForm({
       series_kind: prefillValues.series_kind,
+      // Feature 023: prefill (serie ya existente) no expone selector de
+      // nivel; se mantiene el default — el backend lo ignora al resolver
+      // una serie ya creada (ver contracts/api-delta.md §3).
+      series_level: "departmental",
       series_name: prefillValues.series_name,
       season: prefillValues.season,
       // Campeonato: valida_num null → undefined (el superRefine no lo exige).
@@ -664,6 +676,10 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
           // Spec 014: enviar el kind de serie para que el backend resuelva
           // la serie correctamente (no hardcodea Copa Valle)
           series_kind: values.series_kind,
+          // Feature 023: nivel del campeonato — solo consultado por el backend
+          // al CREAR una serie de campeonato nueva; ignorado si la serie ya
+          // existe (prefill feature 015, series_id explícito).
+          series_level: values.series_level,
           // F-COND — condiciones opcionales
           climate: climateVal,
           temperature_c: tempC,
@@ -887,6 +903,28 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 <option value="championship">Campeonato (evento único anual)</option>
               </select>
             </div>
+
+            {/* Feature 023: nivel del campeonato — solo al crear serie nueva */}
+            {isChampionship && (
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="series_level"
+                  className="block text-xs font-medium text-mid-gray"
+                >
+                  Nivel del campeonato
+                </label>
+                <select
+                  id="series_level"
+                  {...register("series_level")}
+                  className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px]"
+                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  data-testid="wizard-series-level"
+                >
+                  <option value="departmental">Departamental</option>
+                  <option value="national">Nacional</option>
+                </select>
+              </div>
+            )}
 
             <div className="sm:col-span-2">
               <label

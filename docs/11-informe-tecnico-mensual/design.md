@@ -220,7 +220,22 @@ Minors' names appear in the PDF only in podiums (`competition_results`) and atte
 
 ---
 
-## 10. References
+## 10. Format-Alignment Update (Feature 022, 2026-07-03)
+
+`specs/022-align-monthly-report-format/` closes the remaining gaps between the generated report and the approved institutional format. **No Alembic migration** — all changes are additive keys inside the existing JSON columns (`metrics_snapshot`, `narrative_blocks`, `competition_results` of `monthly_reports`); no new screens, no changes to session creation or media upload.
+
+- **New narrative block `plan_entrenamiento`** ("Plan de entrenamiento") added to `ALLOWED_BLOCK_KEYS` and to the AI use case's block config; `competencia` gains auto-generation fed by the grouped competition summary (pseudonyms only, never passed as free text to the LLM).
+- **Per-session detail table**: `MonthlyMetrics.session_detail` (new, additive) lists each session of the period, computed in `compute_monthly_metrics` (`backend/app/services/training/metrics.py`), ordered `session_date, start_time` ASC.
+- **Per-athlete rubric columns**: `AthleteAttendanceStats.avg_rubric_{effort,attitude,technique}` (nullable when no rubric was recorded) added alongside existing attendance stats.
+- **Competition breakdown by jornada**: `CompetitionResultItem` gains `event_id`, `series_kind`, `awards_points` (`awards_points = series_kind == 'cup'`, per feature 014's cup-vs-championship distinction) so the PDF/DOCX can group results by `event_id` then category, with a points/no-points note per jornada.
+- **Photo register grouped by section**: `build_report_photo_evidence` now attaches a derived `section` per photo (`entrenamiento`/`otro` → "Grupo de Alto Rendimiento", `actividad_conjunta`/`salida` → "Actividades Conjuntas", session date matching a `RaceEvent` date → "Competencia", with a default fallback), rendered as titled sections with reserved placeholders for empty groups. Existing consent/thumbnail/6-photo/2MB filters are unchanged.
+- **DOCX export**: new `GET /api/clubs/{club_id}/monthly-reports/{year}/{month}/docx` (coach/admin only, same RBAC as `/pdf`) renders `backend/templates/documents/docx/training_monthly_technical_report.docx` via `docxtpl` (already a dependency — no new package). Both PDF and DOCX now consume a single shared context builder, `build_report_document_context()` (`backend/app/services/training/reports.py`), to avoid duplicating section/table/photo assembly logic.
+- **Backward compatibility**: `build_report_document_context()` guards every new key; a pre-feature snapshot (no `session_detail`, flat competition items) renders without error, showing "Pendiente — regenerar informe" instead of crashing.
+- **Privacy**: unchanged contract — parents still never receive `narrative_blocks`, `competition_results`, `session_detail`, or the PDF/DOCX; the new AI block prompt uses the same pseudonym pipeline and forbidden-names guardrail as the other blocks.
+
+See `specs/022-align-monthly-report-format/plan.md` and `data-model.md` for the full design record.
+
+## 11. References
 
 - [`workflow.md`](workflow.md) — overall vision, scope, steps.
 - [`runbook.md`](runbook.md) — coach operational guide.

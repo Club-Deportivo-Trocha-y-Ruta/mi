@@ -167,7 +167,7 @@ export function CompetitionFiltersBar({
           >
             <option value="">Todas</option>
             <option value="false">Válidas regulares</option>
-            <option value="true">Campeonatos (CD)</option>
+            <option value="true">Campeonatos</option>
           </select>
         </div>
       </div>

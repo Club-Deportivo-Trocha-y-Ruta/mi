@@ -266,6 +266,95 @@ class TestGenerateMonthlyReport:
         db.flush.assert_called()
 
     @pytest.mark.asyncio
+    async def test_run_all_blocks_incluye_plan_entrenamiento_y_competencia(self):
+        """T012: la orquestación de `generate_monthly_report` no usa un listado
+        de claves hardcodeado propio — delega en `run_all_blocks(ctx)` (sin
+        `block_keys` explícito), que a su vez expone los 8 bloques estándar
+        incluyendo `plan_entrenamiento` y `competencia` (feature 022, T009).
+        Verifica que ambos queden persistidos en `narrative_blocks`.
+        """
+        from app.services.ai.use_cases.monthly_report_blocks import BlockDraft
+
+        db = AsyncMock()
+        coach = _make_user(1)
+        club = _make_club(1)
+        metrics = _make_empty_metrics()
+
+        call_n = [0]
+
+        async def mock_execute(stmt):
+            call_n[0] += 1
+            result = MagicMock()
+            if call_n[0] == 1:
+                result.scalar_one_or_none.return_value = None  # no existing report
+            elif call_n[0] == 2:
+                result.scalar_one_or_none.return_value = club
+            else:
+                result.scalars.return_value.all.return_value = []
+            return result
+
+        db.execute = mock_execute
+        db.add = MagicMock()
+        db.flush = AsyncMock()
+
+        standard_keys = [
+            "objetivo",
+            "plan_entrenamiento",
+            "desarrollo",
+            "competencia",
+            "resultados",
+            "conclusiones",
+            "apoyos_materiales",
+            "analisis_grupo",
+        ]
+
+        blocks_use_case = MagicMock()
+        blocks_use_case.build_context_from_metrics.return_value = MagicMock()
+
+        async def fake_run_all_blocks(ctx, block_keys=None):
+            keys = block_keys or standard_keys
+            return [
+                BlockDraft(
+                    block_key=key,
+                    ai_draft=f"Borrador de {key}.",
+                    ai_model="fake-model",
+                    generated_at=datetime.now(timezone.utc),
+                )
+                for key in keys
+            ]
+
+        blocks_use_case.run_all_blocks = AsyncMock(side_effect=fake_run_all_blocks)
+
+        with patch(
+            "app.services.training.reports.compute_monthly_metrics",
+            AsyncMock(return_value=metrics),
+        ), patch("app.services.training.reports._validate_period"):
+            report = await generate_monthly_report(
+                db=db,
+                club_id=1,
+                year=2026,
+                month=3,
+                generator_user=coach,
+                blocks_use_case=blocks_use_case,
+            )
+
+        # run_all_blocks se invocó sin block_keys explícito (deja que el use
+        # case decida el listado estándar — no hay lista hardcodeada aquí).
+        blocks_use_case.run_all_blocks.assert_awaited_once()
+        _, kwargs = blocks_use_case.run_all_blocks.await_args
+        assert not kwargs.get("block_keys")
+        assert (
+            len(blocks_use_case.run_all_blocks.await_args.args) < 2
+            or blocks_use_case.run_all_blocks.await_args.args[1] is None
+        )
+
+        persisted = report.narrative_blocks
+        assert "plan_entrenamiento" in persisted
+        assert "competencia" in persisted
+        assert persisted["plan_entrenamiento"]["ai_draft"] == "Borrador de plan_entrenamiento."
+        assert persisted["competencia"]["ai_draft"] == "Borrador de competencia."
+
+    @pytest.mark.asyncio
     async def test_periodo_futuro_rechazado(self):
         db = AsyncMock()
         coach = _make_user(1)
@@ -461,6 +550,7 @@ class TestReportPhotoEvidence:
     async def test_embebe_thumbnail_base64_con_fecha_de_sesion(self):
         import base64 as _b64
         import tempfile as _tf
+        from app.models.training_session import SessionKind
         from app.services.training.reports import build_report_photo_evidence
 
         media = MagicMock()
@@ -468,7 +558,9 @@ class TestReportPhotoEvidence:
         media.caption = "Bajada técnica"
 
         row_result = MagicMock()
-        row_result.all.return_value = [(media, date(2026, 5, 15))]
+        row_result.all.return_value = [
+            (media, date(2026, 5, 15), SessionKind.ENTRENAMIENTO)
+        ]
         db = AsyncMock()
         db.execute = AsyncMock(return_value=row_result)
 
@@ -495,6 +587,7 @@ class TestReportPhotoEvidence:
 
     @pytest.mark.asyncio
     async def test_omite_foto_que_no_se_puede_leer(self):
+        from app.models.training_session import SessionKind
         from app.services.training.reports import build_report_photo_evidence
 
         media = MagicMock()
@@ -502,7 +595,9 @@ class TestReportPhotoEvidence:
         media.caption = None
 
         row_result = MagicMock()
-        row_result.all.return_value = [(media, date(2026, 5, 10))]
+        row_result.all.return_value = [
+            (media, date(2026, 5, 10), SessionKind.ENTRENAMIENTO)
+        ]
         db = AsyncMock()
         db.execute = AsyncMock(return_value=row_result)
 

@@ -65,6 +65,7 @@ function makeNarrativeBlock(overrides?: Partial<NarrativeBlock>): NarrativeBlock
 export function makeMonthlyReport(overrides?: Partial<MonthlyReportFull>): MonthlyReportFull {
   const defaultBlocks: Record<NarrativeBlockKey, NarrativeBlock> = {
     objetivo: makeNarrativeBlock({ ai_draft: "Desarrollar habilidades técnicas en XCO." }),
+    plan_entrenamiento: makeNarrativeBlock({ ai_draft: "Bloque técnico y de resistencia base." }),
     desarrollo: makeNarrativeBlock({ ai_draft: "Se realizaron 7 sesiones técnicas." }),
     resultados: makeNarrativeBlock({ ai_draft: "85% de asistencia promedio." }),
     conclusiones: makeNarrativeBlock({ ai_draft: "Buena progresión del grupo." }),
@@ -225,6 +226,20 @@ export const trainingHandlers = [
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": 'attachment; filename="reporte.pdf"',
+      },
+    });
+  }),
+
+  // GET /api/clubs/:id/monthly-reports/:year/:month/docx — descargar DOCX
+  http.get("*/api/clubs/:id/monthly-reports/:year/:month/docx", () => {
+    const docx = new Blob(["fake docx bytes"], {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    return new HttpResponse(docx, {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": 'attachment; filename="reporte.docx"',
       },
     });
   }),

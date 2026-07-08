@@ -53,7 +53,7 @@ from app.models.race_competitor import RaceCompetitor
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_import import RaceImport, RaceImportStatus
 from app.models.race_result import RaceResult, ResultStatus
-from app.models.race_series import RaceSeries, RaceSeriesKind
+from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 
 
@@ -715,6 +715,43 @@ class TestChampionshipEventGuardT010:
         assert r.status_code == 409, r.text
         detail = r.json()["detail"]
         # Mensaje en es-CO (spec 014 / error catalog)
+        assert "campeonato" in detail.lower(), f"Mensaje inesperado: {detail}"
+        assert "único" in detail or "unico" in detail.lower() or "ya tiene" in detail.lower(), (
+            f"Mensaje no menciona singularidad: {detail}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_championship_nacional_segundo_evento_409(self, coach_client, db_factory):
+        """INV-2 (023): campeonato kind=championship level=national con 1 evento
+        también rechaza un 2do POST con 409 — el guard depende de kind, no de level."""
+        async with db_factory() as s:
+            await _seed_base_users(s)
+            s.add(RaceSeries(
+                id=50, name="Campeonato Nacional Ficticio 2026", season_year=2026,
+                organizer="Federación Colombiana de Ciclismo",
+                points_scheme_code="copa_valle_2026",
+                kind=RaceSeriesKind.championship,
+                level=RaceSeriesLevel.national,
+            ))
+            # El campeonato ya tiene su evento
+            s.add(RaceEvent(
+                id=200, series_id=50, sequence_number=1,
+                name="Campeonato Nacional 2026",
+                event_date=date(2026, 7, 12), location="Pereira",
+                is_championship=True, status=RaceEventStatus.COMPLETED,
+                created_by_user_id=10,
+            ))
+            await s.commit()
+
+        payload = {
+            "series_id": 50,
+            "name": "Segundo intento",
+            "event_date": "2026-08-01",
+            "create_calendar_event": False,
+        }
+        r = await coach_client.post(_EVENTS_URL, json=payload)
+        assert r.status_code == 409, r.text
+        detail = r.json()["detail"]
         assert "campeonato" in detail.lower(), f"Mensaje inesperado: {detail}"
         assert "único" in detail or "unico" in detail.lower() or "ya tiene" in detail.lower(), (
             f"Mensaje no menciona singularidad: {detail}"

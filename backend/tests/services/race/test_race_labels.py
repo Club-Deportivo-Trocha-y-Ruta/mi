@@ -6,7 +6,7 @@ ciudad None/vacía/whitespace y número fuera de rango.
 """
 import pytest
 
-from app.models.race_series import RaceSeriesKind
+from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.services.race.race_labels import build_race_label
 
 
@@ -140,3 +140,55 @@ class TestEmDashFormat:
     def test_championship_em_dash_is_u2014(self):
         label = build_race_label(RaceSeriesKind.championship, 1, "Ginebra")
         assert " — " in label
+
+
+# ---------------------------------------------------------------------------
+# Campeonato Nacional (feature 023) — parámetro `level`
+# ---------------------------------------------------------------------------
+
+
+class TestChampionshipLevel:
+    """Cobertura del parámetro ``level`` (departmental | national, spec 023)."""
+
+    def test_championship_national_with_city(self):
+        result = build_race_label(
+            RaceSeriesKind.championship,
+            1,
+            "Pereira",
+            level=RaceSeriesLevel.national,
+        )
+        assert result == "Cto. Nal. — Pereira"
+
+    def test_championship_national_no_city(self):
+        result = build_race_label(
+            RaceSeriesKind.championship,
+            1,
+            None,
+            level=RaceSeriesLevel.national,
+        )
+        assert result == "Cto. Nal."
+
+    def test_championship_departmental_regression(self):
+        """Regresión: nivel departamental explícito conserva 'Cto. Dep.'."""
+        result = build_race_label(
+            RaceSeriesKind.championship,
+            1,
+            "Ginebra",
+            level=RaceSeriesLevel.departmental,
+        )
+        assert result == "Cto. Dep. — Ginebra"
+
+    def test_cup_level_ignored(self):
+        """Las copas no exponen nivel: el parámetro no debe alterar la etiqueta."""
+        result = build_race_label(
+            RaceSeriesKind.cup,
+            4,
+            "Cali",
+            level=RaceSeriesLevel.national,
+        )
+        assert result == "Válida IV — Cali"
+
+    def test_backward_compat_default_is_departmental(self):
+        """Llamar sin `level` debe seguir produciendo el comportamiento departamental."""
+        result = build_race_label(RaceSeriesKind.championship, 1, "Ginebra")
+        assert result == "Cto. Dep. — Ginebra"

@@ -49,6 +49,7 @@ import {
   useDeleteRaceEvent,
   useRaceEvent,
 } from "@/hooks/race/useRaceEvents";
+import { useRaceSeriesList } from "@/hooks/race/useRaceSeries";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
@@ -231,6 +232,19 @@ export function CompetitionDetailPage() {
   // Datos del evento
   const { data: event, isLoading, isError, refetch, isFetching, error } =
     useRaceEvent(Number.isNaN(raceEventId) ? null : raceEventId);
+
+  // Nivel de la serie (feature 023 — Campeonato Nacional). Solo se necesita
+  // para campeonatos (InfoTab usa el fallback "Departamental" en el resto de
+  // casos) — evita disparar el fetch en cada válida regular de copa.
+  // No existe GET /race-series/{id}; se resuelve filtrando la lista, igual
+  // que `useImportPrefill` (feature 015).
+  const seriesQuery = useRaceSeriesList(
+    {},
+    { enabled: event?.is_championship ?? false },
+  );
+  const seriesLevel = seriesQuery.data?.items.find(
+    (s) => s.id === event?.series_id,
+  )?.level;
 
   // 404 → redirect en efecto (evita setState durante render en React 19)
   const is404 =
@@ -630,7 +644,7 @@ export function CompetitionDetailPage() {
 
         {/* ── Tab: Información ─────────────────────────────────────── */}
         <TabsPrimitive.Content value="info" className="mt-4">
-          <InfoTab event={event} />
+          <InfoTab event={event} seriesLevel={seriesLevel} />
         </TabsPrimitive.Content>
 
         {/* ── Tab: Resultados ──────────────────────────────────────── */}

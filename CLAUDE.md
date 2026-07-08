@@ -151,6 +151,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 | Competitive Anxiety Assessment (CSAI-2R/SAS-2/CSAI-2 state questionnaires; age-driven selection + under-13 guard; deterministic scoring; on-demand LLM interpretation + rule fallback; baseline-anchored, mastery-climate, no-diagnosis; guardian-consent gate via `parental_consents.psychological_assessment`; single-use answer tokens; public token answer page; group-triage dashboards; CSV import/export) | specs/017-competitive-anxiety-assessment | ✅ Backend + frontend complete (migration `c2d3e4f5a6b7`; 51 backend + 8 frontend tests pass, no regressions) — deploy pending (run migration on Render) |
 | Technique & Gymkhana Library (searchable catalog ~24 pre-seeded drills/gymkhana exercises, A–H skill taxonomy, age bands 7–15, illustrative ASCII circuit layouts, session assembly via existing Training Sessions module, per-athlete skill progress coach-only no comparison; seeded from `docs/14-tecnica-gymkana-7-15/research.md`; no AI/LLM) | specs/018-technique-gymkhana-library | ✅ Backend + frontend complete (migration `e1f2a3b4c5d6`; 180 backend + 230 frontend tests pass, 4 audits PASS_WITH_FIXES) — deploy pending (run migration on Render) |
 | Strength Training Exercise Library (illustrated own-artwork catalog filterable by equipment/age band, ≤30-min time-boxed blocks attached to existing Training Sessions module, age-band safety guardrails 10-12 bodyweight-only vs 13-15 progressive equipment with override recording, per-athlete strength progress notes coach-only) | specs/021-strength-training-library | ✅ Complete — deploy pending (migration a7b8c9d0e1f2) |
+| Align Monthly Report to Approved Format (new `plan_entrenamiento` narrative block + auto-generated `competencia`; PDF restructured to approved institutional section order; per-session detail table + per-athlete rubric averages in `metrics_snapshot`; competition results grouped by jornada (`event_id`/`series_kind`/`awards_points`) with points/no-points note; photo register auto-grouped by section from `session_kind` + race-date heuristic; new DOCX export via docxtpl, `GET .../monthly-reports/{year}/{month}/docx`; shared `build_report_document_context` feeds both PDF and DOCX with backward-compatible "Pendiente — regenerar informe" fallback for pre-feature snapshots) | specs/022-align-monthly-report-format | ✅ Complete — deploy pending (no Alembic migration, additive JSON-column changes only) |
 
 ## Development credentials (seed data)
 
@@ -276,5 +277,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/021-strength-training-library/plan.md
+at specs/023-national-championship-level/plan.md
 <!-- SPECKIT END -->

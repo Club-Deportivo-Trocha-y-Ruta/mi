@@ -13,6 +13,12 @@ PRIVACIDAD:
   use case de bloques). La IA trabaja únicamente con datos agregados y
   posiciones numéricas.
 - Degrada limpio: cualquier error de BD devuelve [] sin romper el informe.
+
+Spec 022 (T017): el query ahora hace JOIN (outer, defensivo) con
+``RaceSeries`` para poblar ``event_id``, ``series_kind`` y ``awards_points``
+en cada ``CompetitionResultItem`` sin round-trips adicionales:
+``awards_points = (series_kind == "cup")`` — los campeonatos (spec 014,
+``RaceSeriesKind.championship``) no otorgan puntos de ranking acumulado.
 """
 
 from __future__ import annotations
@@ -41,6 +47,7 @@ async def build_competition_results(
         RaceResult JOIN RaceEvent (event_date dentro del mes)
                   JOIN RaceCategory
                   JOIN Athlete (athlete_id en el club)
+                  LEFT OUTER JOIN RaceSeries (RaceEvent.series_id)
         WHERE deleted_at IS NULL AND position IS NOT NULL
         ORDER BY event_date ASC, position ASC
 
@@ -59,6 +66,7 @@ async def build_competition_results(
         from app.models.race_category import RaceCategory
         from app.models.race_event import RaceEvent
         from app.models.race_result import RaceResult
+        from app.models.race_series import RaceSeries, RaceSeriesKind
 
         month_start = date(year, month, 1)
         last_day = calendar.monthrange(year, month)[1]
@@ -66,8 +74,13 @@ async def build_competition_results(
 
         # Primero: IDs de atletas del club con race_results vinculados.
         # Hacemos un JOIN explícito para no cargar todos los atletas.
+        # LEFT OUTER JOIN a RaceSeries: series_id es NOT NULL hoy, pero se
+        # mantiene defensivo (Spec 022) para no romper si un evento legacy
+        # quedara sin serie resoluble — en ese caso series_kind/awards_points
+        # caen a sus defaults seguros (None / True).
         result = await db.execute(
             select(
+                RaceEvent.id.label("event_id"),
                 RaceResult.position,
                 RaceResult.points_awarded,
                 RaceEvent.name.label("event_name"),
@@ -75,10 +88,12 @@ async def build_competition_results(
                 RaceCategory.label.label("category_label"),
                 Athlete.first_name,
                 Athlete.last_name,
+                RaceSeries.kind.label("series_kind"),
             )
             .join(RaceEvent, RaceEvent.id == RaceResult.event_id)
             .join(RaceCategory, RaceCategory.id == RaceResult.category_id)
             .join(Athlete, Athlete.id == RaceResult.athlete_id)
+            .outerjoin(RaceSeries, RaceSeries.id == RaceEvent.series_id)
             .where(
                 Athlete.club_id == club_id,
                 RaceEvent.event_date >= month_start,
@@ -99,6 +114,12 @@ async def build_competition_results(
 
     items: list[CompetitionResultItem] = []
     for row in rows:
+        series_kind_raw = row.series_kind
+        series_kind_enum = (
+            series_kind_raw
+            if isinstance(series_kind_raw, RaceSeriesKind)
+            else (RaceSeriesKind(series_kind_raw) if series_kind_raw is not None else None)
+        )
         items.append(
             CompetitionResultItem(
                 athlete_name=f"{row.first_name} {row.last_name}",
@@ -107,6 +128,11 @@ async def build_competition_results(
                 points=row.points_awarded if row.points_awarded else None,
                 event_name=row.event_name,
                 event_date=row.event_date,
+                event_id=row.event_id,
+                series_kind=series_kind_enum.value if series_kind_enum is not None else None,
+                awards_points=(series_kind_enum == RaceSeriesKind.cup)
+                if series_kind_enum is not None
+                else True,
             )
         )
     return items

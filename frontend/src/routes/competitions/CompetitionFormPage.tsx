@@ -52,7 +52,7 @@ import {
 } from "@/hooks/race/useRaceEvents";
 import { useRaceSeriesList, useCreateRaceSeries } from "@/hooks/race/useRaceSeries";
 import { VENUE_ALTITUDES } from "@/types/raceEvents.types";
-import type { RaceSeriesKind } from "@/types/raceSeries.types";
+import type { RaceSeriesKind, RaceSeriesLevel } from "@/types/raceSeries.types";
 
 // ---------------------------------------------------------------------------
 // Estilos compartidos (patrón del proyecto)
@@ -93,6 +93,15 @@ const COMPETITION_TYPE_OPTIONS: { value: RaceSeriesKind; label: string }[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Nivel de serie de campeonato — spec 023
+// ---------------------------------------------------------------------------
+
+const SERIES_LEVEL_OPTIONS: { value: RaceSeriesLevel; label: string }[] = [
+  { value: "departmental", label: "Departamental" },
+  { value: "national", label: "Nacional" },
+];
+
+// ---------------------------------------------------------------------------
 // Inline create-series form para campeonatos
 // ---------------------------------------------------------------------------
 
@@ -107,6 +116,7 @@ function CreateChampionshipSeriesForm({
 }: CreateChampionshipSeriesFormProps) {
   const [name, setName] = useState("");
   const [organizer, setOrganizer] = useState("");
+  const [level, setLevel] = useState<RaceSeriesLevel>("departmental");
   const [formError, setFormError] = useState<string | null>(null);
   const createSeries = useCreateRaceSeries();
 
@@ -123,6 +133,7 @@ function CreateChampionshipSeriesForm({
         season_year: season,
         kind: "championship",
         organizer: organizer.trim() || null,
+        level,
       },
       {
         onSuccess: (created) => onCreated(created.id),
@@ -174,6 +185,24 @@ function CreateChampionshipSeriesForm({
           style={inputStyle}
           aria-label="Organizador de la serie"
         />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-mid-gray">
+          Nivel de la serie
+        </label>
+        <select
+          value={level}
+          onChange={(e) => setLevel(e.target.value as RaceSeriesLevel)}
+          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[48px]"
+          style={inputStyle}
+          aria-label="Nivel de la serie"
+        >
+          {SERIES_LEVEL_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
       </div>
       {formError && (
         <p className="text-xs text-red-600" role="alert">

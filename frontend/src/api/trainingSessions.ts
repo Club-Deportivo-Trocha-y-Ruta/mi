@@ -370,6 +370,25 @@ export function useDownloadMonthlyReportPdf(clubId: number) {
   });
 }
 
+export async function downloadMonthlyReportDocx(
+  clubId: number,
+  year: number,
+  month: number,
+): Promise<Blob> {
+  const response = await apiClient.get(
+    `${CLUBS_BASE}/${clubId}/monthly-reports/${year}/${month}/docx`,
+    { responseType: "blob" },
+  );
+  return response.data as Blob;
+}
+
+export function useDownloadMonthlyReportDocx(clubId: number) {
+  return useMutation({
+    mutationFn: ({ year, month }: { year: number; month: number }) =>
+      downloadMonthlyReportDocx(clubId, year, month),
+  });
+}
+
 export async function updateReportBlocks(
   clubId: number,
   year: number,

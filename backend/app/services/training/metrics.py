@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import calendar
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date
 
 from sqlalchemy import select
@@ -15,7 +15,11 @@ from app.models.training_session import (
     SessionStatus,
     TrainingSession,
 )
-from app.schemas.training_session import AthleteAttendanceStats, MonthlyMetrics
+from app.schemas.training_session import (
+    AthleteAttendanceStats,
+    MonthlyMetrics,
+    SessionDetailItem,
+)
 
 _PRESENT_STATUSES = {AttendanceStatus.PRESENTE, AttendanceStatus.TARDE}
 
@@ -90,6 +94,7 @@ async def compute_monthly_metrics(
             avg_rubric_effort=None,
             avg_rubric_attitude=None,
             avg_rubric_technique=None,
+            session_detail=[],
         )
 
     attendance_result = await db.execute(
@@ -98,6 +103,12 @@ async def compute_monthly_metrics(
         )
     )
     all_attendance = list(attendance_result.scalars().all())
+
+    # SPEC 2 — asistencias agrupadas por sesión (reutiliza `all_attendance`,
+    # ya cargado con una sola query; sin N+1) para armar `session_detail`.
+    attendance_by_session: dict[int, list[SessionAttendance]] = defaultdict(list)
+    for att in all_attendance:
+        attendance_by_session[att.session_id].append(att)
 
     # SPEC 1 — Conteos de asistencia a nivel club por estado.
     attendance_status_totals = {
@@ -133,6 +144,20 @@ async def compute_monthly_metrics(
         elif att.status == AttendanceStatus.LESIONADO:
             stats["injured"] += 1
 
+    # Promedios de RPE y rúbrica — solo asistencias presentes/tarde
+    present_att = [a for a in all_attendance if a.status in _PRESENT_STATUSES]
+
+    def _avg(values: list[int | None]) -> float | None:
+        nums = [v for v in values if v is not None]
+        return round(sum(nums) / len(nums), 2) if nums else None
+
+    # SPEC 2 — asistencias presentes/tarde agrupadas por atleta (reutiliza
+    # `present_att`, ya filtrado en memoria) para los promedios de rúbrica
+    # por atleta de `AthleteAttendanceStats`.
+    present_att_by_athlete: dict[int, list[SessionAttendance]] = defaultdict(list)
+    for att in present_att:
+        present_att_by_athlete[att.athlete_id].append(att)
+
     attendance_by_athlete = {
         athlete_id: AthleteAttendanceStats(
             athlete_id=athlete_id,
@@ -147,21 +172,44 @@ async def compute_monthly_metrics(
                 if s["total"] > 0
                 else 0.0
             ),
+            avg_rubric_effort=_avg(
+                [a.rubric_effort for a in present_att_by_athlete.get(athlete_id, [])]
+            ),
+            avg_rubric_attitude=_avg(
+                [a.rubric_attitude for a in present_att_by_athlete.get(athlete_id, [])]
+            ),
+            avg_rubric_technique=_avg(
+                [a.rubric_technique for a in present_att_by_athlete.get(athlete_id, [])]
+            ),
         )
         for athlete_id, s in athlete_stats.items()
     }
-
-    # Promedios de RPE y rúbrica — solo asistencias presentes/tarde
-    present_att = [a for a in all_attendance if a.status in _PRESENT_STATUSES]
-
-    def _avg(values: list[int | None]) -> float | None:
-        nums = [v for v in values if v is not None]
-        return round(sum(nums) / len(nums), 2) if nums else None
 
     avg_rpe = _avg([a.rpe_omni for a in present_att])
     avg_rubric_effort = _avg([a.rubric_effort for a in present_att])
     avg_rubric_attitude = _avg([a.rubric_attitude for a in present_att])
     avg_rubric_technique = _avg([a.rubric_technique for a in present_att])
+
+    # SPEC 2 — detalle por sesión (fecha, hora, foco, lugar, estado,
+    # asistencia) para la sección "Plan de entrenamiento" del Informe
+    # Técnico Mensual. Ordenado por fecha y hora ascendente; reutiliza
+    # `sessions` y `attendance_by_session` ya cargados (sin N+1).
+    session_detail = [
+        SessionDetailItem(
+            session_date=s.scheduled_date,
+            start_time=s.scheduled_start_time,
+            technical_focus=s.technical_focus,
+            location=s.location,
+            status=s.status.value,
+            present_count=sum(
+                1
+                for a in attendance_by_session.get(s.id, [])
+                if a.status in _PRESENT_STATUSES
+            ),
+            attendee_total=len(attendance_by_session.get(s.id, [])),
+        )
+        for s in sorted(sessions, key=lambda s: (s.scheduled_date, s.scheduled_start_time))
+    ]
 
     return MonthlyMetrics(
         club_id=club_id,
@@ -181,4 +229,5 @@ async def compute_monthly_metrics(
         avg_hours_per_week=avg_hours_per_week,
         technical_focus_counts=technical_focus_counts,
         attendance_status_totals=attendance_status_totals,
+        session_detail=session_detail,
     )

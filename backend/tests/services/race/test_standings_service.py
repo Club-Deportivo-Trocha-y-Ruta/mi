@@ -60,7 +60,7 @@ from app.models.race_category import CategoryGender, RaceCategory
 from app.models.race_competitor import RaceCompetitor
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_result import RaceResult, ResultStatus
-from app.models.race_series import RaceSeries
+from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 from app.services.race.standings import get_event_standings
 
@@ -518,6 +518,57 @@ class TestStandingsService:
         assert rows[0].total_points == 40
         assert rows[1].total_points == 30
         assert rows[2].total_points == 20
+
+    async def test_national_championship_excluded_same_as_departmental(
+        self, session_factory
+    ):
+        """Regression lock (spec 023 SC-004): standings exclusion keys off ``kind``,
+        not ``level``.  A ``championship`` series with ``level=national`` and results
+        present must be excluded from cumulative standings exactly like a
+        ``departmental`` (or level-unset/default) championship — i.e. the guard at
+        ``standings.py`` (``series_kind != RaceSeriesKind.cup``) is unaffected by
+        the new ``level`` column.
+        """
+        national_series_id = 900
+        national_event_id = 901
+
+        async with session_factory() as s:
+            await _seed_base(s)
+            series = RaceSeries(
+                id=national_series_id,
+                name="Campeonato Nacional Fedeciclismo 2026",
+                season_year=2026,
+                organizer="Fedeciclismo",
+                points_scheme_code="test",
+                kind=RaceSeriesKind.championship,
+                level=RaceSeriesLevel.national,
+            )
+            evt = RaceEvent(
+                id=national_event_id,
+                series_id=national_series_id,
+                sequence_number=1,
+                name="Campeonato Nacional",
+                event_date=date(2026, 7, 18),
+                location="Pereira",
+                is_championship=True,
+                status=RaceEventStatus.COMPLETED,
+                created_by_user_id=_USER_ID,
+            )
+            s.add_all([series, evt])
+            s.add(_mk_competitor(1))
+            s.add(_mk_competitor(2))
+            s.add(_mk_result(1, national_event_id, 1, 40, 1))
+            s.add(_mk_result(2, national_event_id, 2, 30, 2))
+            await s.commit()
+
+        async with session_factory() as s:
+            result = await get_event_standings(s, national_event_id)
+
+        # Same empty-categories payload the departmental-championship guard
+        # already produces (see standings.py "championship_skip" branch) —
+        # identical regardless of results being present and regardless of level.
+        assert result is not None
+        assert result.categories == []
 
     async def test_is_our_club_true_only_when_athlete_id_present(self, session_factory):
         """is_our_club=True iff max(athlete_id) is not None for the competitor."""

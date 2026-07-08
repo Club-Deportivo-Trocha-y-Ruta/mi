@@ -26,6 +26,7 @@ ALLOWED_BLOCK_KEYS: frozenset[str] = frozenset({
     "apoyos_materiales",
     "analisis_grupo",
     "competencia",
+    "plan_entrenamiento",
 })
 
 
@@ -363,6 +364,9 @@ class CompetitionResultItem(BaseModel):
     points: int | None = None
     event_name: str | None = None
     event_date: date | None = None
+    event_id: int = 0
+    series_kind: str | None = None
+    awards_points: bool = True
 
 
 class MonthlyReportRead(BaseModel):
@@ -497,6 +501,22 @@ class AthleteAttendanceStats(BaseModel):
     count_injured: int
     total_sessions: int
     attendance_pct: float
+    # SPEC 2 — promedios de rúbrica por atleta (None si no hubo registros).
+    avg_rubric_effort: float | None = None
+    avg_rubric_attitude: float | None = None
+    avg_rubric_technique: float | None = None
+
+
+class SessionDetailItem(BaseModel):
+    """Detalle de una sesión individual del mes, para el Informe Técnico Mensual."""
+
+    session_date: date
+    start_time: time
+    technical_focus: str
+    location: str
+    status: Literal["executed", "cancelled", "planned"]
+    present_count: int
+    attendee_total: int
 
 
 class MonthlyMetrics(BaseModel):
@@ -525,3 +545,7 @@ class MonthlyMetrics(BaseModel):
     # Conteos de asistencia a nivel club por estado (presente/tarde/justificado/
     # ausente/lesionado).
     attendance_status_totals: dict[str, int] = Field(default_factory=dict)
+    # SPEC 2 — detalle de sesiones del mes para la sección de plan de
+    # entrenamiento del Informe Técnico Mensual (default vacío para
+    # reportes antiguos cuyo snapshot no lo incluye).
+    session_detail: list[SessionDetailItem] = Field(default_factory=list)

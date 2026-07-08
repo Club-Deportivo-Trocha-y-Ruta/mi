@@ -37,6 +37,11 @@ Genera el bloque **{{ block_title }}** para el Informe Técnico Mensual del club
 - NO incluyas juicios subjetivos sobre la actitud o capacidad de atletas individuales.
 - Si recibes `attendance_summary` (grupo pequeño), usa solo ese agregado. NO desgloses por atleta, NO inventes pseudónimos.
 - Entrega el texto del bloque directamente, sin título ni prefijo. Comienza con el primer párrafo.
+{% if block_key == "plan_entrenamiento" %}
+- Tono de informe de gestión: describe el plan a nivel de grupo (focos técnicos, cadencia de sesiones, progresión de carga), vinculado al mesociclo vigente. NUNCA prescripciones individuales.
+{% elif block_key == "competencia" %}
+- Refuerzo obligatorio: NUNCA nombres reales de atletas, solo pseudónimos. En este bloque en particular NO menciones resultados individuales (posiciones, puntos, categorías) ni siquiera con pseudónimos — esos datos viven en una tabla estructurada aparte del informe (`competition_results`), fuera de este flujo de IA.
+{% endif %}
 
 # Datos del período {{ period_month }}/{{ period_year }}
 

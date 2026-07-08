@@ -102,6 +102,7 @@ async def list_race_series(
             season_year=series.season_year,
             organizer=series.organizer,
             kind=series.kind,
+            level=series.level,
             event_count=int(event_count or 0),
         )
         for series, event_count in rows
@@ -167,6 +168,7 @@ async def create_race_series(
         organizer=body.organizer,
         points_scheme_code=_DEFAULT_POINTS_SCHEME_CODE,
         kind=body.kind,
+        level=body.level,
     )
     db.add(series)
     await db.flush()
@@ -184,5 +186,6 @@ async def create_race_series(
         season_year=series.season_year,
         organizer=series.organizer,
         kind=series.kind,
+        level=series.level,
         event_count=0,
     )

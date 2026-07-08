@@ -710,3 +710,152 @@ def test_build_urls_panorama_url_encodes_athlete_id():
     )
 
     assert panorama_url == "https://app.example/my-athletes/99?tab=ai-analysis"
+
+
+# ---------------------------------------------------------------------------
+# Tests: campeonato label por nivel (feature 023 — RaceSeriesLevel)
+# ---------------------------------------------------------------------------
+#
+# D3 (specs/023-national-championship-level/plan.md): el tier de notificación
+# se mantiene RaceTier.CD para todo campeonato (máxima prioridad); solo la
+# etiqueta humana ("valida_label") varía por level ("Campeonato Nacional" vs
+# "Campeonato Departamental"). El helper `_build_valida_label` aún no conoce
+# `level` — estas pruebas fallan hasta que se le agregue ese parámetro.
+
+
+async def _run_championship_dispatch(*, series_level):
+    """Helper compartido: dispara dispatch_insight_notification para un
+    insight tier=CD (is_championship=True) con un ``series.level`` dado."""
+    from datetime import date
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.services.notification.race_insight_dispatcher import (
+        dispatch_insight_notification,
+    )
+
+    insight = SimpleNamespace(
+        id=200,
+        athlete_id=42,
+        coach_approved=True,
+        is_active=1,
+        valida_num=1,
+        event_id=8,
+        season=2026,
+        summary_text=V2_SAMPLE,
+        prompt_version=PROMPT_VERSION_V2,
+    )
+
+    series = SimpleNamespace(season_year=2026, level=series_level)
+    event = SimpleNamespace(
+        id=8,
+        event_date=date(2026, 7, 18),
+        location="Pereira",
+        sequence_number=1,
+        is_championship=True,
+        series=series,
+    )
+
+    athlete = SimpleNamespace(first_name="Carolina", last_name="Pérez")
+    fresh_insight = SimpleNamespace(
+        id=200,
+        athlete_id=42,
+        valida_num=1,
+        season=2026,
+        summary_text=V2_SAMPLE,
+        prompt_version=PROMPT_VERSION_V2,
+        event=event,
+        event_id=8,
+        athlete=athlete,
+    )
+
+    parent = SimpleNamespace(
+        id=21,
+        email="padre2@test.com",
+        first_name="Carlos",
+        last_name="Pérez",
+    )
+
+    call_count = {"n": 0}
+
+    async def _fake_execute(_stmt):
+        call_count["n"] += 1
+        n = call_count["n"]
+        res = MagicMock()
+        if n == 1:
+            res.scalar_one_or_none.return_value = fresh_insight
+        elif n == 2:
+            res.scalars.return_value.all.return_value = [parent]
+        elif n == 3:
+            res.scalar_one_or_none.return_value = "Club Trocha y Ruta"
+        else:
+            res.scalar_one_or_none.return_value = None
+            res.scalars.return_value.all.return_value = []
+        return res
+
+    db = MagicMock()
+    db.execute = _fake_execute
+
+    captured_requests = []
+
+    class _FakeNotificationService:
+        async def send(self, request, dispatcher=None):
+            captured_requests.append(request)
+            return SimpleNamespace(success=True)
+
+    settings = SimpleNamespace(frontend_base_url="https://app.example")
+
+    result = await dispatch_insight_notification(
+        insight,
+        db,
+        notification_service=_FakeNotificationService(),
+        settings=settings,
+    )
+
+    return result, captured_requests
+
+
+@pytest.mark.asyncio
+async def test_dispatch_national_championship_label_says_campeonato_nacional():
+    """Campeonato Nacional (series.level=national): la etiqueta del email debe
+    decir "Campeonato Nacional" y NUNCA "Campeonato Departamental"."""
+    from app.models.race_series import RaceSeriesLevel
+    from app.services.notification.race_event_tier import RaceTier
+    from app.services.notification.race_insight_dispatcher import (
+        NotificationDecision,
+    )
+
+    result, captured = await _run_championship_dispatch(
+        series_level=RaceSeriesLevel.national
+    )
+
+    assert result.decision == NotificationDecision.SENT_EMAIL
+    assert result.tier == RaceTier.CD
+
+    assert len(captured) == 1
+    ctx = captured[0].context
+    assert "Campeonato Nacional" in ctx["valida_label"]
+    assert "Campeonato Departamental" not in ctx["valida_label"]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_departmental_championship_label_unchanged():
+    """Regresión: Campeonato Departamental (series.level=departmental) conserva
+    la etiqueta "Campeonato Departamental" y el tier CD."""
+    from app.models.race_series import RaceSeriesLevel
+    from app.services.notification.race_event_tier import RaceTier
+    from app.services.notification.race_insight_dispatcher import (
+        NotificationDecision,
+    )
+
+    result, captured = await _run_championship_dispatch(
+        series_level=RaceSeriesLevel.departmental
+    )
+
+    assert result.decision == NotificationDecision.SENT_EMAIL
+    assert result.tier == RaceTier.CD
+
+    assert len(captured) == 1
+    ctx = captured[0].context
+    assert ctx["valida_label"] == "Campeonato Departamental"
+    assert "Campeonato Nacional" not in ctx["valida_label"]

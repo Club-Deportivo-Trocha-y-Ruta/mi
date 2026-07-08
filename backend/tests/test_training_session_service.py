@@ -632,6 +632,8 @@ class TestComputeMonthlyMetrics:
         s.technical_focus = technical_focus
         s.duration_min = duration_min
         s.scheduled_date = date(2026, 3, session_id)
+        s.scheduled_start_time = time(17, 0)
+        s.location = "Bosque Municipal"
         return s
 
     def _make_mock_attendance(

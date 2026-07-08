@@ -375,6 +375,138 @@ describe("ImportWizard — Step 1", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Feature 023 — nivel del campeonato (Departamental|Nacional) al crear serie
+// ---------------------------------------------------------------------------
+
+async function fillStep1ChampionshipAndSubmit(
+  user: ReturnType<typeof userEvent.setup>,
+  { level }: { level?: "departmental" | "national" } = {},
+) {
+  await user.selectOptions(
+    screen.getByTestId("wizard-series-kind"),
+    "championship",
+  );
+  await user.type(
+    screen.getByTestId("wizard-series-name"),
+    "Campeonato Nacional MTB 2026",
+  );
+  if (level) {
+    await user.selectOptions(screen.getByTestId("wizard-series-level"), level);
+  }
+
+  await user.type(
+    screen.getByTestId("wizard-event-name"),
+    "Campeonato Nacional XCO — Pereira",
+  );
+  fireEvent.change(screen.getByTestId("wizard-event-date"), {
+    target: { value: "2026-07-18" },
+  });
+  await user.type(screen.getByTestId("wizard-location"), "Pereira");
+
+  const input = screen.getByTestId(
+    "race-upload-resultados-input",
+  ) as HTMLInputElement;
+  const pdf = makeValidPdf();
+  Object.defineProperty(input, "files", { value: [pdf] });
+  fireEvent.change(input);
+
+  await waitFor(() =>
+    expect(
+      screen.getByTestId("race-upload-resultados-preview"),
+    ).toBeInTheDocument(),
+  );
+
+  await user.click(screen.getByTestId("wizard-step1-submit"));
+}
+
+describe("ImportWizard — nivel del campeonato (feature 023)", () => {
+  it("campeonato: aparece el selector de nivel Departamental|Nacional con default Departamental", async () => {
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+
+    await user.selectOptions(
+      screen.getByTestId("wizard-series-kind"),
+      "championship",
+    );
+
+    const levelSelect = await screen.findByTestId("wizard-series-level");
+    expect(levelSelect).toBeInTheDocument();
+    expect((levelSelect as HTMLSelectElement).value).toBe("departmental");
+
+    const options = Array.from(
+      (levelSelect as HTMLSelectElement).options,
+    ).map((o) => o.value);
+    expect(options).toEqual(["departmental", "national"]);
+  });
+
+  it("copa: el selector de nivel NO existe", async () => {
+    wrap(<ImportWizard />);
+
+    // series_kind por defecto es "cup".
+    await screen.findByTestId("wizard-series-kind");
+    expect(screen.queryByTestId("wizard-series-level")).not.toBeInTheDocument();
+  });
+
+  it("al volver de campeonato a copa desaparece el selector de nivel", async () => {
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+
+    const kindSelect = screen.getByTestId("wizard-series-kind");
+    await user.selectOptions(kindSelect, "championship");
+    await screen.findByTestId("wizard-series-level");
+
+    await user.selectOptions(kindSelect, "cup");
+    expect(screen.queryByTestId("wizard-series-level")).not.toBeInTheDocument();
+  });
+
+  it("envía el nivel elegido (nacional) en el payload de /parse al crear la serie", async () => {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue({
+      ...PARSE_RESPONSE,
+      header: {
+        series_name: "Campeonato Nacional MTB 2026",
+        season: 2026,
+        valida_num: 1,
+        event_name: "Campeonato Nacional XCO — Pereira",
+      },
+    });
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
+      DRY_RUN_CONFIRMED_ONLY,
+    );
+
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+    await fillStep1ChampionshipAndSubmit(user, { level: "national" });
+
+    await waitFor(() =>
+      expect(importsApi.parseRaceImport).toHaveBeenCalledTimes(1),
+    );
+    const [fields] = vi.mocked(importsApi.parseRaceImport).mock.calls[0];
+    expect((fields as { series_level?: string }).series_level).toBe(
+      "national",
+    );
+  });
+
+  it("default (sin tocar el selector) envía nivel departamental en el payload", async () => {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
+      DRY_RUN_CONFIRMED_ONLY,
+    );
+
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+    await fillStep1ChampionshipAndSubmit(user);
+
+    await waitFor(() =>
+      expect(importsApi.parseRaceImport).toHaveBeenCalledTimes(1),
+    );
+    const [fields] = vi.mocked(importsApi.parseRaceImport).mock.calls[0];
+    expect((fields as { series_level?: string }).series_level).toBe(
+      "departmental",
+    );
+  });
+});
+
 describe("ImportWizard — Step 2", () => {
   it("muestra loader mientras dry-run isPending", async () => {
     vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);

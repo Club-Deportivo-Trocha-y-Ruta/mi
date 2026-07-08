@@ -56,6 +56,13 @@ export interface ImportParseRequestFields {
    * is_championship=true). Default `cup` para compatibilidad hacia atrás.
    */
   series_kind?: "cup" | "championship";
+  /**
+   * Feature 023 — Nivel del campeonato (departamental|nacional). Solo
+   * consultado por el backend cuando crea una serie de campeonato NUEVA;
+   * ignorado si la serie ya existe (resuelta por `series_id`). Default
+   * `departmental` para compatibilidad hacia atrás.
+   */
+  series_level?: "departmental" | "national";
   // F-COND — campos opcionales de condiciones de carrera
   /** Descripción corta del clima (máx 60 chars), ej: "Soleado con viento". */
   climate?: string | null;

@@ -10,6 +10,10 @@ distintas copas en paralelo (`Copa Valle 2026`, `Liga Departamental 2026`, etc.)
 Spec 014 (2026-06-15): agrega `RaceSeriesKind` enum y columna `kind` (cup |
 championship). Championships son series independientes con un único evento anual;
 se excluyen del ranking acumulado de temporada. Ver specs/014-cup-vs-championship-series/.
+
+Spec 023 (2026-07-08): agrega `RaceSeriesLevel` enum y columna `level`
+(departmental | national) para distinguir el Campeonato Departamental Valle del
+Campeonato Nacional Fedeciclismo. Ver specs/023-national-championship-level/.
 """
 from __future__ import annotations
 
@@ -38,6 +42,17 @@ class RaceSeriesKind(str, enum.Enum):
     championship = "championship"
 
 
+class RaceSeriesLevel(str, enum.Enum):
+    """Ámbito territorial del campeonato.
+
+    departmental — Campeonato Departamental (ej. Valle del Cauca).
+    national     — Campeonato Nacional Fedeciclismo (ej. Pereira 2026).
+    """
+
+    departmental = "departmental"
+    national = "national"
+
+
 class RaceSeries(Base):
     """Serie de competencias deportivas agrupadas por temporada.
 
@@ -47,6 +62,9 @@ class RaceSeries(Base):
 
     El campo `kind` discrimina copas (rondas + ranking) de campeonatos (evento único,
     sin ranking acumulado). Ver decisiones D1–D5 en specs/014-cup-vs-championship-series/research.md.
+
+    El campo `level` distingue el ámbito territorial de un campeonato (departmental |
+    national). Ver specs/023-national-championship-level/data-model.md.
     """
 
     __tablename__ = "race_series"
@@ -67,6 +85,15 @@ class RaceSeries(Base):
         ),
         nullable=False,
         default=RaceSeriesKind.cup,
+    )
+    level: Mapped[RaceSeriesLevel] = mapped_column(
+        Enum(
+            RaceSeriesLevel,
+            name="raceserieslevel",
+            values_callable=lambda e: [x.value for x in e],
+        ),
+        nullable=False,
+        default=RaceSeriesLevel.departmental,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False

@@ -13,15 +13,22 @@
 
 import { useState } from "react";
 import { useRef } from "react";
-import { Download, RefreshCw, CheckCircle2 } from "lucide-react";
+import { ChevronDown, Download, RefreshCw, CheckCircle2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
 import {
   useMonthlyReport,
   useDownloadMonthlyReportPdf,
+  useDownloadMonthlyReportDocx,
   useUpdateReportBlocks,
   useRegenerateBlock,
 } from "@/api/trainingSessions";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { MonthlyMetricsTable } from "@/components/training/MonthlyMetricsTable";
 import { formatDateTime } from "@/lib/datetime";
 import { triggerBlobDownload } from "@/lib/download";
@@ -46,16 +53,18 @@ const MONTH_NAMES = [
 
 const BLOCK_ORDER: NarrativeBlockKey[] = [
   "objetivo",
+  "plan_entrenamiento",
   "desarrollo",
+  "competencia",
   "resultados",
   "conclusiones",
   "apoyos_materiales",
   "analisis_grupo",
-  "competencia",
 ];
 
 const BLOCK_LABELS: Record<NarrativeBlockKey, string> = {
   objetivo: "Objetivo del período",
+  plan_entrenamiento: "Plan de entrenamiento",
   desarrollo: "Desarrollo de actividades",
   resultados: "Resultados obtenidos",
   conclusiones: "Conclusiones",
@@ -300,57 +309,98 @@ function NarrativeBlockEditor({
 // CompetitionResultsTable — solo lectura
 // ---------------------------------------------------------------------------
 
+/** Agrupa por event_id (jornada); event_id ausente (informes antiguos) cae en un único grupo "sin identidad de evento". */
+function groupByEvent(results: CompetitionResult[]): { eventId: number | null; eventName: string | null; awardsPoints: boolean | null; rows: CompetitionResult[] }[] {
+  const groups = new Map<string, { eventId: number | null; eventName: string | null; awardsPoints: boolean | null; rows: CompetitionResult[] }>();
+  for (const r of results) {
+    const key = r.event_id != null ? String(r.event_id) : `legacy-${r.event_name ?? "sin-evento"}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.rows.push(r);
+    } else {
+      groups.set(key, {
+        eventId: r.event_id ?? null,
+        eventName: r.event_name,
+        awardsPoints: r.awards_points ?? null,
+        rows: [r],
+      });
+    }
+  }
+  return Array.from(groups.values());
+}
+
 function CompetitionResultsTable({ results }: { results: CompetitionResult[] }) {
   if (results.length === 0) {
     return (
       <p className="text-sm text-mid-gray" data-testid="competition-results-empty">
-        Sin resultados de competencia registrados para este período.
+        Sin competencias en el período.
       </p>
     );
   }
+  const groups = groupByEvent(results);
   return (
-    <div
-      className="overflow-x-auto rounded-xl bg-white"
-      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-      data-testid="competition-results-table"
-    >
-      <table className="min-w-full text-sm">
-        <caption className="sr-only">Resultados de competencia del período</caption>
-        <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
-          <tr>
-            <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-              Atleta
-            </th>
-            <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-              Categoría
-            </th>
-            <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-              Pos.
-            </th>
-            <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-              Puntos
-            </th>
-            <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-              Evento
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((r, i) => (
-            <tr
-              key={i}
-              style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
-              className="transition-colors hover:bg-light-gray"
-            >
-              <td className="px-4 py-3 font-medium text-charcoal">{r.athlete_name}</td>
-              <td className="px-4 py-3 text-mid-gray">{r.category ?? "—"}</td>
-              <td className="px-4 py-3 text-mid-gray">{r.position ?? "—"}</td>
-              <td className="px-4 py-3 text-mid-gray">{r.points ?? "—"}</td>
-              <td className="px-4 py-3 text-mid-gray">{r.event_name ?? "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-4" data-testid="competition-results-table">
+      {groups.map((group, gi) => (
+        <div
+          key={group.eventId ?? gi}
+          className="overflow-x-auto rounded-xl bg-white"
+          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+        >
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+            style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
+          >
+            <h3 className="text-sm font-semibold text-charcoal">
+              {group.eventName ?? "Evento sin nombre"}
+            </h3>
+            {group.awardsPoints !== null && (
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                  group.awardsPoints
+                    ? "bg-green-100 text-green-800"
+                    : "bg-light-gray text-mid-gray"
+                }`}
+                data-testid={`event-points-note-${group.eventId ?? gi}`}
+              >
+                {group.awardsPoints ? "Otorga puntos" : "No otorga puntos"}
+              </span>
+            )}
+          </div>
+          <table className="min-w-full text-sm">
+            <caption className="sr-only">Resultados de {group.eventName ?? "la jornada"}</caption>
+            <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
+              <tr>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  Atleta
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  Categoría
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  Pos.
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  Puntos
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {group.rows.map((r, i) => (
+                <tr
+                  key={i}
+                  style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
+                  className="transition-colors hover:bg-light-gray"
+                >
+                  <td className="px-4 py-3 font-medium text-charcoal">{r.athlete_name}</td>
+                  <td className="px-4 py-3 text-mid-gray">{r.category ?? "—"}</td>
+                  <td className="px-4 py-3 text-mid-gray">{r.position ?? "—"}</td>
+                  <td className="px-4 py-3 text-mid-gray">{r.points ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
     </div>
   );
 }
@@ -364,8 +414,10 @@ interface CoachEditorViewProps {
   clubId: number;
   year: number;
   month: number;
-  onDownload: () => void;
-  isDownloading: boolean;
+  onDownloadPdf: () => void;
+  onDownloadDocx: () => void;
+  isDownloadingPdf: boolean;
+  isDownloadingDocx: boolean;
   downloadError: string | null;
 }
 
@@ -374,8 +426,10 @@ function CoachEditorView({
   clubId,
   year,
   month,
-  onDownload,
-  isDownloading,
+  onDownloadPdf,
+  onDownloadDocx,
+  isDownloadingPdf,
+  isDownloadingDocx,
   downloadError,
 }: CoachEditorViewProps) {
   const monthLabel = MONTH_NAMES[report.month - 1] ?? String(report.month);
@@ -383,6 +437,7 @@ function CoachEditorView({
   const blocks = report.narrative_blocks;
   const results = report.competition_results ?? [];
   const isApproved = report.status === "approved";
+  const isDownloading = isDownloadingPdf || isDownloadingDocx;
 
   const updateMutation = useUpdateReportBlocks(clubId, year, month);
   const [approveError, setApproveError] = useState<string | null>(null);
@@ -432,17 +487,40 @@ function CoachEditorView({
               <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
               {updateMutation.isPending && !isApproved ? "Aprobando…" : "Aprobar"}
             </button>
-            {/* Descargar PDF */}
-            <button
-              type="button"
-              onClick={onDownload}
-              disabled={isDownloading}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              data-testid="download-pdf-button"
-            >
-              <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
-              {isDownloading ? "Descargando…" : "Descargar PDF"}
-            </button>
+            {/* Descargar informe — PDF o DOCX */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  disabled={isDownloading}
+                  aria-label="Descargar informe"
+                  className="flex min-h-[48px] items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  data-testid="download-menu-trigger"
+                >
+                  <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {isDownloading ? "Descargando…" : "Descargar informe"}
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={onDownloadPdf}
+                  disabled={isDownloading}
+                  data-testid="download-pdf-option"
+                >
+                  <Download className="mr-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  Descargar PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={onDownloadDocx}
+                  disabled={isDownloading}
+                  data-testid="download-docx-option"
+                >
+                  <Download className="mr-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  Descargar DOCX
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
         {approveError && (
@@ -526,14 +604,15 @@ export function ReportDetailPage() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const reportQuery = useMonthlyReport(clubId, year, month);
-  const downloadMutation = useDownloadMonthlyReportPdf(clubId ?? 0);
+  const downloadPdfMutation = useDownloadMonthlyReportPdf(clubId ?? 0);
+  const downloadDocxMutation = useDownloadMonthlyReportDocx(clubId ?? 0);
 
   const report = reportQuery.data;
 
-  function handleDownload() {
+  function handleDownloadPdf() {
     if (!clubId) return;
     setDownloadError(null);
-    downloadMutation.mutate(
+    downloadPdfMutation.mutate(
       { year, month },
       {
         onSuccess: (blob) => {
@@ -544,6 +623,24 @@ export function ReportDetailPage() {
         },
         onError: () =>
           setDownloadError("No se pudo descargar el PDF. Intenta de nuevo."),
+      },
+    );
+  }
+
+  function handleDownloadDocx() {
+    if (!clubId) return;
+    setDownloadError(null);
+    downloadDocxMutation.mutate(
+      { year, month },
+      {
+        onSuccess: (blob) => {
+          triggerBlobDownload(
+            blob,
+            `informe-tecnico-${year}-${String(month).padStart(2, "0")}.docx`,
+          );
+        },
+        onError: () =>
+          setDownloadError("No se pudo descargar el DOCX. Intenta de nuevo."),
       },
     );
   }
@@ -584,8 +681,10 @@ export function ReportDetailPage() {
         clubId={clubId}
         year={year}
         month={month}
-        onDownload={handleDownload}
-        isDownloading={downloadMutation.isPending}
+        onDownloadPdf={handleDownloadPdf}
+        onDownloadDocx={handleDownloadDocx}
+        isDownloadingPdf={downloadPdfMutation.isPending}
+        isDownloadingDocx={downloadDocxMutation.isPending}
         downloadError={downloadError}
       />
     );

@@ -83,6 +83,18 @@ The `analisis_grupo` block is the **qualitative chapter of the group** — the "
 - [x] The report omits the "Population Served" section and is limited to the high-performance group.
 - [ ] Deployment to Render approved and applied.
 
+## Format-Alignment Update (Feature 022, 2026-07-03)
+
+Follow-up refactor (`specs/022-align-monthly-report-format/`) that aligns the generated report with the approved institutional format, entirely inside the existing module — **no Alembic migration** (additive keys inside `metrics_snapshot`/`narrative_blocks`/`competition_results`), no new screens, no changes to session creation or media upload:
+
+- New narrative block **`plan_entrenamiento`**; `competencia` is now auto-generated from the grouped competition summary.
+- New **per-session detail table** and **per-athlete rubric averages** in the persisted metrics snapshot.
+- **Competition results grouped by jornada** (`event_id`/`series_kind`/`awards_points`), with a points/no-points note per jornada.
+- **Photo register grouped by section** (Alto Rendimiento / Actividades Conjuntas / Competencia), derived from `session_kind` + race-date heuristic, with reserved placeholders for empty groups.
+- New **DOCX export** (`GET .../monthly-reports/{year}/{month}/docx`, docxtpl — already a dependency) alongside the existing PDF; both share one context builder for backward-compatible rendering of pre-feature report snapshots.
+
+Full design record in [`design.md`](design.md) §10.
+
 ## Coach Runbook
 
 The step-by-step operational guide for capturing inputs during the month and closing the report is in [`runbook.md`](runbook.md).

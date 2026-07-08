@@ -137,4 +137,66 @@ describe("MonthlyMetricsTable", () => {
     // La tabla de asistencia sigue presente (dato siempre existió).
     expect(screen.getByTestId("attendance-table")).toBeInTheDocument();
   });
+
+  it("muestra el detalle de sesiones (fecha/hora/foco/lugar/asistencia)", () => {
+    render(
+      <MonthlyMetricsTable
+        metrics={makeMetrics({
+          session_detail: [
+            {
+              session_date: "2026-05-13",
+              start_time: "16:30:00",
+              technical_focus: "Frenada",
+              location: "Pista Panamericana",
+              status: "executed",
+              present_count: 8,
+              attendee_total: 10,
+            },
+            {
+              session_date: "2026-05-20",
+              start_time: "07:00:00",
+              technical_focus: "Curvas técnicas",
+              location: "Bosque Municipal",
+              status: "cancelled",
+              present_count: 0,
+              attendee_total: 10,
+            },
+          ],
+        })}
+        athleteNames={NAMES}
+      />,
+    );
+    const table = screen.getByTestId("session-detail-table");
+    expect(table).toBeInTheDocument();
+    expect(table).toHaveTextContent("13/05/2026");
+    expect(table).toHaveTextContent("04:30 p. m.");
+    expect(table).toHaveTextContent("Pista Panamericana");
+    expect(table).toHaveTextContent("8/10");
+    expect(table).toHaveTextContent("Ejecutada");
+    expect(table).toHaveTextContent("Cancelada");
+  });
+
+  it("muestra 'Pendiente — regenerar informe' cuando session_detail no existe (informe antiguo)", () => {
+    render(
+      <MonthlyMetricsTable
+        metrics={makeMetrics({ session_detail: undefined })}
+        athleteNames={NAMES}
+      />,
+    );
+    expect(screen.getByTestId("session-detail-pending")).toHaveTextContent(
+      "Pendiente — regenerar informe.",
+    );
+    expect(screen.queryByTestId("session-detail-table")).not.toBeInTheDocument();
+  });
+
+  it("muestra estado vacío cuando session_detail es una lista vacía (período sin sesiones)", () => {
+    render(
+      <MonthlyMetricsTable
+        metrics={makeMetrics({ session_detail: [] })}
+        athleteNames={NAMES}
+      />,
+    );
+    expect(screen.getByTestId("session-detail-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("session-detail-table")).not.toBeInTheDocument();
+  });
 });

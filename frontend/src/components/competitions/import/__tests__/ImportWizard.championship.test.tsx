@@ -68,3 +68,19 @@ describe("ImportWizard — válida según tipo (US4)", () => {
     expect(summary).toHaveTextContent("4");
   });
 });
+
+describe("ImportWizard — prefill de campeonato no muestra selector de nivel (feature 023)", () => {
+  it("campeonato vía prefill: la identidad bloqueada NO expone el selector de nivel", async () => {
+    mswServer.use(...raceSeriesHandlers, prefillChampionshipEventHandler);
+    wrap(<ImportWizard raceEventId={15} />);
+
+    await screen.findByTestId("prefill-locked-summary");
+
+    // Feature 023: el nivel (Departamental|Nacional) solo se pide al CREAR
+    // una serie de campeonato nueva desde el wizard standalone. En el flujo
+    // prefill (feature 015) la serie/tipo ya existen y quedan bloqueados —
+    // no hay selector de nivel, igual que no hay selector de series_kind.
+    expect(screen.queryByTestId("wizard-series-level")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("wizard-series-kind")).not.toBeInTheDocument();
+  });
+});

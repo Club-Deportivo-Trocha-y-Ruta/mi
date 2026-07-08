@@ -64,7 +64,7 @@ from app.models.athlete import Athlete
 from app.models.club import ClubMember, ClubRole
 from app.models.race_category import RaceCategory
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
-from app.models.race_series import RaceSeries, RaceSeriesKind
+from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 from app.schemas.race import EventMeta
 from app.schemas.race_imports import (
@@ -211,6 +211,7 @@ async def _get_or_create_series(
     series_name: str,
     season: int,
     kind: RaceSeriesKind,
+    level: RaceSeriesLevel | str = RaceSeriesLevel.departmental,
 ) -> RaceSeries:
     """Resuelve o crea una serie por (name, season_year), honrando el kind del cliente.
 
@@ -218,12 +219,29 @@ async def _get_or_create_series(
     siempre usaba el hardcoded ``_SERIES_NAME`` ("Copa Valle de Ciclomontañismo").
     Esta versión usa el nombre real enviado por el cliente.
 
+    Spec 023 (D5 / R5): el default de organizer ``"Liga Vallecaucana de
+    Ciclismo"`` solo se aplica a series NUEVAS de tipo ``kind == cup``. Los
+    campeonatos nuevos (departamentales o nacionales) quedan con
+    ``organizer=None`` — el organizador real lo aporta el flujo de import
+    ligado a la competencia (feature 015).
+
     Args:
         db: Sesión async.
         series_name: Nombre de la serie (enviado por el cliente en el Form).
         season: Año de temporada.
         kind: Tipo de serie (cup | championship).
+        level: Ámbito territorial (departmental | national). Solo relevante
+            para campeonatos nuevos; se acepta ``str`` para validar el valor
+            crudo del Form field ``series_level`` (lanza ``ValueError`` si es
+            inválido).
+
+    Raises:
+        ValueError: si ``level`` es una cadena que no corresponde a ningún
+            valor de ``RaceSeriesLevel``.
     """
+    resolved_level = (
+        level if isinstance(level, RaceSeriesLevel) else RaceSeriesLevel(level)
+    )
     result = await db.execute(
         select(RaceSeries).where(
             RaceSeries.name == series_name,
@@ -236,9 +254,12 @@ async def _get_or_create_series(
     series = RaceSeries(
         name=series_name,
         season_year=season,
-        organizer="Liga Vallecaucana de Ciclismo",
+        organizer=(
+            "Liga Vallecaucana de Ciclismo" if kind == RaceSeriesKind.cup else None
+        ),
         points_scheme_code="copa_valle_2026",
         kind=kind,
+        level=resolved_level,
     )
     db.add(series)
     await db.flush()
@@ -323,6 +344,12 @@ async def parse_import(
         Optional[str],
         Form(description="Tipo de serie: 'cup' (default) o 'championship'. Retrocompatible."),
     ] = None,
+    series_level: Annotated[
+        Optional[str],
+        Form(
+            description="Ámbito del campeonato: 'departmental' (default) o 'national'. Retrocompatible."
+        ),
+    ] = None,
     # --- Condiciones de carrera (opcionales — no están en el PDF) ---
     climate: Annotated[
         Optional[str],
@@ -358,6 +385,12 @@ async def parse_import(
     El campo ``series_kind`` (default 'cup') indica si los resultados corresponden
     a una copa con rondas o a un campeonato anual. Retrocompatible: clientes que
     no envían el campo reciben el comportamiento de copa (existente).
+
+    El campo ``series_level`` (default 'departmental', spec 023) indica el
+    ámbito territorial de un campeonato nuevo (departmental | national). Solo
+    se consulta cuando ``_get_or_create_series`` crea una serie de tipo
+    ``championship``; el organizer "Liga Vallecaucana de Ciclismo" NO se
+    aplica a campeonatos nuevos (D5).
     """
     # Validar y resolver series_kind
     resolved_series_kind: RaceSeriesKind = RaceSeriesKind.cup
@@ -370,6 +403,20 @@ async def parse_import(
                 detail=(
                     f"series_kind inválido: '{series_kind}'. "
                     "Valores permitidos: cup, championship."
+                ),
+            )
+
+    # Validar y resolver series_level (spec 023)
+    resolved_series_level: RaceSeriesLevel = RaceSeriesLevel.departmental
+    if series_level is not None:
+        try:
+            resolved_series_level = RaceSeriesLevel(series_level)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"series_level inválido: '{series_level}'. "
+                    "Valores permitidos: departmental, national."
                 ),
             )
 
@@ -522,7 +569,9 @@ async def parse_import(
                 pass
 
     # 7. Crear RaceImport status=pending con parse_meta_json
-    series = await _get_or_create_series(db, series_name, season, resolved_series_kind)
+    series = await _get_or_create_series(
+        db, series_name, season, resolved_series_kind, resolved_series_level
+    )
     parse_meta = {
         "header": {
             "series_name": series_name,

@@ -39,3 +39,40 @@ export const monthlyReportCreateSchema = z
   );
 
 export type MonthlyReportFormValues = z.infer<typeof monthlyReportCreateSchema>;
+
+// ---------------------------------------------------------------------------
+// Campos aditivos del Informe Técnico Mensual (feature 022) — todos opcionales
+// para mantener compatibilidad con snapshots antiguos que no los incluyen.
+// Espejo de los campos añadidos en `backend/app/schemas/training_session.py`
+// (`SessionDetailItem`, `AthleteAttendanceStats`, `CompetitionResultItem`).
+// ---------------------------------------------------------------------------
+
+export const sessionDetailItemSchema = z.object({
+  session_date: z.string(),
+  start_time: z.string(),
+  technical_focus: z.string(),
+  location: z.string(),
+  status: z.enum(["executed", "cancelled", "planned"]),
+  present_count: z.number().int(),
+  attendee_total: z.number().int(),
+});
+
+export type SessionDetailItemValues = z.infer<typeof sessionDetailItemSchema>;
+
+// Campos aditivos de `AthleteAttendanceStats`: promedios de rúbrica por
+// atleta. `undefined`/`null` → el consumidor debe renderizar
+// "Pendiente — regenerar informe".
+export const athleteAttendanceStatsAdditiveSchema = z.object({
+  avg_rubric_effort: z.number().nullable().optional(),
+  avg_rubric_attitude: z.number().nullable().optional(),
+  avg_rubric_technique: z.number().nullable().optional(),
+});
+
+// Campos aditivos de `CompetitionResultItem`: identidad estable del evento
+// y clasificación de la carrera (copa vs. campeonato) para saber si el
+// resultado suma puntos al ranking.
+export const competitionResultAdditiveSchema = z.object({
+  event_id: z.number().int().optional().default(0),
+  series_kind: z.string().nullable().optional(),
+  awards_points: z.boolean().optional().default(true),
+});

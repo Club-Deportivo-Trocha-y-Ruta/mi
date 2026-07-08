@@ -30,7 +30,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.race_series import RaceSeriesKind
+from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.schemas.athlete_race_analysis import (
     AnalysisConfidence,
     DistributionCurvePoint,
@@ -155,6 +155,7 @@ async def build_evolution(
                 e.sequence_number AS valida_num,
                 e.event_date,
                 s.kind           AS series_kind,
+                s.level          AS series_level,
                 e.location       AS location
             FROM race_results rr
             JOIN race_events e   ON e.id = rr.event_id
@@ -188,6 +189,7 @@ async def build_evolution(
             cs.time_max_ms,
             cs.cat_size,
             ar.series_kind,
+            ar.series_level,
             ar.location
         FROM athlete_results ar
         LEFT JOIN cat_stats cs
@@ -222,7 +224,8 @@ async def build_evolution(
         time_max_ms = _get("time_max_ms", 7)
         cat_size = _get("cat_size", 8)
         series_kind_raw = _get("series_kind", 9)
-        location_raw = _get("location", 10)
+        series_level_raw = _get("series_level", 10)
+        location_raw = _get("location", 11)
 
         if event_id is None or event_date is None:
             continue
@@ -274,11 +277,23 @@ async def build_evolution(
             else str(series_kind_raw)
         )
         kind_enum = RaceSeriesKind(kind_str)
+        # Normalizar series_level: mismo patrón dual-driver que series_kind.
+        level_str = (
+            series_level_raw.value
+            if isinstance(series_level_raw, RaceSeriesLevel)
+            else str(series_level_raw)
+        )
+        level_enum = (
+            RaceSeriesLevel(level_str)
+            if level_str
+            else RaceSeriesLevel.departmental
+        )
         location_str: str | None = str(location_raw) if location_raw else None
         event_label = build_race_label(
             kind_enum,
             int(valida_num) if valida_num is not None else 0,
             location_str,
+            level=level_enum,
         )
 
         series.append(
@@ -572,6 +587,7 @@ async def list_athlete_races(
             e.id             AS event_id,
             e.sequence_number,
             s.kind           AS series_kind,
+            s.level          AS series_level,
             e.event_date,
             e.name           AS event_name,
             e.location
@@ -585,6 +601,7 @@ async def list_athlete_races(
             e.id,
             e.sequence_number,
             s.kind,
+            s.level,
             e.event_date,
             e.name,
             e.location
@@ -610,9 +627,10 @@ async def list_athlete_races(
         event_id_raw   = _get("event_id", 0)
         seq_num_raw    = _get("sequence_number", 1)
         series_kind_raw = _get("series_kind", 2)
-        event_date_raw = _get("event_date", 3)
-        event_name_raw = _get("event_name", 4)
-        location_raw   = _get("location", 5)
+        series_level_raw = _get("series_level", 3)
+        event_date_raw = _get("event_date", 4)
+        event_name_raw = _get("event_name", 5)
+        location_raw   = _get("location", 6)
 
         if event_id_raw is None or event_date_raw is None or event_name_raw is None:
             continue
@@ -625,10 +643,20 @@ async def list_athlete_races(
             else str(series_kind_raw)
         )
         kind_enum = RaceSeriesKind(kind_str)
+        level_str = (
+            series_level_raw.value
+            if isinstance(series_level_raw, RaceSeriesLevel)
+            else str(series_level_raw)
+        )
+        level_enum = (
+            RaceSeriesLevel(level_str)
+            if level_str
+            else RaceSeriesLevel.departmental
+        )
 
         seq_num   = int(seq_num_raw) if seq_num_raw is not None else 1
         location_str: str | None = str(location_raw) if location_raw else None
-        label = build_race_label(kind_enum, seq_num, location_str)
+        label = build_race_label(kind_enum, seq_num, location_str, level=level_enum)
 
         items.append(
             RaceParticipationOption(

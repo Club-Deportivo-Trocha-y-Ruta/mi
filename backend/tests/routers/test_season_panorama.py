@@ -33,6 +33,7 @@ from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
 from app.models.club import ClubRole
+from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.models.user import UserRole
 
 from tests.fixtures.race_history_fixtures import (
@@ -318,6 +319,52 @@ async def test_coach_club_ajeno_403(client_factory):
     async with await client_factory(10, UserRole.coach, "coach1@test.com") as client:
         r = await client.get("/api/race-analysis/insights/season/2026?club_id=2")
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_panorama_ignora_resultados_de_campeonato_nacional(
+    seeded_factory, client_factory
+):
+    """Regresión (spec 023 SC-004): la exclusión de campeonatos de panorama
+    de temporada usa ``race_series.kind`` (ver filtro ``rs.kind = 'cup'`` en
+    ``season_panorama.py``), NO ``level``. Insertar resultados de un
+    campeonato NACIONAL (Pereira 2026) para athlete_144 no debe alterar el
+    panorama frente al baseline sin esos resultados.
+    """
+    async with await client_factory(10, UserRole.coach, "coach1@test.com") as client:
+        r_before = await client.get("/api/race-analysis/insights/season/2026")
+    baseline = r_before.json()
+
+    async with seeded_factory() as s:
+        await create_race_series(
+            s,
+            series_id=900,
+            season_year=2026,
+            name="Campeonato Nacional Fedeciclismo 2026",
+            kind=RaceSeriesKind.championship,
+            level=RaceSeriesLevel.national,
+        )
+        await create_race_event(
+            s,
+            event_id=900,
+            series_id=900,
+            sequence_number=1,
+            name="Campeonato Nacional",
+            event_date=date(2026, 7, 18),
+            location="Pereira",
+        )
+        # athlete_144 wins the national championship — must NOT affect panorama.
+        await create_race_result(
+            s, event_id=900, category_id=100, competitor_id=501, athlete_id=144,
+            position=1, points_awarded=100,
+        )
+        await s.commit()
+
+    async with await client_factory(10, UserRole.coach, "coach1@test.com") as client:
+        r_after = await client.get("/api/race-analysis/insights/season/2026")
+
+    assert r_after.status_code == 200
+    assert r_after.json() == baseline
 
 
 @pytest.mark.asyncio

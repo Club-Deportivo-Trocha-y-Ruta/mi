@@ -50,6 +50,9 @@ class DocumentTemplate(str, Enum):
     # Informe Técnico Mensual estilo financiador (Grupo Alto Rendimiento).
     # Solo coach/admin del club — contiene nombres de menores. No distribuir.
     TRAINING_MONTHLY_TECHNICAL_REPORT = "training_monthly_technical_report"
+    # Variante DOCX editable del mismo informe (docxtpl). Mismo contexto que la
+    # variante PDF — comparten un único context-builder. Solo coach/admin.
+    TRAINING_MONTHLY_TECHNICAL_REPORT_DOCX = "training_monthly_technical_report_docx"
 
 
 class DocumentFormat(str, Enum):

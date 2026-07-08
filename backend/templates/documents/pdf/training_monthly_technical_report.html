@@ -10,10 +10,36 @@
     season_year         str  "2026"
     is_draft            bool — True muestra banner BORRADOR
     project_profile     dict|None — ClubProjectProfile serializado
+    header              dict|None — build_report_document_context()['header']
+                         ({project_name, executing_entity, report_responsible,
+                         period_label}, "—" en los campos ausentes). Opcional
+                         por compatibilidad: si el router aún no lo compone,
+                         el template degrada a project_profile/month_label.
+    sections            list[dict]|None — build_report_document_context()['sections']
+                         ({key, title, text, is_missing}) en el orden aprobado
+                         (Objetivo, Plan de entrenamiento, Desarrollo de
+                         actividades, Participación en competencia, Resultados
+                         obtenidos, Conclusiones). Opcional por compatibilidad:
+                         si ausente, el template usa narrative_blocks directo.
+    missing_sections    list[str]|None — títulos de secciones obligatorias
+                         pendientes (para el banner de borrador).
     narrative_blocks    dict[str, dict]|None — {clave: {final_text: str, ...}}
     metrics_snapshot    dict|None — MonthlyMetrics serializado
     athlete_names       dict[str, str]|None — {str(id): "Nombre Apellido"}
     competition_results list[dict]|None — CompetitionResultItem serializado
+    session_detail      dict|None — build_report_document_context()['session_detail']
+                         ({rows, is_empty, placeholder}); rows = SessionDetailItem
+                         serializado (session_date, start_time, technical_focus,
+                         location, status, present_count, attendee_total).
+    attendance_table    dict|None — build_report_document_context()['attendance_table']
+                         ({rows, is_empty, placeholder}); rows incluyen
+                         avg_rubric_effort/attitude/technique (None si no hubo
+                         registros de rúbrica en el período).
+    competition_groups  list[dict]|None — build_report_document_context()['competition_groups']
+                         (resultados agrupados por evento/jornada, orden por
+                         fecha; cada grupo trae event_id, event_name,
+                         event_date, series_kind, awards_points, results).
+    has_competition_results bool|None — atajo de conveniencia (misma fuente).
     conjoint_sessions   list[dict]|None — sesiones actividad_conjunta/salida
     photos              list[dict]|None — [{data_uri, session_date, caption}]
 
@@ -22,6 +48,13 @@
   Solo para coach y administrador del club. No distribuir externamente.
   La narrativa IA (ai_draft) NUNCA aparece en este documento; solo final_text
   aprobado por el coach.
+
+  COMPATIBILIDAD (FR-012): reportes generados antes de la feature 022 pueden
+  no traer ``header``/``sections``/``missing_sections`` (el router aún no los
+  compone) o traer ``narrative_blocks`` sin las claves nuevas
+  (``plan_entrenamiento``, ``competencia``). En ningún caso el render debe
+  fallar: las claves ausentes muestran "Pendiente de completar" (narrativa) o
+  "Pendiente — regenerar informe" (tablas derivadas de metrics_snapshot).
 #}
 
 {% block title %}Informe Técnico Mensual {{ month_label }} — {{ club_name }}{% endblock %}
@@ -31,8 +64,53 @@
 
 {% block body %}
 
+{% set nb = narrative_blocks or {} %}
+{% set ms = metrics_snapshot or {} %}
+{% set hdr = header or {} %}
+{% set missing = missing_sections or [] %}
+
 {# ====================================================================
-   BANNER BORRADOR — visible solo cuando is_draft=True
+   HELPER: sections_by_key — lookup de bloques narrativos por clave, tal
+   como los entrega build_report_document_context (fuente única de verdad
+   compartida con el renderer DOCX). Degrada a diccionario vacío cuando el
+   router aún no compone el contexto compartido (compatibilidad, FR-012).
+   ==================================================================== #}
+{% set sections_by_key = {} %}
+{% for _sec in (sections or []) %}
+  {% set _ = sections_by_key.update({_sec.key: _sec}) %}
+{% endfor %}
+
+{% macro narrative_section(key) %}
+  {%- set sec = sections_by_key.get(key) -%}
+  {%- if sec -%}
+    {%- if sec.is_missing -%}
+<p class="pending-marker" style="color: #92400e; background: #fef3c7; border-left: 3pt solid #d97706;
+     padding: 5pt 8pt; font-weight: bold; font-size: 9pt; margin: 0;">
+  Pendiente de completar
+</p>
+    {%- else -%}
+<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
+  {{ sec.text | markdown }}
+</div>
+    {%- endif -%}
+  {%- else -%}
+    {%- set legacy = nb.get(key) -%}
+    {%- if legacy and legacy.get('final_text') -%}
+<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
+  {{ legacy.final_text | markdown }}
+</div>
+    {%- else -%}
+<p class="pending-marker" style="color: #92400e; background: #fef3c7; border-left: 3pt solid #d97706;
+     padding: 5pt 8pt; font-weight: bold; font-size: 9pt; margin: 0;">
+  Pendiente de completar
+</p>
+    {%- endif -%}
+  {%- endif -%}
+{% endmacro %}
+
+{# ====================================================================
+   BANNER BORRADOR — visible solo cuando is_draft=True. Enumera las
+   secciones obligatorias aún pendientes (FR-008).
    ==================================================================== #}
 {% if is_draft %}
 <div style="background: #fef3c7; border: 2pt solid #d97706; border-radius: 4pt;
@@ -42,6 +120,12 @@
     — Este informe está pendiente de aprobación por parte del entrenador.
     Los textos pueden estar incompletos o sin revisar.
   </span>
+  {% if missing %}
+  <p style="color: #92400e; font-size: 9pt; margin: 6pt 0 0 0;">
+    Secciones obligatorias pendientes de completar:
+    {{ missing | join(', ') }}.
+  </p>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -69,19 +153,19 @@
     </tr>
     <tr>
       <td>Nombre del proyecto</td>
-      <td>{{ pp.get('project_name') or '—' }}</td>
+      <td>{{ hdr.get('project_name') or pp.get('project_name') or '—' }}</td>
     </tr>
     <tr>
       <td>Entidad ejecutora</td>
-      <td>{{ pp.get('executing_entity') or '—' }}</td>
+      <td>{{ hdr.get('executing_entity') or pp.get('executing_entity') or '—' }}</td>
     </tr>
     <tr>
-      <td>Responsable del informe</td>
-      <td>{{ pp.get('report_responsible') or '—' }}</td>
+      <td>Responsable</td>
+      <td>{{ hdr.get('report_responsible') or pp.get('report_responsible') or '—' }}</td>
     </tr>
     <tr>
       <td>Período</td>
-      <td>{{ month_label }}</td>
+      <td>{{ hdr.get('period_label') or month_label }}</td>
     </tr>
     <tr>
       <td>Temporada</td>
@@ -91,7 +175,9 @@
 </table>
 
 {# ====================================================================
-   1. CONTEXTO
+   1. CONTEXTO — sección directiva (fuera del alcance del coach, se
+   mantiene tal cual; no se reordena respecto a las secciones del Grupo
+   de Alto Rendimiento).
    ==================================================================== #}
 {% if pp.get('purpose') or pp.get('general_objective') or pp.get('specific_objectives') %}
 <h2>1. Contexto del proyecto</h2>
@@ -117,7 +203,7 @@
 {% endif %}
 
 {# ====================================================================
-   2. TERRITORIO
+   2. TERRITORIO — sección directiva (se mantiene tal cual).
    ==================================================================== #}
 {% if pp.get('territory_location') or pp.get('territory_description') %}
 <h2>2. Localización territorial</h2>
@@ -138,31 +224,29 @@
 {% endif %}
 
 {# ====================================================================
-   3. OBJETIVO DEL PERÍODO (bloque narrativo)
+   3. OBJETIVO DEL PERÍODO (bloque narrativo) — Grupo de Alto Rendimiento.
+   Orden aprobado (formato institucional, feature 022): siempre se
+   renderiza, con marcador "Pendiente de completar" si falta contenido
+   (FR-002, FR-008).
    ==================================================================== #}
-{% set nb = narrative_blocks or {} %}
-{% if nb.get('objetivo') and nb.objetivo.get('final_text') %}
 <h2>3. Objetivo del período</h2>
-<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
-  {{ nb.objetivo.final_text | markdown }}
-</div>
-{% endif %}
+{{ narrative_section('objetivo') }}
 
 {# ====================================================================
-   4. ACTIVIDADES EJECUTADAS — Grupo Alto Rendimiento
+   4. PLAN DE ENTRENAMIENTO (bloque narrativo — NUEVO, feature 022)
    ==================================================================== #}
-{% set ms = metrics_snapshot or {} %}
-<h2>4. Actividades ejecutadas — Grupo de Alto Rendimiento</h2>
+<h2>4. Plan de entrenamiento</h2>
+{{ narrative_section('plan_entrenamiento') }}
 
-{# 4a. Bloque narrativo: desarrollo #}
-{% if nb.get('desarrollo') and nb.desarrollo.get('final_text') %}
-<h3>Descripción del desarrollo</h3>
-<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
-  {{ nb.desarrollo.final_text | markdown }}
-</div>
-{% endif %}
+{# ====================================================================
+   5. DESARROLLO DE ACTIVIDADES — Grupo Alto Rendimiento
+   ==================================================================== #}
+<h2>5. Desarrollo de actividades — Grupo de Alto Rendimiento</h2>
 
-{# 4b. Tabla resumen de sesiones #}
+{# 5a. Bloque narrativo: desarrollo #}
+{{ narrative_section('desarrollo') }}
+
+{# 5b. Tabla resumen de sesiones #}
 <h3>Resumen de sesiones</h3>
 <table class="data-table">
   <thead>
@@ -217,7 +301,7 @@
   </tbody>
 </table>
 
-{# 4c. Focos técnicos #}
+{# 5c. Focos técnicos #}
 {% if ms.get('technical_focus_counts') %}
 <h3>Focos técnicos cubiertos</h3>
 <ul style="font-size: 9.5pt; line-height: 1.5;">
@@ -234,7 +318,45 @@
 </ul>
 {% endif %}
 
-{# 4d. Tabla de asistencia con rúbricas — nombres reales (doc. interno) #}
+{# 5d. Detalle por sesión — NUEVO, feature 022 (FR-012: fila de marcador si
+   ``session_detail`` está vacío por venir de un reporte generado antes de
+   esta feature; nunca una tabla en blanco). #}
+{% set sd = session_detail or {} %}
+{% set sd_rows = sd.get('rows') or [] %}
+<h3>Detalle de sesiones</h3>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Fecha</th>
+      <th>Hora</th>
+      <th>Foco técnico</th>
+      <th>Lugar</th>
+      <th>Asistencia</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if sd_rows %}
+    {% for row in sd_rows %}
+    <tr>
+      <td>{{ row.session_date if row.session_date else '—' }}</td>
+      <td>{{ row.start_time if row.start_time else '—' }}</td>
+      <td>{{ row.technical_focus or '—' }}</td>
+      <td>{{ row.location or '—' }}</td>
+      <td>{{ row.present_count }}/{{ row.attendee_total }}</td>
+    </tr>
+    {% endfor %}
+    {% else %}
+    <tr>
+      <td colspan="5" class="pending-marker" style="color: #92400e; background: #fef3c7;
+          border-left: 3pt solid #d97706; font-weight: bold; font-size: 9pt;">
+        {{ sd.get('placeholder') or 'Pendiente — regenerar informe' }}
+      </td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+
+{# 5e. Tabla de asistencia con rúbricas — nombres reales (doc. interno) #}
 {% if ms.get('attendance_by_athlete') %}
 <h3>Asistencia y rúbrica por atleta</h3>
 <p style="font-size: 8.5pt; color: #888888; margin-bottom: 6pt;">
@@ -251,6 +373,9 @@
       <th>Les.</th>
       <th>Total</th>
       <th>% Asist.</th>
+      <th>Rúb. Esf.</th>
+      <th>Rúb. Act.</th>
+      <th>Rúb. Téc.</th>
     </tr>
   </thead>
   <tbody>
@@ -265,6 +390,9 @@
       <td>{{ stats.get('count_injured', 0) }}</td>
       <td>{{ stats.total_sessions }}</td>
       <td>{{ "%.1f"|format(stats.attendance_pct) }}%</td>
+      <td>{{ "%.1f"|format(stats.avg_rubric_effort) if stats.get('avg_rubric_effort') is not none else '—' }}</td>
+      <td>{{ "%.1f"|format(stats.avg_rubric_attitude) if stats.get('avg_rubric_attitude') is not none else '—' }}</td>
+      <td>{{ "%.1f"|format(stats.avg_rubric_technique) if stats.get('avg_rubric_technique') is not none else '—' }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -279,57 +407,94 @@
   <strong>Lesion.: {{ t.get('lesionado', 0) }}</strong>
 </p>
 {% endif %}
+{% else %}
+<h3>Asistencia y rúbrica por atleta</h3>
+<p class="pending-marker" style="color: #92400e; background: #fef3c7; border-left: 3pt solid #d97706;
+     padding: 5pt 8pt; font-weight: bold; font-size: 9pt; margin: 0;">
+  Pendiente — regenerar informe
+</p>
 {% endif %}
 
 {# ====================================================================
-   5. PARTICIPACIÓN EN COMPETENCIA
+   6. PARTICIPACIÓN EN COMPETENCIA
    ==================================================================== #}
-{% if competition_results or (nb.get('competencia') and nb.competencia.get('final_text')) %}
-<h2>5. Participación en competencia</h2>
+<h2>6. Participación en competencia</h2>
 
-{% if nb.get('competencia') and nb.competencia.get('final_text') %}
-<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
-  {{ nb.competencia.final_text | markdown }}
-</div>
-{% endif %}
+{{ narrative_section('competencia') }}
 
-{% if competition_results %}
+{# Agrupación por jornada (event_id, orden por fecha) y, dentro de cada
+   jornada, por categoría — feature 022 (T018). ``competition_groups`` es la
+   fuente única de verdad (build_report_document_context); se degrada a la
+   lista plana + agrupación en el propio template si un caller antiguo aún
+   no la compone (compatibilidad, FR-012). #}
+{% set comp_groups = competition_groups if competition_groups is defined and competition_groups else [] %}
+{% set has_comp = has_competition_results if has_competition_results is defined else (competition_results|length > 0) %}
+
+{% if has_comp %}
 <h3>Resultados del período</h3>
 <p style="font-size: 8.5pt; color: #888888; margin-bottom: 6pt;">
   Documento interno del club. Contiene datos personales de menores — no distribuir externamente.
 </p>
-<table class="data-table">
-  <thead>
-    <tr>
-      <th>Atleta</th>
-      <th>Categoría</th>
-      <th>Evento</th>
-      <th>Fecha</th>
-      <th>Pos.</th>
-      <th>Pts.</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for r in competition_results %}
-    <tr>
-      <td>{{ r.athlete_name }}</td>
-      <td>{{ r.category or '—' }}</td>
-      <td>{{ r.event_name or '—' }}</td>
-      <td>{{ r.event_date if r.event_date else '—' }}</td>
-      <td>{{ r.position if r.position else '—' }}</td>
-      <td>{{ r.points if r.points else '—' }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
+{% for group in comp_groups %}
+<div style="margin-bottom: 10pt;">
+  <p style="font-size: 9.5pt; font-weight: bold; margin: 8pt 0 3pt 0;">
+    {{ group.event_name or 'Evento sin nombre' }}
+    {% if group.event_date %} — {{ group.event_date }}{% endif %}
+    <span style="font-weight: normal; font-size: 8.5pt;
+        color: {{ '#166534' if group.awards_points else '#6b7280' }};">
+      ({{ 'Otorga puntos' if group.awards_points else 'No otorga puntos' }})
+    </span>
+  </p>
+  {% for category, results in group.results | groupby('category') %}
+  <p style="font-size: 9pt; font-weight: bold; margin: 4pt 0 2pt 0;">
+    {{ category or 'Sin categoría' }}
+  </p>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Atleta</th>
+        <th>Pos.</th>
+        <th>Pts.</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in results %}
+      <tr>
+        <td>{{ r.athlete_name }}</td>
+        <td>{{ r.position if r.position else '—' }}</td>
+        <td>{{ r.points if r.points else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</div>
+{% endfor %}
+{% else %}
+<p style="font-size: 9pt; color: #6b7280; font-style: italic;">
+  Sin competencias en el período.
+</p>
 {% endif %}
 
 {# ====================================================================
-   6. ACTIVIDADES CONJUNTAS
+   7. RESULTADOS OBTENIDOS (bloque narrativo)
+   ==================================================================== #}
+<h2>7. Resultados obtenidos</h2>
+{{ narrative_section('resultados') }}
+
+{# ====================================================================
+   8. CONCLUSIONES (bloque narrativo)
+   ==================================================================== #}
+<h2>8. Conclusiones</h2>
+{{ narrative_section('conclusiones') }}
+
+{# ====================================================================
+   9. ACTIVIDADES CONJUNTAS — sección complementaria (fuera de las seis
+   secciones obligatorias del formato aprobado; se conserva después de
+   Conclusiones para no interrumpir el orden aprobado).
    ==================================================================== #}
 {% if conjoint_sessions %}
-<h2>6. Actividades conjuntas y salidas</h2>
+<h2>9. Actividades conjuntas y salidas</h2>
 <table class="data-table">
   <thead>
     <tr>
@@ -357,55 +522,50 @@
 {% endif %}
 
 {# ====================================================================
-   7. APOYOS Y RECURSOS MATERIALES (bloque narrativo)
+   10. APOYOS Y RECURSOS MATERIALES (bloque narrativo) — complementaria.
    ==================================================================== #}
 {% if nb.get('apoyos_materiales') and nb.apoyos_materiales.get('final_text') %}
-<h2>7. Apoyos y recursos materiales</h2>
+<h2>10. Apoyos y recursos materiales</h2>
 <div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
   {{ nb.apoyos_materiales.final_text | markdown }}
 </div>
 {% endif %}
 
 {# ====================================================================
-   8. RESULTADOS — bloque narrativo
-   ==================================================================== #}
-{% if nb.get('resultados') and nb.resultados.get('final_text') %}
-<h2>8. Resultados</h2>
-<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
-  {{ nb.resultados.final_text | markdown }}
-</div>
-{% endif %}
-
-{# ====================================================================
-   9. ANÁLISIS DEL GRUPO (bloque narrativo — sin juicios individuales)
+   11. ANÁLISIS DEL GRUPO (bloque narrativo — sin juicios individuales) —
+   complementaria.
    ==================================================================== #}
 {% if nb.get('analisis_grupo') and nb.analisis_grupo.get('final_text') %}
-<h2>9. Análisis del grupo de alto rendimiento</h2>
+<h2>11. Análisis del grupo de alto rendimiento</h2>
 <div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
   {{ nb.analisis_grupo.final_text | markdown }}
 </div>
 {% endif %}
 
 {# ====================================================================
-   10. CONCLUSIONES (bloque narrativo)
+   12. REGISTRO FOTOGRÁFICO
+   Agrupado por sección (spec 022, R6): "Grupo de Alto Rendimiento",
+   "Competencia", "Actividades Conjuntas" (orden fijo del formato
+   aprobado). Cada foto trae su `section` ya derivada por
+   build_report_photo_evidence (compatibilidad FR-012: fotos de
+   reportes anteriores a esta feature sin `section` caen en "Grupo de
+   Alto Rendimiento", el default de esa función). Los grupos sin fotos
+   en el período muestran un espacio reservado en lugar de omitirse.
    ==================================================================== #}
-{% if nb.get('conclusiones') and nb.conclusiones.get('final_text') %}
-<h2>10. Conclusiones y recomendaciones</h2>
-<div class="obs-box" style="font-size: 9.5pt; line-height: 1.55;">
-  {{ nb.conclusiones.final_text | markdown }}
-</div>
-{% endif %}
-
-{# ====================================================================
-   11. REGISTRO FOTOGRÁFICO
-   ==================================================================== #}
-{% if photos %}
-<h2>11. Registro fotográfico</h2>
+<h2>12. Registro fotográfico</h2>
 <p style="font-size: 8.5pt; color: #888888; margin-bottom: 8pt;">
   Imágenes con consentimiento informado — no distribuir externamente (Ley 1581/2012).
 </p>
+{% set photo_groups = [
+  ("Grupo de Alto Rendimiento", (photos or []) | selectattr("section", "equalto", "Grupo de Alto Rendimiento") | list),
+  ("Competencia", (photos or []) | selectattr("section", "equalto", "Competencia") | list),
+  ("Actividades Conjuntas", (photos or []) | selectattr("section", "equalto", "Actividades Conjuntas") | list),
+] %}
+{% for group_title, group_photos in photo_groups %}
+<h3 style="font-size: 10.5pt; margin: 10pt 0 6pt 0;">{{ group_title }}</h3>
+{% if group_photos %}
 <div>
-  {% for p in photos %}
+  {% for p in group_photos %}
   <div style="display: inline-block; width: 31%; margin: 0 1% 12pt 1%; vertical-align: top; text-align: center;">
     <img src="{{ p.data_uri }}"
          style="max-width: 100%; max-height: 110pt; border: 1pt solid #d1d5db; border-radius: 3pt;"
@@ -416,7 +576,12 @@
   </div>
   {% endfor %}
 </div>
+{% else %}
+<div class="obs-box" style="font-size: 8.5pt; color: #6b7280; text-align: center; padding: 10pt;">
+  Espacio reservado — sin fotografías del período para esta sección
+</div>
 {% endif %}
+{% endfor %}
 
 {# ====================================================================
    PIE DE DOCUMENTO

@@ -10,6 +10,13 @@
  *  - ?returnTo=... → navigate a esa URL tras success.
  *  - mode=edit + cambio status=cancelled → banner aparece.
  *  - 0 violaciones a11y (create vacio).
+ *
+ * Spec 023 — National Championship Level (T008):
+ *  - tipo=Campeonato + form inline de crear serie abierto → select de nivel
+ *    visible (Departamental/Nacional), default Departamental.
+ *  - tipo=Copa → el select de nivel no existe.
+ *  - Crear serie con Nacional → payload de la mutación incluye level:"national".
+ *  - 0 violaciones a11y con el select de nivel visible.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -46,7 +53,10 @@ import {
   raceEventsHandlers,
   raceEventsCreateConflictHandler,
 } from "@/test/msw/raceEventsHandlers";
-import { raceSeriesHandlers } from "@/test/msw/raceSeriesHandlers";
+import {
+  raceSeriesHandlers,
+  raceSeriesEmptyHandler,
+} from "@/test/msw/raceSeriesHandlers";
 import { CompetitionFormPage } from "@/routes/competitions/CompetitionFormPage";
 
 function renderForm(
@@ -289,5 +299,108 @@ describe("CompetitionFormPage — mode=edit", () => {
         /permanecerá en el histórico pero no aparecerá como activo/i,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 023 (T008) — Nivel de campeonato (Departamental / Nacional)
+// ---------------------------------------------------------------------------
+
+describe("CompetitionFormPage spec-023 — nivel de serie de campeonato", () => {
+  it("tipo=Campeonato + form de crear serie abierto → select de nivel visible, default Departamental", async () => {
+    // Sin series existentes para forzar el flujo de creación inline.
+    mswServer.use(raceSeriesEmptyHandler);
+    const user = userEvent.setup();
+    renderForm("create");
+
+    const kindSelect = await screen.findByLabelText(/Tipo de competencia/i);
+    await user.selectOptions(kindSelect, "championship");
+
+    const createLink = await screen.findByRole("button", {
+      name: /Crear nueva serie de campeonato/i,
+    });
+    await user.click(createLink);
+
+    const levelSelect = (await screen.findByLabelText(
+      /Nivel de la serie/i,
+    )) as HTMLSelectElement;
+    expect(levelSelect).toBeInTheDocument();
+    expect(levelSelect).toHaveDisplayValue(/Departamental/i);
+
+    const optionValues = Array.from(levelSelect.options).map((o) => o.value);
+    expect(optionValues).toContain("departmental");
+    expect(optionValues).toContain("national");
+  });
+
+  it("tipo=Copa → el select de nivel no existe", async () => {
+    renderForm("create");
+    await screen.findByLabelText(/Tipo de competencia/i);
+
+    expect(screen.queryByLabelText(/Nivel de la serie/i)).not.toBeInTheDocument();
+  });
+
+  it("crear serie con Nacional → el payload de la mutación incluye level:\"national\"", async () => {
+    mswServer.use(raceSeriesEmptyHandler);
+    let receivedBody: unknown = null;
+    mswServer.use(
+      http.post("*/api/race-analysis/race-series", async ({ request }) => {
+        receivedBody = await request.json();
+        return HttpResponse.json(
+          {
+            id: 42,
+            name: "Campeonato Nacional MTB 2026",
+            season_year: 2026,
+            organizer: null,
+            kind: "championship",
+            level: "national",
+            event_count: 0,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderForm("create");
+
+    const kindSelect = await screen.findByLabelText(/Tipo de competencia/i);
+    await user.selectOptions(kindSelect, "championship");
+
+    const createLink = await screen.findByRole("button", {
+      name: /Crear nueva serie de campeonato/i,
+    });
+    await user.click(createLink);
+
+    await user.type(
+      screen.getByLabelText(/Nombre de la nueva serie de campeonato/i),
+      "Campeonato Nacional MTB 2026",
+    );
+
+    const levelSelect = await screen.findByLabelText(/Nivel de la serie/i);
+    await user.selectOptions(levelSelect, "national");
+
+    await user.click(screen.getByRole("button", { name: /Crear serie/i }));
+
+    await waitFor(() => expect(receivedBody).not.toBeNull());
+    expect(receivedBody).toMatchObject({ level: "national" });
+  });
+
+  it("0 violaciones a11y con el select de nivel visible", async () => {
+    mswServer.use(raceSeriesEmptyHandler);
+    const user = userEvent.setup();
+    const { container } = renderForm("create");
+
+    const kindSelect = await screen.findByLabelText(/Tipo de competencia/i);
+    await user.selectOptions(kindSelect, "championship");
+
+    const createLink = await screen.findByRole("button", {
+      name: /Crear nueva serie de campeonato/i,
+    });
+    await user.click(createLink);
+
+    await screen.findByLabelText(/Nivel de la serie/i);
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });
