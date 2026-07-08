@@ -516,7 +516,7 @@
       </div>
       <div style="display: table-cell; vertical-align: middle; padding-left: 14pt;">
         <p style="margin: 0 0 4pt 0; font-size: 11pt; font-weight: 700; color: #111827;">
-          V{{ r.valida_num or "—" }}{% if r.city %} · {{ r.city }}{% endif %}
+          {{ r.label or ('V' ~ (r.valida_num or "—")) }}{% if r.city %} · {{ r.city }}{% endif %}
           {% if r.category_code %}<span style="font-size: 9pt; color: #6b7280; font-weight: 400;"> — {{ r.category_code }}</span>{% endif %}
         </p>
         {% if r.race_time_ms %}
@@ -549,7 +549,7 @@
       <tbody>
         {% for r in results_list %}
         <tr>
-          <td>V{{ r.valida_num or "—" }}</td>
+          <td>{{ r.label or ('V' ~ (r.valida_num or "—")) }}</td>
           <td>{{ r.category_code or "—" }}</td>
           <td>{{ r.position or "DNF/DSQ" }}</td>
           <td>

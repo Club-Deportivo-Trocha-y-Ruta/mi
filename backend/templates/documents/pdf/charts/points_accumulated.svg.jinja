@@ -46,7 +46,7 @@
       {%- endif -%}
       <circle cx="{{ cx }}" cy="{{ cy }}" r="4" fill="#7c3aed"/>
       <text x="{{ cx }}" y="{{ cy - 6 }}" text-anchor="middle" font-size="8" fill="#5b21b6">{{ pt.y }}</text>
-      <text x="{{ cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#555">V{{ pt.x }}</text>
+      <text x="{{ cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#555">{{ pt.label or ('V' ~ pt.x) }}</text>
       {%- set prev_cx.val = cx -%}
       {%- set prev_cy.val = cy -%}
     {%- endfor -%}

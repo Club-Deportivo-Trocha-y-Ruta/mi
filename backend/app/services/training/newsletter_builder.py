@@ -37,6 +37,62 @@ _MONTHS_ES = [
 ]
 
 
+def _row_str(row: Any, col: str) -> str | None:
+    """Extrae una columna de una fila de DataFrame como str, o None.
+
+    Tolera columnas ausentes (KeyError) y los sentinelas nulos de pandas
+    (``NaN``/``NA``/``None``/cadena vacía) que aparecen cuando el merge no
+    encontró la serie del evento.
+    """
+    try:
+        val = row[col]
+    except (KeyError, IndexError):
+        return None
+    s = str(val).strip() if val is not None else ""
+    if s in ("", "nan", "<NA>", "None", "NaN"):
+        return None
+    return s
+
+
+def _race_short_label(
+    series_kind: str | None,
+    series_level: str | None,
+    valida_num: int | None,
+) -> str:
+    """Etiqueta compacta para el eje X de los gráficos del boletín.
+
+    Los campeonatos llevan ``sequence_number=1`` (spec 014) y no pertenecen a
+    la secuencia de válidas; mostrarlos como "V1" los haría colisionar con la
+    Válida I real. Por eso el campeonato usa su propia etiqueta:
+
+        - ``championship`` + ``national``     → ``"CN"`` (Campeonato Nacional)
+        - ``championship`` + ``departmental`` → ``"CD"`` (Campeonato Departamental)
+        - ``cup``                             → ``"V{n}"`` (número de válida)
+    """
+    if series_kind == "championship":
+        return "CN" if series_level == "national" else "CD"
+    return f"V{valida_num}" if valida_num is not None else "—"
+
+
+def _race_readable_label(
+    series_kind: str | None,
+    series_level: str | None,
+    valida_num: int | None,
+) -> str:
+    """Etiqueta legible para tablas, destacados y email del boletín.
+
+    A diferencia de :func:`_race_short_label` (eje X de gráficos, sin espacio),
+    aquí sí cabe la forma completa:
+
+        - ``championship`` + ``national``     → ``"Campeonato Nacional"``
+        - ``championship`` + ``departmental`` → ``"Campeonato Departamental"``
+        - ``cup``                             → ``"Válida {n}"``
+    """
+    if series_kind == "championship":
+        return "Campeonato Nacional" if series_level == "national" else "Campeonato Departamental"
+    return f"Válida {valida_num}" if valida_num is not None else "—"
+
+
 async def build_newsletter_metrics(
     db: AsyncSession,
     athlete_id: int,
@@ -446,8 +502,14 @@ async def _build_race_block(
 
         results_serialized = []
         for _, row in month_results.iterrows():
+            _valida_num = int(row["valida_num"]) if row["valida_num"] is not None and str(row["valida_num"]) != "<NA>" else None
+            _series_kind = _row_str(row, "series_kind") or "cup"
+            _series_level = _row_str(row, "series_level") or "departmental"
             results_serialized.append({
-                "valida_num": int(row["valida_num"]) if row["valida_num"] is not None and str(row["valida_num"]) != "<NA>" else None,
+                "valida_num": _valida_num,
+                "series_kind": _series_kind,
+                "series_level": _series_level,
+                "label": _race_readable_label(_series_kind, _series_level, _valida_num),
                 "event_date": str(row["event_date"]) if row["event_date"] else None,
                 "category_code": str(row["category_code"]) if row["category_code"] else None,
                 "position": int(row["position"]) if row["position"] is not None and str(row["position"]) != "<NA>" else None,
@@ -465,12 +527,20 @@ async def _build_race_block(
                 pts = int(row["points_awarded"]) if str(row["points_awarded"]) != "<NA>" else 0
                 gap = int(row["gap_to_winner_ms"]) if str(row["gap_to_winner_ms"]) != "<NA>" else None
                 gap_pct = float(row["gap_to_winner_pct"]) if str(row["gap_to_winner_pct"]) not in ("nan", "<NA>", "None") else None
+                valida_num = int(row["valida_num"]) if str(row["valida_num"]) != "<NA>" else None
+                series_kind = _row_str(row, "series_kind") or "cup"
+                series_level = _row_str(row, "series_level") or "departmental"
+                location = _row_str(row, "location")
                 all_results.append({
-                    "valida_num": int(row["valida_num"]) if str(row["valida_num"]) != "<NA>" else None,
+                    "valida_num": valida_num,
                     "event_date": str(row["event_date"]),
                     "position": pos,
                     "points_awarded": pts,
                     "gap_to_winner_pct": gap_pct,
+                    "series_kind": series_kind,
+                    "series_level": series_level,
+                    "location": location,
+                    "label": _race_short_label(series_kind, series_level, valida_num),
                 })
             except Exception:
                 continue
@@ -914,15 +984,23 @@ def _build_charts_context(race_block: dict[str, Any]) -> dict[str, Any]:
     gap_pcts = []
     points_acc = []
     acc = 0
-    for row in history:
+    # El eje X usa un índice ordinal cronológico (1..N) — NO el valida_num —
+    # para que el campeonato (sequence_number=1, spec 014) no colisione con la
+    # Válida I ni se dibuje fuera de orden. La etiqueta visible viene de
+    # ``label`` (V1..VN para copas, CD/CN para campeonatos). ``history`` ya
+    # llega ordenado cronológicamente por event_date (athlete_progression).
+    for idx, row in enumerate(history, start=1):
         v = row.get("valida_num")
         pos = row.get("position")
         gap = row.get("gap_to_winner_pct")
         pts = row.get("points_awarded", 0) or 0
+        label = row.get("label") or _race_short_label(
+            row.get("series_kind"), row.get("series_level"), v
+        )
         acc += pts
-        positions.append({"x": v, "y": pos})
-        gap_pcts.append({"x": v, "y": gap})
-        points_acc.append({"x": v, "y": acc})
+        positions.append({"x": idx, "label": label, "y": pos})
+        gap_pcts.append({"x": idx, "label": label, "y": gap})
+        points_acc.append({"x": idx, "label": label, "y": acc})
 
     n_samples = len([p for p in positions if p["y"] is not None])
 

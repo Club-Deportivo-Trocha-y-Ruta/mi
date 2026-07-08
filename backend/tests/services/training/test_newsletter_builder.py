@@ -22,6 +22,8 @@ import pytest
 
 from app.services.training.newsletter_builder import (
     _build_charts_context,
+    _race_readable_label,
+    _race_short_label,
     _build_support_block,
     _get_upcoming_copa_valle_races,
     build_newsletter_metrics,
@@ -412,3 +414,61 @@ class TestBuildChartsContext:
         ctx = _build_charts_context(race_block)
         assert ctx["n_samples"] >= 5
         assert ctx["low_confidence"] is False
+
+
+# ---------------------------------------------------------------------------
+# Fix boletín: campeonato (departamental/nacional) fuera de la secuencia de
+# válidas. sequence_number=1 (spec 014) NO debe colisionar con la Válida I ni
+# desordenar el eje X del gráfico. El eje usa índice ordinal cronológico y la
+# etiqueta viene de series_kind/level.
+# ---------------------------------------------------------------------------
+
+
+class TestChampionshipChartLabels:
+    def test_championship_no_colisiona_con_valida_1(self):
+        """CD (sequence_number=1) intercalado entre válidas se dibuja en su
+        posición cronológica (x ordinal), no en x=1 sobre la Válida I."""
+        race_block = {
+            "has_races": True,
+            "progression_history": [
+                {"valida_num": 3, "position": 5, "gap_to_winner_pct": 4.0,
+                 "points_awarded": 10, "series_kind": "cup",
+                 "series_level": "departmental", "label": "V3"},
+                {"valida_num": 4, "position": 4, "gap_to_winner_pct": 3.0,
+                 "points_awarded": 12, "series_kind": "cup",
+                 "series_level": "departmental", "label": "V4"},
+                # Campeonato departamental: sequence_number=1 pero va DESPUÉS.
+                {"valida_num": 1, "position": 3, "gap_to_winner_pct": 2.0,
+                 "points_awarded": 0, "series_kind": "championship",
+                 "series_level": "departmental", "label": "CD"},
+            ],
+        }
+        ctx = _build_charts_context(race_block)
+        xs = [p["x"] for p in ctx["positions"]]
+        labels = [p["label"] for p in ctx["positions"]]
+        # X ordinal estrictamente creciente y único (sin colisión en x=1).
+        assert xs == [1, 2, 3]
+        assert labels == ["V3", "V4", "CD"]
+
+    def test_campeonato_nacional_label_cn(self):
+        race_block = {
+            "has_races": True,
+            "progression_history": [
+                {"valida_num": 1, "position": 2, "gap_to_winner_pct": 1.0,
+                 "points_awarded": 0, "series_kind": "championship",
+                 "series_level": "national"},
+            ],
+        }
+        ctx = _build_charts_context(race_block)
+        # Sin 'label' precomputado, se deriva de series_kind/level → "CN".
+        assert ctx["positions"][0]["label"] == "CN"
+
+    def test_short_labels(self):
+        assert _race_short_label("championship", "departmental", 1) == "CD"
+        assert _race_short_label("championship", "national", 1) == "CN"
+        assert _race_short_label("cup", "departmental", 5) == "V5"
+
+    def test_readable_labels(self):
+        assert _race_readable_label("championship", "departmental", 1) == "Campeonato Departamental"
+        assert _race_readable_label("championship", "national", 1) == "Campeonato Nacional"
+        assert _race_readable_label("cup", "departmental", 5) == "Válida 5"

@@ -284,6 +284,7 @@ class TestAthleteProgression:
         expected_cols = {
             "valida_num", "event_date", "category_code", "position",
             "race_time_ms", "points_awarded", "gap_to_winner_ms", "gap_to_winner_pct",
+            "series_kind", "series_level", "location",
         }
         assert expected_cols == set(df.columns)
 

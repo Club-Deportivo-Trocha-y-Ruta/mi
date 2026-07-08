@@ -193,7 +193,7 @@
                          style="width:100%;margin-bottom:2px;padding-left:10px;">
                     <tr>
                       <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7280;line-height:1.5;padding:0 0 1px 10px;">
-                        Válida {{ r.valida_num or "—" }}
+                        {{ r.label or ('Válida ' ~ (r.valida_num or "—")) }}
                       </td>
                       <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;color:#1f2937;line-height:1.5;padding:0 0 1px 0;">
                         {% if r.position %}P{{ r.position }}{% else %}DNF/DSQ{% endif %}

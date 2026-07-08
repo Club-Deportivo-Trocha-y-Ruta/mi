@@ -48,8 +48,10 @@ from app.services.race.queries import (
     load_competitors as _load_competitors,
     load_events as _load_events,
     load_results as _load_results,
+    load_series as _load_series,
     results_to_df as _results_df,
 )
+from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +96,23 @@ async def athlete_progression(db: AsyncSession, competitor_id: int) -> pd.DataFr
     results = await _load_results(db)
     events = await _load_events(db)
     categories = await _load_categories(db)
+    series = await _load_series(db)
+
+    # Mapa series_id → (kind, level) para etiquetar campeonatos vs copas.
+    # Los campeonatos llevan sequence_number=1 (spec 014) y colisionarían con
+    # la Válida I si el eje del gráfico usara valida_num; por eso el boletín
+    # necesita saber el kind/level para construir la etiqueta correcta.
+    series_meta = {
+        s.id: (
+            s.kind.value if isinstance(s.kind, RaceSeriesKind) else str(s.kind),
+            (
+                s.level.value
+                if isinstance(getattr(s, "level", None), RaceSeriesLevel)
+                else (str(s.level) if getattr(s, "level", None) else "departmental")
+            ),
+        )
+        for s in series
+    }
 
     columns = [
         "valida_num",
@@ -104,6 +123,9 @@ async def athlete_progression(db: AsyncSession, competitor_id: int) -> pd.DataFr
         "points_awarded",
         "gap_to_winner_ms",
         "gap_to_winner_pct",
+        "series_kind",
+        "series_level",
+        "location",
     ]
 
     if not results:
@@ -136,6 +158,14 @@ async def athlete_progression(db: AsyncSession, competitor_id: int) -> pd.DataFr
     df = df_mine.merge(df_e, on="event_id", how="left")
     df = df.merge(df_c, on="category_id", how="left")
     df = df.merge(winners, on=["event_id", "category_id"], how="left")
+
+    # Derivar kind/level de la serie de cada evento (para etiquetar campeonatos).
+    df["series_kind"] = df["series_id"].map(
+        lambda sid: series_meta.get(sid, ("cup", "departmental"))[0]
+    )
+    df["series_level"] = df["series_id"].map(
+        lambda sid: series_meta.get(sid, ("cup", "departmental"))[1]
+    )
 
     # Calcular gap al ganador.
     # gap_ms = race_time_ms - winner_time_ms (0 si es P1; NaN si DNF/DSQ).

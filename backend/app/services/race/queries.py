@@ -91,11 +91,13 @@ def events_to_df(events: list[RaceEvent]) -> pd.DataFrame:
             "series_id": e.series_id,
             "valida_num": e.sequence_number,
             "event_date": e.event_date.isoformat() if e.event_date else None,
+            "location": e.location,
         }
         for e in events
     ]
     return pd.DataFrame(
-        rows, columns=["event_id", "series_id", "valida_num", "event_date"]
+        rows,
+        columns=["event_id", "series_id", "valida_num", "event_date", "location"],
     )
 
 

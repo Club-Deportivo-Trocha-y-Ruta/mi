@@ -260,7 +260,7 @@ async def test_load_series_1(race_db: FakeAsyncSession) -> None:
 async def test_events_to_df_columnas_y_iso(race_db: FakeAsyncSession) -> None:
     events = await load_events(race_db)
     df = events_to_df(events)
-    assert list(df.columns) == ["event_id", "series_id", "valida_num", "event_date"]
+    assert list(df.columns) == ["event_id", "series_id", "valida_num", "event_date", "location"]
     # Fechas serializadas como ISO string (no datetime.date).
     assert all(isinstance(d, str) for d in df["event_date"])
     assert df.iloc[0]["event_date"] == "2026-01-15"
@@ -269,7 +269,7 @@ async def test_events_to_df_columnas_y_iso(race_db: FakeAsyncSession) -> None:
 def test_events_to_df_vacio() -> None:
     df = events_to_df([])
     assert df.empty
-    assert list(df.columns) == ["event_id", "series_id", "valida_num", "event_date"]
+    assert list(df.columns) == ["event_id", "series_id", "valida_num", "event_date", "location"]
 
 
 @pytest.mark.asyncio
