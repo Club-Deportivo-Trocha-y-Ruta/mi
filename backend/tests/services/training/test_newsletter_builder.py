@@ -181,7 +181,6 @@ async def test_build_newsletter_metrics_has_both_blocks():
 @pytest.mark.asyncio
 async def test_anthropometry_only_in_pdf_blocks():
     """Antropometría NUNCA aparece en email_blocks."""
-    from app.models.training_session import AttendanceStatus
 
     db = make_session()
     athlete = make_athlete()
@@ -311,13 +310,13 @@ class TestGetUpcomingCopaValleRaces:
 
 class TestBuildSupportBlock:
     def test_returns_tips_list(self):
-        block = _build_support_block()
+        block = _build_support_block(13.5, 6, "su hijo/a")
         assert "tips" in block
         assert isinstance(block["tips"], list)
         assert len(block["tips"]) > 0
 
     def test_tips_have_required_fields(self):
-        block = _build_support_block()
+        block = _build_support_block(13.5, 6, "su hijo/a")
         for tip in block["tips"]:
             assert "category" in tip
             assert "title" in tip
@@ -325,7 +324,7 @@ class TestBuildSupportBlock:
 
     def test_no_calorie_counting_language(self):
         """El bloque de apoyo no debe incluir conteo calórico."""
-        block = _build_support_block()
+        block = _build_support_block(13.5, 6, "su hijo/a")
         combined = " ".join(t["text"] for t in block["tips"]).lower()
         # No debe mencionar contar calorías como instrucción
         assert "contar calorías" not in combined
@@ -333,7 +332,7 @@ class TestBuildSupportBlock:
 
     def test_no_supplements_recommendation(self):
         """El bloque no debe recomendar suplementos."""
-        block = _build_support_block()
+        block = _build_support_block(13.5, 6, "su hijo/a")
         combined = " ".join(t["text"] for t in block["tips"]).lower()
         # No debe recomendar suplementos
         assert "tomar suplemento" not in combined
@@ -341,12 +340,12 @@ class TestBuildSupportBlock:
         assert "creatina" not in combined
 
     def test_hydration_tip_present(self):
-        block = _build_support_block()
+        block = _build_support_block(13.5, 6, "su hijo/a")
         categories = {t["category"] for t in block["tips"]}
         assert "hidratacion" in categories
 
     def test_sleep_tip_present(self):
-        block = _build_support_block()
+        block = _build_support_block(13.5, 6, "su hijo/a")
         categories = {t["category"] for t in block["tips"]}
         assert "sueno" in categories
 

@@ -24,13 +24,11 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from app.services.ai.guardrails import Guardrails
-from app.services.ai.models import LLMMessage, LLMRequest
 from app.services.ai.protocols import LLMProvider
 from app.services.ai.prompts.registry import PromptRegistry
 from app.services.ai.use_cases.base import BaseUseCase
@@ -84,7 +82,9 @@ class AthleteNewsletterContext:
     sessions_total: int
     attendance_pct: float
     attendance_pct_prev_month: float | None
-    streak_days: int
+    streak_sessions: int
+    # Referencia de género para narrar al atleta sin usar su nombre real
+    athlete_reference: str
     # Técnico
     focos_tecnicos: list[str]
     avg_rpe: float | None
@@ -116,15 +116,31 @@ def _compute_confidence(sessions_total: int, num_races: int) -> str:
     return "medium"
 
 
+def _derive_athlete_reference(athlete_sex: str | None) -> str:
+    """Deriva la referencia de género para narrar sin usar el nombre real.
+
+    'M' -> "su hijo", 'F' -> "su hija", None/otro -> "su hijo/a" (neutro).
+    Nunca debe loguearse junto al nombre real del atleta.
+    """
+    if athlete_sex == "M":
+        return "su hijo"
+    if athlete_sex == "F":
+        return "su hija"
+    return "su hijo/a"
+
+
 def build_context_from_metrics(
     metrics_snapshot: dict[str, Any],
     year: int,
     month: int,
     forbidden_names: frozenset[str],
+    athlete_sex: str | None = None,
 ) -> AthleteNewsletterContext:
     """Construye el contexto del prompt a partir del metrics_snapshot del builder.
 
     Nunca incluye nombres reales (ya fueron redactados por el builder).
+    `athlete_sex` (valor de `Athlete.sex`, 'M'/'F'/None) solo se usa para derivar
+    `athlete_reference`; no se persiste ni se loguea junto al nombre real.
     """
     email_blocks = metrics_snapshot.get("email_blocks", {})
 
@@ -137,7 +153,10 @@ def build_context_from_metrics(
     sessions_total = attendance.get("sessions_total", 0)
     attendance_pct = attendance.get("attendance_pct", 0.0)
     attendance_pct_prev = attendance.get("attendance_pct_prev_month")
-    streak = attendance.get("streak_days", 0)
+    # R12/B12: streak_sessions renombrado desde streak_days; fallback para
+    # snapshots persistidos antes de la 024 (FR-015).
+    streak = attendance.get("streak_sessions", attendance.get("streak_days", 0))
+    athlete_reference = _derive_athlete_reference(athlete_sex)
 
     focos = technical.get("focos_tecnicos", [])
     avg_rpe = technical.get("avg_rpe")
@@ -159,7 +178,8 @@ def build_context_from_metrics(
         sessions_total=sessions_total,
         attendance_pct=attendance_pct,
         attendance_pct_prev_month=attendance_pct_prev,
-        streak_days=streak,
+        streak_sessions=streak,
+        athlete_reference=athlete_reference,
         focos_tecnicos=focos,
         avg_rpe=avg_rpe,
         avg_rubric_technique=avg_technique,
@@ -267,7 +287,8 @@ class AthleteNewsletterUseCase(BaseUseCase):
             "sessions_total": ctx.sessions_total,
             "attendance_pct": ctx.attendance_pct,
             "attendance_pct_prev_month": ctx.attendance_pct_prev_month,
-            "streak_days": ctx.streak_days,
+            "streak_sessions": ctx.streak_sessions,
+            "athlete_reference": ctx.athlete_reference,
             "focos_tecnicos": ctx.focos_tecnicos,
             "avg_rpe": ctx.avg_rpe,
             "avg_rubric_technique": ctx.avg_rubric_technique,

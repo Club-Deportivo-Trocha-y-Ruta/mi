@@ -28,6 +28,7 @@ from app.services.ai.use_cases.athlete_monthly_newsletter import (
     AthleteNewsletterLLMTimeout,
     AthleteNewsletterUseCase,
     _compute_confidence,
+    _derive_athlete_reference,
     build_context_from_metrics,
 )
 
@@ -53,6 +54,7 @@ def _make_context(
     forbidden_names: frozenset[str] = frozenset(),
     sessions_total: int = 8,
     num_races: int = 2,
+    athlete_reference: str = "su hijo/a",
 ) -> AthleteNewsletterContext:
     confidence = _compute_confidence(sessions_total, num_races)
     return AthleteNewsletterContext(
@@ -62,7 +64,8 @@ def _make_context(
         sessions_total=sessions_total,
         attendance_pct=100.0,
         attendance_pct_prev_month=90.0,
-        streak_days=sessions_total,
+        streak_sessions=sessions_total,
+        athlete_reference=athlete_reference,
         focos_tecnicos=["Frenado", "Curvas cerradas"],
         avg_rpe=6.2,
         avg_rubric_technique=3.8,
@@ -156,7 +159,7 @@ class TestBuildContextFromMetrics:
         assert ctx.sessions_present == 9
         assert ctx.sessions_total == 10
         assert ctx.attendance_pct == 90.0
-        assert ctx.streak_days == 4
+        assert ctx.streak_sessions == 4
 
     def test_maps_technical_fields(self):
         ctx = build_context_from_metrics(
@@ -208,6 +211,60 @@ class TestBuildContextFromMetrics:
         assert ctx.sessions_total == 0
         assert ctx.has_races is False
         assert ctx.badges == []
+
+
+# ---------------------------------------------------------------------------
+# R2/B2 (024) — athlete_reference: referencia de género sin usar el nombre real
+# ---------------------------------------------------------------------------
+
+
+class TestAthleteReferenceGender:
+    def test_reference_is_su_hija_for_sex_f(self):
+        assert _derive_athlete_reference("F") == "su hija"
+
+    def test_reference_is_su_hijo_for_sex_m(self):
+        assert _derive_athlete_reference("M") == "su hijo"
+
+    def test_reference_is_neutral_for_sex_none(self):
+        assert _derive_athlete_reference(None) == "su hijo/a"
+
+    def test_build_context_from_metrics_derives_reference_from_athlete_sex(self):
+        ctx = build_context_from_metrics(
+            metrics_snapshot={},
+            year=2026,
+            month=4,
+            forbidden_names=frozenset(),
+            athlete_sex="F",
+        )
+        assert ctx.athlete_reference == "su hija"
+
+    def test_rendered_prompt_includes_gender_instruction(self):
+        """El prompt renderizado debe incluir la instrucción explícita de
+        género (`athlete_reference`) que el LLM debe usar textualmente."""
+        registry = PromptRegistry()
+        ctx = _make_context(athlete_reference="su hija")
+        context_dict = {
+            "period_year": ctx.period_year,
+            "period_month": ctx.period_month,
+            "sessions_present": ctx.sessions_present,
+            "sessions_total": ctx.sessions_total,
+            "attendance_pct": ctx.attendance_pct,
+            "attendance_pct_prev_month": ctx.attendance_pct_prev_month,
+            "streak_sessions": ctx.streak_sessions,
+            "athlete_reference": ctx.athlete_reference,
+            "focos_tecnicos": ctx.focos_tecnicos,
+            "avg_rpe": ctx.avg_rpe,
+            "avg_rubric_technique": ctx.avg_rubric_technique,
+            "total_training_hours": ctx.total_training_hours,
+            "has_races": ctx.has_races,
+            "race_results": ctx.race_results,
+            "num_races": ctx.num_races,
+            "badges": ctx.badges,
+            "confidence": ctx.confidence,
+        }
+        rendered = registry.render("athlete_monthly_newsletter_v1", context_dict)
+        assert "su hija" in rendered
+        assert "usa SIEMPRE y textualmente la expresión" in rendered
 
 
 # ---------------------------------------------------------------------------

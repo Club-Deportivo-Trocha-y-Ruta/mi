@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
 from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.notification import DocumentFormat, DocumentRequest, DocumentTemplate, GeneratedDocument
 from app.services.notification.document_generator import DocumentGenerator
+from app.services.notification.media_embedding import build_photos_render
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +47,15 @@ async def generate_newsletter_pdf(
     coach_narrative_overrides: dict[str, Any] | None,
     club_name: str = "Trocha y Ruta",
     season_year: str | None = None,
+    db: AsyncSession | None = None,
 ) -> tuple[GeneratedDocument, str]:
     """Genera el PDF del boletín mensual individual.
+
+    Args:
+        db: sesión async opcional para embeber thumbnails de fotos como
+            data-URI (`photos_render`, R3). Si no se provee, la galería
+            degrada a `embeddable_count=0` (ver `build_photos_render`) — el
+            template debe mostrar el placeholder de conteo en ese caso.
 
     Returns:
         (GeneratedDocument con bytes PDF, sha256 hex del PDF)
@@ -56,6 +65,13 @@ async def generate_newsletter_pdf(
     """
     month_label = _month_label(year, month)
     season_year_str = season_year or str(year)
+
+    photos_block = email_blocks.get("photos") or {}
+    photos_render = await build_photos_render(
+        db,
+        photos_block.get("items") or [],
+        eligible_count=photos_block.get("count", 0),
+    )
 
     context: dict[str, Any] = {
         "athlete_first_name": athlete_first_name,
@@ -67,6 +83,7 @@ async def generate_newsletter_pdf(
         "pdf_only_blocks": pdf_only_blocks,
         "ai_narrative": ai_narrative,
         "coach_narrative_overrides": coach_narrative_overrides,
+        "photos_render": photos_render,
     }
 
     request = DocumentRequest(

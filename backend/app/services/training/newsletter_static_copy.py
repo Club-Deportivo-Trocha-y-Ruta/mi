@@ -138,6 +138,174 @@ def build_static_highlights(email_blocks: dict[str, Any]) -> str:
     return _HIGHLIGHTS_DEFAULT
 
 
+# ---------------------------------------------------------------------------
+# "Cómo apoyar desde casa" — variantes por banda etaria y rotación mensual
+# (R14/B14). Cada texto usa el placeholder ``{ref}`` para el pronombre de
+# referencia del atleta ("su hijo"/"su hija"/"su hijo/a"), sustituido por el
+# builder. Todas las variantes preservan los no-negociables del club: cero
+# suplementos, sin conteo calórico, alimentación real como base.
+# ---------------------------------------------------------------------------
+
+SUPPORT_TIP_TITLES: dict[str, str] = {
+    "hidratacion": "Hidratación",
+    "sueno": "Sueño",
+    "descanso": "Descanso activo",
+    "nutricion": "Alimentación",
+}
+
+SUPPORT_TIP_VARIANTS: dict[str, dict[str, list[str]]] = {
+    "10-12": {
+        "hidratacion": [
+            (
+                "Asegúrate de que {ref} llegue al entrenamiento bien hidratado/a. "
+                "Durante el día: agua o bebida de fruta natural. "
+                "Antes del entreno: 500ml en la hora previa. "
+                "Durante: sorbos cada 15-20 min según la sed."
+            ),
+            (
+                "A esta edad la sed llega tarde: ofrece agua a {ref} de forma regular "
+                "durante el día, sin esperar a que la pida. "
+                "Un vaso al despertar y otro antes de salir de casa ayudan a llegar "
+                "bien hidratado/a al entrenamiento."
+            ),
+            (
+                "Después de entrenar, lo mejor para {ref} es agua o una fruta jugosa. "
+                "Evita bebidas con mucha azúcar o cafeína; el cuerpo en esta etapa "
+                "se hidrata mejor con líquidos simples."
+            ),
+        ],
+        "sueno": [
+            (
+                "Los atletas de 10-12 años necesitan 9-11 horas de sueño por noche. "
+                "El sueño es cuando el cuerpo crece y se recupera. "
+                "Mantén horarios regulares para {ref}, especialmente antes de competencia."
+            ),
+            (
+                "A los 10-12 años el cuerpo de {ref} crece mientras duerme: prioriza "
+                "9-11 horas por noche. Apagar pantallas una hora antes de dormir "
+                "ayuda a conciliar el sueño más rápido."
+            ),
+            (
+                "Una rutina estable de sueño (misma hora de acostarse) es tan "
+                "importante para {ref} como el entrenamiento mismo. "
+                "Apunta a 9-11 horas por noche en esta etapa de crecimiento."
+            ),
+        ],
+        "descanso": [
+            (
+                "Los días sin entrenamiento son parte del plan de {ref}. "
+                "Un paseo en familia, nadar o jugar libremente es ideal. "
+                "Evitar actividades extenuantes el día antes de competencia."
+            ),
+            (
+                "El descanso activo de {ref} puede ser tan simple como jugar en el "
+                "parque o andar en bici por diversión, sin cronómetro ni exigencia. "
+                "El objetivo es moverse con disfrute, no entrenar dos veces."
+            ),
+            (
+                "Respeta los días de descanso de {ref}: el cuerpo necesita esas "
+                "pausas para asimilar el entrenamiento. "
+                "Actividades multideporte libres (nadar, correr, jugar) son bienvenidas."
+            ),
+        ],
+        "nutricion": [
+            (
+                "Tres comidas principales más un snack post-entreno balanceado para {ref}. "
+                "Fruta, lácteos, proteína de alimentos naturales. "
+                "Sin suplementos: a esta edad, la comida real es suficiente. "
+                "El entrenador no realiza seguimiento calórico — la familia es la guía."
+            ),
+            (
+                "La alimentación de {ref} debe apoyarse en comida real: frutas, "
+                "verduras, cereales y proteína natural en cada comida principal. "
+                "Cero suplementos y cero conteo de calorías — el apetito de un niño "
+                "en crecimiento es la mejor guía."
+            ),
+            (
+                "Después de entrenar, un snack sencillo (fruta con yogur, por ejemplo) "
+                "ayuda a {ref} a recuperarse. "
+                "No se recomiendan suplementos ni seguimiento calórico a esta edad; "
+                "la comida real y variada es la base."
+            ),
+        ],
+    },
+    "13-15": {
+        "hidratacion": [
+            (
+                "Asegúrate de que {ref} llegue al entrenamiento bien hidratado/a. "
+                "Durante el día: agua como bebida principal. "
+                "Antes del entreno: 500ml en la hora previa. "
+                "Durante sesiones largas o de calor: sorbos frecuentes cada 15-20 min."
+            ),
+            (
+                "En esta etapa el volumen de entrenamiento de {ref} aumenta: "
+                "reforzar la hidratación durante todo el día (no solo en el entreno) "
+                "hace la diferencia en el rendimiento y la recuperación."
+            ),
+            (
+                "Antes de una competencia, ayuda a {ref} a hidratarse bien desde el "
+                "día anterior, no solo esa mañana. "
+                "Agua como base; evita bebidas energizantes o con cafeína."
+            ),
+        ],
+        "sueno": [
+            (
+                "Los atletas de 13-15 años necesitan 8-10 horas de sueño por noche. "
+                "El sueño es cuando el cuerpo se recupera del entrenamiento. "
+                "Mantén horarios regulares para {ref}, especialmente antes de competencia."
+            ),
+            (
+                "Con la carga de estudio y entrenamiento, el sueño de {ref} es la "
+                "recuperación más importante y muchas veces la más descuidada. "
+                "Apunta a 8-10 horas por noche, con horarios consistentes."
+            ),
+            (
+                "Las pantallas antes de dormir afectan la calidad del sueño de {ref}. "
+                "En esta etapa de mayor exigencia física, 8-10 horas de sueño "
+                "reparador son clave para el progreso y para evitar lesiones."
+            ),
+        ],
+        "descanso": [
+            (
+                "Los días sin entrenamiento son parte del plan de {ref}. "
+                "Actividad ligera y recreativa está bien; evitar sobrecarga física extra. "
+                "Evitar actividades extenuantes el día antes de competencia."
+            ),
+            (
+                "A los 13-15 años, con más sesiones de intensidad por semana, el "
+                "descanso de {ref} entre entrenamientos duros no es opcional. "
+                "Un día completamente libre de esfuerzo físico ayuda a prevenir lesiones."
+            ),
+            (
+                "Antes de una válida importante, prioriza que {ref} reduzca la "
+                "actividad física extra (no solo el entrenamiento) los días previos. "
+                "Llegar descansado/a rinde más que llegar cansado/a pero \"en forma\"."
+            ),
+        ],
+        "nutricion": [
+            (
+                "Tres comidas principales más snacks balanceados para {ref}, ajustados "
+                "al mayor gasto energético de esta etapa. "
+                "Fruta, lácteos, proteína de alimentos naturales. "
+                "Sin suplementos: la comida real cubre las necesidades. "
+                "El entrenador no realiza seguimiento calórico — la familia es la guía."
+            ),
+            (
+                "Con más horas de entrenamiento, {ref} necesita comidas completas y "
+                "snacks de recuperación (ej. fruta con proteína) tras las sesiones. "
+                "Cero suplementos y cero conteo de calorías: comida real y variada "
+                "en cantidad suficiente."
+            ),
+            (
+                "Evita restringir la alimentación de {ref} pensando en el peso: en "
+                "esta etapa de crecimiento y mayor carga física la prioridad es comer "
+                "suficiente y variado, sin suplementos ni conteo calórico."
+            ),
+        ],
+    },
+}
+
+
 def build_static_narrative(email_blocks: dict[str, Any]) -> dict[str, Any]:
     """Construye el dict de narrativa estática usado como fallback.
 

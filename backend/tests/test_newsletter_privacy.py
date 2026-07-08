@@ -377,6 +377,102 @@ class TestDispatcherLogsNoAnthropometricData:
                 )
 
 
+class TestNoDataUriInSnapshotOrEmail:
+    """R3/R16 (024): los data-URI embebidos de fotos son solo-render, nunca
+    persisten en ``metrics_snapshot`` ni llegan a un bloque de email."""
+
+    def test_metrics_snapshot_serialization_has_no_data_uri(self):
+        """El snapshot persistido (email_blocks + pdf_only_blocks) nunca
+        contiene un data-URI, aunque el bloque de fotos exista."""
+        import json
+
+        obj = _make_obj()
+        obj.metrics_snapshot["email_blocks"]["photos"] = {
+            "count": 2,
+            "items": [
+                {"media_id": 1, "thumbnail_url": "https://cdn.example/a.jpg", "caption": "Sesión técnica"},
+                {"media_id": 2, "thumbnail_url": "https://cdn.example/b.jpg", "caption": None},
+            ],
+        }
+        serialized = json.dumps(obj.metrics_snapshot)
+        assert "data:" not in serialized
+
+    @pytest.mark.asyncio
+    async def test_photos_render_data_uri_never_reaches_email_blocks(self):
+        """``build_photos_render`` produce data-URI en render-time, pero ese
+        resultado nunca se mezcla en ``email_blocks`` que el dispatcher envía."""
+        from unittest.mock import patch
+
+        from app.services.notification.media_embedding import build_photos_render
+
+        photo_items = [
+            {"media_id": 1, "thumbnail_url": "https://cdn.example/a.jpg", "caption": "Sesión técnica"},
+        ]
+
+        with patch(
+            "app.services.notification.media_embedding._fetch_storage_paths",
+            new=AsyncMock(return_value={1: "photos/2026/04/a_thumb.jpg"}),
+        ), patch(
+            "app.services.notification.media_embedding._download_thumb_as_data_uri",
+            new=AsyncMock(return_value=("data:image/jpeg;base64,AAAA", 4)),
+        ):
+            photos_render = await build_photos_render(
+                db=object(),  # sesión mockeada vía patches anteriores
+                photo_items=photo_items,
+                eligible_count=1,
+            )
+
+        # `photos_render` sí contiene el data-URI (uso exclusivo de render PDF).
+        assert photos_render["embeddable_count"] == 1
+        assert photos_render["items"][0]["data_uri"].startswith("data:")
+
+        # Pero email_blocks (lo que persiste/viaja al email) nunca lo incluye:
+        # el snapshot original solo tiene `photos.items[].thumbnail_url`, jamás
+        # `photos_render` ni `data_uri`.
+        email_blocks = {
+            "attendance": {"percentage": 92.0},
+            "photos": {"count": 1, "items": photo_items},
+        }
+        import json
+
+        assert "data:" not in json.dumps(email_blocks)
+
+    def test_email_rendered_block_contains_no_data_uri(self):
+        """Renderiza el template de email con un `children` fixture completo
+        (sin `photos_render` — el email nunca lo recibe) y confirma ausencia
+        de data-URI en el HTML resultante."""
+        from app.services.notification.newsletter_dispatcher import _render_email_template
+        from app.services.notification.template_registry import TemplateRegistry
+
+        registry = TemplateRegistry()
+        context = {
+            "club_name": "Trocha y Ruta",
+            "month_label": "Abril 2026",
+            "season_year": "2026",
+            "children": [
+                {
+                    "athlete_id": 10,
+                    "athlete_first_name": "Atleta",
+                    "email_blocks": {
+                        "attendance": {
+                            "sessions_present": 9,
+                            "sessions_total": 10,
+                            "attendance_pct": 90.0,
+                            "streak_sessions": 4,
+                        },
+                        "technical": {"focos_tecnicos": ["Frenado"]},
+                        "race_results": {"has_races": False, "results": []},
+                        "badges": {"items": []},
+                    },
+                    "ai_narrative": None,
+                    "coach_narrative_overrides": None,
+                }
+            ],
+        }
+        html = _render_email_template(registry, context)
+        assert "data:" not in html
+
+
 class TestAiNarrativeForbiddenNutritionalTerms:
     """La narrativa IA no debe contener términos diagnósticos nutricionales.
 
