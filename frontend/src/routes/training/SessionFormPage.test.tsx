@@ -208,9 +208,10 @@ describe("SessionFormPage — asistente (modo crear)", () => {
       );
     });
 
-    // Pantalla de éxito + navegación al detalle.
-    fireEvent.click(await screen.findByRole("button", { name: /Ver la sesión/i }));
-    expect(mockNavigate).toHaveBeenCalledWith("/training/sessions/99");
+    // Redirige directo al detalle de la sesión creada, sin pantalla intermedia.
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("/training/sessions/99");
+    });
   });
 
   it("crea con send_notification=false cuando no se marca el check", async () => {

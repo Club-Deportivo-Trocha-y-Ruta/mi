@@ -44,9 +44,10 @@ vi.mock("@/store/auth.store", () => ({
   ),
 }));
 
+const navigateMock = vi.fn();
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
-  return { ...actual, useNavigate: () => vi.fn() };
+  return { ...actual, useNavigate: () => navigateMock };
 });
 
 import { SessionFormPage } from "./SessionFormPage";
@@ -124,7 +125,9 @@ describe("Wizard — ruta, notas y notificación (US4)", () => {
       expect(createMutateAsync).toHaveBeenCalled();
       expect(uploadRouteFileMock).toHaveBeenCalledWith(55, file);
     });
-    expect(await screen.findByTestId("session-wizard-success")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("/training/sessions/55");
+    });
   });
 
   it("si la subida del archivo falla, la sesión queda guardada y ofrece reintentar", async () => {
@@ -144,13 +147,15 @@ describe("Wizard — ruta, notas y notificación (US4)", () => {
     // Pantalla "guardada, archivo pendiente" con reintento.
     expect(await screen.findByTestId("session-wizard-route-failed")).toBeInTheDocument();
 
-    // Reintento exitoso → pantalla de éxito.
+    // Reintento exitoso → redirige directo al detalle de la sesión.
     uploadRouteFileMock.mockResolvedValueOnce({ id: 56 });
     fireEvent.click(screen.getByRole("button", { name: /Reintentar subida/i }));
-    expect(await screen.findByTestId("session-wizard-success")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("/training/sessions/56");
+    });
   });
 
-  it("notificar: el resultado indica que se avisó a las familias", async () => {
+  it("notificar: crea la sesión y redirige directo a su detalle", async () => {
     createMutateAsync.mockResolvedValueOnce({ id: 57 });
     renderCreate();
     await gotoRouteStep();
@@ -159,11 +164,13 @@ describe("Wizard — ruta, notas y notificación (US4)", () => {
     fireEvent.click(screen.getByTestId("notify-parents-checkbox"));
     fireEvent.click(screen.getByTestId("session-wizard-submit"));
 
-    const success = await screen.findByTestId("session-wizard-success");
-    expect(success).toHaveTextContent(/Se envió la notificación a las familias/i);
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("/training/sessions/57");
+    });
+    expect(screen.queryByTestId("session-wizard-success")).not.toBeInTheDocument();
   });
 
-  it("sin notificar: el resultado indica que no se enviaron notificaciones", async () => {
+  it("sin notificar: crea la sesión y redirige directo a su detalle", async () => {
     createMutateAsync.mockResolvedValueOnce({ id: 58 });
     renderCreate();
     await gotoRouteStep();
@@ -171,8 +178,10 @@ describe("Wizard — ruta, notas y notificación (US4)", () => {
     await screen.findByTestId("session-step-review");
     fireEvent.click(screen.getByTestId("session-wizard-submit"));
 
-    const success = await screen.findByTestId("session-wizard-success");
-    expect(success).toHaveTextContent(/No se enviaron notificaciones/i);
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("/training/sessions/58");
+    });
+    expect(screen.queryByTestId("session-wizard-success")).not.toBeInTheDocument();
   });
 
   it("si falla la creación, muestra error y conserva el formulario (sin pantalla de éxito)", async () => {

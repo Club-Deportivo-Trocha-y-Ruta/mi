@@ -305,7 +305,7 @@ export function SessionWizard({
       }
 
       clearDraft();
-      setOutcome({ kind: "success", sessionId: saved.id, notified: notify });
+      finishSuccess(saved.id);
       setSubmitting(false);
     } catch {
       setSubmitError(
@@ -319,6 +319,16 @@ export function SessionWizard({
 
   function onInvalid() {
     setShowSummary(true);
+  }
+
+  // Al crear, salta directo al detalle de la sesión (sin pantalla intermedia).
+  // Al editar, se mantiene la pantalla de confirmación existente.
+  function finishSuccess(sessionId: number) {
+    if (isEdit) {
+      setOutcome({ kind: "success", sessionId, notified: notify });
+    } else {
+      navigate(`/training/sessions/${sessionId}`);
+    }
   }
 
   // --- Pantalla de resultado (éxito o fallo de subida de ruta)
@@ -383,7 +393,7 @@ export function SessionWizard({
               setRouteFileError(null);
               try {
                 await uploadRouteFile(outcome.sessionId, routeFile);
-                setOutcome({ kind: "success", sessionId: outcome.sessionId, notified: notify });
+                finishSuccess(outcome.sessionId);
               } catch {
                 setRouteFileError("La subida volvió a fallar. Intenta más tarde.");
               }
