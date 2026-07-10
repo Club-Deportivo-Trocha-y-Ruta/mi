@@ -43,6 +43,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.interval_structure import IntervalStructure
     from app.models.strava_activity import StravaActivity
 
 
@@ -138,4 +139,10 @@ class IntervalMatchResult(Base):
             values_callable=lambda e: [x.value for x in e],
         ),
         nullable=False,
+    )
+
+    structure: Mapped["IntervalStructure"] = relationship(
+        "IntervalStructure",
+        back_populates="match_results",
+        foreign_keys="[IntervalMatchResult.structure_id]",
     )

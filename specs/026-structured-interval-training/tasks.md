@@ -21,11 +21,11 @@
 
 **Purpose**: Models, migration, and schema surface every story depends on.
 
-- [ ] T001 [P] Create `backend/app/models/interval_structure.py` — enums `IntervalBlockType` (warmup/work/recovery/cooldown), `HRZone` (Z1–Z5), models `IntervalStructure`, `IntervalStructureBlock`, `IntervalTemplate`, `IntervalTemplateBlock` per data-model.md §1–4 (reuse `AgeBand` from `technique_exercise`, `values_callable` on all enums, UNIQUE constraints, relationships incl. `TrainingSession.interval_structure` back-ref in `backend/app/models/training_session.py`) (Agente: database-architect · Modelo: sonnet)
-- [ ] T002 [P] Create `backend/app/models/strava_activity_lap.py` — `StravaActivityLap` (no geo/name/cadence/watts columns, UNIQUE `(strava_activity_id, lap_index)`) + `IntervalMatchResult` (UNIQUE `(structure_id, strava_activity_id)`, `result_json`, `engine_version`, `triggered_by` enum `MatchTrigger`) per data-model.md §5–6, with the privacy doctrine docstring mirroring `strava_activity.py` (Agente: database-architect · Modelo: sonnet)
-- [ ] T003 Create Alembic migration `backend/alembic/versions/b5c6d7e8f9a0_interval_training.py` — `down_revision = "a4b5c6d7e8f9"`; creates the 6 tables + indexes/uniques; **reuses** existing `ageband` enum (does NOT create/drop it — same rule as migration `a7b8c9d0e1f2`); creates `intervalblocktype`, `hrzone`, `matchtrigger` enums; verify `alembic upgrade head` + `downgrade -1` round-trip on Docker MySQL (Agente: database-architect · Modelo: sonnet)
-- [ ] T004 [P] Create `backend/app/schemas/intervals.py` — `BlockIn/Out`, `StructureCreate/Update/Out` (incl. `age_gate_confirmed`, `total_planned_duration_s`), `TemplateCreate/Update/Out`, `TemplateAttachIn`, `MatchBlockOut`, `MatchDetailOut` (statuses `computed|no_activity|computing|failed`), `RecalculateIn/Out`, `LapOut` per contracts/api.md; result_json validated by a `MatchResultPayload` model before persist (Agente: fastapi-architect · Modelo: sonnet)
-- [ ] T005 [P] Create `frontend/src/types/intervals.types.ts` + `frontend/src/schemas/intervals.schema.ts` — Zod: cadence `min(60)` with localized message, `duration_s > 0`, repeat group consistency (`repeat_count >= 2`, identical within group), band enum; types mirror contracts (Agente: react-ui-engineer · Modelo: haiku)
+- [x] T001 [P] Create `backend/app/models/interval_structure.py` — enums `IntervalBlockType` (warmup/work/recovery/cooldown), `HRZone` (Z1–Z5), models `IntervalStructure`, `IntervalStructureBlock`, `IntervalTemplate`, `IntervalTemplateBlock` per data-model.md §1–4 (reuse `AgeBand` from `technique_exercise`, `values_callable` on all enums, UNIQUE constraints, relationships incl. `TrainingSession.interval_structure` back-ref in `backend/app/models/training_session.py`) (Agente: database-architect · Modelo: sonnet)
+- [x] T002 [P] Create `backend/app/models/strava_activity_lap.py` — `StravaActivityLap` (no geo/name/cadence/watts columns, UNIQUE `(strava_activity_id, lap_index)`) + `IntervalMatchResult` (UNIQUE `(structure_id, strava_activity_id)`, `result_json`, `engine_version`, `triggered_by` enum `MatchTrigger`) per data-model.md §5–6, with the privacy doctrine docstring mirroring `strava_activity.py` (Agente: database-architect · Modelo: sonnet)
+- [x] T003 Create Alembic migration `backend/alembic/versions/b5c6d7e8f9a0_interval_training.py` — `down_revision = "a4b5c6d7e8f9"`; creates the 6 tables + indexes/uniques; **reuses** existing `ageband` enum (does NOT create/drop it — same rule as migration `a7b8c9d0e1f2`); creates `intervalblocktype`, `hrzone`, `matchtrigger` enums; verify `alembic upgrade head` + `downgrade -1` round-trip on Docker MySQL (Agente: database-architect · Modelo: sonnet)
+- [x] T004 [P] Create `backend/app/schemas/intervals.py` — `BlockIn/Out`, `StructureCreate/Update/Out` (incl. `age_gate_confirmed`, `total_planned_duration_s`), `TemplateCreate/Update/Out`, `TemplateAttachIn`, `MatchBlockOut`, `MatchDetailOut` (statuses `computed|no_activity|computing|failed`), `RecalculateIn/Out`, `LapOut` per contracts/api.md; result_json validated by a `MatchResultPayload` model before persist (Agente: fastapi-architect · Modelo: sonnet)
+- [x] T005 [P] Create `frontend/src/types/intervals.types.ts` + `frontend/src/schemas/intervals.schema.ts` — Zod: cadence `min(60)` with localized message, `duration_s > 0`, repeat group consistency (`repeat_count >= 2`, identical within group), band enum; types mirror contracts (Agente: react-ui-engineer · Modelo: haiku)
 
 ---
 
@@ -35,9 +35,9 @@
 
 **⚠️ CRITICAL**: Complete before any user story phase.
 
-- [ ] T006 Create `backend/app/routers/intervals.py` skeleton — prefix `/api/intervals`, every route `Depends(require_role([UserRole.admin, UserRole.coach]))` + club scoping helper via `user_club_role` (copy `routers/strength.py` `_coach_or_admin`/`_coach_club_id` pattern); register router in `backend/app/main.py`; add `services/intervals/__init__.py` (Agente: fastapi-architect · Modelo: sonnet)
-- [ ] T007 [P] Add `get_activity_laps(activity_id: int) -> list[dict]` to `backend/app/services/strava/client.py` — `GET /activities/{id}/laps` through existing `_request()` (token refresh, 429 → `StravaRateLimited`, 404 → `StravaNotFoundError`); unit test with stubbed httpx in `backend/tests/services/test_strava_client_laps.py` (Agente: integration-engineer · Modelo: sonnet)
-- [ ] T008 [P] Create `frontend/src/api/intervals.ts` (API fns incl. `extractAgeGateError` mirroring `extractAgeBandGuardrail`, blob fn for instructivo) + `frontend/src/hooks/intervals/useIntervals.ts` (query-key factory `intervalKeys`, query/mutation hooks with invalidation per `api/strength.ts`/`useStrength.ts` conventions) (Agente: react-ui-engineer · Modelo: sonnet)
+- [x] T006 Create `backend/app/routers/intervals.py` skeleton — prefix `/api/intervals`, every route `Depends(require_role([UserRole.admin, UserRole.coach]))` + club scoping helper via `user_club_role` (copy `routers/strength.py` `_coach_or_admin`/`_coach_club_id` pattern); register router in `backend/app/main.py`; add `services/intervals/__init__.py` (Agente: fastapi-architect · Modelo: sonnet)
+- [x] T007 [P] Add `get_activity_laps(activity_id: int) -> list[dict]` to `backend/app/services/strava/client.py` — `GET /activities/{id}/laps` through existing `_request()` (token refresh, 429 → `StravaRateLimited`, 404 → `StravaNotFoundError`); unit test with stubbed httpx in `backend/tests/services/test_strava_client_laps.py` (Agente: integration-engineer · Modelo: sonnet)
+- [x] T008 [P] Create `frontend/src/api/intervals.ts` (API fns incl. `extractAgeGateError` mirroring `extractAgeBandGuardrail`, blob fn for instructivo) + `frontend/src/hooks/intervals/useIntervals.ts` (query-key factory `intervalKeys`, query/mutation hooks with invalidation per `api/strength.ts`/`useStrength.ts` conventions) (Agente: react-ui-engineer · Modelo: sonnet)
 
 **Checkpoint**: Foundation ready — user stories can proceed (US1 first; US2–US4 parallelizable after US1).
 
@@ -51,17 +51,17 @@
 
 ### Tests for User Story 1 (write first, must fail)
 
-- [ ] T009 [P] [US1] Create `backend/tests/intervals/conftest.py` (club/coach/parent/session fixtures, mirrors `tests/strength/conftest.py`) + `backend/tests/intervals/test_structures.py` — create/get/put/delete happy paths, 1:1 conflict 409, repeat-group persistence, `invalid_repeat_group` 422, parent 403 (Agente: qa-engineer · Modelo: sonnet)
-- [ ] T010 [P] [US1] Create `backend/tests/intervals/test_guardrail.py` — `cadence_below_minimum` 422 any band incl. templates; `age_gate_z3_blocked` 422 hard (structure + template-save + attach paths); `age_gate_confirmation_required` 422 then success with `age_gate_confirmed=true` persisting user+timestamp; SC-002/SC-003 exhaustive (Agente: qa-engineer · Modelo: sonnet)
+- [x] T009 [P] [US1] Create `backend/tests/intervals/conftest.py` (club/coach/parent/session fixtures, mirrors `tests/strength/conftest.py`) + `backend/tests/intervals/test_structures.py` — create/get/put/delete happy paths, 1:1 conflict 409, repeat-group persistence, `invalid_repeat_group` 422, parent 403 (Agente: qa-engineer · Modelo: sonnet)
+- [x] T010 [P] [US1] Create `backend/tests/intervals/test_guardrail.py` — `cadence_below_minimum` 422 any band incl. templates; `age_gate_z3_blocked` 422 hard (structure + template-save + attach paths); `age_gate_confirmation_required` 422 then success with `age_gate_confirmed=true` persisting user+timestamp; SC-002/SC-003 exhaustive (Agente: qa-engineer · Modelo: sonnet)
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Create `backend/app/services/intervals/structures.py` — CRUD + flattening helper `flatten_blocks()` (shared with matching/instructivo) + validation per research D2/D3 and contracts error codes; docstring with inputs/outputs/side effects (Constitution I) (Agente: fastapi-architect · Modelo: fable)
-- [ ] T012 [US1] Implement structure endpoints in `backend/app/routers/intervals.py` — `POST /structures`, `GET /sessions/{id}/structure`, `PUT /structures/{id}`, `DELETE /structures/{id}` per contracts/api.md; wire T009/T010 green (Agente: fastapi-architect · Modelo: sonnet)
-- [ ] T013 [P] [US1] Create `frontend/src/components/intervals/StructureEditor.tsx` + `BlockRow.tsx` — RHF+Zod, block list with add/remove/reorder, repeat-group UI (agrupar ×N), band selector, inline localized errors, 48px targets, español neutro copy (Agente: react-ui-engineer · Modelo: sonnet)
-- [ ] T014 [P] [US1] Create `frontend/src/components/intervals/AgeGateDialog.tsx` — mirrors `AgeBandGuardrailDialog.tsx` (focus trap, Escape, explicit close); on 422 `age_gate_confirmation_required` → confirm → resubmit `age_gate_confirmed: true`; hard `age_gate_z3_blocked` renders blocking explanation, no override CTA (Agente: react-ui-engineer · Modelo: sonnet)
-- [ ] T015 [US1] Integrate section "Estructura de intervalos" into `frontend/src/routes/training/SessionDetailPage.tsx` — empty/create state, view/edit, delete with confirm; lazy-load the editor (Agente: react-ui-engineer · Modelo: sonnet)
-- [ ] T016 [US1] Create `frontend/src/components/intervals/__tests__/StructureEditor.test.tsx` + `AgeGateDialog.test.tsx` — branching logic, error mapping, resubmit flow, jest-axe zero violations on the dialog and editor (Agente: qa-engineer · Modelo: sonnet)
+- [x] T011 [US1] Create `backend/app/services/intervals/structures.py` — CRUD + flattening helper `flatten_blocks()` (shared with matching/instructivo) + validation per research D2/D3 and contracts error codes; docstring with inputs/outputs/side effects (Constitution I) (Agente: fastapi-architect · Modelo: fable)
+- [x] T012 [US1] Implement structure endpoints in `backend/app/routers/intervals.py` — `POST /structures`, `GET /sessions/{id}/structure`, `PUT /structures/{id}`, `DELETE /structures/{id}` per contracts/api.md; wire T009/T010 green (Agente: fastapi-architect · Modelo: sonnet)
+- [x] T013 [P] [US1] Create `frontend/src/components/intervals/StructureEditor.tsx` + `BlockRow.tsx` — RHF+Zod, block list with add/remove/reorder, repeat-group UI (agrupar ×N), band selector, inline localized errors, 48px targets, español neutro copy (Agente: react-ui-engineer · Modelo: sonnet)
+- [x] T014 [P] [US1] Create `frontend/src/components/intervals/AgeGateDialog.tsx` — mirrors `AgeBandGuardrailDialog.tsx` (focus trap, Escape, explicit close); on 422 `age_gate_confirmation_required` → confirm → resubmit `age_gate_confirmed: true`; hard `age_gate_z3_blocked` renders blocking explanation, no override CTA (Agente: react-ui-engineer · Modelo: sonnet)
+- [x] T015 [US1] Integrate section "Estructura de intervalos" into `frontend/src/routes/training/SessionDetailPage.tsx` — empty/create state, view/edit, delete with confirm; lazy-load the editor (Agente: react-ui-engineer · Modelo: sonnet)
+- [x] T016 [US1] Create `frontend/src/components/intervals/__tests__/StructureEditor.test.tsx` + `AgeGateDialog.test.tsx` — branching logic, error mapping, resubmit flow, jest-axe zero violations on the dialog and editor (Agente: qa-engineer · Modelo: sonnet)
 
 **Checkpoint**: US1 fully functional standalone — richer session planning even with Strava disabled.
 
@@ -75,18 +75,18 @@
 
 ### Tests for User Story 2 (write first, must fail)
 
-- [ ] T017 [P] [US2] Create `backend/tests/intervals/test_matching.py` — pure-engine unit tests: repeat-group flattening, `plan[i]↔lap[i]` pairing, ±30% boundary cases, `<10s` lap discard, fewer/more/zero laps → `sin_dato`/`extra`, `result_json` shape + summary counts (FR-016 exhaustive) (Agente: qa-engineer · Modelo: sonnet)
-- [ ] T018 [P] [US2] Create `backend/tests/intervals/test_match_flow.py` — link dispatch trigger (stubbed `get_activity_laps` + dispatcher), structure-change trigger, `GET /sessions/{id}/match` statuses (`computed|no_activity|computing|failed`), `POST /structures/{id}/recalculate` 202/409, laps replace-on-refetch, unlink deletes match row but preserves laps (Agente: qa-engineer · Modelo: sonnet)
-- [ ] T019 [P] [US2] Create `backend/tests/privacy/test_laps_privacy.py` — model has no geo/name/cadence/watts attrs; runner allow-list drops unexpected raw fields; match responses + `result_json` contain no coordinates; numeric-only log assertions (SC-007) (Agente: data-privacy-guard · Modelo: sonnet)
+- [x] T017 [P] [US2] Create `backend/tests/intervals/test_matching.py` — pure-engine unit tests: repeat-group flattening, `plan[i]↔lap[i]` pairing, ±30% boundary cases, `<10s` lap discard, fewer/more/zero laps → `sin_dato`/`extra`, `result_json` shape + summary counts (FR-016 exhaustive) (Agente: qa-engineer · Modelo: sonnet)
+- [x] T018 [P] [US2] Create `backend/tests/intervals/test_match_flow.py` — link dispatch trigger (stubbed `get_activity_laps` + dispatcher), structure-change trigger, `GET /sessions/{id}/match` statuses (`computed|no_activity|computing|failed`), `POST /structures/{id}/recalculate` 202/409, laps replace-on-refetch, unlink deletes match row but preserves laps (Agente: qa-engineer · Modelo: sonnet)
+- [x] T019 [P] [US2] Create `backend/tests/privacy/test_laps_privacy.py` — model has no geo/name/cadence/watts attrs; runner allow-list drops unexpected raw fields; match responses + `result_json` contain no coordinates; numeric-only log assertions (SC-007) (Agente: data-privacy-guard · Modelo: sonnet)
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Create `backend/app/services/intervals/matching.py` — pure function `compute_match(flattened_blocks, laps) -> MatchResultPayload` per research D5 (tolerance constant, discard rule, statuses, extra laps, engine `ENGINE_VERSION = 1`); no I/O, fully deterministic (Agente: fastapi-architect · Modelo: fable)
-- [ ] T021 [US2] Create `backend/app/services/intervals/match_runner.py` — deferred job: fetch laps via `get_activity_laps`, allow-list + replace-persist `StravaActivityLap` rows, compute, upsert `IntervalMatchResult` (`triggered_by`); own `AsyncSessionLocal` + commit (webhook dispatcher pattern); failure → `failed` state, numeric-only logs (Agente: integration-engineer · Modelo: sonnet)
-- [ ] T022 [US2] Wire triggers — edit `backend/app/routers/activities.py::link_activity` (dispatch on link when session has structure; delete match row on unlink) and `services/intervals/structures.py` (dispatch on create/update when a linked activity exists), both via `TaskDispatcher` (Agente: integration-engineer · Modelo: sonnet)
-- [ ] T023 [US2] Implement match endpoints in `backend/app/routers/intervals.py` — `GET /sessions/{id}/match`, `POST /structures/{id}/recalculate` per contracts; laps only ever serialized inside match detail (Agente: fastapi-architect · Modelo: sonnet)
-- [ ] T024 [US2] Create `frontend/src/components/intervals/PlanVsActualTable.tsx` + `frontend/src/routes/training/ActivityMatchPage.tsx` (lazy) + route `/training/sessions/:id/activity-match/:activityId` in `App.tsx` under `ProtectedRoute allowedRoles={[coach, admin]}`; badge semantics verde/ámbar/gris, states no_activity/computing/failed with retry, link from SessionDetailPage activity section (Agente: react-ui-engineer · Modelo: sonnet)
-- [ ] T025 [US2] Create `frontend/src/components/intervals/__tests__/PlanVsActualTable.test.tsx` + `ActivityMatchPage.test.tsx` — all four states, mismatch rendering, jest-axe on the page (Agente: qa-engineer · Modelo: sonnet)
+- [x] T020 [US2] Create `backend/app/services/intervals/matching.py` — pure function `compute_match(flattened_blocks, laps) -> MatchResultPayload` per research D5 (tolerance constant, discard rule, statuses, extra laps, engine `ENGINE_VERSION = 1`); no I/O, fully deterministic (Agente: fastapi-architect · Modelo: fable)
+- [x] T021 [US2] Create `backend/app/services/intervals/match_runner.py` — deferred job: fetch laps via `get_activity_laps`, allow-list + replace-persist `StravaActivityLap` rows, compute, upsert `IntervalMatchResult` (`triggered_by`); own `AsyncSessionLocal` + commit (webhook dispatcher pattern); failure → `failed` state, numeric-only logs (Agente: integration-engineer · Modelo: sonnet)
+- [x] T022 [US2] Wire triggers — edit `backend/app/routers/activities.py::link_activity` (dispatch on link when session has structure; delete match row on unlink) and `services/intervals/structures.py` (dispatch on create/update when a linked activity exists), both via `TaskDispatcher` (Agente: integration-engineer · Modelo: sonnet)
+- [x] T023 [US2] Implement match endpoints in `backend/app/routers/intervals.py` — `GET /sessions/{id}/match`, `POST /structures/{id}/recalculate` per contracts; laps only ever serialized inside match detail (Agente: fastapi-architect · Modelo: sonnet)
+- [x] T024 [US2] Create `frontend/src/components/intervals/PlanVsActualTable.tsx` + `frontend/src/routes/training/ActivityMatchPage.tsx` (lazy) + route `/training/sessions/:id/activity-match/:activityId` in `App.tsx` under `ProtectedRoute allowedRoles={[coach, admin]}`; badge semantics verde/ámbar/gris, states no_activity/computing/failed with retry, link from SessionDetailPage activity section (Agente: react-ui-engineer · Modelo: sonnet)
+- [x] T025 [US2] Create `frontend/src/components/intervals/__tests__/PlanVsActualTable.test.tsx` + `ActivityMatchPage.test.tsx` — all four states, mismatch rendering, jest-axe on the page (Agente: qa-engineer · Modelo: sonnet)
 
 **Checkpoint**: Core value proposition live — objective adherence evidence, coach-only.
 
@@ -100,13 +100,13 @@
 
 ### Tests for User Story 3 (write first, must fail)
 
-- [ ] T026 [P] [US3] Create `backend/tests/intervals/test_instructivo_pdf.py` — 200 + `application/pdf` + attachment filename per brand; rendered HTML contains flattened blocks, brand-specific steps, "desactivá la vuelta automática" in all three; 404 no structure; 422 unknown brand; parent 403 (PDF byte render needs pango/glib — assert via HTML context where env lacks it, same caveat as feature 024) (Agente: qa-engineer · Modelo: sonnet)
+- [x] T026 [P] [US3] Create `backend/tests/intervals/test_instructivo_pdf.py` — 200 + `application/pdf` + attachment filename per brand; rendered HTML contains flattened blocks, brand-specific steps, "desactivá la vuelta automática" in all three; 404 no structure; 422 unknown brand; parent 403 (PDF byte render needs pango/glib — assert via HTML context where env lacks it, same caveat as feature 024) (Agente: qa-engineer · Modelo: sonnet)
 
 ### Implementation for User Story 3
 
-- [ ] T027 [P] [US3] Create `backend/templates/documents/pdf/session_instructivo.html` — extends `base/layout.html` + `_brand_tokens.html`; session header, flattened block table (orden/tipo/duración/zona/cadencia), per-brand conditional steps per research D8, auto-lap warning block; español neutro; register new `DocumentTemplate` enum value + spec in the template registry (Agente: technical-writer · Modelo: sonnet)
-- [ ] T028 [US3] Create `backend/app/services/intervals/instructivo_pdf.py` (wrapper mirroring `athlete_newsletter_pdf.py`, reuses `flatten_blocks()`) + endpoint `GET /sessions/{id}/instructivo?brand=` in `routers/intervals.py` returning in-memory `Response` attachment per contracts (Agente: fastapi-architect · Modelo: sonnet)
-- [ ] T029 [US3] Create `frontend/src/components/intervals/InstructivoDownloadButton.tsx` — brand select (3 marcas), blob download via `triggerBlobDownload`, disabled sin estructura, loading/error states; integrate into SessionDetailPage section; test `__tests__/InstructivoDownloadButton.test.tsx` incl. jest-axe (Agente: react-ui-engineer · Modelo: sonnet)
+- [x] T027 [P] [US3] Create `backend/templates/documents/pdf/session_instructivo.html` — extends `base/layout.html` + `_brand_tokens.html`; session header, flattened block table (orden/tipo/duración/zona/cadencia), per-brand conditional steps per research D8, auto-lap warning block; español neutro; register new `DocumentTemplate` enum value + spec in the template registry (Agente: technical-writer · Modelo: sonnet)
+- [x] T028 [US3] Create `backend/app/services/intervals/instructivo_pdf.py` (wrapper mirroring `athlete_newsletter_pdf.py`, reuses `flatten_blocks()`) + endpoint `GET /sessions/{id}/instructivo?brand=` in `routers/intervals.py` returning in-memory `Response` attachment per contracts (Agente: fastapi-architect · Modelo: sonnet)
+- [x] T029 [US3] Create `frontend/src/components/intervals/InstructivoDownloadButton.tsx` — brand select (3 marcas), blob download via `triggerBlobDownload`, disabled sin estructura, loading/error states; integrate into SessionDetailPage section; test `__tests__/InstructivoDownloadButton.test.tsx` incl. jest-axe (Agente: react-ui-engineer · Modelo: sonnet)
 
 **Checkpoint**: Plan actionable in the real world without device push.
 
@@ -120,14 +120,14 @@
 
 ### Tests for User Story 4 (write first, must fail)
 
-- [ ] T030 [P] [US4] Create `backend/tests/intervals/test_templates.py` — CRUD + archive; tag filters; attach clones (independent copy proven by mutating both sides); Z3+ on 10-12 template rejected at save; attach onto 10-12 requires confirmation; 409 session already structured; parent 403 (Agente: qa-engineer · Modelo: sonnet)
+- [x] T030 [P] [US4] Create `backend/tests/intervals/test_templates.py` — CRUD + archive; tag filters; attach clones (independent copy proven by mutating both sides); Z3+ on 10-12 template rejected at save; attach onto 10-12 requires confirmation; 409 session already structured; parent 403 (Agente: qa-engineer · Modelo: sonnet)
 
 ### Implementation for User Story 4
 
-- [ ] T031 [US4] Create `backend/app/services/intervals/templates.py` — CRUD + `attach_template()` copy-on-attach reusing the full structure validation from `structures.py` (research D3, spec edge case) (Agente: fastapi-architect · Modelo: sonnet)
-- [ ] T032 [US4] Implement template endpoints in `backend/app/routers/intervals.py` — `POST/GET/PUT /templates`, `PATCH /templates/{id}/archive`, `POST /templates/{id}/attach` per contracts; list with `selectinload` on blocks (Agente: fastapi-architect · Modelo: sonnet)
-- [ ] T033 [US4] Create `frontend/src/components/intervals/TemplatePicker.tsx` (browse/filter by 3 tags + attach w/ AgeGateDialog reuse) + `frontend/src/routes/intervals/TemplateLibraryPage.tsx` (lazy route `/intervals/templates`, coach/admin) + "Guardar como plantilla" action in StructureEditor (Agente: react-ui-engineer · Modelo: sonnet)
-- [ ] T034 [US4] Create `frontend/src/components/intervals/__tests__/TemplatePicker.test.tsx` + `TemplateLibraryPage.test.tsx` — filters, attach flow incl. confirmation path, jest-axe on the page (Agente: qa-engineer · Modelo: sonnet)
+- [x] T031 [US4] Create `backend/app/services/intervals/templates.py` — CRUD + `attach_template()` copy-on-attach reusing the full structure validation from `structures.py` (research D3, spec edge case) (Agente: fastapi-architect · Modelo: sonnet)
+- [x] T032 [US4] Implement template endpoints in `backend/app/routers/intervals.py` — `POST/GET/PUT /templates`, `PATCH /templates/{id}/archive`, `POST /templates/{id}/attach` per contracts; list with `selectinload` on blocks (Agente: fastapi-architect · Modelo: sonnet)
+- [x] T033 [US4] Create `frontend/src/components/intervals/TemplatePicker.tsx` (browse/filter by 3 tags + attach w/ AgeGateDialog reuse) + `frontend/src/routes/intervals/TemplateLibraryPage.tsx` (lazy route `/intervals/templates`, coach/admin) + "Guardar como plantilla" action in StructureEditor (Agente: react-ui-engineer · Modelo: sonnet)
+- [x] T034 [US4] Create `frontend/src/components/intervals/__tests__/TemplatePicker.test.tsx` + `TemplateLibraryPage.test.tsx` — filters, attach flow incl. confirmation path, jest-axe on the page (Agente: qa-engineer · Modelo: sonnet)
 
 **Checkpoint**: All four stories independently functional.
 
@@ -138,7 +138,7 @@
 - [ ] T035 [P] Run `data-privacy-guard` audit over the full feature surface (models, runner, responses, logs, PDF output) — mandatory constitution gate for athlete-linked data; fix findings (Agente: data-privacy-guard · Modelo: fable)
 - [ ] T036 [P] Add query-count/eager-load assertions for structure+template list endpoints in `backend/tests/intervals/test_perf_queries.py` (mirrors `tests/strength/test_perf_queries.py`; Constitution IV N+1 rule) (Agente: performance-engineer · Modelo: sonnet)
 - [ ] T037 Execute quickstart.md end-to-end on Docker (all 4 scenarios + privacy audit section) + full `pytest` / `vitest` regression; verify new lazy routes stay ≤150 KB gzip (`npm run build` output) (Agente: qa-engineer · Modelo: sonnet)
-- [ ] T038 [P] Update `docs/implementation-status.md` + add feature row to `CLAUDE.md` status table (deploy pending note: run migration `b5c6d7e8f9a0` on Render) (Agente: technical-writer · Modelo: haiku)
+- [x] T038 [P] Update `docs/implementation-status.md` + add feature row to `CLAUDE.md` status table (deploy pending note: run migration `b5c6d7e8f9a0` on Render) (Agente: technical-writer · Modelo: haiku)
 
 ---
 

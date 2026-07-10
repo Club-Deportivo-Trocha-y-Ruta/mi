@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine
-from app.routers import ai, alerts, anxiety, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, strength, technique, training_sessions
+from app.routers import ai, alerts, anxiety, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, strength, technique, training_sessions
 from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
@@ -92,6 +92,7 @@ app.include_router(club_race_insights_router, prefix="/api/races", tags=["club-r
 app.include_router(session_assistant_router, prefix="/api/clubs", tags=["session-assistant"])
 app.include_router(technique.router, prefix="/api/technique", tags=["technique"])
 app.include_router(strength.router, prefix="/api/strength", tags=["strength"])
+app.include_router(intervals.router, prefix="/api/intervals", tags=["intervals"])
 
 if settings.strava_enabled:
     from app.routers import activities as activities_router_module

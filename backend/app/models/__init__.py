@@ -113,6 +113,21 @@ from app.models.strava_activity import (
     StravaUpstreamState,
 )
 
+# Feature 026 — Structured Interval Training
+from app.models.interval_structure import (
+    HRZone,
+    IntervalBlockType,
+    IntervalStructure,
+    IntervalStructureBlock,
+    IntervalTemplate,
+    IntervalTemplateBlock,
+)
+from app.models.strava_activity_lap import (
+    IntervalMatchResult,
+    MatchTrigger,
+    StravaActivityLap,
+)
+
 __all__ = [
     "Base",
     "User",
@@ -229,4 +244,14 @@ __all__ = [
     "StravaActivity",
     "StravaIngestSource",
     "StravaUpstreamState",
+    # Feature 026 — Structured Interval Training
+    "IntervalStructure",
+    "IntervalStructureBlock",
+    "IntervalTemplate",
+    "IntervalTemplateBlock",
+    "IntervalBlockType",
+    "HRZone",
+    "StravaActivityLap",
+    "IntervalMatchResult",
+    "MatchTrigger",
 ]

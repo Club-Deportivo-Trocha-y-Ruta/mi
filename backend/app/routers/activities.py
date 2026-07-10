@@ -28,14 +28,17 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, get_task_dispatcher
 from app.models.athlete import Athlete
 from app.models.club import ClubRole
+from app.models.interval_structure import IntervalStructure
 from app.models.strava_activity import StravaActivity
+from app.models.strava_activity_lap import IntervalMatchResult, MatchTrigger
 from app.models.training_session import SessionAttendance, TrainingSession
 from app.models.user import User, UserRole
 from app.schemas.strava import (
@@ -47,6 +50,8 @@ from app.schemas.strava import (
     SessionSuggestionListOut,
     SessionSuggestionOut,
 )
+from app.services.intervals.match_runner import run_match_deferred
+from app.services.notification.task_dispatcher import TaskDispatcher
 from app.services.permissions import (
     can_link_activity,
     can_view_activity,
@@ -366,6 +371,7 @@ async def link_activity(
     body: LinkUpdateIn,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    dispatcher: TaskDispatcher = Depends(get_task_dispatcher),
 ) -> ActivityOut:
     """Vincula, re-vincula o desvincula una actividad a una sesión (FR-007).
 
@@ -373,6 +379,19 @@ async def link_activity(
     ``can_link_activity`` (parents y el propio athlete-role reciben 403).
     ``training_session_id=None`` desvincula. La sesión debe pertenecer al
     mismo club del atleta o se rechaza con 422 (mensaje en español).
+
+    Feature 026 (structured interval training): si la sesión previamente
+    vinculada tenía un ``IntervalStructure`` con un ``IntervalMatchResult``
+    persistido para este par estructura↔actividad, el desvínculo borra esa
+    fila de comparación (el par ya no existe) pero preserva las
+    ``StravaActivityLap`` — son propiedad de la actividad, no del match
+    (data-model.md §5/§7). Si el vínculo nuevo apunta a una sesión que sí
+    tiene ``IntervalStructure``, se despacha el job diferido de
+    emparejamiento (``services/intervals/match_runner.py``,
+    ``triggered_by=link``) vía el ``TaskDispatcher`` existente — el fetch de
+    laps a Strava y el cómputo nunca corren en el hilo de este endpoint
+    (contracts/api.md "Side-contract on existing endpoint"). El shape de la
+    respuesta no cambia.
     """
     activity = await _get_activity_or_404(db, activity_id)
 
@@ -383,11 +402,31 @@ async def link_activity(
         )
 
     if body.training_session_id is None:
+        previous_session_id = activity.training_session_id
+
         activity.training_session = None
         activity.training_session_id = None
         activity.linked_by = None
         activity.linked_by_user_id = None
         activity.linked_at = None
+
+        if previous_session_id is not None:
+            previous_structure_result = await db.execute(
+                select(IntervalStructure.id).where(
+                    IntervalStructure.training_session_id == previous_session_id
+                )
+            )
+            previous_structure_id = previous_structure_result.scalar_one_or_none()
+            if previous_structure_id is not None:
+                # Borra solo la fila de comparación de este par
+                # estructura↔actividad — las StravaActivityLap NO se tocan
+                # (son propiedad de la actividad, D7).
+                await db.execute(
+                    sa_delete(IntervalMatchResult).where(
+                        IntervalMatchResult.structure_id == previous_structure_id,
+                        IntervalMatchResult.strava_activity_id == activity.id,
+                    )
+                )
     else:
         session_result = await db.execute(
             select(TrainingSession).where(
@@ -410,6 +449,20 @@ async def link_activity(
         activity.linked_by = current_user
         activity.linked_by_user_id = current_user.id
         activity.linked_at = datetime.now(timezone.utc)
+
+        target_structure_result = await db.execute(
+            select(IntervalStructure.id).where(
+                IntervalStructure.training_session_id == session_obj.id
+            )
+        )
+        target_structure_id = target_structure_result.scalar_one_or_none()
+        if target_structure_id is not None:
+            dispatcher.dispatch(
+                run_match_deferred,
+                target_structure_id,
+                activity.id,
+                MatchTrigger.link,
+            )
 
     await db.flush()
 

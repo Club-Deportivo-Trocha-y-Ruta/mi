@@ -163,6 +163,19 @@ const ActivityReviewPage = lazy(() =>
   })),
 );
 
+// Structured Interval Training (feature 026) — plan-vs-actual + biblioteca de
+// plantillas, coach/admin only (lazy)
+const ActivityMatchPage = lazy(() =>
+  import("@/routes/training/ActivityMatchPage").then((m) => ({
+    default: m.ActivityMatchPage,
+  })),
+);
+const TemplateLibraryPage = lazy(() =>
+  import("@/routes/intervals/TemplateLibraryPage").then((m) => ({
+    default: m.TemplateLibraryPage,
+  })),
+);
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -365,6 +378,22 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <SessionFormPage mode="edit" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/sessions/:id/activity-match/:activityId"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando comparación plan vs. real…
+                  </div>
+                }
+              >
+                <ActivityMatchPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -818,6 +847,24 @@ export default function App() {
                 }
               >
                 <ActivityReviewPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Biblioteca de plantillas de intervalos (feature 026) — coach/admin only ── */}
+        <Route
+          path="/intervals/templates"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando biblioteca de plantillas…
+                  </div>
+                }
+              >
+                <TemplateLibraryPage />
               </Suspense>
             </ProtectedRoute>
           }

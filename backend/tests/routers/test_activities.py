@@ -85,6 +85,11 @@ _TABLES = (
     "strava_activities",
     "training_sessions",
     "session_attendance",
+    # feature 026: link_activity now checks for an attached interval structure
+    # to decide whether to dispatch a plan-vs-actual match, and unlink clears
+    # any match result for the pair.
+    "interval_structures",
+    "interval_match_results",
 )
 
 
