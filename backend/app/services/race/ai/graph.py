@@ -5,7 +5,7 @@ Topología (lineal con conditional edges para error handling y fallback):
     validate_input
         ├─ errors? → END
         └─ ok    → load_race_data → anonymize → compute_metrics
-                                 → retrieve_principles → recall_memory
+                                 → recall_memory
                                  → analyst_agent
                                        ├─ failed? → fallback_render →
                                        │            render_outputs → notify → END
@@ -48,7 +48,6 @@ from app.services.race.ai.nodes.persist_insight import persist_insight
 from app.services.race.ai.nodes.recall_memory import recall_memory
 from app.services.race.ai.nodes.rehydrate_names import rehydrate_names
 from app.services.race.ai.nodes.render_outputs import render_outputs
-from app.services.race.ai.nodes.retrieve_principles import retrieve_principles
 from app.services.race.ai.nodes.validate_input import validate_input
 from app.services.race.ai.state import RaceAnalystState
 
@@ -153,7 +152,6 @@ def build_graph(checkpointer: Optional[Any] = None):
     sg.add_node("load_race_data", load_race_data)
     sg.add_node("anonymize", anonymize)
     sg.add_node("compute_metrics", compute_metrics)
-    sg.add_node("retrieve_principles", retrieve_principles)
     sg.add_node("recall_memory", recall_memory)
     sg.add_node("analyst_agent", _analyst_agent_with_fallback)
     sg.add_node("critic_agent", critic_agent)
@@ -172,8 +170,7 @@ def build_graph(checkpointer: Optional[Any] = None):
     )
     sg.add_edge("load_race_data", "anonymize")
     sg.add_edge("anonymize", "compute_metrics")
-    sg.add_edge("compute_metrics", "retrieve_principles")
-    sg.add_edge("retrieve_principles", "recall_memory")
+    sg.add_edge("compute_metrics", "recall_memory")
     sg.add_edge("recall_memory", "analyst_agent")
     sg.add_edge("analyst_agent", "critic_agent")
     sg.add_edge("critic_agent", "hitl_gate_review")

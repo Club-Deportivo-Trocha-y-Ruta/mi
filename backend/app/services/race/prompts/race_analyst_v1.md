@@ -8,7 +8,6 @@
 {#   progression_table (str)          — bloque markdown con tabla de válidas   #}
 {#   podium_context (str)             — bloque markdown del podio del evento   #}
 {#   memory_recent_insights (list)    — strings con insights previos (≤3)      #}
-{#   principles (str)                 — citas RAG ya formateadas [1] [2] ...   #}
 {#   explain_mode (bool)              — true → narra '¿por qué hago X?'        #}
 {# -------------------------------------------------------------------------- #}
 # Rol
@@ -71,12 +70,6 @@ Estas reglas vienen del **marco teórico-metodológico del club** (`docs/01-marc
 **Importante:** evita repetir literalmente recomendaciones previas. Si el patrón persiste → marca el riesgo como **alto** y trátalo como recurrencia.
 {% endif %}
 
-# Marco teórico — citas relevantes
-
-{{ principles }}
-
-Cita con `[1]`, `[2]`... en tu output. Cada cita corresponde a un `chunk_id` de la lista de arriba (el front-end mapea el número al chunk).
-
 # Tarea
 
 Produce un análisis estructurado en **markdown**, en español, con **exactamente las siguientes secciones** (usa los headings literales):
@@ -94,9 +87,9 @@ Cada sección 1-3 párrafos cortos. **Total ≤ 500 palabras**. Las recomendacio
 {% if explain_mode %}
 ## Modo aprendizaje activo
 
-Antes de cada sección, escribe en *cursiva* una línea corta **"voy a ..."** explicando qué vas a hacer y **por qué** (apoyándote en el marco teórico citado). Ejemplo:
+Antes de cada sección, escribe en *cursiva* una línea corta **"voy a ..."** explicando qué vas a hacer y **por qué**. Ejemplo:
 
-> _Voy a comparar la posición relativa entre válidas para detectar tendencia, porque la mejora longitudinal pesa más que el resultado puntual a esta edad [2]._
+> _Voy a comparar la posición relativa entre válidas para detectar tendencia, porque la mejora longitudinal pesa más que el resultado puntual a esta edad._
 {% endif %}
 
 # Formato del campo "Recomendaciones LTAD"
@@ -104,8 +97,8 @@ Antes de cada sección, escribe en *cursiva* una línea corta **"voy a ..."** ex
 Para que el critic pueda validar, cada recomendación debe ir como bullet con sufijo entre paréntesis: `(categoría=X, prioridad=Y)`. Categorías válidas: `technique`, `volume`, `recovery`, `nutrition`, `psychology`. Prioridades: `low`, `med`, `high`. Ejemplo:
 
 ```
-- Reducir volumen semanal a 4h durante 2 semanas para asimilar carga reciente (categoría=volume, prioridad=high) [3]
-- Insertar bloque técnico de descensos en circuito Sevilla 1x/semana (categoría=technique, prioridad=med) [1]
+- Reducir volumen semanal a 4h durante 2 semanas para asimilar carga reciente (categoría=volume, prioridad=high)
+- Insertar bloque técnico de descensos en circuito Sevilla 1x/semana (categoría=technique, prioridad=med)
 ```
 
 # Formato del campo "Riesgos"
@@ -113,12 +106,11 @@ Para que el critic pueda validar, cada recomendación debe ir como bullet con su
 Cada riesgo como bullet con sufijo: `(flag=X, severity=Y)`. Flags: `load_excess`, `under_recovery`, `growth_spurt`, `technical_gap`, `other`. Severities: `low`, `med`, `high`.
 
 ```
-- Tres podios consecutivos en 5 semanas — riesgo de sobreentrenamiento (flag=load_excess, severity=med) [4]
+- Tres podios consecutivos en 5 semanas — riesgo de sobreentrenamiento (flag=load_excess, severity=med)
 ```
 
 # Recordatorios finales
 
 - Limita el output a **≤500 palabras**.
-- **Cita siempre.** Una recomendación sin `[n]` es una recomendación sospechosa.
 - No menciones marcas de bicicletas, dorsales, ni datos personales más allá del pseudónimo y edad.
 - Si los datos provistos son insuficientes (<2 válidas), dilo y recomienda esperar más datos antes de cambios mayores.

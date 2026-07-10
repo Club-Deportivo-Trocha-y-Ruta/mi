@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Any, TypedDict
 
 from app.models.athlete_ai_insight import InsightConfidence
-from app.services.race.schemas import AnalysisOutput, Citation, CriticFeedback
+from app.services.race.schemas import AnalysisOutput, CriticFeedback
 
 
 class RaceAnalystState(TypedDict, total=False):
@@ -52,7 +52,7 @@ class RaceAnalystState(TypedDict, total=False):
     coach_id: int  # audit
     explain_mode: bool
     # Edad cronológica del atleta calculada en el router desde birth_date.
-    # NULL → fallback warning en analyst_agent + retrieve_principles.
+    # NULL → fallback warning en analyst_agent.
     athlete_age: int | None
     # Feature 011: grupo LTAD real (derivado de age_decimal en el router) y
     # fase madurativa real (último registro antropométrico, None si no hay).
@@ -71,7 +71,6 @@ class RaceAnalystState(TypedDict, total=False):
     # Producido por load_race_data; weather_notes scrubeado por anonymize.
     event_conditions: dict[int, dict]
 
-    principles: list[Citation]
     memory: list[str]  # últimos 3 insights del atleta
 
     draft_analysis: AnalysisOutput | None

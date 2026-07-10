@@ -27,7 +27,9 @@ class AnthropicProvider(_BaseProvider):
         model: str,
         timeout: float = 30.0,
         max_tokens: int = 1024,
-        temperature: float = 0.4,
+        temperature: float = 0.4,  # aceptado por paridad de interfaz con
+        # otros providers (ver factory.py); no se reenvía al SDK — ver
+        # comentario en `complete()`.
         base_url: str | None = None,
     ) -> None:
         try:
@@ -52,13 +54,13 @@ class AnthropicProvider(_BaseProvider):
 
         t0 = time.perf_counter()
         try:
+            # Nota: `temperature` NO se envía. En claude-sonnet-5 (y el resto
+            # de la familia 4.6+) el SDK rechaza con 400 cualquier valor de
+            # temperature/top_p/top_k distinto del default — se omite el
+            # parámetro entero en vez de intentar pasar `self._temperature`.
             resp = await self._client.messages.create(
                 model=self.model,
                 max_tokens=req.max_tokens or self._max_tokens,
-                temperature=(
-                    req.temperature if req.temperature is not None
-                    else self._temperature
-                ),
                 system=req.system,
                 messages=[{"role": m.role, "content": m.content} for m in req.messages],
             )

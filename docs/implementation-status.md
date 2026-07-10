@@ -506,3 +506,32 @@ Section B: (B6) `focus_groups` via new pure `focus_grouping.py` mapping free-tex
 New files: `app/services/training/focus_grouping.py`, `app/services/notification/media_embedding.py`, `app/services/utils/dates_es.py`. Implemented via a 5-wave multi-agent workflow scoped by file ownership (sonnet agents). Additive `metrics_snapshot`/`ai_narrative` fields with template fallbacks for pre-024 snapshots.
 
 **Status:** ✅ Complete — deploy pending (no Alembic migration; additive JSON-column changes only). Feature-scoped tests green (133 newsletter/helper tests). The one WeasyPrint PDF-layout render test is env-blocked locally (macOS lacks pango/glib `libgobject-2.0-0`); it passes in the Docker/Render image.
+
+---
+
+## Implementation status — Strava Activity Sync (specs/025-strava-activity-sync)
+
+Per-athlete Strava account connection via OAuth (guardian-consent-gated), automatic activity ingestion (webhook push + daily reconcile pull), and **coach-gated manual linking** of a synced activity to a specific training session. Athletes' Garmin/Magene/iGPSport devices already sync to Strava; Strava is the single integration hub. Privacy-first (Ley 1581): GPS/lat/lng/polyline/map/description are never persisted or exposed; logs carry numeric IDs only. Coach/admin link activities; parents get read-only visibility of their own children. Technical detail in `docs/16-strava-sync/` and `specs/025-strava-activity-sync/`.
+
+**Backend — ✅ Complete (migration `a4b5c6d7e8f9`, single head on `d3e4f5a6b7c8`), deploy pending:**
+
+| Layer | File | Change |
+|---|---|---|
+| Migration | `alembic/versions/a4b5c6d7e8f9_add_strava_sync_tables.py` | NEW — `strava_connections`, `strava_activities` tables + `parental_consents.external_activity_sync` column |
+| Models | `app/models/strava_connection.py`, `strava_activity.py` | NEW — `StravaConnection` (status enum, Fernet-encrypted token columns, UNIQUE athlete/strava_athlete_id), `StravaActivity` (UNIQUE `strava_activity_id`, `upstream_state`/`ingest_source` enums, composite `(training_session_id, start_date_utc)` index, **no GPS columns**) |
+| Schemas | `app/schemas/strava.py` | NEW — `ConnectionStatusOut`, `AuthorizeUrlOut`, `ActivityOut` (nested `link`, no coordinate fields), `LinkUpdateIn`, `SessionSuggestionOut`, `ReconcileResultOut`, `StravaWebhookEvent` |
+| Services | `app/services/strava/{token_store,oauth,client,ingest,reconcile}.py` | NEW — Fernet encrypt/decrypt; OAuth authorize URL + signed 15-min `state` + token exchange/refresh-rotation; httpx Strava client (auto-refresh, 429/rate-limit aware); idempotent GPS-stripping ingest + webhook dispatch; watermark reconcile |
+| RBAC | `app/services/permissions.py` | `can_view_activity`, `can_link_activity`, `filter_activities_for_parent` |
+| Routers | `app/routers/strava_integration.py`, `activities.py` (+ `main.py` flag-gated, `config.py`) | NEW — connect/status/disconnect, OAuth callback, webhook GET validation + POST (immediate 200, deferred processing), secret-gated reconcile; review list, athlete activities, session-suggestions, coach-only `PATCH .../link`, session activities |
+
+**Tests:** 110 passed + 1 xfail (backend, aiosqlite + httpx mocks): model constraints, OAuth/callback/webhook/reconcile router paths, service token-refresh/idempotency/GPS-strip/deauth, privacy invariants (no GPS in schema/model/response, numeric-only logs), RBAC (parent 403, cross-club 422), query-count anti-N+1. Frontend 48 passed (vitest + jest-axe). `ruff` clean on new modules. No regressions.
+
+> Privacy-suite bug caught & fixed during implementation: `upsert_activity` logged `extra={"created": ...}`, which collides with `LogRecord`'s reserved `created` field and would raise `KeyError` at INFO level in prod — renamed to `row_created` (`app/services/strava/ingest.py`).
+
+**Frontend — ✅ Complete, deploy pending:** `api/stravaActivities.ts` + `types/strava.types.ts`; hooks `hooks/activities/*` (`useStravaConnection`, `useAthleteActivities`, `useActivityReview`, `useLinkActivity`, `useSessionActivities`); components `components/activities/*` (`ConnectionStatusBadge`, `ActivityCard`, `LinkSessionDialog`); coach review page `routes/activities/ActivityReviewPage.tsx` (lazy route `/activities`, coach/admin); connection card + activity section on athlete detail; linked-activities section on session detail; parent read-only view. All copy español neutro. `tsc --noEmit` clean.
+
+**Audits:** security-engineer — 2 actionable findings applied (webhook `subscription_id` validation; fail-closed on empty shared secrets); data-privacy-guard — data minimization confirmed at schema/API/log layers.
+
+**Remaining (ops/deploy):** Strava dashboard self-service athlete-cap upgrade (1 → 10) + Developer Program application for full club; set Render env vars (`STRAVA_*` incl. `STRAVA_TOKEN_ENCRYPTION_KEY`, `STRAVA_RECONCILE_TOKEN`, `STRAVA_SUBSCRIPTION_ID`); set the app's Authorization Callback Domain to the prod host; run migration `a4b5c6d7e8f9` on Render (auto via `entrypoint.sh`); create the one-time webhook subscription against the prod callback; add GitHub secret `STRAVA_RECONCILE_TOKEN` for `.github/workflows/strava-reconcile.yml`; pilot one real athlete for SC-001/SC-002 validation. See `specs/025-strava-activity-sync/deploy-checklist.md` + `docs/16-strava-sync/runbook-ops.md`.
+
+> **Data privacy (authoritative):** `strava_activities` persists only summary fields (external id, athlete FK, connection FK, `name`, `sport_type`, start UTC/local, elapsed/moving time, distance, elevation gain, avg/max heart rate, trainer flag, upstream/link state). **No** GPS (`lat/lng/latlng`), `map.polyline`, `description`, photos, or segment data — enforced at schema, API, and log layers with a dedicated invariant test suite (`backend/tests/privacy/test_strava_privacy.py`). `strava_connections` stores `access_token`/`refresh_token` Fernet-encrypted. All reads scoped by RBAC (parent → own children read-only). See `specs/025-strava-activity-sync/data-model.md` § Privacy.

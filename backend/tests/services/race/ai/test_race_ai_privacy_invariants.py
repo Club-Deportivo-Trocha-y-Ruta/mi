@@ -106,7 +106,6 @@ def _make_analysis_input(pseudonym: str = "AzulZorro") -> AnalysisInput:
         ],
         podium_context={},
         memory_recent_insights=[],
-        principles_citations=[],
         explain_mode=False,
         athlete_id=999,
         season=2026,

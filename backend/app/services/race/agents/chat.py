@@ -37,7 +37,6 @@ from app.services.race.queries import (
     fetch_event_conditions,
     fetch_results_for_athlete,
 )
-from app.services.race.rag.tools import consultar_marco_teorico
 from app.services.race.schemas import ChatResponse
 
 logger = logging.getLogger(__name__)
@@ -557,8 +556,8 @@ class RaceChatAgent:
         llm: chat model con métodos ``bind_tools`` + ``ainvoke``. Si
             ``None``, se construye lazy en :meth:`chat`.
         tools: lista de tools LangChain. Si ``None``, se arma el set
-            default (consultar_marco_teorico, obtener_insights_atleta,
-            fetch_results) — los dos últimos requieren ``db_factory``.
+            default (obtener_insights_atleta, fetch_results, ...) —
+            requieren ``db_factory``.
         db_factory: callable que produce ``AsyncSession`` para los tools
             que consultan MySQL. En tests se pasa un fake o ``None``.
         session_store: override del store in-memory (tests).
@@ -593,7 +592,6 @@ class RaceChatAgent:
         race_event_id: Optional[int] = None,
     ) -> list[Any]:
         tools = [
-            consultar_marco_teorico,
             _build_obtener_insights_atleta_tool(
                 db_factory,
                 scope_season=scope_season,
@@ -725,9 +723,6 @@ class RaceChatAgent:
                         tool = effective_tools_by_name[name]
                         result = await tool.ainvoke(args or {})
                         tool_output = str(result)
-                        if name == "consultar_marco_teorico":
-                            for m in _CITE_RE.finditer(tool_output):
-                                pass  # citations se computan al final desde final_text
                     except Exception as exc:
                         logger.warning("Tool '%s' falló: %s", name, exc)
                         tool_output = f"(error ejecutando {name}: {type(exc).__name__})"

@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.athlete import ParentAthlete
+from app.models.athlete import Athlete, ParentAthlete
 from app.models.club import ClubMember, ClubRole
 from app.models.session_media import SessionMedia
 from app.models.training_session import SessionAttendance, TrainingSession
 from app.models.user import User, UserRole
+
+if TYPE_CHECKING:
+    # Modulo creado en la tarea T006 (feature 025); import solo para tipado
+    # estatico — evita el import en tiempo de ejecucion mientras el modulo
+    # aun no existe (`from __future__ import annotations` difiere la
+    # evaluacion de anotaciones).
+    from app.models.strava_activity import StravaActivity
 
 
 async def allowed_athlete_ids_for(
@@ -309,3 +318,110 @@ async def can_rsvp_event(
         return await event_visible_to_athlete(db, event, athlete_id)  # type: ignore[arg-type]
 
     return False
+
+
+# ---------------------------------------------------------------------------
+# Permisos de actividades de Strava (feature 025)
+# ---------------------------------------------------------------------------
+
+
+async def can_view_activity(
+    user: User,
+    athlete_id: int,
+    db: AsyncSession,
+) -> bool:
+    """Autoriza la lectura de actividades de Strava de un atleta.
+
+    Admin: siempre.
+    Coach: si pertenece al mismo club que el atleta.
+    Parent: solo si el atleta es uno de sus hijos vinculados (acceso de solo
+        lectura — nunca puede vincular/desvincular, ver ``can_link_activity``).
+    Otros roles (athlete, etc.): False.
+    """
+    if user.role == UserRole.admin:
+        return True
+
+    if user.role == UserRole.coach:
+        result = await db.execute(
+            select(Athlete.club_id).where(Athlete.id == athlete_id)
+        )
+        club_id = result.scalar_one_or_none()
+        if club_id is None:
+            return False
+        role = await user_club_role(db, user.id, club_id)
+        return role is not None
+
+    if user.role == UserRole.parent:
+        ids = await parent_athlete_ids(db, user.id)
+        return athlete_id in ids
+
+    return False
+
+
+async def can_link_activity(
+    user: User,
+    activity: "StravaActivity",
+    db: AsyncSession,
+) -> bool:
+    """Autoriza vincular, re-vincular o desvincular una actividad de Strava
+    a una sesion de entrenamiento (FR-007).
+
+    Admin: siempre.
+    Coach: solo si pertenece al club del atleta duenio de la actividad.
+    Parent: nunca — la vinculacion es una accion exclusiva del cuerpo
+        tecnico; las familias solo tienen visibilidad de solo lectura
+        (ver ``can_view_activity``).
+    Otros roles: False.
+    """
+    if user.role == UserRole.admin:
+        return True
+
+    if user.role == UserRole.coach:
+        result = await db.execute(
+            select(Athlete.club_id).where(Athlete.id == activity.athlete_id)
+        )
+        club_id = result.scalar_one_or_none()
+        if club_id is None:
+            return False
+        role = await user_club_role(db, user.id, club_id)
+        return role is not None
+
+    # Parent (y cualquier otro rol) nunca puede vincular actividades.
+    return False
+
+
+def filter_activities_for_parent(
+    activities: list["StravaActivity"],
+    children_ids: set[int],
+) -> list["StravaActivity"]:
+    """Filtra una lista de actividades de Strava para una vista parent.
+
+    Mismo patron que ``filter_media_for_parent`` (session media): un padre
+    solo debe ver las filas cuyo ``athlete_id`` sea uno de sus propios hijos,
+    incluso cuando la lista de entrada proviene de un query no acotado por
+    atleta (p.ej. ``GET /training-sessions/{id}/activities``, donde la
+    sesion puede convocar a atletas de otras familias — FR-011).
+    """
+    return [a for a in activities if a.athlete_id in children_ids]
+
+
+async def athlete_activity_scope(
+    user: User,
+    db: AsyncSession,
+) -> set[int] | None:
+    """Retorna el alcance de athlete_id cuyas actividades de Strava el
+    usuario puede consultar.
+
+    Reutiliza la misma semantica que ``allowed_athlete_ids_for``:
+    - ``None`` → sin restriccion por atleta (admin / coach); el router aun
+      debe filtrar por club cuando corresponda (p.ej. ``GET /api/activities``
+      solo debe listar atletas del club del coach).
+    - ``set``  → alcance de padre; solo actividades cuyo ``athlete_id`` esta
+      en este set. Un set vacio significa que el padre no tiene hijos
+      vinculados y por tanto no ve ninguna actividad.
+
+    Pensado para acotar las queries de listado
+    (``GET /api/activities``, ``GET /api/athletes/{id}/activities``) antes
+    de aplicar filtros adicionales de club/sesion.
+    """
+    return await allowed_athlete_ids_for(user, db)

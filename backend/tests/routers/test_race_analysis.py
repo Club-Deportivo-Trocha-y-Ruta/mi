@@ -334,7 +334,7 @@ class TestChat:
                 return ChatResponse(
                     answer=f"Respuesta a: {query}",
                     citations_used=["1"],
-                    tools_called=["consultar_marco_teorico"],
+                    tools_called=["obtener_insights_atleta"],
                 )
 
         app.dependency_overrides[get_race_chat_agent] = lambda: FakeChatAgent()

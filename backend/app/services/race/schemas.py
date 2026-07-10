@@ -8,8 +8,8 @@ del grafo LangGraph (Fase 4). Diseño guiado por:
   ``athlete_pseudonym`` — NUNCA un nombre real. ``athlete_id`` viaja sólo
   para audit-trail interno (persistencia en ``athlete_ai_insights``), no
   para el prompt.
-- Trazabilidad: ``citations_used`` lista los ``chunk_id`` del RAG que el
-  modelo realmente referenció, para verificación humana.
+- Trazabilidad: ``citations_used`` lista referencias ``[N]`` que el
+  modelo incluyó en su output, para verificación humana.
 - JSON-serializable: todos los modelos exponen ``.model_dump()`` plano
   (sin objetos no-Pydantic) para persistir como JSON en MySQL.
 - Defensa en profundidad: enums cerrados para ``category`` /
@@ -30,9 +30,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Re-export Citation desde rag.retriever — un solo lugar de verdad.
-from app.services.race.rag.retriever import Citation
-
 __all__ = [
     # Enums
     "LTADGroup",
@@ -41,8 +38,6 @@ __all__ = [
     "RiskFlagType",
     "Severity",
     "CriticIssueSeverity",
-    # Dataclasses re-exported
-    "Citation",
     # Pydantic models
     "Recommendation",
     "RiskFlag",
@@ -195,10 +190,6 @@ class AnalysisInput(BaseModel):
         default_factory=list,
         max_length=10,
         description="Resúmenes textuales de últimos N insights (máx 10).",
-    )
-    principles_citations: list[Citation] = Field(
-        default_factory=list,
-        description="Citas RAG ya recuperadas para alimentar el prompt.",
     )
     explain_mode: bool = Field(
         False,

@@ -20,7 +20,6 @@ from app.services.race.ai.nodes import (
     critic_agent as critic_node_mod,
     load_race_data as load_node_mod,
     rehydrate_names as rehydrate_node_mod,
-    retrieve_principles as retrieve_node_mod,
     validate_input as validate_node_mod,
 )
 from tests.services.race.ai.conftest import (
@@ -59,15 +58,11 @@ def patched_pipeline(monkeypatch):
         import pandas as pd
         return pd.DataFrame([{"competitor_id": 22, "gap_to_p1_ms": 100}])
 
-    def _rag(query, top_k):
-        return []
-
     monkeypatch.setattr(validate_node_mod, "fetch_results_for_athlete", _fetch_results)
     monkeypatch.setattr(load_node_mod, "fetch_results_for_athlete", _fetch_results)
     monkeypatch.setattr(load_node_mod, "fetch_podium_context", _fetch_podium)
     monkeypatch.setattr(metrics_node_mod, "athlete_progression", _athlete_progression)
     monkeypatch.setattr(metrics_node_mod, "podium_gap", _podium_gap)
-    monkeypatch.setattr(retrieve_node_mod, "rag_retrieve", _rag)
 
     # Patch agentes para retornar FakeAnalystAgent/FakeCriticAgent.
     monkeypatch.setattr(

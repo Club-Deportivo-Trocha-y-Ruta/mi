@@ -37,7 +37,6 @@ from typing import Any, Optional
 from app.services.race.agents._llm import LLMCallResult, build_chat_llm, call_llm
 from app.services.race.agents.pricing import PROMPT_VERSION_ANALYST
 from app.services.race.prompts import render_prompt
-from app.services.race.rag.tools import format_citations
 from app.services.race.schemas import (
     AnalysisInput,
     AnalysisOutput,
@@ -84,9 +83,6 @@ _RISK_BULLET_RE = re.compile(
     r"severity\s*=\s*(?P<sev>low|med|high)\s*\)\s*(?P<cites>(?:\[\d+\]\s*)*)$",
     re.IGNORECASE,
 )
-
-# Regex: cualquier [n] citado en el texto.
-_CITE_RE = re.compile(r"\[(\d+)\]")
 
 
 def _split_sections(markdown: str) -> dict[str, str]:
@@ -178,25 +174,6 @@ def _parse_risks(section_text: str) -> list[RiskFlag]:
     return out
 
 
-def _extract_citations(markdown: str, principles_chunk_ids: list[str]) -> list[str]:
-    """Mapea ``[n]`` en el texto a ``chunk_id`` reales.
-
-    ``principles_chunk_ids`` viene en orden (1-indexed). Si el modelo
-    cita ``[5]`` pero solo hay 3 chunks → ignoramos la cita (el critic
-    la marcará).
-    """
-    used: list[str] = []
-    seen: set[str] = set()
-    for match in _CITE_RE.finditer(markdown):
-        idx = int(match.group(1))
-        if 1 <= idx <= len(principles_chunk_ids):
-            cid = principles_chunk_ids[idx - 1]
-            if cid not in seen:
-                seen.add(cid)
-                used.append(cid)
-    return used
-
-
 def _word_count(text: str) -> int:
     """Conteo aproximado de palabras (compatibilidad ES/EN)."""
     return len([w for w in re.split(r"\s+", text.strip()) if w])
@@ -206,7 +183,6 @@ def _build_prompt_context(input_: AnalysisInput) -> dict[str, Any]:
     """Mapea ``AnalysisInput`` → variables Jinja2 del prompt."""
     progression_md = _progression_to_md(input_.progression_df_records)
     podium_md = _podium_to_md(input_.podium_context)
-    principles_block = format_citations(input_.principles_citations)
 
     return {
         "athlete_pseudonym": input_.athlete_pseudonym,
@@ -215,7 +191,6 @@ def _build_prompt_context(input_: AnalysisInput) -> dict[str, Any]:
         "progression_table": progression_md,
         "podium_context": podium_md,
         "memory_recent_insights": input_.memory_recent_insights,
-        "principles": principles_block,
         "explain_mode": input_.explain_mode,
     }
 
@@ -420,16 +395,14 @@ class RaceAnalystAgent:
 
         call: LLMCallResult = await call_llm(llm, prompt)
 
-        principles_ids = [c.chunk_id for c in input_.principles_citations]
         sections = _split_sections(call.text)
         recs = _parse_recommendations(sections.get("recommendations", ""))
         risks = _parse_risks(sections.get("risks", ""))
-        cites = _extract_citations(call.text, principles_ids)
 
         output = AnalysisOutput(
             pseudonym=input_.athlete_pseudonym,
             sections=sections,
-            citations_used=cites,
+            citations_used=[],
             recommendations=recs,
             risk_flags=risks,
             raw_markdown=call.text if call.text else "_(modelo no devolvió contenido)_",
@@ -480,7 +453,6 @@ class RaceAnalystAgent:
         from app.services.race.ai.fallback import deterministic_fallback
 
         llm = self._llm or build_chat_llm()
-        principles_ids = [c.chunk_id for c in input_.principles_citations]
         context = self._build_v2_context(
             input_,
             valida_num=valida_num,
@@ -509,12 +481,11 @@ class RaceAnalystAgent:
             scrubbed_text = report.text
             sections = _split_sections_v2(scrubbed_text)
             recs = _parse_recommendations(sections.get("next_steps", ""))
-            cites = _extract_citations(scrubbed_text, principles_ids)
 
             out = AnalysisOutput(
                 pseudonym=input_.athlete_pseudonym,
                 sections=sections,
-                citations_used=cites,
+                citations_used=[],
                 recommendations=recs,
                 risk_flags=[],
                 raw_markdown=scrubbed_text or "_(modelo no devolvió contenido)_",
@@ -669,7 +640,6 @@ class RaceAnalystAgent:
         timeout = timeout_seconds or float(settings.ai_timeout_seconds)
         _forbidden = forbidden_names or []
         llm = self._llm or build_chat_llm()
-        principles_ids = [c.chunk_id for c in input_.principles_citations]
 
         context = self._build_v2_context(input_, valida_num=0, is_season_summary=True)
         prompt = render_prompt("race_analyst_v2", context, strict=False)
@@ -693,12 +663,11 @@ class RaceAnalystAgent:
         scrubbed = guardrails.scrub_with_report(call.text).text
         sections = _split_sections_v2(scrubbed)
         recs = _parse_recommendations(sections.get("next_steps", ""))
-        cites = _extract_citations(scrubbed, principles_ids)
 
         output = AnalysisOutput(
             pseudonym=input_.athlete_pseudonym,
             sections=sections,
-            citations_used=cites,
+            citations_used=[],
             recommendations=recs,
             risk_flags=[],
             raw_markdown=scrubbed or "_(modelo no devolvió contenido)_",
@@ -738,7 +707,6 @@ class RaceAnalystAgent:
         """
         progression_md = _progression_to_md(input_.progression_df_records)
         podium_md = _podium_to_md(input_.podium_context)
-        principles_block = format_citations(input_.principles_citations)
 
         # Compactar season_progression para el prompt (solo campos relevantes).
         compact_season: list[dict[str, Any]] = []
@@ -783,7 +751,6 @@ class RaceAnalystAgent:
             # anti-fabricación (ya no se lee el dead key podium_context["race_meta"]).
             "race_meta": input_.race_meta,
             "memory_recent_insights": input_.memory_recent_insights,
-            "principles": principles_block,
             "explain_mode": input_.explain_mode,
             "is_season_summary": is_season_summary,
             # Season context (T014 — feature 010):

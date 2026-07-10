@@ -52,8 +52,6 @@ Cualquiera de los siguientes en el draft → **`must_block=true`, severity=high*
 
 # Reglas de calidad (causan `approved=false` pero NO bloqueo)
 
-- Falta de citas en recomendaciones.
-- Citas inventadas (referencia `[n]` inexistente).
 - Vaguedad: recomendaciones no accionables.
 - Tono juzgador hacia el atleta o que viole "diversión primero".
 - Falta de una de las tres secciones v2 obligatorias.

@@ -156,6 +156,13 @@ const StrengthAthleteProgressPage = lazy(() =>
   })),
 );
 
+// Strava Activity Sync (feature 025) — revisión de actividades, coach/admin only (lazy)
+const ActivityReviewPage = lazy(() =>
+  import("@/routes/activities/ActivityReviewPage").then((m) => ({
+    default: m.ActivityReviewPage,
+  })),
+);
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -793,6 +800,24 @@ export default function App() {
                 }
               >
                 <StrengthAthleteProgressPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Revisión de actividades Strava (feature 025) — coach/admin only ── */}
+        <Route
+          path="/activities"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
+                    Cargando actividades…
+                  </div>
+                }
+              >
+                <ActivityReviewPage />
               </Suspense>
             </ProtectedRoute>
           }

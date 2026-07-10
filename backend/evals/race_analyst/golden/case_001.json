@@ -8,18 +8,58 @@
     "age": 10,
     "ltad_group": "mini-bambino",
     "progression_df_records": [
-      {"valida_num": 1, "event_date": "2026-01-31", "position": 3, "race_time_ms": 1820000, "points_awarded": 80, "gap_to_winner_ms": 60000},
-      {"valida_num": 2, "event_date": "2026-02-28", "position": 2, "race_time_ms": 1790000, "points_awarded": 95, "gap_to_winner_ms": 35000},
-      {"valida_num": 3, "event_date": "2026-04-19", "position": 3, "race_time_ms": 1775000, "points_awarded": 80, "gap_to_winner_ms": 25000},
-      {"valida_num": 4, "event_date": "2026-05-17", "position": 2, "race_time_ms": 1760000, "points_awarded": 95, "gap_to_winner_ms": 18000}
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "position": 3,
+        "race_time_ms": 1820000,
+        "points_awarded": 80,
+        "gap_to_winner_ms": 60000
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "position": 2,
+        "race_time_ms": 1790000,
+        "points_awarded": 95,
+        "gap_to_winner_ms": 35000
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "position": 3,
+        "race_time_ms": 1775000,
+        "points_awarded": 80,
+        "gap_to_winner_ms": 25000
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "position": 2,
+        "race_time_ms": 1760000,
+        "points_awarded": 95,
+        "gap_to_winner_ms": 18000
+      }
     ],
     "podium_context": {
       "category_id": 1,
       "event_id": 4,
       "podium": [
-        {"position": 1, "competitor_id": 4001, "race_time_ms": 1742000},
-        {"position": 2, "competitor_id": 9001, "race_time_ms": 1760000},
-        {"position": 3, "competitor_id": 4003, "race_time_ms": 1788000}
+        {
+          "position": 1,
+          "competitor_id": 4001,
+          "race_time_ms": 1742000
+        },
+        {
+          "position": 2,
+          "competitor_id": 9001,
+          "race_time_ms": 1760000
+        },
+        {
+          "position": 3,
+          "competitor_id": 4003,
+          "race_time_ms": 1788000
+        }
       ],
       "finishers_count": 11
     },
@@ -27,15 +67,25 @@
       "Válida 3 (2026): consistencia técnica, cadencia estimada 78 rpm",
       "Asistencia 90% sesiones — alta motivación"
     ],
-    "principles_citations": [
-      {"chunk_id": "rag_ltad_mb01", "source": "docs/01-marco-teorico.md", "content": "Ventana de entrenabilidad de la coordinación entre 9 y 12 años: prioridad absoluta a habilidades técnicas y juego.", "score": 0.92, "metadata": {"h1": "LTAD", "h2": "Ventanas entrenabilidad"}},
-      {"chunk_id": "rag_diver01", "source": "docs/01-marco-teorico.md", "content": "Diversión como principio inviolable: si compromete el disfrute, está mal calibrado.", "score": 0.88, "metadata": {"h1": "Principios"}}
-    ],
     "explain_mode": false
   },
-  "expected_themes": ["evoluci", "ventana", "técnic", "diversión", "podio"],
-  "forbidden_terms": ["suplementos", "creatina", "potenciómetro", "test VO2", "Mariana", "Thiago", "Sofia"],
-  "must_cite": true,
+  "expected_themes": [
+    "evoluci",
+    "ventana",
+    "técnic",
+    "diversión",
+    "podio"
+  ],
+  "forbidden_terms": [
+    "suplementos",
+    "creatina",
+    "potenciómetro",
+    "test VO2",
+    "Mariana",
+    "Thiago",
+    "Sofia"
+  ],
+  "must_cite": false,
   "max_words": 600,
   "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-A-M-001 muestra una progresión clara: subió de posición 3 a 2 sostenidamente y redujo el gap al ganador de 60s a 18s en 4 válidas [1]. La consistencia indica adaptación adecuada al volumen actual.\n\n## Análisis Técnico\n\nA los 10 años estamos en plena ventana de entrenabilidad de coordinación [1]. Cadencia estimada 78 rpm dentro del rango LTAD para mini-bambino.\n\n## Recomendaciones LTAD\n\n- Mantener componente lúdico ≥80% del tiempo de sesión (categoría=technique, prioridad=high) [2]\n- Sumar 1 sesión técnica con conos y manejo de obstáculos (categoría=technique, prioridad=med) [1]\n\n## Riesgos\n\n- Vigilar fatiga acumulada ante 4 competencias en 4 meses (flag=load_excess, severity=low) [1]\n\n## Próximos Pasos\n\nMantener volumen actual. Revisar técnica post-Cali."
 }

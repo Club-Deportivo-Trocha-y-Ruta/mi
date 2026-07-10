@@ -87,7 +87,7 @@ class Settings(BaseSettings):
     # Strategy + Factory: agregar uno nuevo no toca a los use cases.
     ai_provider: str = "anthropic"
     # ID de modelo del proveedor.
-    ai_model: str = "claude-sonnet-4-5"
+    ai_model: str = "claude-sonnet-5"
     # API key del proveedor — vacío en repo, validator exige valor en producción.
     ai_api_key: str = ""
     # Override opcional del endpoint (proxies, gateways corporativos).
@@ -100,6 +100,20 @@ class Settings(BaseSettings):
     ai_temperature: float = 0.4
     # True → loguea prompts y respuestas (NUNCA activar en producción).
     ai_log_prompts: bool = False
+
+    # -----------------------------------------------------------------------
+    # Race AI — proveedor/modelo dedicado (specs/010-competitions-ai-insights y sig.)
+    # -----------------------------------------------------------------------
+    # El pipeline agéntico de race/agents/ (analyst, critic, chat) usa su
+    # propio proveedor/modelo/API key — independiente de AI_PROVIDER/AI_MODEL
+    # (capa app/services/ai/) para poder cambiar uno sin romper el otro.
+    # Factory + Strategy en app/services/race/agents/_llm.py::build_chat_llm.
+    # Proveedor: "anthropic" | "google".
+    race_ai_provider: str = "anthropic"
+    # Vacío → default por proveedor en _llm.py (claude-sonnet-5 | gemini-2.5-flash-lite).
+    race_ai_model: str = ""
+    # Vacío → si race_ai_provider == ai_provider, cae a AI_API_KEY (mismo proveedor).
+    race_ai_api_key: str = ""
 
     # -----------------------------------------------------------------------
     # Race AI — budget guard (F8A)
@@ -163,6 +177,36 @@ class Settings(BaseSettings):
     # Ventana móvil (minutos) para el rate-limit de cambio de correo.
     email_change_window_minutes: int = 15
 
+    # -----------------------------------------------------------------------
+    # Strava Activity Sync (specs/025-strava-activity-sync)
+    # -----------------------------------------------------------------------
+    # Interruptor maestro; con false los routers responden como deshabilitados.
+    strava_enabled: bool = False
+    # Credenciales de la app registrada en Strava — vacías en repo, validator
+    # exige valor en producción cuando STRAVA_ENABLED=true.
+    strava_client_id: str = ""
+    strava_client_secret: str = ""
+    # Base URLs de la API/OAuth de Strava.
+    strava_api_base_url: str = "https://www.strava.com/api/v3"
+    strava_oauth_base_url: str = "https://www.strava.com/oauth"
+    # URL de retorno registrada en el "Authorization Callback Domain" de la
+    # app de Strava (debe apuntar a ESTE backend, no al frontend). Default de
+    # desarrollo local; producción DEBE sobreescribirla (ver validator abajo).
+    strava_redirect_uri: str = "http://localhost:8000/api/integrations/strava/callback"
+    # Token de verificación devuelto en el challenge GET de suscripción webhook.
+    strava_webhook_verify_token: str = ""
+    # Clave Fernet para cifrar access/refresh tokens en `strava_connections`.
+    strava_token_encryption_key: str = ""
+    # Secreto compartido para autenticar POST /reconcile (comparación constant-time).
+    strava_reconcile_token: str = ""
+    # ID de la suscripción de webhook creada (POST /push_subscriptions). Strava NO
+    # firma el body de los eventos, así que validamos `subscription_id` como defensa
+    # en profundidad contra eventos falsificados. Vacío = sin validar (aún no creada);
+    # setéalo tras crear la suscripción (ver docs/16-strava-sync/runbook-ops.md).
+    strava_subscription_id: str = ""
+    # Margen de seguridad (horas) restado al watermark `last_sync_at` al reconciliar.
+    strava_reconcile_lookback_hours: int = 48
+
     @field_validator("hostinger_public_base_url")
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:
@@ -213,6 +257,17 @@ class Settings(BaseSettings):
             )
         return normalized
 
+    @field_validator("race_ai_provider")
+    @classmethod
+    def validate_race_ai_provider(cls, v: str, info) -> str:
+        allowed = {"anthropic", "google"}
+        normalized = v.lower().strip()
+        if normalized not in allowed:
+            raise ValueError(
+                f"RACE_AI_PROVIDER='{v}' inválido. Permitidos: {sorted(allowed)}."
+            )
+        return normalized
+
     @field_validator("ai_api_key")
     @classmethod
     def validate_ai_api_key_in_prod(cls, v: str, info) -> str:
@@ -237,6 +292,24 @@ class Settings(BaseSettings):
             )
         return v
 
+    @field_validator(
+        "strava_client_id",
+        "strava_client_secret",
+        "strava_webhook_verify_token",
+        "strava_token_encryption_key",
+        "strava_reconcile_token",
+    )
+    @classmethod
+    def validate_strava_secrets_in_prod(cls, v: str, info) -> str:
+        env = info.data.get("app_env", "development")
+        enabled = info.data.get("strava_enabled", False)
+        if env == "production" and enabled and not v:
+            raise ValueError(
+                f"{info.field_name.upper()} requerido cuando STRAVA_ENABLED=true "
+                "en producción."
+            )
+        return v
+
     @model_validator(mode="after")
     def _forbid_default_jwt_secret_in_prod(self) -> "Settings":
         if self.app_env == "production" and self.jwt_secret_key == "cambiar-en-produccion":
@@ -250,6 +323,17 @@ class Settings(BaseSettings):
                 "CORS_ORIGINS='*' en producción. Restringir al dominio real del "
                 "frontend (Cloudflare Pages) en cuanto exista.",
                 stacklevel=2,
+            )
+        if (
+            self.app_env == "production"
+            and self.strava_enabled
+            and "localhost" in self.strava_redirect_uri
+        ):
+            raise ValueError(
+                "STRAVA_REDIRECT_URI usa el valor por defecto de desarrollo "
+                "(localhost) en producción. Debe apuntar al host del backend "
+                "en producción, p. ej. https://mi-2yzi.onrender.com/api/"
+                "integrations/strava/callback."
             )
         return self
 

@@ -105,6 +105,14 @@ from app.models.strength import (
     StrengthSessionBlock,
 )
 
+# Feature 025 — Strava Activity Sync
+from app.models.strava_connection import StravaConnection, StravaConnectionStatus
+from app.models.strava_activity import (
+    StravaActivity,
+    StravaIngestSource,
+    StravaUpstreamState,
+)
+
 __all__ = [
     "Base",
     "User",
@@ -215,4 +223,10 @@ __all__ = [
     "EquipmentKind",
     "MovementCategory",
     "StrengthProgressStatus",
+    # Feature 025 — Strava Activity Sync
+    "StravaConnection",
+    "StravaConnectionStatus",
+    "StravaActivity",
+    "StravaIngestSource",
+    "StravaUpstreamState",
 ]

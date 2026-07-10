@@ -3,19 +3,26 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
+  Bike,
   CalendarDays,
+  ExternalLink,
   Info,
+  Link2,
   Loader2,
   Mail,
+  RefreshCw,
   Ruler,
   Sparkles,
   TrendingUp,
+  Unlink,
   User,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 
 import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
+import { ActivityCard } from "@/components/activities/ActivityCard";
+import { ConnectionStatusBadge } from "@/components/activities/ConnectionStatusBadge";
 import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import { AnthropometryForm } from "@/components/athletes/AnthropometryForm";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
@@ -27,14 +34,23 @@ import { NutritionalClassification } from "@/components/athletes/NutritionalClas
 import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
 import { AthleteNewslettersTabPanel } from "@/components/training/AthleteNewslettersTabPanel";
+import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
+import { Button } from "@/components/ui/button";
 import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { formatDateMedium } from "@/lib/datetime";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
+import { useAthleteActivities } from "@/hooks/activities/useAthleteActivities";
+import {
+  useConnectStrava,
+  useDisconnectStrava,
+  useStravaConnection,
+} from "@/hooks/activities/useStravaConnection";
 import { useAuthStore } from "@/store/auth.store";
 import { MaturationStatus, UserRole } from "@/types/enums";
 
-type Tab = "info" | "anthropometry" | "growth" | "ai_analysis" | "newsletters";
+type Tab = "info" | "anthropometry" | "growth" | "ai_analysis" | "newsletters" | "activities";
 
 const VALID_TABS: readonly Tab[] = [
   "info",
@@ -42,6 +58,7 @@ const VALID_TABS: readonly Tab[] = [
   "growth",
   "ai_analysis",
   "newsletters",
+  "activities",
 ] as const;
 
 function parseTabParam(raw: string | null): Tab | null {
@@ -97,6 +114,265 @@ function formatRelativeDate(dateStr: string): string {
   const diffMonths = Math.floor(diffDays / 30);
   if (diffMonths === 1) return "hace 1 mes";
   return `hace ${diffMonths} meses`;
+}
+
+const ACTIVITIES_PAGE_SIZE = 10;
+
+/**
+ * StravaTabPanel — tarjeta de conexión Strava + listado de actividades
+ * sincronizadas del atleta (feature 025, T025/T026).
+ *
+ * Se monta únicamente cuando el tab "Actividades" está activo, así las
+ * queries de conexión/actividades no compiten con el resto de la página en
+ * la carga inicial (mismo criterio que `AthleteNewslettersTabPanel`).
+ *
+ * Estados de conexión: none/active/broken/disconnected (ver
+ * `ConnectionStatusBadge`). El CTA de conexión está disponible según el rol
+ * (RBAC) — autorizar la conexión OAuth de Strava ES el consentimiento
+ * afirmativo, sin checkbox de consentimiento aparte.
+ *
+ * Sin UI de mapa/ubicación en ningún estado — `ActivityCard` no expone esos
+ * campos (ver su docstring).
+ */
+function StravaTabPanel({ athleteId }: { athleteId: number }) {
+  const connectionQuery = useStravaConnection(athleteId);
+  const activitiesQuery = useAthleteActivities(athleteId, {
+    page: 1,
+    page_size: ACTIVITIES_PAGE_SIZE,
+  });
+  const connectMutation = useConnectStrava(athleteId);
+  const disconnectMutation = useDisconnectStrava(athleteId);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+
+  const connection = connectionQuery.data;
+  const status = connection?.status ?? "none";
+
+  const handleConnect = () => {
+    connectMutation.mutate(undefined, {
+      onSuccess: (data) => {
+        // Redirección real de navegador — no es una ruta SPA, es la página
+        // de autorización de Strava (contracts/api.md §A POST /connect).
+        window.location.href = data.authorize_url;
+      },
+    });
+  };
+
+  const handleDisconnect = () => {
+    disconnectMutation.mutate(undefined, {
+      onSuccess: () => setShowDisconnectConfirm(false),
+    });
+  };
+
+  const activities = activitiesQuery.data?.items ?? [];
+  const total = activitiesQuery.data?.total ?? 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Connection card */}
+      <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3
+            className="flex items-center gap-2 text-sm text-charcoal"
+            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+          >
+            <Bike size={16} />
+            Conexión con Strava
+          </h3>
+
+          {connectionQuery.isLoading ? (
+            <div className="h-6 w-24 animate-pulse rounded-full bg-light-gray" />
+          ) : (
+            <ConnectionStatusBadge status={status} />
+          )}
+        </div>
+
+        {/* Loading */}
+        {connectionQuery.isLoading && (
+          <div className="mt-4 space-y-2">
+            <div className="h-4 w-64 animate-pulse rounded bg-light-gray" />
+            <div className="h-9 w-40 animate-pulse rounded-lg bg-light-gray" />
+          </div>
+        )}
+
+        {/* Error */}
+        {connectionQuery.isError && !connectionQuery.isLoading && (
+          <p className="mt-4 text-sm text-mid-gray">
+            No se pudo cargar el estado de la conexión.{" "}
+            <button
+              type="button"
+              onClick={() => connectionQuery.refetch()}
+              className="font-medium text-charcoal underline underline-offset-2 transition-opacity hover:opacity-70"
+            >
+              Reintentar
+            </button>
+          </p>
+        )}
+
+        {/* Loaded */}
+        {connection && !connectionQuery.isLoading && !connectionQuery.isError && (
+          <div className="mt-4 space-y-3">
+            {status === "active" && (
+              <p className="text-sm text-mid-gray">
+                Cuenta autorizada por{" "}
+                <span className="font-medium text-charcoal">
+                  {connection.authorized_by ?? "—"}
+                </span>
+                {connection.last_sync_at && (
+                  <> · Última sincronización: {formatDateMedium(connection.last_sync_at)}</>
+                )}
+              </p>
+            )}
+            {status === "broken" && (
+              <p className="text-sm text-amber-700">
+                La conexión con Strava dejó de funcionar (autorización revocada o
+                expirada). Vuelve a conectar la cuenta para reanudar la
+                sincronización.
+              </p>
+            )}
+            {status === "disconnected" && (
+              <p className="text-sm text-mid-gray">
+                La sincronización está detenida
+                {connection.disconnected_at && (
+                  <> desde el {formatDateMedium(connection.disconnected_at)}</>
+                )}
+                . Las actividades ya sincronizadas se conservan.
+              </p>
+            )}
+            {status === "none" && (
+              <p className="text-sm text-mid-gray">
+                Conecta la cuenta de Strava del atleta para que sus actividades
+                (duración, distancia, frecuencia cardiaca) aparezcan aquí
+                automáticamente.
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              {(status === "none" || status === "disconnected" || status === "broken") && (
+                <Button
+                  type="button"
+                  size="default"
+                  onClick={handleConnect}
+                  disabled={connectMutation.isPending}
+                  className="gap-2"
+                >
+                  {connectMutation.isPending ? (
+                    <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                  ) : status === "none" ? (
+                    <Link2 size={16} aria-hidden="true" />
+                  ) : (
+                    <RefreshCw size={16} aria-hidden="true" />
+                  )}
+                  {status === "none" ? "Conectar con Strava" : "Reconectar"}
+                </Button>
+              )}
+
+              {status === "active" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowDisconnectConfirm(true)}
+                  disabled={disconnectMutation.isPending}
+                  className="gap-2"
+                >
+                  <Unlink size={16} aria-hidden="true" />
+                  Desconectar
+                </Button>
+              )}
+
+              <a
+                href="https://www.strava.com"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-link-blue transition-opacity hover:opacity-70"
+              >
+                Strava <ExternalLink size={12} aria-hidden="true" />
+              </a>
+            </div>
+
+            {connectMutation.isError && (
+              <p className="text-xs text-red-600" role="alert">
+                No se pudo iniciar la conexión con Strava. Intenta de nuevo.
+              </p>
+            )}
+            {disconnectMutation.isError && (
+              <p className="text-xs text-red-600" role="alert">
+                No se pudo desconectar. Intenta de nuevo.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Activities list */}
+      <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+        <h3
+          className="mb-4 flex items-center gap-2 text-sm text-charcoal"
+          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+        >
+          <Activity size={16} />
+          Actividades sincronizadas
+        </h3>
+
+        {/* Loading */}
+        {activitiesQuery.isLoading && (
+          <div className="space-y-3">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="h-24 animate-pulse rounded-xl bg-light-gray" />
+            ))}
+          </div>
+        )}
+
+        {/* Error */}
+        {activitiesQuery.isError && !activitiesQuery.isLoading && (
+          <p className="text-sm text-mid-gray">
+            No se pudieron cargar las actividades.{" "}
+            <button
+              type="button"
+              onClick={() => activitiesQuery.refetch()}
+              className="font-medium text-charcoal underline underline-offset-2 transition-opacity hover:opacity-70"
+            >
+              Reintentar
+            </button>
+          </p>
+        )}
+
+        {/* Empty */}
+        {!activitiesQuery.isLoading && !activitiesQuery.isError && activities.length === 0 && (
+          <p className="text-sm text-mid-gray">
+            {status === "active"
+              ? "Todavía no ha llegado ninguna actividad sincronizada. Aparecerán aquí automáticamente cuando el atleta suba una rodada a Strava."
+              : "Sin actividades sincronizadas."}
+          </p>
+        )}
+
+        {/* List */}
+        {!activitiesQuery.isLoading && !activitiesQuery.isError && activities.length > 0 && (
+          <div className="space-y-3">
+            {activities.map((activity) => (
+              <ActivityCard key={activity.id} activity={activity} canLink />
+            ))}
+            {total > activities.length && (
+              <p className="pt-1 text-xs text-mid-gray">
+                Mostrando las {activities.length} actividades más recientes de {total}.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <ConfirmDeleteDialog
+        open={showDisconnectConfirm}
+        title="Desconectar Strava"
+        subject="Se detendrá la sincronización de actividades de este atleta"
+        description="Las actividades ya sincronizadas se conservan. Podrás volver a conectar la cuenta cuando quieras."
+        confirmLabel="Desconectar"
+        isPending={disconnectMutation.isPending}
+        errorMessage={disconnectMutation.isError ? "No se pudo desconectar. Intenta de nuevo." : null}
+        onCancel={() => setShowDisconnectConfirm(false)}
+        onConfirm={handleDisconnect}
+      />
+    </div>
+  );
 }
 
 export function AthleteDetailPage() {
@@ -345,6 +621,17 @@ export function AthleteDetailPage() {
           </button>
         )}
 
+        <button
+          type="button"
+          className={tabClasses("activities")}
+          style={tabStyle("activities")}
+          onClick={() => updateTab("activities")}
+          data-testid="athlete-tab-activities"
+        >
+          <Bike size={14} />
+          Actividades
+        </button>
+
         {/* TODO: Este botón será eliminado cuando se implemente el cron job mensual automático.
             Ver: backend/app/routers/reports.py - POST /athletes/{id}/report/email */}
         <div className="ml-auto flex flex-col items-end gap-1">
@@ -511,6 +798,9 @@ export function AthleteDetailPage() {
       {activeTab === "newsletters" && !isParent && (
         <AthleteNewslettersTabPanel athleteId={athleteId} />
       )}
+
+      {/* Tab content — Actividades (Strava) */}
+      {activeTab === "activities" && <StravaTabPanel athleteId={athleteId} />}
 
       {/* Tab content — Crecimiento */}
       {activeTab === "growth" && records.length > 0 && (

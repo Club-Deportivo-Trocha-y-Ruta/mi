@@ -19,6 +19,7 @@ Numbered folders by feature in chronological order. Internal files by type: `wor
 | 13 | [13-competitive-anxiety/](13-competitive-anxiety/) | **Competitive Anxiety Assessment** (specs/017): CSAI-2R/SAS-2 questionnaires, deterministic scoring, LLM interpretation + rule fallback, guardian-consent gate, single-use answer tokens, group-triage dashboards, CSV import/export — `workflow.md` |
 | 14 | [14-tecnica-gymkana-7-15/](14-tecnica-gymkana-7-15/) | **Technique & Gymkhana Research** (source for feature 018): deep-research report on technique drills/gymkhana for ages 7–15 XCO; A–H skill taxonomy; ~24-exercise bank with circuit layouts; LTAD/PMBIA/NICA alignment; mastery-climate framing — `research.md` |
 | 15 | [15-tecnica-gymkana-modulo/](15-tecnica-gymkana-modulo/) | **Technique & Gymkhana Library Module** (specs/018): module design, `technique_*` data model + `athlete_skill_progress`, `/api/technique` endpoints, session-reuse approach, per-athlete progress (coach-only, no comparison), illustrative-layout decision — `design.md` |
+| 16 | [16-strava-sync/](16-strava-sync/) | **Strava Activity Sync** (specs/025): automatic ingest of athlete cycling-computer rides via Strava (webhook + reconcile fallback), coach-gated linking to training sessions, no GPS/route data ever persisted or displayed (Ley 1581) — `guia-familias.md` (family connection guide, Spanish), `guia-entrenador.md` (coach review-flow guide), `runbook-ops.md` (webhook subscription, athlete-cap upgrade, env vars) |
 
 ## Status
 

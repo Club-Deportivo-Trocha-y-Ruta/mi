@@ -22,7 +22,6 @@ import os
 import pytest
 
 from app.services.race.agents.analyst import RaceAnalystAgent
-from app.services.race.rag.retriever import Citation
 from app.services.race.schemas import AnalysisInput, AnalysisOutput, LTADGroup
 
 pytestmark = pytest.mark.integration
@@ -52,15 +51,6 @@ async def test_analyst_real_gemini_smoke():
             "finishers_count": 12,
         },
         memory_recent_insights=["Válida 1: cadencia OK"],
-        principles_citations=[
-            Citation(
-                chunk_id="real_test_chunk",
-                source="docs/01-marco-teorico.md",
-                content="A los 10-12 años priorizar técnica antes que potencia.",
-                score=0.9,
-                metadata={"h1": "LTAD"},
-            ),
-        ],
         explain_mode=False,
         athlete_id=999,
         season=2026,

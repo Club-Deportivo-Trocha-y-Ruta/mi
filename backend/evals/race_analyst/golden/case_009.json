@@ -8,18 +8,59 @@
     "age": 12,
     "ltad_group": "bambino",
     "progression_df_records": [
-      {"valida_num": 1, "event_date": "2026-01-31", "position": 5, "race_time_ms": 2150000, "points_awarded": 40, "gap_to_winner_ms": 80000},
-      {"valida_num": 2, "event_date": "2026-02-28", "position": 4, "race_time_ms": 2120000, "points_awarded": 60, "gap_to_winner_ms": 65000},
-      {"valida_num": 3, "event_date": "2026-04-19", "position": 3, "race_time_ms": 2090000, "points_awarded": 80, "gap_to_winner_ms": 45000},
-      {"valida_num": 4, "event_date": "2026-05-17", "position": null, "race_time_ms": null, "points_awarded": 0, "status": "DNF", "dnf_reason": "pinchazo km 8"}
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "position": 5,
+        "race_time_ms": 2150000,
+        "points_awarded": 40,
+        "gap_to_winner_ms": 80000
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "position": 4,
+        "race_time_ms": 2120000,
+        "points_awarded": 60,
+        "gap_to_winner_ms": 65000
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "position": 3,
+        "race_time_ms": 2090000,
+        "points_awarded": 80,
+        "gap_to_winner_ms": 45000
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "position": null,
+        "race_time_ms": null,
+        "points_awarded": 0,
+        "status": "DNF",
+        "dnf_reason": "pinchazo km 8"
+      }
     ],
     "podium_context": {
       "category_id": 2,
       "event_id": 4,
       "podium": [
-        {"position": 1, "competitor_id": 4080, "race_time_ms": 2045000},
-        {"position": 2, "competitor_id": 4081, "race_time_ms": 2068000},
-        {"position": 3, "competitor_id": 4082, "race_time_ms": 2085000}
+        {
+          "position": 1,
+          "competitor_id": 4080,
+          "race_time_ms": 2045000
+        },
+        {
+          "position": 2,
+          "competitor_id": 4081,
+          "race_time_ms": 2068000
+        },
+        {
+          "position": 3,
+          "competitor_id": 4082,
+          "race_time_ms": 2085000
+        }
       ],
       "finishers_count": 9
     },
@@ -27,15 +68,23 @@
       "Mejora sostenida V-I → V-III: 5→4→3, gap bajó 35s",
       "DNF V-IV: pinchazo km 8 sin kit reparación"
     ],
-    "principles_citations": [
-      {"chunk_id": "rag_dnf01", "source": "docs/01-marco-teorico.md", "content": "Un DNF mecánico no refleja rendimiento del ciclista. Separar análisis técnico de la curva de progresión.", "score": 0.93, "metadata": {"h1": "Análisis competencia"}},
-      {"chunk_id": "rag_kit01", "source": "docs/01-marco-teorico.md", "content": "Kit reparación mínimo XCO juvenil: cámara extra, multiherramienta, CO2 o bomba. Práctica de cambio cámara mensual.", "score": 0.86, "metadata": {"h1": "Equipamiento"}}
-    ],
     "explain_mode": false
   },
-  "expected_themes": ["DNF", "pinchazo", "mecánico", "kit reparación", "progresión positiva"],
-  "forbidden_terms": ["suplementos", "potenciómetro", "Mariana", "Thiago", "rendimiento bajo"],
-  "must_cite": true,
+  "expected_themes": [
+    "DNF",
+    "pinchazo",
+    "mecánico",
+    "kit reparación",
+    "progresión positiva"
+  ],
+  "forbidden_terms": [
+    "suplementos",
+    "potenciómetro",
+    "Mariana",
+    "Thiago",
+    "rendimiento bajo"
+  ],
+  "must_cite": false,
   "max_words": 500,
   "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-B-F-009 con progresión sostenida V-I→V-III (5→4→3), gap al ganador bajó 35s [1]. DNF V-IV fue pinchazo sin kit — NO refleja rendimiento [1].\n\n## Análisis Técnico\n\nMejora consistente antes del DNF. Carencia identificada: equipamiento de reparación.\n\n## Recomendaciones LTAD\n\n- Kit reparación obligatorio en bolsillo jersey (categoría=technique, prioridad=high) [2]\n- Práctica mensual de cambio de cámara (categoría=technique, prioridad=med) [2]\n\n## Riesgos\n\n- Recurrencia DNF mecánico si no se sistematiza (flag=other, severity=low) [2]\n\n## Próximos Pasos\n\nChecklist pre-carrera firmado por atleta + padre antes de V-V."
 }

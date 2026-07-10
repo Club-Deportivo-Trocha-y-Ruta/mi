@@ -8,16 +8,42 @@
     "age": 11,
     "ltad_group": "bambino",
     "progression_df_records": [
-      {"valida_num": 3, "event_date": "2026-04-19", "position": 6, "race_time_ms": 1980000, "points_awarded": 30, "gap_to_winner_ms": 110000},
-      {"valida_num": 4, "event_date": "2026-05-17", "position": 5, "race_time_ms": 1950000, "points_awarded": 40, "gap_to_winner_ms": 95000}
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "position": 6,
+        "race_time_ms": 1980000,
+        "points_awarded": 30,
+        "gap_to_winner_ms": 110000
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "position": 5,
+        "race_time_ms": 1950000,
+        "points_awarded": 40,
+        "gap_to_winner_ms": 95000
+      }
     ],
     "podium_context": {
       "category_id": 1,
       "event_id": 4,
       "podium": [
-        {"position": 1, "competitor_id": 4040, "race_time_ms": 1855000},
-        {"position": 2, "competitor_id": 4041, "race_time_ms": 1880000},
-        {"position": 3, "competitor_id": 4042, "race_time_ms": 1905000}
+        {
+          "position": 1,
+          "competitor_id": 4040,
+          "race_time_ms": 1855000
+        },
+        {
+          "position": 2,
+          "competitor_id": 4041,
+          "race_time_ms": 1880000
+        },
+        {
+          "position": 3,
+          "competitor_id": 4042,
+          "race_time_ms": 1905000
+        }
       ],
       "finishers_count": 8
     },
@@ -25,14 +51,23 @@
       "Primera temporada: ingresó al club en febrero 2026",
       "Coach reporta entusiasmo alto"
     ],
-    "principles_citations": [
-      {"chunk_id": "rag_mb02", "source": "docs/01-marco-teorico.md", "content": "Mini-bambino y bambino: prioridad absoluta a fundamentos básicos y diversión; no juzgar resultados temprano.", "score": 0.95, "metadata": {"h1": "LTAD", "h2": "10-12 años"}}
-    ],
     "explain_mode": false
   },
-  "expected_themes": ["primera temporada", "diversión", "fundamentos", "muestra pequeña"],
-  "forbidden_terms": ["suplementos", "creatina", "potenciómetro", "VO2", "Mariana", "Thiago"],
-  "must_cite": true,
+  "expected_themes": [
+    "primera temporada",
+    "diversión",
+    "fundamentos",
+    "muestra pequeña"
+  ],
+  "forbidden_terms": [
+    "suplementos",
+    "creatina",
+    "potenciómetro",
+    "VO2",
+    "Mariana",
+    "Thiago"
+  ],
+  "must_cite": false,
   "max_words": 500,
   "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-A-F-005 con sólo 2 válidas (V-III, V-IV): muestra pequeña, baja confianza estadística. Mejoró pos 6→5 y gap bajó 15s [1].\n\n## Análisis Técnico\n\nPrimera temporada — el foco son fundamentos básicos y diversión, no comparar contra el podio aún.\n\n## Recomendaciones LTAD\n\n- 80% sesiones lúdicas y multideporte (categoría=technique, prioridad=high) [1]\n- Mantener entusiasmo: una victoria pequeña por sesión (categoría=psychology, prioridad=high) [1]\n\n## Riesgos\n\n- Comparación temprana con compañeros podría desmotivar (flag=other, severity=low) [1]\n\n## Próximos Pasos\n\nReevaluar en V-VI con n=4."
 }

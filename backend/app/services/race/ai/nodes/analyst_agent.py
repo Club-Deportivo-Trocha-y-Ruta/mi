@@ -91,7 +91,6 @@ def _build_input(
         metrics.get("progression", []) or []
     )
     podium_ctx = state.get("podium_context") or {}
-    principles = state.get("principles") or []
     memory = state.get("memory") or []
 
     # Season context (T014): inject comparative data computed by compute_metrics.
@@ -109,7 +108,6 @@ def _build_input(
         progression_df_records=records,
         podium_context=podium_ctx,
         memory_recent_insights=memory[:10],
-        principles_citations=principles,
         explain_mode=bool(state.get("explain_mode", False)),
         season_comparative=season_comparative,
         progression_assessment=progression_assessment,

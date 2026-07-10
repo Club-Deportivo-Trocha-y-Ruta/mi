@@ -1,25 +1,29 @@
 """Tarifas LLM para cálculo de ``cost_usd`` en :class:`RunMetrics`.
 
-Fuente: pricing público de Google Gemini Flash Lite (model
-``gemini-2.5-flash-lite``) a fecha 2026-05-20.
+Una tarifa por **proveedor** (no por modelo exacto) — MVP asume un solo
+modelo activo por proveedor a la vez (``RACE_AI_MODEL`` en config.py).
+Si en el futuro se necesita precisión por modelo, refactorizar
+``_PRICING_USD_PER_1M`` a ``{model_id: PricingRow}``.
 
-- Input:  USD 0.075 / 1M tokens
-- Output: USD 0.30  / 1M tokens
+Fuentes (USD por 1M tokens):
+- Gemini 2.5 Flash Lite — pricing público a fecha 2026-05-20.
+  Input 0.075 / Output 0.30.
+- Claude Sonnet 5 (``claude-sonnet-5``) — pricing estándar a fecha
+  2026-07-10. Input 3.00 / Output 15.00. (Existe pricing introductorio
+  2.00/10.00 hasta 2026-08-31 — usamos el estándar, más conservador
+  para el budget guard de ``race_ai_budget_usd_30d``.)
 
-Si Google cambia tarifas o se cambia de modelo, **solo este módulo
-se toca** — los agentes consumen :func:`compute_cost_usd`.
-
-Decisión: mantenemos las constantes como floats simples (no enums
-ni dicts por modelo) porque MVP usa **un solo modelo**. Si en el
-futuro se introduce Pro/Flash dual, refactorizar a un dict
-``{model_id: PricingRow}``.
+Si un proveedor cambia tarifas, **solo este módulo se toca** — los
+agentes consumen :func:`compute_cost_usd`.
 """
 
 from __future__ import annotations
 
-# USD por 1M tokens (Gemini 2.5 Flash Lite — 2026-05).
-GEMINI_FLASH_LITE_INPUT_USD_PER_1M = 0.075
-GEMINI_FLASH_LITE_OUTPUT_USD_PER_1M = 0.30
+# (input_usd_per_1m, output_usd_per_1m) por proveedor.
+_PRICING_USD_PER_1M: dict[str, tuple[float, float]] = {
+    "anthropic": (3.00, 15.00),
+    "google": (0.075, 0.30),
+}
 
 # Prompt version registry — mantener en sincronía con archivos en prompts/.
 # Sirve a auditoría / Langfuse / golden eval para correlacionar outputs con
@@ -31,20 +35,22 @@ PROMPT_VERSION_CRITIC_V2 = "race_critic_v2"
 PROMPT_VERSION_CHAT = "race_chat_v1"
 
 
-def compute_cost_usd(tokens_in: int, tokens_out: int) -> float:
+def compute_cost_usd(tokens_in: int, tokens_out: int, *, provider: str) -> float:
     """Calcula costo en USD para una invocación.
 
     Args:
         tokens_in: tokens del prompt enviado al modelo.
         tokens_out: tokens generados por el modelo.
+        provider: ``"anthropic"`` | ``"google"`` — selecciona la tarifa.
 
     Returns:
         Costo en USD redondeado a 6 decimales (precisión sub-cent).
+
+    Raises:
+        KeyError: proveedor sin tarifa registrada en ``_PRICING_USD_PER_1M``.
     """
-    cost = (
-        tokens_in * GEMINI_FLASH_LITE_INPUT_USD_PER_1M / 1_000_000
-        + tokens_out * GEMINI_FLASH_LITE_OUTPUT_USD_PER_1M / 1_000_000
-    )
+    input_rate, output_rate = _PRICING_USD_PER_1M[provider]
+    cost = tokens_in * input_rate / 1_000_000 + tokens_out * output_rate / 1_000_000
     return round(cost, 6)
 
 

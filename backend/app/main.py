@@ -93,6 +93,21 @@ app.include_router(session_assistant_router, prefix="/api/clubs", tags=["session
 app.include_router(technique.router, prefix="/api/technique", tags=["technique"])
 app.include_router(strength.router, prefix="/api/strength", tags=["strength"])
 
+if settings.strava_enabled:
+    from app.routers import activities as activities_router_module
+    from app.routers import strava_integration as strava_integration_router_module
+
+    app.include_router(
+        strava_integration_router_module.router,
+        prefix="/api",
+        tags=["strava-integration"],
+    )
+    app.include_router(
+        activities_router_module.router,
+        prefix="/api",
+        tags=["activities"],
+    )
+
 
 # Boot: configurar db_factory del grafo race-AI (F4) para que los nodos
 # puedan abrir AsyncSession en runtime fuera del Depends(get_db) de FastAPI.

@@ -6,8 +6,6 @@ Diseño:
   ``bind_tools`` que retorna ``self`` (compatibilidad con el chat agent).
 - :class:`StubAIMessage` — emula ``AIMessage`` con ``content`` +
   ``usage_metadata`` opcional + ``tool_calls``.
-- :func:`make_principles` — genera lista de Citation reales con
-  ``chunk_id`` controlables para verificar trazabilidad.
 
 Convención: NINGÚN test toca red. Si un test parece requerir Gemini
 real, marcarlo con ``@pytest.mark.integration`` y skiparlo cuando
@@ -18,10 +16,6 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Iterable
-
-import pytest
-
-from app.services.race.rag.retriever import Citation
 
 
 # ---------------------------------------------------------------------------
@@ -74,22 +68,3 @@ class FakeChatLLM:
         resp = self._responses[self._cursor]
         self._cursor += 1
         return resp
-
-
-@pytest.fixture
-def make_principles():
-    """Genera lista de :class:`Citation` con ids controlables."""
-
-    def _factory(n: int = 3, prefix: str = "chunk") -> list[Citation]:
-        return [
-            Citation(
-                chunk_id=f"{prefix}_{i:02d}",
-                source="docs/01-marco-teorico.md",
-                content=f"Principio {i}: contenido de prueba.",
-                score=0.9 - i * 0.05,
-                metadata={"h1": "Capítulo", "h2": f"Sección {i}"},
-            )
-            for i in range(1, n + 1)
-        ]
-
-    return _factory

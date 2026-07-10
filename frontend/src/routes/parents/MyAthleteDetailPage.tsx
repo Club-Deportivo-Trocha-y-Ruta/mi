@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
+  Bike,
   CalendarDays,
   Info,
   Ruler,
@@ -13,6 +14,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
+import { ActivityCard } from "@/components/activities/ActivityCard";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
@@ -22,9 +24,12 @@ import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { cn } from "@/lib/utils";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
+import { useAthleteActivities } from "@/hooks/activities/useAthleteActivities";
 import { MaturationStatus, Sex } from "@/types/enums";
 
-type Tab = "info" | "growth" | "ai-analysis";
+type Tab = "info" | "growth" | "activities" | "ai-analysis";
+
+const ACTIVITIES_PAGE_SIZE = 10;
 
 const cardShadow =
   "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
@@ -91,6 +96,14 @@ export function MyAthleteDetailPage() {
   const athleteId = Number(id);
   const athleteQuery = useAthlete(athleteId, Number.isFinite(athleteId));
   const anthropometryQuery = useAnthropometry(athleteId);
+  // RBAC (padre solo ve actividades de su propio hijo) se aplica en backend —
+  // ver docstring de useAthleteActivities. Query no habilitada hasta tener
+  // un athleteId válido, mismo criterio que el resto de la página.
+  const activitiesQuery = useAthleteActivities(
+    athleteId,
+    { page: 1, page_size: ACTIVITIES_PAGE_SIZE },
+    Number.isFinite(athleteId),
+  );
 
   // Soportar deep-link desde email: ?tab=ai-analysis&insight=<id>
   const tabParam = searchParams.get("tab") as Tab | null;
@@ -250,6 +263,16 @@ export function MyAthleteDetailPage() {
         )}
         <button
           type="button"
+          className={tabClasses("activities")}
+          style={tabStyle("activities")}
+          onClick={() => setActiveTab("activities")}
+          data-testid="parent-tab-activities"
+        >
+          <Bike size={14} />
+          Actividades
+        </button>
+        <button
+          type="button"
           className={tabClasses("ai-analysis")}
           style={tabStyle("ai-analysis")}
           onClick={() => setActiveTab("ai-analysis")}
@@ -394,6 +417,72 @@ export function MyAthleteDetailPage() {
             readOnly
           />
           <ResearchReferences />
+        </div>
+      )}
+
+      {/* Tab content — Actividades (feature 025, T036). Solo lectura: sin
+          controles de conexión ni de enlace a sesión (esos son exclusivos
+          del coach/admin, ver FR-007). RBAC de "solo mi hijo" lo aplica el
+          backend — acá solo se consume la respuesta ya filtrada. */}
+      {activeTab === "activities" && (
+        <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <h3
+            className="mb-4 flex items-center gap-2 text-sm text-charcoal"
+            style={{
+              fontFamily: "'Cal Sans', system-ui, sans-serif",
+              fontWeight: 600,
+              letterSpacing: "0.2px",
+            }}
+          >
+            <Bike size={16} />
+            Actividades sincronizadas
+          </h3>
+
+          {activitiesQuery.isLoading && (
+            <div className="space-y-3">
+              {[...Array(2)].map((_, i) => (
+                <div key={i} className="h-24 animate-pulse rounded-xl bg-light-gray" />
+              ))}
+            </div>
+          )}
+
+          {activitiesQuery.isError && !activitiesQuery.isLoading && (
+            <p className="text-sm text-mid-gray">
+              No se pudieron cargar las actividades.{" "}
+              <button
+                type="button"
+                onClick={() => activitiesQuery.refetch()}
+                className="font-medium text-charcoal underline underline-offset-2 transition-opacity hover:opacity-70"
+              >
+                Reintentar
+              </button>
+            </p>
+          )}
+
+          {!activitiesQuery.isLoading &&
+            !activitiesQuery.isError &&
+            (activitiesQuery.data?.items.length ?? 0) === 0 && (
+              <p className="text-sm text-mid-gray">
+                Todavía no hay actividades sincronizadas de Strava para tu
+                atleta. Aparecerán aquí automáticamente cuando suba una rodada.
+              </p>
+            )}
+
+          {!activitiesQuery.isLoading &&
+            !activitiesQuery.isError &&
+            (activitiesQuery.data?.items.length ?? 0) > 0 && (
+              <div className="space-y-3">
+                {activitiesQuery.data!.items.map((activity) => (
+                  <ActivityCard key={activity.id} activity={activity} />
+                ))}
+                {activitiesQuery.data!.total > activitiesQuery.data!.items.length && (
+                  <p className="pt-1 text-xs text-mid-gray">
+                    Mostrando las {activitiesQuery.data!.items.length} actividades más
+                    recientes de {activitiesQuery.data!.total}.
+                  </p>
+                )}
+              </div>
+            )}
         </div>
       )}
     </section>

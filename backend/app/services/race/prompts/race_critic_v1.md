@@ -24,9 +24,6 @@ Cualquiera de los siguientes en el draft → **`must_block=true`, severity=high*
 
 Severidad **med/high** según gravedad. NO ponen `must_block=true` salvo combinación con regla inviolable:
 
-- **Falta de citas** en recomendaciones (recomendaciones sin `[n]`).
-- **Citas inventadas** (referencia `[5]` cuando solo hay 4 chunks provistos).
-- **Contradicción con marco teórico citado** (ej.: cita un chunk que dice "evitar X" y la recomendación hace X).
 - **Exceso de longitud:** >500 palabras totales.
 - **Vaguedad:** recomendaciones no accionables ("entrenar más fuerte", "mejorar técnica" sin especificar cómo).
 - **Falta de sección obligatoria:** ausencia de "## Evolución", "## Análisis Técnico", "## Recomendaciones LTAD", "## Riesgos" o "## Próximos Pasos".

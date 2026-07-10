@@ -106,43 +106,32 @@ def _load_all_cases() -> list[tuple[str, dict[str, Any]]]:
 def _build_analysis_input(case_input: dict[str, Any]) -> AnalysisInput:
     """Construye :class:`AnalysisInput` desde el dict del caso golden.
 
-    Rehydrata ``principles_citations`` como ``Citation`` (dataclass).
+    ``principles_citations`` ya no es un campo de ``AnalysisInput`` (RAG
+    removido) — se descarta si el JSON golden todavía lo trae.
     """
-    from app.services.race.rag.retriever import Citation
-
-    raw_cites = case_input.get("principles_citations") or []
-    cites = [
-        Citation(
-            chunk_id=c["chunk_id"],
-            source=c.get("source", ""),
-            content=c.get("content", ""),
-            score=float(c.get("score", 0.0)),
-            metadata=dict(c.get("metadata") or {}),
-        )
-        for c in raw_cites
-    ]
     payload = dict(case_input)
-    payload["principles_citations"] = cites
+    payload.pop("principles_citations", None)
     return AnalysisInput(**payload)
 
 
 # ---------------------------------------------------------------------------
-# Skip guard: AI_API_KEY required for the real eval
+# Skip guard: RACE_AI_API_KEY required for the real eval
 # ---------------------------------------------------------------------------
 
 
 def _api_key_available() -> bool:
     """``True`` si hay clave para llamar Gemini.
 
-    Acepta tanto ``AI_API_KEY`` (proyecto) como ``GOOGLE_API_KEY``
-    (SDK convención).
+    Acepta ``RACE_AI_API_KEY`` (dedicada al pipeline race/agents/, que sigue
+    en Gemini — ver CLAUDE.md notas 2026-07-10) o ``GOOGLE_API_KEY`` (SDK
+    convención). ``AI_API_KEY`` ya NO aplica aquí: apunta a Anthropic.
     """
-    return bool(os.getenv("AI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+    return bool(os.getenv("RACE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
 
 _skip_no_api = pytest.mark.skipif(
     not _api_key_available(),
-    reason="AI_API_KEY/GOOGLE_API_KEY no disponible; eval real necesita Gemini.",
+    reason="RACE_AI_API_KEY/GOOGLE_API_KEY no disponible; eval real necesita Gemini.",
 )
 
 

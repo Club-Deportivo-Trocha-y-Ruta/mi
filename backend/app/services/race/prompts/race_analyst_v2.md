@@ -13,7 +13,6 @@
 {#   race_meta (str | None)           — condiciones registradas o None; None → #}
 {#                                      omitir + veto anti-fabricación (feat 011)#}
 {#   memory_recent_insights (list)    — strings con insights previos (≤3)      #}
-{#   principles (str)                 — citas RAG formateadas [1] [2] ...      #}
 {#   explain_mode (bool)              — narra '¿por qué hago X?'               #}
 {#   forbidden_names (list[str])      — nombres reales PROHIBIDOS (no al LLM)  #}
 {#   season_comparative (list[dict])  — datos de válidas previas (T014)        #}
@@ -121,12 +120,6 @@ Para esta válida **NO se registraron condiciones de carrera**. PROHIBIDO mencio
 **Nota:** si un patrón de riesgo persiste desde insights anteriores → márcalo como **recurrente** con severidad alta.
 {% endif %}
 
-# Marco teórico — citas relevantes
-
-{{ principles }}
-
-Cita con `[1]`, `[2]`... en tu output. Las citas corresponden a fragmentos del marco teórico LTAD del club.
-
 # Tarea
 
 Produce un análisis estructurado en **markdown**, en español, con **exactamente las siguientes 3 secciones** (usa los headings literales):
@@ -147,25 +140,24 @@ Contenido concreto y accionable. **Total ≤ 360 palabras** para las 3 secciones
 {% if explain_mode %}
 ## Modo aprendizaje activo
 
-Antes de cada sección, escribe en *cursiva* una línea corta **"voy a ..."** explicando qué vas a hacer y **por qué** (apoyándote en el marco teórico citado). Ejemplo:
+Antes de cada sección, escribe en *cursiva* una línea corta **"voy a ..."** explicando qué vas a hacer y **por qué**. Ejemplo:
 
-> _Voy a describir el resultado objetivo de la válida sin calificadores valorativos, porque el marco LTAD prioriza la experiencia sobre el resultado a esta edad [2]._
+> _Voy a describir el resultado objetivo de la válida sin calificadores valorativos, porque el marco LTAD prioriza la experiencia sobre el resultado a esta edad._
 {% endif %}
 
 # Formato de "Hacia dónde va" — recomendaciones LTAD
 
-Para que el critic pueda validar, cada recomendación debe ir como bullet con sufijo entre paréntesis: `(categoría=X, prioridad=Y)`. Categorías válidas: `technique`, `volume`, `recovery`, `nutrition`, `psychology`. Prioridades: `low`, `med`, `high`. Cita al menos 1 principio por recomendación.
+Para que el critic pueda validar, cada recomendación debe ir como bullet con sufijo entre paréntesis: `(categoría=X, prioridad=Y)`. Categorías válidas: `technique`, `volume`, `recovery`, `nutrition`, `psychology`. Prioridades: `low`, `med`, `high`.
 
 ```
-- Trabajar descensos técnicos en circuito 2x/semana, 20 min con supervisión (categoría=technique, prioridad=med) [1]
-- Mantener carga semanal en 4-5h con 2 días de descanso completo (categoría=volume, prioridad=high) [3]
+- Trabajar descensos técnicos en circuito 2x/semana, 20 min con supervisión (categoría=technique, prioridad=med)
+- Mantener carga semanal en 4-5h con 2 días de descanso completo (categoría=volume, prioridad=high)
 ```
 
 # Recordatorios finales
 
 - **Nunca uses un nombre propio.** Siempre "la deportista" o pronombres.
 - Limita cada sección a ≤120 palabras. Si te excedes, recorta; no quites información relevante, sintetiza.
-- **Cita siempre.** Una recomendación sin `[n]` es una recomendación sospechosa.
 - No menciones marcas, dorsales, ni ningún dato personal más allá de edad y grupo LTAD.
 - Si los datos provistos son insuficientes (<2 resultados), señálalo y recomienda esperar más datos antes de cambios mayores.
 

@@ -8,18 +8,58 @@
     "age": 12,
     "ltad_group": "bambino",
     "progression_df_records": [
-      {"valida_num": 1, "event_date": "2026-01-31", "position": 4, "race_time_ms": 2100000, "points_awarded": 60, "gap_to_winner_ms": 40000},
-      {"valida_num": 2, "event_date": "2026-02-28", "position": 6, "race_time_ms": 2160000, "points_awarded": 30, "gap_to_winner_ms": 90000},
-      {"valida_num": 3, "event_date": "2026-04-19", "position": 7, "race_time_ms": 2210000, "points_awarded": 20, "gap_to_winner_ms": 140000},
-      {"valida_num": 4, "event_date": "2026-05-17", "position": 8, "race_time_ms": 2280000, "points_awarded": 15, "gap_to_winner_ms": 195000}
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "position": 4,
+        "race_time_ms": 2100000,
+        "points_awarded": 60,
+        "gap_to_winner_ms": 40000
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "position": 6,
+        "race_time_ms": 2160000,
+        "points_awarded": 30,
+        "gap_to_winner_ms": 90000
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "position": 7,
+        "race_time_ms": 2210000,
+        "points_awarded": 20,
+        "gap_to_winner_ms": 140000
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "position": 8,
+        "race_time_ms": 2280000,
+        "points_awarded": 15,
+        "gap_to_winner_ms": 195000
+      }
     ],
     "podium_context": {
       "category_id": 2,
       "event_id": 4,
       "podium": [
-        {"position": 1, "competitor_id": 4010, "race_time_ms": 2085000},
-        {"position": 2, "competitor_id": 4011, "race_time_ms": 2120000},
-        {"position": 3, "competitor_id": 4012, "race_time_ms": 2155000}
+        {
+          "position": 1,
+          "competitor_id": 4010,
+          "race_time_ms": 2085000
+        },
+        {
+          "position": 2,
+          "competitor_id": 4011,
+          "race_time_ms": 2120000
+        },
+        {
+          "position": 3,
+          "competitor_id": 4012,
+          "race_time_ms": 2155000
+        }
       ],
       "finishers_count": 9
     },
@@ -27,15 +67,25 @@
       "Válida 2 (2026): coach reportó desmotivación pre-carrera",
       "Coach observó descenso técnico en curvas"
     ],
-    "principles_citations": [
-      {"chunk_id": "rag_psy01", "source": "docs/01-marco-teorico.md", "content": "Diversión primero: revisar carga, descanso, contexto escolar antes que aumentar intensidad.", "score": 0.91, "metadata": {"h1": "Psicología"}},
-      {"chunk_id": "rag_phv02", "source": "docs/01-marco-teorico.md", "content": "Brotes de crecimiento 10-13 años explican regresiones temporales por desajuste neuromuscular.", "score": 0.87, "metadata": {"h1": "PHV"}}
-    ],
     "explain_mode": false
   },
-  "expected_themes": ["regresi", "gap", "diversión", "descanso", "técnic"],
-  "forbidden_terms": ["suplementos", "potenciómetro", "VO2", "diagnóstico", "lesión confirmada", "Mariana", "Thiago"],
-  "must_cite": true,
+  "expected_themes": [
+    "regresi",
+    "gap",
+    "diversión",
+    "descanso",
+    "técnic"
+  ],
+  "forbidden_terms": [
+    "suplementos",
+    "potenciómetro",
+    "VO2",
+    "diagnóstico",
+    "lesión confirmada",
+    "Mariana",
+    "Thiago"
+  ],
+  "must_cite": false,
   "max_words": 600,
   "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-B-M-002 muestra regresión sostenida: posición pasó de 4 a 8 y el gap al ganador se cuadruplicó (40s → 195s) [1]. Patrón consistente, no puntual.\n\n## Análisis Técnico\n\nA los 12 años podemos estar en transición pre-PHV [2]; descenso técnico en curvas reportado por coach refuerza hipótesis de desajuste neuromuscular temporal.\n\n## Recomendaciones LTAD\n\n- Reducir intensidad 15 días y priorizar técnica lúdica (categoría=technique, prioridad=high) [1]\n- Conversar con familia: contexto escolar y descanso (categoría=psychology, prioridad=high) [1]\n\n## Riesgos\n\n- Posible brote de crecimiento sin reportar (flag=growth_spurt, severity=med) [2]\n\n## Próximos Pasos\n\nReevaluar antropometría. Si gap persiste, derivar a fisioterapeuta deportivo."
 }

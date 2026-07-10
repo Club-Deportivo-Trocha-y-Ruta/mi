@@ -68,11 +68,22 @@ def test_extract_usage_fallback_when_both_tokens_zero():
     assert to == 5
 
 
-def test_compute_cost_usd_known_values():
+def test_compute_cost_usd_known_values_google():
     # 1M tokens input + 1M tokens output → 0.075 + 0.30 = 0.375.
-    assert compute_cost_usd(1_000_000, 1_000_000) == 0.375
+    assert compute_cost_usd(1_000_000, 1_000_000, provider="google") == 0.375
     # Zero → zero.
-    assert compute_cost_usd(0, 0) == 0.0
+    assert compute_cost_usd(0, 0, provider="google") == 0.0
+
+
+def test_compute_cost_usd_known_values_anthropic():
+    # 1M tokens input + 1M tokens output → 3.00 + 15.00 = 18.0.
+    assert compute_cost_usd(1_000_000, 1_000_000, provider="anthropic") == 18.0
+    assert compute_cost_usd(0, 0, provider="anthropic") == 0.0
+
+
+def test_compute_cost_usd_unknown_provider_raises():
+    with pytest.raises(KeyError):
+        compute_cost_usd(1, 1, provider="bogus")
 
 
 def test_estimate_tokens_from_chars_floor_at_zero():
@@ -80,8 +91,30 @@ def test_estimate_tokens_from_chars_floor_at_zero():
     assert estimate_tokens_from_chars("abc") == 0  # 3 // 4 == 0
 
 
-def test_build_chat_llm_constructs_instance_without_calling_api():
+def test_build_chat_llm_constructs_google_instance_without_calling_api():
     """build_chat_llm no debe hacer red — solo instanciar el wrapper."""
-    llm = build_chat_llm(model="gemini-2.5-flash-lite", api_key="dummy", temperature=0.1)
+    llm = build_chat_llm(
+        provider="google", model="gemini-2.5-flash-lite", api_key="dummy", temperature=0.1
+    )
     # Sanity: el objeto existe y tiene el método ainvoke.
     assert hasattr(llm, "ainvoke")
+
+
+def test_build_chat_llm_constructs_anthropic_instance_without_calling_api():
+    llm = build_chat_llm(provider="anthropic", model="claude-sonnet-5", api_key="dummy")
+    assert hasattr(llm, "ainvoke")
+    assert hasattr(llm, "bind_tools")
+
+
+def test_build_chat_llm_defaults_to_anthropic_when_unset(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "anthropic")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    llm = build_chat_llm(api_key="dummy")
+    assert llm.model == "claude-sonnet-5"
+
+
+def test_build_chat_llm_rejects_unsupported_provider():
+    with pytest.raises(ValueError, match="no soportado"):
+        build_chat_llm(provider="bogus", api_key="x")

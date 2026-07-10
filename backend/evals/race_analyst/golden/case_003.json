@@ -8,18 +8,60 @@
     "age": 13,
     "ltad_group": "juvenil",
     "progression_df_records": [
-      {"valida_num": 1, "event_date": "2026-01-31", "position": 2, "race_time_ms": 2700000, "points_awarded": 95, "gap_to_winner_ms": 18000},
-      {"valida_num": 2, "event_date": "2026-02-28", "position": 1, "race_time_ms": 2640000, "points_awarded": 110, "gap_to_winner_ms": 0},
-      {"valida_num": 3, "event_date": "2026-04-19", "position": null, "race_time_ms": null, "points_awarded": 0, "gap_to_winner_ms": null, "status": "DNF", "dnf_reason": "mecánico"},
-      {"valida_num": 4, "event_date": "2026-05-17", "position": 3, "race_time_ms": 2710000, "points_awarded": 80, "gap_to_winner_ms": 35000}
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "position": 2,
+        "race_time_ms": 2700000,
+        "points_awarded": 95,
+        "gap_to_winner_ms": 18000
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "position": 1,
+        "race_time_ms": 2640000,
+        "points_awarded": 110,
+        "gap_to_winner_ms": 0
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "position": null,
+        "race_time_ms": null,
+        "points_awarded": 0,
+        "gap_to_winner_ms": null,
+        "status": "DNF",
+        "dnf_reason": "mecánico"
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "position": 3,
+        "race_time_ms": 2710000,
+        "points_awarded": 80,
+        "gap_to_winner_ms": 35000
+      }
     ],
     "podium_context": {
       "category_id": 5,
       "event_id": 4,
       "podium": [
-        {"position": 1, "competitor_id": 4020, "race_time_ms": 2675000},
-        {"position": 2, "competitor_id": 4021, "race_time_ms": 2692000},
-        {"position": 3, "competitor_id": 9003, "race_time_ms": 2710000}
+        {
+          "position": 1,
+          "competitor_id": 4020,
+          "race_time_ms": 2675000
+        },
+        {
+          "position": 2,
+          "competitor_id": 4021,
+          "race_time_ms": 2692000
+        },
+        {
+          "position": 3,
+          "competitor_id": 9003,
+          "race_time_ms": 2710000
+        }
       ],
       "finishers_count": 14
     },
@@ -27,15 +69,24 @@
       "Válida 2 (2026): primera victoria; manejo técnico destacado",
       "Válida 3 DNF: cadena rota a los 12 km — mantenimiento bicicleta pendiente"
     ],
-    "principles_citations": [
-      {"chunk_id": "rag_juv01", "source": "docs/01-marco-teorico.md", "content": "Juvenil 13-15 años: max 2 sesiones alta intensidad/sem, 5-10 h/sem, ratio 60:40 entrenamiento:competencia.", "score": 0.93, "metadata": {"h1": "LTAD"}},
-      {"chunk_id": "rag_tech01", "source": "docs/01-marco-teorico.md", "content": "Mantenimiento de bicicleta es una habilidad técnica fundamental; un DNF mecánico no refleja rendimiento del ciclista.", "score": 0.85, "metadata": {"h1": "Técnica"}}
-    ],
     "explain_mode": false
   },
-  "expected_themes": ["consistenc", "DNF", "mecánico", "técnic", "mantenimiento"],
-  "forbidden_terms": ["suplementos", "creatina", "potenciómetro", "Mariana", "Thiago", "Sofia"],
-  "must_cite": true,
+  "expected_themes": [
+    "consistenc",
+    "DNF",
+    "mecánico",
+    "técnic",
+    "mantenimiento"
+  ],
+  "forbidden_terms": [
+    "suplementos",
+    "creatina",
+    "potenciómetro",
+    "Mariana",
+    "Thiago",
+    "Sofia"
+  ],
+  "must_cite": false,
   "max_words": 600,
   "ideal_output_excerpt": "## Evolución\n\nAtleta-PJUV-M-M-003 tiene 3 podios en 4 válidas reales (2-1-DNF-3) [1]. El DNF V-III fue mecánico (cadena rota), no rendimiento — no penalizar la curva de progresión.\n\n## Análisis Técnico\n\nConsistencia alta: pos 1-3 en todas las carreras completadas, gaps al podio <35s. Mantenimiento de bici es vacío detectado [2].\n\n## Recomendaciones LTAD\n\n- Taller de mantenimiento de bicicleta semanal (categoría=technique, prioridad=high) [2]\n- Mantener volumen 6-8 h/sem y ratio 60:40 (categoría=volume, prioridad=med) [1]\n\n## Riesgos\n\n- Recurrencia mecánica si no se sistematiza chequeo pre-carrera (flag=other, severity=low) [2]\n\n## Próximos Pasos\n\nChecklist mecánico pre-V-V firmado por atleta + padre."
 }

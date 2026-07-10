@@ -994,7 +994,6 @@ async def create_season_summary(
         progression_df_records=progression_records,
         podium_context={},
         memory_recent_insights=[],
-        principles_citations=[],
         explain_mode=body.explain_mode,
         athlete_id=athlete.id,
         season=body.season,

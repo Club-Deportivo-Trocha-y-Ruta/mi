@@ -5,7 +5,6 @@ Sin red — todos usan :class:`FakeChatLLM`. Verifican:
 - Prompt renderiza correcto (variables sustituidas, pseudónimo presente,
   bloque de citas formateado).
 - Output parsea a :class:`AnalysisOutput` con sections/recommendations/risks.
-- Citations_used mapea ``[n]`` → chunk_id reales.
 - Métricas computan (cost_usd > 0 cuando hay tokens).
 - Fallback de tokens (sin ``usage_metadata`` → estimate por chars).
 - Edge: explain_mode on/off cambia output sin romper parseo.
@@ -56,8 +55,6 @@ Revaluar en válida 5.
 
 
 def _sample_input(pseudonym="Atleta-PJUV-A-F-001", **over) -> AnalysisInput:
-    from app.services.race.rag.retriever import Citation
-
     base = dict(
         athlete_pseudonym=pseudonym,
         age=12,
@@ -79,10 +76,6 @@ def _sample_input(pseudonym="Atleta-PJUV-A-F-001", **over) -> AnalysisInput:
         memory_recent_insights=[
             "Válida 1 (2026): cadencia OK, posición 8/12",
         ],
-        principles_citations=[
-            Citation(chunk_id="rag_a1b2", source="docs/01-marco-teorico.md", content="Principio cadencia", score=0.92, metadata={"h1": "Técnica"}),
-            Citation(chunk_id="rag_c3d4", source="docs/01-marco-teorico.md", content="Volumen 10-12", score=0.88, metadata={"h1": "Carga"}),
-        ],
         explain_mode=False,
         athlete_id=42,
         season=2026,
@@ -91,7 +84,7 @@ def _sample_input(pseudonym="Atleta-PJUV-A-F-001", **over) -> AnalysisInput:
     return AnalysisInput(**base)
 
 
-async def test_analyst_happy_path_returns_structured_output(make_principles):
+async def test_analyst_happy_path_returns_structured_output():
     md = _markdown_sample()
     llm = FakeChatLLM([
         StubAIMessage(content=md, usage_metadata={"input_tokens": 1500, "output_tokens": 400})
@@ -122,7 +115,8 @@ async def test_analyst_happy_path_returns_structured_output(make_principles):
     assert out.word_count > 0
 
 
-async def test_analyst_citations_used_mapped_to_chunk_ids():
+async def test_analyst_citations_used_always_empty_without_rag():
+    """Sin RAG, el analyst ya no mapea `[n]` a chunk_id — citations_used vacío."""
     md = _markdown_sample("[1]", "[2]")
     llm = FakeChatLLM([
         StubAIMessage(content=md, usage_metadata={"input_tokens": 1000, "output_tokens": 300})
@@ -132,20 +126,7 @@ async def test_analyst_citations_used_mapped_to_chunk_ids():
 
     out, _ = await agent.invoke(inp)
 
-    # chunk_ids del input están en orden — [1]→primero, [2]→segundo.
-    assert "rag_a1b2" in out.citations_used
-    assert "rag_c3d4" in out.citations_used
-
-
-async def test_analyst_ignores_out_of_range_citation():
-    """Si modelo cita [5] pero solo hay 2 chunks → cita se ignora."""
-    md = _markdown_sample("[5]", "[2]")
-    llm = FakeChatLLM([StubAIMessage(content=md, usage_metadata={"input_tokens": 100, "output_tokens": 50})])
-    agent = RaceAnalystAgent(llm=llm)
-    out, _ = await agent.invoke(_sample_input())
-    assert "rag_c3d4" in out.citations_used  # [2] válido
-    # [5] no produjo cita falsa.
-    assert all(cid in ("rag_a1b2", "rag_c3d4") for cid in out.citations_used)
+    assert out.citations_used == []
 
 
 async def test_analyst_metrics_use_usage_metadata():

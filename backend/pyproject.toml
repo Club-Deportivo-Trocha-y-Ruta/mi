@@ -39,7 +39,6 @@ do_not_mutate = [
     "app/services/race/ai/*",
     "app/services/race/eval/*",
     "app/services/race/prompts/*",
-    "app/services/race/rag/*",
     # race sibling modules (excluded — keep standings.py un-excluded for mutation)
     "app/services/race/__init__.py",
     "app/services/race/analytics.py",

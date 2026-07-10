@@ -26,13 +26,22 @@ services:
       - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-30}
       - AI_TEMPERATURE=${AI_TEMPERATURE:-0.4}
       - AI_LOG_PROMPTS=${AI_LOG_PROMPTS:-false}
-      # Race-results v2 (Fase 2 — RAG sobre marco teórico)
-      - CHROMA_PATH=${CHROMA_PATH:-/app/data/chroma}
-    volumes:
-      # Persiste el índice ChromaDB del marco teórico entre restarts.
-      # Gitignored en el host (./data/chroma/). Si el dir no existe lo crea
-      # ChromaDB en el primer `python -m app.services.race.rag.indexer reindex`.
-      - ./data/chroma:/app/data/chroma
+      # Race-results v2 — race/agents/ pipeline con proveedor propio
+      - RACE_AI_PROVIDER=${RACE_AI_PROVIDER:-anthropic}
+      - RACE_AI_MODEL=${RACE_AI_MODEL:-}
+      - RACE_AI_API_KEY=${RACE_AI_API_KEY:-}
+      # Strava Activity Sync (specs/025-strava-activity-sync)
+      - STRAVA_ENABLED=${STRAVA_ENABLED:-false}
+      - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID:-}
+      - STRAVA_CLIENT_SECRET=${STRAVA_CLIENT_SECRET:-}
+      - STRAVA_API_BASE_URL=${STRAVA_API_BASE_URL:-https://www.strava.com/api/v3}
+      - STRAVA_OAUTH_BASE_URL=${STRAVA_OAUTH_BASE_URL:-https://www.strava.com/oauth}
+      - STRAVA_REDIRECT_URI=${STRAVA_REDIRECT_URI:-http://localhost:8000/api/integrations/strava/callback}
+      - STRAVA_TOKEN_ENCRYPTION_KEY=${STRAVA_TOKEN_ENCRYPTION_KEY:-}
+      - STRAVA_WEBHOOK_VERIFY_TOKEN=${STRAVA_WEBHOOK_VERIFY_TOKEN:-}
+      - STRAVA_RECONCILE_TOKEN=${STRAVA_RECONCILE_TOKEN:-}
+      - STRAVA_SUBSCRIPTION_ID=${STRAVA_SUBSCRIPTION_ID:-}
+      - STRAVA_RECONCILE_LOOKBACK_HOURS=${STRAVA_RECONCILE_LOOKBACK_HOURS:-48}
     networks: [backend]
 
   mailhog:

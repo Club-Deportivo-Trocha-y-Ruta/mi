@@ -119,6 +119,15 @@ export function AppShell({ children }: AppShellProps) {
       )}
       {(isCoach || isAdmin) && (
         <NavLink
+          to="/activities"
+          className={navLinkClass}
+          onClick={() => setSidebarOpen(false)}
+        >
+          Actividades
+        </NavLink>
+      )}
+      {(isCoach || isAdmin) && (
+        <NavLink
           to="/technique"
           className={navLinkClass}
           onClick={() => setSidebarOpen(false)}

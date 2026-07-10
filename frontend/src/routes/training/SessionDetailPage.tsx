@@ -20,8 +20,11 @@ import { AttendanceTable } from "@/components/training/AttendanceTable";
 import { MediaUploadZone } from "@/components/training/MediaUploadZone";
 import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ActivityCard } from "@/components/activities/ActivityCard";
 import type { SessionMedia } from "@/types/trainingSession.types";
+import type { ActivityOut } from "@/types/strava.types";
 import { useDetachBlock, useSessionBlocks } from "@/hooks/strength/useStrength";
+import { useSessionActivities } from "@/hooks/activities/useSessionActivities";
 
 const RouteViewer = lazy(() =>
   import("@/components/training/RouteViewer").then((m) => ({ default: m.RouteViewer })),
@@ -43,6 +46,29 @@ function formatDate(dateStr: string): string {
 
 function formatTime(timeStr: string): string {
   return timeStr.slice(0, 5);
+}
+
+/** Agrupa actividades por atleta, preservando el orden de primera aparición. */
+function groupActivitiesByAthlete(
+  activities: ActivityOut[],
+): { athleteId: number; athleteName: string; activities: ActivityOut[] }[] {
+  const groups = new Map<
+    number,
+    { athleteId: number; athleteName: string; activities: ActivityOut[] }
+  >();
+  for (const activity of activities) {
+    const existing = groups.get(activity.athlete_id);
+    if (existing) {
+      existing.activities.push(activity);
+    } else {
+      groups.set(activity.athlete_id, {
+        athleteId: activity.athlete_id,
+        athleteName: activity.athlete_name,
+        activities: [activity],
+      });
+    }
+  }
+  return Array.from(groups.values());
 }
 
 const cardStyle: React.CSSProperties = {
@@ -84,6 +110,7 @@ export function SessionDetailPage() {
   const mediaDeleteMutation = useDeleteSessionMedia(sessionId);
   const strengthBlocksQuery = useSessionBlocks(sessionId, !!sessionId);
   const detachBlockMutation = useDetachBlock();
+  const sessionActivitiesQuery = useSessionActivities(sessionId, !!sessionId);
 
   const session = sessionQuery.data;
 
@@ -169,6 +196,9 @@ export function SessionDetailPage() {
   const isCancelled = session.status === "cancelled";
   const notesValue = coachNotes !== null ? coachNotes : (session.coach_notes ?? "");
   const attendances = attendanceQuery.data ?? [];
+  const activityGroups = groupActivitiesByAthlete(
+    sessionActivitiesQuery.data?.items ?? [],
+  );
 
   return (
     <section className="space-y-5">
@@ -464,6 +494,49 @@ export function SessionDetailPage() {
               </li>
             ))}
           </ul>
+        )}
+      </div>
+
+      {/* Actividades Strava enlazadas (feature 025, FR-009) */}
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+        <h2 className={sectionHeading} style={{ marginBottom: 0 }}>
+          Actividades Strava
+        </h2>
+
+        {sessionActivitiesQuery.isLoading && (
+          <div className="h-16 animate-pulse rounded-lg bg-light-gray" />
+        )}
+
+        {sessionActivitiesQuery.isError && (
+          <p className="text-sm text-red-600" role="alert">
+            No se pudieron cargar las actividades Strava de esta sesión.
+          </p>
+        )}
+
+        {!sessionActivitiesQuery.isLoading &&
+          !sessionActivitiesQuery.isError &&
+          activityGroups.length === 0 && (
+            <p className="text-sm text-mid-gray" data-testid="session-activities-empty">
+              Ningún atleta ha enlazado una actividad Strava a esta sesión
+              todavía.
+            </p>
+          )}
+
+        {activityGroups.length > 0 && (
+          <div className="space-y-4" data-testid="session-activities-groups">
+            {activityGroups.map((group) => (
+              <div key={group.athleteId}>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  {group.athleteName}
+                </p>
+                <div className="space-y-2">
+                  {group.activities.map((activity) => (
+                    <ActivityCard key={activity.id} activity={activity} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

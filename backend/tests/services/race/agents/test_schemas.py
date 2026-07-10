@@ -12,7 +12,6 @@ import json
 
 import pytest
 
-from app.services.race.rag.retriever import Citation
 from app.services.race.schemas import (
     AnalysisInput,
     AnalysisOutput,
@@ -71,7 +70,6 @@ def _sample_input(**over) -> AnalysisInput:
         progression_df_records=[],
         podium_context={},
         memory_recent_insights=[],
-        principles_citations=[],
         explain_mode=False,
         athlete_id=42,
         season=2026,
@@ -103,16 +101,6 @@ def test_analysis_input_forbids_extra_fields():
             season=2026,
             unexpected_field="boom",
         )
-
-
-def test_analysis_input_with_citations_json_serializable():
-    cites = [
-        Citation(chunk_id="abc123", source="docs/01.md", content="bla", score=0.9, metadata={}),
-    ]
-    inp = _sample_input(principles_citations=cites)
-    dump = inp.model_dump(mode="json")
-    # Round-trip via JSON.
-    json.dumps(dump)
 
 
 # ---------------------------------------------------------------------------

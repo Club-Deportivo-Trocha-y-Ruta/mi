@@ -1,0 +1,25 @@
+name: Strava Reconcile
+
+# Trigger: daily at 09:00 UTC (04:00 Colombia time) + manual trigger.
+# Reconciles Strava activities for all active connections.
+# Refs: specs/025-strava-activity-sync/contracts/api.md §E.
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  reconcile:
+    name: Reconcile Strava activities
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Reconcile with Strava
+        run: |
+          curl -X POST \
+            -H "X-Reconcile-Token: ${{ secrets.STRAVA_RECONCILE_TOKEN }}" \
+            --max-time 300 \
+            --retry 2 \
+            https://mi-2yzi.onrender.com/api/integrations/strava/reconcile

@@ -8,18 +8,58 @@
     "age": 10,
     "ltad_group": "mini-bambino",
     "progression_df_records": [
-      {"valida_num": 1, "event_date": "2026-01-31", "position": 4, "race_time_ms": 1880000, "points_awarded": 60, "gap_to_winner_ms": 70000},
-      {"valida_num": 2, "event_date": "2026-02-28", "position": 5, "race_time_ms": 1920000, "points_awarded": 40, "gap_to_winner_ms": 110000},
-      {"valida_num": 3, "event_date": "2026-04-19", "position": 7, "race_time_ms": 1990000, "points_awarded": 20, "gap_to_winner_ms": 175000},
-      {"valida_num": 4, "event_date": "2026-05-17", "position": 8, "race_time_ms": 2040000, "points_awarded": 15, "gap_to_winner_ms": 225000}
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "position": 4,
+        "race_time_ms": 1880000,
+        "points_awarded": 60,
+        "gap_to_winner_ms": 70000
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "position": 5,
+        "race_time_ms": 1920000,
+        "points_awarded": 40,
+        "gap_to_winner_ms": 110000
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "position": 7,
+        "race_time_ms": 1990000,
+        "points_awarded": 20,
+        "gap_to_winner_ms": 175000
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "position": 8,
+        "race_time_ms": 2040000,
+        "points_awarded": 15,
+        "gap_to_winner_ms": 225000
+      }
     ],
     "podium_context": {
       "category_id": 1,
       "event_id": 4,
       "podium": [
-        {"position": 1, "competitor_id": 4060, "race_time_ms": 1815000},
-        {"position": 2, "competitor_id": 4061, "race_time_ms": 1842000},
-        {"position": 3, "competitor_id": 4062, "race_time_ms": 1870000}
+        {
+          "position": 1,
+          "competitor_id": 4060,
+          "race_time_ms": 1815000
+        },
+        {
+          "position": 2,
+          "competitor_id": 4061,
+          "race_time_ms": 1842000
+        },
+        {
+          "position": 3,
+          "competitor_id": 4062,
+          "race_time_ms": 1870000
+        }
       ],
       "finishers_count": 10
     },
@@ -28,15 +68,24 @@
       "Coach reportó cansancio recurrente últimas 3 sesiones",
       "Aumento de talla 4 cm en 3 meses"
     ],
-    "principles_citations": [
-      {"chunk_id": "rag_phv01", "source": "docs/01-marco-teorico.md", "content": "Brote de crecimiento (Circa-PHV): reducir carga 30%, priorizar descanso, evitar HIIT, vigilar dolor articular.", "score": 0.97, "metadata": {"h1": "PHV"}},
-      {"chunk_id": "rag_load01", "source": "docs/01-marco-teorico.md", "content": "Mini-bambino máx 5 días/sem; horas semanales ≤ edad del atleta (10 h máx).", "score": 0.88, "metadata": {"h1": "Carga"}}
-    ],
     "explain_mode": false
   },
-  "expected_themes": ["brote", "PHV", "reducir carga", "descanso", "crecimiento"],
-  "forbidden_terms": ["suplementos", "diagnóstico médico", "lesión confirmada", "HIIT obligatorio", "Mariana", "Thiago"],
-  "must_cite": true,
+  "expected_themes": [
+    "brote",
+    "PHV",
+    "reducir carga",
+    "descanso",
+    "crecimiento"
+  ],
+  "forbidden_terms": [
+    "suplementos",
+    "diagnóstico médico",
+    "lesión confirmada",
+    "HIIT obligatorio",
+    "Mariana",
+    "Thiago"
+  ],
+  "must_cite": false,
   "max_words": 600,
   "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-A-M-007 muestra regresión sostenida (4→8) y gap creciente al podio (70s→225s). Coincide con brote de crecimiento detectado por antropometría [1].\n\n## Análisis Técnico\n\nCirca-PHV (-0.3 años): adaptación neuromuscular en curso. Cansancio recurrente reportado por coach es consistente.\n\n## Recomendaciones LTAD\n\n- Reducir carga 30% durante 6 semanas, sin HIIT (categoría=volume, prioridad=high) [1]\n- Sumar día de descanso completo adicional (categoría=recovery, prioridad=high) [2]\n- Comunicación con familia: vigilar dolor articular (categoría=psychology, prioridad=med) [1]\n\n## Riesgos\n\n- Lesión por sobrecarga si se mantiene volumen actual (flag=growth_spurt, severity=high) [1]\n\n## Próximos Pasos\n\nReevaluar PHV en 3 meses. Si dolor persiste, derivar al fisioterapeuta deportivo."
 }
