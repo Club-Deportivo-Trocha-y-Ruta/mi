@@ -144,6 +144,11 @@ def _strava_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         settings, "strava_token_encryption_key", Fernet.generate_key().decode()
     )
+    # Aísla del .env real del host: si el desarrollador tiene
+    # STRAVA_SUBSCRIPTION_ID configurado localmente (suscripción real creada),
+    # se filtraría a estos tests y el guard anti-spoofing (§B) rechazaría los
+    # eventos de prueba por subscription_id mismatch.
+    monkeypatch.setattr(settings, "strava_subscription_id", "")
 
 
 @pytest.fixture(autouse=True)

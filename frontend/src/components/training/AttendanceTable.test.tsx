@@ -1,14 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 
 vi.mock("@/api/trainingSessions", () => ({
   useUpdateAttendance: vi.fn(),
 }));
 
+// `ActivityEvidenceStrip` en estado "enlazado" expandido renderiza
+// `ActivityCard`, que lee el rol autenticado internamente (doble gate de
+// `canLink` + rol — ver docstring de ActivityCard.tsx).
+vi.mock("@/store/auth.store", () => ({
+  useAuthStore: (selector: (s: { user: { role: string } }) => unknown) =>
+    selector({ user: { role: "coach" } }),
+}));
+
+// `LinkSessionDialog` real depende de `useTrainingSessions`/MSW — fuera del
+// alcance de esta suite (ya cubierto por LinkSessionDialog.test.tsx /
+// ActivityEvidenceStrip.test.tsx). Se stubea para aislar el estado "sin
+// enlazar" de la fila.
+vi.mock("@/components/activities/LinkSessionDialog", () => ({
+  LinkSessionDialog: () => null,
+}));
+
 import { useUpdateAttendance } from "@/api/trainingSessions";
 import { AttendanceTable } from "./AttendanceTable";
 import type { Attendance } from "@/types/trainingSession.types";
+import type { ActivityOut } from "@/types/strava.types";
 
 const mutate = vi.fn();
 const mutationStub = {
@@ -46,19 +64,60 @@ function makeAttendance(overrides?: Partial<Attendance>): Attendance {
   };
 }
 
-function renderTable(
-  attendances: Attendance[],
-  sessionId = 10,
-  disabled = false,
-) {
+function makeActivity(overrides?: Partial<ActivityOut>): ActivityOut {
+  return {
+    id: 1,
+    athlete_id: 1,
+    athlete_name: "Sebastián García",
+    name: "Rodada matutina",
+    sport_type: "MountainBikeRide",
+    start_date_local: "2026-07-08T06:30:00",
+    elapsed_time_s: 5400,
+    moving_time_s: 5100,
+    distance_m: 32000,
+    total_elevation_gain_m: 450,
+    average_heartrate: 148,
+    max_heartrate: 172,
+    is_trainer: false,
+    upstream_state: "present",
+    summary_complete: true,
+    link: null,
+    ...overrides,
+  };
+}
+
+interface RenderTableOptions {
+  sessionId?: number;
+  disabled?: boolean;
+  linkedActivitiesByAthleteId?: Map<number, ActivityOut[]>;
+  unlinkedActivitiesByAthleteId?: Map<number, ActivityOut[]>;
+  activitiesLoading?: boolean;
+  canLink?: boolean;
+}
+
+function renderTable(attendances: Attendance[], options: RenderTableOptions = {}) {
+  const {
+    sessionId = 10,
+    disabled = false,
+    linkedActivitiesByAthleteId,
+    unlinkedActivitiesByAthleteId,
+    activitiesLoading = false,
+    canLink = false,
+  } = options;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <AttendanceTable
-        sessionId={sessionId}
-        attendances={attendances}
-        disabled={disabled}
-      />
+      <MemoryRouter>
+        <AttendanceTable
+          sessionId={sessionId}
+          attendances={attendances}
+          disabled={disabled}
+          linkedActivitiesByAthleteId={linkedActivitiesByAthleteId}
+          unlinkedActivitiesByAthleteId={unlinkedActivitiesByAthleteId}
+          activitiesLoading={activitiesLoading}
+          canLink={canLink}
+        />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -245,9 +304,96 @@ describe("AttendanceTable", () => {
 
   describe("disabled cuando cancelled", () => {
     it("los selects están deshabilitados cuando disabled=true", () => {
-      renderTable([makeAttendance()], 10, true);
+      renderTable([makeAttendance()], { sessionId: 10, disabled: true });
       const selects = screen.getAllByRole("combobox", { name: /Estado de asistencia/i });
       selects.forEach((s) => expect(s).toBeDisabled());
+    });
+  });
+
+  // `AttendanceTable` siempre renderiza AMBAS variantes (card móvil + fila
+  // de escritorio) en el DOM — la responsividad es solo CSS (`md:hidden` /
+  // `hidden md:block`), que jsdom no aplica. Las queries se acotan con
+  // `within(desktopRow)` para evitar falsos "multiple elements found"
+  // (mismo patrón que el resto de la suite: `row.querySelectorAll(...)`).
+  describe("evidencia de actividad Strava (session-detail-redesign.md §3.2)", () => {
+    it("atleta sin datos de actividad muestra el estado neutro 'Sin actividad Strava'", () => {
+      renderTable([makeAttendance({ athlete_id: 1 })]);
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByText(/Sin actividad Strava/i)).toBeInTheDocument();
+    });
+
+    it("un Map sin entrada para el atleta cae al estado vacío en vez de lanzar", () => {
+      const linked = new Map<number, ActivityOut[]>([[999, [makeActivity({ athlete_id: 999 })]]]);
+      renderTable([makeAttendance({ athlete_id: 1 })], {
+        linkedActivitiesByAthleteId: linked,
+      });
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByText(/Sin actividad Strava/i)).toBeInTheDocument();
+    });
+
+    it("resuelve la actividad enlazada correcta por athlete_id (lookup puntual, no por índice)", () => {
+      const linked = new Map<number, ActivityOut[]>([
+        [2, [makeActivity({ id: 20, athlete_id: 2, elapsed_time_s: 5400 })]],
+      ]);
+      renderTable(
+        [
+          makeAttendance({ athlete_id: 1, athlete_name: "Atleta Uno" }),
+          makeAttendance({ athlete_id: 2, athlete_name: "Atleta Dos" }),
+        ],
+        { linkedActivitiesByAthleteId: linked },
+      );
+
+      // Atleta 1 (sin actividad en el Map) queda neutro; atleta 2 (con
+      // actividad) muestra el chip de cumplimiento.
+      expect(screen.getAllByTestId("activity-evidence-empty-1").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByTestId("activity-evidence-linked-2").length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("muestra el badge 'Actividad sin enlazar' + botón Enlazar cuando canLink=true", () => {
+      const unlinked = new Map<number, ActivityOut[]>([
+        [1, [makeActivity({ id: 30, athlete_id: 1, link: null })]],
+      ]);
+      renderTable([makeAttendance({ athlete_id: 1 })], {
+        unlinkedActivitiesByAthleteId: unlinked,
+        canLink: true,
+      });
+
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByText(/Actividad sin enlazar/i)).toBeInTheDocument();
+      expect(row.getByRole("button", { name: /Enlazar/i })).toBeInTheDocument();
+    });
+
+    it("oculta el botón Enlazar cuando canLink=false aunque haya actividad sin enlazar", () => {
+      const unlinked = new Map<number, ActivityOut[]>([
+        [1, [makeActivity({ id: 30, athlete_id: 1, link: null })]],
+      ]);
+      renderTable([makeAttendance({ athlete_id: 1 })], {
+        unlinkedActivitiesByAthleteId: unlinked,
+        canLink: false,
+      });
+
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByText(/Actividad sin enlazar/i)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Enlazar/i })).not.toBeInTheDocument();
+    });
+
+    it("muestra el skeleton de carga cuando activitiesLoading=true", () => {
+      renderTable([makeAttendance({ athlete_id: 1 })], { activitiesLoading: true });
+      expect(screen.getAllByTestId("activity-evidence-loading-1").length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("el chevron expande y muestra un ActivityCard por actividad enlazada", () => {
+      const linked = new Map<number, ActivityOut[]>([
+        [1, [makeActivity({ id: 40, athlete_id: 1 })]],
+      ]);
+      renderTable([makeAttendance({ athlete_id: 1 })], {
+        linkedActivitiesByAthleteId: linked,
+      });
+
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(screen.queryByText(/Rodada matutina/i)).not.toBeInTheDocument();
+      fireEvent.click(row.getByRole("button", { name: /ver detalle de actividad/i }));
+      expect(row.getByText(/Rodada matutina/i)).toBeInTheDocument();
     });
   });
 });

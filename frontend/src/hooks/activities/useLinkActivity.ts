@@ -15,6 +15,12 @@
  *     `session-activities`, sessionId) and of the PREVIOUS session when
  *     re-linking/unlinking, so both session-detail views drop/gain the row
  *     immediately without a manual refresh.
+ *   - the session-detail redesign's unlinked-near-date lookup
+ *     (`unlinked-activities-near-date` prefix, session-detail-redesign.md
+ *     §3.5) — without this, linking from the new row-level "Enlazar"
+ *     action leaves the activity visible in BOTH the "sin enlazar" state
+ *     and (after the `session-activities` invalidation above) the linked
+ *     state, until the coach reloads the page.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -42,6 +48,7 @@ export function useLinkActivity() {
       void queryClient.invalidateQueries({
         queryKey: ["athlete-activities", variables.athleteId],
       });
+      void queryClient.invalidateQueries({ queryKey: ["unlinked-activities-near-date"] });
       if (variables.trainingSessionId != null) {
         void queryClient.invalidateQueries({
           queryKey: ["session-activities", variables.trainingSessionId],

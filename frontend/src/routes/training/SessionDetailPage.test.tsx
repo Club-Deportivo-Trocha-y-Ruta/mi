@@ -49,6 +49,19 @@ vi.mock("@/components/training/RouteViewer", () => ({
   ),
 }));
 
+// Ambos hooks reales de actividades corren contra `apiClient.get` mockeado
+// (retorna `undefined`), lo que los deja "pending" indefinidamente y puede
+// disparar un act()/unhandled-rejection warning silencioso — se mockean
+// explícitamente, mismo patrón que el resto de hooks de la página
+// (session-detail-redesign.md §8).
+vi.mock("@/hooks/activities/useSessionActivities", () => ({
+  useSessionActivities: vi.fn(),
+}));
+
+vi.mock("@/hooks/activities/useUnlinkedActivitiesNearDate", () => ({
+  useUnlinkedActivitiesNearDate: vi.fn(),
+}));
+
 import {
   useTrainingSession,
   useSessionAttendance,
@@ -57,6 +70,8 @@ import {
   useUploadRouteFile,
   useUpdateTrainingSession,
 } from "@/api/trainingSessions";
+import { useSessionActivities } from "@/hooks/activities/useSessionActivities";
+import { useUnlinkedActivitiesNearDate } from "@/hooks/activities/useUnlinkedActivitiesNearDate";
 import { SessionDetailPage } from "./SessionDetailPage";
 import type { TrainingSession, Attendance } from "@/types/trainingSession.types";
 
@@ -141,6 +156,16 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
   } as unknown as ReturnType<typeof useSessionAttendance>);
+  vi.mocked(useSessionActivities).mockReturnValue({
+    data: { items: [] },
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useSessionActivities>);
+  vi.mocked(useUnlinkedActivitiesNearDate).mockReturnValue({
+    data: { items: [], total: 0, page: 1, page_size: 30 },
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useUnlinkedActivitiesNearDate>);
 });
 
 describe("SessionDetailPage", () => {
@@ -323,6 +348,25 @@ describe("SessionDetailPage", () => {
     it("muestra el conteo de convocados", () => {
       renderPage();
       expect(screen.getByText(/Asistencia \(1\)/i)).toBeInTheDocument();
+    });
+
+    it("ya no renderiza la sección separada 'Actividades Strava' (fusionada en la fila de asistencia)", () => {
+      renderPage();
+      expect(screen.queryByText(/^Actividades Strava$/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId("session-activities-groups")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("session-activities-empty")).not.toBeInTheDocument();
+    });
+
+    it("muestra la nota de error inline cuando fallan las actividades Strava de la sesión", () => {
+      vi.mocked(useSessionActivities).mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+      } as unknown as ReturnType<typeof useSessionActivities>);
+      renderPage();
+      expect(
+        screen.getByText(/No se pudieron cargar las actividades Strava vinculadas/i),
+      ).toBeInTheDocument();
     });
   });
 });

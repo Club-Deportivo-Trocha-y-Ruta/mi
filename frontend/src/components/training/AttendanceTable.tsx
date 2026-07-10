@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import { AlertCircle, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 
 import type { Attendance, AttendanceStatus } from "@/types/trainingSession.types";
+import type { ActivityOut } from "@/types/strava.types";
+import { ActivityEvidenceStrip } from "./ActivityEvidenceStrip";
 import { RubricSliders } from "./RubricSliders";
 import { useAttendanceForm, ALLOWS_RUBRIC } from "./useAttendanceForm";
 
@@ -35,9 +37,21 @@ interface AttendanceRowProps {
   attendance: Attendance;
   sessionId: number;
   disabled?: boolean;
+  linkedActivities: ActivityOut[];
+  unlinkedActivities: ActivityOut[];
+  activitiesLoading: boolean;
+  canLink: boolean;
 }
 
-function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) {
+function AttendanceRow({
+  attendance,
+  sessionId,
+  disabled,
+  linkedActivities,
+  unlinkedActivities,
+  activitiesLoading,
+  canLink,
+}: AttendanceRowProps) {
   const rowRef = useRef<HTMLTableRowElement>(null);
   const reasonInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -66,7 +80,10 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTableRowElement>) => {
       const tag = (e.target as HTMLElement).tagName.toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      // "button" incluye el chevron/"Enlazar" del ActivityEvidenceStrip —
+      // esos botones deben recibir Tab/Enter normalmente, no ser
+      // interceptados por los atajos P/A/J/T/L de la fila.
+      if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button") return;
       const mapped = STATUS_KEY_MAP[e.key.toLowerCase()];
       if (mapped) setValue("status", mapped);
     },
@@ -127,6 +144,15 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
               </span>
             )}
           </span>
+        </div>
+        <div className="mt-1.5">
+          <ActivityEvidenceStrip
+            athleteId={attendance.athlete_id}
+            linkedActivities={linkedActivities}
+            unlinkedActivities={unlinkedActivities}
+            loading={activitiesLoading}
+            canLink={canLink}
+          />
         </div>
       </td>
 
@@ -208,7 +234,15 @@ function AttendanceRow({ attendance, sessionId, disabled }: AttendanceRowProps) 
   );
 }
 
-function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps) {
+function AttendanceCard({
+  attendance,
+  sessionId,
+  disabled,
+  linkedActivities,
+  unlinkedActivities,
+  activitiesLoading,
+  canLink,
+}: AttendanceRowProps) {
   const reasonInputRef = useRef<HTMLInputElement | null>(null);
   const {
     control,
@@ -278,6 +312,14 @@ function AttendanceCard({ attendance, sessionId, disabled }: AttendanceRowProps)
         </div>
       </div>
 
+      <ActivityEvidenceStrip
+        athleteId={attendance.athlete_id}
+        linkedActivities={linkedActivities}
+        unlinkedActivities={unlinkedActivities}
+        loading={activitiesLoading}
+        canLink={canLink}
+      />
+
       {requiresReason && (
         <div className="flex flex-col gap-1">
           <input
@@ -335,9 +377,21 @@ interface AttendanceTableProps {
   sessionId: number;
   attendances: Attendance[];
   disabled?: boolean;
+  linkedActivitiesByAthleteId?: Map<number, ActivityOut[]>;
+  unlinkedActivitiesByAthleteId?: Map<number, ActivityOut[]>;
+  activitiesLoading?: boolean;
+  canLink?: boolean;
 }
 
-export function AttendanceTable({ sessionId, attendances, disabled }: AttendanceTableProps) {
+export function AttendanceTable({
+  sessionId,
+  attendances,
+  disabled,
+  linkedActivitiesByAthleteId,
+  unlinkedActivitiesByAthleteId,
+  activitiesLoading = false,
+  canLink = false,
+}: AttendanceTableProps) {
   if (attendances.length === 0) {
     return (
       <p className="py-6 text-center text-sm text-mid-gray">
@@ -356,6 +410,10 @@ export function AttendanceTable({ sessionId, attendances, disabled }: Attendance
             attendance={a}
             sessionId={sessionId}
             disabled={disabled}
+            linkedActivities={linkedActivitiesByAthleteId?.get(a.athlete_id) ?? []}
+            unlinkedActivities={unlinkedActivitiesByAthleteId?.get(a.athlete_id) ?? []}
+            activitiesLoading={activitiesLoading}
+            canLink={canLink}
           />
         ))}
       </div>
@@ -391,6 +449,10 @@ export function AttendanceTable({ sessionId, attendances, disabled }: Attendance
                 attendance={a}
                 sessionId={sessionId}
                 disabled={disabled}
+                linkedActivities={linkedActivitiesByAthleteId?.get(a.athlete_id) ?? []}
+                unlinkedActivities={unlinkedActivitiesByAthleteId?.get(a.athlete_id) ?? []}
+                activitiesLoading={activitiesLoading}
+                canLink={canLink}
               />
             ))}
           </tbody>
