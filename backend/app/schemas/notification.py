@@ -53,6 +53,9 @@ class DocumentTemplate(str, Enum):
     # Variante DOCX editable del mismo informe (docxtpl). Mismo contexto que la
     # variante PDF — comparten un único context-builder. Solo coach/admin.
     TRAINING_MONTHLY_TECHNICAL_REPORT_DOCX = "training_monthly_technical_report_docx"
+    # Instructivo de sesión de intervalos por marca de ciclocomputador
+    # (Garmin / Magene / iGPSport). Sin PII de menores. Feature 026.
+    SESSION_INSTRUCTIVO = "session_instructivo"
 
 
 class DocumentFormat(str, Enum):

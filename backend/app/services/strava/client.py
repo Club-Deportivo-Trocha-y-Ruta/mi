@@ -381,6 +381,25 @@ class StravaClient:
         """
         return await self._request("GET", f"/activities/{activity_id}")
 
+    async def get_activity_laps(self, activity_id: int) -> list[dict]:
+        """Fetch an activity's device-recorded laps: ``GET /activities/{id}/laps``.
+
+        Routed through the shared ``_request`` choke point, so it inherits the
+        exact same behavior as every other read: automatic token refresh, 429
+        → ``StravaRateLimited`` (caller backs off), and 404 →
+        ``StravaNotFoundError`` (activity deleted/private/not visible to this
+        token). Strava returns a JSON **array** of lap objects — passed through
+        verbatim; this client performs no allow-listing itself.
+
+        Privacy (feature 026 §D4 / Ley 1581 minors gate): the caller
+        (``services/intervals/match_runner.py``) is the single place allowed to
+        touch this payload, and it allow-lists only the non-geo numeric fields
+        (``lap_index``, ``elapsed_time``, ``moving_time``, ``average_heartrate``,
+        ``average_speed``) before persistence — GPS, polyline/map, lap name,
+        cadence and watts are dropped and never stored or exposed.
+        """
+        return await self._request("GET", f"/activities/{activity_id}/laps")
+
     async def list_athlete_activities(
         self, after: datetime | int, per_page: int = 50
     ) -> AsyncIterator[dict]:

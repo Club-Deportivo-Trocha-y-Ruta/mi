@@ -515,6 +515,27 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
             "Distribución restringida. is_draft=True añade banner BORRADOR."
         ),
     ),
+    DocumentTemplate.SESSION_INSTRUCTIVO: DocumentTemplateSpec(
+        template_id=DocumentTemplate.SESSION_INSTRUCTIVO,
+        format=DocumentFormat.PDF,
+        template_path="documents/pdf/session_instructivo.html",
+        required_context_keys=frozenset(
+            {
+                "brand",       # "garmin" | "magene" | "igpsport"
+                "session",     # dict con metadatos de la sesión (sin PII de menores)
+                "blocks",      # lista de bloques aplanados (orden/tipo/duración/zona/cadencia)
+                "club_name",
+                "generated_at",
+            }
+        ),
+        description=(
+            "Instructivo de sesión de intervalos por marca de ciclocomputador "
+            "(Garmin / Magene / iGPSport). Explica cómo configurar o seguir la "
+            "estructura de intervalos e incluye el paso obligatorio de desactivar "
+            "el auto-lap en las tres marcas. Sin GPS/mapa ni potencia; sin PII de "
+            "menores. Documento de apoyo para el atleta y su familia. Feature 026."
+        ),
+    ),
 }
 
 

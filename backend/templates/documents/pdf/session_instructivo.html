@@ -1,0 +1,285 @@
+{% extends "documents/pdf/base/layout.html" %}
+
+{#
+  Instructivo de sesión de intervalos por marca de ciclocomputador — T027
+  (feature 026, Structured Interval Training).
+
+  Genera una hoja imprimible que le explica al atleta / familia cómo configurar
+  (o seguir) la estructura de intervalos de la sesión en su dispositivo, según la
+  marca (Garmin / Magene / iGPSport). Extiende base/layout.html (que ya incluye
+  _brand_tokens.html) — sin peticiones externas, todo el estilo es inline/base.
+
+  Variables requeridas (validadas por TemplateRegistry):
+    brand         str    — "garmin" | "magene" | "igpsport"
+    session       dict   — metadatos de la sesión:
+                           { technical_focus: str, scheduled_date: str|date,
+                             duration_min: int|None, location: str|None,
+                             session_kind: str|None, objectives: str|None,
+                             target_age_band: str|None }  # ej. "13-15"
+    blocks        list   — bloques APLANADOS (grupos de repetición ya expandidos),
+                           en orden de ejecución, cada uno:
+                           { order: int,                # posición secuencial (1..n)
+                             block_type: str,           # warmup|work|recovery|cooldown
+                             duration_s: int,           # duración planificada en segundos
+                             target_zone: str,          # Z1..Z5 (zona de FC)
+                             target_cadence_rpm: int,   # cadencia objetivo (>=60)
+                             repeat_label: str|None }   # ej. "Rep 2 de 4" (opcional)
+    club_name     str    — nombre del club
+    generated_at  str    — fecha/hora de generación (formato legible)
+
+  Privacidad (Ley 1581):
+    - No contiene datos personales del menor (sin DOB, sin datos médicos, sin PII).
+    - No contiene GPS, polilínea ni mapa. No hay columna de potencia (watts).
+    - Documento de apoyo para el atleta y su familia.
+
+  Copy en español neutro (Colombia).
+#}
+
+{% block title %}Instructivo de intervalos — {{ session.technical_focus }} — {{ club_name }}{% endblock %}
+{% block header_right %}Instructivo de Intervalos{% endblock %}
+{% block doc_title %}Instructivo de Intervalos{% endblock %}
+{% block generated_at %}{{ generated_at }}{% endblock %}
+
+{% block body %}
+
+{# --------------------------------------------------------------------
+   Diccionarios de apoyo (labels en español neutro)
+   -------------------------------------------------------------------- #}
+{%- set block_type_labels = {
+      "warmup":   "Calentamiento",
+      "work":     "Trabajo",
+      "recovery": "Recuperación",
+      "cooldown": "Vuelta a la calma"
+} -%}
+
+{%- set brand_key = (brand | lower) -%}
+{%- set brand_labels = {
+      "garmin":   "Garmin",
+      "magene":   "Magene",
+      "igpsport": "iGPSport"
+} -%}
+{%- set brand_label = brand_labels.get(brand_key, brand_key | capitalize) -%}
+
+{# Estilo compartido para el paso destacado de auto-lap (aplica a las 3 marcas) #}
+{%- set autolap_box_style =
+      "margin: 12pt 0; padding: 10pt 12pt; border: 1.5pt solid " ~ "var(--warning)" ~ ";"
+      ~ " border-left: 5pt solid " ~ "var(--warning)" ~ "; background: #FEF3C7;"
+      ~ " border-radius: 4pt; page-break-inside: avoid;" -%}
+
+{# ====================================================================
+   DATOS DE LA SESIÓN
+   ==================================================================== #}
+<h2>Datos de la sesión</h2>
+<table class="meta-table">
+  <tbody>
+    <tr>
+      <td>Enfoque técnico</td>
+      <td>{{ session.technical_focus }}</td>
+    </tr>
+    <tr>
+      <td>Fecha</td>
+      <td>{{ session.scheduled_date }}</td>
+    </tr>
+    {% if session.duration_min %}
+    <tr>
+      <td>Duración</td>
+      <td>{{ session.duration_min }} min</td>
+    </tr>
+    {% endif %}
+    {% if session.location %}
+    <tr>
+      <td>Lugar</td>
+      <td>{{ session.location }}</td>
+    </tr>
+    {% endif %}
+    {% if session.session_kind %}
+    <tr>
+      <td>Tipo de sesión</td>
+      <td>{{ session.session_kind | capitalize }}</td>
+    </tr>
+    {% endif %}
+    {% if session.target_age_band %}
+    <tr>
+      <td>Categoría</td>
+      <td>{{ session.target_age_band }} años</td>
+    </tr>
+    {% endif %}
+    <tr>
+      <td>Dispositivo</td>
+      <td>{{ brand_label }}</td>
+    </tr>
+    {% if session.objectives %}
+    <tr>
+      <td>Objetivos</td>
+      <td>{{ session.objectives }}</td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+
+{# ====================================================================
+   TABLA DE BLOQUES (aplanada)
+   ==================================================================== #}
+<h2>Estructura de intervalos</h2>
+
+{% if blocks %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th style="width: 8%;">Orden</th>
+      <th style="width: 34%;">Tipo de bloque</th>
+      <th style="width: 22%;">Duración</th>
+      <th style="width: 18%;">Zona FC</th>
+      <th style="width: 18%;">Cadencia</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in blocks %}
+    {%- set total_s = b.duration_s | int -%}
+    {%- set mins = total_s // 60 -%}
+    {%- set secs = total_s % 60 -%}
+    <tr>
+      <td>{{ b.order }}</td>
+      <td>
+        {{ block_type_labels.get(b.block_type, b.block_type | capitalize) }}
+        {% if b.repeat_label %}
+        <span style="display: inline-block; margin-left: 4pt; font-size: 7.5pt;
+                     font-weight: 600; color: var(--accent-violet);
+                     background: #EDE9FE; padding: 1pt 5pt; border-radius: 3pt;">
+          {{ b.repeat_label }}
+        </span>
+        {% endif %}
+      </td>
+      <td>
+        {%- if mins and secs -%}
+          {{ mins }} min {{ secs }} s
+        {%- elif mins -%}
+          {{ mins }} min
+        {%- else -%}
+          {{ secs }} s
+        {%- endif -%}
+      </td>
+      <td>{{ b.target_zone }}</td>
+      <td>{{ b.target_cadence_rpm }} rpm</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="caption">
+  La cadencia objetivo nunca baja de 60 rpm. No se usa potencia (watts) en esta categoría;
+  la referencia principal es la zona de frecuencia cardíaca (FC) y la sensación de esfuerzo.
+</p>
+{% else %}
+<p style="color: var(--gray-500); font-style: italic;">
+  Esta sesión aún no tiene bloques de intervalos definidos.
+</p>
+{% endif %}
+
+{# ====================================================================
+   CONFIGURACIÓN POR MARCA
+   ==================================================================== #}
+<h2>Cómo configurar tu {{ brand_label }}</h2>
+
+{# -------------------- GARMIN -------------------- #}
+{% if brand_key == "garmin" %}
+<p>
+  Tu Garmin permite crear el entrenamiento directamente en el dispositivo, así que
+  el ciclocomputador te va guiando bloque por bloque durante la sesión.
+</p>
+<ol style="margin: 0 0 10pt 0; padding-left: 18pt; font-size: 9.5pt; color: var(--gray-700);">
+  <li style="margin-bottom: 5pt;">
+    En el menú del dispositivo entrá a <strong>Entrenamiento &gt; Intervalos</strong>.
+  </li>
+  <li style="margin-bottom: 5pt;">
+    Cargá cada bloque de la tabla de arriba en orden: calentamiento, trabajo,
+    recuperación y vuelta a la calma, con su duración y zona de FC.
+  </li>
+  <li style="margin-bottom: 5pt;">
+    Para los bloques de recuperación configurá el tipo de descanso en
+    <strong>Type = Open</strong> (abierto). Así el dispositivo <strong>espera a que
+    presiones el botón de vuelta (lap)</strong> antes de pasar al siguiente bloque.
+  </li>
+  <li style="margin-bottom: 5pt;">
+    Durante la sesión, presioná el botón de <strong>vuelta (lap)</strong> al terminar
+    cada bloque para dejar registrada su duración real.
+  </li>
+</ol>
+
+{# -------------------- MAGENE -------------------- #}
+{% elif brand_key == "magene" %}
+<p>
+  Tu Magene permite armar el entrenamiento desde el menú <strong>training-create</strong>.
+  Los bloques usan <strong>solo una duración fija</strong>, así que cargá las duraciones
+  estimadas de la tabla y marcá tú mismo el cambio de bloque con el botón de vuelta.
+</p>
+<ol style="margin: 0 0 10pt 0; padding-left: 18pt; font-size: 9.5pt; color: var(--gray-700);">
+  <li style="margin-bottom: 5pt;">
+    Entrá al menú <strong>training-create</strong> y agregá los bloques
+    (Warm-up / Riding / Recovery / Cool-down) en el mismo orden de la tabla.
+  </li>
+  <li style="margin-bottom: 5pt;">
+    Cargá la <strong>duración fija</strong> de cada bloque tal como aparece en la
+    tabla de arriba. Tené presente la zona de FC de cada bloque como referencia.
+  </li>
+  <li style="margin-bottom: 5pt;">
+    Durante la sesión, presioná el botón de <strong>vuelta (lap)</strong> de forma
+    manual al terminar cada bloque, aunque la duración fija ya se haya cumplido.
+  </li>
+</ol>
+
+{# -------------------- IGPSPORT -------------------- #}
+{% elif brand_key == "igpsport" %}
+<p>
+  Tu iGPSport <strong>no tiene editor de entrenamientos por bloques</strong>, así que
+  esta hoja es tu <strong>hoja de referencia</strong>: seguí la tabla de intervalos
+  mientras pedaleás y marcá cada bloque con el botón de vuelta.
+</p>
+<ol style="margin: 0 0 10pt 0; padding-left: 18pt; font-size: 9.5pt; color: var(--gray-700);">
+  <li style="margin-bottom: 5pt;">
+    Llevá esta hoja impresa (o en el celular) contigo y seguí los bloques de la
+    tabla en orden, respetando la duración, la zona de FC y la cadencia.
+  </li>
+  <li style="margin-bottom: 5pt;">
+    Al terminar cada bloque, presioná el botón de <strong>vuelta (lap)</strong> del
+    dispositivo para dejar registrada su duración real.
+  </li>
+  <li style="margin-bottom: 5pt;">
+    No hace falta configurar nada en el dispositivo: la estructura la marcás tú con
+    el botón de vuelta, siguiendo esta hoja.
+  </li>
+</ol>
+
+{# -------------------- MARCA DESCONOCIDA (fallback defensivo) -------------------- #}
+{% else %}
+<p style="color: var(--gray-500); font-style: italic;">
+  Seguí la tabla de intervalos de arriba y marcá cada bloque con el botón de vuelta
+  (lap) de tu dispositivo.
+</p>
+{% endif %}
+
+{# ====================================================================
+   PASO DESTACADO — DESACTIVAR AUTO-LAP (las 3 marcas)
+   ==================================================================== #}
+<div style="{{ autolap_box_style }}">
+  <p style="margin: 0 0 4pt 0; font-size: 10pt; font-weight: 700; color: var(--warning);">
+    ⚠ Desactivá la vuelta automática (auto-lap)
+  </p>
+  <p style="margin: 0; font-size: 9pt; color: var(--gray-700);">
+    Antes de empezar, entrá a la configuración de tu {{ brand_label }} y
+    <strong>apagá la vuelta automática por distancia</strong> (auto-lap por km).
+    Si queda activa, el dispositivo crea vueltas extra que no coinciden con tus
+    bloques y dañan la comparación entre lo planificado y lo realizado. Las vueltas
+    deben marcarse <strong>solo con el botón de vuelta (lap)</strong>, a mano.
+  </p>
+</div>
+
+{# ====================================================================
+   PIE DE DOCUMENTO
+   ==================================================================== #}
+<div class="doc-footer" style="margin-top: 20pt;">
+  <p style="margin: 0;">
+    Club Deportivo Trocha y Ruta &mdash; Instructivo de apoyo para el atleta y su familia.
+  </p>
+</div>
+
+{% endblock %}

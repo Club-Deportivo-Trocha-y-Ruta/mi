@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from app.models.athlete import Athlete
     from app.models.calendar_event import CalendarEvent
     from app.models.club import Club
+    from app.models.interval_structure import IntervalStructure
     from app.models.session_media import SessionMedia
     from app.models.strength import StrengthSessionBlock
     from app.models.technique_exercise import TechniqueSessionExercise
@@ -154,6 +155,14 @@ class TrainingSession(Base):
         back_populates="training_session",
         cascade="all, delete-orphan",
         foreign_keys="[StrengthSessionBlock.training_session_id]",
+    )
+    # Feature 026 — structured interval plan attached 1:1 to this session (FR-001).
+    interval_structure: Mapped[IntervalStructure | None] = relationship(
+        "IntervalStructure",
+        back_populates="training_session",
+        uselist=False,
+        cascade="all, delete-orphan",
+        foreign_keys="[IntervalStructure.training_session_id]",
     )
 
 
