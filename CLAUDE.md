@@ -296,5 +296,5 @@ Always preserve: competition calendar, current macrocycle phase, non-negotiable 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/026-structured-interval-training/plan.md
+at specs/028-frontend-design-foundation/plan.md
 <!-- SPECKIT END -->
