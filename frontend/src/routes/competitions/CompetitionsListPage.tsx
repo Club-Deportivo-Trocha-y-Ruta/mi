@@ -18,6 +18,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   CalendarPlus,
+  CalendarRange,
   Edit2,
   Link2Off,
   Loader2,
@@ -57,6 +58,7 @@ import {
   useRaceEventsList,
 } from "@/hooks/race/useRaceEvents";
 import { getRaceEvent } from "@/api/raceEvents";
+import { currentSeason } from "@/lib/datetime";
 import { usePrefetchOnIntent } from "@/hooks/usePrefetchOnIntent";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
@@ -193,6 +195,14 @@ export function CompetitionsListPage() {
             >
               <Link2Off size={14} aria-hidden="true" />
               Sin enlazar
+            </Link>
+            <Link
+              to={`/competitions/insights/season/${currentSeason()}`}
+              className="inline-flex min-h-[48px] min-w-[48px] items-center gap-2 rounded-lg bg-white px-4 py-3 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              aria-label="Ver panorama de temporada"
+            >
+              <CalendarRange size={14} aria-hidden="true" />
+              Panorama de temporada
             </Link>
             {/* Acción primaria */}
             <Link

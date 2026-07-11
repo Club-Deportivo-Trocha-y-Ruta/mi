@@ -24,7 +24,7 @@ function HeaderBar({ year }: { year: number }) {
   return (
     <header className="space-y-1">
       <Link
-        to="/competitions/insights"
+        to="/competitions"
         className="inline-flex items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
         data-testid="back-to-insights"
       >
@@ -146,7 +146,7 @@ export function SeasonInsightsPage() {
                   key={it.athlete_id}
                   className="cursor-pointer border-b border-light-gray/60 transition-colors last:border-0 hover:bg-light-gray/40"
                   onClick={() =>
-                    navigate(`/competitions/insights/athletes/${it.athlete_id}`)
+                    navigate(`/athletes/${it.athlete_id}?tab=ai_analysis`)
                   }
                   data-testid={`season-row-${it.athlete_id}`}
                 >

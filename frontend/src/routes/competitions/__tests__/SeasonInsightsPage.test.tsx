@@ -19,7 +19,7 @@ import {
   errorSeasonPanoramaHandler,
 } from "@/test/msw/athleteRaceAnalysisHandlers";
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
-import { SeasonInsightsPage } from "@/routes/competitions/insights/SeasonInsightsPage";
+import { SeasonInsightsPage } from "@/routes/competitions/SeasonInsightsPage";
 
 const mockNavigate = vi.fn();
 let mockYear = "2026";
@@ -55,7 +55,7 @@ describe("SeasonInsightsPage", () => {
     expect(rows[0]).toHaveAttribute("data-testid", "season-row-144");
   });
 
-  it("click en fila navega al detalle del deportista bajo /competitions/insights", async () => {
+  it("click en fila navega al detalle del deportista (tab ai_analysis)", async () => {
     mswServer.use(seasonPanoramaHandler);
     const user = userEvent.setup();
     renderWithProviders(<SeasonInsightsPage />);
@@ -65,7 +65,7 @@ describe("SeasonInsightsPage", () => {
     );
     await user.click(screen.getByTestId("season-row-144"));
     expect(mockNavigate).toHaveBeenCalledWith(
-      "/competitions/insights/athletes/144",
+      "/athletes/144?tab=ai_analysis",
     );
   });
 

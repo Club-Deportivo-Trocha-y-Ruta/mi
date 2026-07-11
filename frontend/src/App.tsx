@@ -35,27 +35,16 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { RouteFallback } from "@/components/shared/RouteFallback";
 
-// PR1: índice slim de análisis IA (solo vistas cross-válida, sin lanzador ni chat).
-const InsightsHubPage = lazy(() =>
-  import("@/routes/competitions/insights/InsightsHubPage").then((m) => ({
-    default: m.InsightsHubPage,
-  })),
-);
 // Paso 3: página de competidores sin enlazar (wrapper sobre UnlinkedCompetitorsTab).
 const UnlinkedCompetitorsPage = lazy(() =>
   import("@/routes/competitions/UnlinkedCompetitorsPage").then((m) => ({
     default: m.UnlinkedCompetitorsPage,
   })),
 );
-// PR3: subpáginas IA cross-válida bajo /competitions/insights/* (lazy por chunk).
+// Panorama de temporada (única vista no duplicada del extinto hub IA cross-válida;
+// relocada fuera de competitions/insights/ en feature 029).
 const SeasonInsightsPage = lazy(
-  () => import("@/routes/competitions/insights/SeasonInsightsPage"),
-);
-const AthleteInsightsPage = lazy(
-  () => import("@/routes/competitions/insights/AthleteInsightsPage"),
-);
-const ClubInsightsPage = lazy(
-  () => import("@/routes/competitions/insights/ClubInsightsPage"),
+  () => import("@/routes/competitions/SeasonInsightsPage"),
 );
 import { useAuthStore } from "@/store/auth.store";
 import { AIHealthPage } from "@/routes/admin/AIHealthPage";
@@ -119,23 +108,6 @@ const ExerciseDetailPage = lazy(() =>
     default: m.ExerciseDetailPage,
   })),
 );
-const SessionBuilderPage = lazy(() =>
-  import("@/routes/technique/SessionBuilderPage").then((m) => ({
-    default: m.SessionBuilderPage,
-  })),
-);
-const AthleteProgressPage = lazy(() =>
-  import("@/routes/technique/AthleteProgressPage").then((m) => ({
-    default: m.AthleteProgressPage,
-  })),
-);
-// Phase B: Gymkhana circuit composer (react-konva — lazy to keep out of shared bundle)
-const ComposerPage = lazy(() =>
-  import("@/routes/technique/ComposerPage").then((m) => ({
-    default: m.ComposerPage,
-  })),
-);
-
 // Strength & Conditioning Library (feature 021) — coach/admin only (lazy)
 const StrengthCatalogPage = lazy(() =>
   import("@/routes/strength/CatalogPage").then((m) => ({
@@ -152,12 +124,6 @@ const StrengthBlockBuilderPage = lazy(() =>
     default: m.BlockBuilderPage,
   })),
 );
-const StrengthAthleteProgressPage = lazy(() =>
-  import("@/routes/strength/AthleteProgressPage").then((m) => ({
-    default: m.AthleteProgressPage,
-  })),
-);
-
 // Strava Activity Sync (feature 025) — revisión de actividades, coach/admin only (lazy)
 const ActivityReviewPage = lazy(() =>
   import("@/routes/activities/ActivityReviewPage").then((m) => ({
@@ -172,12 +138,6 @@ const ActivityMatchPage = lazy(() =>
     default: m.ActivityMatchPage,
   })),
 );
-const TemplateLibraryPage = lazy(() =>
-  import("@/routes/intervals/TemplateLibraryPage").then((m) => ({
-    default: m.TemplateLibraryPage,
-  })),
-);
-
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -563,19 +523,6 @@ export default function App() {
           }
         />
 
-        {/* ── Análisis IA carreras — índice slim (solo vistas cross-válida).
-              Rediseño: sin lanzador, sin chat, sin import. ── */}
-        <Route
-          path="/competitions/insights"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando análisis IA..." />}>
-                <InsightsHubPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-
         {/* ── Competidores sin enlazar — reubicado desde el hub ── */}
         <Route
           path="/competitions/unlinked"
@@ -588,18 +535,9 @@ export default function App() {
           }
         />
 
-        {/* ── PR3: subpáginas IA cross-válida. RBAC coach/admin (parent →
-              redirect por ProtectedRoute; backend devuelve 403). ── */}
-        <Route
-          path="/competitions/insights/club"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando análisis del club..." />}>
-                <ClubInsightsPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
+        {/* ── Panorama de temporada — única vista no duplicada del extinto hub IA
+              cross-válida (feature 029). RBAC coach/admin (parent → redirect por
+              ProtectedRoute; backend devuelve 403). ── */}
         <Route
           path="/competitions/insights/season/:year"
           element={
@@ -610,23 +548,15 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/competitions/insights/athletes/:id"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando análisis del deportista..." />}>
-                <AthleteInsightsPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
 
-        {/* ── Wave B (D7): /coach/race-analysis → redirect 301 hacia el hub IA.
+        {/* ── Wave B (D7): /coach/race-analysis → redirect 301. El hub IA fue
+              eliminado en feature 029 (duplicado con las vistas IA en Competencias
+              y en el perfil del deportista); ahora apunta a Competencias.
               Permanece activo durante la transición (Wave B – Wave F);
               en Wave F se sustituirá por GonePage (410). ── */}
         <Route
           path="/coach/race-analysis"
-          element={<Navigate to="/competitions/insights" replace />}
+          element={<Navigate to="/competitions" replace />}
         />
 
         {/* ── Técnica y gymkhana (feature 018) — coach/admin only ── */}
@@ -650,38 +580,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/technique/sessions/new"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando armador de sesión…" />}>
-                <SessionBuilderPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/technique/athletes/:athleteId/progress"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando progreso técnico…" />}>
-                <AthleteProgressPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-        {/* ── Compositor de gymkhana (feature 019, Phase B) — coach/admin only ── */}
-        <Route
-          path="/technique/composer"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando compositor de gymkhana…" />}>
-                <ComposerPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-
         {/* ── Fuerza y acondicionamiento (feature 021) — coach/admin only ── */}
         <Route
           path="/strength"
@@ -723,17 +621,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/strength/athletes/:athleteId/progress"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando progreso de fuerza…" />}>
-                <StrengthAthleteProgressPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-
         {/* ── Revisión de actividades Strava (feature 025) — coach/admin only ── */}
         <Route
           path="/activities"
@@ -741,18 +628,6 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando actividades…" />}>
                 <ActivityReviewPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-
-        {/* ── Biblioteca de plantillas de intervalos (feature 026) — coach/admin only ── */}
-        <Route
-          path="/intervals/templates"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando biblioteca de plantillas…" />}>
-                <TemplateLibraryPage />
               </Suspense>
             </ProtectedRoute>
           }
