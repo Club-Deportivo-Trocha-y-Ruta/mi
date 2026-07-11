@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { AnthropometricRecordExplanationCard } from "@/components/ai/AnthropometricRecordExplanationCard";
-import { PHVBadge } from "@/components/shared/PHVBadge";
+import { PHVBadge } from "@/components/athletes/PHVBadge";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 
 interface AnthropometryHistoryProps {

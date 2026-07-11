@@ -1,7 +1,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 
-import { PHVBadge } from "@/components/shared/PHVBadge";
+import { PHVBadge } from "@/components/athletes/PHVBadge";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { PHVExplanationResponse } from "@/types/ai.types";

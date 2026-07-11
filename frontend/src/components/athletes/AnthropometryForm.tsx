@@ -6,7 +6,7 @@ import { z } from "zod";
 import { useCreateAnthropometry } from "@/hooks/athletes/useAnthropometry";
 import { computeAgeDecimal } from "@/lib/category";
 import { calculatePHV, type PHVResult } from "@/lib/phv";
-import { PHVBadge } from "@/components/shared/PHVBadge";
+import { PHVBadge } from "@/components/athletes/PHVBadge";
 import type { Sex } from "@/types/enums";
 
 const anthropometrySchema = z.object({

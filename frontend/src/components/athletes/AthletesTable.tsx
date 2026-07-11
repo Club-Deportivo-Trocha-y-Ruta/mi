@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-import { PHVBadge } from "@/components/shared/PHVBadge";
+import { PHVBadge } from "@/components/athletes/PHVBadge";
 import { MaturationStatus } from "@/types/enums";
 import type { AthleteOut } from "@/types/athlete.types";
 

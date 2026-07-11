@@ -39,7 +39,7 @@ async def _auth_admin(client: AsyncClient) -> dict:
 
 
 async def _auth_parent(client: AsyncClient) -> dict:
-    token = await _login(client, "padre@trochyruta.com", "Parent2026!")
+    token = await _login(client, "padre@trochayruta.com", "Parent2026!")
     return {"Authorization": f"Bearer {token}"}
 
 

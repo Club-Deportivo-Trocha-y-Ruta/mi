@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowLeft, Calendar, Pencil, Ruler, Scale } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { PHVBadge } from "@/components/shared/PHVBadge";
+import { PHVBadge } from "@/components/athletes/PHVBadge";
 import type { AthleteDetailOut } from "@/types/athlete.types";
 
 interface AthleteInfoCardProps {
