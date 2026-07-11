@@ -433,6 +433,29 @@ describe("ResultsTable — hideClubFilter", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Touch target — botón de nota (regresión tamaño mínimo 48x48px)
+// ---------------------------------------------------------------------------
+
+describe("ResultsTable — botón de nota (touch target)", () => {
+  it("el botón de nota por fila tiene min-h-[48px] y min-w-[48px]", () => {
+    const data = makeRaceEventResultsResponse();
+    const qc = makeQueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <ResultsTable data={data} isCoachOrAdmin />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Fila 101 — is_our_club=true, athlete_id=55 → botón de nota visible.
+    const noteBtn = screen.getByTestId("note-btn-101");
+    expect(noteBtn).toHaveClass("min-h-[48px]");
+    expect(noteBtn).toHaveClass("min-w-[48px]");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Formato de tiempo
 // ---------------------------------------------------------------------------
 

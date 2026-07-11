@@ -12,7 +12,7 @@ Contrato de API:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -287,3 +287,25 @@ class AthleteNewsletterBatchResult(BaseModel):
         default_factory=list,
         description="Mensajes de error (sin PII) por atletas que fallaron.",
     )
+
+
+class NewsletterStatusSummaryItem(BaseModel):
+    """Estado del boletín mensual de un atleta para un periodo dado.
+
+    Una fila por atleta en el resumen de estado a nivel de club/roster.
+    status='none' si aún no existe newsletter para (athlete_id, year, month).
+    """
+
+    athlete_id: int
+    newsletter_id: int | None = None
+    status: Literal["none", "draft", "sent"]
+    generated_at: datetime | None = None
+    sent_at: datetime | None = None
+
+
+class NewsletterStatusSummary(BaseModel):
+    """Resumen de estado de boletines mensuales de todos los atletas de un club."""
+
+    year: int
+    month: int
+    items: list[NewsletterStatusSummaryItem]

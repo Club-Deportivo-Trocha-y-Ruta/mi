@@ -183,6 +183,7 @@ export function AnalyzeAthleteButton({
           "text-mid-gray hover:bg-charcoal/8 hover:text-charcoal",
           "disabled:cursor-not-allowed disabled:opacity-50",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+          "min-h-[48px] min-w-[48px]",
         )}
         aria-label={`Analizar con IA a ${displayName}`}
         data-testid={`ai-launch-btn-${athleteId}`}

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
@@ -170,5 +171,45 @@ describe("DashboardPage", () => {
 
     const totalHeading = screen.getByText("Total atletas");
     expect(totalHeading.parentElement?.querySelector("p:last-child")).toHaveTextContent("--");
+  });
+
+  it("retries the alerts query when clicking \"Reintentar\" and recovers on success", async () => {
+    const user = userEvent.setup();
+    const summary: AlertsSummary = {
+      overdue: 0,
+      due_soon: 0,
+      ok: 1,
+      never_measured: 0,
+      rapid_growth_count: 0,
+      athletes: [
+        buildAlert({
+          athlete_id: 1,
+          measurement_status: "ok",
+          last_measurement_date: "2026-06-01",
+        }),
+      ],
+    };
+    vi.mocked(getAlerts)
+      .mockRejectedValueOnce(new Error("network error"))
+      .mockResolvedValueOnce(summary);
+
+    renderPage();
+
+    const retryButton = await screen.findByRole("button", { name: "Reintentar" });
+    await user.click(retryButton);
+
+    await waitFor(() => {
+      expect(getAlerts).toHaveBeenCalledTimes(2);
+    });
+
+    // La consulta se recupera con los datos frescos y el estado de error desaparece.
+    await waitFor(() => {
+      expect(screen.getByText("1")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(
+        "No pudimos cargar la información del dashboard. Intenta de nuevo más tarde.",
+      ),
+    ).not.toBeInTheDocument();
   });
 });

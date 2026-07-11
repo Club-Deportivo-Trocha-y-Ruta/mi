@@ -11,17 +11,21 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { FileText, Play, RefreshCw } from "lucide-react";
+import { FileText, Loader2, Play, RefreshCw } from "lucide-react";
 
 import {
   useBatchCreateNewsletters,
-  useAthleteNewsletters,
   useGenerateNewsletter,
   parseApiError,
 } from "@/api/athleteNewsletters";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
+import {
+  useNewsletterStatusSummary,
+  type NewsletterStatusSummaryItem,
+} from "@/hooks/training/useNewsletterStatusSummary";
 import { useAuthStore } from "@/store/auth.store";
 import {
   Dialog,
@@ -32,7 +36,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatDayMonthShort } from "@/lib/datetime";
-import type { AthleteNewsletter, NewsletterStatus } from "@/types/athleteNewsletter.types";
+import type { NewsletterStatus } from "@/types/athleteNewsletter.types";
 import type { AthleteOut } from "@/types/athlete.types";
 
 // ---------------------------------------------------------------------------
@@ -61,29 +65,6 @@ const cardStyle: React.CSSProperties = {
 };
 
 // ---------------------------------------------------------------------------
-// Per-athlete newsletter hook (wraps bulk query per-athlete)
-// ---------------------------------------------------------------------------
-
-/**
- * Para el dashboard necesitamos el estado de newsletter de CADA atleta en el mes seleccionado.
- * Usamos el hook individual por atleta con un helper para buscar en la lista.
- */
-function useNewsletterForAthlete(
-  athleteId: number,
-  year: number,
-  month: number,
-): AthleteNewsletter | undefined {
-  const { data } = useAthleteNewsletters(athleteId);
-  return useMemo(
-    () =>
-      data?.find(
-        (n) => n.year === year && n.month === month,
-      ),
-    [data, year, month],
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Athlete card
 // ---------------------------------------------------------------------------
 
@@ -91,6 +72,12 @@ interface AthleteNewsletterCardProps {
   athlete: AthleteOut;
   year: number;
   month: number;
+  /**
+   * Entrada del resumen para este atleta (undefined = "Sin generar" para el
+   * período seleccionado). Viene de useNewsletterStatusSummary, resuelto por
+   * el padre — la card ya NO hace fetch propio (ver AthleteCardWithFilter).
+   */
+  newsletter: NewsletterStatusSummaryItem | undefined;
   onClick: (athleteId: number, newsletterId?: number) => void;
 }
 
@@ -98,12 +85,13 @@ function AthleteNewsletterCard({
   athlete,
   year,
   month,
+  newsletter,
   onClick,
 }: AthleteNewsletterCardProps) {
-  const newsletter = useNewsletterForAthlete(athlete.id, year, month);
   const status: NewsletterStatus | "none" = newsletter?.status ?? "none";
   const config = STATUS_CONFIG[status];
 
+  const queryClient = useQueryClient();
   const generateMutation = useGenerateNewsletter(athlete.id);
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -111,12 +99,24 @@ function AthleteNewsletterCard({
   const isNone = status === "none";
   const canRegenerate = status === "draft" || status === "failed";
 
+  /**
+   * El resumen del dashboard vive en la queryKey "newsletter-status-summary"
+   * (useNewsletterStatusSummary), NO en "athlete-newsletters" — que es lo
+   * único que useGenerateNewsletter invalida por defecto. Sin esto, el badge
+   * de la card se quedaría desactualizado tras generar/regenerar hasta el
+   * próximo refetch natural.
+   */
+  function invalidateSummary() {
+    void queryClient.invalidateQueries({ queryKey: ["newsletter-status-summary"] });
+  }
+
   function handleGenerate(e: React.MouseEvent) {
     e.stopPropagation();
     setActionError(null);
     generateMutation.mutate(
       { year, month, force: false },
       {
+        onSuccess: invalidateSummary,
         onError: (err) =>
           setActionError(parseApiError(err, "Error al generar el boletín.")),
       },
@@ -129,6 +129,7 @@ function AthleteNewsletterCard({
     generateMutation.mutate(
       { year, month, force: true },
       {
+        onSuccess: invalidateSummary,
         onError: (err) =>
           setActionError(parseApiError(err, "Error al regenerar el boletín.")),
       },
@@ -145,7 +146,7 @@ function AthleteNewsletterCard({
         {/* Clickable area — navigate to detail */}
         <button
           type="button"
-          onClick={() => onClick(athlete.id, newsletter?.id)}
+          onClick={() => onClick(athlete.id, newsletter?.newsletter_id)}
           className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 rounded-lg"
           aria-label={`Ver boletín de ${athlete.first_name} ${athlete.last_name}: ${config.label}`}
         >
@@ -167,9 +168,11 @@ function AthleteNewsletterCard({
             </span>
           </div>
 
-          {newsletter?.error_message && (
-            <p className="mt-2 text-xs text-red-600 line-clamp-2">{newsletter.error_message}</p>
-          )}
+          {/*
+            error_message NO viene en el resumen liviano (NewsletterStatusSummaryItem):
+            el badge "Fallido" ya señala el estado; el detalle del error se
+            consulta en la vista de detalle del atleta (useAthleteNewsletter).
+          */}
 
           {newsletter?.sent_at && (
             <p className="mt-1 text-xs text-mid-gray">
@@ -195,8 +198,12 @@ function AthleteNewsletterCard({
                 data-testid={`generate-btn-${athlete.id}`}
                 aria-label={`Generar boletín para ${athlete.first_name} ${athlete.last_name}`}
               >
-                <Play className="h-3 w-3" aria-hidden="true" />
-                Generar
+                {generateMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Play className="h-3 w-3" aria-hidden="true" />
+                )}
+                {generateMutation.isPending ? "Generando…" : "Generar"}
               </button>
             )}
             {canRegenerate && (
@@ -246,6 +253,7 @@ interface BatchModalProps {
 
 function BatchModal({ open, onClose, year, month, clubId }: BatchModalProps) {
   const batchMutation = useBatchCreateNewsletters(clubId);
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [forceGenerate, setForceGenerate] = useState(false);
 
@@ -255,7 +263,9 @@ function BatchModal({ open, onClose, year, month, clubId }: BatchModalProps) {
       { year, month, force: forceGenerate },
       {
         onSuccess: () => {
-          // Modal stays open to show result summary
+          // Modal stays open to show result summary. Refresca el resumen del
+          // dashboard para que el grid muestre los boletines recién creados.
+          void queryClient.invalidateQueries({ queryKey: ["newsletter-status-summary"] });
         },
         onError: (err) => {
           if (isAxiosError(err)) {
@@ -415,6 +425,17 @@ export function AthleteNewslettersDashboardPage() {
 
   const athletesQuery = useAthletes(clubId ? { club_id: clubId } : undefined);
   const athletes = athletesQuery.data?.items ?? [];
+
+  // Resumen de estado de boletines de TODOS los atletas del club en UNA sola
+  // petición (reemplaza el fan-out N+1 por card que había antes).
+  const summaryQuery = useNewsletterStatusSummary(selectedYear, selectedMonth);
+  const newslettersByAthleteId = useMemo(() => {
+    const map = new Map<number, NewsletterStatusSummaryItem>();
+    for (const item of summaryQuery.data?.items ?? []) {
+      map.set(item.athlete_id, item);
+    }
+    return map;
+  }, [summaryQuery.data]);
 
   const years = Array.from(
     { length: initialPeriod.year - 2023 },
@@ -609,6 +630,7 @@ export function AthleteNewslettersDashboardPage() {
           month={selectedMonth}
           statusFilter={statusFilter}
           nameFilter={nameFilter}
+          newslettersByAthleteId={newslettersByAthleteId}
           onAthleteClick={handleAthleteClick}
         />
       )}
@@ -637,6 +659,8 @@ interface AthleteNewsletterGridProps {
   month: number;
   statusFilter: NewsletterStatus | "all" | "none";
   nameFilter: string;
+  /** Resumen resuelto en un único useNewsletterStatusSummary del padre. */
+  newslettersByAthleteId: Map<number, NewsletterStatusSummaryItem>;
   onAthleteClick: (athleteId: number, newsletterId?: number) => void;
 }
 
@@ -646,6 +670,7 @@ function AthleteNewsletterGrid({
   month,
   statusFilter,
   nameFilter,
+  newslettersByAthleteId,
   onAthleteClick,
 }: AthleteNewsletterGridProps) {
   return (
@@ -655,14 +680,16 @@ function AthleteNewsletterGrid({
       month={month}
       statusFilter={statusFilter}
       nameFilter={nameFilter}
+      newslettersByAthleteId={newslettersByAthleteId}
       onAthleteClick={onAthleteClick}
     />
   );
 }
 
 /**
- * Inner component that resolves newsletters per-athlete and applies filters.
- * Separate component so each card can independently query its newsletter status.
+ * Inner component that applies the name/status filters. Newsletter status
+ * per athlete comes from the single useNewsletterStatusSummary map resolved
+ * by the page — cards no longer query their own status independently.
  */
 function AthleteGridInner({
   athletes,
@@ -670,6 +697,7 @@ function AthleteGridInner({
   month,
   statusFilter,
   nameFilter,
+  newslettersByAthleteId,
   onAthleteClick,
 }: AthleteNewsletterGridProps) {
   // Apply text filter synchronously
@@ -695,6 +723,7 @@ function AthleteGridInner({
           year={year}
           month={month}
           statusFilter={statusFilter}
+          newslettersByAthleteId={newslettersByAthleteId}
           onClick={onAthleteClick}
         />
       ))}
@@ -707,6 +736,7 @@ interface AthleteCardWithFilterProps {
   year: number;
   month: number;
   statusFilter: NewsletterStatus | "all" | "none";
+  newslettersByAthleteId: Map<number, NewsletterStatusSummaryItem>;
   onClick: (athleteId: number, newsletterId?: number) => void;
 }
 
@@ -715,10 +745,11 @@ function AthleteCardWithFilter({
   year,
   month,
   statusFilter,
+  newslettersByAthleteId,
   onClick,
 }: AthleteCardWithFilterProps) {
-  const newsletter = useNewsletterForAthlete(athlete.id, year, month);
-  const status = (newsletter?.status ?? "none") as string;
+  const newsletter = newslettersByAthleteId.get(athlete.id);
+  const status: NewsletterStatus | "none" = newsletter?.status ?? "none";
 
   // Apply status filter
   if (statusFilter !== "all") {
@@ -731,6 +762,7 @@ function AthleteCardWithFilter({
       athlete={athlete}
       year={year}
       month={month}
+      newsletter={newsletter}
       onClick={onClick}
     />
   );

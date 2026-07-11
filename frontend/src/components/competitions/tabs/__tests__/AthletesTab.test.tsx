@@ -17,7 +17,7 @@
  *  - Se mockea useAuthStore para controlar el rol del usuario.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -110,6 +110,11 @@ function makeCoachAuth() {
 function makeParentAuth() {
   return (selector: (s: { accessToken: string; user: { role: UserRole } }) => unknown) =>
     selector({ accessToken: "test-token", user: { role: UserRole.parent } });
+}
+
+function makeAdminAuth() {
+  return (selector: (s: { accessToken: string; user: { role: UserRole } }) => unknown) =>
+    selector({ accessToken: "test-token", user: { role: UserRole.admin } });
 }
 
 function wrap(ui: ReactNode) {
@@ -227,6 +232,48 @@ describe("AthletesTab — padre (solo lectura / privacidad)", () => {
   it("axe 0 violaciones en vista padre", async () => {
     mockUseAuthStore.mockImplementation(makeParentAuth());
     mockUseClubInsightsByRace.mockReturnValue(EMPTY_INSIGHTS);
+
+    const { container } = wrap(<AthletesTab raceEventId={1} />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Admin vs. coach — bug de navegación silenciosa a /athletes/:id
+// (mismo patrón que la corrección hermana en MeasurementAlerts: esa ruta es
+// coach-only en App.tsx; un <Link>/navigate() sin chequear el rol hacía que
+// ProtectedRoute rebotara a admin en silencio de vuelta al dashboard).
+// ---------------------------------------------------------------------------
+
+describe("AthletesTab — admin vs. coach (navegación a /athletes/:id)", () => {
+  it("coach: la tarjeta de atleta enlaza a /athletes/{id}?tab=ai_analysis", () => {
+    mockUseAuthStore.mockImplementation(makeCoachAuth());
+    mockUseClubInsightsByRace.mockReturnValue(INSIGHTS_WITH_DATA);
+
+    wrap(<AthletesTab raceEventId={1} />);
+
+    const card = screen.getByTestId("athlete-tab-card-145");
+    const link = card.querySelector("a");
+    expect(link).toHaveAttribute("href", "/athletes/145?tab=ai_analysis");
+  });
+
+  it("admin: la tarjeta de atleta NO renderiza un <a> (antes navegaba y ProtectedRoute rebotaba en silencio)", () => {
+    mockUseAuthStore.mockImplementation(makeAdminAuth());
+    mockUseClubInsightsByRace.mockReturnValue(INSIGHTS_WITH_DATA);
+
+    wrap(<AthletesTab raceEventId={1} />);
+
+    const card = screen.getByTestId("athlete-tab-card-145");
+    expect(card.querySelector("a")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    // El contenido se sigue mostrando como texto plano, sin navegación.
+    expect(within(card).getByText("Mi Atleta")).toBeInTheDocument();
+  });
+
+  it("admin: axe 0 violaciones con datos de análisis", async () => {
+    mockUseAuthStore.mockImplementation(makeAdminAuth());
+    mockUseClubInsightsByRace.mockReturnValue(INSIGHTS_WITH_DATA);
 
     const { container } = wrap(<AthletesTab raceEventId={1} />);
     const results = await axe(container);

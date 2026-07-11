@@ -1,6 +1,8 @@
 import type { Control } from "react-hook-form";
 import { Controller } from "react-hook-form";
 
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+
 import type { AttendanceFormValues } from "./AttendanceTable";
 
 // OMNI 0-10 (Robertson et al.): even indices map validated adult-OMNI anchors;
@@ -30,6 +32,17 @@ const RUBRIC_LABELS: Record<number, string> = {
   5: "Excelente",
 };
 
+// Discrete steps rendered as ToggleGroup options (replaces native <input type="range">).
+const RPE_VALUES = Array.from({ length: 11 }, (_, i) => i); // 0..10
+const RUBRIC_VALUES = [1, 2, 3, 4, 5];
+
+// Fixed 48x48 square so every option meets the >=48x48px touch-target minimum
+// (constitution III). The parent uses `flex flex-wrap` so the row wraps onto
+// additional lines on narrow viewports instead of overflowing or shrinking
+// options below the minimum size.
+const toggleItemClass =
+  "h-12 w-12 shrink-0 rounded-lg border border-[rgba(34,42,53,0.12)] px-0 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white";
+
 interface RubricSlidersProps {
   control: Control<AttendanceFormValues>;
   disabled?: boolean;
@@ -57,31 +70,31 @@ function RubricSlider({
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-charcoal">{label}</label>
-              <span className="text-xs text-mid-gray">
+              <span className="text-xs text-text-disclaimer">
                 {val} — {RUBRIC_LABELS[val]}
               </span>
             </div>
-            <input
-              type="range"
-              min={1}
-              max={5}
-              step={1}
-              value={val}
+            <ToggleGroup
+              type="single"
+              value={String(val)}
+              onValueChange={(v) => {
+                if (v) field.onChange(Number(v));
+              }}
               disabled={disabled}
               aria-label={label}
-              aria-valuenow={val}
-              aria-valuemin={1}
-              aria-valuemax={5}
-              onChange={(e) => field.onChange(Number(e.target.value))}
-              className="h-1.5 w-full cursor-pointer accent-charcoal disabled:cursor-not-allowed disabled:opacity-40 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] text-light-gray-dark">
-              <span>1</span>
-              <span>2</span>
-              <span>3</span>
-              <span>4</span>
-              <span>5</span>
-            </div>
+              className="flex flex-wrap gap-1.5"
+            >
+              {RUBRIC_VALUES.map((n) => (
+                <ToggleGroupItem
+                  key={n}
+                  value={String(n)}
+                  aria-label={`${label}: ${n} — ${RUBRIC_LABELS[n]}`}
+                  className={toggleItemClass}
+                >
+                  {n}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           </div>
         );
       }}
@@ -101,7 +114,7 @@ export function RubricSliders({ control, disabled, feedbackLength }: RubricSlide
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-charcoal">RPE OMNI</label>
-                <span className="text-xs text-mid-gray">
+                <span className="text-xs text-text-disclaimer">
                   {val} — {RPE_LABELS[val]}
                 </span>
               </div>
@@ -116,25 +129,27 @@ export function RubricSliders({ control, disabled, feedbackLength }: RubricSlide
                   </span>
                 ))}
               </div>
-              <input
-                type="range"
-                min={0}
-                max={10}
-                step={1}
-                value={val}
+              <ToggleGroup
+                type="single"
+                value={String(val)}
+                onValueChange={(v) => {
+                  if (v) field.onChange(Number(v));
+                }}
                 disabled={disabled}
                 aria-label="RPE OMNI 0-10"
-                aria-valuenow={val}
-                aria-valuemin={0}
-                aria-valuemax={10}
-                onChange={(e) => field.onChange(Number(e.target.value))}
-                className="h-1.5 w-full cursor-pointer accent-charcoal disabled:cursor-not-allowed disabled:opacity-40 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] text-mid-gray">
-                <span>0</span>
-                <span>5</span>
-                <span>10</span>
-              </div>
+                className="flex flex-wrap gap-1.5"
+              >
+                {RPE_VALUES.map((n) => (
+                  <ToggleGroupItem
+                    key={n}
+                    value={String(n)}
+                    aria-label={`RPE OMNI 0-10: ${n} — ${RPE_LABELS[n]}`}
+                    className={toggleItemClass}
+                  >
+                    {n}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
             </div>
           );
         }}
@@ -161,8 +176,7 @@ export function RubricSliders({ control, disabled, feedbackLength }: RubricSlide
               maxLength={500}
               placeholder="Observaciones del coach…"
               aria-label="Comentario del coach"
-              className="w-full resize-none rounded-lg px-2.5 py-2 text-xs text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="w-full resize-none rounded-lg px-2.5 py-2 text-xs text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 shadow-ring"
             />
           </div>
         )}

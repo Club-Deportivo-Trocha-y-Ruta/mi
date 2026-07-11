@@ -14,7 +14,7 @@ from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
 from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
-from app.routers.athlete_monthly_newsletters import router as athlete_newsletters_router, clubs_router as newsletter_clubs_router
+from app.routers.athlete_monthly_newsletters import router as athlete_newsletters_router, clubs_router as newsletter_clubs_router, training_router as newsletter_training_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -88,6 +88,7 @@ app.include_router(race_competitors.router, prefix="/api/race-competitors", tags
 app.include_router(athlete_race_analysis.router, prefix="/api/athletes", tags=["athlete-race-analysis"])
 app.include_router(athlete_newsletters_router, prefix="/api/athletes", tags=["athlete-newsletters"])
 app.include_router(newsletter_clubs_router, prefix="/api/clubs", tags=["athlete-newsletters"])
+app.include_router(newsletter_training_router, prefix="/api/training", tags=["athlete-newsletters"])
 app.include_router(club_race_insights_router, prefix="/api/races", tags=["club-race-insights"])
 app.include_router(session_assistant_router, prefix="/api/clubs", tags=["session-assistant"])
 app.include_router(technique.router, prefix="/api/technique", tags=["technique"])

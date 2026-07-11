@@ -146,6 +146,7 @@ export function MediaUploadZone({
             ref={fileInputRef}
             type="file"
             accept={[...PHOTO_EXTENSIONS, ...VIDEO_EXTENSIONS].join(",")}
+            capture="environment"
             className="hidden"
             onChange={handleFileInput}
             data-testid="media-file-input"

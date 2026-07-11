@@ -1,9 +1,10 @@
 import { useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { CalendarShell, type CalendarView } from "@/components/calendar/CalendarShell";
 import { CalendarFiltersBar } from "@/components/calendar/FiltersBar";
 import { EventDrawer } from "@/components/calendar/EventDrawer";
+import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { useCalendarEvents } from "@/api/calendar";
 import { useCalendarFiltersStore } from "@/store/calendarFilters.store";
 import type { CalendarEventListItem } from "@/types/calendar.types";
@@ -26,6 +27,7 @@ function currentMonthRange() {
 }
 
 export function CalendarPage() {
+  const navigate = useNavigate();
   const [view, setView] = useState<CalendarView>("dayGridMonth");
   // Inicializar con null y esperar el primer onDatesSet de FullCalendar evita
   // una segunda llamada a la API cuando el grid reporta un rango distinto al
@@ -46,15 +48,19 @@ export function CalendarPage() {
   });
 
   const events: CalendarEventListItem[] = eventsQuery.data ?? [];
+  const eventsColdStart = isColdStartError(eventsQuery.error);
 
   const handleEventClick = useCallback((eventId: number) => {
     setDrawerEventId(eventId);
     setDrawerOpen(true);
   }, []);
 
-  const handleDateClick = useCallback((_dateStr: string) => {
-    // Navigation happens via Link with query param — handled by EventFormPage
-  }, []);
+  const handleDateClick = useCallback(
+    (dateStr: string) => {
+      navigate(`/calendar/events/new?date=${dateStr}`);
+    },
+    [navigate],
+  );
 
   const handleDatesSet = useCallback((start: string, end: string) => {
     setRangeFrom(start);
@@ -116,9 +122,11 @@ export function CalendarPage() {
         <CalendarFiltersBar />
 
         {eventsQuery.isError && (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            No se pudieron cargar los eventos. Intenta de nuevo.
-          </p>
+          <ErrorState
+            message={eventsColdStart ? undefined : "No se pudieron cargar los eventos. Intenta de nuevo."}
+            onRetry={() => void eventsQuery.refetch()}
+            isColdStart={eventsColdStart}
+          />
         )}
 
         {eventsQuery.isLoading && (

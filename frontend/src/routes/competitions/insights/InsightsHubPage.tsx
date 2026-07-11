@@ -14,8 +14,7 @@
 import { Link } from "react-router-dom";
 import { BarChart2, Calendar } from "lucide-react";
 
-// Año de temporada activa. Si en el futuro la temporada cambia, actualizar aquí.
-const CURRENT_SEASON = 2026;
+import { currentSeason } from "@/lib/datetime";
 
 // ---------------------------------------------------------------------------
 // Constante de estilo (alineada con CompetitionsListPage y SeasonInsightsPage)
@@ -31,6 +30,8 @@ const cardStyle = {
 // ---------------------------------------------------------------------------
 
 export function InsightsHubPage() {
+  const activeSeason = currentSeason();
+
   return (
     <section className="space-y-6">
       {/* Header */}
@@ -50,7 +51,7 @@ export function InsightsHubPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Card: Panorama de temporada */}
         <Link
-          to={`/competitions/insights/season/${CURRENT_SEASON}`}
+          to={`/competitions/insights/season/${activeSeason}`}
           className="group flex flex-col gap-3 rounded-xl bg-white p-6 transition-colors hover:ring-2 hover:ring-charcoal/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal"
           style={cardStyle}
           aria-label="Ir a Panorama de temporada"
@@ -71,7 +72,7 @@ export function InsightsHubPage() {
             </p>
             <p className="mt-1 text-sm text-mid-gray">
               Tabla longitudinal de resultados por deportista en la temporada{" "}
-              {CURRENT_SEASON}: válidas corridas, podios, puntos acumulados y
+              {activeSeason}: válidas corridas, podios, puntos acumulados y
               mejor posición.
             </p>
           </div>
@@ -79,7 +80,7 @@ export function InsightsHubPage() {
             className="mt-auto text-xs font-medium text-charcoal transition-opacity group-hover:opacity-70"
             aria-hidden="true"
           >
-            Ver temporada {CURRENT_SEASON} →
+            Ver temporada {activeSeason} →
           </span>
         </Link>
 

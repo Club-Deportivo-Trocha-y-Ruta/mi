@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
@@ -9,9 +9,29 @@ vi.mock("@/hooks/athletes/useAlerts", () => ({
   useAlerts: vi.fn(),
 }));
 
+// `vi.hoisted` corre antes de que los imports se resuelvan — mismo patrón
+// que ActivityCard.test.tsx / AthleteLink.test.tsx para poder alternar el rol
+// entre tests del mismo archivo. Default "coach" porque los tests
+// preexistentes de esta suite asumen que el nombre del atleta es un <a>
+// navegable (AthleteLink solo renderiza <Link> para coach — ver
+// src/components/shared/AthleteLink.tsx).
+const authState = vi.hoisted(() => ({
+  role: "coach" as string | undefined,
+}));
+
+vi.mock("@/store/auth.store", () => ({
+  useAuthStore: (
+    selector: (s: { user: { id: number; role: string | undefined } | null }) => unknown,
+  ) => selector({ user: { id: 1, role: authState.role } }),
+}));
+
 import { useAlerts } from "@/hooks/athletes/useAlerts";
 
 const mockUseAlerts = vi.mocked(useAlerts);
+
+beforeEach(() => {
+  authState.role = "coach";
+});
 
 function makeAlert(overrides: Partial<AthleteAlert>): AthleteAlert {
   return {
@@ -191,5 +211,78 @@ describe("MeasurementAlerts — training_implications en crecimiento acelerado",
     renderComponent();
 
     expect(screen.getByText(/Revisar carga de entrenamiento\./)).toBeInTheDocument();
+  });
+});
+
+describe("MeasurementAlerts — enlace al detalle del atleta según rol (AthleteLink)", () => {
+  it('admin: el nombre del atleta se renderiza como texto plano, sin navegación (ProtectedRoute bounce en "/athletes/:id")', () => {
+    authState.role = "admin";
+    const athlete = makeAlert({
+      athlete_id: 7,
+      athlete_name: "Admin Ficticio",
+      measurement_status: "overdue",
+      days_overdue: 3,
+      growth_alerts: ["rapid_growth"],
+      growth_velocity_cm_month: 1.0,
+    });
+    mockUseAlerts.mockReturnValue({
+      data: makeSummary([athlete]),
+      isPending: false,
+      isError: false,
+    } as ReturnType<typeof useAlerts>);
+
+    renderComponent();
+
+    // Ningún link en toda la sección — ni en la lista de accionables ni en
+    // el banner de crecimiento acelerado (con un solo atleta y sin superar
+    // MAX_VISIBLE, tampoco aparece "Ver todas").
+    expect(screen.queryAllByRole("link")).toHaveLength(0);
+
+    // El nombre sigue visible como texto plano en ambos sitios de render.
+    const nameNodes = screen.getAllByText("Admin Ficticio");
+    expect(nameNodes.length).toBeGreaterThan(0);
+    nameNodes.forEach((node) => expect(node.tagName).not.toBe("A"));
+  });
+
+  it("coach: el nombre del atleta es un link funcional a /athletes/{id}", () => {
+    authState.role = "coach";
+    const athlete = makeAlert({
+      athlete_id: 9,
+      athlete_name: "Coach Ficticio",
+      measurement_status: "overdue",
+      days_overdue: 4,
+    });
+    mockUseAlerts.mockReturnValue({
+      data: makeSummary([athlete]),
+      isPending: false,
+      isError: false,
+    } as ReturnType<typeof useAlerts>);
+
+    renderComponent();
+
+    const link = screen.getByRole("link", { name: "Coach Ficticio" });
+    expect(link).toHaveAttribute("href", "/athletes/9");
+  });
+
+  it("coach: el nombre del atleta en el banner de crecimiento acelerado también es un link funcional", () => {
+    authState.role = "coach";
+    const athlete = makeAlert({
+      athlete_id: 11,
+      athlete_name: "Crecimiento Ficticio",
+      measurement_status: "ok",
+      days_overdue: null,
+      growth_alerts: ["rapid_growth"],
+      growth_velocity_cm_month: 1.5,
+    });
+    mockUseAlerts.mockReturnValue({
+      data: makeSummary([athlete]),
+      isPending: false,
+      isError: false,
+    } as ReturnType<typeof useAlerts>);
+
+    renderComponent();
+
+    const link = screen.getByRole("link", { name: "Crecimiento Ficticio" });
+    expect(link).toHaveAttribute("href", "/athletes/11");
   });
 });

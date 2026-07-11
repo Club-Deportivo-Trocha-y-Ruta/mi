@@ -154,3 +154,26 @@ describe("DurationPicker — valores edge", () => {
     expect(minutosSelect).toHaveValue("15");
   });
 });
+
+describe("DurationPicker — touch targets (regresión ≥48px)", () => {
+  it("el input de horas tiene una clase de min-height >= 48px", () => {
+    renderPicker(60);
+    const horasInput = screen.getByRole("spinbutton", { name: /Horas/i });
+    expect(horasInput.className).toMatch(/min-h-\[48px\]|min-h-12/);
+  });
+
+  it("el select de minutos tiene una clase de min-height >= 48px", () => {
+    renderPicker(60);
+    const minutosSelect = screen.getByRole("combobox", { name: /Minutos/i });
+    expect(minutosSelect.className).toMatch(/min-h-\[48px\]|min-h-12/);
+  });
+
+  it("cada botón de preset tiene una clase de min-height >= 48px", () => {
+    renderPicker(60);
+    const presetButtons = screen.getAllByRole("button");
+    expect(presetButtons.length).toBeGreaterThan(0);
+    for (const button of presetButtons) {
+      expect(button.className).toMatch(/min-h-\[48px\]|min-h-12/);
+    }
+  });
+});

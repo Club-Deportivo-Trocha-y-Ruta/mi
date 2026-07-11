@@ -22,10 +22,9 @@ interface DurationPickerProps {
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
 const selectClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 cursor-pointer";
+  "mt-1 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 cursor-pointer";
 
 const MINUTE_STEPS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
@@ -110,7 +109,6 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
               value={hours}
               onChange={handleHoursChange}
               className={inputClass}
-              style={inputStyle}
               aria-label="Horas"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-mid-gray select-none">
@@ -129,7 +127,6 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
               value={displayMinutes}
               onChange={handleMinutesChange}
               className={selectClass}
-              style={inputStyle}
               aria-label="Minutos"
             >
               {MINUTE_STEPS.map((m) => (
@@ -156,16 +153,11 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
               onClick={() => handlePreset(p.minutes)}
               aria-pressed={isActive}
               className={[
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-all",
+                "min-h-[48px] rounded-md px-2.5 py-1 text-xs font-medium transition-all",
                 isActive
                   ? "bg-charcoal text-white"
-                  : "bg-white text-mid-gray hover:text-charcoal",
+                  : "bg-white text-mid-gray shadow-ring hover:text-charcoal",
               ].join(" ")}
-              style={{
-                boxShadow: isActive
-                  ? undefined
-                  : "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-              }}
             >
               {p.label}
             </button>
@@ -175,7 +167,7 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
 
       {/* Helper text: total en minutos */}
       {!isError && (
-        <p id="duration-helper" className="mt-1.5 text-xs text-mid-gray">
+        <p id="duration-helper" className="mt-1.5 text-xs text-text-disclaimer">
           Total: {totalDisplay} minutos
         </p>
       )}

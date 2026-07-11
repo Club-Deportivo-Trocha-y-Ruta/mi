@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { AthleteLink } from "@/components/shared/AthleteLink";
 import { useAlerts } from "@/hooks/athletes/useAlerts";
 import type { AthleteAlert, MeasurementStatus } from "@/types/alerts.types";
 
@@ -118,9 +119,9 @@ export function MeasurementAlerts() {
           <p className="mb-2 text-sm font-medium text-amber-800">Crecimiento acelerado detectado</p>
           {rapidGrowth.map((a) => (
             <p key={a.athlete_id} className="text-sm text-amber-700">
-              <Link to={`/athletes/${a.athlete_id}`} className="font-medium underline">
+              <AthleteLink athleteId={a.athlete_id} className="font-medium underline">
                 {a.athlete_name}
-              </Link>
+              </AthleteLink>
               {" — "}{a.growth_velocity_cm_month} cm/mes. {a.training_implications ?? "Revisar carga de entrenamiento."}
             </p>
           ))}
@@ -143,12 +144,12 @@ export function MeasurementAlerts() {
                   style={idx > 0 ? { borderTop: "1px solid rgba(34, 42, 53, 0.06)" } : undefined}
                 >
                   <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.dot}`} />
-                  <Link
-                    to={`/athletes/${a.athlete_id}`}
+                  <AthleteLink
+                    athleteId={a.athlete_id}
                     className="min-w-0 flex-1 truncate text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
                   >
                     {a.athlete_name}
-                  </Link>
+                  </AthleteLink>
                   {a.current_phv_status ? (
                     <span className="shrink-0 rounded-full bg-light-gray px-2.5 py-0.5 text-xs text-charcoal">
                       {a.current_phv_status}

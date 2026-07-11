@@ -1,9 +1,11 @@
 import { MeasurementAlerts } from "@/components/dashboard/MeasurementAlerts";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { useDashboardStats } from "@/hooks/athletes/useDashboardStats";
 import { formatDateMedium } from "@/lib/datetime";
 
 export function DashboardPage() {
-  const { total, lastEvaluation, phvVigentes, phvTotal, isLoading, isError } = useDashboardStats();
+  const { total, lastEvaluation, phvVigentes, phvTotal, isLoading, isError, refetch } =
+    useDashboardStats();
   const isEmpty = !isLoading && !isError && (total ?? 0) === 0;
 
   return (
@@ -16,9 +18,10 @@ export function DashboardPage() {
       </h1>
 
       {isError && (
-        <p className="text-sm text-red-600" role="alert">
-          No pudimos cargar la información del dashboard. Intenta de nuevo más tarde.
-        </p>
+        <ErrorState
+          message="No pudimos cargar la información del dashboard. Intenta de nuevo más tarde."
+          onRetry={() => void refetch()}
+        />
       )}
 
       {isEmpty && (

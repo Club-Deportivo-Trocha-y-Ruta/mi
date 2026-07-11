@@ -101,16 +101,21 @@ describe("AttendanceTable — accesibilidad", () => {
     expect(document.activeElement).not.toBe(document.body);
   });
 
-  it("los sliders de rúbrica tienen roles, aria-valuenow, aria-valuemin y aria-valuemax", () => {
+  it("los grupos de rúbrica (RPE + 3 rúbrica) exponen opciones discretas accesibles (radio)", () => {
+    // feature 028 T018: los <input type="range"> nativos fueron reemplazados
+    // por ToggleGroup/ToggleGroupItem (steppers discretos, target >=48px) —
+    // Radix expone cada grupo como role="group" y cada opción como
+    // role="radio" con aria-checked, no valuenow/valuemin/valuemax.
     renderTable([makeAttendance({ status: "presente", rpe_omni: 7, rubric_effort: 4, rubric_attitude: 3, rubric_technique: 5 })]);
 
-    const sliders = screen.getAllByRole("slider");
-    expect(sliders.length).toBeGreaterThanOrEqual(4); // RPE + 3 rúbrica
+    const groups = screen.getAllByRole("group");
+    expect(groups.length).toBeGreaterThanOrEqual(4); // RPE OMNI + Esfuerzo/Actitud/Técnica
 
-    for (const slider of sliders) {
-      expect(slider).toHaveAttribute("aria-valuenow");
-      expect(slider).toHaveAttribute("aria-valuemin");
-      expect(slider).toHaveAttribute("aria-valuemax");
+    const options = screen.getAllByRole("radio");
+    expect(options.length).toBeGreaterThanOrEqual(4); // al menos una opción marcada por grupo
+
+    for (const option of options) {
+      expect(option).toHaveAttribute("aria-checked");
     }
   });
 

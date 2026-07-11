@@ -199,6 +199,26 @@ export function formatRelativeDay(value: DateInput): string {
 }
 
 /**
+ * Año actual (season) en CLUB_TIMEZONE — no el año local del navegador/runtime.
+ * Misma técnica de extracción que formatRelativeDay: formatea "hoy" con
+ * Intl.DateTimeFormat("en-CA", { timeZone: CLUB_TIMEZONE }) y toma el año.
+ * Evita el sesgo de `new Date().getFullYear()` cerca de la medianoche cuando
+ * la TZ del cliente/servidor difiere de America/Bogota (UTC-5).
+ */
+export function currentSeason(): number {
+  const [year] = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: CLUB_TIMEZONE,
+  })
+    .format(new Date())
+    .split("-")
+    .map(Number);
+  return year;
+}
+
+/**
  * Formatea una duración en minutos como "hh:mm:ss".
  * Acepta minutos fraccionarios (ej. un promedio en horas convertido a minutos);
  * los segundos salen de la fracción. Retorna "—" si el valor es null/undefined.

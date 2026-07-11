@@ -10,7 +10,7 @@
  *  - 2 links/cards con hrefs correctos.
  *  - 0 violaciones a11y (jest-axe).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import { axe } from "jest-axe";
 
@@ -18,6 +18,10 @@ import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { InsightsHubPage } from "@/routes/competitions/insights/InsightsHubPage";
 
 describe("InsightsHubPage", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renderiza el header del índice", () => {
     renderWithProviders(<InsightsHubPage />);
     expect(
@@ -57,5 +61,24 @@ describe("InsightsHubPage", () => {
     const { container } = renderWithProviders(<InsightsHubPage />);
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  it("usa el año activo del reloj (no un 2026 fijo) en el link y el texto de temporada", () => {
+    // 2027-06-15T12:00:00Z = 2027-06-15 07:00 en Bogotá (UTC-5): lejos de
+    // cualquier cruce de frontera de año, año inequívocamente 2027 (no 2026).
+    // Regresión: CURRENT_SEASON estaba hardcodeado a 2026; debe seguir
+    // currentSeason() (lib/datetime) y reflejar el reloj real.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2027-06-15T12:00:00Z"));
+
+    renderWithProviders(<InsightsHubPage />);
+
+    const seasonCard = screen.getByTestId("hub-card-season");
+    expect(seasonCard).toHaveAttribute(
+      "href",
+      "/competitions/insights/season/2027",
+    );
+    expect(screen.getByText(/Ver temporada 2027/i)).toBeInTheDocument();
+    expect(screen.queryByText(/2026/)).not.toBeInTheDocument();
   });
 });

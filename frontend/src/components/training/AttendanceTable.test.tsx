@@ -259,8 +259,10 @@ describe("AttendanceTable", () => {
   describe("rúbrica deshabilitada para ausente", () => {
     it("no muestra RubricSliders cuando status=ausente", () => {
       renderTable([makeAttendance({ status: "ausente" })]);
-      const ranges = screen.queryAllByRole("slider", { name: /RPE OMNI/i });
-      expect(ranges.length).toBe(0);
+      // feature 028 T018: opciones ahora son role="radio" (ToggleGroupItem),
+      // no role="slider" (input range nativo retirado).
+      const options = screen.queryAllByRole("radio", { name: /RPE OMNI/i });
+      expect(options.length).toBe(0);
     });
 
     it("muestra campo razón cuando status=ausente", () => {
@@ -271,8 +273,9 @@ describe("AttendanceTable", () => {
 
     it("muestra RubricSliders cuando status=presente", () => {
       renderTable([makeAttendance({ status: "presente" })]);
-      const ranges = screen.getAllByRole("slider", { name: /RPE OMNI/i });
-      expect(ranges.length).toBeGreaterThanOrEqual(1);
+      // feature 028 T018: 11 opciones discretas (0-10) reemplazan el slider único.
+      const options = screen.getAllByRole("radio", { name: /RPE OMNI/i });
+      expect(options.length).toBeGreaterThanOrEqual(1);
     });
   });
 

@@ -10,11 +10,11 @@
  * T011 (feature 010): GroupAnalysisPanel se monta sobre el grid,
  * visible únicamente para coach/admin (isCoachOrAdmin prop).
  */
-import { useNavigate } from "react-router-dom";
 import { Users } from "lucide-react";
 
 import { GroupAnalysisPanel } from "@/components/competitions/insights/GroupAnalysisPanel";
 import { CompetitionChatPanel } from "@/components/competitions/chat/CompetitionChatPanel";
+import { AthleteLink } from "@/components/shared/AthleteLink";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,6 @@ const cardShadow =
 
 interface InsightCardProps {
   item: ClubInsightByRaceItem;
-  onNavigate: (athleteId: number, insightId: number) => void;
   /** coach/admin → muestra el botón "Analizar con IA" por tarjeta. */
   canAnalyze?: boolean;
   /** Año de temporada (necesario para lanzar el análisis). */
@@ -56,7 +55,6 @@ interface InsightCardProps {
 
 function InsightCard({
   item,
-  onNavigate,
   canAnalyze = false,
   season,
   validaNum,
@@ -80,11 +78,69 @@ function InsightCard({
   const insightFreshness =
     item.insight_id === null ? undefined : (item.stale_run_id ?? null);
 
-  function handleClick() {
-    if (isClickable) {
-      onNavigate(item.athlete_id, item.insight_id!);
-    }
-  }
+  // Contenido visual de la card — idéntico para todos los roles. La
+  // navegación real (o su ausencia para roles sin acceso a /athletes/:id,
+  // como admin) la resuelve únicamente AthleteLink más abajo, nunca este div.
+  const cardBody = (
+    <div
+      className={[
+        "rounded-xl bg-white p-4 transition-colors",
+        isClickable
+          ? "cursor-pointer hover:ring-2 hover:ring-charcoal/20"
+          : "opacity-60 cursor-default",
+      ].join(" ")}
+      style={{ boxShadow: cardShadow }}
+      data-testid={`insights-tab-card-${item.athlete_id}`}
+    >
+      {/* Header: avatar + nombre */}
+      <div className="mb-3 flex items-center gap-3">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-charcoal text-sm font-bold text-white"
+          aria-hidden="true"
+        >
+          {initials || <Users size={14} />}
+        </div>
+        <p className="line-clamp-2 text-sm font-semibold leading-tight text-charcoal">
+          {item.athlete_display_name}
+        </p>
+      </div>
+
+      {item.insight_id === null ? (
+        <div className="space-y-1">
+          <Badge variant="secondary" className="text-xs">
+            Sin análisis
+          </Badge>
+          <p className="text-xs text-mid-gray">El análisis está pendiente.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="secondary" className="text-xs">
+              {validaLabel(item.valida_num)}
+            </Badge>
+            {item.confidence !== null && (
+              <Badge
+                variant={confidenceVariant(item.confidence)}
+                className="text-xs"
+              >
+                {confidenceLabel(item.confidence)}
+              </Badge>
+            )}
+          </div>
+          {item.summary_excerpt !== null && (
+            <p className="line-clamp-3 text-sm leading-relaxed text-charcoal">
+              {item.summary_excerpt}
+            </p>
+          )}
+          {item.generated_at !== null && (
+            <p className="text-xs text-mid-gray">
+              {formatDateTimeCompact(item.generated_at)}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     // Contenedor article: evita nesting de controles interactivos (axe
@@ -94,82 +150,23 @@ function InsightCard({
       className="flex flex-col gap-2"
       aria-label={item.athlete_display_name}
     >
-      <div
-        className={[
-          "rounded-xl bg-white p-4 transition-colors",
-          isClickable
-            ? "cursor-pointer hover:ring-2 hover:ring-charcoal/20"
-            : "opacity-60 cursor-default",
-        ].join(" ")}
-        style={{ boxShadow: cardShadow }}
-        onClick={handleClick}
-        role={isClickable ? "button" : undefined}
-        tabIndex={isClickable ? 0 : undefined}
-        onKeyDown={
-          isClickable
-            ? (e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  handleClick();
-                }
-              }
-            : undefined
-        }
-        aria-label={
-          isClickable
-            ? `Ver análisis de ${item.athlete_display_name}`
-            : undefined
-        }
-        data-testid={`insights-tab-card-${item.athlete_id}`}
-      >
-        {/* Header: avatar + nombre */}
-        <div className="mb-3 flex items-center gap-3">
-          <div
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-charcoal text-sm font-bold text-white"
-            aria-hidden="true"
-          >
-            {initials || <Users size={14} />}
-          </div>
-          <p className="line-clamp-2 text-sm font-semibold leading-tight text-charcoal">
-            {item.athlete_display_name}
-          </p>
-        </div>
-
-        {item.insight_id === null ? (
-          <div className="space-y-1">
-            <Badge variant="secondary" className="text-xs">
-              Sin análisis
-            </Badge>
-            <p className="text-xs text-mid-gray">El análisis está pendiente.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-1.5">
-              <Badge variant="secondary" className="text-xs">
-                {validaLabel(item.valida_num)}
-              </Badge>
-              {item.confidence !== null && (
-                <Badge
-                  variant={confidenceVariant(item.confidence)}
-                  className="text-xs"
-                >
-                  {confidenceLabel(item.confidence)}
-                </Badge>
-              )}
-            </div>
-            {item.summary_excerpt !== null && (
-              <p className="line-clamp-3 text-sm leading-relaxed text-charcoal">
-                {item.summary_excerpt}
-              </p>
-            )}
-            {item.generated_at !== null && (
-              <p className="text-xs text-mid-gray">
-                {formatDateTimeCompact(item.generated_at)}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
+      {/* AthleteLink decide Link (coach) vs. <span> (resto de roles) —
+          `/athletes/:id` es coach-only (ver AthleteLink.tsx); antes de este
+          cambio, un div con role="button" navegaba ahí sin mirar el rol, y
+          ProtectedRoute rebotaba a admin en silencio de vuelta al dashboard.
+          Solo se monta cuando hay algo que ver (isClickable); si no, la card
+          queda como contenido plano, igual que antes. */}
+      {isClickable ? (
+        <AthleteLink
+          athleteId={item.athlete_id}
+          tab="ai_analysis"
+          className="block rounded-xl"
+        >
+          {cardBody}
+        </AthleteLink>
+      ) : (
+        cardBody
+      )}
 
       {/* FR-018 / PR5: badge hermano del card (no anidado) para evitar
           nested-interactive (axe). La re-ejecución es manual (D5/FR-029). */}
@@ -293,15 +290,10 @@ function ClubInsightsGrid({
   season,
   validaNum,
 }: InsightsTabProps) {
-  const navigate = useNavigate();
   const { data, isLoading, isError, refetch } = useClubInsightsByRace(
     raceEventId,
     { latestOnly: true, limit: 50 },
   );
-
-  function handleNavigate(athleteId: number, insightId: number) {
-    navigate(`/athletes/${athleteId}?tab=ai_analysis&insight=${insightId}`);
-  }
 
   if (isLoading) {
     return (
@@ -354,7 +346,6 @@ function ClubInsightsGrid({
           <InsightCard
             key={`${item.athlete_id}-${item.insight_id ?? "none"}`}
             item={item}
-            onNavigate={handleNavigate}
             canAnalyze={isCoachOrAdmin}
             season={season}
             validaNum={validaNum}

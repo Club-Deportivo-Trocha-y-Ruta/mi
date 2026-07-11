@@ -7,7 +7,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { http, HttpResponse } from "msw";
+import axios from "axios";
 import { Sex } from "@/types/enums";
 
 // ---------------------------------------------------------------------------
@@ -24,10 +26,17 @@ vi.mock("@/api/client", () => ({
 }));
 
 vi.mock("@/api/athleteNewsletters", () => ({
-  useAthleteNewsletters: vi.fn(),
   useBatchCreateNewsletters: vi.fn(),
   useGenerateNewsletter: vi.fn(),
   parseApiError: vi.fn((_err: unknown, fallback: string) => fallback),
+}));
+
+// El dashboard ya NO hace fan-out per-athlete (useAthleteNewsletters) — usa
+// el resumen de una sola petición. useAthleteNewsletters/useAthleteNewsletter
+// siguen existiendo sin cambios para AthleteNewslettersTabPanel y la vista de
+// detalle (ver src/api/athleteNewsletters.ts), pero este dashboard no los usa.
+vi.mock("@/hooks/training/useNewsletterStatusSummary", () => ({
+  useNewsletterStatusSummary: vi.fn(),
 }));
 
 vi.mock("@/hooks/athletes/useAthletes", () => ({
@@ -43,12 +52,17 @@ vi.mock("@/store/auth.store", () => ({
   ),
 }));
 
-import { useAthleteNewsletters, useBatchCreateNewsletters, useGenerateNewsletter } from "@/api/athleteNewsletters";
+import { useBatchCreateNewsletters, useGenerateNewsletter } from "@/api/athleteNewsletters";
+import { useNewsletterStatusSummary } from "@/hooks/training/useNewsletterStatusSummary";
+import type {
+  NewsletterStatusSummary,
+  NewsletterStatusSummaryItem,
+} from "@/hooks/training/useNewsletterStatusSummary";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { AthleteNewslettersDashboardPage } from "./AthleteNewslettersDashboardPage";
 import type { AthleteOut } from "@/types/athlete.types";
-import type { AthleteNewsletter } from "@/types/athleteNewsletter.types";
-import { makeNewsletter, makeBatchResult } from "@/test/msw/newsletterHandlers";
+import { makeBatchResult } from "@/test/msw/newsletterHandlers";
+import { mswServer } from "@/test/setup";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -78,6 +92,29 @@ function getPrevPeriod(): { year: number; month: number } {
   const m = now.getMonth() + 1;
   const y = now.getFullYear();
   return m === 1 ? { year: y - 1, month: 12 } : { year: y, month: m - 1 };
+}
+
+function makeSummaryItem(
+  overrides?: Partial<NewsletterStatusSummaryItem>,
+): NewsletterStatusSummaryItem {
+  return {
+    athlete_id: 42,
+    newsletter_id: 1,
+    status: "draft",
+    generated_at: "2026-05-01T00:00:00Z",
+    sent_at: null,
+    ...overrides,
+  };
+}
+
+/** Envuelve items en la forma { isLoading, isError, data } de useNewsletterStatusSummary. */
+function mockSummary(items: NewsletterStatusSummaryItem[]) {
+  const prev = getPrevPeriod();
+  return {
+    isLoading: false,
+    isError: false,
+    data: { year: prev.year, month: prev.month, items },
+  } as unknown as ReturnType<typeof useNewsletterStatusSummary>;
 }
 
 const mutationStub = {
@@ -110,11 +147,7 @@ beforeEach(() => {
   vi.mocked(useGenerateNewsletter).mockReturnValue(
     mutationStub as unknown as ReturnType<typeof useGenerateNewsletter>,
   );
-  vi.mocked(useAthleteNewsletters).mockReturnValue({
-    isLoading: false,
-    isError: false,
-    data: [],
-  } as unknown as ReturnType<typeof useAthleteNewsletters>);
+  vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([]));
 });
 
 // ---------------------------------------------------------------------------
@@ -339,44 +372,27 @@ describe("AthleteNewslettersDashboardPage — estados de badge por atleta", () =
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
     // No hay newsletter para este atleta/periodo
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: [],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([]));
     renderPage();
     // Buscar el badge en la card del atleta (no en el select de filtro)
     expect(screen.getByTestId("status-badge-42")).toHaveTextContent(/Sin generar/i);
   });
 
   it("muestra badge 'Borrador' cuando el newsletter está en draft", () => {
-    const prev = getPrevPeriod();
-    const newsletter: AthleteNewsletter = makeNewsletter({
-      athlete_id: 42,
-      year: prev.year,
-      month: prev.month,
-      status: "draft",
-    });
+    const item = makeSummaryItem({ athlete_id: 42, status: "draft" });
     vi.mocked(useAthletes).mockReturnValue({
       isLoading: false,
       isError: false,
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: [newsletter],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([item]));
     renderPage();
     expect(screen.getByTestId("status-badge-42")).toHaveTextContent("Borrador");
   });
 
   it("muestra badge 'Enviado' cuando el newsletter fue enviado", () => {
-    const prev = getPrevPeriod();
-    const newsletter: AthleteNewsletter = makeNewsletter({
+    const item = makeSummaryItem({
       athlete_id: 42,
-      year: prev.year,
-      month: prev.month,
       status: "sent",
       sent_at: "2026-05-01T10:00:00Z",
     });
@@ -385,11 +401,7 @@ describe("AthleteNewslettersDashboardPage — estados de badge por atleta", () =
       isError: false,
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: [newsletter],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([item]));
     renderPage();
     expect(screen.getByTestId("status-badge-42")).toHaveTextContent("Enviado");
   });
@@ -402,33 +414,19 @@ describe("AthleteNewslettersDashboardPage — botón Generar individual", () => 
       isError: false,
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: [],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([]));
     renderPage();
     expect(screen.getByTestId("generate-btn-42")).toBeInTheDocument();
   });
 
   it("NO muestra botón Generar cuando el atleta ya tiene newsletter enviado", () => {
-    const prev = getPrevPeriod();
-    const newsletter: AthleteNewsletter = makeNewsletter({
-      athlete_id: 42,
-      year: prev.year,
-      month: prev.month,
-      status: "sent",
-    });
+    const item = makeSummaryItem({ athlete_id: 42, status: "sent" });
     vi.mocked(useAthletes).mockReturnValue({
       isLoading: false,
       isError: false,
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: [newsletter],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([item]));
     renderPage();
     expect(screen.queryByTestId("generate-btn-42")).not.toBeInTheDocument();
   });
@@ -444,11 +442,7 @@ describe("AthleteNewslettersDashboardPage — botón Generar individual", () => 
       isError: false,
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: [],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([]));
     renderPage();
 
     fireEvent.click(screen.getByTestId("generate-btn-42"));
@@ -458,93 +452,72 @@ describe("AthleteNewslettersDashboardPage — botón Generar individual", () => 
       expect.any(Object),
     );
   });
-});
 
-describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", () => {
-  it("muestra botón Regenerar cuando el newsletter está en draft", () => {
-    const prev = getPrevPeriod();
-    const newsletter: AthleteNewsletter = makeNewsletter({
-      athlete_id: 42,
-      year: prev.year,
-      month: prev.month,
-      status: "draft",
-    });
+  it("muestra spinner y 'Generando…' en el botón Generar mientras la mutación está pendiente", () => {
+    vi.mocked(useGenerateNewsletter).mockReturnValue({
+      ...mutationStub,
+      isPending: true,
+    } as unknown as ReturnType<typeof useGenerateNewsletter>);
     vi.mocked(useAthletes).mockReturnValue({
       isLoading: false,
       isError: false,
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([]));
+    const { container } = renderPage();
+
+    const generateBtn = screen.getByTestId("generate-btn-42");
+    expect(generateBtn).toHaveTextContent("Generando…");
+    expect(generateBtn).toBeDisabled();
+    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+  });
+});
+
+describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", () => {
+  it("muestra botón Regenerar cuando el newsletter está en draft", () => {
+    const item = makeSummaryItem({ athlete_id: 42, status: "draft" });
+    vi.mocked(useAthletes).mockReturnValue({
       isLoading: false,
       isError: false,
-      data: [newsletter],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+      data: { items: [makeAthlete()], total: 1 },
+    } as unknown as ReturnType<typeof useAthletes>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([item]));
     renderPage();
     expect(screen.getByTestId("regenerate-btn-42")).toBeInTheDocument();
   });
 
   it("muestra botón Regenerar cuando el newsletter está en failed", () => {
-    const prev = getPrevPeriod();
-    const newsletter: AthleteNewsletter = makeNewsletter({
-      athlete_id: 42,
-      year: prev.year,
-      month: prev.month,
-      status: "failed",
-    });
+    const item = makeSummaryItem({ athlete_id: 42, status: "failed" });
     vi.mocked(useAthletes).mockReturnValue({
       isLoading: false,
       isError: false,
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: [newsletter],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([item]));
     renderPage();
     expect(screen.getByTestId("regenerate-btn-42")).toBeInTheDocument();
   });
 
   it("NO muestra botón Regenerar cuando el newsletter está aprobado", () => {
-    const prev = getPrevPeriod();
-    const newsletter: AthleteNewsletter = makeNewsletter({
-      athlete_id: 42,
-      year: prev.year,
-      month: prev.month,
-      status: "approved",
-    });
+    const item = makeSummaryItem({ athlete_id: 42, status: "approved" });
     vi.mocked(useAthletes).mockReturnValue({
       isLoading: false,
       isError: false,
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: [newsletter],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([item]));
     renderPage();
     expect(screen.queryByTestId("regenerate-btn-42")).not.toBeInTheDocument();
   });
 
   it("abre ConfirmModal al hacer click en Regenerar", async () => {
-    const prev = getPrevPeriod();
-    const newsletter: AthleteNewsletter = makeNewsletter({
-      athlete_id: 42,
-      year: prev.year,
-      month: prev.month,
-      status: "draft",
-    });
+    const item = makeSummaryItem({ athlete_id: 42, status: "draft" });
     vi.mocked(useAthletes).mockReturnValue({
       isLoading: false,
       isError: false,
       data: { items: [makeAthlete()], total: 1 },
     } as unknown as ReturnType<typeof useAthletes>);
-    vi.mocked(useAthleteNewsletters).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: [newsletter],
-    } as unknown as ReturnType<typeof useAthleteNewsletters>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([item]));
     renderPage();
 
     fireEvent.click(screen.getByTestId("regenerate-btn-42"));
@@ -552,5 +525,79 @@ describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", ()
     await waitFor(() => {
       expect(screen.getByText(/Se borrará la narrativa actual/i)).toBeInTheDocument();
     });
+  });
+});
+
+describe("AthleteNewslettersDashboardPage — deduplicación de peticiones (regresión N+1)", () => {
+  /**
+   * Antes de la migración a useNewsletterStatusSummary, el dashboard hacía
+   * fan-out N+1: una petición de estado de boletín por cada card de atleta
+   * renderizada. El stub estático de useNewsletterStatusSummary usado en el
+   * resto de este archivo (mockReturnValue con datos síncronos) NO puede
+   * detectar esa regresión — nunca hace una petición HTTP real, así que
+   * "una" o "veinticinco" peticiones lucen exactamente igual para ese stub.
+   *
+   * Este test reemplaza, solo para su propio cuerpo, la implementación del
+   * mock por una basada en useQuery + axios real, interceptada por MSW, para
+   * poder contar peticiones HTTP reales al endpoint de resumen mientras se
+   * renderiza un roster de 25 atletas. Debe quedar en exactamente 1: el
+   * dashboard llama useNewsletterStatusSummary UNA sola vez (en el padre) y
+   * reparte el resultado a las cards vía prop — las cards ya no hacen fetch
+   * propio (ver AthleteCardWithFilter). Contra una implementación pre-migración
+   * (fan-out por card) este conteo sería, conceptualmente, N en vez de 1.
+   */
+  it("hace UNA sola petición GET al endpoint de resumen sin importar el tamaño del roster (25 atletas)", async () => {
+    let requestCount = 0;
+    mswServer.use(
+      http.get("*/api/training/athlete-newsletters/summary", () => {
+        requestCount += 1;
+        return HttpResponse.json({ year: 2026, month: 6, items: [] });
+      }),
+    );
+
+    vi.mocked(useNewsletterStatusSummary).mockImplementation((year, month) =>
+      useQuery<NewsletterStatusSummary>({
+        queryKey: ["newsletter-status-summary", 10, year, month],
+        queryFn: async () => {
+          const res = await axios.get<NewsletterStatusSummary>(
+            "/api/training/athlete-newsletters/summary",
+            { params: { year, month } },
+          );
+          return res.data;
+        },
+        enabled: !!year && !!month,
+      }) as unknown as ReturnType<typeof useNewsletterStatusSummary>,
+    );
+
+    const athletes = Array.from({ length: 25 }, (_, i) =>
+      makeAthlete({
+        id: i + 1,
+        first_name: `Atleta${i + 1}`,
+        last_name: "Prueba",
+      }),
+    );
+    vi.mocked(useAthletes).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { items: athletes, total: athletes.length },
+    } as unknown as ReturnType<typeof useAthletes>);
+
+    renderPage();
+
+    // El roster completo (25 cards) debe montar.
+    await waitFor(() => {
+      expect(screen.getAllByTestId(/^athlete-card-/)).toHaveLength(25);
+    });
+
+    // Espera a que la petición del resumen se resuelva.
+    await waitFor(() => {
+      expect(requestCount).toBeGreaterThan(0);
+    });
+
+    // Margen adicional para detectar peticiones duplicadas tardías (por
+    // ejemplo, si alguna card volviera a hacer fetch propio).
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(requestCount).toBe(1);
   });
 });

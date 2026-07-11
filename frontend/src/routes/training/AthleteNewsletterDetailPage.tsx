@@ -30,6 +30,7 @@ import {
   parseApiError,
 } from "@/api/athleteNewsletters";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
+import { AthleteLink } from "@/components/shared/AthleteLink";
 import { NewsletterNarrativeEditor } from "@/components/training/NewsletterNarrativeEditor";
 import { NewsletterPreviewBlocks } from "@/components/training/NewsletterPreviewBlocks";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
@@ -419,26 +420,37 @@ export function AthleteNewsletterDetailPage() {
                 ← Boletines mensuales
               </Link>
               {athleteQuery.data && (
-                <Link
-                  to={`/athletes/${athleteId}?tab=newsletters`}
-                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full py-2 px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-charcoal"
+                <div
+                  className="inline-flex rounded-full"
                   style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-                  aria-label={`Ver perfil de ${athleteQuery.data.first_name} ${athleteQuery.data.last_name}`}
                   data-testid="athlete-profile-chip"
                 >
-                  {/* Avatar iniciales */}
-                  <span
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-charcoal text-[10px] font-bold text-white"
-                    aria-hidden="true"
+                  {/*
+                    /athletes/:id es coach-only (ver App.tsx) — AthleteLink decide,
+                    según el rol actual, si esto navega (<a>) o se muestra como
+                    texto plano (<span>) para admin, evitando el bounce silencioso
+                    de ProtectedRoute (specs/028, mismo bug que MeasurementAlerts /
+                    AthletesTab).
+                  */}
+                  <AthleteLink
+                    athleteId={athleteId}
+                    tab="newsletters"
+                    className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full py-2 px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-charcoal"
                   >
-                    {athleteQuery.data.first_name[0]}
-                    {athleteQuery.data.last_name[0]}
-                  </span>
-                  <span>
-                    {athleteQuery.data.first_name} {athleteQuery.data.last_name}
-                  </span>
-                  <span className="text-mid-gray">· Ver perfil</span>
-                </Link>
+                    {/* Avatar iniciales */}
+                    <span
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-charcoal text-[10px] font-bold text-white"
+                      aria-hidden="true"
+                    >
+                      {athleteQuery.data.first_name[0]}
+                      {athleteQuery.data.last_name[0]}
+                    </span>
+                    <span>
+                      {athleteQuery.data.first_name} {athleteQuery.data.last_name}
+                    </span>
+                    <span className="text-mid-gray">· Ver perfil</span>
+                  </AthleteLink>
+                </div>
               )}
             </div>
             <h1

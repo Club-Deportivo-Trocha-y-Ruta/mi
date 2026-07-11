@@ -6,7 +6,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { axe } from "jest-axe";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -34,11 +35,20 @@ vi.mock("@/api/athleteNewsletters", () => ({
   parseApiError: vi.fn((_err: unknown, fallback: string) => fallback),
 }));
 
+// `vi.hoisted` corre antes de que los imports se resuelvan — mismo patrón que
+// MeasurementAlerts.test.tsx / AthleteLink.test.tsx para poder alternar el rol
+// entre tests del mismo archivo. Default "coach" porque los tests preexistentes
+// de esta suite asumen el chip de atleta como <a> navegable (AthleteLink solo
+// renderiza <Link> para coach — ver src/components/shared/AthleteLink.tsx).
+const authState = vi.hoisted(() => ({
+  role: "coach" as string | undefined,
+}));
+
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: vi.fn((sel: (s: unknown) => unknown) =>
     sel({
       accessToken: "tok",
-      user: { role: "coach", first_name: "Juan", last_name: "T", club_ids: [1], id: 10 },
+      user: { role: authState.role, first_name: "Juan", last_name: "T", club_ids: [1], id: 10 },
     }),
   ),
 }));
@@ -140,6 +150,7 @@ function setupMocks(status: NewsletterStatus, withAthlete = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  authState.role = "coach";
 });
 
 // ---------------------------------------------------------------------------
@@ -303,7 +314,8 @@ describe("AthleteNewsletterDetailPage — chip de atleta en header", () => {
     setupMocks("draft");
     renderPage(42, 1);
     const chip = screen.getByTestId("athlete-profile-chip");
-    expect(chip).toHaveAttribute("href", "/athletes/42?tab=newsletters");
+    const link = chip.querySelector("a");
+    expect(link).toHaveAttribute("href", "/athletes/42?tab=newsletters");
   });
 
   it("chip muestra iniciales del atleta como avatar", () => {
@@ -317,5 +329,46 @@ describe("AthleteNewsletterDetailPage — chip de atleta en header", () => {
     setupMocks("draft", false);
     renderPage(42, 1);
     expect(screen.queryByTestId("athlete-profile-chip")).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: chip de atleta — admin vs. coach (AthleteLink)
+// (mismo patrón que la corrección hermana en MeasurementAlerts/AthletesTab:
+// /athletes/:id es coach-only en App.tsx; un <Link> sin chequear el rol hacía
+// que ProtectedRoute rebotara a admin en silencio de vuelta al dashboard).
+// ---------------------------------------------------------------------------
+
+describe("AthleteNewsletterDetailPage — chip de atleta: admin vs. coach (AthleteLink)", () => {
+  it("coach: el chip de atleta es un link funcional a /athletes/{id}?tab=newsletters", () => {
+    authState.role = "coach";
+    setupMocks("draft");
+    renderPage(42, 1);
+
+    const chip = screen.getByTestId("athlete-profile-chip");
+    const link = chip.querySelector("a");
+    expect(link).toHaveAttribute("href", "/athletes/42?tab=newsletters");
+  });
+
+  it('admin: el chip de atleta NO renderiza un <a> (antes navegaba y ProtectedRoute rebotaba en silencio en "/athletes/:id")', () => {
+    authState.role = "admin";
+    setupMocks("draft");
+    renderPage(42, 1);
+
+    const chip = screen.getByTestId("athlete-profile-chip");
+    expect(chip.querySelector("a")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Ver perfil/i })).not.toBeInTheDocument();
+    // El contenido se sigue mostrando como texto plano, sin navegación.
+    expect(within(chip).getByText(/Carlos/)).toBeInTheDocument();
+    expect(within(chip).getByText(/Perez/)).toBeInTheDocument();
+  });
+
+  it("admin: axe 0 violaciones con el chip de atleta renderizado", async () => {
+    authState.role = "admin";
+    setupMocks("draft");
+    const { container } = renderPage(42, 1);
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

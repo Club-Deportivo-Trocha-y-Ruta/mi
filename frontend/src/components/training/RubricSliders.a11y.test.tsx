@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { axe, toHaveNoViolations } from "jest-axe";
 import { useForm } from "react-hook-form";
 import { RubricSliders } from "./RubricSliders";
@@ -22,6 +22,8 @@ function Wrapper({ disabled = false }: { disabled?: boolean }) {
   return <RubricSliders control={control} disabled={disabled} feedbackLength={0} />;
 }
 
+const GROUP_NAMES = ["RPE OMNI 0-10", "Esfuerzo", "Actitud", "Técnica"];
+
 describe("RubricSliders — accesibilidad", () => {
   it("sin violaciones axe en estado normal", async () => {
     const { container } = render(<Wrapper />);
@@ -35,43 +37,60 @@ describe("RubricSliders — accesibilidad", () => {
     expect(results).toHaveNoViolations();
   });
 
-  it("los 4 sliders (RPE + 3 rúbrica) tienen nombres accesibles", () => {
+  it("no renderiza ningún input de rango (role=slider) — reemplazado por ToggleGroup", () => {
     render(<Wrapper />);
-    const sliders = screen.getAllByRole("slider");
-    expect(sliders).toHaveLength(4);
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(screen.queryByRole("slider", { name: /RPE OMNI/i })).not.toBeInTheDocument();
+  });
 
-    for (const slider of sliders) {
-      const ariaLabel = slider.getAttribute("aria-label") ?? "";
-      expect(ariaLabel.length).toBeGreaterThan(0);
+  it("los 4 grupos (RPE + 3 rúbrica) se renderizan como ToggleGroup (role=group) con nombre accesible", () => {
+    render(<Wrapper />);
+    for (const name of GROUP_NAMES) {
+      expect(screen.getByRole("group", { name })).toBeInTheDocument();
     }
   });
 
-  it("todos los sliders tienen aria-valuenow, aria-valuemin y aria-valuemax", () => {
+  it("el grupo RPE OMNI expone 11 opciones discretas con nombre accesible", () => {
     render(<Wrapper />);
-    const sliders = screen.getAllByRole("slider");
+    const group = screen.getByRole("group", { name: "RPE OMNI 0-10" });
+    const options = within(group).getAllByRole("radio");
+    expect(options).toHaveLength(11);
 
-    for (const slider of sliders) {
-      expect(slider).toHaveAttribute("aria-valuenow");
-      expect(slider).toHaveAttribute("aria-valuemin");
-      expect(slider).toHaveAttribute("aria-valuemax");
+    for (const option of options) {
+      const accessibleName = option.getAttribute("aria-label") ?? "";
+      expect(accessibleName.length).toBeGreaterThan(0);
+      expect(option).toHaveAttribute("aria-checked");
     }
   });
 
-  it("el slider RPE tiene rango 0-10", () => {
+  it("los 3 grupos de rúbrica exponen 5 opciones discretas con nombre accesible", () => {
     render(<Wrapper />);
-    const rpe = screen.getByRole("slider", { name: /RPE OMNI/i });
-    expect(rpe).toHaveAttribute("aria-valuemin", "0");
-    expect(rpe).toHaveAttribute("aria-valuemax", "10");
+    for (const name of ["Esfuerzo", "Actitud", "Técnica"]) {
+      const group = screen.getByRole("group", { name });
+      const options = within(group).getAllByRole("radio");
+      expect(options).toHaveLength(5);
+
+      for (const option of options) {
+        const accessibleName = option.getAttribute("aria-label") ?? "";
+        expect(accessibleName.length).toBeGreaterThan(0);
+        expect(option).toHaveAttribute("aria-checked");
+      }
+    }
   });
 
-  it("los 3 sliders de rúbrica tienen rango 1-5", () => {
+  it("cada grupo tiene exactamente una opción marcada (aria-checked=true)", () => {
     render(<Wrapper />);
-    const sliders = screen.getAllByRole("slider");
-    const rubricSliders = sliders.filter((s) => s.getAttribute("aria-valuemax") === "5");
-    expect(rubricSliders).toHaveLength(3);
-
-    for (const slider of rubricSliders) {
-      expect(slider).toHaveAttribute("aria-valuemin", "1");
+    for (const name of GROUP_NAMES) {
+      const group = screen.getByRole("group", { name });
+      const checked = within(group).getAllByRole("radio", { checked: true });
+      expect(checked).toHaveLength(1);
     }
+  });
+
+  it("todas las opciones quedan deshabilitadas (no solo visualmente) cuando disabled=true", () => {
+    render(<Wrapper disabled />);
+    const options = screen.getAllByRole("radio");
+    expect(options.length).toBeGreaterThan(0);
+    options.forEach((o) => expect(o).toBeDisabled());
   });
 });

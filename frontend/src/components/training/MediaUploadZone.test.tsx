@@ -17,6 +17,14 @@ describe("MediaUploadZone", () => {
     expect(screen.getByTestId("media-upload-dropzone")).toBeInTheDocument();
   });
 
+  it("el input de archivo abre la cámara directamente en tablets (capture=environment)", () => {
+    render(
+      <MediaUploadZone athletes={ATHLETES} onUpload={vi.fn().mockResolvedValue({})} />,
+    );
+    const input = screen.getByTestId("media-file-input") as HTMLInputElement;
+    expect(input).toHaveAttribute("capture", "environment");
+  });
+
   it("rechaza archivos con extensión no permitida y muestra error", async () => {
     const onUpload = vi.fn();
     render(<MediaUploadZone athletes={ATHLETES} onUpload={onUpload} />);

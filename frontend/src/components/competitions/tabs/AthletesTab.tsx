@@ -5,17 +5,21 @@
  *   1. RosterPanel — convocatoria de la válida (FR-022 / FR-023, Wave C).
  *      - Coach/admin: lectura + escritura (agregar, editar estado, retirar).
  *      - Padre: solo su propio hijo (el backend filtra; se pasa isReadOnly=true).
- *   2. Análisis IA por atleta — grid de cards con estado de insight por atleta
- *      (sección preexistente, mantenida sin cambios).
+ *   2. Análisis IA por atleta — grid de cards con estado de insight por atleta.
+ *      El nombre navega a `/athletes/{id}` vía `AthleteLink` (specs/028):
+ *      esa ruta es coach-only, así que para admin/padre se renderiza como
+ *      texto plano en vez de un enlace que ProtectedRoute rebotaría en
+ *      silencio (antes se navegaba con un `onClick` imperativo sin chequear
+ *      el rol — mismo bug que corrigió MeasurementAlerts).
  *
  * Props: `raceEventId: number`
  */
-import { useNavigate } from "react-router-dom";
 import { Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AthleteLink } from "@/components/shared/AthleteLink";
 import { RosterPanel } from "@/components/competitions/roster/RosterPanel";
 import { useClubInsightsByRace } from "@/hooks/athletes/useClubInsightsByRace";
 import { useAuthStore } from "@/store/auth.store";
@@ -40,12 +44,16 @@ const cardShadow =
 
 interface AthleteCardProps {
   item: ClubInsightByRaceItem;
-  onNavigate: (athleteId: number, insightId: number) => void;
 }
 
-function AthleteInsightCard({ item, onNavigate }: AthleteCardProps) {
+function AthleteInsightCard({ item }: AthleteCardProps) {
   const isMasked = item.athlete_id === 0;
-  const isClickable = !isMasked && item.insight_id !== null;
+  const hasInsight = item.insight_id !== null;
+  // Navegar a `/athletes/{id}` solo tiene sentido si hay un insight que ver y
+  // el atleta no está enmascarado (privacidad de padre — ver useClubInsightsByRace).
+  // AthleteLink decide, según el rol actual, si esto se renderiza como <a> o
+  // como texto plano (esa ruta es coach-only).
+  const showLink = !isMasked && hasInsight;
   const initials = item.athlete_display_name
     .split(" ")
     .slice(0, 2)
@@ -53,41 +61,8 @@ function AthleteInsightCard({ item, onNavigate }: AthleteCardProps) {
     .join("")
     .toUpperCase();
 
-  function handleClick() {
-    if (isClickable) {
-      onNavigate(item.athlete_id, item.insight_id!);
-    }
-  }
-
-  return (
-    <div
-      className={[
-        "rounded-xl bg-white p-4 transition-colors",
-        isClickable
-          ? "cursor-pointer hover:ring-2 hover:ring-charcoal/20"
-          : "opacity-60 cursor-default",
-      ].join(" ")}
-      style={{ boxShadow: cardShadow }}
-      onClick={handleClick}
-      role={isClickable ? "button" : undefined}
-      tabIndex={isClickable ? 0 : undefined}
-      onKeyDown={
-        isClickable
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                handleClick();
-              }
-            }
-          : undefined
-      }
-      aria-label={
-        isClickable
-          ? `Ver análisis de ${item.athlete_display_name}`
-          : undefined
-      }
-      data-testid={`athlete-tab-card-${item.athlete_id}`}
-    >
+  const cardContent = (
+    <>
       {/* Header: avatar + nombre */}
       <div className="mb-3 flex items-center gap-3">
         <div
@@ -131,6 +106,29 @@ function AthleteInsightCard({ item, onNavigate }: AthleteCardProps) {
           )}
         </div>
       )}
+    </>
+  );
+
+  return (
+    <div
+      className={[
+        "rounded-xl bg-white p-4 transition-colors",
+        showLink ? "hover:ring-2 hover:ring-charcoal/20" : "opacity-60",
+      ].join(" ")}
+      style={{ boxShadow: cardShadow }}
+      data-testid={`athlete-tab-card-${item.athlete_id}`}
+    >
+      {showLink ? (
+        <AthleteLink
+          athleteId={item.athlete_id}
+          tab="ai_analysis"
+          className="block rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40"
+        >
+          {cardContent}
+        </AthleteLink>
+      ) : (
+        cardContent
+      )}
     </div>
   );
 }
@@ -169,7 +167,6 @@ export interface AthletesTabProps {
 }
 
 export function AthletesTab({ raceEventId }: AthletesTabProps) {
-  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const { data, isLoading, isError, refetch } = useClubInsightsByRace(
     raceEventId,
@@ -178,10 +175,6 @@ export function AthletesTab({ raceEventId }: AthletesTabProps) {
 
   // El padre solo puede ver su propio hijo → RosterPanel en modo solo lectura
   const isParent = user?.role === UserRole.parent;
-
-  function handleNavigate(athleteId: number, insightId: number) {
-    navigate(`/athletes/${athleteId}?tab=ai_analysis&insight=${insightId}`);
-  }
 
   return (
     <div className="space-y-8" data-testid="athletes-tab">
@@ -242,7 +235,6 @@ export function AthletesTab({ raceEventId }: AthletesTabProps) {
                 <AthleteInsightCard
                   key={`${item.athlete_id}-${item.insight_id ?? "none"}`}
                   item={item}
-                  onNavigate={handleNavigate}
                 />
               ))}
             </div>

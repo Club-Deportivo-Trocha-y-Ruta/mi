@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  currentSeason,
   formatDate,
   formatDateMedium,
   formatDateShort,
@@ -236,5 +237,38 @@ describe("formatRelativeDay", () => {
 
   it("devuelve string vacío para string vacío", () => {
     expect(formatRelativeDay("")).toBe("");
+  });
+});
+
+describe("currentSeason", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("usa el año en CLUB_TIMEZONE (Bogotá) y no el año naive de new Date().getFullYear()", () => {
+    // 2027-01-01T02:00:00Z = 2026-12-31 21:00 en Bogotá (UTC-5): en el club
+    // todavía es 2026, aunque un cálculo naive con la TZ del runtime (este
+    // entorno de pruebas corre en UTC) ya reportaría 2027.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2027-01-01T02:00:00Z"));
+
+    expect(new Date().getFullYear()).toBe(2027); // control: confirma el cruce naive de año
+    expect(currentSeason()).toBe(2026);
+  });
+
+  it("no cruza de año cuando Bogotá y UTC todavía coinciden (caso de control)", () => {
+    // 2025-12-31T23:30:00Z = 2025-12-31 18:30 en Bogotá: mismo año en ambos,
+    // caso de control sin cruce para complementar el anterior.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-12-31T23:30:00Z"));
+
+    expect(currentSeason()).toBe(2025);
+  });
+
+  it("devuelve el año en curso lejos de cualquier cruce de zona horaria", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
+
+    expect(currentSeason()).toBe(2026);
   });
 });

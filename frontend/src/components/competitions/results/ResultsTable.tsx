@@ -637,7 +637,7 @@ function ResultRow({
                           ? "text-blue-600 hover:bg-blue-50"
                           : "text-mid-gray hover:bg-charcoal/8 hover:text-charcoal",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-                        "min-h-[36px] min-w-[36px]",
+                        "min-h-[48px] min-w-[48px]",
                       )}
                       aria-label={
                         row.coach_note

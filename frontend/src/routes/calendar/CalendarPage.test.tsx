@@ -29,6 +29,39 @@ vi.mock("@/store/auth.store", () => ({
     }),
 }));
 
+// useNavigate is mocked (partial mock — MemoryRouter/Link stay real) so the
+// handleDateClick regression test can assert on the navigation call.
+const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }));
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
+// CalendarShell wraps FullCalendar, whose dateClick is driven by real pointer
+// drag hit-testing against DOM layout geometry — unavailable in jsdom (verified:
+// userEvent.click() on a real FullCalendar `[data-date]` cell never fires
+// onDateClick). CalendarShell's real FullCalendar rendering is already covered
+// by its own dedicated CalendarShell.test.tsx, so stubbing it here to expose a
+// clickable "day" trades no coverage — it just moves the interaction assertion
+// to the layer that can actually observe it.
+vi.mock("@/components/calendar/CalendarShell", () => ({
+  CalendarShell: ({
+    onDateClick,
+  }: {
+    onDateClick: (dateStr: string) => void;
+  }) => (
+    <div data-testid="calendar-shell">
+      <button type="button" onClick={() => onDateClick("2026-07-15")}>
+        Simular clic en día vacío
+      </button>
+    </div>
+  ),
+}));
+
 import { useCalendarEvents, useCalendarEvent, useCancelCalendarEvent, useDeleteCalendarEventPermanent } from "@/api/calendar";
 import { CalendarPage } from "./CalendarPage";
 import { makeCalendarListItem } from "@/test/msw/calendarHandlers";
@@ -64,6 +97,7 @@ function renderPage() {
 
 describe("CalendarPage", () => {
   beforeEach(() => {
+    mockNavigate.mockClear();
     vi.mocked(useCancelCalendarEvent).mockReturnValue(
       noopMutation as unknown as ReturnType<typeof useCancelCalendarEvent>,
     );
@@ -108,12 +142,57 @@ describe("CalendarPage", () => {
       data: undefined,
       isLoading: false,
       isError: true,
+      error: new Error("boom"),
+      refetch: vi.fn(),
     } as unknown as ReturnType<typeof useCalendarEvents>);
 
     renderPage();
     expect(
       screen.getByText(/No se pudieron cargar los eventos/i),
     ).toBeInTheDocument();
+  });
+
+  it("retries the events query when 'Reintentar' is clicked", async () => {
+    const user = userEvent.setup();
+    const refetch = vi.fn();
+    vi.mocked(useCalendarEvents).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("boom"),
+      refetch,
+    } as unknown as ReturnType<typeof useCalendarEvents>);
+
+    renderPage();
+
+    const retryButton = screen.getByRole("button", { name: /Reintentar/i });
+    await user.click(retryButton);
+
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the cold-start 'waking' copy and tone instead of the error tone when the failure looks like a cold start", () => {
+    vi.mocked(useCalendarEvents).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("Network Error"),
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useCalendarEvents>);
+
+    renderPage();
+
+    // Cold start swaps in ErrorState's friendly "waking up" copy instead of the
+    // calendar-specific error copy, and renders role=status (not role=alert)
+    // with the warm/warning tone rather than the danger/red error tone.
+    expect(screen.getByText(/La aplicación está iniciando/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No se pudieron cargar los eventos/i)).not.toBeInTheDocument();
+
+    const status = screen.getByRole("status");
+    expect(status).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(status.className).toContain("warning");
+    expect(status.className).not.toContain("danger");
   });
 
   it("renders FullCalendar when data is available", async () => {
@@ -185,5 +264,24 @@ describe("CalendarPage", () => {
     renderPage();
     // Filter bar contains event type buttons
     expect(screen.getByText("Entrenamiento")).toBeInTheDocument();
+  });
+
+  it("navigates to the new-event form with the clicked date when an empty day is clicked", async () => {
+    const user = userEvent.setup();
+    vi.mocked(useCalendarEvents).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useCalendarEvents>);
+
+    renderPage();
+
+    await user.click(
+      screen.getByRole("button", { name: /Simular clic en día vacío/i }),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      "/calendar/events/new?date=2026-07-15",
+    );
   });
 });

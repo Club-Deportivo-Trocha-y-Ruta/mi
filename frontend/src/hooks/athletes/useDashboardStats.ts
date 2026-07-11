@@ -26,5 +26,6 @@ export function useDashboardStats() {
     phvTotal,
     isLoading: alertsQuery.isPending,
     isError: alertsQuery.isError,
+    refetch: alertsQuery.refetch,
   };
 }

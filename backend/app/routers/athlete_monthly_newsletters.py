@@ -32,9 +32,10 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
@@ -58,6 +59,8 @@ from app.schemas.athlete_newsletter import (
     AthleteNewsletterRead,
     AttachInsightsRequest,
     AttachInsightsResponse,
+    NewsletterStatusSummary,
+    NewsletterStatusSummaryItem,
 )
 from app.services.permissions import user_club_role
 
@@ -65,11 +68,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 clubs_router = APIRouter()
+training_router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
 # Helpers internos
 # ---------------------------------------------------------------------------
+
+
+def _coach_club_ids(user: User) -> set[int]:
+    return {m.club_id for m in user.club_memberships if m.role_in_club == ClubRole.coach}
 
 
 async def _verify_coach_athlete_access(
@@ -840,3 +848,100 @@ async def attach_insights(
         selected_race_insight_ids=nl.selected_race_insight_ids or [],
         created=created,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/training/athlete-newsletters/summary
+# ---------------------------------------------------------------------------
+
+
+def _summarize_newsletter_status(
+    status_value: NewsletterStatus | None,
+) -> Literal["none", "draft", "sent"]:
+    """Colapsa el estado completo del boletín en los 3 estados públicos del resumen.
+
+    - Sin fila (status_value=None) -> "none": el atleta aún no tiene boletín
+      para el periodo.
+    - sent / outdated -> "sent": 'outdated' solo se alcanza a partir de
+      'sent' (ver app/services/race/run_staleness.py, que solo marca
+      outdated boletines con status==sent) y sent_at permanece poblado en
+      ambos casos.
+    - draft / approved / failed -> "draft": todavía no llegó a los padres.
+      El dashboard ya agrupa 'failed' junto con 'draft' para la acción
+      "regenerar" (ver frontend AthleteNewslettersDashboardPage: canRegenerate).
+    """
+    if status_value is None:
+        return "none"
+    if status_value in (NewsletterStatus.sent, NewsletterStatus.outdated):
+        return "sent"
+    return "draft"
+
+
+@training_router.get(
+    "/athlete-newsletters/summary",
+    response_model=NewsletterStatusSummary,
+    tags=["athlete-newsletters"],
+)
+async def get_newsletter_status_summary(
+    year: int = Query(..., ge=2020, le=2100, description="Año del periodo."),
+    month: int = Query(..., ge=1, le=12, description="Mes del periodo (1=enero)."),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> NewsletterStatusSummary:
+    """Resumen de estado del boletín mensual por atleta activo, para un periodo dado.
+
+    Reemplaza el fan-out de una petición por atleta (una por tarjeta en el
+    dashboard) por una única respuesta de tamaño constante: exactamente un
+    item por atleta activo en el alcance del usuario, obtenido vía una sola
+    query SQL con LEFT JOIN (sin queries por atleta).
+
+    - Coach: alcance limitado a sus propios clubes (rol coach en
+      club_memberships, mismo patrón que app/routers/alerts.py). Sin clubes
+      asignados -> items=[] (no se consulta la DB).
+    - Admin: todos los clubes, sin filtro.
+    - status='none' si el atleta no tiene boletín para (year, month).
+    """
+    club_filter = None
+    if current_user.role != UserRole.admin:
+        coach_clubs = _coach_club_ids(current_user)
+        if not coach_clubs:
+            return NewsletterStatusSummary(year=year, month=month, items=[])
+        club_filter = Athlete.club_id.in_(coach_clubs)
+
+    stmt = (
+        select(
+            Athlete.id,
+            AthleteMonthlyNewsletter.id,
+            AthleteMonthlyNewsletter.status,
+            AthleteMonthlyNewsletter.created_at,
+            AthleteMonthlyNewsletter.sent_at,
+        )
+        .select_from(Athlete)
+        .outerjoin(
+            AthleteMonthlyNewsletter,
+            and_(
+                AthleteMonthlyNewsletter.athlete_id == Athlete.id,
+                AthleteMonthlyNewsletter.year == year,
+                AthleteMonthlyNewsletter.month == month,
+            ),
+        )
+        .order_by(Athlete.id)
+    )
+    if club_filter is not None:
+        stmt = stmt.where(club_filter)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    items = [
+        NewsletterStatusSummaryItem(
+            athlete_id=athlete_id,
+            newsletter_id=newsletter_id,
+            status=_summarize_newsletter_status(nl_status),
+            generated_at=created_at,
+            sent_at=sent_at,
+        )
+        for athlete_id, newsletter_id, nl_status, created_at, sent_at in rows
+    ]
+
+    return NewsletterStatusSummary(year=year, month=month, items=items)

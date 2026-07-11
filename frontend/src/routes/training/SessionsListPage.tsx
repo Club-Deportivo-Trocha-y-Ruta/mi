@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
 import { SessionFiltersBar } from "@/components/training/SessionFiltersBar";
 import { SessionsTable } from "@/components/training/SessionsTable";
@@ -68,9 +69,10 @@ export function SessionsListPage() {
       )}
 
       {sessionsQuery.isError && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          No se pudo cargar la lista de sesiones.
-        </p>
+        <ErrorState
+          message="No se pudo cargar la lista de sesiones."
+          onRetry={() => void sessionsQuery.refetch()}
+        />
       )}
 
       {!sessionsQuery.isLoading && !sessionsQuery.isError && items.length === 0 && (

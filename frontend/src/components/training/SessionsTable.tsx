@@ -58,7 +58,7 @@ export function SessionsTable({
                   <p className="truncate text-base font-medium text-charcoal">
                     {session.technical_focus}
                   </p>
-                  <p className="mt-0.5 text-sm text-mid-gray">
+                  <p className="mt-0.5 text-sm text-text-disclaimer">
                     {formatDate(session.scheduled_date)} · {formatTime(session.scheduled_start_time)}
                   </p>
                   <p className="mt-0.5 truncate text-sm text-mid-gray">{session.location}</p>
@@ -164,7 +164,7 @@ export function SessionsTable({
                 <td className="px-4 py-3 text-charcoal">
                   {formatDate(session.scheduled_date)}
                 </td>
-                <td className="px-4 py-3 text-mid-gray">
+                <td className="px-4 py-3 text-text-disclaimer">
                   {formatTime(session.scheduled_start_time)}
                 </td>
                 <td className="max-w-[200px] truncate px-4 py-3 font-medium text-charcoal">

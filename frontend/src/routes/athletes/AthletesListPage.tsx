@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import { getAthlete } from "@/api/athletes";
 import { AthletesTable, type AthleteRow } from "@/components/athletes/AthletesTable";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useAuthStore } from "@/store/auth.store";
@@ -99,12 +100,14 @@ export function AthletesListPage() {
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Buscar por nombre..."
+          aria-label="Buscar por nombre"
           className={inputSelectClass}
           style={inputSelectStyle}
         />
         <select
           value={category}
           onChange={(event) => setCategory(event.target.value)}
+          aria-label="Categoría"
           className={inputSelectClass}
           style={inputSelectStyle}
         >
@@ -117,6 +120,7 @@ export function AthletesListPage() {
         <select
           value={phv}
           onChange={(event) => setPhv(event.target.value as "Todos" | MaturationStatus)}
+          aria-label="Estado PHV"
           className={inputSelectClass}
           style={inputSelectStyle}
         >
@@ -141,9 +145,10 @@ export function AthletesListPage() {
 
       {/* Error */}
       {athletesQuery.isError ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          No se pudo cargar la lista de atletas.
-        </p>
+        <ErrorState
+          message="No se pudo cargar la lista de atletas."
+          onRetry={() => void athletesQuery.refetch()}
+        />
       ) : null}
 
       {/* Empty state */}
