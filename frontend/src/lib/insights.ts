@@ -104,6 +104,9 @@ export function getV2Preview(summaryText: string): string {
 // Etiquetas de enums — reutilizables en lista y hero card
 // ---------------------------------------------------------------------------
 
+// "Válida N" / "Cto. Departamental" / "Resumen de temporada" sentence label.
+// Legacy exception: branches on the raw sequence number because the AI-insights
+// payload (race/ai pipeline) does not yet expose series_kind.
 export function validaLabel(num: number | null | undefined): string {
   if (num === null || num === undefined) return "—";
   if (num === 0) return "Resumen de temporada";

@@ -518,7 +518,20 @@ describe("AthleteDetailPage — refactor Opción C", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 7. Estados de carga y error
+  // 7. Tab Progreso — visible en la barra de tabs (sin gating condicional)
+  // -------------------------------------------------------------------------
+
+  describe("Tab Progreso", () => {
+    it("muestra el tab Progreso en la barra de tabs", async () => {
+      renderPage();
+      await screen.findByTestId("athlete-info-card");
+      expect(screen.getByTestId("athlete-tab-progreso")).toBeInTheDocument();
+      expect(screen.getByText("Progreso")).toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. Estados de carga y error
   // -------------------------------------------------------------------------
 
   describe("Estados de carga y error", () => {

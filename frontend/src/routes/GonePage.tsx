@@ -11,7 +11,7 @@ import { Link } from "react-router-dom";
  * Props opcionales para personalizar el destino sugerido.
  */
 export function GonePage({
-  to = "/competitions/insights",
+  to = "/competitions",
   toLabel = "Ir a Análisis IA",
 }: {
   to?: string;

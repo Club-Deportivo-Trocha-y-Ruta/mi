@@ -5,7 +5,7 @@
  * 301-style (<Navigate replace>) que apuntan a los equivalentes dentro del
  * módulo unificado /competitions/*:
  *
- *   - /coach/race-analysis          → /competitions/insights
+ *   - /coach/race-analysis          → /competitions
  *   - /training/races/:id/club-insights → /competitions/:id?tab=insights
  *
  * Wave F cambiará estos redirects a GonePage (410) definitivo.
@@ -30,7 +30,7 @@ function renderAt(initialPath: string) {
         {/* Legacy routes — Wave B redirects */}
         <Route
           path="/coach/race-analysis"
-          element={<Navigate to="/competitions/insights" replace />}
+          element={<Navigate to="/competitions" replace />}
         />
         <Route
           path="/training/races/:raceEventId/club-insights"
@@ -38,8 +38,8 @@ function renderAt(initialPath: string) {
         />
         {/* Destinos canónicos */}
         <Route
-          path="/competitions/insights"
-          element={<div data-testid="insights-hub">Hub análisis IA</div>}
+          path="/competitions"
+          element={<div data-testid="competitions-list">Listado de competencias</div>}
         />
         <Route
           path="/competitions/:id"
@@ -51,9 +51,9 @@ function renderAt(initialPath: string) {
 }
 
 describe("Redirects de transición Wave B — rutas legacy IA", () => {
-  it("/coach/race-analysis redirige al hub /competitions/insights", () => {
+  it("/coach/race-analysis redirige a /competitions", () => {
     renderAt("/coach/race-analysis");
-    expect(screen.getByTestId("insights-hub")).toBeInTheDocument();
+    expect(screen.getByTestId("competitions-list")).toBeInTheDocument();
     expect(screen.queryByText(/Esta sección se movió/i)).not.toBeInTheDocument();
   });
 

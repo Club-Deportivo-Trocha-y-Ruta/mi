@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { AssessmentWizard } from "@/components/anxiety/AssessmentWizard";
 import { GroupPanel } from "@/components/anxiety/GroupPanel";
@@ -22,7 +23,9 @@ const TABS: { id: Tab; label: string }[] = [
 
 /** Dashboard del módulo de ansiedad competitiva (coach/admin). */
 export function AnxietyDashboardPage() {
-  const [tab, setTab] = useState<Tab>("crear");
+  const [searchParams] = useSearchParams();
+  const athleteFromUrl = Number(searchParams.get("athlete")) || 0;
+  const [tab, setTab] = useState<Tab>(athleteFromUrl > 0 ? "individual" : "crear");
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
@@ -58,17 +61,19 @@ export function AnxietyDashboardPage() {
       </div>
 
       {tab === "crear" && <AssessmentWizard />}
-      {tab === "individual" && <IndividualTab />}
+      {tab === "individual" && <IndividualTab initialAthleteId={athleteFromUrl} />}
       {tab === "grupo" && <GroupTab />}
       {tab === "importar" && <ImportDialog />}
     </div>
   );
 }
 
-function IndividualTab() {
-  const [athleteId, setAthleteId] = useState("");
+function IndividualTab({ initialAthleteId = 0 }: { initialAthleteId?: number }) {
+  const [athleteId, setAthleteId] = useState(
+    initialAthleteId > 0 ? String(initialAthleteId) : "",
+  );
   const [instrument, setInstrument] = useState<AnxietyInstrumentType>("csai2r");
-  const [submittedId, setSubmittedId] = useState(0);
+  const [submittedId, setSubmittedId] = useState(initialAthleteId);
   const series = useAthleteSeries(submittedId, instrument, submittedId > 0);
   const athletesQuery = useAthletes();
   const athletes = athletesQuery.data?.items ?? [];

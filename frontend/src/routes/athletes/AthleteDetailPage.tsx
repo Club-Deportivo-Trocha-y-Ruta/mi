@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -37,6 +37,8 @@ import { AthleteNewslettersTabPanel } from "@/components/training/AthleteNewslet
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { formatDateMedium } from "@/lib/datetime";
@@ -51,7 +53,26 @@ import {
 import { useAuthStore } from "@/store/auth.store";
 import { MaturationStatus, UserRole } from "@/types/enums";
 
-type Tab = "info" | "anthropometry" | "growth" | "ai_analysis" | "newsletters" | "activities";
+// Progreso (Técnica/Fuerza) — tableros pesados (formulario + historial) → lazy-load.
+const SkillProgressBoard = lazy(() =>
+  import("@/components/technique/SkillProgressBoard").then((m) => ({
+    default: m.SkillProgressBoard,
+  })),
+);
+const ProgressNotesBoard = lazy(() =>
+  import("@/components/strength/ProgressNotesBoard").then((m) => ({
+    default: m.ProgressNotesBoard,
+  })),
+);
+
+type Tab =
+  | "info"
+  | "anthropometry"
+  | "growth"
+  | "ai_analysis"
+  | "newsletters"
+  | "activities"
+  | "progreso";
 
 const VALID_TABS: readonly Tab[] = [
   "info",
@@ -60,6 +81,7 @@ const VALID_TABS: readonly Tab[] = [
   "ai_analysis",
   "newsletters",
   "activities",
+  "progreso",
 ] as const;
 
 function parseTabParam(raw: string | null): Tab | null {
@@ -381,6 +403,87 @@ function StravaTabPanel({ athleteId }: { athleteId: number }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Skeleton de suspense mientras carga el chunk lazy (Progreso)
+// ---------------------------------------------------------------------------
+
+function BoardSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando tablero de progreso…"
+      className="space-y-4"
+    >
+      <div className="space-y-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-5 w-24 rounded-full" />
+          </div>
+        ))}
+      </div>
+      <Skeleton className="h-36 w-full rounded-xl" />
+      <Skeleton className="h-28 w-full rounded-xl" />
+    </div>
+  );
+}
+
+/**
+ * ProgresoTabPanel — consolida los tableros de progreso técnico y de fuerza
+ * de un deportista detrás de un toggle interno Técnica/Fuerza, más un enlace
+ * puntual al módulo de ansiedad competitiva.
+ *
+ * Presentación únicamente: reutiliza SkillProgressBoard/ProgressNotesBoard
+ * sin modificarlos y no agrega lógica de fetching nueva. El toggle interno
+ * es estado local (no se sincroniza con la URL) — solo la pestaña externa
+ * ("progreso") se sincroniza vía updateTab/searchParams.
+ */
+function ProgresoTabPanel({ athleteId }: { athleteId: number }) {
+  const [board, setBoard] = useState<"tecnica" | "fuerza">("tecnica");
+  return (
+    <div className="space-y-4">
+      <ToggleGroup
+        type="single"
+        value={board}
+        onValueChange={(v) => {
+          if (v) setBoard(v as "tecnica" | "fuerza");
+        }}
+        className="flex flex-wrap gap-1.5"
+        aria-label="Tipo de progreso"
+      >
+        <ToggleGroupItem
+          value="tecnica"
+          aria-label="Técnica"
+          className="min-h-[48px] rounded-lg border border-[rgba(34,42,53,0.12)] px-4 py-1.5 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+        >
+          Técnica
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="fuerza"
+          aria-label="Fuerza"
+          className="min-h-[48px] rounded-lg border border-[rgba(34,42,53,0.12)] px-4 py-1.5 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+        >
+          Fuerza
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <Suspense fallback={<BoardSkeleton />}>
+        {board === "tecnica" ? (
+          <SkillProgressBoard athleteId={athleteId} />
+        ) : (
+          <ProgressNotesBoard athleteId={athleteId} />
+        )}
+      </Suspense>
+      <Link
+        to={`/anxiety?athlete=${athleteId}`}
+        className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+      >
+        Ver ansiedad competitiva
+      </Link>
+    </div>
+  );
+}
+
 export function AthleteDetailPage() {
   const { id } = useParams();
   const athleteId = Number(id);
@@ -620,6 +723,16 @@ export function AthleteDetailPage() {
           Actividades
         </button>
 
+        <button
+          type="button"
+          className={tabClasses("progreso")}
+          onClick={() => updateTab("progreso")}
+          data-testid="athlete-tab-progreso"
+        >
+          <Activity size={14} />
+          Progreso
+        </button>
+
         {/* TODO: Este botón será eliminado cuando se implemente el cron job mensual automático.
             Ver: backend/app/routers/reports.py - POST /athletes/{id}/report/email */}
         <div className="ml-auto flex flex-col items-end gap-1">
@@ -785,6 +898,9 @@ export function AthleteDetailPage() {
 
       {/* Tab content — Actividades (Strava) */}
       {activeTab === "activities" && <StravaTabPanel athleteId={athleteId} />}
+
+      {/* Tab content — Progreso (Técnica / Fuerza) */}
+      {activeTab === "progreso" && <ProgresoTabPanel athleteId={athleteId} />}
 
       {/* Tab content — Crecimiento */}
       {activeTab === "growth" && records.length > 0 && (

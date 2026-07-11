@@ -60,6 +60,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { formatDateTimeCompact } from "@/lib/datetime";
+import { validaLabel } from "@/lib/insights";
 import { useRunStatus } from "@/hooks/ai/useRaceRun";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import { useAttachInsightsToNewsletter } from "@/api/athleteNewsletters";
@@ -81,13 +82,6 @@ function confidenceText(c: InsightConfidence): string {
   if (c === "high") return "Confianza alta";
   if (c === "medium") return "Confianza media";
   return "Confianza baja";
-}
-
-function validaLabel(num: number | null | undefined): string {
-  if (num === null || num === undefined) return "agregado";
-  if (num === 0) return "resumen de temporada";
-  if (num === 99) return "Cto. Departamental";
-  return `Válida ${num}`;
 }
 
 interface AthleteAIAnalysisTabProps {

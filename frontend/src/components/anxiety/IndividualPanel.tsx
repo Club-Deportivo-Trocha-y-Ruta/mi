@@ -1,6 +1,9 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 
-import type { AthleteSeries } from "@/types/anxiety.types";
+import type { AthleteSeries, InterpretationResponse } from "@/types/anxiety.types";
+
+import { AnalyzeButton } from "./AnalyzeButton";
+import { InterpretationPanel } from "./InterpretationPanel";
 
 // Recharts es pesado → lazy-load para no penalizar el bundle inicial.
 const SeriesChart = lazy(() =>
@@ -19,6 +22,7 @@ function fmt(v: number | null): string {
 export function IndividualPanel({ series }: IndividualPanelProps) {
   const latest = series.points[series.points.length - 1] ?? null;
   const flags = latest?.flags ?? [];
+  const [result, setResult] = useState<InterpretationResponse | null>(null);
 
   return (
     <section
@@ -79,6 +83,17 @@ export function IndividualPanel({ series }: IndividualPanelProps) {
               <li key={i}>{f}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {latest && latest.cognitive !== null && (
+        <div className="mt-4">
+          <AnalyzeButton assessmentId={latest.assessment_id} onAnalyzed={setResult} />
+        </div>
+      )}
+      {result && (
+        <div className="mt-4">
+          <InterpretationPanel interpretation={result.interpretation} source={result.source} />
         </div>
       )}
     </section>

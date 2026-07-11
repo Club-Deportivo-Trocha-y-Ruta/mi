@@ -54,6 +54,13 @@ const SRC_DIR = path.resolve(process.cwd(), "src"); // frontend/src
 const REMOVED_MODULE_FRAGMENTS = [
   "RaceAnalysisPage",
   "ClubInsightsByRacePage",
+  "InsightsHubPage",
+  "ClubInsightsPage",
+  "AthleteInsightsPage",
+  "ComposerPage",
+  "SessionBuilderPage",
+  "SessionAssembler",
+  "TemplateLibraryPage",
 ];
 
 // ---------------------------------------------------------------------------
@@ -107,7 +114,7 @@ function renderLegacyPath(initialPath: string) {
         {/* Wave B redirects — must remain active during transition */}
         <Route
           path="/coach/race-analysis"
-          element={<Navigate to="/competitions/insights" replace />}
+          element={<Navigate to="/competitions" replace />}
         />
         <Route
           path="/training/races/:raceEventId/club-insights"
@@ -115,8 +122,8 @@ function renderLegacyPath(initialPath: string) {
         />
         {/* Canonical destinations */}
         <Route
-          path="/competitions/insights"
-          element={<div data-testid="insights-hub">Hub insights</div>}
+          path="/competitions"
+          element={<div data-testid="competitions-hub">Competencias</div>}
         />
         <Route
           path="/competitions/:id"
@@ -133,10 +140,10 @@ function renderLegacyPath(initialPath: string) {
 }
 
 describe("T049 — Legacy redirect routes still land at canonical destinations (not 410)", () => {
-  it("/coach/race-analysis redirige a /competitions/insights (no GonePage)", () => {
+  it("/coach/race-analysis redirige a /competitions (no GonePage)", () => {
     renderLegacyPath("/coach/race-analysis");
     // Must reach the canonical hub.
-    expect(screen.getByTestId("insights-hub")).toBeInTheDocument();
+    expect(screen.getByTestId("competitions-hub")).toBeInTheDocument();
     // Must NOT show the GonePage "moved" text (410 flip is not yet done).
     expect(screen.queryByText(/Esta sección se movió/i)).not.toBeInTheDocument();
     // Must NOT fall through to 404.

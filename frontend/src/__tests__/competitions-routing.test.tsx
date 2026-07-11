@@ -4,7 +4,8 @@
  * T021: Exactly one "Competencias" nav entry for coach; legacy paths redirect
  *       to the canonical destinations inside /competitions/*.
  * T022: Parent role cannot see the insights nav entry, and hitting
- *       /competitions/insights/* is blocked (redirect via ProtectedRoute).
+ *       coach/admin-only routes like /competitions or /technique is
+ *       blocked (redirect via ProtectedRoute).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -89,7 +90,7 @@ function renderLegacyRoutes(initialPath: string) {
         {/* Wave B redirects */}
         <Route
           path="/coach/race-analysis"
-          element={<Navigate to="/competitions/insights" replace />}
+          element={<Navigate to="/competitions" replace />}
         />
         <Route
           path="/training/races/:raceEventId/club-insights"
@@ -97,8 +98,8 @@ function renderLegacyRoutes(initialPath: string) {
         />
         {/* Canonical destinations */}
         <Route
-          path="/competitions/insights"
-          element={<div data-testid="insights-hub">Hub insights</div>}
+          path="/competitions"
+          element={<div data-testid="competitions-list">Lista competencias</div>}
         />
         <Route
           path="/competitions/:id"
@@ -174,9 +175,9 @@ describe("T021 — Sidebar: entrada única Competencias (admin)", () => {
 });
 
 describe("T021 — Legacy paths redirigen al destino canónico", () => {
-  it("/coach/race-analysis monta el hub /competitions/insights", () => {
+  it("/coach/race-analysis monta la lista /competitions", () => {
     renderLegacyRoutes("/coach/race-analysis");
-    expect(screen.getByTestId("insights-hub")).toBeInTheDocument();
+    expect(screen.getByTestId("competitions-list")).toBeInTheDocument();
     expect(screen.queryByTestId("not-found")).not.toBeInTheDocument();
   });
 
@@ -195,7 +196,7 @@ describe("T021 — Legacy paths redirigen al destino canónico", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T022 — Parent: no insights nav entry + /competitions/insights/* blocked
+// T022 — Parent: no insights nav entry + coach/admin-only routes blocked
 // ---------------------------------------------------------------------------
 
 describe("T022 — Parent: sin entrada de insights en sidebar", () => {
@@ -227,7 +228,7 @@ describe("T022 — Parent: sin entrada de insights en sidebar", () => {
   });
 });
 
-describe("T022 — Parent: /competitions/insights/* bloqueado por ProtectedRoute", () => {
+describe("T022 — Parent: /competitions y /technique bloqueados por ProtectedRoute", () => {
   /**
    * ProtectedRoute redirige a ROLE_FALLBACKS[parent] = "/my-athletes"
    * cuando allowedRoles = [coach, admin] y el usuario es parent.
@@ -239,7 +240,7 @@ describe("T022 — Parent: /competitions/insights/* bloqueado por ProtectedRoute
     vi.clearAllMocks();
   });
 
-  function renderProtectedInsights(role: UserRole, path: string) {
+  function renderProtectedRoutes(role: UserRole, path: string) {
     vi.mocked(useAuthStore).mockImplementation((selector: any) =>
       selector({
         user: makeUser(role),
@@ -275,26 +276,18 @@ describe("T022 — Parent: /competitions/insights/* bloqueado por ProtectedRoute
         <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route
-              path="/competitions/insights"
+              path="/competitions"
               element={
                 <InsightsGuard>
-                  <div data-testid="insights-content">Insights</div>
+                  <div data-testid="competitions-content">Competencias</div>
                 </InsightsGuard>
               }
             />
             <Route
-              path="/competitions/insights/club"
+              path="/technique"
               element={
                 <InsightsGuard>
-                  <div data-testid="insights-club">Club insights</div>
-                </InsightsGuard>
-              }
-            />
-            <Route
-              path="/competitions/insights/athletes/:id"
-              element={
-                <InsightsGuard>
-                  <div data-testid="insights-athlete">Athlete insights</div>
+                  <div data-testid="technique-content">Técnica</div>
                 </InsightsGuard>
               }
             />
@@ -308,36 +301,29 @@ describe("T022 — Parent: /competitions/insights/* bloqueado por ProtectedRoute
     );
   }
 
-  it("parent en /competitions/insights es redirigido (no ve contenido de insights)", () => {
-    renderProtectedInsights(UserRole.parent, "/competitions/insights");
-    expect(screen.queryByTestId("insights-content")).not.toBeInTheDocument();
+  it("parent en /competitions es redirigido (no ve contenido de competencias)", () => {
+    renderProtectedRoutes(UserRole.parent, "/competitions");
+    expect(
+      screen.queryByTestId("competitions-content"),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("my-athletes")).toBeInTheDocument();
   });
 
-  it("parent en /competitions/insights/club es redirigido", () => {
-    renderProtectedInsights(UserRole.parent, "/competitions/insights/club");
-    expect(screen.queryByTestId("insights-club")).not.toBeInTheDocument();
+  it("parent en /technique es redirigido", () => {
+    renderProtectedRoutes(UserRole.parent, "/technique");
+    expect(screen.queryByTestId("technique-content")).not.toBeInTheDocument();
     expect(screen.getByTestId("my-athletes")).toBeInTheDocument();
   });
 
-  it("parent en /competitions/insights/athletes/:id es redirigido", () => {
-    renderProtectedInsights(
-      UserRole.parent,
-      "/competitions/insights/athletes/5",
-    );
-    expect(screen.queryByTestId("insights-athlete")).not.toBeInTheDocument();
-    expect(screen.getByTestId("my-athletes")).toBeInTheDocument();
-  });
-
-  it("coach en /competitions/insights puede acceder (no redirigido)", () => {
-    renderProtectedInsights(UserRole.coach, "/competitions/insights");
-    expect(screen.getByTestId("insights-content")).toBeInTheDocument();
+  it("coach en /competitions puede acceder (no redirigido)", () => {
+    renderProtectedRoutes(UserRole.coach, "/competitions");
+    expect(screen.getByTestId("competitions-content")).toBeInTheDocument();
     expect(screen.queryByTestId("my-athletes")).not.toBeInTheDocument();
   });
 
-  it("admin en /competitions/insights puede acceder (no redirigido)", () => {
-    renderProtectedInsights(UserRole.admin, "/competitions/insights");
-    expect(screen.getByTestId("insights-content")).toBeInTheDocument();
+  it("admin en /competitions puede acceder (no redirigido)", () => {
+    renderProtectedRoutes(UserRole.admin, "/competitions");
+    expect(screen.getByTestId("competitions-content")).toBeInTheDocument();
     expect(screen.queryByTestId("my-athletes")).not.toBeInTheDocument();
   });
 });
