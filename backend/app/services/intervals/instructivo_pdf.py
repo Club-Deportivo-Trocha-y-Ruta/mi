@@ -5,10 +5,16 @@ Wrapper sobre ``DocumentGenerator`` (mismo patrón que
 ``services/notification/athlete_newsletter_pdf.py``, US3/FR-010/FR-011):
 
   1. Armar el contexto que exige ``DocumentTemplate.SESSION_INSTRUCTIVO``
-     (``templates/documents/pdf/session_instructivo.html``, T027) — reusa
-     ``flatten_blocks`` (``services/intervals/structures.py``) para expandir
-     los grupos de repetición en la tabla de pasos, con el mismo orden de
-     ejecución que ve el motor de matching (D5, research.md).
+     (``templates/documents/pdf/session_instructivo.html``, T027) — la tabla
+     de bloques se arma a partir de ``structure.blocks`` **sin aplanar**
+     (bloques distintos, en orden de ``position``), porque así es como se
+     configura realmente el dispositivo: un grupo de repetición se carga una
+     sola vez y el ciclocomputador (o el atleta, con el botón de vuelta) lo
+     repite. Se propaga ``repeat_group``/``repeat_count`` por bloque para que
+     la plantilla anote "Se repite ×N" una sola vez por grupo, en vez de
+     expandir cada iteración como fila (``flatten_blocks`` sigue existiendo
+     en ``services/intervals/structures.py`` para el motor de matching, pero
+     este wrapper ya no lo usa).
   2. Delegar el render PDF (Jinja2 + WeasyPrint, despachado a un executor) en
      ``DocumentGenerator.generate``.
 
@@ -38,7 +44,6 @@ from app.schemas.notification import (
     DocumentTemplate,
     GeneratedDocument,
 )
-from app.services.intervals.structures import flatten_blocks
 from app.services.notification.document_generator import DocumentGenerator
 from app.services.utils.dates_es import format_date_es
 
@@ -89,36 +94,30 @@ def _build_session_context(
 
 
 def _build_blocks_context(structure: IntervalStructure) -> list[dict[str, Any]]:
-    """Aplana los bloques (``flatten_blocks``) y arma las filas de la tabla.
+    """Arma las filas de la tabla a partir de los bloques SIN aplanar.
 
-    ``repeat_label`` (ej. "Rep 2 de 4") se deriva de ``repeat_iteration`` del
-    ``FlattenedStep`` más el ``repeat_count`` del bloque de origen — el paso
-    aplanado no retiene ``repeat_count`` porque es un detalle de autoría, no
-    de ejecución (ver docstring de ``FlattenedStep`` en ``structures.py``).
+    A diferencia del motor de matching (que sí necesita la secuencia real de
+    ejecución vía ``flatten_blocks``), el instructivo debe reflejar **cómo se
+    configura el dispositivo**: los bloques de un grupo de repetición se
+    cargan una sola vez, con su ``repeat_count`` como anotación aparte (ej.
+    "Se repite ×2"), no como filas repetidas. Por eso acá se itera
+    ``structure.blocks`` en orden de ``position`` (ya viene ordenado por el
+    eager-load de ``_structure_select()``, pero se reordena de forma
+    defensiva) sin pasar por ``flatten_blocks``.
     """
-    repeat_counts_by_block_id: dict[int | None, int | None] = {
-        block.id: block.repeat_count for block in structure.blocks
-    }
-    steps = flatten_blocks(structure.blocks)
+    ordered = sorted(structure.blocks, key=lambda b: b.position)
 
     rows: list[dict[str, Any]] = []
-    for order, step in enumerate(steps, start=1):
-        repeat_label: str | None = None
-        if step.repeat_iteration is not None:
-            total = repeat_counts_by_block_id.get(step.block_id)
-            repeat_label = (
-                f"Rep {step.repeat_iteration} de {total}"
-                if total
-                else f"Rep {step.repeat_iteration}"
-            )
+    for block in ordered:
         rows.append(
             {
-                "order": order,
-                "block_type": step.block_type,
-                "duration_s": step.planned_duration_s,
-                "target_zone": step.target_zone,
-                "target_cadence_rpm": step.target_cadence_rpm,
-                "repeat_label": repeat_label,
+                "order": block.position,
+                "block_type": _as_str(block.block_type),
+                "duration_s": block.duration_s,
+                "target_zone": _as_str(block.target_zone),
+                "target_cadence_rpm": block.target_cadence_rpm,
+                "repeat_group": block.repeat_group,
+                "repeat_count": block.repeat_count,
             }
         )
     return rows

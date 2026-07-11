@@ -136,7 +136,7 @@
 ## Phase 7: Polish & Cross-Cutting Concerns
 
 - [ ] T035 [P] Run `data-privacy-guard` audit over the full feature surface (models, runner, responses, logs, PDF output) — mandatory constitution gate for athlete-linked data; fix findings (Agente: data-privacy-guard · Modelo: fable)
-- [ ] T036 [P] Add query-count/eager-load assertions for structure+template list endpoints in `backend/tests/intervals/test_perf_queries.py` (mirrors `tests/strength/test_perf_queries.py`; Constitution IV N+1 rule) (Agente: performance-engineer · Modelo: sonnet)
+- [x] T036 [P] Add query-count/eager-load assertions for structure+template list endpoints in `backend/tests/intervals/test_perf_queries.py` (mirrors `tests/strength/test_perf_queries.py`; Constitution IV N+1 rule) (Agente: performance-engineer · Modelo: sonnet)
 - [ ] T037 Execute quickstart.md end-to-end on Docker (all 4 scenarios + privacy audit section) + full `pytest` / `vitest` regression; verify new lazy routes stay ≤150 KB gzip (`npm run build` output) (Agente: qa-engineer · Modelo: sonnet)
 - [x] T038 [P] Update `docs/implementation-status.md` + add feature row to `CLAUDE.md` status table (deploy pending note: run migration `b5c6d7e8f9a0` on Render) (Agente: technical-writer · Modelo: haiku)
 

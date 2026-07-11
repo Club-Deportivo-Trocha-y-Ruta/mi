@@ -26,10 +26,14 @@ Two independent layers, same caveat as feature 024
    ``templates/documents/pdf/session_instructivo.html`` directly to an HTML
    string via Jinja2 (no WeasyPrint at all — mirrors
    ``test_newsletter_pdf_render_html.py``), so it runs in every environment
-   including this one. Asserts the flattened block table (repeat groups
-   expanded, not collapsed), the per-brand configuration steps, and the
-   mandatory "Desactivá la vuelta automática" (auto-lap) step present in the
-   render for all three brands (FR-010/FR-011, D8).
+   including this one. Asserts the block table lists DISTINCT blocks
+   WITHOUT flattening repeat groups (no "Rep 1 de 2"/"Rep 2 de 2" badges —
+   a repeated group is annotated a single time as "Se repite ×N veces"),
+   the per-brand configuration steps (including the iGPSport BCS200 vs.
+   no-editor-model distinction), the mandatory "Desactivá la vuelta
+   automática" (auto-lap) step present in the render for all three brands
+   (FR-010/FR-011, D8), and that the removed "Cómo configurar tu {marca}"
+   heading no longer appears.
 """
 from __future__ import annotations
 
@@ -432,8 +436,10 @@ def _env() -> Environment:
 def _template_context(brand: str) -> dict:
     """Realistic context: a repeat group (work/recovery x2) around
     warmup/cooldown, matching ``_build_blocks_context`` output shape
-    (``services/intervals/instructivo_pdf.py``) — already flattened, in
-    execution order, with ``repeat_label`` set on the grouped steps."""
+    (``services/intervals/instructivo_pdf.py``) — DISTINCT blocks, NOT
+    flattened, in ``position`` order, with ``repeat_group``/``repeat_count``
+    set on the two grouped steps so the template annotates the group once
+    ("Se repite ×2 veces") instead of expanding it into repeated rows."""
     return {
         "brand": brand,
         "session": {
@@ -446,12 +452,10 @@ def _template_context(brand: str) -> dict:
             "target_age_band": "13-15",
         },
         "blocks": [
-            {"order": 1, "block_type": "warmup", "duration_s": 300, "target_zone": "Z1", "target_cadence_rpm": 70, "repeat_label": None},
-            {"order": 2, "block_type": "work", "duration_s": 120, "target_zone": "Z3", "target_cadence_rpm": 85, "repeat_label": "Rep 1 de 2"},
-            {"order": 3, "block_type": "recovery", "duration_s": 60, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_label": "Rep 1 de 2"},
-            {"order": 4, "block_type": "work", "duration_s": 120, "target_zone": "Z3", "target_cadence_rpm": 85, "repeat_label": "Rep 2 de 2"},
-            {"order": 5, "block_type": "recovery", "duration_s": 60, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_label": "Rep 2 de 2"},
-            {"order": 6, "block_type": "cooldown", "duration_s": 300, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_label": None},
+            {"order": 1, "block_type": "warmup", "duration_s": 300, "target_zone": "Z1", "target_cadence_rpm": 70, "repeat_group": None, "repeat_count": None},
+            {"order": 2, "block_type": "work", "duration_s": 120, "target_zone": "Z3", "target_cadence_rpm": 85, "repeat_group": 1, "repeat_count": 2},
+            {"order": 3, "block_type": "recovery", "duration_s": 60, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_group": 1, "repeat_count": 2},
+            {"order": 4, "block_type": "cooldown", "duration_s": 300, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_group": None, "repeat_count": None},
         ],
         "club_name": "Club Ficticio de Prueba",
         "generated_at": "2026-07-15 10:00 COT",
@@ -459,24 +463,41 @@ def _template_context(brand: str) -> dict:
 
 
 class TestInstructivoTemplateRendering:
-    def test_html_contains_flattened_blocks_in_order(self):
-        """Repeat groups are expanded (not collapsed) — 6 real steps, both
-        iterations of the work/recovery group rendered as separate rows."""
+    def test_html_contains_distinct_blocks_not_flattened(self):
+        """Repeat groups are NOT expanded into repeated rows — distinct
+        blocks are listed once each, in ``position`` order, and the
+        work/recovery group is annotated a single time as
+        "Se repite ×N veces" (never as "Rep 1 de 2"/"Rep 2 de 2")."""
         html = _env().get_template(_TEMPLATE).render(**_template_context("garmin"))
 
         assert "Calentamiento" in html
         assert "Vuelta a la calma" in html
-        assert "Rep 1 de 2" in html
-        assert "Rep 2 de 2" in html
-        # Both work rows (5 min 0 s each is wrong — duration is 2 min) present:
-        assert html.count("85 rpm") == 2
-        assert html.count("65 rpm") >= 2  # recovery (x2) + cooldown
+        assert "Rep 1 de 2" not in html
+        assert "Rep 2 de 2" not in html
+        assert "se repite" in html
+        assert "&times;2" in html  # repeat_count = 2, annotated once
+        # The group annotation row itself appears exactly once (the caption
+        # below the table also mentions "se repite" in prose, hence the more
+        # specific substring here rather than a blanket count of "se repite"):
+        assert html.count("Este conjunto de bloques se repite") == 1
+        # Distinct rows only — no flattening, so each target appears once
+        # per its single row (work=85rpm once; recovery + cooldown=65rpm twice):
+        assert html.count("85 rpm") == 1
+        assert html.count("65 rpm") == 2
 
     @pytest.mark.parametrize("brand", ["garmin", "magene", "igpsport"])
     def test_html_desactiva_autolap_appears(self, brand):
         """FR-010/FR-011/D8: the auto-lap step is mandatory for all 3 brands."""
         html = _env().get_template(_TEMPLATE).render(**_template_context(brand))
         assert "Desactivá la vuelta automática" in html
+
+    @pytest.mark.parametrize("brand", ["garmin", "magene", "igpsport"])
+    def test_html_como_configurar_heading_removed(self, brand):
+        """The per-brand "Cómo configurar tu {marca}" <h2> heading was
+        removed from the template — the per-brand instructions still
+        render below, just without that heading."""
+        html = _env().get_template(_TEMPLATE).render(**_template_context(brand))
+        assert "Cómo configurar tu" not in html
 
     def test_html_garmin_specific_steps(self):
         html = _env().get_template(_TEMPLATE).render(**_template_context("garmin"))
@@ -489,8 +510,12 @@ class TestInstructivoTemplateRendering:
         assert "duración fija" in html
 
     def test_html_igpsport_specific_steps(self):
+        """iGPSport support depends on the model: the BCS200 (and other
+        models with a training editor) DOES support loading blocks on the
+        device, unlike the old blanket "no tiene editor" framing."""
         html = _env().get_template(_TEMPLATE).render(**_template_context("igpsport"))
-        assert "no tiene editor de entrenamientos por bloques" in html
+        assert "BCS200" in html
+        assert "sí permite crear el entrenamiento por bloques" in html
         assert "hoja de referencia" in html
 
     def test_html_no_power_watts_mentioned(self):

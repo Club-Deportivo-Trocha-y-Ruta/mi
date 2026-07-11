@@ -16,14 +16,21 @@
                              duration_min: int|None, location: str|None,
                              session_kind: str|None, objectives: str|None,
                              target_age_band: str|None }  # ej. "13-15"
-    blocks        list   — bloques APLANADOS (grupos de repetición ya expandidos),
-                           en orden de ejecución, cada uno:
-                           { order: int,                # posición secuencial (1..n)
+    blocks        list   — bloques DISTINTOS SIN APLANAR (grupos de repetición
+                           NO se expanden en filas repetidas — así es como se
+                           configura el dispositivo), en orden de `position`,
+                           cada uno:
+                           { order: int,                # `position` de autoría (1..n)
                              block_type: str,           # warmup|work|recovery|cooldown
                              duration_s: int,           # duración planificada en segundos
                              target_zone: str,          # Z1..Z5 (zona de FC)
                              target_cadence_rpm: int,   # cadencia objetivo (>=60)
-                             repeat_label: str|None }   # ej. "Rep 2 de 4" (opcional)
+                             repeat_group: int|None,    # id de grupo de repetición (bloques
+                                                         # contiguos que comparten grupo)
+                             repeat_count: int|None }   # veces que se repite el grupo (>=2);
+                                                         # la plantilla lo anota UNA sola vez
+                                                         # por grupo ("Se repite ×N veces"),
+                                                         # nunca como "Rep 1 de 2"
     club_name     str    — nombre del club
     generated_at  str    — fecha/hora de generación (formato legible)
 
@@ -118,7 +125,7 @@
 </table>
 
 {# ====================================================================
-   TABLA DE BLOQUES (aplanada)
+   TABLA DE BLOQUES (bloques distintos, sin aplanar repeticiones)
    ==================================================================== #}
 <h2>Estructura de intervalos</h2>
 
@@ -138,17 +145,15 @@
     {%- set total_s = b.duration_s | int -%}
     {%- set mins = total_s // 60 -%}
     {%- set secs = total_s % 60 -%}
+    {%- set in_group = b.repeat_group is not none -%}
+    {%- set next_block = blocks[loop.index] if not loop.last else none -%}
+    {%- set is_group_end = in_group and (next_block is none or next_block.repeat_group != b.repeat_group) -%}
     <tr>
-      <td>{{ b.order }}</td>
-      <td>
+      <td style="{% if in_group %}border-left: 3pt solid var(--accent-violet); padding-left: 5pt;{% endif %}">
+        {{ b.order }}
+      </td>
+      <td style="{% if in_group %}border-left: 3pt solid var(--accent-violet); padding-left: 5pt;{% endif %}">
         {{ block_type_labels.get(b.block_type, b.block_type | capitalize) }}
-        {% if b.repeat_label %}
-        <span style="display: inline-block; margin-left: 4pt; font-size: 7.5pt;
-                     font-weight: 600; color: var(--accent-violet);
-                     background: #EDE9FE; padding: 1pt 5pt; border-radius: 3pt;">
-          {{ b.repeat_label }}
-        </span>
-        {% endif %}
       </td>
       <td>
         {%- if mins and secs -%}
@@ -162,10 +167,22 @@
       <td>{{ b.target_zone }}</td>
       <td>{{ b.target_cadence_rpm }} rpm</td>
     </tr>
+    {% if is_group_end %}
+    <tr>
+      <td colspan="5" style="border-left: 3pt solid var(--accent-violet);
+                              background: #EDE9FE; color: var(--accent-violet);
+                              font-weight: 700; font-size: 8.5pt;
+                              padding: 3pt 6pt 3pt 5pt;">
+        &#8635; Este conjunto de bloques se repite &times;{{ b.repeat_count }} veces
+      </td>
+    </tr>
+    {% endif %}
     {% endfor %}
   </tbody>
 </table>
 <p class="caption">
+  Los bloques marcados en morado forman un conjunto que se repite las veces indicadas —
+  cargalos una sola vez en el dispositivo, no uno por cada repetición.
   La cadencia objetivo nunca baja de 60 rpm. No se usa potencia (watts) en esta categoría;
   la referencia principal es la zona de frecuencia cardíaca (FC) y la sensación de esfuerzo.
 </p>
@@ -178,7 +195,6 @@
 {# ====================================================================
    CONFIGURACIÓN POR MARCA
    ==================================================================== #}
-<h2>Cómo configurar tu {{ brand_label }}</h2>
 
 {# -------------------- GARMIN -------------------- #}
 {% if brand_key == "garmin" %}
@@ -230,9 +246,34 @@
 {# -------------------- IGPSPORT -------------------- #}
 {% elif brand_key == "igpsport" %}
 <p>
-  Tu iGPSport <strong>no tiene editor de entrenamientos por bloques</strong>, así que
-  esta hoja es tu <strong>hoja de referencia</strong>: seguí la tabla de intervalos
-  mientras pedaleás y marcá cada bloque con el botón de vuelta.
+  El soporte de edición de bloques en iGPSport depende del modelo. Seguí las
+  instrucciones que correspondan a tu dispositivo:
+</p>
+
+<p style="margin: 8pt 0 4pt 0; font-size: 9.5pt; font-weight: 700; color: var(--gray-700);">
+  iGPSport BCS200 (y modelos con editor de entrenamiento)
+</p>
+<p style="margin: 0 0 4pt 0; font-size: 9.5pt; color: var(--gray-700);">
+  Tu iGPSport BCS200 <strong>sí permite crear el entrenamiento por bloques</strong>
+  directamente en el dispositivo, igual que Garmin o Magene.
+</p>
+<ol style="margin: 0 0 10pt 0; padding-left: 18pt; font-size: 9.5pt; color: var(--gray-700);">
+  <li style="margin-bottom: 5pt;">
+    En el menú del dispositivo entrá al editor de entrenamientos y cargá cada
+    bloque de la tabla de arriba en orden, con su duración y su zona/objetivo.
+  </li>
+  <li style="margin-bottom: 5pt;">
+    Durante la sesión, presioná el botón de <strong>vuelta (lap)</strong> al
+    terminar cada bloque para dejar registrada su duración real.
+  </li>
+</ol>
+
+<p style="margin: 8pt 0 4pt 0; font-size: 9.5pt; font-weight: 700; color: var(--gray-700);">
+  Otros modelos iGPSport sin editor de bloques
+</p>
+<p style="margin: 0 0 4pt 0; font-size: 9.5pt; color: var(--gray-700);">
+  Si tu modelo <strong>no tiene editor de entrenamientos por bloques</strong>,
+  usá esta hoja como <strong>hoja de referencia</strong> mientras pedaleás.
 </p>
 <ol style="margin: 0 0 10pt 0; padding-left: 18pt; font-size: 9.5pt; color: var(--gray-700);">
   <li style="margin-bottom: 5pt;">
@@ -242,10 +283,6 @@
   <li style="margin-bottom: 5pt;">
     Al terminar cada bloque, presioná el botón de <strong>vuelta (lap)</strong> del
     dispositivo para dejar registrada su duración real.
-  </li>
-  <li style="margin-bottom: 5pt;">
-    No hace falta configurar nada en el dispositivo: la estructura la marcás tú con
-    el botón de vuelta, siguiendo esta hoja.
   </li>
 </ol>
 
