@@ -32,6 +32,8 @@ import {
 import { shouldDehydrateQuery } from "@/lib/persistAllowList";
 import { landingPathForRole } from "@/lib/landing";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
+import { RouteFallback } from "@/components/shared/RouteFallback";
 
 // PR1: índice slim de análisis IA (solo vistas cross-válida, sin lanzador ni chat).
 const InsightsHubPage = lazy(() =>
@@ -345,13 +347,7 @@ export default function App() {
           path="/training/sessions/assistant"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando asistente IA...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando asistente IA..." />}>
                 <SessionAssistantPage />
               </Suspense>
             </ProtectedRoute>
@@ -385,13 +381,7 @@ export default function App() {
           path="/training/sessions/:id/activity-match/:activityId"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando comparación plan vs. real…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando comparación plan vs. real…" />}>
                 <ActivityMatchPage />
               </Suspense>
             </ProtectedRoute>
@@ -579,13 +569,7 @@ export default function App() {
           path="/competitions/insights"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando análisis IA...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando análisis IA..." />}>
                 <InsightsHubPage />
               </Suspense>
             </ProtectedRoute>
@@ -597,13 +581,7 @@ export default function App() {
           path="/competitions/unlinked"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando competidores...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando competidores..." />}>
                 <UnlinkedCompetitorsPage />
               </Suspense>
             </ProtectedRoute>
@@ -616,13 +594,7 @@ export default function App() {
           path="/competitions/insights/club"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando análisis del club...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando análisis del club..." />}>
                 <ClubInsightsPage />
               </Suspense>
             </ProtectedRoute>
@@ -632,13 +604,7 @@ export default function App() {
           path="/competitions/insights/season/:year"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando panorama de temporada...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando panorama de temporada..." />}>
                 <SeasonInsightsPage />
               </Suspense>
             </ProtectedRoute>
@@ -648,13 +614,7 @@ export default function App() {
           path="/competitions/insights/athletes/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando análisis del deportista...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando análisis del deportista..." />}>
                 <AthleteInsightsPage />
               </Suspense>
             </ProtectedRoute>
@@ -674,13 +634,7 @@ export default function App() {
           path="/technique"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando biblioteca de técnica…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando biblioteca de técnica…" />}>
                 <CatalogPage />
               </Suspense>
             </ProtectedRoute>
@@ -690,13 +644,7 @@ export default function App() {
           path="/technique/exercises/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando ejercicio…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando ejercicio…" />}>
                 <ExerciseDetailPage />
               </Suspense>
             </ProtectedRoute>
@@ -706,13 +654,7 @@ export default function App() {
           path="/technique/sessions/new"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando armador de sesión…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando armador de sesión…" />}>
                 <SessionBuilderPage />
               </Suspense>
             </ProtectedRoute>
@@ -722,13 +664,7 @@ export default function App() {
           path="/technique/athletes/:athleteId/progress"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando progreso técnico…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando progreso técnico…" />}>
                 <AthleteProgressPage />
               </Suspense>
             </ProtectedRoute>
@@ -739,13 +675,7 @@ export default function App() {
           path="/technique/composer"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando compositor de gymkhana…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando compositor de gymkhana…" />}>
                 <ComposerPage />
               </Suspense>
             </ProtectedRoute>
@@ -757,13 +687,7 @@ export default function App() {
           path="/strength"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando biblioteca de fuerza…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando biblioteca de fuerza…" />}>
                 <StrengthCatalogPage />
               </Suspense>
             </ProtectedRoute>
@@ -773,13 +697,7 @@ export default function App() {
           path="/strength/exercises/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando ejercicio…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando ejercicio…" />}>
                 <StrengthExerciseDetailPage />
               </Suspense>
             </ProtectedRoute>
@@ -789,13 +707,7 @@ export default function App() {
           path="/strength/blocks/new"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando armador de bloque…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando armador de bloque…" />}>
                 <StrengthBlockBuilderPage />
               </Suspense>
             </ProtectedRoute>
@@ -805,13 +717,7 @@ export default function App() {
           path="/strength/blocks/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando bloque…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando bloque…" />}>
                 <StrengthBlockBuilderPage />
               </Suspense>
             </ProtectedRoute>
@@ -821,13 +727,7 @@ export default function App() {
           path="/strength/athletes/:athleteId/progress"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando progreso de fuerza…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando progreso de fuerza…" />}>
                 <StrengthAthleteProgressPage />
               </Suspense>
             </ProtectedRoute>
@@ -839,13 +739,7 @@ export default function App() {
           path="/activities"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando actividades…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando actividades…" />}>
                 <ActivityReviewPage />
               </Suspense>
             </ProtectedRoute>
@@ -857,13 +751,7 @@ export default function App() {
           path="/intervals/templates"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando biblioteca de plantillas…
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando biblioteca de plantillas…" />}>
                 <TemplateLibraryPage />
               </Suspense>
             </ProtectedRoute>
@@ -875,13 +763,7 @@ export default function App() {
           path="/perfil"
           element={
             <ProtectedRoute>
-              <Suspense
-                fallback={
-                  <div className="flex min-h-[40vh] items-center justify-center text-sm text-mid-gray">
-                    Cargando perfil...
-                  </div>
-                }
-              >
+              <Suspense fallback={<RouteFallback label="Cargando perfil..." />}>
                 <ProfilePage />
               </Suspense>
             </ProtectedRoute>
@@ -912,6 +794,7 @@ export default function App() {
         />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      <Toaster />
       </TooltipProvider>
   );
 
