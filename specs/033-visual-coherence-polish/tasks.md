@@ -1,11 +1,6 @@
----
-
-description: "Task list template for feature implementation"
----
-
 # Tasks: Visual Coherence & Polish
 
-**Input**: Design documents from `/home/user/mi/specs/033-visual-coherence-polish/`
+**Input**: Design documents from `/specs/033-visual-coherence-polish/`
 
 **Prerequisites**: plan.md (required, read), spec.md (required, read), research.md (R1–R8, read), data-model.md (read), contracts/status-vocabulary-sweep.md, contracts/chart-style.md, contracts/ai-identity.md, contracts/dark-theme-tokens.md (all read), quickstart.md (read), `.specify/memory/constitution.md` (read). **Hard cross-feature prerequisite**: `specs/028-frontend-design-foundation` (`StatusBadge.tsx`, `PageHeader`/shared-component kit, `--color-success/-warning/-danger` tokens, shadow/token consolidation) MUST already be merged — as of this writing neither exists in `frontend/src/components/shared/` or `frontend/src/style.css`, and every task below that consumes them assumes they have landed first. See **Dependencies & Execution Order** for the full cross-feature map (029/030/032).
 

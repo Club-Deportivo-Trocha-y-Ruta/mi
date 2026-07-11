@@ -1,8 +1,3 @@
----
-
-description: "Task list for feature 030-coach-navigation-redesign"
----
-
 # Tasks: Coach Navigation Redesign
 
 **Input**: Design documents from `/specs/030-coach-navigation-redesign/`
