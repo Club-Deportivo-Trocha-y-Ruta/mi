@@ -61,8 +61,7 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
         aria-busy="true"
         aria-label="Cargando sparkline de evolución"
         data-testid="mini-evolution-sparkline"
-        className="rounded-xl bg-white p-4"
-        style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+        className="rounded-xl bg-white p-4 shadow-card"
       >
         <Skeleton className="h-[120px] w-full rounded-lg" />
       </div>
@@ -77,8 +76,7 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
     return (
       <div
         data-testid="mini-evolution-sparkline"
-        className="rounded-xl bg-white px-4 py-5 text-center"
-        style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+        className="rounded-xl bg-white px-4 py-5 text-center shadow-card"
       >
         <p className="text-xs text-mid-gray">
           Necesitas al menos 2 análisis para ver evolución.
@@ -90,13 +88,11 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
   return (
     <div
       data-testid="mini-evolution-sparkline"
-      className="rounded-xl bg-white p-4"
-      style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+      className="rounded-xl bg-white p-4 shadow-card"
       aria-label="Sparkline de evolución de posición en categoría"
     >
       <p
-        className="mb-2 text-[11px] font-medium uppercase tracking-wide text-mid-gray"
-        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif" }}
+        className="font-display mb-2 text-[11px] font-medium uppercase tracking-wide text-mid-gray"
       >
         Evolución posición — {season}
       </p>

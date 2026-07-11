@@ -41,15 +41,9 @@ type ProjectProfileFormValues = z.infer<typeof projectProfileSchema>;
 // Style constants
 // ---------------------------------------------------------------------------
 
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
   "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 const errorClass = "mt-1 text-xs text-red-600";
 
 // ---------------------------------------------------------------------------
@@ -86,8 +80,7 @@ function SpecificObjectivesList({ items, onChange }: SpecificObjectivesListProps
             value={item}
             onChange={(e) => handleChange(index, e.target.value)}
             placeholder={`Objetivo específico ${index + 1}`}
-            className={inputClass}
-            style={inputStyle}
+            className={`${inputClass} shadow-ring`}
             aria-label={`Objetivo específico ${index + 1}`}
             id={`specific-objective-${index}`}
           />
@@ -95,8 +88,7 @@ function SpecificObjectivesList({ items, onChange }: SpecificObjectivesListProps
             type="button"
             onClick={() => handleRemove(index)}
             aria-label={`Eliminar objetivo ${index + 1}`}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-mid-gray transition-opacity hover:opacity-70"
-            style={inputStyle}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
           >
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -105,8 +97,7 @@ function SpecificObjectivesList({ items, onChange }: SpecificObjectivesListProps
       <button
         type="button"
         onClick={handleAdd}
-        className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-        style={inputStyle}
+        className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
         data-testid="add-objective-btn"
       >
         <Plus className="h-4 w-4" aria-hidden="true" />
@@ -198,7 +189,7 @@ export function ProjectProfilePage() {
     return (
       <section className="max-w-3xl mx-auto space-y-4">
         <div className="h-6 w-48 animate-pulse rounded bg-light-gray" />
-        <div className="h-96 animate-pulse rounded-xl bg-white" style={cardStyle} />
+        <div className="h-96 animate-pulse rounded-xl bg-white shadow-card" />
       </section>
     );
   }
@@ -214,8 +205,7 @@ export function ProjectProfilePage() {
             ← Informes mensuales
           </Link>
           <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="font-display text-2xl text-charcoal"
           >
             Datos del proyecto
           </h1>
@@ -233,7 +223,7 @@ export function ProjectProfilePage() {
         className="space-y-5"
       >
         {/* Identificación del proyecto */}
-        <div className="rounded-xl bg-white p-5 space-y-4" style={cardStyle}>
+        <div className="rounded-xl bg-white p-5 space-y-4 shadow-card">
           <h2 className="text-base font-semibold text-charcoal">
             Identificación del proyecto
           </h2>
@@ -247,8 +237,7 @@ export function ProjectProfilePage() {
               id="project_name"
               type="text"
               {...register("project_name")}
-              className={inputClass}
-              style={inputStyle}
+              className={`${inputClass} shadow-ring`}
               placeholder="Ej: Formación deportiva XCO Valle del Cauca"
               aria-describedby={errors.project_name ? "project_name-error" : undefined}
               aria-invalid={!!errors.project_name}
@@ -267,8 +256,7 @@ export function ProjectProfilePage() {
               id="executing_entity"
               type="text"
               {...register("executing_entity")}
-              className={inputClass}
-              style={inputStyle}
+              className={`${inputClass} shadow-ring`}
               placeholder="Ej: Club Deportivo Trocha y Ruta"
               aria-describedby={errors.executing_entity ? "executing_entity-error" : undefined}
               aria-invalid={!!errors.executing_entity}
@@ -287,8 +275,7 @@ export function ProjectProfilePage() {
               id="report_responsible"
               type="text"
               {...register("report_responsible")}
-              className={inputClass}
-              style={inputStyle}
+              className={`${inputClass} shadow-ring`}
               placeholder="Nombre del entrenador o coordinador"
               aria-describedby={errors.report_responsible ? "report_responsible-error" : undefined}
               aria-invalid={!!errors.report_responsible}
@@ -300,7 +287,7 @@ export function ProjectProfilePage() {
         </div>
 
         {/* Propósito y objetivos */}
-        <div className="rounded-xl bg-white p-5 space-y-4" style={cardStyle}>
+        <div className="rounded-xl bg-white p-5 space-y-4 shadow-card">
           <h2 className="text-base font-semibold text-charcoal">Propósito y objetivos</h2>
 
           <div>
@@ -312,8 +299,7 @@ export function ProjectProfilePage() {
               id="purpose"
               rows={3}
               {...register("purpose")}
-              className={`${inputClass} resize-none`}
-              style={inputStyle}
+              className={`${inputClass} resize-none shadow-ring`}
               placeholder="Describe el propósito general del proyecto deportivo…"
               aria-describedby={errors.purpose ? "purpose-error" : undefined}
               aria-invalid={!!errors.purpose}
@@ -332,8 +318,7 @@ export function ProjectProfilePage() {
               id="general_objective"
               rows={3}
               {...register("general_objective")}
-              className={`${inputClass} resize-none`}
-              style={inputStyle}
+              className={`${inputClass} resize-none shadow-ring`}
               placeholder="Objetivo general del programa de formación…"
               aria-describedby={errors.general_objective ? "general_objective-error" : undefined}
               aria-invalid={!!errors.general_objective}
@@ -356,7 +341,7 @@ export function ProjectProfilePage() {
         </div>
 
         {/* Territorio */}
-        <div className="rounded-xl bg-white p-5 space-y-4" style={cardStyle}>
+        <div className="rounded-xl bg-white p-5 space-y-4 shadow-card">
           <h2 className="text-base font-semibold text-charcoal">Territorio</h2>
 
           <div>
@@ -368,8 +353,7 @@ export function ProjectProfilePage() {
               id="territory_location"
               type="text"
               {...register("territory_location")}
-              className={inputClass}
-              style={inputStyle}
+              className={`${inputClass} shadow-ring`}
               placeholder="Ej: Cali, Valle del Cauca"
               aria-describedby={errors.territory_location ? "territory_location-error" : undefined}
               aria-invalid={!!errors.territory_location}
@@ -388,8 +372,7 @@ export function ProjectProfilePage() {
               id="territory_description"
               rows={3}
               {...register("territory_description")}
-              className={`${inputClass} resize-none`}
-              style={inputStyle}
+              className={`${inputClass} resize-none shadow-ring`}
               placeholder="Describe las características del territorio donde opera el club…"
               aria-describedby={errors.territory_description ? "territory_description-error" : undefined}
               aria-invalid={!!errors.territory_description}
@@ -424,16 +407,14 @@ export function ProjectProfilePage() {
         <div className="flex justify-end gap-3">
           <Link
             to="/training/reports"
-            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
           >
             Cancelar
           </Link>
           <button
             type="submit"
             disabled={isSubmitting || upsertMutation.isPending || (!isDirty && !upsertMutation.isIdle)}
-            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
             data-testid="save-profile-btn"
           >
             {isSubmitting || upsertMutation.isPending ? "Guardando…" : "Guardar perfil"}

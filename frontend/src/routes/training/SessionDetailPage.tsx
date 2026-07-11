@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { InstructivoDownloadButton } from "@/components/intervals/InstructivoDownloadButton";
 import { INTERVAL_AGE_BAND_LABEL } from "@/components/intervals/AgeGateDialog";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { BLOCK_TYPE_LABEL, HR_ZONE_LABEL } from "@/components/intervals/BlockRow";
 import type { StructureEditorSubmitInput } from "@/components/intervals/StructureEditor";
 import type { SessionMedia } from "@/types/trainingSession.types";
@@ -107,16 +108,11 @@ function groupActivitiesByAthleteId(activities: ActivityOut[]): Map<number, Acti
   return groups;
 }
 
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 const sectionHeading = "text-sm font-semibold uppercase tracking-wide text-mid-gray mb-3";
 
 function SkeletonCard() {
   return (
-    <div className="rounded-xl bg-white p-5 space-y-3" style={cardStyle}>
+    <div className="rounded-xl bg-white p-5 space-y-3 shadow-card">
       {[...Array(3)].map((_, i) => (
         <div key={i} className="h-4 animate-pulse rounded bg-light-gray" style={{ width: `${70 - i * 15}%` }} />
       ))}
@@ -511,7 +507,7 @@ export function SessionDetailPage() {
   if (sessionQuery.isError || !session) {
     return (
       <section className="space-y-4">
-        <div className="rounded-xl bg-white p-8 text-center" style={cardStyle}>
+        <div className="rounded-xl bg-white p-8 text-center shadow-card">
           <p className="text-base font-medium text-charcoal">Sesión no encontrada</p>
           <p className="mt-1 text-sm text-mid-gray">
             La sesión solicitada no existe o no tienes permiso para verla.
@@ -549,65 +545,52 @@ export function SessionDetailPage() {
     <section className="space-y-5">
       {/* Header */}
       <div
-        className="rounded-xl bg-white px-5 py-4"
-        style={cardStyle}
+        className="rounded-xl bg-white px-5 py-4 shadow-card"
         data-testid="session-detail-header"
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1
-                className="text-xl text-charcoal"
-                style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-              >
-                {session.technical_focus}
-              </h1>
+        <PageHeader
+          title={session.technical_focus}
+          subtitle={`${formatDate(session.scheduled_date)} · ${formatTime(session.scheduled_start_time)} · ${session.duration_min} min · ${session.location}`}
+          actions={
+            <>
               <SessionStatusBadge status={session.status} />
-            </div>
-            <p className="mt-1 text-sm text-mid-gray">
-              {formatDate(session.scheduled_date)} · {formatTime(session.scheduled_start_time)} · {session.duration_min} min · {session.location}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {isPlanned && (
-              <>
-                <Link
-                  to={`/training/sessions/${session.id}/edit`}
-                  className="rounded-lg px-3 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-                >
-                  Editar
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setShowCancelModal(true)}
-                  className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-                  data-testid="cancel-session-button"
-                >
-                  Cancelar sesión
-                </button>
-                <button
-                  type="button"
-                  onClick={() => executeMutation.mutate(sessionId)}
-                  disabled={executeMutation.isPending}
-                  className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                  data-testid="execute-session-button"
-                >
-                  {executeMutation.isPending && (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  )}
-                  Marcar ejecutada
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+              {isPlanned && (
+                <>
+                  <Link
+                    to={`/training/sessions/${session.id}/edit`}
+                    className="rounded-lg px-3 py-2 text-sm font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70"
+                  >
+                    Editar
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelModal(true)}
+                    className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 shadow-ring transition-opacity hover:opacity-70"
+                    data-testid="cancel-session-button"
+                  >
+                    Cancelar sesión
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeMutation.mutate(sessionId)}
+                    disabled={executeMutation.isPending}
+                    className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    data-testid="execute-session-button"
+                  >
+                    {executeMutation.isPending && (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    )}
+                    Marcar ejecutada
+                  </button>
+                </>
+              )}
+            </>
+          }
+        />
       </div>
 
       {/* Detalles */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
         <h2 className={sectionHeading}>Detalles</h2>
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
@@ -626,8 +609,7 @@ export function SessionDetailPage() {
                   maxLength={2000}
                   placeholder="Notas post-sesión…"
                   aria-label="Notas del entrenador"
-                  className="w-full resize-none rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="w-full resize-none rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
                 />
                 <span
                   role="status"
@@ -644,7 +626,7 @@ export function SessionDetailPage() {
       </div>
 
       {/* Recorrido */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
         <h2 className={sectionHeading}>Recorrido</h2>
 
         {session.route_text && (
@@ -730,7 +712,7 @@ export function SessionDetailPage() {
       </div>
 
       {/* Asistencia */}
-      <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 shadow-card">
         <div className="flex items-center justify-between mb-3">
           <h2 className={sectionHeading} style={{ marginBottom: 0 }}>
             Asistencia ({attendances.length})
@@ -766,7 +748,7 @@ export function SessionDetailPage() {
       </div>
 
       {/* Bloques de fuerza (feature 021, FR-012/FR-013) */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
         <div className="flex items-center justify-between">
           <h2 className={sectionHeading} style={{ marginBottom: 0 }}>
             Bloques de fuerza
@@ -802,8 +784,7 @@ export function SessionDetailPage() {
             {strengthBlocksQuery.data?.items.map((block) => (
               <li
                 key={block.id}
-                className="rounded-lg px-4 py-3"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="rounded-lg px-4 py-3 shadow-ring"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
@@ -853,7 +834,7 @@ export function SessionDetailPage() {
       </div>
 
       {/* Estructura de intervalos (feature 026) */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
         {structureQuery.isLoading ? (
           <>
             <h2 className={sectionHeading}>Estructura de intervalos</h2>
@@ -955,8 +936,7 @@ export function SessionDetailPage() {
               {structureQuery.data.blocks.map((block) => (
                 <li
                   key={block.id}
-                  className="flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-sm text-charcoal"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-sm text-charcoal shadow-ring"
                 >
                   <span className="font-medium">
                     {BLOCK_TYPE_LABEL[block.block_type]}
@@ -1102,7 +1082,7 @@ export function SessionDetailPage() {
       )}
 
       {/* Fotos y videos */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
         <h2 className={sectionHeading}>Fotos y videos</h2>
 
         {!isCancelled && (

@@ -26,18 +26,9 @@ const overlayStyle: React.CSSProperties = {
   backdropFilter: "blur(2px)",
 };
 
-const dialogStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 const btnPrimaryStyle: React.CSSProperties = {
   boxShadow:
     "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(0, 0, 0, 0.16) 0px 1px 1.9px 0px inset, rgba(255, 255, 255, 0.15) 0px 2px 0px inset",
-};
-
-const btnSecondaryStyle: React.CSSProperties = {
-  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
 };
 
 // ---------------------------------------------------------------------------
@@ -115,10 +106,7 @@ export function RevokeConsentDialog({
       aria-labelledby="revoke-dialog-title"
       aria-describedby="revoke-dialog-desc"
     >
-      <div
-        className="w-full max-w-md rounded-2xl bg-white"
-        style={dialogStyle}
-      >
+      <div className={cn("w-full max-w-md rounded-2xl bg-white", "shadow-card")}>
         {/* Header */}
         <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-[rgba(34,42,53,0.08)]">
           <div className="flex items-start gap-3">
@@ -128,8 +116,7 @@ export function RevokeConsentDialog({
             <div>
               <h2
                 id="revoke-dialog-title"
-                className="text-base text-charcoal"
-                style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+                className="font-display text-base text-charcoal"
               >
                 Revocar consentimiento
               </h2>
@@ -186,8 +173,8 @@ export function RevokeConsentDialog({
                   "w-full resize-none rounded-lg px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray/60",
                   "border-0 bg-light-gray outline-none",
                   "focus:ring-2 focus:ring-charcoal/20",
+                  "shadow-ring",
                 )}
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 {...register("reason")}
                 aria-describedby="revoke-reason-hint"
               />
@@ -210,8 +197,10 @@ export function RevokeConsentDialog({
               type="button"
               onClick={onClose}
               disabled={isPending}
-              className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50"
-              style={btnSecondaryStyle}
+              className={cn(
+                "rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50",
+                "shadow-ring",
+              )}
             >
               Cancelar
             </button>

@@ -447,8 +447,7 @@ export function EventDrawer({
                   onClick={() => setConfirmDelete(true)}
                   disabled={deletePermanentMutation.isPending}
                   aria-label="Eliminar permanentemente"
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-red-800 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-2 disabled:opacity-40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-red-800 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-2 disabled:opacity-40 shadow-ring"
                 >
                   {deletePermanentMutation.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -465,8 +464,7 @@ export function EventDrawer({
                   type="button"
                   onClick={() => setConfirmCancel(true)}
                   disabled={event.status === "cancelled" || cancelMutation.isPending}
-                  className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-2 disabled:opacity-40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-2 disabled:opacity-40 shadow-ring"
                 >
                   {cancelMutation.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -478,8 +476,7 @@ export function EventDrawer({
               <button
                 type="button"
                 onClick={handleEdit}
-                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal/60 focus-visible:ring-offset-2"
-                style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal/60 focus-visible:ring-offset-2 shadow-button-highlight"
               >
                 Editar
               </button>

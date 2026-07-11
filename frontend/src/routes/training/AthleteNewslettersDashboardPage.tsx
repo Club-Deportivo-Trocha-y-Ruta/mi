@@ -59,11 +59,6 @@ const STATUS_CONFIG: Record<
   failed: { label: "Fallido", badgeClass: "bg-red-100 text-red-700 border border-red-300" },
 };
 
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 // ---------------------------------------------------------------------------
 // Athlete card
 // ---------------------------------------------------------------------------
@@ -139,8 +134,7 @@ function AthleteNewsletterCard({
   return (
     <>
       <div
-        className="rounded-xl bg-white p-4 transition-shadow hover:shadow-md"
-        style={cardStyle}
+        className="rounded-xl bg-white p-4 transition-shadow hover:shadow-md shadow-card"
         data-testid={`athlete-card-${athlete.id}`}
       >
         {/* Clickable area — navigate to detail */}
@@ -211,8 +205,7 @@ function AthleteNewsletterCard({
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setShowRegenerateConfirm(true); }}
                 disabled={generateMutation.isPending}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
                 data-testid={`regenerate-btn-${athlete.id}`}
                 aria-label={`Regenerar boletín de ${athlete.first_name} ${athlete.last_name}`}
               >
@@ -356,8 +349,7 @@ function BatchModal({ open, onClose, year, month, clubId }: BatchModalProps) {
           <button
             type="button"
             onClick={handleClose}
-            className="rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50 shadow-ring"
           >
             {result ? "Cerrar" : "Cancelar"}
           </button>
@@ -483,8 +475,7 @@ export function AthleteNewslettersDashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="font-display text-2xl text-charcoal"
           >
             Boletines Mensuales
           </h1>
@@ -496,8 +487,7 @@ export function AthleteNewslettersDashboardPage() {
           type="button"
           onClick={() => setShowBatchModal(true)}
           disabled={!clubId}
-          className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-40"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+          className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-40 shadow-button-highlight"
           data-testid="open-batch-modal"
         >
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -507,8 +497,7 @@ export function AthleteNewslettersDashboardPage() {
 
       {/* Filtros */}
       <div
-        className="flex flex-wrap gap-3 rounded-xl bg-white p-3"
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+        className="flex flex-wrap gap-3 rounded-xl bg-white p-3 shadow-ring"
       >
         {/* Selector mes */}
         <div className="flex items-center gap-2">
@@ -519,8 +508,7 @@ export function AthleteNewslettersDashboardPage() {
             id="filter-month"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
           >
             {availableMonths.map(({ value, name }) => (
               <option key={value} value={value}>
@@ -539,8 +527,7 @@ export function AthleteNewslettersDashboardPage() {
             id="filter-year"
             value={selectedYear}
             onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
           >
             {years.map((y) => (
               <option key={y} value={y}>
@@ -559,8 +546,7 @@ export function AthleteNewslettersDashboardPage() {
             id="filter-status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as NewsletterStatus | "all" | "none")}
-            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
           >
             <option value="all">Todos los estados</option>
             <option value="none">Sin generar</option>
@@ -582,8 +568,7 @@ export function AthleteNewslettersDashboardPage() {
             value={nameFilter}
             onChange={(e) => setNameFilter(e.target.value)}
             placeholder="Buscar por nombre..."
-            className="w-full rounded-lg px-3 py-1.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="w-full rounded-lg px-3 py-1.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
           />
         </div>
       </div>
@@ -594,8 +579,7 @@ export function AthleteNewslettersDashboardPage() {
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="h-20 animate-pulse rounded-xl bg-white"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="h-20 animate-pulse rounded-xl bg-white shadow-ring"
             />
           ))}
         </div>
@@ -610,8 +594,8 @@ export function AthleteNewslettersDashboardPage() {
       {/* Empty state sin atletas */}
       {!athletesQuery.isLoading && !athletesQuery.isError && athletes.length === 0 && (
         <div
-          className="rounded-xl bg-white p-10 text-center"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px", borderStyle: "dashed" }}
+          className="rounded-xl bg-white p-10 text-center shadow-ring"
+          style={{ borderStyle: "dashed" }}
           data-testid="empty-athletes"
         >
           <FileText className="mx-auto mb-3 h-8 w-8 text-mid-gray" aria-hidden="true" />

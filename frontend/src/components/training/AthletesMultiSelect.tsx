@@ -99,32 +99,26 @@ export function AthletesMultiSelect({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar atleta..."
-          className="min-h-[48px] flex-1 rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="min-h-[48px] flex-1 rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
           aria-label="Buscar atleta"
         />
         <button
           type="button"
           onClick={selectAll}
-          className="min-h-[48px] rounded-lg px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="min-h-[48px] rounded-lg px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
         >
           Todos
         </button>
         <button
           type="button"
           onClick={clearAll}
-          className="min-h-[48px] rounded-lg px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="min-h-[48px] rounded-lg px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
         >
           Limpiar
         </button>
       </div>
 
-      <div
-        className="max-h-72 overflow-y-auto rounded-lg bg-white"
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-      >
+      <div className="max-h-72 overflow-y-auto rounded-lg bg-white shadow-ring">
         {sortedFiltered.length === 0 ? (
           <p className="px-4 py-3 text-sm text-mid-gray">No hay atletas.</p>
         ) : (

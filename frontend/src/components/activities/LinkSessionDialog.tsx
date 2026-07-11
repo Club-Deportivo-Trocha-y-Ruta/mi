@@ -216,8 +216,8 @@ function SessionOptionRow({
         "peer-focus-visible:outline-none",
         checked ? "ring-2 ring-charcoal" : "hover:bg-light-gray",
         disabled && "cursor-not-allowed opacity-60",
+        "shadow-ring",
       )}
-      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
     >
       <input
         type="radio"
@@ -507,8 +507,10 @@ export function LinkSessionDialog({
                       disabled={isPending}
                       placeholder="Buscar por fecha, lugar o enfoque técnico…"
                       aria-label="Buscar sesión en el calendario"
-                      className="w-full rounded-lg bg-white py-3 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
-                      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                      className={cn(
+                        "w-full rounded-lg bg-white py-3 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50",
+                        "shadow-ring",
+                      )}
                     />
                   </div>
 

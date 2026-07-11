@@ -25,11 +25,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRecalculateMatch, useSessionMatch } from "@/hooks/intervals/useIntervals";
 import { formatDateTime } from "@/lib/datetime";
 
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 /** Segundos → "h:mm:ss" o "m:ss" para el tiempo total de la actividad. */
 function formatElapsed(seconds: number): string {
   const total = Math.round(seconds);
@@ -76,7 +71,7 @@ export function ActivityMatchPage() {
     return (
       <section className="space-y-5">
         <BackLink sessionId={sessionId} />
-        <div className="rounded-xl bg-white p-5 space-y-3" style={cardStyle}>
+        <div className="rounded-xl bg-white p-5 space-y-3 shadow-card">
           <Skeleton className="h-6 w-1/3 rounded" />
           <Skeleton className="h-40 w-full rounded" />
         </div>
@@ -90,8 +85,7 @@ export function ActivityMatchPage() {
       <section className="space-y-5">
         <BackLink sessionId={sessionId} />
         <div
-          className="rounded-xl bg-white p-8 text-center"
-          style={cardStyle}
+          className="rounded-xl bg-white p-8 text-center shadow-card"
           role="alert"
         >
           <p className="text-base font-medium text-charcoal">
@@ -121,13 +115,9 @@ export function ActivityMatchPage() {
     <section className="space-y-5">
       <BackLink sessionId={sessionId} />
 
-      <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 shadow-card">
         <h1
-          className="text-xl text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-          }}
+          className="font-display text-xl text-charcoal"
         >
           Comparación plan vs. real
         </h1>
@@ -146,8 +136,7 @@ export function ActivityMatchPage() {
       {/* Estado: sin actividad enlazada -------------------------------- */}
       {match.status === "no_activity" && (
         <div
-          className="rounded-xl bg-white p-8 text-center"
-          style={cardStyle}
+          className="rounded-xl bg-white p-8 text-center shadow-card"
           data-testid="match-no-activity"
         >
           <LinkIcon
@@ -170,8 +159,7 @@ export function ActivityMatchPage() {
       {/* Estado: cálculo en curso -------------------------------------- */}
       {match.status === "computing" && (
         <div
-          className="rounded-xl bg-white p-8 text-center"
-          style={cardStyle}
+          className="rounded-xl bg-white p-8 text-center shadow-card"
           role="status"
           aria-live="polite"
           data-testid="match-computing"
@@ -193,8 +181,7 @@ export function ActivityMatchPage() {
       {/* Estado: fallo del último cálculo ------------------------------ */}
       {match.status === "failed" && (
         <div
-          className="rounded-xl bg-white p-8 text-center"
-          style={cardStyle}
+          className="rounded-xl bg-white p-8 text-center shadow-card"
           role="alert"
           data-testid="match-failed"
         >
@@ -232,7 +219,7 @@ export function ActivityMatchPage() {
 
       {/* Estado: comparación lista ------------------------------------- */}
       {match.status === "computed" && (
-        <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+        <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-mid-gray">
               Bloques vs. vueltas

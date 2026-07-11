@@ -34,6 +34,8 @@ import {
 } from "@/components/competitions/CompetitionFiltersBar";
 import { CompetitionStatusBadges } from "@/components/competitions/CompetitionStatusBadges";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,12 +94,6 @@ function isUpcomingWithin30Days(iso: string): boolean {
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
   return diffDays >= 0 && diffDays <= 30;
 }
-
-// Estilos comunes
-const cardStyle = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
 
 // ---------------------------------------------------------------------------
 // Componente principal
@@ -176,49 +172,38 @@ export function CompetitionsListPage() {
 
   return (
     <section className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-          >
-            Competencias
-          </h1>
-          <p className="mt-0.5 text-sm text-mid-gray">
-            Válidas Copa Valle y campeonatos del club.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Acciones secundarias */}
-          <Link
-            to="/competitions/import"
-            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-            aria-label="Cargar resultados de una válida"
-          >
-            <Upload size={14} aria-hidden="true" />
-            Cargar resultados
-          </Link>
-          <Link
-            to="/competitions/unlinked"
-            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-            aria-label="Ver competidores sin enlazar"
-          >
-            <Link2Off size={14} aria-hidden="true" />
-            Sin enlazar
-          </Link>
-          {/* Acción primaria */}
-          <Link
-            to="/competitions/new"
-            className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
-          >
-            + Nueva competencia
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Competencias"
+        subtitle="Válidas Copa Valle y campeonatos del club."
+        actions={
+          <>
+            {/* Acciones secundarias */}
+            <Link
+              to="/competitions/import"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              aria-label="Cargar resultados de una válida"
+            >
+              <Upload size={14} aria-hidden="true" />
+              Cargar resultados
+            </Link>
+            <Link
+              to="/competitions/unlinked"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              aria-label="Ver competidores sin enlazar"
+            >
+              <Link2Off size={14} aria-hidden="true" />
+              Sin enlazar
+            </Link>
+            {/* Acción primaria */}
+            <Link
+              to="/competitions/new"
+              className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+            >
+              + Nueva competencia
+            </Link>
+          </>
+        }
+      />
 
       {/* Filtros */}
       <CompetitionFiltersBar
@@ -230,7 +215,7 @@ export function CompetitionsListPage() {
 
       {/* Loading skeleton */}
       {isLoading && (
-        <div className="space-y-2 rounded-xl bg-white p-4" style={cardStyle}>
+        <div className="space-y-2 rounded-xl bg-white p-4 shadow-card">
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-12 animate-pulse rounded-lg bg-light-gray" />
           ))}
@@ -251,8 +236,7 @@ export function CompetitionsListPage() {
             type="button"
             onClick={() => void refetch()}
             disabled={isFetching}
-            className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
           >
             {isFetching ? (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -266,35 +250,25 @@ export function CompetitionsListPage() {
 
       {/* Empty state */}
       {!isLoading && !isError && items.length === 0 && (
-        <div
-          className="rounded-xl bg-white p-10 text-center"
-          style={{ ...cardStyle, borderStyle: "dashed" }}
-        >
-          <Trophy
-            size={36}
-            className="mx-auto mb-3 text-mid-gray"
-            aria-hidden="true"
-          />
-          <p className="text-sm font-medium text-charcoal">
-            No hay competencias en esta temporada
-          </p>
-          <p className="mt-1 text-xs text-mid-gray">
-            Ajusta los filtros o crea la primera válida.
-          </p>
-          <Link
-            to="/competitions/new"
-            className="mt-4 inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
-          >
-            + Crear primera válida
-          </Link>
-        </div>
+        <EmptyState
+          icon={Trophy}
+          title="No hay competencias en esta temporada"
+          description="Ajusta los filtros o crea la primera válida."
+          action={
+            <Link
+              to="/competitions/new"
+              className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+            >
+              + Crear primera válida
+            </Link>
+          }
+        />
       )}
 
       {/* Tabla desktop (≥md) */}
       {!isLoading && !isError && items.length > 0 && (
         <>
-          <div className="hidden md:block rounded-xl bg-white overflow-hidden" style={cardStyle}>
+          <div className="hidden md:block rounded-xl bg-white overflow-hidden shadow-card">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[rgba(34,42,53,0.08)]">
@@ -528,11 +502,7 @@ function CompetitionCard({
     });
   return (
     <div
-      className="rounded-xl bg-white p-4 space-y-3 cursor-pointer"
-      style={{
-        boxShadow:
-          "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-      }}
+      className="rounded-xl bg-white p-4 space-y-3 cursor-pointer shadow-card"
       onClick={() => navigate(`/competitions/${item.id}`)}
       onMouseEnter={prefetchDetail}
       onTouchStart={prefetchDetail}

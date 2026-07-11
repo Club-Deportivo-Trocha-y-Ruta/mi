@@ -108,8 +108,7 @@ function ErrorState({
         type="button"
         onClick={onRetry}
         disabled={isFetching}
-        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50"
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
         data-testid="parent-results-retry"
       >
         {isFetching ? (
@@ -197,7 +196,7 @@ function TabBar({ active, onChange }: TabBarProps) {
 
 function HeaderSkeleton() {
   return (
-    <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-ring-soft">
+    <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-card">
       <Skeleton className="h-6 w-2/3" />
       <Skeleton className="h-4 w-1/3" />
       <Skeleton className="h-4 w-1/4" />
@@ -259,12 +258,11 @@ export function ParentCompetitionResultsPage() {
 
       {/* Header del evento */}
       <div
-        className="rounded-xl bg-white px-5 py-4 space-y-2 shadow-ring-soft"
+        className="rounded-xl bg-white px-5 py-4 space-y-2 shadow-card"
         data-testid="event-header"
       >
         <h1
-          className="text-xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-xl text-charcoal"
           data-testid="event-name"
         >
           {eventName ?? "Competencia"}
@@ -284,7 +282,7 @@ export function ParentCompetitionResultsPage() {
       </div>
 
       {/* Tabs + paneles */}
-      <div className="overflow-hidden rounded-xl shadow-ring-soft">
+      <div className="overflow-hidden rounded-xl shadow-card">
         <TabBar active={activeTab} onChange={setActiveTab} />
 
         {/* Panel Resultados */}

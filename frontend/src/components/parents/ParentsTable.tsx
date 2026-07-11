@@ -2,19 +2,13 @@ import { Link } from "react-router-dom";
 
 import type { UserOut } from "@/types/user.types";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 interface ParentsTableProps {
   items: UserOut[];
 }
 
 export function ParentsTable({ items }: ParentsTableProps) {
   return (
-    <div
-      className="overflow-x-auto rounded-xl bg-white"
-      style={{ boxShadow: cardShadow }}
-    >
+    <div className="overflow-x-auto rounded-xl bg-white shadow-card">
       <table className="min-w-full min-w-[560px] text-sm">
         <thead
           className="text-left"
@@ -69,8 +63,7 @@ export function ParentsTable({ items }: ParentsTableProps) {
               <td className="px-4 py-3">
                 <Link
                   to={`/parents/${parent.id}`}
-                  className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                 >
                   Ver
                 </Link>

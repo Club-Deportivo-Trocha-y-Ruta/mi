@@ -33,8 +33,7 @@ interface AnthropometryFormProps {
 }
 
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 export function AnthropometryForm({
   athleteId,
@@ -110,7 +109,6 @@ export function AnthropometryForm({
             <input
               type="date"
               className={`${inputClass} md:w-64`}
-              style={inputStyle}
               max={new Date().toISOString().slice(0, 10)}
               {...form.register("evaluation_date")}
             />
@@ -129,7 +127,6 @@ export function AnthropometryForm({
               inputMode="decimal"
               step="0.1"
               className={inputClass}
-              style={inputStyle}
               {...form.register("weight_kg", { valueAsNumber: true })}
             />
             <span className="text-xs text-red-600">
@@ -143,7 +140,6 @@ export function AnthropometryForm({
               inputMode="decimal"
               step="0.1"
               className={inputClass}
-              style={inputStyle}
               {...form.register("standing_height_cm", { valueAsNumber: true })}
             />
             <span className="text-xs text-red-600">
@@ -157,7 +153,6 @@ export function AnthropometryForm({
               inputMode="decimal"
               step="0.1"
               className={inputClass}
-              style={inputStyle}
               {...form.register("arm_span_cm", { valueAsNumber: true })}
               placeholder="Opcional"
             />
@@ -169,7 +164,6 @@ export function AnthropometryForm({
               inputMode="decimal"
               step="0.1"
               className={inputClass}
-              style={inputStyle}
               {...form.register("sitting_height_cm", { valueAsNumber: true })}
             />
             <span className="text-xs text-red-600">
@@ -185,8 +179,7 @@ export function AnthropometryForm({
         <button
           type="submit"
           disabled={createMutation.isPending}
-          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
         >
           {createMutation.isPending ? "Guardando..." : "Guardar medición"}
         </button>
@@ -198,8 +191,8 @@ export function AnthropometryForm({
         data-testid="phv-preview"
       >
         <h3
-          className="mb-3 text-sm text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+          className="font-display mb-3 text-sm text-charcoal"
+          style={{ letterSpacing: "0.2px" }}
         >
           Cálculo PHV (en tiempo real)
         </h3>

@@ -61,14 +61,9 @@ import type { RaceSeriesKind, RaceSeriesLevel } from "@/types/raceSeries.types";
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 min-h-[44px]";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
-const sectionClass = "rounded-xl bg-white p-5 space-y-4";
-const sectionStyle = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
+const sectionClass = "rounded-xl bg-white p-5 space-y-4 shadow-card";
 
 // ---------------------------------------------------------------------------
 // Opciones de sede
@@ -167,8 +162,7 @@ function CreateChampionshipSeriesForm({
           placeholder="Ej: Campeonato Departamental 2026"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px]"
-          style={inputStyle}
+          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
           aria-label="Nombre de la nueva serie de campeonato"
         />
       </div>
@@ -182,8 +176,7 @@ function CreateChampionshipSeriesForm({
           placeholder="Ej: Liga Vallecaucana de Ciclismo"
           value={organizer}
           onChange={(e) => setOrganizer(e.target.value)}
-          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px]"
-          style={inputStyle}
+          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
           aria-label="Organizador de la serie"
         />
       </div>
@@ -194,8 +187,7 @@ function CreateChampionshipSeriesForm({
         <select
           value={level}
           onChange={(e) => setLevel(e.target.value as RaceSeriesLevel)}
-          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[48px]"
-          style={inputStyle}
+          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[48px] shadow-ring"
           aria-label="Nivel de la serie"
         >
           {SERIES_LEVEL_OPTIONS.map((opt) => (
@@ -499,8 +491,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
     return (
       <section className="max-w-2xl mx-auto space-y-4">
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           Editar competencia
         </h1>
@@ -533,8 +524,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="font-display text-2xl text-charcoal"
           >
             {isEdit ? "Editar competencia" : "Nueva competencia"}
           </h1>
@@ -547,8 +537,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         <button
           type="button"
           onClick={handleCancel}
-          className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px]"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
         >
           Cancelar
         </button>
@@ -572,7 +561,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         className="space-y-5"
       >
         {/* Sección 1: Identificación */}
-        <div className={sectionClass} style={sectionStyle}>
+        <div className={sectionClass}>
           <h2 className="text-base font-semibold text-charcoal">Identificación</h2>
 
           {/* Tipo de competencia */}
@@ -586,7 +575,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
               onChange={(e) => handleKindChange(e.target.value as RaceSeriesKind)}
               disabled={isEdit}
               className={`${inputClass} ${isEdit ? "bg-light-gray cursor-not-allowed" : ""}`}
-              style={inputStyle}
               aria-label="Tipo de competencia"
             >
               {COMPETITION_TYPE_OPTIONS.map((opt) => (
@@ -648,7 +636,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                 id="series-id"
                 {...register("series_id", { valueAsNumber: true })}
                 className={inputClass}
-                style={inputStyle}
                 aria-invalid={!!(errors as { series_id?: { message?: string } }).series_id}
               >
                 <option value={0} disabled>
@@ -704,7 +691,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                 id="sequence-number"
                 {...register("sequence_number", { valueAsNumber: true })}
                 className={inputClass}
-                style={inputStyle}
                 aria-invalid={
                   !!(errors as { sequence_number?: { message?: string } }).sequence_number ||
                   !!seqError
@@ -747,7 +733,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
               }
               {...register("name")}
               className={inputClass}
-              style={inputStyle}
               aria-invalid={!!errors.name}
               aria-describedby={errors.name ? "event-name-error" : undefined}
             />
@@ -763,7 +748,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         </div>
 
         {/* Sección 2: Logística */}
-        <div className={sectionClass} style={sectionStyle}>
+        <div className={sectionClass}>
           <h2 className="text-base font-semibold text-charcoal">Logística</h2>
 
           {/* Fecha */}
@@ -776,7 +761,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
               type="date"
               {...register("event_date")}
               className={inputClass}
-              style={inputStyle}
               aria-invalid={!!errors.event_date}
               aria-describedby={errors.event_date ? "event-date-error" : undefined}
             />
@@ -798,7 +782,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                 <select
                   id="event-location"
                   className={`${inputClass} flex-1`}
-                  style={inputStyle}
                   value={watchedLocation ?? ""}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -819,8 +802,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                     setLocationMode("custom");
                     setValue("location", null, { shouldDirty: true });
                   }}
-                  className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px]"
-                  style={inputStyle}
+                  className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
                 >
                   Otra sede
                 </button>
@@ -833,7 +815,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                   placeholder="Nombre de la sede"
                   {...register("location")}
                   className={`${inputClass} flex-1`}
-                  style={inputStyle}
                   aria-invalid={!!errors.location}
                 />
                 <button
@@ -842,8 +823,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                     setLocationMode("predefined");
                     setValue("location", null, { shouldDirty: true });
                   }}
-                  className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px]"
-                  style={inputStyle}
+                  className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
                 >
                   Del catálogo
                 </button>
@@ -879,12 +859,11 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                 value={computedAltitude}
                 readOnly={!altitudeEditable}
                 onChange={(e) => setComputedAltitude(Number(e.target.value))}
-                className={`mt-1 w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none min-h-[44px] ${
+                className={`mt-1 w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none min-h-[44px] shadow-ring ${
                   altitudeEditable
                     ? "bg-white transition-shadow focus:ring-2 focus:ring-blue-500/40"
                     : "bg-light-gray cursor-not-allowed"
                 }`}
-                style={inputStyle}
                 aria-label="Altitud en metros sobre el nivel del mar"
               />
               <p className="mt-1 text-xs text-mid-gray">
@@ -896,7 +875,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         </div>
 
         {/* Sección 3: Estado */}
-        <div className={sectionClass} style={sectionStyle}>
+        <div className={sectionClass}>
           <h2 className="text-base font-semibold text-charcoal">Estado</h2>
           <div>
             <label htmlFor="event-status" className={labelClass}>
@@ -906,7 +885,6 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
               id="event-status"
               {...register("status")}
               className={inputClass}
-              style={inputStyle}
               aria-invalid={!!errors.status}
             >
               {STATUS_OPTIONS.map((opt) => (
@@ -923,7 +901,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
 
         {/* Sección 4: Calendario (solo en create) — FR-024 */}
         {!isEdit && (
-          <div className={sectionClass} style={sectionStyle}>
+          <div className={sectionClass}>
             <h2 className="text-base font-semibold text-charcoal">Calendario</h2>
             <label className="flex cursor-pointer items-start gap-2.5 text-sm text-charcoal">
               <input
@@ -962,16 +940,14 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
           <button
             type="button"
             onClick={handleCancel}
-            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 min-h-[44px]"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={isPending || isSubmitting}
-            className="rounded-lg bg-charcoal px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[44px]"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className="rounded-lg bg-charcoal px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[44px] shadow-button-highlight"
           >
             {isPending || isSubmitting
               ? "Guardando…"

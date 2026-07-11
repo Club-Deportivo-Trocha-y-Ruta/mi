@@ -205,7 +205,7 @@ export function CompetitionChatPanel({
 
   return (
     <section
-      className="rounded-xl bg-white shadow-ring-soft"
+      className="rounded-xl bg-white shadow-card"
       aria-label="Chat de IA para esta competencia"
       data-testid="competition-chat-panel"
     >
@@ -229,8 +229,7 @@ export function CompetitionChatPanel({
             aria-hidden="true"
           />
           <span
-            className="text-sm font-semibold text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif" }}
+            className="font-display text-sm font-semibold text-charcoal"
           >
             Preguntar a la IA
           </span>

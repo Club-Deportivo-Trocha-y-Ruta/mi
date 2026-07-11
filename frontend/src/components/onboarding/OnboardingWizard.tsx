@@ -43,18 +43,9 @@ import { ConfirmStep } from "./steps/ConfirmStep";
 // Estilos del design system (Cal.com)
 // ---------------------------------------------------------------------------
 
-const cardStyle = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 const btnPrimaryStyle = {
   boxShadow:
     "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(0, 0, 0, 0.16) 0px 1px 1.9px 0px inset, rgba(255, 255, 255, 0.15) 0px 2px 0px inset",
-};
-
-const btnSecondaryStyle = {
-  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
 };
 
 // ---------------------------------------------------------------------------
@@ -252,8 +243,10 @@ export function OnboardingWizard({
 
   return (
     <div
-      className="w-full max-w-xl mx-auto overflow-hidden rounded-2xl bg-white"
-      style={cardStyle}
+      className={cn(
+        "w-full max-w-xl mx-auto overflow-hidden rounded-2xl bg-white",
+        "shadow-card",
+      )}
     >
       {/* ---- Header: stepper ---- */}
       <div className="px-6 pt-6 pb-4 border-b border-[rgba(34,42,53,0.08)]">
@@ -302,8 +295,10 @@ export function OnboardingWizard({
               type="button"
               onClick={handleBack}
               disabled={isPending}
-              className="flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50"
-              style={btnSecondaryStyle}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50",
+                "shadow-ring",
+              )}
               aria-label="Volver al paso anterior"
             >
               Anterior

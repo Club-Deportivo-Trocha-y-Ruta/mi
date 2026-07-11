@@ -62,11 +62,7 @@ export function ConfirmDeleteDialog({
             <div>
               <h2
                 id="confirm-delete-title"
-                className="text-base text-charcoal"
-                style={{
-                  fontFamily: "'Cal Sans', system-ui, sans-serif",
-                  fontWeight: 600,
-                }}
+                className="font-display text-base text-charcoal"
               >
                 {title}
               </h2>

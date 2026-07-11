@@ -82,9 +82,6 @@ export interface GroupAnalysisPanelProps {
   hasResults: boolean;
 }
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 export function GroupAnalysisPanel({
   raceEventId,
   hasResults,
@@ -116,8 +113,7 @@ export function GroupAnalysisPanel({
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4"
-      style={{ boxShadow: cardShadow }}
+      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
       aria-label="Análisis grupal con IA"
       data-testid="group-analysis-panel"
     >
@@ -130,8 +126,7 @@ export function GroupAnalysisPanel({
             aria-hidden="true"
           />
           <h3
-            className="text-sm font-semibold text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif" }}
+            className="font-display text-sm font-semibold text-charcoal"
           >
             Análisis con IA
           </h3>

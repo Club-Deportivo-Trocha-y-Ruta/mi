@@ -36,8 +36,7 @@ interface AthleteFormProps {
 }
 
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray shadow-ring";
 
 export function AthleteForm({
   initialValues,
@@ -84,15 +83,13 @@ export function AthleteForm({
   return (
     <form
       onSubmit={form.handleSubmit(onSubmit)}
-      className="space-y-5 rounded-xl bg-white p-5"
-      style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
+      className="space-y-5 rounded-xl bg-white p-5 shadow-card"
     >
       <div className="grid gap-4 md:grid-cols-2">
         <label className="text-sm font-medium text-charcoal">
           Nombres
           <input
             className={inputClass}
-            style={inputStyle}
             {...form.register("first_name")}
           />
           <span className="text-xs text-red-600">{form.formState.errors.first_name?.message}</span>
@@ -101,7 +98,6 @@ export function AthleteForm({
           Apellidos
           <input
             className={inputClass}
-            style={inputStyle}
             {...form.register("last_name")}
           />
           <span className="text-xs text-red-600">{form.formState.errors.last_name?.message}</span>
@@ -114,7 +110,6 @@ export function AthleteForm({
           <input
             type="date"
             className={inputClass}
-            style={inputStyle}
             autoComplete="off"
             max={new Date(Date.now() - 86400000).toISOString().slice(0, 10)}
             {...form.register("birth_date")}
@@ -126,7 +121,6 @@ export function AthleteForm({
           Sexo
           <select
             className={inputClass}
-            style={inputStyle}
             {...form.register("sex")}
             disabled={mode === "edit"}
           >
@@ -139,7 +133,6 @@ export function AthleteForm({
           <input
             type="date"
             className={inputClass}
-            style={inputStyle}
             max={new Date().toISOString().slice(0, 10)}
             {...form.register("club_join_date")}
           />
@@ -164,8 +157,7 @@ export function AthleteForm({
       <button
         type="submit"
         disabled={isSubmitting}
-        className="rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-        style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+        className="rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
       >
         {isSubmitting ? "Guardando..." : mode === "create" ? "Crear atleta" : "Guardar cambios"}
       </button>

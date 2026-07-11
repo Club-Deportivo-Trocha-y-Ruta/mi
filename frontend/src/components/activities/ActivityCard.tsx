@@ -37,13 +37,6 @@ import { UserRole } from "@/types/enums";
 import type { ActivityOut } from "@/types/strava.types";
 
 // ---------------------------------------------------------------------------
-// Design tokens (mirror de LinkedParentsCard / ConsentStatusPanel)
-// ---------------------------------------------------------------------------
-
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-// ---------------------------------------------------------------------------
 // Formatters
 // ---------------------------------------------------------------------------
 
@@ -149,8 +142,7 @@ export function ActivityCard({
 
   return (
     <article
-      className={cn("rounded-xl bg-white p-4", className)}
-      style={{ boxShadow: cardShadow }}
+      className={cn("rounded-xl bg-white p-4 shadow-card", className)}
       aria-label={`Actividad ${sportTypeLabel(activity.sport_type)} del ${formatActivityDateTime(activity.start_date_local)}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">

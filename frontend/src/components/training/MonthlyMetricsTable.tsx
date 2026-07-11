@@ -30,13 +30,9 @@ interface MonthlyMetricsTableProps {
   athleteNames?: Record<string, string>;
 }
 
-const cardStyle: React.CSSProperties = {
-  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-};
-
 function StatCard({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-xl bg-white p-4 text-center" style={cardStyle}>
+    <div className="rounded-xl bg-white p-4 text-center shadow-ring">
       <p className="text-2xl font-bold text-charcoal">{value}</p>
       <p className="mt-0.5 text-xs text-mid-gray">{label}</p>
     </div>
@@ -119,7 +115,7 @@ export function MonthlyMetricsTable({ metrics, athleteNames }: MonthlyMetricsTab
             Sin sesiones registradas para este período.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-xl bg-white" style={cardStyle}>
+          <div className="overflow-x-auto rounded-xl bg-white shadow-ring">
             <table className="min-w-full text-sm" data-testid="session-detail-table">
               <caption className="sr-only">Detalle de sesiones del período</caption>
               <thead style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
@@ -174,7 +170,7 @@ export function MonthlyMetricsTable({ metrics, athleteNames }: MonthlyMetricsTab
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mid-gray">
             Asistencia por atleta
           </h3>
-          <div className="overflow-x-auto rounded-xl bg-white" style={cardStyle}>
+          <div className="overflow-x-auto rounded-xl bg-white shadow-ring">
             <table className="min-w-full text-sm" data-testid="attendance-table">
               <caption className="sr-only">
                 Asistencia mensual por atleta y estado
@@ -299,8 +295,7 @@ export function MonthlyMetricsTable({ metrics, athleteNames }: MonthlyMetricsTab
           ).map(({ label, value }) => (
             <div
               key={label}
-              className="rounded-xl bg-white px-4 py-3 text-center"
-              style={cardStyle}
+              className="rounded-xl bg-white px-4 py-3 text-center shadow-ring"
             >
               <p className="text-lg font-bold text-charcoal">{metricLabel(value)}</p>
               <p className="mt-0.5 text-xs text-mid-gray">{label}</p>

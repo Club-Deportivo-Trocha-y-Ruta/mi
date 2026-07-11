@@ -77,11 +77,7 @@ export function AnthropometryHistory({
           <li key={record.id}>
             <button
               type="button"
-              className="w-full cursor-pointer rounded-xl bg-white p-4 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
-              style={{
-                boxShadow:
-                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-              }}
+              className="w-full cursor-pointer rounded-xl bg-white p-4 text-left shadow-card transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
               onClick={() => setSelectedRecord(record)}
               aria-label={`Ver detalle de medición del ${formatDate(record.evaluation_date)}`}
             >
@@ -163,12 +159,8 @@ export function AnthropometryHistory({
             role="dialog"
             aria-modal="true"
             aria-labelledby="anthropometry-record-modal-title"
-            className="mx-4 w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 sm:p-8"
-            style={{
-              maxHeight: "85dvh",
-              boxShadow:
-                "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-            }}
+            className="mx-4 w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 sm:p-8 shadow-card"
+            style={{ maxHeight: "85dvh" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div
@@ -177,8 +169,8 @@ export function AnthropometryHistory({
             >
               <h3
                 id="anthropometry-record-modal-title"
-                className="text-base text-charcoal"
-                style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+                className="font-display text-base text-charcoal"
+                style={{ letterSpacing: "0.2px" }}
               >
                 Medición del {formatDate(selectedRecord.evaluation_date)}
               </h3>

@@ -21,8 +21,7 @@ export function UnlinkedCompetitorsPage() {
       {/* Header */}
       <div>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           Competidores sin enlazar
         </h1>

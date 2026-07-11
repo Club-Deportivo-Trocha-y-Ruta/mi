@@ -14,8 +14,7 @@ import {
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
 
 /** Small "IA" badge rendered next to a field label when AI pre-filled it. */
@@ -56,7 +55,6 @@ export function StepGeneral({ register, control, errors, aiSeededFields }: StepG
             type="date"
             {...register("scheduled_date")}
             className={inputClass}
-            style={inputStyle}
             aria-describedby={errors.scheduled_date ? "scheduled_date-error" : undefined}
             aria-invalid={!!errors.scheduled_date}
           />
@@ -76,7 +74,6 @@ export function StepGeneral({ register, control, errors, aiSeededFields }: StepG
             type="time"
             {...register("scheduled_start_time")}
             className={inputClass}
-            style={inputStyle}
             aria-describedby={
               errors.scheduled_start_time ? "scheduled_start_time-error" : undefined
             }
@@ -121,7 +118,6 @@ export function StepGeneral({ register, control, errors, aiSeededFields }: StepG
             placeholder="Ej: Pista XCO La Buitrera"
             {...register("location")}
             className={inputClass}
-            style={inputStyle}
             aria-describedby={errors.location ? "location-error" : undefined}
             aria-invalid={!!errors.location}
           />
@@ -144,7 +140,6 @@ export function StepGeneral({ register, control, errors, aiSeededFields }: StepG
           placeholder="Ej: Técnica de frenada en descenso"
           {...register("technical_focus")}
           className={inputClass}
-          style={inputStyle}
           aria-describedby={errors.technical_focus ? "technical_focus-error" : undefined}
           aria-invalid={!!errors.technical_focus}
         />
@@ -166,7 +161,6 @@ export function StepGeneral({ register, control, errors, aiSeededFields }: StepG
           placeholder="Describe el plan de la sesión, objetivos, metodología..."
           {...register("description")}
           className={`${inputClass} resize-none`}
-          style={inputStyle}
           aria-describedby={errors.description ? "description-error" : undefined}
           aria-invalid={!!errors.description}
         />
@@ -224,7 +218,6 @@ export function StepGeneral({ register, control, errors, aiSeededFields }: StepG
           placeholder="Lista los objetivos específicos de esta sesión…"
           {...register("objectives")}
           className={`${inputClass} resize-none`}
-          style={inputStyle}
           aria-describedby={errors.objectives ? "objectives-error" : undefined}
           aria-invalid={!!errors.objectives}
         />

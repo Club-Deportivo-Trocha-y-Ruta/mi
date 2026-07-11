@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -35,6 +35,7 @@ import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
 import { AthleteNewslettersTabPanel } from "@/components/training/AthleteNewslettersTabPanel";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
@@ -68,9 +69,6 @@ function parseTabParam(raw: string | null): Tab | null {
   return null;
 }
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function StatCard({
   icon: Icon,
   label,
@@ -85,7 +83,7 @@ function StatCard({
   colorClass?: string;
 }) {
   return (
-    <div className="rounded-xl bg-white p-4" style={{ boxShadow: cardShadow }}>
+    <div className="rounded-xl bg-white p-4 shadow-card">
       <div className="flex items-center gap-2 text-mid-gray">
         <Icon size={16} />
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
@@ -169,11 +167,11 @@ function StravaTabPanel({ athleteId }: { athleteId: number }) {
   return (
     <div className="space-y-4">
       {/* Connection card */}
-      <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+      <div className="rounded-xl bg-white p-5 shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3
-            className="flex items-center gap-2 text-sm text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+            className="font-display flex items-center gap-2 text-sm text-charcoal"
+            style={{ letterSpacing: "0.2px" }}
           >
             <Bike size={16} />
             Conexión con Strava
@@ -304,10 +302,10 @@ function StravaTabPanel({ athleteId }: { athleteId: number }) {
       </div>
 
       {/* Activities list */}
-      <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+      <div className="rounded-xl bg-white p-5 shadow-card">
         <h3
-          className="mb-4 flex items-center gap-2 text-sm text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+          className="font-display mb-4 flex items-center gap-2 text-sm text-charcoal"
+          style={{ letterSpacing: "0.2px" }}
         >
           <Activity size={16} />
           Actividades sincronizadas
@@ -484,18 +482,11 @@ export function AthleteDetailPage() {
   if (athleteQuery.isError) {
     return (
       <section className="space-y-3">
-        <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-        >
-          Atleta no encontrado
-        </h1>
-        <p className="text-sm text-mid-gray">
-          No existe un atleta con ese ID o no tienes permisos para verlo.
-        </p>
-        <Link to="/athletes" className="text-sm font-medium text-charcoal transition-opacity hover:opacity-70">
-          Volver a la lista
-        </Link>
+        <PageHeader
+          title="Atleta no encontrado"
+          subtitle="No existe un atleta con ese ID o no tienes permisos para verlo."
+          backTo={{ to: "/athletes", label: "Volver a la lista" }}
+        />
       </section>
     );
   }
@@ -514,13 +505,8 @@ export function AthleteDetailPage() {
       "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
       activeTab === tab
         ? "bg-charcoal text-white"
-        : "bg-white text-mid-gray hover:text-charcoal",
+        : "bg-white text-mid-gray shadow-ring hover:text-charcoal",
     );
-
-  const tabStyle = (tab: Tab) =>
-    activeTab !== tab
-      ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }
-      : undefined;
 
   return (
     <section className="space-y-4">
@@ -563,8 +549,8 @@ export function AthleteDetailPage() {
           </>
         ) : (
           <div
-            className="col-span-1 flex items-center justify-center rounded-xl bg-white p-4 text-sm text-mid-gray lg:col-span-3"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px", borderStyle: "dashed" }}
+            className="col-span-1 flex items-center justify-center rounded-xl bg-white p-4 text-sm text-mid-gray shadow-ring lg:col-span-3"
+            style={{ borderStyle: "dashed" }}
           >
             Sin mediciones antropométricas registradas
           </div>
@@ -579,7 +565,6 @@ export function AthleteDetailPage() {
         <button
           type="button"
           className={tabClasses("info")}
-          style={tabStyle("info")}
           onClick={() => updateTab("info")}
         >
           <User size={14} />
@@ -588,7 +573,6 @@ export function AthleteDetailPage() {
         <button
           type="button"
           className={tabClasses("anthropometry")}
-          style={tabStyle("anthropometry")}
           onClick={() => updateTab("anthropometry")}
         >
           <Ruler size={14} />
@@ -598,7 +582,6 @@ export function AthleteDetailPage() {
           <button
             type="button"
             className={tabClasses("growth")}
-            style={tabStyle("growth")}
             onClick={() => updateTab("growth")}
           >
             <TrendingUp size={14} />
@@ -608,7 +591,6 @@ export function AthleteDetailPage() {
         <button
           type="button"
           className={tabClasses("ai_analysis")}
-          style={tabStyle("ai_analysis")}
           onClick={() => updateTab("ai_analysis")}
           data-testid="athlete-tab-ai-analysis"
         >
@@ -620,7 +602,6 @@ export function AthleteDetailPage() {
           <button
             type="button"
             className={tabClasses("newsletters")}
-            style={tabStyle("newsletters")}
             onClick={() => updateTab("newsletters")}
             data-testid="athlete-tab-newsletters"
           >
@@ -632,7 +613,6 @@ export function AthleteDetailPage() {
         <button
           type="button"
           className={tabClasses("activities")}
-          style={tabStyle("activities")}
           onClick={() => updateTab("activities")}
           data-testid="athlete-tab-activities"
         >
@@ -648,13 +628,12 @@ export function AthleteDetailPage() {
             disabled={sendReportMutation.isPending || reportSent}
             onClick={() => sendReportMutation.mutate()}
             className={cn(
-              "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-opacity",
+              "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium shadow-button-highlight transition-opacity",
               reportSent
                 ? "bg-green-600 text-white"
                 : "bg-charcoal text-white hover:opacity-70",
               (sendReportMutation.isPending || reportSent) && "cursor-not-allowed opacity-70",
             )}
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
           >
             {sendReportMutation.isPending ? (
               <>
@@ -684,10 +663,10 @@ export function AthleteDetailPage() {
       {/* Tab content — Info general */}
       {activeTab === "info" && (
         <div className="space-y-4">
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <h3
-              className="mb-4 flex items-center gap-2 text-sm text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+              className="font-display mb-4 flex items-center gap-2 text-sm text-charcoal"
+              style={{ letterSpacing: "0.2px" }}
             >
               <Info size={16} />
               Datos del atleta
@@ -728,17 +707,16 @@ export function AthleteDetailPage() {
                 "rounded-xl p-5",
                 latest.maturation_status === "Circa-PHV"
                   ? "border border-amber-200 bg-amber-50"
-                  : "bg-white",
+                  : "bg-white shadow-card",
               )}
-              style={latest.maturation_status !== "Circa-PHV" ? { boxShadow: cardShadow } : undefined}
             >
               <div className="mb-3 flex items-center gap-2">
                 {latest.maturation_status === "Circa-PHV" && (
                   <AlertTriangle size={16} className="text-amber-500" />
                 )}
                 <span
-                  className="text-sm text-charcoal"
-                  style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+                  className="font-display text-sm text-charcoal"
+                  style={{ letterSpacing: "0.2px" }}
                 >
                   Implicaciones PHV
                 </span>
@@ -757,23 +735,21 @@ export function AthleteDetailPage() {
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <h3
-              className="text-lg text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+              className="font-display text-lg text-charcoal"
             >
               Registro de mediciones
             </h3>
             <button
               type="button"
               onClick={() => setShowForm(!showForm)}
-              className="rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-              style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+              className="rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-white shadow-button-highlight transition-opacity hover:opacity-70"
             >
               {showForm ? "Cancelar" : "+ Nueva medición"}
             </button>
           </div>
 
           {showForm && (
-            <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+            <div className="rounded-xl bg-white p-5 shadow-card">
               <AnthropometryForm
                 athleteId={athlete.id}
                 athleteSex={athlete.sex}
@@ -783,7 +759,7 @@ export function AthleteDetailPage() {
             </div>
           )}
 
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <AnthropometryHistory
               records={records}
               isLoading={anthropometryQuery.isLoading}
@@ -818,7 +794,7 @@ export function AthleteDetailPage() {
             sex={athlete.sex}
             birthDate={athlete.birth_date}
           />
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <GrowthCharts
               records={records}
               sex={athlete.sex}

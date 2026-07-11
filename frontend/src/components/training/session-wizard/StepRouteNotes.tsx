@@ -5,8 +5,7 @@ import type { TrainingSessionFormValues } from "@/schemas/trainingSession.schema
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
 
 interface StepRouteNotesProps {
@@ -37,7 +36,6 @@ export function StepRouteNotes({
           placeholder="Describe el recorrido en texto libre (máx. 500 caracteres)..."
           {...register("route_text")}
           className={`${inputClass} resize-none`}
-          style={inputStyle}
           aria-describedby={errors.route_text ? "route_text-error" : undefined}
           aria-invalid={!!errors.route_text}
         />
@@ -60,7 +58,6 @@ export function StepRouteNotes({
           placeholder="https://www.strava.com/activities/..."
           {...register("strava_url")}
           className={inputClass}
-          style={inputStyle}
           aria-describedby={errors.strava_url ? "strava_url-error" : undefined}
           aria-invalid={!!errors.strava_url}
         />
@@ -88,7 +85,6 @@ export function StepRouteNotes({
           placeholder="Notas internas — no se comparten con las familias."
           {...register("coach_notes")}
           className={`${inputClass} resize-none`}
-          style={inputStyle}
           aria-describedby={errors.coach_notes ? "coach_notes-error" : undefined}
           aria-invalid={!!errors.coach_notes}
         />

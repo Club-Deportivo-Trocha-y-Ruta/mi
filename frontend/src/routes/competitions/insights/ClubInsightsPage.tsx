@@ -28,9 +28,6 @@ import {
 } from "@/lib/insights";
 import type { ClubInsightByRaceItem } from "@/types/athleteRaceAnalysis.types";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function InsightCard({
   item,
   onNavigate,
@@ -50,12 +47,11 @@ function InsightCard({
   return (
     <div
       className={[
-        "rounded-xl bg-white p-4 transition-colors",
+        "rounded-xl bg-white p-4 transition-colors shadow-card",
         isClickable
           ? "cursor-pointer hover:ring-2 hover:ring-charcoal/20"
           : "cursor-default opacity-60",
       ].join(" ")}
-      style={{ boxShadow: cardShadow }}
       onClick={isClickable ? () => onNavigate(item.athlete_id) : undefined}
       role={isClickable ? "button" : undefined}
       tabIndex={isClickable ? 0 : undefined}
@@ -155,8 +151,7 @@ export function ClubInsightsPage() {
           Análisis IA
         </Link>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           Análisis del club por válida
         </h1>
@@ -192,8 +187,7 @@ export function ClubInsightsPage() {
 
       {effectiveId === null && !eventsQuery.isLoading && (
         <div
-          className="flex min-h-[20vh] items-center justify-center rounded-xl bg-white p-6 text-center"
-          style={{ boxShadow: cardShadow }}
+          className="flex min-h-[20vh] items-center justify-center rounded-xl bg-white p-6 text-center shadow-card"
           data-testid="club-insights-no-races"
         >
           <p className="text-sm text-mid-gray">
@@ -210,8 +204,7 @@ export function ClubInsightsPage() {
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-xl bg-white p-4"
-              style={{ boxShadow: cardShadow }}
+              className="rounded-xl bg-white p-4 shadow-card"
             >
               <div className="mb-3 flex items-center gap-3">
                 <Skeleton className="h-9 w-9 rounded-full" />
@@ -227,8 +220,7 @@ export function ClubInsightsPage() {
         insightsQuery.isError &&
         !insightsQuery.isLoading && (
           <div
-            className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6"
-            style={{ boxShadow: cardShadow }}
+            className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6 shadow-card"
             data-testid="club-insights-error"
           >
             <p className="text-sm text-mid-gray">
@@ -255,8 +247,7 @@ export function ClubInsightsPage() {
             </p>
             {insightsQuery.data.items.length === 0 ? (
               <div
-                className="flex min-h-[20vh] items-center justify-center rounded-xl bg-white p-6 text-center"
-                style={{ boxShadow: cardShadow }}
+                className="flex min-h-[20vh] items-center justify-center rounded-xl bg-white p-6 text-center shadow-card"
                 data-testid="club-insights-empty"
               >
                 <p className="text-sm text-mid-gray">

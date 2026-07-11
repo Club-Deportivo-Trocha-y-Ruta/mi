@@ -162,8 +162,7 @@ function AttendanceRow({
           {...register("status")}
           disabled={disabled}
           aria-label="Estado de asistencia"
-          className="rounded-lg px-2 py-1.5 text-xs text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="rounded-lg px-2 py-1.5 text-xs text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 shadow-ring"
         >
           {Object.entries(STATUS_LABELS).map(([val, label]) => (
             <option key={val} value={val}>
@@ -191,12 +190,12 @@ function AttendanceRow({
               aria-required="true"
               aria-invalid={needsReasonAlert}
               aria-describedby={needsReasonAlert ? `reason-help-${attendance.athlete_id}` : undefined}
-              className="w-full min-w-[140px] rounded-lg px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-              style={{
-                boxShadow: needsReasonAlert
-                  ? "rgba(217, 119, 6, 0.5) 0px 0px 0px 2px"
-                  : "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-              }}
+              className="w-full min-w-[140px] rounded-lg px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 shadow-ring"
+              style={
+                needsReasonAlert
+                  ? { boxShadow: "rgba(217, 119, 6, 0.5) 0px 0px 0px 2px" }
+                  : undefined
+              }
             />
             {needsReasonAlert && (
               <p
@@ -268,10 +267,7 @@ function AttendanceCard({
   const athleteName = attendance.athlete_name ?? `Atleta #${attendance.athlete_id}`;
 
   return (
-    <div
-      className="rounded-xl bg-white p-4 space-y-3"
-      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-    >
+    <div className="rounded-xl bg-white p-4 space-y-3 shadow-ring">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-charcoal">{athleteName}</p>
         <div className="flex items-center gap-2">
@@ -300,8 +296,7 @@ function AttendanceCard({
             {...register("status")}
             disabled={disabled}
             aria-label="Estado de asistencia"
-            className="rounded-lg px-2 py-1 text-xs text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg px-2 py-1 text-xs text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 shadow-ring"
           >
             {Object.entries(STATUS_LABELS).map(([val, label]) => (
               <option key={val} value={val}>
@@ -336,12 +331,12 @@ function AttendanceCard({
             aria-required="true"
             aria-invalid={needsReasonAlert}
             aria-describedby={needsReasonAlert ? `reason-help-card-${attendance.athlete_id}` : undefined}
-            className="w-full rounded-lg px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid-gray outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40"
-            style={{
-              boxShadow: needsReasonAlert
-                ? "rgba(217, 119, 6, 0.5) 0px 0px 0px 2px"
-                : "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-            }}
+            className="w-full rounded-lg px-2.5 py-1.5 text-xs text-charcoal placeholder:text-mid-gray outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 shadow-ring"
+            style={
+              needsReasonAlert
+                ? { boxShadow: "rgba(217, 119, 6, 0.5) 0px 0px 0px 2px" }
+                : undefined
+            }
           />
           {needsReasonAlert && (
             <p

@@ -3,7 +3,7 @@
  *
  * Aplica por defecto:
  *  - `rounded-xl` (radius-lg del design system)
- *  - `shadow-ring-soft` (var(--shadow-ring-soft) — sombra Cal.com ring+soft)
+ *  - `shadow-card` (var(--shadow-card) — sombra Cal.com ring+soft)
  *  - `bg-white`
  *
  * Estos defaults reemplazan el `CARD_SHADOW` hardcoded que estaba duplicado
@@ -18,7 +18,7 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("rounded-xl bg-white text-charcoal shadow-ring-soft", className)}
+      className={cn("rounded-xl bg-white text-charcoal shadow-card", className)}
       {...props}
     />
   ),

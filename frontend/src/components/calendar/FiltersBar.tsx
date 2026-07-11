@@ -11,8 +11,6 @@ const ALL_EVENT_TYPES: EventType[] = [
   "rest_day",
 ];
 
-const inputSelectStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
-
 export function CalendarFiltersBar() {
   const {
     eventTypes,
@@ -30,11 +28,7 @@ export function CalendarFiltersBar() {
 
   return (
     <div
-      className="rounded-xl bg-white p-4"
-      style={{
-        boxShadow:
-          "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-      }}
+      className="rounded-xl bg-white p-4 shadow-card"
     >
       <div className="flex flex-wrap items-end gap-2">
         {/* Event type filter */}
@@ -48,12 +42,11 @@ export function CalendarFiltersBar() {
                   key={type}
                   type="button"
                   onClick={() => toggleEventType(type)}
-                  className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors shadow-ring ${
                     active
                       ? "bg-charcoal text-white"
                       : "bg-white text-charcoal hover:bg-light-gray"
                   }`}
-                  style={inputSelectStyle}
                   aria-pressed={active}
                 >
                   {labelForEventType(type)}
@@ -67,8 +60,7 @@ export function CalendarFiltersBar() {
         <button
           type="button"
           onClick={reset}
-          className="self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70"
-          style={inputSelectStyle}
+          className="self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
         >
           Limpiar filtros
         </button>

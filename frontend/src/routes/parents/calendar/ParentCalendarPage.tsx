@@ -64,9 +64,8 @@ function AthleteChip({
       className={`rounded-full px-3 py-2.5 min-h-11 text-sm font-medium transition-colors ${
         active
           ? "bg-charcoal text-white"
-          : "bg-white text-mid-gray hover:text-charcoal"
+          : "bg-white text-mid-gray hover:text-charcoal shadow-ring"
       }`}
-      style={!active ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
       aria-pressed={active}
     >
       {label}
@@ -139,8 +138,7 @@ export function ParentCalendarPage() {
       {/* Header */}
       <div>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           Mi calendario
         </h1>
@@ -152,7 +150,7 @@ export function ParentCalendarPage() {
       {/* Sin atletas vinculados */}
       {!athletesQuery.isLoading && !hasAthletes && (
         <div
-          className="rounded-xl bg-white px-5 py-10 text-center shadow-ring-soft"
+          className="rounded-xl bg-white px-5 py-10 text-center shadow-card"
           data-testid="no-athletes-state"
         >
           <p className="text-sm font-medium text-charcoal">
@@ -238,7 +236,7 @@ export function ParentCalendarPage() {
           {/* Error state */}
           {eventsQuery.isError && !eventsQuery.isLoading && (
             <div
-              className="rounded-xl bg-white px-5 py-6 shadow-ring-soft"
+              className="rounded-xl bg-white px-5 py-6 shadow-card"
               role="alert"
             >
               <p className="text-sm text-mid-gray">
@@ -250,7 +248,7 @@ export function ParentCalendarPage() {
           {/* Empty state */}
           {!eventsQuery.isLoading && !eventsQuery.isError && events.length === 0 && (
             <div
-              className="rounded-xl bg-white px-5 py-10 text-center shadow-ring-soft"
+              className="rounded-xl bg-white px-5 py-10 text-center shadow-card"
               data-testid="empty-state"
             >
               <p className="text-sm text-mid-gray">Sin eventos este mes.</p>

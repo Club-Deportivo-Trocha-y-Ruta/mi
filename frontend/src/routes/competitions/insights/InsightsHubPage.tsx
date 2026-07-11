@@ -14,16 +14,8 @@
 import { Link } from "react-router-dom";
 import { BarChart2, Calendar } from "lucide-react";
 
+import { PageHeader } from "@/components/shared/PageHeader";
 import { currentSeason } from "@/lib/datetime";
-
-// ---------------------------------------------------------------------------
-// Constante de estilo (alineada con CompetitionsListPage y SeasonInsightsPage)
-// ---------------------------------------------------------------------------
-
-const cardStyle = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
 
 // ---------------------------------------------------------------------------
 // Componente
@@ -34,26 +26,17 @@ export function InsightsHubPage() {
 
   return (
     <section className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-        >
-          Análisis IA carreras
-        </h1>
-        <p className="mt-0.5 text-sm text-mid-gray">
-          Vistas agregadas de rendimiento por temporada y por válida.
-        </p>
-      </div>
+      <PageHeader
+        title="Análisis IA carreras"
+        subtitle="Vistas agregadas de rendimiento por temporada y por válida."
+      />
 
       {/* Grid de accesos */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Card: Panorama de temporada */}
         <Link
           to={`/competitions/insights/season/${activeSeason}`}
-          className="group flex flex-col gap-3 rounded-xl bg-white p-6 transition-colors hover:ring-2 hover:ring-charcoal/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal"
-          style={cardStyle}
+          className="group flex flex-col gap-3 rounded-xl bg-white p-6 shadow-card transition-colors hover:ring-2 hover:ring-charcoal/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal"
           aria-label="Ir a Panorama de temporada"
           data-testid="hub-card-season"
         >
@@ -65,8 +48,7 @@ export function InsightsHubPage() {
           </div>
           <div>
             <p
-              className="text-base font-semibold text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif" }}
+              className="font-display text-base font-semibold text-charcoal"
             >
               Panorama de temporada
             </p>
@@ -87,8 +69,7 @@ export function InsightsHubPage() {
         {/* Card: Análisis por válida */}
         <Link
           to="/competitions/insights/club"
-          className="group flex flex-col gap-3 rounded-xl bg-white p-6 transition-colors hover:ring-2 hover:ring-charcoal/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal"
-          style={cardStyle}
+          className="group flex flex-col gap-3 rounded-xl bg-white p-6 shadow-card transition-colors hover:ring-2 hover:ring-charcoal/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal"
           aria-label="Ir a Análisis por válida"
           data-testid="hub-card-club"
         >
@@ -100,8 +81,7 @@ export function InsightsHubPage() {
           </div>
           <div>
             <p
-              className="text-base font-semibold text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif" }}
+              className="font-display text-base font-semibold text-charcoal"
             >
               Análisis por válida
             </p>

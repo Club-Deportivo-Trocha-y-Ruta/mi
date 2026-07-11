@@ -202,8 +202,8 @@ export function EditConditionsDialog({
                     className={cn(
                       "w-full rounded-lg bg-white py-3 pl-3 pr-12 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px]",
+                      "shadow-ring",
                     )}
-                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                     aria-invalid={errors.temperature_c ? true : undefined}
                   />
                   <span
@@ -240,8 +240,8 @@ export function EditConditionsDialog({
                     className={cn(
                       "w-full rounded-lg bg-white py-3 pl-3 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px]",
+                      "shadow-ring",
                     )}
-                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                     aria-invalid={errors.altitude_msnm ? true : undefined}
                   />
                   <span
@@ -312,8 +312,8 @@ export function EditConditionsDialog({
                 className={cn(
                   "w-full rounded-lg bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                   "min-h-[48px]",
+                  "shadow-ring",
                 )}
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
                 aria-invalid={errors.climate ? true : undefined}
               />
               <datalist id="ec-climate-suggestions">
@@ -346,9 +346,11 @@ export function EditConditionsDialog({
                 maxLength={2000}
                 placeholder="Condiciones generales del trazado y clima — evite incluir nombres de atletas o información médica"
                 {...register("weather_notes")}
-                className="w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                className={cn(
+                  "w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                  "shadow-ring",
+                )}
                 style={{
-                  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
                   minHeight: "80px",
                 }}
                 aria-invalid={errors.weather_notes ? true : undefined}

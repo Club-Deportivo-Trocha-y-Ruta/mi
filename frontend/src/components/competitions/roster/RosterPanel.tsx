@@ -153,8 +153,10 @@ function RosterError({
         type="button"
         onClick={onRetry}
         disabled={isFetching}
-        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50"
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+        className={cn(
+          "flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50",
+          "shadow-ring",
+        )}
         data-testid="roster-panel-retry"
       >
         {isFetching ? (

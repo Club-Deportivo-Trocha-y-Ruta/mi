@@ -30,22 +30,9 @@ const overlayStyle: React.CSSProperties = {
   backdropFilter: "blur(3px)",
 };
 
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
-const checkboxStyle: React.CSSProperties = {
-  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-};
-
 const btnPrimaryStyle: React.CSSProperties = {
   boxShadow:
     "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(0, 0, 0, 0.16) 0px 1px 1.9px 0px inset, rgba(255, 255, 255, 0.15) 0px 2px 0px inset",
-};
-
-const btnSecondaryStyle: React.CSSProperties = {
-  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
 };
 
 const changelogStyle: React.CSSProperties = {
@@ -99,8 +86,7 @@ function ConsentItem({
         <input
           type="checkbox"
           id={`renewal-${id}`}
-          className="h-4 w-4 cursor-pointer rounded accent-charcoal"
-          style={checkboxStyle}
+          className={cn("h-4 w-4 cursor-pointer rounded accent-charcoal", "shadow-ring")}
           {...register(id)}
           aria-required={required}
           aria-describedby={error ? `renewal-${id}-error` : undefined}
@@ -204,10 +190,7 @@ export function ConsentRenewalModal({
         aria-labelledby="renewal-modal-title"
         aria-describedby="renewal-modal-desc"
       >
-        <div
-          className="w-full max-w-lg rounded-2xl bg-white"
-          style={cardStyle}
-        >
+        <div className={cn("w-full max-w-lg rounded-2xl bg-white", "shadow-card")}>
           {/* Header */}
           <div className="px-6 pt-6 pb-4 border-b border-[rgba(34,42,53,0.08)]">
             <div className="flex items-start gap-3">
@@ -217,8 +200,7 @@ export function ConsentRenewalModal({
               <div>
                 <h2
                   id="renewal-modal-title"
-                  className="text-base text-charcoal"
-                  style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+                  className="font-display text-base text-charcoal"
                 >
                   {isFirstConsent
                     ? "Consentimiento parental requerido"
@@ -364,8 +346,10 @@ export function ConsentRenewalModal({
                   type="button"
                   onClick={() => setShowRevokeDialog(true)}
                   disabled={isPending}
-                  className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-red-600 transition-opacity disabled:opacity-50"
-                  style={btnSecondaryStyle}
+                  className={cn(
+                    "rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-red-600 transition-opacity disabled:opacity-50",
+                    "shadow-ring",
+                  )}
                 >
                   Revocar consentimiento
                 </button>

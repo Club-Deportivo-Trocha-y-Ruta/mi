@@ -7,8 +7,7 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useAuthStore } from "@/store/auth.store";
 
 const inputClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 export function ParentsListPage() {
   const user = useAuthStore((state) => state.user);
@@ -34,8 +33,7 @@ export function ParentsListPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="font-display text-2xl text-charcoal"
           >
             Padres y Acudientes
           </h1>
@@ -44,36 +42,25 @@ export function ParentsListPage() {
         <button
           type="button"
           onClick={() => setShowDialog(true)}
-          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
         >
           + Nuevo padre
         </button>
       </div>
 
       {/* Search */}
-      <div
-        className="rounded-xl bg-white p-4"
-        style={{
-          boxShadow:
-            "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-        }}
-      >
+      <div className="rounded-xl bg-white p-4 shadow-card">
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Buscar por nombre..."
           className={inputClass}
-          style={inputStyle}
         />
       </div>
 
       {/* Skeleton */}
       {parentsQuery.isLoading ? (
-        <div
-          className="space-y-2 rounded-xl bg-white p-4"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-        >
+        <div className="space-y-2 rounded-xl bg-white p-4 shadow-ring">
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
           ))}
@@ -90,8 +77,8 @@ export function ParentsListPage() {
       {/* Empty state */}
       {!parentsQuery.isLoading && !parentsQuery.isError && filteredParents.length === 0 ? (
         <div
-          className="rounded-xl bg-white p-10 text-center"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px", borderStyle: "dashed" }}
+          className="rounded-xl bg-white p-10 text-center shadow-ring"
+          style={{ borderStyle: "dashed" }}
         >
           <p className="text-sm text-mid-gray">No hay padres o acudientes registrados.</p>
           <button

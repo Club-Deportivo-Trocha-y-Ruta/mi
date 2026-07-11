@@ -103,12 +103,11 @@ describe("CompetitionDetailPage — render", () => {
     mockAuthAs("coach");
     renderDetail(1);
     await waitFor(() =>
-      expect(screen.getByTestId("competition-title")).toHaveTextContent(
-        "Copa Valle XCO — Válida I",
-      ),
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Copa Valle XCO — Válida I" }),
+      ).toBeInTheDocument(),
     );
-    const subtitle = screen.getByTestId("competition-subtitle");
-    expect(subtitle.textContent).toMatch(/Sevilla/);
+    const subtitle = screen.getByText(/Sevilla/, { selector: "p" });
     expect(subtitle.textContent).toMatch(/Completada/);
   });
 });
@@ -118,7 +117,7 @@ describe("CompetitionDetailPage — tabs URL-driven", () => {
     mockAuthAs("coach");
     renderDetail(1, "?tab=results");
     await waitFor(() =>
-      expect(screen.getByTestId("competition-title")).toBeInTheDocument(),
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument(),
     );
     // El trigger de "Resultados" debe estar marcado como activo (data-state=active)
     const trigger = screen.getByRole("tab", { name: "Resultados" });
@@ -177,7 +176,7 @@ describe("CompetitionDetailPage — CF6 calendar CTA", () => {
     );
     mockAuthAs("coach");
     renderDetail(9);
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
     expect(
       screen.queryByTestId("btn-associate-calendar"),
     ).not.toBeInTheDocument();
@@ -198,7 +197,7 @@ describe("CompetitionDetailPage — CF6 calendar CTA", () => {
     );
     mockAuthAs("coach");
     renderDetail(10);
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
     expect(
       screen.queryByTestId("btn-associate-calendar"),
     ).not.toBeInTheDocument();
@@ -232,7 +231,7 @@ describe("CompetitionDetailPage — delete admin", () => {
     mockAuthAs("admin");
     const user = userEvent.setup();
     renderDetail(1);
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
 
     await user.click(screen.getByTestId("btn-delete"));
     expect(
@@ -260,7 +259,7 @@ describe("CompetitionDetailPage — a11y", () => {
   it("0 violaciones jest-axe en tab Info", async () => {
     mockAuthAs("coach");
     const { container } = renderDetail(1);
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });

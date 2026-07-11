@@ -23,7 +23,7 @@ import { ExerciseCard, type StrengthExerciseListItem } from "./ExerciseCard";
 
 function CardSkeleton() {
   return (
-    <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-ring-soft">
+    <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-card">
       <Skeleton className="mb-2 h-4 w-3/4" />
       <Skeleton className="mb-3 h-3 w-full" />
       <Skeleton className="mb-2 h-3 w-1/2" />

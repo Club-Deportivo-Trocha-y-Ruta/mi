@@ -36,9 +36,6 @@ import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnaly
 import { useAthleteRaces } from "@/hooks/athletes/useAthleteRaces";
 import { cn } from "@/lib/utils";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 const MAX_VALIDA_SELECTION = 4;
 
 function getDefaultSeason(): number {
@@ -161,14 +158,12 @@ export function LaunchAnalysisForm({
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="rounded-xl bg-white p-5 space-y-5"
-      style={{ boxShadow: cardShadow }}
+      className={cn("rounded-xl bg-white p-5 space-y-5", "shadow-card")}
       aria-label="Lanzar análisis IA"
       data-testid="launch-analysis-form"
     >
       <h3
-        className="flex items-center gap-2 text-base text-charcoal"
-        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+        className="font-display flex items-center gap-2 text-base text-charcoal"
       >
         <Play size={16} aria-hidden="true" />
         Lanzar análisis IA
@@ -204,8 +199,10 @@ export function LaunchAnalysisForm({
                   setValue("event_ids", [], { shouldValidate: true });
                 }}
                 id="launch-season"
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className={cn(
+                  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+                  "shadow-ring",
+                )}
                 data-testid="launch-season-select"
               >
                 {seasonOptions.map((y) => (
@@ -324,8 +321,8 @@ export function LaunchAnalysisForm({
           className={cn(
             "inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity",
             isDisabled ? "cursor-not-allowed opacity-60" : "hover:opacity-90",
+            "shadow-button-highlight",
           )}
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
         >
           {isDisabled ? (
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />

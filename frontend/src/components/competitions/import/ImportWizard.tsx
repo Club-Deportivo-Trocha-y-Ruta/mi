@@ -869,8 +869,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               <select
                 id="series_kind"
                 {...register("series_kind")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px]"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
                 data-testid="wizard-series-kind"
               >
                 <option value="cup">Copa (con válidas numeradas)</option>
@@ -890,8 +889,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 <select
                   id="series_level"
                   {...register("series_level")}
-                  className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px]"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
                   data-testid="wizard-series-level"
                 >
                   <option value="departmental">Departamental</option>
@@ -916,8 +914,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                     : "Ej: Copa Valle de Ciclomontañismo"
                 }
                 {...register("series_name")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-series-name"
               />
               {errors.series_name && (
@@ -940,8 +937,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 min={2020}
                 max={2100}
                 {...register("season", { valueAsNumber: true })}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-season"
               />
               {errors.season && (
@@ -975,8 +971,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                         ? undefined
                         : Number(v),
                   })}
-                  className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                   data-testid="wizard-valida-num"
                 />
                 {errors.valida_num && (
@@ -1011,8 +1006,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 type="text"
                 placeholder="Ej: Válida IV — Cali"
                 {...register("event_name")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-event-name"
               />
               {errors.event_name && (
@@ -1033,8 +1027,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 id="event_date"
                 type="date"
                 {...register("event_date")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-event-date"
               />
               {errors.event_date && (
@@ -1056,8 +1049,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 type="text"
                 placeholder="Ej: Cali"
                 {...register("location")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-location"
               />
               {errors.location && (
@@ -1098,8 +1090,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                     max={50}
                     step={0.1}
                     {...register("temperature_c")}
-                    className="w-full rounded-lg bg-white py-2.5 pl-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                    className="w-full rounded-lg bg-white py-2.5 pl-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                     aria-invalid={errors.temperature_c ? true : undefined}
                     data-testid="wizard-temperature"
                   />
@@ -1171,8 +1162,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                     max={5000}
                     step={1}
                     {...register("altitude_msnm")}
-                    className="w-full rounded-lg bg-white py-2.5 pl-3 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                    style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                    className="w-full rounded-lg bg-white py-2.5 pl-3 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                     aria-invalid={errors.altitude_msnm ? true : undefined}
                     data-testid="wizard-altitude"
                   />
@@ -1205,8 +1195,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   placeholder="ej: soleado, parcialmente nublado"
                   maxLength={60}
                   {...register("climate")}
-                  className="w-full rounded-lg bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="w-full rounded-lg bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                   aria-invalid={errors.climate ? true : undefined}
                   data-testid="wizard-climate"
                 />
@@ -1239,9 +1228,8 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   maxLength={2000}
                   placeholder="Condiciones generales del trazado y clima — evite incluir nombres de atletas o información médica"
                   {...register("weather_notes")}
-                  className="w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
+                  className="w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                   style={{
-                    boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
                     minHeight: "80px",
                   }}
                   aria-invalid={errors.weather_notes ? true : undefined}
@@ -1427,10 +1415,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   aria-invalid={
                     !reasonValid && revisionReasonTouched ? true : undefined
                   }
-                  className="w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40"
-                  style={{
-                    boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-                  }}
+                  className="w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 >
                   <option value="">Selecciona un motivo…</option>
                   {(revisionReasonsQuery.data?.options ?? []).map((opt) => (

@@ -198,7 +198,7 @@ export function AppShell({ children }: AppShellProps) {
             Permanece visualmente oculto hasta recibir foco. ── */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-charcoal focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white focus:shadow-ring-soft focus:outline-none focus-visible:outline-none"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-charcoal focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white focus:shadow-card focus:outline-none focus-visible:outline-none"
       >
         Saltar a contenido
       </a>
@@ -223,8 +223,7 @@ export function AppShell({ children }: AppShellProps) {
         {/* Logo */}
         <div className="mb-8 px-2">
           <h2
-            className="text-lg text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="font-display text-lg text-charcoal"
           >
             Trocha y Ruta
           </h2>
@@ -278,16 +277,14 @@ export function AppShell({ children }: AppShellProps) {
             {isParent && <AthleteSwitcher />}
             <Link
               to="/perfil"
-              className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             >
               Mi perfil
             </Link>
             <button
               type="button"
               onClick={logout}
-              className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             >
               Cerrar sesión
             </button>

@@ -8,16 +8,6 @@ import { cn, maskPhone } from "@/lib/utils";
 import type { ParentAthleteOut, ParentInviteOut } from "@/types/parent.types";
 import type { FamilyRelationship } from "@/types/enums";
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
-
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-const calSansTitleStyle: React.CSSProperties = {
-  fontFamily: "'Cal Sans', system-ui, sans-serif",
-  fontWeight: 600,
-};
-
 // ─── Sub-components (internal, not exported) ──────────────────────────────────
 
 function RelationshipBadge({ relationship }: { relationship: FamilyRelationship }) {
@@ -180,7 +170,7 @@ export function LinkedParentsCard({
   const pendingInviteEmail = pendingInvite?.email ?? null;
 
   return (
-    <div className="overflow-hidden rounded-xl bg-white" style={{ boxShadow: cardShadow }}>
+    <div className={cn("overflow-hidden rounded-xl bg-white", "shadow-card")}>
       {/* Header — always visible, acts as toggle */}
       <button
         type="button"
@@ -188,10 +178,7 @@ export function LinkedParentsCard({
         className="flex w-full items-center justify-between px-5 py-4 transition-colors hover:bg-light-gray/40"
         aria-expanded={isExpanded}
       >
-        <span
-          className="text-sm text-charcoal"
-          style={calSansTitleStyle}
-        >
+        <span className="font-display text-sm text-charcoal">
           <UserRound size={15} className="mr-2 inline-block text-mid-gray" />
           Padres / acudientes
         </span>

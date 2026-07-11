@@ -5,6 +5,7 @@ import { CalendarShell, type CalendarView } from "@/components/calendar/Calendar
 import { CalendarFiltersBar } from "@/components/calendar/FiltersBar";
 import { EventDrawer } from "@/components/calendar/EventDrawer";
 import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { useCalendarEvents } from "@/api/calendar";
 import { useCalendarFiltersStore } from "@/store/calendarFilters.store";
 import type { CalendarEventListItem } from "@/types/calendar.types";
@@ -70,54 +71,41 @@ export function CalendarPage() {
   return (
     <>
       <section className="space-y-5">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1
-              className="text-2xl text-charcoal"
-              style={{
-                fontFamily: "'Cal Sans', system-ui, sans-serif",
-                fontWeight: 600,
-              }}
-            >
-              Calendario
-            </h1>
-            <p className="mt-0.5 text-sm text-mid-gray">
-              Eventos, entrenamientos y competencias del club.
-            </p>
-          </div>
+        <PageHeader
+          title="Calendario"
+          subtitle="Eventos, entrenamientos y competencias del club."
+          actions={
+            <>
+              {/* View selector */}
+              <div className="flex rounded-lg overflow-hidden shadow-ring">
+                {(Object.entries(VIEW_LABELS) as [CalendarView, string][]).map(
+                  ([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setView(v)}
+                      className={`px-3 py-2 text-sm font-medium transition-colors ${
+                        view === v
+                          ? "bg-charcoal text-white"
+                          : "bg-white text-charcoal hover:bg-light-gray"
+                      }`}
+                      aria-pressed={view === v}
+                    >
+                      {label}
+                    </button>
+                  ),
+                )}
+              </div>
 
-          <div className="flex items-center gap-2">
-            {/* View selector */}
-            <div className="flex rounded-lg overflow-hidden" style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}>
-              {(Object.entries(VIEW_LABELS) as [CalendarView, string][]).map(
-                ([v, label]) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setView(v)}
-                    className={`px-3 py-2 text-sm font-medium transition-colors ${
-                      view === v
-                        ? "bg-charcoal text-white"
-                        : "bg-white text-charcoal hover:bg-light-gray"
-                    }`}
-                    aria-pressed={view === v}
-                  >
-                    {label}
-                  </button>
-                ),
-              )}
-            </div>
-
-            <Link
-              to="/calendar/events/new"
-              className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-              style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
-            >
-              + Nuevo evento
-            </Link>
-          </div>
-        </div>
+              <Link
+                to="/calendar/events/new"
+                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white shadow-button-highlight transition-opacity hover:opacity-70"
+              >
+                + Nuevo evento
+              </Link>
+            </>
+          }
+        />
 
         <CalendarFiltersBar />
 
@@ -137,13 +125,7 @@ export function CalendarPage() {
         )}
 
         {!eventsQuery.isLoading && (
-          <div
-            className="rounded-xl bg-white p-4"
-            style={{
-              boxShadow:
-                "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-            }}
-          >
+          <div className="rounded-xl bg-white p-4 shadow-card">
             <CalendarShell
               events={events}
               onEventClick={handleEventClick}

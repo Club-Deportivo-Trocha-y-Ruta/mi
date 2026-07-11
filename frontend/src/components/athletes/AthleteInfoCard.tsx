@@ -35,13 +35,7 @@ export function AthleteInfoCard({
   const initials = `${athlete.first_name.charAt(0)}${athlete.last_name.charAt(0)}`.toUpperCase();
 
   return (
-    <article
-      className="overflow-hidden rounded-xl bg-white"
-      style={{
-        boxShadow:
-          "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-      }}
-    >
+    <article className="overflow-hidden rounded-xl bg-white shadow-card">
       {/* Top bar: navigation */}
       {(backUrl !== null || resolvedEditUrl !== null) && (
         <div
@@ -62,8 +56,7 @@ export function AthleteInfoCard({
           {resolvedEditUrl !== null && (
             <Link
               to={resolvedEditUrl}
-              className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             >
               <Pencil size={14} />
               Editar
@@ -84,12 +77,8 @@ export function AthleteInfoCard({
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
               <h2
-                className="truncate text-xl text-charcoal"
-                style={{
-                  fontFamily: "'Cal Sans', system-ui, sans-serif",
-                  fontWeight: 600,
-                  letterSpacing: "0.2px",
-                }}
+                className="font-display truncate text-xl text-charcoal"
+                style={{ letterSpacing: "0.2px" }}
               >
                 {athlete.first_name} {athlete.last_name}
               </h2>

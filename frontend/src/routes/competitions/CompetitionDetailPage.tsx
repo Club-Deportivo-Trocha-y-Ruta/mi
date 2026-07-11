@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { buttonVariants } from "@/components/ui/button";
 import {
   getRaceEventErrorMessage,
@@ -351,8 +352,7 @@ export function CompetitionDetailPage() {
             type="button"
             onClick={() => void refetch()}
             disabled={isFetching}
-            className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70 disabled:opacity-50"
           >
             {isFetching ? (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -399,33 +399,14 @@ export function CompetitionDetailPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 px-4 py-6">
-      {/* ── Breadcrumb ────────────────────────────────────────────────── */}
-      <Link
-        to="/competitions"
-        className="inline-flex items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
-        data-testid="back-link"
-      >
-        <ArrowLeft size={14} aria-hidden="true" />
-        Competencias
-      </Link>
-
       {/* ── Header ───────────────────────────────────────────────────── */}
       <header>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            {/* Título + badges */}
-            <div className="flex flex-wrap items-center gap-2">
-              <h1
-                className="text-2xl text-charcoal"
-                style={{
-                  fontFamily: "'Cal Sans', system-ui, sans-serif",
-                  fontWeight: 600,
-                }}
-                data-testid="competition-title"
-              >
-                {event.name}
-              </h1>
-
+        <PageHeader
+          title={event.name}
+          subtitle={`${event.location ? `${event.location} · ` : ""}${formatDate(event.event_date)} · ${STATUS_LABELS[event.status]}`}
+          backTo={{ to: "/competitions", label: "Competencias" }}
+          actions={
+            <>
               {/* Badge campeonato */}
               {event.is_championship && (
                 <span
@@ -446,113 +427,101 @@ export function CompetitionDetailPage() {
                   Cancelada
                 </span>
               )}
-            </div>
 
-            {/* Subtítulo */}
-            <p className="mt-1 text-sm text-mid-gray" data-testid="competition-subtitle">
-              {event.location ? `${event.location} · ` : ""}
-              {formatDate(event.event_date)}
-              {" · "}
-              {STATUS_LABELS[event.status]}
-            </p>
-          </div>
-
-          {/* Action bar */}
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Link
-              to={`/competitions/${raceEventId}/edit`}
-              className={buttonVariants({ variant: "outline", size: "sm" })}
-              data-testid="btn-edit"
-            >
-              <Edit2 size={14} aria-hidden="true" />
-              Editar metadata
-            </Link>
-
-            {/* CF6: badge "En calendario" cuando ya tiene calendar_event */}
-            {event.has_calendar_event === true && (
-              <span
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-                data-testid="badge-in-calendar"
+              <Link
+                to={`/competitions/${raceEventId}/edit`}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+                data-testid="btn-edit"
               >
-                <Link2 size={14} aria-hidden="true" />
-                En calendario
-              </span>
-            )}
+                <Edit2 size={14} aria-hidden="true" />
+                Editar metadata
+              </Link>
 
-            {/* CF6 / US1+US2: split button "Asociar a calendario".
-                - Acción primaria (izquierda): one-click, cero re-entrada.
-                - Acción secundaria (chevron dropdown): "Editar detalles primero"
-                  navega a /calendar/events/new?race_event_id=N pre-rellenado.
-                Oculto cuando ya está en calendario o la competencia está cancelada. */}
-            {showCalendarCTA && (
-              <div className="flex" role="group" aria-label="Opciones de calendario">
-                {/* Botón principal — one-click associate */}
+              {/* CF6: badge "En calendario" cuando ya tiene calendar_event */}
+              {event.has_calendar_event === true && (
+                <span
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 shadow-ring"
+                  data-testid="badge-in-calendar"
+                >
+                  <Link2 size={14} aria-hidden="true" />
+                  En calendario
+                </span>
+              )}
+
+              {/* CF6 / US1+US2: split button "Asociar a calendario".
+                  - Acción primaria (izquierda): one-click, cero re-entrada.
+                  - Acción secundaria (chevron dropdown): "Editar detalles primero"
+                    navega a /calendar/events/new?race_event_id=N pre-rellenado.
+                  Oculto cuando ya está en calendario o la competencia está cancelada. */}
+              {showCalendarCTA && (
+                <div className="flex" role="group" aria-label="Opciones de calendario">
+                  {/* Botón principal — one-click associate */}
+                  <button
+                    type="button"
+                    onClick={handleAssociateCalendar}
+                    disabled={associateMutation.isPending}
+                    aria-label="Asociar competencia al calendario del club"
+                    className={cn(
+                      buttonVariants({ variant: "default", size: "sm" }),
+                      "min-h-12 min-w-12 rounded-r-none border-r border-r-white/20",
+                      associateMutation.isPending && "opacity-70",
+                    )}
+                    data-testid="btn-associate-calendar"
+                  >
+                    {associateMutation.isPending ? (
+                      <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Link2 size={14} aria-hidden="true" />
+                    )}
+                    Asociar a calendario
+                  </button>
+
+                  {/* Chevron — abre el dropdown con la acción secundaria */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Más opciones de calendario"
+                        disabled={associateMutation.isPending}
+                        className={cn(
+                          buttonVariants({ variant: "default", size: "sm" }),
+                          "min-h-12 w-9 rounded-l-none px-0",
+                          associateMutation.isPending && "opacity-70",
+                        )}
+                        data-testid="btn-associate-calendar-chevron"
+                      >
+                        <ChevronDown size={14} aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onSelect={() => navigate(getCalendarNewUrl(raceEventId))}
+                        data-testid="btn-edit-details-first"
+                      >
+                        <Edit2 size={14} aria-hidden="true" className="mr-2" />
+                        Editar detalles primero
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
+
+              {isAdmin && (
                 <button
                   type="button"
-                  onClick={handleAssociateCalendar}
-                  disabled={associateMutation.isPending}
-                  aria-label="Asociar competencia al calendario del club"
-                  className={cn(
-                    buttonVariants({ variant: "default", size: "sm" }),
-                    "min-h-12 min-w-12 rounded-r-none border-r border-r-white/20",
-                    associateMutation.isPending && "opacity-70",
-                  )}
-                  data-testid="btn-associate-calendar"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteOpen(true);
+                  }}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                  data-testid="btn-delete"
                 >
-                  {associateMutation.isPending ? (
-                    <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Link2 size={14} aria-hidden="true" />
-                  )}
-                  Asociar a calendario
+                  Eliminar
                 </button>
-
-                {/* Chevron — abre el dropdown con la acción secundaria */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Más opciones de calendario"
-                      disabled={associateMutation.isPending}
-                      className={cn(
-                        buttonVariants({ variant: "default", size: "sm" }),
-                        "min-h-12 w-9 rounded-l-none px-0",
-                        associateMutation.isPending && "opacity-70",
-                      )}
-                      data-testid="btn-associate-calendar-chevron"
-                    >
-                      <ChevronDown size={14} aria-hidden="true" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onSelect={() => navigate(getCalendarNewUrl(raceEventId))}
-                      data-testid="btn-edit-details-first"
-                    >
-                      <Edit2 size={14} aria-hidden="true" className="mr-2" />
-                      Editar detalles primero
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )}
-
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => {
-                  setDeleteError(null);
-                  setDeleteOpen(true);
-                }}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                data-testid="btn-delete"
-              >
-                Eliminar
-              </button>
-            )}
-          </div>
-        </div>
+              )}
+            </>
+          }
+        />
 
         {/* ── Acción primaria contextual ───────────────────────────── */}
         {(showImportCTA || showInsightsCTA) && (
@@ -560,11 +529,7 @@ export function CompetitionDetailPage() {
             {showImportCTA && (
               <Link
                 to={`/competitions/${raceEventId}/import`}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                style={{
-                  boxShadow:
-                    "rgba(255, 255, 255, 0.15) 0px 2px 0px inset",
-                }}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white shadow-button-highlight transition-opacity hover:opacity-90"
                 data-testid="cta-import"
               >
                 <Upload size={16} aria-hidden="true" />
@@ -575,11 +540,7 @@ export function CompetitionDetailPage() {
               <button
                 type="button"
                 onClick={() => handleTabChange("insights")}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                style={{
-                  boxShadow:
-                    "rgba(255, 255, 255, 0.15) 0px 2px 0px inset",
-                }}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white shadow-button-highlight transition-opacity hover:opacity-90"
                 data-testid="cta-insights"
               >
                 <BarChart2Icon size={16} aria-hidden="true" />

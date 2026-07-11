@@ -40,13 +40,12 @@ function AthleteSummaryCard({
 }) {
   return (
     <div
-      className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-ring-soft"
+      className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card"
       aria-label={`Resumen de ${athlete.athlete_first_name} ${athlete.athlete_last_name}`}
     >
       <div>
         <h2
-          className="text-base text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-base text-charcoal"
         >
           {athlete.athlete_first_name} {athlete.athlete_last_name}
         </h2>
@@ -153,8 +152,7 @@ export function ParentMonthlyOverviewPage() {
     <section className="space-y-5">
       <div>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           Resumen mensual
         </h1>
@@ -171,8 +169,7 @@ export function ParentMonthlyOverviewPage() {
             id="select-year"
             value={period.year}
             onChange={(e) => setPeriod((p) => ({ ...p, year: Number(e.target.value) }))}
-            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-2"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-2 shadow-ring"
             aria-label="Seleccionar año"
           >
             {years.map((y) => (
@@ -189,8 +186,7 @@ export function ParentMonthlyOverviewPage() {
             id="select-month"
             value={period.month}
             onChange={(e) => setPeriod((p) => ({ ...p, month: Number(e.target.value) }))}
-            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-2"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg px-3 py-1.5 text-sm text-charcoal outline-none focus-visible:ring-2 focus-visible:ring-charcoal/40 focus-visible:ring-offset-2 shadow-ring"
             aria-label="Seleccionar mes"
           >
             {MONTHS.map((name, i) => (
@@ -216,7 +212,7 @@ export function ParentMonthlyOverviewPage() {
 
       {/* Sin atletas */}
       {!athletesQuery.isLoading && athletes.length === 0 && (
-        <div className="rounded-xl bg-white px-5 py-8 text-center shadow-ring-soft">
+        <div className="rounded-xl bg-white px-5 py-8 text-center shadow-card">
           <p className="text-sm text-mid-gray">
             No tienes atletas vinculados. Contacta al entrenador.
           </p>

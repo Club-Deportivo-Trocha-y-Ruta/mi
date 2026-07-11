@@ -26,12 +26,8 @@ import type { ActivityLinkedFilter, ActivityOut } from "@/types/strava.types";
 // Design tokens (mirror de CompetitionsListPage / SessionsListPage)
 // ---------------------------------------------------------------------------
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 const inputSelectClass =
-  "min-h-[40px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
-const inputSelectStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "min-h-[40px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 const DEFAULT_PAGE_SIZE = 30;
 const PAGE_SIZE_STEP = 30;
@@ -145,8 +141,7 @@ export function ActivityReviewPage() {
       {/* Header */}
       <div>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           Revisión de actividades
         </h1>
@@ -157,7 +152,7 @@ export function ActivityReviewPage() {
       </div>
 
       {/* Filtros */}
-      <div className="rounded-xl bg-white p-4" style={{ boxShadow: cardShadow }}>
+      <div className="rounded-xl bg-white p-4 shadow-card">
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
           <div className="flex flex-col gap-1">
             <label htmlFor="filter-linked" className="text-xs font-medium text-mid-gray">
@@ -170,7 +165,6 @@ export function ActivityReviewPage() {
                 handleFilterChange(setLinkedFilter)(e.target.value as ActivityLinkedFilter)
               }
               className={inputSelectClass}
-              style={inputSelectStyle}
             >
               <option value="all">Todas</option>
               <option value="false">Sin enlazar</option>
@@ -188,7 +182,6 @@ export function ActivityReviewPage() {
               onChange={(e) => handleFilterChange(setAthleteId)(e.target.value)}
               disabled={athletesQuery.isLoading}
               className={inputSelectClass}
-              style={inputSelectStyle}
             >
               <option value="">Todos los atletas</option>
               {athletes.map((a) => (
@@ -209,7 +202,6 @@ export function ActivityReviewPage() {
               value={dateFrom}
               onChange={(e) => handleFilterChange(setDateFrom)(e.target.value)}
               className={inputSelectClass}
-              style={inputSelectStyle}
             />
           </div>
 
@@ -223,7 +215,6 @@ export function ActivityReviewPage() {
               value={dateTo}
               onChange={(e) => handleFilterChange(setDateTo)(e.target.value)}
               className={inputSelectClass}
-              style={inputSelectStyle}
             />
           </div>
 
@@ -231,8 +222,7 @@ export function ActivityReviewPage() {
             <button
               type="button"
               onClick={resetFilters}
-              className="inline-flex min-h-[40px] items-center gap-1.5 self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70"
-              style={inputSelectStyle}
+              className="inline-flex min-h-[40px] items-center gap-1.5 self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
             >
               <X size={14} aria-hidden="true" />
               Limpiar filtros
@@ -243,7 +233,7 @@ export function ActivityReviewPage() {
 
       {/* Loading */}
       {reviewQuery.isLoading && (
-        <div className="space-y-2 rounded-xl bg-white p-4" style={{ boxShadow: cardShadow }} role="status" aria-live="polite">
+        <div className="space-y-2 rounded-xl bg-white p-4 shadow-card" role="status" aria-live="polite">
           <span className="sr-only">Cargando actividades…</span>
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-16 animate-pulse rounded-lg bg-light-gray" />
@@ -264,8 +254,7 @@ export function ActivityReviewPage() {
           <button
             type="button"
             onClick={() => reviewQuery.refetch()}
-            className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-red-700 transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-red-700 transition-opacity hover:opacity-70 shadow-ring"
           >
             Reintentar
           </button>
@@ -275,8 +264,8 @@ export function ActivityReviewPage() {
       {/* Empty */}
       {!reviewQuery.isLoading && !reviewQuery.isError && items.length === 0 && (
         <div
-          className="rounded-xl bg-white p-10 text-center"
-          style={{ boxShadow: cardShadow, borderStyle: "dashed" }}
+          className="rounded-xl bg-white p-10 text-center shadow-card"
+          style={{ borderStyle: "dashed" }}
         >
           <Filter className="mx-auto h-8 w-8 text-mid-gray" aria-hidden="true" />
           <p className="mt-2 text-sm text-mid-gray">
@@ -319,8 +308,7 @@ export function ActivityReviewPage() {
                   setPageSize((prev) => Math.min(prev + PAGE_SIZE_STEP, MAX_PAGE_SIZE))
                 }
                 disabled={reviewQuery.isFetching || pageSize >= MAX_PAGE_SIZE}
-                className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
               >
                 {reviewQuery.isFetching ? "Cargando…" : "Cargar más"}
               </button>

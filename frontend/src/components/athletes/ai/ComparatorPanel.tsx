@@ -68,9 +68,6 @@ import { MaturationStatus } from "@/types/enums";
 // Constantes
 // ---------------------------------------------------------------------------
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 /** Opciones del selector de válida. 0 representa "Sin selección". */
 const VALIDA_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 1, label: "Válida I" },
@@ -197,8 +194,7 @@ export function ComparatorPanel({
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4"
-      style={{ boxShadow: cardShadow }}
+      className={cn("rounded-xl bg-white p-5 space-y-4", "shadow-card")}
       aria-label="Comparador progreso entre válidas"
       data-testid="comparator-panel"
     >
@@ -261,12 +257,8 @@ function Header({
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h3
-          className="flex items-center gap-2 text-sm text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-            letterSpacing: "0.2px",
-          }}
+          className="font-display flex items-center gap-2 text-sm text-charcoal"
+          style={{ letterSpacing: "0.2px" }}
         >
           <Scale size={16} aria-hidden="true" />
           Comparador progreso
@@ -285,8 +277,8 @@ function Header({
         className={cn(
           "rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
           TAP_TARGET_CLASSES,
+          "shadow-ring",
         )}
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
         data-testid="comparator-season-select"
       >
         {Array.from(
@@ -388,8 +380,8 @@ function SideSelector({
         className={cn(
           "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
           TAP_TARGET_CLASSES,
+          "shadow-ring",
         )}
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
       >
         {VALIDA_OPTIONS.map((o) => (
           <option

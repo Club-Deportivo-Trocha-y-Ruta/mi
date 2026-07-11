@@ -61,12 +61,11 @@ export function MonthlyAveragesBanner({
     <section
       data-testid="parent-monthly-banner"
       aria-label={`Resumen del mes de ${monthLabel} para ${athleteName}`}
-      className="rounded-xl bg-white px-5 py-4 shadow-ring-soft"
+      className="rounded-xl bg-white px-5 py-4 shadow-card"
     >
       <header className="mb-3 flex items-baseline justify-between gap-3">
         <h2
-          className="text-base text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-base text-charcoal"
         >
           Cómo va este mes
         </h2>

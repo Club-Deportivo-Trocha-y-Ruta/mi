@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
 import { SessionFiltersBar } from "@/components/training/SessionFiltersBar";
 import { SessionsTable } from "@/components/training/SessionsTable";
@@ -34,34 +36,23 @@ export function SessionsListPage() {
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+      <PageHeader
+        title="Sesiones de Entrenamiento"
+        subtitle="Planifica y gestiona las sesiones del club."
+        actions={
+          <Link
+            to="/training/sessions/new"
+            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
           >
-            Sesiones de Entrenamiento
-          </h1>
-          <p className="mt-0.5 text-sm text-mid-gray">
-            Planifica y gestiona las sesiones del club.
-          </p>
-        </div>
-        <Link
-          to="/training/sessions/new"
-          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
-        >
-          + Nueva sesión
-        </Link>
-      </div>
+            + Nueva sesión
+          </Link>
+        }
+      />
 
       <SessionFiltersBar />
 
       {sessionsQuery.isLoading && (
-        <div
-          className="space-y-2 rounded-xl bg-white p-4"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-        >
+        <div className="space-y-2 rounded-xl bg-white p-4 shadow-ring">
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
           ))}
@@ -76,23 +67,17 @@ export function SessionsListPage() {
       )}
 
       {!sessionsQuery.isLoading && !sessionsQuery.isError && items.length === 0 && (
-        <div
-          className="rounded-xl bg-white p-10 text-center"
-          style={{
-            boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-            borderStyle: "dashed",
-          }}
-        >
-          <p className="text-sm text-mid-gray">
-            No hay sesiones para los filtros seleccionados.
-          </p>
-          <Link
-            to="/training/sessions/new"
-            className="mt-3 inline-block text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-          >
-            + Crear primera sesión
-          </Link>
-        </div>
+        <EmptyState
+          title="No hay sesiones para los filtros seleccionados."
+          action={
+            <Link
+              to="/training/sessions/new"
+              className="inline-block text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+            >
+              + Crear primera sesión
+            </Link>
+          }
+        />
       )}
 
       {!sessionsQuery.isLoading && !sessionsQuery.isError && items.length > 0 && (

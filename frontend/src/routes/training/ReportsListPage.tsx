@@ -46,11 +46,6 @@ function ReportStatusBadge({ status }: { status?: string }) {
   );
 }
 
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 interface GenerateModalProps {
   open: boolean;
   onClose: () => void;
@@ -100,8 +95,7 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
                 <select
                   id="report-year"
                   {...register("year", { valueAsNumber: true })}
-                  className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 >
                   {years.map((y) => (
                     <option key={y} value={y}>{y}</option>
@@ -118,8 +112,7 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
                 <select
                   id="report-month"
                   {...register("month", { valueAsNumber: true })}
-                  className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 >
                   {months.map(({ value, label }) => (
                     <option key={value} value={value}>{label}</option>
@@ -143,8 +136,7 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
                 rows={4}
                 maxLength={2000}
                 placeholder="Notas del entrenador para incluir en el reporte…"
-                className="w-full resize-none rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="w-full resize-none rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
               />
               {errors.coach_observations && (
                 <p className="mt-1 text-xs text-red-600">{errors.coach_observations.message}</p>
@@ -172,8 +164,7 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
               type="button"
               onClick={handleClose}
               disabled={isPending}
-              className="rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50 shadow-ring"
             >
               Cancelar
             </button>
@@ -212,7 +203,7 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
       <ul role="list" className="flex flex-col gap-3 md:hidden">
         {reports.map((r) => (
           <li key={r.id}>
-            <div className="rounded-xl bg-white p-4" style={cardStyle}>
+            <div className="rounded-xl bg-white p-4 shadow-card">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="font-medium text-charcoal">
                   {MONTH_NAMES[r.month - 1]} {r.year}
@@ -226,8 +217,7 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
                 <button
                   type="button"
                   onClick={() => navigate(`/training/reports/${r.year}/${r.month}`)}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                 >
                   Ver
                 </button>
@@ -247,8 +237,7 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
 
       {/* Desktop: tabla */}
       <div
-        className="hidden overflow-x-auto rounded-xl bg-white md:block"
-        style={cardStyle}
+        className="hidden overflow-x-auto rounded-xl bg-white md:block shadow-card"
       >
         <table className="min-w-full text-sm">
           <caption className="sr-only">Lista de reportes mensuales del club</caption>
@@ -287,8 +276,7 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
                     <button
                       type="button"
                       onClick={() => navigate(`/training/reports/${r.year}/${r.month}`)}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                     >
                       Ver
                     </button>
@@ -384,8 +372,7 @@ export function ReportsListPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="font-display text-2xl text-charcoal"
           >
             Reportes Mensuales
           </h1>
@@ -396,8 +383,7 @@ export function ReportsListPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to="/training/reports/project-profile"
-            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             data-testid="project-profile-link"
           >
             Datos del proyecto
@@ -408,8 +394,7 @@ export function ReportsListPage() {
               setGenerateError(null);
               setShowGenerateModal(true);
             }}
-            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
             data-testid="open-generate-modal"
           >
             + Generar reporte
@@ -419,8 +404,7 @@ export function ReportsListPage() {
 
       {reportsQuery.isLoading && (
         <div
-          className="space-y-2 rounded-xl bg-white p-4"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="space-y-2 rounded-xl bg-white p-4 shadow-ring"
         >
           {Array.from({ length: 3 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
@@ -436,9 +420,8 @@ export function ReportsListPage() {
 
       {!reportsQuery.isLoading && !reportsQuery.isError && reports.length === 0 && (
         <div
-          className="rounded-xl bg-white p-10 text-center"
+          className="rounded-xl bg-white p-10 text-center shadow-ring"
           style={{
-            boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
             borderStyle: "dashed",
           }}
           data-testid="empty-state"

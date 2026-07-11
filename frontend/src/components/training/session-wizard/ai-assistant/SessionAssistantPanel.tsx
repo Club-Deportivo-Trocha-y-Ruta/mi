@@ -204,8 +204,7 @@ export function SessionAssistantPanel({
           onChange={(e) => setIntentText(e.target.value)}
           placeholder="Ej: salida de 90 min, técnica de bajada, grupo 13-15, faltan 12 días para la válida…"
           disabled={isLoading || phase === "done"}
-          className="mt-1 w-full resize-none rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="mt-1 w-full resize-none rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60 shadow-ring"
           aria-describedby="assistant-intent-hint"
         />
         <p id="assistant-intent-hint" className="mt-1 text-xs text-mid-gray">

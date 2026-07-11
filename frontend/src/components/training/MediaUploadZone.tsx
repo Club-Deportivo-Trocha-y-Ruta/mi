@@ -189,8 +189,7 @@ export function MediaUploadZone({
               onChange={(e) => setCaption(e.target.value)}
               maxLength={280}
               placeholder="Ej: técnica de descenso en sección rocosa"
-              className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none focus:ring-2 focus:ring-blue-500/40"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
             />
           </div>
 

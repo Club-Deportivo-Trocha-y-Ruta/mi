@@ -29,7 +29,7 @@ export function ReadOnlyAttendanceRow({ attendance, athleteName }: ReadOnlyAtten
 
   return (
     <div
-      className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-ring-soft"
+      className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card"
       data-athlete-id={attendance.athlete_id}
       aria-label={`Registro de asistencia de ${athleteName}`}
     >

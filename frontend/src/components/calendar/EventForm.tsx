@@ -76,15 +76,10 @@ const COMPETITION_CATEGORIES = [
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
 const sectionClass =
-  "rounded-xl bg-white p-5 space-y-4";
-const sectionStyle = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
+  "rounded-xl bg-white p-5 space-y-4 shadow-card";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildSpecificFields(
@@ -355,18 +350,17 @@ export function EventForm({
       className="space-y-6"
     >
       {/* Step 0: Event type selector */}
-      <div className={sectionClass} style={sectionStyle}>
+      <div className={sectionClass}>
         <h2 className="text-base font-semibold text-charcoal">Tipo de evento</h2>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {ALL_EVENT_TYPES.map((type) => (
             <label
               key={type}
-              className={`flex cursor-pointer items-center justify-center rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              className={`flex cursor-pointer items-center justify-center rounded-lg px-3 py-2 text-sm font-medium transition-colors shadow-ring ${
                 selectedType === type
                   ? "bg-charcoal text-white"
                   : "bg-white text-charcoal hover:bg-light-gray"
               }`}
-              style={inputStyle}
             >
               <input
                 type="radio"
@@ -412,7 +406,7 @@ export function EventForm({
 
         {/* ── Tab 1: Básico ─────────────────────────────────────── */}
         <TabsPrimitive.Content value="basic" className="mt-4 space-y-4">
-          <div className={sectionClass} style={sectionStyle}>
+          <div className={sectionClass}>
             {/* Title */}
             <div>
               <label htmlFor="event-title" className={labelClass}>
@@ -424,7 +418,6 @@ export function EventForm({
                 placeholder="Nombre del evento"
                 {...register("title")}
                 className={inputClass}
-                style={inputStyle}
                 aria-invalid={!!errors.title}
               />
               {errors.title && <p className={errorClass}>{errors.title.message}</p>}
@@ -442,7 +435,6 @@ export function EventForm({
                 placeholder="Detalles del evento..."
                 {...register("description")}
                 className={`${inputClass} resize-none`}
-                style={inputStyle}
                 aria-invalid={!!errors.description}
               />
               {errors.description && (
@@ -462,7 +454,6 @@ export function EventForm({
                 placeholder="Ej: Pista XCO La Buitrera"
                 {...register("location")}
                 className={inputClass}
-                style={inputStyle}
                 aria-invalid={!!errors.location}
               />
               {errors.location && (
@@ -481,7 +472,6 @@ export function EventForm({
                   type="date"
                   {...register("start_date")}
                   className={inputClass}
-                  style={inputStyle}
                   aria-invalid={!!errors.start_date}
                 />
                 {errors.start_date && (
@@ -498,7 +488,6 @@ export function EventForm({
                     type="time"
                     {...register("start_time")}
                     className={inputClass}
-                    style={inputStyle}
                     aria-invalid={!!errors.start_time}
                   />
                   {errors.start_time && (
@@ -517,7 +506,6 @@ export function EventForm({
                   max={1440}
                   {...register("duration_min", { valueAsNumber: true })}
                   className={inputClass}
-                  style={inputStyle}
                   aria-invalid={!!errors.duration_min}
                 />
                 {errors.duration_min && (
@@ -567,8 +555,7 @@ export function EventForm({
                             type="color"
                             value={field.value as string}
                             onChange={(e) => field.onChange(e.target.value)}
-                            className="h-9 w-16 cursor-pointer rounded-lg border-none bg-transparent p-1"
-                            style={inputStyle}
+                            className="h-9 w-16 cursor-pointer rounded-lg border-none bg-transparent p-1 shadow-ring"
                             aria-label="Seleccionar color del evento"
                           />
                           <span className="font-mono text-xs text-mid-gray">
@@ -589,7 +576,7 @@ export function EventForm({
 
         {/* ── Tab 2: Audiencia ──────────────────────────────────── */}
         <TabsPrimitive.Content value="audience" className="mt-4">
-          <div className={sectionClass} style={sectionStyle}>
+          <div className={sectionClass}>
             <h2 className="text-base font-semibold text-charcoal">Audiencia</h2>
             <Controller
               name="audiences"
@@ -611,7 +598,7 @@ export function EventForm({
 
         {/* ── Tab 3: Específico ─────────────────────────────────── */}
         <TabsPrimitive.Content value="specific" className="mt-4" aria-label="Datos específicos">
-          <div className={sectionClass} style={sectionStyle}>
+          <div className={sectionClass}>
             <h2 className="text-base font-semibold text-charcoal">
               Datos de {labelForEventType(selectedType as EventType)}
             </h2>
@@ -665,7 +652,6 @@ export function EventForm({
                             !raceEventsQuery.isError)
                         }
                         className={inputClass}
-                        style={inputStyle}
                         data-testid="event-race-event-id"
                       >
                         <option value="">
@@ -737,7 +723,6 @@ export function EventForm({
                     placeholder="Ej: Cali"
                     {...register("data_competition.city")}
                     className={inputClass}
-                    style={inputStyle}
                   />
                   {errors.data_competition?.city && (
                     <p className={errorClass}>{errors.data_competition.city.message}</p>
@@ -751,7 +736,6 @@ export function EventForm({
                     id="comp-race-category"
                     {...register("data_competition.race_category")}
                     className={inputClass}
-                    style={inputStyle}
                   >
                     {COMPETITION_CATEGORIES.map((c) => (
                       <option key={c.value} value={c.value}>
@@ -782,7 +766,6 @@ export function EventForm({
                     id="club-event-kind"
                     {...register("data_club_event.kind")}
                     className={inputClass}
-                    style={inputStyle}
                   >
                     <option value="social">Social</option>
                     <option value="meeting">Reunión</option>
@@ -800,7 +783,6 @@ export function EventForm({
                     placeholder="https://..."
                     {...register("data_club_event.registration_url")}
                     className={inputClass}
-                    style={inputStyle}
                   />
                   {errors.data_club_event?.registration_url && (
                     <p className={errorClass}>
@@ -822,7 +804,6 @@ export function EventForm({
                     id="pt-intensity"
                     {...register("data_personal_training.intensity")}
                     className={inputClass}
-                    style={inputStyle}
                   >
                     {INTENSITY_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -845,7 +826,6 @@ export function EventForm({
                     id="gt-intensity"
                     {...register("data_group_training.intensity")}
                     className={inputClass}
-                    style={inputStyle}
                   >
                     {INTENSITY_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -868,7 +848,6 @@ export function EventForm({
                       valueAsNumber: true,
                     })}
                     className={inputClass}
-                    style={inputStyle}
                   />
                   {errors.data_group_training?.group_size_max && (
                     <p className={errorClass}>
@@ -890,7 +869,6 @@ export function EventForm({
                     id="rd-scope"
                     {...register("data_rest_day.scope")}
                     className={inputClass}
-                    style={inputStyle}
                   >
                     <option value="club">Todo el club</option>
                     <option value="category">Por categoría</option>
@@ -908,7 +886,6 @@ export function EventForm({
                     placeholder="Ej: Semana de recuperación post-carrera"
                     {...register("data_rest_day.reason")}
                     className={inputClass}
-                    style={inputStyle}
                   />
                   {errors.data_rest_day?.reason && (
                     <p className={errorClass}>{errors.data_rest_day.reason.message}</p>
@@ -930,16 +907,14 @@ export function EventForm({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
         >
           Cancelar
         </button>
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
         >
           {isSubmitting
             ? "Guardando..."

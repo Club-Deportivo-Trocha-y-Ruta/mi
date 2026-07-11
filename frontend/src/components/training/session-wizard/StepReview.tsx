@@ -46,9 +46,7 @@ export function StepReview({
         ))}
       </dl>
 
-      <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-lg bg-white px-3 py-2"
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-      >
+      <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-lg bg-white px-3 py-2 shadow-ring">
         <input
           type="checkbox"
           checked={notify}

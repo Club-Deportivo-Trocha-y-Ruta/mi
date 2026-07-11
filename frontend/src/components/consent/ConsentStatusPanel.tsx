@@ -23,21 +23,6 @@ import { ConsentRenewalModal } from "./ConsentRenewalModal";
 import { RevokeConsentDialog } from "./RevokeConsentDialog";
 
 // ---------------------------------------------------------------------------
-// Estilos del design system (Cal.com)
-// ---------------------------------------------------------------------------
-
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-const btnSecondaryStyle: React.CSSProperties = {
-  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-};
-
-const btnDestructiveStyle: React.CSSProperties = {
-  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-};
-
-// ---------------------------------------------------------------------------
 // Helpers de estado
 // ---------------------------------------------------------------------------
 
@@ -150,8 +135,10 @@ function AthleteConsentRow({
             <button
               type="button"
               onClick={() => onRenew(athlete)}
-              className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
-              style={btnSecondaryStyle}
+              className={cn(
+                "rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90",
+                "shadow-ring",
+              )}
             >
               {state === "revoked" ? "Dar consentimiento" : "Renovar"}
             </button>
@@ -161,8 +148,10 @@ function AthleteConsentRow({
             <button
               type="button"
               onClick={() => onRevoke(athlete)}
-              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-80"
-              style={btnDestructiveStyle}
+              className={cn(
+                "rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-80",
+                "shadow-ring",
+              )}
             >
               Revocar
             </button>
@@ -230,12 +219,11 @@ function AiConsentRow({ athlete, activePolicy }: AiConsentRowProps) {
         onClick={handleToggleAi}
         disabled={isPending}
         className={cn(
-          "flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium transition-opacity disabled:opacity-50",
+          "flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium transition-opacity disabled:opacity-50 shadow-ring",
           isAiActive
             ? "bg-white text-red-600"
             : "bg-charcoal text-white hover:opacity-90",
         )}
-        style={isAiActive ? btnDestructiveStyle : btnSecondaryStyle}
         aria-label={
           isAiActive
             ? `Revocar autorización de IA para ${athlete.athlete_name}`
@@ -283,10 +271,7 @@ export function ConsentStatusPanel({
 
   return (
     <>
-      <div
-        className="rounded-xl bg-white"
-        style={{ boxShadow: CARD_SHADOW }}
-      >
+      <div className={cn("rounded-xl bg-white", "shadow-card")}>
         {/* Header con toggle */}
         <button
           type="button"
@@ -298,8 +283,7 @@ export function ConsentStatusPanel({
           <div className="flex items-center gap-3">
             <div>
               <p
-                className="text-sm font-medium text-charcoal"
-                style={{ fontFamily: "'Cal Sans', system-ui, sans-serif" }}
+                className="font-display text-sm font-medium text-charcoal"
               >
                 Gestionar consentimiento
               </p>

@@ -26,9 +26,6 @@ import type { AthleteOut } from "@/types/athlete.types";
 import { HeroLastInsightCard } from "./HeroLastInsightCard";
 import { MiniSparkline } from "./MiniSparkline";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function getCurrentSeason(): number {
   return new Date().getFullYear();
 }
@@ -171,9 +168,8 @@ interface KpiCardProps {
 function KpiCard({ label, value, isLoading, testId, note }: KpiCardProps) {
   return (
     <Card
-      style={{ boxShadow: cardShadow }}
       data-testid={testId}
-      className="bg-white"
+      className="bg-white shadow-card"
     >
       <CardContent className="p-4">
         {isLoading ? (
@@ -184,8 +180,7 @@ function KpiCard({ label, value, isLoading, testId, note }: KpiCardProps) {
         ) : (
           <>
             <p
-              className="text-2xl font-bold text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif" }}
+              className="font-display text-2xl font-bold text-charcoal"
             >
               {value ?? "—"}
             </p>

@@ -32,13 +32,6 @@ import { UserRole } from "@/types/enums";
 import type { ClubInsightByRaceItem } from "@/types/athleteRaceAnalysis.types";
 
 // ---------------------------------------------------------------------------
-// Constante de estilo compartida
-// ---------------------------------------------------------------------------
-
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-// ---------------------------------------------------------------------------
 // Card de atleta
 // ---------------------------------------------------------------------------
 
@@ -112,10 +105,9 @@ function AthleteInsightCard({ item }: AthleteCardProps) {
   return (
     <div
       className={[
-        "rounded-xl bg-white p-4 transition-colors",
+        "rounded-xl bg-white p-4 transition-colors shadow-card",
         showLink ? "hover:ring-2 hover:ring-charcoal/20" : "opacity-60",
       ].join(" ")}
-      style={{ boxShadow: cardShadow }}
       data-testid={`athlete-tab-card-${item.athlete_id}`}
     >
       {showLink ? (
@@ -143,8 +135,7 @@ function SkeletonGrid() {
       {Array.from({ length: 4 }).map((_, i) => (
         <div
           key={i}
-          className="rounded-xl bg-white p-4"
-          style={{ boxShadow: cardShadow }}
+          className="rounded-xl bg-white p-4 shadow-card"
         >
           <div className="mb-3 flex items-center gap-3">
             <Skeleton className="h-9 w-9 rounded-full" />
@@ -204,8 +195,7 @@ export function AthletesTab({ raceEventId }: AthletesTabProps) {
           <SkeletonGrid />
         ) : isError || !data ? (
           <div
-            className="flex min-h-[16vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6"
-            style={{ boxShadow: cardShadow }}
+            className="flex min-h-[16vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6 shadow-card"
           >
             <p className="text-sm text-mid-gray">
               No se pudo cargar la información de atletas.
@@ -216,8 +206,7 @@ export function AthletesTab({ raceEventId }: AthletesTabProps) {
           </div>
         ) : data.items.length === 0 ? (
           <div
-            className="flex min-h-[16vh] items-center justify-center rounded-xl bg-white p-6 text-center"
-            style={{ boxShadow: cardShadow }}
+            className="flex min-h-[16vh] items-center justify-center rounded-xl bg-white p-6 text-center shadow-card"
           >
             <p className="text-sm text-mid-gray">
               No hay atletas de Trocha y Ruta con resultados en esta válida.

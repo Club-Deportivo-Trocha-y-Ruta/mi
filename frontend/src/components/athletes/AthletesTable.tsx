@@ -19,13 +19,7 @@ export function AthletesTable({ items }: AthletesTableProps) {
       <ul role="list" className="flex flex-col gap-3 md:hidden">
         {items.map((athlete) => (
           <li key={athlete.id}>
-            <div
-              className="rounded-xl bg-white p-4"
-              style={{
-                boxShadow:
-                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-              }}
-            >
+            <div className="rounded-xl bg-white p-4 shadow-card">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <Link
@@ -51,16 +45,14 @@ export function AthletesTable({ items }: AthletesTableProps) {
                 <Link
                   to={`/athletes/${athlete.id}`}
                   aria-label={`Ver detalle de ${athlete.first_name} ${athlete.last_name}`}
-                  className="flex-1 rounded-lg bg-white py-3 text-center text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="flex-1 rounded-lg bg-white py-3 text-center text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                 >
                   Ver
                 </Link>
                 <Link
                   to={`/athletes/${athlete.id}/edit`}
                   aria-label={`Editar a ${athlete.first_name} ${athlete.last_name}`}
-                  className="flex-1 rounded-lg bg-white py-3 text-center text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="flex-1 rounded-lg bg-white py-3 text-center text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                 >
                   Editar
                 </Link>
@@ -71,13 +63,7 @@ export function AthletesTable({ items }: AthletesTableProps) {
       </ul>
 
       {/* Vista desktop: tabla (md+) */}
-      <div
-        className="hidden overflow-x-auto rounded-xl bg-white md:block"
-        style={{
-          boxShadow:
-            "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-        }}
-      >
+      <div className="hidden overflow-x-auto rounded-xl bg-white md:block shadow-card">
         <table className="min-w-full text-sm">
           <thead className="text-left" style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}>
             <tr>
@@ -115,15 +101,13 @@ export function AthletesTable({ items }: AthletesTableProps) {
                   <div className="flex gap-2">
                     <Link
                       to={`/athletes/${athlete.id}`}
-                      className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                      className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                     >
                       Ver
                     </Link>
                     <Link
                       to={`/athletes/${athlete.id}/edit`}
-                      className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70"
-                      style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                      className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                     >
                       Editar
                     </Link>

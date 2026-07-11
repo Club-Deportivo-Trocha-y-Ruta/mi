@@ -44,15 +44,14 @@ export function ChildCard({ athlete }: ChildCardProps) {
   return (
     <Link
       to={`/my-athletes/${athlete.athlete_id}`}
-      className="flex flex-col rounded-xl bg-white shadow-ring-soft transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
+      className="flex flex-col rounded-xl bg-white shadow-card transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
       aria-label={`Ver detalle de ${athlete.athlete_first_name} ${athlete.athlete_last_name}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between px-5 pt-5 pb-4">
         <div className="min-w-0 flex-1">
           <h2
-            className="truncate text-lg text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="font-display truncate text-lg text-charcoal"
           >
             {athlete.athlete_first_name} {athlete.athlete_last_name}
           </h2>

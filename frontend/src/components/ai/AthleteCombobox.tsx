@@ -232,12 +232,13 @@ export function AthleteCombobox({
           className={cn(
             "flex w-full items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-left text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50",
             !selected && "text-mid-gray",
+            !error && "shadow-ring",
           )}
-          style={{
-            boxShadow: error
-              ? "rgb(220, 38, 38) 0px 0px 0px 1px"
-              : "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-          }}
+          style={
+            error
+              ? { boxShadow: "rgb(220, 38, 38) 0px 0px 0px 1px" }
+              : undefined
+          }
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
             {selected && (

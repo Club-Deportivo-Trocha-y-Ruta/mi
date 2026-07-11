@@ -25,11 +25,6 @@ type RegisterForm = z.infer<typeof schema>;
 // Shared style constants (mirror LoginPage)
 // ---------------------------------------------------------------------------
 
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-const INPUT_SHADOW = "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px";
-
 const inputClassName =
   "w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
 
@@ -131,12 +126,8 @@ export function ParentRegisterPage() {
         Club Deportivo
       </p>
       <h1
-        className="mt-1 text-2xl text-charcoal"
-        style={{
-          fontFamily: "'Cal Sans', system-ui, sans-serif",
-          fontWeight: 600,
-          letterSpacing: "0.2px",
-        }}
+        className="font-display mt-1 text-2xl text-charcoal"
+        style={{ letterSpacing: "0.2px" }}
       >
         Trocha y Ruta
       </h1>
@@ -153,10 +144,7 @@ export function ParentRegisterPage() {
   if (pageState === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white p-4">
-        <div
-          className="w-full max-w-md rounded-xl bg-white p-8 text-center"
-          style={{ boxShadow: CARD_SHADOW }}
-        >
+        <div className="w-full max-w-md rounded-xl bg-white p-8 text-center shadow-card">
           {renderCardHeader()}
           <p className="text-sm text-mid-gray">Verificando invitación...</p>
         </div>
@@ -171,10 +159,7 @@ export function ParentRegisterPage() {
   if (pageState === "invalid") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white p-4">
-        <div
-          className="w-full max-w-md rounded-xl bg-white p-8"
-          style={{ boxShadow: CARD_SHADOW }}
-        >
+        <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-card">
           {renderCardHeader()}
           <div className="rounded-lg bg-red-50 px-4 py-4 text-center">
             <p className="text-sm font-medium text-red-700">
@@ -197,10 +182,7 @@ export function ParentRegisterPage() {
   if (pageState === "success") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white p-4">
-        <div
-          className="w-full max-w-md rounded-xl bg-white p-8 text-center"
-          style={{ boxShadow: CARD_SHADOW }}
-        >
+        <div className="w-full max-w-md rounded-xl bg-white p-8 text-center shadow-card">
           {renderCardHeader()}
           <div className="rounded-lg bg-green-50 px-4 py-4">
             <p className="text-sm font-medium text-green-700">
@@ -213,8 +195,7 @@ export function ParentRegisterPage() {
           </div>
           <Link
             to="/login"
-            className="mt-6 block w-full rounded-lg bg-charcoal px-4 py-2.5 text-center text-sm font-medium text-white transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className="mt-6 block w-full rounded-lg bg-charcoal px-4 py-2.5 text-center text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
           >
             Ir al inicio de sesión
           </Link>
@@ -229,22 +210,15 @@ export function ParentRegisterPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white p-4">
-      <div
-        className="w-full max-w-md rounded-xl bg-white p-8"
-        style={{ boxShadow: CARD_SHADOW }}
-      >
+      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-card">
         {/* Header */}
         <div className="mb-8 text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-mid-gray">
             Club Deportivo
           </p>
           <h1
-            className="mt-1 text-2xl text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-              letterSpacing: "0.2px",
-            }}
+            className="font-display mt-1 text-2xl text-charcoal"
+            style={{ letterSpacing: "0.2px" }}
           >
             Trocha y Ruta
           </h1>
@@ -273,8 +247,7 @@ export function ParentRegisterPage() {
               type="email"
               readOnly
               value={tokenData?.email ?? ""}
-              className="w-full cursor-not-allowed rounded-lg bg-surface px-3 py-2.5 text-sm text-mid-gray outline-none"
-              style={{ boxShadow: INPUT_SHADOW }}
+              className="w-full cursor-not-allowed rounded-lg bg-surface px-3 py-2.5 text-sm text-mid-gray outline-none shadow-ring"
             />
           </div>
 
@@ -289,8 +262,7 @@ export function ParentRegisterPage() {
             <input
               id="first_name"
               type="text"
-              className={inputClassName}
-              style={{ boxShadow: INPUT_SHADOW }}
+              className={`${inputClassName} shadow-ring`}
               {...form.register("first_name")}
             />
             {form.formState.errors.first_name && (
@@ -311,8 +283,7 @@ export function ParentRegisterPage() {
             <input
               id="last_name"
               type="text"
-              className={inputClassName}
-              style={{ boxShadow: INPUT_SHADOW }}
+              className={`${inputClassName} shadow-ring`}
               {...form.register("last_name")}
             />
             {form.formState.errors.last_name && (
@@ -333,8 +304,7 @@ export function ParentRegisterPage() {
             <input
               id="password"
               type="password"
-              className={inputClassName}
-              style={{ boxShadow: INPUT_SHADOW }}
+              className={`${inputClassName} shadow-ring`}
               {...form.register("password")}
             />
             {form.formState.errors.password && (
@@ -357,8 +327,7 @@ export function ParentRegisterPage() {
               id="phone"
               type="tel"
               placeholder="Ej: +57 300 123 4567"
-              className={inputClassName}
-              style={{ boxShadow: INPUT_SHADOW }}
+              className={`${inputClassName} shadow-ring`}
               {...form.register("phone")}
             />
           </div>
@@ -374,8 +343,7 @@ export function ParentRegisterPage() {
           <button
             type="submit"
             disabled={form.formState.isSubmitting}
-            className="w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className="w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
           >
             {form.formState.isSubmitting ? "Creando cuenta..." : "Crear cuenta"}
           </button>

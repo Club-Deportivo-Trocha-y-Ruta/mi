@@ -20,9 +20,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSeasonPanorama } from "@/hooks/athletes/useSeasonPanorama";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function HeaderBar({ year }: { year: number }) {
   return (
     <header className="space-y-1">
@@ -35,8 +32,7 @@ function HeaderBar({ year }: { year: number }) {
         Análisis IA
       </Link>
       <h1
-        className="text-2xl text-charcoal"
-        style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+        className="font-display text-2xl text-charcoal"
       >
         Panorama de temporada {year}
       </h1>
@@ -50,8 +46,7 @@ function HeaderBar({ year }: { year: number }) {
 function TableSkeleton() {
   return (
     <div
-      className="space-y-2 rounded-xl bg-white p-4"
-      style={{ boxShadow: cardShadow }}
+      className="space-y-2 rounded-xl bg-white p-4 shadow-card"
       data-testid="season-insights-loading"
     >
       {Array.from({ length: 5 }).map((_, i) => (
@@ -95,8 +90,7 @@ export function SeasonInsightsPage() {
 
       {isError && !isLoading && (
         <div
-          className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6"
-          style={{ boxShadow: cardShadow }}
+          className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6 shadow-card"
           data-testid="season-insights-error"
         >
           <p className="text-sm text-mid-gray">
@@ -110,8 +104,7 @@ export function SeasonInsightsPage() {
 
       {!isLoading && !isError && items.length === 0 && (
         <div
-          className="flex min-h-[20vh] items-center justify-center rounded-xl bg-white p-6 text-center"
-          style={{ boxShadow: cardShadow }}
+          className="flex min-h-[20vh] items-center justify-center rounded-xl bg-white p-6 text-center shadow-card"
           data-testid="season-insights-empty"
         >
           <p className="text-sm text-mid-gray">
@@ -122,8 +115,7 @@ export function SeasonInsightsPage() {
 
       {!isLoading && !isError && items.length > 0 && (
         <div
-          className="overflow-hidden rounded-xl bg-white"
-          style={{ boxShadow: cardShadow }}
+          className="overflow-hidden rounded-xl bg-white shadow-card"
         >
           <table className="w-full text-sm" data-testid="season-insights-table">
             <caption className="sr-only">

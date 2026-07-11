@@ -35,7 +35,7 @@ function formatTime(timeStr: string): string {
 
 function SkeletonCard() {
   return (
-    <div className="rounded-xl bg-white p-5 space-y-3 shadow-ring-soft">
+    <div className="rounded-xl bg-white p-5 space-y-3 shadow-card">
       {[...Array(3)].map((_, i) => (
         <Skeleton key={i} className="h-4" style={{ width: `${70 - i * 15}%` }} />
       ))}
@@ -89,7 +89,7 @@ export function ParentSessionDetailPage() {
           <span aria-hidden="true">←</span>
           <span>Entrenamientos</span>
         </Link>
-        <div className="rounded-xl bg-white p-8 text-center shadow-ring-soft">
+        <div className="rounded-xl bg-white p-8 text-center shadow-card">
           <p className="text-base font-medium text-charcoal">Sesión no encontrada</p>
           <p className="mt-1 text-sm text-mid-gray">
             La sesión no existe o no tienes acceso a ella.
@@ -111,11 +111,10 @@ export function ParentSessionDetailPage() {
       </Link>
 
       {/* Header */}
-      <div className="rounded-xl bg-white px-5 py-4 shadow-ring-soft" data-testid="session-header">
+      <div className="rounded-xl bg-white px-5 py-4 shadow-card" data-testid="session-header">
         <div className="flex flex-wrap items-center gap-2 mb-1">
           <h1
-            className="text-xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="font-display text-xl text-charcoal"
           >
             {session.technical_focus}
           </h1>
@@ -127,7 +126,7 @@ export function ParentSessionDetailPage() {
       </div>
 
       {/* Detalles generales */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-ring-soft">
+      <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-card">
         <h2 className={sectionHeading}>Detalles</h2>
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
@@ -145,7 +144,7 @@ export function ParentSessionDetailPage() {
 
       {/* Recorrido */}
       {(session.route_text || session.strava_url || session.route_file_path) && (
-        <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-ring-soft">
+        <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-card">
           <h2 className={sectionHeading}>Recorrido</h2>
 
           {session.route_text && (
@@ -182,7 +181,7 @@ export function ParentSessionDetailPage() {
       )}
 
       {/* Fotos y videos donde aparece tu atleta */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-ring-soft">
+      <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-card">
         <h2 className={sectionHeading}>Fotos y videos</h2>
         {mediaQuery.isLoading ? (
           <Skeleton className="h-24 rounded-lg" />
@@ -219,7 +218,7 @@ export function ParentSessionDetailPage() {
         )}
 
         {!attendanceQuery.isLoading && !attendanceQuery.isError && myAttendance.length === 0 && (
-          <div className="rounded-xl bg-white px-5 py-5 shadow-ring-soft">
+          <div className="rounded-xl bg-white px-5 py-5 shadow-card">
             <p className="text-sm text-mid-gray">
               Tu atleta no figura como convocado en esta sesión.
             </p>

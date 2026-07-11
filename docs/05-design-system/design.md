@@ -21,31 +21,35 @@ The elevation system is notably sophisticated for a minimal site — 11 shadow d
 ## 2. Color Palette & Roles
 
 ### Primary
-- **Charcoal** (`#242424`): Primary heading and button text — Cal.com's signature near-black, warmer than pure black
+- **Charcoal** (`#2f2f2f`): Primary heading and button text — shipped as `--color-charcoal` / `--color-text-primary` in `frontend/src/style.css`'s `@theme` block. Slightly softer than Cal.com's original inspiration value (`#242424`), tuned for the brand
 - **Midnight** (`#111111`): Deepest text/overlay color — used at 50% opacity for subtle overlays
 - **White** (`#ffffff`): Primary background and surface — the dominant canvas
 
 ### Secondary & Accent
-- **Link Blue** (`#0099ff`): In-text links with underline decoration — the only blue in the system, reserved strictly for hyperlinks
+- **Link Blue** (`--color-link-blue`): No longer a standalone literal — merged into a single source of truth by resolving to `var(--color-primary)` (the brand teal, `#20b7c9`). In-text links keep their underline decoration; there is no separate blue hex anywhere in `style.css` anymore
 - **Focus Ring** (`#3b82f6` at 50% opacity): Keyboard focus indicator — accessibility-only, invisible in normal interaction
 - **Default Link** (`#0000ee`): Browser-default link color on some elements — unmodified, signaling openness
 
 ### Surface & Background
 - **Pure White** (`#ffffff`): Primary page background and card surfaces
 - **Light Gray** (approx `#f5f5f5`): Subtle section differentiation — barely visible tint
-- **Mid Gray** (`#898989`): Secondary text, descriptions, and muted labels
+- **Mid Gray** (`#717171`): Secondary text, descriptions, and muted labels — shipped as `--color-mid-gray`
 
 ### Neutrals & Text
-- **Charcoal** (`#242424`): Headlines, buttons, primary UI text
+- **Charcoal** (`#2f2f2f`): Headlines, buttons, primary UI text
 - **Midnight** (`#111111`): Deep black for high-contrast links and nav text
-- **Mid Gray** (`#898989`): Descriptions, secondary labels, muted content
+- **Mid Gray** (`#717171`): Descriptions, secondary labels, muted content
 - **Pure Black** (`#000000`): Certain link text elements
 - **Border Gray** (approx `rgba(34, 42, 53, 0.08–0.10)`): Shadow-based borders using ring shadows instead of CSS borders
 
 ### Semantic & Accent
-- Cal.com is deliberately colorless for brand elements — "a grayscale brand to emphasise on boldness and professionalism"
-- Product UI screenshots show color (blues, greens in the scheduling interface), but the marketing site itself stays monochrome
-- The philosophy mirrors Uber's approach: let the content carry color, the frame stays neutral
+Real 4-tier semantic status scale, defined in `style.css`'s `@theme` block and consumed by `StatusBadge` (`frontend/src/components/shared`), swept across charts/modules:
+- **Success** (`--color-success`, `#0ca30c`): Positive/completed states
+- **Warning** (`--color-warning`, `#fab219`): Caution/attention-needed states
+- **Danger** (`--color-danger`, `#d03b3b`): Error/blocking states
+- **Neutral**: No dedicated hex token of its own — reuses the existing gray tokens (`--color-light-gray` background + `--color-mid-gray` text/icon) rather than introducing a fifth literal color
+- The former lime-accent tokens (`--color-accent` / `--color-accent-dark` / `--color-accent-light`) have been fully retired and removed — they no longer exist in `style.css`; do not reintroduce them
+- Outside of these functional status colors, the palette stays deliberately colorless — "a grayscale brand to emphasise on boldness and professionalism"
 
 ### Gradient System
 - No gradients on the marketing site — the design is fully flat and monochrome
@@ -54,7 +58,7 @@ The elevation system is notably sophisticated for a minimal site — 11 shadow d
 ## 3. Typography Rules
 
 ### Font Family
-- **Display**: `Cal Sans` — custom geometric sans-serif by Mark Davis. Open-source, available on Google Fonts and GitHub. Extremely tight default letter-spacing designed for large headlines. Has 6 character variants (Cc, j, t, u, 0, 1)
+- **Display**: `Cal Sans` — custom geometric sans-serif by Mark Davis. **Shipped and self-hosted**: bundled via the `@fontsource/cal-sans` npm package (`^5.2.3`) and imported directly in `frontend/src/style.css` (`@import "@fontsource/cal-sans";`) — no Google Fonts/CDN dependency at runtime. Registered as `--font-display` in the Tailwind `@theme` block and applied sitewide through the `font-display` utility class (headings, page titles, card labels, nav — used across dozens of components). No longer aspirational/documented-but-unshipped: it renders everywhere in production. Extremely tight default letter-spacing designed for large headlines. Has 6 character variants (Cc, j, t, u, 0, 1)
 - **Body**: `Inter` — "rock-solid" standard body font. Fallback: `Inter Placeholder`
 - **UI Light**: `Cal Sans UI Variable Light` — light-weight variant (300) for softer UI text with -0.2px letter-spacing
 - **UI Medium**: `Cal Sans UI Medium` — medium-weight variant (500) for emphasized captions
@@ -157,14 +161,22 @@ The elevation system is notably sophisticated for a minimal site — 11 shadow d
 
 ## 6. Depth & Elevation
 
+### Canonical Shadow Utilities
+`shadow-card` and `shadow-ring` are the two canonical, Tailwind-auto-generated shadow utilities — both backed by `@theme` custom properties in `frontend/src/style.css` (`--shadow-card` / `--shadow-ring`), so they work as ordinary Tailwind classes with no hand-written CSS required:
+- **`shadow-card`** (`--shadow-card`): The 3-layer workhorse — sharp contact shadow + ring border + diffused ambient shadow composited together. The default elevation for cards and containers
+- **`shadow-ring`** (`--shadow-ring`): The hairline ring layer alone (`rgba(34, 42, 53, 0.08) 0px 0px 0px 1px`) — used wherever only a shadow-based border is needed, without the full card elevation
+
+**Retired**: `.shadow-ring-soft` was a hand-written CSS utility class (not `@theme`-generated) layering the ring + ambient shadows. It has been fully retired and removed from the codebase — all 16 former call sites now use `shadow-card` instead. Do not reintroduce `.shadow-ring-soft`; use `shadow-card` (or bare `shadow-ring` when only the hairline border is wanted).
+
 | Level | Treatment | Use |
 |-------|-----------|-----|
-| Level 0 (Flat) | No shadow | Page canvas, basic text containers |
-| Level 1 (Inset) | `rgba(0,0,0,0.16) 0px 1px 1.9px 0px inset` | Pressed/recessed elements, input wells |
-| Level 2 (Ring + Soft) | `rgba(19,19,22,0.7) 0px 1px 5px -4px, rgba(34,42,53,0.08) 0px 0px 0px 1px, rgba(34,42,53,0.05) 0px 4px 8px` | Cards, containers — the workhorse shadow |
-| Level 3 (Ring + Soft Alt) | `rgba(36,36,36,0.7) 0px 1px 5px -4px, rgba(36,36,36,0.05) 0px 4px 8px` | Alt card elevation without ring border |
-| Level 4 (Inset Highlight) | `rgba(255,255,255,0.15) 0px 2px 0px inset` or `rgb(255,255,255) 0px 2px 0px inset` | Button inner highlight — 3D pressed effect |
-| Level 5 (Soft Only) | `rgba(34,42,53,0.05) 0px 4px 8px` | Subtle ambient shadow |
+| Level 0 (Flat) | No shadow (`--shadow-flat: none`) | Page canvas, basic text containers |
+| Level 1 (Inset) | `rgba(0,0,0,0.16) 0px 1px 1.9px 0px inset` (`--shadow-inset`) | Pressed/recessed elements, input wells |
+| Level 2 (Ring + Soft — canonical `shadow-card`) | `rgba(19,19,22,0.7) 0px 1px 5px -4px, rgba(34,42,53,0.08) 0px 0px 0px 1px, rgba(34,42,53,0.05) 0px 4px 8px` (`--shadow-card`) | Cards, containers — the workhorse shadow |
+| Level 2b (Ring only — canonical `shadow-ring`) | `rgba(34,42,53,0.08) 0px 0px 0px 1px` (`--shadow-ring`) | Shadow-based border alone, no card elevation |
+| Level 3 (Ring + Soft Alt) | `rgba(36,36,36,0.7) 0px 1px 5px -4px, rgba(36,36,36,0.05) 0px 4px 8px` (`--shadow-card-alt`) | Alt card elevation without ring border |
+| Level 4 (Inset Highlight) | `rgba(255,255,255,0.15) 0px 2px 0px inset` or `rgb(255,255,255) 0px 2px 0px inset` (`--shadow-button-highlight`) | Button inner highlight — 3D pressed effect |
+| Level 5 (Soft Only) | `rgba(34,42,53,0.05) 0px 4px 8px` (`--shadow-ambient`) | Subtle ambient shadow |
 
 ### Shadow Philosophy
 Cal.com's shadow system is the most sophisticated element of the design — 11 shadow definitions using a multi-layered compositing technique:

@@ -27,9 +27,6 @@ const MONTH_NAMES = [
 
 const PAGE_SIZE = 12;
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 interface StatusConfig {
   label: string;
   className: string;
@@ -102,8 +99,10 @@ function EmptyState({ athleteId }: EmptyStateProps) {
 
   return (
     <div
-      className="flex flex-col items-center gap-4 rounded-xl bg-white px-6 py-12 text-center"
-      style={{ boxShadow: cardShadow }}
+      className={cn(
+        "flex flex-col items-center gap-4 rounded-xl bg-white px-6 py-12 text-center",
+        "shadow-card",
+      )}
       data-testid="newsletters-empty-state"
     >
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-light-gray">
@@ -123,16 +122,20 @@ function EmptyState({ athleteId }: EmptyStateProps) {
           onClick={() =>
             navigate(`/training/athlete-newsletters?generate=${athleteId}`)
           }
-          className="min-h-[44px] rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+          className={cn(
+            "min-h-[44px] rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70",
+            "shadow-button-highlight",
+          )}
           data-testid="generate-newsletter-cta"
         >
           Generar boletin de este mes
         </button>
         <Link
           to="/training/athlete-newsletters"
-          className="min-h-[44px] flex items-center rounded-lg px-4 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className={cn(
+            "min-h-[44px] flex items-center rounded-lg px-4 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70",
+            "shadow-ring",
+          )}
           data-testid="dashboard-newsletters-link"
         >
           Ir al dashboard de boletines
@@ -179,8 +182,7 @@ function TableRow({ newsletter, athleteId }: { newsletter: AthleteNewsletter; at
 function MobileCard({ newsletter, athleteId }: { newsletter: AthleteNewsletter; athleteId: number }) {
   return (
     <div
-      className="rounded-xl bg-white p-4"
-      style={{ boxShadow: cardShadow }}
+      className={cn("rounded-xl bg-white p-4", "shadow-card")}
       data-testid={`newsletter-card-${newsletter.id}`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -192,8 +194,10 @@ function MobileCard({ newsletter, athleteId }: { newsletter: AthleteNewsletter; 
         </div>
         <Link
           to={`/training/athlete-newsletters/${athleteId}/${newsletter.id}`}
-          className="min-h-[44px] inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className={cn(
+            "min-h-[44px] inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70",
+            "shadow-ring",
+          )}
           aria-label={`Ver detalle del boletin de ${monthLabel(newsletter.month)} ${newsletter.year}`}
           data-testid={`newsletter-mobile-link-${newsletter.id}`}
         >
@@ -229,8 +233,7 @@ export function AthleteNewslettersTabPanel({ athleteId }: AthleteNewslettersTabP
   if (query.isError) {
     return (
       <div
-        className="rounded-xl bg-white p-6 text-center"
-        style={{ boxShadow: cardShadow }}
+        className={cn("rounded-xl bg-white p-6 text-center", "shadow-card")}
         data-testid="newsletters-error"
       >
         <p className="text-sm text-red-600">Error al cargar los boletines. Intenta de nuevo.</p>
@@ -250,8 +253,7 @@ export function AthleteNewslettersTabPanel({ athleteId }: AthleteNewslettersTabP
     <div className="space-y-3" data-testid="newsletters-tab-panel">
       {/* Desktop table */}
       <div
-        className="hidden sm:block overflow-hidden rounded-xl bg-white"
-        style={{ boxShadow: cardShadow }}
+        className={cn("hidden sm:block overflow-hidden rounded-xl bg-white", "shadow-card")}
       >
         <table className="w-full" aria-label="Boletines mensuales del atleta">
           <thead>
@@ -297,8 +299,10 @@ export function AthleteNewslettersTabPanel({ athleteId }: AthleteNewslettersTabP
           <button
             type="button"
             onClick={() => setPage((p) => p + 1)}
-            className="min-h-[44px] rounded-lg px-5 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className={cn(
+              "min-h-[44px] rounded-lg px-5 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70",
+              "shadow-ring",
+            )}
             data-testid="ver-mas-btn"
           >
             Ver más

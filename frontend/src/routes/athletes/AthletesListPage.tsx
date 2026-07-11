@@ -4,7 +4,9 @@ import { Link } from "react-router-dom";
 
 import { getAthlete } from "@/api/athletes";
 import { AthletesTable, type AthleteRow } from "@/components/athletes/AthletesTable";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useAuthStore } from "@/store/auth.store";
@@ -27,8 +29,7 @@ const CATEGORY_OPTIONS = [
 ];
 
 const inputSelectClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
-const inputSelectStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 export function AthletesListPage() {
   const user = useAuthStore((state) => state.user);
@@ -69,47 +70,35 @@ export function AthletesListPage() {
 
   return (
     <section className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1
-            className="text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
-          >
-            Atletas
-          </h1>
-          <p className="mt-0.5 text-sm text-mid-gray">Gestion de atletas del club.</p>
-        </div>
-        {isCoach && (
-          <Link
-            to="/athletes/new"
-            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
-          >
-            + Agregar atleta
-          </Link>
-        )}
-      </div>
+      <PageHeader
+        title="Atletas"
+        subtitle="Gestion de atletas del club."
+        actions={
+          isCoach && (
+            <Link
+              to="/athletes/new"
+              className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+            >
+              + Agregar atleta
+            </Link>
+          )
+        }
+      />
 
       {/* Filtros */}
-      <div
-        className="grid gap-3 rounded-xl bg-white p-4 md:grid-cols-3"
-        style={{ boxShadow: "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px" }}
-      >
+      <div className="grid gap-3 rounded-xl bg-white p-4 md:grid-cols-3 shadow-card">
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Buscar por nombre..."
           aria-label="Buscar por nombre"
           className={inputSelectClass}
-          style={inputSelectStyle}
         />
         <select
           value={category}
           onChange={(event) => setCategory(event.target.value)}
           aria-label="Categoría"
           className={inputSelectClass}
-          style={inputSelectStyle}
         >
           {CATEGORY_OPTIONS.map((option) => (
             <option key={option} value={option}>
@@ -122,7 +111,6 @@ export function AthletesListPage() {
           onChange={(event) => setPhv(event.target.value as "Todos" | MaturationStatus)}
           aria-label="Estado PHV"
           className={inputSelectClass}
-          style={inputSelectStyle}
         >
           <option value="Todos">Todos los estados PHV</option>
           <option value={MaturationStatus.PrePHV}>Pre-PHV</option>
@@ -133,10 +121,7 @@ export function AthletesListPage() {
 
       {/* Skeleton */}
       {athletesQuery.isLoading ? (
-        <div
-          className="space-y-2 rounded-xl bg-white p-4"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-        >
+        <div className="space-y-2 rounded-xl bg-white p-4 shadow-ring">
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
           ))}
@@ -153,20 +138,19 @@ export function AthletesListPage() {
 
       {/* Empty state */}
       {!athletesQuery.isLoading && !athletesQuery.isError && filteredRows.length === 0 ? (
-        <div
-          className="rounded-xl bg-white p-10 text-center"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px", borderStyle: "dashed" }}
-        >
-          <p className="text-sm text-mid-gray">No hay atletas registrados.</p>
-          {isCoach ? (
-            <Link
-              to="/athletes/new"
-              className="mt-3 inline-block text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
-            >
-              + Agregar atleta
-            </Link>
-          ) : null}
-        </div>
+        <EmptyState
+          title="No hay atletas registrados."
+          action={
+            isCoach ? (
+              <Link
+                to="/athletes/new"
+                className="inline-block text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
+              >
+                + Agregar atleta
+              </Link>
+            ) : undefined
+          }
+        />
       ) : null}
 
       {/* Table */}

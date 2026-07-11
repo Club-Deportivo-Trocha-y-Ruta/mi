@@ -80,8 +80,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
     return (
       <section className="mx-auto max-w-3xl space-y-3">
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           Editar sesión
         </h1>
@@ -100,8 +99,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
     <section className="mx-auto max-w-3xl space-y-5">
       <div>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           {isEdit ? "Editar sesión" : "Nueva sesión"}
         </h1>

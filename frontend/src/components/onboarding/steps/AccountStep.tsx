@@ -66,8 +66,7 @@ const strengthWidths: Record<PasswordStrength, string> = {
 // ---------------------------------------------------------------------------
 
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray shadow-ring";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -104,7 +103,6 @@ export function AccountStep({ email }: AccountStepProps) {
           readOnly
           disabled
           className={inputClass}
-          style={inputStyle}
           aria-label="Correo electrónico (pre-rellenado desde tu invitación)"
         />
         <span className="mt-1 block text-xs text-mid-gray">
@@ -121,7 +119,6 @@ export function AccountStep({ email }: AccountStepProps) {
             autoComplete="new-password"
             placeholder="Min. 8 caracteres, una mayúscula y un número"
             className={inputClass}
-            style={inputStyle}
             {...register("password")}
           />
         </label>
@@ -155,7 +152,6 @@ export function AccountStep({ email }: AccountStepProps) {
           autoComplete="new-password"
           placeholder="Repite tu contraseña"
           className={inputClass}
-          style={inputStyle}
           {...register("password_confirm")}
         />
         {errors.password_confirm && (

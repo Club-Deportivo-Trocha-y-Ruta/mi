@@ -62,11 +62,7 @@ export function EventFormPage({ mode }: EventFormPageProps) {
     return (
       <section className="space-y-3">
         <h1
-          className="text-2xl text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-          }}
+          className="font-display text-2xl text-charcoal"
         >
           Editar evento
         </h1>
@@ -103,11 +99,7 @@ export function EventFormPage({ mode }: EventFormPageProps) {
               </ol>
             </nav>
             <h1
-              className="text-2xl text-charcoal"
-              style={{
-                fontFamily: "'Cal Sans', system-ui, sans-serif",
-                fontWeight: 600,
-              }}
+              className="font-display text-2xl text-charcoal"
             >
               {isEdit ? "Editar evento" : "Nuevo evento"}
             </h1>
@@ -119,8 +111,7 @@ export function EventFormPage({ mode }: EventFormPageProps) {
           </div>
           <Link
             to="/calendar"
-            className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
           >
             Cancelar
           </Link>

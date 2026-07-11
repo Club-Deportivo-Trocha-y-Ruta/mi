@@ -12,9 +12,6 @@ import { useParentAthletes } from "@/hooks/parents/useParentAthletes";
 import { useParentUsers } from "@/hooks/parents/useParentUsers";
 import { useAuthStore } from "@/store/auth.store";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function StatCard({
   icon: Icon,
   label,
@@ -27,7 +24,7 @@ function StatCard({
   subtitle?: string;
 }) {
   return (
-    <div className="rounded-xl bg-white p-4" style={{ boxShadow: cardShadow }}>
+    <div className="rounded-xl bg-white p-4 shadow-card">
       <div className="flex items-center gap-2 text-mid-gray">
         <Icon size={16} />
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
@@ -89,8 +86,7 @@ export function ParentDetailPage() {
     return (
       <section className="space-y-3">
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           Padre / acudiente no encontrado
         </h1>
@@ -121,8 +117,7 @@ export function ParentDetailPage() {
             &larr; Padres
           </Link>
           <h1
-            className="mt-1 text-2xl text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+            className="font-display mt-1 text-2xl text-charcoal"
           >
             {parent.first_name} {parent.last_name}
           </h1>
@@ -166,12 +161,8 @@ export function ParentDetailPage() {
       {linkedRelations.length > 0 && (
         <div className="space-y-3">
           <h2
-            className="text-base text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-              letterSpacing: "0.2px",
-            }}
+            className="font-display text-base text-charcoal"
+            style={{ letterSpacing: "0.2px" }}
           >
             Invitaciones al portal
           </h2>
@@ -190,10 +181,7 @@ export function ParentDetailPage() {
 
       {/* Empty invite section when no athletes linked */}
       {!relationsQuery.isLoading && linkedRelations.length === 0 && (
-        <div
-          className="rounded-xl bg-white px-5 py-8 text-center"
-          style={{ boxShadow: cardShadow }}
-        >
+        <div className="rounded-xl bg-white px-5 py-8 text-center shadow-card">
           <p className="text-sm text-mid-gray">
             Vincula al menos un atleta para poder generar invitaciones al portal.
           </p>

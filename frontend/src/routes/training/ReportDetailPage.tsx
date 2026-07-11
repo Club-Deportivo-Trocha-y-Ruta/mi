@@ -73,11 +73,6 @@ const BLOCK_LABELS: Record<NarrativeBlockKey, string> = {
   competencia: "Participación en competencia",
 };
 
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 const sectionHeading = "text-sm font-semibold uppercase tracking-wide text-mid-gray mb-3";
 
 // ---------------------------------------------------------------------------
@@ -86,7 +81,7 @@ const sectionHeading = "text-sm font-semibold uppercase tracking-wide text-mid-g
 
 function SkeletonCard() {
   return (
-    <div className="rounded-xl bg-white p-5 space-y-3" style={cardStyle}>
+    <div className="rounded-xl bg-white p-5 space-y-3 shadow-card">
       {[...Array(3)].map((_, i) => (
         <div
           key={i}
@@ -188,8 +183,7 @@ function NarrativeBlockEditor({
 
   return (
     <div
-      className="rounded-xl bg-white p-5 space-y-3"
-      style={cardStyle}
+      className="rounded-xl bg-white p-5 space-y-3 shadow-card"
       data-testid={`block-editor-${blockKey}`}
     >
       {/* Header del bloque */}
@@ -204,8 +198,7 @@ function NarrativeBlockEditor({
             onClick={handleRegenerate}
             disabled={disabled || isRegenerating || isSaving}
             aria-label={`Regenerar con IA el bloque "${BLOCK_LABELS[blockKey]}"`}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-40 shadow-ring"
             data-testid={`regenerate-btn-${blockKey}`}
           >
             <RefreshCw
@@ -289,8 +282,7 @@ function NarrativeBlockEditor({
           onChange={(e) => setLocalText(e.target.value)}
           disabled={disabled || isRegenerating}
           placeholder={`Escribe el contenido de "${BLOCK_LABELS[blockKey]}"…`}
-          className="w-full resize-y rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="w-full resize-y rounded-lg px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50 shadow-ring"
           aria-describedby={updateMutation.isError ? errorId : undefined}
           aria-invalid={updateMutation.isError}
           data-testid={`block-textarea-${blockKey}`}
@@ -343,8 +335,7 @@ function CompetitionResultsTable({ results }: { results: CompetitionResult[] }) 
       {groups.map((group, gi) => (
         <div
           key={group.eventId ?? gi}
-          className="overflow-x-auto rounded-xl bg-white"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="overflow-x-auto rounded-xl bg-white shadow-ring"
         >
           <div
             className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
@@ -455,7 +446,7 @@ function CoachEditorView({
   return (
     <section className="space-y-5">
       {/* Header */}
-      <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <Link
@@ -466,8 +457,7 @@ function CoachEditorView({
             </Link>
             <div className="flex flex-wrap items-center gap-2">
               <h1
-                className="text-xl text-charcoal"
-                style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+                className="font-display text-xl text-charcoal"
               >
                 Informe Técnico — {monthLabel} {report.year}
               </h1>
@@ -480,8 +470,7 @@ function CoachEditorView({
               type="button"
               onClick={handleApprove}
               disabled={isApproved || updateMutation.isPending}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-40"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-40 shadow-ring"
               data-testid="approve-btn"
             >
               <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -542,7 +531,7 @@ function CoachEditorView({
 
       {/* Métricas — solo lectura */}
       {metrics && (
-        <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+        <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
           <h2 className={sectionHeading}>Métricas del mes</h2>
           <MonthlyMetricsTable metrics={metrics} athleteNames={report.athlete_names} />
         </div>
@@ -565,7 +554,7 @@ function CoachEditorView({
           ))}
         </div>
       ) : (
-        <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
+        <div className="rounded-xl bg-white px-5 py-4 shadow-card">
           <p className="text-sm text-mid-gray">
             Este informe no tiene secciones narrativas disponibles.
           </p>
@@ -573,13 +562,13 @@ function CoachEditorView({
       )}
 
       {/* Resultados de competencia — solo lectura + bloque narrativo */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
         <h2 className={sectionHeading}>Participación en competencia</h2>
         <CompetitionResultsTable results={results} />
       </div>
 
       {/* Footer */}
-      <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 shadow-card">
         <p className="text-xs text-mid-gray">
           Generado el {formatDateTime(report.generated_at)}
         </p>
@@ -658,7 +647,7 @@ export function ReportDetailPage() {
   if (reportQuery.isError || !report) {
     return (
       <section className="space-y-4">
-        <div className="rounded-xl bg-white p-8 text-center" style={cardStyle}>
+        <div className="rounded-xl bg-white p-8 text-center shadow-card">
           <p className="text-base font-medium text-charcoal">Reporte no encontrado</p>
           <p className="mt-1 text-sm text-mid-gray">
             El reporte solicitado no existe o no tienes permiso para verlo.
@@ -695,7 +684,7 @@ export function ReportDetailPage() {
   // esta página). No caemos en una vista de reporte: estado neutro.
   return (
     <section className="space-y-4">
-      <div className="rounded-xl bg-white p-8 text-center" style={cardStyle}>
+      <div className="rounded-xl bg-white p-8 text-center shadow-card">
         <p className="text-base font-medium text-charcoal">Informe no disponible</p>
         <p className="mt-1 text-sm text-mid-gray">
           Tu cuenta no tiene un club asignado para ver este informe.

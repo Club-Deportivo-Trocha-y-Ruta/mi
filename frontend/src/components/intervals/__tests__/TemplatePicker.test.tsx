@@ -354,7 +354,7 @@ describe("TemplatePicker — tarjetas", () => {
     renderPicker();
 
     const heading = screen.getByRole("heading", { name: "Piramidal base" });
-    const card = heading.closest(".shadow-ring-soft") as HTMLElement;
+    const card = heading.closest(".shadow-card") as HTMLElement;
     expect(within(card).getByText("13 a 15 años")).toBeInTheDocument();
     expect(within(card).getByText("Base")).toBeInTheDocument();
     expect(within(card).getByText("General")).toBeInTheDocument();

@@ -43,10 +43,7 @@ export function RouteFileDropzone({ value, onChange, error }: RouteFileDropzoneP
       </label>
 
       {value ? (
-        <div
-          className="flex min-h-[48px] items-center justify-between rounded-lg bg-white px-3 py-2"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
-        >
+        <div className="flex min-h-[48px] items-center justify-between rounded-lg bg-white px-3 py-2 shadow-ring">
           <span className="truncate text-sm text-charcoal" data-testid="route-file-name">
             {value.name}
           </span>
@@ -65,8 +62,7 @@ export function RouteFileDropzone({ value, onChange, error }: RouteFileDropzoneP
       ) : (
         <label
           htmlFor={inputId}
-          className="flex min-h-[48px] cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-mid-gray transition-colors hover:bg-light-gray"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+          className="flex min-h-[48px] cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-mid-gray transition-colors hover:bg-light-gray shadow-ring"
         >
           <FileUp size={16} aria-hidden="true" />
           Seleccionar archivo (.gpx / .fit, máx. {MAX_MB} MB)

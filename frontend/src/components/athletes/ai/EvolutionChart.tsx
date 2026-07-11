@@ -29,9 +29,6 @@ import { useAthleteEvolution } from "@/hooks/athletes/useAthleteEvolution";
 import { cn } from "@/lib/utils";
 import { EvolutionMetric } from "@/types/athleteRaceAnalysis.types";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function formatMs(ms: number, unit: string): string {
   if (unit === "ms") {
     if (ms >= 60_000) {
@@ -122,16 +119,15 @@ export function EvolutionChart({
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4"
-      style={{ boxShadow: cardShadow }}
+      className={cn("rounded-xl bg-white p-5 space-y-4", "shadow-card")}
       aria-label="Gráfica de evolución por temporada"
       data-testid="evolution-chart"
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3
-            className="flex items-center gap-2 text-sm text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+            className="font-display flex items-center gap-2 text-sm text-charcoal"
+            style={{ letterSpacing: "0.2px" }}
           >
             <Calendar size={16} aria-hidden="true" />
             Evolución
@@ -148,8 +144,10 @@ export function EvolutionChart({
             id="evo-season"
             value={season}
             onChange={(e) => setSeason(Number(e.target.value))}
-            className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className={cn(
+              "rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+              "shadow-ring",
+            )}
             data-testid="evolution-season-select"
           >
             {seasonOptions.map((y) => (
@@ -165,8 +163,10 @@ export function EvolutionChart({
             id="evo-metric"
             value={metric}
             onChange={(e) => setMetric(e.target.value as EvolutionMetric)}
-            className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className={cn(
+              "rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+              "shadow-ring",
+            )}
             data-testid="evolution-metric-select"
           >
             {Object.entries(METRIC_LABELS).map(([k, label]) => (
@@ -330,8 +330,7 @@ function EvolutionTooltip(
   };
   return (
     <div
-      className="rounded-lg bg-white px-3 py-2 text-xs"
-      style={{ boxShadow: "rgba(34, 42, 53, 0.15) 0px 2px 8px" }}
+      className={cn("rounded-lg bg-white px-3 py-2 text-xs", "shadow-ambient")}
     >
       <p className="font-semibold text-charcoal">{point.label}</p>
       <p className="text-mid-gray">{point.event_date}</p>

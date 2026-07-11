@@ -153,8 +153,7 @@ function SuggestionCard({
     >
       <div className="space-y-0.5">
         <p
-          className="truncate text-sm text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display truncate text-sm text-charcoal"
           title={suggestion.full_name}
         >
           {suggestion.full_name}
@@ -228,11 +227,7 @@ function CompetitorCard({
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
           <h3
-            className="truncate text-sm text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-            }}
+            className="font-display truncate text-sm text-charcoal"
             title={competitor.display_name}
           >
             {competitor.display_name}
@@ -394,12 +389,8 @@ function CompetitorCard({
 function CompetitorSkeleton() {
   return (
     <div
-      className="space-y-3 rounded-xl bg-white p-4"
+      className={cn("space-y-3 rounded-xl bg-white p-4", "shadow-ring")}
       data-testid="competitor-skeleton"
-      style={{
-        boxShadow:
-          "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-      }}
     >
       <div className="h-4 w-1/2 animate-pulse rounded-md bg-light-gray" />
       <div className="flex gap-2">
@@ -550,11 +541,7 @@ export function UnlinkedCompetitorsTab({
           <div>
             <h2
               id="unlinked-competitors-heading"
-              className="text-sm text-charcoal"
-              style={{
-                fontFamily: "'Cal Sans', system-ui, sans-serif",
-                fontWeight: 600,
-              }}
+              className="font-display text-sm text-charcoal"
             >
               Atletas sin enlazar
             </h2>
@@ -592,8 +579,10 @@ export function UnlinkedCompetitorsTab({
             }
             data-testid="filter-season"
             aria-label="Filtrar por temporada"
-            className="rounded-lg bg-white px-2 py-1.5 text-xs text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className={cn(
+              "rounded-lg bg-white px-2 py-1.5 text-xs text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40",
+              "shadow-ring",
+            )}
           >
             <option value="">Todas las temporadas</option>
             {SEASON_OPTIONS.map((y) => (
@@ -636,11 +625,7 @@ export function UnlinkedCompetitorsTab({
             <CheckCircle2 size={24} />
           </span>
           <p
-            className="text-sm text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-            }}
+            className="font-display text-sm text-charcoal"
           >
             Todos los competidores están enlazados
           </p>

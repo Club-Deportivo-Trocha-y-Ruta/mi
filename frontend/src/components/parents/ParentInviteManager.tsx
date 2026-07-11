@@ -7,12 +7,8 @@ import type { FamilyRelationship } from "@/types/enums";
 import { formatDateMedium } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 const inputClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 flex-1";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 flex-1 shadow-ring";
 
 type InviteStatus = "used" | "expired" | "pending";
 
@@ -111,14 +107,10 @@ export function ParentInviteManager({
   }
 
   return (
-    <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+    <div className={cn("rounded-xl bg-white p-5", "shadow-card")}>
       <h4
-        className="mb-1 flex items-center gap-2 text-sm text-charcoal"
-        style={{
-          fontFamily: "'Cal Sans', system-ui, sans-serif",
-          fontWeight: 600,
-          letterSpacing: "0.2px",
-        }}
+        className="font-display mb-1 flex items-center gap-2 text-sm text-charcoal"
+        style={{ letterSpacing: "0.2px" }}
       >
         <Mail size={15} />
         Invitacion — {athleteName}
@@ -188,7 +180,6 @@ export function ParentInviteManager({
             onChange={(e) => setEmail(e.target.value)}
             placeholder="correo@ejemplo.com"
             className={inputClass}
-            style={inputStyle}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleSend();
             }}
@@ -197,8 +188,10 @@ export function ParentInviteManager({
             type="button"
             onClick={() => handleSend()}
             disabled={!email.trim() || createInviteMutation.isPending}
-            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className={cn(
+              "rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40",
+              "shadow-button-highlight",
+            )}
           >
             {createInviteMutation.isPending ? "Enviando..." : "Enviar invitacion"}
           </button>

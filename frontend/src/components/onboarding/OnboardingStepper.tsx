@@ -61,7 +61,7 @@ function StepIndicator({ step, index, status }: StepIndicatorProps) {
           isCompleted && "border-green-600 bg-green-600 text-white",
           isCurrent &&
             "border-primary bg-white text-primary ring-4 ring-primary/20",
-          !isCompleted && !isCurrent && "border-muted-foreground/30 bg-muted text-muted-foreground",
+          !isCompleted && !isCurrent && "border-mid-gray/30 bg-light-gray text-mid-gray",
         )}
         aria-hidden="true"
       >
@@ -79,7 +79,7 @@ function StepIndicator({ step, index, status }: StepIndicatorProps) {
             "text-xs font-medium tabular-nums",
             isCurrent && "text-primary",
             isCompleted && "text-green-700",
-            !isCompleted && !isCurrent && "text-muted-foreground/60",
+            !isCompleted && !isCurrent && "text-mid-gray/60",
           )}
         >
           {index + 1}
@@ -87,9 +87,9 @@ function StepIndicator({ step, index, status }: StepIndicatorProps) {
         <span
           className={cn(
             "max-w-[80px] text-center text-xs leading-tight",
-            isCurrent && "font-semibold text-foreground",
+            isCurrent && "font-semibold text-charcoal",
             isCompleted && "font-medium text-green-700",
-            !isCompleted && !isCurrent && "text-muted-foreground/60",
+            !isCompleted && !isCurrent && "text-mid-gray/60",
           )}
         >
           {step.label}
@@ -156,10 +156,10 @@ export function OnboardingStepper({
                 <activeStep.icon className="h-4 w-4" />
               </div>
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-mid-gray">
                   Paso {currentStep + 1} de {totalSteps}
                 </span>
-                <span className="text-sm font-semibold text-foreground">
+                <span className="text-sm font-semibold text-charcoal">
                   {activeStep.label}
                 </span>
               </div>
@@ -176,7 +176,7 @@ export function OnboardingStepper({
                 "h-1.5 w-6 rounded-full transition-colors duration-200",
                 i < currentStep && "bg-green-500",
                 i === currentStep && "bg-primary",
-                i > currentStep && "bg-muted",
+                i > currentStep && "bg-light-gray",
               )}
               aria-hidden="true"
             />

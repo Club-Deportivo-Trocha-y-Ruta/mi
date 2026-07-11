@@ -52,8 +52,7 @@ const AGE_BAND_OPTIONS = [
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
 
 // ---------------------------------------------------------------------------
@@ -188,7 +187,6 @@ export function ExerciseForm({
           placeholder="Ej: Slalom de conos"
           {...register("name")}
           className={`mt-1 ${inputClass}`}
-          style={inputStyle}
           aria-describedby={errors.name ? "exercise-name-error" : undefined}
           aria-invalid={!!errors.name}
           aria-required="true"
@@ -213,7 +211,6 @@ export function ExerciseForm({
           placeholder="Una frase que describa el ejercicio"
           {...register("summary")}
           className={`mt-1 ${inputClass}`}
-          style={inputStyle}
           aria-describedby={errors.summary ? "exercise-summary-error" : undefined}
           aria-invalid={!!errors.summary}
           aria-required="true"
@@ -260,7 +257,6 @@ export function ExerciseForm({
           id="exercise-difficulty"
           {...register("difficulty")}
           className={`mt-1 ${inputClass}`}
-          style={inputStyle}
           aria-describedby={errors.difficulty ? "exercise-difficulty-error" : undefined}
           aria-invalid={!!errors.difficulty}
         >
@@ -343,7 +339,6 @@ export function ExerciseForm({
             placeholder="Ej: Circuito en forma de U con 4 conos equidistantes"
             {...register("layout_alt")}
             className={`mt-1 ${inputClass}`}
-            style={inputStyle}
           />
         </div>
       )}

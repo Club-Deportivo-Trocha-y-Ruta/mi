@@ -24,9 +24,6 @@ import {
 } from "@/lib/insights";
 import type { AthleteOut } from "@/types/athlete.types";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 interface HeroLastInsightCardProps {
   athlete: AthleteOut;
   mode: "coach" | "parent";
@@ -55,8 +52,7 @@ export function HeroLastInsightCard({
   if (insightQuery.isLoading) {
     return (
       <div
-        className="rounded-xl bg-white p-5"
-        style={{ boxShadow: cardShadow }}
+        className="rounded-xl bg-white p-5 shadow-card"
         data-testid="hero-last-insight-card"
       >
         <Skeleton className="h-4 w-32 mb-3" />
@@ -71,8 +67,7 @@ export function HeroLastInsightCard({
   if (!insight) {
     return (
       <div
-        className="rounded-xl bg-white p-5 text-center"
-        style={{ boxShadow: cardShadow }}
+        className="rounded-xl bg-white p-5 text-center shadow-card"
         data-testid="hero-last-insight-card"
       >
         <p className="text-sm font-medium text-charcoal">
@@ -92,8 +87,7 @@ export function HeroLastInsightCard({
 
   return (
     <div
-      className="rounded-xl bg-white p-5"
-      style={{ boxShadow: cardShadow }}
+      className="rounded-xl bg-white p-5 shadow-card"
       data-testid="hero-last-insight-card"
     >
       {/* Meta: fecha + badges */}

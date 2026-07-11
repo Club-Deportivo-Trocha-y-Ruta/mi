@@ -19,8 +19,7 @@ interface ParentFormDialogProps {
 }
 
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
+  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray shadow-ring";
 
 export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProps) {
   const createMutation = useCreateParentUser();
@@ -84,20 +83,15 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
         <div
-          className="w-full max-w-md overflow-y-auto rounded-xl bg-white p-6"
-          style={{
-            maxHeight: "90dvh",
-            boxShadow:
-              "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-          }}
+          className="w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-card"
+          style={{ maxHeight: "90dvh" }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
           <div className="mb-5 flex items-center justify-between">
             <h2
               id="parent-dialog-title"
-              className="text-base text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+              className="font-display text-base text-charcoal"
             >
               Nuevo padre / acudiente
             </h2>
@@ -118,7 +112,6 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
                 Nombres
                 <input
                   className={inputClass}
-                  style={inputStyle}
                   placeholder="Juan"
                   autoComplete="off"
                   {...form.register("first_name")}
@@ -132,7 +125,6 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
                 Apellidos
                 <input
                   className={inputClass}
-                  style={inputStyle}
                   placeholder="Garcia"
                   autoComplete="off"
                   {...form.register("last_name")}
@@ -165,8 +157,7 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
               <button
                 type="submit"
                 disabled={createMutation.isPending}
-                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
-                style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
               >
                 {createMutation.isPending ? "Guardando..." : "Crear padre"}
               </button>

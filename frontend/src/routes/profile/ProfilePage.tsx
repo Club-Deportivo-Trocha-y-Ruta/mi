@@ -81,12 +81,7 @@ type EmailForm = z.infer<typeof emailSchema>;
 const labelClass = "mb-1.5 block text-sm font-medium text-charcoal";
 const inputClass =
   "w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 min-h-[48px]";
-const inputStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 const errorClass = "mt-1 text-xs text-red-600";
-const sectionStyle = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
 
 // ---------------------------------------------------------------------------
 // Toast inline component (matches AthleteNewsletterDetailPage pattern)
@@ -178,8 +173,7 @@ function BasicInfoSection({ profile }: BasicInfoSectionProps) {
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4"
-      style={sectionStyle}
+      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
       aria-labelledby="basic-info-title"
     >
       <div>
@@ -199,8 +193,8 @@ function BasicInfoSection({ profile }: BasicInfoSectionProps) {
         <div>
           <p className={labelClass}>Correo</p>
           <p
-            className="rounded-lg px-3 py-2.5 text-sm text-charcoal min-h-[48px] flex items-center"
-            style={{ ...inputStyle, background: "#f9f9f9" }}
+            className="rounded-lg px-3 py-2.5 text-sm text-charcoal min-h-[48px] flex items-center shadow-ring"
+            style={{ background: "#f9f9f9" }}
           >
             {profile.email ?? "—"}
           </p>
@@ -208,8 +202,8 @@ function BasicInfoSection({ profile }: BasicInfoSectionProps) {
         <div>
           <p className={labelClass}>Rol</p>
           <p
-            className="rounded-lg px-3 py-2.5 text-sm text-charcoal capitalize min-h-[48px] flex items-center"
-            style={{ ...inputStyle, background: "#f9f9f9" }}
+            className="rounded-lg px-3 py-2.5 text-sm text-charcoal capitalize min-h-[48px] flex items-center shadow-ring"
+            style={{ background: "#f9f9f9" }}
           >
             {profile.role}
           </p>
@@ -238,8 +232,7 @@ function BasicInfoSection({ profile }: BasicInfoSectionProps) {
               id="first_name"
               type="text"
               autoComplete="given-name"
-              className={inputClass}
-              style={inputStyle}
+              className={`${inputClass} shadow-ring`}
               {...form.register("first_name")}
             />
             {form.formState.errors.first_name && (
@@ -257,8 +250,7 @@ function BasicInfoSection({ profile }: BasicInfoSectionProps) {
               id="last_name"
               type="text"
               autoComplete="family-name"
-              className={inputClass}
-              style={inputStyle}
+              className={`${inputClass} shadow-ring`}
               {...form.register("last_name")}
             />
             {form.formState.errors.last_name && (
@@ -279,8 +271,7 @@ function BasicInfoSection({ profile }: BasicInfoSectionProps) {
             type="tel"
             autoComplete="tel"
             placeholder="+57 300 000 0000"
-            className={inputClass}
-            style={inputStyle}
+            className={`${inputClass} shadow-ring`}
             {...form.register("phone")}
           />
           {form.formState.errors.phone && (
@@ -294,8 +285,7 @@ function BasicInfoSection({ profile }: BasicInfoSectionProps) {
           <button
             type="submit"
             disabled={form.formState.isSubmitting}
-            className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px]"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px] shadow-button-highlight"
           >
             {form.formState.isSubmitting ? "Guardando..." : "Guardar cambios"}
           </button>
@@ -344,8 +334,7 @@ function ChangePasswordSection() {
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4"
-      style={sectionStyle}
+      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
       aria-labelledby="change-password-title"
     >
       <div>
@@ -381,8 +370,7 @@ function ChangePasswordSection() {
             id="current_password"
             type="password"
             autoComplete="current-password"
-            className={inputClass}
-            style={inputStyle}
+            className={`${inputClass} shadow-ring`}
             {...form.register("current_password")}
           />
           {form.formState.errors.current_password && (
@@ -400,8 +388,7 @@ function ChangePasswordSection() {
             id="new_password"
             type="password"
             autoComplete="new-password"
-            className={inputClass}
-            style={inputStyle}
+            className={`${inputClass} shadow-ring`}
             {...form.register("new_password")}
           />
           {form.formState.errors.new_password && (
@@ -419,8 +406,7 @@ function ChangePasswordSection() {
             id="confirm_password"
             type="password"
             autoComplete="new-password"
-            className={inputClass}
-            style={inputStyle}
+            className={`${inputClass} shadow-ring`}
             {...form.register("confirm_password")}
           />
           {form.formState.errors.confirm_password && (
@@ -434,8 +420,7 @@ function ChangePasswordSection() {
           <button
             type="submit"
             disabled={form.formState.isSubmitting}
-            className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px]"
-            style={{ boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset" }}
+            className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px] shadow-button-highlight"
           >
             {form.formState.isSubmitting
               ? "Actualizando..."
@@ -482,8 +467,7 @@ function ChangeEmailSection() {
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4"
-      style={sectionStyle}
+      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
       aria-labelledby="change-email-title"
     >
       <div>
@@ -532,8 +516,7 @@ function ChangeEmailSection() {
                 id="email_current_password"
                 type="password"
                 autoComplete="current-password"
-                className={inputClass}
-                style={inputStyle}
+                className={`${inputClass} shadow-ring`}
                 {...form.register("current_password")}
               />
               {form.formState.errors.current_password && (
@@ -552,8 +535,7 @@ function ChangeEmailSection() {
                 type="email"
                 autoComplete="email"
                 placeholder="nuevo@ejemplo.com"
-                className={inputClass}
-                style={inputStyle}
+                className={`${inputClass} shadow-ring`}
                 {...form.register("new_email")}
               />
               {form.formState.errors.new_email && (
@@ -567,10 +549,7 @@ function ChangeEmailSection() {
               <button
                 type="submit"
                 disabled={form.formState.isSubmitting}
-                className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px]"
-                style={{
-                  boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset",
-                }}
+                className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px] shadow-button-highlight"
               >
                 {form.formState.isSubmitting
                   ? "Enviando..."
@@ -596,11 +575,7 @@ export function ProfilePage() {
       {/* Page title */}
       <div>
         <h1
-          className="text-xl text-charcoal"
-          style={{
-            fontFamily: "'Cal Sans', system-ui, sans-serif",
-            fontWeight: 600,
-          }}
+          className="font-display text-xl text-charcoal"
         >
           Mi perfil
         </h1>
@@ -612,8 +587,7 @@ export function ProfilePage() {
       {/* Loading state */}
       {isLoading && (
         <div
-          className="rounded-xl bg-white p-8 text-center text-sm text-mid-gray"
-          style={sectionStyle}
+          className="rounded-xl bg-white p-8 text-center text-sm text-mid-gray shadow-card"
           role="status"
           aria-live="polite"
         >
@@ -624,8 +598,7 @@ export function ProfilePage() {
       {/* Error state */}
       {isError && (
         <div
-          className="rounded-xl bg-white p-8 text-center"
-          style={sectionStyle}
+          className="rounded-xl bg-white p-8 text-center shadow-card"
           role="alert"
         >
           <p className="text-sm text-red-700">

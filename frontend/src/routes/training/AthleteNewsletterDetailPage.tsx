@@ -54,11 +54,6 @@ const MONTH_NAMES = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
-const cardStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
-
 // ---------------------------------------------------------------------------
 // Skeleton
 // ---------------------------------------------------------------------------
@@ -66,14 +61,14 @@ const cardStyle: React.CSSProperties = {
 function SkeletonDetail() {
   return (
     <div className="space-y-5">
-      <div className="h-16 animate-pulse rounded-xl bg-white" style={cardStyle} />
+      <div className="h-16 animate-pulse rounded-xl bg-white shadow-card" />
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <div className="space-y-3">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-28 animate-pulse rounded-xl bg-white" style={cardStyle} />
+            <div key={i} className="h-28 animate-pulse rounded-xl bg-white shadow-card" />
           ))}
         </div>
-        <div className="h-64 animate-pulse rounded-xl bg-white" style={cardStyle} />
+        <div className="h-64 animate-pulse rounded-xl bg-white shadow-card" />
       </div>
     </div>
   );
@@ -153,8 +148,7 @@ function SendDialog({
             type="button"
             onClick={handleClose}
             disabled={isPending}
-            className="rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50 shadow-ring"
           >
             Cancelar
           </button>
@@ -366,7 +360,7 @@ export function AthleteNewsletterDetailPage() {
   if (newsletterQuery.isError || !newsletter) {
     return (
       <section>
-        <div className="rounded-xl bg-white p-8 text-center" style={cardStyle}>
+        <div className="rounded-xl bg-white p-8 text-center shadow-card">
           <p className="text-base font-medium text-charcoal">Boletín no encontrado</p>
           <p className="mt-1 text-sm text-mid-gray">
             El boletín solicitado no existe o no tienes permiso para verlo.
@@ -408,7 +402,7 @@ export function AthleteNewsletterDetailPage() {
       )}
 
       {/* Header */}
-      <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-4 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             {/* Breadcrumbs: dashboard + chip atleta */}
@@ -421,8 +415,7 @@ export function AthleteNewsletterDetailPage() {
               </Link>
               {athleteQuery.data && (
                 <div
-                  className="inline-flex rounded-full"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="inline-flex rounded-full shadow-ring"
                   data-testid="athlete-profile-chip"
                 >
                   {/*
@@ -454,8 +447,7 @@ export function AthleteNewsletterDetailPage() {
               )}
             </div>
             <h1
-              className="text-xl text-charcoal"
-              style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+              className="font-display text-xl text-charcoal"
             >
               Boletín de {monthLabel} {newsletter.year}
             </h1>
@@ -552,7 +544,7 @@ export function AthleteNewsletterDetailPage() {
         {/* Right: Narrative editor + actions */}
         <div className="space-y-4">
           {/* Actions panel */}
-          <div className="rounded-xl bg-white px-5 py-4 space-y-3" style={cardStyle}>
+          <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-card">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Acciones
             </h2>
@@ -563,8 +555,7 @@ export function AthleteNewsletterDetailPage() {
                 type="button"
                 onClick={handleDownloadPdf}
                 disabled={!canDownloadPdf || downloadMutation.isPending}
-                className="flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-40"
-                style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                className="flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-40 shadow-ring"
                 data-testid="download-pdf-btn"
                 aria-label="Descargar PDF del boletín"
               >
@@ -616,8 +607,7 @@ export function AthleteNewsletterDetailPage() {
                   type="button"
                   onClick={() => setShowRegenerateConfirm(true)}
                   disabled={generateMutation.isPending}
-                  className="flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-40"
-                  style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+                  className="flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-40 shadow-ring"
                   data-testid="regenerate-narrative-btn"
                   aria-label="Regenerar narrativa del boletín"
                 >
@@ -660,7 +650,7 @@ export function AthleteNewsletterDetailPage() {
           </div>
 
           {/* Narrative editor */}
-          <div className="rounded-xl bg-white px-5 py-4" style={cardStyle}>
+          <div className="rounded-xl bg-white px-5 py-4 shadow-card">
             <NewsletterNarrativeEditor
               aiNarrative={newsletter.ai_narrative}
               currentOverrides={newsletter.coach_narrative_overrides}
@@ -673,7 +663,7 @@ export function AthleteNewsletterDetailPage() {
       </div>
 
       {/* Footer */}
-      <div className="rounded-xl bg-white px-5 py-3" style={cardStyle}>
+      <div className="rounded-xl bg-white px-5 py-3 shadow-card">
         <p className="text-xs text-mid-gray">
           Creado el {formatDateTime(newsletter.created_at)}
         </p>

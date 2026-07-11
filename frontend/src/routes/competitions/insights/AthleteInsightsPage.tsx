@@ -40,8 +40,7 @@ export function AthleteInsightsPage() {
           Análisis IA
         </Link>
         <h1
-          className="text-2xl text-charcoal"
-          style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600 }}
+          className="font-display text-2xl text-charcoal"
         >
           {athlete
             ? `${athlete.first_name} ${athlete.last_name}`

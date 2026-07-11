@@ -8,13 +8,6 @@ import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { OnboardingSuccess } from "@/components/onboarding/OnboardingSuccess";
 
 // ---------------------------------------------------------------------------
-// Shared style constants (mirror LoginPage / ParentRegisterPage)
-// ---------------------------------------------------------------------------
-
-const CARD_SHADOW =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
-// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -30,22 +23,15 @@ type OnboardingRole = "parent" | "coach";
 function AuthCard({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-white p-4">
-      <div
-        className="w-full max-w-md rounded-xl bg-white p-8"
-        style={{ boxShadow: CARD_SHADOW }}
-      >
+      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-card">
         {/* Club header */}
         <div className="mb-8 text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-mid-gray">
             Club Deportivo
           </p>
           <h1
-            className="mt-1 text-2xl text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-              letterSpacing: "0.2px",
-            }}
+            className="font-display mt-1 text-2xl text-charcoal"
+            style={{ letterSpacing: "0.2px" }}
           >
             Trocha y Ruta
           </h1>

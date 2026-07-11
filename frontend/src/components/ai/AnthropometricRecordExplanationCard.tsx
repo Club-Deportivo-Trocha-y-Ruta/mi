@@ -97,7 +97,7 @@ function DeltaSummary({
 function ParentDisclaimer() {
   return (
     <p
-      className="mt-3 text-[13px] text-muted-foreground text-mid-gray"
+      className="mt-3 text-[13px] text-mid-gray"
       data-testid="record-explanation-disclaimer"
     >
       Generado automáticamente por IA. Ante cualquier duda, consulta con el

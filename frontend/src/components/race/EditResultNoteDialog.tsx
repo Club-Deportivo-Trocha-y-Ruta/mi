@@ -213,10 +213,10 @@ export function EditResultNoteDialog({
                   "w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none",
                   "focus:ring-2 focus:ring-blue-500/40",
                   "disabled:cursor-not-allowed disabled:opacity-60",
+                  "shadow-ring",
                   errors.note && "ring-1 ring-red-400",
                 )}
                 style={{
-                  boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
                   minHeight: "120px",
                 }}
                 aria-invalid={errors.note ? true : undefined}

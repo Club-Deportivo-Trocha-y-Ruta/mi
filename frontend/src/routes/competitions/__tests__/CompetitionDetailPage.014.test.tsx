@@ -130,9 +130,9 @@ describe("CompetitionDetailPage spec-014 — US4: badge copa V{n}", () => {
     renderDetail(3);
 
     await waitFor(() =>
-      expect(screen.getByTestId("competition-title")).toHaveTextContent(
-        "Copa Valle XCO — Válida III",
-      ),
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Copa Valle XCO — Válida III" }),
+      ).toBeInTheDocument(),
     );
 
     // No debe aparecer el badge de campeonato (CD).
@@ -158,7 +158,7 @@ describe("CompetitionDetailPage spec-014 — US4: badge copa V{n}", () => {
     mockAuthAs("coach");
     renderDetail(1);
 
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
 
     // El tab "Clasificación" debe existir para copas.
     expect(
@@ -188,7 +188,7 @@ describe("CompetitionDetailPage spec-014 — US4: badge campeonato CD", () => {
     mockAuthAs("coach");
     renderDetail(9);
 
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
 
     // El badge de campeonato (CD) debe estar presente.
     const badge = await screen.findByTestId("badge-championship");
@@ -216,7 +216,7 @@ describe("CompetitionDetailPage spec-014 — US4: badge campeonato CD", () => {
     mockAuthAs("coach");
     renderDetail(9);
 
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
 
     // El tab "Clasificación" NO debe existir para campeonatos (spec 014).
     await waitFor(() =>
@@ -245,7 +245,7 @@ describe("CompetitionDetailPage spec-014 — US4: badge campeonato CD", () => {
     mockAuthAs("coach");
     renderDetail(9);
 
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
 
     // Tabs que deben existir incluso para campeonatos.
     expect(screen.getByRole("tab", { name: "Información" })).toBeInTheDocument();
@@ -274,7 +274,7 @@ describe("CompetitionDetailPage spec-014 — US4: badge campeonato CD", () => {
     mockAuthAs("coach");
     renderDetail(9, "?tab=standings");
 
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
 
     // El tab "Información" debe ser el activo (data-state=active) — fallback.
     await waitFor(() => {
@@ -303,7 +303,7 @@ describe("CompetitionDetailPage spec-014 — US4: badge campeonato CD", () => {
     mockAuthAs("coach");
     const { container } = renderDetail(9);
 
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
@@ -334,7 +334,7 @@ describe("CompetitionDetailPage spec-014 — regresion copa sin badge CD", () =>
     mockAuthAs("coach");
     renderDetail(1);
 
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
     // No debe aparecer badge de campeonato para una copa.
     expect(screen.queryByTestId("badge-championship")).not.toBeInTheDocument();
   });
@@ -342,7 +342,7 @@ describe("CompetitionDetailPage spec-014 — regresion copa sin badge CD", () =>
   it("0 violaciones a11y en tab Info para una copa", async () => {
     mockAuthAs("coach");
     const { container } = renderDetail(1);
-    await screen.findByTestId("competition-title");
+    await screen.findByRole("heading", { level: 1 });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });

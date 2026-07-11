@@ -13,12 +13,6 @@ import { useFormContext } from "react-hook-form";
 import type { OnboardingFormData } from "@/schemas/onboarding.schema";
 
 // ---------------------------------------------------------------------------
-// Estilos compartidos (design system Cal.com)
-// ---------------------------------------------------------------------------
-
-const checkboxStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
-
-// ---------------------------------------------------------------------------
 // Tipos internos
 // ---------------------------------------------------------------------------
 
@@ -50,8 +44,7 @@ function ConsentItem({
         <input
           type="checkbox"
           id={id}
-          className="h-4 w-4 cursor-pointer rounded accent-charcoal"
-          style={checkboxStyle}
+          className="h-4 w-4 cursor-pointer rounded accent-charcoal shadow-ring"
           {...register(id)}
           aria-required="true"
           aria-describedby={error ? `${id}-error` : undefined}

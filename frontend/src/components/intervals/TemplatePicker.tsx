@@ -457,7 +457,7 @@ function resolveErrorMessage(error: unknown): string {
 
 function CardSkeleton(): React.ReactElement {
   return (
-    <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-ring-soft">
+    <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-card">
       <Skeleton className="mb-2 h-4 w-3/4" />
       <div className="mb-3 flex gap-1.5">
         <Skeleton className="h-5 w-16 rounded-full" />

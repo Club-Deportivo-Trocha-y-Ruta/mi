@@ -31,9 +31,6 @@ type Tab = "info" | "growth" | "activities" | "ai-analysis";
 
 const ACTIVITIES_PAGE_SIZE = 10;
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function StatCard({
   icon: Icon,
   label,
@@ -48,7 +45,7 @@ function StatCard({
   colorClass?: string;
 }) {
   return (
-    <div className="rounded-xl bg-white p-4" style={{ boxShadow: cardShadow }}>
+    <div className="rounded-xl bg-white p-4 shadow-card">
       <div className="flex items-center gap-2 text-mid-gray">
         <Icon size={16} />
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
@@ -149,7 +146,7 @@ export function MyAthleteDetailPage() {
           <span>←</span>
           <span>Mis Atletas</span>
         </Link>
-        <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+        <div className="rounded-xl bg-white p-5 shadow-card">
           <p className="text-sm text-mid-gray">
             No se pudo cargar la información del atleta.
           </p>
@@ -177,13 +174,8 @@ export function MyAthleteDetailPage() {
       "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
       activeTab === tab
         ? "bg-charcoal text-white"
-        : "bg-white text-mid-gray hover:text-charcoal",
+        : "bg-white text-mid-gray hover:text-charcoal shadow-ring",
     );
-
-  const tabStyle = (tab: Tab) =>
-    activeTab !== tab
-      ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }
-      : undefined;
 
   return (
     <section className="space-y-4">
@@ -228,11 +220,8 @@ export function MyAthleteDetailPage() {
           </>
         ) : (
           <div
-            className="col-span-1 flex items-center justify-center rounded-xl bg-white p-4 text-sm text-mid-gray sm:col-span-2"
-            style={{
-              boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px",
-              borderStyle: "dashed",
-            }}
+            className="col-span-1 flex items-center justify-center rounded-xl bg-white p-4 text-sm text-mid-gray sm:col-span-2 shadow-ring"
+            style={{ borderStyle: "dashed" }}
           >
             Sin mediciones registradas
           </div>
@@ -244,7 +233,6 @@ export function MyAthleteDetailPage() {
         <button
           type="button"
           className={tabClasses("info")}
-          style={tabStyle("info")}
           onClick={() => setActiveTab("info")}
         >
           <User size={14} />
@@ -254,7 +242,6 @@ export function MyAthleteDetailPage() {
           <button
             type="button"
             className={tabClasses("growth")}
-            style={tabStyle("growth")}
             onClick={() => setActiveTab("growth")}
           >
             <TrendingUp size={14} />
@@ -264,7 +251,6 @@ export function MyAthleteDetailPage() {
         <button
           type="button"
           className={tabClasses("activities")}
-          style={tabStyle("activities")}
           onClick={() => setActiveTab("activities")}
           data-testid="parent-tab-activities"
         >
@@ -274,7 +260,6 @@ export function MyAthleteDetailPage() {
         <button
           type="button"
           className={tabClasses("ai-analysis")}
-          style={tabStyle("ai-analysis")}
           onClick={() => setActiveTab("ai-analysis")}
           data-testid="parent-tab-ai-analysis"
         >
@@ -287,14 +272,10 @@ export function MyAthleteDetailPage() {
       {activeTab === "info" && (
         <div className="space-y-4">
           {/* Datos basicos */}
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <h3
-              className="mb-4 flex items-center gap-2 text-sm text-charcoal"
-              style={{
-                fontFamily: "'Cal Sans', system-ui, sans-serif",
-                fontWeight: 600,
-                letterSpacing: "0.2px",
-              }}
+              className="font-display mb-4 flex items-center gap-2 text-sm text-charcoal"
+              style={{ letterSpacing: "0.2px" }}
             >
               <Info size={16} />
               Datos del atleta
@@ -342,25 +323,16 @@ export function MyAthleteDetailPage() {
                 "rounded-xl p-5",
                 latest.maturation_status === MaturationStatus.CircaPHV
                   ? "border border-amber-200 bg-amber-50"
-                  : "bg-white",
+                  : "bg-white shadow-card",
               )}
-              style={
-                latest.maturation_status !== MaturationStatus.CircaPHV
-                  ? { boxShadow: cardShadow }
-                  : undefined
-              }
             >
               <div className="mb-3 flex items-center gap-2">
                 {latest.maturation_status === MaturationStatus.CircaPHV && (
                   <AlertTriangle size={16} className="text-amber-500" />
                 )}
                 <span
-                  className="text-sm text-charcoal"
-                  style={{
-                    fontFamily: "'Cal Sans', system-ui, sans-serif",
-                    fontWeight: 600,
-                    letterSpacing: "0.2px",
-                  }}
+                  className="font-display text-sm text-charcoal"
+                  style={{ letterSpacing: "0.2px" }}
                 >
                   Etapa de desarrollo
                 </span>
@@ -394,7 +366,7 @@ export function MyAthleteDetailPage() {
             sex={athlete.sex}
             birthDate={athlete.birth_date}
           />
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <AnthropometryHistory
               records={records}
               isLoading={anthropometryQuery.isLoading}
@@ -402,7 +374,7 @@ export function MyAthleteDetailPage() {
               mode="parent"
             />
           </div>
-          <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+          <div className="rounded-xl bg-white p-5 shadow-card">
             <GrowthCharts
               records={records}
               sex={athlete.sex}
@@ -425,14 +397,10 @@ export function MyAthleteDetailPage() {
           del coach/admin, ver FR-007). RBAC de "solo mi hijo" lo aplica el
           backend — acá solo se consume la respuesta ya filtrada. */}
       {activeTab === "activities" && (
-        <div className="rounded-xl bg-white p-5" style={{ boxShadow: cardShadow }}>
+        <div className="rounded-xl bg-white p-5 shadow-card">
           <h3
-            className="mb-4 flex items-center gap-2 text-sm text-charcoal"
-            style={{
-              fontFamily: "'Cal Sans', system-ui, sans-serif",
-              fontWeight: 600,
-              letterSpacing: "0.2px",
-            }}
+            className="font-display mb-4 flex items-center gap-2 text-sm text-charcoal"
+            style={{ letterSpacing: "0.2px" }}
           >
             <Bike size={16} />
             Actividades sincronizadas

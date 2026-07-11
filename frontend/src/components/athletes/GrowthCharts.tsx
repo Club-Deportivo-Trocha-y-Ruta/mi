@@ -107,9 +107,8 @@ export function GrowthCharts({
           className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
             view === "longitudinal"
               ? "bg-charcoal text-white"
-              : "bg-white text-mid-gray hover:text-charcoal"
+              : "bg-white text-mid-gray hover:text-charcoal shadow-ring"
           }`}
-          style={view !== "longitudinal" ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
           onClick={() => setView("longitudinal")}
         >
           Longitudinal
@@ -120,9 +119,8 @@ export function GrowthCharts({
             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
               view === "percentiles"
                 ? "bg-charcoal text-white"
-                : "bg-white text-mid-gray hover:text-charcoal"
+                : "bg-white text-mid-gray hover:text-charcoal shadow-ring"
             }`}
-            style={view !== "percentiles" ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
             onClick={() => setView("percentiles")}
           >
             Curvas de percentiles
@@ -135,8 +133,7 @@ export function GrowthCharts({
             data-testid="export-png-button"
             disabled={isExporting}
             onClick={handleExportPng}
-            className="ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-mid-gray transition-colors hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-mid-gray transition-colors hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-50 shadow-ring"
           >
             <Download className="size-4" aria-hidden="true" />
             {isExporting ? "Exportando..." : "Descargar PNG"}
@@ -159,9 +156,8 @@ export function GrowthCharts({
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   safeIndicator === key
                     ? "bg-charcoal text-white"
-                    : "bg-white text-mid-gray hover:text-charcoal"
+                    : "bg-white text-mid-gray hover:text-charcoal shadow-ring"
                 }`}
-                style={safeIndicator !== key ? { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" } : undefined}
                 onClick={() => setActiveIndicator(key)}
               >
                 {label}
@@ -233,11 +229,10 @@ function LongitudinalCharts({ records }: LongitudinalChartsProps) {
               labelFormatter={(_, payload) =>
                 payload[0] ? formatDateTooltip(payload[0].payload.date) : ""
               }
+              wrapperClassName="shadow-card"
               contentStyle={{
                 borderRadius: "8px",
                 border: "none",
-                boxShadow:
-                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
               }}
             />
             <Line
@@ -271,11 +266,10 @@ function LongitudinalCharts({ records }: LongitudinalChartsProps) {
               labelFormatter={(_, payload) =>
                 payload[0] ? formatDateTooltip(payload[0].payload.date) : ""
               }
+              wrapperClassName="shadow-card"
               contentStyle={{
                 borderRadius: "8px",
                 border: "none",
-                boxShadow:
-                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
               }}
             />
             <Line
@@ -308,11 +302,10 @@ function LongitudinalCharts({ records }: LongitudinalChartsProps) {
               labelFormatter={(_, payload) =>
                 payload[0] ? formatDateTooltip(payload[0].payload.date) : ""
               }
+              wrapperClassName="shadow-card"
               contentStyle={{
                 borderRadius: "8px",
                 border: "none",
-                boxShadow:
-                  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
               }}
             />
             <ReferenceLine

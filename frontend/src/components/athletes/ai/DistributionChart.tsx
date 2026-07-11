@@ -38,9 +38,6 @@ import {
   raceOptionValue,
 } from "@/lib/raceOptionLabel";
 
-const cardShadow =
-  "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px";
-
 function getDefaultSeason(): number {
   return new Date().getFullYear();
 }
@@ -139,8 +136,7 @@ export function DistributionChart({
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4"
-      style={{ boxShadow: cardShadow }}
+      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
       aria-label="Distribución de tiempos en la categoría"
       data-testid="distribution-chart"
       data-event-id={query.data?.event_id ?? undefined}
@@ -148,8 +144,8 @@ export function DistributionChart({
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3
-            className="flex items-center gap-2 text-sm text-charcoal"
-            style={{ fontFamily: "'Cal Sans', system-ui, sans-serif", fontWeight: 600, letterSpacing: "0.2px" }}
+            className="font-display flex items-center gap-2 text-sm text-charcoal"
+            style={{ letterSpacing: "0.2px" }}
           >
             <BarChart3 size={16} aria-hidden="true" />
             Distribución de tiempos
@@ -170,8 +166,7 @@ export function DistributionChart({
             id="dist-season"
             value={season}
             onChange={(e) => setSeason(Number(e.target.value))}
-            className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+            className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
             data-testid="distribution-season-select"
             aria-hidden={hasNoRaces || undefined}
           >
@@ -195,8 +190,7 @@ export function DistributionChart({
             <select
               id="dist-valida"
               disabled
-              className="rounded-lg bg-white px-3 py-2 text-sm outline-none opacity-60"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="rounded-lg bg-white px-3 py-2 text-sm outline-none opacity-60 shadow-ring"
               aria-label="Seleccionar carrera"
               aria-busy="true"
               aria-hidden="true"
@@ -208,8 +202,7 @@ export function DistributionChart({
               id="dist-valida"
               value={selectedValue}
               onChange={(e) => setSelectedValue(e.target.value)}
-              className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-              style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
+              className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
               data-testid="distribution-valida-select"
               aria-label="Seleccionar carrera"
             >
@@ -603,8 +596,7 @@ function DistributionTooltip(props: TooltipLikeProps) {
   const point = payload[0].payload as { x_ms: number; density: number };
   return (
     <div
-      className="rounded-lg bg-white px-3 py-2 text-xs"
-      style={{ boxShadow: "rgba(34, 42, 53, 0.15) 0px 2px 8px" }}
+      className="rounded-lg bg-white px-3 py-2 text-xs shadow-ambient"
     >
       <p className="font-semibold text-charcoal">{formatTime(point.x_ms)}</p>
       <p className="text-mid-gray">Densidad: {point.density.toExponential(2)}</p>

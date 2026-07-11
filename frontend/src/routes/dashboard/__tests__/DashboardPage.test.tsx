@@ -13,8 +13,9 @@ vi.mock("@/api/alerts", () => ({
 }));
 
 vi.mock("@/store/auth.store", () => ({
-  useAuthStore: (selector: (state: { accessToken: string }) => unknown) =>
-    selector({ accessToken: "fake-token" }),
+  useAuthStore: (
+    selector: (state: { accessToken: string; user: { role: string } }) => unknown,
+  ) => selector({ accessToken: "fake-token", user: { role: "coach" } }),
 }));
 
 import { getAlerts } from "@/api/alerts";
