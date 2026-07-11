@@ -491,10 +491,15 @@ describe("AthleteDetailPage — tarjeta de conexión Strava", () => {
         within(dialog).getByText(/Desconectar Strava/i),
       ).toBeInTheDocument();
 
-      mswServer.use(disconnectedConnectionHandler);
+      // tone="danger": el foco inicial va a Cancelar, nunca a Desconectar.
+      const cancelBtn = within(dialog).getByRole("button", { name: /^Cancelar$/i });
       const confirmBtn = within(dialog).getByRole("button", {
         name: /^Desconectar$/i,
       });
+      await vi.waitFor(() => expect(cancelBtn).toHaveFocus());
+      expect(confirmBtn).not.toHaveFocus();
+
+      mswServer.use(disconnectedConnectionHandler);
       await act(async () => {
         await userEvent.click(confirmBtn);
       });
@@ -513,9 +518,8 @@ describe("AthleteDetailPage — tarjeta de conexión Strava", () => {
       });
 
       const dialog = await screen.findByRole("alertdialog");
-      // El diálogo tiene DOS botones accesibles como "Cancelar": el ícono
-      // "X" (aria-label) y el botón de texto del footer. Se distingue por
-      // texto visible, único al botón del footer.
+      // ConfirmDialog (a diferencia del antiguo ConfirmDeleteDialog) solo
+      // tiene un botón "Cancelar" en el footer — sin ícono "X" separado.
       const cancelBtn = within(dialog).getByText("Cancelar");
       await act(async () => {
         await userEvent.click(cancelBtn);

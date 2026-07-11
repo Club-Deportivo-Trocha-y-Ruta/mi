@@ -23,7 +23,7 @@ import { useSearchParams } from "react-router-dom";
 import { BrainCircuit, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
 
 // ---------------------------------------------------------------------------
@@ -198,11 +198,12 @@ export function AnalyzeAthleteButton({
         </span>
       </button>
 
-      <ConfirmModal
+      <ConfirmDialog
         open={confirmOpen}
         title="Re-ejecutar análisis"
-        body="Ya existe un análisis para este deportista. ¿Deseas re-ejecutarlo?"
+        description="Ya existe un análisis para este deportista. ¿Deseas re-ejecutarlo?"
         confirmLabel="Re-ejecutar"
+        tone="default"
         isPending={launch.isPending}
         onCancel={() => {
           if (!launch.isPending) setConfirmOpen(false);

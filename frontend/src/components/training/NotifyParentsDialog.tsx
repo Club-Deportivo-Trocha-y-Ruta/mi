@@ -2,16 +2,15 @@ import { useEffect, useState } from "react";
 import { Loader2, Mail, MailX, X } from "lucide-react";
 
 import type { AthleteEntry, ChangeEntry } from "@/lib/sessionDiff";
-
-const overlayStyle: React.CSSProperties = {
-  background: "rgba(19, 19, 22, 0.65)",
-  backdropFilter: "blur(2px)",
-};
-
-const dialogStyle: React.CSSProperties = {
-  boxShadow:
-    "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
-};
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const btnPrimaryStyle: React.CSSProperties = {
   boxShadow:
@@ -108,8 +107,6 @@ export function NotifyParentsDialog({
     if (!open) setReason("");
   }, [open]);
 
-  if (!open) return null;
-
   const copy = variantCopy(variant, parentCount);
   const sendDisabled =
     isPending ||
@@ -121,32 +118,23 @@ export function NotifyParentsDialog({
     else onSend();
   }
 
+  function handleOpenChange(nextOpen: boolean) {
+    // Cubre Escape y clic fuera del diálogo (Radix llama a onDismiss en
+    // ambos casos). isPending bloquea el cierre mientras la acción está en
+    // vuelo — mismo patrón que ConfirmDialog/ConfirmModal.
+    if (!nextOpen && !isPending) onCancel();
+  }
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={overlayStyle}
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="notify-parents-title"
-      aria-describedby="notify-parents-desc"
-    >
-      <div className="w-full max-w-lg rounded-2xl bg-white" style={dialogStyle}>
-        <div className="flex items-start justify-between border-b border-[rgba(34,42,53,0.08)] px-6 pb-4 pt-6">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent role="alertdialog" hideClose className="max-w-lg">
+        <DialogHeader className="flex-row items-start justify-between gap-3 pr-6">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50">
               <Mail className="h-4 w-4 text-blue-600" aria-hidden="true" />
             </div>
             <div>
-              <h2
-                id="notify-parents-title"
-                className="text-base text-charcoal"
-                style={{
-                  fontFamily: "'Cal Sans', system-ui, sans-serif",
-                  fontWeight: 600,
-                }}
-              >
-                {copy.title}
-              </h2>
+              <DialogTitle>{copy.title}</DialogTitle>
               <p className="mt-0.5 text-sm text-mid-gray">{copy.subject}</p>
             </div>
           </div>
@@ -159,12 +147,12 @@ export function NotifyParentsDialog({
           >
             <X size={16} aria-hidden="true" />
           </button>
-        </div>
+        </DialogHeader>
 
-        <div className="space-y-4 px-6 py-5">
-          <p id="notify-parents-desc" className="text-sm text-charcoal">
+        <DialogBody className="space-y-4">
+          <DialogDescription className="text-charcoal">
             {copy.intro}
-          </p>
+          </DialogDescription>
 
           {variant === "update" && (
             <div
@@ -256,9 +244,9 @@ export function NotifyParentsDialog({
               {errorMessage}
             </p>
           )}
-        </div>
+        </DialogBody>
 
-        <div className="flex flex-wrap justify-end gap-3 px-6 pb-6">
+        <DialogFooter className="flex-wrap">
           <button
             type="button"
             onClick={onCancel}
@@ -292,8 +280,8 @@ export function NotifyParentsDialog({
             )}
             {isPending ? "Guardando…" : "Enviar notificación"}
           </button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -510,7 +510,7 @@ describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", ()
     expect(screen.queryByTestId("regenerate-btn-42")).not.toBeInTheDocument();
   });
 
-  it("abre ConfirmModal al hacer click en Regenerar", async () => {
+  it("abre ConfirmDialog al hacer click en Regenerar", async () => {
     const item = makeSummaryItem({ athlete_id: 42, status: "draft" });
     vi.mocked(useAthletes).mockReturnValue({
       isLoading: false,

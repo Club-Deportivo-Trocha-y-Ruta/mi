@@ -19,6 +19,8 @@ interface StepperProps {
    * círculos más grandes y líneas conectoras (ver `OnboardingStepper`).
    */
   variant?: "compact" | "detailed";
+  /** Accesible name de la lista de pasos. Default: "Progreso". */
+  ariaLabel?: string;
 }
 
 type StepStatus = "done" | "current" | "upcoming";
@@ -51,11 +53,11 @@ function getStepStatus(index: number, active: number): StepStatus {
  * pantalla sin que Stepper tenga que conocer la estructura interna del
  * wizard que lo consume.
  */
-export function Stepper({ steps, active, onStepClick, variant = "compact" }: StepperProps) {
+export function Stepper({ steps, active, onStepClick, variant = "compact", ariaLabel }: StepperProps) {
   return variant === "detailed" ? (
-    <DetailedStepper steps={steps} active={active} onStepClick={onStepClick} />
+    <DetailedStepper steps={steps} active={active} onStepClick={onStepClick} ariaLabel={ariaLabel} />
   ) : (
-    <CompactStepper steps={steps} active={active} onStepClick={onStepClick} />
+    <CompactStepper steps={steps} active={active} onStepClick={onStepClick} ariaLabel={ariaLabel} />
   );
 }
 
@@ -68,14 +70,15 @@ interface VariantProps {
   steps: StepperStep[];
   active: number;
   onStepClick?: (index: number) => void;
+  ariaLabel?: string;
 }
 
-function CompactStepper({ steps, active, onStepClick }: VariantProps) {
+function CompactStepper({ steps, active, onStepClick, ariaLabel = "Progreso" }: VariantProps) {
   return (
     <ol
       role="list"
       className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
-      aria-label="Progreso"
+      aria-label={ariaLabel}
     >
       {steps.map((step, index) => {
         const status = getStepStatus(index, active);
@@ -132,11 +135,11 @@ function CompactStepper({ steps, active, onStepClick }: VariantProps) {
 // variant="detailed" — círculos grandes + líneas conectoras (OnboardingStepper)
 // ---------------------------------------------------------------------------
 
-function DetailedStepper({ steps, active, onStepClick }: VariantProps) {
+function DetailedStepper({ steps, active, onStepClick, ariaLabel = "Progreso" }: VariantProps) {
   const idPrefix = useId();
 
   return (
-    <ol role="list" className="flex items-start" aria-label="Progreso">
+    <ol role="list" className="flex items-start" aria-label={ariaLabel}>
       {steps.map((step, index) => {
         const status = getStepStatus(index, active);
         const clickable = !!onStepClick && status === "done";

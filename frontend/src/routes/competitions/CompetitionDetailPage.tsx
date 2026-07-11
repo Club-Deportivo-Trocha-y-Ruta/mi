@@ -11,7 +11,7 @@
  *
  * URL: /competitions/:id?tab=info|results|conditions|athletes|insights
  */
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Link,
   useNavigate,
@@ -21,9 +21,7 @@ import {
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import {
   AlertCircle,
-  AlertTriangle,
   ArrowLeft,
-  CheckCircle2,
   ChevronDown,
   Edit2,
   Link2,
@@ -31,8 +29,8 @@ import {
   RefreshCw,
   Trophy,
   Upload,
-  X,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   DropdownMenu,
@@ -41,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { buttonVariants } from "@/components/ui/button";
 import {
   getRaceEventErrorMessage,
@@ -266,36 +264,16 @@ export function CompetitionDetailPage() {
 
   // Associate to calendar (US1 — one-click)
   const associateMutation = useCreateCalendarEventForRaceEvent();
-  const [calendarToast, setCalendarToast] = useState<ToastState | null>(null);
-  const calendarToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function showCalendarToast(variant: "success" | "error", message: string) {
-    if (calendarToastTimer.current) clearTimeout(calendarToastTimer.current);
-    setCalendarToast({ variant, message });
-    calendarToastTimer.current = setTimeout(() => {
-      setCalendarToast(null);
-      calendarToastTimer.current = null;
-    }, 6_000);
-  }
-
-  // Limpia el timer del toast al desmontar (evita setState tras unmount).
-  useEffect(
-    () => () => {
-      if (calendarToastTimer.current) clearTimeout(calendarToastTimer.current);
-    },
-    [],
-  );
 
   function handleAssociateCalendar() {
     associateMutation.mutate(
       { raceEventId },
       {
         onSuccess: () => {
-          showCalendarToast("success", "Competencia asociada al calendario.");
+          toast.success("Competencia asociada al calendario.");
         },
         onError: (err) => {
-          showCalendarToast(
-            "error",
+          toast.error(
             getRaceEventErrorMessage(
               err,
               "No se pudo asociar al calendario. Intenta de nuevo.",
@@ -612,14 +590,6 @@ export function CompetitionDetailPage() {
         )}
       </header>
 
-      {/* ── Toast de acción de calendario ───────────────────────────── */}
-      {calendarToast && (
-        <ToastBanner
-          toast={calendarToast}
-          onDismiss={() => setCalendarToast(null)}
-        />
-      )}
-
       {/* ── Tabs ─────────────────────────────────────────────────────── */}
       {/* Spec 014: championships have no season ranking — hide standings tab. */}
       <TabsPrimitive.Root
@@ -692,14 +662,20 @@ export function CompetitionDetailPage() {
       </TabsPrimitive.Root>
 
       {/* ── Dialog de confirmación de eliminación ─────────────────── */}
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={deleteOpen}
         title="Eliminar competencia"
-        subject={event.name}
-        description="Esta acción es irreversible. La válida se eliminará permanentemente del sistema. Los datos históricos no podrán recuperarse."
+        description={
+          <>
+            <span className="font-medium text-charcoal">{event.name}</span>
+            <br />
+            Esta acción es irreversible. La válida se eliminará permanentemente del sistema. Los datos históricos no podrán recuperarse.
+          </>
+        }
         confirmLabel="Eliminar válida"
+        tone="danger"
         isPending={deleteMutation.isPending}
-        errorMessage={deleteError}
+        errorMessage={deleteError ?? undefined}
         onCancel={() => {
           if (!deleteMutation.isPending) {
             setDeleteOpen(false);
@@ -708,54 +684,6 @@ export function CompetitionDetailPage() {
         }}
         onConfirm={handleDeleteConfirm}
       />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Toast banner local (sin librería externa — patrón establecido en UnlinkedCompetitorsTab)
-// ---------------------------------------------------------------------------
-
-type ToastVariant = "success" | "error";
-
-interface ToastState {
-  variant: ToastVariant;
-  message: string;
-}
-
-function ToastBanner({
-  toast,
-  onDismiss,
-}: {
-  toast: ToastState | null;
-  onDismiss: () => void;
-}) {
-  if (!toast) return null;
-  const palette =
-    toast.variant === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : "border-red-200 bg-red-50 text-red-800";
-  const Icon = toast.variant === "success" ? CheckCircle2 : AlertTriangle;
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-testid={`toast-${toast.variant}`}
-      className={cn(
-        "flex items-start gap-2 rounded-xl border px-4 py-3 text-sm",
-        palette,
-      )}
-    >
-      <Icon size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-      <span className="flex-1">{toast.message}</span>
-      <button
-        type="button"
-        aria-label="Cerrar notificación"
-        onClick={onDismiss}
-        className="shrink-0 rounded p-0.5 transition-colors hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
     </div>
   );
 }

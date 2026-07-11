@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
 import { SessionFiltersBar } from "@/components/training/SessionFiltersBar";
@@ -111,13 +111,13 @@ export function SessionsListPage() {
         />
       )}
 
-      <ConfirmModal
+      <ConfirmDialog
         open={executeTarget !== null}
         title="Marcar sesión como ejecutada"
-        body="La sesión pasará al estado 'ejecutada'. Quedará registrada como realizada en el historial del club."
+        description="La sesión pasará al estado 'ejecutada'. Quedará registrada como realizada en el historial del club."
         confirmLabel="Marcar ejecutada"
         cancelLabel="No"
-        confirmDanger={false}
+        tone="default"
         isPending={executeMutation.isPending}
         onCancel={() => setExecuteTarget(null)}
         onConfirm={() => {

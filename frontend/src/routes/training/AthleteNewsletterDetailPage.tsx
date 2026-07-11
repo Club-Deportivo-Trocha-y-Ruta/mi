@@ -33,7 +33,7 @@ import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { AthleteLink } from "@/components/shared/AthleteLink";
 import { NewsletterNarrativeEditor } from "@/components/training/NewsletterNarrativeEditor";
 import { NewsletterPreviewBlocks } from "@/components/training/NewsletterPreviewBlocks";
-import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import {
   Dialog,
   DialogContent,
@@ -680,12 +680,13 @@ export function AthleteNewsletterDetailPage() {
       </div>
 
       {/* Dialogs */}
-      <ConfirmModal
+      <ConfirmDialog
         open={showApproveConfirm}
         title="Aprobar boletín"
-        body={`¿Deseas aprobar el boletín de ${monthLabel} ${newsletter.year}? Una vez aprobado podrás enviarlo a los padres.`}
+        description={`¿Deseas aprobar el boletín de ${monthLabel} ${newsletter.year}? Una vez aprobado podrás enviarlo a los padres.`}
         confirmLabel="Sí, aprobar"
         cancelLabel="Cancelar"
+        tone="default"
         isPending={approveMutation.isPending}
         onCancel={() => setShowApproveConfirm(false)}
         onConfirm={handleApprove}
@@ -702,13 +703,13 @@ export function AthleteNewsletterDetailPage() {
         siblingBlockedError={siblingBlocked}
       />
 
-      <ConfirmModal
+      <ConfirmDialog
         open={showRegenerateConfirm}
         title="Regenerar narrativa"
-        body="Se borrará la narrativa actual y se generará una nueva. La narrativa editada se perderá. ¿Continuar?"
+        description="Se borrará la narrativa actual y se generará una nueva. La narrativa editada se perderá. ¿Continuar?"
         confirmLabel="Sí, regenerar"
         cancelLabel="Cancelar"
-        confirmDanger
+        tone="default"
         isPending={generateMutation.isPending}
         onCancel={() => setShowRegenerateConfirm(false)}
         onConfirm={handleRegenerate}

@@ -344,6 +344,32 @@ describe("ImportWizard — Step 1", () => {
     expect(importsApi.dryRunRaceImport).toHaveBeenCalledWith("p-1");
   });
 
+  // Regression (feature 028, T051): al avanzar de paso el wizard debe mover
+  // el foco al encabezado del nuevo paso (contrato de foco documentado en
+  // `@/components/shared/Stepper` — ref + tabIndex={-1} + useEffect keyed en
+  // el step activo) para que lectores de pantalla anuncien la transición.
+  // Debe fallar en el código sin arreglar: no existe ningún elemento
+  // `wizard-step-heading` (ni llamada `.focus()`) antes de este cambio.
+  it("al avanzar a step 2, el encabezado del nuevo paso recibe el foco", async () => {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
+      DRY_RUN_CONFIRMED_ONLY,
+    );
+
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+
+    await fillStep1AndSubmit(user);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("import-wizard-step2")).toBeInTheDocument(),
+    );
+
+    const heading = screen.getByTestId("wizard-step-heading");
+    expect(heading).toHaveTextContent("Validar matches");
+    expect(heading).toHaveFocus();
+  });
+
   it("error API en step 1 muestra alert", async () => {
     vi.mocked(importsApi.parseRaceImport).mockRejectedValue({
       response: { status: 413, data: { detail: "Demasiado grande" } },

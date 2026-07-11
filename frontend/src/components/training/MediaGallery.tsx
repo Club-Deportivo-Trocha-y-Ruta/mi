@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Loader2, Trash2, X } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import type {
   SessionMedia,
   SessionMediaParent,
@@ -24,6 +25,7 @@ export function MediaGallery({
   isDeleting = false,
 }: MediaGalleryProps) {
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   if (media.length === 0) {
     return (
@@ -128,16 +130,7 @@ export function MediaGallery({
               <div className="mt-3 flex justify-center">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "¿Borrar esta media? Se eliminará para padres y entrenador.",
-                      )
-                    ) {
-                      onDelete(active.id);
-                      setActiveIdx(null);
-                    }
-                  }}
+                  onClick={() => setPendingDeleteId(active.id)}
                   disabled={isDeleting}
                   className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
                   data-testid="media-delete-button"
@@ -154,6 +147,23 @@ export function MediaGallery({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title="¿Borrar esta media?"
+        description="Se eliminará para padres y entrenador."
+        confirmLabel="Borrar"
+        tone="danger"
+        isPending={isDeleting}
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => {
+          if (pendingDeleteId !== null) {
+            onDelete?.(pendingDeleteId);
+          }
+          setPendingDeleteId(null);
+          setActiveIdx(null);
+        }}
+      />
     </>
   );
 }

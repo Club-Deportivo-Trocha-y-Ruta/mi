@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp, CheckCircle2, AlertCircle, XCircle, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { formatDateMedium } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -273,14 +274,6 @@ export function ConsentStatusPanel({
   const [renewTarget, setRenewTarget] = useState<AthleteConsentStatus | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<AthleteConsentStatus | null>(null);
 
-  // Estado de toast simple (sin librería externa)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  const showSuccess = (msg: string) => {
-    setSuccessMessage(msg);
-    setTimeout(() => setSuccessMessage(null), 4000);
-  };
-
   const pendingCount = consentsPerAthlete.filter(
     (a) =>
       a.current_consent === null ||
@@ -360,18 +353,6 @@ export function ConsentStatusPanel({
         )}
       </div>
 
-      {/* Toast de éxito */}
-      {successMessage && (
-        <div
-          className="fixed bottom-6 right-6 z-50 rounded-xl bg-charcoal px-5 py-3 text-sm font-medium text-white"
-          style={{ boxShadow: CARD_SHADOW }}
-          role="status"
-          aria-live="polite"
-        >
-          {successMessage}
-        </div>
-      )}
-
       {/* Modal de renovación desde el panel manual */}
       {renewTarget && (
         <ConsentRenewalModal
@@ -379,7 +360,7 @@ export function ConsentStatusPanel({
           activePolicy={activePolicy}
           onRenewed={() => {
             setRenewTarget(null);
-            showSuccess("Consentimiento actualizado correctamente.");
+            toast.success("Consentimiento actualizado correctamente.");
           }}
         />
       )}
@@ -389,7 +370,7 @@ export function ConsentStatusPanel({
         <RevokeConsentDialog
           athlete={revokeTarget}
           onClose={() => setRevokeTarget(null)}
-          onSuccess={() => showSuccess("Consentimiento revocado correctamente.")}
+          onSuccess={() => toast.success("Consentimiento revocado correctamente.")}
         />
       )}
     </>

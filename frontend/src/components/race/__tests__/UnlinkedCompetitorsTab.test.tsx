@@ -35,6 +35,23 @@ vi.mock("@/store/auth.store", () => ({
     selector({ accessToken: "test-token" }),
 }));
 
+// Mock de sonner para espiar las llamadas a toast(...)/toast.success/toast.error
+// sin renderizar toasts reales. vi.hoisted() es necesario porque el factory de
+// vi.mock construye el mock de forma eager (Object.assign), no dentro de un
+// closure perezoso — una const normal quedaría en temporal dead zone.
+const { mockToast, mockToastSuccess, mockToastError } = vi.hoisted(() => ({
+  mockToast: vi.fn(),
+  mockToastSuccess: vi.fn(),
+  mockToastError: vi.fn(),
+}));
+
+vi.mock("sonner", () => ({
+  toast: Object.assign(mockToast, {
+    success: mockToastSuccess,
+    error: mockToastError,
+  }),
+}));
+
 import * as api from "@/api/raceCompetitors";
 import { UnlinkedCompetitorsTab } from "@/components/race/UnlinkedCompetitorsTab";
 import type { UnlinkedCompetitorItem } from "@/types/raceCompetitors.types";
@@ -185,10 +202,9 @@ describe("UnlinkedCompetitorsTab — link flow", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByTestId("toast-success")).toBeInTheDocument(),
-    );
-    expect(screen.getByTestId("toast-success").textContent).toMatch(
-      /3 resultados asociados a Tomás García/i,
+      expect(mockToastSuccess).toHaveBeenCalledWith(
+        expect.stringMatching(/3 resultados asociados a Tomás García/i),
+      ),
     );
   });
 
@@ -216,10 +232,9 @@ describe("UnlinkedCompetitorsTab — link flow", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByTestId("toast-info")).toBeInTheDocument(),
-    );
-    expect(screen.getByTestId("toast-info").textContent).toMatch(
-      /ya estaba enlazado/i,
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.stringMatching(/ya estaba enlazado/i),
+      ),
     );
   });
 
@@ -243,10 +258,9 @@ describe("UnlinkedCompetitorsTab — link flow", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByTestId("toast-error")).toBeInTheDocument(),
-    );
-    expect(screen.getByTestId("toast-error").textContent).toMatch(
-      /ya está enlazado a otro atleta/i,
+      expect(mockToastError).toHaveBeenCalledWith(
+        expect.stringMatching(/ya está enlazado a otro atleta/i),
+      ),
     );
   });
 
@@ -269,8 +283,8 @@ describe("UnlinkedCompetitorsTab — link flow", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByTestId("toast-error").textContent).toMatch(
-        /sin permiso/i,
+      expect(mockToastError).toHaveBeenCalledWith(
+        expect.stringMatching(/sin permiso/i),
       ),
     );
   });
@@ -313,8 +327,8 @@ describe("UnlinkedCompetitorsTab — unlink flow", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByTestId("toast-info").textContent).toMatch(
-        /5 resultados sin atleta asociado/i,
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.stringMatching(/5 resultados sin atleta asociado/i),
       ),
     );
   });

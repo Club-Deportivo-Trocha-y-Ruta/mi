@@ -5,14 +5,14 @@
  * se basó en resultados que luego fueron corregidos por una re-ingesta).
  *
  * D5 honrado: la re-ejecución es MANUAL y requiere confirmación explícita del
- * coach (ConfirmModal). No hay cron ni auto-trigger.
+ * coach (ConfirmDialog). No hay cron ni auto-trigger.
  */
 import { useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useReExecuteRun } from "@/hooks/ai/useRaceRun";
 
 export interface StaleAnalysisBadgeProps {
@@ -58,14 +58,15 @@ export function StaleAnalysisBadge({ runId, onReExecuted }: StaleAnalysisBadgePr
         Re-ejecutar
       </Button>
 
-      <ConfirmModal
+      <ConfirmDialog
         open={confirmOpen}
         title="Re-ejecutar análisis"
-        body={
+        description={
           "Se generará un nuevo análisis IA con los resultados corregidos. " +
           "El análisis anterior se conservará en el histórico. ¿Continuar?"
         }
         confirmLabel="Re-ejecutar"
+        tone="default"
         isPending={reExecute.isPending}
         onCancel={() => {
           if (!reExecute.isPending) setConfirmOpen(false);

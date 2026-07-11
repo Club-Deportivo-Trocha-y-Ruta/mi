@@ -15,7 +15,7 @@
  * Patron auth: vi.mock("@/store/auth.store") + vi.mocked al inicio de cada test
  * para cambiar entre roles. Patron tomado de a11y.v2.test.tsx del repo.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
@@ -53,6 +53,23 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Registramos los handlers default de race-events por test (no globales).
   mswServer.use(...raceEventsHandlers);
+  // Ver nota junto al afterEach de abajo.
+  document.body.style.pointerEvents = "";
+});
+
+// El AlertDialog de Radix (base de ConfirmDialog) bloquea el body con
+// `pointer-events: none` mientras está abierto — a diferencia del antiguo
+// ConfirmDeleteDialog (un <div> plano sin overlay modal real). El retiro de
+// ese estilo al cerrar no siempre es sincrónico con el desmontaje del
+// diálogo (puede quedar pendiente en un timer/efecto que sigue a la
+// aserción "ya no está en el documento"), así que un test cuyo diálogo
+// queda abierto al terminar (p. ej. error 409, que no cierra el diálogo)
+// puede filtrar el bloqueo al siguiente test. Se restaura en beforeEach
+// (defensivo, cubre residuos diferidos de un test previo) y en afterEach
+// (limpia lo que sí alcanzó a aplicarse de forma sincrónica) para aislar
+// cada test sin depender del timing interno de Radix.
+afterEach(() => {
+  document.body.style.pointerEvents = "";
 });
 
 // La página renderiza tanto la tabla desktop (≥md) como las cards mobile (<md)
@@ -408,6 +425,13 @@ describe("CompetitionsListPage — delete admin", () => {
     expect(
       await screen.findByRole("alertdialog", { name: /Eliminar competencia/i }),
     ).toBeInTheDocument();
+    // tone="danger": el foco inicial va a Cancelar, nunca a Eliminar válida.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Cancelar/i })).toHaveFocus(),
+    );
+    expect(
+      screen.getByRole("button", { name: /Eliminar válida/i }),
+    ).not.toHaveFocus();
     await user.click(screen.getByRole("button", { name: /Eliminar válida/i }));
     await waitFor(() => expect(deleteCalled).toBe(true));
     // Dialog se cierra
@@ -494,6 +518,13 @@ describe("CompetitionsListPage — cleanup duplicado (feature 009)", () => {
         name: /Eliminar competencia duplicada/i,
       }),
     ).toBeInTheDocument();
+    // tone="danger": el foco inicial va a Cancelar, nunca a Eliminar duplicado.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Cancelar/i })).toHaveFocus(),
+    );
+    expect(
+      screen.getByRole("button", { name: /Eliminar duplicado/i }),
+    ).not.toHaveFocus();
     await user.click(
       screen.getByRole("button", { name: /Eliminar duplicado/i }),
     );

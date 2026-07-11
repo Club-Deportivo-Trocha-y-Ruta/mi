@@ -20,7 +20,7 @@ import {
   useGenerateNewsletter,
   parseApiError,
 } from "@/api/athleteNewsletters";
-import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import {
   useNewsletterStatusSummary,
@@ -224,13 +224,13 @@ function AthleteNewsletterCard({
         )}
       </div>
 
-      <ConfirmModal
+      <ConfirmDialog
         open={showRegenerateConfirm}
         title="Regenerar boletín"
-        body="Se borrará la narrativa actual y se generará una nueva. La narrativa editada se perderá. ¿Continuar?"
+        description="Se borrará la narrativa actual y se generará una nueva. La narrativa editada se perderá. ¿Continuar?"
         confirmLabel="Sí, regenerar"
         cancelLabel="Cancelar"
-        confirmDanger
+        tone="default"
         isPending={generateMutation.isPending}
         onCancel={() => setShowRegenerateConfirm(false)}
         onConfirm={handleRegenerateConfirm}

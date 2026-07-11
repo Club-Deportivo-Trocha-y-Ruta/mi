@@ -38,6 +38,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import {
   competitionEventSchema,
   STATUS_OPTIONS,
@@ -249,6 +250,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
   const [createCalendarEvent, setCreateCalendarEvent] = useState(true);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [seqError, setSeqError] = useState<string | null>(null);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   // Datos
   const eventQuery = useRaceEvent(isEdit ? eventId : null);
@@ -466,15 +468,20 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
     );
   }
 
-  function handleCancel() {
-    if (isDirty) {
-      if (!window.confirm("Tienes cambios sin guardar. ¿Salir sin guardar?")) return;
-    }
+  function discardAndLeave() {
     if (returnTo) {
       navigate(returnTo);
       return;
     }
     navigate(isEdit && eventId ? `/competitions/${eventId}` : "/competitions");
+  }
+
+  function handleCancel() {
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    discardAndLeave();
   }
 
   // ── Loading en modo edit ──────────────────────────────────────────────────
@@ -974,6 +981,20 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
           </button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={showDiscardConfirm}
+        title="¿Salir sin guardar?"
+        description="Tienes cambios sin guardar. Se perderán si sales de esta página."
+        confirmLabel="Salir sin guardar"
+        cancelLabel="Seguir editando"
+        tone="default"
+        onCancel={() => setShowDiscardConfirm(false)}
+        onConfirm={() => {
+          setShowDiscardConfirm(false);
+          discardAndLeave();
+        }}
+      />
     </section>
   );
 }

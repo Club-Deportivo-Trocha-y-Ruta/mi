@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Trash2, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ParentContactInfo } from "@/components/parents/ParentContactInfo";
 import { ParentAthleteAssignment } from "@/components/parents/ParentAthleteAssignment";
 import { ParentInviteManager } from "@/components/parents/ParentInviteManager";
@@ -200,14 +200,22 @@ export function ParentDetailPage() {
         </div>
       )}
 
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={deleteOpen}
         title="Eliminar padre/acudiente"
-        subject={`${parent.first_name} ${parent.last_name}`}
-        description="Se eliminarán de forma permanente el padre/acudiente, sus vínculos con atletas, su membresía al club y sus consentimientos otorgados. Las invitaciones que haya consumido quedarán como anónimas. Esta acción no se puede deshacer."
+        description={
+          <>
+            <span className="font-medium text-charcoal">
+              {parent.first_name} {parent.last_name}
+            </span>
+            <br />
+            Se eliminarán de forma permanente el padre/acudiente, sus vínculos con atletas, su membresía al club y sus consentimientos otorgados. Las invitaciones que haya consumido quedarán como anónimas. Esta acción no se puede deshacer.
+          </>
+        }
         confirmLabel="Sí, eliminar"
+        tone="danger"
         isPending={deleteMutation.isPending}
-        errorMessage={deleteError}
+        errorMessage={deleteError ?? undefined}
         onCancel={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
       />

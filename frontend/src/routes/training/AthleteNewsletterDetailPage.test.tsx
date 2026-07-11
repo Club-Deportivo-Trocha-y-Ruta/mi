@@ -182,7 +182,7 @@ describe("AthleteNewsletterDetailPage — botón Regenerar narrativa", () => {
     expect(screen.queryByTestId("regenerate-narrative-btn")).not.toBeInTheDocument();
   });
 
-  it("muestra ConfirmModal al hacer click en Regenerar narrativa (draft)", async () => {
+  it("muestra ConfirmDialog al hacer click en Regenerar narrativa (draft)", async () => {
     setupMocks("draft");
     renderPage();
 

@@ -53,7 +53,14 @@ vi.mock("@/store/auth.store", () => ({
     }),
 }));
 
+// Mock de sonner para espiar la llamada a toast(...) sin renderizar toasts
+// reales — el banner F-COND hand-rolled fue migrado a un toast neutral.
+vi.mock("sonner", () => ({
+  toast: vi.fn(),
+}));
+
 import * as importsApi from "@/api/raceImports";
+import { toast } from "sonner";
 import { ImportWizard } from "@/components/competitions/import/ImportWizard";
 import type { ImportParseResponse } from "@/types/raceImports.types";
 
@@ -305,11 +312,14 @@ describe("ImportWizard F-COND — submit sin condiciones", () => {
 
     await user.click(screen.getByTestId("wizard-step1-submit"));
 
-    // Toast neutral visible mientras la promesa parse está pendiente —
-    // seguimos en Step 1, así el toast (que vive dentro del form) está montado.
-    expect(
-      await screen.findByTestId("wizard-conditions-toast"),
-    ).toHaveTextContent(/Condiciones sin registrar/i);
+    // Toast neutral (sonner) disparado en el mismo punto que antes — ya no
+    // es un banner local, así que se verifica el call en vez del DOM.
+    await waitFor(() => {
+      expect(toast).toHaveBeenCalledWith(
+        "Condiciones sin registrar — podrás agregarlas después desde el evento.",
+      );
+    });
+    expect(toast).toHaveBeenCalledTimes(1);
 
     // Verifica que parseRaceImport fue llamado con los 5 campos en null.
     expect(importsApi.parseRaceImport).toHaveBeenCalledTimes(1);
@@ -372,9 +382,7 @@ describe("ImportWizard F-COND — submit con condiciones", () => {
     expect(fields.weather_notes).toBe("Cuesta lavada por tormenta nocturna.");
 
     // No toast neutral (porque sí hay condiciones).
-    expect(
-      screen.queryByTestId("wizard-conditions-toast"),
-    ).not.toBeInTheDocument();
+    expect(toast).not.toHaveBeenCalled();
   });
 
   it("strings vacíos en clima/notas se envían como null cuando hay otras condiciones", async () => {

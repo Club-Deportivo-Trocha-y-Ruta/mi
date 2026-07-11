@@ -14,7 +14,7 @@
  *  - `useLinkCompetitor()` → POST /link
  *  - `useUnlinkCompetitor()` → DELETE /link (con confirm dialog)
  *
- * Toasts (sin librería externa, banner aria-live="polite"):
+ * Toasts (sonner):
  *  - Éxito link: "Enlazado: N resultados asociados a {athlete}"
  *  - already_linked=true: "Ya estaba enlazado, sin cambios"
  *  - Error 409: "Ya enlazado a otro atleta, desvincula primero"
@@ -25,7 +25,6 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle,
   Calendar,
   CheckCircle2,
   Filter,
@@ -38,6 +37,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import {
@@ -419,61 +419,6 @@ function CompetitorSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// Toast banner (sin librería externa)
-// ---------------------------------------------------------------------------
-
-type ToastVariant = "success" | "error" | "info";
-
-interface ToastState {
-  variant: ToastVariant;
-  message: string;
-}
-
-function ToastBanner({
-  toast,
-  onDismiss,
-}: {
-  toast: ToastState | null;
-  onDismiss: () => void;
-}) {
-  if (!toast) return null;
-  const palette =
-    toast.variant === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : toast.variant === "error"
-        ? "border-red-200 bg-red-50 text-red-800"
-        : "border-blue-200 bg-blue-50 text-blue-800";
-  const Icon =
-    toast.variant === "success"
-      ? CheckCircle2
-      : toast.variant === "error"
-        ? AlertTriangle
-        : Link2;
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-testid={`toast-${toast.variant}`}
-      className={cn(
-        "flex items-start gap-2 rounded-xl border px-4 py-3 text-sm",
-        palette,
-      )}
-    >
-      <Icon size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-      <span className="flex-1">{toast.message}</span>
-      <button
-        type="button"
-        aria-label="Cerrar notificación"
-        onClick={onDismiss}
-        className="shrink-0 rounded p-0.5 transition-colors hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Tab principal
 // ---------------------------------------------------------------------------
 
@@ -488,13 +433,6 @@ export function UnlinkedCompetitorsTab({
   // Filtros
   const [onlyTrocha, setOnlyTrocha] = useState(true);
   const [season, setSeason] = useState<number | null>(null);
-
-  // Toast simple (sin librería)
-  const [toast, setToast] = useState<ToastState | null>(null);
-  const showToast = (variant: ToastVariant, message: string) => {
-    setToast({ variant, message });
-    setTimeout(() => setToast(null), 6_000);
-  };
 
   // Dialog de confirmación para unlink
   const [unlinkTarget, setUnlinkTarget] =
@@ -548,17 +486,16 @@ export function UnlinkedCompetitorsTab({
           );
           const athleteName = suggestion?.full_name ?? `Atleta #${athleteId}`;
           if (data.already_linked) {
-            showToast("info", "Ya estaba enlazado, sin cambios.");
+            toast("Ya estaba enlazado, sin cambios.");
           } else {
-            showToast(
-              "success",
+            toast.success(
               `Enlazado: ${data.results_propagated} resultado${data.results_propagated === 1 ? "" : "s"} asociado${data.results_propagated === 1 ? "" : "s"} a ${athleteName}.`,
             );
           }
         },
         onError: (err) => {
           setLinkingAthleteId(null);
-          showToast("error", getCompetitorErrorMessage(err));
+          toast.error(getCompetitorErrorMessage(err));
         },
       },
     );
@@ -572,8 +509,7 @@ export function UnlinkedCompetitorsTab({
       {
         onSuccess: (data) => {
           setUnlinkTarget(null);
-          showToast(
-            "info",
+          toast(
             data.was_linked
               ? `Desvinculado: ${data.results_propagated} resultado${data.results_propagated === 1 ? "" : "s"} sin atleta asociado.`
               : "El competidor no estaba enlazado.",
@@ -581,7 +517,7 @@ export function UnlinkedCompetitorsTab({
         },
         onError: (err) => {
           setUnlinkTarget(null);
-          showToast("error", getCompetitorErrorMessage(err));
+          toast.error(getCompetitorErrorMessage(err));
         },
       },
     );
@@ -668,9 +604,6 @@ export function UnlinkedCompetitorsTab({
           </select>
         </div>
       </header>
-
-      {/* Toast */}
-      <ToastBanner toast={toast} onDismiss={() => setToast(null)} />
 
       {/* Lista */}
       {query.isLoading && (

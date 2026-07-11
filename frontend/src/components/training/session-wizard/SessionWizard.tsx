@@ -27,19 +27,24 @@ import type {
   TrainingSessionUpdate,
 } from "@/types/trainingSession.types";
 
+import { Stepper } from "@/components/shared/Stepper";
+
 import { clearDirtySeeds, type SeededFieldName } from "./ai-assistant/aiSeededFields";
-import { SessionStepper, type WizardStep } from "./SessionStepper";
 import { SessionErrorSummary, type ErrorSummaryItem } from "./SessionErrorSummary";
 import { StepGeneral } from "./StepGeneral";
 import { StepAthletes } from "./StepAthletes";
 import { StepRouteNotes } from "./StepRouteNotes";
 import { StepReview } from "./StepReview";
 
-const STEPS: WizardStep[] = [
-  { idx: 1, label: "General" },
-  { idx: 2, label: "Atletas" },
-  { idx: 3, label: "Ruta y notas" },
-  { idx: 4, label: "Revisar" },
+// Stepper visual — unified shared Stepper (@/components/shared/Stepper,
+// contract in specs/028-frontend-design-foundation/contracts/shared-components.md).
+// `Stepper.active` is 0-based; the `step` state below is 1-based, so render
+// sites pass `step - 1` (same convention as `ImportWizard`).
+const STEPS: { label: string }[] = [
+  { label: "General" },
+  { label: "Atletas" },
+  { label: "Ruta y notas" },
+  { label: "Revisar" },
 ];
 
 const FIELDS_BY_STEP: Record<number, readonly (keyof TrainingSessionFormValues)[]> = {
@@ -180,6 +185,18 @@ export function SessionWizard({
   }, [dirtyFields, activeSeededFields.size]);
 
   const [step, setStep] = useState(1);
+  // Feature 028 (T050) — step-focus management contract documented in
+  // `@/components/shared/Stepper`: ref + tabIndex={-1} on the step heading +
+  // a useEffect keyed on the active step index. A single effect (rather than
+  // a `.focus()` call at each `setStep(...)` site) guarantees every
+  // SUCCESSFUL transition is covered (goNext, goBack, restoreDraft, clicking
+  // a completed step) without touching the existing validation-failure focus
+  // behavior, which is handled separately by `trigger(fields, { shouldFocus:
+  // true })` inside `goNext()` and never reaches `setStep`.
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    stepHeadingRef.current?.focus();
+  }, [step]);
   const [notesDismissed, setNotesDismissed] = useState(false);
   const [routeFile, setRouteFile] = useState<File | null>(null);
   const [routeFileError, setRouteFileError] = useState<string | null>(null);
@@ -425,11 +442,22 @@ export function SessionWizard({
 
   return (
     <section data-testid="session-wizard">
-      <SessionStepper
-        steps={STEPS}
-        active={step}
-        onStepClick={(idx) => setStep(idx)}
-      />
+      <div className="mb-4">
+        <Stepper
+          steps={STEPS}
+          active={step - 1}
+          onStepClick={(idx) => setStep(idx + 1)}
+          ariaLabel="Pasos para crear la sesión"
+        />
+      </div>
+      <h2
+        ref={stepHeadingRef}
+        tabIndex={-1}
+        data-testid="wizard-step-heading"
+        className="mb-4 text-base font-semibold text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 rounded"
+      >
+        {STEPS[step - 1].label}
+      </h2>
 
       {draftNotes && !notesDismissed && (
         <div

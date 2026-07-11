@@ -34,7 +34,7 @@ import { NutritionalClassification } from "@/components/athletes/NutritionalClas
 import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
 import { AthleteNewslettersTabPanel } from "@/components/training/AthleteNewslettersTabPanel";
-import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
@@ -360,14 +360,22 @@ function StravaTabPanel({ athleteId }: { athleteId: number }) {
         )}
       </div>
 
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={showDisconnectConfirm}
         title="Desconectar Strava"
-        subject="Se detendrá la sincronización de actividades de este atleta"
-        description="Las actividades ya sincronizadas se conservan. Podrás volver a conectar la cuenta cuando quieras."
+        description={
+          <>
+            <span className="font-medium text-charcoal">
+              Se detendrá la sincronización de actividades de este atleta
+            </span>
+            <br />
+            Las actividades ya sincronizadas se conservan. Podrás volver a conectar la cuenta cuando quieras.
+          </>
+        }
         confirmLabel="Desconectar"
+        tone="danger"
         isPending={disconnectMutation.isPending}
-        errorMessage={disconnectMutation.isError ? "No se pudo desconectar. Intenta de nuevo." : null}
+        errorMessage={disconnectMutation.isError ? "No se pudo desconectar. Intenta de nuevo." : undefined}
         onCancel={() => setShowDisconnectConfirm(false)}
         onConfirm={handleDisconnect}
       />

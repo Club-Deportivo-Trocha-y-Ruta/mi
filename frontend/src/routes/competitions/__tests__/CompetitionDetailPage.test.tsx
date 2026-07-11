@@ -238,6 +238,13 @@ describe("CompetitionDetailPage — delete admin", () => {
     expect(
       await screen.findByRole("alertdialog", { name: /Eliminar competencia/i }),
     ).toBeInTheDocument();
+    // tone="danger": el foco inicial va a Cancelar, nunca a Eliminar válida.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Cancelar/i })).toHaveFocus(),
+    );
+    expect(
+      screen.getByRole("button", { name: /Eliminar válida/i }),
+    ).not.toHaveFocus();
     await user.click(screen.getByRole("button", { name: /Eliminar válida/i }));
 
     await waitFor(() => expect(deleted).toBe(true));

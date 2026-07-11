@@ -37,15 +37,34 @@ vi.mock("@/hooks/consent", () => ({
   }),
 }));
 
-// Mock de sub-componentes que abren modales sobre el panel (evitan renders complejos)
+// Mock de sonner para espiar las llamadas a toast.success sin renderizar toasts reales
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+// Mock de sub-componentes que abren modales sobre el panel (evitan renders complejos).
+// Cada uno expone un botón que invoca su callback de éxito, para poder probar que
+// ConsentStatusPanel dispara el toast en el punto correcto.
 vi.mock("./ConsentRenewalModal", () => ({
-  ConsentRenewalModal: () => null,
+  ConsentRenewalModal: ({ onRenewed }: { onRenewed: () => void }) => (
+    <button type="button" onClick={onRenewed}>
+      mock-renewal-success
+    </button>
+  ),
 }));
 
 vi.mock("./RevokeConsentDialog", () => ({
-  RevokeConsentDialog: () => null,
+  RevokeConsentDialog: ({ onSuccess }: { onSuccess?: () => void }) => (
+    <button type="button" onClick={() => onSuccess?.()}>
+      mock-revoke-success
+    </button>
+  ),
 }));
 
+import { toast } from "sonner";
 import { ConsentStatusPanel } from "./ConsentStatusPanel";
 import type { AthleteConsentStatus, PrivacyPolicySummary } from "@/types/consent";
 
@@ -258,6 +277,41 @@ describe("ConsentStatusPanel", () => {
 
       expect(screen.queryByText(/IA: activa/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/IA: no autorizada/i)).not.toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Toast de éxito (sonner) — migrado desde el banner hand-rolled
+  // -------------------------------------------------------------------------
+
+  describe("toast de éxito (sonner)", () => {
+    it("llama a toast.success al completar la renovación desde el panel manual", async () => {
+      await renderAndExpand([athleteRevoked]);
+
+      fireEvent.click(screen.getByRole("button", { name: "Dar consentimiento" }));
+      fireEvent.click(screen.getByRole("button", { name: "mock-renewal-success" }));
+
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith(
+          "Consentimiento actualizado correctamente.",
+        );
+      });
+      // El banner hand-rolled ya no existe: no debe quedar ningún nodo con role="status".
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+
+    it("llama a toast.success al completar la revocación desde el panel manual", async () => {
+      await renderAndExpand([athleteAiInactive]);
+
+      fireEvent.click(screen.getByRole("button", { name: "Revocar" }));
+      fireEvent.click(screen.getByRole("button", { name: "mock-revoke-success" }));
+
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith(
+          "Consentimiento revocado correctamente.",
+        );
+      });
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
     });
   });
 

@@ -55,6 +55,14 @@ vi.mock("@/components/competitions/tabs/ConditionsTab", () => ({
   ),
 }));
 
+// ── Sonner mock (espía toast.success/toast.error sin renderizar toasts reales) ──
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 import { useAuthStore } from "@/store/auth.store";
 import { mswServer } from "@/test/setup";
 import {
@@ -62,6 +70,7 @@ import {
   raceEventsCalendarAutoCreateConflictHandler,
   raceEventsHandlers,
 } from "@/test/msw/raceEventsHandlers";
+import { toast } from "sonner";
 import { CompetitionDetailPage } from "@/routes/competitions/CompetitionDetailPage";
 
 // ---------------------------------------------------------------------------
@@ -200,8 +209,12 @@ describe("CompetitionDetailPage — associate calendar (US1)", () => {
 
     await user.click(screen.getByTestId("btn-associate-calendar"));
 
-    // Toast de éxito aparece
-    await screen.findByTestId("toast-success");
+    // Toast de éxito (sonner) disparado
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(
+        "Competencia asociada al calendario.",
+      );
+    });
 
     // Tras la invalidación y re-fetch el botón desaparece y el badge aparece
     await waitFor(() =>
@@ -226,8 +239,10 @@ describe("CompetitionDetailPage — associate calendar (US1)", () => {
     await screen.findByTestId("btn-associate-calendar");
     await user.click(screen.getByTestId("btn-associate-calendar"));
 
-    // Toast de error aparece
-    await screen.findByTestId("toast-error");
+    // Toast de error (sonner) disparado
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalled();
+    });
 
     // El botón sigue presente (retry posible)
     expect(screen.getByTestId("btn-associate-calendar")).toBeInTheDocument();
@@ -251,11 +266,14 @@ describe("CompetitionDetailPage — associate calendar (US1)", () => {
     await screen.findByTestId("btn-associate-calendar");
     await user.click(screen.getByTestId("btn-associate-calendar"));
 
-    const toastEl = await screen.findByTestId("toast-error");
-    // El texto del toast no debe contener stack traces ni "Internal Server Error"
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalled();
+    });
+    const message = vi.mocked(toast.error).mock.calls.at(-1)?.[0];
+    // El mensaje del toast no debe contener stack traces ni "Internal Server Error"
     // crudo — debe ser un mensaje amigable.
-    expect(toastEl.textContent).not.toMatch(/^Error$/i);
-    expect(toastEl.textContent).toBeTruthy();
+    expect(message).not.toMatch(/^Error$/i);
+    expect(message).toBeTruthy();
   });
 
   // ---------------------------------------------------------------------------

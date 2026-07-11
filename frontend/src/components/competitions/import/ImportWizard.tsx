@@ -15,7 +15,7 @@
  *   - No persiste en Zustand; navegar fuera reinicia (DT-5 del workflow).
  *   - Stepper visual = breadcrumbs simples con `aria-current`.
  */
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate } from "react-router-dom";
@@ -31,12 +31,14 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { launchGroupAnalysis } from "@/api/raceAnalysis";
 import { z } from "zod";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import { RaceUploadZone } from "@/components/competitions/import/RaceUploadZone";
 import { RaceConditionsCard } from "@/components/race/RaceConditionsCard";
+import { Stepper } from "@/components/shared/Stepper";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   useImportCommit,
@@ -46,7 +48,6 @@ import {
 import { useImportPrefill } from "@/hooks/race/useImportPrefill";
 import { useRevisionReasons } from "@/hooks/race/useRevisionReasons";
 import { formatDateTime } from "@/lib/datetime";
-import { cn } from "@/lib/utils";
 import type {
   ImportCommitResponse,
   ImportDryRunResponse,
@@ -197,60 +198,17 @@ const step1Schema = z
 type Step1Values = z.infer<typeof step1Schema>;
 
 // ---------------------------------------------------------------------------
-// Stepper visual
+// Stepper visual — unified shared Stepper (@/components/shared/Stepper,
+// contract in specs/028-frontend-design-foundation/contracts/shared-components.md).
+// `Stepper.active` is 0-based; the `step` state below is 1-based, so render
+// sites pass `step - 1`.
 // ---------------------------------------------------------------------------
 
-const STEPS = [
-  { idx: 1, label: "Archivos y datos" },
-  { idx: 2, label: "Validar matches" },
-  { idx: 3, label: "Resultado" },
-] as const;
-
-function Stepper({ active }: { active: 1 | 2 | 3 }) {
-  return (
-    <ol
-      className="mb-4 flex items-center gap-2 text-xs"
-      aria-label="Pasos del wizard"
-    >
-      {STEPS.map((s, i) => {
-        const done = s.idx < active;
-        const current = s.idx === active;
-        return (
-          <li
-            key={s.idx}
-            className="flex items-center gap-2"
-            aria-current={current ? "step" : undefined}
-          >
-            <span
-              className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold",
-                done && "bg-charcoal text-white",
-                current && "bg-blue-100 text-blue-700 ring-2 ring-blue-500",
-                !done && !current && "bg-light-gray text-mid-gray",
-              )}
-              aria-hidden="true"
-            >
-              {done ? "✓" : s.idx}
-            </span>
-            <span
-              className={cn(
-                "font-medium",
-                current ? "text-charcoal" : "text-mid-gray",
-              )}
-            >
-              {s.label}
-            </span>
-            {i < STEPS.length - 1 && (
-              <span className="mx-1 text-mid-gray" aria-hidden="true">
-                →
-              </span>
-            )}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
+const STEPS: { label: string }[] = [
+  { label: "Archivos y datos" },
+  { label: "Validar matches" },
+  { label: "Resultado" },
+];
 
 // ---------------------------------------------------------------------------
 // Helper para extraer mensaje del error axios
@@ -511,6 +469,16 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
   const isPrefilled = raceEventId != null;
   const prefill = useImportPrefill(raceEventId ?? null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  // Feature 028 (T051) — step-focus management contract documented in
+  // `@/components/shared/Stepper`: ref + tabIndex={-1} on the step heading +
+  // a useEffect keyed on the active step index. A single effect (rather than
+  // a `.focus()` call at each `setStep(...)` site) guarantees every
+  // transition is covered regardless of which call site changed `step`
+  // (Continuar, Volver, Reintentar, reset/"Cargar otro").
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    stepHeadingRef.current?.focus();
+  }, [step]);
   const [parseResult, setParseResult] = useState<ImportParseResponse | null>(
     null,
   );
@@ -523,8 +491,6 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
   >({});
   const [onlyPending, setOnlyPending] = useState(false);
   const [step1Error, setStep1Error] = useState<string | null>(null);
-  // F-COND: toast neutral cuando el coach avanza sin llenar condiciones.
-  const [conditionsToast, setConditionsToast] = useState(false);
   // F-UP-REV5 / PR4: motivo de revisión — code del catálogo CERRADO
   // (sin texto libre, privacidad menores). Obligatorio si hay deletes.
   const [revisionReason, setRevisionReason] = useState("");
@@ -640,11 +606,10 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
       (values.climate && values.climate.trim() !== "") ||
       (values.weather_notes && values.weather_notes.trim() !== "");
     if (!hasAnyCondition) {
-      setConditionsToast(true);
-      // Auto-ocultar el toast tras 5 s
-      setTimeout(() => setConditionsToast(false), 5000);
-    } else {
-      setConditionsToast(false);
+      // F-COND: toast neutral cuando el coach avanza sin llenar condiciones.
+      toast(
+        "Condiciones sin registrar — podrás agregarlas después desde el evento.",
+      );
     }
 
     // Normalizar campos de condiciones: string vacío → null
@@ -834,7 +799,6 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
     setResolutions({});
     setOnlyPending(false);
     setStep1Error(null);
-    setConditionsToast(false);
     setRevisionReason("");
     setRevisionReasonTouched(false);
     parseMutation.reset();
@@ -849,7 +813,17 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
       data-testid="import-wizard"
       aria-label="Wizard de carga de resultados"
     >
-      <Stepper active={step} />
+      <div className="mb-4">
+        <Stepper steps={STEPS} active={step - 1} />
+      </div>
+      <h2
+        ref={stepHeadingRef}
+        tabIndex={-1}
+        data-testid="wizard-step-heading"
+        className="mb-4 text-base font-semibold text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 rounded"
+      >
+        {STEPS[step - 1].label}
+      </h2>
 
       {/* Feature 015 — estados no-ready del prefill reemplazan el paso 1. */}
       {step === 1 && isPrefilled && prefill && prefill.status !== "ready" && (
@@ -1282,18 +1256,6 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
             </div>
           </div>
           {/* ── Fin F-COND ── */}
-
-          {/* Toast neutral si avanza sin condiciones */}
-          {conditionsToast && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="rounded-lg bg-light-gray px-3 py-2 text-xs text-mid-gray"
-              data-testid="wizard-conditions-toast"
-            >
-              Condiciones sin registrar — podrás agregarlas después desde el evento.
-            </div>
-          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <RaceUploadZone

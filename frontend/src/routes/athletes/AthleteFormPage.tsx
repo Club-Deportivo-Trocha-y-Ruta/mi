@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Trash2 } from "lucide-react";
 
 import { AthleteForm, type AthleteFormValues } from "@/components/athletes/AthleteForm";
-import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useCreateAthlete } from "@/hooks/athletes/useCreateAthlete";
 import { useDeleteAthlete } from "@/hooks/athletes/useDeleteAthlete";
@@ -157,14 +157,20 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
       />
 
       {isEdit && (
-        <ConfirmDeleteDialog
+        <ConfirmDialog
           open={deleteOpen}
           title="Eliminar atleta"
-          subject={athleteFullName}
-          description="Se eliminarán de forma permanente el perfil del atleta, sus mediciones antropométricas, vínculos con padres/acudientes, invitaciones y consentimientos. Esta acción no se puede deshacer."
+          description={
+            <>
+              <span className="font-medium text-charcoal">{athleteFullName}</span>
+              <br />
+              Se eliminarán de forma permanente el perfil del atleta, sus mediciones antropométricas, vínculos con padres/acudientes, invitaciones y consentimientos. Esta acción no se puede deshacer.
+            </>
+          }
           confirmLabel="Sí, eliminar atleta"
+          tone="danger"
           isPending={deleteMutation.isPending}
-          errorMessage={deleteError}
+          errorMessage={deleteError ?? undefined}
           onCancel={() => setDeleteOpen(false)}
           onConfirm={handleDelete}
         />

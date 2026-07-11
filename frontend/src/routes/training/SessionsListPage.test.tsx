@@ -53,8 +53,8 @@ vi.mock("@/components/training/SessionsTable", () => ({
   ),
 }));
 
-vi.mock("@/components/common/ConfirmModal", () => ({
-  ConfirmModal: ({
+vi.mock("@/components/shared/ConfirmDialog", () => ({
+  ConfirmDialog: ({
     open,
     title,
     onConfirm,
@@ -66,7 +66,7 @@ vi.mock("@/components/common/ConfirmModal", () => ({
     onCancel: () => void;
   }) =>
     open ? (
-      <div data-testid="confirm-modal">
+      <div data-testid="confirm-dialog">
         <span>{title}</span>
         <button onClick={onConfirm}>confirm-ok</button>
         <button onClick={onCancel}>confirm-cancel</button>
@@ -249,7 +249,7 @@ describe("SessionsListPage", () => {
       );
       renderPage();
       fireEvent.click(screen.getByRole("button", { name: /Ejecutar-3/i }));
-      expect(screen.getByTestId("confirm-modal")).toBeInTheDocument();
+      expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
       expect(screen.getByText("Marcar sesión como ejecutada")).toBeInTheDocument();
       expect(executeMock.mutate).not.toHaveBeenCalled();
     });
@@ -273,7 +273,7 @@ describe("SessionsListPage", () => {
       renderPage();
       fireEvent.click(screen.getByRole("button", { name: /Ejecutar-3/i }));
       fireEvent.click(screen.getByRole("button", { name: /confirm-cancel/i }));
-      expect(screen.queryByTestId("confirm-modal")).toBeNull();
+      expect(screen.queryByTestId("confirm-dialog")).toBeNull();
       expect(executeMock.mutate).not.toHaveBeenCalled();
     });
 

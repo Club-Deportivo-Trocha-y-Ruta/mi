@@ -33,7 +33,7 @@ import {
   type LocalFilters,
 } from "@/components/competitions/CompetitionFiltersBar";
 import { CompetitionStatusBadges } from "@/components/competitions/CompetitionStatusBadges";
-import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -376,14 +376,20 @@ export function CompetitionsListPage() {
       )}
 
       {/* Dialog de confirmación de eliminación */}
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={deleteTarget !== null}
         title="Eliminar competencia"
-        subject={deleteTarget?.name ?? ""}
-        description="Esta acción es irreversible. La válida se eliminará permanentemente del sistema. Los datos históricos no podrán recuperarse."
+        description={
+          <>
+            <span className="font-medium text-charcoal">{deleteTarget?.name ?? ""}</span>
+            <br />
+            Esta acción es irreversible. La válida se eliminará permanentemente del sistema. Los datos históricos no podrán recuperarse.
+          </>
+        }
         confirmLabel="Eliminar válida"
+        tone="danger"
         isPending={deleteMutation.isPending}
-        errorMessage={deleteError}
+        errorMessage={deleteError ?? undefined}
         onCancel={() => {
           if (!deleteMutation.isPending) {
             setDeleteTarget(null);
@@ -394,14 +400,20 @@ export function CompetitionsListPage() {
       />
 
       {/* Dialog de confirmación de limpieza de duplicado (feature 009, coach) */}
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={cleanupTarget !== null}
         title="Eliminar competencia duplicada"
-        subject={cleanupTarget?.name ?? ""}
-        description="Esta acción es irreversible. Se eliminarán permanentemente la competencia duplicada y su evento de calendario asociado. Úsala solo para limpiar duplicados sin resultados."
+        description={
+          <>
+            <span className="font-medium text-charcoal">{cleanupTarget?.name ?? ""}</span>
+            <br />
+            Esta acción es irreversible. Se eliminarán permanentemente la competencia duplicada y su evento de calendario asociado. Úsala solo para limpiar duplicados sin resultados.
+          </>
+        }
         confirmLabel="Eliminar duplicado"
+        tone="danger"
         isPending={cleanupMutation.isPending}
-        errorMessage={cleanupError}
+        errorMessage={cleanupError ?? undefined}
         onCancel={() => {
           if (!cleanupMutation.isPending) {
             setCleanupTarget(null);

@@ -11,7 +11,7 @@ import {
   SheetBody,
   SheetFooter,
 } from "@/components/ui/sheet";
-import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { EventTypeChip } from "./EventTypeChip";
 import {
   useCancelCalendarEvent,
@@ -266,6 +266,21 @@ export function EventDrawer({
   const event = eventQuery.data;
   const isLoading = eventQuery.isLoading;
 
+  /**
+   * ConfirmDialog (AlertDialog de Radix) ahora se anida dentro del Sheet
+   * (Dialog de Radix) mientras confirmCancel/confirmDelete están abiertos.
+   * Dialog y AlertDialog traen cada uno su propia copia de
+   * @radix-ui/react-focus-scope (versiones distintas en node_modules, sin
+   * deduplicar) — dos FocusScope "trapped" simultáneos que no se conocen
+   * entre sí compiten por recuperar el foco en cada focusout del otro,
+   * entrando en un loop síncrono infinito en jsdom (cuelga la suite; en
+   * navegador real se manifiesta como el foco "peleado" entre ambos).
+   * Al soltar `modal` en el Sheet mientras hay un ConfirmDialog anidado
+   * abierto, el Sheet deja de atrapar el foco y el AlertDialog (que sigue
+   * siendo modal) queda como única capa activa — sin pelea.
+   */
+  const nestedConfirmOpen = confirmCancel || confirmDelete;
+
   function handleEdit() {
     if (eventId) {
       onOpenChange(false);
@@ -301,7 +316,7 @@ export function EventDrawer({
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet open={open} onOpenChange={onOpenChange} modal={!nestedConfirmOpen}>
         <SheetContent side="right" aria-label="Detalle del evento">
           <SheetHeader>
             {isLoading ? (
@@ -473,25 +488,25 @@ export function EventDrawer({
         </SheetContent>
       </Sheet>
 
-      <ConfirmModal
+      <ConfirmDialog
         open={confirmCancel}
         title="Cancelar evento"
-        body="El evento pasará al estado 'cancelado'. Los participantes serán notificados."
+        description="El evento pasará al estado 'cancelado'. Los participantes serán notificados."
         confirmLabel="Cancelar evento"
         cancelLabel="No, volver"
-        confirmDanger
+        tone="danger"
         isPending={cancelMutation.isPending}
         onCancel={() => setConfirmCancel(false)}
         onConfirm={handleConfirmCancel}
       />
 
-      <ConfirmModal
+      <ConfirmDialog
         open={confirmDelete}
         title="Eliminar evento permanentemente"
-        body="Esta acción NO se puede deshacer. El evento, sus participantes y asistencias serán borrados de la base de datos."
+        description="Esta acción NO se puede deshacer. El evento, sus participantes y asistencias serán borrados de la base de datos."
         confirmLabel="Sí, eliminar"
         cancelLabel="No, volver"
-        confirmDanger
+        tone="danger"
         isPending={deletePermanentMutation.isPending}
         onCancel={() => setConfirmDelete(false)}
         onConfirm={handleConfirmDelete}
