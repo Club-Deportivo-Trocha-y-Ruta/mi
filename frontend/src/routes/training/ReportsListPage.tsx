@@ -374,7 +374,7 @@ export function ReportsListPage() {
           <h1
             className="font-display text-2xl text-charcoal"
           >
-            Reportes Mensuales
+            Informes del club
           </h1>
           <p className="mt-0.5 text-sm text-mid-gray">
             Resúmenes mensuales de actividad del club.

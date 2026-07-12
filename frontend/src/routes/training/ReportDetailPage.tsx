@@ -453,7 +453,7 @@ function CoachEditorView({
               to="/training/reports"
               className="mb-2 inline-block text-xs text-mid-gray transition-opacity hover:opacity-70"
             >
-              ← Informes mensuales
+              ← Informes del club
             </Link>
             <div className="flex flex-wrap items-center gap-2">
               <h1

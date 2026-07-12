@@ -6,6 +6,10 @@ import { CalendarFiltersBar } from "@/components/calendar/FiltersBar";
 import { EventDrawer } from "@/components/calendar/EventDrawer";
 import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import {
+  SiblingViewTabs,
+  type SiblingViewTabsItem,
+} from "@/components/layout/SiblingViewTabs";
 import { useCalendarEvents } from "@/api/calendar";
 import { useCalendarFiltersStore } from "@/store/calendarFilters.store";
 import type { CalendarEventListItem } from "@/types/calendar.types";
@@ -16,6 +20,14 @@ const VIEW_LABELS: Record<CalendarView, string> = {
   timeGridDay: "Día",
   listMonth: "Agenda",
 };
+
+// Sibling views of the Entrenamiento area (data-model.md §2) — shared across
+// CalendarPage, SessionsListPage y ActivityReviewPage.
+const TRAINING_SIBLING_VIEWS: SiblingViewTabsItem[] = [
+  { label: "Calendario", to: "/calendar" },
+  { label: "Sesiones", to: "/training/sessions" },
+  { label: "Actividades", to: "/activities" },
+];
 
 function currentMonthRange() {
   const now = new Date();
@@ -106,6 +118,8 @@ export function CalendarPage() {
             </>
           }
         />
+
+        <SiblingViewTabs items={TRAINING_SIBLING_VIEWS} />
 
         <CalendarFiltersBar />
 

@@ -36,6 +36,7 @@ import {
   raceEventsDeleteConflictHandler,
 } from "@/test/msw/raceEventsHandlers";
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
+import { currentSeason } from "@/lib/datetime";
 import { CompetitionsListPage } from "@/routes/competitions/CompetitionsListPage";
 
 function mockAuthAs(role: "admin" | "coach" | "parent") {
@@ -164,27 +165,58 @@ describe("CompetitionsListPage — acciones secundarias del header", () => {
     expect(link).toHaveAttribute("href", "/competitions/import");
   });
 
-  it("acción 'Sin enlazar' apunta a /competitions/unlinked", async () => {
-    mockAuthAs("coach");
-    renderWithProviders(<CompetitionsListPage />);
-    const link = await screen.findByRole("link", {
-      name: /Ver competidores sin enlazar/i,
-    });
-    expect(link).toHaveAttribute("href", "/competitions/unlinked");
-  });
-
-  it("las acciones secundarias mantienen altura táctil ≥44px", async () => {
+  it("la acción secundaria mantiene altura táctil ≥44px", async () => {
     mockAuthAs("coach");
     renderWithProviders(<CompetitionsListPage />);
     const importLink = await screen.findByRole("link", {
       name: /Cargar resultados de una válida/i,
     });
-    const unlinkedLink = screen.getByRole("link", {
-      name: /Ver competidores sin enlazar/i,
-    });
     // El patrón del repo usa min-h-[44px] (clase utilitaria de altura mínima).
     expect(importLink.className).toMatch(/min-h-\[44px\]/);
-    expect(unlinkedLink.className).toMatch(/min-h-\[44px\]/);
+  });
+});
+
+describe("CompetitionsListPage — sibling view tabs (feature 030, US2)", () => {
+  it("renderiza las 3 pastillas Válidas | Sin enlazar | Panorama de temporada", async () => {
+    mockAuthAs("coach");
+    // CompetitionsListPage is mounted at "/competitions" in the real route
+    // table (App.tsx) — initialEntries matches that so SiblingViewTabs
+    // resolves "Válidas" as the active pill.
+    renderWithProviders(<CompetitionsListPage />, {
+      initialEntries: ["/competitions"],
+    });
+
+    const tablist = await screen.findByRole("tablist", {
+      name: /Vistas relacionadas/i,
+    });
+    expect(tablist).toBeInTheDocument();
+
+    const validasTab = screen.getByRole("tab", { name: "Válidas" });
+    const sinEnlazarTab = screen.getByRole("tab", { name: "Sin enlazar" });
+    const panoramaTab = screen.getByRole("tab", {
+      name: "Panorama de temporada",
+    });
+
+    expect(validasTab).toBeInTheDocument();
+    expect(sinEnlazarTab).toBeInTheDocument();
+    expect(panoramaTab).toBeInTheDocument();
+
+    expect(validasTab).toHaveAttribute("data-state", "active");
+    expect(sinEnlazarTab).toHaveAttribute("data-state", "inactive");
+    expect(panoramaTab).toHaveAttribute("data-state", "inactive");
+  });
+
+  it("la pastilla 'Panorama de temporada' navega a /competitions/insights/season/${currentSeason()}", async () => {
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />);
+
+    const panoramaTab = await screen.findByRole("tab", {
+      name: "Panorama de temporada",
+    });
+    expect(panoramaTab).toHaveAttribute(
+      "href",
+      `/competitions/insights/season/${currentSeason()}`,
+    );
   });
 });
 

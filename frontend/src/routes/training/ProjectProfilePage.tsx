@@ -202,7 +202,7 @@ export function ProjectProfilePage() {
             to="/training/reports"
             className="mb-1 inline-block text-xs text-mid-gray transition-opacity hover:opacity-70"
           >
-            ← Informes mensuales
+            ← Informes del club
           </Link>
           <h1
             className="font-display text-2xl text-charcoal"

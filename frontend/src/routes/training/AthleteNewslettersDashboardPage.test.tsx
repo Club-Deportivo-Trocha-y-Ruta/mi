@@ -162,7 +162,7 @@ describe("AthleteNewslettersDashboardPage — render básico", () => {
       data: { items: [], total: 0 },
     } as unknown as ReturnType<typeof useAthletes>);
     renderPage();
-    expect(screen.getByText(/Boletines Mensuales/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^Boletines$/i })).toBeInTheDocument();
   });
 
   it("muestra estado vacío cuando no hay atletas", () => {

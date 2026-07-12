@@ -223,6 +223,17 @@ describe("SessionsListPage", () => {
     expect(link).toHaveAttribute("href", "/training/sessions/new");
   });
 
+  it("muestra el botón de crear con IA", () => {
+    vi.mocked(useTrainingSessions).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [],
+    } as unknown as ReturnType<typeof useTrainingSessions>);
+    renderPage();
+    const link = screen.getByRole("link", { name: /Crear con IA/i });
+    expect(link).toHaveAttribute("href", "/training/sessions/assistant");
+  });
+
   it("muestra la barra de filtros", () => {
     vi.mocked(useTrainingSessions).mockReturnValue({
       isLoading: false,
@@ -231,6 +242,20 @@ describe("SessionsListPage", () => {
     } as unknown as ReturnType<typeof useTrainingSessions>);
     renderPage();
     expect(screen.getByTestId("filters-bar")).toBeInTheDocument();
+  });
+
+  it("muestra la fila de pastillas de vistas hermanas", () => {
+    vi.mocked(useTrainingSessions).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [],
+    } as unknown as ReturnType<typeof useTrainingSessions>);
+    renderPage();
+    const tabs = screen.getByRole("tablist", { name: /Vistas relacionadas/i });
+    expect(tabs).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Calendario" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Sesiones" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Actividades" })).toBeInTheDocument();
   });
 
   describe("confirmación de acciones destructivas", () => {

@@ -12,7 +12,7 @@ import { Link } from "react-router-dom";
  */
 export function GonePage({
   to = "/competitions",
-  toLabel = "Ir a Análisis IA",
+  toLabel = "Ir a Insights IA",
 }: {
   to?: string;
   toLabel?: string;

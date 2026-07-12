@@ -43,6 +43,17 @@ describe("UnlinkedCompetitorsPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("renderiza las 3 pastillas de vistas hermanas de Competencias", () => {
+    renderWithProviders(<UnlinkedCompetitorsPage />);
+    expect(screen.getByRole("tab", { name: "Válidas" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Sin enlazar" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Panorama de temporada" }),
+    ).toBeInTheDocument();
+  });
+
   it("monta la herramienta UnlinkedCompetitorsTab", async () => {
     renderWithProviders(<UnlinkedCompetitorsPage />);
     // El tab expone data-testid="unlinked-competitors-tab" una vez resuelto el

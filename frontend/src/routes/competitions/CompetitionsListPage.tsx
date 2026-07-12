@@ -18,9 +18,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   CalendarPlus,
-  CalendarRange,
   Edit2,
-  Link2Off,
   Loader2,
   MoreHorizontal,
   RefreshCw,
@@ -37,6 +35,10 @@ import { CompetitionStatusBadges } from "@/components/competitions/CompetitionSt
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import {
+  SiblingViewTabs,
+  type SiblingViewTabsItem,
+} from "@/components/layout/SiblingViewTabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -96,6 +98,14 @@ function isUpcomingWithin30Days(iso: string): boolean {
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
   return diffDays >= 0 && diffDays <= 30;
 }
+
+// Sibling views of the Competencias area (data-model.md §2) — shared across
+// CompetitionsListPage, UnlinkedCompetitorsPage y SeasonInsightsPage.
+const COMPETITIONS_SIBLING_VIEWS: SiblingViewTabsItem[] = [
+  { label: "Válidas", to: "/competitions" },
+  { label: "Sin enlazar", to: "/competitions/unlinked" },
+  { label: "Panorama de temporada", to: `/competitions/insights/season/${currentSeason()}` },
+];
 
 // ---------------------------------------------------------------------------
 // Componente principal
@@ -188,22 +198,6 @@ export function CompetitionsListPage() {
               <Upload size={14} aria-hidden="true" />
               Cargar resultados
             </Link>
-            <Link
-              to="/competitions/unlinked"
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
-              aria-label="Ver competidores sin enlazar"
-            >
-              <Link2Off size={14} aria-hidden="true" />
-              Sin enlazar
-            </Link>
-            <Link
-              to={`/competitions/insights/season/${currentSeason()}`}
-              className="inline-flex min-h-[48px] min-w-[48px] items-center gap-2 rounded-lg bg-white px-4 py-3 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
-              aria-label="Ver panorama de temporada"
-            >
-              <CalendarRange size={14} aria-hidden="true" />
-              Panorama de temporada
-            </Link>
             {/* Acción primaria */}
             <Link
               to="/competitions/new"
@@ -214,6 +208,8 @@ export function CompetitionsListPage() {
           </>
         }
       />
+
+      <SiblingViewTabs items={COMPETITIONS_SIBLING_VIEWS} />
 
       {/* Filtros */}
       <CompetitionFiltersBar

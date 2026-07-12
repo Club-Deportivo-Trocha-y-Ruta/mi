@@ -39,10 +39,16 @@ beforeEach(() => {
   mockYear = "2026";
 });
 
+// Ruta real de la página bajo prueba — debe coincidir con `mockYear` para que
+// SiblingViewTabs (que lee `useLocation`, no mockeado) resuelva la pastilla activa.
+const SEASON_PATH = "/competitions/insights/season/2026";
+
 describe("SeasonInsightsPage", () => {
   it("renderiza la tabla con deportistas ordenados por puntos", async () => {
     mswServer.use(seasonPanoramaHandler);
-    renderWithProviders(<SeasonInsightsPage />);
+    renderWithProviders(<SeasonInsightsPage />, {
+      initialEntries: [SEASON_PATH],
+    });
 
     await waitFor(() =>
       expect(screen.getByTestId("season-insights-table")).toBeInTheDocument(),
@@ -58,7 +64,9 @@ describe("SeasonInsightsPage", () => {
   it("click en fila navega al detalle del deportista (tab ai_analysis)", async () => {
     mswServer.use(seasonPanoramaHandler);
     const user = userEvent.setup();
-    renderWithProviders(<SeasonInsightsPage />);
+    renderWithProviders(<SeasonInsightsPage />, {
+      initialEntries: [SEASON_PATH],
+    });
 
     await waitFor(() =>
       expect(screen.getByTestId("season-row-144")).toBeInTheDocument(),
@@ -71,7 +79,9 @@ describe("SeasonInsightsPage", () => {
 
   it("muestra empty state cuando no hay resultados", async () => {
     mswServer.use(emptySeasonPanoramaHandler);
-    renderWithProviders(<SeasonInsightsPage />);
+    renderWithProviders(<SeasonInsightsPage />, {
+      initialEntries: [SEASON_PATH],
+    });
     await waitFor(() =>
       expect(screen.getByTestId("season-insights-empty")).toBeInTheDocument(),
     );
@@ -79,7 +89,9 @@ describe("SeasonInsightsPage", () => {
 
   it("muestra error state cuando el endpoint falla", async () => {
     mswServer.use(errorSeasonPanoramaHandler);
-    renderWithProviders(<SeasonInsightsPage />);
+    renderWithProviders(<SeasonInsightsPage />, {
+      initialEntries: [SEASON_PATH],
+    });
     await waitFor(() =>
       expect(screen.getByTestId("season-insights-error")).toBeInTheDocument(),
     );
@@ -87,8 +99,26 @@ describe("SeasonInsightsPage", () => {
 
   it("año inválido muestra alerta sin disparar fetch", async () => {
     mockYear = "abc";
-    renderWithProviders(<SeasonInsightsPage />);
+    renderWithProviders(<SeasonInsightsPage />, {
+      initialEntries: ["/competitions/insights/season/abc"],
+    });
     expect(screen.getByText(/Año de temporada inválido/i)).toBeInTheDocument();
     expect(screen.queryByTestId("season-insights-table")).not.toBeInTheDocument();
+  });
+
+  it("renderiza las 3 pastillas de vistas hermanas con 'Panorama de temporada' activa", async () => {
+    mswServer.use(seasonPanoramaHandler);
+    renderWithProviders(<SeasonInsightsPage />, {
+      initialEntries: [SEASON_PATH],
+    });
+
+    expect(screen.getByRole("tab", { name: "Válidas" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Sin enlazar" }),
+    ).toBeInTheDocument();
+    const active = screen.getByRole("tab", { name: "Panorama de temporada" });
+    expect(active).toBeInTheDocument();
+    expect(active).toHaveAttribute("data-state", "active");
+    expect(active).toHaveAttribute("aria-current", "page");
   });
 });

@@ -278,7 +278,7 @@ describe("ProjectProfilePage", () => {
     } as unknown as ReturnType<typeof useProjectProfile>);
     renderPage();
     await waitFor(() => {
-      const link = screen.getByText(/← Informes mensuales/i);
+      const link = screen.getByText(/← Informes del club/i);
       expect(link).toBeInTheDocument();
       expect(link.closest("a")).toHaveAttribute("href", "/training/reports");
     });

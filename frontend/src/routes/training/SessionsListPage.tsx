@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { Sparkles } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { SiblingViewTabs } from "@/components/layout/SiblingViewTabs";
 import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
 import { SessionFiltersBar } from "@/components/training/SessionFiltersBar";
 import { SessionsTable } from "@/components/training/SessionsTable";
@@ -40,13 +42,30 @@ export function SessionsListPage() {
         title="Sesiones de Entrenamiento"
         subtitle="Planifica y gestiona las sesiones del club."
         actions={
-          <Link
-            to="/training/sessions/new"
-            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
-          >
-            + Nueva sesión
-          </Link>
+          <>
+            <Link
+              to="/training/sessions/assistant"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+            >
+              <Sparkles size={14} aria-hidden="true" />
+              Crear con IA
+            </Link>
+            <Link
+              to="/training/sessions/new"
+              className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+            >
+              + Nueva sesión
+            </Link>
+          </>
         }
+      />
+
+      <SiblingViewTabs
+        items={[
+          { label: "Calendario", to: "/calendar" },
+          { label: "Sesiones", to: "/training/sessions" },
+          { label: "Actividades", to: "/activities" },
+        ]}
       />
 
       <SessionFiltersBar />

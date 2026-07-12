@@ -10,8 +10,14 @@
  * Coach/admin only (gating en App.tsx via ProtectedRoute). Catálogo estático
  * curado — no hay creación/edición desde la UI en v1 (FR-018, mirror 018).
  * La URL no codifica los filtros; se reinician al navegar fuera y volver.
+ *
+ * "Armar bloque" (feature 030 / T022, US2, FR-007) — nueva entrada directa
+ * al armador de bloques de fuerza (`/strength/blocks/new`), antes solo
+ * alcanzable desde el detalle de una sesión de entrenamiento.
  */
 import { useCallback, useState } from "react";
+import { Plus } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { CatalogGrid } from "@/components/strength/CatalogGrid";
 import { FilterBar } from "@/components/strength/FilterBar";
@@ -52,14 +58,25 @@ export function CatalogPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       {/* Page header */}
-      <div className="mb-5">
-        <h1 className="text-2xl font-semibold text-slate-900">
-          Biblioteca de fuerza y acondicionamiento
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Explora y filtra ejercicios de fortalecimiento ilustrados, con y sin
-          equipo, para armar bloques adaptados a cada grupo de edad.
-        </p>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold text-slate-900">
+            Biblioteca de fuerza y acondicionamiento
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Explora y filtra ejercicios de fortalecimiento ilustrados, con y sin
+            equipo, para armar bloques adaptados a cada grupo de edad.
+          </p>
+        </div>
+
+        {/* Entrada directa al armador de bloques (feature 030, FR-007) */}
+        <Link
+          to="/strength/blocks/new"
+          className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+        >
+          <Plus size={16} aria-hidden="true" />
+          Armar bloque
+        </Link>
       </div>
 
       {/* Filter controls */}

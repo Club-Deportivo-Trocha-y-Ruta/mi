@@ -477,7 +477,7 @@ export function AthleteNewslettersDashboardPage() {
           <h1
             className="font-display text-2xl text-charcoal"
           >
-            Boletines Mensuales
+            Boletines
           </h1>
           <p className="mt-0.5 text-sm text-mid-gray">
             Boletines individuales por atleta para enviar a sus familias.

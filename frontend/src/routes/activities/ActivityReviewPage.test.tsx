@@ -21,6 +21,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse, delay } from "msw";
 import { axe, toHaveNoViolations } from "jest-axe";
@@ -95,14 +96,34 @@ import { ActivityReviewPage } from "./ActivityReviewPage";
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={qc}>
-      <ActivityReviewPage />
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={["/activities"]}>
+      <QueryClientProvider client={qc}>
+        <ActivityReviewPage />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
 beforeEach(() => {
   mswServer.use(...stravaHandlers);
+});
+
+// ---------------------------------------------------------------------------
+// Vistas hermanas (feature 030, T020)
+// ---------------------------------------------------------------------------
+
+describe("ActivityReviewPage — vistas hermanas", () => {
+  it("renderiza la fila de pastillas Calendario | Sesiones | Actividades con Actividades activa", async () => {
+    renderPage();
+
+    const tabs = screen.getByRole("tablist", { name: /vistas relacionadas/i });
+    expect(within(tabs).getByRole("tab", { name: "Calendario" })).toBeInTheDocument();
+    expect(within(tabs).getByRole("tab", { name: "Sesiones" })).toBeInTheDocument();
+
+    const actividadesTab = within(tabs).getByRole("tab", { name: "Actividades" });
+    expect(actividadesTab).toBeInTheDocument();
+    expect(actividadesTab).toHaveAttribute("aria-selected", "true");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -84,10 +84,13 @@ const noopMutation = {
   submittedAt: 0,
 };
 
-function renderPage() {
+// CalendarPage is mounted at "/calendar" in the real route table (App.tsx) —
+// initialEntries defaults to that path so SiblingViewTabs resolves the
+// correct active pill, matching how the page is actually reached.
+function renderPage(initialEntries: string[] = ["/calendar"]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <QueryClientProvider client={qc}>
         <CalendarPage />
       </QueryClientProvider>
@@ -252,6 +255,31 @@ describe("CalendarPage", () => {
     renderPage();
     const link = screen.getByRole("link", { name: /Nuevo evento/i });
     expect(link).toHaveAttribute("href", "/calendar/events/new");
+  });
+
+  it("renders the sibling-view pill row with Calendario active", () => {
+    vi.mocked(useCalendarEvents).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useCalendarEvents>);
+
+    renderPage();
+
+    const tablist = screen.getByRole("tablist", { name: /Vistas relacionadas/i });
+    expect(tablist).toBeInTheDocument();
+
+    const calendarioTab = screen.getByRole("tab", { name: "Calendario" });
+    const sesionesTab = screen.getByRole("tab", { name: "Sesiones" });
+    const actividadesTab = screen.getByRole("tab", { name: "Actividades" });
+
+    expect(calendarioTab).toBeInTheDocument();
+    expect(sesionesTab).toBeInTheDocument();
+    expect(actividadesTab).toBeInTheDocument();
+
+    expect(calendarioTab).toHaveAttribute("data-state", "active");
+    expect(sesionesTab).toHaveAttribute("data-state", "inactive");
+    expect(actividadesTab).toHaveAttribute("data-state", "inactive");
   });
 
   it("renders filters bar", () => {

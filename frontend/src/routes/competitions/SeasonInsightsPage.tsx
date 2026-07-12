@@ -18,7 +18,23 @@ import { ArrowLeft, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  SiblingViewTabs,
+  type SiblingViewTabsItem,
+} from "@/components/layout/SiblingViewTabs";
 import { useSeasonPanorama } from "@/hooks/athletes/useSeasonPanorama";
+import { currentSeason } from "@/lib/datetime";
+
+// Vistas hermanas del área Competencias (data-model.md §2, navigation-model.md) —
+// compartidas con CompetitionsListPage y UnlinkedCompetitorsPage.
+const COMPETITIONS_SIBLING_VIEWS: SiblingViewTabsItem[] = [
+  { label: "Válidas", to: "/competitions" },
+  { label: "Sin enlazar", to: "/competitions/unlinked" },
+  {
+    label: "Panorama de temporada",
+    to: `/competitions/insights/season/${currentSeason()}`,
+  },
+];
 
 function HeaderBar({ year }: { year: number }) {
   return (
@@ -72,6 +88,7 @@ export function SeasonInsightsPage() {
     return (
       <div className="mx-auto max-w-5xl space-y-5 px-4 py-6">
         <HeaderBar year={0} />
+        <SiblingViewTabs items={COMPETITIONS_SIBLING_VIEWS} />
         <div
           className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700"
           role="alert"
@@ -85,6 +102,8 @@ export function SeasonInsightsPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-5 px-4 py-6">
       <HeaderBar year={yearNum} />
+
+      <SiblingViewTabs items={COMPETITIONS_SIBLING_VIEWS} />
 
       {isLoading && <TableSkeleton />}
 

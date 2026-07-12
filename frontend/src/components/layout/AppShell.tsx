@@ -4,9 +4,15 @@ import { NavLink, Link } from "react-router-dom";
 
 import { AthleteSwitcher } from "@/components/parents/AthleteSwitcher";
 import { ServerWakingBanner } from "@/components/layout/ServerWakingBanner";
+import { SidebarNav } from "@/components/layout/SidebarNav";
+import { BottomNav } from "@/components/layout/BottomNav";
+import { MoreSheet } from "@/components/layout/MoreSheet";
+import { UserMenu } from "@/components/layout/UserMenu";
+import { QuickCreate } from "@/components/layout/QuickCreate";
 import { warmUp } from "@/api/client";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
+import type { NavRole } from "@/lib/navigation";
 
 interface AppShellProps {
   children: ReactNode;
@@ -23,6 +29,9 @@ export function AppShell({ children }: AppShellProps) {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Feature 030, US3: shared open state for the mobile <BottomNav>'s "Más"
+  // trigger and the <MoreSheet> it opens (coach/admin only, < md).
+  const [moreSheetOpen, setMoreSheetOpen] = useState(false);
 
   // Feature 012, US2: pre-calienta el backend al montar el shell autenticado
   // (una sola vez por carga) para acortar el cold start de Render Free.
@@ -34,116 +43,15 @@ export function AppShell({ children }: AppShellProps) {
   const isCoach = user?.role === UserRole.coach;
   const isParent = user?.role === UserRole.parent;
 
-  const navLinks = (
+  // Coach/admin navigation is config-driven (feature 030, NAV_AREAS) — parent
+  // nav stays the hand-rolled block list untouched (NavRole is coach/admin-only
+  // by design, per spec.md Assumptions).
+  const navRole: NavRole | null = isAdmin ? "admin" : isCoach ? "coach" : null;
+
+  const navLinks = navRole ? (
+    <SidebarNav role={navRole} onNavigate={() => setSidebarOpen(false)} />
+  ) : (
     <nav className="flex flex-col gap-1">
-      {!isParent && (
-        <NavLink
-          to="/dashboard"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Dashboard
-        </NavLink>
-      )}
-      {isCoach && (
-        <NavLink
-          to="/athletes"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Atletas
-        </NavLink>
-      )}
-      {isCoach && (
-        <NavLink
-          to="/parents"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Padres
-        </NavLink>
-      )}
-      {(isCoach || isAdmin) && (
-        <NavLink
-          to="/calendar"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Calendario
-        </NavLink>
-      )}
-      {(isCoach || isAdmin) && (
-        <NavLink
-          to="/training/sessions"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Entrenamientos
-        </NavLink>
-      )}
-      {(isCoach || isAdmin) && (
-        <NavLink
-          to="/training/reports"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Reportes mensuales
-        </NavLink>
-      )}
-      {(isCoach || isAdmin) && (
-        <NavLink
-          to="/training/athlete-newsletters"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Boletines Mensuales
-        </NavLink>
-      )}
-      {(isCoach || isAdmin) && (
-        <NavLink
-          to="/competitions"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Competencias
-        </NavLink>
-      )}
-      {(isCoach || isAdmin) && (
-        <NavLink
-          to="/anxiety"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Ansiedad competitiva
-        </NavLink>
-      )}
-      {(isCoach || isAdmin) && (
-        <NavLink
-          to="/activities"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Actividades
-        </NavLink>
-      )}
-      {(isCoach || isAdmin) && (
-        <NavLink
-          to="/technique"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Técnica
-        </NavLink>
-      )}
-      {(isCoach || isAdmin) && (
-        <NavLink
-          to="/strength"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Fuerza
-        </NavLink>
-      )}
       {isParent && (
         <NavLink
           to="/my-athletes"
@@ -180,15 +88,6 @@ export function AppShell({ children }: AppShellProps) {
           Resumen mensual
         </NavLink>
       )}
-      {isAdmin && (
-        <NavLink
-          to="/admin/ai"
-          className={navLinkClass}
-          onClick={() => setSidebarOpen(false)}
-        >
-          Salud IA
-        </NavLink>
-      )}
     </nav>
   );
 
@@ -203,8 +102,8 @@ export function AppShell({ children }: AppShellProps) {
         Saltar a contenido
       </a>
 
-      {/* ── Mobile drawer overlay ── */}
-      {sidebarOpen && (
+      {/* ── Mobile drawer overlay — parent role only; coach/admin use <BottomNav>/<MoreSheet> instead (feature 030, US3). ── */}
+      {sidebarOpen && !navRole && (
         <div
           className="fixed inset-0 z-30 bg-midnight/40 md:hidden"
           aria-hidden="true"
@@ -212,11 +111,16 @@ export function AppShell({ children }: AppShellProps) {
         />
       )}
 
-      {/* ── Sidebar — hidden on mobile, drawer when open ── */}
+      {/* ── Sidebar — coach/admin: hidden below md, static at md+ (bottom bar
+            replaces the mobile drawer). Parent: unchanged mobile drawer. ── */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 shrink-0 bg-white px-4 py-5 transition-transform duration-200 md:static md:translate-x-0 md:z-auto ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={
+          navRole
+            ? "hidden w-64 shrink-0 bg-white px-4 py-5 md:flex md:flex-col"
+            : `fixed inset-y-0 left-0 z-40 w-64 shrink-0 bg-white px-4 py-5 transition-transform duration-200 md:static md:translate-x-0 md:z-auto ${
+                sidebarOpen ? "translate-x-0" : "-translate-x-full"
+              }`
+        }
         style={{ boxShadow: "rgba(34, 42, 53, 0.08) 1px 0px 0px 0px" }}
         aria-label="Menú de navegación"
       >
@@ -242,52 +146,69 @@ export function AppShell({ children }: AppShellProps) {
           className="sticky top-0 z-50 flex items-center justify-between bg-white px-4 py-3 md:px-6"
           style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 1px 0px 0px" }}
         >
-          {/* Left: hamburger (mobile) + user name */}
+          {/* Left: hamburger (mobile, parent only) + user name */}
           <div className="flex min-w-0 items-center gap-3">
-            {/* Hamburger — visible only on mobile */}
-            <button
-              type="button"
-              aria-label="Abrir menú"
-              aria-expanded={sidebarOpen}
-              onClick={() => setSidebarOpen(true)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-charcoal transition-colors hover:bg-light-gray md:hidden"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 18 18"
-                fill="none"
-                aria-hidden="true"
+            {/* Hamburger — parent role only; coach/admin use <BottomNav>/<MoreSheet> instead (feature 030, US3). */}
+            {!navRole && (
+              <button
+                type="button"
+                aria-label="Abrir menú"
+                aria-expanded={sidebarOpen}
+                onClick={() => setSidebarOpen(true)}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-charcoal transition-colors hover:bg-light-gray md:hidden"
               >
-                <path
-                  d="M2 4.5h14M2 9h14M2 13.5h14"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-            <p className="truncate text-sm font-medium text-mid-gray">
-              {user ? `${user.first_name} ${user.last_name}` : "Usuario"}
-            </p>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 18 18"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2 4.5h14M2 9h14M2 13.5h14"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            )}
+            {/* Coach/admin: the name now lives in <UserMenu>'s trigger on
+                the right (feature 030, US4) — avoid rendering it twice. */}
+            {!navRole && (
+              <p className="truncate text-sm font-medium text-mid-gray">
+                {user ? `${user.first_name} ${user.last_name}` : "Usuario"}
+              </p>
+            )}
           </div>
 
-          {/* Right: athlete switcher (parent only) + Mi perfil + logout */}
+          {/* Right: coach/admin get <QuickCreate>/<UserMenu> (feature 030,
+                US4); parent keeps the athlete switcher + Mi perfil + logout
+                buttons untouched. */}
           <div className="flex items-center gap-2">
-            {isParent && <AthleteSwitcher />}
-            <Link
-              to="/perfil"
-              className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
-            >
-              Mi perfil
-            </Link>
-            <button
-              type="button"
-              onClick={logout}
-              className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
-            >
-              Cerrar sesión
-            </button>
+            {navRole ? (
+              <>
+                <QuickCreate role={navRole} />
+                <UserMenu role={navRole} />
+              </>
+            ) : (
+              <>
+                {isParent && <AthleteSwitcher />}
+                <Link
+                  to="/perfil"
+                  className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                >
+                  Mi perfil
+                </Link>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                >
+                  Cerrar sesión
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -295,11 +216,29 @@ export function AppShell({ children }: AppShellProps) {
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 overflow-y-auto p-4 md:p-6 focus:outline-none"
+          className={`flex-1 overflow-y-auto p-4 focus:outline-none md:p-6 ${
+            navRole ? "pb-24 md:pb-6" : ""
+          }`}
         >
           {children}
         </main>
       </div>
+
+      {/* ── Mobile bottom navigation — coach/admin only, < md (feature 030, US3). ── */}
+      {navRole && (
+        <>
+          <BottomNav
+            role={navRole}
+            open={moreSheetOpen}
+            onOpenChange={setMoreSheetOpen}
+          />
+          <MoreSheet
+            role={navRole}
+            open={moreSheetOpen}
+            onOpenChange={setMoreSheetOpen}
+          />
+        </>
+      )}
     </div>
   );
 }

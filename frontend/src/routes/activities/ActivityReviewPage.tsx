@@ -18,9 +18,20 @@ import { useMemo, useState } from "react";
 import { AlertCircle, Filter, X } from "lucide-react";
 
 import { ActivityCard } from "@/components/activities/ActivityCard";
+import { SiblingViewTabs } from "@/components/layout/SiblingViewTabs";
 import { useActivityReview } from "@/hooks/activities/useActivityReview";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 import type { ActivityLinkedFilter, ActivityOut } from "@/types/strava.types";
+
+// ---------------------------------------------------------------------------
+// Vistas hermanas (Calendario | Sesiones | Actividades) — feature 030, T020
+// ---------------------------------------------------------------------------
+
+const SIBLING_VIEWS = [
+  { label: "Calendario", to: "/calendar" },
+  { label: "Sesiones", to: "/training/sessions" },
+  { label: "Actividades", to: "/activities" },
+];
 
 // ---------------------------------------------------------------------------
 // Design tokens (mirror de CompetitionsListPage / SessionsListPage)
@@ -150,6 +161,8 @@ export function ActivityReviewPage() {
           una sesión de entrenamiento o déjalas sin enlazar.
         </p>
       </div>
+
+      <SiblingViewTabs items={SIBLING_VIEWS} />
 
       {/* Filtros */}
       <div className="rounded-xl bg-white p-4 shadow-card">

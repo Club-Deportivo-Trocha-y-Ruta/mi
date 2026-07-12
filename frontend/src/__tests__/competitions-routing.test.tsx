@@ -8,7 +8,7 @@
  *       blocked (redirect via ProtectedRoute).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, Navigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -60,6 +60,17 @@ function mockAuthAs(role: UserRole) {
       fetchMe: vi.fn(),
     } as any),
   );
+}
+
+// feature 030 (T029): <BottomNav> is now always mounted alongside
+// <SidebarNav> for coach/admin — Tailwind's `md:hidden`/`md:flex` only
+// toggle CSS `display`, both trees stay in the DOM per
+// contracts/mobile-navigation.md. "Competencias" therefore exists twice in
+// the accessibility tree (sidebar + bottom-bar slot); tests that assert a
+// single sidebar entry scope their queries to the sidebar landmark, same
+// pattern as `AppShell.test.tsx`'s `getSidebar()` helper.
+function getSidebar() {
+  return screen.getByRole("complementary", { name: "Menú de navegación" });
 }
 
 function renderShellAt(initialPath = "/") {
@@ -123,7 +134,7 @@ describe("T021 — Sidebar: entrada única Competencias (coach)", () => {
 
   it("muestra exactamente UN enlace 'Competencias' en el sidebar", () => {
     renderShellAt();
-    const links = screen
+    const links = within(getSidebar())
       .getAllByRole("link")
       .filter((el) => el.textContent === "Competencias");
     expect(links).toHaveLength(1);
@@ -147,7 +158,7 @@ describe("T021 — Sidebar: entrada única Competencias (coach)", () => {
 
   it("el único entry de competencias apunta a /competitions (no al hub de insights)", () => {
     renderShellAt();
-    const link = screen.getByRole("link", { name: "Competencias" });
+    const link = within(getSidebar()).getByRole("link", { name: "Competencias" });
     expect(link).toHaveAttribute("href", "/competitions");
   });
 });
@@ -160,7 +171,7 @@ describe("T021 — Sidebar: entrada única Competencias (admin)", () => {
 
   it("admin también ve exactamente UN enlace 'Competencias'", () => {
     renderShellAt();
-    const links = screen
+    const links = within(getSidebar())
       .getAllByRole("link")
       .filter((el) => el.textContent === "Competencias");
     expect(links).toHaveLength(1);

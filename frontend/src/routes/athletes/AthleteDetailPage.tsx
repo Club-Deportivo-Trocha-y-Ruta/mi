@@ -698,7 +698,7 @@ export function AthleteDetailPage() {
           data-testid="athlete-tab-ai-analysis"
         >
           <Sparkles size={14} />
-          Análisis IA
+          Insights IA
         </button>
 
         {!isParent && (
