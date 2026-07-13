@@ -4,6 +4,7 @@ import { apiClient } from "@/api/client";
 import {
   assembleResultSchema,
   athleteProgressSchema,
+  attachExercisesResponseSchema,
   catalogListSchema,
   exerciseDetailSchema,
   materialSchema,
@@ -16,6 +17,8 @@ import type {
   AssembleSessionInput,
   AssembleSessionResult,
   AthleteProgress,
+  AttachExercisesInput,
+  AttachExercisesResult,
   CatalogFilters,
   CatalogList,
   ExerciseCreateInput,
@@ -82,6 +85,24 @@ export async function getSessionExercises(
     `${BASE}/sessions/${sessionId}/exercises`,
   );
   return sessionItemsSchema.parse(response.data);
+}
+
+/**
+ * POST /api/technique/sessions/{training_session_id}/exercises — adjunta
+ * ejercicios a una sesión de entrenamiento ya existente (feature 032, T007;
+ * contracts/attach-technique-to-session.md). El servidor deduplica por
+ * (exercise_id, segment) — un reintento idéntico no duplica filas — y
+ * responde con la lista completa actual de la sesión, no solo el delta.
+ */
+export async function attachExercisesToSession(
+  sessionId: number,
+  items: AttachExercisesInput["items"],
+): Promise<AttachExercisesResult> {
+  const response = await apiClient.post<unknown>(
+    `${BASE}/sessions/${sessionId}/exercises`,
+    { items } satisfies AttachExercisesInput,
+  );
+  return attachExercisesResponseSchema.parse(response.data);
 }
 
 // ---------------------------------------------------------------------------

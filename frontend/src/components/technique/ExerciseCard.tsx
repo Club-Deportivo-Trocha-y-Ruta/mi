@@ -15,7 +15,7 @@
  * semántica correcta para lectores de pantalla.
  */
 import { Link } from "react-router-dom";
-import { Pencil } from "lucide-react";
+import { CalendarPlus, Loader2, Pencil } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,13 +58,26 @@ interface ExerciseCardProps {
    * Absent for parent role — no curation affordance.
    */
   onEdit?: (exercise: ExerciseListItem) => void;
+  /**
+   * When provided (coach/admin only), renders a "adjuntar a una sesión"
+   * affordance — the catalog-initiated attach entry point (feature 032,
+   * T017, contracts/unified-attach-flow.md's entry point #2).
+   */
+  onAttach?: (exercise: ExerciseListItem) => void;
+  /** True while this exercise's attach mutation is in flight (T017). */
+  isAttaching?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ExerciseCard({ exercise, onEdit }: ExerciseCardProps) {
+export function ExerciseCard({
+  exercise,
+  onEdit,
+  onAttach,
+  isAttaching = false,
+}: ExerciseCardProps) {
   const hasSinMaterial = exercise.materials.some((m) => m.is_none);
 
   return (
@@ -82,6 +95,26 @@ export function ExerciseCard({ exercise, onEdit }: ExerciseCardProps) {
             <Badge variant={DIFFICULTY_VARIANT[exercise.difficulty]}>
               {DIFFICULTY_LABEL[exercise.difficulty]}
             </Badge>
+            {onAttach && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-slate-400 hover:text-slate-700"
+                onClick={() => onAttach(exercise)}
+                disabled={isAttaching}
+                aria-label={`Adjuntar ${exercise.name} a una sesión`}
+              >
+                {isAttaching ? (
+                  <Loader2
+                    size={14}
+                    className="animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <CalendarPlus size={14} aria-hidden="true" />
+                )}
+              </Button>
+            )}
             {onEdit && (
               <Button
                 variant="ghost"

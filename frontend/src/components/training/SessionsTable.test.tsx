@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionsTable } from "./SessionsTable";
@@ -149,6 +149,42 @@ describe("SessionsTable", () => {
       renderTable([]);
       expect(screen.getByText("Fecha")).toBeInTheDocument();
       expect(screen.queryAllByRole("button", { name: /Ejecutar/i }).length).toBe(0);
+    });
+  });
+
+  describe("marcador de 'Hoy' (feature 032, US3 — icono + texto, no solo color)", () => {
+    beforeEach(() => {
+      // 2026-06-15T15:00:00Z = 2026-06-15 10:00 en America/Bogota (UTC-5):
+      // fecha determinística, no wall-clock.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-06-15T15:00:00Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("muestra el marcador 'Hoy' con texto accesible en la card móvil cuando la sesión es de hoy", () => {
+      const { container } = renderTable([
+        makeSession({ id: 1, scheduled_date: "2026-06-15" }),
+      ]);
+      const mobileList = container.querySelector('ul[role="list"]');
+      expect(mobileList).not.toBeNull();
+      expect(within(mobileList as HTMLElement).getByText("Hoy")).toBeInTheDocument();
+    });
+
+    it("muestra el marcador 'Hoy' con texto accesible en la fila de tabla desktop cuando la sesión es de hoy", () => {
+      const { container } = renderTable([
+        makeSession({ id: 1, scheduled_date: "2026-06-15" }),
+      ]);
+      const table = container.querySelector("table");
+      expect(table).not.toBeNull();
+      expect(within(table as HTMLElement).getByText("Hoy")).toBeInTheDocument();
+    });
+
+    it("no muestra el marcador 'Hoy' cuando la sesión no es de hoy", () => {
+      renderTable([makeSession({ id: 1, scheduled_date: "2026-06-20" })]);
+      expect(screen.queryByText("Hoy")).not.toBeInTheDocument();
     });
   });
 });

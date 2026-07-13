@@ -253,7 +253,9 @@ describe("Coach flow — detalle de sesión", () => {
   it("muestra el foco técnico y la tabla de asistencia", () => {
     render(
       <QueryClientProvider client={makeQC()}>
-        <MemoryRouter initialEntries={["/training/sessions/1"]}>
+        {/* feature 032/US2: la sesión de fixture (2026-05-15) no es "hoy" —
+            la sección Asistencia ya no es la default, se pide explícita. */}
+        <MemoryRouter initialEntries={["/training/sessions/1?section=asistencia"]}>
           <Routes>
             <Route path="/training/sessions/:id" element={<SessionDetailPage />} />
           </Routes>
@@ -268,7 +270,7 @@ describe("Coach flow — detalle de sesión", () => {
   it("la tabla de asistencia muestra el número de convocados", () => {
     render(
       <QueryClientProvider client={makeQC()}>
-        <MemoryRouter initialEntries={["/training/sessions/1"]}>
+        <MemoryRouter initialEntries={["/training/sessions/1?section=asistencia"]}>
           <Routes>
             <Route path="/training/sessions/:id" element={<SessionDetailPage />} />
           </Routes>

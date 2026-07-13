@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {
+  createMemoryRouter,
+  MemoryRouter,
+  Route,
+  RouterProvider,
+  Routes,
+} from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+import { AgeGateDialog } from "@/components/intervals/AgeGateDialog";
+import { todayISODate } from "@/lib/datetime";
 
 vi.mock("@/api/client", () => ({
   apiClient: {
@@ -60,6 +70,28 @@ vi.mock("@/hooks/activities/useSessionActivities", () => ({
 
 vi.mock("@/hooks/activities/useUnlinkedActivitiesNearDate", () => ({
   useUnlinkedActivitiesNearDate: vi.fn(),
+}));
+
+// PlanSection (feature 032, US1) trae consigo hooks reales de técnica/fuerza/
+// intervalos (useSessionExercises, useSessionBlocks, useSessionStructure…)
+// que no son responsabilidad de este archivo — se mockea con un stub que
+// incluye un `AgeGateDialog` real y siempre abierto para la aserción de
+// regresión de T025 (SC-007: el diálogo debe seguir abriendo igual desde
+// dentro del contenedor de tabs nuevo).
+vi.mock("@/components/training/session-plan/PlanSection", () => ({
+  PlanSection: () => (
+    <div data-testid="plan-section-stub">
+      <p>Plan section (stub de test)</p>
+      <AgeGateDialog
+        open
+        onOpenChange={() => {}}
+        mode="confirmation"
+        targetAgeBand="10-12"
+        onConfirm={() => {}}
+        isPending={false}
+      />
+    </div>
+  ),
 }));
 
 import {
@@ -124,18 +156,44 @@ function makeAttendance(overrides?: Partial<Attendance>): Attendance {
   };
 }
 
-function renderPage(sessionId = 1) {
+function renderPage(sessionId = 1, initialPath?: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[`/training/sessions/${sessionId}`]}>
+      <MemoryRouter initialEntries={[initialPath ?? `/training/sessions/${sessionId}`]}>
         <Routes>
           <Route path="/training/sessions/:id" element={<SessionDetailPage />} />
           <Route path="/training/sessions" element={<div>Lista</div>} />
+          <Route
+            path="/training/sessions/:id/activity-match/:activityId"
+            element={<div data-testid="activity-match-page-stub">Comparación plan vs. real</div>}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+/**
+ * Variante con `createMemoryRouter`/`RouterProvider` (data router) para los
+ * tests que necesitan navegación "atrás" real (`router.navigate(-1)`) —
+ * `MemoryRouter` declarativo no expone un history programático equivalente.
+ */
+function renderPageWithHistory(initialPath: string) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const router = createMemoryRouter(
+    [
+      { path: "/training/sessions/:id", element: <SessionDetailPage /> },
+      { path: "/training/sessions", element: <div>Lista</div> },
+    ],
+    { initialEntries: [initialPath] },
+  );
+  render(
+    <QueryClientProvider client={qc}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  return router;
 }
 
 beforeEach(() => {
@@ -340,18 +398,21 @@ describe("SessionDetailPage", () => {
       } as unknown as ReturnType<typeof useTrainingSession>);
     });
 
+    // La sesión de fixture (2026-06-15) no es "hoy" — la sección Asistencia
+    // no es el default (feature 032/US2), así que estos tests la piden
+    // explícita por `?section=` en vez de depender de la regla default.
     it("muestra la tabla de asistencia", () => {
-      renderPage();
+      renderPage(1, "/training/sessions/1?section=asistencia");
       expect(screen.getByTestId("attendance-table")).toBeInTheDocument();
     });
 
     it("muestra el conteo de convocados", () => {
-      renderPage();
+      renderPage(1, "/training/sessions/1?section=asistencia");
       expect(screen.getByText(/Asistencia \(1\)/i)).toBeInTheDocument();
     });
 
     it("ya no renderiza la sección separada 'Actividades Strava' (fusionada en la fila de asistencia)", () => {
-      renderPage();
+      renderPage(1, "/training/sessions/1?section=asistencia");
       expect(screen.queryByText(/^Actividades Strava$/i)).not.toBeInTheDocument();
       expect(screen.queryByTestId("session-activities-groups")).not.toBeInTheDocument();
       expect(screen.queryByTestId("session-activities-empty")).not.toBeInTheDocument();
@@ -363,9 +424,126 @@ describe("SessionDetailPage", () => {
         isLoading: false,
         isError: true,
       } as unknown as ReturnType<typeof useSessionActivities>);
-      renderPage();
+      renderPage(1, "/training/sessions/1?section=asistencia");
       expect(
         screen.getByText(/No se pudieron cargar las actividades Strava vinculadas/i),
+      ).toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Secciones (?section=) — feature 032, US2 (contracts/session-sections.md)
+  // ---------------------------------------------------------------------
+  describe("secciones (?section=)", () => {
+    const ALL_SECTION_TESTIDS = [
+      "session-section-resumen",
+      "session-section-asistencia",
+      "session-section-plan",
+      "session-section-media",
+    ];
+
+    beforeEach(() => {
+      // Fecha pasada (no "hoy") — el default cae en "resumen" salvo que el
+      // test la pida explícita por `?section=`.
+      vi.mocked(useTrainingSession).mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: makeSession({ status: "planned", scheduled_date: "2026-06-15" }),
+      } as unknown as ReturnType<typeof useTrainingSession>);
+    });
+
+    it.each([
+      ["resumen", "session-section-resumen"],
+      ["asistencia", "session-section-asistencia"],
+      ["plan", "session-section-plan"],
+      ["media", "session-section-media"],
+    ])("?section=%s renderiza esa sección y oculta las otras tres", (section, testId) => {
+      renderPage(1, `/training/sessions/1?section=${section}`);
+      expect(screen.getByTestId(testId)).toBeVisible();
+      for (const otherTestId of ALL_SECTION_TESTIDS) {
+        if (otherTestId === testId) continue;
+        // `@radix-ui/react-tabs` mantiene los `TabsContent` inactivos
+        // montados en el DOM (ocultos vía atributo `hidden`, no
+        // desmontados) — se verifica visibilidad, no presencia.
+        expect(screen.getByTestId(otherTestId)).not.toBeVisible();
+      }
+    });
+
+    it("un valor de ?section= desconocido/inválido cae al default (resumen, sesión no es hoy)", () => {
+      renderPage(1, "/training/sessions/1?section=no-existe");
+      expect(screen.getByTestId("session-section-resumen")).toBeVisible();
+      expect(screen.getByTestId("session-section-asistencia")).not.toBeVisible();
+    });
+
+    it("sin ?section=, una sesión de HOY tiene default 'asistencia'", () => {
+      vi.mocked(useTrainingSession).mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: makeSession({ status: "planned", scheduled_date: todayISODate() }),
+      } as unknown as ReturnType<typeof useTrainingSession>);
+      renderPage(1, "/training/sessions/1");
+      expect(screen.getByTestId("session-section-asistencia")).toBeVisible();
+      expect(screen.getByTestId("session-section-resumen")).not.toBeVisible();
+    });
+
+    it("sin ?section=, una sesión FUTURA tiene default 'resumen'", () => {
+      vi.mocked(useTrainingSession).mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: makeSession({ status: "planned", scheduled_date: "2099-01-01" }),
+      } as unknown as ReturnType<typeof useTrainingSession>);
+      renderPage(1, "/training/sessions/1");
+      expect(screen.getByTestId("session-section-resumen")).toBeVisible();
+      expect(screen.getByTestId("session-section-asistencia")).not.toBeVisible();
+    });
+
+    it("un click explícito en un tab agrega una entrada de historial; 'atrás' vuelve a la sección anterior sin salir de la página", async () => {
+      const user = userEvent.setup();
+      const router = renderPageWithHistory("/training/sessions/1");
+
+      // Default (replace) aterriza en "resumen" — la sesión de fixture no es hoy.
+      await waitFor(() => {
+        expect(screen.getByTestId("session-section-resumen")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("session-section-tab-asistencia"));
+      expect(screen.getByTestId("session-section-asistencia")).toBeInTheDocument();
+
+      await router.navigate(-1);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("session-section-resumen")).toBeInTheDocument();
+      });
+      // Seguimos en la misma página — "atrás" no salió de la sesión.
+      expect(screen.getByTestId("session-detail-header")).toBeInTheDocument();
+    });
+
+    it("un remount simulado con la misma URL preserva la sección activa", () => {
+      const { unmount } = renderPage(1, "/training/sessions/1?section=media");
+      expect(screen.getByTestId("session-section-media")).toBeInTheDocument();
+      unmount();
+
+      renderPage(1, "/training/sessions/1?section=media");
+      expect(screen.getByTestId("session-section-media")).toBeInTheDocument();
+    });
+
+    it("montar directo con ?section=plan renderiza Plan activo sin necesidad de click", () => {
+      renderPage(1, "/training/sessions/1?section=plan");
+      expect(screen.getByTestId("session-section-plan")).toBeInTheDocument();
+      expect(screen.getByTestId("plan-section-stub")).toBeInTheDocument();
+    });
+
+    it("la ruta separada /training/sessions/{id}/activity-match/{activityId} no se ve afectada por la sectorización (FR-008)", () => {
+      renderPage(1, "/training/sessions/1/activity-match/55");
+      expect(screen.getByTestId("activity-match-page-stub")).toBeInTheDocument();
+      expect(screen.queryByTestId("session-section-tab-resumen")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("session-detail-header")).not.toBeInTheDocument();
+    });
+
+    it("regresión SC-007: AgeGateDialog sigue abriendo igual desde el bloque de intervalos ahora dentro de PlanSection", () => {
+      renderPage(1, "/training/sessions/1?section=plan");
+      expect(
+        screen.getByRole("heading", { name: "Confirmá la estructura para esta categoría" }),
       ).toBeInTheDocument();
     });
   });

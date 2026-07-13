@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addProgress,
   assembleSession,
+  attachExercisesToSession,
   createExercise,
   getAthleteProgress,
   getExercise,
@@ -17,6 +18,7 @@ import type {
   AssembleSessionInput,
   AssembleSessionResult,
   AthleteProgress,
+  AttachExercisesResult,
   CatalogFilters,
   CatalogList,
   ExerciseCreateInput,
@@ -24,6 +26,7 @@ import type {
   ExerciseUpdateInput,
   MaterialRead,
   ProgressInput,
+  SessionItemInput,
   SkillProgressEvent,
   SkillRead,
   TechniqueSessionItem,
@@ -114,6 +117,31 @@ export function useSessionExercises(sessionId: number, enabled = true) {
     queryFn: () => getSessionExercises(sessionId),
     enabled: enabled && sessionId > 0,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Attach exercises to an existing session (feature 032, T014)
+// contracts/attach-technique-to-session.md
+// ---------------------------------------------------------------------------
+
+/**
+ * Mutación para adjuntar ejercicios de técnica a una sesión de entrenamiento
+ * ya existente (nunca crea una sesión — feature 032, FR-001/FR-002). Al
+ * terminar exitosamente invalida `techniqueKeys.sessionExercises(sessionId)`
+ * para que la lista de la sección Plan se refresque con el estado completo
+ * que devuelve el servidor (viejos + nuevos ítems, deduplicado server-side).
+ */
+export function useAttachTechniqueItems(sessionId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<AttachExercisesResult, unknown, SessionItemInput[]>({
+    mutationKey: ["technique", "attach-items", sessionId],
+    mutationFn: (items) => attachExercisesToSession(sessionId, items),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: techniqueKeys.sessionExercises(sessionId),
+      });
+    },
   });
 }
 

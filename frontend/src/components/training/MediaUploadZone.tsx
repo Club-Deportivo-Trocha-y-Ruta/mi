@@ -121,27 +121,36 @@ export function MediaUploadZone({
   return (
     <div className="space-y-3" data-testid="media-upload-zone">
       {!pendingFile ? (
-        <div
-          role="button"
-          tabIndex={0}
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              fileInputRef.current?.click();
-            }
-          }}
-          onClick={() => fileInputRef.current?.click()}
-          aria-label="Soltar foto/video aquí o presionar Enter para seleccionar"
-          className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-light-gray px-4 py-6 transition-colors hover:border-mid-gray"
-          data-testid="media-upload-dropzone"
-        >
-          <Upload size={20} className="text-mid-gray" aria-hidden="true" />
-          <p className="mt-2 text-sm text-mid-gray">
-            Arrastra foto (.jpg/.png/.webp ≤ {MAX_PHOTO_MB} MB) o video (.mp4/.mov ≤ {MAX_VIDEO_MB} MB)
-          </p>
-          <p className="mt-1 text-xs text-mid-gray">o haz clic para seleccionar</p>
+        <>
+          {/*
+            El `<input type="file">` vive FUERA de este `role="button"` (no
+            anidado adentro) — axe's "nested-interactive" marca como
+            violación un control interactivo con descendientes focusables,
+            incluso oculto vía `hidden`. El input sigue funcionando igual
+            (mismo `ref`/`onChange`), solo cambia su posición en el árbol.
+          */}
+          <div
+            role="button"
+            tabIndex={0}
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            onClick={() => fileInputRef.current?.click()}
+            aria-label="Soltar foto/video aquí o presionar Enter para seleccionar"
+            className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-light-gray px-4 py-6 transition-colors hover:border-mid-gray"
+            data-testid="media-upload-dropzone"
+          >
+            <Upload size={20} className="text-mid-gray" aria-hidden="true" />
+            <p className="mt-2 text-sm text-mid-gray">
+              Arrastra foto (.jpg/.png/.webp ≤ {MAX_PHOTO_MB} MB) o video (.mp4/.mov ≤ {MAX_VIDEO_MB} MB)
+            </p>
+            <p className="mt-1 text-xs text-mid-gray">o haz clic para seleccionar</p>
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -152,7 +161,7 @@ export function MediaUploadZone({
             data-testid="media-file-input"
             aria-label="Subir archivo de foto o video"
           />
-        </div>
+        </>
       ) : (
         <div
           className="rounded-xl border border-light-gray p-4 space-y-3"

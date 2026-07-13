@@ -261,6 +261,35 @@ export function currentSeason(): number {
 }
 
 /**
+ * "2026-07-13" — fecha de "hoy" en CLUB_TIMEZONE, formato ISO (YYYY-MM-DD).
+ * Misma técnica de extracción que diffDaysFromToday/currentSeason
+ * (Intl.DateTimeFormat("en-CA", { timeZone: CLUB_TIMEZONE }) ya produce
+ * el orden ISO). Evita el sesgo timezone-naive de `new Date().toISOString()`
+ * cerca de la medianoche cuando la TZ del cliente/servidor difiere de
+ * America/Bogota (UTC-5) — no reutilizar el `new Date()` crudo de
+ * `AthleteDetailPage.tsx:formatRelativeDate`.
+ */
+export function todayISODate(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: CLUB_TIMEZONE,
+  }).format(new Date());
+}
+
+/**
+ * `true` si `dateStr` (formato "YYYY-MM-DD", ej. `TrainingSession.scheduled_date`)
+ * es "hoy" en CLUB_TIMEZONE. Usada para el marcador "Hoy" de SessionsTable
+ * (feature 032, US3) y compartida con el default-section rule de
+ * SessionDetailPage (feature 032, US2) — quien la importe primero la posee.
+ */
+export function isToday(dateStr: string | null | undefined): boolean {
+  if (!dateStr) return false;
+  return dateStr === todayISODate();
+}
+
+/**
  * Formatea una duración en minutos como "hh:mm:ss".
  * Acepta minutos fraccionarios (ej. un promedio en horas convertido a minutos);
  * los segundos salen de la fracción. Retorna "—" si el valor es null/undefined.

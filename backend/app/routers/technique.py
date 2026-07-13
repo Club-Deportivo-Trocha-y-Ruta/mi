@@ -19,6 +19,7 @@ Route inventory (contract: specs/018-technique-gymkhana-library/contracts/rest-a
   PATCH /api/technique/exercises/{id}/visibility          — hide/unhide (T044)
   POST /api/technique/sessions                            — session assembly (T028)
   GET  /api/technique/sessions/{training_session_id}/exercises — session read (T028)
+  POST /api/technique/sessions/{training_session_id}/exercises — attach to existing session (feature 032, T003/T006)
   GET  /api/technique/athletes/{athlete_id}/progress      — progress read (T037)
   POST /api/technique/athletes/{athlete_id}/progress      — progress append (T037)
 """
@@ -50,6 +51,8 @@ from app.schemas.technique import (
     AssembleSessionRequest,
     AssembleSessionResponse,
     AthleteProgressRead,
+    AttachExercisesRequest,
+    AttachExercisesResponse,
     ExerciseCreate,
     ExerciseDetail,
     ExerciseListItem,
@@ -407,6 +410,49 @@ async def get_session_exercises(
     """Return the ordered technique exercise list for a session."""
     link_rows = await assembler_svc.get_session_exercises(db, training_session_id)
     return [_serialize_session_item(link) for link in link_rows]
+
+
+# ---------------------------------------------------------------------------
+# POST /api/technique/sessions/{training_session_id}/exercises — attach to an
+# existing session (feature 032, session content unification, T003/T006).
+# Sibling of the GET above: same resource, same path prefix.
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/sessions/{training_session_id}/exercises",
+    response_model=AttachExercisesResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Adjuntar ejercicios de técnica a una sesión existente",
+    description=(
+        "Adjunta uno o más ejercicios a una sesión de entrenamiento ya "
+        "existente, sin crear una sesión nueva (FR-001/FR-002/FR-009). "
+        "Idempotente: reenviar el mismo payload no duplica filas "
+        "(deduplicado por (exercise_id, segment)). "
+        "404 cuando la sesión no existe o pertenece a otro club. "
+        "422 cuando items está vacío o contiene exercise_id desconocido."
+    ),
+)
+async def attach_exercises(
+    training_session_id: int,
+    payload: AttachExercisesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_require_coach_or_admin),
+) -> AttachExercisesResponse:
+    """Attach technique exercises to an already-existing training session."""
+    club_id = await _coach_club_id(db, current_user)
+
+    mixes, link_rows = await assembler_svc.attach_exercises_to_session(
+        db,
+        training_session_id=training_session_id,
+        items=payload.items,
+        club_id=club_id,
+    )
+
+    return AttachExercisesResponse(
+        mixes_age_bands=mixes,
+        items=[_serialize_session_item(link) for link in link_rows],
+    )
 
 
 # ---------------------------------------------------------------------------

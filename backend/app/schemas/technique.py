@@ -463,6 +463,38 @@ class AssembleSessionResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Attach exercises to an existing session (feature 032 — session content
+# unification, contracts/attach-technique-to-session.md).
+# ---------------------------------------------------------------------------
+
+
+class AttachExercisesRequest(BaseModel):
+    """Body para POST /api/technique/sessions/{training_session_id}/exercises.
+
+    Reutiliza AssembleItem verbatim — sin campos nuevos. training_session_id
+    NO forma parte del body: viaja como path param (a diferencia de
+    AssembleSessionRequest, que sí lo necesita en el body porque ese endpoint
+    crea la sesión). El position enviado es solo indicativo: el servidor
+    siempre agrega después de la posición máxima actual por segmento
+    (ver attach_exercises_to_session en assembler.py).
+    """
+
+    items: list[AssembleItem] = Field(min_length=1)
+
+
+class AttachExercisesResponse(BaseModel):
+    """Respuesta 201 — misma forma que GET .../exercises más la notificación de mezcla.
+
+    items es la lista COMPLETA actual de ejercicios de la sesión (viejos +
+    nuevos), no solo el delta insertado — el frontend puede reemplazar su
+    caché por completo con esta respuesta.
+    """
+
+    mixes_age_bands: bool
+    items: list[TechniqueSessionItem]
+
+
+# ---------------------------------------------------------------------------
 # Per-athlete skill progress (US4)
 # ---------------------------------------------------------------------------
 

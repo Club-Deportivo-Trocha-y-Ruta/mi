@@ -410,6 +410,27 @@ export const strengthSaveBlockValidationErrorHandler = http.post(
     }),
 );
 
+/**
+ * 422 `AGE_BAND_GUARDRAIL` al guardar (crear) un bloque — misma forma que
+ * `extractAgeBandGuardrail` espera (`detail.code`). Usado para verificar
+ * que `AgeBandGuardrailDialog` sigue abriéndose sin cambios desde los
+ * flujos unificados de la feature 032 (SC-007, research.md R9).
+ */
+export const strengthSaveBlockAgeBandGuardrailHandler = http.post(
+  "*/api/strength/blocks",
+  () =>
+    new HttpResponse(
+      JSON.stringify({
+        detail: {
+          code: "AGE_BAND_GUARDRAIL",
+          detail:
+            "Sentadilla con peso corporal está pensado para 13 a 15 años, pero este bloque tiene como franja objetivo 10 a 12 años.",
+        },
+      }),
+      { status: 422 },
+    ),
+);
+
 /** 500 — error inesperado al adjuntar un bloque a una sesión. */
 export const strengthAttachErrorHandler = http.post(
   "*/api/strength/blocks/:id/attach",
@@ -417,6 +438,16 @@ export const strengthAttachErrorHandler = http.post(
     new HttpResponse(JSON.stringify({ detail: "Error inesperado" }), {
       status: 500,
     }),
+);
+
+/** 409 — el bloque ya está adjunto a esta sesión (feature 032, research.md R2/R11). */
+export const strengthAttachAlreadyAttachedHandler = http.post(
+  "*/api/strength/blocks/:id/attach",
+  () =>
+    new HttpResponse(
+      JSON.stringify({ detail: "Este bloque ya está adjunto a esta sesión." }),
+      { status: 409 },
+    ),
 );
 
 /** 404 — atleta sin progreso de fuerza registrado todavía. */

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import { todayISODate } from "@/lib/datetime";
 import type { SessionStatus } from "@/types/trainingSession.types";
 
 function currentMonthRange(): { from_date: string; to_date: string } {
@@ -23,6 +24,7 @@ interface TrainingFiltersState {
   setToDate: (to_date: string) => void;
   setStatus: (status: SessionStatus | "") => void;
   resetToCurrentMonth: () => void;
+  setToday: () => void;
 }
 
 const defaults = currentMonthRange();
@@ -37,6 +39,12 @@ export const useTrainingFiltersStore = create<TrainingFiltersState>()(
       setToDate: (to_date) => set({ to_date }),
       setStatus: (status) => set({ status }),
       resetToCurrentMonth: () => set({ ...currentMonthRange(), status: "" }),
+      // Feature 032, US3: atajo "Hoy" — reusa el shape from_date/to_date/status
+      // persistido existente, sin campos nuevos.
+      setToday: () => {
+        const today = todayISODate();
+        set({ from_date: today, to_date: today });
+      },
     }),
     {
       name: "training-filters",

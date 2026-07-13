@@ -38,7 +38,10 @@ function formatElapsed(seconds: number): string {
 function BackLink({ sessionId }: { sessionId: number }) {
   return (
     <Link
-      to={`/training/sessions/${sessionId}`}
+      // feature 032 / T036: la comparación plan-vs-real solo se llega desde el
+      // enlace "Ver comparación plan vs. real" de la sección Plan — volver
+      // debe aterrizar ahí, no en la sección default.
+      to={`/training/sessions/${sessionId}?section=plan`}
       className="inline-flex items-center gap-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"
     >
       <ArrowLeft size={16} aria-hidden="true" />

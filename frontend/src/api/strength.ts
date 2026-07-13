@@ -226,6 +226,18 @@ export function extractAgeBandGuardrail(
   };
 }
 
+/**
+ * Detecta si un error de Axios es el 409 "ya está adjunto" de
+ * `POST /blocks/{id}/attach` (`uq_strength_session_block`, feature 032
+ * research.md R2/R11). El llamador debe tratarlo como un aviso suave, no
+ * como un error bloqueante — el adjunto ya existe, que es el resultado que
+ * el coach buscaba.
+ */
+export function isAlreadyAttachedError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  return (error as AxiosError).response?.status === 409;
+}
+
 /** Traduce un error de Axios a un objeto consumible por la UI. */
 export function mapStrengthError(error: unknown): StrengthErrorInfo {
   if (axios.isCancel(error) || (error as Error)?.name === "CanceledError") {

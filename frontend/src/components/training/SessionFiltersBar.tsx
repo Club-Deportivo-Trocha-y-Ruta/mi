@@ -13,6 +13,7 @@ export function SessionFiltersBar() {
     setToDate,
     setStatus,
     resetToCurrentMonth,
+    setToday,
   } = useTrainingFiltersStore();
 
   return (
@@ -53,6 +54,13 @@ export function SessionFiltersBar() {
             <option value="cancelled">Cancelada</option>
           </select>
         </div>
+        <button
+          type="button"
+          onClick={setToday}
+          className="self-end rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+        >
+          Hoy
+        </button>
         <button
           type="button"
           onClick={resetToCurrentMonth}

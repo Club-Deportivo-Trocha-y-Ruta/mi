@@ -199,6 +199,20 @@ export interface AssembleSessionResult {
 }
 
 // ---------------------------------------------------------------------------
+// Attach exercises to an existing session (feature 032, T007)
+// contracts/attach-technique-to-session.md
+// ---------------------------------------------------------------------------
+
+export interface AttachExercisesInput {
+  items: SessionItemInput[];
+}
+
+export interface AttachExercisesResult {
+  mixes_age_bands: boolean;
+  items: TechniqueSessionItem[];
+}
+
+// ---------------------------------------------------------------------------
 // Per-athlete skill progress (US4)
 // ---------------------------------------------------------------------------
 

@@ -245,6 +245,19 @@ export const assembleResultSchema = z
 
 export const sessionItemsSchema = z.array(techniqueSessionItemSchema);
 
+/**
+ * Respuesta de POST /api/technique/sessions/{id}/exercises (feature 032, T007).
+ * Mismo shape que assembleResultSchema, sin training_session_id/combined_exercise_id
+ * (contracts/attach-technique-to-session.md) — items es la lista completa
+ * actual, no solo el delta recién insertado.
+ */
+export const attachExercisesResponseSchema = z
+  .object({
+    mixes_age_bands: z.boolean(),
+    items: z.array(techniqueSessionItemSchema),
+  })
+  .strip();
+
 // ---------------------------------------------------------------------------
 // Per-athlete skill progress — server response schemas
 // ---------------------------------------------------------------------------

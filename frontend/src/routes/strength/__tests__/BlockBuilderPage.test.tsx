@@ -1,28 +1,30 @@
 /**
- * Tests para BlockBuilderPage (US2 / T027) — flujo de adjuntar un bloque
- * guardado a una sesión de entrenamiento existente:
- *   - Antes de guardar el bloque, la sección "Adjuntar a una sesión" no se
- *     renderiza (savedBlockId es null).
- *   - Tras guardar un bloque nuevo con éxito, aparece el selector de
- *     sesiones (radiogroup) con las sesiones existentes del club.
- *   - Buscar filtra las sesiones por fecha/lugar/foco técnico.
- *   - Sin selección, el botón "Adjuntar a la sesión seleccionada" está
- *     deshabilitado.
- *   - Seleccionar una sesión y adjuntar exitosamente muestra la confirmación
- *     con enlace "Ver sesión".
- *   - Error al adjuntar muestra una alerta inline sin perder la selección.
- *   - jest-axe sin violaciones en el estado inicial (modo creación) y en el
- *     flujo de adjunto tras guardar.
+ * Tests para BlockBuilderPage (feature 021 / T027 — flujo original de
+ * adjunto; feature 032 / T011 — preselect `?session_id=` + resumen
+ * bloqueado + auto-adjunto, US1):
  *
- * Estrategia: MSW real vía mswServer.use(...strengthHandlers) + handler
- * custom para /api/training-sessions con datos distinguibles (evita
- * ambigüedad de accessible name entre las dos sesiones fixture por defecto
- * de trainingHandlers, que comparten fecha/lugar/foco). useAuthStore se
- * mockea para inyectar un accessToken determinista (requerido por
- * useTrainingSessions) sin levantar el stack de auth real.
+ *   - Con `?session_id=` presente (entry point 1 del contrato de adjunto
+ *     unificado): la sesión se muestra como un resumen bloqueado de solo
+ *     lectura (texto estático, no un `disabled` input) y el selector
+ *     buscable de sesiones (`role="radiogroup"`) nunca se renderiza.
+ *   - Guardar el bloque con sesión bloqueada dispara el adjunto
+ *     automáticamente y navega a `/training/sessions/{id}?section=plan`
+ *     — sin la elección manual "Ver sesión / Seguir editando" de antes.
+ *   - `AgeBandGuardrailDialog` sigue abriéndose sin cambios desde este
+ *     camino preseleccionado (SC-007, research.md R9) — el guardrail vive
+ *     en la lógica de guardado del bloque, no tocada por esta feature.
+ *   - Sin `?session_id=` (entry points 2/3): `SessionPickerDialog`
+ *     aparece antes que el formulario de armado; el formulario no se
+ *     renderiza hasta elegir una sesión. Elegir una sesión navega con
+ *     `?session_id={id}` (replace).
  *
- * Mirror de `components/technique/__tests__/CatalogPage.test.tsx` para el
- * patrón de mock de useAuthStore + MSW.
+ * Estrategia: MSW real vía mswServer.use(...strengthHandlers, ...) +
+ * handlers custom para `/api/training-sessions` con datos distinguibles.
+ * `useAuthStore` se mockea para inyectar un accessToken determinista
+ * (requerido por `useTrainingSession`/`useTrainingSessions`).
+ * `useNavigate` se mockea (manteniendo el resto de react-router-dom real)
+ * para poder aserir a qué ruta se navegó tras el auto-adjunto — mismo
+ * patrón que `ImportWizard.postimport.test.tsx`.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -30,12 +32,12 @@ import userEvent from "@testing-library/user-event";
 import { axe, toHaveNoViolations } from "jest-axe";
 import { http, HttpResponse } from "msw";
 
-import { BlockBuilderPage } from "@/routes/strength/BlockBuilderPage";
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { mswServer } from "@/test/setup";
 import {
   strengthHandlers,
   strengthAttachErrorHandler,
+  strengthSaveBlockAgeBandGuardrailHandler,
 } from "@/test/msw/strengthHandlers";
 import { makeSession } from "@/test/msw/trainingHandlers";
 import { UserRole } from "@/types/enums";
@@ -43,8 +45,15 @@ import { UserRole } from "@/types/enums";
 expect.extend(toHaveNoViolations);
 
 // ---------------------------------------------------------------------------
-// Mock del store de autenticación
+// Mocks — deben declararse antes de cualquier import dinámico
 // ---------------------------------------------------------------------------
+
+const mockNavigate = vi.fn();
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 const mockCoachUser = {
   id: 10,
@@ -63,39 +72,59 @@ vi.mock("@/store/auth.store", () => ({
   ) => selector({ user: mockCoachUser, accessToken: "fixture-token-ficticio" }),
 }));
 
+// `vi.mock` se hoistea automáticamente por encima de este import estático.
+import { BlockBuilderPage } from "@/routes/strength/BlockBuilderPage";
+
 // ---------------------------------------------------------------------------
-// Fixtures — sesiones distinguibles por lugar (evita nombres accesibles duplicados)
+// Fixtures
 // ---------------------------------------------------------------------------
 
-const SESSION_A = makeSession({
+/** Sesión bloqueada (`?session_id=1`) — coincide con `GET /training-sessions/:id`. */
+const LOCKED_SESSION = makeSession({
   id: 1,
   scheduled_date: "2026-05-15",
-  location: "Cancha Ficticia A",
+  location: "Pista XCO La Cumbre",
   technical_focus: "Frenada controlada",
 });
+const LOCKED_SESSION_LABEL =
+  "2026-05-15 — Pista XCO La Cumbre — Frenada controlada";
 
-const SESSION_B = makeSession({
-  id: 2,
+const trainingSessionByIdHandler = http.get(
+  "*/api/training-sessions/:id",
+  ({ params }) =>
+    HttpResponse.json({ ...LOCKED_SESSION, id: Number(params.id) || 1 }),
+);
+
+/** Sesión ofrecida por SessionPickerDialog cuando no hay `?session_id=`. */
+const SESSION_A = makeSession({
+  id: 7,
   scheduled_date: "2026-06-01",
-  location: "Cancha Ficticia B",
+  location: "Cancha Ficticia A",
   technical_focus: "Equilibrio",
 });
 
-const trainingSessionsHandler = http.get("*/api/training-sessions", () =>
-  HttpResponse.json([SESSION_A, SESSION_B]),
+const trainingSessionsListHandler = http.get("*/api/training-sessions", () =>
+  HttpResponse.json([SESSION_A]),
 );
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function renderPage() {
+function renderLocked(sessionId: number | string = 1) {
+  return renderWithProviders(<BlockBuilderPage />, {
+    initialEntries: [`/strength/blocks/new?session_id=${sessionId}`],
+  });
+}
+
+function renderNoSession() {
   return renderWithProviders(<BlockBuilderPage />, {
     initialEntries: ["/strength/blocks/new"],
   });
 }
 
-async function saveBlock(user: ReturnType<typeof userEvent.setup>) {
+/** Llena el formulario mínimo y hace clic en "Guardar bloque de fuerza". */
+async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>) {
   const nameInput = await screen.findByLabelText("Nombre del bloque");
   await user.type(nameInput, "Bloque ficticio");
 
@@ -105,151 +134,198 @@ async function saveBlock(user: ReturnType<typeof userEvent.setup>) {
   await user.selectOptions(select, "Sentadilla con peso corporal");
   await user.click(screen.getByRole("button", { name: "Agregar" }));
 
-  await user.click(screen.getByRole("button", { name: "Guardar bloque de fuerza" }));
-
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Adjuntar a una sesión de entrenamiento" }),
-    ).toBeInTheDocument();
-  });
+  await user.click(
+    screen.getByRole("button", { name: "Guardar bloque de fuerza" }),
+  );
 }
 
 beforeEach(() => {
-  mswServer.use(...strengthHandlers, trainingSessionsHandler);
+  mockNavigate.mockClear();
+  mswServer.use(
+    trainingSessionByIdHandler,
+    trainingSessionsListHandler,
+    ...strengthHandlers,
+  );
 });
 
 // ---------------------------------------------------------------------------
-// Suite: antes de guardar
+// Suite: con ?session_id= — resumen bloqueado (T018, entry point 1)
 // ---------------------------------------------------------------------------
 
-describe("BlockBuilderPage — antes de guardar el bloque", () => {
-  it("no muestra la sección de adjuntar a sesión", () => {
-    renderPage();
+describe("BlockBuilderPage — con ?session_id= (sesión conocida)", () => {
+  it("renderiza el resumen de sesión bloqueado como texto estático, no un input", async () => {
+    renderLocked();
+
     expect(
-      screen.queryByRole("heading", { name: "Adjuntar a una sesión de entrenamiento" }),
+      await screen.findByText(LOCKED_SESSION_LABEL),
+    ).toBeInTheDocument();
+    // Convención feature 015: nunca un input `disabled`.
+    expect(screen.queryByRole("textbox", { name: /sesión/i })).not.toBeInTheDocument();
+  });
+
+  it("no renderiza el selector buscable de sesiones (radiogroup)", async () => {
+    renderLocked();
+
+    await screen.findByText(LOCKED_SESSION_LABEL);
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Buscar sesión de entrenamiento"),
     ).not.toBeInTheDocument();
   });
 
-  it("renderiza el encabezado de modo creación", async () => {
-    renderPage();
+  it("muestra el formulario de armado directamente, sin preguntar por la sesión", async () => {
+    renderLocked();
+
     expect(
       await screen.findByRole("heading", { name: "Armar bloque de fuerza" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Nombre del bloque"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it('ofrece "Cambiar sesión" antes de guardar, y lo oculta después de guardar', async () => {
+    const user = userEvent.setup();
+    renderLocked();
+
+    await screen.findByText(LOCKED_SESSION_LABEL);
+    expect(
+      screen.getByRole("link", { name: /Cambiar sesión/ }),
+    ).toBeInTheDocument();
+
+    await fillAndSubmit(user);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalled();
+    });
+  });
+
+  it("guarda el bloque, adjunta automáticamente y navega a la sesión con section=plan (T019)", async () => {
+    const user = userEvent.setup();
+    renderLocked();
+
+    await screen.findByText(LOCKED_SESSION_LABEL);
+    await fillAndSubmit(user);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/training/sessions/1?section=plan",
+      );
+    });
+  });
+
+  it("un 409 (ya adjunto) igual navega a la sesión — no es un error bloqueante", async () => {
+    mswServer.use(
+      http.post(
+        "*/api/strength/blocks/:id/attach",
+        () =>
+          new HttpResponse(
+            JSON.stringify({
+              detail: "Este bloque ya está adjunto a esta sesión.",
+            }),
+            { status: 409 },
+          ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderLocked();
+
+    await screen.findByText(LOCKED_SESSION_LABEL);
+    await fillAndSubmit(user);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/training/sessions/1?section=plan",
+      );
+    });
+  });
+
+  it("un error real de adjunto muestra una alerta con opción de reintentar, sin navegar", async () => {
+    mswServer.use(strengthAttachErrorHandler);
+
+    const user = userEvent.setup();
+    renderLocked();
+
+    await screen.findByText(LOCKED_SESSION_LABEL);
+    await fillAndSubmit(user);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Reintentar adjunto" }),
+    ).toBeInTheDocument();
+  });
+
+  it("AgeBandGuardrailDialog sigue abriéndose sin cambios desde este camino preseleccionado (SC-007)", async () => {
+    mswServer.use(strengthSaveBlockAgeBandGuardrailHandler);
+
+    const user = userEvent.setup();
+    renderLocked();
+
+    await screen.findByText(LOCKED_SESSION_LABEL);
+
+    // `BlockAssembler` solo abre el diálogo si encuentra localmente una
+    // entrada cuyo ejercicio no calza con `target_age_band` (mismo
+    // algoritmo que el backend, `findFirstAgeBandViolation`) — "Sentadilla
+    // con peso corporal" (age_bands: ["10-12"]) contra un objetivo "13-15"
+    // produce esa violación real.
+    const ageBandSelect = await screen.findByLabelText(
+      "Franja de edad objetivo",
+    );
+    await user.selectOptions(ageBandSelect, "13-15");
+    await fillAndSubmit(user);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Ejercicio fuera de la franja de edad",
+      }),
+    ).toBeInTheDocument();
+    // El guardado no se completó — no hay adjunto ni navegación.
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Suite: flujo de adjunto tras guardar
+// Suite: sin ?session_id= — se pregunta primero (T018, entry points 2/3)
 // ---------------------------------------------------------------------------
 
-describe("BlockBuilderPage — flujo de adjuntar bloque a sesión", () => {
-  it("tras guardar el bloque, aparece el selector de sesiones con las sesiones del club", async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await saveBlock(user);
-
-    const radiogroup = await screen.findByRole("radiogroup", {
-      name: "Sesiones de entrenamiento disponibles",
-    });
-    expect(within(radiogroup).getByText(/Cancha Ficticia A/)).toBeInTheDocument();
-    expect(within(radiogroup).getByText(/Cancha Ficticia B/)).toBeInTheDocument();
-  });
-
-  it("el botón de adjuntar está deshabilitado sin sesión seleccionada", async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await saveBlock(user);
-    await screen.findByRole("radiogroup", {
-      name: "Sesiones de entrenamiento disponibles",
-    });
+describe("BlockBuilderPage — sin ?session_id= (sesión desconocida)", () => {
+  it("muestra el selector de sesiones antes del formulario de armado", async () => {
+    renderNoSession();
 
     expect(
-      screen.getByRole("button", { name: "Adjuntar a la sesión seleccionada" }),
-    ).toBeDisabled();
-  });
-
-  it("buscar filtra las sesiones por lugar", async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await saveBlock(user);
-    await screen.findByRole("radiogroup", {
-      name: "Sesiones de entrenamiento disponibles",
-    });
-
-    await user.type(
-      screen.getByLabelText("Buscar sesión de entrenamiento"),
-      "Ficticia B",
-    );
-
-    await waitFor(() => {
-      expect(screen.queryByText(/Cancha Ficticia A/)).not.toBeInTheDocument();
-    });
-    expect(screen.getByText(/Cancha Ficticia B/)).toBeInTheDocument();
-  });
-
-  it("seleccionar una sesión y adjuntar muestra la confirmación con enlace 'Ver sesión'", async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await saveBlock(user);
-    await screen.findByRole("radiogroup", {
-      name: "Sesiones de entrenamiento disponibles",
-    });
-
-    await user.click(screen.getByText(/Cancha Ficticia A/));
-    await user.click(
-      screen.getByRole("button", { name: "Adjuntar a la sesión seleccionada" }),
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByText("Bloque adjuntado correctamente"),
-      ).toBeInTheDocument();
-    });
-
-    const link = screen.getByRole("link", { name: "Ver sesión" });
-    expect(link).toHaveAttribute("href", "/training/sessions/1");
-  });
-
-  it("muestra una alerta inline si el adjunto falla, sin perder el flujo", async () => {
-    mswServer.use(strengthAttachErrorHandler);
-
-    const user = userEvent.setup();
-    renderPage();
-
-    await saveBlock(user);
-    await screen.findByRole("radiogroup", {
-      name: "Sesiones de entrenamiento disponibles",
-    });
-
-    await user.click(screen.getByText(/Cancha Ficticia A/));
-    await user.click(
-      screen.getByRole("button", { name: "Adjuntar a la sesión seleccionada" }),
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toBeInTheDocument();
-    });
-    expect(
-      screen.queryByText("Bloque adjuntado correctamente"),
-    ).not.toBeInTheDocument();
-    // El selector sigue disponible para reintentar
-    expect(
-      screen.getByRole("button", { name: "Adjuntar a la sesión seleccionada" }),
+      await screen.findByRole("dialog", {
+        name: "¿A qué sesión vas a adjuntar el bloque?",
+      }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Nombre del bloque"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Armar bloque de fuerza" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("el enlace 'crea una sesión nueva' apunta al asistente de sesiones existente", async () => {
+  it("al elegir una sesión, navega a /strength/blocks/new?session_id= con replace", async () => {
     const user = userEvent.setup();
-    renderPage();
+    renderNoSession();
 
-    await saveBlock(user);
+    const dialog = await screen.findByRole("dialog", {
+      name: "¿A qué sesión vas a adjuntar el bloque?",
+    });
+    const sessionButton = await within(dialog).findByRole("button", {
+      name: /Cancha Ficticia A/,
+    });
+    await user.click(sessionButton);
 
-    const link = screen.getByRole("link", { name: "crea una sesión nueva" });
-    expect(link).toHaveAttribute("href", "/training/sessions/new");
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/strength/blocks/new?session_id=7",
+        { replace: true },
+      );
+    });
   });
 });
 
@@ -258,45 +334,20 @@ describe("BlockBuilderPage — flujo de adjuntar bloque a sesión", () => {
 // ---------------------------------------------------------------------------
 
 describe("BlockBuilderPage — accesibilidad", () => {
-  it("no tiene violaciones de a11y en el estado inicial (modo creación)", async () => {
-    const { container } = renderPage();
-    await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { name: "Armar bloque de fuerza" }),
-      ).toBeInTheDocument();
-    });
-    expect(await axe(container)).toHaveNoViolations();
-  });
+  it("no tiene violaciones de a11y con la sesión bloqueada y el formulario visible", async () => {
+    const { container } = renderLocked();
 
-  it("no tiene violaciones de a11y tras guardar el bloque y con el selector de sesiones visible", async () => {
-    const user = userEvent.setup();
-    const { container } = renderPage();
-
-    await saveBlock(user);
-    await screen.findByRole("radiogroup", {
-      name: "Sesiones de entrenamiento disponibles",
-    });
+    await screen.findByText(LOCKED_SESSION_LABEL);
+    await screen.findByRole("heading", { name: "Armar bloque de fuerza" });
 
     expect(await axe(container)).toHaveNoViolations();
   });
 
-  it("no tiene violaciones de a11y en el estado de confirmación de adjunto", async () => {
-    const user = userEvent.setup();
-    const { container } = renderPage();
+  it("no tiene violaciones de a11y con el selector de sesiones abierto (sin session_id)", async () => {
+    const { container } = renderNoSession();
 
-    await saveBlock(user);
-    await screen.findByRole("radiogroup", {
-      name: "Sesiones de entrenamiento disponibles",
-    });
-    await user.click(screen.getByText(/Cancha Ficticia A/));
-    await user.click(
-      screen.getByRole("button", { name: "Adjuntar a la sesión seleccionada" }),
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByText("Bloque adjuntado correctamente"),
-      ).toBeInTheDocument();
+    await screen.findByRole("dialog", {
+      name: "¿A qué sesión vas a adjuntar el bloque?",
     });
 
     expect(await axe(container)).toHaveNoViolations();

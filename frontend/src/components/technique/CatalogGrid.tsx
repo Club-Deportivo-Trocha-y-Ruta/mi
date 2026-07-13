@@ -16,9 +16,10 @@ import { ExerciseCard } from "./ExerciseCard";
 import type { ExerciseListItem } from "@/types/technique.types";
 
 // ---------------------------------------------------------------------------
-// Re-export the onEdit callback type so callers share the same shape
+// Re-export the onEdit/onAttach callback types so callers share the same shape
 // ---------------------------------------------------------------------------
 export type OnEditExercise = (exercise: ExerciseListItem) => void;
+export type OnAttachExercise = (exercise: ExerciseListItem) => void;
 
 // ---------------------------------------------------------------------------
 // Skeleton placeholder cards
@@ -56,6 +57,13 @@ interface CatalogGridProps {
    * that calls this callback with the exercise to edit.
    */
   onEdit?: OnEditExercise;
+  /**
+   * When provided (coach/admin only), each card renders an "adjuntar a una
+   * sesión" affordance (feature 032, T017).
+   */
+  onAttach?: OnAttachExercise;
+  /** Id of the exercise currently being attached, if any (feature 032, T017). */
+  attachingExerciseId?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +99,8 @@ export function CatalogGrid({
   error,
   hasActiveFilters,
   onEdit,
+  onAttach,
+  attachingExerciseId,
 }: CatalogGridProps) {
   // Loading state — initial fetch
   if (isLoading) {
@@ -166,6 +176,8 @@ export function CatalogGrid({
             key={exercise.id}
             exercise={exercise}
             onEdit={onEdit}
+            onAttach={onAttach}
+            isAttaching={attachingExerciseId === exercise.id}
           />
         ))}
       </div>

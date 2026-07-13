@@ -77,7 +77,7 @@ export async function cancelTrainingSession(
   return response.data;
 }
 
-export function useTrainingSessions(filters?: SessionFilters) {
+export function useTrainingSessions(filters?: SessionFilters, enabled = true) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   // Privacy R2: userId va al inicio del key (después del namespace) para
@@ -86,7 +86,10 @@ export function useTrainingSessions(filters?: SessionFilters) {
   return useQuery({
     queryKey: ["training-sessions", userId, filters],
     queryFn: () => fetchTrainingSessions(filters),
-    enabled: !!accessToken,
+    // Feature 032, US3: `enabled` opcional permite a SessionsListPage disparar
+    // la consulta de la ventana de fallback ("hoy" sin sesiones") solo cuando
+    // realmente se necesita, en vez de siempre en paralelo con la principal.
+    enabled: !!accessToken && enabled,
     // Feature 012, US3: al cambiar filtros de la lista de entrenamientos,
     // mantiene la lista anterior visible (sin parpadeo a vacío).
     placeholderData: keepPreviousData,

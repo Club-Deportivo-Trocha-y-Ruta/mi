@@ -46,7 +46,7 @@ from app.models.technique_exercise import (
     TechniqueSessionExercise,
 )
 from app.models.training_session import SessionKind, TrainingSession
-from app.schemas.technique import AssembleSessionRequest
+from app.schemas.technique import AssembleItem, AssembleSessionRequest
 from app.schemas.training_session import TrainingSessionCreate
 
 if TYPE_CHECKING:
@@ -571,3 +571,136 @@ async def get_session_exercises(
         )
     )
     return list(result.scalars().all())
+
+
+async def attach_exercises_to_session(
+    db: AsyncSession,
+    *,
+    training_session_id: int,
+    items: list[AssembleItem],
+    club_id: int,
+) -> tuple[bool, list[TechniqueSessionExercise]]:
+    """Attach technique exercises to an already-existing training session.
+
+    Contract: contracts/attach-technique-to-session.md (feature 032, T006).
+    Unlike :func:`assemble_technique_session`, this never creates a
+    ``TrainingSession`` — it only writes ``TechniqueSessionExercise`` link
+    rows against a session that must already exist (FR-001/FR-002).
+
+    Idempotency (FR-009): ``TechniqueSessionExercise`` has no unique
+    constraint on ``(training_session_id, exercise_id, segment)`` (only an
+    index on ``training_session_id``), so a retry of an already-committed
+    request must not duplicate rows. This function de-dupes in application
+    code: a submitted item is skipped (no insert, no error) when a row with
+    the same ``(exercise_id, segment)`` already exists for the session —
+    whether from a prior call or from an earlier item in the same payload.
+    Genuinely new items are appended after the current max ``position``
+    within their segment (or ``0`` when the segment is empty), in submission
+    order.
+
+    Args:
+        db: Active async session. This function owns the commit.
+        training_session_id: Primary key of the target training session.
+        items: Submitted ``AssembleItem`` list (already validated
+            non-empty by ``AttachExercisesRequest.items``'s ``min_length=1``).
+        club_id: Club-scope filter — the session must belong to this club.
+
+    Returns:
+        Two-tuple ``(mixes_age_bands, link_rows)`` where ``link_rows`` is the
+        full current list of the session's ``TechniqueSessionExercise`` rows
+        (old + newly inserted), ordered like :func:`get_session_exercises`,
+        with ``.exercise``/``.exercise.skills``/``.exercise.age_bands``
+        eagerly loaded. ``mixes_age_bands`` is computed over the union of age
+        bands across that full list (old + new), matching FR-014 parity with
+        the create flow.
+
+    Raises:
+        HTTPException 404: unknown ``training_session_id``, or a session that
+            belongs to another club (never leaks existence via 403).
+        HTTPException 422: any submitted ``exercise_id`` is unknown.
+
+    Side-effects:
+        Issues a bounded, constant number of SELECT statements regardless of
+        ``len(items)`` (session lookup + existing-rows lookup + one bulk
+        ``_load_exercises_by_ids`` IN-query + the final eager-loaded reload
+        via ``get_session_exercises`` — no per-item queries, Constitution IV).
+        Commits once on success.
+    """
+    session_result = await db.execute(
+        select(TrainingSession.id).where(
+            TrainingSession.id == training_session_id,
+            TrainingSession.club_id == club_id,
+        )
+    )
+    if session_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sesión de entrenamiento {training_session_id} no encontrada.",
+        )
+
+    item_exercise_ids: list[int] = [item.exercise_id for item in items]
+    exercises = await _load_exercises_by_ids(db, item_exercise_ids)
+
+    missing = sorted(set(item_exercise_ids) - exercises.keys())
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Ejercicios no encontrados: {missing}",
+        )
+
+    # Existing rows determine both the de-dupe key set and the current max
+    # position per segment; a lightweight (non-eager) query is enough here —
+    # the full eager-loaded list is fetched once at the end via
+    # get_session_exercises for the response/mixes computation.
+    existing_result = await db.execute(
+        select(
+            TechniqueSessionExercise.exercise_id,
+            TechniqueSessionExercise.segment,
+            TechniqueSessionExercise.position,
+        ).where(TechniqueSessionExercise.training_session_id == training_session_id)
+    )
+    existing_rows = existing_result.all()
+    existing_keys: set[tuple[int, SessionSegment]] = {
+        (row.exercise_id, row.segment) for row in existing_rows
+    }
+    max_position_by_segment: dict[SessionSegment, int] = {}
+    for row in existing_rows:
+        current_max = max_position_by_segment.get(row.segment, -1)
+        if row.position > current_max:
+            max_position_by_segment[row.segment] = row.position
+
+    for item in items:
+        key = (item.exercise_id, item.segment)
+        if key in existing_keys:
+            continue  # already attached — skip (idempotency, FR-009)
+        next_position = max_position_by_segment.get(item.segment, -1) + 1
+        db.add(
+            TechniqueSessionExercise(
+                training_session_id=training_session_id,
+                exercise_id=item.exercise_id,
+                segment=item.segment,
+                position=next_position,
+            )
+        )
+        max_position_by_segment[item.segment] = next_position
+        existing_keys.add(key)
+
+    await db.commit()
+
+    link_rows = await get_session_exercises(db, training_session_id)
+
+    all_exercises = {link.exercise_id: link.exercise for link in link_rows}
+    all_exercise_ids = [link.exercise_id for link in link_rows]
+    mixes = _compute_mixes_age_bands(all_exercises, all_exercise_ids)
+
+    logger.debug(
+        "Ejercicios de técnica adjuntados a sesión existente | "
+        "session_id=%s club_id=%s submitted=%d total=%d mixes_age_bands=%s",
+        training_session_id,
+        club_id,
+        len(items),
+        len(link_rows),
+        mixes,
+    )
+
+    return mixes, link_rows

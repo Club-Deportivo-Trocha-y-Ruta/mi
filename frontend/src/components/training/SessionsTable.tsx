@@ -1,8 +1,10 @@
+import { CalendarDays } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { fetchTrainingSession } from "@/api/trainingSessions";
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
 import { usePrefetchOnIntent } from "@/hooks/usePrefetchOnIntent";
+import { isToday } from "@/lib/datetime";
 import { useAuthStore } from "@/store/auth.store";
 import type { SessionStatus, TrainingSession } from "@/types/trainingSession.types";
 
@@ -21,6 +23,20 @@ function formatDate(dateStr: string): string {
 
 function formatTime(timeStr: string): string {
   return timeStr.slice(0, 5);
+}
+
+/**
+ * Marcador "Hoy" — icono + texto (nunca solo color) para no depender de la
+ * percepción de color al distinguir la fila/card del día actual (feature 032,
+ * US3, FR-007). Compartido entre la card móvil y la fila de tabla desktop.
+ */
+function TodayMarker() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-link-blue/10 px-2 py-0.5 text-xs font-medium text-link-blue">
+      <CalendarDays size={12} aria-hidden="true" />
+      Hoy
+    </span>
+  );
 }
 
 export function SessionsTable({
@@ -54,8 +70,11 @@ export function SessionsTable({
                   <p className="truncate text-base font-medium text-charcoal">
                     {session.technical_focus}
                   </p>
-                  <p className="mt-0.5 text-sm text-text-disclaimer">
-                    {formatDate(session.scheduled_date)} · {formatTime(session.scheduled_start_time)}
+                  <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-text-disclaimer">
+                    <span>
+                      {formatDate(session.scheduled_date)} · {formatTime(session.scheduled_start_time)}
+                    </span>
+                    {isToday(session.scheduled_date) && <TodayMarker />}
                   </p>
                   <p className="mt-0.5 truncate text-sm text-mid-gray">{session.location}</p>
                 </div>
@@ -148,7 +167,10 @@ export function SessionsTable({
                 onMouseEnter={prefetchSession(session.id)}
               >
                 <td className="px-4 py-3 text-charcoal">
-                  {formatDate(session.scheduled_date)}
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span>{formatDate(session.scheduled_date)}</span>
+                    {isToday(session.scheduled_date) && <TodayMarker />}
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-text-disclaimer">
                   {formatTime(session.scheduled_start_time)}

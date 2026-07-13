@@ -1,23 +1,35 @@
 /**
  * BlockBuilderPage — página de armado de bloques de fuerza y adjunto a una
- * sesión de entrenamiento existente (feature 021 / T026, US2).
+ * sesión de entrenamiento existente (feature 021 / T026, US2; preselect +
+ * auto-adjunto unificados en feature 032 / T018-T019, US1).
  *
  * Rutas:
- *   - /strength/blocks/new  → modo creación
- *   - /strength/blocks/:id  → modo edición (carga el bloque existente)
+ *   - /strength/blocks/new                  → modo creación, sin sesión conocida
+ *   - /strength/blocks/new?session_id={id}  → modo creación, sesión ya elegida
+ *   - /strength/blocks/:id                  → modo edición (carga el bloque existente)
  *
- * Flujo:
- *   1. Carga el catálogo de ejercicios (BlockAssembler) y, en modo edición,
- *      el bloque existente.
- *   2. El entrenador arma/edita el bloque (metadatos + entradas ordenables)
- *      y lo guarda vía useSaveBlock (POST/PUT /api/strength/blocks).
- *   3. Tras guardar con éxito, se habilita el selector "Adjuntar a una
- *      sesión de entrenamiento": busca/filtra entre las sesiones existentes
- *      del club (useTrainingSessions) y adjunta el bloque con
- *      useAttachBlock (POST /blocks/{id}/attach). No se duplica la UI de
- *      creación de sesiones — se enlaza al asistente existente
- *      (`/training/sessions/new`) para el caso de "necesito una sesión
- *      nueva".
+ * Flujo (modo creación, feature 032 — contracts/unified-attach-flow.md):
+ *   0. Si no llega `?session_id=` en la URL, primero se pregunta "¿a qué
+ *      sesión?" vía `SessionPickerDialog` — el formulario de armado ni
+ *      siquiera se muestra hasta tener una sesión resuelta (entry points
+ *      2/3 del contrato). Al elegir, se navega con
+ *      `?session_id={id}` (replace) y converge al paso 1.
+ *   1. Con `?session_id=` presente (entry point 1, o ya resuelto en el paso
+ *      0), la sesión se muestra como un resumen bloqueado de solo lectura
+ *      (texto estático + ícono Lock/Pencil — convención "locked read-only
+ *      summary" de la feature 015) y el selector buscable de sesiones
+ *      (`role="radiogroup"`) NO se renderiza.
+ *   2. El entrenador arma el bloque (metadatos + entradas ordenables) y lo
+ *      guarda vía useSaveBlock (POST/PUT /api/strength/blocks).
+ *   3. Con sesión bloqueada, el guardado exitoso dispara automáticamente
+ *      useAttachBlock y navega a `/training/sessions/{id}?section=plan` —
+ *      no hay una segunda elección manual de sesión para el caso común.
+ *
+ * Modo edición (`/strength/blocks/:id`, sin `?session_id=`): conserva el
+ * flujo previo — el selector buscable de sesiones existentes sigue
+ * disponible tras guardar, sin la compuerta de "¿a qué sesión?" (no es uno
+ * de los entry points del contrato 032; el coach puede seguir editando un
+ * bloque sin verse forzado a elegir sesión).
  *
  * Estados cubiertos: loading (skeleton), error de carga del bloque (404 sin
  * reintentar), error de guardado (inline), guardado exitoso + adjunto
@@ -29,25 +41,36 @@
  * la sesión (a diferencia de una sesión técnica, que se crea de una vez).
  */
 import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
+import { AlertTriangle, Loader2, Lock, Pencil, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   BlockAssembler,
   type BlockAssemblerEntry,
   type BlockAssemblerSubmitInput,
 } from "@/components/strength/BlockAssembler";
+import { SessionPickerDialog } from "@/components/training/session-plan/SessionPickerDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { extractAgeBandGuardrail, mapStrengthError } from "@/api/strength";
+import {
+  extractAgeBandGuardrail,
+  isAlreadyAttachedError,
+  mapStrengthError,
+} from "@/api/strength";
 import {
   useAttachBlock,
   useSaveBlock,
   useStrengthBlock,
   useStrengthCatalog,
 } from "@/hooks/strength/useStrength";
-import { useTrainingSessions } from "@/api/trainingSessions";
+import { useTrainingSession, useTrainingSessions } from "@/api/trainingSessions";
 import type { TrainingSession } from "@/types/trainingSession.types";
 
 // ---------------------------------------------------------------------------
@@ -74,17 +97,96 @@ function matchesQuery(session: TrainingSession, query: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Resumen bloqueado de solo lectura (feature 032, T018)
+//
+// Convención "locked read-only summary" de la feature 015 (CLAUDE.md,
+// `specs/015-prefill-import-from-competition`): texto estático + ícono
+// Lock/Pencil — nunca un input `disabled` — para preservar navegabilidad por
+// teclado y lectura de screen-reader.
+// ---------------------------------------------------------------------------
+
+interface LockedSessionSummaryProps {
+  session: TrainingSession | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  /** Oculta el enlace "Cambiar sesión" una vez que ya se guardó el bloque. */
+  canChange: boolean;
+}
+
+function LockedSessionSummary({
+  session,
+  isLoading,
+  isError,
+  canChange,
+}: LockedSessionSummaryProps) {
+  return (
+    <div
+      className="mb-6 rounded-lg border border-[rgba(34,42,53,0.08)] bg-light-gray/30 p-4"
+      aria-label="Sesión de entrenamiento (bloqueada)"
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Lock size={14} aria-hidden="true" className="text-mid-gray" />
+          <h2 className="text-sm font-semibold text-slate-900">
+            Sesión de entrenamiento
+          </h2>
+          <span className="rounded-full bg-light-gray px-2 py-0.5 text-[11px] font-medium text-mid-gray">
+            Bloqueado
+          </span>
+        </div>
+        {canChange && (
+          <Link
+            to="/strength/blocks/new"
+            replace
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs font-medium text-primary hover:text-primary/80"
+          >
+            <Pencil size={12} aria-hidden="true" />
+            Cambiar sesión
+          </Link>
+        )}
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-4 w-2/3" />
+      ) : isError || !session ? (
+        <p className="text-sm text-red-600">
+          No se pudo cargar la sesión seleccionada.
+        </p>
+      ) : (
+        <p className="text-sm font-medium text-slate-800">
+          {sessionLabel(session)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export function BlockBuilderPage() {
   const { id: rawId } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const blockId = rawId ? Number(rawId) || 0 : 0;
   const isEditMode = blockId > 0;
 
+  // Feature 032 (T018) — sesión preseleccionada vía `?session_id=`
+  // (research.md R5). Solo modo creación: editar un bloque existente no es
+  // uno de los entry points del contrato de adjunto unificado
+  // (contracts/unified-attach-flow.md), así que conserva su flujo previo.
+  const sessionIdParam = Number(searchParams.get("session_id")) || 0;
+  const lockedSessionId = sessionIdParam > 0 ? sessionIdParam : null;
+  const needsSessionPick = !isEditMode && lockedSessionId == null;
+
+  const [pickerOpen, setPickerOpen] = useState(needsSessionPick);
+
   const catalog = useStrengthCatalog();
   const blockQuery = useStrengthBlock(blockId, isEditMode);
+  const lockedSessionQuery = useTrainingSession(
+    lockedSessionId ?? 0,
+    lockedSessionId != null,
+  );
   const saveBlock = useSaveBlock();
   const attachBlock = useAttachBlock();
 
@@ -104,7 +206,7 @@ export function BlockBuilderPage() {
   const [attachedSession, setAttachedSession] =
     useState<TrainingSession | null>(null);
 
-  const sessions = useTrainingSessions();
+  const sessions = useTrainingSessions(undefined, !lockedSessionId);
 
   const filteredSessions = useMemo(() => {
     const items = sessions.data ?? [];
@@ -117,6 +219,9 @@ export function BlockBuilderPage() {
   // detectar el 422 AGE_BAND_GUARDRAIL (FR-011, US3) y abrir su propio
   // diálogo de anulación en vez de un error genérico; para cualquier otro
   // error, esta página sigue mostrando `saveErrorMessage` como antes.
+  //
+  // T019: con sesión bloqueada (`lockedSessionId`), el guardado exitoso
+  // dispara el adjunto automáticamente — no hay una segunda elección manual.
   async function handleSubmit(input: BlockAssemblerSubmitInput) {
     setSaveErrorMessage(null);
     try {
@@ -125,6 +230,9 @@ export function BlockBuilderPage() {
         input,
       });
       setSavedBlockId(data.id);
+      if (lockedSessionId != null) {
+        runAutoAttach(data.id, lockedSessionId);
+      }
     } catch (err) {
       if (!extractAgeBandGuardrail(err)) {
         setSaveErrorMessage(mapStrengthError(err).message);
@@ -133,7 +241,34 @@ export function BlockBuilderPage() {
     }
   }
 
-  // ── Adjunto a sesión existente ──────────────────────────────────────────
+  // ── Adjunto automático a la sesión bloqueada (T019) ─────────────────────
+
+  function runAutoAttach(blockIdToAttach: number, trainingSessionId: number) {
+    setAttachErrorMessage(null);
+    attachBlock.mutate(
+      { blockId: blockIdToAttach, trainingSessionId },
+      {
+        onSuccess: () => {
+          toast.success("Bloque de fuerza adjuntado a la sesión.");
+          navigate(`/training/sessions/${trainingSessionId}?section=plan`);
+        },
+        onError: (err) => {
+          // 409 "ya está adjunto" (research.md R2/R11) — el resultado que el
+          // coach buscaba ya existe; sigue igual que un adjunto exitoso.
+          if (isAlreadyAttachedError(err)) {
+            toast.success("Bloque de fuerza adjuntado a la sesión.");
+            navigate(`/training/sessions/${trainingSessionId}?section=plan`);
+            return;
+          }
+          const message = mapStrengthError(err).message;
+          setAttachErrorMessage(message);
+          toast.error(message);
+        },
+      },
+    );
+  }
+
+  // ── Adjunto a sesión existente (modo edición, sin sesión bloqueada) ─────
 
   function handleAttach() {
     if (!savedBlockId || !selectedSessionId) return;
@@ -151,6 +286,37 @@ export function BlockBuilderPage() {
           setAttachErrorMessage(mapStrengthError(err).message);
         },
       },
+    );
+  }
+
+  // ── Estado: sin sesión conocida — se pregunta primero (T018) ───────────
+
+  if (needsSessionPick) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-6">
+        <SessionPickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onSelect={(sessionId) =>
+            navigate(`/strength/blocks/new?session_id=${sessionId}`, {
+              replace: true,
+            })
+          }
+          title="¿A qué sesión vas a adjuntar el bloque?"
+          description="Elegí la sesión de entrenamiento antes de armar el bloque de fuerza."
+        />
+        {!pickerOpen && (
+          <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
+            <p className="mb-4 text-sm text-slate-600">
+              Elegí una sesión de entrenamiento para armar el bloque de
+              fuerza.
+            </p>
+            <Button type="button" onClick={() => setPickerOpen(true)}>
+              Elegir sesión
+            </Button>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -266,10 +432,19 @@ export function BlockBuilderPage() {
         {isEditMode ? "Editar bloque de fuerza" : "Armar bloque de fuerza"}
       </h1>
       <p className="mb-6 text-sm text-slate-500">
-        Selecciona ejercicios, ajusta duración y repeticiones, y guarda el
-        bloque. Luego puedes adjuntarlo a una sesión de entrenamiento
-        existente.
+        {lockedSessionId != null
+          ? "Selecciona ejercicios, ajusta duración y repeticiones, y guarda el bloque. Se adjuntará automáticamente a la sesión elegida."
+          : "Selecciona ejercicios, ajusta duración y repeticiones, y guarda el bloque. Luego puedes adjuntarlo a una sesión de entrenamiento existente."}
       </p>
+
+      {lockedSessionId != null && (
+        <LockedSessionSummary
+          session={lockedSessionQuery.data}
+          isLoading={lockedSessionQuery.isLoading}
+          isError={lockedSessionQuery.isError}
+          canChange={!savedBlockId}
+        />
+      )}
 
       <BlockAssembler
         exercises={catalog.data?.items ?? []}
@@ -280,8 +455,46 @@ export function BlockBuilderPage() {
         defaultEntries={defaultEntries}
       />
 
-      {/* ── Adjuntar a sesión de entrenamiento existente ── */}
-      {savedBlockId && (
+      {/* ── T019: adjunto automático a la sesión bloqueada ── */}
+      {savedBlockId && lockedSessionId != null && (
+        <Card className="mt-8">
+          <CardContent className="py-5">
+            {attachBlock.isPending ? (
+              <p
+                role="status"
+                aria-busy="true"
+                className="flex items-center gap-2 text-sm text-slate-600"
+              >
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Adjuntando a la sesión…
+              </p>
+            ) : attachErrorMessage ? (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 p-4"
+              >
+                <p className="text-sm text-red-700">{attachErrorMessage}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-3"
+                  disabled={attachBlock.isPending}
+                  onClick={() => runAutoAttach(savedBlockId, lockedSessionId)}
+                >
+                  {attachBlock.isPending ? "Reintentando…" : "Reintentar adjunto"}
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Bloque guardado. Adjuntando a la sesión…
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Adjuntar a sesión de entrenamiento existente (modo edición, sin sesión bloqueada) ── */}
+      {savedBlockId && lockedSessionId == null && (
         <Card className="mt-8">
           <CardContent className="py-5">
             <h2 className="mb-1 text-base font-semibold text-slate-900">

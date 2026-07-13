@@ -15,7 +15,7 @@
  *     profundas del formulario de creación (fuera del scope de esta suite).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe, toHaveNoViolations } from "jest-axe";
 
@@ -26,6 +26,7 @@ import {
   techniqueHandlers,
   techniqueEmptyCatalogHandler,
   techniqueColdStartHandler,
+  createStatefulSessionExercisesHandlers,
 } from "@/test/msw/techniqueHandlers";
 import { UserRole } from "@/types/enums";
 
@@ -43,9 +44,16 @@ const mockCoachUser = {
   club_id: 1,
 };
 
+// `accessToken` se incluye porque SessionPickerDialog (T017) consume
+// useTrainingSessions, que solo dispara su query cuando hay un token —
+// sin esto el picker queda cargando para siempre (feature 032).
 vi.mock("@/store/auth.store", () => ({
-  useAuthStore: (selector: (s: { user: typeof mockCoachUser }) => unknown) =>
-    selector({ user: mockCoachUser }),
+  useAuthStore: (
+    selector: (s: {
+      user: typeof mockCoachUser;
+      accessToken: string;
+    }) => unknown,
+  ) => selector({ user: mockCoachUser, accessToken: "test-access-token" }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -295,6 +303,75 @@ describe("CatalogPage — dialog de creación", () => {
     await user.click(editButtons[0]);
 
     expect(screen.getByRole("dialog", { name: "Formulario de ejercicio" })).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: "Adjuntar a una sesión" — entry point de biblioteca (feature 032, T013)
+//
+// GET /api/training-sessions ya está mockeado globalmente por trainingHandlers
+// (src/test/setup.ts) — devuelve dos sesiones "planned"/"executed" con id 1/2,
+// la primera en "Pista XCO La Cumbre". No hace falta un handler adicional
+// para el picker; solo agregamos el par GET/POST stateful de
+// /api/technique/sessions/:id/exercises para el adjunto en sí.
+// ---------------------------------------------------------------------------
+
+describe("CatalogPage — adjuntar a una sesión", () => {
+  beforeEach(() => {
+    const sessionExercises = createStatefulSessionExercisesHandlers(1);
+    mswServer.use(...techniqueHandlers, ...sessionExercises.handlers);
+  });
+
+  it("abre SessionPickerDialog al hacer clic en 'Adjuntar a una sesión' de una tarjeta", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Slalom con conos")).toBeInTheDocument();
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: "Adjuntar Slalom con conos a una sesión" }),
+    );
+
+    expect(screen.getByRole("dialog", { name: "¿A qué sesión?" })).toBeInTheDocument();
+  });
+
+  it("al elegir una sesión, adjunta directamente (sin navegar) y muestra 'Ver en la sesión'", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Slalom con conos")).toBeInTheDocument();
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: "Adjuntar Slalom con conos a una sesión" }),
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "¿A qué sesión?" });
+    const sessionButton = within(dialog)
+      .getAllByRole("button")
+      .find((btn) => btn.textContent?.includes("Pista XCO La Cumbre"));
+    expect(sessionButton).toBeDefined();
+    await user.click(sessionButton!);
+
+    // El diálogo se cierra — no hay navegación, seguimos en CatalogPage.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "¿A qué sesión?" })).not.toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole("heading", { name: /Biblioteca de técnica y gymkhana/ }),
+    ).toBeInTheDocument();
+
+    // Enlace "Ver en la sesión" hacia la sección Plan de la sesión elegida.
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Ver en la sesión" })).toBeInTheDocument();
+    });
+    expect(screen.getByRole("link", { name: "Ver en la sesión" })).toHaveAttribute(
+      "href",
+      "/training/sessions/1?section=plan",
+    );
   });
 });
 
