@@ -174,3 +174,65 @@ export function getCarreraTier(
   const key = `${year}-${month}`;
   return CARRERA_TIER[key] ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// Guía de tapering por tier de carrera — tile "Próxima carrera" (Inicio coach)
+// ---------------------------------------------------------------------------
+
+/**
+ * Guía de tapering asociada a un tier de carrera Copa Valle.
+ *
+ * `taperDays` es la ventana de tapering completa en días (`[min, max]`),
+ * `null` cuando el tier no tiene tapering (diagnóstica). `warningAt`/`dangerAt`
+ * son los umbrales de `daysUntil` (días restantes hasta la carrera) que
+ * disparan cada estado de urgencia en la tile ("upcoming"/"in_window");
+ * ambos `null` cuando el tier nunca escala urgencia (tier C).
+ */
+export interface TaperGuidance {
+  label: string;
+  taperDays: [number, number] | null;
+  warningAt: number | null;
+  dangerAt: number | null;
+}
+
+/**
+ * Mapa tier → guía de tapering, clave según `getCarreraTier`.
+ *
+ * Copia exacta de las etiquetas de categoría ya usadas en el wizard de
+ * calendario (`EventForm.tsx:71-75`, `COMPETITION_CATEGORIES`) para A/B/C;
+ * CD (Campeonato Departamental) extiende la misma disciplina de tapering
+ * que A, per CLAUDE.md § Calendario Copa Valle 2026 (fila "CD 12-jun
+ * Ginebra A — tapering completo 7 días").
+ *
+ * Umbrales de urgencia (`warningAt`/`dangerAt`) per
+ * `specs/031-coach-home-mission-control/contracts/home-tiles.md`:
+ * A/CD → warning en `daysUntil <= 10`, in_window en `daysUntil <= 7`;
+ * B → warning en `daysUntil <= 6`, in_window en `daysUntil <= 4`;
+ * C → siempre neutral (no existe ventana de tapering para una diagnóstica).
+ */
+export const TAPER_GUIDANCE: Record<"A" | "B" | "C" | "CD", TaperGuidance> = {
+  A: {
+    label: "A — Tapering completo",
+    taperDays: [5, 7],
+    warningAt: 10,
+    dangerAt: 7,
+  },
+  B: {
+    label: "B — Mini-tapering",
+    taperDays: [3, 4],
+    warningAt: 6,
+    dangerAt: 4,
+  },
+  C: {
+    label: "C — Diagnóstica",
+    taperDays: null,
+    warningAt: null,
+    dangerAt: null,
+  },
+  CD: {
+    label: "CD — Campeonato Departamental",
+    taperDays: [5, 7],
+    warningAt: 10,
+    dangerAt: 7,
+  },
+};

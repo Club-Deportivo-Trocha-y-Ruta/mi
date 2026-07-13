@@ -158,12 +158,20 @@ export function formatDateTimeCompact(value: DateInput): string {
 }
 
 /**
- * "Hoy" / "Ayer" / "Mañana" / fallback a formatDate.
- * La referencia "hoy" es la fecha actual en CLUB_TIMEZONE.
+ * Diferencia en días calendario, en CLUB_TIMEZONE, entre `value` y "hoy".
+ * Extrae ambas fechas con Intl.DateTimeFormat("en-CA", { timeZone: CLUB_TIMEZONE })
+ * para evitar el sesgo de comparar instantes UTC crudos. Positivo = futuro,
+ * negativo = pasado, 0 = hoy. Retorna `null` si `value` no es una fecha válida.
+ * Math compartida por formatRelativeDay y formatRelativeDayCount.
+ *
+ * Exportada (feature 031) para que las tiles de "Inicio" (`NextRaceTile`,
+ * `NextSessionTile`) puedan derivar `daysUntil` numérico contra los umbrales
+ * de urgencia de `contracts/home-tiles.md` reutilizando esta misma math de
+ * diferencia de días en CLUB_TIMEZONE en vez de re-derivarla.
  */
-export function formatRelativeDay(value: DateInput): string {
+export function diffDaysFromToday(value: DateInput): number | null {
   const d = toDate(value);
-  if (!d) return "";
+  if (!d) return null;
 
   // Extraer la fecha del valor en la TZ del club.
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -190,11 +198,45 @@ export function formatRelativeDay(value: DateInput): string {
   const todayDay = new Date(nowParts[0], nowParts[1] - 1, nowParts[2]);
 
   const diffMs = targetDay.getTime() - todayDay.getTime();
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * "Hoy" / "Ayer" / "Mañana" / fallback a formatDate.
+ * La referencia "hoy" es la fecha actual en CLUB_TIMEZONE.
+ */
+export function formatRelativeDay(value: DateInput): string {
+  const d = toDate(value);
+  if (!d) return "";
+
+  const diffDays = diffDaysFromToday(value);
+  if (diffDays === null) return "";
 
   if (diffDays === 0) return "Hoy";
   if (diffDays === -1) return "Ayer";
   if (diffDays === 1) return "Mañana";
+  return formatDate(d);
+}
+
+/**
+ * "Hoy" / "Mañana" / "en N días" — variante de formatRelativeDay para tiles
+ * que necesitan expresar cercanía futura sin caer a fecha absoluta
+ * (contracts/home-tiles.md Tile 1 "Próxima sesión", Tile 2 "Próxima carrera").
+ * Reutiliza la misma math de diferencia de días en CLUB_TIMEZONE que
+ * formatRelativeDay. No maneja "Ayer" con una etiqueta especial (fuera de
+ * alcance de estas tiles, que solo miran hacia adelante); un valor pasado
+ * cae al fallback de formatDate igual que formatRelativeDay.
+ */
+export function formatRelativeDayCount(value: DateInput): string {
+  const d = toDate(value);
+  if (!d) return "";
+
+  const diffDays = diffDaysFromToday(value);
+  if (diffDays === null) return "";
+
+  if (diffDays === 0) return "Hoy";
+  if (diffDays === 1) return "Mañana";
+  if (diffDays > 1) return `en ${diffDays} días`;
   return formatDate(d);
 }
 

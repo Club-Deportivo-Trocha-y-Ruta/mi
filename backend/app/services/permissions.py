@@ -68,6 +68,11 @@ async def parent_athlete_ids(db: AsyncSession, user_id: int) -> list[int]:
     return list(result.scalars().all())
 
 
+def coach_club_ids(user: User) -> set[int]:
+    """Retorna los IDs de clubes donde el usuario tiene rol de coach."""
+    return {m.club_id for m in user.club_memberships if m.role_in_club == ClubRole.coach}
+
+
 async def user_club_role(
     db: AsyncSession, user_id: int, club_id: int
 ) -> ClubRole | None:

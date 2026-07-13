@@ -8,7 +8,6 @@ from sqlalchemy.orm import selectinload
 from app.dependencies import get_db, require_role
 from app.models.anthropometry import AnthropometricRecord
 from app.models.athlete import Athlete
-from app.models.club import ClubRole
 from app.models.user import User, UserRole
 from app.schemas.alerts import (
     AlertsSummary,
@@ -26,12 +25,9 @@ from app.services.measurement_alerts import (
     detect_approaching_circa,
     get_measurement_interval,
 )
+from app.services.permissions import coach_club_ids as _coach_club_ids
 
 router = APIRouter()
-
-
-def _coach_club_ids(user: User) -> set[int]:
-    return {m.club_id for m in user.club_memberships if m.role_in_club == ClubRole.coach}
 
 
 @router.get("/alerts", response_model=AlertsSummary)

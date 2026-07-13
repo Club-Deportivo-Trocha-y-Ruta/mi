@@ -56,6 +56,11 @@ export const PERSIST_ALLOWLIST_PREFIXES: readonly (readonly unknown[])[] = [
   ["raceEvents"],
   // Closed catalog of revision reasons.
   ["revision-reasons"],
+  // Coach-home mission-control summary (feature 031): counts + per-band
+  // minute sums only (consents_pending, insights_stale, weekly_load). No
+  // athlete ids/names/session content — data-privacy-guard reviewed
+  // (research.md R9).
+  ["dashboard", "coach-summary"],
 ] as const;
 
 /** True when `key`'s leading elements match `prefix` element-by-element. */

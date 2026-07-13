@@ -11,6 +11,7 @@ import {
   formatDayMonthShort,
   formatFullDate,
   formatRelativeDay,
+  formatRelativeDayCount,
   formatTime,
   formatWeekdayShortDate,
 } from "@/lib/datetime";
@@ -237,6 +238,55 @@ describe("formatRelativeDay", () => {
 
   it("devuelve string vacío para string vacío", () => {
     expect(formatRelativeDay("")).toBe("");
+  });
+});
+
+describe("formatRelativeDayCount", () => {
+  beforeEach(() => {
+    // Fijamos "hoy" al 2026-05-25 12:00 en UTC (= 07:00 en Bogotá, mismo día)
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-25T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('devuelve "Hoy" cuando la diferencia es 0 días (boundary)', () => {
+    // 2026-05-25T20:00:00Z = 2026-05-25 15:00 en Bogotá → mismo día
+    expect(formatRelativeDayCount("2026-05-25T20:00:00Z")).toBe("Hoy");
+  });
+
+  it('devuelve "Mañana" cuando la diferencia es exactamente 1 día (boundary)', () => {
+    expect(formatRelativeDayCount("2026-05-26T20:00:00Z")).toBe("Mañana");
+  });
+
+  it('devuelve "en 2 días" cuando la diferencia es >1 día (boundary just above 1)', () => {
+    expect(formatRelativeDayCount("2026-05-27T20:00:00Z")).toBe("en 2 días");
+  });
+
+  it('devuelve "en N días" para diferencias mayores (ej. 5 días)', () => {
+    expect(formatRelativeDayCount("2026-05-30T20:00:00Z")).toBe("en 5 días");
+  });
+
+  it("usa la fecha calendario en CLUB_TIMEZONE, no el día UTC crudo", () => {
+    // "hoy" en Bogotá es 25-may. 2026-05-28T02:00:00Z = 2026-05-27 21:00 en
+    // Bogotá (UTC-5): día calendario 27, es decir +2 días respecto a hoy.
+    // Un cálculo naive con el día UTC crudo (28) daría +3 días ("en 3 días").
+    expect(formatRelativeDayCount("2026-05-28T02:00:00Z")).toBe("en 2 días");
+  });
+
+  it("cae a formatDate para una fecha pasada (fuera del alcance de estas tiles)", () => {
+    const result = formatRelativeDayCount("2026-05-20T20:00:00Z");
+    expect(result).toMatch(/20 de mayo de 2026/);
+  });
+
+  it("devuelve string vacío para null", () => {
+    expect(formatRelativeDayCount(null)).toBe("");
+  });
+
+  it("devuelve string vacío para string vacío", () => {
+    expect(formatRelativeDayCount("")).toBe("");
   });
 });
 

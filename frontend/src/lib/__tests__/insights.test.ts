@@ -1,10 +1,12 @@
 /**
- * Tests for insights.ts utility functions — T018.
+ * Tests for insights.ts utility functions — T018, T025.
  *
  * Covers:
  *   - extractSeasonContext: section present / absent / legacy insight
  *   - progressionLabel: all 5 ProgressionAssessment values
  *   - Legacy compat: old summaryText without new section returns null, no crash
+ *   - getCarreraTier / TAPER_GUIDANCE: tier lookup by date and taper guidance
+ *     per tier (T025)
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -12,6 +14,8 @@ import {
   progressionLabel,
   extractSection,
   getV2Preview,
+  getCarreraTier,
+  TAPER_GUIDANCE,
 } from "@/lib/insights";
 import type { ProgressionAssessment } from "@/types/raceAnalysis.types";
 
@@ -130,5 +134,82 @@ describe("legacy insight compat (no regression)", () => {
       "El atleta terminó en posición 4 con tiempo 45:22. " +
       "Cadencia promedio 78 rpm. Próximo objetivo: mejorar salida.";
     expect(extractSeasonContext(v1Summary)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getCarreraTier / TAPER_GUIDANCE — T025
+// ---------------------------------------------------------------------------
+
+describe("getCarreraTier", () => {
+  const cases: Array<[string, "A" | "B" | "C" | "CD"]> = [
+    ["2026-01-31", "C"],
+    ["2026-02-28", "C"],
+    ["2026-04-19", "C"],
+    ["2026-05-17", "A"],
+    ["2026-06-12", "CD"],
+    ["2026-08-15", "B"],
+    ["2026-09-12", "A"],
+    ["2026-10-18", "B"],
+  ];
+
+  it.each(cases)("maps %s → tier %s", (date, tier) => {
+    expect(getCarreraTier(date)).toBe(tier);
+  });
+
+  it("returns null for a date not in CARRERA_TIER (e.g. off-season month)", () => {
+    expect(getCarreraTier("2026-03-15")).toBeNull();
+    expect(getCarreraTier("2026-11-15")).toBeNull();
+    expect(getCarreraTier("2027-05-17")).toBeNull();
+  });
+
+  it("returns null for an invalid date string (no crash)", () => {
+    expect(getCarreraTier("not-a-date")).toBeNull();
+  });
+});
+
+describe("TAPER_GUIDANCE", () => {
+  it("tier A — full taper, warning at 10d, danger at 7d", () => {
+    expect(TAPER_GUIDANCE.A).toEqual({
+      label: "A — Tapering completo",
+      taperDays: [5, 7],
+      warningAt: 10,
+      dangerAt: 7,
+    });
+  });
+
+  it("tier B — mini taper, warning at 6d, danger at 4d", () => {
+    expect(TAPER_GUIDANCE.B).toEqual({
+      label: "B — Mini-tapering",
+      taperDays: [3, 4],
+      warningAt: 6,
+      dangerAt: 4,
+    });
+  });
+
+  it("tier C — diagnostic, no taper window, never escalates urgency", () => {
+    expect(TAPER_GUIDANCE.C).toEqual({
+      label: "C — Diagnóstica",
+      taperDays: null,
+      warningAt: null,
+      dangerAt: null,
+    });
+  });
+
+  it("tier CD — same taper discipline as A (Campeonato Departamental)", () => {
+    expect(TAPER_GUIDANCE.CD).toEqual({
+      label: "CD — Campeonato Departamental",
+      taperDays: [5, 7],
+      warningAt: 10,
+      dangerAt: 7,
+    });
+  });
+
+  it("covers all 4 tier keys returned by getCarreraTier (completeness check)", () => {
+    const tiers: Array<"A" | "B" | "C" | "CD"> = ["A", "B", "C", "CD"];
+    for (const tier of tiers) {
+      expect(TAPER_GUIDANCE[tier]).toBeTruthy();
+      expect(TAPER_GUIDANCE[tier].label).toBeTruthy();
+    }
   });
 });

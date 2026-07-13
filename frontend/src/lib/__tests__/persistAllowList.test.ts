@@ -45,6 +45,10 @@ describe("persistAllowList — isPersistableKey (default-deny)", () => {
     expect(isPersistableKey(["revision-reasons"])).toBe(true);
   });
 
+  it("allows the coach-home mission-control summary (counts + minute sums only)", () => {
+    expect(isPersistableKey(["dashboard", "coach-summary"])).toBe(true);
+  });
+
   it("does NOT allow training sessions (list, detail, attendance, media)", () => {
     // The list item exposes media[].athlete_ids + free-text coach_notes
     // (privacy audit BLOCK); detail/attendance/media are obviously personal.

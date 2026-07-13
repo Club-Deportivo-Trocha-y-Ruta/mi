@@ -883,7 +883,7 @@ export function AthleteDetailPage() {
         </div>
       )}
 
-      {/* Tab content — Análisis IA */}
+      {/* Tab content — Insights IA */}
       {activeTab === "ai_analysis" && (
         <AthleteAIAnalysisTab
           athlete={athlete}

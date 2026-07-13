@@ -17,7 +17,9 @@
  *      based effort rubric (T018) inside the Asistencia section.
  *   2. Competitions results table (`/competitions/:id?tab=results`) — incl.
  *      the per-row "note" button and "Analizar con IA" button (T021).
- *   3. Coach dashboard (`/dashboard`).
+ *   3. Coach dashboard (`/dashboard`) — incl. the feature-031 mission-control
+ *      rewrite: `NextSessionTile`, `NextRaceTile`, `WeeklyLoadMeter`, and
+ *      `PendingInbox`'s five rows (T057).
  *   4. Sessions list (`/training/sessions`) — representative list page.
  *
  * Self-contained, no backend/docker required (there is no live backend in
@@ -299,6 +301,79 @@ const CLUB_INSIGHTS_BY_RACE = {
   items: [] as unknown[],
 };
 
+// ---- Dashboard (031) fixtures — NextSessionTile / NextRaceTile /
+// WeeklyLoadMeter / PendingInbox ---------------------------------------------
+
+// One upcoming race (`event_date >= today`) so NextRaceTile has a hero to
+// render, plus one past race missing results so PendingInbox's "Resultados
+// por importar" row resolves to a non-zero, clickable row instead of being
+// skeleton/empty.
+const DASHBOARD_RACE_EVENTS = {
+  items: [
+    {
+      id: 705,
+      series_id: 5,
+      sequence_number: 5,
+      name: "Copa Valle V — Palmira",
+      event_date: "2026-08-01",
+      location: "Palmira",
+      is_championship: false,
+      status: "scheduled",
+      has_results: false,
+      has_calendar_event: true,
+      conditions_completeness: "empty",
+    },
+    {
+      id: 706,
+      series_id: 4,
+      sequence_number: 1,
+      name: "Copa Valle CD — Ginebra",
+      event_date: "2026-06-12",
+      location: "Ginebra",
+      is_championship: true,
+      status: "completed",
+      has_results: false,
+      has_calendar_event: true,
+      conditions_completeness: "complete",
+    },
+  ],
+  total: 2,
+};
+
+// `total: 3` so PendingInbox's "Actividades sin enlazar" row renders as a
+// real, non-zero clickable row (items themselves are irrelevant — the row
+// only reads `.total`, per `useActivityReview({ page_size: 1 })`).
+const DASHBOARD_ACTIVITIES_UNLINKED = {
+  items: [] as unknown[],
+  total: 3,
+  page: 1,
+  page_size: 1,
+};
+
+const DASHBOARD_NEWSLETTER_SUMMARY = {
+  year: 2026,
+  month: 7,
+  items: [
+    {
+      athlete_id: OUR_ATHLETE_ID,
+      newsletter_id: 1,
+      status: "draft",
+      generated_at: "2026-07-01T00:00:00Z",
+      sent_at: null,
+    },
+  ],
+};
+
+const DASHBOARD_COACH_SUMMARY = {
+  generated_at: "2026-07-12T12:00:00Z",
+  consents_pending: 2,
+  insights_stale: 1,
+  weekly_load: [
+    { age_band: "10-12", planned_minutes: 300, cap_minutes: 600, athlete_count: 5 },
+    { age_band: "13-15", planned_minutes: 700, cap_minutes: 780, athlete_count: 6 },
+  ],
+};
+
 // ---- Per-page route registration -------------------------------------------
 
 async function mockSessionDetailApi(page: Page): Promise<void> {
@@ -354,6 +429,35 @@ async function mockDashboardApi(page: Page): Promise<void> {
   await page.route(
     (url) => isBackend(url) && url.pathname === "/api/athletes/alerts",
     jsonRoute(ALERTS_SUMMARY),
+  );
+  // NextSessionTile (feature 031) — same list endpoint as sessions list,
+  // reused as-is: `SESSION_LIST`'s id 501 is `status: "planned"` with a
+  // `scheduled_date` inside the next 14 days, so it resolves to a real tile.
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/training-sessions",
+    jsonRoute(SESSIONS_LIST),
+  );
+  // NextRaceTile + PendingInbox's "Resultados por importar" row — same
+  // queryKey/endpoint, mocked once (research.md R2: no duplicate request).
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/race-analysis/race-events/",
+    jsonRoute(DASHBOARD_RACE_EVENTS),
+  );
+  // PendingInbox's "Actividades sin enlazar" row.
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/activities",
+    jsonRoute(DASHBOARD_ACTIVITIES_UNLINKED),
+  );
+  // PendingInbox's "Boletines pendientes del mes" row.
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/training/athlete-newsletters/summary",
+    jsonRoute(DASHBOARD_NEWSLETTER_SUMMARY),
+  );
+  // WeeklyLoadMeter + PendingInbox's "Consentimientos pendientes" /
+  // "Insights IA desactualizados" rows.
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/dashboard/coach-summary",
+    jsonRoute(DASHBOARD_COACH_SUMMARY),
   );
 }
 
@@ -565,7 +669,9 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
     await expectNoTargetSizeViolations(page, "Competitions results table");
   });
 
-  test("coach dashboard — every control >=48x48px", async ({ page }) => {
+  test("coach dashboard — every control >=48x48px, incl. next-session/next-race tiles, weekly-load meter, and pending inbox (T057)", async ({
+    page,
+  }) => {
     await mockDashboardApi(page);
 
     await page.goto("/dashboard");
@@ -573,6 +679,30 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
       timeout: WAIT_TIMEOUT,
     });
     await expect(page.getByText("Mediciones pendientes")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+
+    // Confirm the feature-031 mission-control tiles/rows actually rendered
+    // (not skeletons) before sweeping, so a stalled fetch can't silently
+    // shrink the swept surface down to zero interactive elements.
+    await expect(page.getByText("Próxima sesión")).toBeVisible({ timeout: WAIT_TIMEOUT });
+    await expect(page.getByText(SESSION.technical_focus)).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByText("Próxima carrera Copa Valle")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByText(DASHBOARD_RACE_EVENTS.items[0].name)).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByText("Carga semanal")).toBeVisible({ timeout: WAIT_TIMEOUT });
+    await expect(page.getByText("Pendientes de esta semana")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByText("Resultados por importar")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByText("Consentimientos pendientes")).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
 

@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine
-from app.routers import ai, alerts, anxiety, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, strength, technique, training_sessions
+from app.routers import ai, alerts, anxiety, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, strength, technique, training_sessions
 from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
@@ -66,6 +66,7 @@ app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
 app.include_router(clubs.router, prefix="/api/clubs", tags=["clubs"])
 app.include_router(alerts.router, prefix="/api/athletes", tags=["alerts"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(athletes.router, prefix="/api/athletes", tags=["athletes"])
 app.include_router(anthropometry.router, prefix="/api/athletes", tags=["anthropometry"])
 app.include_router(reports.router, prefix="/api/athletes", tags=["reports"])

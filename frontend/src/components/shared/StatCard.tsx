@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Status } from "@/components/shared/StatusBadge";
 
 /**
  * StatCard — tile de métrica reutilizable (label + valor + hint opcional).
@@ -21,9 +22,36 @@ interface StatCardProps {
   isLoading?: boolean;
   /** Si se pasa, toda la tarjeta se envuelve en un Link a esta ruta. */
   href?: string;
+  /**
+   * Slot aditivo de urgencia (feature 031, `contracts/home-tiles.md` Tile 2
+   * "Próxima carrera"). Agrega un acento de color en el borde izquierdo de
+   * la tarjeta. `undefined`/`"neutral"`/`"success"` no cambian el estilo por
+   * defecto — retrocompatible con todos los consumidores existentes.
+   */
+  tone?: Status;
+  /**
+   * Slot aditivo (feature 031): contenido extra (p. ej. un `StatusBadge`)
+   * renderizado debajo del hint. El color nunca es el único canal — este
+   * slot existe precisamente para acompañar `tone` con ícono + texto
+   * (Constitution III).
+   */
+  badge?: ReactNode;
 }
 
-export function StatCard({ label, value, hint, isLoading = false, href }: StatCardProps) {
+const TONE_ACCENT_CLASSES: Partial<Record<Status, string>> = {
+  warning: "border-l-4 border-l-warning",
+  danger: "border-l-4 border-l-danger",
+};
+
+export function StatCard({
+  label,
+  value,
+  hint,
+  isLoading = false,
+  href,
+  tone,
+  badge,
+}: StatCardProps) {
   const body = (
     <CardContent className="flex flex-col gap-1">
       <p className="text-sm text-mid-gray">{label}</p>
@@ -33,11 +61,18 @@ export function StatCard({ label, value, hint, isLoading = false, href }: StatCa
         <p className="font-display text-2xl font-semibold text-charcoal">{value}</p>
       )}
       {hint && <p className="text-xs text-mid-gray">{hint}</p>}
+      {badge && <div className="mt-1">{badge}</div>}
     </CardContent>
   );
 
   return (
-    <Card className={cn("shadow-card", href && "transition-shadow hover:shadow-ring")}>
+    <Card
+      className={cn(
+        "shadow-card",
+        href && "transition-shadow hover:shadow-ring",
+        tone && TONE_ACCENT_CLASSES[tone],
+      )}
+    >
       {href ? (
         <Link
           to={href}

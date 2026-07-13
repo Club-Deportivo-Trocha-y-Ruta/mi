@@ -38,17 +38,13 @@ from app.services import training as training_svc
 from app.services.category import compute_age_decimal, compute_years_in_club, get_category
 from app.services.notification.service import NotificationService
 from app.services.notification.task_dispatcher import TaskDispatcher
-from app.services.permissions import can_view_athlete_feedback, parent_athlete_ids
+from app.services.permissions import (
+    can_view_athlete_feedback,
+    coach_club_ids as _coach_club_ids,
+    parent_athlete_ids,
+)
 
 router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _coach_club_ids(user: User) -> set[int]:
-    return {m.club_id for m in user.club_memberships if m.role_in_club == ClubRole.coach}
 
 
 ATTENDANCE_SORT_WINDOW_DAYS = 90
