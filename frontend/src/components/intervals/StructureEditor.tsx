@@ -317,20 +317,20 @@ export function StructureEditor({
       {/* ── Metadatos ── */}
       <Card className="mb-4">
         <CardContent className="py-5">
-          <h2 className="mb-4 text-base font-semibold text-slate-900">
+          <h2 className="mb-4 text-base font-semibold text-charcoal">
             Datos de la estructura
           </h2>
           <div className="max-w-xs">
             <label
               htmlFor="structure-age-band"
-              className="mb-1 block text-xs font-medium text-slate-700"
+              className="mb-1 block text-xs font-medium text-charcoal"
             >
               Categoría objetivo
             </label>
             <select
               id="structure-age-band"
               {...register("target_age_band")}
-              className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               <option value="10-12">
                 {INTERVAL_AGE_BAND_LABEL["10-12"]}
@@ -344,7 +344,7 @@ export function StructureEditor({
                 {errors.target_age_band.message}
               </p>
             )}
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-mid-gray">
               Para la categoría 10 a 12 años solo se permiten zonas suaves (Z1–Z2).
             </p>
           </div>
@@ -355,9 +355,9 @@ export function StructureEditor({
       <div
         role="status"
         aria-live="polite"
-        className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4"
+        className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-gray bg-white p-4"
       >
-        <p className="text-sm font-semibold text-slate-900">
+        <p className="text-sm font-semibold text-charcoal">
           Duración total estimada:{" "}
           <span data-testid="structure-total-duration">
             {formatMmSs(flattenedDurationS)}
@@ -373,13 +373,13 @@ export function StructureEditor({
       <Card className="mb-4">
         <CardContent className="py-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-slate-900">
+            <h2 className="text-base font-semibold text-charcoal">
               Bloques de la estructura
             </h2>
           </div>
 
           {fields.length === 0 ? (
-            <p className="mb-3 text-xs italic text-slate-400">
+            <p className="mb-3 text-xs italic text-mid-gray">
               Sin bloques. Agregá el primero para armar la estructura.
             </p>
           ) : (

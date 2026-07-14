@@ -32,7 +32,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   // pero hay un refreshToken → evita que las queries se disparen sin token.
   if (isLoading || (!accessToken && !!refreshToken)) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-slate-600">
+      <div className="flex min-h-screen items-center justify-center text-sm text-mid-gray">
         Cargando sesión...
       </div>
     );

@@ -1,8 +1,10 @@
 # Design System Inspired by Cal.com
 
+> **As shipped (feature 033, Visual Coherence & Polish)**: the app diverges from the pure Cal.com clone described narratively below in one deliberate way — it formalizes **one** brand accent (`--color-primary`, `#20b7c9`, a teal, see §2) used consistently for links, the AI/insights identity, chart "self" series, and the A/B/C race-intensity ramp, plus a real 4-tier status vocabulary (`--color-success`/`-warning`/`-danger` + neutral grays, see §2 and `contracts/status-vocabulary-sweep.md` under `specs/033-visual-coherence-polish/`). The rest of §1's Cal.com-inspired narrative (typography, shadows, spacing, monochrome text/surface hierarchy) still describes shipped reality accurately. A former second brand color (`--color-accent`, lime `#8be000`) was explored early in the project and fully retired — it was never consumed anywhere in `frontend/src` and no longer exists in `style.css` or in this document's palette below.
+
 ## 1. Visual Theme & Atmosphere
 
-Cal.com's website is a masterclass in monochromatic restraint — a grayscale world where boldness comes not from color but from the sheer confidence of black text on white space. Inspired by Uber's minimal aesthetic, the palette is deliberately stripped of hue: near-black headings (`#242424`), mid-gray secondary text (`#898989`), and pure white surfaces. Color is treated as a foreign substance — when it appears (a rare blue link, a green trust badge), it feels like a controlled accent in an otherwise black-and-white photograph.
+Cal.com's website is a masterclass in monochromatic restraint — a grayscale world where boldness comes not from color but from the sheer confidence of black text on white space. Inspired by Uber's minimal aesthetic, the palette is deliberately stripped of hue: near-black headings (`#242424`), mid-gray secondary text (`#898989`), and pure white surfaces. Color is treated as a foreign substance — when it appears (a rare blue link, a green trust badge), it feels like a controlled accent in an otherwise black-and-white photograph. **(Historical inspiration reference only — the app's actual shipped values are `#2f2f2f`/`#717171`/`--color-primary #20b7c9`, per §2 below; this paragraph describes the Cal.com source material, not the Trocha y Ruta palette.)**
 
 Cal Sans, the brand's custom geometric display typeface designed by Mark Davis, is the visual centerpiece. Letters are intentionally spaced extremely close at large sizes, creating dense, architectural headlines that feel like they're carved into the page. At 64px and 48px, Cal Sans headings sit at weight 600 with a tight 1.10 line-height — confident, compressed, and immediately recognizable. For body text, the system switches to Inter, providing "rock-solid" readability that complements Cal Sans's display personality. The typography pairing creates a clear division: Cal Sans speaks, Inter explains.
 
@@ -43,13 +45,49 @@ The elevation system is notably sophisticated for a minimal site — 11 shadow d
 - **Border Gray** (approx `rgba(34, 42, 53, 0.08–0.10)`): Shadow-based borders using ring shadows instead of CSS borders
 
 ### Semantic & Accent
-Real 4-tier semantic status scale, defined in `style.css`'s `@theme` block and consumed by `StatusBadge` (`frontend/src/components/shared`), swept across charts/modules:
-- **Success** (`--color-success`, `#0ca30c`): Positive/completed states
-- **Warning** (`--color-warning`, `#fab219`): Caution/attention-needed states
-- **Danger** (`--color-danger`, `#d03b3b`): Error/blocking states
-- **Neutral**: No dedicated hex token of its own — reuses the existing gray tokens (`--color-light-gray` background + `--color-mid-gray` text/icon) rather than introducing a fifth literal color
-- The former lime-accent tokens (`--color-accent` / `--color-accent-dark` / `--color-accent-light`) have been fully retired and removed — they no longer exist in `style.css`; do not reintroduce them
-- Outside of these functional status colors, the palette stays deliberately colorless — "a grayscale brand to emphasise on boldness and professionalism"
+
+**Single brand accent.** The app has exactly **one** accent color, formalized in feature 033: `--color-primary` (`#20b7c9`, a teal), with `-dark` (`#1a96a4`) and `-light` (`#4dc9d7`) variants. It is the single source of truth for links (`--color-link-blue` resolves to `var(--color-primary)` — there is no separate blue hex anywhere in `style.css`), the AI/"Insights IA" identity treatment, chart "self"/own-series marks, and the base hue of the A/B/C ordinal ramp below. There is no second brand color: a former lime accent (`--color-accent` / `--color-accent-dark` / `--color-accent-light`, `#8be000`) was explored early in the project and has been **fully retired and removed** — confirmed unconsumed anywhere in `frontend/src` and no longer defined in `style.css`. Do not reintroduce it.
+
+**Status vocabulary (final).** Real 4-tier semantic status scale, defined in `style.css`'s `@theme` block and consumed by `StatusBadge` (`frontend/src/components/shared`) — always icon **and** label, never color alone (Constitution III). Swept across all eight ad hoc status presentations found in the app (Strava sync, competition results/calendar/conditions, session status, AI insight confidence, newsletter status, consent + AI sub-toggle, analysis freshness, group-run/live-run state); full per-domain state→status mapping in `specs/033-visual-coherence-polish/contracts/status-vocabulary-sweep.md` and `data-model.md` §1:
+- **Success** (`--color-success`, `#0ca30c`): Positive/completed states (e.g. "Conectado", "Ejecutada", "Vigente", "Completado")
+- **Warning** (`--color-warning`, `#fab219`): Caution/attention-needed states, always recoverable/actionable, never destructive (e.g. "Conexión rota", "Borrador", "Análisis desactualizado", "Límite alcanzado")
+- **Danger** (`--color-danger`, `#d03b3b`): Error/blocking/terminal-failure states (e.g. "Cancelada", "Revocado", "Fallido")
+- **Neutral**: No dedicated hex token of its own — reuses the existing gray tokens (`--color-light-gray` background + `--color-mid-gray` text/icon) rather than introducing a fifth literal color. Used for absence/not-yet/informational states that are *not* errors (e.g. "Sin conectar", "Sin resultados", "IA: no autorizada", "Ya en curso")
+- Race classes **A/B/C are explicitly excluded** from this vocabulary — they are ordinal intensity, never status polarity (see the ordinal ramp below)
+- Outside of the one accent and these four functional status colors, the palette stays deliberately colorless — "a grayscale brand to emphasise on boldness and professionalism"
+
+### A/B/C Ordinal Race-Class Ramp
+
+Race taper-intensity classes (A = full taper 5–7 days, B = mini-taper 3–4 days, C = no tapering/diagnostic) render as a **one-hue ordinal ramp** in the brand accent hue — never as status colors, since C ("no tapering") is a valid diagnostic race, not a failure. Darkest = most intense (A), lightest = least intense (C); magnitude reads as depth. Validated with the `dataviz` skill's `validate_palette.js --ordinal` against the app's real white surface (monotone lightness, single hue, adjacent-step ΔL, light-end contrast floor — all PASS; full report in `specs/033-visual-coherence-polish/research.md` R2):
+
+| Tier | Meaning | Token | Hex (light) | Hex (dark, US5) |
+|---|---|---|---|---|
+| A | Full taper (5–7 days, most intense) | `--color-tier-a` | `#008492` | `#0d97a7` |
+| B | Mini-taper (3–4 days) | `--color-tier-b` | `#1cb5c7` | `#2fbfd1` |
+| C | No tapering / diagnostic (least intense) | `--color-tier-c` | `#5bc6d5` | `#6dd6e6` |
+
+- The lightest step (C) sits exactly at the 2:1 ordinal contrast floor against white — always paired with the visible `A`/`B`/`C` text label, never a bare colored dot.
+- `"CD"` (Campeonato Departamental) is **not** a 4th ramp tier — its tapering intensity is **A** (per the Copa Valle calendar in the project's `CLAUDE.md`); the championship distinction is carried separately by an existing amber "CD" trophy badge, never merged into this color scale.
+
+### Dark Theme Tokens (Coach Surfaces, US5)
+
+Optional story, shipped for **coach surfaces only** — the parent portal always forces light mode regardless of preference. Activated via a `data-theme` attribute (`@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *))`, Tailwind v4), defaulting to `prefers-color-scheme: dark` absent an explicit choice, with a 3-state override (Sistema/Claro/Oscuro) in the user menu persisted to `localStorage` (`tyr:theme-preference:v1`, `frontend/src/lib/theme.ts`). Full contract: `specs/033-visual-coherence-polish/contracts/dark-theme-tokens.md`.
+
+| Role | Token | Light | Dark |
+|---|---|---|---|
+| Page plane | `--color-page-plane` | `#ffffff` | `#0d0d0d` |
+| Card/chart surface | `--color-surface` / `--color-white` | `#ffffff` | `#1a1a1a` |
+| Primary text | `--color-charcoal` / `--color-text-primary` | `#2f2f2f` | `#f2f2f0` |
+| Secondary text | `--color-mid-gray` / `--color-text-secondary` | `#717171` | `#a3a3a3` |
+| Disclaimer text | `--color-text-disclaimer` | `#5a5a5a` | `#b8b8b8` |
+| Subtle panel fill | `--color-light-gray` | `#f5f5f5` | `#242424` |
+| Border (hairline) | `--color-border-gray` | `rgba(34,42,53,0.08)` | `rgba(255,255,255,0.10)` |
+| Card shadow | `--shadow-card` | multi-layer rgba shadow | 1px `rgba(255,255,255,0.08)` ring |
+| A/B/C ordinal ramp | `--color-tier-a/-b/-c` | see ramp table above | see ramp table above |
+| Accent | `--color-primary` | `#20b7c9` | **unchanged** |
+| Status success/warning/danger | `--color-success`/`-warning`/`-danger` | `#0ca30c`/`#fab219`/`#d03b3b` | **unchanged** |
+
+The accent and all four status tokens need **zero** hex changes between modes — every one already clears an adequate contrast against the real dark surface (`#1a1a1a`) as shipped; only surface/text/border/shadow/ordinal tokens carry dark-specific values. Generated documents (PDF reports, newsletters, instructivos) are completely unaffected — dark mode is an app-chrome concept only, never applied to exported artifacts.
 
 ### Gradient System
 - No gradients on the marketing site — the design is fully flat and monochrome
@@ -247,25 +285,32 @@ Cal.com's shadow system is the most sophisticated element of the design — 11 s
 ## 9. Agent Prompt Guide
 
 ### Quick Color Reference
-- Primary Text: Charcoal (`#242424`)
-- Deep Text: Midnight (`#111111`)
-- Secondary Text: Mid Gray (`#898989`)
+
+> Values below are the **shipped** app palette (`frontend/src/style.css`), not the original Cal.com inspiration figures — see the callout at the top of §1.
+
+- Primary Text: Charcoal (`#2f2f2f`, `--color-charcoal`)
+- Deep Text: Midnight (`#111111`, `--color-midnight`)
+- Secondary Text: Mid Gray (`#717171`, `--color-mid-gray`)
 - Background: Pure White (`#ffffff`)
-- Link: Link Blue (`#0099ff`)
-- CTA Button: Charcoal (`#242424`) bg, white text
+- Accent (one brand color): Teal (`#20b7c9`, `--color-primary`) — links, AI/Insights identity, chart self-series, A/B/C ramp base hue
+- Status: Success `#0ca30c` / Warning `#fab219` / Danger `#d03b3b` — always icon+label via `StatusBadge`, never color alone
+- CTA Button: Charcoal (`#2f2f2f`) bg, white text
 - Shadow Border: `rgba(34, 42, 53, 0.08)` ring
+- Dark mode (coach surfaces, optional): page plane `#0d0d0d`, surface `#1a1a1a`, primary text `#f2f2f0` — accent and status hexes are unchanged in dark mode
 
 ### Example Component Prompts
-- "Create a hero section with white background, 64px Cal Sans heading at weight 600, line-height 1.10, #242424 text, centered layout with a dark CTA button (#242424, 8px radius, white text)"
+- "Create a hero section with white background, 64px Cal Sans heading at weight 600, line-height 1.10, #2f2f2f text, centered layout with a dark CTA button (#2f2f2f, 8px radius, white text)"
 - "Design a scheduling card with white background, multi-layered shadow (0px 1px 5px -4px rgba(19,19,22,0.7), 0px 0px 0px 1px rgba(34,42,53,0.08), 0px 4px 8px rgba(34,42,53,0.05)), 12px radius"
-- "Build a navigation bar with white background, Inter links at 14px weight 500 in #111111, a dark CTA button (#242424), sticky positioning"
+- "Build a navigation bar with white background, Inter links at 14px weight 500 in #111111, a dark CTA button (#2f2f2f), sticky positioning"
 - "Create a trust bar with grayscale company logos, horizontally centered, 16px gap between logos, on white background"
-- "Design a feature section with 48px Cal Sans heading (weight 600, #242424), 16px Inter body text (weight 300, #898989, line-height 1.50), and a product screenshot with 12px radius and the card shadow"
+- "Design a feature section with 48px Cal Sans heading (weight 600, #2f2f2f), 16px Inter body text (weight 300, #717171, line-height 1.50), and a product screenshot with 12px radius and the card shadow"
+- "Add a status badge using StatusBadge (icon + label, never color alone): success `#0ca30c` / warning `#fab219` / danger `#d03b3b` / neutral gray — pick the status by the state's meaning per `contracts/status-vocabulary-sweep.md`, never invent a new hex"
 
 ### Iteration Guide
 When refining existing screens generated with this design system:
 1. Verify headings use Cal Sans at weight 600, body uses Inter — never mix them
-2. Check that the palette is purely grayscale — if you see brand colors, remove them
+2. Check that the palette stays within the app's formalized colors: grayscale neutrals, the **one** brand accent (`--color-primary #20b7c9`), and the four status tokens — if you see an ad hoc hex outside this set (e.g. a hand-picked blue/green/red, or the retired lime `#8be000`), replace it with the correct token
 3. Ensure card elevation uses the multi-layered shadow stack, not CSS borders
 4. Confirm section spacing is generous (80px+) — if sections feel cramped, add more space
-5. The overall tone should feel like a clean, professional scheduling tool — monochrome confidence without any decorative flourishes
+5. The overall tone should feel like a clean, professional scheduling tool — monochrome confidence with exactly one accent hue and a closed 4-color status vocabulary, no decorative flourishes
+6. On coach surfaces, verify the screen renders legibly in both light and dark mode (`data-theme`) if it uses any token from the dark-theme table in §2 — generated documents (PDF/newsletter/instructivo) are always light-only and out of scope for this check

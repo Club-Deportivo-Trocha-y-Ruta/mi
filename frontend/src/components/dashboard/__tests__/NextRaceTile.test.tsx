@@ -4,11 +4,15 @@
  *
  * Cubre:
  *  - skeleton mientras `useRaceEventsList` está en `isLoading`.
- *  - estado poblado, parametrizado por tier (A/B/C/CD) en los `daysUntil`
+ *  - estado poblado, parametrizado por tier (A/B/C) en los `daysUntil`
  *    que cruzan cada umbral exacto de `contracts/home-tiles.md`:
- *      A/CD → warning en daysUntil<=10, in_window en daysUntil<=7.
- *      B    → warning en daysUntil<=6, in_window en daysUntil<=4.
- *      C    → siempre neutral (sin ventana de tapering).
+ *      A → warning en daysUntil<=10, in_window en daysUntil<=7.
+ *      B → warning en daysUntil<=6, in_window en daysUntil<=4.
+ *      C → siempre neutral (sin ventana de tapering).
+ *    El Campeonato Departamental (junio) ya no es un tier "CD" separado
+ *    (feature 033, T015): `getCarreraTier` lo resuelve a "A", así que el
+ *    mes de junio se cubre con el mismo caso `tier: "A"` (ver el caso
+ *    dedicado más abajo que fija `month: 6` para probar ese mes puntual).
  *  - estado vacío de fin de temporada (sin eventos con event_date >= hoy).
  *  - estado de error real (no cold start): ErrorState con "Reintentar".
  *  - cold start (`isColdStartError`): siempre skeleton, nunca tono de error.
@@ -112,7 +116,7 @@ describe("NextRaceTile", () => {
     const IN_WINDOW_LABEL = "En ventana de tapering";
 
     it.each<{
-      tier: "A" | "B" | "C" | "CD";
+      tier: "A" | "B" | "C";
       month: number;
       taperLabel: string;
       daysUntil: number;
@@ -131,10 +135,13 @@ describe("NextRaceTile", () => {
       // Tier C (enero) — sin ventana de tapering: siempre neutral.
       { tier: "C", month: 1, taperLabel: "C — Diagnóstica", daysUntil: 20, expectedUrgency: "neutral" },
       { tier: "C", month: 1, taperLabel: "C — Diagnóstica", daysUntil: 0, expectedUrgency: "neutral" },
-      // Tier CD (junio, Campeonato Departamental) — misma disciplina que A.
-      { tier: "CD", month: 6, taperLabel: "CD — Campeonato Departamental", daysUntil: 11, expectedUrgency: "neutral" },
-      { tier: "CD", month: 6, taperLabel: "CD — Campeonato Departamental", daysUntil: 10, expectedUrgency: "upcoming" },
-      { tier: "CD", month: 6, taperLabel: "CD — Campeonato Departamental", daysUntil: 7, expectedUrgency: "in_window" },
+      // Junio (Campeonato Departamental) — feature 033/T015: getCarreraTier
+      // ya no devuelve "CD", resuelve a "A" (misma disciplina de tapering);
+      // la distinción de campeonato la sigue llevando el badge "CD" aparte
+      // en CompetitionDetailPage.tsx, no esta tile.
+      { tier: "A", month: 6, taperLabel: "A — Tapering completo", daysUntil: 11, expectedUrgency: "neutral" },
+      { tier: "A", month: 6, taperLabel: "A — Tapering completo", daysUntil: 10, expectedUrgency: "upcoming" },
+      { tier: "A", month: 6, taperLabel: "A — Tapering completo", daysUntil: 7, expectedUrgency: "in_window" },
     ])(
       "tier $tier, daysUntil=$daysUntil → $expectedUrgency",
       ({ month, taperLabel, daysUntil, expectedUrgency }) => {

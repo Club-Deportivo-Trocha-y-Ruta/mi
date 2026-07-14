@@ -2,7 +2,9 @@
  * Tests v2 — AthleteAIAnalysisTab en modo parent (Task #9).
  *
  * Privacidad para padres:
- *  - Header con label "Análisis del coach" (NO "Análisis IA del deportista").
+ *  - Header con label "Insights IA" (feature 033: nombre único en toda la app,
+ *    ya no varía por modo — la diferenciación parent/coach vive en el texto
+ *    descriptivo debajo del h2, no en el h2 mismo).
  *  - Sin badge de modelo (gemini-2.5-flash-lite no debe aparecer).
  *  - Tooltip con copy de privacidad presente.
  *
@@ -72,15 +74,17 @@ describe("AthleteAIAnalysisTab — vista parent (v2)", () => {
     vi.clearAllMocks();
   });
 
-  it("modo parent muestra header 'Análisis del coach' (no 'Análisis IA del deportista')", async () => {
+  it("modo parent muestra header 'Insights IA' con descripción específica de padre", async () => {
     renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="parent" />);
     await waitFor(() => {
       expect(screen.getByTestId("athlete-ai-analysis-tab")).toBeInTheDocument();
     });
-    expect(screen.getByText(/análisis del coach/i)).toBeInTheDocument();
     expect(
-      screen.queryByText(/análisis ia del deportista/i),
-    ).not.toBeInTheDocument();
+      screen.getByRole("heading", { level: 2, name: /insights ia/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/seguimiento y evolución del deportista, revisado por el entrenador/i),
+    ).toBeInTheDocument();
   });
 
   it("modo parent NO renderiza badge del modelo (gemini-2.5-flash-lite)", async () => {

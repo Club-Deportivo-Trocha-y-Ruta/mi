@@ -110,15 +110,15 @@ export interface BlockRowProps {
 // ---------------------------------------------------------------------------
 
 const CONTROL_CLASS = cn(
-  "min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2",
-  "text-sm text-slate-900 placeholder:text-slate-400 transition-colors",
+  "min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2",
+  "text-sm text-charcoal placeholder:text-mid-gray transition-colors",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
 );
 
 const ICON_BUTTON_CLASS = cn(
   "min-h-12 min-w-12 flex items-center justify-center rounded-lg",
-  "text-slate-400 hover:text-slate-700 transition-colors",
-  "disabled:opacity-30 disabled:hover:text-slate-400 disabled:cursor-not-allowed",
+  "text-mid-gray hover:text-charcoal transition-colors",
+  "disabled:opacity-30 disabled:hover:text-mid-gray disabled:cursor-not-allowed",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
 );
 
@@ -148,14 +148,14 @@ export function BlockRow({
 
   return (
     <li
-      className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
+      className="rounded-xl border border-border-gray bg-white p-3 shadow-sm sm:p-4"
       aria-label={`Bloque ${index + 1}`}
     >
       {/* ── Encabezado: posición + acciones de orden/eliminación ── */}
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span
-            className="flex h-7 min-w-7 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-500"
+            className="flex h-7 min-w-7 items-center justify-center rounded-full bg-light-gray px-2 text-xs font-semibold text-mid-gray"
             aria-hidden="true"
           >
             {index + 1}
@@ -204,7 +204,7 @@ export function BlockRow({
         <div>
           <label
             htmlFor={typeId}
-            className="mb-1 block text-xs font-medium text-slate-700"
+            className="mb-1 block text-xs font-medium text-charcoal"
           >
             Tipo
           </label>
@@ -232,7 +232,7 @@ export function BlockRow({
         <div>
           <label
             htmlFor={durationId}
-            className="mb-1 block text-xs font-medium text-slate-700"
+            className="mb-1 block text-xs font-medium text-charcoal"
           >
             Duración (segundos)
           </label>
@@ -264,7 +264,7 @@ export function BlockRow({
         <div>
           <label
             htmlFor={zoneId}
-            className="mb-1 block text-xs font-medium text-slate-700"
+            className="mb-1 block text-xs font-medium text-charcoal"
           >
             Zona de FC
           </label>
@@ -292,7 +292,7 @@ export function BlockRow({
         <div>
           <label
             htmlFor={cadenceId}
-            className="mb-1 block text-xs font-medium text-slate-700"
+            className="mb-1 block text-xs font-medium text-charcoal"
           >
             Cadencia (rpm)
           </label>
@@ -312,7 +312,7 @@ export function BlockRow({
             ).trim()}
             className={CONTROL_CLASS}
           />
-          <p id={`${cadenceId}-hint`} className="mt-1 text-xs text-slate-400">
+          <p id={`${cadenceId}-hint`} className="mt-1 text-xs text-mid-gray">
             Mínimo 60 rpm, todas las categorías.
           </p>
           {errors?.target_cadence_rpm && (
@@ -328,13 +328,13 @@ export function BlockRow({
       </div>
 
       {/* ── Grupo repetido (FR-002) ── */}
-      <div className="mt-3 border-t border-slate-100 pt-3">
-        <label className="flex min-h-12 items-center gap-2 text-sm text-slate-700">
+      <div className="mt-3 border-t border-border-gray pt-3">
+        <label className="flex min-h-12 items-center gap-2 text-sm text-charcoal">
           <input
             type="checkbox"
             checked={grouped}
             onChange={(event) => onToggleGroup(event.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-primary focus-visible:ring-2 focus-visible:ring-primary/50"
+            className="h-4 w-4 rounded border-border-gray text-primary focus-visible:ring-2 focus-visible:ring-primary/50"
           />
           Parte de un grupo repetido
         </label>
@@ -345,7 +345,7 @@ export function BlockRow({
             <div>
               <label
                 htmlFor={groupId}
-                className="mb-1 block text-xs font-medium text-slate-700"
+                className="mb-1 block text-xs font-medium text-charcoal"
               >
                 Número de grupo
               </label>
@@ -363,7 +363,7 @@ export function BlockRow({
                 aria-describedby={`${groupId}-hint`}
                 className={CONTROL_CLASS}
               />
-              <p id={`${groupId}-hint`} className="mt-1 text-xs text-slate-400">
+              <p id={`${groupId}-hint`} className="mt-1 text-xs text-mid-gray">
                 Usá el mismo número en los bloques que se repiten juntos (p. ej.
                 trabajo y recuperación).
               </p>
@@ -378,7 +378,7 @@ export function BlockRow({
             <div>
               <label
                 htmlFor={countId}
-                className="mb-1 block text-xs font-medium text-slate-700"
+                className="mb-1 block text-xs font-medium text-charcoal"
               >
                 Repeticiones (×N)
               </label>

@@ -379,7 +379,7 @@ export function BlockAssembler({
       {/* ── Block metadata ── */}
       <Card className="mb-6">
         <CardContent className="py-5">
-          <h2 className="mb-4 text-base font-semibold text-slate-900">
+          <h2 className="mb-4 text-base font-semibold text-charcoal">
             Datos del bloque
           </h2>
 
@@ -388,7 +388,7 @@ export function BlockAssembler({
             <div className="sm:col-span-2">
               <label
                 htmlFor="block-name"
-                className="mb-1 block text-xs font-medium text-slate-700"
+                className="mb-1 block text-xs font-medium text-charcoal"
               >
                 Nombre del bloque
               </label>
@@ -398,7 +398,7 @@ export function BlockAssembler({
                 {...register("name")}
                 placeholder="Ej: Fuerza de tren inferior — pretemporada"
                 aria-describedby={errors.name ? "err-name" : undefined}
-                className="min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                className="min-h-12 w-full rounded-lg border border-border-gray px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-primary"
               />
               {errors.name && (
                 <p id="err-name" role="alert" className="mt-1 text-xs text-red-600">
@@ -411,7 +411,7 @@ export function BlockAssembler({
             <div>
               <label
                 htmlFor="block-age-band"
-                className="mb-1 block text-xs font-medium text-slate-700"
+                className="mb-1 block text-xs font-medium text-charcoal"
               >
                 Franja de edad objetivo
               </label>
@@ -421,7 +421,7 @@ export function BlockAssembler({
                 aria-describedby={
                   errors.target_age_band ? "err-age-band" : undefined
                 }
-                className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary"
+                className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="10-12">
                   {STRENGTH_AGE_BAND_LABEL["10-12"]} años
@@ -445,7 +445,7 @@ export function BlockAssembler({
             <div>
               <label
                 htmlFor="block-duration-target"
-                className="mb-1 block text-xs font-medium text-slate-700"
+                className="mb-1 block text-xs font-medium text-charcoal"
               >
                 Meta de duración (minutos)
               </label>
@@ -457,11 +457,11 @@ export function BlockAssembler({
                 max={120}
                 {...register("duration_target_min", { valueAsNumber: true })}
                 aria-describedby="block-duration-target-hint"
-                className="min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary"
+                className="min-h-12 w-full rounded-lg border border-border-gray px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
               />
               <p
                 id="block-duration-target-hint"
-                className="mt-1 text-xs text-slate-400"
+                className="mt-1 text-xs text-mid-gray"
               >
                 Guía de diseño de sesión del club (por defecto 30 min), no un
                 límite clínico.
@@ -480,15 +480,15 @@ export function BlockAssembler({
       <div
         role="status"
         aria-live="polite"
-        className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4"
+        className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-gray bg-white p-4"
       >
         <div>
-          <p className="text-sm font-semibold text-slate-900">
+          <p className="text-sm font-semibold text-charcoal">
             Total estimado del bloque:{" "}
             <span data-testid="block-total-minutes">{totalDurationMin}</span>{" "}
             de {Number.isFinite(durationTargetMin) ? durationTargetMin : DEFAULT_DURATION_TARGET_MIN} min
           </p>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-mid-gray">
             Los 30 minutos son la guía de diseño de sesión del club, no un
             límite clínico: superarla es solo una señal para revisar el
             bloque, no un bloqueo.
@@ -502,7 +502,7 @@ export function BlockAssembler({
       {/* ── Entries ── */}
       <Card className="mb-6">
         <CardContent className="py-5">
-          <h2 className="mb-3 text-base font-semibold text-slate-900">
+          <h2 className="mb-3 text-base font-semibold text-charcoal">
             Ejercicios del bloque
             {entries.length > 0 && (
               <Badge variant="secondary" className="ml-2 text-xs">
@@ -512,7 +512,7 @@ export function BlockAssembler({
           </h2>
 
           {entries.length === 0 ? (
-            <p className="mb-3 text-xs text-slate-400 italic">
+            <p className="mb-3 text-xs text-mid-gray italic">
               Sin ejercicios. Agrega desde el selector.
             </p>
           ) : (
@@ -520,18 +520,18 @@ export function BlockAssembler({
               {entries.map((entry, idx) => (
                 <li
                   key={entry.exercise_id}
-                  className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"
+                  className="flex flex-wrap items-center gap-2 rounded-lg border border-border-gray bg-white px-3 py-2 shadow-sm"
                 >
                   {/* Position */}
                   <span
-                    className="w-5 shrink-0 text-center text-xs font-semibold text-slate-400"
+                    className="w-5 shrink-0 text-center text-xs font-semibold text-mid-gray"
                     aria-label={`Posición ${idx + 1}`}
                   >
                     {idx + 1}
                   </span>
 
                   {/* Name */}
-                  <span className="min-w-[10rem] flex-1 text-sm text-slate-800">
+                  <span className="min-w-[10rem] flex-1 text-sm text-charcoal">
                     {entry.name}
                   </span>
 
@@ -579,9 +579,9 @@ export function BlockAssembler({
                           e.target.valueAsNumber,
                         )
                       }
-                      className="min-h-12 w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="min-h-12 w-20 rounded-lg border border-border-gray px-2 py-1 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
                     />
-                    <span className="text-xs text-slate-400">min</span>
+                    <span className="text-xs text-mid-gray">min</span>
                   </div>
 
                   {/* Reps editor */}
@@ -600,7 +600,7 @@ export function BlockAssembler({
                         handleRepsChange(entry.exercise_id, e.target.value)
                       }
                       placeholder="Ej: 3×10"
-                      className="min-h-12 w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="min-h-12 w-24 rounded-lg border border-border-gray px-2 py-1 text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
 
@@ -610,7 +610,7 @@ export function BlockAssembler({
                     aria-label={`Subir ${entry.name}`}
                     disabled={idx === 0}
                     onClick={() => handleMove(idx, -1)}
-                    className="min-h-12 min-w-12 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                    className="min-h-12 min-w-12 flex items-center justify-center rounded text-mid-gray hover:text-charcoal disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                   >
                     <svg
                       aria-hidden="true"
@@ -634,7 +634,7 @@ export function BlockAssembler({
                     aria-label={`Bajar ${entry.name}`}
                     disabled={idx === entries.length - 1}
                     onClick={() => handleMove(idx, 1)}
-                    className="min-h-12 min-w-12 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                    className="min-h-12 min-w-12 flex items-center justify-center rounded text-mid-gray hover:text-charcoal disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                   >
                     <svg
                       aria-hidden="true"
@@ -657,7 +657,7 @@ export function BlockAssembler({
                     type="button"
                     aria-label={`Quitar ${entry.name}`}
                     onClick={() => handleRemove(entry.exercise_id)}
-                    className="min-h-12 min-w-12 flex items-center justify-center rounded text-slate-400 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
+                    className="min-h-12 min-w-12 flex items-center justify-center rounded text-mid-gray hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
                   >
                     <svg
                       aria-hidden="true"
@@ -689,7 +689,7 @@ export function BlockAssembler({
               id="block-exercise-picker"
               value={pickerValue}
               onChange={(e) => setPickerValue(e.target.value)}
-              className="min-h-12 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="min-h-12 flex-1 rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">— Selecciona un ejercicio —</option>
               {availableExercises.map((ex) => (

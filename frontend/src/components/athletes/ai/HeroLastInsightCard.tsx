@@ -73,7 +73,7 @@ export function HeroLastInsightCard({
         <p className="text-sm font-medium text-charcoal">
           {mode === "parent"
             ? "Cuando se aprueben análisis de tu hijo, aparecerán aquí."
-            : "Aún no hay análisis aprobados. Lanza el primero desde la pestaña 'Lanzar'."}
+            : "Aún no hay análisis aprobados. Lanza el primero desde la pestaña 'Analizar con IA'."}
         </p>
       </div>
     );

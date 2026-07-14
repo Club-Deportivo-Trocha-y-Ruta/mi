@@ -33,12 +33,12 @@ export function AnalyzeButton({
         type="button"
         onClick={run}
         disabled={mutation.isPending}
-        className="inline-flex min-h-10 items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="inline-flex min-h-10 items-center justify-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
       >
         {mutation.isPending ? "Analizando… (puede tardar)" : label}
       </button>
       {mutation.isPending && (
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-mid-gray">
           Si el servidor estaba inactivo, la primera respuesta puede tardar ~50 s.
         </span>
       )}

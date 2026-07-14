@@ -55,7 +55,7 @@ describe("FilterBar", () => {
 
     // Materiales: skeleton while loading → buttons once resolved
     await waitFor(() => {
-      expect(screen.getByRole("group", { name: "Filtrar por material" })).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "Materiales disponibles hoy" })).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: "Conos" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sin material" })).toBeInTheDocument();
@@ -191,7 +191,7 @@ describe("FilterBar", () => {
 
     // Wait for materials to load so the component is fully rendered
     await waitFor(() =>
-      expect(screen.getByRole("group", { name: "Filtrar por material" })).toBeInTheDocument(),
+      expect(screen.getByRole("group", { name: "Materiales disponibles hoy" })).toBeInTheDocument(),
     );
 
     expect(screen.queryByRole("button", { name: /Limpiar filtros/ })).not.toBeInTheDocument();
@@ -202,7 +202,7 @@ describe("FilterBar", () => {
     renderFilterBar();
 
     await waitFor(() =>
-      expect(screen.getByRole("group", { name: "Filtrar por material" })).toBeInTheDocument(),
+      expect(screen.getByRole("group", { name: "Materiales disponibles hoy" })).toBeInTheDocument(),
     );
 
     await user.selectOptions(screen.getByLabelText("Dificultad"), "media");
@@ -217,7 +217,7 @@ describe("FilterBar", () => {
     renderFilterBar(onChange);
 
     await waitFor(() =>
-      expect(screen.getByRole("group", { name: "Filtrar por material" })).toBeInTheDocument(),
+      expect(screen.getByRole("group", { name: "Materiales disponibles hoy" })).toBeInTheDocument(),
     );
 
     // Apply a filter

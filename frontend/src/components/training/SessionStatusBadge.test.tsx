@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { SessionStatusBadge } from "./SessionStatusBadge";
+import { SessionStatusBadge, sessionStatus } from "./SessionStatusBadge";
+import type { SessionStatus } from "@/types/trainingSession.types";
 
 describe("SessionStatusBadge", () => {
   it("muestra 'Planificada' para status planned", () => {
@@ -18,21 +19,41 @@ describe("SessionStatusBadge", () => {
     expect(screen.getByText("Cancelada")).toBeInTheDocument();
   });
 
-  it("aplica clase verde para executed", () => {
+  it("renderiza vía StatusBadge — tono success (bg-success/10) para executed", () => {
+    render(<SessionStatusBadge status="executed" />);
+    const badge = screen.getByText("Ejecutada").closest("span");
+    expect(badge).toHaveClass("bg-success/10");
+  });
+
+  it("renderiza vía StatusBadge — tono danger (bg-danger/10) para cancelled", () => {
+    render(<SessionStatusBadge status="cancelled" />);
+    const badge = screen.getByText("Cancelada").closest("span");
+    expect(badge).toHaveClass("bg-danger/10");
+  });
+
+  it("renderiza vía StatusBadge — tono neutral (bg-light-gray) para planned", () => {
+    render(<SessionStatusBadge status="planned" />);
+    const badge = screen.getByText("Planificada").closest("span");
+    expect(badge).toHaveClass("bg-light-gray");
+  });
+
+  // Regresión (contract §"Test obligations"): SessionStatusBadge ya no debe
+  // renderizar el <span data-status> artesanal con className manual — todo
+  // pasa por <StatusBadge> (ícono + label siempre juntos).
+  it("no renderiza un <span data-status> artesanal — solo el StatusBadge compartido", () => {
     const { container } = render(<SessionStatusBadge status="executed" />);
-    const badge = container.querySelector("[data-status='executed']");
-    expect(badge?.className).toContain("green");
+    expect(container.querySelector("[data-status]")).not.toBeInTheDocument();
+    // StatusBadge siempre pairea el label con un ícono (Constitution III).
+    expect(container.querySelector("svg")).toBeInTheDocument();
   });
+});
 
-  it("aplica clase roja para cancelled", () => {
-    const { container } = render(<SessionStatusBadge status="cancelled" />);
-    const badge = container.querySelector("[data-status='cancelled']");
-    expect(badge?.className).toContain("red");
-  });
-
-  it("aplica clase gris para planned", () => {
-    const { container } = render(<SessionStatusBadge status="planned" />);
-    const badge = container.querySelector("[data-status='planned']");
-    expect(badge?.className).toContain("light-gray");
+describe("sessionStatus adapter", () => {
+  it.each<[SessionStatus, { status: string; label: string }]>([
+    ["planned", { status: "neutral", label: "Planificada" }],
+    ["executed", { status: "success", label: "Ejecutada" }],
+    ["cancelled", { status: "danger", label: "Cancelada" }],
+  ])("%s → %o", (status, expected) => {
+    expect(sessionStatus(status)).toEqual(expected);
   });
 });

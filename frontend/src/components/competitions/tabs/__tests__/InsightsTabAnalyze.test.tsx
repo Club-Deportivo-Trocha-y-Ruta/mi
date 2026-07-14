@@ -43,6 +43,11 @@ vi.mock("@/hooks/athletes/useLaunchAthleteAnalysis", () => ({
   }),
 }));
 
+// useAIStatus (T051) — sin datos por defecto: degradación reactiva-only.
+vi.mock("@/hooks/ai/useAIStatus", () => ({
+  useAIStatus: () => ({ data: undefined, isError: false }),
+}));
+
 // Aislar de dependencias de hooks/API.
 vi.mock("@/components/competitions/insights/GroupAnalysisPanel", () => ({
   GroupAnalysisPanel: () => <div data-testid="group-analysis-panel" />,

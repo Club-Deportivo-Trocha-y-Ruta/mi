@@ -114,6 +114,29 @@ export function validaLabel(num: number | null | undefined): string {
   return `Válida ${num}`;
 }
 
+/**
+ * Adaptador canónico de confianza de insight → `StatusBadge`
+ * (`contracts/status-vocabulary-sweep.md` §4). Reemplaza el par
+ * `confidenceVariant`/`confidenceLabel` de abajo como la única fuente de
+ * verdad para "alta/media/baja" en toda la app.
+ */
+export function confidenceStatus(
+  confidence: InsightConfidence,
+): { status: "success" | "warning" | "danger"; label: string } {
+  if (confidence === "high") return { status: "success", label: "Confianza alta" };
+  if (confidence === "medium") return { status: "warning", label: "Confianza media" };
+  return { status: "danger", label: "Confianza baja" };
+}
+
+/**
+ * @deprecated Usa `confidenceStatus()` — mantenido en términos de la
+ * misma tabla mientras `HeroLastInsightCard.tsx`, `InsightsTimeline.tsx`,
+ * `AthletesTab.tsx` e `InsightsTab.tsx` siguen consumiendo `<Badge
+ * variant>` en lugar de `<StatusBadge>`. Su migración a `StatusBadge` no
+ * está cubierta por ninguna tarea de `tasks.md` en este feature (solo
+ * `AthleteAIAnalysisTab.tsx`'s duplicate lo está, vía T019) — se deja
+ * aquí para no romper esos call sites.
+ */
 export function confidenceVariant(
   confidence: InsightConfidence,
 ): "success" | "warning" | "destructive" {
@@ -122,6 +145,7 @@ export function confidenceVariant(
   return "destructive";
 }
 
+/** @deprecated Usa `confidenceStatus()` — ver nota en `confidenceVariant`. */
 export function confidenceLabel(confidence: InsightConfidence): string {
   if (confidence === "high") return "Confianza alta";
   if (confidence === "medium") return "Confianza media";
@@ -133,39 +157,47 @@ export function confidenceLabel(confidence: InsightConfidence): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Mapa mes-año → tipo de carrera Copa Valle 2026.
- * Clave: "YYYY-MM" (ISO). Valores tomados del CLAUDE.md § Calendario Copa Valle 2026.
+ * Mapa mes-año → tier ordinal (intensidad de tapering) de la carrera Copa
+ * Valle 2026. Clave: "YYYY-MM" (ISO). Valores tomados del CLAUDE.md §
+ * Calendario Copa Valle 2026.
+ *
+ * `CD` (Campeonato Departamental) NO es un 4º tier: por
+ * `contracts/chart-style.md` §"A/B/C ordinal scale" / `data-model.md` §2,
+ * su intensidad de tapering real es **A** (tapering completo, 7 días) —
+ * la distinción de campeonato es un hecho ortogonal, ya representado por
+ * separado en el badge "CD" con ícono `Trophy`
+ * (`CompetitionDetailPage.tsx:452-460`), no fusionado en esta escala.
  *
  *   I   31-ene (2026-01)  → C  (sin tapering)
  *   II  28-feb (2026-02)  → C
  *   III 19-abr (2026-04)  → C  (diagnóstica)
  *   IV  17-may (2026-05)  → A  (tapering completo)
- *   CD  12-jun (2026-06)  → CD (Campeonato Departamental)
+ *   CD  12-jun (2026-06)  → A  (Campeonato Departamental, mismo tapering que A)
  *   V   01-ago (2026-08)  → B  (mini-tapering)
  *   VI  12-sep (2026-09)  → A
  *   VII 18-oct (2026-10)  → B
  */
-const CARRERA_TIER: Record<string, "A" | "B" | "C" | "CD"> = {
+const CARRERA_TIER: Record<string, "A" | "B" | "C"> = {
   "2026-01": "C",
   "2026-02": "C",
   "2026-04": "C",
   "2026-05": "A",
-  "2026-06": "CD",
+  "2026-06": "A",
   "2026-08": "B",
   "2026-09": "A",
   "2026-10": "B",
 };
 
 /**
- * Dado un insight (o su fecha ``generated_at``), devuelve el tier de la
- * carrera Copa Valle correspondiente al mes-año de la fecha.
+ * Dado un insight (o su fecha ``generated_at``), devuelve el tier ordinal
+ * (A/B/C) de la carrera Copa Valle correspondiente al mes-año de la fecha.
  * Devuelve ``null`` si la fecha no coincide con ninguna válida del calendario.
  *
  * @param date - ISO date string o Date object (``generated_at`` del insight).
  */
 export function getCarreraTier(
   date: Date | string,
-): "A" | "B" | "C" | "CD" | null {
+): "A" | "B" | "C" | null {
   const d = typeof date === "string" ? new Date(date) : date;
   if (!Number.isFinite(d.getTime())) return null;
   // getMonth() es 0-based — añadimos 1 y pad con "0".
@@ -199,18 +231,19 @@ export interface TaperGuidance {
  * Mapa tier → guía de tapering, clave según `getCarreraTier`.
  *
  * Copia exacta de las etiquetas de categoría ya usadas en el wizard de
- * calendario (`EventForm.tsx:71-75`, `COMPETITION_CATEGORIES`) para A/B/C;
- * CD (Campeonato Departamental) extiende la misma disciplina de tapering
- * que A, per CLAUDE.md § Calendario Copa Valle 2026 (fila "CD 12-jun
- * Ginebra A — tapering completo 7 días").
+ * calendario (`EventForm.tsx:71-75`, `COMPETITION_CATEGORIES`) para A/B/C.
+ * El Campeonato Departamental (junio) resuelve a tier `A` desde
+ * `CARRERA_TIER` — no tiene entrada propia aquí (ver nota en
+ * `CARRERA_TIER`); su distinción de campeonato la sigue llevando el badge
+ * "CD" independiente en `CompetitionDetailPage.tsx`.
  *
  * Umbrales de urgencia (`warningAt`/`dangerAt`) per
  * `specs/031-coach-home-mission-control/contracts/home-tiles.md`:
- * A/CD → warning en `daysUntil <= 10`, in_window en `daysUntil <= 7`;
+ * A → warning en `daysUntil <= 10`, in_window en `daysUntil <= 7`;
  * B → warning en `daysUntil <= 6`, in_window en `daysUntil <= 4`;
  * C → siempre neutral (no existe ventana de tapering para una diagnóstica).
  */
-export const TAPER_GUIDANCE: Record<"A" | "B" | "C" | "CD", TaperGuidance> = {
+export const TAPER_GUIDANCE: Record<"A" | "B" | "C", TaperGuidance> = {
   A: {
     label: "A — Tapering completo",
     taperDays: [5, 7],
@@ -228,11 +261,5 @@ export const TAPER_GUIDANCE: Record<"A" | "B" | "C" | "CD", TaperGuidance> = {
     taperDays: null,
     warningAt: null,
     dangerAt: null,
-  },
-  CD: {
-    label: "CD — Campeonato Departamental",
-    taperDays: [5, 7],
-    warningAt: 10,
-    dangerAt: 7,
   },
 };

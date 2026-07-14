@@ -2,6 +2,49 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Dark-mode pre-hydration (feature 033, US5 / FR-008, optional story).
+      Runs synchronously, before any CSS/JS paints, to avoid a
+      flash-of-wrong-theme on reload. Must stay a plain (non type="module")
+      script placed first in <head> so it executes before Vite's injected
+      stylesheet <link> and before the deferred module script in <body>.
+
+      Coach/admin surfaces: honors the stored `tyr:theme-preference:v1`
+      (see frontend/src/lib/theme.ts, the source of truth this inline copy
+      must be kept in sync with) — "system"/missing leaves `data-theme`
+      unset, falling back to the `prefers-color-scheme` CSS rule.
+
+      Parent portal (out of scope for dark mode, contracts/dark-theme-tokens.md):
+      forces `data-theme="light"` explicitly, read from the same
+      `auth-session` sessionStorage key the Zustand auth store persists
+      (frontend/src/store/auth.store.ts) — the same `user.role` field
+      AppShell/UserMenu already use to distinguish coach vs. parent, just
+      read here before React has mounted. AppShell re-applies/corrects this
+      on mount as the authoritative, self-healing source — this inline
+      guess only matters for the very first paint.
+    -->
+    <script>
+      (function () {
+        try {
+          var sessionRaw = window.sessionStorage.getItem("auth-session");
+          var role = sessionRaw ? (JSON.parse(sessionRaw).state || {}).user : null;
+          role = role ? role.role : null;
+          if (role === "parent") {
+            document.documentElement.setAttribute("data-theme", "light");
+            return;
+          }
+          var stored = window.localStorage.getItem("tyr:theme-preference:v1");
+          if (stored === "light" || stored === "dark") {
+            document.documentElement.setAttribute("data-theme", stored);
+          }
+          // "system" or missing: leave unset — the prefers-color-scheme
+          // CSS rule in style.css handles the zero-configuration default.
+        } catch (error) {
+          // localStorage/sessionStorage no disponible (modo privado, cuota
+          // agotada) — sin efecto, cae al valor por defecto del sistema.
+        }
+      })();
+    </script>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />

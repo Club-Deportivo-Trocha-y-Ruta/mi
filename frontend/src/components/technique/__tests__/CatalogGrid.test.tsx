@@ -114,7 +114,9 @@ describe("CatalogGrid — estado de error", () => {
       total: undefined,
     });
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    // Cold-start errors render as role="status" (reassuring tone), not
+    // role="alert" — shared `ErrorState` contract (feature 033 / T041).
+    expect(screen.getByRole("status")).toHaveTextContent(
       "El servidor está iniciando",
     );
   });
@@ -127,7 +129,7 @@ describe("CatalogGrid — estado de error", () => {
       total: undefined,
     });
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveTextContent(
       "El servidor está iniciando",
     );
   });
@@ -140,7 +142,7 @@ describe("CatalogGrid — estado de error", () => {
       total: undefined,
     });
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveTextContent(
       "El servidor está iniciando",
     );
   });

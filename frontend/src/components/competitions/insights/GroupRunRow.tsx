@@ -11,138 +11,62 @@
  * nunca el athlete_id real ni datos identificadores adicionales.
  */
 import { useEffect } from "react";
-import { CheckCircle2, AlertCircle, Clock, Loader2, XCircle } from "lucide-react";
 
+import { AnalysisRunTimeline } from "@/components/ai/AnalysisRunTimeline";
 import { HITLApprovalCard } from "@/components/ai/HITLApprovalCard";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import { useRunStatus, isTerminalState } from "@/hooks/ai/useRaceRun";
 import { cn } from "@/lib/utils";
 import type { GroupRunOutcome, RunState } from "@/types/raceAnalysis.types";
 import type { TrackedRunEntry } from "@/hooks/ai/useGroupAnalysis";
 
 // ---------------------------------------------------------------------------
-// State chip
+// Status adapter
 // ---------------------------------------------------------------------------
 
-interface StateChipProps {
-  /** Run state from polling (only available when run_id is set). */
-  runState: RunState | undefined;
-  /** Outcome from the launch response (for runs with no run_id). */
-  outcome: GroupRunOutcome | "recovered";
-}
-
-function StateChip({ runState, outcome }: StateChipProps) {
+/**
+ * groupRunStatus — adaptador puro estado de run grupal → { status, label }
+ * para `StatusBadge`, per contracts/status-vocabulary-sweep.md §8. Cubre
+ * todos los estados terminales; los estados "en curso" (`running`, outcome
+ * `started`/`recovered`) no son un badge — devuelven `null` porque se
+ * enrutan al `AnalysisRunTimeline` compacto (ai-identity.md), no aquí.
+ *
+ * Prioridad: estado de polling en vivo (`runState`) > outcome del launch.
+ */
+export function groupRunStatus(
+  runState: RunState | undefined,
+  outcome: GroupRunOutcome | "recovered",
+): { status: Status; label: string } | null {
   // Priority: live run state > launch outcome
   if (runState) {
     switch (runState) {
       case "running":
-        return (
-          <Badge
-            variant="secondary"
-            className="gap-1 bg-blue-50 text-blue-700"
-            aria-label="Análisis en curso"
-          >
-            <Loader2 size={10} className="animate-spin" aria-hidden="true" />
-            En curso
-          </Badge>
-        );
+        return null;
       case "hitl_waiting":
-        return (
-          <Badge
-            variant="secondary"
-            className="gap-1 bg-amber-50 text-amber-700"
-            aria-label="Esperando aprobación del coach"
-          >
-            <Clock size={10} aria-hidden="true" />
-            Esperando aprobación
-          </Badge>
-        );
+        return { status: "warning", label: "Esperando aprobación" };
       case "done":
-        return (
-          <Badge
-            variant="secondary"
-            className="gap-1 bg-emerald-50 text-emerald-700"
-            aria-label="Análisis completado"
-          >
-            <CheckCircle2 size={10} aria-hidden="true" />
-            Completado
-          </Badge>
-        );
+        return { status: "success", label: "Completado" };
       case "failed":
       case "error":
-        return (
-          <Badge
-            variant="secondary"
-            className="gap-1 bg-red-50 text-red-700"
-            aria-label="Análisis fallido"
-          >
-            <XCircle size={10} aria-hidden="true" />
-            Fallido
-          </Badge>
-        );
+        return { status: "danger", label: "Fallido" };
       case "cancelled":
-        return (
-          <Badge
-            variant="secondary"
-            className="gap-1 bg-gray-100 text-gray-600"
-            aria-label="Análisis rechazado"
-          >
-            <XCircle size={10} aria-hidden="true" />
-            Rechazado
-          </Badge>
-        );
+        return { status: "neutral", label: "Rechazado" };
     }
   }
 
-  // No live state: use outcome chip
+  // No live state: use outcome
   switch (outcome) {
     case "started":
     case "recovered":
-      return (
-        <Badge
-          variant="secondary"
-          className="gap-1 bg-blue-50 text-blue-700"
-          aria-label="Análisis en curso"
-        >
-          <Loader2 size={10} className="animate-spin" aria-hidden="true" />
-          En curso
-        </Badge>
-      );
+      return null;
     case "backpressure":
-      return (
-        <Badge
-          variant="secondary"
-          className="gap-1 bg-orange-50 text-orange-700"
-          aria-label="Límite alcanzado"
-        >
-          <AlertCircle size={10} aria-hidden="true" />
-          Límite alcanzado
-        </Badge>
-      );
+      return { status: "warning", label: "Límite alcanzado" };
     case "already_running":
-      return (
-        <Badge
-          variant="secondary"
-          className="gap-1 bg-sky-50 text-sky-700"
-          aria-label="Ya en curso"
-        >
-          <Clock size={10} aria-hidden="true" />
-          Ya en curso
-        </Badge>
-      );
+      return { status: "neutral", label: "Ya en curso" };
     case "error":
     case "no_results":
     case "budget_exceeded":
-      return (
-        <Badge
-          variant="secondary"
-          className="gap-1 bg-red-50 text-red-700"
-          aria-label="Análisis fallido"
-        >
-          <XCircle size={10} aria-hidden="true" />
-          Fallido
-        </Badge>
-      );
+      return { status: "danger", label: "Fallido" };
     default:
       return null;
   }
@@ -188,6 +112,8 @@ export function GroupRunRow({ entry, onTerminated }: GroupRunRowProps) {
     run_id !== null &&
     (runState === "hitl_waiting" || !!lastHitlEvent);
 
+  const badge = groupRunStatus(runState, outcome);
+
   // Notify parent on terminal state.
   useEffect(() => {
     if (!run_id) return;
@@ -215,9 +141,18 @@ export function GroupRunRow({ entry, onTerminated }: GroupRunRowProps) {
           {name}
         </span>
 
-        {/* Chip de estado */}
-        <StateChip runState={runState} outcome={outcome} />
+        {/* Chip de estado — solo para estados terminales; "en curso" se
+            muestra abajo con el timeline compacto (mismo run-view que
+            AthleteAIAnalysisTab, densidad reducida). */}
+        {badge && <StatusBadge status={badge.status} label={badge.label} />}
       </div>
+
+      {/* Timeline compacto — reemplaza el chip "En curso" hand-rolled para
+          runState="running" u outcome started/recovered (T050). Un solo
+          componente de run-view (AnalysisRunTimeline), dos densidades. */}
+      {!badge && run_id && (
+        <AnalysisRunTimeline runId={run_id} variant="compact" />
+      )}
 
       {/* Mensaje de detalle para outcomes no-started */}
       {detail && !run_id && (

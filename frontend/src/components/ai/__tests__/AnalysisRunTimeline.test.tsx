@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
+import { axe } from "jest-axe";
 
 vi.mock("@/api/raceAnalysis", () => ({
   startRun: vi.fn(),
@@ -277,5 +278,94 @@ describe("AnalysisRunTimeline", () => {
     }
     // Header del wizard: estado global "Completado".
     expect(screen.getAllByText(/Completado/i).length).toBeGreaterThan(0);
+  });
+
+  // ------------------------------------------------------------------
+  // variant="compact" (T049) — solo header, sin `<ol>` de nodos
+  // ------------------------------------------------------------------
+
+  it('variant="compact" renderiza solo el header (label + progressbar + ETA), sin la lista de nodos', async () => {
+    vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+      run_id: "r1",
+      state: "running",
+      progress_pct: 40,
+      current_node: "analyst_agent",
+      started_at: "2026-05-20T10:00:00Z",
+      estimated_seconds_remaining: 18,
+      last_seq: 0,
+      new_events: [],
+    });
+    wrap(<AnalysisRunTimeline runId="r1" variant="compact" />);
+
+    await waitFor(() => {
+      const bar = screen.getByRole("progressbar");
+      expect(bar).toHaveAttribute("aria-valuenow", "40");
+    });
+    expect(screen.getByTestId("timeline-eta")).toHaveTextContent("18s");
+    expect(screen.queryByTestId("timeline-nodes-list")).not.toBeInTheDocument();
+  });
+
+  it('variant="full" (default) sigue renderizando la lista de nodos', async () => {
+    vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+      run_id: "r1",
+      state: "running",
+      progress_pct: 10,
+      current_node: null,
+      started_at: "2026-05-20T10:00:00Z",
+      estimated_seconds_remaining: 30,
+      last_seq: 0,
+      new_events: [],
+    });
+    wrap(<AnalysisRunTimeline runId="r1" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("timeline-nodes-list")).toBeInTheDocument(),
+    );
+  });
+
+  // ------------------------------------------------------------------
+  // jest-axe (feature 033 / T056) — ambas densidades
+  // ------------------------------------------------------------------
+
+  describe("accesibilidad (T056)", () => {
+    it('jest-axe: 0 violaciones en variant="full"', async () => {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state: "running",
+        progress_pct: 25,
+        current_node: "compute_metrics",
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 20,
+        last_seq: 0,
+        new_events: [],
+      });
+      const { container } = wrap(<AnalysisRunTimeline runId="r1" />);
+      await waitFor(() =>
+        expect(screen.getByTestId("timeline-nodes-list")).toBeInTheDocument(),
+      );
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it('jest-axe: 0 violaciones en variant="compact"', async () => {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state: "running",
+        progress_pct: 60,
+        current_node: "critic_agent",
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 10,
+        last_seq: 0,
+        new_events: [],
+      });
+      const { container } = wrap(
+        <AnalysisRunTimeline runId="r1" variant="compact" />,
+      );
+      await waitFor(() => {
+        const bar = screen.getByRole("progressbar");
+        expect(bar).toHaveAttribute("aria-valuenow", "60");
+      });
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
   });
 });

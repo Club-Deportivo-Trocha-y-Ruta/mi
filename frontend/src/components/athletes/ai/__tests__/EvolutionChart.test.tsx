@@ -12,6 +12,7 @@
  * con ResponsiveContainer puede colgar tests (no hay layout/ResizeObserver
  * real). El test verifica el modelo de datos del chart, no el SVG.
  */
+import { Children, cloneElement, isValidElement } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -48,11 +49,50 @@ vi.mock("recharts", () => ({
       data-points={data.length}
       data-entries={JSON.stringify(data)}
     >
-      {children}
+      {/* T032: inyectamos `data` como `chartData` en el <Line> hijo para que
+          el mock de Line pueda invocar la prop `dot` (custom render de
+          EvolutionChart.tsx) por cada punto — así podemos afirmar que el
+          diamante de campeonato (T030) se renderiza en el punto correcto. */}
+      {Children.map(children, (child) =>
+        isValidElement(child) &&
+        (child.props as { dataKey?: string })?.dataKey === "value"
+          ? cloneElement(child as React.ReactElement<{ chartData?: unknown[] }>, {
+              chartData: data,
+            })
+          : child,
+      )}
     </div>
   ),
-  Line: () => <div data-testid="recharts-line" />,
-  CartesianGrid: () => <div data-testid="recharts-grid" />,
+  Line: ({
+    dot,
+    chartData,
+  }: {
+    dot?: (props: {
+      cx: number;
+      cy: number;
+      index: number;
+      payload: unknown;
+    }) => React.ReactNode;
+    chartData?: unknown[];
+  }) => (
+    <svg data-testid="recharts-line">
+      {(chartData ?? []).map((payload, index) =>
+        typeof dot === "function" ? (
+          <g key={index}>{dot({ cx: 10 + index * 20, cy: 10, index, payload })}</g>
+        ) : null,
+      )}
+    </svg>
+  ),
+  // T032: capturamos stroke/strokeDasharray para poder afirmar que la
+  // grilla es un hairline sólido — contracts/chart-style.md prohíbe
+  // strokeDasharray en <CartesianGrid> (anti-patrón "grilla punteada").
+  CartesianGrid: (props: { stroke?: string; strokeDasharray?: string }) => (
+    <div
+      data-testid="recharts-grid"
+      data-stroke={props.stroke}
+      data-stroke-dasharray={props.strokeDasharray ?? ""}
+    />
+  ),
   XAxis: ({ dataKey }: { dataKey?: string }) => (
     <div data-testid="recharts-x" data-key={dataKey} />
   ),
@@ -297,7 +337,9 @@ describe("EvolutionChart", () => {
       // T027 los renderizará como ticks del XAxis o como un data-label en el
       // LineChart. Verificamos que la etiqueta del campeonato sea visible.
       // Actualmente romanForValida(1)="I" → "Cto. Dep." nunca aparece → FALLA.
-      expect(screen.getByText(/cto\.?\s*dep\./i)).toBeInTheDocument();
+      // T030 añade además un label directo sobre el punto (diamante) — por
+      // eso puede haber más de una ocurrencia (leyenda <ol> + marcador).
+      expect(screen.getAllByText(/cto\.?\s*dep\./i).length).toBeGreaterThan(0);
     });
 
     it("la lista DNF ('No finalizó') usa el campo label del punto, no romanForValida(valida_num)", async () => {
@@ -347,6 +389,135 @@ describe("EvolutionChart", () => {
       });
       const results = await axe(container);
       expect(results).toHaveNoViolations();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T032 — chart regression contract (contracts/chart-style.md): grid is a
+  // solid hairline (no dashing), the championship diamond dot renders iff
+  // a point has series_kind==="championship", and the n<3 low-confidence
+  // fallback keeps rendering unchanged.
+  // ---------------------------------------------------------------------------
+
+  describe("T032 — chart regression contract", () => {
+    it("CartesianGrid nunca recibe strokeDasharray (grilla hairline sólida, sin punteado)", async () => {
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument(),
+      );
+      const grid = screen.getByTestId("recharts-grid");
+      expect(grid.getAttribute("data-stroke-dasharray")).toBe("");
+    });
+
+    it("renderiza el marcador diamante del campeonato cuando un punto tiene series_kind==='championship'", async () => {
+      mswServer.use(cupAndChampionshipConflictHandler);
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument(),
+      );
+
+      // Buscamos SOLO dentro del <svg> mockeado de <Line> — el resto del
+      // árbol (iconos lucide del header, p.ej. Calendar/LayoutGrid) también
+      // dibuja <rect>/<circle>, así que acotamos el scope a los dots reales.
+      const lineSvg = screen.getByTestId("recharts-line");
+
+      // El diamante es un <rect> rotado 45° (no un color nuevo) — exactamente
+      // uno, para el único punto series_kind==="championship" del fixture.
+      const diamonds = lineSvg.querySelectorAll("rect");
+      expect(diamonds).toHaveLength(1);
+      expect(diamonds[0].getAttribute("transform")).toContain("rotate(45");
+
+      // Etiqueta directa sobre el punto, ADEMÁS de (no en reemplazo de) la
+      // leyenda accesible <ol> — deben coexistir ambas ocurrencias del texto.
+      expect(
+        screen.getAllByText(/cto\.?\s*dep\./i).length,
+      ).toBeGreaterThanOrEqual(2);
+
+      // El punto no-campeonato (copa, event_id=91) sigue como círculo simple.
+      expect(lineSvg.querySelectorAll("circle")).toHaveLength(1);
+    });
+
+    it("NO renderiza el marcador diamante cuando ningún punto es series_kind==='championship'", async () => {
+      // mockEvolution() default: 4 puntos, todos series_kind='cup'.
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument(),
+      );
+
+      const lineSvg = screen.getByTestId("recharts-line");
+      expect(lineSvg.querySelectorAll("rect")).toHaveLength(0);
+      expect(screen.queryByText(/cto\.?\s*dep\./i)).not.toBeInTheDocument();
+      // Los 4 puntos se marcan como círculo simple en --color-primary.
+      expect(lineSvg.querySelectorAll("circle")).toHaveLength(4);
+    });
+
+    it("el fallback n<3 (low confidence) se renderiza sin cambios: disclaimer con el texto exacto de siempre", async () => {
+      mswServer.use(lowConfidenceEvolutionHandler);
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() => {
+        expect(screen.getByRole("note")).toBeInTheDocument();
+      });
+      expect(
+        screen.getByText(/muestra insuficiente.*n<3/i),
+      ).toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T033 — el twin de tabla debe ser el equivalente WCAG-limpio de la
+  // gráfica por sí mismo (no solo "también presente"): axe corre sobre el
+  // contenedor cuando la vista "Tabla" está activa y es la única vista
+  // montada (Radix Tabs desmonta el panel inactivo).
+  // ---------------------------------------------------------------------------
+
+  describe("T033 — table-view twin es WCAG-limpio por sí mismo (axe)", () => {
+    it("la vista Tabla activa no tiene violaciones a11y y reemplaza por completo a la gráfica en el DOM", async () => {
+      const user = userEvent.setup();
+      const { container } = renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument(),
+      );
+
+      await user.click(screen.getByTestId("evolution-tab-table"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("evolution-table")).toBeInTheDocument();
+        expect(screen.queryByTestId("line-chart")).not.toBeInTheDocument();
+      });
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it("la fila del campeonato en la tabla se marca igual que la leyenda accesible <ol>", async () => {
+      mswServer.use(cupAndChampionshipConflictHandler);
+      const user = userEvent.setup();
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument(),
+      );
+
+      await user.click(screen.getByTestId("evolution-tab-table"));
+
+      await waitFor(() =>
+        expect(screen.getByTestId("evolution-table")).toBeInTheDocument(),
+      );
+      const champRow = screen
+        .getByText("Cto. Dep. — Ginebra")
+        .closest("tr");
+      expect(champRow).toHaveClass("text-amber-700");
     });
   });
 });

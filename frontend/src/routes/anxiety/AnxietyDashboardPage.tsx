@@ -29,10 +29,10 @@ export function AnxietyDashboardPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
-      <h1 className="mb-1 text-2xl font-semibold text-slate-900">
+      <h1 className="mb-1 text-2xl font-semibold text-charcoal">
         Ansiedad competitiva
       </h1>
-      <p className="mb-5 text-sm text-slate-500">
+      <p className="mb-5 text-sm text-mid-gray">
         Evalúa, puntúa e interpreta el estado de ansiedad previo a la
         competencia, anclado a la línea base de cada deportista.
       </p>
@@ -51,8 +51,8 @@ export function AnxietyDashboardPage() {
             className={[
               "min-h-10 rounded-lg px-4 py-2 text-sm",
               tab === t.id
-                ? "bg-slate-900 text-white"
-                : "border border-slate-300 text-slate-700",
+                ? "bg-charcoal text-white"
+                : "border border-border-gray text-charcoal",
             ].join(" ")}
           >
             {t.label}
@@ -82,14 +82,14 @@ function IndividualTab({ initialAthleteId = 0 }: { initialAthleteId?: number }) 
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">
+          <span className="mb-1 block font-medium text-charcoal">
             Deportista
           </span>
           <select
             value={athleteId}
             onChange={(e) => setAthleteId(e.target.value)}
             disabled={athletesQuery.isLoading}
-            className="min-h-10 w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="min-h-10 w-56 rounded-lg border border-border-gray px-3 py-2 text-sm"
           >
             <option value="">
               {athletesQuery.isLoading
@@ -104,13 +104,13 @@ function IndividualTab({ initialAthleteId = 0 }: { initialAthleteId?: number }) 
           </select>
         </label>
         <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Instrumento</span>
+          <span className="mb-1 block font-medium text-charcoal">Instrumento</span>
           <select
             value={instrument}
             onChange={(e) =>
               setInstrument(e.target.value as AnxietyInstrumentType)
             }
-            className="min-h-10 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="min-h-10 rounded-lg border border-border-gray px-3 py-2 text-sm"
           >
             <option value="csai2r">CSAI-2R</option>
             <option value="sas2">SAS-2</option>
@@ -120,14 +120,14 @@ function IndividualTab({ initialAthleteId = 0 }: { initialAthleteId?: number }) 
         <button
           type="button"
           onClick={() => setSubmittedId(Number(athleteId) || 0)}
-          className="min-h-10 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+          className="min-h-10 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white"
         >
           Ver
         </button>
       </div>
 
       {series.isLoading && (
-        <p className="text-sm text-slate-500">Cargando…</p>
+        <p className="text-sm text-mid-gray">Cargando…</p>
       )}
       {series.data && <IndividualPanel series={series.data} />}
     </div>
@@ -143,26 +143,26 @@ function GroupTab() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">
+          <span className="mb-1 block font-medium text-charcoal">
             Evento (ID)
           </span>
           <input
             type="number"
             value={eventId}
             onChange={(e) => setEventId(e.target.value)}
-            className="min-h-10 w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="min-h-10 w-40 rounded-lg border border-border-gray px-3 py-2 text-sm"
           />
         </label>
         <button
           type="button"
           onClick={() => setSubmittedId(Number(eventId) || 0)}
-          className="min-h-10 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+          className="min-h-10 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white"
         >
           Ver
         </button>
       </div>
 
-      {triage.isLoading && <p className="text-sm text-slate-500">Cargando…</p>}
+      {triage.isLoading && <p className="text-sm text-mid-gray">Cargando…</p>}
       {triage.data && <GroupPanel triage={triage.data} />}
     </div>
   );

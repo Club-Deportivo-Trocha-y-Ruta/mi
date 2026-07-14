@@ -26,10 +26,10 @@ export function IndividualPanel({ series }: IndividualPanelProps) {
 
   return (
     <section
-      className="rounded-xl border border-slate-200 bg-white p-5"
+      className="rounded-xl border border-border-gray bg-white p-5"
       aria-label="Panel individual de ansiedad"
     >
-      <h3 className="mb-3 text-base font-semibold text-slate-900">
+      <h3 className="mb-3 text-base font-semibold text-charcoal">
         Evolución individual ({series.instrument_type.toUpperCase()})
       </h3>
 
@@ -41,24 +41,24 @@ export function IndividualPanel({ series }: IndividualPanelProps) {
 
       <table className="mb-4 w-full text-sm">
         <thead>
-          <tr className="text-left text-slate-500">
+          <tr className="text-left text-mid-gray">
             <th className="py-1">Dimensión</th>
             <th className="py-1">Último</th>
             <th className="py-1">Línea base</th>
           </tr>
         </thead>
         <tbody>
-          <tr className="border-t border-slate-100">
+          <tr className="border-t border-border-gray">
             <td className="py-1">Cognitiva</td>
             <td className="py-1">{fmt(latest?.cognitive ?? null)}</td>
             <td className="py-1">{fmt(series.baseline_cognitive)}</td>
           </tr>
-          <tr className="border-t border-slate-100">
+          <tr className="border-t border-border-gray">
             <td className="py-1">Somática</td>
             <td className="py-1">{fmt(latest?.somatic ?? null)}</td>
             <td className="py-1">{fmt(series.baseline_somatic)}</td>
           </tr>
-          <tr className="border-t border-slate-100">
+          <tr className="border-t border-border-gray">
             <td className="py-1">Autoconfianza</td>
             <td className="py-1">{fmt(latest?.selfconfidence ?? null)}</td>
             <td className="py-1">{fmt(series.baseline_selfconfidence)}</td>
@@ -69,7 +69,7 @@ export function IndividualPanel({ series }: IndividualPanelProps) {
       {series.points.length > 0 && (
         <Suspense
           fallback={
-            <p className="text-sm text-slate-400">Cargando gráfica…</p>
+            <p className="text-sm text-mid-gray">Cargando gráfica…</p>
           }
         >
           <SeriesChart series={series} />

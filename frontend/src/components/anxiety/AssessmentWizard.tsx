@@ -51,23 +51,23 @@ export function AssessmentWizard() {
 
   return (
     <section
-      className="rounded-xl border border-slate-200 bg-white p-5"
+      className="rounded-xl border border-border-gray bg-white p-5"
       aria-label="Crear evaluación"
     >
-      <h3 className="mb-4 text-base font-semibold text-slate-900">
+      <h3 className="mb-4 text-base font-semibold text-charcoal">
         Nueva evaluación
       </h3>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">
+          <span className="mb-1 block font-medium text-charcoal">
             Deportista
           </span>
           <select
             value={athleteId}
             onChange={(e) => setAthleteId(e.target.value)}
             disabled={athletesQuery.isLoading}
-            className="min-h-10 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="min-h-10 w-full rounded-lg border border-border-gray px-3 py-2 text-sm"
           >
             <option value="">
               {athletesQuery.isLoading
@@ -83,19 +83,19 @@ export function AssessmentWizard() {
         </label>
 
         <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">
+          <span className="mb-1 block font-medium text-charcoal">
             Fecha y hora
           </span>
           <input
             type="datetime-local"
             value={scheduledAt}
             onChange={(e) => setScheduledAt(e.target.value)}
-            className="min-h-10 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="min-h-10 w-full rounded-lg border border-border-gray px-3 py-2 text-sm"
           />
         </label>
 
         <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">
+          <span className="mb-1 block font-medium text-charcoal">
             Evento (ID, opcional)
           </span>
           <input
@@ -103,12 +103,12 @@ export function AssessmentWizard() {
             inputMode="numeric"
             value={eventId}
             onChange={(e) => setEventId(e.target.value)}
-            className="min-h-10 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="min-h-10 w-full rounded-lg border border-border-gray px-3 py-2 text-sm"
           />
         </label>
 
         <label className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">
+          <span className="mb-1 block font-medium text-charcoal">
             Instrumento (opcional, por defecto según edad)
           </span>
           <select
@@ -116,7 +116,7 @@ export function AssessmentWizard() {
             onChange={(e) =>
               setInstrument(e.target.value as AnxietyInstrumentType | "")
             }
-            className="min-h-10 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="min-h-10 w-full rounded-lg border border-border-gray px-3 py-2 text-sm"
           >
             <option value="">Automático por edad</option>
             <option value="sas2">SAS-2 (10–12)</option>
@@ -126,7 +126,7 @@ export function AssessmentWizard() {
       </div>
 
       {instrument === "csai2r" && (
-        <label className="mt-3 flex items-start gap-2 text-xs text-slate-600">
+        <label className="mt-3 flex items-start gap-2 text-xs text-mid-gray">
           <input
             type="checkbox"
             checked={override}

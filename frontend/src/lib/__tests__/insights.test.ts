@@ -16,8 +16,10 @@ import {
   getV2Preview,
   getCarreraTier,
   TAPER_GUIDANCE,
+  confidenceStatus,
 } from "@/lib/insights";
 import type { ProgressionAssessment } from "@/types/raceAnalysis.types";
+import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
 
 // ---------------------------------------------------------------------------
 // extractSeasonContext
@@ -142,12 +144,15 @@ describe("legacy insight compat (no regression)", () => {
 // ---------------------------------------------------------------------------
 
 describe("getCarreraTier", () => {
-  const cases: Array<[string, "A" | "B" | "C" | "CD"]> = [
+  const cases: Array<[string, "A" | "B" | "C"]> = [
     ["2026-01-31", "C"],
     ["2026-02-28", "C"],
     ["2026-04-19", "C"],
     ["2026-05-17", "A"],
-    ["2026-06-12", "CD"],
+    // Campeonato Departamental (junio): NO es un 4º tier — resuelve a "A"
+    // (su intensidad de tapering real), la distinción de campeonato queda
+    // aparte en el badge "CD" de CompetitionDetailPage.tsx (T015).
+    ["2026-06-12", "A"],
     ["2026-08-15", "B"],
     ["2026-09-12", "A"],
     ["2026-10-18", "B"],
@@ -196,20 +201,29 @@ describe("TAPER_GUIDANCE", () => {
     });
   });
 
-  it("tier CD — same taper discipline as A (Campeonato Departamental)", () => {
-    expect(TAPER_GUIDANCE.CD).toEqual({
-      label: "CD — Campeonato Departamental",
-      taperDays: [5, 7],
-      warningAt: 10,
-      dangerAt: 7,
-    });
+  it("has no 'CD' entry — the Departamental Championship resolves to tier A, not a 4th tier", () => {
+    expect(Object.keys(TAPER_GUIDANCE).sort()).toEqual(["A", "B", "C"]);
   });
 
-  it("covers all 4 tier keys returned by getCarreraTier (completeness check)", () => {
-    const tiers: Array<"A" | "B" | "C" | "CD"> = ["A", "B", "C", "CD"];
+  it("covers all 3 tier keys returned by getCarreraTier (completeness check)", () => {
+    const tiers: Array<"A" | "B" | "C"> = ["A", "B", "C"];
     for (const tier of tiers) {
       expect(TAPER_GUIDANCE[tier]).toBeTruthy();
       expect(TAPER_GUIDANCE[tier].label).toBeTruthy();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// confidenceStatus — canonical adapter, contracts/status-vocabulary-sweep.md §4
+// ---------------------------------------------------------------------------
+
+describe("confidenceStatus", () => {
+  it.each<[InsightConfidence, { status: string; label: string }]>([
+    ["high", { status: "success", label: "Confianza alta" }],
+    ["medium", { status: "warning", label: "Confianza media" }],
+    ["low", { status: "danger", label: "Confianza baja" }],
+  ])("%s → %o", (confidence, expected) => {
+    expect(confidenceStatus(confidence)).toEqual(expected);
   });
 });

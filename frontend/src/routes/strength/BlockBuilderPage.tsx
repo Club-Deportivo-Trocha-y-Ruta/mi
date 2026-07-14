@@ -127,7 +127,7 @@ function LockedSessionSummary({
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Lock size={14} aria-hidden="true" className="text-mid-gray" />
-          <h2 className="text-sm font-semibold text-slate-900">
+          <h2 className="text-sm font-semibold text-charcoal">
             Sesión de entrenamiento
           </h2>
           <span className="rounded-full bg-light-gray px-2 py-0.5 text-[11px] font-medium text-mid-gray">
@@ -152,7 +152,7 @@ function LockedSessionSummary({
           No se pudo cargar la sesión seleccionada.
         </p>
       ) : (
-        <p className="text-sm font-medium text-slate-800">
+        <p className="text-sm font-medium text-charcoal">
           {sessionLabel(session)}
         </p>
       )}
@@ -306,8 +306,8 @@ export function BlockBuilderPage() {
           description="Elegí la sesión de entrenamiento antes de armar el bloque de fuerza."
         />
         {!pickerOpen && (
-          <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
-            <p className="mb-4 text-sm text-slate-600">
+          <div className="rounded-xl border border-border-gray bg-white p-8 text-center">
+            <p className="mb-4 text-sm text-mid-gray">
               Elegí una sesión de entrenamiento para armar el bloque de
               fuerza.
             </p>
@@ -428,10 +428,10 @@ export function BlockBuilderPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
-      <h1 className="mb-1 text-2xl font-semibold text-slate-900">
+      <h1 className="mb-1 text-2xl font-semibold text-charcoal">
         {isEditMode ? "Editar bloque de fuerza" : "Armar bloque de fuerza"}
       </h1>
-      <p className="mb-6 text-sm text-slate-500">
+      <p className="mb-6 text-sm text-mid-gray">
         {lockedSessionId != null
           ? "Selecciona ejercicios, ajusta duración y repeticiones, y guarda el bloque. Se adjuntará automáticamente a la sesión elegida."
           : "Selecciona ejercicios, ajusta duración y repeticiones, y guarda el bloque. Luego puedes adjuntarlo a una sesión de entrenamiento existente."}
@@ -463,7 +463,7 @@ export function BlockBuilderPage() {
               <p
                 role="status"
                 aria-busy="true"
-                className="flex items-center gap-2 text-sm text-slate-600"
+                className="flex items-center gap-2 text-sm text-mid-gray"
               >
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 Adjuntando a la sesión…
@@ -485,7 +485,7 @@ export function BlockBuilderPage() {
                 </Button>
               </div>
             ) : (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-mid-gray">
                 Bloque guardado. Adjuntando a la sesión…
               </p>
             )}
@@ -497,10 +497,10 @@ export function BlockBuilderPage() {
       {savedBlockId && lockedSessionId == null && (
         <Card className="mt-8">
           <CardContent className="py-5">
-            <h2 className="mb-1 text-base font-semibold text-slate-900">
+            <h2 className="mb-1 text-base font-semibold text-charcoal">
               Adjuntar a una sesión de entrenamiento
             </h2>
-            <p className="mb-4 text-sm text-slate-500">
+            <p className="mb-4 text-sm text-mid-gray">
               Bloque guardado correctamente. Búscalo entre las sesiones
               existentes del club y adjúntalo, o{" "}
               <Link
@@ -551,7 +551,7 @@ export function BlockBuilderPage() {
                   value={attachQuery}
                   onChange={(e) => setAttachQuery(e.target.value)}
                   placeholder="Buscar por fecha, lugar o enfoque técnico…"
-                  className="mb-3 min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="mb-3 min-h-12 w-full rounded-lg border border-border-gray px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-primary"
                 />
 
                 {sessions.isLoading ? (
@@ -561,7 +561,7 @@ export function BlockBuilderPage() {
                     No se pudieron cargar las sesiones de entrenamiento.
                   </p>
                 ) : filteredSessions.length === 0 ? (
-                  <p className="text-sm text-slate-400 italic">
+                  <p className="text-sm text-mid-gray italic">
                     No hay sesiones que coincidan con la búsqueda.
                   </p>
                 ) : (
@@ -573,7 +573,7 @@ export function BlockBuilderPage() {
                     {filteredSessions.map((session) => (
                       <label
                         key={session.id}
-                        className="flex min-h-12 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+                        className="flex min-h-12 cursor-pointer items-center gap-2 rounded-lg border border-border-gray px-3 py-2 text-sm text-charcoal hover:bg-light-gray has-[:checked]:border-primary has-[:checked]:bg-primary/5"
                       >
                         <input
                           type="radio"

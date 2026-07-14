@@ -50,7 +50,7 @@ export interface CircuitDiagramProps {
 
 const COLORS = {
   cone:  { fill: "#F59E0B", stroke: "#92400E" },            // amber
-  line:  { stroke: "#475569" },                              // slate-600
+  line:  { stroke: "#475569" },                              // neutral gray
   gate:  { fill: "#0EA5E9", stroke: "#0369A1" },            // sky
   mine:  { fill: "#F43F5E", stroke: "#9F1239", x: "#FFFFFF" }, // rose + white cross
   beam:  { fill: "#D97706", stroke: "#78350F", hatch: "#92400E" }, // amber-dark + hatch
@@ -419,7 +419,7 @@ export function CircuitDiagram({ layout, altText, className }: CircuitDiagramPro
   return (
     <div className={cn("space-y-3", className)}>
       {/* SVG canvas — responsive via width="100%", aspect-ratio preserved */}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-border-gray bg-white">
         <svg
           role="img"
           aria-labelledby={`${titleId} ${descId}`}
@@ -456,13 +456,13 @@ export function CircuitDiagram({ layout, altText, className }: CircuitDiagramPro
 
       {/* Legend — matches CircuitLayout's visual style; suppressed for empty layouts */}
       {!isEmpty && legendKeys.length > 0 && (
-        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="rounded-lg border border-border-gray bg-light-gray p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-mid-gray">
             Leyenda del circuito
           </p>
           <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {legendKeys.map((key) => (
-              <li key={key} className="flex items-center gap-2 text-xs text-slate-600">
+              <li key={key} className="flex items-center gap-2 text-xs text-mid-gray">
                 <LegendSwatch legendKey={key} />
                 <span>{LEGEND_LABELS[key]}</span>
               </li>

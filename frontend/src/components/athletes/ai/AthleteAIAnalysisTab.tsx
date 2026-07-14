@@ -11,10 +11,10 @@
  *   · Histórico    → InsightsTimeline
  *   · Evolución    → EvolutionChart
  *   · Distribución → DistributionChart + Sheet con ComparatorPanel (solo coach)
- *   · Lanzar       → LaunchAnalysisForm (solo coach)
+ *   · Analizar con IA → LaunchAnalysisForm (solo coach)
  *
  * Privacidad Ley 1581:
- *   - mode="parent" oculta Distribución, Lanzar, Sheet del Comparador.
+ *   - mode="parent" oculta Distribución, "Analizar con IA", Sheet del Comparador.
  *   - Multi-select y action bar SOLO en mode="coach".
  *   - Checkbox nunca se renderiza para parent.
  */
@@ -24,7 +24,6 @@ import {
   BarChart3,
   Calendar,
   History,
-  Play,
   Sparkles,
 } from "lucide-react";
 
@@ -59,30 +58,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatDateTimeCompact } from "@/lib/datetime";
-import { validaLabel } from "@/lib/insights";
+import { confidenceStatus, validaLabel } from "@/lib/insights";
 import { useRunStatus } from "@/hooks/ai/useRaceRun";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import { useAttachInsightsToNewsletter } from "@/api/athleteNewsletters";
 import type { AttachInsightsRequest } from "@/types/athleteNewsletter.types";
 import type { AthleteOut } from "@/types/athlete.types";
-import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
 
 type SubTab = "panorama" | "history" | "evolution" | "distribution" | "launch";
-
-function confidenceBadgeVariant(
-  c: InsightConfidence,
-): "success" | "warning" | "destructive" {
-  if (c === "high") return "success";
-  if (c === "medium") return "warning";
-  return "destructive";
-}
-
-function confidenceText(c: InsightConfidence): string {
-  if (c === "high") return "Confianza alta";
-  if (c === "medium") return "Confianza media";
-  return "Confianza baja";
-}
 
 interface AthleteAIAnalysisTabProps {
   athlete: AthleteOut;
@@ -217,7 +202,7 @@ export function AthleteAIAnalysisTab({
               className="font-display flex items-center gap-2 text-base text-charcoal"
             >
               <Sparkles size={16} aria-hidden="true" />
-              {mode === "parent" ? "Análisis del coach" : "Análisis IA del deportista"}
+              Insights IA
             </h2>
             <p className="mt-1 text-xs text-mid-gray">
               {mode === "parent"
@@ -265,9 +250,10 @@ export function AthleteAIAnalysisTab({
                 <div className="flex flex-wrap items-center justify-end gap-1.5">
                   <Badge variant="secondary">{validaLabel(latest.valida_num)}</Badge>
                   {mode === "coach" && (
-                    <Badge variant={confidenceBadgeVariant(latest.confidence)}>
-                      {confidenceText(latest.confidence)}
-                    </Badge>
+                    <StatusBadge
+                      status={confidenceStatus(latest.confidence).status}
+                      label={confidenceStatus(latest.confidence).label}
+                    />
                   )}
                 </div>
                 <span className="text-[11px] text-mid-gray">
@@ -327,8 +313,8 @@ export function AthleteAIAnalysisTab({
           )}
           {mode === "coach" && (
             <TabsTrigger value="launch" data-testid="ai-subtab-launch" className="shrink-0">
-              <Play size={14} aria-hidden="true" />
-              Lanzar
+              <Sparkles size={14} aria-hidden="true" />
+              Analizar con IA
             </TabsTrigger>
           )}
         </TabsList>

@@ -30,6 +30,15 @@ export const aiHealthResponseSchema = z
   })
   .strip();
 
+export const aiStatusResponseSchema = z
+  .object({
+    budget_status: z.enum(["ok", "warning", "exhausted"]),
+    budget_remaining_pct: z.number(),
+    concurrency_available: z.boolean(),
+    est_wait_seconds: z.number(),
+  })
+  .strip();
+
 export const anthropometricRecordExplanationResponseSchema = z
   .object({
     text: z.string().min(1),

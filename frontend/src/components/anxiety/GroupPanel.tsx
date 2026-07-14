@@ -20,9 +20,9 @@ const BUCKET_ORDER: GroupPattern[] = [
 
 function MemberRow({ m }: { m: GroupMember }) {
   return (
-    <li className="flex items-center justify-between rounded-md bg-slate-50 px-2 py-1 text-sm">
+    <li className="flex items-center justify-between rounded-md bg-light-gray px-2 py-1 text-sm">
       <span>Deportista #{m.athlete_id}</span>
-      <span className="text-xs text-slate-500">
+      <span className="text-xs text-mid-gray">
         C {m.cognitive ?? "—"} · S {m.somatic ?? "—"} · A {m.selfconfidence ?? "—"}
       </span>
     </li>
@@ -33,10 +33,10 @@ function MemberRow({ m }: { m: GroupMember }) {
 export function GroupPanel({ triage }: GroupPanelProps) {
   return (
     <section
-      className="rounded-xl border border-slate-200 bg-white p-5"
+      className="rounded-xl border border-border-gray bg-white p-5"
       aria-label="Panel grupal de ansiedad"
     >
-      <h3 className="mb-3 text-base font-semibold text-slate-900">
+      <h3 className="mb-3 text-base font-semibold text-charcoal">
         Triage del grupo
       </h3>
 
@@ -57,12 +57,12 @@ export function GroupPanel({ triage }: GroupPanelProps) {
         {BUCKET_ORDER.map((bucket) => {
           const members = triage.buckets[bucket] ?? [];
           return (
-            <div key={bucket} className="rounded-lg border border-slate-100 p-3">
-              <h4 className="mb-2 text-sm font-medium text-slate-800">
+            <div key={bucket} className="rounded-lg border border-border-gray p-3">
+              <h4 className="mb-2 text-sm font-medium text-charcoal">
                 {BUCKET_LABELS[bucket]} ({members.length})
               </h4>
               {members.length === 0 ? (
-                <p className="text-xs text-slate-400">Sin deportistas.</p>
+                <p className="text-xs text-mid-gray">Sin deportistas.</p>
               ) : (
                 <ul className="space-y-1">
                   {members.map((m) => (

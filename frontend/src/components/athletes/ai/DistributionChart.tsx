@@ -28,6 +28,7 @@ import { BarChart3, Info } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAthleteDistribution } from "@/hooks/athletes/useAthleteDistribution";
 import { useAthleteRaces } from "@/hooks/athletes/useAthleteRaces";
 import {
@@ -275,9 +276,10 @@ export function DistributionChart({
                 </div>
               )}
 
-              {/* Confianza baja: tabla simple */}
+              {/* Confianza baja: tabla simple (fallback n<5, sin toggle — nunca
+                  coexiste con la gráfica, per contracts/chart-style.md). */}
               {query.data.athlete_time_ms !== null && lowConfidence && (
-                <LowConfidenceTable
+                <RiderTimesTable
                   points={query.data.points}
                   sampleSize={query.data.sample_size}
                   athleteTimeMs={query.data.athlete_time_ms}
@@ -285,74 +287,100 @@ export function DistributionChart({
                 />
               )}
 
-              {/* Confianza media/alta + curva fitteada */}
+              {/* Confianza media/alta + curva fitteada — toggle Gráfica/Tabla
+                  (T028): el acento --color-primary de la curva no alcanza el
+                  contraste 3:1 sobre blanco (contracts/chart-style.md WARN),
+                  así que la tabla es el canal de relief obligatorio, no
+                  decorativo. */}
               {query.data.athlete_time_ms !== null && !lowConfidence && hasFit && (
                 <>
-                  <div className="w-full">
-                    <ResponsiveContainer width="100%" height={320}>
-                      <AreaChart
-                        data={query.data.curve}
-                        margin={{ top: 30, right: 16, bottom: 48, left: 12 }}
-                      >
-                        <CartesianGrid stroke="rgba(34,42,53,0.08)" strokeDasharray="3 3" />
-                        <XAxis
-                          dataKey="x_ms"
-                          type="number"
-                          domain={xDomain ?? ["dataMin", "dataMax"]}
-                          tick={{ fontSize: 12, fill: "#5a6172" }}
-                          tickFormatter={(v: number) => formatTime(v)}
-                          label={{
-                            value: "Tiempo",
-                            position: "insideBottom",
-                            offset: -4,
-                            style: { fontSize: 11, fill: "#5a6172" },
-                          }}
-                        />
-                        <YAxis
-                          dataKey="density"
-                          tick={{ fontSize: 12, fill: "#5a6172" }}
-                          tickFormatter={(v: number) => v.toExponential(0)}
-                          width={48}
-                          label={{
-                            value: "Densidad",
-                            angle: -90,
-                            position: "insideLeft",
-                            style: { fontSize: 11, fill: "#5a6172" },
-                          }}
-                        />
-                        <Tooltip
-                          content={(props: unknown) => (
-                            <DistributionTooltip {...(props as TooltipLikeProps)} />
-                          )}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="density"
-                          stroke="#131316"
-                          fill="rgba(19,19,22,0.15)"
-                          strokeWidth={2}
-                        />
-                        {query.data.athlete_time_ms !== null && (
-                          <ReferenceLine
-                            x={query.data.athlete_time_ms}
-                            stroke="#0ea5e9"
-                            strokeDasharray="4 2"
-                            strokeWidth={2}
-                            label={{
-                              value:
-                                query.data.athlete_percentile !== null
-                                  ? `P${Math.round(query.data.athlete_percentile)} · Tú`
-                                  : "Tú",
-                              position: "top",
-                              fill: "#0369a1",
-                              fontSize: 11,
-                            }}
-                          />
-                        )}
-                        <RiderReferenceLines points={query.data.points} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <Tabs defaultValue="chart">
+                    <TabsList aria-label="Vista de distribución">
+                      <TabsTrigger value="chart" data-testid="distribution-view-chart">
+                        Gráfica
+                      </TabsTrigger>
+                      <TabsTrigger value="table" data-testid="distribution-view-table">
+                        Tabla
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="chart">
+                      <div className="w-full">
+                        <ResponsiveContainer width="100%" height={320}>
+                          <AreaChart
+                            data={query.data.curve}
+                            margin={{ top: 30, right: 16, bottom: 48, left: 12 }}
+                          >
+                            <CartesianGrid stroke="var(--color-border-gray)" />
+                            <XAxis
+                              dataKey="x_ms"
+                              type="number"
+                              domain={xDomain ?? ["dataMin", "dataMax"]}
+                              tick={{ fontSize: 12, fill: "var(--color-mid-gray)" }}
+                              tickFormatter={(v: number) => formatTime(v)}
+                              label={{
+                                value: "Tiempo",
+                                position: "insideBottom",
+                                offset: -4,
+                                style: { fontSize: 11, fill: "var(--color-mid-gray)" },
+                              }}
+                            />
+                            <YAxis
+                              dataKey="density"
+                              tick={{ fontSize: 12, fill: "var(--color-mid-gray)" }}
+                              tickFormatter={(v: number) => v.toExponential(0)}
+                              width={48}
+                              label={{
+                                value: "Densidad",
+                                angle: -90,
+                                position: "insideLeft",
+                                style: { fontSize: 11, fill: "var(--color-mid-gray)" },
+                              }}
+                            />
+                            <Tooltip
+                              content={(props: unknown) => (
+                                <DistributionTooltip {...(props as TooltipLikeProps)} />
+                              )}
+                            />
+                            <Area
+                              type="monotone"
+                              dataKey="density"
+                              stroke="var(--color-primary)"
+                              fill="color-mix(in srgb, var(--color-primary) 15%, transparent)"
+                              strokeWidth={2}
+                            />
+                            {query.data.athlete_time_ms !== null && (
+                              <ReferenceLine
+                                x={query.data.athlete_time_ms}
+                                stroke="var(--color-primary)"
+                                strokeDasharray="4 2"
+                                strokeWidth={2}
+                                label={{
+                                  value:
+                                    query.data.athlete_percentile !== null
+                                      ? `P${Math.round(query.data.athlete_percentile)} · Tú`
+                                      : "Tú",
+                                  position: "top",
+                                  fill: "var(--color-primary)",
+                                  fontSize: 11,
+                                }}
+                              />
+                            )}
+                            <RiderReferenceLines points={query.data.points} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="table">
+                      <RiderTimesTable
+                        points={query.data.points}
+                        sampleSize={query.data.sample_size}
+                        athleteTimeMs={query.data.athlete_time_ms}
+                        categoryCode={query.data.category_code}
+                      />
+                    </TabsContent>
+                  </Tabs>
 
                   <StatsSummary
                     meanMs={query.data.mean_ms}
@@ -389,19 +417,29 @@ export function DistributionChart({
 // Sub-components
 // ---------------------------------------------------------------------------
 
-interface LowConfidenceTableProps {
+interface RiderTimesTableProps {
   points: { pseudonym: string; time_ms: number; is_self: boolean; display_name?: string | null }[];
   sampleSize: number;
   athleteTimeMs: number;
   categoryCode: string;
 }
 
-function LowConfidenceTable({
+/**
+ * RiderTimesTable — posición / nombre-o-pseudónimo / tiempo, self-row
+ * resaltada. Componente único con dos call sites (T028,
+ * contracts/chart-style.md "Table-view twin"):
+ *   1. Fallback n<5 (confidence==="low") — se renderiza siempre, nunca
+ *      junto al toggle Gráfica/Tabla.
+ *   2. Vista "Tabla" del toggle en el path n≥5 con curva fitteada — el
+ *      equivalente WCAG-limpio de la gráfica (relief obligatorio por el
+ *      WARN de contraste del acento, no decorativo).
+ */
+function RiderTimesTable({
   points,
   sampleSize,
   athleteTimeMs,
   categoryCode,
-}: LowConfidenceTableProps) {
+}: RiderTimesTableProps) {
   const sorted = [...points].sort((a, b) => a.time_ms - b.time_ms);
   const hasDisplayNames = sorted.some((p) => p.display_name != null);
   const nameHeader = hasDisplayNames ? "Nombre" : "Pseudónimo";
@@ -471,23 +509,37 @@ function shortName(name: string): string {
 /** Renderiza una ReferenceLine por corredora (excluye self — ya tiene su
  *  propia línea "Tú" arriba). Color: verde=mejor, rojo=peor, gris=resto.
  *  Labels alternados arriba/abajo según índice para reducir solapamiento.
- *  Usa primer nombre para que el label no invada otros. */
+ *  Usa primer nombre para que el label no invada otros.
+ *
+ *  T027: con más de 8 corredoras en la categoría, un label de texto por
+ *  cada una satura la gráfica (anti-patrón "número en cada punto" —
+ *  contracts/chart-style.md). Por encima de ese umbral solo mejor/peor
+ *  conservan label visible; el resto sigue renderizando su ReferenceLine
+ *  en la posición correcta (informativa), solo sin texto. Self no pasa
+ *  por acá — su label vive en la línea "Tú" separada de arriba.
+ */
 function RiderReferenceLines({ points }: RiderReferenceLinesProps) {
   if (points.length === 0) return null;
   const sorted = [...points].sort((a, b) => a.time_ms - b.time_ms);
   const bestTime = sorted[0].time_ms;
   const worstTime = sorted[sorted.length - 1].time_ms;
+  const capLabels = points.length > 8;
   return (
     <>
       {sorted.map((p, idx) => {
         if (p.is_self) return null;
         const isBest = p.time_ms === bestTime;
         const isWorst = p.time_ms === worstTime && worstTime !== bestTime;
-        const stroke = isBest ? "#16a34a" : isWorst ? "#dc2626" : "#94a3b8";
-        const fill = isBest ? "#15803d" : isWorst ? "#b91c1c" : "#64748b";
+        const stroke = isBest
+          ? "var(--color-success)"
+          : isWorst
+          ? "var(--color-danger)"
+          : "var(--color-mid-gray)";
+        const fill = stroke;
         // Mejor + peor siempre abajo (anclas visuales); el resto alterna.
         const position: "top" | "bottom" =
           isBest || isWorst ? "bottom" : idx % 2 === 0 ? "bottom" : "top";
+        const showLabel = isBest || isWorst || !capLabels;
         const label = p.display_name
           ? shortName(p.display_name)
           : p.pseudonym;
@@ -498,12 +550,16 @@ function RiderReferenceLines({ points }: RiderReferenceLinesProps) {
             stroke={stroke}
             strokeDasharray="3 3"
             strokeWidth={1.5}
-            label={{
-              value: label,
-              position,
-              fill,
-              fontSize: 10,
-            }}
+            label={
+              showLabel
+                ? {
+                    value: label,
+                    position,
+                    fill,
+                    fontSize: 10,
+                  }
+                : undefined
+            }
           />
         );
       })}

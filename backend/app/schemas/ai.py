@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +14,22 @@ class AIHealthResponse(BaseModel):
     enabled: bool
     provider: str
     model: str
+
+
+class AIStatusResponse(BaseModel):
+    """Respuesta de `GET /api/ai/status` (feature 033, pre-launch hint).
+
+    Read-model puramente informativo para que el frontend muestre un
+    hint ANTES del click de lanzar un análisis (presupuesto/backpressure),
+    en vez de solo reaccionar a un 503/429 después del intento. No expone
+    identificadores de atletas ni ningún dato personal — solo agregados
+    de costo/latencia/capacidad ya usados por `admin_ai_usage()`/`check_budget()`.
+    """
+
+    budget_status: Literal["ok", "warning", "exhausted"]
+    budget_remaining_pct: int = Field(..., ge=0, le=100)
+    concurrency_available: bool
+    est_wait_seconds: int = Field(..., ge=0)
 
 
 class PHVExplanationResponse(BaseModel):

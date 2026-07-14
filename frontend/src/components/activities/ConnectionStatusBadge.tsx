@@ -1,67 +1,57 @@
 /**
  * ConnectionStatusBadge — píldora de estado de la conexión Strava de un atleta
- * (feature 025, T025).
+ * (feature 025, T025; migrado a `StatusBadge` en feature 033, T016 —
+ * `contracts/status-vocabulary-sweep.md` §1).
  *
- * Mirror del patrón `STATE_CONFIG` de `ConsentStatusPanel` / `RelationshipBadge`
- * de `LinkedParentsCard`: un mapeo `status → { label, icon, variant }` sobre el
- * primitivo `Badge` de shadcn/ui.
+ * Renderiza el adaptador puro `connectionStatus()` sobre `<StatusBadge>`
+ * (color + ícono + texto siempre juntos, Constitution III).
  *
  * Estados (mirror de `StravaConnectionStatus` en `types/strava.types.ts` y del
  * contrato `contracts/api.md §D`):
- *   - none         → nunca se conectó. Variante neutra.
- *   - active       → sincronizando con normalidad. Variante success (verde).
- *   - broken       → token inválido / revocado desde Strava. Variante warning
+ *   - none         → nunca se conectó. Estado neutral.
+ *   - active       → sincronizando con normalidad. Estado success (verde).
+ *   - broken       → token inválido / revocado desde Strava. Estado warning
  *                    (ámbar) — requiere reconectar, no es un error destructivo.
- *   - disconnected → desconexión intencional (familia o coach). Variante
- *                    secondary (neutra) — estado válido, no un error.
+ *   - disconnected → desconexión intencional (familia o coach). Estado
+ *                    neutral — estado válido, no un error.
  */
+import type { LucideIcon } from "lucide-react";
 import { CheckCircle2, CircleOff, Link2Off, TriangleAlert } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import type { StravaConnectionStatus } from "@/types/strava.types";
 
-interface StatusConfig {
+/**
+ * Adaptador puro `StravaConnectionStatus → StatusBadge`
+ * (`contracts/status-vocabulary-sweep.md` §1).
+ */
+export interface ConnectionStatusAdapterResult {
+  status: Status;
   label: string;
-  icon: React.ReactNode;
-  variant: "success" | "warning" | "secondary";
+  icon: LucideIcon;
 }
 
-const STATUS_CONFIG: Record<StravaConnectionStatus, StatusConfig> = {
-  none: {
-    label: "Sin conectar",
-    icon: <CircleOff size={13} aria-hidden="true" />,
-    variant: "secondary",
-  },
-  active: {
-    label: "Conectado",
-    icon: <CheckCircle2 size={13} aria-hidden="true" />,
-    variant: "success",
-  },
-  broken: {
-    label: "Conexión rota",
-    icon: <TriangleAlert size={13} aria-hidden="true" />,
-    variant: "warning",
-  },
-  disconnected: {
-    label: "Desconectado",
-    icon: <Link2Off size={13} aria-hidden="true" />,
-    variant: "secondary",
-  },
-};
+export function connectionStatus(
+  state: StravaConnectionStatus,
+): ConnectionStatusAdapterResult {
+  switch (state) {
+    case "none":
+      return { status: "neutral", label: "Sin conectar", icon: CircleOff };
+    case "active":
+      return { status: "success", label: "Conectado", icon: CheckCircle2 };
+    case "broken":
+      return { status: "warning", label: "Conexión rota", icon: TriangleAlert };
+    case "disconnected":
+      return { status: "neutral", label: "Desconectado", icon: Link2Off };
+  }
+}
 
 interface ConnectionStatusBadgeProps {
   status: StravaConnectionStatus;
-  className?: string;
 }
 
-export function ConnectionStatusBadge({ status, className }: ConnectionStatusBadgeProps) {
-  const config = STATUS_CONFIG[status];
+export function ConnectionStatusBadge({ status }: ConnectionStatusBadgeProps) {
+  const { status: badgeStatus, label, icon } = connectionStatus(status);
 
-  return (
-    <Badge variant={config.variant} className={cn("gap-1", className)}>
-      {config.icon}
-      {config.label}
-    </Badge>
-  );
+  return <StatusBadge status={badgeStatus} label={label} icon={icon} />;
 }

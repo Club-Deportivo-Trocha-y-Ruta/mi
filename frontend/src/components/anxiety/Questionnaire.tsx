@@ -61,16 +61,16 @@ export function Questionnaire({ form, onSubmit, isSubmitting }: QuestionnairePro
       className="mx-auto w-full max-w-md px-4 py-6"
       aria-label="Cuestionario previo a la carrera"
     >
-      <p className="mb-4 text-sm text-slate-600">{form.intro}</p>
+      <p className="mb-4 text-sm text-mid-gray">{form.intro}</p>
 
       <div
-        className="mb-2 text-xs text-slate-500"
+        className="mb-2 text-xs text-mid-gray"
         aria-live="polite"
       >
         Pregunta {index + 1} de {total} · {answeredCount} respondidas
       </div>
       <div
-        className="mb-5 h-2 w-full overflow-hidden rounded-full bg-slate-200"
+        className="mb-5 h-2 w-full overflow-hidden rounded-full bg-light-gray"
         role="progressbar"
         aria-label="Progreso del cuestionario"
         aria-valuemin={0}
@@ -84,7 +84,7 @@ export function Questionnaire({ form, onSubmit, isSubmitting }: QuestionnairePro
       </div>
 
       <fieldset className="mb-6">
-        <legend className="mb-4 text-base font-medium text-slate-900">
+        <legend className="mb-4 text-base font-medium text-charcoal">
           {current.text ?? `Frase ${current.item_id}`}
         </legend>
         <div className="flex flex-col gap-2">
@@ -100,11 +100,11 @@ export function Questionnaire({ form, onSubmit, isSubmitting }: QuestionnairePro
                   "flex min-h-12 w-full items-center justify-between rounded-lg border px-4 py-3 text-left text-sm transition-colors",
                   active
                     ? "border-emerald-600 bg-emerald-50 text-emerald-900"
-                    : "border-slate-300 bg-white text-slate-700 hover:border-slate-400",
+                    : "border-border-gray bg-white text-charcoal hover:border-mid-gray",
                 ].join(" ")}
               >
                 <span>{SCALE_LABELS[value] ?? String(value)}</span>
-                <span aria-hidden className="text-xs text-slate-400">
+                <span aria-hidden className="text-xs text-mid-gray">
                   {value}
                 </span>
               </button>
@@ -118,7 +118,7 @@ export function Questionnaire({ form, onSubmit, isSubmitting }: QuestionnairePro
           type="button"
           onClick={prev}
           disabled={index === 0}
-          className="min-h-12 rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 disabled:opacity-40"
+          className="min-h-12 rounded-lg border border-border-gray px-4 py-2 text-sm text-charcoal disabled:opacity-40"
         >
           Anterior
         </button>
@@ -135,7 +135,7 @@ export function Questionnaire({ form, onSubmit, isSubmitting }: QuestionnairePro
           <button
             type="button"
             onClick={next}
-            className="min-h-12 rounded-lg bg-slate-900 px-5 py-2 text-sm font-medium text-white"
+            className="min-h-12 rounded-lg bg-charcoal px-5 py-2 text-sm font-medium text-white"
           >
             Siguiente
           </button>

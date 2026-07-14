@@ -130,7 +130,7 @@ export function ExerciseDetailPage() {
       {/* ── Encabezado ──────────────────────────────────────────────── */}
       <div className="mb-5 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
+          <h1 className="text-xl font-semibold text-charcoal sm:text-2xl">
             {name}
           </h1>
           <Badge
@@ -140,7 +140,7 @@ export function ExerciseDetailPage() {
             {EQUIPMENT_LABEL[equipment]}
           </Badge>
         </div>
-        {summary && <p className="text-sm text-slate-500">{summary}</p>}
+        {summary && <p className="text-sm text-mid-gray">{summary}</p>}
       </div>
 
       {/* ── Metadatos: categoría, franjas de edad, equipo, dosis sugerida ── */}
@@ -148,7 +148,7 @@ export function ExerciseDetailPage() {
         <CardContent className="grid gap-4 pt-4 sm:grid-cols-2">
           {/* Categoría de movimiento */}
           <section aria-label="Categoría de movimiento">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Categoría de movimiento
             </p>
             <Badge variant="outline">
@@ -158,7 +158,7 @@ export function ExerciseDetailPage() {
 
           {/* Franjas de edad */}
           <section aria-label="Franjas de edad">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Franjas de edad
             </p>
             {age_bands.length > 0 ? (
@@ -170,26 +170,26 @@ export function ExerciseDetailPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-slate-400">Sin franja registrada</p>
+              <p className="text-sm text-mid-gray">Sin franja registrada</p>
             )}
           </section>
 
           {/* Detalle de equipo (si aplica) */}
           <section aria-label="Detalle del equipo">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Detalle del equipo
             </p>
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-charcoal">
               {equipment_detail?.trim() || "Sin equipo"}
             </p>
           </section>
 
           {/* Dosis sugerida */}
           <section aria-label="Duración y repeticiones sugeridas">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Dosis sugerida
             </p>
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-charcoal">
               {suggested_duration_min} min · {suggested_reps}
             </p>
           </section>
@@ -204,7 +204,7 @@ export function ExerciseDetailPage() {
           </h2>
         </CardHeader>
         <CardContent>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
             {how_to}
           </p>
         </CardContent>
@@ -219,7 +219,7 @@ export function ExerciseDetailPage() {
             </h2>
           </CardHeader>
           <CardContent>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
               {common_errors}
             </p>
           </CardContent>
@@ -247,7 +247,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
     <div className="mx-auto max-w-2xl px-4 py-6">
       <Link
         to="/strength"
-        className="mb-5 inline-flex items-center gap-1.5 py-3 text-sm text-slate-500 hover:text-slate-800"
+        className="mb-5 inline-flex items-center gap-1.5 py-3 text-sm text-mid-gray hover:text-charcoal"
         aria-label="Volver al catálogo de ejercicios de fuerza"
       >
         <ArrowLeft size={16} aria-hidden="true" />

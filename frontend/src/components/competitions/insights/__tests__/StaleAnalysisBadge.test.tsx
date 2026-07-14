@@ -16,7 +16,7 @@ vi.mock("@/hooks/ai/useRaceRun", () => ({
   useReExecuteRun: () => ({ mutate: mockMutate, isPending: mockIsPending }),
 }));
 
-import { StaleAnalysisBadge } from "@/components/competitions/insights/StaleAnalysisBadge";
+import { StaleAnalysisBadge, staleAnalysisStatus } from "@/components/competitions/insights/StaleAnalysisBadge";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -29,6 +29,13 @@ describe("StaleAnalysisBadge", () => {
     expect(screen.getByTestId("stale-analysis-badge")).toBeInTheDocument();
     expect(screen.getByText(/Análisis desactualizado/i)).toBeInTheDocument();
     expect(screen.getByTestId("stale-reexecute-button")).toBeInTheDocument();
+  });
+
+  it("regresión: usa StatusBadge (ícono presente) y no el <Badge> amarillo hand-rolled", () => {
+    const { container } = render(<StaleAnalysisBadge runId="run-abc" />);
+    const badgeEl = screen.getByText("Análisis desactualizado");
+    expect(badgeEl.querySelector("svg")).toBeInTheDocument();
+    expect(container.innerHTML).not.toMatch(/bg-amber-100|text-amber-800/);
   });
 
   it("click en re-ejecutar abre confirmación (no dispara aún la mutación)", async () => {
@@ -56,5 +63,14 @@ describe("StaleAnalysisBadge", () => {
       expect(mockMutate).toHaveBeenCalledWith("run-abc", expect.any(Object)),
     );
     expect(onReExecuted).toHaveBeenCalledWith("new-run");
+  });
+});
+
+describe("staleAnalysisStatus (adaptador puro)", () => {
+  it("mapea el único estado 'stale' a warning/'Análisis desactualizado'", () => {
+    expect(staleAnalysisStatus()).toEqual({
+      status: "warning",
+      label: "Análisis desactualizado",
+    });
   });
 });

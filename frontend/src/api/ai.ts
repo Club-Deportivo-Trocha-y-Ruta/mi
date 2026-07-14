@@ -3,11 +3,13 @@ import axios, { type AxiosError } from "axios";
 import { apiClient } from "@/api/client";
 import {
   aiHealthResponseSchema,
+  aiStatusResponseSchema,
   anthropometricRecordExplanationResponseSchema,
   phvExplanationResponseSchema,
 } from "@/schemas/ai.schemas";
 import type {
   AIHealthResponse,
+  AIStatusResponse,
   AnthropometricRecordExplanationResponse,
   PHVExplanationResponse,
 } from "@/types/ai.types";
@@ -57,6 +59,18 @@ export async function getPHVExplanationCached(
 export async function getAIHealth(): Promise<AIHealthResponse> {
   const response = await apiClient.get<unknown>("/api/ai/health");
   return aiHealthResponseSchema.parse(response.data);
+}
+
+/** Llama GET /api/ai/status. Coach + admin.
+ *
+ * Señal pre-lanzamiento de presupuesto/concurrencia de IA consumida por
+ * `useAIStatus()`. Sin parámetros; el backend reutiliza la misma
+ * consulta de `check_budget()` + `has_capacity()` ya usada al lanzar un
+ * análisis, así que nunca puede desincronizarse del bloqueo real.
+ */
+export async function getAIStatus(): Promise<AIStatusResponse> {
+  const response = await apiClient.get<unknown>("/api/ai/status");
+  return aiStatusResponseSchema.parse(response.data);
 }
 
 /** POST /api/ai/athletes/{id}/measurements/{recordId}/explanation

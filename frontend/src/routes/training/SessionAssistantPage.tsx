@@ -11,6 +11,8 @@ import { lazy, Suspense } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
+import { AIBudgetHint } from "@/components/ai/AIBudgetHint";
+import { useAIStatus } from "@/hooks/ai/useAIStatus";
 import { useAuthStore } from "@/store/auth.store";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
 
@@ -57,6 +59,11 @@ export function SessionAssistantPage() {
   const athletesQuery = useAthletes({ club_id: clubId });
   const roster = athletesQuery.data?.items ?? [];
 
+  // Señal pre-lanzamiento de presupuesto/concurrencia de IA (T053) — se
+  // muestra antes de cualquier interacción con el asistente, mismo patrón
+  // que AnalyzeAthleteButton/GroupAnalysisPanel (ai-identity.md §4).
+  const aiStatus = useAIStatus();
+
   function handleDraftReady({ values, seededFields, draftNotes }: DraftReadyPayload) {
     const state: AssistantDraftState = {
       fromAssistant: true,
@@ -82,16 +89,17 @@ export function SessionAssistantPage() {
             Sesiones
           </Link>
           <span className="text-mid-gray">/</span>
-          <span className="text-sm text-charcoal">Asistente IA</span>
+          <span className="text-sm text-charcoal">Insights IA</span>
         </div>
         <h1
           className="font-display mt-2 text-2xl text-charcoal"
         >
-          Asistente IA
+          Insights IA
         </h1>
         <p className="mt-0.5 text-sm text-mid-gray">
-          Planifica una sesión con ayuda de la inteligencia artificial.
+          Asistente de sesión: planifica un entrenamiento con ayuda de la inteligencia artificial.
         </p>
+        <AIBudgetHint status={aiStatus.data} className="mt-2" />
       </div>
 
       <div

@@ -18,7 +18,7 @@ const BIKE_FIT_LABEL: Record<BikeFitCategory, string> = {
 
 const BIKE_FIT_BADGE: Record<BikeFitCategory, string> = {
   short_reach: "bg-blue-100 text-blue-800",
-  standard: "bg-slate-100 text-slate-800",
+  standard: "bg-light-gray text-charcoal",
   long_reach: "bg-purple-100 text-purple-800",
 };
 

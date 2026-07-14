@@ -272,14 +272,14 @@ export function TemplatePicker({
       {/* --- Filtros --- */}
       <section
         aria-label="Filtros de la biblioteca de intervalos"
-        className="rounded-xl border border-slate-200 bg-white p-4"
+        className="rounded-xl border border-border-gray bg-white p-4"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {/* Categoría de edad */}
           <div>
             <label
               htmlFor="tpl-filter-age"
-              className="mb-1 block text-xs font-medium text-slate-700"
+              className="mb-1 block text-xs font-medium text-charcoal"
             >
               Categoría de edad
             </label>
@@ -287,7 +287,7 @@ export function TemplatePicker({
               id="tpl-filter-age"
               value={filters.age_band}
               onChange={(e) => handleFilterChange("age_band", e.target.value)}
-              className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las categorías</option>
               {AGE_BAND_OPTIONS.map((o) => (
@@ -302,7 +302,7 @@ export function TemplatePicker({
           <div>
             <label
               htmlFor="tpl-filter-phase"
-              className="mb-1 block text-xs font-medium text-slate-700"
+              className="mb-1 block text-xs font-medium text-charcoal"
             >
               Fase de mesociclo
             </label>
@@ -312,7 +312,7 @@ export function TemplatePicker({
               onChange={(e) =>
                 handleFilterChange("mesocycle_phase", e.target.value)
               }
-              className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las fases</option>
               {MESOCYCLE_PHASE_OPTIONS.map((o) => (
@@ -327,7 +327,7 @@ export function TemplatePicker({
           <div>
             <label
               htmlFor="tpl-filter-proximity"
-              className="mb-1 block text-xs font-medium text-slate-700"
+              className="mb-1 block text-xs font-medium text-charcoal"
             >
               Proximidad a competencia
             </label>
@@ -337,7 +337,7 @@ export function TemplatePicker({
               onChange={(e) =>
                 handleFilterChange("competition_proximity", e.target.value)
               }
-              className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las proximidades</option>
               {COMPETITION_PROXIMITY_OPTIONS.map((o) => (
@@ -350,14 +350,14 @@ export function TemplatePicker({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
+          <label className="flex items-center gap-2 text-xs font-medium text-charcoal">
             <input
               type="checkbox"
               checked={filters.include_archived}
               onChange={(e) =>
                 handleFilterChange("include_archived", e.target.checked)
               }
-              className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-2 focus:ring-primary"
+              className="h-4 w-4 rounded border-border-gray text-primary focus:ring-2 focus:ring-primary"
             />
             Incluir archivados
           </label>
@@ -367,7 +367,7 @@ export function TemplatePicker({
               <button
                 type="button"
                 onClick={handleClear}
-                className="min-h-9 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-slate-400 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary"
+                className="min-h-9 rounded-lg border border-border-gray px-3 py-1.5 text-xs font-medium text-mid-gray hover:border-mid-gray hover:text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 Limpiar filtros
               </button>
@@ -457,7 +457,7 @@ function resolveErrorMessage(error: unknown): string {
 
 function CardSkeleton(): React.ReactElement {
   return (
-    <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-card">
+    <div className="rounded-xl border border-border-gray bg-white p-4 shadow-card">
       <Skeleton className="mb-2 h-4 w-3/4" />
       <div className="mb-3 flex gap-1.5">
         <Skeleton className="h-5 w-16 rounded-full" />
@@ -510,22 +510,22 @@ function TemplateResults({
 
   if (!items || items.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+      <div className="rounded-xl border border-border-gray bg-white p-10 text-center">
         {hasActiveFilters ? (
           <>
-            <p className="text-sm font-medium text-slate-700">
+            <p className="text-sm font-medium text-charcoal">
               Sin templates para estos filtros
             </p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-mid-gray">
               Ajustá o limpiá los filtros para ver más templates.
             </p>
           </>
         ) : (
           <>
-            <p className="text-sm font-medium text-slate-700">
+            <p className="text-sm font-medium text-charcoal">
               La biblioteca está vacía
             </p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-mid-gray">
               Aún no hay templates de intervalos guardados en el club.
             </p>
           </>
@@ -536,7 +536,7 @@ function TemplateResults({
 
   return (
     <div>
-      <p className="mb-3 text-xs text-slate-400">
+      <p className="mb-3 text-xs text-mid-gray">
         {total !== undefined
           ? `${total} ${total === 1 ? "template" : "templates"}`
           : ""}
@@ -615,7 +615,7 @@ function TemplateCard({
           </Badge>
         </div>
 
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-mid-gray">
           {blockCount} {blockCount === 1 ? "bloque" : "bloques"} ·{" "}
           {formatDurationMin(template.total_planned_duration_s)}
         </p>

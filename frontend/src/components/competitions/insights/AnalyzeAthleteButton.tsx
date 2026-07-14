@@ -20,10 +20,16 @@
  */
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { BrainCircuit, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Sparkles, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import {
+  AIBudgetHint,
+  AI_BUDGET_EXHAUSTED_MESSAGE,
+  isBudgetExhausted,
+} from "@/components/ai/AIBudgetHint";
+import { useAIStatus } from "@/hooks/ai/useAIStatus";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +38,7 @@ import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnaly
 // ---------------------------------------------------------------------------
 
 const AI_ERROR_MESSAGES: Record<number, string> = {
-  503: "Presupuesto mensual de IA agotado. Los análisis se reactivan el próximo ciclo.",
+  503: AI_BUDGET_EXHAUSTED_MESSAGE,
   429: "Límite de análisis simultáneos alcanzado. Intenta de nuevo en unos minutos.",
 };
 
@@ -69,7 +75,7 @@ export interface AnalyzeAthleteButtonProps {
    */
   insightFreshness: string | null | undefined;
   displayName: string;
-  /** Texto del botón. @default "Analizar". */
+  /** Texto del botón. @default "Analizar con IA". */
   label?: string;
   /** Muestra el label en todos los breakpoints (no oculto en mobile). @default false. */
   alwaysShowLabel?: boolean;
@@ -87,7 +93,7 @@ export function AnalyzeAthleteButton({
   eventId,
   insightFreshness,
   displayName,
-  label = "Analizar",
+  label = "Analizar con IA",
   alwaysShowLabel = false,
   showInsightsLink = true,
 }: AnalyzeAthleteButtonProps) {
@@ -97,6 +103,12 @@ export function AnalyzeAthleteButton({
   const [, setSearchParams] = useSearchParams();
 
   const launch = useLaunchAthleteAnalysis(athleteId);
+
+  // Señal pre-lanzamiento (T051): degrada con gracia si falla el fetch —
+  // `aiStatus.data` queda `undefined` y `AIBudgetHint` no renderiza nada,
+  // nunca bloqueando este botón por un error de useAIStatus().
+  const aiStatus = useAIStatus();
+  const budgetExhausted = isBudgetExhausted(aiStatus.data);
 
   // Un insight fresco existe cuando el map tiene una entrada con stale_run_id null.
   const hasFreshInsight = insightFreshness === null;
@@ -119,6 +131,7 @@ export function AnalyzeAthleteButton({
   }
 
   function handleButtonClick() {
+    if (budgetExhausted) return;
     setErrorMsg(null);
     setSuccessRunId(null);
     if (hasFreshInsight) {
@@ -174,33 +187,42 @@ export function AnalyzeAthleteButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={handleButtonClick}
-        disabled={launch.isPending}
-        className={cn(
-          "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-          "text-mid-gray hover:bg-charcoal/8 hover:text-charcoal",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-          "min-h-[48px] min-w-[48px]",
-        )}
-        aria-label={`Analizar con IA a ${displayName}`}
-        data-testid={`ai-launch-btn-${athleteId}`}
-      >
-        {launch.isPending ? (
-          <Loader2 size={13} className="animate-spin" aria-hidden="true" />
-        ) : (
-          <BrainCircuit size={13} aria-hidden="true" />
-        )}
-        <span className={alwaysShowLabel ? undefined : "hidden sm:inline"}>
-          {label}
-        </span>
-      </button>
+      <div className="flex flex-col items-start gap-1">
+        <button
+          type="button"
+          onClick={handleButtonClick}
+          disabled={launch.isPending || budgetExhausted}
+          className={cn(
+            "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+            "text-mid-gray hover:bg-charcoal/8 hover:text-charcoal",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+            "min-h-[48px] min-w-[48px]",
+          )}
+          aria-label={
+            budgetExhausted
+              ? `Presupuesto de IA agotado — no se puede analizar a ${displayName}`
+              : `Analizar con IA a ${displayName}`
+          }
+          data-testid={`ai-launch-btn-${athleteId}`}
+        >
+          {launch.isPending ? (
+            <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <Sparkles size={13} aria-hidden="true" />
+          )}
+          <span className={alwaysShowLabel ? undefined : "hidden sm:inline"}>
+            {label}
+          </span>
+        </button>
+
+        {/* Pista pre-lanzamiento de presupuesto/concurrencia (T051) */}
+        <AIBudgetHint status={aiStatus.data} className="max-w-[200px]" />
+      </div>
 
       <ConfirmDialog
         open={confirmOpen}
-        title="Re-ejecutar análisis"
+        title="Re-ejecutar análisis con IA"
         description="Ya existe un análisis para este deportista. ¿Deseas re-ejecutarlo?"
         confirmLabel="Re-ejecutar"
         tone="default"

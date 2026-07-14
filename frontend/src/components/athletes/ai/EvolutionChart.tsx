@@ -22,9 +22,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Calendar, Info } from "lucide-react";
+import type { DotItemDotProps } from "recharts";
+import { Calendar, Info, LayoutGrid, Table2 } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAthleteEvolution } from "@/hooks/athletes/useAthleteEvolution";
 import { cn } from "@/lib/utils";
 import { EvolutionMetric } from "@/types/athleteRaceAnalysis.types";
@@ -204,73 +206,92 @@ export function EvolutionChart({
               Sin datos para esta temporada/métrica.
             </div>
           ) : (
-            <div className="w-full">
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart
-                  data={chartData}
-                  margin={{ top: 8, right: 16, bottom: 8, left: 12 }}
-                >
-                  <CartesianGrid stroke="rgba(34,42,53,0.08)" strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="event_id"
-                    tick={{ fontSize: 12, fill: "#5a6172" }}
-                    tickFormatter={(v: number) =>
-                      labelByEventId.get(v) ?? String(v)
-                    }
-                    label={{
-                      value: "Evento",
-                      position: "insideBottom",
-                      offset: -4,
-                      style: { fontSize: 11, fill: "#5a6172" },
-                    }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 12, fill: "#5a6172" }}
-                    reversed={isRanking}
-                    tickFormatter={(v: number) => formatMs(v, unit)}
-                    width={70}
-                  />
-                  <Tooltip
-                    content={(props: unknown) => (
-                      <EvolutionTooltip
-                        {...(props as TooltipLikeProps)}
-                        unit={unit}
-                      />
-                    )}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#131316"
-                    strokeWidth={2}
-                    dot={{ r: 4, fill: "#131316" }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            <Tabs defaultValue="chart" className="w-full">
+              <TabsList aria-label="Vista de evolución" data-testid="evolution-view-tabs">
+                <TabsTrigger value="chart" data-testid="evolution-tab-chart" className="gap-1.5">
+                  <LayoutGrid size={14} aria-hidden="true" />
+                  Gráfica
+                </TabsTrigger>
+                <TabsTrigger value="table" data-testid="evolution-tab-table" className="gap-1.5">
+                  <Table2 size={14} aria-hidden="true" />
+                  Tabla
+                </TabsTrigger>
+              </TabsList>
 
-              {/* Leyenda accesible de etiquetas del eje X.
-                  Expone los labels en el DOM para accesibilidad y para que
-                  el campeonato ("Cto. Dep.") sea identificable sin depender
-                  del SVG de recharts. */}
-              <ol
-                aria-label="Etiquetas del eje de evolución"
-                className="mt-2 flex flex-wrap gap-x-3 gap-y-1 justify-center"
-              >
-                {chartData.map((entry) => (
-                  <li
-                    key={entry.event_id}
-                    className={cn(
-                      "text-[10px] text-mid-gray",
-                      entry.series_kind === "championship" &&
-                        "font-medium text-amber-700",
-                    )}
+              <TabsContent value="chart">
+                <div className="w-full">
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart
+                      data={chartData}
+                      margin={{ top: 8, right: 16, bottom: 8, left: 12 }}
+                    >
+                      <CartesianGrid stroke="var(--color-border-gray)" />
+                      <XAxis
+                        dataKey="event_id"
+                        tick={{ fontSize: 12, fill: "var(--color-mid-gray)" }}
+                        tickFormatter={(v: number) =>
+                          labelByEventId.get(v) ?? String(v)
+                        }
+                        label={{
+                          value: "Evento",
+                          position: "insideBottom",
+                          offset: -4,
+                          style: { fontSize: 11, fill: "var(--color-mid-gray)" },
+                        }}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 12, fill: "var(--color-mid-gray)" }}
+                        reversed={isRanking}
+                        tickFormatter={(v: number) => formatMs(v, unit)}
+                        width={70}
+                      />
+                      <Tooltip
+                        content={(props: unknown) => (
+                          <EvolutionTooltip
+                            {...(props as TooltipLikeProps)}
+                            unit={unit}
+                          />
+                        )}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke="var(--color-primary)"
+                        strokeWidth={2}
+                        dot={renderEvolutionDot}
+                        activeDot={{ r: 6 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+
+                  {/* Leyenda accesible de etiquetas del eje X.
+                      Expone los labels en el DOM para accesibilidad y para que
+                      el campeonato ("Cto. Dep.") sea identificable sin depender
+                      del SVG de recharts. */}
+                  <ol
+                    aria-label="Etiquetas del eje de evolución"
+                    className="mt-2 flex flex-wrap gap-x-3 gap-y-1 justify-center"
                   >
-                    {entry.label}
-                  </li>
-                ))}
-              </ol>
-            </div>
+                    {chartData.map((entry) => (
+                      <li
+                        key={entry.event_id}
+                        className={cn(
+                          "text-[10px] text-mid-gray",
+                          entry.series_kind === "championship" &&
+                            "font-medium text-amber-700",
+                        )}
+                      >
+                        {entry.label}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="table">
+                <EvolutionTable points={chartData} unit={unit} />
+              </TabsContent>
+            </Tabs>
           )}
 
           {/* Disclaimer si confidence baja */}
@@ -298,6 +319,114 @@ export function EvolutionChart({
         </>
       )}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Custom dot — marca el punto del campeonato con un diamante distintivo
+// (T030). El resto de puntos mantiene un círculo simple en --color-primary.
+// ---------------------------------------------------------------------------
+
+interface EvolutionChartPoint {
+  event_id: number;
+  label: string;
+  series_kind: string;
+  event_date: string;
+  value: number;
+}
+
+/** Render function pasado a `<Line dot={...}>` — recharts invoca esto por
+ *  cada punto con `payload` = la fila de `chartData` correspondiente. */
+function renderEvolutionDot(props: DotItemDotProps) {
+  const { cx, cy, index, payload } = props;
+  if (cx === undefined || cy === undefined) return null;
+  const point = payload as EvolutionChartPoint;
+  const key = `evo-dot-${index}`;
+
+  if (point?.series_kind === "championship") {
+    return <ChampionshipDot key={key} cx={cx} cy={cy} />;
+  }
+
+  return (
+    <circle key={key} cx={cx} cy={cy} r={4} fill="var(--color-primary)" />
+  );
+}
+
+/** Marcador diamante ("Cto. Dep.") — contracts/chart-style.md §"Championship
+ *  on-point marking". Mismo color que la serie propia (identidad, no
+ *  polaridad); anillo de 2px en el color de superficie para legibilidad
+ *  sobre la línea; etiqueta directa además de (no en reemplazo de) la
+ *  leyenda `<ol>` accesible. */
+function ChampionshipDot({ cx, cy }: { cx: number; cy: number }) {
+  const half = 6; // radio ~6 → diamante de 12x12px, sobre el piso de 8px
+  return (
+    <g>
+      <rect
+        x={cx - half}
+        y={cy - half}
+        width={half * 2}
+        height={half * 2}
+        fill="var(--color-primary)"
+        stroke="var(--color-surface)"
+        strokeWidth={2}
+        transform={`rotate(45 ${cx} ${cy})`}
+      />
+      <text
+        x={cx}
+        y={cy - half - 6}
+        textAnchor="middle"
+        fontSize={10}
+        fontWeight={600}
+        fill="var(--color-charcoal)"
+      >
+        Cto. Dep.
+      </text>
+    </g>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Table-view twin (T031) — misma información que el tooltip (label / fecha
+// del evento / valor), fila del campeonato marcada igual que la leyenda
+// `<ol>` de arriba (ámbar). Es la salida obligatoria del WARN de contraste
+// del accent sobre superficie blanca (contracts/chart-style.md).
+// ---------------------------------------------------------------------------
+
+interface EvolutionTableProps {
+  points: EvolutionChartPoint[];
+  unit: string;
+}
+
+function EvolutionTable({ points, unit }: EvolutionTableProps) {
+  return (
+    <table className="w-full text-sm" data-testid="evolution-table">
+      <caption className="sr-only">
+        Evolución por temporada — vista de tabla
+      </caption>
+      <thead>
+        <tr className="text-left text-xs uppercase tracking-wide text-mid-gray">
+          <th className="px-3 py-2 font-medium">Evento</th>
+          <th className="px-3 py-2 font-medium">Fecha</th>
+          <th className="px-3 py-2 font-medium">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {points.map((p) => (
+          <tr
+            key={p.event_id}
+            className={cn(
+              "text-charcoal",
+              p.series_kind === "championship" &&
+                "font-medium text-amber-700",
+            )}
+          >
+            <td className="px-3 py-1.5">{p.label}</td>
+            <td className="px-3 py-1.5">{p.event_date}</td>
+            <td className="px-3 py-1.5">{formatValue(p.value, unit)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

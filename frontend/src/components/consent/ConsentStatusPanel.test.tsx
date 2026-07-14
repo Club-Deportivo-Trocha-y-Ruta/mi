@@ -65,7 +65,7 @@ vi.mock("./RevokeConsentDialog", () => ({
 }));
 
 import { toast } from "sonner";
-import { ConsentStatusPanel } from "./ConsentStatusPanel";
+import { ConsentStatusPanel, consentStatus, aiConsentStatus } from "./ConsentStatusPanel";
 import type { AthleteConsentStatus, PrivacyPolicySummary } from "@/types/consent";
 
 // ---------------------------------------------------------------------------
@@ -324,6 +324,65 @@ describe("ConsentStatusPanel", () => {
       const { container } = await renderAndExpand([athleteAiActive, athleteAiInactive]);
       const results = await axe(container);
       expect(results).toHaveNoViolations();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Adaptadores puros (T012)
+  // -------------------------------------------------------------------------
+
+  describe("consentStatus (adaptador puro)", () => {
+    it("mapea 'never' a neutral/'Sin consentimiento'", () => {
+      expect(consentStatus("never")).toEqual({ status: "neutral", label: "Sin consentimiento" });
+    });
+
+    it("mapea 'outdated' a warning/'Desactualizado'", () => {
+      expect(consentStatus("outdated")).toEqual({ status: "warning", label: "Desactualizado" });
+    });
+
+    it("mapea 'revoked' a danger/'Revocado'", () => {
+      expect(consentStatus("revoked")).toEqual({ status: "danger", label: "Revocado" });
+    });
+
+    it("mapea 'current' a success/'Vigente'", () => {
+      expect(consentStatus("current")).toEqual({ status: "success", label: "Vigente" });
+    });
+  });
+
+  describe("aiConsentStatus (adaptador puro)", () => {
+    it("mapea isActive=true a success/'IA: activa'", () => {
+      expect(aiConsentStatus(true)).toEqual({ status: "success", label: "IA: activa" });
+    });
+
+    it("mapea isActive=false a neutral/'IA: no autorizada'", () => {
+      expect(aiConsentStatus(false)).toEqual({ status: "neutral", label: "IA: no autorizada" });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Regresión: STATE_CONFIG hand-rolled reemplazado por StatusBadge (T021)
+  // -------------------------------------------------------------------------
+
+  describe("regresión — migración a StatusBadge", () => {
+    it("el badge de estado de consentimiento y la fila IA usan StatusBadge (ícono presente, sin clases hand-rolled)", async () => {
+      const { container } = await renderAndExpand([athleteAiActive, athleteAiInactive]);
+
+      // StatusBadge siempre renderiza un ícono junto al label. Ambos atletas
+      // están "current" ("Vigente" aparece dos veces).
+      const vigenteBadges = screen.getAllByText("Vigente");
+      expect(vigenteBadges.length).toBeGreaterThan(0);
+      for (const el of vigenteBadges) {
+        expect(el.closest("span")?.querySelector("svg")).toBeInTheDocument();
+      }
+      expect(screen.getByText("IA: activa").closest("span")?.querySelector("svg")).toBeInTheDocument();
+      expect(screen.getByText("IA: no autorizada").closest("span")?.querySelector("svg")).toBeInTheDocument();
+
+      // Las clases utility hand-rolled de STATE_CONFIG legado ya no aparecen
+      // (distintas de otras clases legítimas no relacionadas con el badge,
+      // como "text-red-600" del botón Revocar o "text-amber-600" de la nota
+      // de política desactualizada).
+      const legacyClassPattern = /bg-green-50|text-green-700|bg-amber-50|text-amber-700|bg-red-50|text-red-700/;
+      expect(container.innerHTML).not.toMatch(legacyClassPattern);
     });
   });
 });

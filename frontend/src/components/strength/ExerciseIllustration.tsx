@@ -45,7 +45,7 @@ export function ExerciseIllustration({
 
   return (
     <section aria-label="Figura del ejercicio" className="space-y-0">
-      <h3 className="mb-2 text-sm font-semibold text-slate-700">Figura</h3>
+      <h3 className="mb-2 text-sm font-semibold text-charcoal">Figura</h3>
 
       {/*
         role="img" convierte el <pre> en una imagen accesible.
@@ -53,11 +53,11 @@ export function ExerciseIllustration({
         El <VisuallyHidden> es un fallback para SRs que no honran role="img"
         en elementos no-img nativos (ej. NVDA + Firefox).
       */}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-950">
+      <div className="overflow-x-auto rounded-lg border border-border-gray bg-charcoal">
         <pre
           role="img"
           aria-label={altText}
-          className="whitespace-pre p-4 font-mono text-xs leading-snug text-slate-100 sm:text-sm"
+          className="whitespace-pre p-4 font-mono text-xs leading-snug text-white sm:text-sm"
         >
           <VisuallyHidden>{altText}</VisuallyHidden>
           {illustration_ascii}

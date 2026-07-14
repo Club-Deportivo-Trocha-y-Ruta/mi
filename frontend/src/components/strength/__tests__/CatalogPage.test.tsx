@@ -96,17 +96,20 @@ describe("CatalogPage (strength) — estado de error", () => {
     mswServer.use(strengthColdStartHandler, ...strengthHandlers);
   });
 
-  it("muestra role=alert cuando la API falla", async () => {
+  it("muestra role=status (cold-start, no alert) cuando la API falla por red", async () => {
+    // strengthColdStartHandler simulates a network error — the shared
+    // `ErrorState` renders that as role="status" (reassuring tone), not
+    // role="alert" (feature 033 / T042).
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expect(screen.getByRole("status")).toBeInTheDocument();
     });
   });
 
   it("muestra copy de servidor iniciando para errores de red (MSW.error)", async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(
+      expect(screen.getByRole("status")).toHaveTextContent(
         /El servidor está iniciando/,
       );
     });

@@ -64,7 +64,7 @@ describe("InsightsTimeline", () => {
         screen.getByText(/aún no hay análisis aprobados/i),
       ).toBeInTheDocument();
     });
-    // El hint para coach pide ir a "Lanzar".
+    // El hint para coach pide ir a "Analizar con IA".
     expect(screen.getByText(/lanza un análisis desde/i)).toBeInTheDocument();
   });
 

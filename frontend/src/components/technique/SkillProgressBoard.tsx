@@ -176,7 +176,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
         <div>
           <label
             htmlFor="skill_id"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-charcoal"
           >
             Habilidad
           </label>
@@ -186,7 +186,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
             disabled={skillsLoading}
             aria-invalid={!!errors.skill_id}
             aria-describedby={errors.skill_id ? "skill_id-error" : undefined}
-            className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+            className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
           >
             <option value={0}>Selecciona una habilidad</option>
             {skills?.map((skill) => (
@@ -206,7 +206,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
         <div>
           <label
             htmlFor="status"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-charcoal"
           >
             Estado
           </label>
@@ -215,7 +215,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
             {...register("status")}
             aria-invalid={!!errors.status}
             aria-describedby={errors.status ? "status-error" : undefined}
-            className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="introducido">Introducido</option>
             <option value="en_progreso">En progreso</option>
@@ -232,7 +232,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
         <div>
           <label
             htmlFor="season"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-charcoal"
           >
             Temporada
           </label>
@@ -243,7 +243,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
             {...register("season", { valueAsNumber: true })}
             aria-invalid={!!errors.season}
             aria-describedby={errors.season ? "season-error" : undefined}
-            className="min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="min-h-12 w-full rounded-lg border border-border-gray px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
           {errors.season && (
             <p id="season-error" role="alert" className="mt-1 text-xs text-red-600">
@@ -256,7 +256,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
         <div>
           <label
             htmlFor="coach_note"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-charcoal"
           >
             Nota (opcional)
           </label>
@@ -268,7 +268,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
             placeholder="Contexto sobre el progreso observado…"
             aria-invalid={!!errors.coach_note}
             aria-describedby={errors.coach_note ? "coach_note-error" : undefined}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full rounded-lg border border-border-gray px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
           {errors.coach_note && (
             <p id="coach_note-error" role="alert" className="mt-1 text-xs text-red-600">
@@ -306,16 +306,16 @@ interface CurrentStatusTableProps {
 function CurrentStatusTable({ progress }: CurrentStatusTableProps) {
   if (progress.current.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-100 bg-slate-50 p-8 text-center">
+      <div className="rounded-xl border border-border-gray bg-light-gray p-8 text-center">
         <Sparkles
           size={24}
-          className="mx-auto mb-2 text-slate-300"
+          className="mx-auto mb-2 text-mid-gray"
           aria-hidden="true"
         />
-        <p className="text-sm font-medium text-slate-700">
+        <p className="text-sm font-medium text-charcoal">
           Sin habilidades registradas todavía
         </p>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-mid-gray">
           Usa el formulario de abajo para registrar el primer progreso.
         </p>
       </div>
@@ -329,17 +329,17 @@ function CurrentStatusTable({ progress }: CurrentStatusTableProps) {
         aria-label="Estado actual de habilidades técnicas"
       >
         <thead>
-          <tr className="border-b border-slate-200 text-left">
-            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <tr className="border-b border-border-gray text-left">
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Habilidad
             </th>
-            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Estado
             </th>
-            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Fecha
             </th>
-            <th className="pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className="pb-2 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Nota
             </th>
           </tr>
@@ -348,13 +348,13 @@ function CurrentStatusTable({ progress }: CurrentStatusTableProps) {
           {progress.current.map((entry) => (
             <tr
               key={entry.skill.slug}
-              className="border-b border-slate-100 last:border-0"
+              className="border-b border-border-gray last:border-0"
             >
               <td className="py-2.5 pr-4">
-                <span className="font-medium text-slate-800">
+                <span className="font-medium text-charcoal">
                   {entry.skill.name}
                 </span>
-                <span className="ml-1.5 text-[11px] font-medium text-slate-400">
+                <span className="ml-1.5 text-[11px] font-medium text-text-disclaimer">
                   {entry.skill.code}
                 </span>
               </td>
@@ -367,7 +367,7 @@ function CurrentStatusTable({ progress }: CurrentStatusTableProps) {
                   {STATUS_LABEL[entry.status]}
                 </Badge>
               </td>
-              <td className="py-2.5 pr-4 text-xs text-slate-500">
+              <td className="py-2.5 pr-4 text-xs text-mid-gray">
                 {new Date(entry.recorded_at).toLocaleDateString("es-CO", {
                   day: "numeric",
                   month: "short",
@@ -376,11 +376,11 @@ function CurrentStatusTable({ progress }: CurrentStatusTableProps) {
               </td>
               <td className="py-2.5 max-w-[200px]">
                 {entry.coach_note ? (
-                  <span className="line-clamp-2 text-xs text-slate-600">
+                  <span className="line-clamp-2 text-xs text-mid-gray">
                     {entry.coach_note}
                   </span>
                 ) : (
-                  <span className="text-slate-300 text-xs">—</span>
+                  <span className="text-mid-gray text-xs">—</span>
                 )}
               </td>
             </tr>
@@ -417,7 +417,7 @@ function HistoryTimeline({ progress }: HistoryTimelineProps) {
         {visible.map((event) => (
           <li
             key={event.id}
-            className="flex items-start gap-3 rounded-lg border border-slate-100 bg-white p-3 text-sm shadow-sm"
+            className="flex items-start gap-3 rounded-lg border border-border-gray bg-white p-3 text-sm shadow-sm"
           >
             <div className="mt-0.5 shrink-0">
               <Badge
@@ -430,11 +430,11 @@ function HistoryTimeline({ progress }: HistoryTimelineProps) {
             </div>
 
             <div className="flex-1 min-w-0">
-              <span className="font-medium text-slate-800">
+              <span className="font-medium text-charcoal">
                 {event.skill.name}
               </span>
               {event.coach_note && (
-                <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">
+                <p className="mt-0.5 line-clamp-2 text-xs text-mid-gray">
                   {event.coach_note}
                 </p>
               )}
@@ -442,14 +442,14 @@ function HistoryTimeline({ progress }: HistoryTimelineProps) {
 
             <time
               dateTime={event.recorded_at}
-              className="shrink-0 text-right text-xs text-slate-400"
+              className="shrink-0 text-right text-xs text-mid-gray"
             >
               {new Date(event.recorded_at).toLocaleDateString("es-CO", {
                 day: "numeric",
                 month: "short",
               })}
               <br />
-              <span className="font-medium text-slate-500">
+              <span className="font-medium text-mid-gray">
                 T{event.season}
               </span>
             </time>
@@ -462,7 +462,7 @@ function HistoryTimeline({ progress }: HistoryTimelineProps) {
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
-          className="mt-3 inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          className="mt-3 inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-mid-gray hover:bg-light-gray hover:text-charcoal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           {expanded ? (
             <>
@@ -545,7 +545,7 @@ export function SkillProgressBoard({ athleteId }: SkillProgressBoardProps) {
       <Card>
         <CardHeader>
           <CardTitle>Estado actual de habilidades</CardTitle>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-mid-gray">
             Avance personal anclado a la etapa de maduración biológica del
             deportista — no se compara con otros atletas.
           </p>
@@ -560,7 +560,7 @@ export function SkillProgressBoard({ athleteId }: SkillProgressBoardProps) {
         <Card>
           <CardHeader>
             <CardTitle>Evolución en la temporada</CardTitle>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-mid-gray">
               Registro cronológico de los cambios de estado observados durante
               los entrenamientos.
             </p>
@@ -575,7 +575,7 @@ export function SkillProgressBoard({ athleteId }: SkillProgressBoardProps) {
       <Card>
         <CardHeader>
           <CardTitle>Registrar progreso</CardTitle>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-mid-gray">
             El estado actual de cada habilidad siempre refleja el registro más
             reciente — registra un nuevo evento para actualizar.
           </p>

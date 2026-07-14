@@ -23,10 +23,11 @@ Convenciones:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+import statistics
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +46,7 @@ from app.models.athlete import Athlete
 from app.models.user import User, UserRole
 from app.schemas.ai import (
     AIHealthResponse,
+    AIStatusResponse,
     AnthropometricRecordExplanationResponse,
     PHVExplanationResponse,
 )
@@ -60,11 +62,24 @@ from app.services.ai.use_cases.anthropometric_record_explainer import (
 )
 from app.services.ai.use_cases.phv_explainer import PHVExplainerUseCase
 from app.services.privacy import athlete_has_ai_processing_consent
+from app.services.race.ai.budget_guard import _sum_cost_last_30d
+from app.services.race.ai.runner import has_capacity
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _PHV_USE_CASE = "phv_explainer"
+
+# RBAC de `/status` (feature 033) — mismo patrón que
+# `race_analysis.py:115` (`_coach_or_admin`): coach y admin pueden leer
+# el hint pre-lanzamiento; padres quedan afuera (defensa en profundidad,
+# igual que `_forbid_parents` más abajo en este archivo).
+_coach_or_admin = require_role([UserRole.coach, UserRole.admin])
+
+# Ventana "reciente" para `est_wait_seconds` — deliberadamente más corta
+# que los 30 días del budget guard: buscamos un típico *reciente*, no
+# diluido por runs de hace semanas (contracts/ai-identity.md §4).
+_RECENT_LATENCY_WINDOW_DAYS = 7
 
 
 def _forbid_parents(current_user: User) -> None:
@@ -136,6 +151,97 @@ async def ai_health(
         enabled=settings.ai_enabled,
         provider=settings.ai_provider,
         model=settings.ai_model,
+    )
+
+
+async def _recent_p50_latency_seconds(
+    db: AsyncSession, days: int = _RECENT_LATENCY_WINDOW_DAYS
+) -> int:
+    """Duración típica reciente de un run completo, en segundos.
+
+    Misma extracción JSON que `admin_ai_usage()` (`race_analysis.py`
+    ~línea 1431) sobre `athlete_ai_insights.metrics_snapshot_json`, pero
+    acotada a una ventana corta (default 7 días, no los 30 del budget
+    guard) para que el estimado refleje performance *reciente*. Es un
+    típico, no una promesa de cola — el frontend lo presenta con "≈".
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(
+        text(
+            """
+            SELECT
+              CAST(JSON_EXTRACT(metrics_snapshot_json, '$.aggregate.latency_ms_total') AS UNSIGNED) AS lat
+            FROM athlete_ai_insights
+            WHERE generated_at >= :cutoff
+              AND JSON_EXTRACT(metrics_snapshot_json, '$.aggregate.latency_ms_total') IS NOT NULL
+            """
+        ),
+        {"cutoff": cutoff},
+    )
+    rows = result.fetchall() if hasattr(result, "fetchall") else (result.all() if hasattr(result, "all") else [])
+    latencies: list[int] = []
+    for r in rows:
+        try:
+            v = r._mapping.get("lat") if hasattr(r, "_mapping") else (getattr(r, "lat", None) or r[0])
+            if v is not None:
+                latencies.append(int(v))
+        except (TypeError, ValueError):
+            continue
+
+    if not latencies:
+        return 0
+    p50_ms = statistics.median(latencies)
+    return round(p50_ms / 1000)
+
+
+@router.get("/status", response_model=AIStatusResponse)
+async def ai_status(
+    db: AsyncSession = Depends(get_db),
+    _coach: User = Depends(_coach_or_admin),
+) -> AIStatusResponse:
+    """Hint pre-lanzamiento (presupuesto/backpressure) — feature 033.
+
+    Read-only, coach-safe (sin montos en dólares, sin identificadores de
+    atletas). Los umbrales replican EXACTAMENTE los del enforcement real
+    (`check_budget()` en `budget_guard.py`) para que este hint nunca
+    prometa algo que el endpoint de lanzamiento real luego contradiga.
+    """
+    current_usd_30d = await _sum_cost_last_30d(db)
+    budget_usd_30d = settings.race_ai_budget_usd_30d
+
+    if budget_usd_30d <= 0:
+        # Defensivo: un presupuesto mal configurado a 0 se trata como
+        # agotado, nunca como división por cero.
+        budget_remaining_pct = 0
+        is_exhausted = True
+    else:
+        budget_remaining_pct = round(
+            max(0.0, 1 - current_usd_30d / budget_usd_30d) * 100
+        )
+        # `is_exhausted` usa la comparación CRUDA (sin redondear), la
+        # misma que dispara `BudgetExceededError` en `check_budget()`
+        # (`current >= max_cost_usd_30d`). Derivar "exhausted" del
+        # `budget_remaining_pct` YA REDONDEADO puede reportar 0% (y por
+        # tanto "exhausted") para un remanente real ínfimo pero positivo
+        # (p.ej. gasto=$19.99 de $20 → 0.05% real, redondea a 0) mientras
+        # que `check_budget()` con esos mismos números NO bloquearía el
+        # lanzamiento — exactamente la deriva que T005's property test
+        # existe para atrapar. Anclar `is_exhausted` a la comparación
+        # cruda garantiza que este hint y el bloqueo duro NUNCA diverjan.
+        is_exhausted = current_usd_30d >= budget_usd_30d
+
+    if is_exhausted:
+        budget_status = "exhausted"
+    elif budget_remaining_pct < 20:
+        budget_status = "warning"
+    else:
+        budget_status = "ok"
+
+    return AIStatusResponse(
+        budget_status=budget_status,
+        budget_remaining_pct=budget_remaining_pct,
+        concurrency_available=has_capacity(),
+        est_wait_seconds=await _recent_p50_latency_seconds(db),
     )
 
 

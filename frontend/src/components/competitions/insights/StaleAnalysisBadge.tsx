@@ -8,12 +8,20 @@
  * coach (ConfirmDialog). No hay cron ni auto-trigger.
  */
 import { useState } from "react";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import { useReExecuteRun } from "@/hooks/ai/useRaceRun";
+
+/**
+ * staleAnalysisStatus — adaptador puro para el único estado de este badge
+ * ("stale" → warning), per contracts/status-vocabulary-sweep.md §7.
+ */
+export function staleAnalysisStatus(): { status: Status; label: string } {
+  return { status: "warning", label: "Análisis desactualizado" };
+}
 
 export interface StaleAnalysisBadgeProps {
   /** external_run_id del run desactualizado. */
@@ -35,18 +43,14 @@ export function StaleAnalysisBadge({ runId, onReExecuted }: StaleAnalysisBadgePr
     });
   }
 
+  const badge = staleAnalysisStatus();
+
   return (
     <div
       className="flex flex-wrap items-center gap-2"
       data-testid="stale-analysis-badge"
     >
-      <Badge
-        variant="secondary"
-        className="gap-1 bg-amber-100 text-amber-800"
-      >
-        <AlertTriangle size={12} aria-hidden="true" />
-        Análisis desactualizado
-      </Badge>
+      <StatusBadge status={badge.status} label={badge.label} />
       <Button
         type="button"
         variant="outline"

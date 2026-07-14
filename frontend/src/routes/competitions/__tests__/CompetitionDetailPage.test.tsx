@@ -264,3 +264,22 @@ describe("CompetitionDetailPage — a11y", () => {
     expect(results).toHaveNoViolations();
   });
 });
+
+describe("CompetitionDetailPage — Insights tab label (T054, lock-in regression)", () => {
+  // contracts/ai-identity.md §1 rename table: this label is already correct
+  // ("Insights IA" — the noun standard, ~line 110) and MUST NOT drift, e.g.
+  // back to a stale "Análisis IA"/"Análisis con IA" variant, as a side effect
+  // of unrelated future edits to this file.
+  it("el último tab se llama 'Insights IA', no una variante antigua", async () => {
+    mockAuthAs("coach");
+    renderDetail(1);
+    const trigger = await screen.findByRole("tab", { name: "Insights IA" });
+    expect(trigger).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Análisis IA" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Análisis con IA" }),
+    ).not.toBeInTheDocument();
+  });
+});

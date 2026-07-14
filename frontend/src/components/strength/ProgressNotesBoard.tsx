@@ -183,7 +183,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
         <div>
           <label
             htmlFor="exercise_id"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-charcoal"
           >
             Ejercicio
           </label>
@@ -195,7 +195,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
             aria-describedby={
               errors.exercise_id ? "exercise_id-error" : undefined
             }
-            className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+            className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
           >
             <option value={0}>Selecciona un ejercicio</option>
             {exercises?.map((exercise) => (
@@ -219,7 +219,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
         <div>
           <label
             htmlFor="status"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-charcoal"
           >
             Estado
           </label>
@@ -228,7 +228,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
             {...register("status")}
             aria-invalid={!!errors.status}
             aria-describedby={errors.status ? "status-error" : undefined}
-            className="min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="introducido">Introducido</option>
             <option value="en_progreso">En progreso</option>
@@ -245,7 +245,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
         <div>
           <label
             htmlFor="season"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-charcoal"
           >
             Temporada
           </label>
@@ -256,7 +256,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
             {...register("season", { valueAsNumber: true })}
             aria-invalid={!!errors.season}
             aria-describedby={errors.season ? "season-error" : undefined}
-            className="min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="min-h-12 w-full rounded-lg border border-border-gray px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
           {errors.season && (
             <p id="season-error" role="alert" className="mt-1 text-xs text-red-600">
@@ -269,7 +269,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
         <div>
           <label
             htmlFor="coach_note"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-charcoal"
           >
             Nota (opcional)
           </label>
@@ -283,7 +283,7 @@ function AddProgressForm({ athleteId, onSuccess }: AddProgressFormProps) {
             aria-describedby={
               errors.coach_note ? "coach_note-error" : undefined
             }
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full rounded-lg border border-border-gray px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
           {errors.coach_note && (
             <p
@@ -321,16 +321,16 @@ interface CurrentStatusTableProps {
 function CurrentStatusTable({ items }: CurrentStatusTableProps) {
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-100 bg-slate-50 p-8 text-center">
+      <div className="rounded-xl border border-border-gray bg-light-gray p-8 text-center">
         <Sparkles
           size={24}
-          className="mx-auto mb-2 text-slate-300"
+          className="mx-auto mb-2 text-mid-gray"
           aria-hidden="true"
         />
-        <p className="text-sm font-medium text-slate-700">
+        <p className="text-sm font-medium text-charcoal">
           Sin ejercicios registrados todavía
         </p>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-mid-gray">
           Usa el formulario de abajo para registrar el primer progreso.
         </p>
       </div>
@@ -344,20 +344,20 @@ function CurrentStatusTable({ items }: CurrentStatusTableProps) {
         aria-label="Estado actual de ejercicios de fuerza — solo este deportista"
       >
         <thead>
-          <tr className="border-b border-slate-200 text-left">
-            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <tr className="border-b border-border-gray text-left">
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Ejercicio
             </th>
-            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Estado
             </th>
-            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Temporada
             </th>
-            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Fecha
             </th>
-            <th className="pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className="pb-2 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Nota
             </th>
           </tr>
@@ -366,10 +366,10 @@ function CurrentStatusTable({ items }: CurrentStatusTableProps) {
           {items.map((entry) => (
             <tr
               key={entry.exercise_id}
-              className="border-b border-slate-100 last:border-0"
+              className="border-b border-border-gray last:border-0"
             >
               <td className="py-2.5 pr-4">
-                <span className="font-medium text-slate-800">
+                <span className="font-medium text-charcoal">
                   {entry.exercise_name}
                 </span>
               </td>
@@ -382,10 +382,10 @@ function CurrentStatusTable({ items }: CurrentStatusTableProps) {
                   {STATUS_LABEL[entry.status]}
                 </Badge>
               </td>
-              <td className="py-2.5 pr-4 text-xs text-slate-500">
+              <td className="py-2.5 pr-4 text-xs text-mid-gray">
                 T{entry.season}
               </td>
-              <td className="py-2.5 pr-4 text-xs text-slate-500">
+              <td className="py-2.5 pr-4 text-xs text-mid-gray">
                 {new Date(entry.recorded_at).toLocaleDateString("es-CO", {
                   day: "numeric",
                   month: "short",
@@ -394,11 +394,11 @@ function CurrentStatusTable({ items }: CurrentStatusTableProps) {
               </td>
               <td className="py-2.5 max-w-[200px]">
                 {entry.coach_note ? (
-                  <span className="line-clamp-2 text-xs text-slate-600">
+                  <span className="line-clamp-2 text-xs text-mid-gray">
                     {entry.coach_note}
                   </span>
                 ) : (
-                  <span className="text-slate-300 text-xs">—</span>
+                  <span className="text-mid-gray text-xs">—</span>
                 )}
               </td>
             </tr>
@@ -488,7 +488,7 @@ export function ProgressNotesBoard({ athleteId }: ProgressNotesBoardProps) {
           <h2 className="text-base font-semibold text-charcoal">
             Estado actual de fuerza y acondicionamiento
           </h2>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-mid-gray">
             Avance personal anclado al proceso y al esfuerzo — no se compara
             con otros deportistas.
           </p>
@@ -504,7 +504,7 @@ export function ProgressNotesBoard({ athleteId }: ProgressNotesBoardProps) {
           <h2 className="text-base font-semibold text-charcoal">
             Registrar progreso
           </h2>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-mid-gray">
             Cada registro es un nuevo evento (histórico append-only); el
             estado actual siempre refleja el más reciente por ejercicio.
           </p>

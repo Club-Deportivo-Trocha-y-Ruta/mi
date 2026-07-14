@@ -250,8 +250,11 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("insight-card-901")).toBeInTheDocument();
     });
-    // Sanidad mínima: badge de tier y agrupación renderizadas.
-    expect(screen.getByText(/Carrera\s*A/i)).toBeInTheDocument();
+    // Sanidad mínima: badge(s) de tier y agrupación renderizadas. El grupo
+    // de junio (Cto. Departamental, valida_num=99) también resuelve a tier
+    // "A" desde feature 033/T015 (getCarreraTier ya no distingue "CD"), así
+    // que hay 2 badges "Carrera A" (mayo + junio) — no 1.
+    expect(screen.getAllByText(/Carrera\s*A/i).length).toBe(2);
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });

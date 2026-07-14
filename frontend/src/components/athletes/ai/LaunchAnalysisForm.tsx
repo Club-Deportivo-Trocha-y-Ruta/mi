@@ -28,7 +28,7 @@
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Play, User as UserIcon } from "lucide-react";
+import { Loader2, Sparkles, User as UserIcon } from "lucide-react";
 import { z } from "zod";
 
 import { Badge } from "@/components/ui/badge";
@@ -159,14 +159,14 @@ export function LaunchAnalysisForm({
     <form
       onSubmit={handleSubmit(onSubmit)}
       className={cn("rounded-xl bg-white p-5 space-y-5", "shadow-card")}
-      aria-label="Lanzar análisis IA"
+      aria-label="Analizar con IA"
       data-testid="launch-analysis-form"
     >
       <h3
         className="font-display flex items-center gap-2 text-base text-charcoal"
       >
-        <Play size={16} aria-hidden="true" />
-        Lanzar análisis IA
+        <Sparkles size={16} aria-hidden="true" />
+        Analizar con IA
       </h3>
 
       {/* Atleta read-only */}
@@ -327,7 +327,7 @@ export function LaunchAnalysisForm({
           {isDisabled ? (
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
           ) : (
-            <Play size={16} aria-hidden="true" />
+            <Sparkles size={16} aria-hidden="true" />
           )}
           {isDisabled ? "Lanzando…" : "Analizar deportista"}
         </button>

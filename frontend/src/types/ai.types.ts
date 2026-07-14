@@ -24,6 +24,23 @@ export interface AIHealthResponse {
   model: string;
 }
 
+/** Estado de presupuesto de IA para la señal pre-lanzamiento. */
+export type AIBudgetStatus = "ok" | "warning" | "exhausted";
+
+/** Respuesta de GET /api/ai/status (coach + admin).
+ *
+ * Señal pre-lanzamiento reutilizada por todo botón "Analizar con IA"
+ * para mostrar presupuesto/concurrencia antes del clic. Sin montos en
+ * dólares (eso sigue siendo solo-admin vía /admin/ai-usage) ni
+ * identificadores de deportistas.
+ */
+export interface AIStatusResponse {
+  budget_status: AIBudgetStatus;
+  budget_remaining_pct: number;
+  concurrency_available: boolean;
+  est_wait_seconds: number;
+}
+
 /** Respuesta de POST/GET
  *  /api/ai/athletes/{id}/measurements/{record_id}/explanation
  *

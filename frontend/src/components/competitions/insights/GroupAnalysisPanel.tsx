@@ -21,6 +21,11 @@ import { useCallback } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import type { AxiosError } from "axios";
 
+import {
+  AIBudgetHint,
+  AI_BUDGET_EXHAUSTED_MESSAGE,
+  isBudgetExhausted,
+} from "@/components/ai/AIBudgetHint";
 import { GroupRunRow } from "@/components/competitions/insights/GroupRunRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +34,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useAIStatus } from "@/hooks/ai/useAIStatus";
 import {
   useGroupAnalysis,
   type TrackedRunEntry,
@@ -46,7 +52,7 @@ function mapLaunchError(error: unknown): string | null {
   const status = axiosErr?.response?.status;
 
   if (status === 503) {
-    return "Presupuesto mensual de IA agotado. Los análisis se reactivan el próximo ciclo.";
+    return AI_BUDGET_EXHAUSTED_MESSAGE;
   }
   if (status === 429) {
     return "Límite de análisis simultáneos alcanzado. Intenta de nuevo en unos minutos.";
@@ -96,8 +102,13 @@ export function GroupAnalysisPanel({
     notifyRunTerminated,
   } = useGroupAnalysis(raceEventId);
 
+  // Señal pre-lanzamiento (T052): degrada con gracia si falla el fetch —
+  // `aiStatus.data` queda `undefined` y `AIBudgetHint` no renderiza nada.
+  const aiStatus = useAIStatus();
+  const budgetExhausted = isBudgetExhausted(aiStatus.data);
+
   const isInProgress = groupState === "in_progress" || isLaunching;
-  const launchDisabled = !hasResults || isInProgress;
+  const launchDisabled = !hasResults || isInProgress || budgetExhausted;
 
   const errorMessage = mapLaunchError(launchError);
 
@@ -167,9 +178,11 @@ export function GroupAnalysisPanel({
                     aria-label={
                       !hasResults
                         ? "La competencia no tiene resultados importados."
-                        : isInProgress
-                          ? "Análisis en curso…"
-                          : "Analizar con IA"
+                        : budgetExhausted
+                          ? AI_BUDGET_EXHAUSTED_MESSAGE
+                          : isInProgress
+                            ? "Análisis en curso…"
+                            : "Analizar con IA"
                     }
                     data-testid="group-launch-button"
                     className={launchDisabled ? "pointer-events-none" : undefined}
@@ -192,15 +205,23 @@ export function GroupAnalysisPanel({
                   La competencia no tiene resultados importados.
                 </TooltipContent>
               )}
-              {hasResults && isInProgress && (
+              {hasResults && !budgetExhausted && isInProgress && (
                 <TooltipContent side="bottom">
                   Análisis en curso…
+                </TooltipContent>
+              )}
+              {hasResults && budgetExhausted && (
+                <TooltipContent side="bottom" className="max-w-56">
+                  {AI_BUDGET_EXHAUSTED_MESSAGE}
                 </TooltipContent>
               )}
             </Tooltip>
           </TooltipProvider>
         </div>
       </div>
+
+      {/* Pista pre-lanzamiento de presupuesto/concurrencia (T052) */}
+      <AIBudgetHint status={aiStatus.data} />
 
       {/* Error banner (422/429/503) */}
       {errorMessage && (

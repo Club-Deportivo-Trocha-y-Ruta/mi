@@ -193,16 +193,34 @@ function resolveShape(validaNum: number | null | undefined): InsightShape {
   return "normal";
 }
 
-/** Badge del tier de carrera Copa Valle (A / B / C / CD). */
-function CarreraTierBadge({ tier }: { tier: "A" | "B" | "C" | "CD" }) {
+/**
+ * Clases del ramp ordinal A/B/C (feature 033, `contracts/chart-style.md`
+ * §"A/B/C ordinal scale") — un solo matiz (accent teal de la marca),
+ * lightness monótono. El Campeonato Departamental ("CD") ya no es un 4º
+ * valor: `getCarreraTier` lo resuelve a tier `A` (ver `lib/insights.ts`).
+ */
+const TIER_RAMP_CLASSES: Record<"A" | "B" | "C", string> = {
+  A: "border-[--color-tier-a]/40 bg-[--color-tier-a]/10 text-[--color-tier-a]",
+  B: "border-[--color-tier-b]/40 bg-[--color-tier-b]/10 text-[--color-tier-b]",
+  C: "border-[--color-tier-c]/40 bg-[--color-tier-c]/10 text-[--color-tier-c]",
+};
+
+/**
+ * Badge del tier de carrera Copa Valle (A / B / C — ordinal, nunca color de
+ * estado). La letra siempre se renderiza como texto visible ("Carrera A"),
+ * nunca como un punto de color aislado (Constitution III, FR-002).
+ */
+function CarreraTierBadge({ tier }: { tier: "A" | "B" | "C" }) {
   return (
-    <Badge
-      variant="outline"
-      className="text-[10px] shrink-0"
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium",
+        TIER_RAMP_CLASSES[tier],
+      )}
       aria-label={`Tipo de carrera: ${tier}`}
     >
       Carrera {tier}
-    </Badge>
+    </span>
   );
 }
 
@@ -298,7 +316,7 @@ export function InsightsTimeline({
         </p>
         <p className="mt-1 text-xs text-mid-gray">
           {mode === "coach"
-            ? 'Lanza un análisis desde la pestaña "Lanzar" para crear el primero.'
+            ? 'Lanza un análisis desde la pestaña "Analizar con IA" para crear el primero.'
             : "Cuando tu entrenador apruebe un análisis, lo verás aquí."}
         </p>
       </div>

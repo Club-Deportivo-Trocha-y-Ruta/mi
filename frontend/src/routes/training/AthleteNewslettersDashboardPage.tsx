@@ -36,6 +36,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatDayMonthShort } from "@/lib/datetime";
+import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import type { NewsletterStatus } from "@/types/athleteNewsletter.types";
 import type { AthleteOut } from "@/types/athlete.types";
 
@@ -48,16 +49,30 @@ const MONTH_NAMES = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
-const STATUS_CONFIG: Record<
-  NewsletterStatus | "none",
-  { label: string; badgeClass: string }
-> = {
-  none: { label: "Sin generar", badgeClass: "bg-gray-100 text-gray-500 border border-gray-200" },
-  draft: { label: "Borrador", badgeClass: "bg-yellow-100 text-yellow-700 border border-yellow-300" },
-  approved: { label: "Aprobado", badgeClass: "bg-green-100 text-green-700 border border-green-300" },
-  sent: { label: "Enviado", badgeClass: "bg-blue-100 text-blue-700 border border-blue-300" },
-  failed: { label: "Fallido", badgeClass: "bg-red-100 text-red-700 border border-red-300" },
-};
+/**
+ * newsletterStatus — adaptador puro estado boletín → { status, label } para
+ * `StatusBadge` (contracts/status-vocabulary-sweep.md §5). `approved` y `sent`
+ * comparten `success` (ambos significan "listo" desde la perspectiva del
+ * coach); se diferencian solo por el label — `sent` además muestra su
+ * `sent_at` por separado, sin cambios.
+ */
+export function newsletterStatus(status: NewsletterStatus | "none"): {
+  status: Status;
+  label: string;
+} {
+  switch (status) {
+    case "none":
+      return { status: "neutral", label: "Sin generar" };
+    case "draft":
+      return { status: "warning", label: "Borrador" };
+    case "approved":
+      return { status: "success", label: "Aprobado" };
+    case "sent":
+      return { status: "success", label: "Enviado" };
+    case "failed":
+      return { status: "danger", label: "Fallido" };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Athlete card
@@ -84,7 +99,7 @@ function AthleteNewsletterCard({
   onClick,
 }: AthleteNewsletterCardProps) {
   const status: NewsletterStatus | "none" = newsletter?.status ?? "none";
-  const config = STATUS_CONFIG[status];
+  const badge = newsletterStatus(status);
 
   const queryClient = useQueryClient();
   const generateMutation = useGenerateNewsletter(athlete.id);
@@ -142,7 +157,7 @@ function AthleteNewsletterCard({
           type="button"
           onClick={() => onClick(athlete.id, newsletter?.newsletter_id)}
           className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 rounded-lg"
-          aria-label={`Ver boletín de ${athlete.first_name} ${athlete.last_name}: ${config.label}`}
+          aria-label={`Ver boletín de ${athlete.first_name} ${athlete.last_name}: ${badge.label}`}
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -154,11 +169,8 @@ function AthleteNewsletterCard({
                 {athlete.age_decimal ? `· ${Math.floor(athlete.age_decimal)} años` : ""}
               </p>
             </div>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${config.badgeClass}`}
-              data-testid={`status-badge-${athlete.id}`}
-            >
-              {config.label}
+            <span className="shrink-0" data-testid={`status-badge-${athlete.id}`}>
+              <StatusBadge status={badge.status} label={badge.label} />
             </span>
           </div>
 

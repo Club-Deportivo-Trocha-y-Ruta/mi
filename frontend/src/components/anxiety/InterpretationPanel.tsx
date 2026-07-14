@@ -11,14 +11,14 @@ export function InterpretationPanel({
   source,
 }: InterpretationPanelProps) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-5">
+    <article className="rounded-xl border border-border-gray bg-white p-5">
       <header className="mb-3 flex items-center justify-between">
-        <h3 className="text-base font-semibold text-slate-900">
+        <h3 className="text-base font-semibold text-charcoal">
           Interpretación
         </h3>
         {source && (
           <span
-            className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+            className="rounded-full bg-light-gray px-2 py-0.5 text-xs text-mid-gray"
             title={
               source === "llm"
                 ? "Generada por IA del club"
@@ -30,24 +30,24 @@ export function InterpretationPanel({
         )}
       </header>
 
-      <p className="mb-4 text-sm text-slate-700">{interpretation.resumen}</p>
+      <p className="mb-4 text-sm text-charcoal">{interpretation.resumen}</p>
 
       <dl className="mb-4 space-y-2 text-sm">
         <div>
-          <dt className="font-medium text-slate-800">Cognitiva</dt>
-          <dd className="text-slate-600">
+          <dt className="font-medium text-charcoal">Cognitiva</dt>
+          <dd className="text-mid-gray">
             {interpretation.por_dimension.cognitiva}
           </dd>
         </div>
         <div>
-          <dt className="font-medium text-slate-800">Somática</dt>
-          <dd className="text-slate-600">
+          <dt className="font-medium text-charcoal">Somática</dt>
+          <dd className="text-mid-gray">
             {interpretation.por_dimension.somatica}
           </dd>
         </div>
         <div>
-          <dt className="font-medium text-slate-800">Autoconfianza</dt>
-          <dd className="text-slate-600">
+          <dt className="font-medium text-charcoal">Autoconfianza</dt>
+          <dd className="text-mid-gray">
             {interpretation.por_dimension.autoconfianza}
           </dd>
         </div>
@@ -55,10 +55,10 @@ export function InterpretationPanel({
 
       {interpretation.estrategias.length > 0 && (
         <div className="mb-4">
-          <h4 className="mb-1 text-sm font-medium text-slate-800">
+          <h4 className="mb-1 text-sm font-medium text-charcoal">
             Estrategias
           </h4>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-mid-gray">
             {interpretation.estrategias.map((s, i) => (
               <li key={i}>{s}</li>
             ))}

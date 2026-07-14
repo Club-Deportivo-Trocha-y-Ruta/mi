@@ -22,7 +22,7 @@ export function AnswerPage() {
   if (form.isLoading) {
     return (
       <Centered>
-        <p className="text-sm text-slate-600">Cargando…</p>
+        <p className="text-sm text-mid-gray">Cargando…</p>
       </Centered>
     );
   }
@@ -31,10 +31,10 @@ export function AnswerPage() {
     const info = mapAnxietyError(form.error);
     return (
       <Centered>
-        <h1 className="mb-2 text-xl font-semibold text-slate-900">
+        <h1 className="mb-2 text-xl font-semibold text-charcoal">
           {info.kind === "token_gone" ? "Enlace no disponible" : "Algo salió mal"}
         </h1>
-        <p className="text-sm text-slate-600">{info.message}</p>
+        <p className="text-sm text-mid-gray">{info.message}</p>
       </Centered>
     );
   }
@@ -43,7 +43,7 @@ export function AnswerPage() {
     return (
       <Centered>
         <h1 className="mb-2 text-xl font-semibold text-emerald-700">¡Listo!</h1>
-        <p className="text-sm text-slate-600">{result.short_message}</p>
+        <p className="text-sm text-mid-gray">{result.short_message}</p>
       </Centered>
     );
   }
@@ -51,7 +51,7 @@ export function AnswerPage() {
   if (!form.data) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-light-gray">
       <Questionnaire
         form={form.data}
         isSubmitting={submit.isPending}
@@ -70,7 +70,7 @@ export function AnswerPage() {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-light-gray p-4">
       <div className="max-w-md text-center">{children}</div>
     </div>
   );

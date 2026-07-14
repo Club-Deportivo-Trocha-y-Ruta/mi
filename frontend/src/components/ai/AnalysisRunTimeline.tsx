@@ -162,6 +162,14 @@ interface AnalysisRunTimelineProps {
   className?: string;
   /** Llamado una sola vez cuando el run alcanza estado terminal (done/failed/cancelled). */
   onComplete?: () => void;
+  /**
+   * `"full"` (default) renderiza el header + la lista `<ol>` de los 13 nodos.
+   * `"compact"` renderiza solo el header (label de estado + barra de progreso
+   * + ETA) — misma máquina de estados, sin el detalle por nodo. Pensado para
+   * filas de tabla (`GroupRunRow`) donde el espacio es limitado: un solo
+   * componente de run-view, dos densidades.
+   */
+  variant?: "full" | "compact";
 }
 
 function statusBadge(status: NodeStatus): {
@@ -208,6 +216,7 @@ export function AnalysisRunTimeline({
   runId,
   className,
   onComplete,
+  variant = "full",
 }: AnalysisRunTimelineProps) {
   const query = useRunStatus(runId);
   const { data, isLoading, isError, error } = query;
@@ -356,6 +365,7 @@ export function AnalysisRunTimeline({
         </div>
       </div>
 
+      {variant === "full" && (
       <ol
         className="space-y-2"
         data-testid="timeline-nodes-list"
@@ -429,6 +439,7 @@ export function AnalysisRunTimeline({
           );
         })}
       </ol>
+      )}
     </section>
   );
 }

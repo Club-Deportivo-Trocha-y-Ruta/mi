@@ -1,23 +1,24 @@
 /**
- * ExerciseCard — tarjeta compacta para el catálogo de Fuerza y Acondicionamiento
- * (feature 021 / T016).
+ * ExerciseCard — envoltorio config-driven del catálogo de Fuerza y
+ * Acondicionamiento sobre `LibraryEntityCard` compartido (feature 033 / T042).
  *
- * Muestra:
- *   - Nombre del ejercicio (enlace a la ruta de detalle)
- *   - Chip de equipo requerido
- *   - Chip de categoría de movimiento
- *   - Chips de franja de edad
- *   - Duración y repeticiones sugeridas
- *   - Resumen corto (1-2 líneas truncadas)
+ * Antes una tarjeta completa (feature 021 / T016, mirror de
+ * `components/technique/ExerciseCard.tsx`); ahora solo mapea un
+ * `StrengthExerciseListItem` a las props de `LibraryEntityCard` — badge de
+ * equipo en `cornerContent`, categoría de movimiento + franjas de edad en
+ * `chipGroups`, duración/repeticiones en `footer`. El shell (enlace de
+ * 48×48 px sobre el nombre, layout de tarjeta) vive en el componente
+ * compartido.
  *
- * Mirror de `components/technique/ExerciseCard.tsx` (feature 018): enlace
- * explícito sobre el nombre (no toda la tarjeta clickable), área de clic
- * mínima 48×48 px (WCAG).
+ * Sigue exportando los tipos y label maps (`StrengthExerciseListItem`,
+ * `StrengthEquipmentKind`, `StrengthMovementCategory`, `StrengthAgeBand`,
+ * `EQUIPMENT_LABEL`, `MOVEMENT_CATEGORY_LABEL`, `STRENGTH_AGE_BAND_LABEL`)
+ * — consumidos por `FilterBar.tsx`, `BlockAssembler.tsx`,
+ * `AgeBandGuardrailDialog.tsx`, `StrengthBlockPicker.tsx` y
+ * `routes/strength/ExerciseDetailPage.tsx`.
  */
-import { Link } from "react-router-dom";
-
+import { LibraryEntityCard } from "@/components/shared/LibraryEntityCard";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 
 // ---------------------------------------------------------------------------
 // Local shapes — mirror ExerciseOut (contracts/strength-api.md).
@@ -87,57 +88,51 @@ interface ExerciseCardProps {
 
 export function ExerciseCard({ exercise }: ExerciseCardProps) {
   return (
-    <Card className="flex flex-col">
-      <CardContent className="flex flex-1 flex-col gap-2 py-4">
-        {/* Name + equipment chip row */}
-        <div className="flex items-start justify-between gap-2">
-          <Link
-            to={`/strength/exercises/${exercise.id}`}
-            className="min-h-12 flex items-center text-sm font-semibold text-slate-900 leading-snug hover:text-primary focus-visible:outline-none focus-visible:underline"
-          >
-            {exercise.name}
-          </Link>
-          <Badge
-            variant={exercise.equipment === "sin_equipo" ? "success" : "info"}
-            className="shrink-0 text-[11px]"
-          >
-            {EQUIPMENT_LABEL[exercise.equipment]}
-          </Badge>
-        </div>
-
-        {/* Summary */}
-        {exercise.summary && (
-          <p className="line-clamp-2 text-xs text-slate-500">
-            {exercise.summary}
-          </p>
-        )}
-
-        {/* Movement category */}
-        <div>
-          <Badge variant="outline" className="text-[11px]">
-            {MOVEMENT_CATEGORY_LABEL[exercise.movement_category]}
-          </Badge>
-        </div>
-
-        {/* Age-band chips */}
-        {exercise.age_bands.length > 0 && (
-          <div className="flex flex-wrap gap-1" aria-label="Franjas de edad">
-            {exercise.age_bands.map((band) => (
-              <Badge key={band} variant="secondary" className="text-[11px]">
-                {STRENGTH_AGE_BAND_LABEL[band]} años
-              </Badge>
-            ))}
-          </div>
-        )}
-
-        {/* Duration / reps indicator row */}
-        <div className="mt-auto flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-500">
+    <LibraryEntityCard
+      href={`/strength/exercises/${exercise.id}`}
+      title={exercise.name}
+      summary={exercise.summary}
+      cornerContent={
+        <Badge variant={exercise.equipment === "sin_equipo" ? "success" : "info"} className="text-[11px]">
+          {EQUIPMENT_LABEL[exercise.equipment]}
+        </Badge>
+      }
+      chipGroups={[
+        {
+          ariaLabel: "Categoría de movimiento",
+          chips: [
+            {
+              key: exercise.movement_category,
+              label: MOVEMENT_CATEGORY_LABEL[exercise.movement_category],
+            },
+          ],
+          renderChip: (chip) => (
+            <Badge key={chip.key} variant="outline" className="text-[11px]">
+              {chip.label}
+            </Badge>
+          ),
+        },
+        {
+          ariaLabel: "Franjas de edad",
+          chips: exercise.age_bands.map((band) => ({
+            key: band,
+            label: `${STRENGTH_AGE_BAND_LABEL[band]} años`,
+          })),
+          renderChip: (chip) => (
+            <Badge key={chip.key} variant="secondary" className="text-[11px]">
+              {chip.label}
+            </Badge>
+          ),
+        },
+      ]}
+      footer={
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-mid-gray">
           <span>{exercise.suggested_duration_min} min</span>
           <span aria-hidden="true">·</span>
           <span>{exercise.suggested_reps}</span>
         </div>
-      </CardContent>
-    </Card>
+      }
+    />
   );
 }
 

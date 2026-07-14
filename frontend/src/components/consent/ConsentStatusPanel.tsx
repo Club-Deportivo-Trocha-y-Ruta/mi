@@ -12,11 +12,12 @@
  */
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, CheckCircle2, AlertCircle, XCircle, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateMedium } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
+import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import type { AthleteConsentStatus, PrivacyPolicySummary } from "@/types/consent";
 import { useRenewConsent } from "@/hooks/consent";
 import { ConsentRenewalModal } from "./ConsentRenewalModal";
@@ -35,31 +36,33 @@ function getConsentState(athlete: AthleteConsentStatus): ConsentState {
   return "current";
 }
 
-const STATE_CONFIG: Record<
-  ConsentState,
-  { label: string; icon: React.ReactNode; badgeClass: string }
-> = {
-  current: {
-    label: "Vigente",
-    icon: <CheckCircle2 size={14} aria-hidden="true" />,
-    badgeClass: "bg-green-50 text-green-700",
-  },
-  outdated: {
-    label: "Desactualizado",
-    icon: <AlertCircle size={14} aria-hidden="true" />,
-    badgeClass: "bg-amber-50 text-amber-700",
-  },
-  revoked: {
-    label: "Revocado",
-    icon: <XCircle size={14} aria-hidden="true" />,
-    badgeClass: "bg-red-50 text-red-700",
-  },
-  never: {
-    label: "Sin consentimiento",
-    icon: <XCircle size={14} aria-hidden="true" />,
-    badgeClass: "bg-mid-gray/10 text-mid-gray",
-  },
-};
+/**
+ * consentStatus — adaptador puro estado de consentimiento → { status, label }
+ * para `StatusBadge` (contracts/status-vocabulary-sweep.md §6).
+ */
+export function consentStatus(state: ConsentState): { status: Status; label: string } {
+  switch (state) {
+    case "never":
+      return { status: "neutral", label: "Sin consentimiento" };
+    case "outdated":
+      return { status: "warning", label: "Desactualizado" };
+    case "revoked":
+      return { status: "danger", label: "Revocado" };
+    case "current":
+      return { status: "success", label: "Vigente" };
+  }
+}
+
+/**
+ * aiConsentStatus — adaptador puro para la fila de sub-toggle IA embebida
+ * (`AiConsentRow`, autorización de `third_party_sharing`), per
+ * contracts/status-vocabulary-sweep.md §6.
+ */
+export function aiConsentStatus(isActive: boolean): { status: Status; label: string } {
+  return isActive
+    ? { status: "success", label: "IA: activa" }
+    : { status: "neutral", label: "IA: no autorizada" };
+}
 
 
 // ---------------------------------------------------------------------------
@@ -80,7 +83,7 @@ function AthleteConsentRow({
   onRevoke,
 }: AthleteConsentRowProps) {
   const state = getConsentState(athlete);
-  const config = STATE_CONFIG[state];
+  const badge = consentStatus(state);
   const consent = athlete.current_consent;
 
   const isRevocable = state === "current" || state === "outdated";
@@ -94,15 +97,7 @@ function AthleteConsentRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-medium text-charcoal">{athlete.athlete_name}</p>
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
-                config.badgeClass,
-              )}
-            >
-              {config.icon}
-              {config.label}
-            </span>
+            <StatusBadge status={badge.status} label={badge.label} />
           </div>
 
           {/* Detalle de la versión aceptada */}
@@ -182,6 +177,7 @@ function AiConsentRow({ athlete, activePolicy }: AiConsentRowProps) {
   if (!consent || consent.withdrawn_at) return null;
 
   const isAiActive = consent.grants.third_party_sharing === true;
+  const aiBadge = aiConsentStatus(isAiActive);
 
   const handleToggleAi = () => {
     renew({
@@ -199,14 +195,7 @@ function AiConsentRow({ athlete, activePolicy }: AiConsentRowProps) {
       aria-live="polite"
     >
       <div className="flex items-center gap-2">
-        {isAiActive ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-            <CheckCircle2 size={12} aria-hidden="true" />
-            IA: activa
-          </span>
-        ) : (
-          <span className="text-xs text-mid-gray">IA: no autorizada</span>
-        )}
+        <StatusBadge status={aiBadge.status} label={aiBadge.label} />
         {isError && (
           <span className="text-xs text-red-600" role="alert">
             Error al actualizar. Intenta de nuevo.

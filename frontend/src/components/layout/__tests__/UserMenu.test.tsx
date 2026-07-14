@@ -98,6 +98,125 @@ describe("UserMenu — visibilidad de items por rol", () => {
   });
 });
 
+// T059 [US5] — toggle "Apariencia" (Sistema/Claro/Oscuro), feature 033.
+describe("UserMenu — Apariencia (dark-mode toggle)", () => {
+  beforeEach(() => {
+    mockAuthStore();
+    window.localStorage.clear();
+    delete document.documentElement.dataset.theme;
+  });
+
+  it("muestra las 3 opciones Sistema/Claro/Oscuro con 'Sistema' seleccionado por defecto", async () => {
+    const testUser = userEvent.setup();
+    renderUserMenu("coach");
+
+    await testUser.click(screen.getByTestId("user-menu-trigger"));
+
+    const system = screen.getByRole("menuitemradio", { name: /Sistema/i });
+    expect(system).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByRole("menuitemradio", { name: /Claro/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitemradio", { name: /Oscuro/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("elegir 'Oscuro' aplica data-theme='dark' en <html> y lo persiste en localStorage", async () => {
+    const testUser = userEvent.setup();
+    renderUserMenu("coach");
+
+    await testUser.click(screen.getByTestId("user-menu-trigger"));
+    await testUser.click(screen.getByRole("menuitemradio", { name: /Oscuro/i }));
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(window.localStorage.getItem("tyr:theme-preference:v1")).toBe(
+      "dark",
+    );
+  });
+
+  it("elegir 'Claro' tras 'Oscuro' aplica data-theme='light'", async () => {
+    const testUser = userEvent.setup();
+    renderUserMenu("coach");
+
+    await testUser.click(screen.getByTestId("user-menu-trigger"));
+    await testUser.click(screen.getByRole("menuitemradio", { name: /Oscuro/i }));
+
+    await testUser.click(screen.getByTestId("user-menu-trigger"));
+    await testUser.click(screen.getByRole("menuitemradio", { name: /Claro/i }));
+
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(window.localStorage.getItem("tyr:theme-preference:v1")).toBe(
+      "light",
+    );
+  });
+
+  it("volver a 'Sistema' quita el atributo data-theme (cae a prefers-color-scheme)", async () => {
+    const testUser = userEvent.setup();
+    renderUserMenu("coach");
+
+    await testUser.click(screen.getByTestId("user-menu-trigger"));
+    await testUser.click(screen.getByRole("menuitemradio", { name: /Oscuro/i }));
+
+    await testUser.click(screen.getByTestId("user-menu-trigger"));
+    await testUser.click(screen.getByRole("menuitemradio", { name: /Sistema/i }));
+
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(window.localStorage.getItem("tyr:theme-preference:v1")).toBe(
+      "system",
+    );
+  });
+});
+
+// T063 [US5] — "Atajos de teclado" help dialog entry point, feature 033.
+// Verifies the dark-mode toggle (T059) and the shortcuts entry point (T063)
+// coexist in the same DropdownMenuContent without a merge/logic conflict.
+describe("UserMenu — Atajos de teclado (help dialog)", () => {
+  beforeEach(() => {
+    mockAuthStore();
+  });
+
+  it("muestra el item 'Atajos de teclado' junto al toggle de Apariencia", async () => {
+    const testUser = userEvent.setup();
+    renderUserMenu("coach");
+
+    await testUser.click(screen.getByTestId("user-menu-trigger"));
+
+    expect(
+      screen.getByRole("menuitem", { name: /Atajos de teclado/i }),
+    ).toBeInTheDocument();
+    // The Apariencia radio group from T059 is still present alongside it.
+    expect(
+      screen.getByRole("menuitemradio", { name: /Sistema/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("seleccionar 'Atajos de teclado' abre el diálogo de ayuda", async () => {
+    const testUser = userEvent.setup();
+    renderUserMenu("coach");
+
+    await testUser.click(screen.getByTestId("user-menu-trigger"));
+    await testUser.click(
+      screen.getByRole("menuitem", { name: /Atajos de teclado/i }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: /Atajos de teclado/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("la tecla '?' abre el diálogo de ayuda (wired a useKeyboardShortcuts)", async () => {
+    const testUser = userEvent.setup();
+    renderUserMenu("coach");
+
+    await testUser.keyboard("?");
+
+    expect(
+      await screen.findByRole("dialog", { name: /Atajos de teclado/i }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("UserMenu — Cerrar sesión", () => {
   beforeEach(() => {
     mockAuthStore();
@@ -141,8 +260,13 @@ describe("UserMenu — foco/roving-tabindex/Escape heredados de Radix DropdownMe
     const first = screen.getByRole("menuitem", { name: /Mi perfil/i });
     expect(first).toHaveFocus();
 
+    // Feature 033, US5: el siguiente item tras "Mi perfil" ahora es el
+    // primer radio item del toggle "Apariencia" (Sistema), insertado antes
+    // de "Cerrar sesión".
     await testUser.keyboard("{ArrowDown}");
-    expect(screen.getByRole("menuitem", { name: /Cerrar sesión/i })).toHaveFocus();
+    expect(
+      screen.getByRole("menuitemradio", { name: /Sistema/i }),
+    ).toHaveFocus();
     expect(first).toHaveAttribute("tabindex", "-1");
   });
 

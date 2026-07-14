@@ -283,7 +283,7 @@ export function ExerciseForm({
           <input
             type="checkbox"
             {...register("is_game")}
-            className="h-5 w-5 rounded border-slate-300 text-primary focus:ring-2 focus:ring-primary/50"
+            className="h-5 w-5 rounded border-border-gray text-primary focus:ring-2 focus:ring-primary/50"
           />
           <span className="text-sm text-charcoal">
             Juego de participación
@@ -295,7 +295,7 @@ export function ExerciseForm({
           <input
             type="checkbox"
             {...register("is_gymkhana")}
-            className="h-5 w-5 rounded border-slate-300 text-primary focus:ring-2 focus:ring-primary/50"
+            className="h-5 w-5 rounded border-border-gray text-primary focus:ring-2 focus:ring-primary/50"
           />
           <span className="text-sm text-charcoal">
             Gymkhana
@@ -515,7 +515,7 @@ export function ExerciseForm({
                             : [...current, mat.slug];
                           field.onChange(next);
                         }}
-                        colorActive="bg-slate-700 text-white border-slate-700"
+                        colorActive="bg-charcoal text-white border-charcoal"
                       />
                     );
                   })}

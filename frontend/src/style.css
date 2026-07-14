@@ -2,6 +2,18 @@
 @import "@fontsource/cal-sans";
 
 /* ─────────────────────────────────────────────
+   Dark mode activation (feature 033, US5 / FR-008, optional story)
+   Targets the `data-theme` attribute — NOT `prefers-color-scheme`
+   directly — so a manual choice (frontend/src/lib/theme.ts, wired from
+   the UserMenu Sistema/Claro/Oscuro toggle) always wins over the OS
+   default. Scoped to coach surfaces only: the parent portal forces
+   `data-theme="light"` explicitly in AppShell regardless of this
+   variant's availability — see contracts/dark-theme-tokens.md.
+   Verified against Tailwind v4 docs (specs/028-frontend-design-foundation/research.md R5).
+   ───────────────────────────────────────────── */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* ─────────────────────────────────────────────
    Fuentes locales (alineadas con landing Astro)
    ───────────────────────────────────────────── */
 @font-face {
@@ -29,6 +41,11 @@
   --color-surface-dark: #2f2f2f;
   --color-surface-muted: #d8d8d8;
 
+  /* Page plane (feature 033, US5) — the app-shell backdrop behind cards.
+     Light mode: implicit white, same as --color-surface (no separate
+     elevation needed — see dark override below for why it diverges). */
+  --color-page-plane: #ffffff;
+
   --color-text-primary: #2f2f2f;
   --color-text-secondary: #5a5a5a;
 
@@ -45,6 +62,25 @@
      Requiere contraste mayor que --color-mid-gray para superar WCAG AA en
      tamaño chico. Ratio sobre blanco ≈ 7.4:1. */
   --color-text-disclaimer: #5a5a5a;
+
+  /* Semantic status scale — success/warning/danger (neutral reuses grays
+     above). Consumed by StatusBadge (frontend/src/components/shared);
+     swept across charts/modules in feature 033. Defensive duplication of
+     the @theme block below — feature 028 owns these long-term. */
+  --color-success: #0ca30c;
+  --color-warning: #fab219;
+  --color-danger: #d03b3b;
+
+  /* A/B/C race-class ordinal ramp (feature 033) — one hue (brand accent
+     teal), monotone lightness. Validated with validate-palette.mjs
+     validateOrdinal() against surface #ffffff (research.md R2):
+     lightest step C=#5bc6d5 sits exactly at the 2:1 ordinal contrast
+     floor — always paired with the visible A/B/C text label, never a
+     bare colored dot. NOT part of the success/warning/danger status
+     vocabulary — intensity, not polarity. */
+  --color-tier-c: #5bc6d5;
+  --color-tier-b: #1cb5c7;
+  --color-tier-a: #008492;
 
   /* Shadows — multi-layer system (no CSS borders for cards) */
   --shadow-flat: none;
@@ -96,6 +132,7 @@
   --color-surface: #ffffff;
   --color-surface-dark: #2f2f2f;
   --color-surface-muted: #d8d8d8;
+  --color-page-plane: #ffffff;
 
   --color-text-primary: #2f2f2f;
   --color-text-secondary: #5a5a5a;
@@ -115,6 +152,13 @@
   --color-success: #0ca30c;
   --color-warning: #fab219;
   --color-danger: #d03b3b;
+
+  /* A/B/C race-class ordinal ramp (feature 033) — see :root block above
+     for the full rationale; kept in sync here so Tailwind utilities
+     (e.g. bg-[--color-tier-a]) can consume it too. */
+  --color-tier-c: #5bc6d5;
+  --color-tier-b: #1cb5c7;
+  --color-tier-a: #008492;
 
   /* Shadows */
   --shadow-flat: none;
@@ -140,6 +184,98 @@
   --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
   --font-display: "Cal Sans", system-ui, sans-serif;
   --font-body: "Inter Variable", "Inter", system-ui, sans-serif;
+}
+
+/* ─────────────────────────────────────────────
+   Dark theme tokens (feature 033, US5 / FR-008, optional story)
+   Coach surfaces only — contracts/dark-theme-tokens.md. Accent
+   (--color-primary) and the status tokens (--color-success/-warning/-danger)
+   are deliberately UNCHANGED between modes: both already clear an adequate
+   contrast against the real dark surface (#1a1a1a) as shipped, so only
+   surface/text/border/shadow/ordinal tokens need dark-specific values.
+
+   Three blocks, in increasing specificity/precedence order:
+   1. @media (prefers-color-scheme: dark) + :root:not([data-theme]) — the
+      zero-configuration default, applies ONLY absent an explicit choice.
+   2. :root[data-theme="dark"] — explicit manual override, always wins.
+   3. :root[data-theme="light"] — explicit manual override restated, so
+      choosing "Claro" wins even against a dark OS preference too.
+   AppShell (frontend/src/components/layout/AppShell.tsx) is the one place
+   that decides which of these applies: coach/admin surfaces honor the
+   stored preference; the parent portal always forces data-theme="light"
+   regardless (out of scope for this story) — frontend/src/lib/theme.ts.
+   ───────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-page-plane: #0d0d0d;
+    --color-surface: #1a1a1a;
+    --color-white: #1a1a1a;
+
+    --color-text-primary: #f2f2f0;
+    --color-text-secondary: #a3a3a3;
+    --color-charcoal: #f2f2f0;
+    --color-mid-gray: #a3a3a3;
+    --color-text-disclaimer: #b8b8b8;
+
+    --color-light-gray: #242424;
+    --color-border-gray: rgba(255, 255, 255, 0.1);
+
+    --color-tier-c: #6dd6e6;
+    --color-tier-b: #2fbfd1;
+    --color-tier-a: #0d97a7;
+
+    --shadow-card: rgba(255, 255, 255, 0.08) 0px 0px 0px 1px;
+    --shadow-card-alt: rgba(255, 255, 255, 0.08) 0px 0px 0px 1px;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-page-plane: #0d0d0d;
+  --color-surface: #1a1a1a;
+  --color-white: #1a1a1a;
+
+  --color-text-primary: #f2f2f0;
+  --color-text-secondary: #a3a3a3;
+  --color-charcoal: #f2f2f0;
+  --color-mid-gray: #a3a3a3;
+  --color-text-disclaimer: #b8b8b8;
+
+  --color-light-gray: #242424;
+  --color-border-gray: rgba(255, 255, 255, 0.1);
+
+  --color-tier-c: #6dd6e6;
+  --color-tier-b: #2fbfd1;
+  --color-tier-a: #0d97a7;
+
+  --shadow-card: rgba(255, 255, 255, 0.08) 0px 0px 0px 1px;
+  --shadow-card-alt: rgba(255, 255, 255, 0.08) 0px 0px 0px 1px;
+}
+
+:root[data-theme="light"] {
+  --color-page-plane: #ffffff;
+  --color-surface: #ffffff;
+  --color-white: #ffffff;
+
+  --color-text-primary: #2f2f2f;
+  --color-text-secondary: #5a5a5a;
+  --color-charcoal: #2f2f2f;
+  --color-mid-gray: #717171;
+  --color-text-disclaimer: #5a5a5a;
+
+  --color-light-gray: #f5f5f5;
+  --color-border-gray: rgba(34, 42, 53, 0.08);
+
+  --color-tier-c: #5bc6d5;
+  --color-tier-b: #1cb5c7;
+  --color-tier-a: #008492;
+
+  --shadow-card:
+    rgba(19, 19, 22, 0.7) 0px 1px 5px -4px,
+    rgba(34, 42, 53, 0.08) 0px 0px 0px 1px,
+    rgba(34, 42, 53, 0.05) 0px 4px 8px 0px;
+  --shadow-card-alt:
+    rgba(36, 36, 36, 0.7) 0px 1px 5px -4px,
+    rgba(36, 36, 36, 0.05) 0px 4px 8px 0px;
 }
 
 /* ─────────────────────────────────────────────

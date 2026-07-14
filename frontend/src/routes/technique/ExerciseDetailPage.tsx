@@ -145,7 +145,7 @@ export function ExerciseDetailPage() {
       {/* ── Encabezado ──────────────────────────────────────────────── */}
       <div className="mb-5 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
+          <h1 className="text-xl font-semibold text-charcoal sm:text-2xl">
             {name}
           </h1>
           {is_game && (
@@ -160,7 +160,7 @@ export function ExerciseDetailPage() {
           )}
         </div>
         {summary && (
-          <p className="text-sm text-slate-500">{summary}</p>
+          <p className="text-sm text-mid-gray">{summary}</p>
         )}
       </div>
 
@@ -169,7 +169,7 @@ export function ExerciseDetailPage() {
         <CardContent className="grid gap-4 pt-4 sm:grid-cols-2">
           {/* Habilidades */}
           <section aria-label="Habilidades técnicas">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Habilidades técnicas
             </p>
             {skills.length > 0 ? (
@@ -181,13 +181,13 @@ export function ExerciseDetailPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-slate-400">Sin habilidades registradas</p>
+              <p className="text-sm text-mid-gray">Sin habilidades registradas</p>
             )}
           </section>
 
           {/* Franjas de edad */}
           <section aria-label="Franjas de edad">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Franjas de edad
             </p>
             {age_bands.length > 0 ? (
@@ -199,13 +199,13 @@ export function ExerciseDetailPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-slate-400">Sin franja registrada</p>
+              <p className="text-sm text-mid-gray">Sin franja registrada</p>
             )}
           </section>
 
           {/* Dificultad */}
           <section aria-label="Nivel de dificultad">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Dificultad
             </p>
             <Badge variant={DIFFICULTY_VARIANT[difficulty]}>
@@ -215,7 +215,7 @@ export function ExerciseDetailPage() {
 
           {/* Materiales */}
           <section aria-label="Materiales necesarios">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mid-gray">
               Materiales
             </p>
             {/* Cuando hay materiales reales, los mostramos */}
@@ -230,7 +230,7 @@ export function ExerciseDetailPage() {
             )}
             {/* Indicador explícito de "sin material" (FR-009) */}
             {(noMaterialMats.length > 0 || !hasMaterials) && (
-              <p className="text-sm font-medium text-slate-500">
+              <p className="text-sm font-medium text-mid-gray">
                 Sin material
               </p>
             )}
@@ -246,7 +246,7 @@ export function ExerciseDetailPage() {
         </CardHeader>
         <CardContent>
           {/* how_to puede contener saltos de línea; los conservamos */}
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-charcoal">
             {how_to}
           </p>
         </CardContent>
@@ -268,7 +268,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
     <div className="mx-auto max-w-2xl px-4 py-6">
       <Link
         to="/technique"
-        className="mb-5 inline-flex items-center gap-1.5 py-3 text-sm text-slate-500 hover:text-slate-800"
+        className="mb-5 inline-flex items-center gap-1.5 py-3 text-sm text-mid-gray hover:text-charcoal"
         aria-label="Volver al catálogo de ejercicios"
       >
         <ArrowLeft size={16} aria-hidden="true" />

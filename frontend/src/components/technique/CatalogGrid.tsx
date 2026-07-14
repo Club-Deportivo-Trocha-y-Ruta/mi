@@ -1,17 +1,15 @@
 /**
- * CatalogGrid — renderiza una cuadrícula de ExerciseCard (US1 / T014).
+ * CatalogGrid — envoltorio config-driven del catálogo de técnica y gymkhana
+ * sobre `CatalogGrid` compartido (feature 033 / T041).
  *
- * Estados:
- *   - loading  → skeletons accesibles (role="status" wrapper + aria-busy)
- *   - error    → mensaje de error con variante cold-start para 503 / timeout
- *   - empty    → estado diferenciado: sin resultados con filtros activos vs.
- *                catálogo vacío
- *   - success  → grid responsive 1 → 2 → 3 col
- *
- * El componente es presentacional: recibe los datos ya resueltos y los estados
- * de carga/error como props desde CatalogPage.
+ * Antes una implementación completa de los cuatro estados loading/error/
+ * empty/success (US1 / T014); ahora solo declara la copy y el mapeo de
+ * `ExerciseListItem` → `ExerciseCard` del dominio técnica. El shell (grid
+ * responsive, skeletons, `ErrorState` con detección de cold-start,
+ * `EmptyState`) vive en el componente compartido.
  */
-import { Skeleton } from "@/components/ui/skeleton";
+import { CatalogGrid as SharedCatalogGrid } from "@/components/shared/CatalogGrid";
+import { isColdStartError } from "@/components/shared/ErrorState";
 import { ExerciseCard } from "./ExerciseCard";
 import type { ExerciseListItem } from "@/types/technique.types";
 
@@ -22,22 +20,14 @@ export type OnEditExercise = (exercise: ExerciseListItem) => void;
 export type OnAttachExercise = (exercise: ExerciseListItem) => void;
 
 // ---------------------------------------------------------------------------
-// Skeleton placeholder cards
+// Error copy — técnica's own generic vs. cold-start wording, kept as-is
+// (`isColdStartError` centralizes the detection heuristic; the copy stays
+// domain-owned, same pattern the shared component's own callers use).
 // ---------------------------------------------------------------------------
 
-function CardSkeleton() {
-  return (
-    <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-card">
-      <Skeleton className="mb-2 h-4 w-3/4" />
-      <Skeleton className="mb-3 h-3 w-full" />
-      <Skeleton className="mb-2 h-3 w-1/2" />
-      <div className="flex gap-1.5">
-        <Skeleton className="h-5 w-14 rounded-full" />
-        <Skeleton className="h-5 w-16 rounded-full" />
-      </div>
-    </div>
-  );
-}
+const GENERIC_ERROR_MESSAGE = "No se pudo cargar el catálogo. Intenta de nuevo.";
+const COLD_START_ERROR_MESSAGE =
+  "El servidor está iniciando, puede tomar hasta 60 segundos. Intenta de nuevo en un momento.";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -67,26 +57,6 @@ interface CatalogGridProps {
 }
 
 // ---------------------------------------------------------------------------
-// Error message helper
-// ---------------------------------------------------------------------------
-
-function resolveErrorMessage(error: unknown): string {
-  // Detect Render cold-start / timeout
-  if (error instanceof Error) {
-    const msg = error.message.toLowerCase();
-    if (
-      msg.includes("timeout") ||
-      msg.includes("network") ||
-      msg.includes("503") ||
-      msg.includes("502")
-    ) {
-      return "El servidor está iniciando, puede tomar hasta 60 segundos. Intenta de nuevo en un momento.";
-    }
-  }
-  return "No se pudo cargar el catálogo. Intenta de nuevo.";
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -102,86 +72,36 @@ export function CatalogGrid({
   onAttach,
   attachingExerciseId,
 }: CatalogGridProps) {
-  // Loading state — initial fetch
-  if (isLoading) {
-    return (
-      <div
-        role="status"
-        aria-busy="true"
-        aria-label="Cargando catálogo de ejercicios…"
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-      >
-        {Array.from({ length: 9 }).map((_, i) => (
-          <CardSkeleton key={i} />
-        ))}
-      </div>
-    );
-  }
-
-  // Error state
-  if (isError) {
-    return (
-      <div
-        role="alert"
-        className="rounded-xl border border-red-200 bg-red-50 p-6 text-center"
-      >
-        <p className="text-sm font-medium text-red-800">
-          {resolveErrorMessage(error)}
-        </p>
-      </div>
-    );
-  }
-
-  // Empty state — no results
-  if (!items || items.length === 0) {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
-        {hasActiveFilters ? (
-          <>
-            <p className="text-sm font-medium text-slate-700">
-              Sin resultados para estos filtros
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Ajusta o limpia los filtros para ver más ejercicios.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-medium text-slate-700">
-              El catálogo está vacío
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Aún no hay ejercicios registrados en esta biblioteca.
-            </p>
-          </>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div>
-      {/* Total + refetch indicator */}
-      <p className="mb-3 text-xs text-slate-400">
-        {total !== undefined ? `${total} ejercicios` : ""}
-        {isFetching && !isLoading ? " · Actualizando…" : ""}
-      </p>
-
-      <div
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-        aria-label={`Catálogo: ${items.length} ejercicios`}
-      >
-        {items.map((exercise) => (
-          <ExerciseCard
-            key={exercise.id}
-            exercise={exercise}
-            onEdit={onEdit}
-            onAttach={onAttach}
-            isAttaching={attachingExerciseId === exercise.id}
-          />
-        ))}
-      </div>
-    </div>
+    <SharedCatalogGrid
+      items={items}
+      total={total}
+      isLoading={isLoading}
+      isFetching={isFetching}
+      isError={isError}
+      error={error}
+      errorMessage={isColdStartError(error) ? COLD_START_ERROR_MESSAGE : GENERIC_ERROR_MESSAGE}
+      emptyState={
+        hasActiveFilters
+          ? {
+              title: "Sin resultados para estos filtros",
+              description: "Ajusta o limpia los filtros para ver más ejercicios.",
+            }
+          : {
+              title: "El catálogo está vacío",
+              description: "Aún no hay ejercicios registrados en esta biblioteca.",
+            }
+      }
+      renderCard={(exercise) => (
+        <ExerciseCard
+          exercise={exercise}
+          onEdit={onEdit}
+          onAttach={onAttach}
+          isAttaching={attachingExerciseId === exercise.id}
+        />
+      )}
+      getItemKey={(exercise) => exercise.id}
+    />
   );
 }
 

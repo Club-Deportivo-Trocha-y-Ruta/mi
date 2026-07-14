@@ -13,6 +13,11 @@ import { warmUp } from "@/api/client";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
 import type { NavRole } from "@/lib/navigation";
+import {
+  applyCoachTheme,
+  applyParentSurfaceTheme,
+  getStoredThemePreference,
+} from "@/lib/theme";
 
 interface AppShellProps {
   children: ReactNode;
@@ -47,6 +52,24 @@ export function AppShell({ children }: AppShellProps) {
   // nav stays the hand-rolled block list untouched (NavRole is coach/admin-only
   // by design, per spec.md Assumptions).
   const navRole: NavRole | null = isAdmin ? "admin" : isCoach ? "coach" : null;
+
+  // Feature 033, US5 (FR-008, optional story): dark mode "surface scope"
+  // guardrail. AppShell is the one shared layout component rendered for
+  // every authenticated role (ProtectedRoute.tsx) — it's the single place
+  // that decides, from the *same* navRole/isParent this file already
+  // computes above, whether to honor the coach's stored theme preference
+  // or force light regardless (parent portal — out of scope for this
+  // story, contracts/dark-theme-tokens.md). Only acts once the role is
+  // definitively known (navRole or isParent), so a brief `user === null`
+  // load window never flips `data-theme` away from what the index.html
+  // pre-hydration script already set — avoids a flash either direction.
+  useEffect(() => {
+    if (navRole) {
+      applyCoachTheme(getStoredThemePreference());
+    } else if (isParent) {
+      applyParentSurfaceTheme();
+    }
+  }, [navRole, isParent]);
 
   const navLinks = navRole ? (
     <SidebarNav role={navRole} onNavigate={() => setSidebarOpen(false)} />
@@ -92,7 +115,11 @@ export function AppShell({ children }: AppShellProps) {
   );
 
   return (
-    <div className="flex min-h-screen overflow-x-hidden bg-white text-charcoal">
+    <div className="flex min-h-screen overflow-x-hidden bg-page-plane text-charcoal">
+      {/* bg-page-plane (feature 033, US5): same #ffffff as bg-white in light
+          mode (no visible change) but a darker backdrop than card/header/
+          sidebar surfaces in dark mode — see style.css's dark token block
+          for the elevation rationale. */}
       {/* ── Skip link — first focusable element for keyboard / screen reader users.
             Permanece visualmente oculto hasta recibir foco. ── */}
       <a

@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
 
@@ -43,7 +44,16 @@ vi.mock("recharts", () => ({
     </div>
   ),
   Area: () => <div data-testid="recharts-area" />,
-  CartesianGrid: () => <div data-testid="recharts-grid" />,
+  // T032: capturamos stroke/strokeDasharray para poder afirmar que la
+  // grilla es un hairline sólido — contracts/chart-style.md prohíbe
+  // strokeDasharray en <CartesianGrid> (anti-patrón "grilla punteada").
+  CartesianGrid: (props: { stroke?: string; strokeDasharray?: string }) => (
+    <div
+      data-testid="recharts-grid"
+      data-stroke={props.stroke}
+      data-stroke-dasharray={props.strokeDasharray ?? ""}
+    />
+  ),
   XAxis: ({ domain }: { domain?: unknown }) => (
     <div data-testid="recharts-x" data-domain={JSON.stringify(domain)} />
   ),
@@ -674,6 +684,129 @@ describe("DistributionChart", () => {
       // (el componente lo debería exponer, p.e., en un data-event-id o similar).
       const section = screen.getByTestId("distribution-chart");
       expect(section.getAttribute("data-event-id")).toBe("100");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T032 — chart regression contract (contracts/chart-style.md): grid is a
+  // solid hairline (no dashing), rider reference-line labels cap at n>8,
+  // and the n<5 low-confidence fallback keeps rendering unchanged (no
+  // toggle ever coexists with it).
+  // ---------------------------------------------------------------------------
+
+  describe("T032 — chart regression contract", () => {
+    it("CartesianGrid nunca recibe strokeDasharray (grilla hairline sólida, sin punteado)", async () => {
+      renderWithProviders(
+        <DistributionChart athleteId={42} defaultEventId={100} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("area-chart")).toBeInTheDocument(),
+      );
+      const grid = screen.getByTestId("recharts-grid");
+      expect(grid.getAttribute("data-stroke-dasharray")).toBe("");
+    });
+
+    it("con points.length<=8 todas las reference lines de rivales conservan su label visible", async () => {
+      mswServer.use(coachHighConfidenceDistributionHandler); // 8 puntos totales (self incl.)
+      renderWithProviders(
+        <DistributionChart athleteId={42} defaultEventId={100} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("area-chart")).toBeInTheDocument(),
+      );
+      const refLines = screen.getAllByTestId("recharts-ref-line");
+      // self "Tú" (1) + 7 rivales (self excluido de RiderReferenceLines) = 8.
+      expect(refLines).toHaveLength(8);
+      const withLabel = refLines.filter((el) => el.getAttribute("data-label"));
+      expect(withLabel).toHaveLength(refLines.length);
+    });
+
+    it("con points.length>8 solo self/mejor/peor conservan label — el resto sigue renderizando su ReferenceLine (posición preservada) sin texto", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/distribution",
+          () =>
+            HttpResponse.json(
+              mockDistribution({
+                sample_size: 9,
+                points: [
+                  { pseudonym: "C0001", time_ms: 1_700_000, is_self: false }, // mejor
+                  { pseudonym: "C0002", time_ms: 1_720_000, is_self: false },
+                  { pseudonym: "C0003", time_ms: 1_740_000, is_self: false },
+                  { pseudonym: "C0004", time_ms: 1_760_000, is_self: false },
+                  { pseudonym: "C0005", time_ms: 1_780_000, is_self: true }, // self
+                  { pseudonym: "C0006", time_ms: 1_800_000, is_self: false },
+                  { pseudonym: "C0007", time_ms: 1_820_000, is_self: false },
+                  { pseudonym: "C0008", time_ms: 1_840_000, is_self: false },
+                  { pseudonym: "C0009", time_ms: 1_860_000, is_self: false }, // peor
+                ],
+              }),
+            ),
+        ),
+      );
+      renderWithProviders(
+        <DistributionChart athleteId={42} defaultEventId={100} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("area-chart")).toBeInTheDocument(),
+      );
+      const refLines = screen.getAllByTestId("recharts-ref-line");
+      // self "Tú" (1) + 8 rivales (self excluido) = 9 ReferenceLine — todas
+      // siguen renderizando (posición preservada), solo el label cambia.
+      expect(refLines).toHaveLength(9);
+      const withLabel = refLines.filter((el) => el.getAttribute("data-label"));
+      // Solo self("Tú") + mejor(C0001) + peor(C0009) conservan label visible.
+      expect(withLabel).toHaveLength(3);
+    });
+
+    it("el fallback n<5 (low confidence) se renderiza sin cambios: tabla simple + disclaimer, jamás junto al toggle Gráfica/Tabla", async () => {
+      mswServer.use(lowConfidenceDistributionHandler);
+      renderWithProviders(
+        <DistributionChart athleteId={42} defaultEventId={100} />,
+      );
+      await waitFor(() => {
+        expect(screen.getByRole("note")).toBeInTheDocument();
+      });
+      expect(
+        screen.getByText(/muestra insuficiente.*n<5/i),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId("area-chart")).not.toBeInTheDocument();
+      // El toggle Gráfica/Tabla (T028) NUNCA coexiste con el fallback n<5.
+      expect(
+        screen.queryByTestId("distribution-view-chart"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("distribution-view-table"),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T033 — el twin de tabla debe ser el equivalente WCAG-limpio de la
+  // gráfica por sí mismo (no solo "también presente"): axe corre sobre el
+  // contenedor cuando la vista "Tabla" está activa y es la única vista
+  // montada (Radix Tabs desmonta el panel inactivo).
+  // ---------------------------------------------------------------------------
+
+  describe("T033 — table-view twin es WCAG-limpio por sí mismo (axe)", () => {
+    it("la vista Tabla activa no tiene violaciones a11y y reemplaza por completo a la gráfica en el DOM", async () => {
+      const user = userEvent.setup();
+      const { container } = renderWithProviders(
+        <DistributionChart athleteId={42} defaultEventId={100} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("area-chart")).toBeInTheDocument(),
+      );
+
+      await user.click(screen.getByTestId("distribution-view-table"));
+
+      await waitFor(() => {
+        expect(screen.getByRole("table")).toBeInTheDocument();
+        expect(screen.queryByTestId("area-chart")).not.toBeInTheDocument();
+      });
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
     });
   });
 });

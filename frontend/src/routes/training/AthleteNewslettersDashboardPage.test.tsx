@@ -59,7 +59,7 @@ import type {
   NewsletterStatusSummaryItem,
 } from "@/hooks/training/useNewsletterStatusSummary";
 import { useAthletes } from "@/hooks/athletes/useAthletes";
-import { AthleteNewslettersDashboardPage } from "./AthleteNewslettersDashboardPage";
+import { AthleteNewslettersDashboardPage, newsletterStatus } from "./AthleteNewslettersDashboardPage";
 import type { AthleteOut } from "@/types/athlete.types";
 import { makeBatchResult } from "@/test/msw/newsletterHandlers";
 import { mswServer } from "@/test/setup";
@@ -405,6 +405,27 @@ describe("AthleteNewslettersDashboardPage — estados de badge por atleta", () =
     renderPage();
     expect(screen.getByTestId("status-badge-42")).toHaveTextContent("Enviado");
   });
+
+  it("regresión: el badge de estado usa StatusBadge (ícono + pill) y no un <span> con clases hand-rolled", () => {
+    const item = makeSummaryItem({ athlete_id: 42, status: "approved" });
+    vi.mocked(useAthletes).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { items: [makeAthlete()], total: 1 },
+    } as unknown as ReturnType<typeof useAthletes>);
+    vi.mocked(useNewsletterStatusSummary).mockReturnValue(mockSummary([item]));
+    const { container } = renderPage();
+
+    const badgeWrapper = screen.getByTestId("status-badge-42");
+    // StatusBadge siempre renderiza un ícono junto al label (color nunca es
+    // el único canal) — el <span> hand-rolled legado no tenía ícono.
+    expect(badgeWrapper.querySelector("svg")).toBeInTheDocument();
+    // Ninguna de las clases utility hand-rolled del STATUS_CONFIG legado
+    // (bg-*-100/text-*-700/border-*-300) debe seguir apareciendo en el DOM.
+    const legacyClassPattern =
+      /(bg|text|border)-(gray|yellow|green|blue|red)-(100|500|700|200|300)/;
+    expect(container.innerHTML).not.toMatch(legacyClassPattern);
+  });
 });
 
 describe("AthleteNewslettersDashboardPage — botón Generar individual", () => {
@@ -525,6 +546,28 @@ describe("AthleteNewslettersDashboardPage — botón Regenerar en dashboard", ()
     await waitFor(() => {
       expect(screen.getByText(/Se borrará la narrativa actual/i)).toBeInTheDocument();
     });
+  });
+});
+
+describe("newsletterStatus (adaptador puro)", () => {
+  it("mapea 'none' a neutral/'Sin generar'", () => {
+    expect(newsletterStatus("none")).toEqual({ status: "neutral", label: "Sin generar" });
+  });
+
+  it("mapea 'draft' a warning/'Borrador'", () => {
+    expect(newsletterStatus("draft")).toEqual({ status: "warning", label: "Borrador" });
+  });
+
+  it("mapea 'approved' a success/'Aprobado'", () => {
+    expect(newsletterStatus("approved")).toEqual({ status: "success", label: "Aprobado" });
+  });
+
+  it("mapea 'sent' a success/'Enviado' (mismo status que 'approved', label distinto)", () => {
+    expect(newsletterStatus("sent")).toEqual({ status: "success", label: "Enviado" });
+  });
+
+  it("mapea 'failed' a danger/'Fallido'", () => {
+    expect(newsletterStatus("failed")).toEqual({ status: "danger", label: "Fallido" });
   });
 });
 

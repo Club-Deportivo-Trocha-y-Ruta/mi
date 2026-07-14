@@ -224,6 +224,22 @@ describe("AthleteAIAnalysisTab", () => {
     ).toBeGreaterThanOrEqual(1);
   });
 
+  // T019: confidenceStatus() canónico de lib/insights.ts (contract
+  // status-vocabulary-sweep.md §4) — el header renderiza el badge de
+  // confianza vía <StatusBadge>, ya no el par local
+  // confidenceBadgeVariant/confidenceText eliminado de este archivo.
+  it("badge de confianza del header usa el StatusBadge compartido (confidenceStatus canónico)", async () => {
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-header-summary")).toBeInTheDocument();
+    });
+    // El insight más reciente del handler default trae confidence="high"
+    // → confidenceStatus() mapea a status="success", label="Confianza alta".
+    const badge = screen.getByText("Confianza alta");
+    expect(badge).toBeInTheDocument();
+    expect(badge.closest("span")).toHaveClass("bg-success/10");
+  });
+
   it("muestra placeholder 'Sin análisis' cuando no hay insights", async () => {
     mswServer.use(emptyInsightsHandler);
     renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
@@ -560,5 +576,57 @@ describe("AthleteAIAnalysisTab", () => {
       // Botón Reintentar presente
       expect(screen.getByRole("button", { name: /reintentar/i })).toBeInTheDocument();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rename table (feature 033 / T054, T046) — contracts/ai-identity.md §1
+// ---------------------------------------------------------------------------
+
+describe("AthleteAIAnalysisTab — rename table (T054, regresión T046)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAttachState = {
+      isPending: false,
+      isSuccess: false,
+      isError: false,
+      data: undefined,
+      error: null,
+      mutate: mockAttachMutate,
+      reset: mockAttachReset,
+    };
+  });
+
+  it('mode=coach: el header es "Insights IA" (h2), no "Análisis IA del deportista"', async () => {
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    const heading = await screen.findByRole("heading", {
+      level: 2,
+      name: "Insights IA",
+    });
+    expect(heading).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { level: 2, name: "Análisis IA del deportista" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('mode=parent: el header sigue siendo "Insights IA" (h2), no "Análisis del coach"', async () => {
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="parent" />);
+    const heading = await screen.findByRole("heading", {
+      level: 2,
+      name: "Insights IA",
+    });
+    expect(heading).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { level: 2, name: "Análisis del coach" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('el sub-tab de lanzamiento se llama "Analizar con IA" con ícono Sparkles, no "Lanzar" con Play', async () => {
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    const subtab = await screen.findByTestId("ai-subtab-launch");
+    expect(subtab).toHaveTextContent("Analizar con IA");
+    expect(subtab).not.toHaveTextContent("Lanzar");
+    expect(subtab.querySelector("svg.lucide-sparkles")).toBeInTheDocument();
+    expect(subtab.querySelector("svg.lucide-play")).not.toBeInTheDocument();
   });
 });
