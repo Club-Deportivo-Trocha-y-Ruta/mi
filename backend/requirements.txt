@@ -20,6 +20,7 @@ docxtpl>=0.16.7
 jinja2>=3.1
 markdown>=3.6
 anthropic>=0.40
+openai>=1.0,<3
 google-genai>=1.0
 gpxpy>=1.6
 defusedxml>=0.7
@@ -32,11 +33,13 @@ typer[all]>=0.13
 
 # ─── Race Results v2 (agentico) ─────
 # Orquestación LangGraph + checkpointing + observabilidad.
-# Proveedor LLM configurable (RACE_AI_PROVIDER=anthropic|google) — ver
-# app/services/race/agents/_llm.py::build_chat_llm.
+# Proveedor LLM configurable (RACE_AI_PROVIDER=anthropic|google|openai) — ver
+# app/services/race/agents/_llm.py::build_chat_llm. "openai" habilita Ollama
+# (dialecto OpenAI /v1) vía RACE_AI_BASE_URL, config-only.
 langgraph>=1.2.0,<2.0
 langchain-anthropic>=0.3.0,<2.0
 langchain-google-genai>=2.0.0,<5.0
+langchain-openai>=0.2,<2
 langgraph-checkpoint-sqlite>=2.0.5,<4.0
 langfuse>=3.0.0,<5.0
 # Property-based testing para sentinelas de privacidad (menores)

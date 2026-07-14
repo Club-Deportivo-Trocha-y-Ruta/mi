@@ -39,9 +39,15 @@ def _build_fake(s: "Settings") -> LLMProvider:
 
 
 def _build_openai(s: "Settings") -> LLMProvider:
-    raise LLMConfigError(
-        "OpenAIProvider no implementado todavía. "
-        "Cambia AI_PROVIDER a 'anthropic' o 'fake'."
+    from app.services.ai.providers.openai_provider import OpenAIProvider
+
+    return OpenAIProvider(
+        api_key=s.ai_api_key,
+        model=s.ai_model,
+        timeout=s.ai_timeout_seconds,
+        max_tokens=s.ai_max_tokens,
+        temperature=s.ai_temperature,
+        base_url=s.ai_base_url,
     )
 
 

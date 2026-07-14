@@ -6,7 +6,7 @@ patchean :func:`build_chat_llm` y se ahorran instanciar la SDK real.
 Decisiones:
 - ``build_chat_llm`` es una **factory** (Strategy + Factory, mismo patrón
   que ``app/services/ai/factory.py``): despacha por ``RACE_AI_PROVIDER``
-  (``anthropic`` | ``google``) hacia el builder concreto — agregar un
+  (``anthropic`` | ``google`` | ``openai``) hacia el builder concreto — agregar un
   proveedor nuevo implica solo sumar una entrada a ``_LLM_BUILDERS``. Los
   agentes (analyst/critic/chat/judge) consumen el chat model resultante
   vía la interfaz genérica de LangChain (``ainvoke``/``bind_tools``); no
@@ -32,12 +32,15 @@ from app.services.race.agents.pricing import (
 DEFAULT_MODEL_BY_PROVIDER: dict[str, str] = {
     "anthropic": "claude-sonnet-5",
     "google": "gemini-2.5-flash-lite",
+    # Default genérico para OpenAI real; en uso local con Ollama la config
+    # (RACE_AI_MODEL) elige el modelo instalado, ej. "qwen3.5:latest".
+    "openai": "gpt-4o-mini",
 }
 
 
 def _build_anthropic_llm(
     *, model: str, temperature: Optional[float], max_output_tokens: int,
-    api_key: Optional[str], timeout: float,
+    api_key: Optional[str], timeout: float, base_url: Optional[str] = None,
 ):
     """``ChatAnthropic`` — import lazy (no requerido si el provider es otro).
 
@@ -59,9 +62,14 @@ def _build_anthropic_llm(
 
 def _build_google_llm(
     *, model: str, temperature: Optional[float], max_output_tokens: int,
-    api_key: Optional[str], timeout: float,
+    api_key: Optional[str], timeout: float, base_url: Optional[str] = None,
 ):
-    """``ChatGoogleGenerativeAI`` — import lazy (no requerido si el provider es otro)."""
+    """``ChatGoogleGenerativeAI`` — import lazy (no requerido si el provider es otro).
+
+    ``base_url`` se acepta por paridad de interfaz con el resto de builders
+    pero se ignora — Gemini Developer API no soporta override de endpoint
+    desde este client.
+    """
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     return ChatGoogleGenerativeAI(
@@ -73,9 +81,33 @@ def _build_google_llm(
     )
 
 
+def _build_openai_llm(
+    *, model: str, temperature: Optional[float], max_output_tokens: int,
+    api_key: Optional[str], timeout: float, base_url: Optional[str] = None,
+):
+    """``ChatOpenAI`` — import lazy (no requerido si el provider es otro).
+
+    Habilita Ollama (dialecto OpenAI ``/v1``) de forma config-only vía
+    ``base_url`` (ej. ``http://host.docker.internal:11434/v1`` desde
+    Docker) — ``api_key`` puede ser cualquier string dummy, Ollama no la
+    valida. Sirve igual para OpenAI real dejando ``base_url`` vacío.
+    """
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI(
+        model=model,
+        api_key=api_key,
+        base_url=base_url or None,
+        temperature=temperature if temperature is not None else settings.ai_temperature,
+        max_tokens=max_output_tokens,
+        timeout=timeout,
+    )
+
+
 _LLM_BUILDERS: dict[str, Callable[..., Any]] = {
     "anthropic": _build_anthropic_llm,
     "google": _build_google_llm,
+    "openai": _build_openai_llm,
 }
 
 
@@ -102,14 +134,18 @@ def build_chat_llm(
     max_output_tokens: Optional[int] = None,
     api_key: Optional[str] = None,
     provider: Optional[str] = None,
+    base_url: Optional[str] = None,
 ):
     """Factory: construye el chat model LangChain del proveedor configurado.
 
     Args:
-        provider: override explícito (``"anthropic"`` | ``"google"``). Si
-            ``None``, usa ``Settings.race_ai_provider``.
+        provider: override explícito (``"anthropic"`` | ``"google"`` |
+            ``"openai"``). Si ``None``, usa ``Settings.race_ai_provider``.
         model: override explícito. Si ``None``, usa ``Settings.race_ai_model``
             o el default del proveedor (:data:`DEFAULT_MODEL_BY_PROVIDER`).
+        base_url: override explícito del endpoint. Si ``None``, usa
+            ``Settings.race_ai_base_url``. Solo lo consume el builder
+            ``"openai"`` (Ollama u otro dialecto-OpenAI); el resto lo ignora.
 
     Raises:
         ValueError: proveedor no soportado (no debería ocurrir — el
@@ -132,6 +168,7 @@ def build_chat_llm(
         max_output_tokens=max_output_tokens or settings.ai_max_tokens,
         api_key=_resolve_race_api_key(resolved_provider, api_key),
         timeout=settings.ai_timeout_seconds,
+        base_url=base_url or settings.race_ai_base_url,
     )
 
 

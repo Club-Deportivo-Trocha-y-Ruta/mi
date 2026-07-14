@@ -30,6 +30,8 @@ services:
       - RACE_AI_PROVIDER=${RACE_AI_PROVIDER:-anthropic}
       - RACE_AI_MODEL=${RACE_AI_MODEL:-}
       - RACE_AI_API_KEY=${RACE_AI_API_KEY:-}
+      # base_url del proveedor race (RACE_AI_PROVIDER=openai → Ollama /v1, etc.)
+      - RACE_AI_BASE_URL=${RACE_AI_BASE_URL:-}
       # Strava Activity Sync (specs/025-strava-activity-sync)
       - STRAVA_ENABLED=${STRAVA_ENABLED:-false}
       - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID:-}
@@ -42,6 +44,11 @@ services:
       - STRAVA_RECONCILE_TOKEN=${STRAVA_RECONCILE_TOKEN:-}
       - STRAVA_SUBSCRIPTION_ID=${STRAVA_SUBSCRIPTION_ID:-}
       - STRAVA_RECONCILE_LOOKBACK_HOURS=${STRAVA_RECONCILE_LOOKBACK_HOURS:-48}
+    # Permite alcanzar servicios del host (p.ej. Ollama en localhost:11434) como
+    # host.docker.internal desde el contenedor. En Docker Desktop (Mac/Win) ya
+    # resuelve solo; este mapeo lo hace explícito y portable a Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks: [backend]
 
   mailhog:

@@ -69,8 +69,9 @@ def test_extract_usage_fallback_when_both_tokens_zero():
 
 
 def test_compute_cost_usd_known_values_google():
-    # 1M tokens input + 1M tokens output → 0.075 + 0.30 = 0.375.
-    assert compute_cost_usd(1_000_000, 1_000_000, provider="google") == 0.375
+    # 1M tokens input + 1M tokens output → 0.25 + 1.50 = 1.75
+    # (Gemini 3.1 Flash Lite, tarifa vigente 2026-07-14).
+    assert compute_cost_usd(1_000_000, 1_000_000, provider="google") == 1.75
     # Zero → zero.
     assert compute_cost_usd(0, 0, provider="google") == 0.0
 
@@ -118,3 +119,50 @@ def test_build_chat_llm_defaults_to_anthropic_when_unset(monkeypatch):
 def test_build_chat_llm_rejects_unsupported_provider():
     with pytest.raises(ValueError, match="no soportado"):
         build_chat_llm(provider="bogus", api_key="x")
+
+
+def test_build_chat_llm_constructs_openai_instance_with_base_url_without_calling_api():
+    """build_chat_llm(provider='openai') no debe hacer red — solo instanciar
+    el wrapper ``ChatOpenAI`` con el ``base_url`` config-only (dialecto
+    Ollama u OpenAI real)."""
+    llm = build_chat_llm(
+        provider="openai",
+        model="qwen3.5:latest",
+        api_key="dummy",
+        base_url="http://host.docker.internal:11434/v1",
+    )
+    assert hasattr(llm, "ainvoke")
+    assert llm.model_name == "qwen3.5:latest"
+    # langchain_openai expone el base_url configurado como ``openai_api_base``.
+    assert llm.openai_api_base == "http://host.docker.internal:11434/v1"
+
+
+def test_build_chat_llm_openai_defaults_base_url_to_none_when_unset():
+    """Sin ``base_url`` explícito ni ``Settings.race_ai_base_url`` → apunta
+    a la API real de OpenAI (``base_url=None``, default de ``ChatOpenAI``)."""
+    from app.config import settings
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(settings, "race_ai_base_url", None)
+        llm = build_chat_llm(provider="openai", model="gpt-4o-mini", api_key="dummy")
+    assert hasattr(llm, "ainvoke")
+    assert llm.model_name == "gpt-4o-mini"
+
+
+def test_compute_cost_usd_known_values_openai():
+    """Ollama local (uso objetivo de 'openai' en race/agents/) = costo 0."""
+    assert compute_cost_usd(1_000_000, 1_000_000, provider="openai") == 0.0
+    assert compute_cost_usd(0, 0, provider="openai") == 0.0
+
+
+def test_settings_race_ai_provider_validator_accepts_openai():
+    """El validator de ``Settings.race_ai_provider`` acepta 'openai' sin
+    lanzar ``ValidationError`` (proveedor sumado para Ollama/OpenAI-compatible)."""
+    from app.config import Settings
+
+    s = Settings(race_ai_provider="openai")
+    assert s.race_ai_provider == "openai"
+
+    # También normaliza mayúsculas/espacios como los demás proveedores.
+    s_upper = Settings(race_ai_provider=" OpenAI ")
+    assert s_upper.race_ai_provider == "openai"

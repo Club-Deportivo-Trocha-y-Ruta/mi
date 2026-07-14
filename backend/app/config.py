@@ -108,12 +108,16 @@ class Settings(BaseSettings):
     # propio proveedor/modelo/API key — independiente de AI_PROVIDER/AI_MODEL
     # (capa app/services/ai/) para poder cambiar uno sin romper el otro.
     # Factory + Strategy en app/services/race/agents/_llm.py::build_chat_llm.
-    # Proveedor: "anthropic" | "google".
+    # Proveedor: "anthropic" | "google" | "openai".
     race_ai_provider: str = "anthropic"
-    # Vacío → default por proveedor en _llm.py (claude-sonnet-5 | gemini-2.5-flash-lite).
+    # Vacío → default por proveedor en _llm.py (claude-sonnet-5 | gemini-2.5-flash-lite | gpt-4o-mini).
     race_ai_model: str = ""
     # Vacío → si race_ai_provider == ai_provider, cae a AI_API_KEY (mismo proveedor).
     race_ai_api_key: str = ""
+    # Override opcional del endpoint (proxies, gateways corporativos, u Ollama
+    # en modo dialecto-OpenAI — ej. http://host.docker.internal:11434/v1).
+    # Solo aplica cuando race_ai_provider="openai"; ignorado por los demás.
+    race_ai_base_url: str | None = None
 
     # -----------------------------------------------------------------------
     # Race AI — budget guard (F8A)
@@ -260,7 +264,7 @@ class Settings(BaseSettings):
     @field_validator("race_ai_provider")
     @classmethod
     def validate_race_ai_provider(cls, v: str, info) -> str:
-        allowed = {"anthropic", "google"}
+        allowed = {"anthropic", "google", "openai"}
         normalized = v.lower().strip()
         if normalized not in allowed:
             raise ValueError(
