@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { MeasurementAlerts } from "../MeasurementAlerts";
@@ -73,6 +73,26 @@ function renderComponent() {
 }
 
 describe("MeasurementAlerts", () => {
+  it("ante isError=true muestra ErrorState con Reintentar (no texto ad hoc sin salida)", () => {
+    const refetch = vi.fn();
+    mockUseAlerts.mockReturnValue({
+      data: undefined,
+      isPending: false,
+      isError: true,
+      refetch,
+    } as unknown as ReturnType<typeof useAlerts>);
+
+    renderComponent();
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    const retryButton = screen.getByRole("button", { name: /Reintentar/ });
+    expect(retryButton).toBeInTheDocument();
+
+    fireEvent.click(retryButton);
+
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
   it("muestra maximo 8 filas cuando hay 40 atletas accionables", () => {
     const athletes: AthleteAlert[] = Array.from({ length: 40 }, (_, i) =>
       makeAlert({

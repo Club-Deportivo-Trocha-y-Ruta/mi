@@ -16,6 +16,7 @@
  * bajo document.body (fuera del `container` que devuelve render()), así que
  * los checks de axe corren sobre document.body, no sobre `container`.
  */
+import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -141,6 +142,72 @@ describe("ConfirmDialog — cierre", () => {
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: foco al cerrar (retorno al trigger)
+// ---------------------------------------------------------------------------
+
+/**
+ * ConfirmDialog es controlado por el padre (`open`) y nunca renderiza un
+ * `<AlertDialogTrigger>` de Radix — cada sitio de uso tiene su propio botón
+ * disparador arbitrario. Radix solo restaura el foco automáticamente hacia
+ * el nodo registrado por ese Trigger (`context.triggerRef`); sin él, el
+ * foco cae a `<body>` al cerrar. Este wrapper reproduce un sitio de uso real
+ * (botón disparador propio + estado `open` local) para poder detectar esa
+ * regresión — los tests anteriores montan el diálogo ya `open={true}`, sin
+ * un trigger real en el árbol, así que no podían atraparla.
+ */
+function TriggerAndDialog(overrides: Partial<ConfirmDialogProps> = {}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Eliminar
+      </button>
+      <ConfirmDialog
+        open={open}
+        title="Eliminar atleta"
+        onConfirm={overrides.onConfirm ?? vi.fn()}
+        onCancel={() => setOpen(false)}
+        {...overrides}
+      />
+    </>
+  );
+}
+
+describe("ConfirmDialog — foco al cerrar (retorno al trigger)", () => {
+  it("Escape devuelve el foco al botón que abrió el diálogo", async () => {
+    const user = userEvent.setup();
+    render(<TriggerAndDialog />);
+
+    await user.click(screen.getByRole("button", { name: "Eliminar" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Cancelar" })).toHaveFocus();
+    });
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Eliminar" })).toHaveFocus();
+    });
+  });
+
+  it("clic en Cancelar devuelve el foco al botón que abrió el diálogo", async () => {
+    const user = userEvent.setup();
+    render(<TriggerAndDialog />);
+
+    await user.click(screen.getByRole("button", { name: "Eliminar" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Cancelar" })).toHaveFocus();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Eliminar" })).toHaveFocus();
+    });
   });
 });
 

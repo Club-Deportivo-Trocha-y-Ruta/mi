@@ -52,6 +52,26 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const cancelRef = React.useRef<HTMLButtonElement>(null);
 
+  /**
+   * Radix solo restaura el foco al cerrar hacia el nodo registrado por
+   * `<AlertDialogTrigger>` (`context.triggerRef`). ConfirmDialog es
+   * controlado por el padre (prop `open`) y nunca renderiza un Trigger de
+   * Radix — cada sitio de uso tiene su propio botón disparador arbitrario —
+   * así que ese ref queda `null` para siempre y, sin este workaround, el
+   * foco cae a `<body>` en vez de volver al botón que abrió el diálogo
+   * (Escape, Cancelar o Confirmar). Se captura `document.activeElement`
+   * durante el render en el que `open` pasa de false a true — antes de que
+   * el FocusScope interno mueva el foco a Cancelar/Confirmar — y se
+   * restaura manualmente vía `onCloseAutoFocus`.
+   */
+  const triggerElementRef = React.useRef<HTMLElement | null>(null);
+  const wasOpenRef = React.useRef(false);
+  if (open && !wasOpenRef.current) {
+    triggerElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
+  wasOpenRef.current = open;
+
   return (
     <AlertDialog
       open={open}
@@ -69,6 +89,10 @@ export function ConfirmDialog({
           }
           // tone="default": no se llama preventDefault y el autofocus por
           // defecto de Radix (ya enfoca Cancelar) queda vigente.
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          triggerElementRef.current?.focus();
         }}
       >
         <AlertDialogHeader>

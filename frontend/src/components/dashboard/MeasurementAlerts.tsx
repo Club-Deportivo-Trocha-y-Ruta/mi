@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 import { AthleteLink } from "@/components/shared/AthleteLink";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { useAlerts } from "@/hooks/athletes/useAlerts";
 import type { AthleteAlert, MeasurementStatus } from "@/types/alerts.types";
 
@@ -21,7 +22,7 @@ function formatDaysText(alert: AthleteAlert): string {
 }
 
 export function MeasurementAlerts() {
-  const { data, isPending, isError } = useAlerts();
+  const { data, isPending, isError, refetch } = useAlerts();
 
   if (isPending) {
     return (
@@ -40,7 +41,10 @@ export function MeasurementAlerts() {
         <h2 className="font-display mb-3 text-lg text-charcoal">
           Mediciones pendientes
         </h2>
-        <p className="text-sm text-red-600">Error al cargar alertas</p>
+        <ErrorState
+          message="No se pudieron cargar las alertas de medición."
+          onRetry={() => void refetch()}
+        />
       </section>
     );
   }
