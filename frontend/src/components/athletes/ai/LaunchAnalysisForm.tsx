@@ -24,6 +24,12 @@
  *
  * El nombre del deportista se muestra read-only (UX: confirmar que es
  * el correcto antes de gastar tokens de LLM).
+ *
+ * Identidad IA + pista de presupuesto (contracts/ai-identity.md §1, §4):
+ * el botón de envío usa el verbo compartido "Analizar con IA" (nunca
+ * "Analizar deportista") y consume `useAIStatus()` para deshabilitarse
+ * cuando `budget_status="exhausted"`, mostrando `AIBudgetHint` con el
+ * mismo copy que `AnalyzeAthleteButton`/`GroupAnalysisPanel`.
  */
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -32,6 +38,11 @@ import { Loader2, Sparkles, User as UserIcon } from "lucide-react";
 import { z } from "zod";
 
 import { Badge } from "@/components/ui/badge";
+import {
+  AIBudgetHint,
+  isBudgetExhausted,
+} from "@/components/ai/AIBudgetHint";
+import { useAIStatus } from "@/hooks/ai/useAIStatus";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
 import { useAthleteRaces } from "@/hooks/athletes/useAthleteRaces";
 import { cn } from "@/lib/utils";
@@ -69,6 +80,13 @@ export function LaunchAnalysisForm({
 }: LaunchAnalysisFormProps) {
   const mutation = useLaunchAthleteAnalysis(athleteId);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Pista pre-lanzamiento de presupuesto/concurrencia (contracts/ai-identity.md
+  // §4) — mismo patrón que AnalyzeAthleteButton/GroupAnalysisPanel: degrada
+  // con gracia si falla el fetch (aiStatus.data queda undefined, AIBudgetHint
+  // no renderiza nada, nunca bloquea este formulario por un error de red).
+  const aiStatus = useAIStatus();
+  const budgetExhausted = isBudgetExhausted(aiStatus.data);
 
   const {
     control,
@@ -153,7 +171,8 @@ export function LaunchAnalysisForm({
     return arr;
   })();
 
-  const isDisabled = isSubmitting || mutation.isPending;
+  const isPending = isSubmitting || mutation.isPending;
+  const isDisabled = isPending || budgetExhausted;
 
   return (
     <form
@@ -313,24 +332,32 @@ export function LaunchAnalysisForm({
         </p>
       )}
 
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex flex-col items-end gap-1.5">
         <button
           type="submit"
           disabled={isDisabled}
           data-testid="launch-submit"
+          aria-label={
+            budgetExhausted
+              ? `Presupuesto de IA agotado — no se puede analizar a ${athleteName}`
+              : undefined
+          }
           className={cn(
             "inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity",
             isDisabled ? "cursor-not-allowed opacity-60" : "hover:opacity-90",
             "shadow-button-highlight",
           )}
         >
-          {isDisabled ? (
+          {isPending ? (
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
           ) : (
             <Sparkles size={16} aria-hidden="true" />
           )}
-          {isDisabled ? "Lanzando…" : "Analizar deportista"}
+          {isPending ? "Lanzando…" : "Analizar con IA"}
         </button>
+
+        {/* Pista pre-lanzamiento de presupuesto/concurrencia (contracts/ai-identity.md §4) */}
+        <AIBudgetHint status={aiStatus.data} className="max-w-[280px]" />
       </div>
     </form>
   );

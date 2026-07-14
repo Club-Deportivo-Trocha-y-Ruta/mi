@@ -12,6 +12,11 @@
  *  - Disabled durante mutation.
  *  - onStarted callback dispara con run_id.
  *  - Error de servidor expone el mensaje.
+ *  - Identidad IA (contracts/ai-identity.md §1, §4): botón usa el verbo
+ *    compartido "Analizar con IA" (regresión contra "Analizar deportista",
+ *    hallado en QA de spec 033 — este control no estaba en el rename table
+ *    original pero es un launch control real); se deshabilita y muestra
+ *    AIBudgetHint cuando budget_status="exhausted".
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
@@ -27,6 +32,16 @@ vi.mock("@/store/auth.store", () => ({
       isAuthenticated: true,
     }),
   ),
+}));
+
+// useAIStatus (contracts/ai-identity.md §4) — sin datos por defecto:
+// degradación reactiva-only, igual que en AnalyzeAthleteButton.test.tsx.
+let mockAIStatusData:
+  | { budget_status: "ok" | "warning" | "exhausted"; budget_remaining_pct: number; concurrency_available: boolean; est_wait_seconds: number }
+  | undefined;
+
+vi.mock("@/hooks/ai/useAIStatus", () => ({
+  useAIStatus: () => ({ data: mockAIStatusData }),
 }));
 
 import { mswServer } from "@/test/setup";
@@ -81,6 +96,7 @@ function mockLaunch(bodies: unknown[]) {
 describe("LaunchAnalysisForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAIStatusData = undefined;
   });
 
   it("muestra athlete name read-only y chips de carreras reales", async () => {
@@ -258,6 +274,58 @@ describe("LaunchAnalysisForm", () => {
     await screen.findByTestId("launch-event-1");
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Identidad IA (contracts/ai-identity.md §1, §4)
+  // ---------------------------------------------------------------------------
+  describe("identidad IA compartida", () => {
+    it('el botón usa el verbo compartido "Analizar con IA", no "Analizar deportista"', async () => {
+      mockRaces();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await screen.findByTestId("launch-event-1");
+      const submit = screen.getByTestId("launch-submit");
+      expect(submit).toHaveTextContent("Analizar con IA");
+      expect(submit).not.toHaveTextContent("Analizar deportista");
+    });
+
+    it("presupuesto agotado deshabilita el submit y muestra AIBudgetHint", async () => {
+      mockAIStatusData = {
+        budget_status: "exhausted",
+        budget_remaining_pct: 0,
+        concurrency_available: true,
+        est_wait_seconds: 0,
+      };
+      mockRaces();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await screen.findByTestId("launch-event-1");
+      expect(screen.getByTestId("launch-submit")).toBeDisabled();
+      expect(
+        screen.getByTestId("ai-budget-hint-exhausted"),
+      ).toBeInTheDocument();
+    });
+
+    it("presupuesto ok no muestra hint bloqueante y deja el submit habilitado", async () => {
+      mockAIStatusData = {
+        budget_status: "ok",
+        budget_remaining_pct: 90,
+        concurrency_available: true,
+        est_wait_seconds: 0,
+      };
+      mockRaces();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await screen.findByTestId("launch-event-1");
+      expect(screen.getByTestId("launch-submit")).not.toBeDisabled();
+      expect(
+        screen.queryByTestId("ai-budget-hint-exhausted"),
+      ).not.toBeInTheDocument();
+    });
   });
 
   // ---------------------------------------------------------------------------
