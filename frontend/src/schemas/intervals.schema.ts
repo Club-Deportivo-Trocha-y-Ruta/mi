@@ -235,7 +235,7 @@ export const intervalStructureOutSchema = z
     training_session_id: z.number(),
     target_age_band: intervalAgeBandSchema,
     age_gate_confirmed: z.boolean(),
-    age_gate_confirmed_by: z.number().nullable(),
+    age_gate_confirmed_by: z.string().nullable(),
     age_gate_confirmed_at: z.string().nullable(),
     blocks: z.array(intervalBlockOutSchema),
     total_planned_duration_s: z.number(),
