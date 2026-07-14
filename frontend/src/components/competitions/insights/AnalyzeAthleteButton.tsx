@@ -31,6 +31,7 @@ import {
 } from "@/components/ai/AIBudgetHint";
 import { useAIStatus } from "@/hooks/ai/useAIStatus";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
+import { useAthleteRunOutcome } from "@/hooks/ai/useAthleteRunOutcome";
 
 // ---------------------------------------------------------------------------
 // Mapeo de errores del backend (FR-010)
@@ -110,6 +111,17 @@ export function AnalyzeAthleteButton({
   const aiStatus = useAIStatus();
   const budgetExhausted = isBudgetExhausted(aiStatus.data);
 
+  // Seguimiento del run lanzado (FR-013 / US1-Sc5): el POST de launch solo
+  // confirma que el run arrancó, no que terminó. El hook polea el estado y
+  // notifica el desenlace con un toast no bloqueante (éxito → refresca
+  // insights; fallo → expone `failureMessage` para reemplazar el estado
+  // optimista "iniciado" por uno de error visible).
+  const { failureMessage } = useAthleteRunOutcome(successRunId, {
+    athleteId,
+    displayName,
+  });
+  const shownError = errorMsg ?? failureMessage;
+
   // Un insight fresco existe cuando el map tiene una entrada con stale_run_id null.
   const hasFreshInsight = insightFreshness === null;
 
@@ -149,6 +161,21 @@ export function AnalyzeAthleteButton({
     });
   }
 
+  // El error tiene prioridad: si el run terminó en fallo (`failureMessage`)
+  // reemplaza el estado optimista "iniciado" en vez de dejar un falso verde.
+  if (shownError) {
+    return (
+      <div
+        className="flex max-w-[200px] items-start gap-1.5 text-xs text-red-600"
+        data-testid={`ai-launch-error-${athleteId}`}
+        role="alert"
+      >
+        <AlertCircle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>{shownError}</span>
+      </div>
+    );
+  }
+
   if (successRunId) {
     return (
       <div
@@ -168,19 +195,6 @@ export function AnalyzeAthleteButton({
         ) : (
           <span>Análisis iniciado</span>
         )}
-      </div>
-    );
-  }
-
-  if (errorMsg) {
-    return (
-      <div
-        className="flex max-w-[200px] items-start gap-1.5 text-xs text-red-600"
-        data-testid={`ai-launch-error-${athleteId}`}
-        role="alert"
-      >
-        <AlertCircle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-        <span>{errorMsg}</span>
       </div>
     );
   }

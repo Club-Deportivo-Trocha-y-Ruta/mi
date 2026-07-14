@@ -49,6 +49,13 @@ vi.mock("@/hooks/ai/useAIStatus", () => ({
   useAIStatus: () => ({ data: mockAIStatusData, isError: mockAIStatusIsError }),
 }));
 
+// useAthleteRunOutcome (FR-013) — sin desenlace de fallo por defecto; el
+// seguimiento del run tiene su propio suite (useAthleteRunOutcome.test.ts).
+let mockRunFailureMessage: string | null = null;
+vi.mock("@/hooks/ai/useAthleteRunOutcome", () => ({
+  useAthleteRunOutcome: () => ({ failureMessage: mockRunFailureMessage }),
+}));
+
 import { AnalyzeAthleteButton } from "@/components/competitions/insights/AnalyzeAthleteButton";
 
 // ---------------------------------------------------------------------------
@@ -77,6 +84,7 @@ beforeEach(() => {
   mockIsPending = false;
   mockAIStatusData = undefined;
   mockAIStatusIsError = false;
+  mockRunFailureMessage = null;
 });
 
 // ---------------------------------------------------------------------------
@@ -104,6 +112,25 @@ describe("AnalyzeAthleteButton — render básico", () => {
       "aria-label",
       "Analizar con IA a Corredor A",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Desenlace del run (FR-013) — el fallo terminal reemplaza el estado optimista
+// ---------------------------------------------------------------------------
+
+describe("AnalyzeAthleteButton — desenlace del run (FR-013)", () => {
+  it("cuando useAthleteRunOutcome reporta failureMessage, muestra el error (no el botón)", () => {
+    mockRunFailureMessage = "El análisis de Corredor A falló. Intenta de nuevo.";
+    renderButton();
+
+    const error = screen.getByTestId("ai-launch-error-55");
+    expect(error).toHaveAttribute("role", "alert");
+    expect(error).toHaveTextContent(
+      "El análisis de Corredor A falló. Intenta de nuevo.",
+    );
+    // El botón de lanzamiento ya no está en pantalla.
+    expect(screen.queryByTestId("ai-launch-btn-55")).not.toBeInTheDocument();
   });
 });
 

@@ -261,7 +261,7 @@ describe("ResultsTable — launch directo cuando no hay insight previo", () => {
 
     // mutate called with correct body
     expect(mockMutate).toHaveBeenCalledWith(
-      { season: 2026, valida_nums: [4] },
+      { season: 2026, valida_nums: [4], event_id: 10 },
       expect.any(Object),
     );
   });
@@ -318,7 +318,7 @@ describe("ResultsTable — modal de confirmación cuando existe insight fresco",
     await user.click(confirmBtn);
 
     expect(mockMutate).toHaveBeenCalledWith(
-      { season: 2026, valida_nums: [4] },
+      { season: 2026, valida_nums: [4], event_id: 10 },
       expect.any(Object),
     );
   });

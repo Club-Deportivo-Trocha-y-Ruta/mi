@@ -48,6 +48,12 @@ vi.mock("@/hooks/ai/useAIStatus", () => ({
   useAIStatus: () => ({ data: undefined, isError: false }),
 }));
 
+// useAthleteRunOutcome (FR-013) — no-op en estos tests de visibilidad/flujo;
+// su seguimiento del run se prueba en useAthleteRunOutcome.test.ts.
+vi.mock("@/hooks/ai/useAthleteRunOutcome", () => ({
+  useAthleteRunOutcome: () => ({ failureMessage: null }),
+}));
+
 // Aislar de dependencias de hooks/API.
 vi.mock("@/components/competitions/insights/GroupAnalysisPanel", () => ({
   GroupAnalysisPanel: () => <div data-testid="group-analysis-panel" />,
@@ -179,7 +185,7 @@ describe("InsightsTab — flujo de lanzamiento por tarjeta", () => {
 
     expect(screen.queryByText(/re-ejecutar análisis/i)).not.toBeInTheDocument();
     expect(mockMutate).toHaveBeenCalledWith(
-      { season: 2026, valida_nums: [4] },
+      { season: 2026, valida_nums: [4], event_id: 5 },
       expect.any(Object),
     );
   });
@@ -202,7 +208,7 @@ describe("InsightsTab — flujo de lanzamiento por tarjeta", () => {
     await user.click(screen.getByRole("button", { name: "Re-ejecutar" }));
 
     expect(mockMutate).toHaveBeenCalledWith(
-      { season: 2026, valida_nums: [4] },
+      { season: 2026, valida_nums: [4], event_id: 5 },
       expect.any(Object),
     );
   });
