@@ -331,9 +331,15 @@ function ClubInsightsGrid({
         {data.total_athletes === 1 ? "atleta" : "atletas"} con análisis IA
       </p>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {data.items.map((item) => (
+        {data.items.map((item, index) => (
           <InsightCard
-            key={`${item.athlete_id}-${item.insight_id ?? "none"}`}
+            // Se incluye `index` porque varias tarjetas enmascaradas de padre
+            // comparten `athlete_id=0` + `insight_id=null` (mismo par clave),
+            // lo que provoca el warning de React "two children with the same
+            // key". La lista es un snapshot estable por válida (no se reordena
+            // ni filtra en cliente tras el render), así que el índice es una
+            // desambiguación segura.
+            key={`${item.athlete_id}-${item.insight_id ?? "none"}-${index}`}
             item={item}
             canAnalyze={isCoachOrAdmin}
             season={season}
