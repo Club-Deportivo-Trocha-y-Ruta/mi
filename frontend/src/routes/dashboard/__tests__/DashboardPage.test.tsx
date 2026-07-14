@@ -321,11 +321,16 @@ describe("DashboardPage", () => {
 
     renderPage();
 
+    // `MeasurementAlerts` is the single source of truth for this query's
+    // error state — DashboardPage no longer renders its own top-level
+    // `ErrorState` for the same failure (see DashboardPage.tsx comment):
+    // that used to render a SECOND "No pudimos cargar..." banner with its
+    // own "Reintentar" button alongside this one, a duplicate-control bug
+    // that made `findByRole("button", { name: "Reintentar" })` ambiguous
+    // in the retry test below.
     await waitFor(() => {
       expect(
-        screen.getByText(
-          "No pudimos cargar la información del dashboard. Intenta de nuevo más tarde.",
-        ),
+        screen.getByText("No se pudieron cargar las alertas de medición."),
       ).toBeInTheDocument();
     });
 
@@ -363,14 +368,14 @@ describe("DashboardPage", () => {
       expect(getAlerts).toHaveBeenCalledTimes(2);
     });
 
-    // La consulta se recupera con los datos frescos y el estado de error desaparece.
+    // La consulta se recupera con los datos frescos y el estado de error
+    // (renderizado por `MeasurementAlerts`, la única fuente de este mensaje
+    // ahora — ver DashboardPage.tsx) desaparece.
     await waitFor(() => {
       expect(getAlerts).toHaveResolvedTimes(1);
     });
     expect(
-      screen.queryByText(
-        "No pudimos cargar la información del dashboard. Intenta de nuevo más tarde.",
-      ),
+      screen.queryByText("No se pudieron cargar las alertas de medición."),
     ).not.toBeInTheDocument();
   });
 
@@ -1175,7 +1180,14 @@ describe("DashboardPage — admin variant (US4, T049): 0 role dead-ends (SC-004)
       await screen.findByText("Consentimientos pendientes");
       await screen.findByText("Insights IA desactualizados");
       await screen.findByText("Atleta Ficticio 10");
-      await screen.findByRole("link", { name: /ver todas/i });
+      const verTodas = await screen.findByText(/ver todas/i);
+      // `/athletes` (the list) is coach-only in App.tsx, same as
+      // `/athletes/:id` — `MeasurementAlerts`'s "Ver todas (N)" link is
+      // gated the same way the individual `AthleteLink` rows already are
+      // (mirrors the "Consentimientos pendientes" assertion below): for
+      // admin it renders as plain, non-interactive text instead of a link
+      // that would bounce straight back to /dashboard.
+      expect(verTodas.closest("a")).toBeNull();
 
       const hrefs = Array.from(
         new Set(
@@ -1189,13 +1201,13 @@ describe("DashboardPage — admin variant (US4, T049): 0 role dead-ends (SC-004)
       unmount();
       vi.useRealTimers();
 
-      // Sanity: la página debe haber expuesto al menos los 8 destinos
-      // ÚNICOS documentados en `contracts/home-tiles.md` para este
-      // escenario poblado (3 hero tiles + 5 filas de PendingInbox — la fila
-      // "Consentimientos pendientes" y el "Ver todas" de MeasurementAlerts
-      // comparten el mismo href `/athletes`, deduplicado por el `Set` de
-      // arriba) antes de evaluar a dónde apunta cada uno.
-      expect(hrefs.length).toBeGreaterThanOrEqual(8);
+      // Sanity: la página debe haber expuesto al menos los 7 destinos
+      // ÚNICOS documentados en `contracts/home-tiles.md` que SÍ son
+      // navegables para admin (3 hero tiles + 4 filas de PendingInbox — la
+      // fila "Consentimientos pendientes" apunta a `/athletes`, restringida
+      // para admin, así que no es un link) antes de evaluar a dónde apunta
+      // cada uno.
+      expect(hrefs.length).toBeGreaterThanOrEqual(7);
 
       const deadEnds: string[] = [];
 

@@ -3,7 +3,17 @@ import { Link } from "react-router-dom";
 import { AthleteLink } from "@/components/shared/AthleteLink";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { useAlerts } from "@/hooks/athletes/useAlerts";
+import { useAuthStore } from "@/store/auth.store";
 import type { AthleteAlert, MeasurementStatus } from "@/types/alerts.types";
+import { UserRole } from "@/types/enums";
+
+/**
+ * `/athletes` (la lista) está restringida a `UserRole.coach` (ver
+ * `src/App.tsx`), igual que `/athletes/:id` en `AthleteLink.tsx` — admin NO
+ * tiene acceso y `ProtectedRoute` lo rebota en silencio al dashboard.
+ * Mantener sincronizado con el `allowedRoles` de esa ruta.
+ */
+const ATHLETES_LIST_ALLOWED_ROLES: readonly UserRole[] = [UserRole.coach];
 
 const STATUS_CONFIG: Record<MeasurementStatus, { dot: string; bg: string; label: string }> = {
   overdue: { dot: "bg-red-500", bg: "bg-red-50 text-red-700", label: "vencidas" },
@@ -23,6 +33,9 @@ function formatDaysText(alert: AthleteAlert): string {
 
 export function MeasurementAlerts() {
   const { data, isPending, isError, refetch } = useAlerts();
+  const role = useAuthStore((state) => state.user?.role);
+  const canViewAthletesList =
+    role !== undefined && ATHLETES_LIST_ALLOWED_ROLES.includes(role);
 
   if (isPending) {
     return (
@@ -168,12 +181,18 @@ export function MeasurementAlerts() {
       )}
 
       {remainingCount > MAX_VISIBLE && (
-        <Link
-          to="/athletes"
-          className="inline-block text-sm font-medium text-primary underline transition-opacity hover:opacity-70"
-        >
-          Ver todas ({remainingCount})
-        </Link>
+        canViewAthletesList ? (
+          <Link
+            to="/athletes"
+            className="inline-block text-sm font-medium text-primary underline transition-opacity hover:opacity-70"
+          >
+            Ver todas ({remainingCount})
+          </Link>
+        ) : (
+          <span className="inline-block text-sm font-medium text-primary">
+            Ver todas ({remainingCount})
+          </span>
+        )
       )}
     </section>
   );
