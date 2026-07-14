@@ -523,6 +523,14 @@ export default function App() {
           }
         />
 
+        {/* ── Tombstone: /competitions/insights (hub eliminado en feature 029).
+              Sin esta ruta estática explícita, React Router hace match con
+              /competitions/:id (id="insights"), que renderiza el guard de
+              "ID de competencia inválido" en vez del 404 documentado en
+              contracts/removal-and-redirect-manifest.md. Cero enlaces entrantes
+              (confirmado en research.md R1) — solo bookmarks viejos. ── */}
+        <Route path="/competitions/insights" element={<NotFoundPage />} />
+
         {/* ── Competidores sin enlazar — reubicado desde el hub ── */}
         <Route
           path="/competitions/unlinked"

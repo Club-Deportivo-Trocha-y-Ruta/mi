@@ -112,6 +112,11 @@ function renderLegacyRoutes(initialPath: string) {
           path="/competitions"
           element={<div data-testid="competitions-list">Lista competencias</div>}
         />
+        {/* Tombstone (feature 029): without this explicit static route,
+            /competitions/insights matches /competitions/:id (id="insights")
+            instead of falling through to the catch-all — see
+            contracts/removal-and-redirect-manifest.md. */}
+        <Route path="/competitions/insights" element={<div data-testid="not-found">404</div>} />
         <Route
           path="/competitions/:id"
           element={<div data-testid="competition-detail">Detalle</div>}
@@ -203,6 +208,17 @@ describe("T021 — Legacy paths redirigen al destino canónico", () => {
     // Si la ruta /competitions/99 no existe en este mini-árbol,
     // el match de /competitions/:id la captura de todas formas.
     expect(screen.getByTestId("competition-detail")).toBeInTheDocument();
+  });
+
+  it("/competitions/insights (hub eliminado) resuelve 404, NO el detalle de competencia", () => {
+    // Regresión: sin el tombstone explícito en App.tsx, esta ruta hace match
+    // con /competitions/:id (id="insights"), lo que renderiza
+    // CompetitionDetailPage con un id inválido ("ID de competencia inválido")
+    // en vez del catch-all documentado en
+    // contracts/removal-and-redirect-manifest.md.
+    renderLegacyRoutes("/competitions/insights");
+    expect(screen.getByTestId("not-found")).toBeInTheDocument();
+    expect(screen.queryByTestId("competition-detail")).not.toBeInTheDocument();
   });
 });
 
