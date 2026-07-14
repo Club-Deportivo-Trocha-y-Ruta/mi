@@ -242,6 +242,41 @@ describe("AppShell", () => {
       expect(currentItem).toHaveAttribute("aria-current", "page");
       expect(currentItem.className).toMatch(/bg-charcoal/);
     });
+
+    // Regression: "competitions" is the one area whose items nest path-wise
+    // ("Válidas" → /competitions is a literal prefix of "Sin enlazar" →
+    // /competitions/unlinked and "Panorama de temporada" →
+    // /competitions/insights/season/:year). A naive NavLink prefix match
+    // (no `end`) marks more than one sibling active simultaneously.
+    it("en /competitions/insights/season/2026, solo 'Panorama de temporada' queda marcado activo (no también 'Válidas')", () => {
+      renderShell(UserRole.coach, "/competitions/insights/season/2026");
+
+      const sidebar = getSidebar();
+      const seasonItem = within(sidebar).getByRole("link", {
+        name: "Panorama de temporada",
+      });
+      const validasItem = within(sidebar).getByRole("link", { name: "Válidas" });
+
+      expect(seasonItem).toHaveAttribute("aria-current", "page");
+      expect(seasonItem.className).toMatch(/bg-charcoal/);
+      expect(validasItem).not.toHaveAttribute("aria-current", "page");
+      expect(validasItem.className).not.toMatch(/bg-charcoal/);
+    });
+
+    it("en /competitions/unlinked, solo 'Sin enlazar' queda marcado activo (no también 'Válidas')", () => {
+      renderShell(UserRole.coach, "/competitions/unlinked");
+
+      const sidebar = getSidebar();
+      const unlinkedItem = within(sidebar).getByRole("link", {
+        name: "Sin enlazar",
+      });
+      const validasItem = within(sidebar).getByRole("link", { name: "Válidas" });
+
+      expect(unlinkedItem).toHaveAttribute("aria-current", "page");
+      expect(unlinkedItem.className).toMatch(/bg-charcoal/);
+      expect(validasItem).not.toHaveAttribute("aria-current", "page");
+      expect(validasItem.className).not.toMatch(/bg-charcoal/);
+    });
   });
 
   // -------------------------------------------------------------------------

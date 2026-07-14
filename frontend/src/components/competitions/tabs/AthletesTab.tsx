@@ -5,7 +5,7 @@
  *   1. RosterPanel — convocatoria de la válida (FR-022 / FR-023, Wave C).
  *      - Coach/admin: lectura + escritura (agregar, editar estado, retirar).
  *      - Padre: solo su propio hijo (el backend filtra; se pasa isReadOnly=true).
- *   2. Análisis IA por atleta — grid de cards con estado de insight por atleta.
+ *   2. Insights IA por atleta — grid de cards con estado de insight por atleta.
  *      El nombre navega a `/athletes/{id}` vía `AthleteLink` (specs/028):
  *      esa ruta es coach-only, así que para admin/padre se renderiza como
  *      texto plano en vez de un enlace que ProtectedRoute rebotaría en
@@ -183,13 +183,13 @@ export function AthletesTab({ raceEventId }: AthletesTabProps) {
         />
       </section>
 
-      {/* ── Sección 2: Análisis IA por atleta ───────────────────────────── */}
+      {/* ── Sección 2: Insights IA por atleta ───────────────────────────── */}
       <section aria-labelledby="insights-section-title">
         <h2
           id="insights-section-title"
           className="mb-4 text-sm font-semibold uppercase tracking-wide text-mid-gray"
         >
-          Análisis IA
+          Insights IA
         </h2>
         {isLoading ? (
           <SkeletonGrid />

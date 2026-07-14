@@ -131,7 +131,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("AthletesTab — estructura", () => {
-  it("renderiza el panel de convocatoria (RosterPanel) y la sección de análisis IA", () => {
+  it("renderiza el panel de convocatoria (RosterPanel) y la sección de insights IA", () => {
     mockUseAuthStore.mockImplementation(makeCoachAuth());
     mockUseClubInsightsByRace.mockReturnValue(EMPTY_INSIGHTS);
 
@@ -141,7 +141,7 @@ describe("AthletesTab — estructura", () => {
     expect(screen.getByTestId("mock-roster-panel")).toBeInTheDocument();
     // Encabezados de sección
     expect(screen.getByText(/Convocatoria/i)).toBeInTheDocument();
-    expect(screen.getByText(/Análisis IA/i)).toBeInTheDocument();
+    expect(screen.getByText(/Insights IA/i)).toBeInTheDocument();
   });
 
   it("pasa el raceEventId correcto al RosterPanel", () => {

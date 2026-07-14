@@ -6,6 +6,7 @@ import {
   getMoreSheetAreas,
   getVisibleAreas,
   isAreaActive,
+  resolveActiveItemId,
   resolveAreaDefaultTo,
   type NavRole,
 } from "@/lib/navigation";
@@ -154,6 +155,53 @@ describe("isAreaActive", () => {
       isAreaActive(area, pathname),
     );
     expect(activeAreas.map((a) => a.id)).toEqual(["competitions"]);
+  });
+});
+
+// Regression — SidebarNav sub-item exclusivity within the "competitions" area,
+// whose items nest path-wise ("Válidas" /competitions is a literal prefix of
+// "Sin enlazar" /competitions/unlinked and "Panorama de temporada"
+// /competitions/insights/season/:year). A naive NavLink prefix match would
+// mark more than one sibling active at once.
+describe("resolveActiveItemId", () => {
+  it("resuelve 'Panorama de temporada' (no 'Válidas') en la ruta anidada", () => {
+    const items = findArea("competitions").items;
+    expect(
+      resolveActiveItemId(items, "/competitions/insights/season/2026"),
+    ).toBe("competitions.seasonInsights");
+  });
+
+  it("resuelve 'Sin enlazar' (no 'Válidas') en /competitions/unlinked", () => {
+    const items = findArea("competitions").items;
+    expect(resolveActiveItemId(items, "/competitions/unlinked")).toBe(
+      "competitions.unlinked",
+    );
+  });
+
+  it("resuelve 'Válidas' para el detalle de una válida (/competitions/2)", () => {
+    const items = findArea("competitions").items;
+    expect(resolveActiveItemId(items, "/competitions/2")).toBe(
+      "competitions.valid",
+    );
+  });
+
+  it("nunca resuelve más de un item activo a la vez", () => {
+    const items = findArea("competitions").items;
+    for (const pathname of [
+      "/competitions",
+      "/competitions/2",
+      "/competitions/unlinked",
+      "/competitions/insights/season/2026",
+    ]) {
+      const matches = items.filter((item) => {
+        const to = typeof item.to === "function" ? item.to() : item.to;
+        return to === pathname || pathname.startsWith(`${to}/`);
+      });
+      // Multiple raw prefix matches are expected (that's the whole bug this
+      // guards against) — resolveActiveItemId must still pick exactly one.
+      expect(matches.length).toBeGreaterThanOrEqual(1);
+      expect(resolveActiveItemId(items, pathname)).toBeDefined();
+    }
   });
 });
 

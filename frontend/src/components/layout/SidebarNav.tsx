@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 
 import {
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import {
   getVisibleAreas,
   isAreaActive,
+  resolveActiveItemId,
   resolveAreaDefaultTo,
   type NavRole,
 } from "@/lib/navigation";
@@ -114,24 +115,33 @@ export function SidebarNav({ role, onNavigate }: SidebarNavProps) {
             </div>
 
             <CollapsibleContent className="flex flex-col gap-1 py-1 pl-9">
-              {visibleItems.map((item) => {
-                const to = typeof item.to === "function" ? item.to() : item.to;
-                return (
-                  <NavLink
-                    key={item.id}
-                    to={to}
-                    onClick={onNavigate}
-                    className={({ isActive }) =>
-                      cn(
+              {(() => {
+                // Plain `Link` + manually-computed active item — not `NavLink`'s
+                // own (non-`end`) prefix match, which would mark e.g. "Válidas"
+                // (`/competitions`) simultaneously active alongside "Sin enlazar"
+                // (`/competitions/unlinked`) or "Panorama de temporada"
+                // (`/competitions/insights/season/:year`). Same rationale as
+                // `BottomNav.tsx`'s area-level `isAreaActive` + `Link` pairing.
+                const activeItemId = resolveActiveItemId(visibleItems, pathname);
+                return visibleItems.map((item) => {
+                  const to = typeof item.to === "function" ? item.to() : item.to;
+                  const itemActive = item.id === activeItemId;
+                  return (
+                    <Link
+                      key={item.id}
+                      to={to}
+                      onClick={onNavigate}
+                      aria-current={itemActive ? "page" : undefined}
+                      className={cn(
                         "block rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                        isActive ? activeClasses : inactiveClasses,
-                      )
-                    }
-                  >
-                    {item.label}
-                  </NavLink>
-                );
-              })}
+                        itemActive ? activeClasses : inactiveClasses,
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                });
+              })()}
             </CollapsibleContent>
           </Collapsible>
         );

@@ -220,6 +220,33 @@ export function isAreaActive(area: NavArea, pathname: string): boolean {
   );
 }
 
+/**
+ * Resolves which single item within an area's sub-item list is "active" for
+ * `pathname` — same exact-match-first / longest-prefix-fallback algorithm as
+ * `SiblingViewTabs.tsx`'s `resolveActiveTo`. Required because sibling items
+ * within an area can nest path-wise (e.g. competitions.valid's `/competitions`
+ * is a literal prefix of competitions.unlinked's `/competitions/unlinked` and
+ * competitions.seasonInsights's `/competitions/insights/season/:year`); a
+ * naive `NavLink` default match (prefix, non-`end`) marks multiple siblings
+ * active simultaneously.
+ */
+export function resolveActiveItemId(
+  items: NavItem[],
+  pathname: string,
+): string | undefined {
+  const resolved = items.map((item) => ({ item, to: resolveTo(item.to) }));
+
+  const exactMatch = resolved.find(({ to }) => to === pathname);
+  if (exactMatch) return exactMatch.item.id;
+
+  const prefixMatches = resolved.filter(({ to }) => pathname.startsWith(`${to}/`));
+  if (prefixMatches.length === 0) return undefined;
+
+  return prefixMatches.reduce((longest, current) =>
+    current.to.length > longest.to.length ? current : longest,
+  ).item.id;
+}
+
 /** Areas visible to `role`, in `NAV_AREAS` order. */
 export function getVisibleAreas(role: NavRole): NavArea[] {
   return NAV_AREAS.filter((area) => isVisible(area.roles, role));

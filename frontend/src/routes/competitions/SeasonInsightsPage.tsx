@@ -45,7 +45,7 @@ function HeaderBar({ year }: { year: number }) {
         data-testid="back-to-insights"
       >
         <ArrowLeft size={14} aria-hidden="true" />
-        Análisis IA
+        Válidas
       </Link>
       <h1
         className="font-display text-2xl text-charcoal"
