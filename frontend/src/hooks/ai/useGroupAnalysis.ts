@@ -90,11 +90,14 @@ function isTerminalRunState(state: RunState | undefined | null): boolean {
   return !!state && (state === "done" || state === "failed" || state === "cancelled" || state === "error");
 }
 
-function deriveGroupState(runs: TrackedRunEntry[]): GroupState {
+const FAILED_TERMINAL_STATES = new Set<RunState>(["failed", "cancelled", "error"]);
+
+function deriveGroupState(
+  runs: TrackedRunEntry[],
+  terminalStates: Record<string, RunState>,
+): GroupState {
   if (runs.length === 0) return "idle";
 
-  // Runs with a run_id can be in-progress or done; we infer from outcome.
-  // Outcomes that are terminal at launch time (no run_id):
   const nonStarted = runs.filter((r) => r.run_id === null);
   const started = runs.filter((r) => r.run_id !== null);
 
@@ -103,17 +106,20 @@ function deriveGroupState(runs: TrackedRunEntry[]): GroupState {
     return "partial";
   }
 
-  // We can't know individual run terminal states here (that's per-row).
-  // Use a conservative heuristic: if any run_id exists → "in_progress".
-  // The row-level useRunStatus will signal completion; the parent component
-  // (GroupAnalysisPanel) calls a callback that triggers invalidation.
-  // For a "completed" state we'd need all run_ids to be terminal — but
-  // we leave fine-grained state to rows; here we return "partial" when
-  // there are both started and non-started (some failed at launch).
-  if (nonStarted.length > 0 && started.length > 0) return "partial";
-  if (nonStarted.length > 0 && started.length === 0) return "partial";
+  // Un run con run_id sigue "en curso" hasta que su polling (GroupRunRow)
+  // reporte un estado terminal vía notifyRunTerminated — sin este chequeo,
+  // un run failed queda leído como in_progress para siempre y el botón de
+  // lanzar se queda bloqueado (bug reportado: "Fallido" en la fila pero
+  // "Análisis en curso…" nunca se apaga).
+  const stillPending = started.some((r) => !terminalStates[r.run_id!]);
+  if (stillPending) return "in_progress";
 
-  return "in_progress";
+  if (nonStarted.length > 0) return "partial";
+
+  const anyFailed = started.some((r) =>
+    FAILED_TERMINAL_STATES.has(terminalStates[r.run_id!]),
+  );
+  return anyFailed ? "partial" : "completed";
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +137,11 @@ export function useGroupAnalysis(raceEventId: number): UseGroupAnalysisReturn {
   // Set of run_ids that have reached a terminal state (done/failed).
   // Used to trigger insights invalidation without re-renders from a ref.
   const terminalRunIds = useRef<Set<string>>(new Set());
+
+  // Estado terminal por run_id (done/failed/cancelled/error), alimentado por
+  // GroupRunRow vía notifyRunTerminated. Necesario para que deriveGroupState
+  // sepa cuándo un run dejó de estar "en curso".
+  const [terminalStates, setTerminalStates] = useState<Record<string, RunState>>({});
 
   // ── Recovery query ──────────────────────────────────────────────────────
   const recoveryQuery = useQuery({
@@ -202,6 +213,11 @@ export function useGroupAnalysis(raceEventId: number): UseGroupAnalysisReturn {
   const notifyRunTerminated = useCallback(
     (runId: string, state: RunState) => {
       if (!isTerminalRunState(state)) return;
+
+      setTerminalStates((prev) =>
+        prev[runId] === state ? prev : { ...prev, [runId]: state },
+      );
+
       if (terminalRunIds.current.has(runId)) return;
       terminalRunIds.current.add(runId);
 
@@ -231,7 +247,7 @@ export function useGroupAnalysis(raceEventId: number): UseGroupAnalysisReturn {
   );
 
   // ── Derived groupState ──────────────────────────────────────────────────
-  const groupState = deriveGroupState(trackedRuns);
+  const groupState = deriveGroupState(trackedRuns, terminalStates);
 
   return {
     runs: trackedRuns,
