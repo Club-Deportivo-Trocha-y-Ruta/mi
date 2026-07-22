@@ -452,14 +452,27 @@ def _template_context(brand: str) -> dict:
             "target_age_band": "13-15",
         },
         "blocks": [
-            {"order": 1, "block_type": "warmup", "duration_s": 300, "target_zone": "Z1", "target_cadence_rpm": 70, "repeat_group": None, "repeat_count": None},
-            {"order": 2, "block_type": "work", "duration_s": 120, "target_zone": "Z3", "target_cadence_rpm": 85, "repeat_group": 1, "repeat_count": 2},
-            {"order": 3, "block_type": "recovery", "duration_s": 60, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_group": 1, "repeat_count": 2},
-            {"order": 4, "block_type": "cooldown", "duration_s": 300, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_group": None, "repeat_count": None},
+            {"order": 1, "block_type": "warmup", "duration_type": "fixed", "duration_s": 300, "target_zone": "Z1", "target_cadence_rpm": 70, "repeat_group": None, "repeat_count": None},
+            {"order": 2, "block_type": "work", "duration_type": "fixed", "duration_s": 120, "target_zone": "Z3", "target_cadence_rpm": 85, "repeat_group": 1, "repeat_count": 2},
+            {"order": 3, "block_type": "recovery", "duration_type": "fixed", "duration_s": 60, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_group": 1, "repeat_count": 2},
+            {"order": 4, "block_type": "cooldown", "duration_type": "fixed", "duration_s": 300, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_group": None, "repeat_count": None},
         ],
         "club_name": "Club Ficticio de Prueba",
         "generated_at": "2026-07-15 10:00 COT",
     }
+
+
+def _template_context_with_open_warmup(brand: str) -> dict:
+    """Same session context as ``_template_context`` but the warmup block is
+    ``open_lap`` (feature 034) — mirrors ``_build_blocks_context`` output
+    shape for an open block: ``duration_s`` is ``None``."""
+    ctx = _template_context(brand)
+    ctx["blocks"] = [
+        {"order": 1, "block_type": "warmup", "duration_type": "open_lap", "duration_s": None, "target_zone": "Z1", "target_cadence_rpm": 70, "repeat_group": None, "repeat_count": None},
+        {"order": 2, "block_type": "work", "duration_type": "fixed", "duration_s": 300, "target_zone": "Z2", "target_cadence_rpm": 80, "repeat_group": None, "repeat_count": None},
+        {"order": 3, "block_type": "cooldown", "duration_type": "fixed", "duration_s": 300, "target_zone": "Z1", "target_cadence_rpm": 65, "repeat_group": None, "repeat_count": None},
+    ]
+    return ctx
 
 
 class TestInstructivoTemplateRendering:
@@ -524,3 +537,31 @@ class TestInstructivoTemplateRendering:
         explanatory caption mentions the word, to rule it out)."""
         html = _env().get_template(_TEMPLATE).render(**_template_context("garmin"))
         assert "No se usa potencia (watts)" in html
+
+    @pytest.mark.parametrize("brand", ["garmin", "magene", "igpsport"])
+    def test_html_open_block_renders_libre_text(self, brand):
+        """Feature 034 (T025/T027): an open_lap warmup renders the open-block
+        text instead of a duration, for every brand, keeping zone + cadence."""
+        html = (
+            _env()
+            .get_template(_TEMPLATE)
+            .render(**_template_context_with_open_warmup(brand))
+        )
+        assert "Libre — hasta botón de vuelta" in html
+        assert "Z1" in html
+        assert "70 rpm" in html
+        # The fixed sibling blocks still render their duration normally.
+        assert "5 min" in html
+
+    def test_html_fixed_blocks_unaffected_by_open_block_conditional(self):
+        """Regression: adding the open-block conditional does not change
+        the rendering of fixed blocks in a structure that also has an open
+        one — durations still show as 'X min Y s' / 'X min' / 'Y s'."""
+        html = (
+            _env()
+            .get_template(_TEMPLATE)
+            .render(**_template_context_with_open_warmup("garmin"))
+        )
+        assert "Libre — hasta botón de vuelta" in html
+        # Both fixed blocks (300s = 5 min each) render as "5 min".
+        assert html.count("5 min") == 2

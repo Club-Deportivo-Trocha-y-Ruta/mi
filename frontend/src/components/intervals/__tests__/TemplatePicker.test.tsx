@@ -56,6 +56,7 @@ function makeBlock(position: number) {
     id: position,
     position,
     block_type: "work" as const,
+    duration_type: "fixed" as const,
     duration_s: 120,
     target_zone: "Z2" as const,
     target_cadence_rpm: 75,

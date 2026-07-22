@@ -85,7 +85,11 @@ class FlattenedStep:
         block_type: ``warmup`` | ``work`` | ``recovery`` | ``cooldown`` (string).
         repeat_iteration: iteración 1-based dentro de un grupo de repetición;
             ``None`` para bloques no agrupados.
-        planned_duration_s: duración planificada del paso (segundos, > 0).
+        duration_type: ``fixed`` | ``open_lap`` (string, feature 034).
+        planned_duration_s: duración planificada del paso (segundos, > 0)
+            cuando ``duration_type == "fixed"``; ``None`` cuando
+            ``"open_lap"`` (bloque libre, sin duración planificada —
+            nunca entra a la matemática de tolerancia del matching).
         target_zone: ``Z1``..``Z5`` (string).
         target_cadence_rpm: cadencia objetivo (rpm, siempre ≥ 60).
         position: ``position`` de autoría del bloque de origen (los pasos de un
@@ -96,7 +100,8 @@ class FlattenedStep:
     block_id: int | None
     block_type: str
     repeat_iteration: int | None
-    planned_duration_s: int
+    duration_type: str
+    planned_duration_s: int | None
     target_zone: str
     target_cadence_rpm: int
     position: int
@@ -183,6 +188,10 @@ def _to_step(block: Any, *, repeat_iteration: int | None) -> FlattenedStep:
         block_id=getattr(block, "id", None),
         block_type=_as_str(block.block_type),
         repeat_iteration=repeat_iteration,
+        duration_type=_as_str(block.duration_type),
+        # ``duration_s`` ya es None en el bloque de origen para un paso
+        # open_lap (invariante validada por ``validate_structure_blocks``) —
+        # se propaga tal cual, sin transformación (feature 034).
         planned_duration_s=block.duration_s,
         target_zone=_as_str(block.target_zone),
         target_cadence_rpm=block.target_cadence_rpm,
@@ -198,13 +207,24 @@ def total_planned_duration_s(blocks: Sequence[Any]) -> int:
     ejecuta. Ecoado en ``StructureOut.total_planned_duration_s`` /
     ``TemplateOut.total_planned_duration_s``.
 
+    Feature 034: los pasos ``open_lap`` tienen ``planned_duration_s = None``
+    y **no** contribuyen a la suma (documentado en contracts/api-delta.md
+    como "fixed-blocks-only sum, repeat-expanded") — el frontend deriva el
+    sufijo "+ calentamiento libre" / "+ bloques libres" a partir de los
+    bloques, no de un campo nuevo en la respuesta.
+
     Args:
         blocks: bloques de la estructura/plantilla (``BlockIn`` o filas ORM).
 
     Returns:
-        Suma de ``planned_duration_s`` sobre los pasos aplanados; ``0`` si vacío.
+        Suma de ``planned_duration_s`` sobre los pasos aplanados de tipo
+        ``fixed``; ``0`` si vacío o si todos los pasos son ``open_lap``.
     """
-    return sum(step.planned_duration_s for step in flatten_blocks(blocks))
+    return sum(
+        step.planned_duration_s
+        for step in flatten_blocks(blocks)
+        if step.planned_duration_s is not None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +312,93 @@ def _validate_repeat_groups(blocks: Sequence[Any]) -> None:
         previous_group = group
 
 
+#: Tipos de bloque que pueden ser ``open_lap`` (feature 034 — nunca
+#: ``work``/``recovery``, ver contracts/api-delta.md).
+_OPEN_LAP_ALLOWED_BLOCK_TYPES: frozenset[str] = frozenset({"warmup", "cooldown"})
+
+
+def _validate_duration_types(blocks: Sequence[Any]) -> None:
+    """Guardarraíles de duración de bloque (feature 034, data-model.md §Invariants).
+
+    Función **pura** (solo levanta ``HTTPException``, sin I/O). Reglas, en
+    orden de chequeo (mensajes español-neutro exactos de
+    ``contracts/api-delta.md``):
+
+      1. ``open_lap_invalid_block_type`` (422) — un bloque ``open_lap`` con
+         ``block_type`` distinto de ``warmup``/``cooldown``.
+      2. ``open_lap_repeat_group_not_allowed`` (422) — un bloque ``open_lap``
+         con ``repeat_group`` seteado (nunca dentro de un grupo repetido,
+         sin importar el orden en que el cliente setee ambos campos —
+         edge case de la spec).
+      3. ``open_lap_duration_not_allowed`` (422) — un bloque ``open_lap``
+         con ``duration_s`` presente (un bloque libre no lleva duración).
+      4. ``fixed_duration_required`` (422) — un bloque ``fixed`` (el
+         default cuando se omite ``duration_type``) con ``duration_s``
+         ausente o ≤ 0. Reemplaza la constraint ``Field(gt=0)`` que
+         ``BlockIn.duration_s`` tenía antes de esta feature — ahora es una
+         regla CRUZADA (depende de ``duration_type``), por eso vive acá y
+         no en el schema.
+
+    Args:
+        blocks: bloques a validar (``BlockIn`` o filas ORM).
+
+    Raises:
+        HTTPException 422: con ``detail={"code", "message", "positions"}``
+            para el primer guardarraíl violado, en el orden documentado
+            arriba.
+    """
+    invalid_block_type = sorted(
+        b.position
+        for b in blocks
+        if _as_str(b.duration_type) == "open_lap"
+        and _as_str(b.block_type) not in _OPEN_LAP_ALLOWED_BLOCK_TYPES
+    )
+    if invalid_block_type:
+        _raise_422(
+            "open_lap_invalid_block_type",
+            "Solo el calentamiento y el enfriamiento pueden ser libres "
+            "(hasta botón de vuelta).",
+            positions=invalid_block_type,
+        )
+
+    invalid_repeat_group = sorted(
+        b.position
+        for b in blocks
+        if _as_str(b.duration_type) == "open_lap" and b.repeat_group is not None
+    )
+    if invalid_repeat_group:
+        _raise_422(
+            "open_lap_repeat_group_not_allowed",
+            "Un bloque libre no puede pertenecer a un grupo repetido.",
+            positions=invalid_repeat_group,
+        )
+
+    invalid_duration_present = sorted(
+        b.position
+        for b in blocks
+        if _as_str(b.duration_type) == "open_lap" and b.duration_s is not None
+    )
+    if invalid_duration_present:
+        _raise_422(
+            "open_lap_duration_not_allowed",
+            "Un bloque libre no lleva duración.",
+            positions=invalid_duration_present,
+        )
+
+    invalid_duration_missing = sorted(
+        b.position
+        for b in blocks
+        if _as_str(b.duration_type) != "open_lap"
+        and (b.duration_s is None or b.duration_s <= 0)
+    )
+    if invalid_duration_missing:
+        _raise_422(
+            "fixed_duration_required",
+            "La duración debe ser mayor que cero.",
+            positions=invalid_duration_missing,
+        )
+
+
 def validate_structure_blocks(
     blocks: Sequence[Any],
     target_age_band: Any,
@@ -303,13 +410,18 @@ def validate_structure_blocks(
     en create/update de estructura, create/update de plantilla y attach de
     plantilla (mismo patrón que ``services/strength/blocks.py``).
 
-    Orden de chequeos y códigos (``contracts/api.md``):
+    Orden de chequeos y códigos (``contracts/api.md`` + ``contracts/api-delta.md``
+    para feature 034):
       1. ``cadence_below_minimum`` (422) — algún bloque con
          ``target_cadence_rpm`` < 60 (FR-004, cualquier banda). ``positions``
          lista las ``position`` infractoras.
-      2. ``invalid_repeat_group`` (422) — modelado de repeticiones inválido
+      2. Guardarraíles de duración de bloque (feature 034, ver
+         ``_validate_duration_types``): ``open_lap_invalid_block_type``,
+         ``open_lap_repeat_group_not_allowed``, ``open_lap_duration_not_allowed``,
+         ``fixed_duration_required``.
+      3. ``invalid_repeat_group`` (422) — modelado de repeticiones inválido
          (ver ``_validate_repeat_groups``).
-      3. Solo si la banda es ``10-12`` (D3):
+      4. Solo si la banda es ``10-12`` (D3):
          - ``age_gate_z3_blocked`` (422, duro, sin override) — algún bloque con
            zona Z3/Z4/Z5 (FR-006). ``positions`` lista las ``position``.
          - ``age_gate_confirmation_required`` (422) — todos los bloques Z1–Z2
@@ -341,10 +453,13 @@ def validate_structure_blocks(
             positions=below,
         )
 
-    # 2) Grupos de repetición.
+    # 2) Duración de bloque (feature 034) — open_lap vs. fixed.
+    _validate_duration_types(blocks)
+
+    # 3) Grupos de repetición.
     _validate_repeat_groups(blocks)
 
-    # 3) Age gate — solo banda 10-12 (D3).
+    # 4) Age gate — solo banda 10-12 (D3).
     if _band_str(target_age_band) != _GATED_BAND:
         return
 
@@ -421,6 +536,7 @@ def _build_block_rows(
             structure_id=structure_id,
             position=block.position,
             block_type=block.block_type,
+            duration_type=block.duration_type,
             duration_s=block.duration_s,
             target_zone=block.target_zone,
             target_cadence_rpm=block.target_cadence_rpm,

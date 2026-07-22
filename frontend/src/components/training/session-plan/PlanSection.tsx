@@ -112,13 +112,21 @@ function formatDurationMmSs(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-/** Bloques de una `IntervalStructureOut` → payload de bloques (sin `id`) para un template. */
+/**
+ * Bloques de una `IntervalStructureOut` → payload de bloques (sin `id`) para
+ * un template. Se reutiliza tanto para "Guardar como plantilla" (US4) como
+ * para hidratar el editor en modo edición — en ambos casos `duration_type`
+ * (feature 034) se preserva verbatim, igual que el resto de los campos
+ * (copy-on-attach / round-trip de edición no deben perder si un bloque es
+ * libre u su duración fija).
+ */
 function toTemplateBlocks(
   blocks: IntervalStructureOut["blocks"],
 ): IntervalBlockInput[] {
   return blocks.map((block) => ({
     position: block.position,
     block_type: block.block_type,
+    duration_type: block.duration_type,
     duration_s: block.duration_s,
     target_zone: block.target_zone,
     target_cadence_rpm: block.target_cadence_rpm,
@@ -691,7 +699,9 @@ export function PlanSection({
                         {BLOCK_TYPE_LABEL[block.block_type]}
                       </span>
                       <span className="text-mid-gray">
-                        {formatDurationMmSs(block.duration_s)}
+                        {block.duration_type === "open_lap"
+                          ? "Libre — hasta botón de vuelta"
+                          : formatDurationMmSs(block.duration_s ?? 0)}
                       </span>
                       <span className="text-mid-gray">
                         {HR_ZONE_LABEL[block.target_zone]}

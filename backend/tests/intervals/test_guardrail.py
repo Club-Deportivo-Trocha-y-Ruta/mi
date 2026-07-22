@@ -102,7 +102,8 @@ def _block(
     *,
     position: int,
     block_type: str = "work",
-    duration_s: int = 300,
+    duration_type: str = "fixed",
+    duration_s: int | None = 300,
     target_zone: str = "Z1",
     target_cadence_rpm: int = 70,
     repeat_group: int | None = None,
@@ -111,12 +112,37 @@ def _block(
     return {
         "position": position,
         "block_type": block_type,
+        "duration_type": duration_type,
         "duration_s": duration_s,
         "target_zone": target_zone,
         "target_cadence_rpm": target_cadence_rpm,
         "repeat_group": repeat_group,
         "repeat_count": repeat_count,
     }
+
+
+def _blocks_with_open_warmup(*, warmup_block_type: str = "warmup") -> list[dict]:
+    """An open_lap warmup/cooldown + one fixed work block — happy path shape
+    for the feature-034 duration-type guardrails (never trips cadence/age
+    gate on its own — Z1/Z2, cadence 70/80)."""
+    return [
+        _block(
+            position=1,
+            block_type=warmup_block_type,
+            duration_type="open_lap",
+            duration_s=None,
+            target_zone="Z1",
+            target_cadence_rpm=70,
+        ),
+        _block(
+            position=2,
+            block_type="work",
+            duration_type="fixed",
+            duration_s=300,
+            target_zone="Z2",
+            target_cadence_rpm=80,
+        ),
+    ]
 
 
 def _safe_blocks(*, cadence: int = 70) -> list[dict]:
@@ -701,3 +727,212 @@ async def test_age_gate_confirmation_not_required_when_template_band_13_15_attac
 
     assert attach_resp.status_code == 201, attach_resp.text
     assert attach_resp.json()["age_gate_confirmed_by"] is None
+
+
+# ===========================================================================
+# 4. duration_type guardrails (feature 034) — open_lap vs fixed
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("block_type", ["warmup", "cooldown"])
+async def test_open_lap_allowed_on_warmup_and_cooldown(session, block_type):
+    """An open_lap block on warmup/cooldown saves fine (happy path,
+    contracts/api-delta.md)."""
+    await _setup(session)
+    ts = await _seed_training_session(session)
+
+    blocks = _blocks_with_open_warmup(warmup_block_type=block_type)
+    payload = _structure_payload(training_session_id=ts.id, blocks=blocks)
+
+    async with make_client(session) as client:
+        resp = await client.post(f"{BASE}/structures", json=payload)
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    open_block = next(b for b in body["blocks"] if b["position"] == 1)
+    assert open_block["duration_type"] == "open_lap"
+    assert open_block["duration_s"] is None
+    # Fixed sibling block is unaffected.
+    fixed_block = next(b for b in body["blocks"] if b["position"] == 2)
+    assert fixed_block["duration_type"] == "fixed"
+    assert fixed_block["duration_s"] == 300
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("block_type", ["work", "recovery"])
+async def test_open_lap_rejected_on_work_and_recovery(session, block_type):
+    """open_lap is hard-restricted to warmup/cooldown — work/recovery reject
+    with 422 open_lap_invalid_block_type."""
+    await _setup(session)
+    ts = await _seed_training_session(session)
+
+    blocks = [
+        _block(
+            position=1,
+            block_type=block_type,
+            duration_type="open_lap",
+            duration_s=None,
+            target_zone="Z1",
+            target_cadence_rpm=70,
+        ),
+    ]
+    payload = _structure_payload(training_session_id=ts.id, blocks=blocks)
+
+    async with make_client(session) as client:
+        resp = await client.post(f"{BASE}/structures", json=payload)
+
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "open_lap_invalid_block_type"
+    assert detail["positions"] == [1]
+
+
+@pytest.mark.asyncio
+async def test_open_lap_rejected_when_in_repeat_group(session):
+    """A block cannot be both open_lap and part of a repeat group (spec edge
+    case: order-independent — the server rejects the combined state
+    regardless of which field the client conceptually 'set first')."""
+    await _setup(session)
+    ts = await _seed_training_session(session)
+
+    blocks = [
+        _block(
+            position=1,
+            block_type="warmup",
+            duration_type="open_lap",
+            duration_s=None,
+            target_zone="Z1",
+            target_cadence_rpm=70,
+            repeat_group=1,
+            repeat_count=2,
+        ),
+        _block(
+            position=2,
+            block_type="warmup",
+            duration_type="open_lap",
+            duration_s=None,
+            target_zone="Z1",
+            target_cadence_rpm=70,
+            repeat_group=1,
+            repeat_count=2,
+        ),
+    ]
+    payload = _structure_payload(training_session_id=ts.id, blocks=blocks)
+
+    async with make_client(session) as client:
+        resp = await client.post(f"{BASE}/structures", json=payload)
+
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "open_lap_repeat_group_not_allowed"
+    assert detail["positions"] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_open_lap_rejected_with_duration_s_present(session):
+    """An open_lap block must not carry a duration_s value."""
+    await _setup(session)
+    ts = await _seed_training_session(session)
+
+    blocks = [
+        _block(
+            position=1,
+            block_type="warmup",
+            duration_type="open_lap",
+            duration_s=120,
+            target_zone="Z1",
+            target_cadence_rpm=70,
+        ),
+    ]
+    payload = _structure_payload(training_session_id=ts.id, blocks=blocks)
+
+    async with make_client(session) as client:
+        resp = await client.post(f"{BASE}/structures", json=payload)
+
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "open_lap_duration_not_allowed"
+    assert detail["positions"] == [1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_duration_s", [None, 0, -5])
+async def test_fixed_block_requires_positive_duration(session, bad_duration_s):
+    """A fixed block (the default type) with a missing/non-positive
+    duration_s is rejected — the cross-field rule that used to live in the
+    schema's Field(gt=0) now lives here (service layer, feature 034)."""
+    await _setup(session)
+    ts = await _seed_training_session(session)
+
+    blocks = [
+        _block(
+            position=1,
+            block_type="work",
+            duration_type="fixed",
+            duration_s=bad_duration_s,
+            target_zone="Z1",
+            target_cadence_rpm=70,
+        ),
+    ]
+    payload = _structure_payload(training_session_id=ts.id, blocks=blocks)
+
+    async with make_client(session) as client:
+        resp = await client.post(f"{BASE}/structures", json=payload)
+
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "fixed_duration_required"
+    assert detail["positions"] == [1]
+
+
+@pytest.mark.asyncio
+async def test_duration_type_defaults_to_fixed_when_omitted(session):
+    """A block payload without ``duration_type`` behaves exactly as before
+    (FR-011, backward compatibility) — defaults to 'fixed', still requiring
+    a positive ``duration_s``, and the response echoes 'fixed' explicitly."""
+    await _setup(session)
+    ts = await _seed_training_session(session)
+
+    blocks = [
+        {
+            "position": 1,
+            "block_type": "work",
+            "duration_s": 300,
+            "target_zone": "Z1",
+            "target_cadence_rpm": 70,
+            "repeat_group": None,
+            "repeat_count": None,
+        },
+    ]
+    payload = _structure_payload(training_session_id=ts.id, blocks=blocks)
+
+    async with make_client(session) as client:
+        resp = await client.post(f"{BASE}/structures", json=payload)
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["blocks"][0]["duration_type"] == "fixed"
+
+
+@pytest.mark.asyncio
+async def test_open_lap_on_10_12_structure_still_requires_age_gate_confirmation(session):
+    """duration_type and age-gate guardrails are independent: an open_lap
+    warmup at Z1 on a 10-12 structure still needs explicit age-gate
+    confirmation (FR-007), unrelated to its duration type."""
+    await _setup(session)
+    ts = await _seed_training_session(session)
+
+    blocks = _blocks_with_open_warmup()
+    payload = _structure_payload(
+        training_session_id=ts.id, target_age_band="10-12", blocks=blocks
+    )
+
+    async with make_client(session) as client:
+        unconfirmed = await client.post(f"{BASE}/structures", json=payload)
+    assert unconfirmed.status_code == 422, unconfirmed.text
+    assert unconfirmed.json()["detail"]["code"] == "age_gate_confirmation_required"
+
+    payload["age_gate_confirmed"] = True
+    async with make_client(session) as client:
+        confirmed = await client.post(f"{BASE}/structures", json=payload)
+    assert confirmed.status_code == 201, confirmed.text

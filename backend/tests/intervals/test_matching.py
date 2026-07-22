@@ -21,6 +21,7 @@ import pytest
 from app.schemas.intervals import BlockIn, MatchResultPayload
 from app.services.intervals.matching import (
     DURATION_TOLERANCE_FRACTION,
+    ENGINE_VERSION,
     MIN_LAP_ELAPSED_S,
     TOLERANCE_PCT,
     FlattenedBlock,
@@ -93,6 +94,51 @@ class TestFlatteningRepeatGroupIntoMatching:
         assert result.summary.fuera_tolerancia == 0
         assert result.summary.sin_dato == 0
         assert result.summary.extra == 0
+
+
+# ---------------------------------------------------------------------------
+# Flattening de un bloque open_lap (feature 034) — duration_type propagado
+# ---------------------------------------------------------------------------
+
+
+class TestFlattenOpenLapStep:
+    """``flatten_blocks`` carries ``duration_type`` per step (T020); an
+    open_lap step's ``planned_duration_s`` is ``None`` and appears exactly
+    once (repeat groups are disallowed for open_lap blocks by
+    ``validate_structure_blocks``, so there is nothing to expand)."""
+
+    def test_open_step_flattens_with_duration_type_and_none_duration(self):
+        blocks = [
+            BlockIn(
+                position=1, block_type="warmup", duration_type="open_lap",
+                duration_s=None, target_zone="Z1", target_cadence_rpm=70,
+            ),
+            BlockIn(
+                position=2, block_type="cooldown", duration_type="open_lap",
+                duration_s=None, target_zone="Z1", target_cadence_rpm=65,
+            ),
+        ]
+
+        flattened = flatten_blocks(blocks)
+
+        assert len(flattened) == 2
+        assert flattened[0].duration_type == "open_lap"
+        assert flattened[0].planned_duration_s is None
+        assert flattened[1].duration_type == "open_lap"
+        assert flattened[1].planned_duration_s is None
+
+    def test_fixed_step_flattens_with_duration_type_fixed(self):
+        blocks = [
+            BlockIn(
+                position=1, block_type="work", duration_s=120,
+                target_zone="Z2", target_cadence_rpm=75,
+            ),
+        ]
+
+        flattened = flatten_blocks(blocks)
+
+        assert flattened[0].duration_type == "fixed"
+        assert flattened[0].planned_duration_s == 120
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +511,140 @@ class TestResultPayloadShape:
         assert result.summary.extra == len(result.extra_laps)
 
     def test_engine_version_constant_is_stable(self):
-        from app.services.intervals.matching import ENGINE_VERSION
+        # Feature 034 bumped 1 -> 2 (new 'libre' status vocabulary for
+        # open_lap steps) — stored v1 comparisons still render verbatim,
+        # they are never recomputed retroactively (SC-003).
+        assert ENGINE_VERSION == 2
 
-        assert ENGINE_VERSION == 1
+
+# ---------------------------------------------------------------------------
+# Open-lap steps (feature 034, engine v2) — never enter tolerance math
+# ---------------------------------------------------------------------------
+
+
+class TestOpenLapSteps:
+    """``planned_duration_s is None`` marks an open_lap step (feature 034).
+
+    Covers: open+lap -> ``libre`` (informational, actual elapsed shown,
+    never judged); open+no-lap -> existing ``sin_dato``; open steps never
+    reach ``fuera_tolerancia`` no matter how far the lap deviates (there is
+    nothing to be 'out of tolerance' against); positional pairing is
+    unaffected — an open step consumes its lap exactly like a fixed one, so
+    later steps are never shifted; the < 10 s noise filter still applies.
+    """
+
+    def test_open_step_with_lap_yields_libre(self):
+        blocks = [
+            FlattenedBlock(
+                block_type="warmup", planned_duration_s=None,
+                target_zone="Z1", target_cadence_rpm=70,
+            ),
+        ]
+        laps = [MatchLap(lap_index=0, elapsed_time_s=612, average_heartrate=118.0)]
+
+        result = compute_match(blocks, laps)
+
+        assert result.blocks[0].status == "libre"
+        assert result.blocks[0].planned_duration_s is None
+        assert result.blocks[0].lap_index == 0
+        assert result.blocks[0].lap_elapsed_time_s == 612
+        assert result.blocks[0].lap_average_heartrate == 118.0
+        assert result.summary.libre == 1
+        assert result.summary.cumplido == 0
+        assert result.summary.fuera_tolerancia == 0
+        assert result.summary.sin_dato == 0
+
+    def test_open_step_without_lap_yields_sin_dato(self):
+        blocks = [
+            FlattenedBlock(
+                block_type="cooldown", planned_duration_s=None,
+                target_zone="Z1", target_cadence_rpm=65,
+            ),
+        ]
+
+        result = compute_match(blocks, [])
+
+        assert result.blocks[0].status == "sin_dato"
+        assert result.blocks[0].lap_index is None
+        assert result.blocks[0].planned_duration_s is None
+        assert result.summary.sin_dato == 1
+        assert result.summary.libre == 0
+
+    @pytest.mark.parametrize("lap_elapsed_s", [10, 30, 611, 10_000])
+    def test_open_step_never_fuera_tolerancia_regardless_of_lap_length(
+        self, lap_elapsed_s
+    ):
+        """No matter how far the actual lap runs (>= 10s, past the noise
+        filter), an open step is never judged out of tolerance — there is
+        no planned duration to deviate from (guards ``_is_within_tolerance``
+        from ever dividing by None)."""
+        blocks = [
+            FlattenedBlock(
+                block_type="warmup", planned_duration_s=None,
+                target_zone="Z1", target_cadence_rpm=70,
+            ),
+        ]
+        laps = [MatchLap(lap_index=0, elapsed_time_s=lap_elapsed_s)]
+
+        result = compute_match(blocks, laps)
+
+        assert result.blocks[0].status == "libre"
+        assert result.summary.fuera_tolerancia == 0
+
+    def test_mixed_open_and_fixed_positional_shift(self):
+        """Open warmup + 2 fixed blocks: the open step consumes lap 0
+        positionally exactly like a fixed one, so the fixed steps still
+        judge laps 1/2 without any shift."""
+        blocks = [
+            FlattenedBlock(
+                block_type="warmup", planned_duration_s=None,
+                target_zone="Z1", target_cadence_rpm=70,
+            ),
+            FlattenedBlock(
+                block_type="work", planned_duration_s=120,
+                target_zone="Z2", target_cadence_rpm=80,
+            ),
+            FlattenedBlock(
+                block_type="cooldown", planned_duration_s=300,
+                target_zone="Z1", target_cadence_rpm=65,
+            ),
+        ]
+        laps = [
+            MatchLap(lap_index=0, elapsed_time_s=500),  # open warmup -> libre
+            MatchLap(lap_index=1, elapsed_time_s=125),  # work, within tolerance
+            MatchLap(lap_index=2, elapsed_time_s=800),  # cooldown, way out
+        ]
+
+        result = compute_match(blocks, laps)
+
+        assert result.blocks[0].status == "libre"
+        assert result.blocks[0].lap_elapsed_time_s == 500
+        assert result.blocks[1].status == "cumplido"
+        assert result.blocks[1].lap_elapsed_time_s == 125
+        assert result.blocks[2].status == "fuera_tolerancia"
+        assert result.blocks[2].lap_elapsed_time_s == 800
+        assert result.summary.libre == 1
+        assert result.summary.cumplido == 1
+        assert result.summary.fuera_tolerancia == 1
+        assert result.summary.sin_dato == 0
+
+    def test_open_step_noise_filter_still_applies(self):
+        """A < 10 s lap is discarded as noise before pairing, same rule as
+        fixed steps — an open step gets no special noise-filter treatment."""
+        blocks = [
+            FlattenedBlock(
+                block_type="warmup", planned_duration_s=None,
+                target_zone="Z1", target_cadence_rpm=70,
+            ),
+        ]
+        laps = [
+            MatchLap(lap_index=0, elapsed_time_s=5),  # noise, discarded
+            MatchLap(lap_index=1, elapsed_time_s=400),  # real -> open step
+        ]
+
+        result = compute_match(blocks, laps)
+
+        assert result.laps_discarded_under_10s == 1
+        assert result.blocks[0].status == "libre"
+        assert result.blocks[0].lap_index == 1
+        assert result.blocks[0].lap_elapsed_time_s == 400

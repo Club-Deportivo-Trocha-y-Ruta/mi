@@ -36,6 +36,17 @@ export const intervalBlockTypeSchema = z.enum([
 /** Zona de frecuencia cardíaca objetivo (Z1..Z5). No existe objetivo de potencia (FR-005, D2). */
 export const hrZoneSchema = z.enum(["Z1", "Z2", "Z3", "Z4", "Z5"]);
 
+/**
+ * Tipo de duración de un bloque (feature 034):
+ *   - `fixed`     — duración exacta en segundos (comportamiento histórico).
+ *   - `open_lap`  — libre, el atleta la termina presionando "vuelta" en su
+ *     dispositivo; solo válido en calentamiento/enfriamiento y nunca dentro
+ *     de un grupo repetido.
+ * Bloques sin el campo (datos/borradores previos a esta feature) son `fixed`
+ * por retrocompatibilidad (FR-004/FR-011).
+ */
+export const intervalDurationTypeSchema = z.enum(["fixed", "open_lap"]);
+
 /** Estado global de la comparación plan-vs-real (todos son estados de UI, nunca errores crudos). */
 export const matchOverallStatusSchema = z.enum([
   "computed",
@@ -44,11 +55,16 @@ export const matchOverallStatusSchema = z.enum([
   "failed",
 ]);
 
-/** Estado de cumplimiento por bloque (badge: verde/ámbar/gris — Constitución III). */
+/**
+ * Estado de cumplimiento por bloque (badge: verde/ámbar/gris — Constitución III).
+ * `libre` (feature 034) es informativo — bloque libre con vuelta consumida,
+ * nunca juzgado contra la tolerancia ±30 % (gris, igual semántica que `sin_dato`).
+ */
 export const blockMatchStatusSchema = z.enum([
   "cumplido",
   "fuera_tolerancia",
   "sin_dato",
+  "libre",
 ]);
 
 /** Qué disparó el cálculo de la comparación (observabilidad). */
@@ -72,10 +88,14 @@ export const instructivoBrandSchema = z.enum([
 export const intervalBlockInputSchema = z.object({
   position: z.number().int().min(1),
   block_type: intervalBlockTypeSchema,
-  duration_s: z
-    .number({ error: "La duración es obligatoria." })
-    .int()
-    .gt(0, "La duración debe ser mayor a 0 segundos."),
+  /** Por defecto `fixed` — retrocompatible con datos/borradores previos (FR-004). */
+  duration_type: intervalDurationTypeSchema.default("fixed"),
+  /**
+   * Segundos exactos cuando `duration_type === "fixed"`; `null` cuando es
+   * `open_lap` (FR-006). El requisito `> 0` para bloques fijos se valida en
+   * `refineDurationType` (cruzado con `duration_type`), no acá.
+   */
+  duration_s: z.number().int().nullable(),
   target_zone: hrZoneSchema,
   target_cadence_rpm: z
     .number({ error: "La cadencia es obligatoria." })
@@ -141,6 +161,60 @@ function refineRepeatGroups(
   }
 }
 
+/**
+ * Refinamiento cruzado del tipo de duración (feature 034, FR-005/FR-006):
+ *   - `open_lap` solo en calentamiento/enfriamiento (código 422 equivalente:
+ *     "solo el calentamiento y el enfriamiento pueden ser libres").
+ *   - `open_lap` nunca dentro de un grupo repetido (orden-independiente: da
+ *     igual si el bloque se marcó libre primero o se agrupó primero).
+ *   - `open_lap` no lleva `duration_s`.
+ *   - `fixed` requiere `duration_s > 0` (mueve acá el `gt(0)` que antes vivía
+ *     en el schema base, ahora condicional al tipo).
+ * Emite issues por bloque en el campo más relevante para que
+ * `StructureEditor`/`BlockRow` los ubique inline.
+ */
+function refineDurationType(
+  blocks: readonly z.infer<typeof intervalBlockInputSchema>[],
+  ctx: z.RefinementCtx,
+): void {
+  blocks.forEach((block, index) => {
+    if (block.duration_type === "open_lap") {
+      if (block.block_type !== "warmup" && block.block_type !== "cooldown") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["blocks", index, "duration_type"],
+          message:
+            "Solo el calentamiento y el enfriamiento pueden ser libres (hasta botón de vuelta).",
+        });
+      }
+      if (block.repeat_group != null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["blocks", index, "repeat_group"],
+          message: "Un bloque libre no puede pertenecer a un grupo repetido.",
+        });
+      }
+      if (block.duration_s != null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["blocks", index, "duration_s"],
+          message: "Un bloque libre no lleva duración.",
+        });
+      }
+      return;
+    }
+
+    // duration_type === "fixed"
+    if (block.duration_s == null || block.duration_s <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["blocks", index, "duration_s"],
+        message: "La duración debe ser mayor a 0 segundos.",
+      });
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Estructuras — schemas de entrada (formulario)
 // ---------------------------------------------------------------------------
@@ -155,7 +229,10 @@ export const intervalStructureCreateInputSchema = z
       .array(intervalBlockInputSchema)
       .min(1, "Agregá al menos un bloque a la estructura."),
   })
-  .superRefine((data, ctx) => refineRepeatGroups(data.blocks, ctx));
+  .superRefine((data, ctx) => {
+    refineRepeatGroups(data.blocks, ctx);
+    refineDurationType(data.blocks, ctx);
+  });
 
 /** PUT /api/intervals/structures/{id} — reemplazo completo (body sin `training_session_id`). */
 export const intervalStructureUpdateInputSchema = z
@@ -166,7 +243,10 @@ export const intervalStructureUpdateInputSchema = z
       .array(intervalBlockInputSchema)
       .min(1, "Agregá al menos un bloque a la estructura."),
   })
-  .superRefine((data, ctx) => refineRepeatGroups(data.blocks, ctx));
+  .superRefine((data, ctx) => {
+    refineRepeatGroups(data.blocks, ctx);
+    refineDurationType(data.blocks, ctx);
+  });
 
 // ---------------------------------------------------------------------------
 // Templates — schemas de entrada (formulario, US4)
@@ -185,7 +265,10 @@ export const intervalTemplateSaveInputSchema = z
       .array(intervalBlockInputSchema)
       .min(1, "Agregá al menos un bloque al template."),
   })
-  .superRefine((data, ctx) => refineRepeatGroups(data.blocks, ctx));
+  .superRefine((data, ctx) => {
+    refineRepeatGroups(data.blocks, ctx);
+    refineDurationType(data.blocks, ctx);
+  });
 
 /** Filtros del listado de templates (US4-AC2), club-scoped en servidor. */
 export const intervalTemplateFiltersSchema = z
@@ -217,7 +300,10 @@ export const intervalBlockOutSchema = z
     id: z.number(),
     position: z.number(),
     block_type: intervalBlockTypeSchema,
-    duration_s: z.number(),
+    /** Siempre presente; retrocompatible — filas previas a la feature 034 llegan como `fixed`. */
+    duration_type: intervalDurationTypeSchema,
+    /** `null` únicamente cuando `duration_type === "open_lap"`. */
+    duration_s: z.number().nullable(),
     target_zone: hrZoneSchema,
     target_cadence_rpm: z.number(),
     repeat_group: z.number().nullable(),
@@ -292,7 +378,12 @@ export const matchBlockSchema = z
     flat_index: z.number(),
     block_type: intervalBlockTypeSchema,
     repeat_iteration: z.number().nullable(),
-    planned_duration_s: z.number(),
+    /**
+     * `null` para bloques libres (`open_lap`, feature 034) — no hay duración
+     * planeada contra la cual comparar. La UI muestra "Libre" en ese caso,
+     * nunca "—" (eso queda reservado a la ausencia real de dato).
+     */
+    planned_duration_s: z.number().nullable(),
     target_zone: hrZoneSchema,
     target_cadence_rpm: z.number(),
     lap_index: z.number().nullable(),

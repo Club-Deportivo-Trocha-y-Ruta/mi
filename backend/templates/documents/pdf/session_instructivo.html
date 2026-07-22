@@ -22,7 +22,9 @@
                            cada uno:
                            { order: int,                # `position` de autoría (1..n)
                              block_type: str,           # warmup|work|recovery|cooldown
-                             duration_s: int,           # duración planificada en segundos
+                             duration_type: str,        # fixed|open_lap (feature 034)
+                             duration_s: int|None,      # duración planificada en segundos;
+                                                         # None cuando duration_type == open_lap
                              target_zone: str,          # Z1..Z5 (zona de FC)
                              target_cadence_rpm: int,   # cadencia objetivo (>=60)
                              repeat_group: int|None,    # id de grupo de repetición (bloques
@@ -142,7 +144,8 @@
   </thead>
   <tbody>
     {% for b in blocks %}
-    {%- set total_s = b.duration_s | int -%}
+    {%- set is_open = b.duration_type == 'open_lap' -%}
+    {%- set total_s = (b.duration_s or 0) | int -%}
     {%- set mins = total_s // 60 -%}
     {%- set secs = total_s % 60 -%}
     {%- set in_group = b.repeat_group is not none -%}
@@ -156,7 +159,9 @@
         {{ block_type_labels.get(b.block_type, b.block_type | capitalize) }}
       </td>
       <td>
-        {%- if mins and secs -%}
+        {%- if is_open -%}
+          Libre — hasta botón de vuelta
+        {%- elif mins and secs -%}
           {{ mins }} min {{ secs }} s
         {%- elif mins -%}
           {{ mins }} min

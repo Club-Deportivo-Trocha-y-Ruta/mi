@@ -126,6 +126,64 @@ async def test_create_structure_happy_path(session):
 
 
 # ===========================================================================
+# total_planned_duration_s — open blocks contribute 0 (feature 034)
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_total_planned_duration_s_excludes_open_lap_blocks(session):
+    """An open_lap warmup contributes 0 to the total; only fixed blocks are
+    summed (contracts/api-delta.md — 'fixed-blocks-only sum')."""
+    ctx = await _setup(session)
+    blocks = [
+        {
+            "position": 1,
+            "block_type": "warmup",
+            "duration_type": "open_lap",
+            "duration_s": None,
+            "target_zone": "Z1",
+            "target_cadence_rpm": 70,
+            "repeat_group": None,
+            "repeat_count": None,
+        },
+        {
+            "position": 2,
+            "block_type": "work",
+            "duration_type": "fixed",
+            "duration_s": 300,
+            "target_zone": "Z2",
+            "target_cadence_rpm": 80,
+            "repeat_group": None,
+            "repeat_count": None,
+        },
+        {
+            "position": 3,
+            "block_type": "cooldown",
+            "duration_type": "fixed",
+            "duration_s": 300,
+            "target_zone": "Z1",
+            "target_cadence_rpm": 65,
+            "repeat_group": None,
+            "repeat_count": None,
+        },
+    ]
+    payload = _structure_payload(
+        training_session_id=ctx["training_session_id"], blocks=blocks
+    )
+
+    async with make_client(session) as client:
+        resp = await client.post(f"{BASE}/structures", json=payload)
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    # Only the two fixed blocks (300 + 300) count; the open warmup is 0.
+    assert body["total_planned_duration_s"] == 600
+    open_block = next(b for b in body["blocks"] if b["position"] == 1)
+    assert open_block["duration_type"] == "open_lap"
+    assert open_block["duration_s"] is None
+
+
+# ===========================================================================
 # GET /sessions/{id}/structure — read (happy path)
 # ===========================================================================
 

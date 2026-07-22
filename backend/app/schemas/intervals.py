@@ -46,10 +46,18 @@ AgeBandLiteral = Literal["10-12", "13-15"]
 BlockTypeLiteral = Literal["warmup", "work", "recovery", "cooldown"]
 HrZoneLiteral = Literal["Z1", "Z2", "Z3", "Z4", "Z5"]
 MatchTriggerLiteral = Literal["link", "structure_change", "manual"]
+# Feature 034 — discriminador de duración del bloque (fixed = duración
+# planificada exacta; open_lap = libre, hasta botón de vuelta del atleta).
+IntervalDurationTypeLiteral = Literal["fixed", "open_lap"]
 # Match-detail envelope status — UI-designed states, never raw errors (api.md).
 MatchStatusLiteral = Literal["computed", "no_activity", "computing", "failed"]
 # Per-block compliance badge semantics (Constitution III / data-model.md).
-BlockMatchStatusLiteral = Literal["cumplido", "fuera_tolerancia", "sin_dato", "extra"]
+# ``libre`` (feature 034) es informativo — un bloque open_lap con vuelta
+# consumida, nunca juzgado contra la tolerancia ±30% (nunca "cumplido"/
+# "fuera_tolerancia").
+BlockMatchStatusLiteral = Literal[
+    "cumplido", "fuera_tolerancia", "libre", "sin_dato", "extra"
+]
 
 MIN_CADENCE_RPM = 60
 
@@ -65,12 +73,38 @@ class BlockIn(BaseModel):
     ``repeat_group``/``repeat_count`` modelan repeticiones: los bloques que
     comparten un ``repeat_group`` forman un grupo, ``repeat_count`` (>= 2)
     idéntico en todo el grupo. ``NULL`` ⇢ el bloque corre una sola vez.
-    Validación cruzada (grupos, banda/edad, gate) vive en el service layer.
+
+    ``duration_type`` (feature 034) discrimina entre un bloque de duración
+    exacta (``fixed``, comportamiento original) y uno libre hasta que el
+    atleta presiona el botón de vuelta (``open_lap``). ``duration_s`` queda
+    ``int | None`` a propósito: la regla "``fixed`` ⇒ > 0 / ``open_lap`` ⇒
+    ``None``" es una validación CRUZADA (depende de ``duration_type``), así
+    que vive en el service layer (``validate_structure_blocks``), no acá —
+    mantiene este schema liviano y el 422 con el código/mensaje de dominio
+    correcto en vez del error crudo de Pydantic.
+
+    Validación cruzada (grupos, duración, banda/edad, gate) vive en el
+    service layer.
     """
 
     position: int = Field(ge=1)
     block_type: BlockTypeLiteral
-    duration_s: int = Field(gt=0)
+    duration_type: IntervalDurationTypeLiteral = Field(
+        default="fixed",
+        description=(
+            "'fixed' (duración planificada exacta) | 'open_lap' (libre, "
+            "hasta botón de vuelta). Omitido ⇒ 'fixed' (compatibilidad "
+            "retroactiva, FR-011)."
+        ),
+    )
+    duration_s: int | None = Field(
+        default=None,
+        description=(
+            "Duración planificada en segundos. Requerida (> 0) cuando "
+            "duration_type == 'fixed'; debe ser None cuando 'open_lap' "
+            "(validado en el service layer, no acá)."
+        ),
+    )
     target_zone: HrZoneLiteral
     target_cadence_rpm: int = Field(
         ge=MIN_CADENCE_RPM,
@@ -209,12 +243,17 @@ class MatchBlockOut(BaseModel):
 
     Solo métricas numéricas de la vuelta (duración, FC, velocidad). Nunca GPS,
     polyline, cadencia ni potencia (Ley 1581 / D4).
+
+    ``planned_duration_s`` es ``None`` para un paso ``open_lap`` (feature
+    034, engine v2) — nunca entra a la matemática de tolerancia; su
+    ``status`` es ``libre`` (vuelta consumida, informativo) o ``sin_dato``
+    (sin vuelta), nunca ``cumplido``/``fuera_tolerancia``.
     """
 
     flat_index: int
     block_type: BlockTypeLiteral
     repeat_iteration: int | None = None
-    planned_duration_s: int
+    planned_duration_s: int | None
     target_zone: HrZoneLiteral
     target_cadence_rpm: int
     lap_index: int | None = None
@@ -234,10 +273,18 @@ class ExtraLapOut(BaseModel):
 
 
 class MatchSummary(BaseModel):
-    """Conteos agregados por estado de cumplimiento."""
+    """Conteos agregados por estado de cumplimiento.
+
+    ``libre`` (feature 034) cuenta los pasos ``open_lap`` con vuelta
+    consumida — informativo, nunca contribuye a ``cumplido``/
+    ``fuera_tolerancia``. Ausente en un ``result_json`` v1 persistido antes
+    de esta feature: el default ``0`` lo cubre sin romper la lectura
+    verbatim de comparaciones viejas (SC-003).
+    """
 
     cumplido: int = 0
     fuera_tolerancia: int = 0
+    libre: int = 0
     sin_dato: int = 0
     extra: int = 0
 
@@ -325,7 +372,7 @@ class MatchResultBlock(BaseModel):
     block_id: int | None = None
     block_type: BlockTypeLiteral
     repeat_iteration: int | None = None
-    planned_duration_s: int
+    planned_duration_s: int | None
     target_zone: HrZoneLiteral
     target_cadence_rpm: int
     lap_index: int | None = None

@@ -93,7 +93,8 @@ def _block(
     *,
     position: int,
     block_type: str = "work",
-    duration_s: int = 120,
+    duration_type: str = "fixed",
+    duration_s: int | None = 120,
     target_zone: str = "Z2",
     target_cadence_rpm: int = 75,
     repeat_group: int | None = None,
@@ -102,6 +103,7 @@ def _block(
     return {
         "position": position,
         "block_type": block_type,
+        "duration_type": duration_type,
         "duration_s": duration_s,
         "target_zone": target_zone,
         "target_cadence_rpm": target_cadence_rpm,
@@ -139,7 +141,10 @@ def _template_payload(
 
 
 def _sum_durations(blocks: list[dict]) -> int:
-    return sum(b["duration_s"] for b in blocks)
+    """Sum of fixed-block durations — open_lap blocks (feature 034) carry
+    ``duration_s: None`` and contribute 0, mirroring
+    ``structures.total_planned_duration_s``."""
+    return sum(b["duration_s"] for b in blocks if b.get("duration_s") is not None)
 
 
 # ===========================================================================
@@ -487,6 +492,60 @@ async def test_editing_attached_structure_does_not_change_template(session):
     assert second_attach_resp.status_code == 201, second_attach_resp.text
     assert second_attach_resp.json()["total_planned_duration_s"] == _sum_durations(original_blocks)
     assert second_attach_resp.json()["total_planned_duration_s"] != _sum_durations(mutated_blocks)
+
+
+# ===========================================================================
+# Copy-on-attach preserves duration_type (feature 034, T025/T028)
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_attach_preserves_open_lap_duration_type(session):
+    """A template with an open_lap warmup keeps that type (and the nullable
+    duration_s) after copy-on-attach — verbatim, not defaulted to fixed."""
+    await _seed_base(session)
+    ts = await _seed_training_session(session, scheduled_date=date(2026, 7, 18))
+
+    blocks = [
+        _block(
+            position=1,
+            block_type="warmup",
+            duration_type="open_lap",
+            duration_s=None,
+            target_zone="Z1",
+            target_cadence_rpm=70,
+        ),
+        _block(
+            position=2,
+            block_type="work",
+            duration_type="fixed",
+            duration_s=180,
+            target_zone="Z2",
+            target_cadence_rpm=80,
+        ),
+    ]
+    payload = _template_payload(blocks=blocks)
+    async with make_client(session) as client:
+        create_resp = await client.post(f"{BASE}/templates", json=payload)
+    assert create_resp.status_code == 201, create_resp.text
+    template_id = create_resp.json()["id"]
+    assert create_resp.json()["total_planned_duration_s"] == 180  # open contributes 0
+
+    async with make_client(session) as client:
+        attach_resp = await client.post(
+            f"{BASE}/templates/{template_id}/attach",
+            json={"training_session_id": ts.id, "age_gate_confirmed": False},
+        )
+    assert attach_resp.status_code == 201, attach_resp.text
+    body = attach_resp.json()
+    assert body["total_planned_duration_s"] == 180
+
+    cloned_open = next(b for b in body["blocks"] if b["position"] == 1)
+    assert cloned_open["duration_type"] == "open_lap"
+    assert cloned_open["duration_s"] is None
+    cloned_fixed = next(b for b in body["blocks"] if b["position"] == 2)
+    assert cloned_fixed["duration_type"] == "fixed"
+    assert cloned_fixed["duration_s"] == 180
 
 
 # ===========================================================================

@@ -133,7 +133,10 @@ export function AthleteCombobox({
   useEffect(() => {
     if (open) {
       // Microtask para esperar al render del panel.
-      const t = setTimeout(() => inputRef.current?.focus(), 10);
+      const t = setTimeout(
+        () => inputRef.current?.focus({ preventScroll: true }),
+        10,
+      );
       return () => clearTimeout(t);
     }
   }, [open]);

@@ -782,6 +782,7 @@ class TestMatchStatuses:
         assert body["summary"] == {
             "cumplido": 3,
             "fuera_tolerancia": 0,
+            "libre": 0,
             "sin_dato": 0,
             "extra": 0,
         }

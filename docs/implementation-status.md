@@ -615,3 +615,19 @@ Presentation-only sweep (FR-010: no schema change, no AI pipeline/prompt/scoring
 **Two findings documented but deliberately left unfixed (outside this feature's literal task scope, FR-010 discipline):** (1) técnica's `CatalogPage.tsx`, fuerza's `CatalogPage.tsx`, and `AnxietyDashboardPage.tsx` still hand-roll their page `<h1>` instead of the shared `PageHeader` component (feature 028) every other top-level page uses — same color/size, but renders in the body typeface (Inter) instead of the display typeface (Cal Sans) every other page title uses. (2) `frontend/src/components/training/session-plan/{TechniqueAttachPicker,StrengthBlockPicker,SessionPickerDialog}.tsx` (feature 032, session-planning flow) still carry ~21 `slate-*` occurrences — they live outside the exact 8 directories this feature's slate-remediation tasks targeted, so a coach attaching técnica/fuerza content mid-session-planning still sees the old slate-gray styling.
 
 **Status:** ✅ Complete — deploy pending. No migration. No new runtime dependency. Zero regressions in the anxiety module (Principle V, line-by-line diff-reviewed: 100% className/token-only changes across all 9 touched files) or in generated documents (no document-generation file touched by this feature's diff at all).
+
+---
+
+## Implementation status — Align Monthly Report to Approved Format (specs/022-align-monthly-report-format)
+
+New `plan_entrenamiento` narrative block + auto-generated `competencia`; PDF restructured to approved institutional section order; per-session detail table + per-athlete rubric averages in `metrics_snapshot`; competition results grouped by jornada (`event_id`/`series_kind`/`awards_points`) with points/no-points note; photo register auto-grouped by section from `session_kind` + race-date heuristic; new DOCX export via docxtpl, `GET .../monthly-reports/{year}/{month}/docx`; shared `build_report_document_context` feeds both PDF and DOCX with backward-compatible "Pendiente — regenerar informe" fallback for pre-feature snapshots.
+
+**Status:** ✅ Complete — deploy pending (no Alembic migration, additive JSON-column changes only).
+
+---
+
+## Implementation status — Interval Duration Usability (specs/034-interval-duration-usability)
+
+mm:ss entry for block durations via new `MmSsInput`; `duration_type` discriminator `fixed`/`open_lap` restricted to warmup/cooldown, never inside repeat groups; open-ended "Libre — hasta botón de vuelta" blocks in editor, totals, PDF instructivo; plan-vs-actual comparison ENGINE_VERSION 1→2 with informational `libre` status, stored v1 comparisons unchanged. `duration_s` made nullable — `fixed` keeps exact-seconds behavior, `open_lap` carries no duration (enforced in editor and server-side at save time). Comparisons stored under engine v1 render verbatim, no retroactive recomputation. `MmSsInput` replaces raw-seconds entry in both the structure editor and the template library editor — storage stays integer seconds, only display/entry changes. PDF instructivo (all brands) renders open-ended blocks with zone/cadence still shown. Backward-compatible/additive — pre-existing rows and drafts without an explicit duration type default to `fixed`.
+
+**Status:** ✅ Complete — deploy pending (migration `c7d8e9f0a1b2`).

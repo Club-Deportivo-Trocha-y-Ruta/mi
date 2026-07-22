@@ -17,6 +17,7 @@ import type {
   intervalBlockInputSchema,
   intervalBlockOutSchema,
   intervalBlockTypeSchema,
+  intervalDurationTypeSchema,
   intervalRecalculateInputSchema,
   intervalStructureCreateInputSchema,
   intervalStructureOutSchema,
@@ -40,6 +41,8 @@ import type {
 
 export type IntervalAgeBand = z.infer<typeof intervalAgeBandSchema>;
 export type IntervalBlockType = z.infer<typeof intervalBlockTypeSchema>;
+/** `fixed` (duración exacta) | `open_lap` (libre — hasta botón de vuelta). Feature 034. */
+export type IntervalDurationType = z.infer<typeof intervalDurationTypeSchema>;
 export type HrZone = z.infer<typeof hrZoneSchema>;
 export type MatchOverallStatus = z.infer<typeof matchOverallStatusSchema>;
 export type BlockMatchStatus = z.infer<typeof blockMatchStatusSchema>;

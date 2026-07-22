@@ -79,6 +79,38 @@ const BLOCK_SIN_DATO: MatchBlock = {
   status: "sin_dato",
 };
 
+/** Bloque libre (feature 034) con vuelta consumida — informativo, nunca juzgado. */
+const BLOCK_LIBRE: MatchBlock = {
+  flat_index: 0,
+  block_type: "warmup",
+  repeat_iteration: null,
+  planned_duration_s: null,
+  target_zone: "Z1",
+  target_cadence_rpm: 70,
+  lap_index: 0,
+  lap_elapsed_time_s: 480,
+  lap_moving_time_s: 470,
+  lap_average_heartrate: 118.6,
+  lap_average_speed_m_s: 3.2,
+  status: "libre",
+};
+
+/** Bloque libre sin vuelta emparejada — reportado como sin_dato, igual que uno fijo. */
+const BLOCK_LIBRE_SIN_DATO: MatchBlock = {
+  flat_index: 0,
+  block_type: "cooldown",
+  repeat_iteration: null,
+  planned_duration_s: null,
+  target_zone: "Z1",
+  target_cadence_rpm: 65,
+  lap_index: null,
+  lap_elapsed_time_s: null,
+  lap_moving_time_s: null,
+  lap_average_heartrate: null,
+  lap_average_speed_m_s: null,
+  status: "sin_dato",
+};
+
 const EXTRA_LAP: MatchExtraLap = {
   lap_index: 6,
   elapsed_time_s: 45,
@@ -166,6 +198,55 @@ describe("PlanVsActualTable — filas de bloque", () => {
     expect(screen.getByText("Calentamiento")).toBeInTheDocument();
     expect(screen.getByText("Trabajo")).toBeInTheDocument();
     expect(screen.getByText("Enfriamiento")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: bloques libres (feature 034, US3/FR-008)
+// ---------------------------------------------------------------------------
+
+describe("PlanVsActualTable — bloques libres", () => {
+  it("un bloque libre con vuelta consumida muestra 'Libre' en duración planeada, la duración real y el badge 'Libre'", () => {
+    render(<PlanVsActualTable blocks={[BLOCK_LIBRE]} />);
+
+    const row = screen.getByText("Calentamiento").closest("tr")!;
+    const cells = within(row).getAllByRole("cell");
+    // Columnas: Bloque, Duración planeada, Zona FC, Cadencia obj., Vuelta,
+    // Duración real, FC media, Vel. media, Estado.
+    expect(cells[1]).toHaveTextContent("Libre"); // Duración planeada
+    expect(within(row).getByText("8:00")).toBeInTheDocument(); // lap_elapsed_time_s
+    expect(within(row).getByText("119 bpm")).toBeInTheDocument();
+    expect(within(cells[8]).getByText("Libre")).toBeInTheDocument(); // badge de estado
+  });
+
+  it("el badge de un bloque libre nunca es 'Fuera de tolerancia' ni 'Cumplido'", () => {
+    render(<PlanVsActualTable blocks={[BLOCK_LIBRE]} />);
+
+    expect(screen.queryByText("Fuera de tolerancia")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cumplido")).not.toBeInTheDocument();
+  });
+
+  it("un bloque libre sin vuelta emparejada se reporta como 'Sin dato' (igual que uno fijo) pero con duración planeada 'Libre'", () => {
+    render(<PlanVsActualTable blocks={[BLOCK_LIBRE_SIN_DATO]} />);
+
+    const row = screen.getByText("Enfriamiento").closest("tr")!;
+    expect(within(row).getByText("Sin dato")).toBeInTheDocument();
+    const cells = within(row).getAllByRole("cell");
+    expect(cells[1]).toHaveTextContent("Libre"); // Duración planeada
+  });
+
+  it("un bloque fijo sin vuelta sigue mostrando su duración planeada, nunca 'Libre'", () => {
+    render(<PlanVsActualTable blocks={[BLOCK_SIN_DATO]} />);
+
+    expect(screen.getByText("5:00")).toBeInTheDocument(); // planned_duration_s del fixture fijo
+    expect(screen.queryByText("Libre")).not.toBeInTheDocument();
+  });
+
+  it("no tiene violaciones de a11y con un bloque libre (con y sin vuelta)", async () => {
+    const { container } = render(
+      <PlanVsActualTable blocks={[BLOCK_LIBRE, BLOCK_LIBRE_SIN_DATO]} />,
+    );
+    expect(await axe(container)).toHaveNoViolations();
   });
 });
 

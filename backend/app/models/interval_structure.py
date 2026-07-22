@@ -72,6 +72,21 @@ class HRZone(str, enum.Enum):
     Z5 = "Z5"
 
 
+class IntervalDurationType(str, enum.Enum):
+    """Tipo de duración de un bloque (feature 034).
+
+    ``FIXED``    — el bloque tiene una duración planificada exacta en segundos
+                   enteros (comportamiento original de la feature 026).
+    ``OPEN_LAP`` — el bloque no tiene duración planificada; el atleta lo
+                   termina presionando el botón de vuelta del dispositivo.
+                   Solo permitido en ``warmup``/``cooldown`` y nunca dentro de
+                   un grupo de repetición (validado en la capa de servicio).
+    """
+
+    FIXED = "fixed"
+    OPEN_LAP = "open_lap"
+
+
 # ---------------------------------------------------------------------------
 # IntervalStructure — plan de intervalos 1:1 con una sesión
 # ---------------------------------------------------------------------------
@@ -182,8 +197,18 @@ class IntervalStructureBlock(Base):
         SAEnum(IntervalBlockType, values_callable=lambda e: [x.value for x in e]),
         nullable=False,
     )
-    # Duración planificada; también es el duration_hint del matching (check > 0).
-    duration_s: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Feature 034 — discriminador explícito fixed/open_lap. Filas existentes
+    # migran a 'fixed' vía server_default, sin reescritura de datos.
+    duration_type: Mapped[IntervalDurationType] = mapped_column(
+        SAEnum(IntervalDurationType, values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+        default=IntervalDurationType.FIXED,
+        server_default="fixed",
+    )
+    # Duración planificada; también es el duration_hint del matching (check > 0
+    # cuando duration_type == FIXED). NULL cuando duration_type == OPEN_LAP
+    # (feature 034 — bloque libre, sin duración planificada).
+    duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Única dimensión objetivo junto a la cadencia — no hay columna de potencia.
     target_zone: Mapped[HRZone] = mapped_column(
         SAEnum(HRZone, values_callable=lambda e: [x.value for x in e]),
@@ -293,7 +318,15 @@ class IntervalTemplateBlock(Base):
         SAEnum(IntervalBlockType, values_callable=lambda e: [x.value for x in e]),
         nullable=False,
     )
-    duration_s: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Feature 034 — idéntico delta que interval_structure_blocks; el
+    # copy-on-attach copia duration_type/duration_s verbatim.
+    duration_type: Mapped[IntervalDurationType] = mapped_column(
+        SAEnum(IntervalDurationType, values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+        default=IntervalDurationType.FIXED,
+        server_default="fixed",
+    )
+    duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_zone: Mapped[HRZone] = mapped_column(
         SAEnum(HRZone, values_callable=lambda e: [x.value for x in e]),
         nullable=False,

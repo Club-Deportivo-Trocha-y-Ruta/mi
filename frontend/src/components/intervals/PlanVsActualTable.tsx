@@ -6,10 +6,19 @@
  * aplanados ya emparejados con sus vueltas, las vueltas extra y el resumen
  * agregado, y renderiza:
  *   - una fila por bloque planeado ↔ vuelta real, con badge de cumplimiento
- *     (verde = cumplido, ámbar = fuera de tolerancia, gris = sin dato);
+ *     (verde = cumplido, ámbar = fuera de tolerancia, gris = sin dato/libre);
  *   - filas informativas por cada vuelta extra registrada por el dispositivo
  *     que no corresponde a ningún bloque (nunca es un error, es información);
  *   - una tira de resumen con los conteos por estado.
+ *
+ * Bloques libres (feature 034, US3/FR-008): un bloque `open_lap` no tiene
+ * duración planeada contra la cual comparar — el motor lo señaliza con
+ * `planned_duration_s: null` (nunca lo confunde con "sin dato": un bloque
+ * fijo sin vuelta SIEMPRE conserva su `planned_duration_s`). La columna
+ * "Duración planeada" muestra "Libre" en vez de un guion, y el estado
+ * `libre` (vuelta consumida, informativo, nunca "fuera de tolerancia") usa
+ * el mismo gris neutro que `sin_dato` — informativo, no juzgado
+ * (Constitución III: verde solo para éxito juzgado).
  *
  * Privacidad (Ley 1581, D4): las vueltas solo exponen duración / FC media /
  * velocidad media. Este componente NUNCA recibe ni muestra GPS, polyline,
@@ -52,6 +61,8 @@ const STATUS_META: Record<
   cumplido: { label: "Cumplido", variant: "success" },
   fuera_tolerancia: { label: "Fuera de tolerancia", variant: "warning" },
   sin_dato: { label: "Sin dato", variant: "secondary" },
+  // Informativo — bloque libre con vuelta consumida, nunca juzgado (feature 034).
+  libre: { label: "Libre", variant: "secondary" },
 };
 
 /** Segundos → "m:ss" (ej. 312 → "5:12"). Retorna "—" si es null/undefined. */
@@ -61,6 +72,17 @@ function formatSeconds(value: number | null | undefined): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/**
+ * Duración planeada de un bloque: "Libre" para bloques `open_lap`
+ * (`planned_duration_s == null` — nunca ocurre en un bloque fijo, que
+ * siempre trae su duración planeada aunque no haya vuelta emparejada), o
+ * `formatSeconds` en cualquier otro caso.
+ */
+function formatPlannedDuration(value: number | null | undefined): string {
+  if (value == null) return "Libre";
+  return formatSeconds(value);
 }
 
 /** FC media → "128 bpm" (0 decimales). "—" si no hay dato. */
@@ -150,7 +172,7 @@ export function PlanVsActualTable({
                     </span>
                   )}
                 </TableCell>
-                <TableCell>{formatSeconds(block.planned_duration_s)}</TableCell>
+                <TableCell>{formatPlannedDuration(block.planned_duration_s)}</TableCell>
                 <TableCell>{block.target_zone}</TableCell>
                 <TableCell>{block.target_cadence_rpm} rpm</TableCell>
                 <TableCell>

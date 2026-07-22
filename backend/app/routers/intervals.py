@@ -136,6 +136,7 @@ def _serialize_block_out(block) -> BlockOut:
         id=block.id,
         position=block.position,
         block_type=block.block_type.value,
+        duration_type=block.duration_type.value,
         duration_s=block.duration_s,
         target_zone=block.target_zone.value,
         target_cadence_rpm=block.target_cadence_rpm,

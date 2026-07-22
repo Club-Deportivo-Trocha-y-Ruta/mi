@@ -29,7 +29,7 @@
  * Mirror de `components/strength/__tests__/BlockAssembler.test.tsx`.
  */
 import { describe, it, expect, vi, type Mock } from "vitest";
-import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe, toHaveNoViolations } from "jest-axe";
 
@@ -197,6 +197,7 @@ describe("StructureEditor — defaultValues", () => {
           {
             position: 1,
             block_type: "warmup",
+            duration_type: "fixed",
             duration_s: 180,
             target_zone: "Z1",
             target_cadence_rpm: 75,
@@ -206,6 +207,7 @@ describe("StructureEditor — defaultValues", () => {
           {
             position: 2,
             block_type: "cooldown",
+            duration_type: "fixed",
             duration_s: 180,
             target_zone: "Z1",
             target_cadence_rpm: 65,
@@ -304,15 +306,243 @@ describe("StructureEditor — reordenar bloques", () => {
     renderEditor();
     await user.click(screen.getByRole("button", { name: "Agregar bloque" }));
 
-    const durationInputs = () =>
-      screen.getAllByLabelText("Duración (segundos)") as HTMLInputElement[];
-    fireEvent.change(durationInputs()[1], { target: { value: "999" } });
-    expect(durationInputs()[1].value).toBe("999");
+    const minInputs = () =>
+      screen.getAllByLabelText("Minutos") as HTMLInputElement[];
+    await user.clear(minInputs()[1]);
+    await user.type(minInputs()[1], "16");
+    expect(minInputs()[1].value).toBe("16");
 
     await user.click(screen.getByRole("button", { name: "Subir bloque 2" }));
 
-    expect(durationInputs()[0].value).toBe("999");
-    expect(durationInputs()[1].value).toBe("300");
+    expect(minInputs()[0].value).toBe("16");
+    expect(minInputs()[1].value).toBe("5");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: entrada de duración en minutos y segundos (feature 034, US1/T006)
+// ---------------------------------------------------------------------------
+
+describe("StructureEditor — entrada de duración en minutos y segundos (US1)", () => {
+  it("ya no existe la entrada cruda en segundos — todo es Min/Seg", () => {
+    renderEditor();
+    expect(
+      screen.queryByLabelText("Duración (segundos)"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Minutos")).toBeInTheDocument();
+    expect(screen.getByLabelText("Segundos")).toBeInTheDocument();
+  });
+
+  it("el bloque por defecto (300s) hidrata como Min=5 / Seg=0", () => {
+    renderEditor();
+    expect(screen.getByLabelText("Minutos")).toHaveValue(5);
+    expect(screen.getByLabelText("Segundos")).toHaveValue(0);
+  });
+
+  it("un bloque existente de 90s (feature previa a esta) hidrata como Min=1 / Seg=30", () => {
+    renderEditor({
+      defaultValues: {
+        blocks: [
+          {
+            position: 1,
+            block_type: "warmup",
+            duration_s: 90,
+            target_zone: "Z1",
+            target_cadence_rpm: 70,
+            repeat_group: null,
+            repeat_count: null,
+          } as StructureEditorSubmitInput["blocks"][number],
+        ],
+      },
+    });
+    expect(screen.getByLabelText("Minutos")).toHaveValue(1);
+    expect(screen.getByLabelText("Segundos")).toHaveValue(30);
+  });
+
+  it("editar el segundo bloque a 1 min 30 seg produce total 6:30 (5:00 + 1:30) y duration_s 300/90 al enviar", async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderEditor();
+    await user.click(screen.getByRole("button", { name: "Agregar bloque" }));
+
+    const minInputs = () => screen.getAllByLabelText("Minutos") as HTMLInputElement[];
+    const secInputs = () => screen.getAllByLabelText("Segundos") as HTMLInputElement[];
+
+    await user.clear(minInputs()[1]);
+    await user.type(minInputs()[1], "1");
+    await user.clear(secInputs()[1]);
+    await user.type(secInputs()[1], "30");
+
+    expect(screen.getByTestId("structure-total-duration")).toHaveTextContent(
+      "6:30",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Guardar estructura" }));
+
+    expect(onSubmit).toHaveBeenCalledOnce();
+    const payload = onSubmit.mock.calls[0][0] as StructureEditorSubmitInput;
+    expect(payload.blocks[0].duration_s).toBe(300);
+    expect(payload.blocks[1].duration_s).toBe(90);
+  });
+
+  it("vaciar Min y Seg de un bloque bloquea el envío con el error de duración obligatoria", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.clear(screen.getByLabelText("Minutos"));
+    await user.clear(screen.getByLabelText("Segundos"));
+    await user.click(screen.getByRole("button", { name: "Guardar estructura" }));
+
+    expect(
+      await screen.findByText("La duración debe ser mayor a 0 segundos."),
+    ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: bloques libres "Libre — hasta botón de vuelta" (feature 034, US2/T012)
+// ---------------------------------------------------------------------------
+
+describe("StructureEditor — bloques libres (feature 034, US2)", () => {
+  it("un bloque de calentamiento ofrece 'Tipo de duración'; uno de trabajo no lo ofrece", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    expect(screen.getByLabelText("Tipo de duración")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Tipo"), "work");
+
+    expect(screen.queryByLabelText("Tipo de duración")).not.toBeInTheDocument();
+  });
+
+  it("marcar el bloque como 'Libre' oculta Min/Seg y muestra el texto 'Libre — hasta botón de vuelta'", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.selectOptions(
+      screen.getByLabelText("Tipo de duración"),
+      "open_lap",
+    );
+
+    expect(screen.queryByLabelText("Minutos")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Segundos")).not.toBeInTheDocument();
+    // Nota: el mismo texto también existe como <option> dentro del <select>
+    // "Tipo de duración" — se acota al párrafo visible que reemplaza a Min/Seg.
+    expect(
+      screen.getByText("Libre — hasta botón de vuelta", { selector: "p" }),
+    ).toBeInTheDocument();
+  });
+
+  it("volver a 'Tiempo fijo' vuelve a mostrar Min/Seg vacíos (sin arrastrar un valor fantasma)", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.selectOptions(screen.getByLabelText("Tipo de duración"), "open_lap");
+    await user.selectOptions(screen.getByLabelText("Tipo de duración"), "fixed");
+
+    expect(screen.getByLabelText("Minutos")).toHaveValue(null);
+    expect(screen.getByLabelText("Segundos")).toHaveValue(null);
+  });
+
+  it("la opción 'Libre' no se ofrece cuando el bloque ya está en un grupo repetido (orden: agrupar primero)", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Parte de un grupo repetido" }),
+    );
+
+    const options = within(
+      screen.getByLabelText("Tipo de duración"),
+    ).getAllByRole("option") as HTMLOptionElement[];
+    expect(options.map((o) => o.value)).toEqual(["fixed"]);
+    expect(screen.getByLabelText("Tipo de duración")).toBeDisabled();
+  });
+
+  it("el checkbox de grupo repetido se deshabilita cuando el bloque ya es libre (orden: marcar libre primero)", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.selectOptions(screen.getByLabelText("Tipo de duración"), "open_lap");
+
+    expect(
+      screen.getByRole("checkbox", { name: "Parte de un grupo repetido" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Un bloque libre no puede pertenecer a un grupo repetido."),
+    ).toBeInTheDocument();
+  });
+
+  it("cambiar el tipo de bloque de calentamiento a trabajo mientras es libre lo revierte a 'Tiempo fijo' sin duración", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.selectOptions(screen.getByLabelText("Tipo de duración"), "open_lap");
+    await user.selectOptions(screen.getByLabelText("Tipo"), "work");
+
+    expect(screen.queryByLabelText("Tipo de duración")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Guardar estructura" }));
+    expect(
+      await screen.findByText("La duración debe ser mayor a 0 segundos."),
+    ).toBeInTheDocument();
+  });
+
+  it("el total muestra '+ calentamiento libre' cuando el calentamiento es libre y quedan bloques fijos", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+    await user.click(screen.getByRole("button", { name: "Agregar bloque" }));
+
+    const durationTypeSelects = () =>
+      screen.getAllByLabelText("Tipo de duración") as HTMLSelectElement[];
+    await user.selectOptions(durationTypeSelects()[0], "open_lap");
+
+    expect(screen.getByTestId("structure-total-duration")).toHaveTextContent(
+      "5:00 + calentamiento libre",
+    );
+  });
+
+  it("el total muestra 'Duración libre' cuando no queda ningún bloque fijo", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.selectOptions(screen.getByLabelText("Tipo de duración"), "open_lap");
+
+    expect(screen.getByTestId("structure-total-duration")).toHaveTextContent(
+      "Duración libre",
+    );
+  });
+
+  it("onSubmit recibe duration_type: 'open_lap' y duration_s: null para el bloque libre", async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderEditor();
+
+    await user.selectOptions(screen.getByLabelText("Tipo de duración"), "open_lap");
+    await user.click(screen.getByRole("button", { name: "Guardar estructura" }));
+
+    expect(onSubmit).toHaveBeenCalledOnce();
+    const payload = onSubmit.mock.calls[0][0] as StructureEditorSubmitInput;
+    expect(payload.blocks[0].duration_type).toBe("open_lap");
+    expect(payload.blocks[0].duration_s).toBeNull();
+  });
+
+  it("no tiene violaciones de a11y con un bloque libre", async () => {
+    const user = userEvent.setup();
+    const { container } = renderEditor();
+
+    await user.selectOptions(screen.getByLabelText("Tipo de duración"), "open_lap");
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("no tiene violaciones de a11y con el bloque agrupado (opción 'Libre' oculta)", async () => {
+    const user = userEvent.setup();
+    const { container } = renderEditor();
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Parte de un grupo repetido" }),
+    );
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });
 

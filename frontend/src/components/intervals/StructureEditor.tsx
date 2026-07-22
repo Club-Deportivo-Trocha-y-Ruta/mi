@@ -7,9 +7,13 @@
  *
  * Validación (fuente única: `schemas/intervals.schema.ts`):
  *   - Cadencia objetivo >= 60 rpm para toda categoría (FR-004).
- *   - `duration_s > 0` en cada bloque.
+ *   - `duration_s > 0` en cada bloque fijo; `null` obligatorio en bloques libres.
  *   - Grupos de repetición: `repeat_count >= 2` e idéntico dentro del grupo (FR-002).
  *   - Sin objetivo de potencia/watts (FR-005, D2).
+ *   - Bloques libres ("Libre — hasta botón de vuelta", feature 034): solo
+ *     calentamiento/enfriamiento, nunca en grupo repetido. La duración total
+ *     estimada suma solo bloques fijos y agrega un sufijo cuando hay bloques
+ *     libres (`computeDurationLabel`) — ver FR-007.
  *
  * Compuerta por edad (FR-006/FR-007) — mismo flujo de reintento que
  * `strength/BlockAssembler.tsx`: `onSubmit` puede rechazar con un error 422 de
@@ -25,7 +29,7 @@
  * A11y / UX (Constitución III): copy en español neutro (Colombia), objetivos
  * táctiles >= 48px, errores localizados inline con `role="alert"`.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
@@ -39,6 +43,8 @@ import { intervalStructureUpdateInputSchema } from "@/schemas/intervals.schema";
 import type {
   IntervalAgeBand,
   IntervalBlockInput,
+  IntervalBlockType,
+  IntervalDurationType,
 } from "@/types/intervals.types";
 import {
   AgeGateDialog,
@@ -92,11 +98,12 @@ export interface StructureEditorProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Bloque nuevo por defecto (calentamiento Z1, cadencia válida). */
+/** Bloque nuevo por defecto (calentamiento Z1, cadencia válida, duración fija). */
 function emptyBlock(position: number): IntervalBlockInput {
   return {
     position,
     block_type: "warmup",
+    duration_type: "fixed",
     duration_s: 300,
     target_zone: "Z1",
     target_cadence_rpm: 70,
@@ -106,9 +113,24 @@ function emptyBlock(position: number): IntervalBlockInput {
 }
 
 /**
+ * Normaliza un bloque hidratado desde datos existentes (estructura guardada,
+ * template, borrador en `localStorage`) para que `duration_type` siempre
+ * tenga un valor explícito. Datos previos a la feature 034 no traen el
+ * campo — se tratan como `fixed` sin reescritura visible (FR-004/FR-011).
+ */
+function normalizeBlock(block: IntervalBlockInput): IntervalBlockInput {
+  return {
+    ...block,
+    duration_type: block.duration_type ?? "fixed",
+  };
+}
+
+/**
  * Duración total estimada de la estructura (aplanada): cada bloque agrupado
  * cuenta `repeat_count` veces; los no agrupados, una vez (misma regla de
- * aplanado que el motor de matching y el instructivo).
+ * aplanado que el motor de matching y el instructivo). Los bloques libres
+ * (`duration_type === "open_lap"`) tienen `duration_s == null` y por lo tanto
+ * ya contribuyen 0 sin necesidad de excluirlos explícitamente.
  */
 export function computeFlattenedDurationS(
   blocks: ReadonlyArray<{
@@ -133,6 +155,49 @@ function formatMmSs(totalSeconds: number): string {
   const minutes = Math.floor(safe / 60);
   const seconds = safe % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+/**
+ * Etiqueta de duración total mostrada en el indicador (feature 034, FR-007):
+ *   - Sin bloques libres: `mm:ss` de siempre, sin cambios (SC-003).
+ *   - Con calentamiento libre y/o enfriamiento libre: suma solo bloques fijos
+ *     + sufijo ("+ calentamiento libre" / "+ enfriamiento libre" /
+ *     "+ bloques libres" cuando hay ambos).
+ *   - Sin ningún bloque fijo: "Duración libre" (nunca "0:00 + …").
+ */
+export function computeDurationLabel(
+  blocks: ReadonlyArray<{
+    duration_s?: number | null;
+    duration_type?: IntervalDurationType | null;
+    block_type?: IntervalBlockType;
+    repeat_group?: number | null;
+    repeat_count?: number | null;
+  }>,
+): string {
+  const fixedTotal = computeFlattenedDurationS(blocks);
+  const hasOpenWarmup = blocks.some(
+    (block) => block.duration_type === "open_lap" && block.block_type === "warmup",
+  );
+  const hasOpenCooldown = blocks.some(
+    (block) => block.duration_type === "open_lap" && block.block_type === "cooldown",
+  );
+
+  if (!hasOpenWarmup && !hasOpenCooldown) {
+    return formatMmSs(fixedTotal);
+  }
+
+  if (fixedTotal === 0) {
+    return "Duración libre";
+  }
+
+  const suffix =
+    hasOpenWarmup && hasOpenCooldown
+      ? "bloques libres"
+      : hasOpenWarmup
+        ? "calentamiento libre"
+        : "enfriamiento libre";
+
+  return `${formatMmSs(fixedTotal)} + ${suffix}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +228,7 @@ export function StructureEditor({
       age_gate_confirmed: false,
       blocks:
         defaultValues?.blocks && defaultValues.blocks.length > 0
-          ? defaultValues.blocks
+          ? defaultValues.blocks.map(normalizeBlock)
           : [emptyBlock(1)],
     },
   });
@@ -173,13 +238,18 @@ export function StructureEditor({
     name: "blocks",
   });
 
-  // Se observa el array para el indicador de duración y el estado "agrupado".
+  // Se observa el array para el indicador de duración y el estado
+  // "agrupado"/"tipo de bloque"/"tipo de duración" de cada fila.
   const watchedBlocks = watch("blocks");
 
-  const flattenedDurationS = useMemo(
-    () => computeFlattenedDurationS(watchedBlocks ?? []),
-    [watchedBlocks],
-  );
+  // Deliberadamente SIN `useMemo`: `watch("blocks")` de react-hook-form puede
+  // devolver la MISMA referencia de array mutada in-place para cambios en
+  // hojas anidadas (p. ej. `duration_s` vía `Controller`/`setValue`), por lo
+  // que memoizar por igualdad referencial deja `durationLabel` congelado tras
+  // el primer cambio de ese tipo — el bug se manifestaba tipeando en
+  // `MmSsInput` (FR-001: el total debe reflejar cada tecla). El cálculo es
+  // barato (arreglo chico) — recalcularlo en cada render es seguro y correcto.
+  const durationLabel = computeDurationLabel(watchedBlocks ?? []);
 
   // ---------------------------------------------------------------------------
   // Mutaciones de la lista de bloques
@@ -200,6 +270,40 @@ export function StructureEditor({
       }
     },
     [setValue],
+  );
+
+  /**
+   * Tipo de duración (feature 034, FR-004/FR-006): cambiar entre "Tiempo
+   * fijo" y "Libre" siempre limpia `duration_s` — un bloque libre no lleva
+   * duración, y uno recién vuelto a fijo exige que el entrenador la
+   * reingrese explícitamente (sin arrastrar un valor fantasma).
+   */
+  const handleDurationTypeChange = useCallback(
+    (index: number, durationType: IntervalDurationType) => {
+      setValue(`blocks.${index}.duration_type`, durationType, {
+        shouldDirty: true,
+      });
+      setValue(`blocks.${index}.duration_s`, null, { shouldDirty: true });
+    },
+    [setValue],
+  );
+
+  /**
+   * Si el tipo de bloque cambia hacia trabajo/recuperación mientras estaba
+   * marcado libre, se revierte a "Tiempo fijo" (sin duración cargada) — el
+   * bloque libre solo existe para calentamiento/enfriamiento (FR-005). Cubre
+   * el caso borde de orden de acciones inverso al de `onDurationTypeChange`
+   * (data-model.md "Edge Cases").
+   */
+  const handleBlockTypeChange = useCallback(
+    (index: number, newBlockType: IntervalBlockType) => {
+      const canStayOpen = newBlockType === "warmup" || newBlockType === "cooldown";
+      if (!canStayOpen && getValues(`blocks.${index}.duration_type`) === "open_lap") {
+        setValue(`blocks.${index}.duration_type`, "fixed", { shouldDirty: true });
+        setValue(`blocks.${index}.duration_s`, null, { shouldDirty: true });
+      }
+    },
+    [getValues, setValue],
   );
 
   // ---------------------------------------------------------------------------
@@ -223,6 +327,8 @@ export function StructureEditor({
       blocks: (values.blocks ?? []).map((block, idx) => ({
         position: idx + 1,
         block_type: block.block_type,
+        // Retrocompatible: datos/borradores sin el campo se envían como `fixed`.
+        duration_type: block.duration_type ?? "fixed",
         duration_s: block.duration_s,
         target_zone: block.target_zone,
         target_cadence_rpm: block.target_cadence_rpm,
@@ -359,10 +465,7 @@ export function StructureEditor({
       >
         <p className="text-sm font-semibold text-charcoal">
           Duración total estimada:{" "}
-          <span data-testid="structure-total-duration">
-            {formatMmSs(flattenedDurationS)}
-          </span>{" "}
-          min
+          <span data-testid="structure-total-duration">{durationLabel}</span>
         </p>
         <Badge variant="secondary" data-testid="structure-block-count">
           {fields.length} {fields.length === 1 ? "bloque" : "bloques"}
@@ -391,6 +494,7 @@ export function StructureEditor({
                 const blockErrors: BlockRowErrors | undefined = rowErrors
                   ? {
                       block_type: rowErrors.block_type?.message,
+                      duration_type: rowErrors.duration_type?.message,
                       duration_s: rowErrors.duration_s?.message,
                       target_zone: rowErrors.target_zone?.message,
                       target_cadence_rpm: rowErrors.target_cadence_rpm?.message,
@@ -400,15 +504,28 @@ export function StructureEditor({
                   : undefined;
                 const grouped =
                   (watchedBlocks?.[index]?.repeat_group ?? null) != null;
+                const blockType =
+                  watchedBlocks?.[index]?.block_type ?? "warmup";
+                const durationType =
+                  watchedBlocks?.[index]?.duration_type ?? "fixed";
                 return (
                   <BlockRow
                     key={field.id}
                     index={index}
                     register={register}
+                    control={control}
                     errors={blockErrors}
                     grouped={grouped}
                     onToggleGroup={(checked) =>
                       handleToggleGroup(index, checked)
+                    }
+                    blockType={blockType}
+                    onBlockTypeChange={(newType) =>
+                      handleBlockTypeChange(index, newType)
+                    }
+                    durationType={durationType}
+                    onDurationTypeChange={(newDurationType) =>
+                      handleDurationTypeChange(index, newDurationType)
                     }
                     isFirst={index === 0}
                     isLast={index === fields.length - 1}

@@ -11,11 +11,21 @@ Reglas de emparejamiento (D5):
    el botón de vuelta); se cuentan en ``laps_discarded_under_10s``.
 2. Se conserva el orden del dispositivo por ``lap_index``.
 3. Emparejamiento posicional: ``plan[i] ↔ lap[i]`` (sobre las vueltas ya
-   filtradas).
+   filtradas) — un paso ``open_lap`` (feature 034) consume su vuelta
+   posicional exactamente igual que uno ``fixed``; nunca se salta ni se
+   desplaza el emparejamiento de los pasos siguientes.
 4. Estado por bloque:
-   - ``cumplido``          si ``|dur_lap − dur_plan| / dur_plan <= 0.30``.
-   - ``fuera_tolerancia``  si excede la tolerancia.
-   - ``sin_dato``          si el bloque planificado no tiene vuelta emparejada.
+   - ``cumplido``          si ``|dur_lap − dur_plan| / dur_plan <= 0.30``
+                           (solo pasos ``fixed`` — ``planned_duration_s``
+                           no es ``None``).
+   - ``fuera_tolerancia``  si excede la tolerancia (solo pasos ``fixed``).
+   - ``libre`` (feature 034, engine v2) — paso ``open_lap`` con vuelta
+                           emparejada: informativo, muestra la duración real
+                           de la vuelta, NUNCA entra a la matemática de
+                           tolerancia (``planned_duration_s`` es ``None`` —
+                           dividir por él sería un ``TypeError``/``ZeroDivisionError``).
+   - ``sin_dato``          si el bloque planificado (``fixed`` u ``open_lap``)
+                           no tiene vuelta emparejada.
    - ``extra``             vueltas sobrantes sin bloque — se reportan como filas
                            informativas, NUNCA se descartan en silencio ni se
                            fuerzan sobre un bloque.
@@ -42,8 +52,12 @@ from app.schemas.intervals import (
 # ---------------------------------------------------------------------------
 
 #: Versión del motor de matching. Se incrementa cuando cambian estas reglas
-#: (se persiste en ``interval_match_results.engine_version``).
-ENGINE_VERSION = 1
+#: (se persiste en ``interval_match_results.engine_version``). 1 -> 2
+#: (feature 034): nuevo vocabulario de estado ``libre`` para pasos
+#: ``open_lap``. Las comparaciones ya persistidas conservan su
+#: ``engine_version`` original y se sirven verbatim — nunca se recalculan
+#: retroactivamente (SC-003, contracts/api-delta.md).
+ENGINE_VERSION = 2
 
 #: Tolerancia de duración por bloque (±30 %). Vive en una sola constante (D5).
 DURATION_TOLERANCE_FRACTION = 0.30
@@ -71,7 +85,7 @@ class FlattenedBlockLike(Protocol):
     block_id: int | None
     block_type: str
     repeat_iteration: int | None
-    planned_duration_s: int
+    planned_duration_s: int | None
     target_zone: str
     target_cadence_rpm: int
 
@@ -91,10 +105,11 @@ class FlattenedBlock:
 
     Provista por conveniencia para el ``match_runner`` (que aplana la estructura
     y arma esta lista). ``block_id``/``repeat_iteration`` son opcionales.
+    ``planned_duration_s`` es ``None`` para un paso ``open_lap`` (feature 034).
     """
 
     block_type: str
-    planned_duration_s: int
+    planned_duration_s: int | None
     target_zone: str
     target_cadence_rpm: int
     block_id: int | None = None
@@ -118,8 +133,12 @@ class MatchLap:
 def _is_within_tolerance(lap_elapsed_s: int, planned_duration_s: int) -> bool:
     """``True`` si la duración de la vuelta cae dentro de la tolerancia del plan.
 
-    ``planned_duration_s`` siempre es > 0 (garantizado por el schema/servicio),
-    así que la división es segura.
+    ``planned_duration_s`` siempre es > 0 (garantizado por el schema/servicio)
+    **cuando esta función es llamada** — así que la división es segura. El
+    llamador (``compute_match``) es responsable de nunca invocarla para un
+    paso ``open_lap`` (``planned_duration_s is None``, feature 034); esa
+    guarda vive en ``compute_match``, no acá, para mantener esta función con
+    un único responsable (la matemática de tolerancia).
     """
     deviation = abs(lap_elapsed_s - planned_duration_s) / planned_duration_s
     return deviation <= DURATION_TOLERANCE_FRACTION
@@ -156,11 +175,16 @@ def compute_match(
     for flat_index, block in enumerate(flattened_blocks):
         if flat_index < len(kept):
             lap = kept[flat_index]
-            status: str = (
-                "cumplido"
-                if _is_within_tolerance(lap.elapsed_time_s, block.planned_duration_s)
-                else "fuera_tolerancia"
-            )
+            status: str
+            if block.planned_duration_s is None:
+                # Paso open_lap (feature 034) con vuelta emparejada:
+                # informativo, NUNCA entra a la matemática de tolerancia
+                # (dividir por None rompería _is_within_tolerance).
+                status = "libre"
+            elif _is_within_tolerance(lap.elapsed_time_s, block.planned_duration_s):
+                status = "cumplido"
+            else:
+                status = "fuera_tolerancia"
             result_blocks.append(
                 MatchResultBlock(
                     flat_index=flat_index,
@@ -224,5 +248,7 @@ def _increment_summary(summary: MatchSummary, status: str) -> None:
         summary.cumplido += 1
     elif status == "fuera_tolerancia":
         summary.fuera_tolerancia += 1
+    elif status == "libre":
+        summary.libre += 1
     elif status == "sin_dato":
         summary.sin_dato += 1

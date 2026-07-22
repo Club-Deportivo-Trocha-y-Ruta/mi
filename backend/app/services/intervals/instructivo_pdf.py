@@ -113,6 +113,10 @@ def _build_blocks_context(structure: IntervalStructure) -> list[dict[str, Any]]:
             {
                 "order": block.position,
                 "block_type": _as_str(block.block_type),
+                # Feature 034 — el template renderiza "Libre — hasta botón
+                # de vuelta" cuando duration_type == "open_lap" (duration_s
+                # es None en ese caso).
+                "duration_type": _as_str(block.duration_type),
                 "duration_s": block.duration_s,
                 "target_zone": _as_str(block.target_zone),
                 "target_cadence_rpm": block.target_cadence_rpm,

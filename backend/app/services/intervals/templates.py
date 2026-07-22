@@ -115,6 +115,7 @@ def _build_template_block_rows(
             template_id=template_id,
             position=block.position,
             block_type=block.block_type,
+            duration_type=block.duration_type,
             duration_s=block.duration_s,
             target_zone=block.target_zone,
             target_cadence_rpm=block.target_cadence_rpm,
@@ -134,7 +135,9 @@ def _clone_blocks_to_block_in(
     ORM adjunta) — pasarlos a ``structures.create_structure`` produce filas
     ``IntervalStructureBlock`` **independientes**: mutar la estructura
     resultante nunca toca la plantilla de origen, y viceversa (copy-on-attach,
-    FR-009, data-model.md §3/§4).
+    FR-009, data-model.md §3/§4). ``duration_type``/``duration_s`` se
+    preservan verbatim (feature 034) — un bloque ``open_lap`` de la
+    plantilla sigue siendo ``open_lap`` en la estructura clonada.
 
     Args:
         template_blocks: bloques ORM de la plantilla (``template.blocks``,
@@ -148,6 +151,7 @@ def _clone_blocks_to_block_in(
         BlockIn(
             position=block.position,
             block_type=block.block_type.value,
+            duration_type=block.duration_type.value,
             duration_s=block.duration_s,
             target_zone=block.target_zone.value,
             target_cadence_rpm=block.target_cadence_rpm,
