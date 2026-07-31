@@ -315,12 +315,9 @@ class MonthlyReportCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_period_not_future(self) -> "MonthlyReportCreate":
-        # TEMPORAL (revertir tras generar el informe de julio 2026 on-demand):
-        # relaja el corte de "mes>=actual" a "mes>actual" para permitir el
-        # mes en curso. Bloquea igual cualquier mes realmente futuro.
         today = date.today()
         if self.year > today.year or (
-            self.year == today.year and self.month > today.month
+            self.year == today.year and self.month >= today.month
         ):
             raise ValueError(
                 "Solo se puede generar el reporte de meses ya cerrados "

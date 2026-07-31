@@ -49,11 +49,8 @@ _PHOTO_SECTION_COMPETENCIA = "Competencia"
 
 
 def _validate_period(year: int, month: int) -> None:
-    # TEMPORAL (revertir tras generar el informe de julio 2026 on-demand):
-    # relaja el corte de "mes>=actual" a "mes>actual", en paridad con
-    # MonthlyReportCreate._validate_period_not_future.
     today = date.today()
-    if year > today.year or (year == today.year and month > today.month):
+    if year > today.year or (year == today.year and month >= today.month):
         raise ValueError(
             f"El período {year}-{month:02d} no está cerrado todavía. "
             "Solo se pueden generar reportes de meses anteriores."
