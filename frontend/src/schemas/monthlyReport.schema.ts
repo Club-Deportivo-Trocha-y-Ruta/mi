@@ -24,12 +24,10 @@ export const monthlyReportCreateSchema = z
   .refine(
     (data) => {
       if (data.year < currentYear) return true;
-      // mismo año: el mes debe ser menor al actual, o si es el actual, solo si ya pasó el día 28
-      if (data.month < currentMonth) return true;
-      if (data.month === currentMonth) {
-        return new Date().getDate() > 28;
-      }
-      return false;
+      // Mismo año: el mes debe ser estrictamente anterior al actual.
+      // Sin excepción de "últimos días del mes" — debe coincidir con la
+      // regla del backend (MonthlyReportCreate._validate_period_not_future).
+      return data.month < currentMonth;
     },
     {
       message:

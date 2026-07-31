@@ -31,6 +31,24 @@ const MONTH_NAMES = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) {
+    const detail = err.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) =>
+          item && typeof item === "object" && "msg" in item
+            ? String((item as { msg: unknown }).msg).replace(/^Value error,\s*/, "")
+            : null,
+        )
+        .filter((msg): msg is string => Boolean(msg));
+      if (messages.length > 0) return messages.join(" ");
+    }
+  }
+  return "Error al generar el reporte. Intenta de nuevo.";
+}
+
 function ReportStatusBadge({ status }: { status?: string }) {
   if (status === "approved") {
     return (
@@ -335,11 +353,7 @@ export function ReportsListPage() {
               "Ya existe un reporte para este período. Activa \"Forzar regeneración\" para sobreescribirlo.",
             );
           } else {
-            const msg =
-              isAxiosError(err) && err.response?.data?.detail
-                ? String(err.response.data.detail)
-                : "Error al generar el reporte. Intenta de nuevo.";
-            setGenerateError(msg);
+            setGenerateError(extractErrorMessage(err));
           }
         },
       },
