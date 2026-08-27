@@ -11,6 +11,31 @@ import { currentSeason } from "@/lib/datetime";
 
 export type NavRole = "coach" | "admin";
 
+/**
+ * Agrupación visual del sidebar (feature 035). NO agrega destinos ni cambia
+ * rutas: las mismas 6 `NAV_AREAS` se reparten en dos overlines —
+ * «Operación» (el día a día del entrenador) y «Club» (familias/biblioteca).
+ * `BottomNav`/`MoreSheet` ignoran el grupo por completo.
+ */
+export type NavGroupId = "operacion" | "club";
+
+export interface NavGroup {
+  id: NavGroupId;
+  /** es-CO, copy exacta del mockup (NavEntrenador.dc.html). */
+  label: string;
+}
+
+/** Grupos en orden de render. */
+export const NAV_GROUPS: NavGroup[] = [
+  { id: "operacion", label: "Operación" },
+  { id: "club", label: "Club" },
+];
+
+/** Un grupo junto a las áreas visibles que le corresponden. */
+export interface NavGroupWithAreas extends NavGroup {
+  areas: NavArea[];
+}
+
 export interface NavItem {
   /** Stable key, e.g. "training.calendar". */
   id: string;
@@ -28,6 +53,8 @@ export interface NavArea {
   /** es-CO. */
   label: string;
   icon: LucideIcon;
+  /** Overline bajo el que se agrupa el área en el sidebar (feature 035). */
+  group: NavGroupId;
   /** Area-level visibility (e.g. Atletas: coach-only). */
   roles: NavRole[];
   /** Path prefixes counted "inside" this area (active state / auto-expand). */
@@ -51,6 +78,7 @@ export const NAV_AREAS: NavArea[] = [
     id: "home",
     label: "Inicio",
     icon: Home,
+    group: "operacion",
     roles: ["coach", "admin"],
     matchPrefixes: ["/dashboard"],
     items: [
@@ -67,6 +95,7 @@ export const NAV_AREAS: NavArea[] = [
     id: "training",
     label: "Entrenamiento",
     icon: CalendarDays,
+    group: "operacion",
     roles: ["coach", "admin"],
     matchPrefixes: ["/calendar", "/training/sessions", "/activities"],
     items: [
@@ -95,6 +124,7 @@ export const NAV_AREAS: NavArea[] = [
     id: "competitions",
     label: "Competencias",
     icon: Trophy,
+    group: "operacion",
     roles: ["coach", "admin"],
     matchPrefixes: ["/competitions"],
     items: [
@@ -123,6 +153,7 @@ export const NAV_AREAS: NavArea[] = [
     id: "athletes",
     label: "Atletas",
     icon: Users,
+    group: "operacion",
     roles: ["coach"],
     matchPrefixes: ["/athletes", "/anxiety"],
     items: [
@@ -145,6 +176,7 @@ export const NAV_AREAS: NavArea[] = [
     id: "families",
     label: "Familias",
     icon: UsersRound,
+    group: "club",
     roles: ["coach", "admin"],
     matchPrefixes: [
       "/parents",
@@ -176,6 +208,7 @@ export const NAV_AREAS: NavArea[] = [
     id: "library",
     label: "Biblioteca",
     icon: BookOpen,
+    group: "club",
     roles: ["coach", "admin"],
     matchPrefixes: ["/technique", "/strength"],
     items: [
@@ -250,6 +283,21 @@ export function resolveActiveItemId(
 /** Areas visible to `role`, in `NAV_AREAS` order. */
 export function getVisibleAreas(role: NavRole): NavArea[] {
   return NAV_AREAS.filter((area) => isVisible(area.roles, role));
+}
+
+/**
+ * Las mismas áreas de `getVisibleAreas(role)` repartidas en los overlines del
+ * sidebar (feature 035), en orden de `NAV_GROUPS` y, dentro de cada grupo, en
+ * orden de `NAV_AREAS`. Un grupo sin áreas visibles para el rol se omite (hoy
+ * no ocurre: admin pierde Atletas pero conserva el resto de «Operación»).
+ * Puramente presentacional — no crea, oculta ni reordena destinos.
+ */
+export function getGroupedAreas(role: NavRole): NavGroupWithAreas[] {
+  const visible = getVisibleAreas(role);
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    areas: visible.filter((area) => area.group === group.id),
+  })).filter((group) => group.areas.length > 0);
 }
 
 /** Exactly 4 areas assigned a primary bottom-bar slot for `role`, ordered. */

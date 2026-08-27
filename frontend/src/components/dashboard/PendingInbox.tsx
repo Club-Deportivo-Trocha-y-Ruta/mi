@@ -35,7 +35,7 @@
  * como "resolvió" para este cálculo — se siguen omitiendo, tal como en el
  * listado normal. Las pruebas (T038+) llegan en tareas posteriores.
  */
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import { Link } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -103,6 +103,7 @@ function useCurrentYearMonth(): { year: number; month: number } {
 }
 
 export function PendingInbox() {
+  const headingId = useId();
   // T050 — rol actual, para gatear la fila "consents-pending" (única fila
   // de esta sección que apunta a `/athletes`, coach-only).
   const role = useAuthStore((state) => state.user?.role);
@@ -222,27 +223,34 @@ export function PendingInbox() {
     resolvedRows.length > 0 &&
     resolvedRows.every((row) => row.state.count === 0);
 
+  // Feature 035: la sección vive como tarjeta de la columna derecha del
+  // Inicio (mockup `Main.dc.html`, fila B) — el título entra DENTRO de la
+  // tarjeta y el padding se ajusta; las filas, sus fuentes y el estado
+  // "todo al día" quedan intactos.
   return (
-    <section className="mt-6 space-y-3">
-      <h2 className="font-display text-lg text-charcoal">Pendientes de esta semana</h2>
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col gap-1 rounded-xl bg-white px-2 py-3 shadow-card"
+    >
+      <h2 id={headingId} className="px-3 pb-1 text-[15px] font-semibold text-charcoal">
+        Pendientes
+      </h2>
       {isAllClear ? (
         <EmptyState icon={CheckCircle2} title="Todo al día — sin pendientes esta semana" />
       ) : (
-        <div className="rounded-xl bg-white shadow-card">
-          <ul>
-            {visibleRows.map((row, idx) => (
-              <li
-                key={row.id}
-                style={idx > 0 ? { borderTop: "1px solid rgba(34, 42, 53, 0.06)" } : undefined}
-              >
-                <PendingRow
-                  spec={row}
-                  restricted={row.id === "consents-pending" && !canOpenAthletesList}
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
+        <ul>
+          {visibleRows.map((row, idx) => (
+            <li
+              key={row.id}
+              style={idx > 0 ? { borderTop: "1px solid rgba(34, 42, 53, 0.06)" } : undefined}
+            >
+              <PendingRow
+                spec={row}
+                restricted={row.id === "consents-pending" && !canOpenAthletesList}
+              />
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );
@@ -264,7 +272,7 @@ function PendingRow({
 
   if (state === undefined) {
     return (
-      <div className="flex min-h-12 items-center gap-3 px-4 py-3" aria-hidden="true">
+      <div className="flex min-h-12 items-center gap-2.5 px-3 py-2" aria-hidden="true">
         <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
         <Skeleton className="h-4 w-6 shrink-0" />
         <Skeleton className="h-4 flex-1" />
@@ -274,21 +282,23 @@ function PendingRow({
 
   const content = (
     <>
-      <Icon size={18} className="shrink-0 text-mid-gray" aria-hidden="true" />
+      <Icon size={17} className="shrink-0 text-mid-gray" aria-hidden="true" />
       <span className="shrink-0 text-sm font-semibold text-charcoal">{state.count}</span>
       <span className="min-w-0 flex-1 truncate text-sm text-charcoal">{label}</span>
-      <ChevronRight size={18} className="shrink-0 text-mid-gray" aria-hidden="true" />
+      <ChevronRight size={16} className="shrink-0 text-mid-gray" aria-hidden="true" />
     </>
   );
 
+  // ≥44px de alto real en ambas variantes (min-h-12 = 48px) — el mockup
+  // dibuja filas de 40px, pero el mínimo táctil de la Constitution manda.
   if (restricted) {
-    return <div className="flex min-h-12 items-center gap-3 px-4 py-3">{content}</div>;
+    return <div className="flex min-h-12 items-center gap-2.5 px-3 py-2">{content}</div>;
   }
 
   return (
     <Link
       to={state.href}
-      className="flex min-h-12 items-center gap-3 px-4 py-3 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
+      className="flex min-h-12 items-center gap-2.5 rounded-[10px] px-3 py-2 transition-colors hover:bg-light-gray focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
     >
       {content}
     </Link>

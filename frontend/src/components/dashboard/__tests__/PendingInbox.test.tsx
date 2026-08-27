@@ -580,3 +580,34 @@ describe("PendingInbox", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Feature 035 — la sección pasa a ser una tarjeta de la columna derecha del
+// Inicio: el título entra DENTRO de la tarjeta y las filas conservan su
+// objetivo táctil de ≥44px.
+// ---------------------------------------------------------------------------
+
+describe("PendingInbox — contenedor de tarjeta (feature 035)", () => {
+  it('titula "Pendientes" dentro de la tarjeta (rounded-xl + shadow-card)', () => {
+    setAllResolved();
+
+    renderInbox();
+
+    const heading = screen.getByRole("heading", { name: "Pendientes" });
+    expect(heading).toBeInTheDocument();
+    // El título ya no vive fuera del contenedor: la sección ES la tarjeta.
+    const card = heading.closest("section");
+    expect(card?.className).toMatch(/rounded-xl/);
+    expect(card?.className).toMatch(/shadow-card/);
+    expect(card).toHaveAttribute("aria-labelledby", heading.id);
+  });
+
+  it("cada fila navegable mantiene ≥44px de alto (min-h-12)", () => {
+    setAllResolved();
+
+    renderInbox();
+
+    const link = screen.getByText(LABELS.results).closest("a");
+    expect(link?.className).toMatch(/min-h-12/);
+  });
+});

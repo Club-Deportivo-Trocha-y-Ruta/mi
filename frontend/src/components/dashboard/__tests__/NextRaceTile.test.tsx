@@ -185,6 +185,83 @@ describe("NextRaceTile", () => {
     );
   });
 
+  // -------------------------------------------------------------------------
+  // Feature 035 — insignia "Clase A/B/C" + línea de guía de tapering
+  // -------------------------------------------------------------------------
+
+  describe("insignia de clase y guía de tapering", () => {
+    it("tier con ventana de tapering: chip 'Clase A' + rango real de TAPER_GUIDANCE", () => {
+      const eventDate = isoNoon(2026, 5, 20); // mayo → tier A
+      vi.useFakeTimers();
+      vi.setSystemTime(subDays(eventDate, 20));
+
+      mockUseRaceEventsList.mockReturnValue(
+        makeQueryResult({
+          data: {
+            items: [
+              makeRaceEvent({
+                id: 77,
+                name: "Copa Valle — Cali",
+                event_date: eventDate,
+                location: "Cali",
+              }),
+            ],
+            total: 1,
+          },
+        }),
+      );
+
+      renderTile();
+
+      // El chip lleva texto ("Clase A"), no sólo el punto de color.
+      expect(screen.getByText("Clase A")).toBeInTheDocument();
+      expect(screen.getByText("A — Tapering completo · 5–7 días")).toBeInTheDocument();
+      // La guía de tapering ya no viaja comprimida dentro del hint.
+      expect(screen.getByText("en 20 días · Cali")).toBeInTheDocument();
+    });
+
+    it("tier C (diagnóstica): chip 'Clase C' y copy de 'sin ventana de tapering'", () => {
+      const eventDate = isoNoon(2026, 1, 20); // enero → tier C
+      vi.useFakeTimers();
+      vi.setSystemTime(subDays(eventDate, 5));
+
+      mockUseRaceEventsList.mockReturnValue(
+        makeQueryResult({
+          data: {
+            items: [makeRaceEvent({ id: 78, event_date: eventDate })],
+            total: 1,
+          },
+        }),
+      );
+
+      renderTile();
+
+      expect(screen.getByText("Clase C")).toBeInTheDocument();
+      expect(screen.getByText("C — Diagnóstica · sin ventana de tapering")).toBeInTheDocument();
+    });
+
+    it("carrera fuera del calendario Copa Valle: sin chip ni línea de tapering", () => {
+      const eventDate = isoNoon(2026, 7, 20); // julio → sin tier en el calendario
+      vi.useFakeTimers();
+      vi.setSystemTime(subDays(eventDate, 5));
+
+      mockUseRaceEventsList.mockReturnValue(
+        makeQueryResult({
+          data: {
+            items: [makeRaceEvent({ id: 79, event_date: eventDate, location: "Ginebra" })],
+            total: 1,
+          },
+        }),
+      );
+
+      renderTile();
+
+      expect(screen.queryByText(/^Clase /)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Tapering/)).not.toBeInTheDocument();
+      expect(screen.getByText("en 5 días · Ginebra")).toBeInTheDocument();
+    });
+  });
+
   it('muestra "Temporada finalizada — sin próximas carreras" cuando no hay eventos futuros en la temporada', () => {
     mockUseRaceEventsList.mockReturnValue(
       makeQueryResult({ data: { items: [], total: 0 } }),

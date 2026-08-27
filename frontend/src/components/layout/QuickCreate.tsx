@@ -1,19 +1,28 @@
 /**
  * QuickCreate — header "Crear" dropdown (feature 030, US4 / FR-006).
  *
- * Trigger is a `Plus` icon button (`aria-label="Crear"`) that opens a
- * role-filtered list of "start a new X" shortcuts. Rendered once in
+ * Trigger is la única acción que queda en el header de entrenador/admin
+ * (feature 035, `Main.dc.html`): un botón primario *etiquetado* — Plus +
+ * «Crear» + chevron — en vez del botón de sólo ícono de la 030. La tarjeta
+ * de usuario se mudó al pie de la barra lateral, así que este botón ya no
+ * compite con nada por atención en el header y puede llevar su etiqueta.
+ * Abre la misma lista de atajos "crear X" filtrada por rol. Rendered once in
  * `AppShell`'s header action cluster for `role === "coach" | "admin"` — see
  * `contracts/header-actions.md`. None of the targets take a `?prefill`
  * param: quick-create has no contextual data to seed the create form with
  * (unlike the calendar day-click `?date=` prefill from 028-R11).
  *
  * Built on the existing `ui/dropdown-menu.tsx` primitive (Radix), same
- * pattern as `AthleteSwitcher`.
+ * pattern as `AthleteSwitcher`; el trigger reusa `buttonVariants()` de
+ * `ui/button.tsx` (variante primaria = los mismos valores del mockup:
+ * `bg-primary`/`hover:bg-primary-dark`, `px-4`, `rounded-lg`) con dos
+ * correcciones sobre el default de la variante — altura y tinta del texto,
+ * documentadas en el propio `className`.
  */
 import { Link } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 
+import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,14 +81,29 @@ export function QuickCreate({ role }: QuickCreateProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        // `aria-label` idéntico al texto visible: sigue siendo el nombre
+        // accesible estable que usan las pruebas/e2e desde la 030 y no
+        // contradice la etiqueta visible (WCAG 2.5.3 Label in Name).
         aria-label="Crear"
         className={cn(
-          "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-charcoal transition-colors hover:bg-light-gray",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+          buttonVariants(),
+          // Dos correcciones al default de `buttonVariants()`:
+          //  - `min-h-12` (48px): el tamaño `default` sólo garantiza 44px y
+          //    el piso táctil del proyecto es 48 (mismo criterio que
+          //    `UserMenu` y que los items del propio menú de abajo).
+          //  - `text-midnight`: blanco sobre `--color-primary` (#20b7c9) da
+          //    2.42:1 y no pasa AA para 14px. #111111 da 7.8:1 (5.3:1 sobre
+          //    el hover `--color-primary-dark`). Se usa `midnight` y no
+          //    `charcoal` porque `--color-primary` es idéntico en claro y
+          //    oscuro mientras `--color-charcoal` se invierte a casi blanco
+          //    en oscuro — volvería a fallar allí.
+          "min-h-12 shrink-0 font-semibold text-midnight",
         )}
         data-testid="quick-create-trigger"
       >
-        <Plus className="h-5 w-5" aria-hidden="true" />
+        <Plus size={16} aria-hidden="true" />
+        Crear
+        <ChevronDown size={14} aria-hidden="true" />
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="min-w-[12rem]">

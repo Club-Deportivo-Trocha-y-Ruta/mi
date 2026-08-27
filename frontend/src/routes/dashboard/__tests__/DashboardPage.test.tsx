@@ -48,12 +48,24 @@ vi.mock("@/hooks/training/useNewsletterStatusSummary", () => ({
 // `role` es mutable (vi.hoisted) para que la prueba admin-variant (T049,
 // abajo) pueda alternarlo sin remockear el módulo completo — mismo patrón
 // que `AthleteLink.test.tsx`. Se resetea a "coach" en cada `beforeEach`.
-const authState = vi.hoisted(() => ({ role: "coach" as string }));
+// `firstName` (feature 035) alimenta el saludo "Hola, {nombre}" y también es
+// mutable para poder ejercitar el fallback sin nombre.
+const authState = vi.hoisted(() => ({
+  role: "coach" as string,
+  firstName: "Juan David" as string | undefined,
+}));
 
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: (
-    selector: (state: { accessToken: string; user: { role: string } }) => unknown,
-  ) => selector({ accessToken: "fake-token", user: { role: authState.role } }),
+    selector: (state: {
+      accessToken: string;
+      user: { role: string; first_name: string | undefined };
+    }) => unknown,
+  ) =>
+    selector({
+      accessToken: "fake-token",
+      user: { role: authState.role, first_name: authState.firstName },
+    }),
 }));
 
 import { getAlerts } from "@/api/alerts";
@@ -201,6 +213,7 @@ function renderPage() {
 describe("DashboardPage", () => {
   beforeEach(() => {
     authState.role = "coach";
+    authState.firstName = "Juan David";
     vi.mocked(getAlerts).mockReset();
     mockUseTrainingSessions.mockReset();
     mockUseRaceEventsList.mockReset();
@@ -220,6 +233,136 @@ describe("DashboardPage", () => {
     // this describe keeps that test's state from ever leaking sideways.
     useServerWakingStore.getState().resetForTests();
   });
+
+  // -------------------------------------------------------------------------
+  // Feature 035 — bloque de saludo (reemplaza el PageHeader "Dashboard")
+  // -------------------------------------------------------------------------
+
+  it(
+    "saluda por el nombre del usuario y arma el subtítulo con la semana ISO, las " +
+      "sesiones planificadas de esa semana y la próxima carrera",
+    () => {
+      // 2026-08-27T20:00:00Z == jueves 27 ago, 15:00 America/Bogotá — semana ISO 35.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-08-27T20:00:00Z"));
+
+      vi.mocked(getAlerts).mockReturnValue(new Promise(() => {})); // nunca resuelve
+
+      mockUseTrainingSessions.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: [
+          // Dentro de la semana ISO en curso (lun 24 → dom 30).
+          makeSession({ id: 1, scheduled_date: "2026-08-28" }),
+          // Fuera de la semana: no debe contarse en el subtítulo.
+          makeSession({ id: 2, scheduled_date: "2026-09-03" }),
+        ],
+        error: null,
+        refetch: vi.fn(),
+      } as unknown as TrainingSessionsQueryResult);
+
+      mockUseRaceEventsList.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: {
+          items: [
+            makeRaceEvent({
+              id: 90,
+              name: "Copa Valle — Roldanillo",
+              event_date: "2026-09-12T12:00:00.000Z",
+              location: "Roldanillo",
+            }),
+          ],
+          total: 1,
+        },
+        error: null,
+        refetch: vi.fn(),
+      } as unknown as RaceEventsQueryResult);
+
+      renderPage();
+
+      const heading = screen.getByRole("heading", { level: 1, name: "Hola, Juan David" });
+      expect(heading).toBeInTheDocument();
+      // `data-testid` estable: es la puerta que usan los e2e para saber que
+      // el Inicio cargó, ya desacoplada de la copy del saludo.
+      expect(heading).toHaveAttribute("data-testid", "dashboard-heading");
+      expect(
+        screen.getByText("Semana 35 · 1 sesión planificada · Roldanillo en 16 días"),
+      ).toBeInTheDocument();
+      // El PageHeader genérico "Dashboard" desapareció con el rediseño.
+      expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
+    },
+  );
+
+  it('cae a "Hola" a secas cuando la sesión no trae nombre, y omite del subtítulo las fuentes que aún cargan', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-27T20:00:00Z"));
+    authState.firstName = undefined;
+
+    vi.mocked(getAlerts).mockReturnValue(new Promise(() => {}));
+
+    mockUseTrainingSessions.mockReturnValue({
+      isLoading: true,
+      isError: false,
+      data: undefined,
+      error: null,
+      refetch: vi.fn(),
+    } as unknown as TrainingSessionsQueryResult);
+
+    mockUseRaceEventsList.mockReturnValue({
+      isLoading: true,
+      isError: false,
+      data: undefined,
+      error: null,
+      refetch: vi.fn(),
+    } as unknown as RaceEventsQueryResult);
+
+    renderPage();
+
+    expect(screen.getByRole("heading", { level: 1, name: "Hola" })).toBeInTheDocument();
+    // Sólo la parte que no depende de la red: ni "sesiones planificadas" ni
+    // carrera mientras sus fuentes no resuelvan (nunca un cero falso).
+    expect(screen.getByText("Semana 35")).toBeInTheDocument();
+  });
+
+  it(
+    "arma las tres filas del rediseño: hero strip, semana en curso + pendientes, " +
+      "y alertas de medición + asistencia (mockup Main.dc.html)",
+    async () => {
+      vi.mocked(getAlerts).mockResolvedValue({
+        overdue: 1,
+        due_soon: 0,
+        ok: 0,
+        never_measured: 0,
+        rapid_growth_count: 0,
+        athletes: [
+          buildAlert({
+            athlete_id: 1,
+            measurement_status: "overdue",
+            last_measurement_date: "2026-04-01",
+            days_overdue: 30,
+          }),
+        ],
+      });
+
+      renderPage();
+
+      const weekStrip = (await screen.findByText("Semana en curso")).closest("section");
+      const inbox = screen.getByText("Pendientes").closest("section");
+      const alerts = screen.getByText("Alertas de medición").closest("section");
+      const attendance = screen.getByText("Asistencia").closest("section");
+
+      // Fila B y fila C: cada par comparte su propia grilla 2fr/1fr, que
+      // colapsa a una sola columna en móvil (`grid-cols-1`).
+      expect(weekStrip?.parentElement).toBe(inbox?.parentElement);
+      expect(alerts?.parentElement).toBe(attendance?.parentElement);
+      expect(weekStrip?.parentElement).not.toBe(alerts?.parentElement);
+      for (const row of [weekStrip?.parentElement, alerts?.parentElement]) {
+        expect(row?.className).toMatch(/grid-cols-1/);
+        expect(row?.className).toMatch(/md:grid-cols-\[2fr_1fr\]/);
+      }
+    },
+  );
 
   it("renders total, last evaluation and PHV vigentes from alerts data", async () => {
     const summary: AlertsSummary = {
@@ -708,7 +851,7 @@ describe("DashboardPage", () => {
         // skeleton — `PendingRow` only renders its label once
         // `state !== undefined`, so none of the 5 labels (nor the
         // all-clear copy, which requires every row to have resolved) show.
-        expect(screen.getByText("Pendientes de esta semana")).toBeInTheDocument();
+        expect(screen.getByText("Pendientes")).toBeInTheDocument();
         expect(screen.queryByText("Resultados por importar")).not.toBeInTheDocument();
         expect(screen.queryByText("Actividades sin enlazar")).not.toBeInTheDocument();
         expect(screen.queryByText("Boletines pendientes del mes")).not.toBeInTheDocument();
@@ -964,6 +1107,16 @@ function renderAdminRouteCheck(href: string) {
           element={
             <AdminRouteGuard allowed>
               <div data-testid="target">Competencias</div>
+            </AdminRouteGuard>
+          }
+        />
+        {/* App.tsx: allowedRoles=[coach, admin] — destino de "Abrir
+            calendario" en `WeekStrip` (feature 035). */}
+        <Route
+          path="/calendar"
+          element={
+            <AdminRouteGuard allowed>
+              <div data-testid="target">Calendario</div>
             </AdminRouteGuard>
           }
         />

@@ -157,6 +157,11 @@ describe("MeasurementAlerts", () => {
 
     const link = screen.getByRole("link", { name: "Ver todas (40)" });
     expect(link).toHaveAttribute("href", "/athletes");
+    // Única vía a las alertas más allá del tope de 8: objetivo táctil real
+    // (≥44px) y tinta legible — el turquesa de marca da 2.42:1 sobre blanco.
+    expect(link.className).toMatch(/min-h-11/);
+    expect(link.className).toMatch(/text-charcoal/);
+    expect(link.className).toMatch(/underline/);
   });
 
   it('no muestra el link "Ver todas" cuando hay 8 o menos accionables', () => {
@@ -304,5 +309,135 @@ describe("MeasurementAlerts — enlace al detalle del atleta según rol (Athlete
 
     const link = screen.getByRole("link", { name: "Crecimiento Ficticio" });
     expect(link).toHaveAttribute("href", "/athletes/11");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Feature 035 — encabezado de tarjeta, avatar con inicial e insignia de
+// estado por fila (mockup `Main.dc.html`, fila C). Ninguna de estas pruebas
+// toca la query ni el orden: sólo la presentación.
+// ---------------------------------------------------------------------------
+
+describe("MeasurementAlerts — tarjeta rediseñada (feature 035)", () => {
+  it('titula "Alertas de medición" y enlaza a la lista de atletas desde el encabezado (coach)', () => {
+    authState.role = "coach";
+    mockUseAlerts.mockReturnValue({
+      data: makeSummary([makeAlert({ athlete_id: 1, athlete_name: "Samuel Ficticio" })]),
+      isPending: false,
+      isError: false,
+    } as ReturnType<typeof useAlerts>);
+
+    renderComponent();
+
+    const heading = screen.getByRole("heading", { name: "Alertas de medición" });
+    const card = heading.closest("section");
+    expect(card?.className).toMatch(/rounded-xl/);
+    expect(card?.className).toMatch(/shadow-card/);
+
+    const link = screen.getByRole("link", { name: "Ver todos los atletas" });
+    expect(link).toHaveAttribute("href", "/athletes");
+    // Objetivo táctil ≥44px (Constitution III).
+    expect(link.className).toMatch(/min-h-11/);
+    // Tinta legible: el turquesa de marca sobre blanco da 2.42:1 (falla AA).
+    expect(link.className).toMatch(/text-charcoal/);
+    expect(link.className).toMatch(/underline/);
+  });
+
+  it("admin: el enlace del encabezado no se renderiza (la lista es coach-only)", () => {
+    authState.role = "admin";
+    mockUseAlerts.mockReturnValue({
+      data: makeSummary([makeAlert({ athlete_id: 1, athlete_name: "Samuel Ficticio" })]),
+      isPending: false,
+      isError: false,
+    } as ReturnType<typeof useAlerts>);
+
+    renderComponent();
+
+    expect(screen.getByRole("heading", { name: "Alertas de medición" })).toBeInTheDocument();
+    expect(screen.queryByText("Ver todos los atletas")).not.toBeInTheDocument();
+  });
+
+  it("cada fila lleva inicial, línea de detalle (PHV + días) e insignia de estado con texto", () => {
+    authState.role = "coach";
+    mockUseAlerts.mockReturnValue({
+      data: makeSummary([
+        makeAlert({
+          athlete_id: 5,
+          athlete_name: "Samuel Ficticio",
+          measurement_status: "overdue",
+          days_overdue: 30,
+          current_phv_status: "Circa-PHV",
+        }),
+        makeAlert({
+          athlete_id: 6,
+          athlete_name: "Valeria Ficticia",
+          measurement_status: "due_soon",
+          days_overdue: -4,
+          current_phv_status: "Pre-PHV",
+        }),
+      ]),
+      isPending: false,
+      isError: false,
+    } as ReturnType<typeof useAlerts>);
+
+    renderComponent();
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+
+    // Inicial del nombre en el círculo (aria-hidden: el nombre completo ya
+    // está en el enlace de la misma fila).
+    expect(rows[0].querySelector('[aria-hidden="true"]')?.textContent).toBe("S");
+    expect(rows[1].querySelector('[aria-hidden="true"]')?.textContent).toBe("V");
+
+    expect(screen.getByText("Circa-PHV · 30d de atraso")).toBeInTheDocument();
+    expect(screen.getByText("Pre-PHV · Vence en 4d")).toBeInTheDocument();
+
+    // El estado nunca se comunica sólo por color: la insignia trae texto.
+    expect(screen.getByText("Vencida")).toBeInTheDocument();
+    expect(screen.getByText("Próxima")).toBeInTheDocument();
+  });
+
+  it("la fila entera es el objetivo táctil, no sólo el ancho del nombre", () => {
+    authState.role = "coach";
+    mockUseAlerts.mockReturnValue({
+      data: makeSummary([makeAlert({ athlete_id: 5, athlete_name: "Samuel Ficticio" })]),
+      isPending: false,
+      isError: false,
+    } as ReturnType<typeof useAlerts>);
+
+    renderComponent();
+
+    const row = screen.getAllByRole("listitem")[0];
+    const link = screen.getByRole("link", { name: "Samuel Ficticio" });
+
+    // El ::after del enlace se estira sobre el <li> (su `relative`), así que
+    // tocar el avatar, el detalle o la insignia también navega.
+    expect(row.className).toMatch(/relative/);
+    expect(link.className).toMatch(/after:absolute/);
+    expect(link.className).toMatch(/after:inset-0/);
+    // El `truncate` vive en el span interior: en el propio enlace su
+    // overflow:hidden recortaría el ::after y anularía el área táctil.
+    expect(link.className).not.toMatch(/truncate/);
+    expect(link.querySelector("span")?.className).toMatch(/truncate/);
+  });
+
+  it("la barra de resumen usa el vocabulario de estado compartido, con texto además de color", () => {
+    authState.role = "coach";
+    mockUseAlerts.mockReturnValue({
+      data: makeSummary([
+        makeAlert({ athlete_id: 1, measurement_status: "overdue", days_overdue: 5 }),
+        makeAlert({ athlete_id: 2, measurement_status: "ok", days_overdue: null }),
+        makeAlert({ athlete_id: 3, measurement_status: "never", days_overdue: null }),
+      ]),
+      isPending: false,
+      isError: false,
+    } as ReturnType<typeof useAlerts>);
+
+    renderComponent();
+
+    expect(screen.getByText("1 vencidas")).toBeInTheDocument();
+    expect(screen.getByText("1 al día")).toBeInTheDocument();
+    expect(screen.getByText("1 sin medir")).toBeInTheDocument();
   });
 });

@@ -25,8 +25,11 @@
  *    Content/Overlay while open (and remove once closed) — reused here
  *    instead of inventing new global "is a dialog open" state.
  *
- * Not wired into any shell component yet — that integration (UserMenu /
- * AppShell) happens in a later task.
+ * Mount point: `AppShell` (feature 035). Se llama exactamente una vez por
+ * shell autenticado — con `enabled: false` para el rol parent, que no tiene
+ * `NavArea`s a las que saltar. Antes vivía dentro de `UserMenu`, que ahora se
+ * monta dos veces en el shell de entrenador (pie de la barra lateral + header
+ * bajo `md`) y registraría los mismos atajos por duplicado.
  */
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";

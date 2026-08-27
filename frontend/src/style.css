@@ -82,6 +82,16 @@
   --color-tier-b: #1cb5c7;
   --color-tier-a: #008492;
 
+  /* Navegación lateral (feature 035) — tinte y acento del estado activo.
+     El tinte se calcula sobre la superficie del modo (blanco en claro,
+     #1a1a1a en oscuro) para conservar el mismo "peso" percibido en ambos.
+     El color NUNCA es el único canal del estado activo: la fila activa
+     suma barra de 3px + ícono en --color-nav-accent + label semibold.
+     Duplicación defensiva con el bloque @theme de abajo, igual que
+     --color-tier-a. */
+  --color-nav-active-bg: color-mix(in oklch, var(--color-primary) 10%, #ffffff);
+  --color-nav-accent: #008492;
+
   /* Shadows — multi-layer system (no CSS borders for cards) */
   --shadow-flat: none;
   --shadow-inset: rgba(0, 0, 0, 0.16) 0px 1px 1.9px 0px inset;
@@ -160,6 +170,12 @@
   --color-tier-b: #1cb5c7;
   --color-tier-a: #008492;
 
+  /* Navegación lateral (feature 035) — ver el bloque :root de arriba para
+     el racional completo; se mantiene en sync aquí para que las utilidades
+     de Tailwind (bg-nav-active-bg, text-nav-accent) existan. */
+  --color-nav-active-bg: color-mix(in oklch, var(--color-primary) 10%, #ffffff);
+  --color-nav-accent: #008492;
+
   /* Shadows */
   --shadow-flat: none;
   --shadow-inset: rgba(0, 0, 0, 0.16) 0px 1px 1.9px 0px inset;
@@ -224,6 +240,9 @@
     --color-tier-b: #2fbfd1;
     --color-tier-a: #0d97a7;
 
+    --color-nav-active-bg: color-mix(in oklch, var(--color-primary) 16%, #1a1a1a);
+    --color-nav-accent: #2fbfd1;
+
     --shadow-card: rgba(255, 255, 255, 0.08) 0px 0px 0px 1px;
     --shadow-card-alt: rgba(255, 255, 255, 0.08) 0px 0px 0px 1px;
   }
@@ -247,6 +266,9 @@
   --color-tier-b: #2fbfd1;
   --color-tier-a: #0d97a7;
 
+  --color-nav-active-bg: color-mix(in oklch, var(--color-primary) 16%, #1a1a1a);
+  --color-nav-accent: #2fbfd1;
+
   --shadow-card: rgba(255, 255, 255, 0.08) 0px 0px 0px 1px;
   --shadow-card-alt: rgba(255, 255, 255, 0.08) 0px 0px 0px 1px;
 }
@@ -268,6 +290,9 @@
   --color-tier-c: #5bc6d5;
   --color-tier-b: #1cb5c7;
   --color-tier-a: #008492;
+
+  --color-nav-active-bg: color-mix(in oklch, var(--color-primary) 10%, #ffffff);
+  --color-nav-accent: #008492;
 
   --shadow-card:
     rgba(19, 19, 22, 0.7) 0px 1px 5px -4px,

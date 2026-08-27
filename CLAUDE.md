@@ -149,6 +149,7 @@ Migrations run automatically via `entrypoint.sh` (`alembic upgrade head`) on sta
 | Strava Activity Sync (OAuth, webhook, consent-gated) | specs/025 | `a4b5c6d7e8f9` (+webhook + env vars) |
 | Structured Interval Training with Strava Correlation | specs/026 | `b5c6d7e8f9a0` |
 | Interval Duration Usability (mm:ss, `open_lap`, engine v2) | specs/034 | `c7d8e9f0a1b2` |
+| Nav & Coach Dashboard Redesign (grouped sidebar + rail, parent bottom nav, home) | specs/035 | — (frontend-only) |
 
 ## Development credentials (seed data)
 

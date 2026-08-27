@@ -5,6 +5,10 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { axe, toHaveNoViolations } from "jest-axe";
 import { AppShell } from "../AppShell";
+import {
+  SIDEBAR_COLLAPSED_STORAGE_KEY,
+  SIDEBAR_RAIL_DEFAULT_QUERY,
+} from "@/hooks/layout/useSidebarCollapsed";
 import { UserRole } from "@/types/enums";
 
 expect.extend(toHaveNoViolations);
@@ -14,6 +18,18 @@ expect.extend(toHaveNoViolations);
 vi.mock("@/hooks/parents/useMyAthletes", () => ({
   useMyAthletes: vi.fn(() => ({
     data: [],
+    isLoading: false,
+    isError: false,
+  })),
+}));
+
+// Feature 035: la barra del portal de familias (<ParentSidebar>) consulta el
+// estado de consentimiento para su chip de pie. Sin datos no renderiza chip,
+// que es justo lo que estas pruebas del shell necesitan (el chip tiene su
+// propia cobertura en components/parents/__tests__/ParentSidebar.test.tsx).
+vi.mock("@/hooks/consent", () => ({
+  useMyConsentStatus: vi.fn(() => ({
+    data: undefined,
     isLoading: false,
     isError: false,
   })),
@@ -75,6 +91,11 @@ function getSidebar() {
   return screen.getByRole("complementary", { name: "Menú de navegación" });
 }
 
+/** El `<header>` del shell (landmark `banner`). */
+function getHeader() {
+  return screen.getByRole("banner");
+}
+
 function renderShell(role: UserRole | "admin", initialPath = "/dashboard") {
   mockStoreWithRole(role as UserRole);
   const qc = new QueryClient({
@@ -98,6 +119,11 @@ function renderShell(role: UserRole | "admin", initialPath = "/dashboard") {
 describe("AppShell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Feature 035: `useSidebarCollapsed` persiste la elección riel/expandida
+    // en localStorage (`tyr:nav-collapsed:v1`), igual que el tema
+    // (`tyr:theme-preference:v1`) — sin este reset una prueba que colapsa la
+    // barra dejaría colapsadas a las siguientes.
+    window.localStorage.clear();
   });
 
   // -------------------------------------------------------------------------
@@ -229,7 +255,7 @@ describe("AppShell", () => {
       // La etiqueta del área queda visualmente indicada como activa.
       // (scoped to the sidebar — "Atletas" is also a <BottomNav> slot, T029)
       const areaLabel = within(getSidebar()).getByRole("link", { name: "Atletas" });
-      expect(areaLabel.className).toMatch(/bg-charcoal/);
+      expect(areaLabel.className).toMatch(/bg-nav-active-bg/);
 
       // Sus items quedan visibles y el item correspondiente a la ruta
       // actual está marcado como página actual.
@@ -240,7 +266,7 @@ describe("AppShell", () => {
         name: "Ansiedad competitiva",
       });
       expect(currentItem).toHaveAttribute("aria-current", "page");
-      expect(currentItem.className).toMatch(/bg-charcoal/);
+      expect(currentItem.className).toMatch(/bg-nav-active-bg/);
     });
 
     // Regression: "competitions" is the one area whose items nest path-wise
@@ -258,9 +284,9 @@ describe("AppShell", () => {
       const validasItem = within(sidebar).getByRole("link", { name: "Válidas" });
 
       expect(seasonItem).toHaveAttribute("aria-current", "page");
-      expect(seasonItem.className).toMatch(/bg-charcoal/);
+      expect(seasonItem.className).toMatch(/bg-nav-active-bg/);
       expect(validasItem).not.toHaveAttribute("aria-current", "page");
-      expect(validasItem.className).not.toMatch(/bg-charcoal/);
+      expect(validasItem.className).not.toMatch(/bg-nav-active-bg/);
     });
 
     it("en /competitions/unlinked, solo 'Sin enlazar' queda marcado activo (no también 'Válidas')", () => {
@@ -273,9 +299,9 @@ describe("AppShell", () => {
       const validasItem = within(sidebar).getByRole("link", { name: "Válidas" });
 
       expect(unlinkedItem).toHaveAttribute("aria-current", "page");
-      expect(unlinkedItem.className).toMatch(/bg-charcoal/);
+      expect(unlinkedItem.className).toMatch(/bg-nav-active-bg/);
       expect(validasItem).not.toHaveAttribute("aria-current", "page");
-      expect(validasItem.className).not.toMatch(/bg-charcoal/);
+      expect(validasItem.className).not.toMatch(/bg-nav-active-bg/);
     });
   });
 
@@ -283,9 +309,95 @@ describe("AppShell", () => {
   // Rol: parent
   // -------------------------------------------------------------------------
   describe("cuando el rol es parent", () => {
-    it("debería mostrar el NavLink 'Mis Atletas'", () => {
+    // Feature 035: la lista de NavLinks escrita a mano en AppShell se
+    // reemplazó por <ParentSidebar> (mockup PadresMenu.dc.html) + la barra
+    // inferior <ParentBottomNav> (PadresInicio.dc.html). El destino
+    // /my-athletes sigue existiendo, ahora bajo la etiqueta "Inicio".
+    it("la barra lateral es <ParentSidebar>: Inicio (/my-athletes), Calendario, Entrenamientos y Resumen mensual", () => {
       renderShell(UserRole.parent);
-      expect(screen.getByRole("link", { name: "Mis Atletas" })).toBeInTheDocument();
+
+      const sidebar = within(getSidebar());
+      expect(sidebar.getByText("Portal de familias")).toBeInTheDocument();
+      expect(sidebar.getByRole("link", { name: "Inicio" })).toHaveAttribute(
+        "href",
+        "/my-athletes",
+      );
+      expect(sidebar.getByRole("link", { name: "Calendario" })).toHaveAttribute(
+        "href",
+        "/parents/calendar",
+      );
+      expect(
+        sidebar.getByRole("link", { name: "Entrenamientos" }),
+      ).toHaveAttribute("href", "/parents/training/sessions");
+      expect(
+        sidebar.getByRole("link", { name: "Resumen mensual" }),
+      ).toHaveAttribute("href", "/parents/training/overview");
+    });
+
+    it("ya NO existe la vieja lista de NavLinks con 'Mis Atletas'", () => {
+      renderShell(UserRole.parent);
+      expect(
+        screen.queryByRole("link", { name: "Mis Atletas" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("renderiza la barra inferior de familias con sus 5 slots", () => {
+      renderShell(UserRole.parent);
+
+      const bar = within(
+        screen.getByRole("navigation", { name: "Navegación principal" }),
+      );
+      for (const label of [
+        "Inicio",
+        "Calendario",
+        "Entrenos",
+        "Resumen",
+        "Perfil",
+      ]) {
+        expect(bar.getByRole("link", { name: label })).toBeInTheDocument();
+      }
+    });
+
+    it("el header ya no lleva los botones 'Mi perfil'/'Cerrar sesión' — ahora viven en la barra lateral", () => {
+      renderShell(UserRole.parent);
+
+      const header = within(getHeader());
+      expect(
+        header.queryByRole("link", { name: "Mi perfil" }),
+      ).not.toBeInTheDocument();
+      expect(
+        header.queryByRole("button", { name: "Cerrar sesión" }),
+      ).not.toBeInTheDocument();
+
+      const sidebar = within(getSidebar());
+      expect(sidebar.getByRole("link", { name: "Mi perfil" })).toHaveAttribute(
+        "href",
+        "/perfil",
+      );
+      expect(
+        sidebar.getByRole("button", { name: "Cerrar sesión" }),
+      ).toBeInTheDocument();
+    });
+
+    it("el header conserva el nombre del usuario truncado y el botón de menú", () => {
+      renderShell(UserRole.parent);
+
+      const header = within(getHeader());
+      expect(header.getByText("Test User")).toBeInTheDocument();
+      expect(
+        header.getByRole("button", { name: "Abrir menú" }),
+      ).toBeInTheDocument();
+    });
+
+    it("NO monta los atajos de teclado del entrenador: '?' no abre el diálogo", async () => {
+      const user = userEvent.setup();
+      renderShell(UserRole.parent);
+
+      await user.keyboard("?");
+
+      expect(
+        screen.queryByTestId("keyboard-shortcuts-dialog"),
+      ).not.toBeInTheDocument();
     });
 
     it("NO debería mostrar el NavLink 'Atletas'", () => {
@@ -567,6 +679,201 @@ describe("AppShell", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Feature 035 — barra lateral colapsable, reparto header/pie del menú de
+  // usuario y montaje único de los atajos de teclado.
+  // -------------------------------------------------------------------------
+  describe("shell rediseñado (feature 035)", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("coach: por defecto la barra va expandida (256px), con su control de contraer y la tarjeta de usuario en el pie", () => {
+      renderShell(UserRole.coach);
+
+      const sidebar = getSidebar();
+      expect(sidebar.className).toMatch(/w-64/);
+      expect(
+        screen.getByRole("button", { name: "Contraer navegación" }),
+      ).toBeInTheDocument();
+
+      // La tarjeta de usuario es el pie de la barra (el header sólo la
+      // duplica bajo md) y muestra nombre + rol.
+      const card = within(sidebar).getByTestId("user-menu-trigger");
+      expect(card).toHaveTextContent("Test User");
+      expect(card).toHaveTextContent("Entrenador");
+    });
+
+    it("coach: contraer lleva la barra al riel de 72px y deja el menú de usuario como avatar", async () => {
+      const user = userEvent.setup();
+      renderShell(UserRole.coach);
+
+      await user.click(screen.getByRole("button", { name: "Contraer navegación" }));
+
+      const sidebar = getSidebar();
+      expect(sidebar.className).toMatch(/w-\[72px\]/);
+      expect(sidebar.className).not.toMatch(/w-64/);
+      expect(
+        screen.getByRole("button", { name: "Expandir navegación" }),
+      ).toBeInTheDocument();
+      expect(
+        within(sidebar).getByTestId("user-menu-trigger"),
+      ).toHaveAccessibleName("Menú de usuario");
+    });
+
+    it("coach: una preferencia previa de riel en localStorage monta la barra ya colapsada", () => {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, "true");
+
+      renderShell(UserRole.coach);
+
+      expect(getSidebar().className).toMatch(/w-\[72px\]/);
+      expect(
+        screen.getByRole("button", { name: "Expandir navegación" }),
+      ).toBeInTheDocument();
+    });
+
+    it("coach: sin preferencia guardada, el rango tablet de matchMedia arranca en riel", () => {
+      // jsdom no implementa matchMedia — el hook lo consulta de forma
+      // guardada, así que aquí se stubbea explícitamente el rango tablet
+      // (768–1023px), único caso donde el riel es el default sugerido.
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn((query: string) => ({
+          matches: query === SIDEBAR_RAIL_DEFAULT_QUERY,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      );
+
+      renderShell(UserRole.coach);
+
+      expect(getSidebar().className).toMatch(/w-\[72px\]/);
+    });
+
+    it("coach: el bloque de marca no se duplica — lo dibuja <SidebarNav>, no el shell", () => {
+      renderShell(UserRole.coach);
+
+      expect(screen.getAllByText("Trocha y Ruta")).toHaveLength(1);
+      expect(within(getSidebar()).getByText("Club Ciclismo XCO")).toBeInTheDocument();
+    });
+
+    it("coach: el <UserMenu> del header existe sólo bajo md (md:hidden); el canónico vive en el pie de la barra", () => {
+      renderShell(UserRole.coach);
+
+      const headerTrigger = screen.getByTestId("user-menu-trigger-header");
+      expect(getHeader()).toContainElement(headerTrigger);
+      // Envuelto en `md:hidden`: en ≥md la tarjeta del pie de la barra es el
+      // menú de usuario, y el header queda sólo con «Crear».
+      expect(headerTrigger.parentElement?.className).toMatch(/md:hidden/);
+      expect(getHeader()).toContainElement(
+        screen.getByTestId("quick-create-trigger"),
+      );
+
+      // El id canónico (el que usan los e2e de escritorio) es el del pie.
+      expect(getSidebar()).toContainElement(
+        screen.getByTestId("user-menu-trigger"),
+      );
+    });
+
+    it("coach: el slot izquierdo del header lleva la fecha de hoy, no el nombre (mockup Main.dc.html)", () => {
+      vi.useFakeTimers();
+      // 15:00 en America/Bogotá (UTC-5, sin DST) → jueves 27 de agosto.
+      vi.setSystemTime(new Date("2026-08-27T20:00:00Z"));
+      try {
+        renderShell(UserRole.coach);
+
+        const date = within(getHeader()).getByTestId("header-today-date");
+        // Sin la coma que es-CO inserta tras el día de semana: el mockup no
+        // la lleva, de ahí los dos formateos separados en AppShell.
+        expect(date.textContent).toBe("jueves 27 de agosto de 2026");
+        // El slot izquierdo lleva SÓLO la fecha: el nombre vive en la
+        // tarjeta de usuario del pie de la barra (el "Test User" que sí
+        // queda en el header es el del <UserMenu> móvil, bajo md).
+        expect(date.parentElement?.textContent).toBe("jueves 27 de agosto de 2026");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("parent: el header conserva el nombre y NO la fecha", () => {
+      renderShell(UserRole.parent);
+
+      expect(within(getHeader()).getByText("Test User")).toBeInTheDocument();
+      expect(
+        within(getHeader()).queryByTestId("header-today-date"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("parent: el drawer se apila sobre el header sticky y sobre la barra inferior", () => {
+      renderShell(UserRole.parent);
+
+      // Bajo md el drawer ocupa todo el alto del viewport: si no ganara al
+      // header (`sticky z-50`) su botón X quedaría tapado, y si no ganara a
+      // <ParentBottomNav> (`z-40`, posterior en el DOM) la barra se comería
+      // los toques del pie del drawer.
+      expect(getSidebar().className).toMatch(/z-\[55\]/);
+      expect(getHeader().className).toMatch(/z-50/);
+      expect(
+        screen.getByRole("navigation", { name: "Navegación principal" }).className,
+      ).toMatch(/z-40/);
+    });
+
+    it("coach: los atajos globales se registran exactamente una vez por shell", () => {
+      const addEventListener = vi.spyOn(window, "addEventListener");
+
+      renderShell(UserRole.coach);
+
+      const keydownListeners = addEventListener.mock.calls.filter(
+        ([type]) => type === "keydown",
+      );
+      expect(keydownListeners).toHaveLength(1);
+
+      addEventListener.mockRestore();
+    });
+
+    it("coach: '?' abre un único diálogo de atajos, montado por AppShell", async () => {
+      const user = userEvent.setup();
+      renderShell(UserRole.coach);
+
+      await user.keyboard("?");
+
+      expect(
+        await screen.findAllByTestId("keyboard-shortcuts-dialog"),
+      ).toHaveLength(1);
+    });
+
+    it("coach: el item 'Atajos de teclado' del menú de usuario abre ese mismo diálogo del shell", async () => {
+      const user = userEvent.setup();
+      renderShell(UserRole.coach);
+
+      await user.click(screen.getByTestId("user-menu-trigger"));
+      await user.click(screen.getByTestId("user-menu-shortcuts-help"));
+
+      expect(
+        await screen.findAllByTestId("keyboard-shortcuts-dialog"),
+      ).toHaveLength(1);
+    });
+
+    it.each([
+      ["coach", UserRole.coach],
+      ["parent", UserRole.parent],
+    ])(
+      "%s: el contenido reserva espacio para la barra inferior en móvil (pb-24) y lo suelta en ≥md",
+      (_label, role) => {
+        renderShell(role);
+
+        const main = screen.getByRole("main");
+        expect(main.className).toMatch(/pb-24/);
+        expect(main.className).toMatch(/md:pb-6/);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
   // Accesibilidad (jest-axe) — quickstart.md "automated validation" checklist
   // -------------------------------------------------------------------------
   describe("accesibilidad (jest-axe)", () => {
@@ -613,6 +920,27 @@ describe("AppShell", () => {
       // Confirma que el menú realmente quedó abierto antes de auditar.
       expect(
         screen.getByRole("menuitem", { name: /Mi perfil/i }),
+      ).toBeInTheDocument();
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it("sin violaciones axe en el shell de familias (parent: <ParentSidebar> + barra inferior)", async () => {
+      const { container } = renderShell(UserRole.parent, "/my-athletes");
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it("sin violaciones axe con la barra en modo riel (coach, 72px)", async () => {
+      const user = userEvent.setup();
+      const { container } = renderShell(UserRole.coach);
+
+      await user.click(screen.getByRole("button", { name: "Contraer navegación" }));
+      // Confirma que realmente quedó en riel antes de auditar.
+      expect(
+        screen.getByRole("button", { name: "Expandir navegación" }),
       ).toBeInTheDocument();
 
       const results = await axe(container);

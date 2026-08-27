@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   NAV_AREAS,
+  NAV_GROUPS,
   getBottomBarAreas,
+  getGroupedAreas,
   getMoreSheetAreas,
   getVisibleAreas,
   isAreaActive,
@@ -41,6 +43,70 @@ describe("NAV_AREAS", () => {
       expect(area.items.length).toBeGreaterThan(0);
       const [defaultItem] = area.items;
       expect(defaultItem.roles.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// Feature 035 — agrupación visual del sidebar («Operación» / «Club»).
+// Es metadata de presentación: no agrega, oculta ni reordena destinos.
+describe("grupos de navegación (feature 035)", () => {
+  it("declara exactamente dos grupos, en orden: Operación y Club", () => {
+    expect(NAV_GROUPS.map((g) => g.id)).toEqual(["operacion", "club"]);
+    expect(NAV_GROUPS.map((g) => g.label)).toEqual(["Operación", "Club"]);
+  });
+
+  it("cada área declara un grupo válido", () => {
+    const validIds = NAV_GROUPS.map((g) => g.id);
+    for (const area of NAV_AREAS) {
+      expect(validIds).toContain(area.group);
+    }
+  });
+
+  it("Inicio, Entrenamiento, Competencias y Atletas son «Operación»; Familias y Biblioteca son «Club»", () => {
+    const groupOf = (id: string) => findArea(id).group;
+    expect(groupOf("home")).toBe("operacion");
+    expect(groupOf("training")).toBe("operacion");
+    expect(groupOf("competitions")).toBe("operacion");
+    expect(groupOf("athletes")).toBe("operacion");
+    expect(groupOf("families")).toBe("club");
+    expect(groupOf("library")).toBe("club");
+  });
+
+  it("getGroupedAreas('coach') reparte las 6 áreas: 4 en Operación, 2 en Club", () => {
+    const groups = getGroupedAreas("coach");
+    expect(groups.map((g) => g.label)).toEqual(["Operación", "Club"]);
+    expect(groups[0].areas.map((a) => a.id)).toEqual([
+      "home",
+      "training",
+      "competitions",
+      "athletes",
+    ]);
+    expect(groups[1].areas.map((a) => a.id)).toEqual(["families", "library"]);
+  });
+
+  it("getGroupedAreas('admin') omite Atletas dentro de Operación", () => {
+    const groups = getGroupedAreas("admin");
+    expect(groups[0].areas.map((a) => a.id)).toEqual([
+      "home",
+      "training",
+      "competitions",
+    ]);
+    expect(groups[1].areas.map((a) => a.id)).toEqual(["families", "library"]);
+  });
+
+  it.each(ROLES)(
+    "getGroupedAreas(%s) aplanado === getVisibleAreas(%s): mismos destinos, mismo orden",
+    (role) => {
+      const flattened = getGroupedAreas(role).flatMap((g) => g.areas);
+      expect(flattened.map((a) => a.id)).toEqual(
+        getVisibleAreas(role).map((a) => a.id),
+      );
+    },
+  );
+
+  it.each(ROLES)("getGroupedAreas(%s) nunca devuelve un grupo vacío", (role) => {
+    for (const group of getGroupedAreas(role)) {
+      expect(group.areas.length).toBeGreaterThan(0);
     }
   });
 });

@@ -325,7 +325,9 @@ async function mockSeasonInsightsApi(page: Page): Promise<void> {
 
 async function gotoDashboard(page: Page): Promise<void> {
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({
+  // Ver la nota en `coach-navigation.spec.ts`: el saludo de la feature 035
+  // reemplazó al <h1> "Dashboard", así que la puerta es el `data-testid`.
+  await expect(page.getByTestId("dashboard-heading")).toBeVisible({
     timeout: WAIT_TIMEOUT,
   });
 }

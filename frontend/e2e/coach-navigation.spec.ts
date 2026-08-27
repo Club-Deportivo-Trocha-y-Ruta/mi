@@ -137,7 +137,10 @@ async function mockDashboardApi(page: Page): Promise<void> {
 
 async function gotoDashboard(page: Page): Promise<void> {
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({
+  // Se espera al `data-testid` y no a la copy del <h1>: la feature 035 lo
+  // cambió de "Dashboard" a "Hola, <nombre>" y el testid deja los ~18 call
+  // sites de los e2e a salvo del siguiente cambio de texto.
+  await expect(page.getByTestId("dashboard-heading")).toBeVisible({
     timeout: WAIT_TIMEOUT,
   });
 }

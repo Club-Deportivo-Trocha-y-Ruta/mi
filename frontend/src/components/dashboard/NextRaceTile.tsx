@@ -18,6 +18,12 @@
  *
  * Privacidad: solo nombre/fecha/lugar de la carrera — sin resultados ni
  * nombres de atletas (contracts/home-tiles.md).
+ *
+ * Feature 035 (rediseño del Inicio) suma dos elementos al estado resuelto,
+ * ambos derivados de datos que la tile ya tenía en mano — sin queries ni
+ * lógica de urgencia nuevas: la insignia "Clase A/B/C" (`getCarreraTier`) y
+ * la línea de guía de tapering (`TAPER_GUIDANCE`, que antes viajaba
+ * comprimida dentro del hint junto a día y lugar).
  */
 import { CalendarClock } from "lucide-react";
 
@@ -26,11 +32,34 @@ import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { StatCard } from "@/components/shared/StatCard";
 import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import { useRaceEventsList } from "@/hooks/race/useRaceEvents";
-import { TAPER_GUIDANCE, getCarreraTier } from "@/lib/insights";
+import { TAPER_GUIDANCE, getCarreraTier, type TaperGuidance } from "@/lib/insights";
 import { currentSeason, diffDaysFromToday, formatRelativeDayCount } from "@/lib/datetime";
+import { cn } from "@/lib/utils";
 import type { RaceEventListItem } from "@/types/raceEvents.types";
 
 type Urgency = "neutral" | "upcoming" | "in_window";
+
+type CarreraTier = "A" | "B" | "C";
+
+/**
+ * Tinte 10% + borde 30% del token ordinal del tier (`--color-tier-a/-b/-c`,
+ * feature 033) — el color acompaña al texto "Clase A/B/C", nunca lo
+ * reemplaza. Se usan las utilidades de color del `@theme` (`bg-tier-a/10`) y
+ * NO la forma `bg-[--color-tier-a]/10` de `InsightsTimeline.tsx`: Tailwind
+ * v4 la compila a `color-mix(in oklab, --color-tier-a …)` —sin `var()`—, una
+ * declaración inválida que el navegador descarta.
+ */
+const TIER_CHIP_CLASSES: Record<CarreraTier, string> = {
+  A: "border-tier-a/30 bg-tier-a/10",
+  B: "border-tier-b/30 bg-tier-b/10",
+  C: "border-tier-c/30 bg-tier-c/10",
+};
+
+const TIER_DOT_CLASSES: Record<CarreraTier, string> = {
+  A: "bg-tier-a",
+  B: "bg-tier-b",
+  C: "bg-tier-c",
+};
 
 const URGENCY_TONE: Record<Urgency, Status> = {
   neutral: "neutral",
@@ -48,6 +77,37 @@ function resolveUrgency(daysUntil: number, warningAt: number | null, dangerAt: n
   if (daysUntil <= dangerAt) return "in_window";
   if (daysUntil <= warningAt) return "upcoming";
   return "neutral";
+}
+
+/**
+ * Línea de guía de tapering del tier, armada con el copy real de
+ * `TAPER_GUIDANCE` (`lib/insights.ts`): la etiqueta del tier + su ventana
+ * `taperDays`. Un tier sin ventana (`taperDays: null`, la diagnóstica C) lo
+ * dice explícitamente en vez de mostrar un rango vacío.
+ */
+function taperHint(guidance: TaperGuidance): string {
+  if (!guidance.taperDays) {
+    return `${guidance.label} · sin ventana de tapering`;
+  }
+  const [min, max] = guidance.taperDays;
+  return `${guidance.label} · ${min}–${max} días`;
+}
+
+function TierChip({ tier }: { tier: CarreraTier }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium text-charcoal",
+        TIER_CHIP_CLASSES[tier],
+      )}
+    >
+      <span
+        className={cn("h-2 w-2 shrink-0 rounded-full", TIER_DOT_CLASSES[tier])}
+        aria-hidden="true"
+      />
+      Clase {tier}
+    </span>
+  );
 }
 
 function selectNextRace(items: RaceEventListItem[]): RaceEventListItem | null {
@@ -97,11 +157,14 @@ export function NextRaceTile() {
     ? resolveUrgency(daysUntil, taperGuidance.warningAt, taperGuidance.dangerAt)
     : "neutral";
 
-  const hintParts = [
-    formatRelativeDayCount(nextRace.event_date),
-    nextRace.location,
-    taperGuidance?.label,
-  ].filter((part): part is string => Boolean(part && part.length > 0));
+  // La guía de tapering ya no viaja en el hint: baja a su propia línea, bajo
+  // la insignia de clase (mockup `Main.dc.html`, fila A).
+  const hintParts = [formatRelativeDayCount(nextRace.event_date), nextRace.location].filter(
+    (part): part is string => Boolean(part && part.length > 0),
+  );
+
+  const hasTierBlock = tier !== null && taperGuidance !== null;
+  const hasBadgeBlock = hasTierBlock || urgency !== "neutral";
 
   return (
     <StatCard
@@ -111,8 +174,18 @@ export function NextRaceTile() {
       href={`/competitions/${nextRace.id}`}
       tone={URGENCY_TONE[urgency]}
       badge={
-        urgency !== "neutral" ? (
-          <StatusBadge status={URGENCY_TONE[urgency]} label={URGENCY_LABEL[urgency]} />
+        hasBadgeBlock ? (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {tier && <TierChip tier={tier} />}
+              {urgency !== "neutral" && (
+                <StatusBadge status={URGENCY_TONE[urgency]} label={URGENCY_LABEL[urgency]} />
+              )}
+            </div>
+            {taperGuidance && (
+              <span className="text-xs text-mid-gray">{taperHint(taperGuidance)}</span>
+            )}
+          </div>
         ) : undefined
       }
     />

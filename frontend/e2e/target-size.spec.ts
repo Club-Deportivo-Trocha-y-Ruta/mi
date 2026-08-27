@@ -675,10 +675,13 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
     await mockDashboardApi(page);
 
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({
+    // Feature 035: el <h1> "Dashboard" pasó a ser el saludo "Hola, <nombre>"
+    // (de ahí el `data-testid`) y la sección se renombró "Alertas de
+    // medición".
+    await expect(page.getByTestId("dashboard-heading")).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
-    await expect(page.getByText("Mediciones pendientes")).toBeVisible({
+    await expect(page.getByText("Alertas de medición")).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
 
@@ -696,7 +699,9 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
       timeout: WAIT_TIMEOUT,
     });
     await expect(page.getByText("Carga semanal")).toBeVisible({ timeout: WAIT_TIMEOUT });
-    await expect(page.getByText("Pendientes de esta semana")).toBeVisible({
+    // "Pendientes de esta semana" → "Pendientes" (feature 035). `exact` para
+    // no cruzarse con otras filas que contengan la palabra.
+    await expect(page.getByText("Pendientes", { exact: true })).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
     await expect(page.getByText("Resultados por importar")).toBeVisible({
