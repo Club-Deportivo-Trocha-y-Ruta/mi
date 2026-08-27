@@ -1,0 +1,33 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Inicio del entrenador" },
+    { "file": "NavEntrenador.dc.html", "x": 1520, "y": 0, "w": 640, "h": 980, "title": "Barra lateral · Entrenador" },
+    { "file": "PadresInicio.dc.html", "x": 0, "y": 1100, "w": 390, "h": 844, "title": "Padres · Inicio (móvil)" },
+    { "file": "PadresMenu.dc.html", "x": 470, "y": 1100, "w": 390, "h": 844, "title": "Padres · Menú lateral" },
+    { "file": "DireccionB.dc.html", "x": 1340, "y": 1100, "w": 560, "h": 720, "title": "Dirección B (boceto)" }
+  ],
+  "annotations": [
+    {
+      "id": "resumen",
+      "x": 0,
+      "y": -300,
+      "w": 470,
+      "text": "Rediseño de navegación y dashboard — Club Trocha y Ruta\n\nQué cambia:\n• Barra lateral con grupos «Operación» y «Club», acento turquesa de marca, insignias con pendientes reales y usuario al pie.\n• Modo riel de 72 px pensado para tablet en campo.\n• Padres: barra inferior en móvil + menú lateral con selector de deportista.\n• Inicio del entrenador: hoy y la semana primero; pendientes y alertas después.\n\nTodo usa tokens existentes de style.css — sin colores ni destinos nuevos."
+    },
+    {
+      "id": "estados-nav",
+      "x": 1520,
+      "y": -300,
+      "w": 430,
+      "text": "Reglas de la barra\n\n• Activo: tinte #e9f8fa + barra de 3 px + ícono #008492; el texto sigue en charcoal (el color nunca es el único canal).\n• Se conservan los dos controles ≥44 px por área (feature 030) y el auto-expand del área activa.\n• Insignias: conteos reales de «Pendientes». En el riel: punto ámbar + tooltip.\n• Modo oscuro del entrenador: mismos roles de token; el tinte activo se calcula sobre #1a1a1a."
+    },
+    {
+      "id": "padres-movil",
+      "x": 940,
+      "y": 1100,
+      "w": 320,
+      "text": "Padres — móvil primero\n\nLas familias entran desde Android con 3G/4G: la barra inferior deja Calendario y Entrenos a un toque, sin abrir el menú.\n\nEl menú lateral queda para deportistas, perfil y salida; en ≥768 px se fija como barra lateral.\n\nEl portal de padres permanece siempre en tema claro."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
