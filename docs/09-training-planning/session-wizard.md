@@ -4,6 +4,15 @@ Rebuild of the coach/admin "Create / Edit Training Session" experience as a guid
 multi-step wizard. Replaces the previous single long page (`SessionFormPage`). Spec, plan,
 and tasks under `specs/005-session-create-edit-ux/`.
 
+> **Update (2026-08-20) — Sessions are training-only.** The "Tipo de sesión" selector was
+> removed from the wizard (step General) and from the review step: the module now covers
+> `entrenamiento` exclusively, and the AI assistant draft is forced to that value
+> (`mapDraftToFormValues`). Outings and joint activities are registered as **Calendar**
+> events (`club_event` / `group_training`). The `session_kind` column, enum and API field
+> are untouched — no migration — so sessions saved earlier with another type keep their
+> value and keep feeding the monthly report. The sections below describe the original
+> feature-005 behaviour.
+
 ## What changed
 
 ### Backend (contract fix — no migration)
@@ -27,7 +36,7 @@ wiring only:
 `SessionFormPage` is now a thin host that loads session+attendance (edit mode) and mounts
 `SessionWizard` (`components/training/session-wizard/`):
 
-1. **General** — date, time, duration, location, focus, description, session kind
+1. **General** — date, time, duration, location, focus, description
    (`ToggleGroup` chips), objectives.
 2. **Athletes** — enhanced `AthletesMultiSelect` (removable chips, sticky count, ≥48 px).
 3. **Route & Notes** — route text, Strava URL (shared strict regex), route file

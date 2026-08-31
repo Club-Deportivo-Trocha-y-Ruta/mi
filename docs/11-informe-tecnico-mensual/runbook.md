@@ -20,18 +20,25 @@ The AI pre-drafts the narrative with **aggregated** data (never minors' names). 
 
 ## Part A — During the Month (June): Capturing Inputs
 
-### A1. Record Each Training Session with Type and Goals
+### A1. Record Each Training Session with Goals
 
-When creating a training session in the form, also fill in:
+The Sessions module is **training-only**: every session created there is an
+`entrenamiento` and the wizard no longer shows a session-type selector. When creating a
+session, fill in:
 
-- **Session type (`session_kind`)**: classify the activity.
-  - `entrenamiento` — regular technical/physical training session for the group.
-  - `actividad_conjunta` — activity with multiple groups, families, or partners.
-  - `salida` — outing or ride outside the venue.
-  - `otro` — any other activity relevant to the report.
 - **Goals (`objectives`)**: one or two sentences about the session's focus.
 
-> The type feeds the PDF separation: `entrenamiento` sessions go to the high-performance group chapter; `actividad_conjunta` and `salida` go to the joint activities and outings chapter.
+**Joint activities and outings go in the Calendar**, not in Sessions. Create a calendar
+event with type:
+
+- `club_event` — activity with multiple groups, families, or partners → renders as
+  "Actividad conjunta".
+- `group_training` — outing or ride outside the venue → renders as "Salida".
+
+> That split feeds the PDF: sessions go to the high-performance group chapter; the two
+> calendar event types above go to the joint activities and outings chapter
+> (`get_conjoint_sessions`, which also still lists legacy sessions saved with
+> `session_kind` `actividad_conjunta`/`salida`).
 
 ### A2. Upload Consented Photos
 
@@ -98,7 +105,9 @@ The PDF has **restricted distribution** (coach/admin) and carries the Ley 1581/2
 
 ## Month-Close Checklist
 
-- [ ] All sessions for the month recorded with `session_kind` and `objectives`.
+- [ ] All training sessions for the month recorded with `objectives`.
+- [ ] Joint activities and outings for the month recorded as calendar events
+      (`club_event` / `group_training`).
 - [ ] Consented photos uploaded to sessions.
 - [ ] Attendance and rubrics complete.
 - [ ] Round results for the month ingested.
