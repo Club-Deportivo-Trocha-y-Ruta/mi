@@ -412,7 +412,8 @@ def build_template() -> None:
     body_cells = conjoint_table.rows[2].cells
     body_cells[0].paragraphs[0].add_run("{{ s.date }}")
     body_cells[1].paragraphs[0].add_run(
-        "{{ 'Actividad conjunta' if s.kind == 'actividad_conjunta' else 'Salida' }}"
+        "{{ s.kind_label or ('Actividad conjunta' "
+        "if s.kind == 'actividad_conjunta' else 'Salida') }}"
     )
     body_cells[2].paragraphs[0].add_run("{{ s.technical_focus or '—' }}")
     body_cells[3].paragraphs[0].add_run("{{ s.location or '—' }}")

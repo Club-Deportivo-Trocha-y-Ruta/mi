@@ -40,7 +40,8 @@
                          fecha; cada grupo trae event_id, event_name,
                          event_date, series_kind, awards_points, results).
     has_competition_results bool|None — atajo de conveniencia (misma fuente).
-    conjoint_sessions   list[dict]|None — sesiones actividad_conjunta/salida
+    conjoint_sessions   list[dict]|None — actividades conjuntas y salidas del
+                        mes (eventos del calendario + sesiones históricas)
     photos              list[dict]|None — [{data_uri, session_date, caption}]
 
   PRIVACIDAD: documento de distribución restringida. Contiene nombres reales
@@ -510,7 +511,7 @@
     {% for s in conjoint_sessions %}
     <tr>
       <td>{{ s.date }}</td>
-      <td>{{ "Actividad conjunta" if s.kind == "actividad_conjunta" else "Salida" }}</td>
+      <td>{{ s.kind_label or ("Actividad conjunta" if s.kind == "actividad_conjunta" else "Salida") }}</td>
       <td>{{ s.technical_focus or '—' }}</td>
       <td>{{ s.objectives or '—' }}</td>
       <td>{{ s.location or '—' }}</td>

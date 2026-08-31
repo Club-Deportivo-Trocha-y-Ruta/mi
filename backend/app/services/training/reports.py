@@ -6,7 +6,7 @@ import base64
 import calendar
 import logging
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -928,24 +928,103 @@ async def regenerate_block(
     return report
 
 
+# Tipos de evento del calendario que alimentan el apartado "Actividades
+# conjuntas y salidas" del informe al financiador. Desde que el módulo Sesiones
+# quedó restringido a entrenamientos, esta es la fuente principal: el entrenador
+# registra salidas y actividades del club como eventos del calendario.
+_CONJOINT_EVENT_LABELS: dict[str, str] = {
+    "club_event": "Actividad conjunta",
+    "group_training": "Salida",
+}
+
+# Etiquetas de las sesiones históricas (creadas antes de restringir el módulo
+# Sesiones a entrenamientos). Se siguen listando para que los informes de meses
+# pasados se regeneren idénticos.
+_CONJOINT_SESSION_LABELS: dict[str, str] = {
+    "actividad_conjunta": "Actividad conjunta",
+    "salida": "Salida",
+}
+
+
 async def get_conjoint_sessions(
     db: AsyncSession,
     club_id: int,
     year: int,
     month: int,
 ) -> list[dict]:
-    """Lista sesiones del mes con session_kind=actividad_conjunta o salida.
+    """Actividades conjuntas y salidas del mes para el apartado del informe.
 
-    Usada por el PDF para el apartado "Actividades Conjuntas". Retorna
-    dicts con date, kind, objectives, technical_focus, location, duration_min.
-    Degrada limpio ante errores.
+    Dos fuentes, unidas y ordenadas por fecha:
+
+    1. **Calendario** (fuente actual) — eventos ``club_event`` / ``group_training``
+       no cancelados. El módulo Sesiones quedó restringido a entrenamientos, así
+       que toda actividad no-entrenamiento se registra acá.
+    2. **Sesiones históricas** — ``session_kind`` ``actividad_conjunta``/``salida``
+       guardadas antes de esa restricción. Se conservan para que los informes de
+       meses anteriores no cambien.
+
+    Se descarta el evento de calendario que ya tenga una sesión enlazada
+    (``TrainingSession.calendar_event_id``) para no duplicar la fila.
+
+    Retorna dicts con ``date``, ``kind``, ``kind_label``, ``technical_focus``,
+    ``objectives``, ``location`` y ``duration_min``. Degrada limpio: ante un
+    error en una fuente devuelve lo que haya conseguido de la otra.
     """
+    from app.models.calendar_event import CalendarEvent, EventStatus, EventType
     from app.models.training_session import SessionKind, SessionStatus
 
     month_start = date(year, month, 1)
     last_day = calendar.monthrange(year, month)[1]
     month_end = date(year, month, last_day)
 
+    rows: list[tuple[date, dict]] = []
+
+    # --- 1. Eventos del calendario -----------------------------------------
+    try:
+        linked_event_ids = select(TrainingSession.calendar_event_id).where(
+            TrainingSession.calendar_event_id.is_not(None)
+        )
+        result = await db.execute(
+            select(CalendarEvent)
+            .where(
+                CalendarEvent.club_id == club_id,
+                CalendarEvent.event_type.in_(
+                    [EventType.CLUB_EVENT, EventType.GROUP_TRAINING]
+                ),
+                CalendarEvent.status != EventStatus.CANCELLED,
+                CalendarEvent.start_at >= datetime(year, month, 1),
+                CalendarEvent.start_at
+                < datetime(year, month, last_day) + timedelta(days=1),
+                CalendarEvent.id.not_in(linked_event_ids),
+            )
+            .order_by(CalendarEvent.start_at.asc())
+        )
+        for event in result.scalars().all():
+            event_day = event.start_at.date()
+            duration_min = max(
+                0, int((event.end_at - event.start_at).total_seconds() // 60)
+            )
+            rows.append((
+                event_day,
+                {
+                    "date": event_day.strftime("%d/%m/%Y"),
+                    "kind": event.event_type.value,
+                    "kind_label": _CONJOINT_EVENT_LABELS.get(
+                        event.event_type.value, "Actividad conjunta"
+                    ),
+                    "technical_focus": event.title or "",
+                    "objectives": event.description or "",
+                    "location": event.location or "",
+                    "duration_min": duration_min,
+                },
+            ))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "get_conjoint_sessions: error leyendo calendario club=%d %d-%02d: %s",
+            club_id, year, month, exc,
+        )
+
+    # --- 2. Sesiones históricas --------------------------------------------
     try:
         result = await db.execute(
             select(TrainingSession).where(
@@ -959,22 +1038,26 @@ async def get_conjoint_sessions(
                 TrainingSession.status != SessionStatus.CANCELLED,
             ).order_by(TrainingSession.scheduled_date.asc())
         )
-        sessions = result.scalars().all()
+        for s in result.scalars().all():
+            rows.append((
+                s.scheduled_date,
+                {
+                    "date": s.scheduled_date.strftime("%d/%m/%Y"),
+                    "kind": s.session_kind.value,
+                    "kind_label": _CONJOINT_SESSION_LABELS.get(
+                        s.session_kind.value, "Actividad conjunta"
+                    ),
+                    "technical_focus": s.technical_focus or "",
+                    "objectives": s.objectives or "",
+                    "location": s.location or "",
+                    "duration_min": s.duration_min,
+                },
+            ))
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "get_conjoint_sessions: error club=%d %d-%02d: %s",
+            "get_conjoint_sessions: error leyendo sesiones club=%d %d-%02d: %s",
             club_id, year, month, exc,
         )
-        return []
 
-    return [
-        {
-            "date": s.scheduled_date.strftime("%d/%m/%Y"),
-            "kind": s.session_kind.value,
-            "technical_focus": s.technical_focus or "",
-            "objectives": s.objectives or "",
-            "location": s.location or "",
-            "duration_min": s.duration_min,
-        }
-        for s in sessions
-    ]
+    rows.sort(key=lambda r: r[0])
+    return [payload for _, payload in rows]
