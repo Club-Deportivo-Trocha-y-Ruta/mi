@@ -1,4 +1,3 @@
-import { SESSION_KIND_OPTIONS } from "@/schemas/trainingSession.schema";
 import type { TrainingSessionFormValues } from "@/schemas/trainingSession.schema";
 
 interface StepReviewProps {
@@ -7,10 +6,6 @@ interface StepReviewProps {
   routeFileName: string | null;
   notify: boolean;
   onNotifyChange: (next: boolean) => void;
-}
-
-function kindLabel(kind: string | undefined): string {
-  return SESSION_KIND_OPTIONS.find((o) => o.value === kind)?.label ?? "Entrenamiento";
 }
 
 export function StepReview({
@@ -26,7 +21,6 @@ export function StepReview({
     { label: "Duración", value: `${values.duration_min} min` },
     { label: "Lugar", value: values.location || "—" },
     { label: "Foco técnico", value: values.technical_focus || "—" },
-    { label: "Tipo de sesión", value: kindLabel(values.session_kind) },
     { label: "Atletas convocados", value: String(athleteCount) },
     { label: "Archivo de recorrido", value: routeFileName ?? "Ninguno" },
   ];

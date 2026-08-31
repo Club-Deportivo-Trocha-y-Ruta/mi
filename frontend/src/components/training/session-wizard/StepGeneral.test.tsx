@@ -130,12 +130,12 @@ describe("StepGeneral — marcadores IA (T036)", () => {
   it("muestra múltiples marcadores cuando múltiples campos están sembrados", () => {
     render(
       <StepGeneralWrapper
-        aiSeededFields={new Set(["technical_focus", "description", "location", "objectives", "session_kind"])}
+        aiSeededFields={new Set(["technical_focus", "description", "location", "objectives"])}
       />,
     );
     const markers = screen.getAllByTestId("ai-marker");
-    // At least 5 fields have markers (technical_focus, description, location, objectives, session_kind)
-    expect(markers.length).toBeGreaterThanOrEqual(5);
+    // At least 4 fields have markers (technical_focus, description, location, objectives)
+    expect(markers.length).toBeGreaterThanOrEqual(4);
   });
 
   it("solo el campo sembrado tiene marcador cuando un solo campo está en el set", () => {

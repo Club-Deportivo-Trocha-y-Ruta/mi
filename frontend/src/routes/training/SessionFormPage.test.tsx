@@ -143,16 +143,13 @@ describe("SessionFormPage — asistente (modo crear)", () => {
     expect(screen.getByLabelText(/Objetivos de la sesión/i)).toBeInTheDocument();
   });
 
-  it("el tipo de sesión usa chips con 'Entrenamiento' activo por defecto", () => {
+  it("no expone el selector de tipo de sesión: el módulo es solo entrenamientos", () => {
     renderCreate();
-    const entrenamiento = screen.getByRole("radio", { name: "Entrenamiento" });
-    expect(entrenamiento).toHaveAttribute("data-state", "on");
-  });
-
-  it("permite cambiar el tipo de sesión a 'Salida'", () => {
-    renderCreate();
-    fireEvent.click(screen.getByRole("radio", { name: "Salida" }));
-    expect(screen.getByRole("radio", { name: "Salida" })).toHaveAttribute("data-state", "on");
+    expect(screen.queryByTestId("session-kind-toggle")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Salida" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("radio", { name: "Actividad conjunta" }),
+    ).not.toBeInTheDocument();
   });
 
   it("bloquea 'Siguiente' y muestra resumen de errores si el paso es inválido", async () => {

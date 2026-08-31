@@ -29,7 +29,6 @@ export function buildAiSeededSet(draft: SessionDraftResponse): Set<SeededFieldNa
 
   seeded.add("technical_focus");
   seeded.add("duration_min");
-  seeded.add("session_kind");
 
   if (draft.objectives !== null && draft.objectives !== undefined) {
     seeded.add("objectives");

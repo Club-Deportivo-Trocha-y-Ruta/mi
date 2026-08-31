@@ -5,13 +5,6 @@ import { z } from "zod";
 // para evitar "válido en cliente, 422 en servidor".
 export const STRAVA_ACTIVITY_RE = /^https:\/\/www\.strava\.com\/activities\/\d+$/;
 
-export const SESSION_KIND_OPTIONS = [
-  { value: "entrenamiento", label: "Entrenamiento" },
-  { value: "actividad_conjunta", label: "Actividad conjunta" },
-  { value: "salida", label: "Salida" },
-  { value: "otro", label: "Otro" },
-] as const;
-
 export const trainingSessionCreateSchema = z.object({
   scheduled_date: z.string().min(1, "La fecha es requerida"),
   scheduled_start_time: z
@@ -34,6 +27,11 @@ export const trainingSessionCreateSchema = z.object({
     .string()
     .min(1, "La descripción es requerida")
     .max(2000, "Máximo 2000 caracteres"),
+  // El módulo Sesiones es exclusivamente de entrenamientos: el wizard ya no
+  // expone este campo y siempre envía "entrenamiento". Las salidas y
+  // actividades conjuntas se registran como eventos del Calendario.
+  // El enum sigue aceptando los valores antiguos para no romper la edición de
+  // sesiones históricas ya guardadas con otro tipo.
   session_kind: z
     .enum(["entrenamiento", "actividad_conjunta", "salida", "otro"])
     .default("entrenamiento"),

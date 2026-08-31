@@ -6,11 +6,7 @@ import type {
 } from "react-hook-form";
 
 import { DurationPicker } from "@/components/training/DurationPicker";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import {
-  SESSION_KIND_OPTIONS,
-  type TrainingSessionFormValues,
-} from "@/schemas/trainingSession.schema";
+import type { TrainingSessionFormValues } from "@/schemas/trainingSession.schema";
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
@@ -169,41 +165,6 @@ export function StepGeneral({ register, control, errors, aiSeededFields }: StepG
             {errors.description.message}
           </p>
         )}
-      </div>
-
-      {/* Tipo de sesión — chips ToggleGroup (≥48px) */}
-      <div>
-        <span className={labelClass} id="session_kind-label">
-          Tipo de sesión
-          {seeded.has("session_kind") && <AiMarker />}
-        </span>
-        <Controller
-          name="session_kind"
-          control={control}
-          render={({ field }) => (
-            <ToggleGroup
-              type="single"
-              value={field.value ?? "entrenamiento"}
-              onValueChange={(v) => {
-                if (v) field.onChange(v);
-              }}
-              className="mt-1 flex flex-wrap gap-1.5"
-              aria-labelledby="session_kind-label"
-              data-testid="session-kind-toggle"
-            >
-              {SESSION_KIND_OPTIONS.map((opt) => (
-                <ToggleGroupItem
-                  key={opt.value}
-                  value={opt.value}
-                  aria-label={opt.label}
-                  className="min-h-[48px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-1.5 text-xs font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
-                >
-                  {opt.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          )}
-        />
       </div>
 
       <div>

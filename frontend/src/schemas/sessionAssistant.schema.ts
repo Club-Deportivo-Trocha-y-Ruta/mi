@@ -103,7 +103,11 @@ export function mapDraftToFormValues(
     // Fields always present in draft
     technical_focus: draft.technical_focus,
     duration_min: draft.duration_min,
-    session_kind: draft.session_kind,
+
+    // El wizard ya no expone el tipo de sesión: Sesiones son siempre
+    // entrenamientos. Ignoramos `draft.session_kind` para que la IA no pueda
+    // crear una sesión de otro tipo sin que el entrenador lo vea.
+    session_kind: "entrenamiento",
 
     // Optional fields — fall back to current if draft is null
     objectives: draft.objectives ?? currentValues.objectives,

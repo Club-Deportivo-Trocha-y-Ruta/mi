@@ -101,7 +101,7 @@ describe("Borrador de sesión — autoguardado y restauración", () => {
 
     expect(screen.getByLabelText(/Lugar/i)).toHaveValue("La Buitrera");
     expect(screen.getByLabelText("Descripción")).toHaveValue("Borrador previo");
-    expect(screen.getByRole("radio", { name: "Salida" })).toHaveAttribute("data-state", "on");
+    expect(screen.getByLabelText(/Foco técnico/i)).toHaveValue("Curvas");
     // El banner desaparece tras restaurar.
     expect(screen.queryByTestId("session-draft-banner")).not.toBeInTheDocument();
   });

@@ -400,7 +400,7 @@ describe("SessionAssistantPanel — flujo clarify + draft (T019)", () => {
           values: expect.objectContaining({
             technical_focus: "Técnica de descenso en terreno suelto",
             duration_min: 90,
-            session_kind: "salida",
+            session_kind: "entrenamiento",
           }),
           seededFields: expect.any(Set),
           draftNotes: expect.any(String),
