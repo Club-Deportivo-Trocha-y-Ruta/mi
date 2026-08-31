@@ -70,3 +70,9 @@ backend/data/
 # Claude Code agent worktrees (efímeros)
 .claude/worktrees/
 
+# ─── Informes reales con datos de menores (repo público — NO versionar) ───────
+docs/11-informe-tecnico-mensual/referencias/*.pdf
+docs/11-informe-tecnico-mensual/referencias/*.docx
+docs/11-informe-tecnico-mensual/referencias/*.md
+!docs/11-informe-tecnico-mensual/referencias/README.md
+docs/11-informe-tecnico-mensual/referencias/imagenes-agosto-2026/
