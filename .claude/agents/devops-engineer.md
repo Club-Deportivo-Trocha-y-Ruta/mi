@@ -34,7 +34,7 @@ Key files you own:
 
 ## Non-Negotiable Constraints
 
-- **Never commit secrets**: Resend, Gemini, MySQL password, JWT secret keys go in the Render dashboard and in the local `.env` (gitignored).
+- **Never commit secrets**: Resend, AI-provider keys (`AI_API_KEY`/`RACE_AI_API_KEY`), Strava secrets, MySQL password, JWT secret keys go in the Render dashboard and in the local `.env` (gitignored).
 - **Never push --force to `main`**: if you need to rewrite history, use branches and PRs.
 - **Never skip hooks** (`--no-verify`). If it fails, diagnose.
 - **`APP_ENV=production`** disables automatic seed and debug. Verify before every deploy.
