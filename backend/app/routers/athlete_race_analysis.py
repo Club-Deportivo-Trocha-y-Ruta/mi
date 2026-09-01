@@ -31,6 +31,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -68,7 +69,9 @@ from app.services.race.analytics_charts import (
 )
 from app.services.race.ai.budget_guard import BudgetExceededError, check_budget
 from app.services.race.ai.runner import RunBackpressureError, submit_run
+from app.services.race.group_launch import find_active_run
 from app.services.race.insights_history import (
+    deprecate_previous_active,
     get_athlete_insight,
     get_insight_supersedes_chain,
     list_athlete_insights,
@@ -99,12 +102,22 @@ def _link_from_row(row: AthleteAiInsight) -> InsightLink:
 
 
 def _insight_to_out(row: AthleteAiInsight) -> AthleteInsightOut:
-    """Mapea ORM → schema público.  Filtra ``athlete_id`` / ``competitor_id``."""
+    """Mapea ORM → schema público.  Filtra ``athlete_id`` / ``competitor_id``.
+
+    ``event_date``/``series_kind`` (T030, feature 036) vienen del ``event``
+    (y su ``series``) eager-cargados por ``insights_history`` — nunca
+    disparan un lazy-load implícito, que rompería en contexto async con
+    ``MissingGreenlet``.
+    """
+    event = row.event
+    series = event.series if event is not None else None
     return AthleteInsightOut(
         id=row.id,
         season=row.season,
         valida_num=row.valida_num,
         event_id=row.event_id,
+        event_date=event.event_date if event is not None else None,
+        series_kind=series.kind.value if series is not None else None,
         use_case=row.use_case,
         summary_text=row.summary_text,
         confidence=row.confidence,
@@ -115,6 +128,7 @@ def _insight_to_out(row: AthleteAiInsight) -> AthleteInsightOut:
         approved_at=row.approved_at,
         is_active=bool(row.is_active == 1) if row.is_active is not None else False,
         deprecated_at=row.deprecated_at,
+        is_fallback=bool(row.is_fallback),
     )
 
 
@@ -599,6 +613,26 @@ async def start_athlete_run(
             if len(eids) == 1:
                 resolved_event_id = eids[0]
 
+    # T043 (feature 036): rechazar el lanzamiento si YA hay un run activo
+    # (running/awaiting_hitl) para este mismo atleta + válida. Reusa
+    # ``group_launch.find_active_run`` — el mismo mecanismo que el
+    # lanzamiento grupal ya usa para detectar este caso (``already_running``)
+    # — en vez de duplicar la lógica de matching sobre ``input_json``. Solo
+    # cubre válidas concretas: un lanzamiento sin ``valida_nums`` (temporada
+    # completa, sin filtro) no tiene una "misma válida" contra la cual
+    # comparar y queda fuera del alcance de este guard.
+    for vn in valida_nums or []:
+        existing_run_id = await find_active_run(db, athlete.id, body.season, int(vn))
+        if existing_run_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Ya hay un análisis en curso para este deportista en la "
+                    f"válida {vn} de la temporada {body.season}. Espera a que "
+                    "termine antes de lanzar uno nuevo."
+                ),
+            )
+
     try:
         await check_budget(db)
     except BudgetExceededError as exc:
@@ -908,6 +942,19 @@ async def create_season_summary(
     from app.services.race.schemas import AnalysisInput, LTADGroup
 
     # Cargar forbidden_names dinámicamente desde DB.
+    #
+    # Fix privacidad (fuera de banda, Ley 1581): este bloque consultaba
+    # ``UserModel.full_name`` — columna INEXISTENTE (``app/models/user.py``
+    # solo define ``first_name``/``last_name``). El ``AttributeError`` al
+    # construir el SELECT caía en un ``except Exception`` amplio que solo
+    # logueaba a WARNING, dejando ``forbidden_names=[]`` SIEMPRE: el
+    # guardrail que evita que el LLM mencione el nombre real del menor o de
+    # su familia nunca estuvo activo en producción. Ahora se construye el
+    # nombre desde ``first_name``/``last_name`` y el ``except`` se acota a
+    # ``SQLAlchemyError`` (fallos genuinos de base de datos) para que un
+    # error de programación similar (ej. una columna renombrada de nuevo)
+    # no vuelva a quedar silencioso — se propaga y falla la request en vez
+    # de continuar con el guardrail desactivado.
     forbidden_names: list[str] = []
     try:
         from app.models.athlete import Athlete as AthleteModel, ParentAthlete
@@ -915,7 +962,7 @@ async def create_season_summary(
         from sqlalchemy import select as sa_select
 
         fn_rows = await db.execute(
-            sa_select(UserModel.full_name).where(
+            sa_select(UserModel.first_name, UserModel.last_name).where(
                 UserModel.id == (
                     sa_select(AthleteModel.user_id)
                     .where(AthleteModel.id == athlete.id)
@@ -923,9 +970,11 @@ async def create_season_summary(
                 )
             )
         )
-        fn_row = fn_rows.scalar_one_or_none()
-        if fn_row:
-            forbidden_names.append(fn_row)
+        fn_row = fn_rows.first()
+        if fn_row is not None:
+            full_name = f"{fn_row.first_name} {fn_row.last_name}".strip()
+            if full_name:
+                forbidden_names.append(full_name)
 
         # Nicknames y apodos del atleta.
         if getattr(athlete, "nickname", None):
@@ -933,17 +982,19 @@ async def create_season_summary(
 
         # Nombres de padres vinculados.
         parent_rows = await db.execute(
-            sa_select(UserModel.full_name)
+            sa_select(UserModel.first_name, UserModel.last_name)
             .join(ParentAthlete, UserModel.id == ParentAthlete.parent_id)
             .where(ParentAthlete.athlete_id == athlete.id)
         )
-        for prow in parent_rows.scalars().all():
-            if prow:
-                forbidden_names.append(str(prow))
+        for prow in parent_rows.all():
+            full_name = f"{prow.first_name} {prow.last_name}".strip()
+            if full_name:
+                forbidden_names.append(full_name)
 
-    except Exception:  # noqa: BLE001
+    except SQLAlchemyError:
         logger.warning(
-            "season_summary: no se pudieron cargar forbidden_names para atleta %d",
+            "season_summary: no se pudieron cargar forbidden_names para atleta "
+            "%d (fallo de base de datos)",
             athlete.id,
             exc_info=True,
         )
@@ -1001,6 +1052,37 @@ async def create_season_summary(
 
     from app.services.race.agents.analyst import PROMPT_VERSION_ANALYST_V2, RaceAnalystAgent
 
+    # T044 (feature 036): adquirir el lock de deduplicación (deprecar el
+    # resumen anterior de esta terna, si existe) ANTES de invocar el LLM,
+    # no después. Antes de este fix, un doble submit corría el pipeline
+    # agéntico completo dos veces; recién al insertar la fila final el
+    # perdedor se enteraba del conflicto (UNIQUE ``uq_insights_active_terna``)
+    # y devolvía un 500 genérico — habiendo YA gastado presupuesto de IA.
+    # Confirmar (commit) esta deprecación de inmediato adelanta la detección
+    # del conflicto en el caso de re-generación (ya existe un resumen activo
+    # para esta terna); cuando es la primera generación de la temporada no
+    # hay nada que deprecar todavía, así que el INSERT final sigue siendo la
+    # fuente de verdad de la deduplicación — por eso también captura
+    # ``IntegrityError`` y responde 409 en vez de 500.
+    try:
+        previous_id: Optional[int] = await deprecate_previous_active(
+            db,
+            athlete_id=athlete.id,
+            season=body.season,
+            valida_num=0,
+            new_insight_id=None,
+        )
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        await db.rollback()
+        logger.exception(
+            "season_summary: no se pudo adquirir el lock de deduplicación"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No se pudo iniciar el resumen de temporada: {type(exc).__name__}",
+        )
+
     agent = RaceAnalystAgent(prompt_version=PROMPT_VERSION_ANALYST_V2)
     summary_output, run_metrics = await agent.invoke_season_summary(
         summary_input,
@@ -1010,17 +1092,9 @@ async def create_season_summary(
     # Persistir el resumen con valida_num=0 (sentinel temporada).
     now = _utc_now()
     from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
-    from app.services.race.insights_history import deprecate_previous_active
+    from app.services.race.ai.fallback import is_fallback_output
 
     try:
-        previous_id: Optional[int] = await deprecate_previous_active(
-            db,
-            athlete_id=athlete.id,
-            season=body.season,
-            valida_num=0,
-            new_insight_id=None,
-        )
-
         new_row = AthleteAiInsight(
             athlete_id=athlete.id,
             competitor_id=None,
@@ -1052,6 +1126,7 @@ async def create_season_summary(
             archived_at=None,
             deprecated_at=None,
             is_active=1,
+            is_fallback=is_fallback_output(summary_output),
             created_at=now,
             updated_at=now,
         )
@@ -1068,7 +1143,21 @@ async def create_season_summary(
 
         await db.commit()
         insight_id = int(new_row.id)
+    except IntegrityError:
+        # T044: otra solicitud ganó la carrera y ya insertó su propio
+        # resumen activo para esta terna mientras este request esperaba al
+        # LLM — 409 específico en vez del 500 genérico de antes.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Ya existe un resumen de temporada activo para este "
+                "deportista y esta temporada — probablemente otra solicitud "
+                "se adelantó. Recarga la vista antes de reintentar."
+            ),
+        )
     except Exception as exc:  # noqa: BLE001
+        await db.rollback()
         logger.exception("season_summary: persistencia falló")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

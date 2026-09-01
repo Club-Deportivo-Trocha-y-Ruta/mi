@@ -30,11 +30,18 @@ function buildHandler(status: number, body: object) {
   );
 }
 
-/** Handler éxito. */
+/**
+ * Handler éxito. Shape real (feature 036, T040): la llamada es SÍNCRONA,
+ * sin run_id/status/started_at — ver `SeasonSummaryResponse` en
+ * `api/athleteRaceAnalysis.ts`.
+ */
 export const seasonSummarySuccessHandler = buildHandler(200, {
-  run_id: "season-summary-run-001",
-  status: "running",
-  started_at: "2026-05-25T10:00:00Z",
+  insight_id: 9001,
+  season: 2026,
+  summary_text: "Resumen de temporada de prueba con progreso técnico claro.",
+  prompt_version: "race_analyst_v2",
+  validas_analyzed: 4,
+  generated_at: "2026-05-25T10:00:00Z",
 });
 
 /** Handler error 422 (menos de 3 válidas). */

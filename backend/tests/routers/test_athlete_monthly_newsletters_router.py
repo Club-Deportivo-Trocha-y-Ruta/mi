@@ -521,13 +521,19 @@ class TestAthleteNewsletterBatchResult:
 # Los tests de RBAC HTTP-level se hacen con dependency_overrides.
 
 
-def make_insight(id_: int, athlete_id: int = 5, is_active: int = 1) -> Any:
+def make_insight(
+    id_: int,
+    athlete_id: int = 5,
+    is_active: int = 1,
+    is_fallback: bool = False,
+) -> Any:
     """Factory de AthleteAiInsight mínimo para tests."""
     return SimpleNamespace(
         id=id_,
         athlete_id=athlete_id,
         is_active=is_active,
         coach_approved=True,
+        is_fallback=is_fallback,
     )
 
 
@@ -868,6 +874,105 @@ async def test_attach_insights_rejects_inactive_insight():
 
     assert exc.value.status_code == 400
     assert "50" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_rejects_fallback_insight():
+    """Insight con is_fallback=True → 422, aunque exista, sea del atleta y esté activo.
+
+    Feature 036 (US4, T026): un placeholder de análisis fallido nunca se
+    adjunta a un boletín — ni siquiera si el coach lo aprobó y envía su ID
+    explícitamente. Distinto del 400 de ``is_active``: acá el insight es
+    válido en su existencia/pertenencia, pero su contenido no es publicable.
+    """
+    from fastapi import HTTPException
+    from unittest.mock import patch as _patch
+    from app.routers.athlete_monthly_newsletters import attach_insights
+    from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+    coach = make_user(role="coach")
+    fallback_insight = make_insight(id_=60, athlete_id=5, is_active=1, is_fallback=True)
+
+    call_count = 0
+
+    async def fake_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return make_scalars_result([make_athlete(id_=5, club_id=1)])
+        else:
+            # Insight 60 pasa el filtro is_active==1 de la query, pero es fallback.
+            return make_scalars_result([fallback_insight])
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=fake_execute)
+
+    body = AttachInsightsRequest(insight_ids=[60], year=2026, month=3)
+
+    with _patch(
+        "app.routers.athlete_monthly_newsletters.user_club_role",
+        new_callable=AsyncMock,
+        return_value="coach",
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
+
+    assert exc.value.status_code == 422
+    assert "60" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_attach_insights_allows_non_fallback_insight_mixed_with_check():
+    """Sólo el insight fallback bloquea el request; el resto no importa aquí.
+
+    Con dos insights válidos y uno de ellos fallback, el 422 debe listar
+    únicamente el ID fallback — no el válido.
+    """
+    from fastapi import HTTPException
+    from unittest.mock import patch as _patch
+    from app.routers.athlete_monthly_newsletters import attach_insights
+    from app.schemas.athlete_newsletter import AttachInsightsRequest
+
+    coach = make_user(role="coach")
+    good_insight = make_insight(id_=10, athlete_id=5, is_fallback=False)
+    fallback_insight = make_insight(id_=60, athlete_id=5, is_fallback=True)
+
+    call_count = 0
+
+    async def fake_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return make_scalars_result([make_athlete(id_=5, club_id=1)])
+        else:
+            return make_scalars_result([good_insight, fallback_insight])
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=fake_execute)
+
+    body = AttachInsightsRequest(insight_ids=[10, 60], year=2026, month=3)
+
+    with _patch(
+        "app.routers.athlete_monthly_newsletters.user_club_role",
+        new_callable=AsyncMock,
+        return_value="coach",
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
+
+    assert exc.value.status_code == 422
+    assert "60" in exc.value.detail
+    assert "10" not in exc.value.detail
 
 
 @pytest.mark.asyncio

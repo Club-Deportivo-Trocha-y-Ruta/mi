@@ -125,9 +125,12 @@ async def compute_insights_stale(
 
     Un insight activo (``athlete_ai_insights.is_active = 1``) es stale si el
     ``AgentRun`` del que proviene tiene ``stale_since IS NOT NULL``. Esto
-    refleja, agregado a nivel de club sin fan-out por atleta, exactamente lo
-    que el campo por-atleta ``stale_run_id`` ya expone al frontend
-    (``research.md`` R5).
+    agrega a nivel de club, sin fan-out por atleta, el mismo concepto de
+    staleness que expone por-run ``StaleAnalysisBadge`` en el frontend
+    (``services/race/run_staleness.py``). No existe (ni existió) un campo
+    por-atleta ``stale_run_id`` en ningún endpoint de este módulo — feature
+    036 (T041) confirmó que el frontend lo declaraba sin que el backend lo
+    poblara jamás, y lo eliminó de ambos lados.
 
     Retorna ``None`` si el cálculo falla.
     """

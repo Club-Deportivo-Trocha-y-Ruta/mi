@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 // ---------------------------------------------------------------------------
 // Mocks — deben declararse antes de los imports de producción
@@ -104,6 +105,39 @@ vi.mock("@/components/training/AthleteNewslettersTabPanel", () => ({
     <div data-testid="newsletters-tab-panel">AthleteNewslettersTabPanel</div>
   ),
 }));
+
+// T010 (feature 036, US3) — espía de montajes de AthleteAIAnalysisTab.
+// `vi.hoisted` porque el factory de `vi.mock` se hoistea por encima de
+// cualquier `const` normal del archivo. El efecto con deps=[] sólo
+// corre una vez POR INSTANCIA de React — si AthleteDetailPage no
+// remonta el tab al cambiar de atleta (bug pre-T010), la instancia
+// sigue viva y el efecto no vuelve a dispararse con el id nuevo.
+const { mockAiTabMounts } = vi.hoisted(() => ({
+  mockAiTabMounts: [] as number[],
+}));
+
+vi.mock("@/components/athletes/ai/AthleteAIAnalysisTab", () => {
+  // `MountSpy` se define UNA sola vez (cuerpo del factory, no del
+  // render) para que su identidad de función sea estable entre
+  // renders — si se redefiniera dentro de AthleteAIAnalysisTab, React
+  // la trataría como un tipo nuevo en cada render y el efecto de
+  // montaje dispararía siempre, sin importar si hubo remount real.
+  function MountSpy({ athleteId }: { athleteId: number }) {
+    useEffect(() => {
+      mockAiTabMounts.push(athleteId);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    return null;
+  }
+  return {
+    AthleteAIAnalysisTab: ({ athlete }: { athlete: { id: number } }) => (
+      <div data-testid="mock-ai-analysis-tab">
+        <MountSpy athleteId={athlete.id} />
+        ai-tab-{athlete.id}
+      </div>
+    ),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Imports de producción (después de mocks)
@@ -688,4 +722,94 @@ describe("MyAthleteDetailPage — vista padres (coach es AthleteDetailPage)", ()
       ).not.toBeInTheDocument();
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// T010 (feature 036, US3) — key={athlete.id} en el mount de
+// AthleteAIAnalysisTab. A diferencia de las suites de arriba, aquí SÍ nos
+// importa que AthleteDetailPage sea la MISMA instancia de React entre dos
+// atletas (como ocurre al navegar de un perfil a otro sin desmontar la
+// ruta) — por eso el helper navega con `useNavigate`, no con un nuevo
+// `render`.
+// ---------------------------------------------------------------------------
+
+function renderPageWithNavigation(initialAthleteId: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  // Precalentar la cache de AMBOS atletas: AthleteDetailPage.tsx:567 hace
+  // un early-return mientras `athleteQuery.isLoading`, lo que por sí solo
+  // desmonta y remonta todo el árbol de contenido (incluido
+  // AthleteAIAnalysisTab) durante el fetch — un remount por loading-state
+  // que no tiene nada que ver con T010. Sin datos ya en cache para el
+  // atleta 502, la prueba "detectaría" un remount por la razón
+  // equivocada. Con la cache tibia, la única causa posible de remount al
+  // navegar es la key.
+  queryClient.setQueryData(["athlete", 501], { ...mockAthlete, id: 501 });
+  queryClient.setQueryData(["athlete", 502], { ...mockAthlete, id: 502 });
+
+  function Harness() {
+    const navigate = useNavigate();
+    return (
+      <>
+        <button
+          type="button"
+          data-testid="test-navigate"
+          onClick={() => navigate("/athletes/502?tab=ai_analysis")}
+        >
+          ir a otro atleta
+        </button>
+        <Routes>
+          <Route path="/athletes/:id" element={<AthleteDetailPage />} />
+        </Routes>
+      </>
+    );
+  }
+
+  return render(
+    <MemoryRouter
+      initialEntries={[`/athletes/${initialAthleteId}?tab=ai_analysis`]}
+    >
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+describe("AthleteDetailPage — T010 key={athlete.id} en AthleteAIAnalysisTab", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAiTabMounts.length = 0;
+    vi.mocked(athletesApi.getAthlete).mockImplementation((id: number) =>
+      Promise.resolve({ ...mockAthlete, id }),
+    );
+    vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([]);
+  });
+
+  it(
+    "al navegar de un atleta a otro sin desmontar la página, " +
+      "AthleteAIAnalysisTab se remonta (una instancia nueva por atleta), " +
+      "no reutiliza la instancia del atleta anterior",
+    async () => {
+      renderPageWithNavigation("501");
+
+      await screen.findByText("ai-tab-501");
+      expect(mockAiTabMounts).toEqual([501]);
+
+      await act(async () => {
+        await userEvent.click(screen.getByTestId("test-navigate"));
+      });
+
+      await screen.findByText("ai-tab-502");
+      // Sin key={athlete.id} (bug pre-T010), AthleteDetailPage sigue
+      // siendo la misma instancia y AthleteAIAnalysisTab también — el
+      // efecto de montaje (deps=[]) del atleta 502 nunca se dispara
+      // porque nunca hay un remount real.
+      expect(mockAiTabMounts).toEqual([501, 502]);
+    },
+  );
 });

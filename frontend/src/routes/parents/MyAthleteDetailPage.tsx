@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
@@ -16,16 +16,25 @@ import type { LucideIcon } from "lucide-react";
 import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { ActivityCard } from "@/components/activities/ActivityCard";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
-import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
 import { GrowthCharts } from "@/components/athletes/GrowthCharts";
 import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
 import { ResearchReferences } from "@/components/athletes/ResearchReferences";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
 import { useAthleteActivities } from "@/hooks/activities/useAthleteActivities";
 import { MaturationStatus, Sex } from "@/types/enums";
+
+// T096 (feature 036, US6): Insights IA — arrastra recharts (EvolutionChart,
+// DistributionChart) al bundle sin importar si el tab se abre o no. Mismo
+// patrón lazy-load que AthleteDetailPage.tsx (vista coach).
+const AthleteAIAnalysisTab = lazy(() =>
+  import("@/components/athletes/ai/AthleteAIAnalysisTab").then((m) => ({
+    default: m.AthleteAIAnalysisTab,
+  })),
+);
 
 type Tab = "info" | "growth" | "activities" | "ai-analysis";
 
@@ -52,6 +61,29 @@ function StatCard({
       </div>
       <p className={cn("mt-1.5 text-2xl font-bold", colorClass ?? "text-charcoal")}>{value}</p>
       {subtitle && <p className="mt-0.5 text-xs text-mid-gray">{subtitle}</p>}
+    </div>
+  );
+}
+
+// T096 (feature 036, US6) — fallback mientras se descarga el chunk lazy de
+// AthleteAIAnalysisTab. Sólo cubre la carga del chunk en sí (una vez, por
+// visita) — el propio tab ya tiene sus estados de carga de datos (Skeleton
+// del header, etc.) para cuando el chunk ya está montado.
+function AiTabSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando análisis de IA…"
+      className="space-y-4"
+    >
+      <Skeleton className="h-24 w-full rounded-xl" />
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-24 rounded-lg" />
+        ))}
+      </div>
+      <Skeleton className="h-64 w-full rounded-xl" />
     </div>
   );
 }
@@ -355,7 +387,15 @@ export function MyAthleteDetailPage() {
 
       {/* Tab content — Análisis IA (parent) */}
       {activeTab === "ai-analysis" && (
-        <AthleteAIAnalysisTab athlete={athlete} mode="parent" />
+        // T096 (feature 036, US6): lazy-load — recharts (EvolutionChart,
+        // DistributionChart) ya no entra al bundle si este tab nunca se abre.
+        // T010 (feature 036, US3, aplicado también en el lado parent al
+        // cerrar la feature): key={athlete.id} fuerza un remount limpio si
+        // esta página alguna vez se navega de un hijo a otro sin pasar por
+        // /my-athletes (ver AthleteDetailPage.tsx, mismo patrón del lado coach).
+        <Suspense fallback={<AiTabSkeleton />}>
+          <AthleteAIAnalysisTab key={athlete.id} athlete={athlete} mode="parent" />
+        </Suspense>
       )}
 
       {/* Tab content — Crecimiento */}

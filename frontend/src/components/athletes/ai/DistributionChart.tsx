@@ -2,18 +2,30 @@
  * DistributionChart — distribución de tiempos en la categoría para una
  * válida específica (FE-1).
  *
- * El backend pseudonimiza cada corredor con un código determinístico
- * (C0001…) por temporada — nunca expone nombres reales. Marca como
- * ``is_self=true`` al deportista actual.
+ * El backend calcula siempre un pseudónimo determinístico (C0001…) por
+ * temporada para cada corredor y marca ``is_self=true`` al deportista
+ * actual. Para coach/admin el backend ADEMÁS envía ``display_name``
+ * (nombre real) de cada corredor de la categoría —incluye deportistas de
+ * otros clubes— y este componente lo muestra en vez del pseudónimo cuando
+ * está presente (``RiderTimesTable``, ``RiderReferenceLines``). Para parent
+ * el backend siempre envía ``display_name=null``, así que solo ve
+ * pseudónimos (Ley 1581: nunca el nombre real de un menor hacia una
+ * familia). Si conviene ocultar también el nombre real de menores de OTROS
+ * clubes para coach/admin es una decisión de producto todavía sin tomar
+ * (feature 036, Open Question 2 / T037) — este componente solo refleja lo
+ * que el backend decide enviar, no implementa esa política.
  *
  * Cuando ``sample_size < 5`` (confidence==="low") el backend NO ajusta
  * curva normal — el componente cae a una tabla simple para no exponer
  * estadísticas poco confiables sobre grupos pequeños de menores.
  *
  * T022: el picker de carreras usa useAthleteRaces para listar participaciones
- * del atleta. Seleccionar "Temporada (todas)" inhibe la petición /distribution.
+ * del atleta. Por defecto selecciona la carrera más reciente de la temporada
+ * (feature 036, T035) para que el sub-tab abra con datos. "Temporada
+ * (todas)" sigue disponible en el selector y, si se elige, inhibe la
+ * petición /distribution.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -27,6 +39,7 @@ import {
 import { BarChart3, Info } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAthleteDistribution } from "@/hooks/athletes/useAthleteDistribution";
@@ -59,9 +72,10 @@ interface DistributionChartProps {
   defaultSeason?: number;
   /** event_id del evento de carrera a mostrar al montar el componente.
    *  Cuando está presente se selecciona esa carrera en el picker y la
-   *  query se dispara contra ese evento. Cuando está ausente el picker
-   *  inicia en "Temporada (todas)" y la query de distribución queda
-   *  deshabilitada hasta que el usuario seleccione una carrera. */
+   *  query se dispara contra ese evento. Cuando está ausente (feature 036,
+   *  T035) el picker autoselecciona la carrera más reciente de la
+   *  temporada en cuanto la lista carga; con 0 carreras se queda en
+   *  "Temporada (todas)" y la query de distribución permanece deshabilitada. */
   defaultEventId?: number;
 }
 
@@ -87,6 +101,31 @@ export function DistributionChart({
   const racesQuery = useAthleteRaces(athleteId, season);
   const races = racesQuery.data?.items ?? [];
 
+  // Autoselección de la carrera más reciente (feature 036, T035): sin esto
+  // el selector arrancaba en SEASON_AGGREGATE, un valor que solo produce el
+  // placeholder "selecciona una carrera" — el sub-tab abría vacío y el
+  // coach tenía que adivinar que debía cambiar el selector. Cuando el
+  // caller ya pasó `defaultEventId` (ej. abierto desde una competición
+  // puntual) respetamos esa elección explícita y no autoseleccionamos.
+  // Código defensivo: con 0 carreras no hace nada (queda el mensaje "no hay
+  // carreras disponibles"). Preserva la selección manual del usuario
+  // mientras la carrera siga existiendo en la temporada activa — mismo
+  // patrón de default que ComparatorPanel.tsx usa para válida A/B.
+  useEffect(() => {
+    if (defaultEventId !== undefined) return;
+    if (races.length === 0) return;
+    const mostRecent = races.reduce((latest, r) =>
+      r.event_date > latest.event_date ? r : latest,
+    );
+    setSelectedValue((current) => {
+      const stillExists = races.some(
+        (r) => r.event_id === parseEventId(current),
+      );
+      return stillExists ? current : raceOptionValue(mostRecent.event_id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [races.length, season, defaultEventId]);
+
   // Deriva el eventId efectivo para la query de distribución.
   // null cuando la opción agregada está seleccionada → query deshabilitada.
   const eventId: number | null = isAggregateOption(selectedValue)
@@ -108,6 +147,8 @@ export function DistributionChart({
   }, []);
 
   const lowConfidence = query.data?.confidence === "low";
+  const distributionColdStart = isColdStartError(query.error);
+  const racesColdStart = isColdStartError(racesQuery.error);
   const hasFit =
     !!query.data &&
     query.data.curve.length > 0 &&
@@ -152,7 +193,7 @@ export function DistributionChart({
             Distribución de tiempos
           </h3>
           <p className="mt-0.5 text-xs text-mid-gray">
-            Comparación pseudonimizada vs. la categoría.
+            Comparación con el resto de corredores de la categoría.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -167,7 +208,7 @@ export function DistributionChart({
             id="dist-season"
             value={season}
             onChange={(e) => setSeason(Number(e.target.value))}
-            className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
+            className="min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
             data-testid="distribution-season-select"
             aria-hidden={hasNoRaces || undefined}
           >
@@ -191,7 +232,7 @@ export function DistributionChart({
             <select
               id="dist-valida"
               disabled
-              className="rounded-lg bg-white px-3 py-2 text-sm outline-none opacity-60 shadow-ring"
+              className="min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none opacity-60 shadow-ring"
               aria-label="Seleccionar carrera"
               aria-busy="true"
               aria-hidden="true"
@@ -203,7 +244,7 @@ export function DistributionChart({
               id="dist-valida"
               value={selectedValue}
               onChange={(e) => setSelectedValue(e.target.value)}
-              className="rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
+              className="min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
               data-testid="distribution-valida-select"
               aria-label="Seleccionar carrera"
             >
@@ -218,6 +259,23 @@ export function DistributionChart({
         </div>
       </header>
 
+      {/* Estado: falló la carga de la lista de carreras — antes esto caía en
+          silencio al placeholder "Selecciona una carrera" de abajo, que le
+          decía al coach que debía elegir cuando en realidad la petición
+          falló y el selector no tiene nada para ofrecer (feature 036, US5:
+          "lo que dice la pantalla es cierto"). */}
+      {racesQuery.isError && (
+        <ErrorState
+          message={
+            racesColdStart
+              ? undefined
+              : "No pudimos cargar las carreras de esta temporada."
+          }
+          onRetry={() => void racesQuery.refetch()}
+          isColdStart={racesColdStart}
+        />
+      )}
+
       {/* Estado: cero carreras disponibles en la temporada */}
       {hasNoRaces && (
         <div className="rounded-lg bg-light-gray/30 p-6 text-center text-sm text-mid-gray">
@@ -228,7 +286,7 @@ export function DistributionChart({
       {/* Estado: "Temporada (todas)" seleccionada — mensaje informativo, sin fetch.
           Se muestra siempre que el aggregate esté seleccionado y no haya 0 carreras.
           Durante el loading inicial de races, también se muestra para guiar al usuario. */}
-      {isAggregateOption(selectedValue) && !hasNoRaces && (
+      {isAggregateOption(selectedValue) && !hasNoRaces && !racesQuery.isError && (
         <div className="rounded-lg bg-light-gray/30 p-6 text-center text-sm text-mid-gray">
           La distribución se calcula por carrera. Selecciona una carrera en el selector para ver la comparación con la categoría.
         </div>
@@ -259,12 +317,15 @@ export function DistributionChart({
           )}
 
           {query.isError && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-            >
-              No pudimos cargar la distribución para esta válida.
-            </div>
+            <ErrorState
+              message={
+                distributionColdStart
+                  ? undefined
+                  : "No pudimos cargar la distribución para esta válida."
+              }
+              onRetry={() => void query.refetch()}
+              isColdStart={distributionColdStart}
+            />
           )}
 
           {!query.isLoading && !query.isError && query.data && (

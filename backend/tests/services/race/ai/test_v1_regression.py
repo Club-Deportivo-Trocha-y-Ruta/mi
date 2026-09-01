@@ -83,6 +83,8 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "club_members",
             "athletes",
             "parent_athlete",
+            "race_series",
+            "race_events",
             "athlete_ai_insights",
         )
     ]

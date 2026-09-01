@@ -63,7 +63,7 @@ beforeEach(() => {
 });
 
 describe("SidebarNav — filtrado por rol (data-model.md §3)", () => {
-  it("coach ve el área Atletas (Todos, Ansiedad competitiva)", () => {
+  it("coach ve el área Atletas (Todos)", () => {
     renderSidebar("coach");
     expect(screen.getByText("Atletas")).toBeInTheDocument();
   });
@@ -176,14 +176,14 @@ describe("SidebarNav — estado activo (tinte + barra + semibold, nunca sólo co
   });
 
   it("el sub-item de la ruta actual queda marcado como página actual y en semibold", () => {
-    renderSidebar("coach", { initialPath: "/anxiety" });
+    renderSidebar("coach", { initialPath: "/competitions/unlinked" });
 
-    const current = screen.getByRole("link", { name: "Ansiedad competitiva" });
+    const current = screen.getByRole("link", { name: "Sin enlazar" });
     expect(current).toHaveAttribute("aria-current", "page");
     expect(current.className).toMatch(/bg-nav-active-bg/);
     expect(current.className).toMatch(/font-semibold/);
 
-    const sibling = screen.getByRole("link", { name: "Todos" });
+    const sibling = screen.getByRole("link", { name: "Válidas" });
     expect(sibling).not.toHaveAttribute("aria-current");
     expect(sibling.className).not.toMatch(/bg-nav-active-bg/);
   });
@@ -240,21 +240,21 @@ describe("SidebarNav — insignias de pendientes (useNavBadges)", () => {
 // ---------------------------------------------------------------------------
 
 describe("SidebarNav — auto-expand del área activa en deep link", () => {
-  it("un deep link a /anxiety expande Atletas y muestra sus items", () => {
-    renderSidebar("coach", { initialPath: "/anxiety" });
+  it("un deep link a /competitions/unlinked expande Competencias y muestra sus items", () => {
+    renderSidebar("coach", { initialPath: "/competitions/unlinked" });
 
-    const chevron = screen.getByRole("button", { name: /Atletas/ });
+    const chevron = screen.getByRole("button", { name: /Competencias/ });
     expect(chevron).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: "Todos" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Válidas" })).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Ansiedad competitiva" }),
+      screen.getByRole("link", { name: "Sin enlazar" }),
     ).toBeInTheDocument();
   });
 
   it("un grupo no activo permanece colapsado (sus items no están en el DOM)", () => {
-    renderSidebar("coach", { initialPath: "/anxiety" });
+    renderSidebar("coach", { initialPath: "/competitions/unlinked" });
 
-    // Entrenamiento no es el área activa en /anxiety.
+    // Entrenamiento no es el área activa en /competitions/unlinked.
     const chevron = screen.getByRole("button", { name: /Entrenamiento/ });
     expect(chevron).toHaveAttribute("aria-expanded", "false");
     expect(
@@ -347,7 +347,7 @@ describe("SidebarNav — expandir/colapsar manualmente un grupo no activo", () =
 
   it("expandir manualmente un grupo no altera el estado del área activa", async () => {
     const user = userEvent.setup();
-    renderSidebar("coach", { initialPath: "/anxiety" });
+    renderSidebar("coach", { initialPath: "/competitions/unlinked" });
 
     const inactiveChevron = screen.getByRole("button", {
       name: /Entrenamiento/,
@@ -355,8 +355,8 @@ describe("SidebarNav — expandir/colapsar manualmente un grupo no activo", () =
     await user.click(inactiveChevron);
     expect(inactiveChevron).toHaveAttribute("aria-expanded", "true");
 
-    // Atletas sigue expandido porque sigue siendo el área activa.
-    const activeChevron = screen.getByRole("button", { name: /Atletas/ });
+    // Competencias sigue expandido porque sigue siendo el área activa.
+    const activeChevron = screen.getByRole("button", { name: /Competencias/ });
     expect(activeChevron).toHaveAttribute("aria-expanded", "true");
   });
 });
@@ -495,7 +495,7 @@ describe("SidebarNav — modo riel (72px)", () => {
 describe("SidebarNav — accesibilidad (jest-axe)", () => {
   it("sin violaciones en la barra expandida, con área activa e insignias", async () => {
     badgeState.current = { competitions: 2, families: 3 };
-    const { container } = renderSidebar("coach", { initialPath: "/anxiety" });
+    const { container } = renderSidebar("coach", { initialPath: "/athletes/1" });
 
     expect(await axe(container)).toHaveNoViolations();
   });

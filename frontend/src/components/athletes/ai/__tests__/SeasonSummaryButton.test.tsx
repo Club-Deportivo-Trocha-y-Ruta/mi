@@ -68,7 +68,7 @@ describe("SeasonSummaryButton", () => {
     expect(btn).not.toBeDisabled();
   });
 
-  it("click dispara mutation y muestra feedback de éxito", async () => {
+  it("click dispara mutation y muestra feedback de éxito (llamada síncrona, sin 'en proceso')", async () => {
     mswServer.use(seasonSummarySuccessHandler);
     const user = userEvent.setup();
     renderWithProviders(
@@ -81,9 +81,48 @@ describe("SeasonSummaryButton", () => {
     await waitFor(() => {
       expect(screen.getByTestId("season-summary-success")).toBeInTheDocument();
     });
-    expect(
-      screen.getByText(/resumen en proceso/i),
-    ).toBeInTheDocument();
+    // T040: la llamada es síncrona — el resumen ya existe cuando resuelve,
+    // así que "en proceso"/"al completarse" sería falso.
+    expect(screen.getByText(/resumen de temporada generado/i)).toBeInTheDocument();
+    expect(screen.queryByText(/en proceso/i)).not.toBeInTheDocument();
+  });
+
+  it("T040: expone insight_id via onGenerated y el link 'Ver resumen' lo reinvoca", async () => {
+    mswServer.use(seasonSummarySuccessHandler);
+    const onGenerated = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SeasonSummaryButton
+        athleteId={42}
+        analyzedValidasCount={4}
+        onGenerated={onGenerated}
+      />,
+    );
+
+    await user.click(screen.getByTestId("season-summary-btn"));
+
+    await waitFor(() => {
+      // insight_id=9001 en seasonSummarySuccessHandler.
+      expect(onGenerated).toHaveBeenCalledWith(9001);
+    });
+
+    const viewLink = screen.getByTestId("season-summary-view-link");
+    await user.click(viewLink);
+    expect(onGenerated).toHaveBeenCalledTimes(2);
+    expect(onGenerated).toHaveBeenLastCalledWith(9001);
+  });
+
+  it("sin onGenerated no renderiza el link 'Ver resumen' (affordance opcional)", async () => {
+    mswServer.use(seasonSummarySuccessHandler);
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SeasonSummaryButton athleteId={42} analyzedValidasCount={4} />,
+    );
+    await user.click(screen.getByTestId("season-summary-btn"));
+    await waitFor(() => {
+      expect(screen.getByTestId("season-summary-success")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("season-summary-view-link")).not.toBeInTheDocument();
   });
 
   it("error del backend muestra feedback de error", async () => {

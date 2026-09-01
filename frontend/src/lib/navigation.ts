@@ -155,18 +155,12 @@ export const NAV_AREAS: NavArea[] = [
     icon: Users,
     group: "operacion",
     roles: ["coach"],
-    matchPrefixes: ["/athletes", "/anxiety"],
+    matchPrefixes: ["/athletes"],
     items: [
       {
         id: "athletes.all",
         label: "Todos",
         to: "/athletes",
-        roles: ["coach"],
-      },
-      {
-        id: "athletes.anxiety",
-        label: "Ansiedad competitiva",
-        to: "/anxiety",
         roles: ["coach"],
       },
     ],

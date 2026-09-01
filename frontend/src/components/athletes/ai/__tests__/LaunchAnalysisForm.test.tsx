@@ -17,6 +17,9 @@
  *    hallado en QA de spec 033 — este control no estaba en el rename table
  *    original pero es un launch control real); se deshabilita y muestra
  *    AIBudgetHint cuando budget_status="exhausted".
+ *  - T091 (036/US6): chips y checkbox de revisión paso a paso miden ≥48×48.
+ *  - T092 (036/US6): el checkbox queda junto a su etiqueta, no en el borde.
+ *  - T096b (036/US6): microcopy "Revisión paso a paso" / "Máximo 4 a la vez".
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
@@ -117,6 +120,69 @@ describe("LaunchAnalysisForm", () => {
     expect(screen.getByTestId("launch-event-99")).toHaveTextContent("CD");
   });
 
+  // ---------------------------------------------------------------------------
+  // T031 (feature 036) — dos carreras del mismo series_kind deben ser
+  // identificables sin ambigüedad. RaceParticipationOption documenta que
+  // "para campeonatos siempre es 1" el sequence_number, así que dos
+  // Campeonatos Departamentales en la misma temporada chocan exactamente
+  // en el dato que antes distinguía los chips ("CD" a secas, sin fecha).
+  // ---------------------------------------------------------------------------
+  it("dos Campeonatos Departamentales en la misma temporada se distinguen por fecha", async () => {
+    mockRaces({
+      season: YEAR,
+      items: [
+        {
+          event_id: 1,
+          sequence_number: 1,
+          series_kind: "cup",
+          event_date: `${YEAR}-01-31`,
+          event_name: "V1",
+          location: "Sevilla",
+          label: "Válida 1",
+        },
+        {
+          // Primer Cto. Departamental — mismo sequence_number=1 que el segundo.
+          event_id: 99,
+          sequence_number: 1,
+          series_kind: "championship",
+          event_date: `${YEAR}-06-12`,
+          event_name: "Campeonato Departamental — Ginebra",
+          location: "Ginebra",
+          label: "Cto. Dep. — Ginebra",
+        },
+        {
+          // Segundo Cto. Departamental de la misma temporada (reprogramado
+          // o de otra subcategoría) — el bug reportado: sin fecha, ambos
+          // chips se ven idénticos ("CD") y el coach no puede diferenciarlos.
+          event_id: 150,
+          sequence_number: 1,
+          series_kind: "championship",
+          event_date: `${YEAR}-11-20`,
+          event_name: "Campeonato Departamental — Palmira",
+          location: "Palmira",
+          label: "Cto. Dep. — Palmira",
+        },
+      ],
+    });
+    renderWithProviders(
+      <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+    );
+
+    const firstChampionship = await screen.findByTestId("launch-event-99");
+    const secondChampionship = await screen.findByTestId("launch-event-150");
+
+    // Ambos siguen rotulados "CD" (mismo series_kind)…
+    expect(firstChampionship).toHaveTextContent("CD");
+    expect(secondChampionship).toHaveTextContent("CD");
+    // …pero el texto visible completo ya no es idéntico: cada uno lleva su
+    // propia fecha, así el coach puede distinguirlos sin depender del title.
+    expect(firstChampionship.textContent).not.toBe(
+      secondChampionship.textContent,
+    );
+    expect(firstChampionship).toHaveTextContent("12 jun");
+    expect(secondChampionship).toHaveTextContent("20 nov");
+  });
+
   it("toggle de chip actualiza aria-pressed", async () => {
     mockRaces();
     const user = userEvent.setup();
@@ -207,7 +273,7 @@ describe("LaunchAnalysisForm", () => {
     expect(await screen.findByTestId("launch-races-empty")).toBeInTheDocument();
   });
 
-  it("muestra error de servidor en submit fallido", async () => {
+  it("muestra error de servidor en submit fallido (detail verbatim, no el status genérico)", async () => {
     mockRaces();
     mswServer.use(
       http.post(
@@ -225,10 +291,91 @@ describe("LaunchAnalysisForm", () => {
     );
     await screen.findByTestId("launch-event-1");
     await user.click(screen.getByTestId("launch-submit"));
-    await waitFor(() => {
-      const alerts = screen.getAllByRole("alert");
-      expect(alerts.length).toBeGreaterThan(0);
-    });
+    // T045: el detail del backend, no "Request failed with status code 403".
+    expect(
+      await screen.findByText("Sin permisos para lanzar análisis"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/request failed with status code/i),
+    ).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // T045 — AxiosError extiende Error, así que la rama genérica
+  // `err instanceof Error` atrapaba el 409 antes de llegar al `detail` real.
+  // Los dos 409 nuevos de Wave 2/Foundation (run activo, dedup resumen de
+  // temporada) dependen de que este mensaje SÍ llegue al coach.
+  // ---------------------------------------------------------------------------
+  it("T045: un 409 con detail JSON expone el detail verbatim, no el status genérico", async () => {
+    mockRaces();
+    mswServer.use(
+      http.post(
+        "*/api/athletes/:athleteId/race-analysis/runs",
+        () =>
+          new HttpResponse(
+            JSON.stringify({
+              detail: "Ya hay un análisis en curso para esta válida.",
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(
+      <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+    );
+    await screen.findByTestId("launch-event-1");
+    await user.click(screen.getByTestId("launch-submit"));
+
+    expect(
+      await screen.findByText("Ya hay un análisis en curso para esta válida."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/request failed with status code 409/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("carreras: error 500 muestra ErrorState en vez de 'sin carreras registradas'", async () => {
+    mswServer.use(
+      http.get(
+        "*/api/athletes/:athleteId/race-analysis/races",
+        () =>
+          new HttpResponse(
+            JSON.stringify({ detail: "Error interno" }),
+            { status: 500, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    );
+    renderWithProviders(
+      <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+    );
+    // No debe afirmar falsamente que no hay carreras registradas: el fetch
+    // falló, no es que la temporada esté vacía (US5 — truth on screen).
+    expect(
+      await screen.findByText(/no se pudieron cargar las carreras/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("launch-races-empty")).not.toBeInTheDocument();
+  });
+
+  it("carreras: un fallo de red (forma cold-start) muestra la copy calmada, no un error alarmante", async () => {
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/races", () =>
+        HttpResponse.error(),
+      ),
+    );
+    renderWithProviders(
+      <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+    );
+    // Una petición sin respuesta (Render Free despertando o red caída) es
+    // indistinguible desde el cliente — ErrorState usa `role="status"` y
+    // tono calmado en vez de la alarma roja genérica de "carreras".
+    expect(
+      await screen.findByText(/la aplicación está iniciando/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/no se pudieron cargar las carreras/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("launch-races-empty")).not.toBeInTheDocument();
   });
 
   it("botón submit queda disabled durante la mutation", async () => {
@@ -366,6 +513,112 @@ describe("LaunchAnalysisForm", () => {
       await waitFor(() => expect(fifth).not.toBeDisabled());
       await user.click(fifth);
       expect(fifth).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("no tiene violaciones a11y con un chip en estado cap-reached (disabled)", async () => {
+      mockRaces();
+      const user = userEvent.setup();
+      const { container } = renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await user.click(await screen.findByTestId("launch-event-1"));
+      await user.click(screen.getByTestId("launch-event-2"));
+      await user.click(screen.getByTestId("launch-event-3"));
+      await user.click(screen.getByTestId("launch-event-4"));
+      await waitFor(() =>
+        expect(screen.getByTestId("launch-event-5")).toBeDisabled(),
+      );
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T091 [US6] — piso táctil de 48×48px (frontend/e2e/target-size.spec.ts:44).
+  // jsdom no calcula layout real (sin motor de render), así que se afirma
+  // sobre las clases Tailwind que fijan el tamaño mínimo — mismo patrón que
+  // `session-plan/TechniqueAttachPicker.tsx` (feature 032) ya probó en real:
+  // el propio elemento interactivo mide 48×48, no solo un envoltorio.
+  // ---------------------------------------------------------------------------
+  describe("piso táctil 48×48 (T091)", () => {
+    it("los chips de carreras miden al menos 48×48 (antes: min-h-9 = 36px)", async () => {
+      mockRaces();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      const chip = await screen.findByTestId("launch-event-1");
+      expect(chip).toHaveClass("min-h-12");
+      expect(chip).toHaveClass("min-w-12");
+      expect(chip).not.toHaveClass("min-h-9");
+    });
+
+    it("el checkbox de revisión paso a paso mide al menos 48×48 (antes: h-5 w-5 = 20px)", async () => {
+      mockRaces();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await screen.findByTestId("launch-event-1");
+      const checkbox = screen.getByTestId("launch-explain-switch");
+      expect(checkbox).toHaveClass("h-12");
+      expect(checkbox).toHaveClass("w-12");
+      expect(checkbox).not.toHaveClass("h-5");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T092 [US6] — el checkbox debe quedar junto al texto que gobierna, no
+  // empujado al borde derecho por un `justify-between` a lo ancho del card.
+  // ---------------------------------------------------------------------------
+  it("T092: el checkbox de revisión paso a paso está junto a su etiqueta, no en el borde", async () => {
+    mockRaces();
+    renderWithProviders(
+      <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+    );
+    await screen.findByTestId("launch-event-1");
+    const checkbox = screen.getByTestId("launch-explain-switch");
+    // La fila que envuelve al checkbox comparte contenedor con el título
+    // corto ("Revisión paso a paso") y NO con la descripción larga, que
+    // vive en un bloque aparte debajo — así el checkbox queda pegado al
+    // texto que gobierna en vez de separado por todo el ancho del card.
+    const row = checkbox.closest("span");
+    expect(row).not.toBeNull();
+    expect(row).toHaveTextContent("Revisión paso a paso");
+    expect(row).not.toHaveTextContent("El análisis se detendrá");
+  });
+
+  // ---------------------------------------------------------------------------
+  // T096b [US6] — microcopy: "Modo explicativo" → "Revisión paso a paso";
+  // "Máximo 4 por lanzamiento" → "Máximo 4 a la vez".
+  // ---------------------------------------------------------------------------
+  describe("microcopy T096b", () => {
+    it('usa "Revisión paso a paso" y retira "Modo explicativo"', async () => {
+      mockRaces();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await screen.findByTestId("launch-event-1");
+      expect(screen.getByText("Revisión paso a paso")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "El análisis se detendrá en cada etapa para que lo apruebes antes de continuar.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Modo explicativo")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/el agente pausará/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it('usa "Máximo 4 a la vez" y retira "Máximo 4 por lanzamiento"', async () => {
+      mockRaces();
+      renderWithProviders(
+        <LaunchAnalysisForm athleteId={42} athleteName="Test User" />,
+      );
+      await screen.findByTestId("launch-event-1");
+      expect(screen.getByText(/máximo 4 a la vez/i)).toBeInTheDocument();
+      expect(
+        screen.queryByText(/máximo 4 por lanzamiento/i),
+      ).not.toBeInTheDocument();
     });
   });
 });

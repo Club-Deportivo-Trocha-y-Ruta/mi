@@ -17,12 +17,19 @@
  *
  * Mockeamos los sub-componentes pesados (InsightsTimeline,
  * EvolutionChart, ComparatorPanel, DistributionChart, LaunchAnalysisForm,
- * AnalysisRunTimeline, PanoramaView) — están testeados en sus propios specs.
+ * PanoramaView) — están testeados en sus propios specs.
+ *
+ * Excepción (T015, feature 036): `AnalysisRunTimeline` y
+ * `HITLApprovalCard` NO se mockean — la suite "T012/T013/T014" al final
+ * de este archivo los monta reales contra MSW, porque mockear el propio
+ * timeline es justo lo que dejó sin probar la lógica de activeRunId/HITL
+ * que vive en este componente.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
+import { http, HttpResponse } from "msw";
 
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: vi.fn((sel: (s: unknown) => unknown) =>
@@ -115,23 +122,47 @@ vi.mock("@/components/athletes/ai/DistributionChart", () => ({
     <div data-testid="mock-distribution-chart">distribution</div>
   ),
 }));
+// LaunchAnalysisForm mock: expone un botón que dispara onStarted
+// directamente (T015), sin reproducir el formulario real (carreras,
+// season, useAIStatus) — eso ya está cubierto en LaunchAnalysisForm.test.tsx.
+// Las pruebas T012-T014 (activeRunId / HITL) sólo necesitan poder
+// simular "un run acaba de arrancar".
 vi.mock("@/components/athletes/ai/LaunchAnalysisForm", () => ({
-  LaunchAnalysisForm: ({ athleteName }: { athleteName: string }) => (
-    <div data-testid="mock-launch-form">launch-{athleteName}</div>
+  LaunchAnalysisForm: ({
+    athleteName,
+    onStarted,
+  }: {
+    athleteName: string;
+    onStarted?: (runId: string) => void;
+  }) => (
+    <div data-testid="mock-launch-form">
+      launch-{athleteName}
+      <button
+        type="button"
+        data-testid="mock-launch-trigger"
+        onClick={() => onStarted?.("run-mock-001")}
+      >
+        simular inicio de run
+      </button>
+    </div>
   ),
 }));
-vi.mock("@/components/ai/AnalysisRunTimeline", () => ({
-  AnalysisRunTimeline: ({ runId }: { runId: string }) => (
-    <div data-testid="mock-run-timeline">run-{runId}</div>
-  ),
-}));
+// AnalysisRunTimeline y HITLApprovalCard ya NO se mockean (T015): las
+// pruebas T012-T014 más abajo montan el árbol real contra MSW — mockear
+// el propio timeline es justo lo que dejaba sin probar la lógica de
+// activeRunId/HITL de este archivo.
 
 import { mswServer } from "@/test/setup";
-import { emptyInsightsHandler } from "@/test/msw/athleteRaceAnalysisHandlers";
-import { renderWithProviders } from "@/test/helpers/renderWithProviders";
+import { emptyInsightsHandler, mockInsight } from "@/test/msw/athleteRaceAnalysisHandlers";
+import { seasonSummarySuccessHandler } from "@/test/msw/raceAnalysisV2Handlers";
+import {
+  createTestQueryClient,
+  renderWithProviders,
+} from "@/test/helpers/renderWithProviders";
 import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import type { AthleteOut } from "@/types/athlete.types";
 import { Sex } from "@/types/enums";
+import { doneRunStatusHandler } from "./raceRunTestHandlers";
 
 const athlete: AthleteOut = {
   id: 42,
@@ -179,6 +210,27 @@ describe("AthleteAIAnalysisTab", () => {
     expect(tabsList.querySelectorAll('[role="tab"]').length).toBe(5);
   });
 
+  // -------------------------------------------------------------------------
+  // T090 (feature 036, US6) — el strip de sub-tabs ya no oculta overflow con
+  // scroll horizontal invisible (scrollbar-width:none): a 360–400px eso
+  // dejaba "Analizar con IA" — el último sub-tab y la acción principal del
+  // módulo — inalcanzable salvo que el usuario adivinara que podía
+  // deslizar. jsdom no calcula layout real (no hay forma de medir overflow
+  // horizontal aquí — ver target-size.spec.ts para la comprobación con
+  // layout real a 360px), así que esta prueba confirma el fix estructural:
+  // ya no existe la clase que ocultaba el scroll, y el strip permite wrap.
+  // -------------------------------------------------------------------------
+  it("T090 — el strip de sub-tabs ya no oculta el overflow con scroll invisible (permite wrap)", async () => {
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-subtab-panorama")).toBeInTheDocument();
+    });
+    const tabsList = screen.getByRole("tablist");
+    expect(tabsList.className).toContain("flex-wrap");
+    expect(tabsList.className).not.toContain("overflow-x-auto");
+    expect(tabsList.className).not.toContain("scrollbar");
+  });
+
   it("default activo en mode=coach es 'panorama'", async () => {
     renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
     await waitFor(() => {
@@ -218,9 +270,9 @@ describe("AthleteAIAnalysisTab", () => {
     });
     // El header expone "Total aprobados: 2" del MSW handler default
     expect(screen.getByText(/total aprobados:\s*2/i)).toBeInTheDocument();
-    // Badge "Válida 4" (header)
+    // Badge "Válida IV" (header) — formato romano, feature 036 T032.
     expect(
-      screen.getAllByText(/válida\s*4/i).length,
+      screen.getAllByText(/válida\s*iv\b/i).length,
     ).toBeGreaterThanOrEqual(1);
   });
 
@@ -238,6 +290,118 @@ describe("AthleteAIAnalysisTab", () => {
     const badge = screen.getByText("Confianza alta");
     expect(badge).toBeInTheDocument();
     expect(badge.closest("span")).toHaveClass("bg-success/10");
+  });
+
+  // -------------------------------------------------------------------------
+  // T034 (feature 036, US5) — el header ancla "Último análisis" a la fecha
+  // de LA CARRERA, no a cuándo se generó el análisis. Antes, "Válida 1"
+  // (una carrera vieja) aparecía junto a la fecha de HOY (generated_at),
+  // dando la falsa impresión de que la válida 1 acababa de correrse — el
+  // coach no podía distinguir "el módulo está roto" de "simplemente hay
+  // válidas más nuevas sin analizar todavía".
+  // -------------------------------------------------------------------------
+
+  it("T034 — el header ancla 'Último análisis' a la fecha de la carrera (event_date), no a la fecha de generación", async () => {
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
+        HttpResponse.json({
+          items: [
+            mockInsight({
+              valida_num: 1,
+              event_date: "2026-03-15",
+              generated_at: "2026-08-30T10:00:00Z",
+              season: 2026,
+            }),
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      ),
+    );
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-header-summary")).toBeInTheDocument();
+    });
+
+    // La fecha prominente es la de LA CARRERA (15 mar 2026) — antes de
+    // T034 esta línea mostraba la fecha de generación (30 ago 2026).
+    const raceDate = screen.getByTestId("ai-header-race-date");
+    expect(raceDate).toHaveTextContent("15 mar 2026");
+    expect(raceDate).not.toHaveTextContent(/30 ago/);
+    // La fecha de generación se conserva, pero marcada explícitamente
+    // como tal ("Generado ..."), en una línea aparte — no se pierde
+    // información, sólo se deja de confundir con la fecha de la carrera.
+    // No fijamos el formato exacto de `formatDateTimeCompact` (varía con
+    // la data ICU del runtime) — sólo que la etiqueta "Generado" está
+    // presente y que trae el año/mes de generación (agosto), distinto al
+    // de la carrera (marzo).
+    const summary = screen.getByTestId("ai-header-summary");
+    expect(summary).toHaveTextContent(/generado/i);
+    expect(summary).toHaveTextContent(/ago/i);
+  });
+
+  it("T034 — resumen de temporada (sin evento vinculado): el header cae a 'Temporada {season}' en vez de mostrar la fecha de generación", async () => {
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
+        HttpResponse.json({
+          items: [
+            mockInsight({
+              valida_num: 0,
+              event_id: null,
+              event_date: null,
+              series_kind: null,
+              season: 2026,
+              use_case: "season_summary_v2",
+            }),
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      ),
+    );
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-header-summary")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("ai-header-race-date")).toHaveTextContent(
+      "Temporada 2026",
+    );
+  });
+
+  it("T040 — al generar el resumen de temporada, el botón deep-linkea al insight recién creado (salta a Histórico)", async () => {
+    // `SeasonSummaryButton` requiere >= 3 válidas analizadas para habilitarse.
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
+        HttpResponse.json({
+          items: [mockInsight({ valida_num: 4 })],
+          total: 4,
+          limit: 50,
+          offset: 0,
+        }),
+      ),
+      seasonSummarySuccessHandler,
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("season-summary-btn")).toBeEnabled();
+    });
+    // Antes de este fix, `onGenerated` nunca se pasaba desde este
+    // componente — el link "Ver resumen" de `SeasonSummaryButton` ni
+    // siquiera se renderizaba, y generar el resumen dejaba al coach en el
+    // mismo sub-tab sin ninguna forma de ver el insight recién creado.
+    await user.click(screen.getByTestId("season-summary-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-subtab-history")).toHaveAttribute(
+        "data-state",
+        "active",
+      );
+    });
   });
 
   it("muestra placeholder 'Sin análisis' cuando no hay insights", async () => {
@@ -396,6 +560,31 @@ describe("AthleteAIAnalysisTab", () => {
       });
       const bar = screen.getByTestId("newsletter-action-bar");
       expect(bar).toHaveTextContent(/1\s+insight\s+seleccionado/i);
+    });
+
+    // -----------------------------------------------------------------------
+    // T093 (feature 036, US6) — la barra sticky cambia de estado (conteo de
+    // selección, éxito, error) sin anunciar nada a un lector de pantalla.
+    // -----------------------------------------------------------------------
+    it("T093 — la action bar expone role='status' y aria-live='polite' (no 'assertive': la acción es reintentable)", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-subtab-history")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("ai-subtab-history"));
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("mock-insights-timeline"),
+        ).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("insight-checkbox-101"));
+
+      const bar = await screen.findByTestId("newsletter-action-bar");
+      expect(bar).toHaveAttribute("role", "status");
+      expect(bar).toHaveAttribute("aria-live", "polite");
     });
 
     it("coach: dos checks → copy en plural; 'Limpiar' colapsa la action bar", async () => {
@@ -628,5 +817,241 @@ describe("AthleteAIAnalysisTab — rename table (T054, regresión T046)", () => 
     expect(subtab).not.toHaveTextContent("Lanzar");
     expect(subtab.querySelector("svg.lucide-sparkles")).toBeInTheDocument();
     expect(subtab.querySelector("svg.lucide-play")).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T015 (feature 036, US3) — T012/T013/T014 con el árbol REAL montado.
+//
+// `AnalysisRunTimeline` y `HITLApprovalCard` ya no se mockean (ver el
+// bloque de mocks arriba). `LaunchAnalysisForm` sigue mockeado, pero
+// ahora expone `mock-launch-trigger`, que dispara `onStarted` igual que
+// lo haría un submit real — así estas pruebas no dependen de carreras,
+// season ni useAIStatus, que son responsabilidad de
+// LaunchAnalysisForm.test.tsx.
+// ---------------------------------------------------------------------------
+
+describe("AthleteAIAnalysisTab — T012/T013/T014 (árbol real de run+HITL)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAttachState = {
+      isPending: false,
+      isSuccess: false,
+      isError: false,
+      data: undefined,
+      error: null,
+      mutate: mockAttachMutate,
+      reset: mockAttachReset,
+    };
+  });
+
+  async function startMockRun(user: ReturnType<typeof userEvent.setup>) {
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-subtab-launch")).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId("ai-subtab-launch"));
+    await user.click(await screen.findByTestId("mock-launch-trigger"));
+    // handleStarted setea activeRunId + cambia el sub-tab a Histórico de
+    // forma síncrona — confirma que sí arrancamos "un run" antes de
+    // esperar cualquier efecto de la query real.
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-subtab-history")).toHaveAttribute(
+        "data-state",
+        "active",
+      );
+    });
+  }
+
+  it("T012 — al llegar a estado terminal (done), activeRunId se limpia y el timeline deja de estar montado", async () => {
+    mswServer.use(doneRunStatusHandler());
+    const user = userEvent.setup();
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    await startMockRun(user);
+
+    // Antes de T012 este timeline (real, sin mock) quedaba pegado para
+    // siempre porque handleRunComplete nunca volvía a poner activeRunId
+    // en null.
+    await waitFor(() => {
+      expect(screen.queryByTestId("analysis-run-timeline")).not.toBeInTheDocument();
+    });
+  });
+
+  // T042 (feature 036, US5): antes de este fix, `handleRunComplete`
+  // invalidaba con un predicate ad-hoc `startsWith("athlete-")` — perdía
+  // `club-insights-by-race` y `season-panorama`. Revertir el fix (volver
+  // al predicate inline en vez de `invalidateAthleteAiQueries`) hace
+  // fallar este test.
+  it("T042 — al completar el run, invalidateAthleteAiQueries cubre club-insights-by-race, season-panorama y las claves del atleta correcto", async () => {
+    mswServer.use(doneRunStatusHandler());
+    const queryClient = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const user = userEvent.setup();
+    renderWithProviders(
+      <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
+      { queryClient },
+    );
+    await startMockRun(user);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("analysis-run-timeline"),
+      ).not.toBeInTheDocument();
+    });
+
+    const predicateCall = invalidateSpy.mock.calls.find(
+      (call) =>
+        typeof (call[0] as { predicate?: unknown } | undefined)
+          ?.predicate === "function",
+    );
+    expect(predicateCall).toBeDefined();
+    const predicate = (
+      predicateCall![0] as {
+        predicate: (q: { queryKey: unknown }) => boolean;
+      }
+    ).predicate;
+
+    expect(
+      predicate({ queryKey: ["athlete-insights", athlete.id, {}] }),
+    ).toBe(true);
+    // Otro atleta — no debe invalidarse.
+    expect(predicate({ queryKey: ["athlete-insights", 999, {}] })).toBe(
+      false,
+    );
+    expect(predicate({ queryKey: ["club-insights-by-race", 3] })).toBe(true);
+    expect(predicate({ queryKey: ["season-panorama", 2026, 1] })).toBe(true);
+    // Dominios sin relación con un run de IA.
+    expect(
+      predicate({ queryKey: ["athlete-activities", athlete.id] }),
+    ).toBe(false);
+    expect(
+      predicate({ queryKey: ["athlete-newsletters", 1, athlete.id] }),
+    ).toBe(false);
+  });
+
+  it("T013 — el timer de confirmación (3s) no se reinicia aunque attachMutation cambie de referencia entre renders", async () => {
+    vi.useFakeTimers();
+    try {
+      mockAttachState = {
+        isPending: false,
+        isSuccess: true,
+        isError: false,
+        data: undefined,
+        error: null,
+        mutate: mockAttachMutate,
+        reset: mockAttachReset,
+      };
+      const { rerender } = renderWithProviders(
+        <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
+      );
+      expect(
+        screen.getByTestId("newsletter-action-bar-success"),
+      ).toBeInTheDocument();
+
+      // Simula 4 "poll ticks": cada uno entrega un `attachMutation` con
+      // una referencia NUEVA (igual que TanStack Query v5 en cada
+      // render), pero el mismo `isSuccess` y la misma función `reset` —
+      // justo lo que el fix de T013 debe tolerar sin reiniciar el timer.
+      for (let i = 0; i < 4; i += 1) {
+        await act(async () => {
+          vi.advanceTimersByTime(700);
+        });
+        mockAttachState = { ...mockAttachState };
+        rerender(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+      }
+      // 2800 ms repartidos en 4 renders con referencia nueva cada vez.
+      // Si el efecto dependiera del objeto completo (bug pre-T013), cada
+      // rerender reiniciaría el timer y reset() nunca llegaría a
+      // dispararse acá.
+      expect(mockAttachReset).not.toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(300); // total 3100 ms desde el montaje inicial
+      });
+      expect(mockAttachReset).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("T014 — la card HITL renderiza el draft real y desaparece apenas el coach decide (no queda pegada al hitl_request viejo)", async () => {
+    let decided = false;
+    const hitlRequestEvent = {
+      seq: 1,
+      ts: "2026-08-20T10:00:01Z",
+      type: "hitl_request",
+      node: "hitl_gate_review",
+      payload: {
+        step_id: "hitl-step-1",
+        draft_markdown: "### Borrador real\nContenido de prueba T014.",
+      },
+    };
+    mswServer.use(
+      http.get("*/api/race-analysis/runs/:runId/status", ({ params }) =>
+        HttpResponse.json(
+          decided
+            ? {
+                run_id: String(params.runId),
+                state: "running",
+                progress_pct: 90,
+                current_node: "persist_insight",
+                started_at: "2026-08-20T10:00:00Z",
+                estimated_seconds_remaining: 5,
+                last_seq: 2,
+                new_events: [
+                  hitlRequestEvent,
+                  {
+                    seq: 2,
+                    ts: "2026-08-20T10:00:05Z",
+                    type: "hitl_response",
+                    node: "hitl_gate_review",
+                    payload: {
+                      decision: "approve",
+                      step_id: "hitl-step-1",
+                      has_edits: false,
+                    },
+                  },
+                ],
+              }
+            : {
+                run_id: String(params.runId),
+                state: "hitl_waiting",
+                progress_pct: 70,
+                current_node: "hitl_gate_review",
+                started_at: "2026-08-20T10:00:00Z",
+                estimated_seconds_remaining: 0,
+                last_seq: 1,
+                new_events: [hitlRequestEvent],
+              },
+        ),
+      ),
+      http.post(
+        "*/api/race-analysis/runs/:runId/hitl/:stepId",
+        ({ params }) => {
+          decided = true;
+          return HttpResponse.json({
+            accepted: true,
+            run_id: String(params.runId),
+            step_id: String(params.stepId),
+            next_state: "running",
+          });
+        },
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    await startMockRun(user);
+
+    const card = await screen.findByTestId("hitl-approval-card");
+    expect(card).toHaveTextContent(/Borrador real/);
+
+    await user.click(screen.getByTestId("hitl-approve-button"));
+
+    // Antes de T014, el hitl_request viejo seguía "matcheando" para
+    // siempre (vía node===hitl_gate_review) y la card no se soltaba
+    // aunque ya hubiera un hitl_response más reciente.
+    await waitFor(() => {
+      expect(screen.queryByTestId("hitl-approval-card")).not.toBeInTheDocument();
+    });
   });
 });

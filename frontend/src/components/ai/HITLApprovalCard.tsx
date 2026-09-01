@@ -64,13 +64,25 @@ export function HITLApprovalCard({
   const [editedMarkdown, setEditedMarkdown] = useState(draftMarkdown);
   const [rejectionNotes, setRejectionNotes] = useState("");
 
-  const submit = async (body: HITLDecisionRequest) => {
+  // Devuelve si el submit tuvo éxito. Antes esta función no devolvía nada y
+  // `handleSaveEdit` decidía si cerrar el diálogo leyendo `mutation.isError`
+  // DESPUÉS del await — pero `mutation` es la referencia capturada en el
+  // render anterior al click (closure), nunca la actualizada por el propio
+  // `mutateAsync` que se acaba de resolver/rechazar dentro de esta misma
+  // invocación. Esa lectura era SIEMPRE `false` (el valor de antes del
+  // click), así que el diálogo de edición se cerraba incluso cuando el
+  // guardado fallaba, escondiendo el error de contexto. Devolver el
+  // resultado real de este intento puntual evita depender del estado
+  // (potencialmente stale) del hook.
+  const submit = async (body: HITLDecisionRequest): Promise<boolean> => {
     try {
       await mutation.mutateAsync({ stepId, decision: body });
       onSubmitted?.(body.decision);
+      return true;
     } catch {
       // El error se renderiza desde `mutation.isError` — silenciamos
       // aquí para que no se propague como unhandled rejection en tests.
+      return false;
     }
   };
 
@@ -86,11 +98,11 @@ export function HITLApprovalCard({
   };
 
   const handleSaveEdit = async () => {
-    await submit({
+    const ok = await submit({
       decision: "edit",
       edits: editedMarkdown,
     });
-    if (!mutation.isError) setEditOpen(false);
+    if (ok) setEditOpen(false);
   };
 
   const submitting = mutation.isPending;
@@ -261,6 +273,21 @@ export function HITLApprovalCard({
                 </div>
               </div>
             </div>
+            {errorMsg && (
+              // El banner de error de la sección principal (más abajo en
+              // este archivo) queda `aria-hidden` mientras el diálogo está
+              // abierto (comportamiento estándar de Radix Dialog al ocultar
+              // el fondo) y detrás del overlay visualmente — si "Guardar y
+              // aprobar" falla, el coach nunca lo vería sin este duplicado
+              // DENTRO del diálogo.
+              <p
+                className="mt-3 text-sm text-red-700"
+                role="alert"
+                data-testid="hitl-edit-dialog-error"
+              >
+                {errorMsg}
+              </p>
+            )}
           </DialogBody>
           <DialogFooter>
             <button

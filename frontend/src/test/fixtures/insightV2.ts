@@ -45,6 +45,8 @@ export function mockInsightV2(
     season: 2026,
     valida_num: 4,
     event_id: 104,
+    event_date: "2026-05-17",
+    series_kind: "cup",
     use_case: "race_analysis",
     summary_text: buildV2Markdown(),
     confidence: "high",
@@ -55,6 +57,7 @@ export function mockInsightV2(
     approved_at: "2026-05-20T12:30:00Z",
     is_active: true,
     deprecated_at: null,
+    is_fallback: false,
     ...overrides,
   };
 }
@@ -113,6 +116,8 @@ export function mockSeasonSummaryInsight(
     valida_num: 0,
     use_case: "season_summary",
     event_id: null,
+    event_date: null,
+    series_kind: null,
     summary_text: buildV2Markdown({
       seasonSummary:
         "Temporada con progreso técnico claro y mejora en cadencia. " +

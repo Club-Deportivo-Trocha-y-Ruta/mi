@@ -434,4 +434,97 @@ describe("ComparatorPanel v2", () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  // ---------------------------------------------------------------------------
+  // T038 — antes de este fix, un query fallido no mostraba NADA: el coach
+  // veía el panel en blanco sin ninguna indicación de que algo falló.
+  // ---------------------------------------------------------------------------
+  describe("manejo de errores (T038)", () => {
+    it("error en la lista de insights de temporada muestra ErrorState, no un panel en blanco", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/insights",
+          () =>
+            new HttpResponse(
+              JSON.stringify({ detail: "Error interno" }),
+              { status: 500, headers: { "Content-Type": "application/json" } },
+            ),
+        ),
+        anthropometryEmptyHandler(),
+      );
+      renderWithProviders(<ComparatorPanel athleteId={42} />);
+
+      expect(
+        await screen.findByText(/no se pudieron cargar los análisis de la temporada/i),
+      ).toBeInTheDocument();
+      // El panel no queda en blanco: hay un role="alert" explícito, y ni el
+      // empty state ni la tabla se confunden con "sin datos".
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expect(screen.queryByTestId("comparator-empty-pair")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("comparator-diff-table")).not.toBeInTheDocument();
+    });
+
+    it("Reintentar en el error de temporada vuelve a pedir la lista de insights", async () => {
+      let calls = 0;
+      mswServer.use(
+        http.get("*/api/athletes/:athleteId/race-analysis/insights", () => {
+          calls += 1;
+          return new HttpResponse(
+            JSON.stringify({ detail: "Error interno" }),
+            { status: 500, headers: { "Content-Type": "application/json" } },
+          );
+        }),
+        anthropometryEmptyHandler(),
+      );
+      const user = userEvent.setup();
+      renderWithProviders(<ComparatorPanel athleteId={42} />);
+
+      await screen.findByText(/no se pudieron cargar los análisis de la temporada/i);
+      expect(calls).toBe(1);
+
+      await user.click(screen.getByRole("button", { name: /reintentar/i }));
+      await waitFor(() => expect(calls).toBe(2));
+    });
+
+    it("error en el detalle de una válida (A o B) muestra ErrorState en la comparación", async () => {
+      mswServer.use(
+        defaultSeasonListHandler(),
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/insights/:insightId",
+          () =>
+            new HttpResponse(
+              JSON.stringify({ detail: "Error interno" }),
+              { status: 500, headers: { "Content-Type": "application/json" } },
+            ),
+        ),
+        anthropometryEmptyHandler(),
+      );
+      renderWithProviders(<ComparatorPanel athleteId={42} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("comparator-col-a")).toBeInTheDocument();
+      });
+      expect(
+        await screen.findByText(/no se pudo cargar el detalle del análisis/i),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId("comparator-diff-table")).not.toBeInTheDocument();
+    });
+
+    it("un fallo de red (forma cold-start) en la lista de temporada muestra la copy calmada", async () => {
+      mswServer.use(
+        http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
+          HttpResponse.error(),
+        ),
+        anthropometryEmptyHandler(),
+      );
+      renderWithProviders(<ComparatorPanel athleteId={42} />);
+
+      expect(
+        await screen.findByText(/la aplicación está iniciando/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/no se pudieron cargar los análisis de la temporada/i),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

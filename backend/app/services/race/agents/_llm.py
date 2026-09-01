@@ -31,7 +31,14 @@ from app.services.race.agents.pricing import (
 
 DEFAULT_MODEL_BY_PROVIDER: dict[str, str] = {
     "anthropic": "claude-sonnet-5",
-    "google": "gemini-2.5-flash-lite",
+    # gemini-3.1-flash-lite (GA 2026-05-07) es el modelo Google activo desde
+    # 2026-07-14 — mismo dato que documenta con sus tarifas
+    # ``app/services/race/agents/pricing.py``. Feature 036 (T061): este
+    # default había quedado en el predecesor "gemini-2.5-flash-lite" después
+    # de que pricing.py ya se hubiera actualizado — exactamente la clase de
+    # deriva que este módulo (única fuente de verdad para el default por
+    # proveedor) existe para evitar. Mantener ambos archivos en sync.
+    "google": "gemini-3.1-flash-lite",
     # Default genérico para OpenAI real; en uso local con Ollama la config
     # (RACE_AI_MODEL) elige el modelo instalado, ej. "qwen3.5:latest".
     "openai": "gpt-4o-mini",
@@ -170,6 +177,37 @@ def build_chat_llm(
         timeout=settings.ai_timeout_seconds,
         base_url=base_url or settings.race_ai_base_url,
     )
+
+
+def resolve_configured_model(
+    provider: Optional[str] = None, model: Optional[str] = None
+) -> str:
+    """Resuelve el ``model_id`` configurado, SIN instanciar el cliente LLM.
+
+    Misma resolución de ``model`` que usa internamente :func:`build_chat_llm`
+    (explícito → ``Settings.race_ai_model`` → default del proveedor en
+    :data:`DEFAULT_MODEL_BY_PROVIDER`), expuesta aparte para quien necesite
+    *saber qué modelo se usaría* sin pagar el costo de construir el cliente.
+
+    Feature 036 (T060): ``persist_insight`` la usa para registrar en
+    ``AthleteAiInsight.model`` el modelo que realmente generó el análisis.
+    Antes de este helper, ese nodo tenía su propio string fijo
+    (``"gemini-2.5-flash-lite"``) que quedaba desactualizado cada vez que el
+    proveedor/modelo configurado cambiaba — cada insight persistido
+    misreportaba su propia procedencia. Con este helper hay un único lugar
+    que sabe resolver "el modelo configurado hoy".
+
+    A diferencia de ``build_chat_llm``, nunca lanza por proveedor
+    desconocido: degrada a la entrada ``"anthropic"`` de
+    :data:`DEFAULT_MODEL_BY_PROVIDER` sólo para tener *algún* nombre que
+    persistir — la validación real de proveedores soportados vive en
+    ``Settings.race_ai_provider`` y en ``build_chat_llm``.
+    """
+    resolved_provider = (provider or settings.race_ai_provider or "anthropic").lower()
+    default_model = DEFAULT_MODEL_BY_PROVIDER.get(
+        resolved_provider, DEFAULT_MODEL_BY_PROVIDER["anthropic"]
+    )
+    return model or settings.race_ai_model or default_model
 
 
 @dataclass(frozen=True)

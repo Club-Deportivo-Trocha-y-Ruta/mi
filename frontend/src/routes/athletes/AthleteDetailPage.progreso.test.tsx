@@ -2,8 +2,7 @@
  * AthleteDetailPage — tab Progreso (Técnica/Fuerza) (specs/028, ProgresoTabPanel).
  *
  * Cubre el toggle interno Técnica/Fuerza (Técnica por defecto, monta
- * SkillProgressBoard/ProgressNotesBoard vía lazy+Suspense), el enlace
- * puntual a ansiedad competitiva (`/anxiety?athlete={id}`), y 0
+ * SkillProgressBoard/ProgressNotesBoard vía lazy+Suspense), y 0
  * violaciones axe en el panel de la pestaña.
  *
  * A semejanza de `AthleteDetailPage.strava.test.tsx`, este archivo mockea
@@ -214,15 +213,6 @@ describe("AthleteDetailPage — tab Progreso", () => {
 
     expect(await screen.findByTestId("progress-notes-board")).toBeInTheDocument();
     expect(screen.queryByTestId("skill-progress-board")).not.toBeInTheDocument();
-  });
-
-  it("expone el enlace 'Ver ansiedad competitiva' con el href del atleta activo", async () => {
-    renderPage();
-    await goToProgresoTab();
-    await screen.findByTestId("skill-progress-board");
-
-    const link = screen.getByRole("link", { name: /Ver ansiedad competitiva/i });
-    expect(link).toHaveAttribute("href", `/anxiety?athlete=${TEST_ATHLETE_ID}`);
   });
 
   it("no tiene violaciones de accesibilidad en el panel Progreso", async () => {

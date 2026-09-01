@@ -1,0 +1,103 @@
+{
+  "case_id": "011",
+  "description": "Atleta 13 años (juvenil) con mejora sostenida en descensos tras trabajo técnico específico; caso diseñado para ejercer season_comparative con 2+ válidas previas (specs/036 T053, camino 'con historial' del prompt v2 — antes nunca evaluado).",
+  "input": {
+    "athlete_id": 9011,
+    "season": 2026,
+    "athlete_pseudonym": "Atleta-PJUV-B-M-011",
+    "age": 13,
+    "ltad_group": "juvenil",
+    "progression_df_records": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-02-01",
+        "position": 7,
+        "race_time_ms": 2950000,
+        "points_awarded": 20,
+        "gap_to_winner_ms": 145000
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-03-01",
+        "position": 5,
+        "race_time_ms": 2870000,
+        "points_awarded": 40,
+        "gap_to_winner_ms": 95000
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-15",
+        "position": 4,
+        "race_time_ms": 2830000,
+        "points_awarded": 60,
+        "gap_to_winner_ms": 68000
+      }
+    ],
+    "season_comparative": [
+      {
+        "valida_num": 1,
+        "event_label": "Válida 1",
+        "position": 7,
+        "race_time_ms": 2950000,
+        "field_size": 15,
+        "delta_position": null,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 2,
+        "event_label": "Válida 2",
+        "position": 5,
+        "race_time_ms": 2870000,
+        "field_size": 15,
+        "delta_position": -2,
+        "delta_time_ms": null
+      }
+    ],
+    "progression_assessment": "improving",
+    "podium_context": {
+      "category_id": 5,
+      "event_id": 11,
+      "podium": [
+        {
+          "position": 1,
+          "competitor_id": 5001,
+          "race_time_ms": 2762000
+        },
+        {
+          "position": 2,
+          "competitor_id": 5002,
+          "race_time_ms": 2790000
+        },
+        {
+          "position": 3,
+          "competitor_id": 5003,
+          "race_time_ms": 2810000
+        }
+      ],
+      "finishers_count": 15
+    },
+    "memory_recent_insights": [
+      "Válida 2 (2026): trabajo específico de frenado y línea en descensos, cadencia estimada 82 rpm",
+      "Asistencia 95% sesiones — buena adherencia al plan"
+    ],
+    "explain_mode": false
+  },
+  "expected_themes": [
+    "mejora",
+    "descens",
+    "gap",
+    "cadencia",
+    "técnic"
+  ],
+  "forbidden_terms": [
+    "suplementos",
+    "creatina",
+    "potenciómetro",
+    "Mariana",
+    "Thiago",
+    "Sofia"
+  ],
+  "must_cite": false,
+  "max_words": 400,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nGracias a sostener la línea trabajada en los descensos, la deportista completó la válida 3 y finalizó en la cuarta posición, con un tiempo de carrera de 0:47:10 y un gap al líder de 0:01:08.\n\n## Recorrido hasta acá\n\nEn comparación con las dos válidas anteriores, la posición mejoró de forma sostenida (7 y 5 antes de esta fecha) y el gap al líder se redujo de 0:02:25 a 0:01:35, lo que confirma una tendencia de mejora en lo que va de la temporada. El trabajo específico de frenado y línea en descensos parece estar rindiendo fruto, con cadencia estimada de 82 rpm en el último registro técnico.\n\n## Hacia dónde va\n\n- Mantener dos sesiones semanales de técnica de descenso con supervisión, incorporando terreno variado (categoría=technique, prioridad=high)\n- Sostener el volumen actual de 6 a 9 horas semanales dado el buen nivel de adherencia al plan (categoría=volume, prioridad=med)\n\nComo resultado de la mejora sostenida, conviene registrar en video la próxima válida para objetivar el avance técnico en los descensos."
+}

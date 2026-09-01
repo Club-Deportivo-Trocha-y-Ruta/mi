@@ -8,8 +8,7 @@ MySQL or a live JWT server.
 
 Identity fixtures ("coach/admin/parent JWT token fixtures" in the task
 description) follow the same convention already established across every
-other feature test suite in this repo (technique, race-analysis, anxiety,
-etc.): the authenticated identity is injected via a ``get_current_user``
+other feature test suite in this repo (technique, race-analysis, etc.): the authenticated identity is injected via a ``get_current_user``
 dependency override rather than by minting and decoding a real JWT. This is
 intentional — ``backend/tests/test_auth.py`` is the only suite that exercises
 the actual login/JWT-issuance flow; every feature router suite fakes the

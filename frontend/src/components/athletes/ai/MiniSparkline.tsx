@@ -34,8 +34,14 @@ const ROMAN: Record<number, string> = {
   1: "I", 2: "II", 3: "III", 4: "IV",
   5: "V", 6: "VI", 7: "VII",
 };
-function romanForValida(num: number): string {
-  if (num === 99) return "CD";
+/**
+ * `isChampionship` viene de `EvolutionPoint.series_kind` (siempre presente
+ * en este endpoint — feature 014/016), no del `valida_num === 99` retirado
+ * (feature 036, T030): un campeonato moderno trae su propio `valida_num` de
+ * secuencia dentro de la serie y aun así debe leerse "CD" en el tooltip.
+ */
+function romanForValida(num: number, isChampionship: boolean): string {
+  if (isChampionship) return "CD";
   if (num === 0) return "Σ";
   return ROMAN[num] ?? String(num);
 }
@@ -49,7 +55,7 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
     return query.data.series
       .filter((p) => p.value !== null)
       .map((p) => ({
-        roman: romanForValida(p.valida_num),
+        roman: romanForValida(p.valida_num, p.series_kind === "championship"),
         value: p.value as number,
       }));
   }, [query.data]);

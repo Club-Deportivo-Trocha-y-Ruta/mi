@@ -125,11 +125,37 @@ class AthleteInsightOut(BaseModel):
         ge=0,
         le=99,
         description=(
-            "0 = use_case agregado de temporada. 1..7 = válida regular. "
-            "99 = Cto. Departamental. NULL = no aplica."
+            "Almacenamiento por compatibilidad — YA NO es fuente de la "
+            "etiqueta ni de la identidad de la carrera (feature 036, T030). "
+            "0 = agregado de temporada. NULL = no aplica. La convención "
+            "retirada '99 = Cto. Departamental' no debe usarse para "
+            "identificar carreras: usar `event_id` + `series_kind`, que "
+            "distinguen inequívocamente copa vs. campeonato incluso cuando "
+            "hay más de un campeonato en la misma temporada."
         ),
     )
     event_id: Optional[int] = Field(default=None, ge=1)
+    event_date: Optional[date] = Field(
+        default=None,
+        description=(
+            "Fecha de la carrera (race_events.event_date), resuelta vía "
+            "event_id. None si el insight no está anclado a un evento "
+            "(ej. agregado de temporada, valida_num=0) o si el evento fue "
+            "borrado (event_id ON DELETE SET NULL). Fuente de verdad para "
+            "ordenar y etiquetar carreras (feature 036, T030/T033) — "
+            "reemplaza la convención retirada `valida_num === 99`."
+        ),
+    )
+    series_kind: Optional[Literal["cup", "championship"]] = Field(
+        default=None,
+        description=(
+            "Tipo de serie del evento (race_series.kind), resuelto vía "
+            "event_id. 'cup' = válida regular de copa; 'championship' = "
+            "campeonato (departamental u otro). None si no hay event_id. "
+            "Serializa como string; nunca expone el enum interno "
+            "RaceSeriesKind (feature 036, T030)."
+        ),
+    )
     use_case: str = Field(..., max_length=32)
     summary_text: str
     confidence: InsightConfidence
@@ -146,6 +172,21 @@ class AthleteInsightOut(BaseModel):
         ),
     )
     deprecated_at: Optional[datetime] = None
+    # T024 (feature 036): default=False sólo por si algún caller construye
+    # este schema sin pasar el campo explícitamente. routers/athlete_race_analysis.py
+    # (_insight_to_out) ya pasa is_fallback=bool(row.is_fallback) en la
+    # respuesta real de GET .../insights y GET .../insights/{id}.
+    is_fallback: bool = Field(
+        default=False,
+        description=(
+            "True ⇔ el análisis no se generó correctamente y esta fila es "
+            "el placeholder de falla (services/race/ai/fallback.py:"
+            "deterministic_fallback). NUNCA True para el fallback N=1 "
+            "(deterministic_fallback_n1), que es un análisis legítimo. "
+            "El cliente debe ocultar la casilla de boletín y ofrecer "
+            "reintentar; el servidor además rechaza adjuntarlo (422)."
+        ),
+    )
 
 
 class AthleteInsightDetailOut(AthleteInsightOut):

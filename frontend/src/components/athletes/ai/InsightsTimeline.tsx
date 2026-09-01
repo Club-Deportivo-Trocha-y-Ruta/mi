@@ -17,9 +17,11 @@
  *   - El estado de loading expone ``role="status" aria-busy``.
  */
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronRight, History, Loader2, Medal, RefreshCw, Sparkles, Trophy, TrendingDown, TrendingUp, Minus, GitBranch } from "lucide-react";
+import { AlertCircle, ChevronRight, History, Loader2, Medal, RefreshCw, Sparkles, Trophy, TrendingDown, TrendingUp, Minus, GitBranch } from "lucide-react";
 
 import { MarkdownReportViewer } from "@/components/ai/MarkdownReportViewer";
+import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
+import { useGenerateSeasonSummary } from "@/hooks/athletes/useGenerateSeasonSummary";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
 import { InsightN1Banner } from "./InsightN1Banner";
 import { Badge } from "@/components/ui/badge";
@@ -187,10 +189,78 @@ function useMediaQuery(query: string): boolean {
 
 type InsightShape = "season-summary" | "departamental" | "normal";
 
-function resolveShape(validaNum: number | null | undefined): InsightShape {
-  if (validaNum === 0) return "season-summary";
-  if (validaNum === 99) return "departamental";
-  return "normal";
+/**
+ * Resuelve el shape visual (borde + ícono) de una card del histórico.
+ *
+ * La distinción "departamental" usa `series_kind` (features 014/016), igual
+ * que `validaLabel` (`lib/insights.ts`) — no la convención retirada
+ * `valida_num === 99` (feature 036, T030): un campeonato moderno puede tener
+ * su propio `valida_num` de secuencia (no literalmente 99) y aun así ser
+ * departamental. El chequeo numérico sobrevive solo como fallback para
+ * insights legacy sin `series_kind`.
+ */
+function resolveShape(
+  insight: Pick<AthleteInsightOut, "valida_num" | "series_kind">,
+): InsightShape {
+  if (insight.valida_num === 0) return "season-summary";
+  const isChampionship =
+    insight.series_kind != null
+      ? insight.series_kind === "championship"
+      : insight.valida_num === 99;
+  return isChampionship ? "departamental" : "normal";
+}
+
+/**
+ * Formatea un ``event_date`` (columna DATE sin componente horario, ej.
+ * "2026-05-17") como "17 may 2026".
+ *
+ * OJO: no reusa los formatters de `lib/datetime.ts` (`formatDateMedium` y
+ * hermanos) — están pensados para timestamps y proyectan a
+ * `CLUB_TIMEZONE` (America/Bogotá, UTC-5), lo cual es correcto para una
+ * hora real pero rompe una fecha pura: `new Date("2026-05-17")` la
+ * interpreta como medianoche UTC, y proyectar eso a UTC-5 la corre un día
+ * atrás ("16 may" para una carrera del 17). Verificado en consola antes de
+ * escribir esto. Mismo patrón ya usado para `event_date` en
+ * `competitions/tabs/InfoTab.tsx` y `routes/competitions/
+ * CompetitionDetailPage.tsx`: parsear año/mes/día del string y construir el
+ * `Date` con el constructor local (sin paso por UTC), evitando el corrimiento.
+ */
+function formatRaceDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-");
+  if (!year || !month || !day) return isoDate;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return date.toLocaleDateString("es-CO", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * Etiqueta de válida/campeonato + fecha de carrera embebida (feature 036,
+ * T033) — mismo patrón "CD · 12 jun" que el picker de lanzamiento
+ * (`LaunchAnalysisForm.tsx`, T031) usa para desambiguar carreras del mismo
+ * tipo, pero con año: a diferencia del picker, este histórico no está
+ * acotado a una sola temporada, así que dos "Cto. Departamental" de años
+ * distintos no deben leerse igual. También es lo que ancla la fecha visible
+ * de cada fila al mismo dato (`event_date`) que ya ordena el listado en el
+ * servidor (`insights_history.list_athlete_insights`), en vez de mostrar
+ * `generated_at` como si fuera la fecha de la carrera.
+ *
+ * Sin `event_date` (resumen de temporada, filas legacy sin evento
+ * vinculado) devuelve solo la etiqueta de `validaLabel` — no inventamos
+ * una fecha de carrera que no existe.
+ */
+function validaLabelWithDate(
+  insight: Pick<AthleteInsightOut, "valida_num" | "series_kind" | "event_date">,
+): string {
+  const label = validaLabel({
+    valida_num: insight.valida_num,
+    series_kind: insight.series_kind,
+  });
+  return insight.event_date
+    ? `${label} · ${formatRaceDate(insight.event_date)}`
+    : label;
 }
 
 /**
@@ -221,6 +291,38 @@ function CarreraTierBadge({ tier }: { tier: "A" | "B" | "C" }) {
     >
       Carrera {tier}
     </span>
+  );
+}
+
+/**
+ * T095 (feature 036, US6): antes este sub-tab solo tenía un `aria-label` en
+ * el `div` que envuelve la lista agrupada — un `div` con `aria-label` no
+ * expone ningún nombre a lectores de pantalla (un `div` es `role="generic"`,
+ * que no calcula nombre accesible), así que la navegación por encabezados
+ * (tecla "H") saltaba de la Panorama al resto sin pasar por "Histórico".
+ * Las otras 3 sub-vistas (`EvolutionChart`, `DistributionChart`,
+ * `LaunchAnalysisForm`) ya usan un `<h3>` real bajo el `<h2>` de
+ * `AthleteAIAnalysisTab.tsx` — este heading iguala ese patrón.
+ *
+ * Se renderiza en los 4 branches de `InsightsTimeline` (loading/error/
+ * empty/lista) para que el heading exista sin importar el estado de carga,
+ * igual que el `<h3>` de las otras sub-vistas (siempre dentro de su
+ * `<section>`, nunca condicionado a que la query ya haya resuelto).
+ *
+ * El `aria-label` existente del `div` de la lista NO se retira: varios
+ * tests (`InsightsTimeline.test.tsx`) usan
+ * `getByLabelText(/histórico de análisis del deportista/i)` para acotar la
+ * búsqueda al contenedor — tener heading + aria-label a la vez es válido.
+ */
+function HistoryHeading() {
+  return (
+    <h3
+      className="font-display mb-3 flex items-center gap-2 text-sm text-charcoal"
+      style={{ letterSpacing: "0.2px" }}
+    >
+      <History size={16} aria-hidden="true" />
+      Histórico
+    </h3>
   );
 }
 
@@ -270,62 +372,72 @@ export function InsightsTimeline({
   // ---- Loading state -------------------------------------------------------
   if (insightsQuery.isLoading) {
     return (
-      <div
-        role="status"
-        aria-busy="true"
-        aria-label="Cargando histórico de análisis"
-        className="space-y-3"
-      >
-        {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-28 w-full rounded-xl" />
-        ))}
-      </div>
+      <>
+        <HistoryHeading />
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Cargando histórico de análisis"
+          className="space-y-3"
+        >
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-28 w-full rounded-xl" />
+          ))}
+        </div>
+      </>
     );
   }
 
   // ---- Error state ---------------------------------------------------------
+  // T039 (feature 036): adopta el bloque compartido ErrorState — trae la
+  // variante "cold start" (Render Free ~50s) y el botón "Reintentar" que el
+  // párrafo rojo ad hoc de antes no tenía.
   if (insightsQuery.isError) {
+    const coldStart = isColdStartError(insightsQuery.error);
     return (
-      <div
-        role="alert"
-        className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
-      >
-        <p className="font-semibold">No pudimos cargar el histórico</p>
-        <p className="mt-1 text-xs">
-          {insightsQuery.error instanceof Error
-            ? insightsQuery.error.message
-            : "Error desconocido al consultar el servidor."}
-        </p>
-      </div>
+      <>
+        <HistoryHeading />
+        <ErrorState
+          message={
+            coldStart ? undefined : "No pudimos cargar el histórico de análisis."
+          }
+          onRetry={() => void insightsQuery.refetch()}
+          isColdStart={coldStart}
+        />
+      </>
     );
   }
 
   // ---- Empty state ---------------------------------------------------------
   if (items.length === 0) {
     return (
-      <div
-        className={cn("rounded-xl bg-white p-8 text-center", "shadow-card")}
-      >
-        <Sparkles
-          size={28}
-          className="mx-auto text-mid-gray"
-          aria-hidden="true"
-        />
-        <p className="mt-3 text-sm font-medium text-charcoal">
-          Aún no hay análisis aprobados para este deportista.
-        </p>
-        <p className="mt-1 text-xs text-mid-gray">
-          {mode === "coach"
-            ? 'Lanza un análisis desde la pestaña "Analizar con IA" para crear el primero.'
-            : "Cuando tu entrenador apruebe un análisis, lo verás aquí."}
-        </p>
-      </div>
+      <>
+        <HistoryHeading />
+        <div
+          className={cn("rounded-xl bg-white p-8 text-center", "shadow-card")}
+        >
+          <Sparkles
+            size={28}
+            className="mx-auto text-mid-gray"
+            aria-hidden="true"
+          />
+          <p className="mt-3 text-sm font-medium text-charcoal">
+            Aún no hay análisis aprobados para este deportista.
+          </p>
+          <p className="mt-1 text-xs text-mid-gray">
+            {mode === "coach"
+              ? 'Lanza un análisis desde la pestaña "Analizar con IA" para crear el primero.'
+              : "Cuando tu entrenador apruebe un análisis, lo verás aquí."}
+          </p>
+        </div>
+      </>
     );
   }
 
   // ---- Lista agrupada (BB1) ------------------------------------------------
   return (
     <>
+      <HistoryHeading />
       <div
         className="space-y-0 overflow-hidden rounded-xl"
         aria-label="Histórico de análisis del deportista"
@@ -354,7 +466,7 @@ export function InsightsTimeline({
               {/* Cards del grupo */}
               <ul className="space-y-2 px-1">
                 {groupItems.map((insight) => {
-                  const shape = resolveShape(insight.valida_num);
+                  const shape = resolveShape(insight);
                   const isSelected =
                     newsletterSelection?.has(insight.id) ?? false;
 
@@ -414,12 +526,20 @@ function InsightCard({
   onOpen,
   onToggleSelection,
 }: InsightCardProps) {
-  const showCheckbox = mode === "coach" && !!onToggleSelection;
+  // Fallback (US4, feature 036): la fila fue persistida por el camino de
+  // FALLA de `deterministic_fallback` — el summary_text es el placeholder
+  // fijo, no un análisis real. Nunca es seleccionable para el boletín y usa
+  // "Reintentar" en vez de "Regenerar" (ver abajo).
+  const isFallback = insight.is_fallback === true;
+  const showCheckbox = mode === "coach" && !!onToggleSelection && !isFallback;
   // Regenerar (feature 011, US6): solo coach, solo válidas concretas (no el
-  // resumen de temporada, valida_num=0). Re-lanza el análisis de ESA válida; el
-  // backend deprecca el insight viejo al aprobar el nuevo (reemplazo en 1 acción).
+  // resumen de temporada, valida_num=0) y solo sobre análisis reales — una
+  // fila fallback usa "Reintentar" en su lugar. Re-lanza el análisis de ESA
+  // válida; el backend deprecca el insight viejo al aprobar el nuevo
+  // (reemplazo en 1 acción).
   const canRegenerate =
     mode === "coach" &&
+    !isFallback &&
     insight.valida_num !== null &&
     insight.valida_num !== 0;
   const regenerate = useLaunchAthleteAnalysis(athleteId);
@@ -432,9 +552,38 @@ function InsightCard({
     });
   };
 
-  // Borde izquierdo y ícono según tipo
-  const borderCls =
-    shape === "season-summary"
+  // Reintentar (US4, feature 036): solo coach, solo filas fallback — el
+  // análisis anterior FALLÓ, no es un análisis real que el coach quiera
+  // repetir. Reusa el mismo lanzador por válida; el resumen de temporada
+  // (valida_num=0) usa su propio endpoint on-demand.
+  const canRetry = mode === "coach" && isFallback;
+  const isSeasonSummaryRow = insight.valida_num === 0;
+  const seasonRetry = useGenerateSeasonSummary(athleteId);
+  const handleRetry = () => {
+    if (isSeasonSummaryRow) {
+      seasonRetry.mutate();
+      return;
+    }
+    if (insight.valida_num === null) return;
+    regenerate.mutate({
+      season: insight.season,
+      valida_nums: [insight.valida_num],
+      explain_mode: false,
+    });
+  };
+  const retryPending = isSeasonSummaryRow
+    ? seasonRetry.isPending
+    : regenerate.isPending;
+  const retryFailed = isSeasonSummaryRow
+    ? seasonRetry.isError
+    : regenerate.isError;
+
+  // Borde izquierdo y ícono según tipo. Una fila fallback siempre usa el
+  // mismo tratamiento neutro, sin importar el shape del insight que no
+  // llegó a generarse.
+  const borderCls = isFallback
+    ? "border-l-4 border-dashed border-mid-gray/60 bg-light-gray/20"
+    : shape === "season-summary"
       ? "border-l-4 border-primary"
       : shape === "departamental"
         ? "border-l-4 border-amber-400"
@@ -442,7 +591,13 @@ function InsightCard({
 
   return (
     <div className="relative flex items-start gap-2">
-      {/* Checkbox multi-select (solo coach) — BB4 */}
+      {/* Checkbox multi-select (solo coach) — BB4. T091 (feature 036, US6):
+          el tamaño se fija en el propio <input> (antes h-4 w-4, 16px), no en
+          un wrapper con padding — el sweep e2e de target-size.spec.ts mide
+          el boundingBox() real del elemento `input`, así que un wrapper más
+          grande no bastaría. Mismo patrón ya probado en feature 032
+          (`TechniqueAttachPicker.tsx`'s checkbox seleccionable, también
+          h-12 w-12 directo en el input) para alcanzar el piso de 48×48px. */}
       {showCheckbox && (
         <div className="flex shrink-0 items-center pt-4 pl-1">
           <input
@@ -451,8 +606,8 @@ function InsightCard({
             data-testid={`insight-checkbox-${insight.id}`}
             checked={isSelected}
             onChange={() => onToggleSelection?.(insight.id)}
-            aria-label={`Seleccionar análisis ${validaLabel(insight.valida_num)} para boletín`}
-            className="h-4 w-4 cursor-pointer rounded border-mid-gray accent-primary"
+            aria-label={`Seleccionar análisis ${validaLabelWithDate(insight)} para boletín`}
+            className="h-12 w-12 cursor-pointer rounded border-mid-gray accent-primary"
           />
         </div>
       )}
@@ -461,7 +616,7 @@ function InsightCard({
         type="button"
         onClick={onOpen}
         data-testid={`insight-card-${insight.id}`}
-        aria-label={`Ver análisis del ${formatDateTimeCompact(insight.generated_at)}, ${validaLabel(insight.valida_num)}`}
+        aria-label={`Ver análisis del ${formatDateTimeCompact(insight.generated_at)}, ${validaLabelWithDate(insight)}${isFallback ? ", análisis no disponible" : ""}`}
         className={cn(
           "group flex w-full items-start gap-3 rounded-xl bg-white p-4 text-left transition-colors",
           "hover:bg-light-gray/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
@@ -469,20 +624,31 @@ function InsightCard({
           "shadow-card",
         )}
       >
-        {/* Ícono según tipo */}
-        {shape === "season-summary" && (
-          <Trophy
+        {/* Ícono según tipo — el marcador de fallback (US4) reemplaza a
+            Trophy/Medal porque el análisis de esta fila no llegó a generarse. */}
+        {isFallback ? (
+          <AlertCircle
             size={16}
-            className="mt-0.5 shrink-0 text-primary"
+            className="mt-0.5 shrink-0 text-mid-gray"
             aria-hidden="true"
           />
-        )}
-        {shape === "departamental" && (
-          <Medal
-            size={16}
-            className="mt-0.5 shrink-0 text-amber-500"
-            aria-hidden="true"
-          />
+        ) : (
+          <>
+            {shape === "season-summary" && (
+              <Trophy
+                size={16}
+                className="mt-0.5 shrink-0 text-primary"
+                aria-hidden="true"
+              />
+            )}
+            {shape === "departamental" && (
+              <Medal
+                size={16}
+                className="mt-0.5 shrink-0 text-amber-500"
+                aria-hidden="true"
+              />
+            )}
+          </>
         )}
 
         <div className="flex-1 min-w-0">
@@ -490,12 +656,27 @@ function InsightCard({
             <span className="text-xs font-medium uppercase tracking-wide text-mid-gray">
               {formatDateTimeCompact(insight.generated_at)}
             </span>
-            <Badge variant="secondary">{validaLabel(insight.valida_num)}</Badge>
+            <Badge variant="secondary">{validaLabelWithDate(insight)}</Badge>
             {!insight.is_active && (
               <Badge variant="outline">Histórico</Badge>
             )}
+            {isFallback && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-dashed"
+                data-testid={`insight-fallback-badge-${insight.id}`}
+              >
+                <AlertCircle size={11} aria-hidden="true" />
+                Análisis no disponible
+              </Badge>
+            )}
           </div>
-          <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-charcoal">
+          <p
+            className={cn(
+              "mt-2 line-clamp-2 text-sm leading-relaxed",
+              isFallback ? "italic text-mid-gray" : "text-charcoal",
+            )}
+          >
             {insight.prompt_version === PROMPT_VERSION_V2
               ? getV2Preview(insight.summary_text)
               : insight.summary_text}
@@ -516,7 +697,7 @@ function InsightCard({
             onClick={handleRegenerate}
             disabled={regenerate.isPending}
             data-testid={`insight-regenerate-${insight.id}`}
-            aria-label={`Regenerar análisis ${validaLabel(insight.valida_num)}`}
+            aria-label={`Regenerar análisis ${validaLabelWithDate(insight)}`}
             className={cn(
               "flex min-h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-medium",
               "text-primary transition-colors hover:bg-light-gray/50",
@@ -537,6 +718,42 @@ function InsightCard({
               className="mt-1 max-w-28 text-right text-[10px] leading-tight text-red-700"
             >
               No se pudo regenerar. Intenta de nuevo.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Reintentar (solo coach, solo filas fallback) — US4/T025. El
+          análisis anterior falló; este botón vuelve a lanzarlo (misma
+          válida, o el resumen de temporada cuando valida_num=0). */}
+      {canRetry && (
+        <div className="flex shrink-0 flex-col items-end justify-center self-stretch">
+          <button
+            type="button"
+            onClick={handleRetry}
+            disabled={retryPending}
+            data-testid={`insight-retry-${insight.id}`}
+            aria-label={`Reintentar análisis ${validaLabelWithDate(insight)}`}
+            className={cn(
+              "flex min-h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-medium",
+              "text-primary transition-colors hover:bg-light-gray/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          >
+            {retryPending ? (
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw size={16} aria-hidden="true" />
+            )}
+            <span className="hidden sm:inline">Reintentar</span>
+          </button>
+          {retryFailed && (
+            <p
+              role="alert"
+              className="mt-1 max-w-28 text-right text-[10px] leading-tight text-red-700"
+            >
+              No se pudo reintentar. Intenta de nuevo.
             </p>
           )}
         </div>
@@ -589,29 +806,27 @@ function InsightDetailDrawer({
       );
     }
     if (detailQuery.isError || !detailQuery.data) {
+      const coldStart = isColdStartError(detailQuery.error);
       return (
-        <div
-          role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
-        >
-          <p className="font-semibold">No pudimos cargar el detalle</p>
-          <p className="mt-1 text-xs">
-            {detailQuery.error instanceof Error
-              ? detailQuery.error.message
-              : "Intenta cerrar y abrir de nuevo."}
-          </p>
-        </div>
+        <ErrorState
+          message={
+            coldStart ? undefined : "No pudimos cargar el detalle del análisis."
+          }
+          onRetry={() => void detailQuery.refetch()}
+          isColdStart={coldStart}
+        />
       );
     }
     const insight = detailQuery.data;
     const isV2 = insight.prompt_version === PROMPT_VERSION_V2;
     const sections = isV2 ? parseV2Sections(insight.summary_text) : null;
     const progression = extractProgressionAssessment(insight);
+    const isFallback = insight.is_fallback === true;
 
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{validaLabel(insight.valida_num)}</Badge>
+          <Badge variant="secondary">{validaLabelWithDate(insight)}</Badge>
           {mode === "coach" && (
             <>
               <Badge variant={confidenceVariant(insight.confidence)}>
@@ -623,11 +838,37 @@ function InsightDetailDrawer({
           {progression !== null && (
             <ProgressionBadge assessment={progression} />
           )}
+          {isFallback && (
+            <Badge variant="outline" className="gap-1 border-dashed">
+              <AlertCircle size={11} aria-hidden="true" />
+              Análisis no disponible
+            </Badge>
+          )}
         </div>
 
         {insight.is_first_in_season === true && <InsightN1Banner mode={mode} />}
 
-        {isV2 && sections ? (
+        {isFallback ? (
+          <div
+            role="status"
+            data-testid="insight-fallback-notice"
+            className="rounded-xl border border-dashed border-mid-gray/60 bg-light-gray/20 p-4 text-sm text-charcoal"
+          >
+            <p className="flex items-center gap-2 font-medium">
+              <AlertCircle
+                size={14}
+                className="shrink-0 text-mid-gray"
+                aria-hidden="true"
+              />
+              Análisis no disponible
+            </p>
+            <p className="mt-1 text-xs text-mid-gray">
+              {mode === "coach"
+                ? 'No fue posible generar este análisis. Puedes revisar los datos oficiales en la sección de Resultados, o cerrar esta ventana y usar "Reintentar" en el histórico para volver a intentarlo.'
+                : "No fue posible generar este análisis en este momento. Puedes revisar los datos oficiales en la sección de Resultados; tu entrenador podrá volver a intentarlo."}
+            </p>
+          </div>
+        ) : isV2 && sections ? (
           <InsightV2Sections sections={sections} mode={mode} />
         ) : (
           <MarkdownReportViewer markdown={insight.summary_text} />

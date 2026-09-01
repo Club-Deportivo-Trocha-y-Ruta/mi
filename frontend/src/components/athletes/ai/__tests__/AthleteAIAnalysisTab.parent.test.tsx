@@ -83,7 +83,9 @@ describe("AthleteAIAnalysisTab — vista parent (v2)", () => {
       screen.getByRole("heading", { level: 2, name: /insights ia/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/seguimiento y evolución del deportista, revisado por el entrenador/i),
+      screen.getByText(
+        /resumen del rendimiento en carreras, revisado por el entrenador antes de publicarse/i,
+      ),
     ).toBeInTheDocument();
   });
 

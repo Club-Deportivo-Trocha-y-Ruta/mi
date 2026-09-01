@@ -248,16 +248,26 @@ def _split_sections_v2(markdown: str) -> dict[str, str]:
 
 
 def _format_ms_hhmmss(ms: Any) -> str:
-    """Convierte milisegundos a ``hh:mm:ss`` (o ``—`` si vacío/no numérico)."""
+    """Convierte milisegundos a ``hh:mm:ss`` (o ``—`` si vacío/no numérico).
+
+    Preserva el signo en vez de dejar que ``divmod`` trunque hacia
+    -infinito: un total negativo se separa en signo + magnitud absoluta
+    ANTES de descomponer en horas/min/seg, para no producir una hora
+    corrida (p. ej. ``-30_000`` ms → ``-0:00:30``, no ``-1:59:30``). El
+    único caller real que pasa valores negativos es ``delta_time_ms`` de
+    ``season_comparative`` (T014) cuando el atleta mejora su tiempo entre
+    válidas — ``race_time_ms``/``gap_to_winner_ms`` nunca lo son.
+    """
     if ms is None or ms == "" or str(ms) == "<NA>":
         return "—"
     try:
         total_sec = int(round(int(ms) / 1000))
     except (TypeError, ValueError):
         return "—"
-    h, rem = divmod(total_sec, 3600)
+    sign = "-" if total_sec < 0 else ""
+    h, rem = divmod(abs(total_sec), 3600)
     m, s = divmod(rem, 60)
-    return f"{h:d}:{m:02d}:{s:02d}"
+    return f"{sign}{h:d}:{m:02d}:{s:02d}"
 
 
 def _progression_to_md(records: list[dict[str, Any]]) -> str:
@@ -268,10 +278,16 @@ def _progression_to_md(records: list[dict[str, Any]]) -> str:
     lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
     for r in records:
         race_time_fmt = _format_ms_hhmmss(r.get("race_time_ms"))
+        # DNF/DNS/DSQ dejan position=None (clave presente, valor vacío) —
+        # dict.get(key, default) NO aplica el default en ese caso, así que
+        # sin esta guarda se imprime el literal "None" en la tabla que el
+        # LLM recibe como contexto.
+        position = r.get("position")
+        position_fmt = str(position) if position is not None else "—"
         row = [
             str(r.get("valida_num", "")),
             str(r.get("event_date", "")),
-            str(r.get("position", "")),
+            position_fmt,
             race_time_fmt,
             str(r.get("points_awarded", "")),
         ]

@@ -20,6 +20,22 @@ Convenciones
   ``is_active=NULL`` y no tocar previos.
 - ``valida_num=None`` para use_cases agregados se mapea a ``0`` antes de
   persistir (CHECK relax permite ``>=0``).
+- ``is_fallback`` (feature 036, US4, T024) se propaga por fila desde el
+  draft correspondiente vía ``fallback.is_fallback_output`` — este nodo
+  NO decide la regla (no inspecciona markdown/sections), sólo la lee.
+  v1: un único ``base_draft`` compartido por todas las válidas del
+  fan-out. v2: un chequeo independiente por cada ``per_valida_drafts[vn]``,
+  porque cada válida puede fallar de forma independiente en
+  ``invoke_per_valida``.
+- ``model`` (feature 036, US2, T060) se resuelve UNA vez por invocación con
+  :func:`app.services.race.agents._llm.resolve_configured_model` — lee
+  ``Settings.race_ai_provider``/``race_ai_model`` en el momento del persist,
+  igual que ``build_chat_llm`` los leyó al invocar el LLM. Antes este campo
+  era un string fijo (``"gemini-2.5-flash-lite"``) sin importar qué
+  proveedor/modelo hubiera generado el análisis, así que cada fila
+  misreportaba su propia procedencia. No es un tracking por-llamada (una
+  única resolución cubre todas las filas del fan-out v1/v2, porque hoy todo
+  el pipeline de un run usa un solo proveedor/modelo configurado).
 
 Fix BUG-001 (fan-out por válida)
 ================================
@@ -53,8 +69,10 @@ from typing import Any, Optional
 
 from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
 from app.models.race_result import ResultStatus
+from app.services.race.agents._llm import resolve_configured_model
 from app.services.race.ai.db import get_session
 from app.services.race.ai.events import with_events
+from app.services.race.ai.fallback import is_fallback_output
 from app.services.race.ai.retry import with_retry
 from app.services.race.insights_history import deprecate_previous_active
 from app.services.race.queries import load_events, load_results, load_series
@@ -248,6 +266,9 @@ async def persist_insight(state: dict) -> dict[str, Any]:
 
     # Valores base para v1 (compartidos por todas las válidas en v1).
     base_draft = draft or (list(per_valida_drafts.values())[0] if per_valida_drafts else None)
+    # is_fallback (T022/T024): True sólo si base_draft vino del failure path
+    # de fallback.py (deterministic_fallback). El fallback N=1 nunca marca esto.
+    base_is_fallback = is_fallback_output(base_draft)
     base_recommendations = _serializable(getattr(base_draft, "recommendations", None) or [])
     risks = _serializable(getattr(base_draft, "risk_flags", None) or [])
     principles = _serializable(state.get("principles") or [])
@@ -289,6 +310,9 @@ async def persist_insight(state: dict) -> dict[str, Any]:
         confidence_enum = InsightConfidence.medium
 
     now = _now()
+    # T060: modelo real configurado — ver nota "model" en el docstring del
+    # módulo. Una sola resolución para todas las filas de este run.
+    resolved_model = resolve_configured_model()
 
     try:
         async with get_session() as db:
@@ -342,6 +366,11 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                     # computada; si no, el default compartido.
                     row_confidence = per_valida_confidence.get(vn_num, confidence_enum)
 
+                    # is_fallback por fila (T022/T024): cada válida invoca el
+                    # LLM independientemente en invoke_per_valida, así que una
+                    # puede fallar (fallback) mientras otra tiene análisis real.
+                    row_is_fallback = is_fallback_output(_vn_draft)
+
                     new_row = AthleteAiInsight(
                         athlete_id=athlete_id,
                         competitor_id=competitor_id,
@@ -356,7 +385,7 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                         metrics_snapshot_json=row_snapshot,
                         principles_cited_json=principles,
                         confidence=row_confidence,
-                        model="gemini-2.5-flash-lite",
+                        model=resolved_model,
                         prompt_version=prompt_version,
                         coach_approved=approved,
                         coach_edits_count=0,
@@ -365,6 +394,7 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                         archived_at=now if archived else None,
                         deprecated_at=None,
                         is_active=is_active_value,
+                        is_fallback=row_is_fallback,
                         created_at=now,
                         updated_at=now,
                     )
@@ -414,7 +444,7 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                         metrics_snapshot_json=metrics_snapshot,
                         principles_cited_json=principles,
                         confidence=confidence_enum,
-                        model="gemini-2.5-flash-lite",
+                        model=resolved_model,
                         prompt_version=prompt_version,
                         coach_approved=approved,
                         coach_edits_count=0,
@@ -423,6 +453,7 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                         archived_at=now if archived else None,
                         deprecated_at=None,
                         is_active=is_active_value,
+                        is_fallback=base_is_fallback,
                         created_at=now,
                         updated_at=now,
                     )

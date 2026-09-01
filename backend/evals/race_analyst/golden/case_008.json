@@ -41,6 +41,36 @@
         "gap_to_winner_ms": 93000
       }
     ],
+    "season_comparative": [
+      {
+        "valida_num": 1,
+        "event_label": "Válida 1",
+        "position": 5,
+        "race_time_ms": 2900000,
+        "field_size": 13,
+        "delta_position": null,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 2,
+        "event_label": "Válida 2",
+        "position": 5,
+        "race_time_ms": 2895000,
+        "field_size": 13,
+        "delta_position": 0,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 3,
+        "event_label": "Válida 3",
+        "position": 5,
+        "race_time_ms": 2898000,
+        "field_size": 13,
+        "delta_position": 0,
+        "delta_time_ms": null
+      }
+    ],
+    "progression_assessment": "stable",
     "podium_context": {
       "category_id": 5,
       "event_id": 4,
@@ -84,6 +114,6 @@
     "Thiago"
   ],
   "must_cite": false,
-  "max_words": 600,
-  "ideal_output_excerpt": "## Evolución\n\nAtleta-PJUV-M-F-008 estancada en posición 5 durante 4 válidas. Tiempos y gaps prácticamente idénticos: rendimiento meseta [1].\n\n## Análisis Técnico\n\nCadencia observada en video 65 rpm — por debajo del rango LTAD juvenil (75-90 rpm) [1]. Causa probable del estancamiento.\n\n## Recomendaciones LTAD\n\n- Drills cadencia 4x5min 90 rpm en plano 2x/sem (categoría=technique, prioridad=high) [2]\n- Single-leg drills 3x3min para corregir asimetrías (categoría=technique, prioridad=med) [2]\n\n## Riesgos\n\n- Carga sobre rodilla por cadencia baja (flag=technical_gap, severity=med) [1]\n\n## Próximos Pasos\n\nReanálisis Kinovea en V-V para verificar progreso."
+  "max_words": 400,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nDado que participó el recorrido completo sin abandono, la deportista completó la válida 4 y finalizó en la quinta posición, con un tiempo de carrera de 0:48:22 y un gap al líder de 0:01:33.\n\n## Recorrido hasta acá\n\nLa posición se ha mantenido exactamente en el quinto lugar durante las cuatro válidas de la temporada, con tiempos y gaps prácticamente idénticos entre sí, lo que indica un estancamiento en el resultado más que una tendencia de cambio. El análisis de video más reciente registró una cadencia promedio de 65 rpm, por debajo del rango juvenil recomendado, lo cual explicaría en buena parte la meseta técnica observada.\n\n## Hacia dónde va\n\n- Incorporar drills de cadencia a 90 rpm en terreno plano, cuatro series de cinco minutos, dos veces por semana (categoría=technique, prioridad=high)\n- Sumar ejercicios de pedaleo a una sola pierna para corregir asimetrías en el gesto técnico (categoría=technique, prioridad=med)\n\nComo resultado del trabajo específico de cadencia, conviene repetir el análisis de video en la siguiente válida para verificar si el estancamiento se revierte."
 }

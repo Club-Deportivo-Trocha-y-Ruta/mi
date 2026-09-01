@@ -142,21 +142,3 @@ export function getRaceTypeBadgeStyle(type: RaceType): RaceTypeBadgeStyle {
       };
   }
 }
-
-/**
- * Etiqueta legible "Válida III", "Cto. Departamental", etc.
- */
-export function getValidaLabel(validaNum: number | null | undefined): string {
-  if (validaNum === null || validaNum === undefined) return "—";
-  if (validaNum === 99) return "Cto. Departamental";
-  const romans: Record<number, string> = {
-    1: "I",
-    2: "II",
-    3: "III",
-    4: "IV",
-    5: "V",
-    6: "VI",
-    7: "VII",
-  };
-  return `Válida ${romans[validaNum] ?? validaNum}`;
-}

@@ -41,6 +41,36 @@
         "gap_to_winner_ms": 60000
       }
     ],
+    "season_comparative": [
+      {
+        "valida_num": 1,
+        "event_label": "Válida 1",
+        "position": 5,
+        "race_time_ms": 3300000,
+        "field_size": 16,
+        "delta_position": null,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 2,
+        "event_label": "Válida 2",
+        "position": 4,
+        "race_time_ms": 3250000,
+        "field_size": 16,
+        "delta_position": -1,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 3,
+        "event_label": "Válida 3",
+        "position": 4,
+        "race_time_ms": 3220000,
+        "field_size": 16,
+        "delta_position": 0,
+        "delta_time_ms": null
+      }
+    ],
+    "progression_assessment": "improving",
     "podium_context": {
       "category_id": 7,
       "event_id": 4,
@@ -85,6 +115,6 @@
     "Sofia"
   ],
   "must_cite": false,
-  "max_words": 600,
-  "ideal_output_excerpt": "## Evolución\n\nAtleta-JUV-M-M-004 mostró progresión lineal: 5→4→4→3, su primer podio en V-IV [1]. Gap al ganador bajó 35s en 4 meses.\n\n## Análisis Técnico\n\nFC max 198 dentro de rango LTAD juvenil. Listo para introducir fuerza progresiva con bandas y mancuernas supervisada [1].\n\n## Recomendaciones LTAD\n\n- Sumar 2 sesiones fuerza/sem con bandas (categoría=technique, prioridad=med) [1]\n- Mantener 80% Z1-Z2 + 2 HIIT controlados (categoría=volume, prioridad=high) [2]\n\n## Riesgos\n\n- Salto categoría próximo año: evitar aumentar carga >10% mensual (flag=load_excess, severity=med) [2]\n\n## Próximos Pasos\n\nPlan transición 4 semanas. Tapering completo para CD."
+  "max_words": 400,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nGracias a sostener el ritmo durante toda la prueba, la deportista completó la válida 4 y finalizó en la tercera posición —su primer podio de la temporada— con un tiempo de carrera de 0:53:15 y un gap de 0:01:00 al líder.\n\n## Recorrido hasta acá\n\nRespecto a las tres válidas anteriores, la posición mejoró de forma progresiva (5, 4 y 4) y el gap al líder se redujo de 0:01:35 a 0:01:15 antes de esta fecha, lo que indica una adaptación sostenida a la carga actual. La prueba de frecuencia cardíaca máxima realizada con supervisión (198 lpm) confirma que está en condiciones de iniciar la transición hacia el grupo juvenil, con mayor volumen y trabajo de fuerza progresiva.\n\n## Hacia dónde va\n\n- Sumar dos sesiones semanales de fuerza progresiva con bandas elásticas, con supervisión (categoría=technique, prioridad=med)\n- Mantener el 80 % del entrenamiento en zonas 1-2 e incorporar dos bloques de alta intensidad controlados (categoría=volume, prioridad=high)\n\nDebido al cambio de categoría previsto para la siguiente temporada, conviene incrementar el volumen semanal en no más del 10 % mensual y revisar la carga cada cuatro semanas."
 }

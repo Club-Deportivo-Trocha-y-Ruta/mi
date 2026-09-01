@@ -41,6 +41,36 @@
         "gap_to_winner_ms": 18000
       }
     ],
+    "season_comparative": [
+      {
+        "valida_num": 1,
+        "event_label": "Válida 1",
+        "position": 3,
+        "race_time_ms": 1820000,
+        "field_size": 11,
+        "delta_position": null,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 2,
+        "event_label": "Válida 2",
+        "position": 2,
+        "race_time_ms": 1790000,
+        "field_size": 11,
+        "delta_position": -1,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 3,
+        "event_label": "Válida 3",
+        "position": 3,
+        "race_time_ms": 1775000,
+        "field_size": 11,
+        "delta_position": 1,
+        "delta_time_ms": null
+      }
+    ],
+    "progression_assessment": "improving",
     "podium_context": {
       "category_id": 1,
       "event_id": 4,
@@ -86,6 +116,6 @@
     "Sofia"
   ],
   "must_cite": false,
-  "max_words": 600,
-  "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-A-M-001 muestra una progresión clara: subió de posición 3 a 2 sostenidamente y redujo el gap al ganador de 60s a 18s en 4 válidas [1]. La consistencia indica adaptación adecuada al volumen actual.\n\n## Análisis Técnico\n\nA los 10 años estamos en plena ventana de entrenabilidad de coordinación [1]. Cadencia estimada 78 rpm dentro del rango LTAD para mini-bambino.\n\n## Recomendaciones LTAD\n\n- Mantener componente lúdico ≥80% del tiempo de sesión (categoría=technique, prioridad=high) [2]\n- Sumar 1 sesión técnica con conos y manejo de obstáculos (categoría=technique, prioridad=med) [1]\n\n## Riesgos\n\n- Vigilar fatiga acumulada ante 4 competencias en 4 meses (flag=load_excess, severity=low) [1]\n\n## Próximos Pasos\n\nMantener volumen actual. Revisar técnica post-Cali."
+  "max_words": 400,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nGracias a un ritmo sostenido durante todo el recorrido, la deportista completó la válida 4 y finalizó en la segunda posición, con un tiempo de carrera de 0:29:20. El gap al líder se cerró en 0:00:18 al cierre de la prueba.\n\n## Recorrido hasta acá\n\nEn comparación con las tres válidas anteriores, el gap al líder viene en reducción sostenida (0:01:00, 0:00:35 y 0:00:25), lo que indica una evolución consistente del ritmo de competencia. La deportista se ha mantenido en zona de podio en las cuatro fechas, con cadencia estimada de 78 rpm en el último registro técnico. A los 10 años esto coincide con la ventana de entrenabilidad de la coordinación, por lo que conviene priorizar el componente de diversión y juego sobre la carga estructurada.\n\n## Hacia dónde va\n\n- Mantener el componente lúdico en al menos el 80 % del tiempo de sesión (categoría=technique, prioridad=high)\n- Sumar una sesión técnica semanal con conos y manejo de obstáculos para sostener la cadencia observada (categoría=technique, prioridad=med)\n\nComo resultado de la reducción de gap observada en las últimas válidas, conviene sostener el volumen actual sin incrementarlo; además, vale la pena vigilar la fatiga acumulada frente a cuatro competencias en cuatro meses y mantener al menos un día completo de descanso entre sesiones."
 }

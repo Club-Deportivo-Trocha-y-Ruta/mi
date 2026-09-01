@@ -28,6 +28,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { invalidateAthleteAiQueries } from "@/hooks/ai/invalidateAthleteAiQueries";
 import { useRunStatus, isTerminalState } from "@/hooks/ai/useRaceRun";
 
 export interface UseAthleteRunOutcomeOptions {
@@ -66,18 +67,11 @@ export function useAthleteRunOutcome(
     if (runState === "done") {
       toast.success(`Análisis de ${displayName} completado.`);
       // El run terminó: refresca insights + frescura para reflejarlo.
-      void queryClient.invalidateQueries({
-        predicate: (q) => {
-          const key = q.queryKey;
-          if (!Array.isArray(key)) return false;
-          const [base, id] = key;
-          if (base === "club-insights-by-race") return true;
-          return (
-            (base === "athlete-runs" || base === "athlete-insights") &&
-            id === athleteId
-          );
-        },
-      });
+      // T042: delega en el helper compartido `invalidateAthleteAiQueries`
+      // — la lista explícita que usa cubre además `athlete-evolution`,
+      // `athlete-distribution` y `season-panorama`, que este predicate
+      // ad-hoc no invalidaba.
+      void invalidateAthleteAiQueries(queryClient, athleteId);
       return;
     }
 

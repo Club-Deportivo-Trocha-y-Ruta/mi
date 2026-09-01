@@ -122,12 +122,20 @@ async function mockHealth(page: Page): Promise<void> {
 
 // ---- Fixtures --------------------------------------------------------------
 
+// `scheduled_date` is a fixed far-future date (mirrors `dashboard-coach.
+// spec.ts`'s `NEXT_SESSION`/`FUTURE_RACE_EVENT` convention), not a date
+// relative to "today": this session also feeds `NextSessionTile` on the
+// dashboard sweep below, whose own "is this upcoming?" filter
+// (`endsAt > now`) runs against the browser's real clock. A 2026-dated
+// fixture rotted into the past exactly this way (T070-adjacent repair,
+// feature 036 Wave 5) — session detail's own assertions don't depend on
+// the exact date, so bumping the year costs nothing there.
 const SESSION = {
   id: SESSION_ID,
   club_id: 1,
   created_by_user_id: 1,
   status: "planned",
-  scheduled_date: "2026-07-20",
+  scheduled_date: "2099-07-20",
   scheduled_start_time: "15:30:00",
   duration_min: 90,
   location: "Pista XCO Buitrera",
@@ -301,13 +309,178 @@ const CLUB_INSIGHTS_BY_RACE = {
   items: [] as unknown[],
 };
 
+// ---- Athlete AI insights tab fixtures (feature 036, T090/T091b) -----------
+//
+// Own event/insight ids (810/811, 9101/9104), distinct from the competitions
+// fixtures above — same fake athlete (OUR_ATHLETE_ID, "Sebastián García")
+// for continuity with the rest of this file. Two válidas (I and IV, oldest
+// and newest) so ComparatorPanel's "first/last with insight" autoselection
+// (see ComparatorPanel.tsx) has a real, non-empty pair to diff once the
+// Sheet opens — the whole point of exercising its OPEN state.
+
+const AI_TAB_RACE_EVENT_A_ID = 810; // Válida I — la más vieja
+const AI_TAB_RACE_EVENT_B_ID = 811; // Válida IV — la más reciente
+
+const AI_TAB_ATHLETE = {
+  id: OUR_ATHLETE_ID,
+  user_id: 200,
+  first_name: "Sebastián",
+  last_name: "García",
+  birth_date: "2012-01-15",
+  sex: "M",
+  club_join_date: "2024-01-01",
+  years_in_club: 2,
+  age_decimal: 14.3,
+  category: "Sub-15",
+  club_id: 1,
+  created_at: "2024-01-01T00:00:00Z",
+  latest_anthropometry: null,
+};
+
+function aiTabInsight(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 9101,
+    season: 2026,
+    valida_num: 1,
+    event_id: AI_TAB_RACE_EVENT_A_ID,
+    event_date: "2026-03-15",
+    series_kind: "cup",
+    use_case: "race_analysis_v2",
+    summary_text: "## Qué pasó\nBuena carrera, top 3 de la categoría.\n## Qué sigue\nMantener el ritmo de entrenamiento.",
+    confidence: "high",
+    model: "gemini-3.1-flash-lite",
+    prompt_version: "race_analyst_v2",
+    coach_approved: true,
+    generated_at: "2026-03-16T10:00:00Z",
+    approved_at: "2026-03-16T10:05:00Z",
+    is_active: true,
+    deprecated_at: null,
+    is_fallback: false,
+    ...overrides,
+  };
+}
+
+const AI_TAB_INSIGHT_A = aiTabInsight();
+const AI_TAB_INSIGHT_B = aiTabInsight({
+  id: 9104,
+  valida_num: 4,
+  event_id: AI_TAB_RACE_EVENT_B_ID,
+  event_date: "2026-07-20",
+  generated_at: "2026-07-21T10:00:00Z",
+  approved_at: "2026-07-21T10:05:00Z",
+});
+
+const AI_TAB_INSIGHTS_LIST = {
+  items: [AI_TAB_INSIGHT_A, AI_TAB_INSIGHT_B],
+  total: 2,
+  limit: 50,
+  offset: 0,
+};
+
+function aiTabInsightDetail(id: number): Record<string, unknown> {
+  const base =
+    [AI_TAB_INSIGHT_A, AI_TAB_INSIGHT_B].find((i) => i.id === id) ?? aiTabInsight({ id });
+  return {
+    ...base,
+    recommendations: [] as unknown[],
+    metrics_snapshot: {},
+    principles_cited: [] as unknown[],
+    supersedes: [] as unknown[],
+    superseded_by: null,
+  };
+}
+
+const AI_TAB_EVOLUTION = {
+  season: 2026,
+  metric: "ranking",
+  series: [
+    {
+      valida_num: 1,
+      event_id: AI_TAB_RACE_EVENT_A_ID,
+      event_date: "2026-03-15",
+      value: 3,
+      unit: "posición",
+      series_kind: "cup",
+      label: "Válida I",
+    },
+    {
+      valida_num: 4,
+      event_id: AI_TAB_RACE_EVENT_B_ID,
+      event_date: "2026-07-20",
+      value: 1,
+      unit: "posición",
+      series_kind: "cup",
+      label: "Válida IV",
+    },
+  ],
+  confidence: "high",
+};
+
+const AI_TAB_RACES = {
+  season: 2026,
+  items: [
+    {
+      event_id: AI_TAB_RACE_EVENT_A_ID,
+      sequence_number: 1,
+      series_kind: "cup",
+      event_date: "2026-03-15",
+      event_name: "Copa Valle I — Cali",
+      location: "Cali",
+      label: "Válida I · 15 mar",
+    },
+    {
+      event_id: AI_TAB_RACE_EVENT_B_ID,
+      sequence_number: 4,
+      series_kind: "cup",
+      event_date: "2026-07-20",
+      event_name: "Copa Valle IV — Palmira",
+      location: "Palmira",
+      label: "Válida IV · 20 jul",
+    },
+  ],
+};
+
+const AI_TAB_DISTRIBUTION = {
+  season: 2026,
+  event_id: AI_TAB_RACE_EVENT_B_ID,
+  category_id: 1,
+  category_code: "INF_M",
+  sample_size: 8,
+  mean_ms: 3_600_000,
+  stddev_ms: 120_000,
+  athlete_time_ms: 3_500_000,
+  athlete_z_score: -0.8,
+  athlete_percentile: 78,
+  points: [
+    { pseudonym: "C0001", time_ms: 3_500_000, is_self: true, display_name: "Sebastián García" },
+    { pseudonym: "C0002", time_ms: 3_650_000, is_self: false, display_name: "Rival Dos" },
+  ],
+  curve: [
+    { x_ms: 3_400_000, density: 0.1 },
+    { x_ms: 3_600_000, density: 0.3 },
+    { x_ms: 3_800_000, density: 0.1 },
+  ],
+  confidence: "high",
+};
+
+const AI_STATUS_OK = {
+  budget_status: "ok",
+  budget_remaining_pct: 80,
+  concurrency_available: true,
+  est_wait_seconds: 0,
+};
+
 // ---- Dashboard (031) fixtures — NextSessionTile / NextRaceTile /
 // WeeklyLoadMeter / PendingInbox ---------------------------------------------
 
 // One upcoming race (`event_date >= today`) so NextRaceTile has a hero to
 // render, plus one past race missing results so PendingInbox's "Resultados
 // por importar" row resolves to a non-zero, clickable row instead of being
-// skeleton/empty.
+// skeleton/empty. The "upcoming" one uses a fixed far-future date (2099,
+// same convention as `dashboard-coach.spec.ts`'s `FUTURE_RACE_EVENT`) so it
+// never rots into the past as the suite ages — a plain 2026 date already
+// did exactly that (feature 036 Wave 5 repair). The past one needs no such
+// guard: any fixed past date stays past forever.
 const DASHBOARD_RACE_EVENTS = {
   items: [
     {
@@ -315,7 +488,7 @@ const DASHBOARD_RACE_EVENTS = {
       series_id: 5,
       sequence_number: 5,
       name: "Copa Valle V — Palmira",
-      event_date: "2026-08-01",
+      event_date: "2099-08-01",
       location: "Palmira",
       is_championship: false,
       status: "scheduled",
@@ -431,8 +604,9 @@ async function mockDashboardApi(page: Page): Promise<void> {
     jsonRoute(ALERTS_SUMMARY),
   );
   // NextSessionTile (feature 031) — same list endpoint as sessions list,
-  // reused as-is: `SESSION_LIST`'s id 501 is `status: "planned"` with a
-  // `scheduled_date` inside the next 14 days, so it resolves to a real tile.
+  // reused as-is: `SESSIONS_LIST`'s id 501 is `status: "planned"` with a
+  // far-future `scheduled_date` (see `SESSION`'s own comment), so it always
+  // resolves to a real tile regardless of when this suite runs.
   await page.route(
     (url) => isBackend(url) && url.pathname === "/api/training-sessions",
     jsonRoute(SESSIONS_LIST),
@@ -476,6 +650,88 @@ async function mockCompetitionResultsApi(page: Page): Promise<void> {
     (url) => isBackend(url) && url.pathname === `/api/races/${RACE_EVENT_ID}/club-insights`,
     jsonRoute(CLUB_INSIGHTS_BY_RACE),
   );
+}
+
+/**
+ * Mocks every endpoint `/athletes/:id?tab=ai_analysis` touches across its
+ * five sub-tabs (feature 036, T090/T091b): the page shell (athlete,
+ * anthropometry, linked parents) plus the AI tab's own insights/evolution/
+ * races/distribution/status queries. Path-only matching (query params
+ * ignored, same convention as the rest of this file) means one route per
+ * endpoint covers every param variant each sub-tab requests it with.
+ */
+async function mockAthleteAiTabApi(page: Page): Promise<void> {
+  await page.route(
+    (url) => isBackend(url) && url.pathname === `/api/athletes/${OUR_ATHLETE_ID}`,
+    jsonRoute(AI_TAB_ATHLETE),
+  );
+  await page.route(
+    (url) => isBackend(url) && url.pathname === `/api/athletes/${OUR_ATHLETE_ID}/anthropometry`,
+    jsonRoute([]),
+  );
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/parent-athletes",
+    jsonRoute({ items: [] }),
+  );
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/parent-athletes/invites",
+    jsonRoute([]),
+  );
+  await page.route(
+    (url) =>
+      isBackend(url) &&
+      url.pathname === `/api/athletes/${OUR_ATHLETE_ID}/race-analysis/insights`,
+    jsonRoute(AI_TAB_INSIGHTS_LIST),
+  );
+  // Insight detail — ComparatorPanel fetches both sides of its default pair
+  // (first/last válida with an approved insight) as soon as the Sheet
+  // mounts, with no user interaction needed.
+  await page.route(
+    (url) =>
+      isBackend(url) &&
+      new RegExp(`^/api/athletes/${OUR_ATHLETE_ID}/race-analysis/insights/\\d+$`).test(
+        url.pathname,
+      ),
+    (route: Route) => {
+      const id = Number(new URL(route.request().url()).pathname.split("/").pop());
+      route.fulfill({ status: 200, json: aiTabInsightDetail(id) });
+    },
+  );
+  await page.route(
+    (url) =>
+      isBackend(url) &&
+      url.pathname === `/api/athletes/${OUR_ATHLETE_ID}/race-analysis/evolution`,
+    jsonRoute(AI_TAB_EVOLUTION),
+  );
+  await page.route(
+    (url) =>
+      isBackend(url) && url.pathname === `/api/athletes/${OUR_ATHLETE_ID}/race-analysis/races`,
+    jsonRoute(AI_TAB_RACES),
+  );
+  await page.route(
+    (url) =>
+      isBackend(url) &&
+      url.pathname === `/api/athletes/${OUR_ATHLETE_ID}/race-analysis/distribution`,
+    jsonRoute(AI_TAB_DISTRIBUTION),
+  );
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/ai/status",
+    jsonRoute(AI_STATUS_OK),
+  );
+}
+
+/** Navigates to the AI tab and waits for the header (real data, not the
+ * loading Skeleton) before handing control back — shared by every test
+ * below so each one only has to drive its own sub-tab from there. */
+async function gotoAthleteAiTab(page: Page): Promise<void> {
+  await mockAthleteAiTabApi(page);
+  await page.goto(`/athletes/${OUR_ATHLETE_ID}?tab=ai_analysis`);
+  await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
+    timeout: WAIT_TIMEOUT,
+  });
+  await expect(page.getByTestId("ai-header-summary")).toBeVisible({
+    timeout: WAIT_TIMEOUT,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -635,6 +891,30 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
       timeout: WAIT_TIMEOUT,
     });
 
+    // The page is a `Tabs`-driven section switcher (Resumen/Asistencia/
+    // Plan/Media): all four `TabsContent` panels mount in the DOM at once,
+    // but only the active one is visible (Radix hides the rest, it doesn't
+    // unmount them — see SessionDetailPage.tsx's own comment on this). The
+    // default section is "resumen" (SESSION's `scheduled_date` isn't
+    // "today"), so the T018 effort rubric inside "Asistencia" is invisible
+    // — and therefore correctly excluded from the sweep — until the coach
+    // actually switches tabs. A plain `getByRole('radio', …)` assertion
+    // right after `page.goto()` (no tab switch) never finds it, because it
+    // isn't the active section yet — this was the actual cause of this
+    // test's "element not found" failure (feature 036 Wave 5 repair).
+    //
+    // Both states are swept and asserted together (rather than as two
+    // separate `expectNoTargetSizeViolations` calls) so a violation in
+    // Resumen can't prevent Asistencia — the one T018 actually touches —
+    // from being swept and reported in the same run.
+    const resumenViolations = await findTargetSizeViolations(page);
+    if (resumenViolations.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(`[target-size] Session detail — resumen:\n${describeViolations(resumenViolations)}`);
+    }
+
+    await page.getByTestId("session-section-tab-asistencia").click();
+
     // Confirm the T018 rewrite actually rendered: a discrete ToggleGroup
     // option with this exact accessible name only exists post-rewrite (the
     // pre-rewrite <input type="range"> exposed no such control at all).
@@ -647,7 +927,22 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
       page.getByRole("radio", { name: "RPE OMNI 0-10: 5 — Moderado" }),
     ).toBeVisible({ timeout: WAIT_TIMEOUT });
 
-    await expectNoTargetSizeViolations(page, "Session detail");
+    const asistenciaViolations = await findTargetSizeViolations(page);
+    if (asistenciaViolations.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(`[target-size] Session detail — asistencia:\n${describeViolations(asistenciaViolations)}`);
+    }
+
+    expect(
+      { resumen: resumenViolations, asistencia: asistenciaViolations },
+      `Session detail: ${resumenViolations.length} violation(s) in Resumen, ${asistenciaViolations.length} in Asistencia.\n` +
+        (resumenViolations.length > 0
+          ? `Resumen:\n${describeViolations(resumenViolations)}\n`
+          : "") +
+        (asistenciaViolations.length > 0
+          ? `Asistencia:\n${describeViolations(asistenciaViolations)}`
+          : ""),
+    ).toEqual({ resumen: [], asistencia: [] });
   });
 
   test("competitions results table — every control >=48x48px, incl. note + AI buttons (T021)", async ({
@@ -656,7 +951,12 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
     await mockCompetitionResultsApi(page);
 
     await page.goto(`/competitions/${RACE_EVENT_ID}?tab=results`);
-    await expect(page.getByTestId("competition-title")).toBeVisible({
+    // `data-testid="competition-title"` never existed in `PageHeader` (it
+    // renders a plain `<h1>{title}</h1>`, no test id) — selector drift
+    // fixed here (feature 036 Wave 5 repair) by asserting the real heading.
+    await expect(
+      page.getByRole("heading", { name: RACE_EVENT.name, level: 1 }),
+    ).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
 
@@ -726,5 +1026,181 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
     await expect(page.getByRole("table")).toBeVisible({ timeout: WAIT_TIMEOUT });
 
     await expectNoTargetSizeViolations(page, "Sessions list");
+  });
+
+  // ---------------------------------------------------------------------
+  // Feature 036 (US6) — athlete AI insights tab. T091b: this tab had never
+  // been added to the sweep, which is exactly why T091's violations
+  // (sub-48px race chips in LaunchAnalysisForm, history checkboxes in
+  // InsightsTimeline) survived undetected. Split into one test per
+  // sub-tab/state (rather than one test with several sequential sweeps) so
+  // a violation in one state doesn't prevent the others from being swept
+  // and reported in the same run.
+  // ---------------------------------------------------------------------
+
+  test("athlete AI insights tab (360px) — every sub-tab is reachable without a hidden scroll affordance (T090)", async ({
+    page,
+  }) => {
+    // spec.md US6: "at 360–400 px the sub-tab row clips ... with the
+    // scrollbar deliberately hidden". 360px is the narrowest width called
+    // out there and in T090's own task text.
+    await page.setViewportSize({ width: 360, height: 800 });
+    await gotoAthleteAiTab(page);
+
+    const tabList = page.getByRole("tablist");
+    await expect(tabList).toBeVisible({ timeout: WAIT_TIMEOUT });
+
+    const subtabIds = [
+      "ai-subtab-panorama",
+      "ai-subtab-history",
+      "ai-subtab-evolution",
+      "ai-subtab-distribution",
+      "ai-subtab-launch",
+    ];
+    for (const testId of subtabIds) {
+      await expect(page.getByTestId(testId)).toBeVisible({ timeout: WAIT_TIMEOUT });
+    }
+
+    // The real regression check: `toBeVisible()` above only confirms each
+    // trigger has a non-empty box and isn't CSS-hidden — Playwright's
+    // definition of "visible" doesn't care whether it's scrolled out of an
+    // `overflow-x-auto` ancestor. Before T090, all 5 triggers passed that
+    // same `toBeVisible()` check while "Analizar con IA" still needed a
+    // horizontal swipe to reach — the bug was scrollWidth > clientWidth
+    // with the scrollbar hidden, not an invisible element. `flex-wrap`
+    // (T090's fix) means the strip never overflows horizontally at all.
+    const overflow = await tabList.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+    expect(
+      overflow.scrollWidth,
+      `tablist scrollWidth (${overflow.scrollWidth}px) > clientWidth (${overflow.clientWidth}px) at 360px ` +
+        `— a sub-tab needs horizontal scroll to reach, with no visible affordance to discover it.`,
+    ).toBeLessThanOrEqual(overflow.clientWidth);
+  });
+
+  test("athlete AI insights tab — panorama (default) — every control >=48x48px", async ({
+    page,
+  }) => {
+    await gotoAthleteAiTab(page);
+    await expect(page.getByTestId("hero-last-insight-card")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+
+    await expectNoTargetSizeViolations(page, "Athlete AI tab — panorama");
+  });
+
+  test("athlete AI insights tab — historial sub-tab — every control >=48x48px, incl. the newsletter checkboxes (T091)", async ({
+    page,
+  }) => {
+    await gotoAthleteAiTab(page);
+    await page.getByTestId("ai-subtab-history").click();
+    await expect(page.getByTestId(`insight-card-${AI_TAB_INSIGHT_B.id}`)).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByTestId(`insight-checkbox-${AI_TAB_INSIGHT_B.id}`)).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+
+    const historialViolations = await findTargetSizeViolations(page);
+
+    // Wave 4 flagged BB4's sticky newsletter action bar
+    // (`AthleteAIAnalysisTab.tsx`) as a likely target-size violation but
+    // never confirmed it — nothing renders it on first paint, it only
+    // mounts once a coach selects at least one insight, in one of two
+    // shapes: "selection pending" (Limpiar + Enviar a boletín) or, after a
+    // failed attach, "error" (Reintentar). Both are exercised here (feature
+    // 036 Wave 5 repair) rather than left unconfirmed. The attach-insights
+    // endpoint is deliberately mocked to fail so the error shape actually
+    // renders — this only needs ONE failing request, never a real send;
+    // the full happy-path newsletter flow is T074's spec, not this one's.
+    await page.route(
+      (url) =>
+        isBackend(url) &&
+        url.pathname ===
+          `/api/athletes/${OUR_ATHLETE_ID}/monthly-newsletters/attach-insights`,
+      jsonRoute({ detail: "Error simulado" }, 500),
+    );
+
+    await page.getByTestId(`insight-checkbox-${AI_TAB_INSIGHT_B.id}`).check();
+    await expect(page.getByTestId("newsletter-action-bar")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByTestId("newsletter-action-bar-submit")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    const selectionBarViolations = await findTargetSizeViolations(page);
+
+    await page.getByTestId("newsletter-action-bar-submit").click();
+    await expect(page.getByTestId("newsletter-action-bar-error")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    const errorBarViolations = await findTargetSizeViolations(page);
+
+    // All three states are collected and asserted together (rather than
+    // three separate `expectNoTargetSizeViolations` calls) so a violation
+    // in one can't prevent the others from being swept and reported in the
+    // same run — same rationale as `SessionDetailPage`'s Resumen/Asistencia
+    // split above.
+    const violationsByState = {
+      historial: historialViolations,
+      "historial + barra (selección)": selectionBarViolations,
+      "historial + barra (error)": errorBarViolations,
+    };
+    const total =
+      historialViolations.length + selectionBarViolations.length + errorBarViolations.length;
+    if (total > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[target-size] Athlete AI tab — historial (3 estados):\n` +
+          Object.entries(violationsByState)
+            .filter(([, v]) => v.length > 0)
+            .map(([label, v]) => `${label}:\n${describeViolations(v)}`)
+            .join("\n"),
+      );
+    }
+    expect(
+      violationsByState,
+      `Athlete AI tab — historial: ${total} target-size violation(s) across 3 states.`,
+    ).toEqual({
+      historial: [],
+      "historial + barra (selección)": [],
+      "historial + barra (error)": [],
+    });
+  });
+
+  test("athlete AI insights tab — analizar con IA sub-tab — every control >=48x48px, incl. race chips + modo explicativo (T091)", async ({
+    page,
+  }) => {
+    await gotoAthleteAiTab(page);
+    await page.getByTestId("ai-subtab-launch").click();
+    await expect(page.getByTestId(`launch-event-${AI_TAB_RACE_EVENT_B_ID}`)).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByTestId("launch-explain-switch")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+
+    await expectNoTargetSizeViolations(page, "Athlete AI tab — analizar con IA");
+  });
+
+  test("athlete AI insights tab — comparador (Sheet abierto) — every control >=48x48px", async ({
+    page,
+  }) => {
+    await gotoAthleteAiTab(page);
+    await page.getByTestId("ai-subtab-distribution").click();
+    await expect(page.getByTestId("open-comparator-sheet")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await page.getByTestId("open-comparator-sheet").click();
+    // Diff table only renders once both sides of the default válida-A/B
+    // pair have loaded — the fullest, most control-dense state of the
+    // Sheet, which is the point of sweeping it open at all.
+    await expect(page.getByTestId("comparator-diff-table")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+
+    await expectNoTargetSizeViolations(page, "Athlete AI tab — comparador (Sheet abierto)");
   });
 });

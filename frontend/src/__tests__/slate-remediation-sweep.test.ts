@@ -2,7 +2,7 @@
  * Slate-remediation regression guard (feature 033 / T044).
  *
  * T035-T038 remediated every `slate-*` Tailwind class in técnica, fuerza,
- * intervalos, and ansiedad to the design-token equivalents
+ * and intervalos to the design-token equivalents
  * (`text-charcoal`, `text-mid-gray`, `text-text-disclaimer`, `bg-light-gray`,
  * `border-border-gray` — see `research.md` R4 for the mapping). T039 fixed
  * the two stray occurrences outside those four modules. T040-T042 moved
@@ -20,10 +20,7 @@
  *
  * If this test ever fails, the fix is almost always style-only: swap the
  * reported `slate-*` class for its token equivalent per the remap table
- * above — never touch behavior, and for `components/anxiety`/
- * `routes/anxiety` specifically, never touch instrument selection, scoring,
- * interpretation wording, consent gating, or the human-in-the-loop flow
- * (Principle V / FR-010 of this feature).
+ * above — never touch behavior.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -39,11 +36,9 @@ const TARGET_DIRS = [
   "routes/technique",
   "routes/strength",
   "routes/intervals",
-  "routes/anxiety",
   "components/technique",
   "components/strength",
   "components/intervals",
-  "components/anxiety",
 ];
 
 const SLATE_PATTERN = String.raw`\bslate-[0-9]`;
@@ -72,7 +67,7 @@ function grepSlateUsage(dir: string): string[] {
   }
 }
 
-describe("Slate-remediation sweep (T044) — grep -rnE '\\bslate-[0-9]' over técnica/fuerza/intervalos/ansiedad", () => {
+describe("Slate-remediation sweep (T044) — grep -rnE '\\bslate-[0-9]' over técnica/fuerza/intervalos", () => {
   for (const dir of TARGET_DIRS) {
     const absoluteDir = path.join(SRC_DIR, dir);
     const dirExists = existsSync(absoluteDir);

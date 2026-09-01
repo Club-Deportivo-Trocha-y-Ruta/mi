@@ -85,9 +85,17 @@ class Settings(BaseSettings):
     ai_enabled: bool = False
     # Proveedor: "anthropic" | "openai" | "google" | "fake".
     # Strategy + Factory: agregar uno nuevo no toca a los use cases.
-    ai_provider: str = "anthropic"
-    # ID de modelo del proveedor.
-    ai_model: str = "claude-sonnet-5"
+    # Default "google" (feature 036, T051): coincide con lo que corre de
+    # verdad en backend/.env — el club usa la cuota gratis de Gemini.
+    # Anthropic/OpenAI siguen soportados como alternativa explícita, pero ya
+    # no son el default de código (antes decía "anthropic" mientras todo
+    # despliegue real corría en Gemini, la deriva que 036/US2 corrigió).
+    ai_provider: str = "google"
+    # ID de modelo del proveedor. Debe ser consistente con ai_provider de
+    # arriba — este stack no tiene un default por-proveedor como
+    # race/agents/_llm.py::DEFAULT_MODEL_BY_PROVIDER, así que ambos campos
+    # se mantienen a mano en sync.
+    ai_model: str = "gemini-3.1-flash-lite"
     # API key del proveedor — vacío en repo, validator exige valor en producción.
     ai_api_key: str = ""
     # Override opcional del endpoint (proxies, gateways corporativos).
@@ -109,8 +117,12 @@ class Settings(BaseSettings):
     # (capa app/services/ai/) para poder cambiar uno sin romper el otro.
     # Factory + Strategy en app/services/race/agents/_llm.py::build_chat_llm.
     # Proveedor: "anthropic" | "google" | "openai".
-    race_ai_provider: str = "anthropic"
-    # Vacío → default por proveedor en _llm.py (claude-sonnet-5 | gemini-2.5-flash-lite | gpt-4o-mini).
+    # Default "google" (feature 036, T051): antes decía "anthropic" pese a
+    # que backend/.env — lo que corre de verdad — siempre configuró Gemini,
+    # y el golden eval en CI también corre contra Gemini. El coach depende
+    # de la cuota gratis de Gemini; no hay plan de migrar a Anthropic.
+    race_ai_provider: str = "google"
+    # Vacío → default por proveedor en _llm.py (claude-sonnet-5 | gemini-3.1-flash-lite | gpt-4o-mini).
     race_ai_model: str = ""
     # Vacío → si race_ai_provider == ai_provider, cae a AI_API_KEY (mismo proveedor).
     race_ai_api_key: str = ""
@@ -127,7 +139,43 @@ class Settings(BaseSettings):
     # endpoint POST /api/race-analysis/runs responde 503 y se envía alerta
     # por email al coach + admin. Runs en curso completan.
     # Ver: app/services/race/ai/budget_guard.py + docs/10-race-results/runbook-ops.md
+    #
+    # Calibración verificada para Gemini (feature 036, T062) — el valor NO
+    # cambia, esto sólo documenta que sigue siendo generoso con el proveedor
+    # que realmente corre hoy (``race_ai_provider="google"`` arriba):
+    #   tarifa Gemini 3.1 Flash Lite (pricing.py): $0.25/1M in, $1.50/1M out.
+    #   ~4K tokens in + ~1K out por llamada LLM ⇒ ~$0.0025/llamada.
+    #   hasta 5 llamadas por análisis de UNA válida (1 analyst + 1 critic
+    #   típico; margen para el retry-por-veto-duro de analyst.py::invoke_per_valida
+    #   y su critic correspondiente) ⇒ ~$0.0125/análisis. Un lanzamiento
+    #   agrupa hasta 4 válidas en paralelo (analyst.py::_V2_CAP) pero eso no
+    #   cambia el costo POR válida, sólo cuántas se pagan en un mismo run.
+    #   volumen mensual realista a escala del club (~30 atletas, ritmo de
+    #   ~1 válida analizada/mes cada uno) ⇒ ~30 análisis/mes ⇒ ~$0.375/mes.
+    #   $20 / $0.375 ≈ 53x de margen — sigue generoso incluso a 10x ese
+    #   volumen (~$3.75/mes). Con Anthropic (10-12x más caro por token,
+    #   ver agents/pricing.py) el margen se reduciría a ~4-5x, pero
+    #   Anthropic no es el proveedor activo — no se recalibra para él.
     race_ai_budget_usd_30d: float = 20.0
+
+    # -----------------------------------------------------------------------
+    # Race AI — reconciliación de runs huérfanos (specs/036, US3)
+    # -----------------------------------------------------------------------
+    # El registry de runs activos (services/race/ai/runner.py) vive SOLO en
+    # memoria del proceso. Render redeploya en cada push a `main` (y apaga la
+    # instancia free tier por inactividad), así que una fila `agent_runs` que
+    # haya quedado en `running`/`awaiting_hitl` cuando el proceso muere no la
+    # va a terminar nadie — queda huérfana para siempre y el cliente hace
+    # polling indefinidamente. Al arrancar (main.py::lifespan), cualquier
+    # fila en esos dos estados con `started_at` más viejo que este umbral se
+    # marca `failed`. Debe ser generoso para no competir nunca con un run
+    # legítimo: ≥2x la duración máxima esperada del pipeline (lanzamiento de
+    # 4 válidas con reintentos LLM agotados en analyst+critic, ver
+    # `routers/athlete_race_analysis.py::estimated` y
+    # `services/race/ai/retry.py`, del orden de 12-15 min en el peor caso) →
+    # default 30 min.
+    # Ver: app/services/race/ai/run_reconciliation.py
+    race_ai_orphan_run_threshold_minutes: int = 30
 
     # -----------------------------------------------------------------------
     # Media de sesiones (fotos/videos vía SFTP a Hostinger)

@@ -196,7 +196,7 @@ describe("PanoramaView", () => {
     );
     await waitFor(() => {
       expect(
-        screen.getByText(/cuando se aprueben análisis de tu hijo/i),
+        screen.getByText(/cuando se aprueben análisis de tu hijo\/a/i),
       ).toBeInTheDocument();
     });
     // No botón add-to-newsletter en empty parent.
@@ -248,6 +248,26 @@ describe("PanoramaView", () => {
     ).not.toBeInTheDocument();
   });
 
+  // ---------------------------------------------------------------------------
+  // T095 (feature 036, US6) — heading real, no solo aria-label en un div.
+  // ---------------------------------------------------------------------------
+  it("T095 — expone un <h3> 'Panorama' real (navegación por encabezados)", async () => {
+    renderWithProviders(
+      <PanoramaView
+        athlete={athlete}
+        mode="coach"
+        onOpenDetail={vi.fn()}
+        onAddToNewsletter={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole("heading", { level: 3, name: /panorama/i }),
+    ).toBeInTheDocument();
+  });
+
   // ---------- a11y ----------
   it("no tiene violaciones a11y en mode=coach (con datos)", async () => {
     const { container } = renderWithProviders(
@@ -293,7 +313,7 @@ describe("PanoramaView", () => {
     );
     await waitFor(() => {
       expect(
-        screen.getByText(/cuando se aprueben análisis de tu hijo/i),
+        screen.getByText(/cuando se aprueben análisis de tu hijo\/a/i),
       ).toBeInTheDocument();
     });
     const results = await axe(container);
@@ -386,6 +406,150 @@ describe("PanoramaView", () => {
       expect(onToggle).toHaveBeenCalledTimes(1);
       expect(onToggle).toHaveBeenCalledWith(1);
       expect(onAdd).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T096c (feature 036, US6) — "válida" es jerga sin explicación en la vista
+  // de padres. Opción elegida: tooltip de primer uso sobre el badge del
+  // Hero (no un renombre a "Carrera N" — colisionaría con "Carrera A/B/C",
+  // el tier de dificultad que ya usa este mismo histórico). La etiqueta
+  // "Válida N" NO cambia para ningún rol.
+  // ---------------------------------------------------------------------------
+  describe("HeroLastInsightCard — tooltip 'válida' para padres (T096c)", () => {
+    it("parent ve el disparador del tooltip explicativo junto al badge de válida", async () => {
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="parent"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+      });
+      // La etiqueta sigue siendo "Válida N" — no se renombra a "Carrera N".
+      // (getAllByText: "Válida IV" también aparece dentro del summary_text
+      // generado, no solo en el badge — cualquiera de las dos ocurrencias
+      // basta para confirmar que la etiqueta no cambió).
+      expect(screen.getAllByText(/válida iv/i).length).toBeGreaterThan(0);
+      expect(
+        screen.getByTestId("hero-valida-info-trigger"),
+      ).toBeInTheDocument();
+    });
+
+    it("al enfocar el disparador aparece la explicación de 'válida' (Copa Valle / tabla de posiciones)", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="parent"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("hero-valida-info-trigger"),
+        ).toBeInTheDocument();
+      });
+      // El disparador es el primer elemento enfocable de la card — un solo
+      // Tab basta. Foco por teclado revela el tooltip (Radix lo abre on
+      // focus además de on hover) — confirmamos el contenido explicativo
+      // real, no solo el trigger.
+      await user.tab();
+      // Radix duplica el texto del tooltip en un `<span role="tooltip">`
+      // visualmente oculto (accesibilidad) además del contenido visible —
+      // `findAllByText` porque `findByText` fallaría con "multiple elements".
+      const matches = await screen.findAllByText(
+        /cuenta para la tabla de posiciones/i,
+      );
+      expect(matches.length).toBeGreaterThan(0);
+    });
+
+    it("coach NO ve el disparador del tooltip (ya conoce el término)", async () => {
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByTestId("hero-valida-info-trigger"),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T097 (feature 036, US6) — "Releer último" y "Agregar/Quitar del
+  // boletín" competían con un peso visual similar. "Releer último" sigue
+  // siendo turquesa (`variant="default"`, `bg-primary`) — es la marca
+  // correcta, no se recolorea. El botón secundario se demueve a "ghost".
+  // ---------------------------------------------------------------------------
+  describe("HeroLastInsightCard — jerarquía visual de acciones (T097)", () => {
+    it("'Releer último' conserva el estilo primario (turquesa)", async () => {
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("hero-btn-reread")).toBeInTheDocument();
+      });
+      expect(screen.getByTestId("hero-btn-reread").className).toMatch(
+        /(^|\s)bg-primary(\s|$)/,
+      );
+    });
+
+    it("'Agregar al boletín' ya no compite en peso visual con 'Releer último'", async () => {
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("hero-btn-add-newsletter"),
+        ).toBeInTheDocument();
+      });
+      const newsletterBtn = screen.getByTestId("hero-btn-add-newsletter");
+      // No turquesa (no es la acción primaria)...
+      expect(newsletterBtn.className).not.toMatch(/(^|\s)bg-primary(\s|$)/);
+      // ...y demotado a "ghost" (sin relleno sólido ni borde propio), no a
+      // "outline"/"secondary" (que seguían siendo casi tan sólidos como la
+      // acción primaria).
+      expect(newsletterBtn.className).toMatch(/(^|\s)bg-transparent(\s|$)/);
+    });
+
+    it("'Quitar del boletín' (seleccionado) también queda demotado a 'ghost'", async () => {
+      renderWithProviders(
+        <HeroLastInsightCard
+          athlete={athlete}
+          mode="coach"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+          newsletterSelection={new Set<number>([1])}
+          onToggleSelection={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        const btn = screen.getByTestId("hero-btn-add-newsletter");
+        expect(btn).toHaveAccessibleName(/Quitar del boletín/i);
+      });
+      const newsletterBtn = screen.getByTestId("hero-btn-add-newsletter");
+      expect(newsletterBtn.className).toMatch(/(^|\s)bg-transparent(\s|$)/);
     });
   });
 
@@ -618,6 +782,28 @@ describe("PanoramaView", () => {
       });
       expect(screen.getByText(/mejor posición/i)).toBeInTheDocument();
       expect(screen.getByText(/válidas completadas/i)).toBeInTheDocument();
+    });
+
+    it("no filtra la nota de backlog interna 'TODO Sprint 3' a producción (T035b)", async () => {
+      renderWithProviders(
+        <PanoramaView
+          athlete={athlete}
+          mode="parent"
+          onOpenDetail={vi.fn()}
+          onAddToNewsletter={vi.fn()}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("panorama-kpi-races")).toBeInTheDocument();
+      });
+      await waitFor(() => {
+        expect(screen.getByText(/válidas completadas/i)).toBeInTheDocument();
+      });
+      // La KPI de podios está pendiente (sin campo de backend) — la nota
+      // interna de backlog nunca debe llegar a coach ni a parent.
+      expect(screen.queryByText(/todo/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/sprint/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/podios/i)).not.toBeInTheDocument();
     });
   });
 });

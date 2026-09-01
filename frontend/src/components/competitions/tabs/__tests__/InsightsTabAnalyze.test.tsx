@@ -9,7 +9,7 @@
  *    de atleta vinculado (athlete_id > 0); no aparece para masked (id=0),
  *    ni sin season/validaNum, ni para parent.
  *  - Launch directo (sin insight previo) → mutate con {season, valida_nums:[validaNum]}.
- *  - Insight fresco (stale_run_id null) → abre modal; confirmar lanza.
+ *  - Insight fresco (insight_id no nulo) → abre modal; confirmar lanza.
  *  - El click en el botón NO navega al perfil del atleta.
  *  - Label "Analizar con IA" sin insight; "Re-analizar" con insight.
  */
@@ -70,7 +70,7 @@ const INSIGHTS = {
     race_event_label: "Válida IV — Cali",
     total_athletes: 3,
     items: [
-      // Con insight fresco (stale_run_id null) → confirmar antes de re-correr.
+      // Con insight fresco (insight_id no nulo) → confirmar antes de re-correr.
       {
         athlete_id: 145,
         athlete_display_name: "Isabel Quinonez",
@@ -79,7 +79,6 @@ const INSIGHTS = {
         summary_excerpt: "Tercer lugar, progreso en frenada.",
         generated_at: "2026-05-25T19:49:00",
         confidence: "medium",
-        stale_run_id: null,
       },
       // Sin insight → launch directo.
       {

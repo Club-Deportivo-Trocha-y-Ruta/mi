@@ -10,6 +10,22 @@ Razón:
   notificación al coach.
 - Con el fallback, el grafo siempre llega a ``notify_coach`` con un
   output válido — UX se mantiene incluso en degradación de servicio.
+
+Discriminador ``is_fallback`` (feature 036, US4, T022)
+=======================================================
+``deterministic_fallback`` es el *failure path*: se activa cuando el LLM
+no responde. ``deterministic_fallback_n1`` NO es una falla — es el
+análisis legítimo que exige la regla N=1 (una sola válida en la
+temporada). Sólo el primero debe marcar ``AthleteAiInsight.is_fallback``.
+
+En vez de que ``persist_insight`` infiera esto inspeccionando el
+markdown o las secciones (frágil: cambia con el wording, y un output
+real también puede llegar con ``sections`` vacías si el LLM no usa los
+headings esperados), ``deterministic_fallback`` devuelve una subclase
+marcadora de :class:`AnalysisOutput` — :class:`_FallbackAnalysisOutput`
+— que no agrega ni cambia campos. :func:`is_fallback_output` expone el
+chequeo (``isinstance``) para que los nodos downstream (``persist_insight``)
+sólo *propaguen* el discriminador, sin duplicar la regla de negocio.
 """
 
 from __future__ import annotations
@@ -20,6 +36,17 @@ _FALLBACK_MARKDOWN = (
     "Análisis IA no disponible en este momento. Revisa los datos crudos "
     "en la sección de resultados."
 )
+
+
+class _FallbackAnalysisOutput(AnalysisOutput):
+    """Marca los ``AnalysisOutput`` producidos por el failure path.
+
+    Subclase sin campos nuevos: se comporta exactamente como
+    :class:`AnalysisOutput` en todo lo demás (serialización, acceso a
+    atributos). Sólo existe para permitir ``isinstance`` en vez de
+    inspeccionar contenido. NUNCA la construye ``deterministic_fallback_n1``.
+    """
+
 
 _FALLBACK_N1_MARKDOWN = """\
 ## Qué pasó en esta válida
@@ -36,13 +63,17 @@ Reforzar fundamentos técnicos y mantener disfrute en el entrenamiento (categor�
 def deterministic_fallback(pseudonym: str) -> AnalysisOutput:
     """Output mínimo válido cuando el analyst LLM no responde.
 
+    Failure path: el resultado es una :class:`_FallbackAnalysisOutput`
+    (subclase marcadora — ver :func:`is_fallback_output`), para que
+    ``persist_insight`` marque ``AthleteAiInsight.is_fallback=True``.
+
     Args:
         pseudonym: pseudónimo del atleta (ya anonimizado upstream).
 
     Returns:
         :class:`AnalysisOutput` con secciones vacías y mensaje neutral.
     """
-    return AnalysisOutput(
+    return _FallbackAnalysisOutput(
         pseudonym=pseudonym,
         sections={},
         citations_used=[],
@@ -51,6 +82,25 @@ def deterministic_fallback(pseudonym: str) -> AnalysisOutput:
         raw_markdown=_FALLBACK_MARKDOWN,
         word_count=len(_FALLBACK_MARKDOWN.split()),
     )
+
+
+def is_fallback_output(output: AnalysisOutput | None) -> bool:
+    """``True`` ⇔ ``output`` lo produjo el failure path (T022).
+
+    Chequeo de identidad de tipo (``isinstance``), no de contenido: no
+    inspecciona ``raw_markdown`` ni ``sections``. ``deterministic_fallback_n1``
+    devuelve un :class:`AnalysisOutput` plano y por lo tanto siempre
+    evalúa ``False`` aquí — es un análisis legítimo bajo la regla N=1,
+    no una falla.
+
+    Args:
+        output: el ``AnalysisOutput`` a clasificar, o ``None`` (p.ej. no
+            hubo draft para esa válida).
+
+    Returns:
+        ``True`` sólo para instancias producidas por :func:`deterministic_fallback`.
+    """
+    return isinstance(output, _FallbackAnalysisOutput)
 
 
 def deterministic_fallback_n1(pseudonym: str) -> AnalysisOutput:
@@ -97,4 +147,8 @@ def deterministic_fallback_n1(pseudonym: str) -> AnalysisOutput:
     )
 
 
-__all__ = ["deterministic_fallback", "deterministic_fallback_n1"]
+__all__ = [
+    "deterministic_fallback",
+    "deterministic_fallback_n1",
+    "is_fallback_output",
+]

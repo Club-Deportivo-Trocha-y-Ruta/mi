@@ -75,6 +75,7 @@ import { mswServer } from "@/test/setup";
 import {
   coachHighConfidenceDistributionHandler,
   emptyRacesListHandler,
+  errorRacesListHandler,
   lowConfidenceDistributionHandler,
   mockDistribution,
   racesListHandler,
@@ -150,7 +151,7 @@ describe("DistributionChart", () => {
     });
   });
 
-  it("muestra error cuando la query falla", async () => {
+  it("muestra error cuando la query falla (T039: ErrorState con Reintentar)", async () => {
     mswServer.use(
       http.get(
         "*/api/athletes/:athleteId/race-analysis/distribution",
@@ -163,6 +164,56 @@ describe("DistributionChart", () => {
         screen.getByText(/no pudimos cargar la distribución/i),
       ).toBeInTheDocument();
     });
+    // ErrorState compartido (T039) — antes era un párrafo rojo sin acción.
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /reintentar/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("Reintentar en el error de distribución vuelve a pedir la distribución (T039)", async () => {
+    let calls = 0;
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/distribution", () => {
+        calls += 1;
+        return new HttpResponse(null, { status: 500 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(
+      <DistributionChart athleteId={42} defaultEventId={100} />,
+    );
+
+    await screen.findByText(/no pudimos cargar la distribución/i);
+    expect(calls).toBe(1);
+
+    await user.click(screen.getByRole("button", { name: /reintentar/i }));
+    await waitFor(() => expect(calls).toBe(2));
+  });
+
+  it("un fallo de red (forma cold-start) en la distribución muestra la copy calmada (T039)", async () => {
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/distribution", () =>
+        HttpResponse.error(),
+      ),
+    );
+    renderWithProviders(
+      <DistributionChart athleteId={42} defaultEventId={100} />,
+    );
+
+    const coldStartMessage = await screen.findByText(
+      /la aplicación está iniciando/i,
+    );
+    expect(coldStartMessage).toBeInTheDocument();
+    expect(
+      screen.queryByText(/no pudimos cargar la distribución/i),
+    ).not.toBeInTheDocument();
+    // ErrorState en variante cold-start usa role="status" (tono calmado,
+    // no de error) — se verifica en el contenedor específico del mensaje,
+    // no con getByRole("status") a secas: el picker de carreras de este
+    // componente puede tener su propio spinner "Cargando carreras" con el
+    // mismo role simultáneamente (query /races sin handler en este test).
+    expect(coldStartMessage.closest('[role="status"]')).not.toBeNull();
   });
 
   it("con defaultEventId la query envía event_id (no valida_num) al backend", async () => {
@@ -456,6 +507,16 @@ describe("DistributionChart", () => {
      * y NO dispara una petición /distribution.
      *
      * TDD-red: el componente actual no tiene este flujo — T022 lo implementará.
+     *
+     * Feature 036/T035: con carreras disponibles y sin `defaultEventId` el
+     * montaje YA autoselecciona la más reciente (ver describe "T035" más
+     * abajo), así que el propio mount dispara una petición /distribution.
+     * Esperamos explícitamente a que esa petición inicial llegue ANTES de
+     * limpiar `distributionCalls` — de lo contrario la limpieza puede
+     * ejecutarse antes de que el efecto de autoselección + el fetch que
+     * habilita terminen de propagarse, y el conteo post-selección queda
+     * contaminado por una carrera de datos (flaky, no por un fetch real
+     * disparado por la selección manual de "Temporada (todas)").
      */
     it("seleccionar 'Temporada (todas)' muestra mensaje informativo y no dispara /distribution", async () => {
       const distributionCalls: string[] = [];
@@ -479,7 +540,13 @@ describe("DistributionChart", () => {
         ).toBeInTheDocument();
       });
 
-      // Limpiar llamadas previas (el mount puede haber disparado queries)
+      // Espera a que termine el fetch inicial disparado por la
+      // autoselección T035 antes de limpiar el contador (ver nota arriba).
+      await waitFor(() => {
+        expect(distributionCalls.length).toBeGreaterThan(0);
+      });
+
+      // Limpiar llamadas previas (el mount ya disparó su propia query T035)
       distributionCalls.length = 0;
 
       // Seleccionar "Temporada (todas)" via fireEvent
@@ -581,6 +648,37 @@ describe("DistributionChart", () => {
     });
 
     /**
+     * Feature 036 (US5): un fallo al cargar /races NO debe caer en silencio
+     * al placeholder "Selecciona una carrera" — eso le miente al coach
+     * diciéndole que debe elegir, cuando en realidad la petición falló y el
+     * selector no tiene nada para ofrecer. Debe mostrar el ErrorState
+     * compartido con "Reintentar", igual que ya hace la query de distribución.
+     */
+    it("fallo al cargar /races → ErrorState con Reintentar, NUNCA el placeholder de selección", async () => {
+      mswServer.use(errorRacesListHandler);
+      renderWithProviders(<DistributionChart athleteId={42} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toBeInTheDocument();
+      });
+      expect(
+        screen.getByText(/no pudimos cargar las carreras/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /reintentar/i }),
+      ).toBeInTheDocument();
+
+      // Nunca el placeholder que sugiere que basta con elegir una carrera.
+      expect(
+        screen.queryByText(/selecciona una carrera en el selector/i),
+      ).not.toBeInTheDocument();
+      // Tampoco el mensaje de "0 carreras" — esto no es una temporada vacía.
+      expect(
+        screen.queryByText(/no hay carreras disponibles/i),
+      ).not.toBeInTheDocument();
+    });
+
+    /**
      * T017-5: axe — zero a11y violations con el picker poblado.
      *
      * Este test puede pasar en verde incluso antes de T022 si el picker
@@ -601,6 +699,71 @@ describe("DistributionChart", () => {
 
       const results = await axe(container);
       expect(results).toHaveNoViolations();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T035 (feature 036) — el selector abría en "Temporada (todas)", un valor
+  // que solo produce el placeholder "selecciona una carrera": el sub-tab
+  // abría vacío y el coach tenía que adivinar que debía cambiar el selector.
+  // ---------------------------------------------------------------------------
+
+  describe("T035 — selector por defecto en la carrera más reciente", () => {
+    it("con carreras disponibles autoselecciona la más reciente (por event_date) y muestra datos", async () => {
+      mswServer.use(racesListHandler);
+      renderWithProviders(<DistributionChart athleteId={42} />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("distribution-valida-select"),
+        ).toBeInTheDocument();
+      });
+
+      // racesListHandler: Válida I (2026-01-31, event_id=91) y Cto. Dep.
+      // (2026-06-12, event_id=200) — el más reciente es el campeonato.
+      await waitFor(() => {
+        expect(screen.getByTestId("distribution-valida-select")).toHaveValue(
+          raceOptionValue(200),
+        );
+      });
+
+      // Con una carrera ya seleccionada se ve el chart de una vez — no el
+      // placeholder "selecciona una carrera" (el bug que T035 corrige).
+      await waitFor(() => {
+        expect(screen.getByTestId("area-chart")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByText(/la distribución se calcula por carrera/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("con defaultEventId explícito NO autoselecciona — respeta la elección del caller", async () => {
+      mswServer.use(racesListHandler);
+      renderWithProviders(
+        <DistributionChart athleteId={42} defaultEventId={91} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("area-chart")).toBeInTheDocument();
+      });
+
+      // Se mantiene en 91 (Válida I) aunque 200 (Cto. Dep.) sea más reciente.
+      expect(screen.getByTestId("distribution-valida-select")).toHaveValue(
+        raceOptionValue(91),
+      );
+    });
+
+    it("con 0 carreras no falla: se queda en 'Temporada (todas)' (código defensivo)", async () => {
+      mswServer.use(emptyRacesListHandler);
+      renderWithProviders(<DistributionChart athleteId={42} />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/no hay carreras disponibles/i),
+        ).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId("area-chart")).not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
   });
 

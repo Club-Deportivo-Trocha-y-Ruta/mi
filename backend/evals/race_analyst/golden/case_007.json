@@ -41,6 +41,36 @@
         "gap_to_winner_ms": 225000
       }
     ],
+    "season_comparative": [
+      {
+        "valida_num": 1,
+        "event_label": "Válida 1",
+        "position": 4,
+        "race_time_ms": 1880000,
+        "field_size": 10,
+        "delta_position": null,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 2,
+        "event_label": "Válida 2",
+        "position": 5,
+        "race_time_ms": 1920000,
+        "field_size": 10,
+        "delta_position": 1,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 3,
+        "event_label": "Válida 3",
+        "position": 7,
+        "race_time_ms": 1990000,
+        "field_size": 10,
+        "delta_position": 2,
+        "delta_time_ms": null
+      }
+    ],
+    "progression_assessment": "declining",
     "podium_context": {
       "category_id": 1,
       "event_id": 4,
@@ -86,6 +116,6 @@
     "Thiago"
   ],
   "must_cite": false,
-  "max_words": 600,
-  "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-A-M-007 muestra regresión sostenida (4→8) y gap creciente al podio (70s→225s). Coincide con brote de crecimiento detectado por antropometría [1].\n\n## Análisis Técnico\n\nCirca-PHV (-0.3 años): adaptación neuromuscular en curso. Cansancio recurrente reportado por coach es consistente.\n\n## Recomendaciones LTAD\n\n- Reducir carga 30% durante 6 semanas, sin HIIT (categoría=volume, prioridad=high) [1]\n- Sumar día de descanso completo adicional (categoría=recovery, prioridad=high) [2]\n- Comunicación con familia: vigilar dolor articular (categoría=psychology, prioridad=med) [1]\n\n## Riesgos\n\n- Lesión por sobrecarga si se mantiene volumen actual (flag=growth_spurt, severity=high) [1]\n\n## Próximos Pasos\n\nReevaluar PHV en 3 meses. Si dolor persiste, derivar al fisioterapeuta deportivo."
+  "max_words": 400,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nPuesto que participó el recorrido completo sin abandono, la deportista completó la válida 4 y finalizó en la octava posición, con un tiempo de carrera de 0:34:00 y un gap al líder de 0:03:45.\n\n## Recorrido hasta acá\n\nEl gap al líder viene en aumento sostenido durante las últimas cuatro válidas (0:01:10, 0:01:50 y 0:02:55 antes de esta fecha), lo que coincide con el brote de crecimiento identificado en la antropometría más reciente. Dado que el coach reportó cansancio recurrente en las últimas sesiones, el patrón es consistente con una fase Circa-PHV en curso, no con una caída de motivación ni de técnica.\n\n## Hacia dónde va\n\n- Reducir carga de entrenamiento un 30 % durante las próximas seis semanas, sin sesiones de alta intensidad (categoría=volume, prioridad=high)\n- Sumar un día completo de descanso adicional a la semana (categoría=recovery, prioridad=high)\n\nComo resultado del brote de crecimiento en curso, conviene informar a la familia para vigilar molestias articulares y reevaluar la antropometría en tres meses."
 }

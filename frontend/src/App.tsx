@@ -84,19 +84,6 @@ import { CompetitionDetailPage } from "@/routes/competitions/CompetitionDetailPa
 import { CompetitionImportPage } from "@/routes/competitions/CompetitionImportPage";
 import { UserRole } from "@/types/enums";
 
-// Competitive anxiety assessment (feature 017) — coach/admin dashboard (lazy)
-// + public token answer route.
-const AnxietyDashboardPage = lazy(() =>
-  import("@/routes/anxiety/AnxietyDashboardPage").then((m) => ({
-    default: m.AnxietyDashboardPage,
-  })),
-);
-const AnxietyAnswerPage = lazy(() =>
-  import("@/routes/anxiety/AnswerPage").then((m) => ({
-    default: m.AnswerPage,
-  })),
-);
-
 // Technique & Gymkhana Library (feature 018) — coach/admin only (lazy)
 const CatalogPage = lazy(() =>
   import("@/routes/technique/CatalogPage").then((m) => ({
@@ -197,16 +184,6 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/recuperar-contrasena" element={<ForgotPasswordPage />} />
         <Route path="/restablecer-contrasena" element={<ResetPasswordPage />} />
-        {/* Public token answer route (no auth) — feature 017 */}
-        <Route path="/anxiety/responder/:token" element={<AnxietyAnswerPage />} />
-        <Route
-          path="/anxiety"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.admin, UserRole.coach]}>
-              <AnxietyDashboardPage />
-            </ProtectedRoute>
-          }
-        />
         <Route
           path="/"
           element={

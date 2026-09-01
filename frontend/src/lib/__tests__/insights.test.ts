@@ -17,6 +17,7 @@ import {
   getCarreraTier,
   TAPER_GUIDANCE,
   confidenceStatus,
+  validaLabel,
 } from "@/lib/insights";
 import type { ProgressionAssessment } from "@/types/raceAnalysis.types";
 import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
@@ -225,5 +226,95 @@ describe("confidenceStatus", () => {
     ["low", { status: "danger", label: "Confianza baja" }],
   ])("%s → %o", (confidence, expected) => {
     expect(confidenceStatus(confidence)).toEqual(expected);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validaLabel — feature 036 (T030/T032): helper único, reemplaza el antiguo
+// `validaLabel` arábigo de este módulo y `getValidaLabel` (lib/raceCalendar.ts,
+// romano). Fuente de campeonato: `series_kind`, no el `valida_num === 99`
+// retirado (ese chequeo numérico sobrevive solo como fallback legacy).
+// ---------------------------------------------------------------------------
+
+describe("validaLabel", () => {
+  describe("atajo numérico (retrocompatible, sin series_kind)", () => {
+    it.each<[number, string]>([
+      [1, "Válida I"],
+      [2, "Válida II"],
+      [3, "Válida III"],
+      [4, "Válida IV"],
+      [5, "Válida V"],
+      [6, "Válida VI"],
+      [7, "Válida VII"],
+    ])("%i → %s (formato romano, no arábigo)", (num, expected) => {
+      expect(validaLabel(num)).toBe(expected);
+    });
+
+    it("0 → Resumen de temporada", () => {
+      expect(validaLabel(0)).toBe("Resumen de temporada");
+    });
+
+    it("99 (convención retirada) → Cto. Departamental como fallback sin series_kind", () => {
+      expect(validaLabel(99)).toBe("Cto. Departamental");
+    });
+
+    it("null/undefined → guión", () => {
+      expect(validaLabel(null)).toBe("—");
+      expect(validaLabel(undefined)).toBe("—");
+    });
+  });
+
+  describe("objeto con series_kind — fuente de verdad autoritativa (T030)", () => {
+    it("series_kind='cup' → etiqueta de válida regular en romano", () => {
+      expect(validaLabel({ valida_num: 3, series_kind: "cup" })).toBe(
+        "Válida III",
+      );
+    });
+
+    it("series_kind='championship' → Cto. Departamental sin depender de valida_num===99", () => {
+      // La convención retirada exigía valida_num===99; series_kind decide
+      // ahora sin ese número mágico — aquí valida_num=1 y aun así gana
+      // "Cto. Departamental" porque series_kind es la fuente autoritativa.
+      expect(
+        validaLabel({ valida_num: 1, series_kind: "championship" }),
+      ).toBe("Cto. Departamental");
+    });
+
+    it("valida_num=0 es agregado de temporada sin importar series_kind", () => {
+      expect(validaLabel({ valida_num: 0, series_kind: null })).toBe(
+        "Resumen de temporada",
+      );
+    });
+
+    it("series_kind null/undefined cae al fallback numérico (valida_num=99)", () => {
+      expect(validaLabel({ valida_num: 99, series_kind: null })).toBe(
+        "Cto. Departamental",
+      );
+      expect(validaLabel({ valida_num: 99, series_kind: undefined })).toBe(
+        "Cto. Departamental",
+      );
+    });
+
+    it("event_id/event_date en null (insight sin evento vinculado) no rompe ni cambia el texto", () => {
+      expect(
+        validaLabel({
+          valida_num: 3,
+          series_kind: "cup",
+          event_id: null,
+          event_date: null,
+        }),
+      ).toBe("Válida III");
+    });
+
+    it("acepta el objeto completo del contrato con todo en null salvo valida_num", () => {
+      expect(
+        validaLabel({
+          valida_num: null,
+          series_kind: null,
+          event_id: null,
+          event_date: null,
+        }),
+      ).toBe("—");
+    });
   });
 });

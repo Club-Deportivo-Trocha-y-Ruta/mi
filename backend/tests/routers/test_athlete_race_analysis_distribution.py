@@ -53,15 +53,12 @@ from app.models.user import UserRole
 from tests.fixtures.race_history_fixtures import (
     create_club,
     create_distribution_scenario,
-    create_race_category,
     create_race_competitor,
     create_race_event,
     create_race_result,
-    create_race_series,
     create_user,
     link_user_to_club,
 )
-from app.models.race_series import RaceSeriesKind
 from app.models.race_result import ResultStatus
 
 

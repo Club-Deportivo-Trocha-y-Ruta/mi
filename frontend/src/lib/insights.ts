@@ -104,14 +104,73 @@ export function getV2Preview(summaryText: string): string {
 // Etiquetas de enums — reutilizables en lista y hero card
 // ---------------------------------------------------------------------------
 
-// "Válida N" / "Cto. Departamental" / "Resumen de temporada" sentence label.
-// Legacy exception: branches on the raw sequence number because the AI-insights
-// payload (race/ai pipeline) does not yet expose series_kind.
-export function validaLabel(num: number | null | undefined): string {
+/** Roman numerals for válidas 1..7 — misma tabla que `MiniSparkline.tsx`. */
+const VALIDA_ROMAN_NUMERALS: Record<number, string> = {
+  1: "I",
+  2: "II",
+  3: "III",
+  4: "IV",
+  5: "V",
+  6: "VI",
+  7: "VII",
+};
+
+export interface ValidaLabelInput {
+  /**
+   * 0 = agregado de temporada. 1..7 = válida regular. 99 = Cto.
+   * Departamental bajo la convención retirada (usado solo como fallback,
+   * ver `seriesKind`). `null`/`undefined` = no aplica.
+   */
+  valida_num?: number | null;
+  /**
+   * Identidad autoritativa (features 014/016): cuando está presente decide
+   * "Válida N" vs "Cto. Departamental" en lugar de la convención retirada
+   * `valida_num === 99`. `null`/`undefined` → cae al fallback numérico,
+   * para llamadores legacy que aún no exponen este campo (ej.
+   * `ClubInsightByRaceItem`, feature 036 T030).
+   */
+  series_kind?: string | null;
+  /**
+   * No afecta el texto devuelto — aceptados para que los llamadores puedan
+   * pasar el insight/ítem del contrato tal cual, sin desestructurar. Ambos
+   * pueden ser `null` (insight sin evento vinculado).
+   */
+  event_id?: number | null;
+  event_date?: string | null;
+}
+
+/**
+ * Etiqueta legible y única para una válida/campeonato/agregado de temporada:
+ * "Válida III", "Cto. Departamental", "Resumen de temporada" o "—".
+ *
+ * Fuente única de verdad para este dato en toda la app (feature 036, T032)
+ * — reemplaza los antiguos `validaLabel` (arábigo, este mismo módulo) y
+ * `getValidaLabel` (romano, `lib/raceCalendar.ts`), que producían texto
+ * distinto para el mismo insight. Formato romano adoptado de
+ * `MiniSparkline.tsx`.
+ *
+ * La distinción "Cto. Departamental" vs válida regular usa `series_kind`
+ * (feature 014/016) en vez de la convención retirada `valida_num === 99`
+ * (T030) — ese chequeo numérico sobrevive únicamente como fallback para
+ * llamadores que todavía no exponen `series_kind`.
+ *
+ * Acepta un número plano (atajo retrocompatible, ej. selectores que solo
+ * conocen el número de válida) o el objeto `ValidaLabelInput` con el
+ * contrato completo.
+ */
+export function validaLabel(
+  input: number | null | undefined | ValidaLabelInput,
+): string {
+  const { valida_num: num, series_kind: seriesKind } =
+    typeof input === "object" && input !== null ? input : { valida_num: input, series_kind: undefined };
+
   if (num === null || num === undefined) return "—";
   if (num === 0) return "Resumen de temporada";
-  if (num === 99) return "Cto. Departamental";
-  return `Válida ${num}`;
+
+  const isChampionship = seriesKind != null ? seriesKind === "championship" : num === 99;
+  if (isChampionship) return "Cto. Departamental";
+
+  return `Válida ${VALIDA_ROMAN_NUMERALS[num] ?? num}`;
 }
 
 /**

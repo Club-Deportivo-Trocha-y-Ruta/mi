@@ -41,11 +41,19 @@ Estas reglas vienen del marco teórico-metodológico del club y son **no negocia
 ## Restricciones por sección (OBLIGATORIO)
 
 ### Sección 1 "Qué pasó en esta válida"
-- **SÍ incluir:** posición final, tiempo de carrera (formato `hh:mm:ss`), gap al líder, número de vueltas completadas, si hubo abandono{% if race_meta %}, y las condiciones de carrera registradas (clima, tipo de pista) que aparecen más abajo{% endif %}.
+- **Objetivo: síntesis, no enumeración.** Cada oración debe **combinar al menos dos datos** de la válida (p. ej. posición + gap al líder, o tiempo + relación con el abandono/podio) en una idea interpretativa. Nunca produzcas una lista de hechos sueltos, un dato por oración.
+- **Datos disponibles para esta válida** (insumo de la síntesis, no un checklist a completar frase por frase): posición final, tiempo de carrera (formato `hh:mm:ss`), gap al líder, si hubo abandono{% if race_meta %}, y las condiciones de carrera registradas (clima, tipo de pista) que aparecen más abajo{% endif %}.
 {% if not race_meta %}- **PROHIBIDO mencionar clima, pista o terreno si no se proveen datos de condiciones.** Para esta válida NO se registraron condiciones: no menciones clima, temperatura, superficie, terreno ni altitud, y NO los infieras ni inventes.{% endif %}
-- **Formato de tiempos OBLIGATORIO:** los tiempos en las tablas vienen como `hh:mm:ss`. Cítalos así en la narrativa (ej: "registró un tiempo de 0:59:05"). **PROHIBIDO** expresar tiempos en milisegundos o segundos.
-- **Verbos permitidos:** completó, registró, finalizó, participó, alcanzó.
+- **PROHIBIDO repetir un mismo dato (tiempo, posición o gap) en más de una oración.** Cítalo una sola vez, en la oración donde aporte más contexto.
+- **Formato de tiempos:** si citas un tiempo (de carrera o de gap), usa el formato `hh:mm:ss` tal como viene en la tabla (ej: "0:59:05"). **PROHIBIDO** expresar tiempos en milisegundos o segundos.
+- **PROHIBIDO afirmar o insinuar el número de vueltas completadas.** No existe un dato de conteo de vueltas para esta válida — no inventes una cifra ni uses frases de relleno como "alcanzó el número máximo de vueltas previsto para la categoría".
+- **Verbos (registro descriptivo y neutro, lista orientativa — no cerrada):** completó, registró, finalizó, participó, alcanzó, mostró, sostuvo, gestionó, disputó, cerró, ejecutó, mantuvo, ocupó, defendió (la posición).
 - **PROHIBIDO:** adjetivos valorativos (destacada, decepcionante, brillante, mediocre, excelente, pobre); comparaciones de mérito ("fue la mejor", "no estuvo a la altura"); atribuciones causales subjetivas ("le faltó ganas", "no entrenó suficiente"). Usar siempre "la deportista" o pronombres — **NUNCA pseudónimo, alias ni dorsal**.
+
+**Ejemplo de calibración (datos ficticios — no son datos de esta válida):**
+
+- ❌ *Enumeración, evitar:* "La deportista completó la válida 3, registrando un tiempo de 0:42:10 y finalizando en la posición 5. El tiempo de carrera fue 0:42:10, con un gap al líder de 0:04:03 (9.6%). Alcanzó el número máximo de vueltas previsto para la categoría." — repite el tiempo dos veces y afirma un dato de vueltas inexistente.
+- ✅ *Síntesis, seguir este estilo:* "La deportista finalizó quinta en la válida 3, con un tiempo de 0:42:10 que la dejó a 0:04:03 (9.6%) del líder — una posición media, con una brecha aún amplia respecto a la cabeza de carrera." — combina posición, tiempo y gap en una sola idea, cita el tiempo una sola vez y no menciona vueltas.
 
 ### Sección 2 "Recorrido hasta acá"
 - **SÍ incluir:** {% if maturation_status %}fase madurativa ({{ maturation_status }}), {% endif %}adaptación longitudinal al entrenamiento, consistencia de participación, tendencias observables en los datos.

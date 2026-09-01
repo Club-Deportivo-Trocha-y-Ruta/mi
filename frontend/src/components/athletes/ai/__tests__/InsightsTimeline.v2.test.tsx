@@ -17,6 +17,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { axe } from "jest-axe";
 
 // Auth mock — coach.
 vi.mock("@/store/auth.store", () => ({
@@ -417,5 +418,80 @@ describe("InsightsTimeline — v2 (race_analyst_v2)", () => {
     expect(screen.getByText(/qué pasó/i)).toBeInTheDocument();
     // La sección nueva NO debe aparecer.
     expect(screen.queryByText(/contexto de temporada/i)).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // T094 (feature 036, US6) — el layout v2 no tenía cobertura jest-axe propia
+  // en este archivo. El listado se cubre con `axe(container)`, pero el
+  // detalle abre en un `Sheet`/`Dialog` (Radix) que se porta a
+  // `document.body` fuera de `container` — mismo patrón que
+  // ConfirmDialog.test.tsx / HITLApprovalCard.test.tsx — así que ese caso
+  // usa `axe(document.body)` para realmente inspeccionar las 4 secciones
+  // del acordeón, el badge de progresión y el banner N=1.
+  // -------------------------------------------------------------------------
+  describe("accesibilidad v2 (T094)", () => {
+    it("sin violaciones a11y en el listado con varias previews v2", async () => {
+      mswServer.use(fiveDistinctV2InsightsHandler);
+      const { container } = renderWithProviders(
+        <InsightsTimeline athleteId={42} mode="coach" />,
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId("insight-card-1005")).toBeInTheDocument();
+      });
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it("sin violaciones a11y en el detalle v2 abierto (4 secciones + progression badge + banner N=1)", async () => {
+      mswServer.use(
+        singleV2InsightHandler,
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/insights/:insightId",
+          ({ params }) =>
+            HttpResponse.json(
+              mockInsightV2Detail({
+                id: Number(params.insightId),
+                is_first_in_season: true,
+                season_validas_count: 1,
+                metrics_snapshot: {
+                  schema_version: 1,
+                  season: 2026,
+                  progression_assessment: "improving",
+                } as never,
+              }),
+            ),
+        ),
+      );
+      const user = userEvent.setup();
+      renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+      await waitFor(() => {
+        expect(screen.getByTestId("insight-card-1001")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("insight-card-1001"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("progression-badge")).toBeInTheDocument();
+      });
+      expect(screen.getByTestId("insight-n1-banner")).toBeInTheDocument();
+
+      const results = await axe(document.body);
+      expect(results).toHaveNoViolations();
+    });
+
+    it("sin violaciones a11y en el detalle v2 para mode=parent", async () => {
+      mswServer.use(singleV2InsightHandler, v2InsightDetailHandler);
+      const user = userEvent.setup();
+      renderWithProviders(<InsightsTimeline athleteId={42} mode="parent" />);
+      await waitFor(() => {
+        expect(screen.getByTestId("insight-card-1001")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("insight-card-1001"));
+      await waitFor(() => {
+        expect(screen.getByText(/detalle del análisis/i)).toBeInTheDocument();
+      });
+
+      const results = await axe(document.body);
+      expect(results).toHaveNoViolations();
+    });
   });
 });

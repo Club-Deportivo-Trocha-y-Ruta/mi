@@ -83,8 +83,8 @@ describe("BottomNav — aria-current en el slot activo", () => {
     expect(activeLink).toHaveAttribute("aria-current", "page");
   });
 
-  it("un deep link dentro de un área (p.ej. /anxiety → Atletas) marca ese slot activo", () => {
-    renderBottomNav("coach", { initialPath: "/anxiety" });
+  it("un deep link dentro de un área (p.ej. /athletes/1 → Atletas) marca ese slot activo", () => {
+    renderBottomNav("coach", { initialPath: "/athletes/1" });
 
     const activeLink = screen.getByRole("link", { name: /Atletas/ });
     expect(activeLink).toHaveAttribute("aria-current", "page");

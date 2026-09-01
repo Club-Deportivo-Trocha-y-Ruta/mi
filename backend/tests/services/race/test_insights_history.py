@@ -14,7 +14,7 @@ sesión fresca. No se hacen llamadas a LLM ni a runner — solo CRUD ORM.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import AsyncGenerator
 
 import pytest
@@ -29,6 +29,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.models import Base
 from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
+from app.models.race_series import RaceSeriesKind
 from app.services.race.insights_history import (
     _MAX_CHAIN_DEPTH,
     deprecate_previous_active,
@@ -40,6 +41,8 @@ from tests.fixtures.race_history_fixtures import (
     create_athlete,
     create_club,
     create_insight,
+    create_race_event,
+    create_race_series,
     create_user,
 )
 from app.models.user import UserRole
@@ -58,13 +61,18 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
-    # Tablas necesarias para los tests de insights_history.
+    # Tablas necesarias para los tests de insights_history. race_series y
+    # race_events (T030/T033, feature 036): list_athlete_insights/
+    # get_athlete_insight ahora hacen LEFT JOIN a ambas para exponer
+    # event_date/series_kind y ordenar por fecha de carrera.
     tables = [
         Base.metadata.tables[t]
         for t in (
             "users",
             "clubs",
             "athletes",
+            "race_series",
+            "race_events",
             "athlete_ai_insights",
         )
     ]
@@ -296,6 +304,110 @@ async def test_list_athlete_insights_filter_by_season_use_case_valida(session):
 
 
 # ---------------------------------------------------------------------------
+# T033 (feature 036) — orden por fecha de carrera, no por generated_at
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_athlete_insights_orders_by_race_date_not_generated_at(session):
+    """Reproduce el bug de spec.md: generar en el orden V1 → Resumen →
+    V4 → V3 → V2 (por ``generated_at``) con fechas de carrera CRECIENTES
+    (V1 < V2 < V3 < V4) debe devolver, ordenado por fecha de carrera:
+    V4 → V3 → V2 → V1 → Resumen (agregado de temporada al final — ver
+    docstring de ``list_athlete_insights`` para la decisión documentada)."""
+    await create_race_series(session, series_id=1, season_year=2026)
+    events = {}
+    for seq, day in ((1, 1), (2, 8), (3, 15), (4, 22)):
+        events[seq] = await create_race_event(
+            session,
+            event_id=seq,
+            series_id=1,
+            sequence_number=seq,
+            name=f"V{seq}",
+            event_date=date(2026, 2, day),
+        )
+
+    base_gen = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    # Orden de GENERACIÓN (no de carrera): V1, Resumen, V4, V3, V2.
+    v1 = await create_insight(
+        session, athlete_id=144, valida_num=1, event_id=events[1].id,
+        coach_approved=True, is_active=1, generated_at=base_gen,
+    )
+    resumen = await create_insight(
+        session, athlete_id=144, valida_num=0, use_case="season_summary_v2",
+        event_id=None, coach_approved=True, is_active=1,
+        generated_at=base_gen + timedelta(minutes=1),
+    )
+    v4 = await create_insight(
+        session, athlete_id=144, valida_num=4, event_id=events[4].id,
+        coach_approved=True, is_active=1,
+        generated_at=base_gen + timedelta(minutes=2),
+    )
+    v3 = await create_insight(
+        session, athlete_id=144, valida_num=3, event_id=events[3].id,
+        coach_approved=True, is_active=1,
+        generated_at=base_gen + timedelta(minutes=3),
+    )
+    v2 = await create_insight(
+        session, athlete_id=144, valida_num=2, event_id=events[2].id,
+        coach_approved=True, is_active=1,
+        generated_at=base_gen + timedelta(minutes=4),
+    )
+    await session.commit()
+
+    items, total = await list_athlete_insights(
+        session, athlete_id=144, latest_only=True
+    )
+
+    assert total == 5
+    assert [i.id for i in items] == [v4.id, v3.id, v2.id, v1.id, resumen.id]
+
+
+@pytest.mark.asyncio
+async def test_list_athlete_insights_eager_loads_event_and_series(session):
+    """Los items devueltos exponen ``.event.event_date`` y
+    ``.event.series.kind`` sin lazy-load adicional — requerido por
+    ``_insight_to_out`` en el router, que corre en contexto async donde un
+    lazy-load implícito rompería con ``MissingGreenlet``."""
+    await create_race_series(
+        session, series_id=7, season_year=2026, kind=RaceSeriesKind.championship
+    )
+    event = await create_race_event(
+        session, event_id=70, series_id=7, sequence_number=1,
+        event_date=date(2026, 6, 12),
+    )
+    insight = await create_insight(
+        session, athlete_id=144, valida_num=1, event_id=event.id,
+        coach_approved=True, is_active=1,
+    )
+    await session.commit()
+
+    items, _ = await list_athlete_insights(session, athlete_id=144, latest_only=True)
+    assert len(items) == 1
+    assert items[0].id == insight.id
+    assert items[0].event is not None
+    assert items[0].event.event_date == date(2026, 6, 12)
+    assert items[0].event.series is not None
+    assert items[0].event.series.kind == RaceSeriesKind.championship
+
+
+@pytest.mark.asyncio
+async def test_list_athlete_insights_without_event_leaves_event_none(session):
+    """Un insight sin ``event_id`` (ej. agregado de temporada) no debe
+    romper el JOIN — ``.event`` debe resolver a ``None`` limpiamente."""
+    insight = await create_insight(
+        session, athlete_id=144, valida_num=0, use_case="season_summary_v2",
+        event_id=None, coach_approved=True, is_active=1,
+    )
+    await session.commit()
+
+    items, _ = await list_athlete_insights(session, athlete_id=144, latest_only=True)
+    assert len(items) == 1
+    assert items[0].id == insight.id
+    assert items[0].event is None
+
+
+# ---------------------------------------------------------------------------
 # get_athlete_insight
 # ---------------------------------------------------------------------------
 
@@ -324,6 +436,30 @@ async def test_get_athlete_insight_returns_none_when_cross_athlete(session):
     )
     assert found_right is not None
     assert found_right.id == insight_de_145.id
+
+
+@pytest.mark.asyncio
+async def test_get_athlete_insight_eager_loads_event_and_series(session):
+    """T030 (feature 036): el detalle también expone ``.event``/
+    ``.event.series`` sin lazy-load — el router los usa para poblar
+    ``event_date``/``series_kind`` en ``AthleteInsightDetailOut``."""
+    await create_race_series(session, series_id=3, season_year=2026)
+    event = await create_race_event(
+        session, event_id=30, series_id=3, sequence_number=2,
+        event_date=date(2026, 3, 1),
+    )
+    insight = await create_insight(
+        session, athlete_id=144, valida_num=2, event_id=event.id,
+        coach_approved=True, is_active=1,
+    )
+    await session.commit()
+
+    found = await get_athlete_insight(session, athlete_id=144, insight_id=insight.id)
+    assert found is not None
+    assert found.event is not None
+    assert found.event.event_date == date(2026, 3, 1)
+    assert found.event.series is not None
+    assert found.event.series.kind == RaceSeriesKind.cup
 
 
 # ---------------------------------------------------------------------------

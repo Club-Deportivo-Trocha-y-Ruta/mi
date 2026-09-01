@@ -41,6 +41,36 @@
         "gap_to_winner_ms": 195000
       }
     ],
+    "season_comparative": [
+      {
+        "valida_num": 1,
+        "event_label": "Válida 1",
+        "position": 4,
+        "race_time_ms": 2100000,
+        "field_size": 9,
+        "delta_position": null,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 2,
+        "event_label": "Válida 2",
+        "position": 6,
+        "race_time_ms": 2160000,
+        "field_size": 9,
+        "delta_position": 2,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 3,
+        "event_label": "Válida 3",
+        "position": 7,
+        "race_time_ms": 2210000,
+        "field_size": 9,
+        "delta_position": 1,
+        "delta_time_ms": null
+      }
+    ],
+    "progression_assessment": "declining",
     "podium_context": {
       "category_id": 2,
       "event_id": 4,
@@ -86,6 +116,6 @@
     "Thiago"
   ],
   "must_cite": false,
-  "max_words": 600,
-  "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-B-M-002 muestra regresión sostenida: posición pasó de 4 a 8 y el gap al ganador se cuadruplicó (40s → 195s) [1]. Patrón consistente, no puntual.\n\n## Análisis Técnico\n\nA los 12 años podemos estar en transición pre-PHV [2]; descenso técnico en curvas reportado por coach refuerza hipótesis de desajuste neuromuscular temporal.\n\n## Recomendaciones LTAD\n\n- Reducir intensidad 15 días y priorizar técnica lúdica (categoría=technique, prioridad=high) [1]\n- Conversar con familia: contexto escolar y descanso (categoría=psychology, prioridad=high) [1]\n\n## Riesgos\n\n- Posible brote de crecimiento sin reportar (flag=growth_spurt, severity=med) [2]\n\n## Próximos Pasos\n\nReevaluar antropometría. Si gap persiste, derivar a fisioterapeuta deportivo."
+  "max_words": 400,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nDado que participó la prueba completa sin abandono, la deportista completó la válida 4 y finalizó en la octava posición, con un tiempo de carrera de 0:38:00 y un gap al líder de 0:03:15.\n\n## Recorrido hasta acá\n\nA diferencia de la válida 1, donde el gap al líder era de apenas 0:00:40, la tendencia de las últimas cuatro fechas muestra una regresión sostenida en el resultado (posiciones 4, 6, 7 y 8). El coach reportó desmotivación antes de una de las carreras y un descenso técnico visible en el manejo de curvas, lo que podría explicar parte de la caída. Conviene priorizar la diversión y la confianza técnica por encima del resultado mientras se revisa la causa.\n\n## Hacia dónde va\n\n- Reducir la intensidad de las próximas dos semanas y priorizar técnica lúdica en curvas (categoría=technique, prioridad=high)\n- Conversar con la familia sobre el contexto escolar y el descanso disponible (categoría=psychology, prioridad=high)\n\nDebido a la posible relación entre el descenso técnico reportado y la desmotivación observada, conviene sostener la reducción de carga hasta la siguiente válida y reservar un día adicional de descanso completo."
 }

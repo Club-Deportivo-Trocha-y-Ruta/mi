@@ -39,7 +39,7 @@ Authoritative table of every route/directory/dependency this feature removes or 
 | `routes/intervals/` | Contains only `TemplateLibraryPage.tsx` |
 | `routes/competitions/insights/` | All 4 files either removed (3) or relocated out (1 — `SeasonInsightsPage`) |
 
-**Not removed / do not confuse with the above**: `components/competitions/insights/` (a *different* directory — `AnalyzeAthleteButton`, `GroupAnalysisPanel`, `GroupRunRow`, `StaleAnalysisBadge` — actively used by the surviving `InsightsTab`/`ResultsTable`). `components/shared/`, `components/race/`, and `components/anxiety/{AnalyzeButton,InterpretationPanel}.tsx` are also out of this removal (the anxiety pair is wired in, not deleted — see `contracts/anxiety-interpretation-ui.md`).
+**Not removed / do not confuse with the above**: `components/competitions/insights/` (a *different* directory — `AnalyzeAthleteButton`, `GroupAnalysisPanel`, `GroupRunRow`, `StaleAnalysisBadge` — actively used by the surviving `InsightsTab`/`ResultsTable`). `components/shared/` and `components/race/` are also out of this removal. (The competitive-anxiety-assessment module itself, `components/anxiety/`, was later removed in full as an unused feature — see `docs/implementation-status.md` history.)
 
 ## Dependencies removed
 

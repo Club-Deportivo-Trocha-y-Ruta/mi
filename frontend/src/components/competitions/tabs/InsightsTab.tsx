@@ -19,7 +19,6 @@ import { AthleteLink } from "@/components/shared/AthleteLink";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StaleAnalysisBadge } from "@/components/competitions/insights/StaleAnalysisBadge";
 import { AnalyzeAthleteButton } from "@/components/competitions/insights/AnalyzeAthleteButton";
 import { useClubInsightsByRace } from "@/hooks/athletes/useClubInsightsByRace";
 import { formatDateTimeCompact } from "@/lib/datetime";
@@ -67,9 +66,10 @@ function InsightCard({
   const showAnalyze =
     canAnalyze && !isMasked && item.athlete_id > 0 && season != null && validaNum != null;
   // Frescura para el botón: undefined=sin insight → launch directo; null=insight
-  // fresco → confirmar; string=stale run_id → launch directo.
-  const insightFreshness =
-    item.insight_id === null ? undefined : (item.stale_run_id ?? null);
+  // fresco → confirmar. T041 (feature 036): el backend nunca marcó un insight
+  // de esta vista como "stale" (ClubInsightByRaceItem no expone ese dato), así
+  // que ese tercer estado no es alcanzable aquí — se retiró junto al badge.
+  const insightFreshness = item.insight_id === null ? undefined : null;
 
   // Contenido visual de la card — idéntico para todos los roles. La
   // navegación real (o su ausencia para roles sin acceso a /athletes/:id,
@@ -136,8 +136,8 @@ function InsightCard({
 
   return (
     // Contenedor article: evita nesting de controles interactivos (axe
-    // nested-interactive). El card clickable y el badge stale son hermanos
-    // dentro del article, no padre-hijo.
+    // nested-interactive). El card clickable y el botón de análisis son
+    // hermanos dentro del article, no padre-hijo.
     <article
       className="flex flex-col gap-2"
       aria-label={item.athlete_display_name}
@@ -158,16 +158,6 @@ function InsightCard({
         </AthleteLink>
       ) : (
         cardBody
-      )}
-
-      {/* FR-018 / PR5: badge hermano del card (no anidado) para evitar
-          nested-interactive (axe). La re-ejecución es manual (D5/FR-029). */}
-      {item.stale_run_id != null && (
-        <div
-          data-testid={`insights-tab-stale-badge-${item.athlete_id}`}
-        >
-          <StaleAnalysisBadge runId={item.stale_run_id} />
-        </div>
       )}
 
       {/* US4 (per-atleta): botón "Analizar con IA" por tarjeta. Hermano del

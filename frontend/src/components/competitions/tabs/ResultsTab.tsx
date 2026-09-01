@@ -232,13 +232,15 @@ function ResultsTabInner({
     isCoachOrAdmin ? raceEventId : null,
     { latestOnly: true },
   );
-  // Build map: athlete_id → stale_run_id (null=fresh, string=stale, absent=no insight)
+  // Build map: athlete_id → freshness (null=fresh, absent=no insight). T041
+  // (feature 036): ClubInsightByRaceItem nunca expuso un stale_run_id real
+  // (el backend jamás lo pobló), así que todo insight existente es "fresco".
   const insightFreshnessMap = useMemo<Map<number, string | null>>(() => {
     const m = new Map<number, string | null>();
     if (!insightsQuery.data) return m;
     for (const item of insightsQuery.data.items) {
       if (item.athlete_id > 0) {
-        m.set(item.athlete_id, item.stale_run_id ?? null);
+        m.set(item.athlete_id, null);
       }
     }
     return m;

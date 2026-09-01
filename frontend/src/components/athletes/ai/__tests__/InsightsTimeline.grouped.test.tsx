@@ -217,6 +217,41 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
     expect(hasMedal).toBe(true);
   });
 
+  it("Cto. Departamental moderno (series_kind='championship', valida_num NO es 99) → borde amber + ícono Medal", async () => {
+    // Feature 036 (US5): un campeonato post features 014/016 puede traer su
+    // propio valida_num de secuencia (no literalmente 99) — el shape debe
+    // decidirse por `series_kind`, no por el número mágico retirado.
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
+        HttpResponse.json({
+          items: [
+            mockInsight({
+              id: 41,
+              valida_num: 1,
+              series_kind: "championship",
+              generated_at: "2026-06-26T10:00:00Z",
+            }),
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      ),
+    );
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("insight-card-41")).toBeInTheDocument();
+    });
+    const card = screen.getByTestId("insight-card-41");
+    expect(card.className).toMatch(/border-l-4/);
+    expect(card.className).toMatch(/border-amber/);
+    const svgs = card.querySelectorAll("svg");
+    const hasMedal = Array.from(svgs).some((s) =>
+      (s.getAttribute("class") ?? "").toLowerCase().includes("medal"),
+    );
+    expect(hasMedal).toBe(true);
+  });
+
   it("a11y — Timeline agrupado (3 meses con tiers mixtos) no introduce violaciones", async () => {
     mswServer.use(
       http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>

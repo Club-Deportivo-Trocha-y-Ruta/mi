@@ -35,15 +35,16 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
 import { useAthleteInsightDetail } from "@/hooks/athletes/useAthleteInsightDetail";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import {
   getRaceMeta,
   getRaceTypeBadgeStyle,
-  getValidaLabel,
   type RaceMeta,
 } from "@/lib/raceCalendar";
+import { validaLabel } from "@/lib/insights";
 import {
   computePercentile,
   evaluateImprovementCount,
@@ -81,7 +82,12 @@ const VALIDA_OPTIONS: Array<{ value: number; label: string }> = [
 ];
 
 /** Tap target mínimo WCAG (44×44 px). */
-const TAP_TARGET_CLASSES = "min-h-[44px]";
+// Wave 5 (feature 036, target-size sweep): era `min-h-[44px]` — el floor de
+// iOS HIG, no el de este proyecto (48px, `MIN_TARGET_SIZE` en
+// `e2e/target-size.spec.ts`). Un solo punto de verdad para las 4 controles
+// de este archivo (season select, swap, ambos selects de válida, CTA final)
+// — subir este valor los corrige a todos a la vez.
+const TAP_TARGET_CLASSES = "min-h-[48px]";
 
 /** Ventana de "reciente" para considerar el record antropométrico vigente. */
 const PHV_FRESHNESS_DAYS = 90;
@@ -191,6 +197,7 @@ export function ComparatorPanel({
   // Estados derivados
   const hasEnoughValidas = validasConInsight.length >= 2;
   const sameValida = validaA !== null && validaA === validaB;
+  const seasonListColdStart = isColdStartError(seasonListQuery.error);
 
   return (
     <section
@@ -202,6 +209,16 @@ export function ComparatorPanel({
 
       {seasonListQuery.isLoading ? (
         <Skeleton className="h-40 w-full rounded-lg" />
+      ) : seasonListQuery.isError ? (
+        <ErrorState
+          message={
+            seasonListColdStart
+              ? undefined
+              : "No se pudieron cargar los análisis de la temporada."
+          }
+          onRetry={() => void seasonListQuery.refetch()}
+          isColdStart={seasonListColdStart}
+        />
       ) : !hasEnoughValidas ? (
         <EmptyPair count={validasConInsight.length} />
       ) : (
@@ -333,7 +350,7 @@ function SelectorsRow({
         className={cn(
           "mx-auto inline-flex items-center justify-center self-center rounded-full bg-light-gray text-charcoal",
           TAP_TARGET_CLASSES,
-          "min-w-[44px] transition motion-reduce:transition-none hover:bg-light-gray/70 focus:outline-none focus:ring-2 focus:ring-primary/40",
+          "min-w-[48px] transition motion-reduce:transition-none hover:bg-light-gray/70 focus:outline-none focus:ring-2 focus:ring-primary/40",
         )}
       >
         <ArrowLeftRight size={18} aria-hidden="true" />
@@ -478,6 +495,20 @@ function ComparisonBody({
 
   if (detailA.isLoading || detailB.isLoading) {
     return <Skeleton className="h-64 w-full rounded-lg" />;
+  }
+
+  if (detailA.isError || detailB.isError) {
+    const detailColdStart = isColdStartError(detailA.error ?? detailB.error);
+    return (
+      <ErrorState
+        message={detailColdStart ? undefined : "No se pudo cargar el detalle del análisis."}
+        onRetry={() => {
+          void detailA.refetch();
+          void detailB.refetch();
+        }}
+        isColdStart={detailColdStart}
+      />
+    );
   }
 
   return (
@@ -633,8 +664,8 @@ function DiffTable({
   const noDataB = detailB !== null && metricsB === null;
   const anyLegacy = noDataA || noDataB;
 
-  const labelA = getValidaLabel(validaA);
-  const labelB = getValidaLabel(validaB);
+  const labelA = validaLabel(validaA);
+  const labelB = validaLabel(validaB);
 
   const rows: RowSpec[] = useMemo(() => {
     return buildRows({
@@ -952,7 +983,7 @@ function ImprovementSummary({
       className="text-sm font-medium text-charcoal"
     >
       Mejoró {improved} de {total} métricas — Confianza {confidenceLabel} ·{" "}
-      {getValidaLabel(validaB)}
+      {validaLabel(validaB)}
     </p>
   );
 }

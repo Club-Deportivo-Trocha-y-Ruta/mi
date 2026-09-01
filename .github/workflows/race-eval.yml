@@ -49,17 +49,36 @@ jobs:
 
       - name: Run golden eval (bloqueante)
         env:
-          AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          AI_PROVIDER: google
-          AI_MODEL: gemini-2.5-flash-lite
+          # specs/036-ai-insights-tab-review (T051 — "The Gemini correction"):
+          # el pipeline agéntico de race/agents/ lee su config vía
+          # RACE_AI_PROVIDER/RACE_AI_MODEL/RACE_AI_API_KEY
+          # (app/services/race/agents/_llm.py::build_chat_llm,
+          # Settings.race_ai_* en config.py) — NO vía AI_PROVIDER/AI_MODEL/
+          # AI_API_KEY, que pertenecen al stack independiente
+          # app/services/ai/ (asistente de sesiones, informes, newsletters).
+          # Antes de este fix el job exportaba las variables del OTRO stack:
+          # como RACE_AI_PROVIDER quedaba sin definir, _llm.py caía al
+          # default "anthropic" (config.py) sin ninguna API key resuelta
+          # (el fallback a AI_API_KEY sólo aplica si ambos proveedores
+          # coinciden) — el guard de abajo nunca lo habría detectado
+          # porque miraba RACE_AI_API_KEY/GOOGLE_API_KEY, no AI_API_KEY.
+          # Alineado con backend/.env real y con producción: Google
+          # Gemini Flash Lite, NO Anthropic (el club se queda en el free
+          # tier de Gemini — ver IMPLEMENTATION_STATE.md, decisión D1).
+          RACE_AI_API_KEY: ${{ secrets.RACE_AI_API_KEY }}
+          RACE_AI_PROVIDER: google
+          RACE_AI_MODEL: gemini-3.1-flash-lite
+          # Timeout/tokens/temperatura NO tienen equivalente RACE_AI_* propio
+          # — build_chat_llm cae a estos mismos Settings.ai_* para todos los
+          # proveedores (ver _llm.py), así que sí aplican aquí.
           AI_TEMPERATURE: "0.4"
           AI_MAX_TOKENS: "8192"
           AI_TIMEOUT_SECONDS: "30"
           AI_LOG_PROMPTS: "false"
           RACE_EVAL_THRESHOLD: ${{ github.event.inputs.threshold || '0.75' }}
         run: |
-          if [ -z "$AI_API_KEY" ]; then
-            echo "::error::AI_API_KEY no configurado en secrets de GitHub."
+          if [ -z "$RACE_AI_API_KEY" ]; then
+            echo "::error::RACE_AI_API_KEY no configurado en secrets de GitHub."
             exit 1
           fi
           pytest tests/evals/test_race_analyst_eval.py -m golden -v --tb=short

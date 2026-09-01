@@ -8,7 +8,10 @@
  * Cobertura RBAC (el backend la enforza; aquí solo describimos):
  *   - insights*       — admin + coach + parent (parent filtra aprobados+activos)
  *   - runs (GET/POST) — admin + coach (parent => 403)
- *   - distribution    — admin + coach + parent (pseudonimizado)
+ *   - distribution    — admin + coach + parent (parent ve solo pseudónimos;
+ *                        coach/admin ven display_name real de cada corredor,
+ *                        incl. de otros clubes — ver DistributionChart.tsx,
+ *                        feature 036 Open Question 2 / T037)
  *   - evolution       — admin + coach + parent
  *
  * Privacidad: las funciones jamás reciben datos personales en los
@@ -108,11 +111,22 @@ export async function startAthleteRun(
 // Season summary (on-demand)
 // ---------------------------------------------------------------------------
 
+/**
+ * Respuesta REAL de ``POST /season-summary`` (feature 036, T040 —
+ * `schemas/athlete_race_analysis.py::SeasonSummaryResponse`). A diferencia
+ * de `startAthleteRun`, esta llamada es SÍNCRONA: no hay un run agéntico
+ * polleable, así que no existen `run_id`/`status`/`started_at` — para
+ * cuando la promesa resuelve, el resumen ya fue generado y persistido.
+ * `insight_id` es la PK del insight (`valida_num=0`), útil para
+ * deep-linkear al insight recién creado en el histórico.
+ */
 export interface SeasonSummaryResponse {
-  /** external_run_id del run que produce el resumen. */
-  run_id: string;
-  status: string;
-  started_at: string;
+  insight_id: number;
+  season: number;
+  summary_text: string;
+  prompt_version: string;
+  validas_analyzed: number;
+  generated_at: string;
 }
 
 export async function generateSeasonSummary(

@@ -9,6 +9,7 @@ from app.services.race.agents._llm import (
     build_chat_llm,
     extract_text,
     extract_usage,
+    resolve_configured_model,
 )
 from app.services.race.agents.pricing import (
     compute_cost_usd,
@@ -153,6 +154,47 @@ def test_compute_cost_usd_known_values_openai():
     """Ollama local (uso objetivo de 'openai' en race/agents/) = costo 0."""
     assert compute_cost_usd(1_000_000, 1_000_000, provider="openai") == 0.0
     assert compute_cost_usd(0, 0, provider="openai") == 0.0
+
+
+def test_build_chat_llm_google_default_model_is_gemini_3_1_flash_lite(monkeypatch):
+    """T061: el default de Google debía seguir a pricing.py, no quedar en el
+    modelo predecesor ("gemini-2.5-flash-lite")."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    llm = build_chat_llm(api_key="dummy")
+    assert llm.model == "gemini-3.1-flash-lite"
+
+
+# ---------------------------------------------------------------------------
+# resolve_configured_model (feature 036, T060)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_configured_model_reads_provider_and_model_from_settings(monkeypatch):
+    """No debe hardcodear ningún string — lee de Settings en el momento de la
+    llamada, igual que build_chat_llm."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "anthropic")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    assert resolve_configured_model() == "claude-sonnet-5"
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    assert resolve_configured_model() == "gemini-3.1-flash-lite"
+
+
+def test_resolve_configured_model_prefers_explicit_model_override(monkeypatch):
+    """Un ``race_ai_model`` explícito (o un override pasado por parámetro)
+    gana sobre el default del proveedor — mismo orden que build_chat_llm."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "gemini-custom-pinned")
+    assert resolve_configured_model() == "gemini-custom-pinned"
+    assert resolve_configured_model(model="explicit-override") == "explicit-override"
 
 
 def test_settings_race_ai_provider_validator_accepts_openai():

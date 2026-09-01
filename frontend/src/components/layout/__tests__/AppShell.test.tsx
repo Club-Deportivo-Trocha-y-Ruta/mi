@@ -130,17 +130,17 @@ describe("AppShell", () => {
   // Rol: coach
   // -------------------------------------------------------------------------
   describe("cuando el rol es coach", () => {
-    it("debería mostrar 'Atletas' como grupo colapsable (con su propio control de disclosure), no como NavLink suelto", () => {
+    it("debería mostrar 'Atletas' como link plano (un único item visible, sin control de disclosure)", () => {
       renderShell(UserRole.coach);
-      // La etiqueta del área sigue navegando a su ruta por defecto...
+      // La etiqueta del área navega a su ruta por defecto...
       // (scoped to the sidebar — "Atletas" is also a <BottomNav> slot, T029)
       const label = within(getSidebar()).getByRole("link", { name: "Atletas" });
       expect(label).toHaveAttribute("href", "/athletes");
-      // ...pero ahora está acompañada de un control de expandir/colapsar
-      // independiente — a diferencia del NavLink suelto del sidebar anterior.
+      // ...y no lleva chevron de expandir/colapsar, porque su único item
+      // visible ("Todos") colapsa al link del área — igual que "Inicio".
       expect(
-        screen.getByRole("button", { name: "Expandir Atletas" }),
-      ).toBeInTheDocument();
+        screen.queryByRole("button", { name: "Expandir Atletas" }),
+      ).not.toBeInTheDocument();
     });
 
     it("'Padres' debería estar anidado dentro del grupo 'Familias' — no visible como enlace suelto hasta expandir", async () => {
@@ -244,29 +244,15 @@ describe("AppShell", () => {
       expect(link).toHaveAttribute("href", "/competitions");
     });
 
-    it("en un deep link a /anxiety, el grupo 'Atletas' que contiene la ruta activa está expandido y visualmente indicado", () => {
-      renderShell(UserRole.coach, "/anxiety");
+    it("en un deep link a /athletes/1, el área 'Atletas' (un solo item, sin disclosure) queda visualmente indicada como activa", () => {
+      renderShell(UserRole.coach, "/athletes/1");
 
-      // El chevron reporta expandido (aria-expanded) y su aria-label pasa
-      // de "Expandir" a "Contraer".
-      const chevron = screen.getByRole("button", { name: "Contraer Atletas" });
-      expect(chevron).toHaveAttribute("aria-expanded", "true");
-
-      // La etiqueta del área queda visualmente indicada como activa.
+      // Atletas tiene un único item visible ("Todos"), así que se renderiza
+      // como link plano sin chevron de disclosure (igual que "Inicio").
       // (scoped to the sidebar — "Atletas" is also a <BottomNav> slot, T029)
       const areaLabel = within(getSidebar()).getByRole("link", { name: "Atletas" });
+      expect(areaLabel).toHaveAttribute("aria-current", "page");
       expect(areaLabel.className).toMatch(/bg-nav-active-bg/);
-
-      // Sus items quedan visibles y el item correspondiente a la ruta
-      // actual está marcado como página actual.
-      expect(
-        within(getSidebar()).getByRole("link", { name: "Todos" }),
-      ).toBeInTheDocument();
-      const currentItem = within(getSidebar()).getByRole("link", {
-        name: "Ansiedad competitiva",
-      });
-      expect(currentItem).toHaveAttribute("aria-current", "page");
-      expect(currentItem.className).toMatch(/bg-nav-active-bg/);
     });
 
     // Regression: "competitions" is the one area whose items nest path-wise

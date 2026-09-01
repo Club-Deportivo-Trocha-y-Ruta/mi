@@ -41,6 +41,36 @@
         "gap_to_winner_ms": 70000
       }
     ],
+    "season_comparative": [
+      {
+        "valida_num": 1,
+        "event_label": "Válida 1",
+        "position": 6,
+        "race_time_ms": 3200000,
+        "field_size": 8,
+        "delta_position": null,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 2,
+        "event_label": "Válida 2",
+        "position": 5,
+        "race_time_ms": 3150000,
+        "field_size": 8,
+        "delta_position": -1,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 3,
+        "event_label": "Válida 3",
+        "position": 4,
+        "race_time_ms": 3110000,
+        "field_size": 8,
+        "delta_position": -1,
+        "delta_time_ms": null
+      }
+    ],
+    "progression_assessment": "improving",
     "podium_context": {
       "category_id": 6,
       "event_id": 4,
@@ -87,6 +117,6 @@
     "Sofia"
   ],
   "must_cite": false,
-  "max_words": 600,
-  "ideal_output_excerpt": "## Evolución\n\nAtleta-PJUV-F-F-010 con progresión lineal sostenida (6→5→4→3) y primer podio en V-IV; gap al ganador bajó 75s en 4 válidas [1].\n\n## Análisis Técnico\n\nPost-PHV estable. Lista para introducir fuerza progresiva con bandas y mancuernas, sin diferencias programáticas por género [1].\n\n## Recomendaciones LTAD\n\n- 2 sesiones fuerza/sem con bandas + core (categoría=technique, prioridad=high) [1]\n- Objetivos motivacionales 4-8 sem post-podio (categoría=psychology, prioridad=high) [2]\n\n## Riesgos\n\n- Sobre-expectativa familiar tras primer podio (flag=other, severity=low) [2]\n\n## Próximos Pasos\n\nConversación coach-familia: gestionar expectativas. Plan para CD."
+  "max_words": 400,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nGracias a sostener el ritmo durante todo el recorrido, la deportista completó la válida 4 y alcanzó su primer podio de la temporada al finalizar en la tercera posición, con un tiempo de carrera de 0:51:20 y un gap al líder de 0:01:10.\n\n## Recorrido hasta acá\n\nLa posición mejoró de forma constante en las cuatro válidas de la temporada (6, 5 y 4 antes de esta fecha), lo que indica una progresión sólida que culminó en el primer podio. El desarrollo madurativo registrado en la antropometría más reciente es estable, por lo que el plan de fuerza progresiva puede avanzar sin diferencias respecto al de sus compañeros varones del grupo juvenil.\n\n## Hacia dónde va\n\n- Sumar dos sesiones de fuerza progresiva por semana con bandas elásticas y trabajo de core (categoría=technique, prioridad=high)\n- Aprovechar la motivación posterior al podio con metas de corto plazo para las próximas cuatro a ocho semanas (categoría=psychology, prioridad=high)\n\nDebido a la posible sobre-expectativa familiar tras el primer podio, conviene conversar con la familia para mantener el enfoque en el proceso y no sólo en el resultado."
 }

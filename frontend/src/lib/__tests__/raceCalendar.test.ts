@@ -4,7 +4,6 @@ import {
   RACE_CALENDAR_2026,
   getRaceMeta,
   getRaceTypeBadgeStyle,
-  getValidaLabel,
 } from "@/lib/raceCalendar";
 
 describe("raceCalendar — RACE_CALENDAR_2026", () => {
@@ -79,19 +78,6 @@ describe("raceCalendar — getRaceTypeBadgeStyle", () => {
   });
 });
 
-describe("raceCalendar — getValidaLabel", () => {
-  it("formatea números regulares en romanos", () => {
-    expect(getValidaLabel(1)).toBe("Válida I");
-    expect(getValidaLabel(4)).toBe("Válida IV");
-    expect(getValidaLabel(7)).toBe("Válida VII");
-  });
-
-  it("Departamental (99) usa label dedicado", () => {
-    expect(getValidaLabel(99)).toBe("Cto. Departamental");
-  });
-
-  it("null/undefined → guión", () => {
-    expect(getValidaLabel(null)).toBe("—");
-    expect(getValidaLabel(undefined)).toBe("—");
-  });
-});
+// getValidaLabel se retiró en feature 036 (T032): se colapsó en
+// `validaLabel` (lib/insights.ts), única fuente de verdad para el label de
+// válida en toda la app. Ver lib/__tests__/insights.test.ts.

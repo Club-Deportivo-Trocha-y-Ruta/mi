@@ -9,22 +9,40 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine
-from app.routers import ai, alerts, anxiety, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, strength, technique, training_sessions
+from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, strength, technique, training_sessions
 from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
 from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
 from app.routers.athlete_monthly_newsletters import router as athlete_newsletters_router, clubs_router as newsletter_clubs_router, training_router as newsletter_training_router
 
+logger = logging.getLogger(__name__)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Ciclo de vida de la app.
+
+    Al arrancar, reconciliamos runs huérfanos del pipeline agéntico
+    race-analyst (specs/036, US3): el registro de runs activos de
+    ``services/race/ai/runner.py`` vive solo en memoria, y Render redeploya
+    en cada push a `main`, así que cualquier fila ``agent_runs`` que haya
+    quedado en ``running``/``awaiting_hitl`` del proceso anterior queda
+    huérfana para siempre si no la cerramos aquí. Ver
+    ``services/race/ai/run_reconciliation.py`` para el detalle — esa función
+    ya nunca lanza, pero además envolvemos la llamada acá: un fallo al
+    reconciliar NUNCA debe bloquear ni tumbar el arranque de la app.
 
     Al apagar (incluido el spin-down de Render free tier) cerramos el pool de
     conexiones limpiamente con ``engine.dispose()``. Evita el ruido
     ``RuntimeError: Event loop is closed`` de ``__del__`` y libera las
     conexiones contra Hostinger de forma ordenada.
     """
+    try:
+        from app.services.race.ai.run_reconciliation import reconcile_orphan_runs
+
+        await reconcile_orphan_runs()
+    except Exception:  # noqa: BLE001 — el arranque nunca debe caer por esto.
+        logger.exception("lifespan: reconcile_orphan_runs falló al arrancar")
     yield
     await engine.dispose()
 
@@ -43,8 +61,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
-
-logger = logging.getLogger(__name__)
 
 
 @app.exception_handler(Exception)
@@ -73,7 +89,6 @@ app.include_router(reports.router, prefix="/api/athletes", tags=["reports"])
 app.include_router(growth.router, prefix="/api", tags=["growth"])
 app.include_router(parent_athletes.router, prefix="/api/parent-athletes", tags=["parent-athletes"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
-app.include_router(anxiety.router, prefix="/api/anxiety", tags=["anxiety"])
 app.include_router(consent_public_router, prefix="/api/auth", tags=["consent"])
 app.include_router(consent_router, prefix="/api/me/consent", tags=["consent"])
 app.include_router(calendar.router, prefix="/api/calendar/events", tags=["calendar"])

@@ -7,12 +7,18 @@
  *   - Empty state con copy diferenciado por rol.
  *   - No expone metadatos operativos (tokens, costo, prompts).
  */
-import { BookmarkPlus, Users } from "lucide-react";
+import { AlertCircle, BookmarkPlus, Info, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import { formatDateTimeCompact } from "@/lib/datetime";
 import {
@@ -72,7 +78,7 @@ export function HeroLastInsightCard({
       >
         <p className="text-sm font-medium text-charcoal">
           {mode === "parent"
-            ? "Cuando se aprueben análisis de tu hijo, aparecerán aquí."
+            ? "Cuando se aprueben análisis de tu hijo/a, aparecerán aquí."
             : "Aún no hay análisis aprobados. Lanza el primero desde la pestaña 'Analizar con IA'."}
         </p>
       </div>
@@ -84,6 +90,12 @@ export function HeroLastInsightCard({
   const displayText = isV2
     ? extractSection(insight.summary_text, "Qué pasó") || insight.summary_text
     : insight.summary_text;
+  // Fallback (US4, feature 036): igual que en InsightsTimeline.tsx — una
+  // fila persistida por el camino de FALLA de `deterministic_fallback` no
+  // es un análisis real y nunca debe ofrecerse para el boletín, ni siquiera
+  // desde este card (el guard de verdad es el 422 del backend, pero sin
+  // este badge/gate el coach ve el toggle como si hubiera funcionado).
+  const isFallback = insight.is_fallback === true;
 
   return (
     <div
@@ -95,10 +107,60 @@ export function HeroLastInsightCard({
         <span className="text-xs font-medium uppercase tracking-wide text-mid-gray">
           {formatDateTimeCompact(insight.generated_at)}
         </span>
-        <Badge variant="secondary">{validaLabel(insight.valida_num)}</Badge>
+        <Badge variant="secondary">
+          {validaLabel({ valida_num: insight.valida_num, series_kind: insight.series_kind })}
+        </Badge>
+        {/* T096c (feature 036, US6): "válida" es jerga del club (una fecha
+            de la Copa Valle que cuenta para la tabla de posiciones de la
+            temporada) sin explicación en la vista de padres. Se eligió un
+            tooltip de primer uso en vez de renombrar la etiqueta a "Carrera
+            N" para el rol parent: este mismo histórico ya usa "Carrera A/B/C"
+            para el *tier* de dificultad de la carrera (`CarreraTierBadge`,
+            `InsightsTimeline.tsx`) — reusar "Carrera" con un segundo
+            significado (identidad de la carrera) habría creado una colisión
+            de vocabulario nueva. La etiqueta "Válida N" no cambia para
+            ningún rol; el helper compartido `validaLabel` (`lib/insights.ts`)
+            queda intacto. Un solo punto de explicación basta: Panorama es la
+            sub-pestaña por defecto, así que es el primer "Válida N" que ve
+            un padre. Patrón calcado de `ParentSessionCard.tsx`'s `InfoIcon`
+            (mismo ícono, mismo `TooltipTrigger asChild` + `<button
+            aria-label>`); `TooltipProvider` local porque este componente no
+            puede asumir que quien lo monte (p. ej. tests con
+            `renderWithProviders`) envuelva con el `TooltipProvider` global
+            de `App.tsx`. */}
+        {mode === "parent" && (
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="¿Qué es una 'válida'?"
+                  data-testid="hero-valida-info-trigger"
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full text-mid-gray transition-colors hover:text-charcoal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
+                  <Info size={12} aria-hidden="true" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-64">
+                Cada "válida" es una fecha de la Copa Valle. Cuenta para la
+                tabla de posiciones de la temporada.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
         {mode === "coach" && (
           <Badge variant={confidenceVariant(insight.confidence)}>
             {confidenceLabel(insight.confidence)}
+          </Badge>
+        )}
+        {isFallback && (
+          <Badge
+            variant="outline"
+            className="gap-1 border-dashed"
+            data-testid="hero-insight-fallback-badge"
+          >
+            <AlertCircle size={11} aria-hidden="true" />
+            Análisis no disponible
           </Badge>
         )}
       </div>
@@ -113,12 +175,13 @@ export function HeroLastInsightCard({
         <Button
           variant="default"
           size="sm"
+          className="min-h-12"
           onClick={() => onOpenDetail(insight.id)}
           data-testid="hero-btn-reread"
         >
           Releer último
         </Button>
-        {mode === "coach" && (() => {
+        {mode === "coach" && !isFallback && (() => {
           // BB4: si hay estado de selección controlado, lo refleja en el botón.
           const isSelectedForNewsletter =
             newsletterSelection !== undefined
@@ -129,8 +192,18 @@ export function HeroLastInsightCard({
             : () => onAddToNewsletter(insight.id);
           return (
             <Button
-              variant={isSelectedForNewsletter ? "secondary" : "outline"}
+              // T097 (feature 036, US6): "Releer último" es la acción
+              // primaria de la card (`variant="default"`, turquesa — la
+              // marca correcta, no se recolorea: plan.md corrige al audit
+              // UX que la marcó como defecto). "Agregar/Quitar del boletín"
+              // es la acción secundaria y antes competía con un peso visual
+              // similar (outline/secondary son casi tan sólidos como
+              // default); "ghost" la demota sin quitarle affordance — el
+              // texto ("Agregar"/"Quitar") ya distingue el estado
+              // seleccionado sin necesitar un relleno sólido.
+              variant="ghost"
               size="sm"
+              className="min-h-12"
               onClick={handleClick}
               data-testid="hero-btn-add-newsletter"
             >
@@ -147,7 +220,13 @@ export function HeroLastInsightCard({
         insight.valida_num !== 0 && (
           <Link
             to={`/competitions/${insight.event_id}?tab=insights`}
-            className="mt-3 inline-flex items-center gap-1 text-xs text-mid-gray underline-offset-2 hover:underline"
+            // Wave 5 (feature 036, target-size sweep): sin `min-h-12` este
+            // link de texto medía 144×16 — la línea de texto sola, sin
+            // ningún alto de toque. `min-h-12` en un `inline-flex` con
+            // `items-center` crece el hit-area verticalmente sin agrandar
+            // el texto ni el ícono (mismo truco que `launch-submit` /
+            // `LibraryFilterBar.tsx`'s `<select>`, ver su propio className).
+            className="mt-3 inline-flex min-h-12 items-center gap-1 text-xs text-mid-gray underline-offset-2 hover:underline"
             data-testid="hero-link-club-insights"
             onClick={(e) => e.stopPropagation()}
           >

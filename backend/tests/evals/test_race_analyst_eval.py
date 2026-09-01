@@ -4,7 +4,10 @@ Características:
 
 - **Marker** ``@pytest.mark.golden`` — registrado en ``pyproject.toml``.
   No corre en CI normal (opt-in con ``-m golden``).
-- **Skip si ``AI_API_KEY`` ausente** — eval real necesita Gemini; en CI
+- **Skip si ``RACE_AI_API_KEY``/``GOOGLE_API_KEY`` ausentes** — eval real
+  necesita Gemini (``google``/``gemini-3.1-flash-lite``, el par que
+  realmente corre en producción — ver ``backend/.env`` y
+  ``specs/036-ai-insights-tab-review/IMPLEMENTATION_STATE.md``); en CI
   dedicado se ejecuta con el secret, en local sin key se skipea para
   no romper desarrollo offline.
 - **Auto-discovery** vía ``glob('case_*.json')`` y ``pytest.mark.parametrize``
@@ -16,7 +19,9 @@ Características:
 Convenciones del schema golden — validadas en :func:`_validate_case_schema`:
 - ``case_id`` (str)
 - ``description`` (str)
-- ``input`` (dict con campos de :class:`AnalysisInput`)
+- ``input`` (dict con campos de :class:`AnalysisInput` — incluye
+  opcionalmente ``season_comparative``/``progression_assessment`` para
+  ejercer el camino "con historial", T014/T053)
 - ``expected_themes`` (list[str])
 - ``forbidden_terms`` (list[str])
 - ``must_cite`` (bool)
@@ -26,6 +31,13 @@ Convenciones del schema golden — validadas en :func:`_validate_case_schema`:
 Threshold CI: ``RACE_EVAL_THRESHOLD`` env (default ``0.75``). Si el
 promedio cae por debajo → test ``test_eval_average_meets_threshold`` falla
 y bloquea el merge (workflow §7.7).
+
+Pipeline evaluado (specs/036 T050): el runner invoca
+``RaceAnalystAgent.invoke_per_valida`` con ``prompt_version="race_analyst_v2"``
+— el método y prompt que production usa realmente
+(``services/race/ai/nodes/analyst_agent.py``). Antes de T050 este runner
+llamaba al método v1 (``agent.invoke``, prompt de 5 secciones), que ningún
+coach dispara hoy — el gate medía un pipeline fantasma.
 """
 
 from __future__ import annotations
@@ -114,17 +126,51 @@ def _build_analysis_input(case_input: dict[str, Any]) -> AnalysisInput:
     return AnalysisInput(**payload)
 
 
+def _derive_valida_num(case_input: dict[str, Any]) -> int:
+    """Deriva la válida "actual" del caso: la última fila de ``progression_df_records``.
+
+    Las filas anteriores son el historial de la temporada; la última es la
+    válida que el caso está analizando. Default ``1`` si el caso no trae
+    registros (defensivo — hoy los 11 casos golden siempre traen ≥1).
+    """
+    records = case_input.get("progression_df_records") or []
+    if not records:
+        return 1
+    return int(records[-1].get("valida_num", 1))
+
+
+def _derive_is_first_in_season(case_input: dict[str, Any]) -> bool:
+    """``True`` si el caso trae 1 sola fila de progresión (activa la REGLA N=1 del prompt v2).
+
+    Heurística local al runner basada únicamente en los datos del propio
+    caso golden — no asume cómo production deriva la bandera real para un
+    lanzamiento (eso es specs/036 T057, fuera de este scope; ver
+    ``services/race/ai/nodes/analyst_agent.py``).
+    """
+    records = case_input.get("progression_df_records") or []
+    return len(records) <= 1
+
+
 # ---------------------------------------------------------------------------
 # Skip guard: RACE_AI_API_KEY required for the real eval
 # ---------------------------------------------------------------------------
 
 
 def _api_key_available() -> bool:
-    """``True`` si hay clave para llamar Gemini.
+    """``True`` si hay clave para llamar al proveedor real del pipeline race/agents/.
 
-    Acepta ``RACE_AI_API_KEY`` (dedicada al pipeline race/agents/, que sigue
-    en Gemini — ver CLAUDE.md notas 2026-07-10) o ``GOOGLE_API_KEY`` (SDK
-    convención). ``AI_API_KEY`` ya NO aplica aquí: apunta a Anthropic.
+    Acepta ``RACE_AI_API_KEY`` (la variable que ``build_chat_llm`` /
+    ``Settings.race_ai_api_key`` realmente lee) o ``GOOGLE_API_KEY`` (SDK
+    convención de Gemini). ``AI_API_KEY``/``AI_PROVIDER``/``AI_MODEL`` NO
+    aplican aquí: son la configuración de ``app/services/ai/`` (el stack
+    del asistente de sesiones, informes y newsletters) — un pipeline
+    completamente distinto con su propio proveedor/modelo, aunque hoy
+    ambos apunten a Google (ver ``backend/.env`` y
+    ``specs/036-ai-insights-tab-review/IMPLEMENTATION_STATE.md``, sección
+    "The Gemini correction"). El workflow CI (``race-eval.yml``) exporta
+    ``RACE_AI_API_KEY``/``RACE_AI_PROVIDER=google``/
+    ``RACE_AI_MODEL=gemini-3.1-flash-lite`` — exactamente lo que este
+    guard busca.
     """
     return bool(os.getenv("RACE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
@@ -155,7 +201,11 @@ async def test_golden_case(case_id: str, case: dict[str, Any]) -> None:
 
     Pasos:
     1. Construye ``AnalysisInput`` desde ``case['input']``.
-    2. Invoca :class:`RaceAnalystAgent.invoke` (Gemini real).
+    2. Invoca :meth:`RaceAnalystAgent.invoke_per_valida` (v2, Gemini real)
+       para la válida derivada de ``progression_df_records`` — el método
+       y prompt (``race_analyst_v2.md``) que production usa realmente
+       (specs/036 T050; antes se invocaba el v1 ``agent.invoke``, que
+       ningún coach dispara hoy).
     3. Calcula ``rule_based_score`` (determinístico).
     4. Calcula ``llm_judge_score`` (Gemini, neutral 0.5 si parse falla).
     5. Combina con ``composite_score(rule, judge)``.
@@ -164,13 +214,37 @@ async def test_golden_case(case_id: str, case: dict[str, Any]) -> None:
     El test PASA si ``composite >= 0.0`` (sólo verifica que se pueda
     correr); el test bloqueante es ``test_eval_average_meets_threshold``
     al final.
+
+    Notas sobre los parámetros v2:
+    - ``forbidden_names=[]``: los 11 casos golden son 100% sintéticos —
+      no hay nombre real de un menor que proteger. Las guardrails de
+      edad (``athlete_age``) y de veto duro N=1 sí corren igual.
+    - NO se pasa ``full_season_records``: ese parámetro activa el bloque
+      "Contexto temporada" del prompt, que exige citar ``gap_pct`` por
+      válida — un campo que ningún caso golden trae en
+      ``progression_df_records``. Pasarlo forzaría al modelo a una
+      instrucción imposible de cumplir (el mismo patrón de alucinación
+      forzada que la muletilla de vueltas documentada en spec.md US2).
+      El camino "con historial" que sí se ejercita es
+      ``AnalysisInput.season_comparative`` (T014/T053), poblado en
+      ``case['input']`` cuando el caso lo declara.
     """
-    from app.services.race.agents.analyst import RaceAnalystAgent
+    from app.services.race.agents.analyst import PROMPT_VERSION_ANALYST_V2, RaceAnalystAgent
     from app.services.race.eval.judge import llm_judge_score
 
-    inp = _build_analysis_input(case["input"])
-    agent = RaceAnalystAgent()
-    output, metrics = await agent.invoke(inp)
+    case_input = case["input"]
+    inp = _build_analysis_input(case_input)
+    valida_num = _derive_valida_num(case_input)
+    is_first_in_season = _derive_is_first_in_season(case_input)
+
+    agent = RaceAnalystAgent(prompt_version=PROMPT_VERSION_ANALYST_V2)
+    per_valida_results = await agent.invoke_per_valida(
+        [(valida_num, inp)],
+        forbidden_names=[],
+        is_first_in_season=is_first_in_season,
+        athlete_age=inp.age,
+    )
+    output, metrics = per_valida_results[valida_num]
 
     rule = rule_based_score(output, case)
     judge_result = await llm_judge_score(output, case)
@@ -217,7 +291,7 @@ def test_eval_average_meets_threshold() -> None:
 
     assert avg >= threshold, (
         f"Score promedio {avg:.3f} < threshold {threshold:.2f}. "
-        f"Revisar últimos cambios en prompts/agents/race_analyst_v1.md. "
+        f"Revisar últimos cambios en prompts/race_analyst_v2.md o agents/analyst.py. "
         f"Detalle en evals/race_analyst/results/last_run.md."
     )
 
@@ -307,3 +381,224 @@ def test_loader_can_build_analysis_input_for_all_cases() -> None:
         except Exception as exc:  # pragma: no cover - usaremos assert
             errors.append(f"case_{case_id}: {exc}")
     assert not errors, "Casos golden con input inválido: " + " | ".join(errors)
+
+
+def test_derive_valida_num_uses_last_progression_record() -> None:
+    """La válida analizada es la última fila de ``progression_df_records`` (T050)."""
+    assert _derive_valida_num({"progression_df_records": [{"valida_num": 1}, {"valida_num": 4}]}) == 4
+    assert _derive_valida_num({"progression_df_records": []}) == 1
+    assert _derive_valida_num({}) == 1
+
+
+def test_derive_is_first_in_season_only_true_for_single_record() -> None:
+    """La REGLA N=1 del prompt v2 sólo debe activarse con exactamente 1 registro (T050)."""
+    assert _derive_is_first_in_season({"progression_df_records": [{"valida_num": 1}]}) is True
+    assert _derive_is_first_in_season({"progression_df_records": []}) is True
+    assert (
+        _derive_is_first_in_season({"progression_df_records": [{"valida_num": 1}, {"valida_num": 2}]})
+        is False
+    )
+
+
+def test_at_least_one_case_exercises_season_comparative_path() -> None:
+    """T053: al menos un caso golden trae ``season_comparative`` con 2+ válidas previas.
+
+    Antes de T053 los 10 casos originales dejaban ``season_comparative``
+    vacío (default de :class:`AnalysisInput`) — el bloque "Contexto de
+    temporada" del prompt v2 (``race_analyst_v2.md:164-195``) nunca se
+    ejercitaba con datos reales, sólo con la rama ``first_reference``.
+    """
+    cases_with_history = [
+        (cid, case)
+        for cid, case in _ALL_CASES
+        if len(case["input"].get("season_comparative") or []) >= 2
+    ]
+    assert cases_with_history, (
+        "Ningún caso golden pobla season_comparative con ≥2 válidas previas — "
+        "el camino 'con historial' del prompt v2 (T014) no se ejercita."
+    )
+    # El caso también debe declarar progression_assessment != first_reference,
+    # si no el prompt renderiza la tabla comparativa vacía bajo un mandato que
+    # exige citarla (contradicción — ver notas de case_011.json).
+    for cid, case in cases_with_history:
+        assessment = case["input"].get("progression_assessment")
+        assert assessment and assessment != "first_reference", (
+            f"case_{cid}: trae season_comparative pero progression_assessment="
+            f"{assessment!r} — el prompt v2 renderizaría la rama 'first_reference' "
+            "(prohíbe comparar) sobre una tabla con datos reales."
+        )
+
+
+# ---------------------------------------------------------------------------
+# T052 — sub-rúbricas de calidad narrativa (specs/036 US2)
+#
+# Viven aquí (no en tests/services/race/eval/test_scorer.py) por el límite
+# estricto de ownership de archivos durante la Wave 3 de specs/036: ese
+# archivo no está en el scope de este agente. Debería fusionarse con los
+# tests unitarios de scorer.py en la integración de la feature — ver
+# 'blockers' del reporte de esta tarea.
+#
+# Ninguno de estos tests llama al modelo real: usan markdown fijo
+# (fixture), replicando literalmente los dos ejemplos citados en
+# spec.md US2 ("El tiempo de carrera fue 0:36:19" repetido, la muletilla
+# de vueltas). Demuestran la ordenación fail-antes/pasa-después exigida:
+# el mismo texto (hoy real, sin cambios) puntuaba 1.0 con las 5
+# sub-rúbricas anteriores a T052 y puntúa 0.70 con las 8 actuales.
+# ---------------------------------------------------------------------------
+
+# Texto adaptado verbatim de spec.md US2 (ya público, 100% genérico/sintético
+# — "la deportista", sin edad/club/resultado identificable de un menor real)
+# bajo los 3 headings v2, para aislar el efecto de T052 del de T050 (la
+# estructura ya es v2-válida, así que sólo fallan las 3 rúbricas nuevas).
+_TEMPLATED_OUTPUT_MD = (
+    "## Qué pasó en esta válida\n\n"
+    "La deportista completó la válida 1, registrando un tiempo de 0:36:19 y "
+    "finalizando en la posición 4. El tiempo de carrera fue 0:36:19, con un "
+    "gap al líder de 0:04:17. Alcanzó el número máximo de vueltas previsto "
+    "para la categoría.\n\n"
+    "## Recorrido hasta acá\n\n"
+    "Se observa una evolución en el resultado de la deportista. El grupo "
+    "LTAD es mini-bambino.\n\n"
+    "## Hacia dónde va\n\n"
+    "- Trabajar técnica de descenso (categoría=technique, prioridad=med)\n"
+    "- Mantener volumen actual (categoría=volume, prioridad=low)\n"
+) + ("palabra " * 40)  # empuja word_count por encima del piso de 50 sin afectar el resto
+
+_TEMPLATED_OUTPUT_CASE: dict[str, Any] = {
+    "expected_themes": ["evoluci"],
+    "forbidden_terms": [],
+    "max_words": 400,
+    "must_cite": False,
+    "input": {},  # sin clave "lap"/"vuelta" declarada → no_lap_filler debe fallar
+}
+
+
+class _FakeAnalysisOutput:
+    """Doble mínimo de :class:`AnalysisOutput` — sólo los 3 campos que lee el scorer."""
+
+    def __init__(self, markdown: str, citations: list[str] | None = None) -> None:
+        self.raw_markdown = markdown
+        self.word_count = len([w for w in markdown.split() if w])
+        self.citations_used = citations or []
+
+
+def test_templated_output_passes_pre_t052_rubric_but_fails_post_t052() -> None:
+    """Ordenación fail-antes/pasa-después de T052, sin tocar código pre-T052.
+
+    El scorer previo a T052 (5 sub-rúbricas: themes/forbidden/word_count/
+    sections/citations, pesos 0.25/0.25/0.20/0.15/0.15 — ver historial de
+    ``scorer.py``) es ciego a la repetición de cifras, a la ausencia de
+    conectores y a la muletilla de vueltas: el texto templado de spec.md
+    US2 puntuaba **1.0** con esas 5 sub-rúbricas (recalculado aquí con los
+    pesos históricos, ya que el código viejo ya no existe en el módulo).
+    Con las 3 sub-rúbricas nuevas de T052 el mismo texto, sin cambiar ni
+    un carácter, cae a **0.70** — por debajo del ``RACE_EVAL_THRESHOLD``
+    por defecto (0.75) ya en la componente determinística, antes incluso
+    de sumar el juez LLM.
+    """
+    from app.services.race.eval import scorer as scorer_module
+
+    output = _FakeAnalysisOutput(_TEMPLATED_OUTPUT_MD)
+
+    # Pesos pre-T052 (histórico — ver docstring del módulo scorer.py).
+    _PRE_T052_WEIGHTS = {
+        "themes": 0.25,
+        "forbidden": 0.25,
+        "word_count": 0.20,
+        "sections": 0.15,
+        "citations": 0.15,
+    }
+    pre_t052_score = (
+        _PRE_T052_WEIGHTS["themes"]
+        * scorer_module._all_themes_present(
+            output.raw_markdown, _TEMPLATED_OUTPUT_CASE["expected_themes"]
+        )
+        + _PRE_T052_WEIGHTS["forbidden"]
+        * scorer_module._no_forbidden_terms(
+            output.raw_markdown, _TEMPLATED_OUTPUT_CASE["forbidden_terms"]
+        )
+        + _PRE_T052_WEIGHTS["word_count"]
+        * scorer_module._word_count_in_range(
+            output.word_count, _TEMPLATED_OUTPUT_CASE["max_words"]
+        )
+        + _PRE_T052_WEIGHTS["sections"] * scorer_module._has_all_canonical_sections(output.raw_markdown)
+        + _PRE_T052_WEIGHTS["citations"]
+        * scorer_module._citations_satisfied(output.citations_used, must_cite=False)
+    )
+    assert pre_t052_score == pytest.approx(1.0), (
+        "Precondición del test: el texto templado debía puntuar perfecto bajo "
+        "las 5 sub-rúbricas pre-T052 (si esto falla, el fixture ya no aísla T052)."
+    )
+
+    post_t052_score = rule_based_score(output, _TEMPLATED_OUTPUT_CASE)
+    assert post_t052_score == pytest.approx(0.70, abs=1e-6)
+    assert post_t052_score < pre_t052_score
+    assert post_t052_score < _DEFAULT_THRESHOLD <= pre_t052_score, (
+        "T052 debe hacer que un texto templado deje de alcanzar el threshold "
+        "por defecto en la componente rule-based; antes lo alcanzaba."
+    )
+
+
+def test_repeated_figure_in_section_1_fails_its_subrubric() -> None:
+    """T052-a: la misma cifra en 2 oraciones de la Sección 1 penaliza ``no_repeated_figures``.
+
+    Par mínimo que difiere en una sola cosa (la cifra del gap se repite o
+    no) para aislar exactamente esta sub-rúbrica, sin confundirla con
+    conectores o muletilla de vueltas (cubiertos por los tests siguientes).
+    """
+    from app.services.race.eval.scorer import _no_repeated_figures_in_section_1
+
+    repeated_md = (
+        "## Qué pasó en esta válida\n\n"
+        "La deportista completó la válida 1, registrando un tiempo de 0:36:19 "
+        "y finalizando en la posición 4. El tiempo de carrera fue 0:36:19, con "
+        "un gap al líder de 0:04:17.\n"
+    )
+    not_repeated_md = (
+        "## Qué pasó en esta válida\n\n"
+        "La deportista completó la válida 1, registrando un tiempo de 0:36:19 "
+        "y finalizando en la posición 4, con un gap al líder de 0:04:17.\n"
+    )
+    assert _no_repeated_figures_in_section_1(repeated_md) is False
+    assert _no_repeated_figures_in_section_1(not_repeated_md) is True
+
+
+def test_missing_connectors_fails_its_subrubric() -> None:
+    """T052-b: ninguna sección con conector relacional penaliza ``connectors``."""
+    from app.services.race.eval.scorer import _all_sections_have_connectors
+
+    no_connectors_md = (
+        "## Qué pasó en esta válida\n\nLa deportista completó la válida.\n\n"
+        "## Recorrido hasta acá\n\nEl resultado se mantiene.\n\n"
+        "## Hacia dónde va\n\nMantener el plan actual.\n"
+    )
+    with_connectors_md = (
+        "## Qué pasó en esta válida\n\nGracias a sostener el ritmo, la deportista "
+        "completó la válida.\n\n"
+        "## Recorrido hasta acá\n\nEn comparación con válidas anteriores, el "
+        "resultado se mantiene estable.\n\n"
+        "## Hacia dónde va\n\nComo resultado de lo anterior, conviene mantener "
+        "el plan actual.\n"
+    )
+    assert _all_sections_have_connectors(no_connectors_md) is False
+    assert _all_sections_have_connectors(with_connectors_md) is True
+
+
+def test_lap_filler_fails_when_case_declares_no_lap_data() -> None:
+    """T052-c: la muletilla de vueltas penaliza ``no_lap_filler`` si el caso no declara el dato.
+
+    Hoy ``AnalysisInput`` no define ningún campo de vueltas (grep confirma
+    ausencia total en ``schemas.py``), así que ``has_lap_data`` es siempre
+    ``False`` en la práctica — la detección por nombre de clave
+    ("lap"/"vuelta") es defensiva ante un futuro campo real (T055).
+    """
+    from app.services.race.eval.scorer import _case_declares_lap_data, _no_lap_filler_when_absent
+
+    filler_md = "## Qué pasó en esta válida\n\nAlcanzó el número máximo de vueltas previsto.\n"
+    clean_md = "## Qué pasó en esta válida\n\nCompletó la válida sin abandono.\n"
+
+    assert _case_declares_lap_data({}) is False
+    assert _no_lap_filler_when_absent(filler_md, has_lap_data=False) is False
+    assert _no_lap_filler_when_absent(clean_md, has_lap_data=False) is True
+    # Si el caso SÍ declarara un dato de vueltas, mencionar la cifra es legítimo.
+    assert _no_lap_filler_when_absent(filler_md, has_lap_data=True) is True

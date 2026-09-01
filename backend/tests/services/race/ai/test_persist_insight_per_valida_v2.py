@@ -14,25 +14,18 @@ en paralelo):
   conserva el comportamiento histórico (fan-out con un ``draft_analysis``
   replicado y mismo ``summary_text`` por cada ``valida_nums``).
 
-Si la implementación todavía no existe, los tests xfail (no bloquean
-verde de la suite).
+Feature 036 (T081): el contrato ``per_valida_drafts`` está implementado en
+``persist_insight`` (rama ``is_v2`` — ver docstring del módulo bajo
+"Fix BUG-001"), así que los dos tests que antes llevaban
+``@pytest.mark.xfail`` ahora pasan de verdad y el marcador se retiró.
 """
 
 from __future__ import annotations
-
-import pytest
 
 from app.services.race.ai.nodes.persist_insight import persist_insight
 from tests.services.race.ai.conftest import make_analysis_output
 
 
-@pytest.mark.xfail(
-    reason=(
-        "v2: contrato per_valida_drafts pendiente de implementación en "
-        "persist_insight. Espera que cada draft produzca summary_text distinto."
-    ),
-    strict=False,
-)
 async def test_persist_insight_v2_per_valida_drafts_distinct_summaries(
     configure_db_factory, fake_session
 ):
@@ -73,10 +66,6 @@ async def test_persist_insight_v2_per_valida_drafts_distinct_summaries(
     assert summaries[0] != summaries[1]
 
 
-@pytest.mark.xfail(
-    reason="v2 implementation pending",
-    strict=False,
-)
 async def test_persist_insight_v2_prompt_version_propagated_per_row(
     configure_db_factory, fake_session
 ):

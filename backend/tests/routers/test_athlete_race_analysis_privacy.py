@@ -379,7 +379,6 @@ async def test_distribution_parent_no_real_names(seeded_factory):
     # Override get_current_user + verify_athlete_access para que el parent
     # pueda acceder al atleta 144 sin la comprobación de parentesco.
     from app.dependencies import verify_athlete_access
-    from app.models.athlete import Athlete
 
     async def _override_db():
         async with seeded_factory() as s:

@@ -22,6 +22,12 @@ que necesitamos para queries y eager loading. Las demás (cost_usd,
 input_json, final_output_json, langfuse_trace_id, etc.) siguen
 disponibles via SQL crudo en el router; agregarlas al modelo no es
 necesario para BE-1 y mantiene la superficie pequeña.
+
+Nota (feature 036, T064): ``langfuse_trace_id`` es una columna reservada,
+no una integración activa — Langfuse nunca se integró (ver
+``specs/036-ai-insights-tab-review/research.md`` R3) y esta columna
+siempre es ``NULL`` hoy. No la interpretes como evidencia de que existe
+observabilidad vía Langfuse en el pipeline agéntico.
 """
 from __future__ import annotations
 

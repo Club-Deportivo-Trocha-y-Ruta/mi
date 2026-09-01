@@ -99,7 +99,7 @@ def _build_app() -> FastAPI:
 
 
 # ---------------------------------------------------------------------------
-# DB fixtures — in-memory aiosqlite, subset of tables (mirrors tests/anxiety)
+# DB fixtures — in-memory aiosqlite, subset of tables
 # ---------------------------------------------------------------------------
 
 

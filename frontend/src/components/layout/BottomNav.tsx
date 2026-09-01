@@ -45,7 +45,7 @@ export function BottomNav({ role, open, onOpenChange }: BottomNavProps) {
         // Same isAreaActive logic as SidebarNav (single source of truth,
         // contracts/mobile-navigation.md) — a slot is active whenever the
         // current path is inside the area, not only on its exact default
-        // route (e.g. Atletas stays active on /anxiety). Plain `Link` is
+        // route). Plain `Link` is
         // used instead of `NavLink` because NavLink's own active-match
         // compares the current path only against this single `to`, which
         // would silently override our area-wide `aria-current`.

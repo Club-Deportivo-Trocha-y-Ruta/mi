@@ -4,18 +4,21 @@
  * Sprint 2 (BB2):
  *   - HeroLastInsightCard (arriba).
  *   - MiniSparkline de evolución posición (debajo del Hero).
- *   - 3 KPI cards: total aprobados, mejor posición temporada, TODO podios.
+ *   - 3 KPI cards: total aprobados, mejor posición temporada, válidas
+ *     completadas.
  *
- * KPI "Podios temporada": el snapshot de insight no tiene un campo
- * ``podios`` directo ni sumable sin leer cada detalle. Se deja como TODO
- * para Sprint 3 cuando se implemente el endpoint de métricas agregadas.
- * En su lugar se muestra "Mejor posición" como segunda KPI.
+ * KPI "Podios temporada" (pendiente): el snapshot de insight no tiene un
+ * campo ``podios`` directo ni sumable sin leer cada detalle, así que no
+ * está implementada — no inventar el dato ni el conteo. En su lugar, la
+ * tercera KPI muestra "Válidas completadas" (dato real, derivado de la
+ * serie de evolución) hasta que exista un endpoint de métricas agregadas.
  *
  * Privacidad: este componente no filtra por modo — la responsabilidad
  * recae en HeroLastInsightCard (confianza, boletín) y en el tab-gating
  * del padre (Comparador, Distribución).
  */
 import { useMemo } from "react";
+import { Sparkles } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,6 +80,21 @@ export function PanoramaView({
 
   return (
     <div className="space-y-4" data-testid="panorama-view">
+      {/* T095 (feature 036, US6): antes este sub-tab no tenía ningún
+          heading — a diferencia de EvolutionChart/DistributionChart/
+          LaunchAnalysisForm, que exponen un <h3> real bajo el <h2> "Insights
+          IA" de AthleteAIAnalysisTab.tsx. Sin heading, la navegación por
+          encabezados (tecla "H") saltaba directo de "Insights IA" al resto
+          de sub-vistas. Mismo nivel/tipografía que esas 3 para no romper el
+          orden h2 → h3. */}
+      <h3
+        className="font-display flex items-center gap-2 text-sm text-charcoal"
+        style={{ letterSpacing: "0.2px" }}
+      >
+        <Sparkles size={16} aria-hidden="true" />
+        Panorama
+      </h3>
+
       {/* Hero — último análisis aprobado */}
       <HeroLastInsightCard
         athlete={athlete}
@@ -130,8 +148,9 @@ export function PanoramaView({
           testId="panorama-kpi-best-position"
         />
 
-        {/* KPI 3: Podios — TODO Sprint 3 (requiere campo adicional del backend).
-            Por ahora mostramos "Válidas completadas" de la serie. */}
+        {/* KPI 3: "Podios" está pendiente de un campo adicional del backend
+            (ver docstring del archivo) — mientras tanto esta KPI muestra
+            "Válidas completadas" de la serie, que sí es un dato real. */}
         <KpiCard
           label="Válidas completadas"
           value={
@@ -146,7 +165,6 @@ export function PanoramaView({
           }
           isLoading={evolutionQuery.isLoading}
           testId="panorama-kpi-races"
-          note="Podios: TODO Sprint 3"
         />
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -23,7 +23,6 @@ import { useMutation } from "@tanstack/react-query";
 import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { ActivityCard } from "@/components/activities/ActivityCard";
 import { ConnectionStatusBadge } from "@/components/activities/ConnectionStatusBadge";
-import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import { AnthropometryForm } from "@/components/athletes/AnthropometryForm";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
@@ -62,6 +61,15 @@ const SkillProgressBoard = lazy(() =>
 const ProgressNotesBoard = lazy(() =>
   import("@/components/strength/ProgressNotesBoard").then((m) => ({
     default: m.ProgressNotesBoard,
+  })),
+);
+
+// T096 (feature 036, US6): Insights IA — arrastra recharts (EvolutionChart,
+// DistributionChart) al bundle sin importar si el tab se abre o no. Mismo
+// patrón lazy-load que Progreso arriba.
+const AthleteAIAnalysisTab = lazy(() =>
+  import("@/components/athletes/ai/AthleteAIAnalysisTab").then((m) => ({
+    default: m.AthleteAIAnalysisTab,
   })),
 );
 
@@ -404,7 +412,7 @@ function StravaTabPanel({ athleteId }: { athleteId: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// Skeleton de suspense mientras carga el chunk lazy (Progreso)
+// Skeletons de suspense mientras cargan los chunks lazy (Progreso, Insights IA)
 // ---------------------------------------------------------------------------
 
 function BoardSkeleton() {
@@ -429,10 +437,32 @@ function BoardSkeleton() {
   );
 }
 
+// T096 (feature 036, US6) — fallback mientras se descarga el chunk lazy de
+// AthleteAIAnalysisTab. Sólo cubre la carga del chunk en sí (una vez, por
+// visita) — el propio tab ya tiene sus estados de carga de datos (Skeleton
+// del header, etc.) para cuando el chunk ya está montado.
+function AiTabSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando análisis de IA…"
+      className="space-y-4"
+    >
+      <Skeleton className="h-24 w-full rounded-xl" />
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-24 rounded-lg" />
+        ))}
+      </div>
+      <Skeleton className="h-64 w-full rounded-xl" />
+    </div>
+  );
+}
+
 /**
  * ProgresoTabPanel — consolida los tableros de progreso técnico y de fuerza
- * de un deportista detrás de un toggle interno Técnica/Fuerza, más un enlace
- * puntual al módulo de ansiedad competitiva.
+ * de un deportista detrás de un toggle interno Técnica/Fuerza.
  *
  * Presentación únicamente: reutiliza SkillProgressBoard/ProgressNotesBoard
  * sin modificarlos y no agrega lógica de fetching nueva. El toggle interno
@@ -474,12 +504,6 @@ function ProgresoTabPanel({ athleteId }: { athleteId: number }) {
           <ProgressNotesBoard athleteId={athleteId} />
         )}
       </Suspense>
-      <Link
-        to={`/anxiety?athlete=${athleteId}`}
-        className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
-      >
-        Ver ansiedad competitiva
-      </Link>
     </div>
   );
 }
@@ -885,10 +909,20 @@ export function AthleteDetailPage() {
 
       {/* Tab content — Insights IA */}
       {activeTab === "ai_analysis" && (
-        <AthleteAIAnalysisTab
-          athlete={athlete}
-          mode={isParent ? "parent" : "coach"}
-        />
+        // T096 (feature 036, US6): lazy-load — recharts (EvolutionChart,
+        // DistributionChart) ya no entra al bundle si este tab nunca se
+        // abre. T010 (feature 036, US3): key={athlete.id} fuerza un
+        // remount limpio al cambiar de atleta. Sin esta key,
+        // AthleteAIAnalysisTab es la misma instancia de React entre dos
+        // atletas — selección de insight, run activo y estado HITL de uno
+        // se filtran al otro.
+        <Suspense fallback={<AiTabSkeleton />}>
+          <AthleteAIAnalysisTab
+            key={athlete.id}
+            athlete={athlete}
+            mode={isParent ? "parent" : "coach"}
+          />
+        </Suspense>
       )}
 
       {/* Tab content — Boletines (solo coach/admin) */}

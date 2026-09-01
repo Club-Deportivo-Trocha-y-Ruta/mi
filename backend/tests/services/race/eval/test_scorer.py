@@ -5,8 +5,10 @@ Sin red, todos determinísticos. Cubren cada sub-rúbrica del scorer:
 - themes presentes / faltantes
 - forbidden term detectado / ausente
 - word_count dentro / fuera de rango
-- 5 secciones canónicas presentes / faltantes
+- 3 secciones canónicas v2 presentes / faltantes (T050)
 - citations: must_cite True con 0 / 1+ cites; must_cite False
+- sin cifras repetidas en Sección 1 / conectores analíticos por sección /
+  sin muletilla de vueltas cuando no hay dato (T052)
 - composite_score: ponderación correcta + clamp [0, 1]
 - edge cases: markdown vacío, case incompleto
 """
@@ -36,11 +38,17 @@ def _make_output(markdown: str, citations: list[str] | None = None) -> AnalysisO
 
 
 _FULL_MARKDOWN = (
-    "## Evolución\n\nAtleta-X progresa.\n\n"
-    "## Análisis Técnico\n\nCadencia 80 rpm.\n\n"
-    "## Recomendaciones LTAD\n\n- Reco 1\n- Reco 2\n\n"
-    "## Riesgos\n\n- Riesgo bajo\n\n"
-    "## Próximos Pasos\n\nReevaluar.\n" + "palabra " * 60
+    # 3 secciones canónicas v2 (T050) — no las 5 de v1 — cada una con un
+    # conector analítico (T052-b) para que "todos los rubrics pasan" sea un
+    # caso real y no un checklist plano.
+    "## Qué pasó en esta válida\n\n"
+    "Gracias a un ritmo sostenido, Atleta-X progresa respecto a su marca "
+    "previa.\n\n"
+    "## Recorrido hasta acá\n\n"
+    "En comparación con válidas anteriores, la cadencia subió a 80 rpm.\n\n"
+    "## Hacia dónde va\n\n"
+    "Como resultado de esta mejora, se recomienda mantener el plan de "
+    "entrenamiento.\n" + "palabra " * 60
 )
 
 
@@ -141,9 +149,16 @@ def test_missing_sections_fails_subscore() -> None:
         "must_cite": True,
     }
     score = rule_based_score(out, case)
-    # Pierde sections (0.15). Themes vacíos → pass; forbidden vacío → pass;
-    # word_count ≥50 + ≤600 → pass; citations 1 con must_cite → pass.
-    assert score == pytest.approx(1.0 - RULE_WEIGHTS["sections"], abs=1e-3)
+    # Pierde sections (0.10): sin headings v2 no hay dónde matchear. Pierde
+    # también connectors (0.10): sin secciones detectadas no hay cuerpo
+    # donde buscar un conector (_all_sections_have_connectors trata
+    # "sección ausente" como fallo, igual que sections). Themes vacíos →
+    # pass; forbidden vacío → pass; word_count ≥50 + ≤600 → pass; citations
+    # 1 con must_cite → pass; no_repeated_figures/no_lap_filler → pass
+    # (vacuo: sin cifras que repetir, sin dato de vueltas ni muletilla).
+    assert score == pytest.approx(
+        1.0 - RULE_WEIGHTS["sections"] - RULE_WEIGHTS["connectors"], abs=1e-3
+    )
 
 
 def test_zero_citations_with_must_cite_true_fails_subscore() -> None:
@@ -194,8 +209,18 @@ def test_empty_markdown_yields_low_score() -> None:
         "must_cite": True,
     }
     score = rule_based_score(out, case)
-    # themes 0 + forbidden 0.25 + word_count 0 + sections 0 + citations 0 = 0.25
-    assert score == pytest.approx(RULE_WEIGHTS["forbidden"], abs=1e-3)
+    # themes 0 + forbidden 0.20 + word_count 0 + sections 0 + citations 0
+    # + no_repeated_figures 0.10 + connectors 0 + no_lap_filler 0.10 = 0.40.
+    # Las dos rúbricas T052 nuevas pasan vacuamente sobre texto vacío: no
+    # hay cifras que repetir y no hay muletilla de vueltas (no se declaró
+    # dato de vueltas en el caso). connectors sí falla — igual que
+    # sections — porque no hay cuerpo de sección donde buscar un conector.
+    assert score == pytest.approx(
+        RULE_WEIGHTS["forbidden"]
+        + RULE_WEIGHTS["no_repeated_figures"]
+        + RULE_WEIGHTS["no_lap_filler"],
+        abs=1e-3,
+    )
 
 
 def test_case_incomplete_uses_safe_defaults() -> None:

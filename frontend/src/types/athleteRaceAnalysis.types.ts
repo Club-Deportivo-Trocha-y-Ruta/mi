@@ -114,6 +114,20 @@ export interface AthleteInsightOut {
   /** 0 = use_case agregado de temporada. 1..7 = válida regular. 99 = Cto. */
   valida_num: number | null;
   event_id: number | null;
+  /**
+   * Feature 036 (T030) — fecha ISO (`YYYY-MM-DD`) del evento vinculado por
+   * `event_id`. `null` cuando el insight no tiene evento vinculado (resumen
+   * de temporada, o filas legacy previas a la columna `event_id`).
+   */
+  event_date: string | null;
+  /**
+   * Feature 036 (T030) — tipo de serie del evento vinculado (`"cup"` |
+   * `"championship"`). Fuente de verdad para distinguir un Cto.
+   * Departamental de una válida regular — reemplaza la convención retirada
+   * `valida_num === 99` (ver `lib/insights.ts#validaLabel`). `null` en las
+   * mismas condiciones que `event_date`.
+   */
+  series_kind: "cup" | "championship" | null;
   use_case: string;
   summary_text: string;
   confidence: InsightConfidence;
@@ -124,6 +138,15 @@ export interface AthleteInsightOut {
   approved_at: string | null;
   is_active: boolean;
   deprecated_at: string | null;
+  /**
+   * Feature 036 (US4) — `true` únicamente cuando la fila fue persistida por
+   * el camino de FALLA de `services/race/ai/fallback.py`
+   * (`deterministic_fallback`): el `summary_text` es entonces el placeholder
+   * fijo "Análisis IA no disponible…", no un análisis real. La variante N=1
+   * (`deterministic_fallback_n1`) es un análisis legítimo y mantiene
+   * `is_fallback=false`.
+   */
+  is_fallback: boolean;
   /** Solo presente si fue parseado en el cliente (v2 insights). */
   parsed_sections?: InsightParsedSections;
 }
@@ -271,14 +294,6 @@ export interface ClubInsightByRaceItem {
   summary_excerpt: string | null;
   generated_at: string | null;
   confidence: InsightConfidence | null;
-  /**
-   * PR5 / FR-018 — external_run_id del run cuyo `stale_since` no es null.
-   * Presente solo cuando el run del que proviene el insight fue marcado como
-   * desactualizado (la revisión de resultados lo invalidó automáticamente).
-   * El frontend renderiza el `StaleAnalysisBadge` cuando este campo no es null.
-   * Backend: campo opcional — null/ausente cuando el run está vigente.
-   */
-  stale_run_id?: string | null;
 }
 
 export interface ClubInsightsByRaceResponse {

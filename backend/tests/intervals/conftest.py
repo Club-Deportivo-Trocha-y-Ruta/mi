@@ -8,7 +8,7 @@ MySQL or a live JWT server.
 
 Identity fixtures follow the same convention already established across every
 other feature test suite in this repo (technique, strength, race-analysis,
-anxiety, etc.): the authenticated identity is injected via a
+etc.): the authenticated identity is injected via a
 ``get_current_user`` dependency override rather than by minting and decoding
 a real JWT.
 

@@ -27,8 +27,11 @@ from typing import Optional
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager, selectinload
 
 from app.models.athlete_ai_insight import AthleteAiInsight
+from app.models.race_event import RaceEvent
+from app.models.race_series import RaceSeries
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +97,31 @@ async def list_athlete_insights(
         El default público (``include_deprecated=False`` +
         ``coach_approved=True`` aplicado siempre) garantiza que un padre
         nunca vea drafts internos del coach.
+
+    Orden (T033, feature 036): ancla el historial a la FECHA DE CARRERA
+    (``race_events.event_date``, vía ``event_id``), no al timestamp de
+    generación. Antes producía secuencias sin sentido para el coach — ej.
+    Válida 1 → Resumen de temporada → Válida 4 → Válida 3 → Válida 2 —
+    porque un insight puede (re)generarse en cualquier momento sin relación
+    con el orden real en que se corrieron las carreras.
+
+    Decisión documentada sobre dónde ordena el agregado de temporada
+    (``valida_num=0``, sin ``event_id``): **al final de la lista**. No tiene
+    una fecha de carrera propia — resume todas las válidas ya corridas — así
+    que no existe una posición cronológica correcta entre carreras
+    individuales; tratarlo como un apéndice evita intercalarlo
+    arbitrariamente (que es exactamente el bug original). En SQL esto se
+    logra ordenando primero por "¿tiene evento?" (con evento antes que sin
+    evento) y luego por ``event_date DESC`` — deliberadamente explícito en
+    vez de apoyarse en el orden implícito de NULLs del motor (aunque MySQL
+    y SQLite coinciden en tratar NULL como el valor más bajo en DESC, y por
+    tanto lo ordenarían al final de todas formas).
+
+    Además hace ``LEFT JOIN`` a ``race_events``/``race_series`` y carga
+    ``AthleteAiInsight.event`` / ``RaceEvent.series`` de una sola pasada
+    (``contains_eager``) para que el router pueda leer ``event_date`` /
+    ``series_kind`` sin disparar un lazy-load (que fallaría en contexto
+    async con ``MissingGreenlet``).
     """
     base_filters = [
         AthleteAiInsight.athlete_id == athlete_id,
@@ -110,15 +138,24 @@ async def list_athlete_insights(
     elif not include_deprecated:
         base_filters.append(AthleteAiInsight.deprecated_at.is_(None))
 
-    # Total (sin orderby ni limit).
+    # Total (sin orderby ni limit) — no necesita el JOIN a race_events.
     total_stmt = select(func.count(AthleteAiInsight.id)).where(*base_filters)
     total_result = await db.execute(total_stmt)
     total = int(total_result.scalar_one() or 0)
 
     items_stmt = (
         select(AthleteAiInsight)
+        .outerjoin(RaceEvent, AthleteAiInsight.event_id == RaceEvent.id)
+        .outerjoin(RaceSeries, RaceEvent.series_id == RaceSeries.id)
         .where(*base_filters)
+        .options(
+            contains_eager(AthleteAiInsight.event).contains_eager(RaceEvent.series)
+        )
         .order_by(
+            # Filas sin evento (agregado de temporada) van al final —
+            # decisión explícita, ver docstring arriba.
+            RaceEvent.event_date.is_(None),
+            RaceEvent.event_date.desc(),
             AthleteAiInsight.generated_at.desc(),
             AthleteAiInsight.id.desc(),
         )
@@ -126,7 +163,7 @@ async def list_athlete_insights(
         .offset(offset)
     )
     items_result = await db.execute(items_stmt)
-    items = list(items_result.scalars().all())
+    items = list(items_result.scalars().unique().all())
     return items, total
 
 
@@ -145,10 +182,19 @@ async def get_athlete_insight(
 
     Devuelve None si el insight no existe O pertenece a otro atleta
     (no se distingue para no filtrar pks). El router debe convertirlo a 404.
+
+    Carga ``event`` + ``event.series`` (T030, feature 036) para que el
+    router exponga ``event_date``/``series_kind`` sin lazy-load adicional.
     """
-    stmt = select(AthleteAiInsight).where(
-        AthleteAiInsight.id == insight_id,
-        AthleteAiInsight.athlete_id == athlete_id,
+    stmt = (
+        select(AthleteAiInsight)
+        .options(
+            selectinload(AthleteAiInsight.event).selectinload(RaceEvent.series)
+        )
+        .where(
+            AthleteAiInsight.id == insight_id,
+            AthleteAiInsight.athlete_id == athlete_id,
+        )
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()

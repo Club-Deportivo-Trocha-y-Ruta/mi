@@ -42,6 +42,36 @@
         "dnf_reason": "pinchazo km 8"
       }
     ],
+    "season_comparative": [
+      {
+        "valida_num": 1,
+        "event_label": "Válida 1",
+        "position": 5,
+        "race_time_ms": 2150000,
+        "field_size": 9,
+        "delta_position": null,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 2,
+        "event_label": "Válida 2",
+        "position": 4,
+        "race_time_ms": 2120000,
+        "field_size": 9,
+        "delta_position": -1,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 3,
+        "event_label": "Válida 3",
+        "position": 3,
+        "race_time_ms": 2090000,
+        "field_size": 9,
+        "delta_position": -1,
+        "delta_time_ms": null
+      }
+    ],
+    "progression_assessment": "improving",
     "podium_context": {
       "category_id": 2,
       "event_id": 4,
@@ -85,6 +115,6 @@
     "rendimiento bajo"
   ],
   "must_cite": false,
-  "max_words": 500,
-  "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-B-F-009 con progresión sostenida V-I→V-III (5→4→3), gap al ganador bajó 35s [1]. DNF V-IV fue pinchazo sin kit — NO refleja rendimiento [1].\n\n## Análisis Técnico\n\nMejora consistente antes del DNF. Carencia identificada: equipamiento de reparación.\n\n## Recomendaciones LTAD\n\n- Kit reparación obligatorio en bolsillo jersey (categoría=technique, prioridad=high) [2]\n- Práctica mensual de cambio de cámara (categoría=technique, prioridad=med) [2]\n\n## Riesgos\n\n- Recurrencia DNF mecánico si no se sistematiza (flag=other, severity=low) [2]\n\n## Próximos Pasos\n\nChecklist pre-carrera firmado por atleta + padre antes de V-V."
+  "max_words": 380,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nDebido a un pinchazo en el kilómetro 8, la deportista no logró finalizar la válida 4; se trató de un problema mecánico, por lo que no se registró posición ni tiempo de carrera para esta fecha.\n\n## Recorrido hasta acá\n\nAntes de esta fecha, la deportista venía en progresión positiva sostenida durante tres válidas consecutivas (posiciones 5, 4 y 3, con el gap al líder bajando de 0:01:20 a 0:00:45). En consecuencia, el abandono de la válida 4 no debería interpretarse como una caída de rendimiento, sino como un evento mecánico puntual y externo a la condición de la deportista.\n\n## Hacia dónde va\n\n- Incorporar un kit reparación en el jersey de competencia, de uso obligatorio en cada carrera (categoría=technique, prioridad=high)\n- Practicar el cambio de cámara en sesión de taller una vez al mes (categoría=technique, prioridad=med)\n\nComo resultado de lo ocurrido, conviene sistematizar una revisión mecánica corta antes de cada salida para reducir el riesgo de que un DNF por pinchazo se repita."
 }

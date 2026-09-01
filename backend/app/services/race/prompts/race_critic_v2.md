@@ -55,6 +55,7 @@ Cualquiera de los siguientes en el draft → **`must_block=true`, severity=high*
 - Vaguedad: recomendaciones no accionables.
 - Tono juzgador hacia el atleta o que viole "diversión primero".
 - Falta de una de las tres secciones v2 obligatorias.
+- **Enumeración sin conexión analítica:** la sección "Qué pasó en esta válida" lista datos sueltos (posición, tiempo, gap) uno tras otro, cada uno en su propia oración, sin combinar al menos dos de ellos en una idea interpretativa. Señálalo como issue de severidad **low** (nunca `high`, nunca `must_block=true`) con `suggested_fix` orientado a fusionar los datos en menos oraciones — es una observación de estilo para que el coach mejore el texto, no un motivo para bloquear su publicación.
 
 # Reglas de severidad
 

@@ -59,11 +59,21 @@ export function mockMetricsSnapshot(
 export function mockInsight(
   overrides?: Partial<AthleteInsightOut>,
 ): AthleteInsightOut {
+  // `series_kind` sigue a `valida_num` cuando el caller no lo pasa
+  // explícito: varios tests pre-existentes overridean solo `valida_num: 99`
+  // (convención retirada, feature 036 T030) esperando trato departamental,
+  // y un default fijo en "cup" los dejaría con una combinación imposible en
+  // datos reales (backend nunca emite valida_num=99 + series_kind="cup").
+  const finalValidaNum = overrides?.valida_num ?? 4;
+  const defaultSeriesKind: AthleteInsightOut["series_kind"] =
+    finalValidaNum === 99 ? "championship" : "cup";
   return {
     id: 1,
     season: 2026,
     valida_num: 4,
     event_id: 100,
+    event_date: "2026-05-17",
+    series_kind: defaultSeriesKind,
     use_case: "race_analysis",
     summary_text:
       "Resumen del desempeño del deportista en Válida IV. Mostró " +
@@ -76,8 +86,57 @@ export function mockInsight(
     approved_at: "2026-05-18T12:30:00Z",
     is_active: true,
     deprecated_at: null,
+    is_fallback: false,
     ...overrides,
   };
+}
+
+/**
+ * Texto placeholder exacto persistido por `deterministic_fallback`
+ * (`backend/app/services/race/ai/fallback.py`) cuando el analyst LLM falla.
+ * Mantenido en sync manualmente — no hay import cross-lenguaje posible.
+ */
+export const FALLBACK_SUMMARY_TEXT =
+  "Análisis IA no disponible en este momento. Revisa los datos crudos " +
+  "en la sección de resultados.";
+
+/**
+ * Insight fallback (US4, feature 036) — persistido por el camino de FALLA
+ * de `deterministic_fallback`: `is_fallback=true` y `summary_text` es el
+ * placeholder fijo, no un análisis real. Confianza forzada a "low" por el
+ * crítico ante secciones vacías (`critic_agent.py`).
+ */
+export function mockFallbackInsight(
+  overrides?: Partial<AthleteInsightOut>,
+): AthleteInsightOut {
+  return mockInsight({
+    id: 77,
+    valida_num: 3,
+    confidence: "low",
+    prompt_version: "race_analyst_v2",
+    summary_text: FALLBACK_SUMMARY_TEXT,
+    is_fallback: true,
+    ...overrides,
+  });
+}
+
+/**
+ * Variante fallback del resumen de temporada (`valida_num=0`) — el resumen
+ * on-demand (`invoke_season_summary`) también puede caer al fallback
+ * determinista cuando el LLM falla.
+ */
+export function mockFallbackSeasonSummaryInsight(
+  overrides?: Partial<AthleteInsightOut>,
+): AthleteInsightOut {
+  return mockFallbackInsight({
+    id: 78,
+    valida_num: 0,
+    event_id: null,
+    event_date: null,
+    series_kind: null,
+    use_case: "season_summary_v2",
+    ...overrides,
+  });
 }
 
 export function mockInsightDetail(
@@ -94,6 +153,21 @@ export function mockInsightDetail(
     principles_cited: [
       { id: "ltad-1", text: "Edad biológica > edad cronológica" },
     ],
+    supersedes: [],
+    superseded_by: null,
+    ...overrides,
+  };
+}
+
+/** Detalle de un insight fallback (US4, feature 036) — ver `mockFallbackInsight`. */
+export function mockFallbackInsightDetail(
+  overrides?: Partial<AthleteInsightDetailOut>,
+): AthleteInsightDetailOut {
+  return {
+    ...mockFallbackInsight(),
+    recommendations: [],
+    metrics_snapshot: mockMetricsSnapshot(),
+    principles_cited: [],
     supersedes: [],
     superseded_by: null,
     ...overrides,
@@ -294,6 +368,34 @@ export const emptyInsightsHandler = http.get(
   () => {
     return HttpResponse.json({ items: [], total: 0, limit: 50, offset: 0 });
   },
+);
+
+/**
+ * T027 (feature 036, US4) — listado con un único insight fallback
+ * (`is_fallback=true`, id=77). Usado para probar el marcado visual, la
+ * supresión del checkbox de boletín y la acción "Reintentar".
+ */
+export const fallbackInsightListHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/insights",
+  () => {
+    const items: AthleteInsightOut[] = [mockFallbackInsight()];
+    const response: AthleteInsightListResponse = {
+      items,
+      total: items.length,
+      limit: 50,
+      offset: 0,
+    };
+    return HttpResponse.json(response);
+  },
+);
+
+/** Detalle correspondiente a `fallbackInsightListHandler`. */
+export const fallbackInsightDetailHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/insights/:insightId",
+  ({ params }) =>
+    HttpResponse.json(
+      mockFallbackInsightDetail({ id: Number(params.insightId) }),
+    ),
 );
 
 export const lowConfidenceEvolutionHandler = http.get(
@@ -656,4 +758,12 @@ export const emptyRacesListHandler = http.get(
     HttpResponse.json(
       mockRaceParticipationList({ items: [] }) satisfies RaceParticipationResponse,
     ),
+);
+
+/** Handler de fallo — feature 036 (US5): antes de T035-follow-up esto caía
+ *  en silencio al placeholder "Selecciona una carrera", sin avisar al coach
+ *  que la petición de carreras falló. */
+export const errorRacesListHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/races",
+  () => new HttpResponse(null, { status: 500 }),
 );

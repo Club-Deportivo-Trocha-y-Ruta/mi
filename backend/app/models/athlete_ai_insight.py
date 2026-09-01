@@ -25,6 +25,18 @@ Reglas de negocio (referidas por BE-2 / persist_insight node):
 - ``archived_at`` (preexistente) y ``deprecated_at`` (nuevo) son
   ortogonales: archived = lo borró el coach; deprecated = lo reemplazó
   otro insight.
+
+Feature 036 (US4, T020) agrega:
+
+- ``is_fallback`` (BOOLEAN NOT NULL, server_default FALSE): ``True`` ⇔
+  la fila la escribió el *failure path* de
+  ``services/race/ai/fallback.py`` (``deterministic_fallback``) porque
+  el analyst LLM falló. El fallback N=1 (``deterministic_fallback_n1``)
+  es un análisis legítimo bajo la regla N=1 y NUNCA marca esta columna.
+  No es un campo derivado del contenido (no se infiere del markdown):
+  lo asigna ``persist_insight`` a partir del discriminador expuesto por
+  ``fallback.py``. Migración ``463c1f0ccb38`` agrega la columna y
+  reclasifica filas históricas por texto exacto (backfill único).
 """
 from __future__ import annotations
 
@@ -158,6 +170,13 @@ class AthleteAiInsight(Base):
         ),
         nullable=False,
         default=InsightConfidence.medium,
+    )
+    # Feature 036 (US4): True ⇔ escrita por el failure path de
+    # fallback.py (deterministic_fallback). NO cubre deterministic_fallback_n1
+    # (análisis legítimo bajo la regla N=1). Bloquea el adjunto a boletines
+    # (ver routers/athlete_monthly_newsletters.py:attach_insights).
+    is_fallback: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
     )
 
     # --- Trazabilidad del modelo ------------------------------------------

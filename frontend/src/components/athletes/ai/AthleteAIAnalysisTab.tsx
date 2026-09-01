@@ -18,7 +18,7 @@
  *   - Multi-select y action bar SOLO en mode="coach".
  *   - Checkbox nunca se renderiza para parent.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -61,6 +61,7 @@ import {
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatDateTimeCompact } from "@/lib/datetime";
 import { confidenceStatus, validaLabel } from "@/lib/insights";
+import { invalidateAthleteAiQueries } from "@/hooks/ai/invalidateAthleteAiQueries";
 import { useRunStatus } from "@/hooks/ai/useRaceRun";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import { useAttachInsightsToNewsletter } from "@/api/athleteNewsletters";
@@ -68,6 +69,29 @@ import type { AttachInsightsRequest } from "@/types/athleteNewsletter.types";
 import type { AthleteOut } from "@/types/athlete.types";
 
 type SubTab = "panorama" | "history" | "evolution" | "distribution" | "launch";
+
+const MONTH_ABBR = [
+  "ene", "feb", "mar", "abr", "may", "jun",
+  "jul", "ago", "sep", "oct", "nov", "dic",
+];
+
+/**
+ * T034 (feature 036, US5): "YYYY-MM-DD" → "17 may 2026" — parseo por
+ * substring, sin construir un `Date` (inmune al corrimiento de zona
+ * horaria que sufren las fechas-only al pasar por `new Date(iso)` en
+ * `CLUB_TIMEZONE`/America-Bogota, ver `lib/datetime.ts`). Mismo problema,
+ * mismo campo (`event_date`) y misma solución que
+ * `LaunchAnalysisForm.tsx#shortEventDate` — duplicada aquí en vez de
+ * importada porque ese archivo pertenece a otro agente de esta misma ola
+ * (ownership por archivo, feature 036 Wave 2).
+ */
+function formatRaceDateShort(isoDate: string): string {
+  const year = isoDate.slice(0, 4);
+  const month = Number(isoDate.slice(5, 7));
+  const day = Number(isoDate.slice(8, 10));
+  const abbr = MONTH_ABBR[month - 1];
+  return abbr && Number.isFinite(day) ? `${day} ${abbr} ${year}` : isoDate;
+}
 
 interface AthleteAIAnalysisTabProps {
   athlete: AthleteOut;
@@ -126,6 +150,13 @@ export function AthleteAIAnalysisTab({
   // Tras éxito en la sticky bar: la selección ya se limpió (onSuccess).
   // Esperar 3 s mostrando el mensaje de confirmación y luego resetear la mutación
   // para que la barra desaparezca completamente.
+  //
+  // T013: TanStack Query v5 devuelve un objeto `attachMutation` NUEVO en
+  // cada render (incluye cada poll tick de un run activo). Depender del
+  // objeto completo reiniciaba este timer constantemente y la
+  // confirmación nunca llegaba a limpiarse. `isSuccess` es un booleano
+  // estable y `reset` es la misma función ligada durante toda la vida
+  // del observer — sólo esos dos deben disparar el efecto.
   useEffect(() => {
     if (attachMutation.isSuccess && newsletterSelection.size === 0) {
       const timer = setTimeout(() => {
@@ -133,7 +164,7 @@ export function AthleteAIAnalysisTab({
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [attachMutation, newsletterSelection.size]);
+  }, [attachMutation.isSuccess, attachMutation.reset, newsletterSelection.size]);
 
   // T4 — el botón Hero mantiene toggle a newsletterSelection (selección local).
   // El envío real se hace únicamente desde la sticky bar. No llama a la API aquí.
@@ -147,18 +178,20 @@ export function AthleteAIAnalysisTab({
   });
 
   const queryClient = useQueryClient();
+  // T012: al completar el run (AnalysisRunTimeline invoca esto una sola
+  // vez, al llegar a estado terminal), hay que soltar activeRunId. Antes
+  // nunca se volvía a null y el timeline (y una eventual HITL card
+  // colgada) quedaban fijados arriba de los sub-tabs para siempre.
+  //
+  // T042: la invalidación de queries delega en el helper compartido
+  // `invalidateAthleteAiQueries` — antes este predicate sólo matcheaba
+  // claves que empiezan con "athlete-" y se perdía `club-insights-by-race`
+  // (grid cross-atleta) y `season-panorama` (dashboard de temporada).
   const handleRunComplete = useCallback(() => {
-    void queryClient.invalidateQueries({
-      predicate: (q) => {
-        const k = q.queryKey;
-        return (
-          Array.isArray(k) &&
-          typeof k[0] === "string" &&
-          (k[0] as string).startsWith("athlete-")
-        );
-      },
-    });
-  }, [queryClient]);
+    void invalidateAthleteAiQueries(queryClient, athlete.id);
+    setActiveRunId(null);
+    setHitlStepId(null);
+  }, [queryClient, athlete.id]);
   const latest = headerQuery.data?.items[0];
   const total = headerQuery.data?.total ?? 0;
 
@@ -170,21 +203,37 @@ export function AthleteAIAnalysisTab({
 
   const statusQuery = useRunStatus(mode === "coach" ? activeRunId : null);
   const runState = statusQuery.data?.latest?.state;
-  const lastHitlEvent = statusQuery.data?.events
-    ?.slice()
-    .reverse()
-    .find(
-      (e) =>
-        e.type === "hitl_request" ||
-        e.type === "hitl_required" ||
-        e.node === "hitl_gate_review",
-    );
+  // T014: buscamos hacia atrás (evento más reciente primero) y nos
+  // detenemos apenas encontramos CUALQUIERA de los dos hitos:
+  //   - hitl_request/hitl_required → esa es la interrupción vigente.
+  //   - hitl_response              → el coach ya decidió; no seguimos
+  //     buscando, así un hitl_request viejo (varios nodos atrás en el
+  //     array, que useRunStatus nunca purga) no revive la card.
+  // Antes se usaba `node === "hitl_gate_review"` como tercera condición,
+  // pero el propio evento hitl_response también viaja con ese node (y
+  // con step_id en su payload) — por eso una decisión ya tomada seguía
+  // matcheando y la card quedaba pegada para siempre. Memoizado porque
+  // recorre el array de eventos en cada evaluación.
+  const lastHitlEvent = useMemo(() => {
+    const events = statusQuery.data?.events;
+    if (!events) return undefined;
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const e = events[i];
+      if (e.type === "hitl_response") return undefined;
+      if (e.type === "hitl_request" || e.type === "hitl_required") return e;
+    }
+    return undefined;
+  }, [statusQuery.data]);
   const hitlStepIdFromEvent =
     typeof lastHitlEvent?.payload?.step_id === "string"
       ? (lastHitlEvent.payload.step_id as string)
       : null;
   const effectiveStepId = hitlStepId ?? hitlStepIdFromEvent ?? "hitl_default";
-  const showHITL = runState === "hitl_waiting" || !!hitlStepIdFromEvent;
+  // No mostrar una card de aprobación colgada del último dato bueno si
+  // la query de estado ya quedó en error (p. ej. techo de polling T017).
+  const showHITL =
+    !statusQuery.isError &&
+    (runState === "hitl_waiting" || !!hitlStepIdFromEvent);
   const draftMarkdown =
     typeof lastHitlEvent?.payload?.draft_markdown === "string"
       ? (lastHitlEvent.payload.draft_markdown as string)
@@ -206,8 +255,8 @@ export function AthleteAIAnalysisTab({
             </h2>
             <p className="mt-1 text-xs text-mid-gray">
               {mode === "parent"
-                ? "Seguimiento y evolución del deportista, revisado por el entrenador."
-                : "Pipeline agéntico: análisis, comparaciones y proyecciones a partir de resultados oficiales."}
+                ? "Resumen del rendimiento en carreras, revisado por el entrenador antes de publicarse."
+                : "Análisis generado con IA a partir de los resultados oficiales de carrera."}
             </p>
             {mode === "parent" && (
               <TooltipProvider delayDuration={200}>
@@ -232,6 +281,14 @@ export function AthleteAIAnalysisTab({
               <SeasonSummaryButton
                 athleteId={athlete.id}
                 analyzedValidasCount={total}
+                onGenerated={(insightId) => {
+                  // T040: deep-link al insight recién creado — mismo patrón
+                  // que PanoramaView#onOpenDetail (abajo): fijar
+                  // selectedInsightId y saltar a Histórico, donde
+                  // InsightDetailDrawer lo abre.
+                  setSelectedInsightId(insightId);
+                  setSubTab("history");
+                }}
               />
             )}
             {headerQuery.isLoading ? (
@@ -244,11 +301,29 @@ export function AthleteAIAnalysisTab({
                 <span className="text-[10px] font-medium uppercase tracking-wide text-mid-gray">
                   Último análisis
                 </span>
-                <span className="text-sm font-semibold text-charcoal">
-                  {formatDateTimeCompact(latest.generated_at)}
+                {/* T034 (feature 036, US5): esta línea antes mostraba
+                    `generated_at` — la fecha en que se ESCRIBIÓ el
+                    análisis, no la fecha de la carrera. Eso hacía ver
+                    "reciente" una válida vieja apenas analizada (ej.
+                    generada hoy, sobre la Válida 1 de hace meses),
+                    ocultando que ya hubo carreras más nuevas sin
+                    analizar todavía — la fecha de generación se conserva
+                    abajo, marcada explícitamente como tal. Para el
+                    agregado de temporada (sin `event_id`, `event_date`
+                    null) no hay una fecha de carrera que anclar, así que
+                    cae a la temporada. */}
+                <span
+                  className="text-sm font-semibold text-charcoal"
+                  data-testid="ai-header-race-date"
+                >
+                  {latest.event_date
+                    ? formatRaceDateShort(latest.event_date)
+                    : `Temporada ${latest.season}`}
                 </span>
                 <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  <Badge variant="secondary">{validaLabel(latest.valida_num)}</Badge>
+                  <Badge variant="secondary">
+                    {validaLabel({ valida_num: latest.valida_num, series_kind: latest.series_kind })}
+                  </Badge>
                   {mode === "coach" && (
                     <StatusBadge
                       status={confidenceStatus(latest.confidence).status}
@@ -257,7 +332,7 @@ export function AthleteAIAnalysisTab({
                   )}
                 </div>
                 <span className="text-[11px] text-mid-gray">
-                  Total aprobados: {total}
+                  Generado {formatDateTimeCompact(latest.generated_at)} · Total aprobados: {total}
                 </span>
               </div>
             ) : (
@@ -288,7 +363,16 @@ export function AthleteAIAnalysisTab({
         onValueChange={(v) => setSubTab(v as SubTab)}
         className="w-full"
       >
-        <TabsList className="flex w-full justify-start gap-1 overflow-x-auto bg-white p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* T090 (feature 036, US6): a 360–400px este strip solía recortar
+            en "Distribució…" con el scroll horizontal oculto a propósito
+            (scrollbar-width:none) — "Analizar con IA", el último sub-tab y
+            la acción principal del módulo, quedaba inalcanzable salvo que
+            el usuario adivinara que podía deslizar. `flex-wrap` reemplaza
+            el scroll oculto: los 5 sub-tabs quedan siempre visibles (en 2
+            líneas si hace falta), sin depender de ningún gesto. Mismo
+            patrón que la fila de tabs del perfil (AthleteDetailPage.tsx,
+            `flex flex-wrap gap-2`) y el ToggleGroup de Progreso. */}
+        <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-white p-1">
           <TabsTrigger value="panorama" data-testid="ai-subtab-panorama" className="shrink-0">
             <Sparkles size={14} aria-hidden="true" />
             Panorama
@@ -353,6 +437,7 @@ export function AthleteAIAnalysisTab({
                 <Button
                   variant="outline"
                   size="sm"
+                  className="min-h-12"
                   onClick={() => setComparatorSheetOpen(true)}
                   data-testid="open-comparator-sheet"
                 >
@@ -397,6 +482,15 @@ export function AthleteAIAnalysisTab({
         <div
           className="sticky bottom-4 left-0 right-0 z-20 mx-auto flex max-w-2xl items-center justify-between gap-3 rounded-xl bg-charcoal p-3 text-white shadow-lg"
           data-testid="newsletter-action-bar"
+          // T093 (feature 036, US6): la barra cambia de estado (conteo de
+          // selección, éxito, error) sin avisarle a nadie que use lector de
+          // pantalla. `role="status"` ya implica aria-live="polite", pero
+          // se deja explícito por consistencia con el resto del código
+          // (ver p.ej. ImportWizard.tsx, EditConditionsDialog.tsx). Ninguno
+          // de los tres estados es lo bastante urgente para "assertive": el
+          // envío es reintentable y no hay pérdida de datos en juego.
+          role="status"
+          aria-live="polite"
         >
           {attachMutation.isError ? (
             <>
@@ -413,7 +507,7 @@ export function AthleteAIAnalysisTab({
                     });
                   }
                 }}
-                className="bg-white text-charcoal hover:bg-white/90"
+                className="min-h-12 bg-white text-charcoal hover:bg-white/90"
               >
                 Reintentar
               </Button>
@@ -439,7 +533,7 @@ export function AthleteAIAnalysisTab({
                   size="sm"
                   onClick={() => setNewsletterSelection(new Set())}
                   disabled={attachMutation.isPending}
-                  className="border-white/30 text-white hover:bg-white/10 hover:text-white"
+                  className="min-h-12 border-white/30 text-white hover:bg-white/10 hover:text-white"
                 >
                   Limpiar
                 </Button>
@@ -448,7 +542,7 @@ export function AthleteAIAnalysisTab({
                   size="sm"
                   onClick={handleAddBulkToNewsletter}
                   disabled={attachMutation.isPending}
-                  className="bg-white text-charcoal hover:bg-white/90"
+                  className="min-h-12 bg-white text-charcoal hover:bg-white/90"
                   data-testid="newsletter-action-bar-submit"
                 >
                   {attachMutation.isPending ? "Enviando…" : "Enviar a boletín"}

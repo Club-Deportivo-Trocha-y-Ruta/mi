@@ -25,6 +25,8 @@
         "gap_to_winner_ms": 95000
       }
     ],
+    "season_comparative": [],
+    "progression_assessment": "first_reference",
     "podium_context": {
       "category_id": 1,
       "event_id": 4,
@@ -68,6 +70,6 @@
     "Thiago"
   ],
   "must_cite": false,
-  "max_words": 500,
-  "ideal_output_excerpt": "## Evolución\n\nAtleta-INF-A-F-005 con sólo 2 válidas (V-III, V-IV): muestra pequeña, baja confianza estadística. Mejoró pos 6→5 y gap bajó 15s [1].\n\n## Análisis Técnico\n\nPrimera temporada — el foco son fundamentos básicos y diversión, no comparar contra el podio aún.\n\n## Recomendaciones LTAD\n\n- 80% sesiones lúdicas y multideporte (categoría=technique, prioridad=high) [1]\n- Mantener entusiasmo: una victoria pequeña por sesión (categoría=psychology, prioridad=high) [1]\n\n## Riesgos\n\n- Comparación temprana con compañeros podría desmotivar (flag=other, severity=low) [1]\n\n## Próximos Pasos\n\nReevaluar en V-VI con n=4."
+  "max_words": 380,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nGracias a completar la prueba sin incidentes, la deportista finalizó la válida 4 en la quinta posición, con un tiempo de carrera de 0:32:30 y un gap al líder de 0:01:35.\n\n## Recorrido hasta acá\n\nCon apenas dos válidas disputadas en su primera temporada en el club, se trata de una muestra pequeña que no permite declarar una tendencia; por lo tanto, el foco de esta etapa es la diversión y los fundamentos técnicos básicos, no la comparación con el resultado del podio. El coach reporta entusiasmo alto en cada sesión, lo cual es la señal más relevante a esta edad.\n\n## Hacia dónde va\n\n- Mantener al menos el 80 % del tiempo de sesión en formato lúdico y multideporte (categoría=technique, prioridad=high)\n- Celebrar un logro pequeño por sesión para sostener la motivación (categoría=psychology, prioridad=high)\n\nComo resultado de la baja cantidad de datos disponibles, conviene reevaluar la tendencia real una vez la deportista acumule al menos cuatro válidas en la temporada."
 }

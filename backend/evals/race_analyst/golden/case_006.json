@@ -41,6 +41,36 @@
         "gap_to_winner_ms": 0
       }
     ],
+    "season_comparative": [
+      {
+        "valida_num": 1,
+        "event_label": "Válida 1",
+        "position": 2,
+        "race_time_ms": 3500000,
+        "field_size": 18,
+        "delta_position": null,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 2,
+        "event_label": "Válida 2",
+        "position": 1,
+        "race_time_ms": 3470000,
+        "field_size": 18,
+        "delta_position": -1,
+        "delta_time_ms": null
+      },
+      {
+        "valida_num": 3,
+        "event_label": "Válida 3",
+        "position": 2,
+        "race_time_ms": 3480000,
+        "field_size": 18,
+        "delta_position": 1,
+        "delta_time_ms": null
+      }
+    ],
+    "progression_assessment": "stable",
     "podium_context": {
       "category_id": 8,
       "event_id": 4,
@@ -84,6 +114,6 @@
     "Thiago"
   ],
   "must_cite": false,
-  "max_words": 600,
-  "ideal_output_excerpt": "## Evolución\n\nAtleta-JUV-A-M-006 lidera la categoría: 2-1-2-1 en 4 válidas, ganó V-IV con +13s [1]. Pico de forma claro entrando al CD.\n\n## Análisis Técnico\n\nConsolidación técnica completa. Listo para tapering completo de 7 días [1].\n\n## Recomendaciones LTAD\n\n- Reducir volumen 50% últimos 7 días, mantener 2 micro-HIIT (categoría=volume, prioridad=high) [1]\n- Priorizar sueño 9h y hidratación pre-CD (categoría=recovery, prioridad=high) [2]\n\n## Riesgos\n\n- Sobre-entrenamiento si introduce sesión sorpresa (flag=load_excess, severity=med) [2]\n\n## Próximos Pasos\n\nPlan tapering 7 días + chequeo bici + briefing carrera 24h antes."
+  "max_words": 400,
+  "ideal_output_excerpt": "## Qué pasó en esta válida\n\nGracias a sostener el ritmo durante todo el recorrido, la deportista completó la válida 4 en la primera posición, con un tiempo de 0:57:25 y un gap de 0:00:00 al liderar la prueba de principio a fin.\n\n## Recorrido hasta acá\n\nEn las cuatro válidas de la temporada se ha mantenido siempre entre la primera y la segunda posición (2, 1 y 2 antes de esta fecha), lo que indica un nivel estable de cara al Campeonato Departamental. Con el tapering completo de la semana previa, el volumen se redujo antes de la carrera A, permitiendo llegar en pico de forma a la fecha más importante del calendario.\n\n## Hacia dónde va\n\n- Reducir el volumen un 50 % en los últimos siete días y mantener sólo dos microestímulos de alta intensidad (categoría=volume, prioridad=high)\n- Priorizar el descanso y la hidratación en las horas previas a la carrera A (categoría=recovery, prioridad=high)\n\nDebido a la proximidad de la carrera A, conviene revisar el estado de la bicicleta y confirmar la logística de traslado con al menos 24 horas de anticipación."
 }

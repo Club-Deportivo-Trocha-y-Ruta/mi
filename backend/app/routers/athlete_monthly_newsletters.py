@@ -758,6 +758,9 @@ async def attach_insights(
     - RBAC: solo coach del club del atleta o admin global. Parent → 403.
     - Valida que todos los insight_ids pertenecen al atleta y tienen is_active=1.
     - Si algún insight no cumple → 400 con detalle de cuáles fallaron.
+    - Si algún insight tiene is_fallback=True (feature 036, US4, T026) → 422:
+      un placeholder de análisis fallido nunca se adjunta, ni siquiera si el
+      coach envía su ID explícitamente.
     - year/month default al mes/año actuales en zona Colombia (America/Bogota).
     - Upsert del newsletter:
         - Si existe: append + dedupe preservando orden (items nuevos al final). created=False.
@@ -798,6 +801,23 @@ async def attach_insights(
             detail=(
                 f"Los siguientes insight_ids no son válidos para este atleta "
                 f"(no existen, pertenecen a otro atleta o están inactivos): {invalid_ids}"
+            ),
+        )
+
+    # 3b. Rechazar insights marcados como fallback (feature 036, US4, T026):
+    # un análisis que falló al generarse no puede llegar al boletín de una
+    # familia aunque el coach lo haya aprobado sin darse cuenta. La supresión
+    # en el cliente (checkbox oculta) NO es el punto de aplicación — se
+    # revalida acá porque el cliente puede enviar el ID igual.
+    fallback_ids = sorted(i.id for i in valid_insights if i.is_fallback)
+    if fallback_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Los siguientes insight_ids no se pueden adjuntar porque el "
+                f"análisis no se generó correctamente: {fallback_ids}. Genera "
+                "un nuevo análisis para esa válida antes de adjuntarlo al "
+                "boletín."
             ),
         )
 

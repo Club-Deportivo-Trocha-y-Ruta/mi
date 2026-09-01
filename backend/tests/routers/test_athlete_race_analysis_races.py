@@ -49,7 +49,6 @@ IDs del escenario reutilizados de create_distribution_scenario (defaults):
 """
 from __future__ import annotations
 
-import json
 from datetime import date
 from types import SimpleNamespace
 from typing import AsyncGenerator, Any
@@ -72,20 +71,15 @@ from app.models.club import ClubRole
 from app.models.user import UserRole
 
 from tests.fixtures.race_history_fixtures import (
-    create_athlete,
     create_club,
     create_distribution_scenario,
-    create_race_category,
     create_race_competitor,
     create_race_event,
     create_race_result,
-    create_race_series,
     create_user,
     link_parent_to_athlete,
     link_user_to_club,
 )
-from app.models.race_result import ResultStatus
-from app.models.race_series import RaceSeriesKind
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@ You are the **Product Manager** of Club Trocha y Ruta. You convert coach needs i
 ## Project context
 
 - Project: web application for managing XCO youth riders (10-15 years old) in Valle del Cauca.
-- Current status: 30+ features shipped (auth/PHV, training sessions, media, Copa Valle results, monthly technical report, competitive anxiety, technique/gymkhana, strength, structured intervals, Strava sync, coach-experience redesign). Full per-module history: `docs/implementation-status.md`; feature pipeline: `specs/NNN-*/`.
+- Current status: 30+ features shipped (auth/PHV, training sessions, media, Copa Valle results, monthly technical report, technique/gymkhana, strength, structured intervals, Strava sync, coach-experience redesign). Full per-module history: `docs/implementation-status.md`; feature pipeline: `specs/NNN-*/`.
 - Remaining integration candidates: Intervals.icu, Spond, Google Forms (daily wellness). Strava is already live (specs/025).
 - Documentation per feature: `docs/<NN>-<feature>/{workflow,design,research,qa}.md`.
 

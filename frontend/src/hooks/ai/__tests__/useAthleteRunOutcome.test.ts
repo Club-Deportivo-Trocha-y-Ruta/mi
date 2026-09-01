@@ -67,6 +67,36 @@ describe("useAthleteRunOutcome", () => {
     expect(result.current.failureMessage).toBeNull();
   });
 
+  // T042 (feature 036, US5): antes de este fix, el predicate ad-hoc de
+  // este hook cubría `club-insights-by-race` pero nunca `season-panorama`
+  // (el dashboard de temporada). Revertir el fix (volver a construir el
+  // predicate inline en vez de delegar en `invalidateAthleteAiQueries`)
+  // hace fallar este test.
+  it("done → invalida season-panorama y club-insights-by-race además de las claves del propio atleta", () => {
+    mockRunState = "done";
+    renderHook(() => useAthleteRunOutcome("run-season-panorama", OPTS));
+
+    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    const predicate = invalidateQueries.mock.calls[0]?.[0]?.predicate as (q: {
+      queryKey: unknown;
+    }) => boolean;
+    expect(typeof predicate).toBe("function");
+
+    expect(predicate({ queryKey: ["season-panorama", 2026, 1] })).toBe(true);
+    expect(predicate({ queryKey: ["club-insights-by-race", 9] })).toBe(true);
+    expect(
+      predicate({ queryKey: ["athlete-insights", OPTS.athleteId, {}] }),
+    ).toBe(true);
+    // Otro atleta — no debe invalidarse.
+    expect(predicate({ queryKey: ["athlete-insights", 999, {}] })).toBe(
+      false,
+    );
+    // Dominios sin relación con un run de IA.
+    expect(predicate({ queryKey: ["athlete-activities", OPTS.athleteId] })).toBe(
+      false,
+    );
+  });
+
   it.each<RunState>(["failed", "error"])(
     "%s → toast de error + failureMessage",
     (state) => {

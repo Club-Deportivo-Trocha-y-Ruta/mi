@@ -42,15 +42,34 @@ import {
   AIBudgetHint,
   isBudgetExhausted,
 } from "@/components/ai/AIBudgetHint";
+import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { useAIStatus } from "@/hooks/ai/useAIStatus";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
 import { useAthleteRaces } from "@/hooks/athletes/useAthleteRaces";
+import { extractErrorDetail } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
+
+const LAUNCH_ERROR_FALLBACK =
+  "Error iniciando el análisis. Revisa los datos e intenta de nuevo.";
 
 const MAX_VALIDA_SELECTION = 4;
 
 function getDefaultSeason(): number {
   return new Date().getFullYear();
+}
+
+const MONTH_ABBR = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/**
+ * "YYYY-MM-DD" → "12 jun" — parseo por substring, sin construir un `Date`
+ * (inmune al desplazamiento de zona horaria que sufren las fechas-only al
+ * pasar por `new Date(iso)`, ver `lib/datetime.ts`).
+ */
+function shortEventDate(isoDate: string): string {
+  const month = Number(isoDate.slice(5, 7));
+  const day = Number(isoDate.slice(8, 10));
+  const abbr = MONTH_ABBR[month - 1];
+  return abbr && Number.isFinite(day) ? `${day} ${abbr}` : "";
 }
 
 const launchSchema = z.object({
@@ -141,11 +160,7 @@ export function LaunchAnalysisForm({
       });
       onStarted?.(result.run_id);
     } catch (err) {
-      setSubmitError(
-        err instanceof Error
-          ? err.message
-          : "Error iniciando el análisis. Revisa los datos e intenta de nuevo.",
-      );
+      setSubmitError(extractErrorDetail(err, LAUNCH_ERROR_FALLBACK));
     }
   };
 
@@ -173,6 +188,7 @@ export function LaunchAnalysisForm({
 
   const isPending = isSubmitting || mutation.isPending;
   const isDisabled = isPending || budgetExhausted;
+  const racesColdStart = isColdStartError(races.error);
 
   return (
     <form
@@ -219,7 +235,7 @@ export function LaunchAnalysisForm({
                 }}
                 id="launch-season"
                 className={cn(
-                  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+                  "mt-1 min-h-12 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
                   "shadow-ring",
                 )}
                 data-testid="launch-season-select"
@@ -239,28 +255,34 @@ export function LaunchAnalysisForm({
           )}
         </div>
 
-        {/* Explain mode */}
+        {/* Explain mode → "Revisión paso a paso" (T096b). T092: el checkbox
+            va junto al texto que gobierna, ya no empujado al borde derecho
+            por un `justify-between`. T091: el propio `<input>` mide 48×48
+            (no solo su envoltorio), mismo patrón que
+            `session-plan/TechniqueAttachPicker.tsx` (feature 032, "checkbox
+            de técnica"). */}
         <div className="flex items-end">
           <label
             htmlFor="launch-explain"
-            className="flex w-full cursor-pointer items-center justify-between rounded-lg bg-light-gray/30 px-3 py-2"
+            className="flex w-full cursor-pointer flex-col gap-1 rounded-lg bg-light-gray/30 px-3 py-2"
           >
-            <span className="flex-1">
-              <span className="block text-sm font-medium text-charcoal">
-                Modo explicativo
-              </span>
-              <span className="block text-xs text-mid-gray">
-                El agente pausará para tu aprobación en cada paso.
+            <span className="flex items-center gap-3">
+              <input
+                id="launch-explain"
+                type="checkbox"
+                role="switch"
+                {...register("explain_mode")}
+                className="h-12 w-12 shrink-0 cursor-pointer accent-charcoal"
+                data-testid="launch-explain-switch"
+              />
+              <span className="text-sm font-medium text-charcoal">
+                Revisión paso a paso
               </span>
             </span>
-            <input
-              id="launch-explain"
-              type="checkbox"
-              role="switch"
-              {...register("explain_mode")}
-              className="h-5 w-5 cursor-pointer accent-charcoal"
-              data-testid="launch-explain-switch"
-            />
+            <span className="block text-xs text-mid-gray">
+              El análisis se detendrá en cada etapa para que lo apruebes
+              antes de continuar.
+            </span>
           </label>
         </div>
       </div>
@@ -271,13 +293,23 @@ export function LaunchAnalysisForm({
           Carreras a analizar
         </legend>
         <p className="text-[11px] text-mid-gray">
-          Deja vacío para analizar todas las carreras de la temporada. Máximo 4
-          por lanzamiento.
+          Deja vacío para analizar todas las carreras de la temporada. Máximo
+          4 a la vez.
         </p>
         {races.isLoading ? (
           <p className="text-xs text-mid-gray" data-testid="launch-races-loading">
             Cargando carreras…
           </p>
+        ) : races.isError ? (
+          <ErrorState
+            message={
+              racesColdStart
+                ? undefined
+                : "No se pudieron cargar las carreras de esta temporada."
+            }
+            onRetry={() => void races.refetch()}
+            isColdStart={racesColdStart}
+          />
         ) : raceOptions.length === 0 ? (
           <p className="text-xs text-mid-gray" data-testid="launch-races-empty">
             Sin carreras registradas para esta temporada.
@@ -303,12 +335,16 @@ export function LaunchAnalysisForm({
                   disabled={isCapReached}
                   title={
                     isCapReached
-                      ? "Máximo 4 carreras por lanzamiento (cap v2). Usa resumen temporada para visión global."
+                      ? "Máximo 4 carreras a la vez (cap v2). Usa resumen temporada para visión global."
                       : r.label
                   }
                   data-testid={`launch-event-${r.event_id}`}
                   className={cn(
-                    "min-h-9 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                    // T091: min-h-9 (36px) quedaba bajo el piso de 48px del
+                    // proyecto (frontend/e2e/target-size.spec.ts:44); mismo
+                    // patrón `flex …items-center justify-center` que ya usa
+                    // InsightsTimeline.tsx para sus botones de válida.
+                    "flex min-h-12 min-w-12 items-center justify-center rounded-full px-3 py-1 text-xs font-medium transition-colors",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
                     isChecked
                       ? "bg-charcoal text-white"
@@ -317,7 +353,10 @@ export function LaunchAnalysisForm({
                   )}
                 >
                   {r.series_kind === "championship"
-                    ? "CD"
+                    ? // T031: dos Campeonatos Departamentales en la misma temporada
+                      // comparten sequence_number=1 (RaceParticipationOption — "para
+                      // campeonatos siempre es 1"); sin la fecha son indistinguibles.
+                      `CD · ${shortEventDate(r.event_date)}`
                     : `Válida ${r.sequence_number}`}
                 </button>
               );
@@ -343,7 +382,7 @@ export function LaunchAnalysisForm({
               : undefined
           }
           className={cn(
-            "inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity",
+            "inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity",
             isDisabled ? "cursor-not-allowed opacity-60" : "hover:opacity-90",
             "shadow-button-highlight",
           )}
