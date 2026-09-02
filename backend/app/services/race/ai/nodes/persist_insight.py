@@ -84,6 +84,14 @@ NODE_NAME = "persist_insight"
 _USE_CASE = "race_progression"
 _SUMMARY_MAX_CHARS = 5000
 
+# use_case por tipo de análisis v3 (feature 037, T201). Se separan de los v1/v2
+# para que el historial distinga el contrato analítico de cada fila: las v3
+# tienen ``structured_json`` y las anteriores no.
+_USE_CASE_V3_BY_KIND: dict[str, str] = {
+    "valida": "race_progression_v3",
+    "season": "season_summary_v3",
+}
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -105,6 +113,20 @@ def _serializable(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: _serializable(v) for k, v in obj.items()}
     return obj
+
+
+def _v3_recommendations(structured: Any) -> list[dict[str, Any]]:
+    """``InsightV3.actions`` → ``recommendations_json`` (superset del legacy).
+
+    Conserva ``text``/``category``/``priority`` (lo que ya consumen el DTO y
+    el frontend v2) y agrega ``horizon``/``catalog_ref``/``derived_from``.
+    Ya no hay regex de por medio: en v2 un bullet mal cerrado vaciaba la
+    columna entera (spec.md §problem 6).
+    """
+    from app.services.race.insight_v3 import action_to_legacy_recommendation
+
+    actions = getattr(structured, "actions", None) or []
+    return [action_to_legacy_recommendation(a) for a in actions]
 
 
 async def _compute_category_stats(
@@ -239,7 +261,21 @@ async def persist_insight(state: dict) -> dict[str, Any]:
     coach_id = state.get("coach_id") or 0
     competitor_id = state.get("competitor_id")
     event_id = state.get("event_id")
-    use_case = state.get("use_case") or _USE_CASE
+
+    # v3 (feature 037, T201): drafts estructurados por válida. Cuando existen,
+    # ``summary_text`` es el markdown renderizado desde el JSON (ya viene en
+    # ``per_valida_drafts[vn].raw_markdown``) y las recomendaciones salen
+    # tipadas de ``actions`` — sin re-parsear bullets con regex.
+    per_valida_drafts_v3: dict[int, Any] = state.get("per_valida_drafts_v3") or {}
+    is_v3 = bool(per_valida_drafts_v3)
+    analysis_kind = state.get("analysis_kind") or "valida"
+
+    default_use_case = (
+        _USE_CASE_V3_BY_KIND.get(analysis_kind, _USE_CASE_V3_BY_KIND["valida"])
+        if is_v3
+        else _USE_CASE
+    )
+    use_case = state.get("use_case") or default_use_case
 
     # v2: si per_valida_drafts existe, usamos su mapping {valida_num: draft}
     # para que cada fila tenga summary_text DISTINTO (spec §Output).
@@ -252,7 +288,11 @@ async def persist_insight(state: dict) -> dict[str, Any]:
         for vn, vn_draft in (per_valida_drafts or {}).items():
             vn_raw_md = getattr(vn_draft, "raw_markdown", None) or ""
             vn_summary = vn_raw_md[:_SUMMARY_MAX_CHARS]
-            vn_recs = _serializable(getattr(vn_draft, "recommendations", None) or [])
+            vn_structured = per_valida_drafts_v3.get(int(vn))
+            if vn_structured is not None:
+                vn_recs = _v3_recommendations(vn_structured)
+            else:
+                vn_recs = _serializable(getattr(vn_draft, "recommendations", None) or [])
             v2_pairs.append((int(vn), vn_summary, vn_recs, vn_draft))
         valida_nums_db = [p[0] for p in v2_pairs]
     else:
@@ -312,7 +352,12 @@ async def persist_insight(state: dict) -> dict[str, Any]:
     now = _now()
     # T060: modelo real configurado — ver nota "model" en el docstring del
     # módulo. Una sola resolución para todas las filas de este run.
-    resolved_model = resolve_configured_model()
+    # Feature 037 (AC-6.1): en v3 el analista corre con su propio modelo
+    # (``RACE_AI_ANALYST_MODEL``), así que la fila debe reportar ese y no el
+    # ``RACE_AI_MODEL`` genérico. v1/v2 mantienen la resolución sin rol.
+    resolved_model = resolve_configured_model(role="analyst") if is_v3 else (
+        resolve_configured_model()
+    )
 
     try:
         async with get_session() as db:
@@ -369,7 +414,15 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                     # is_fallback por fila (T022/T024): cada válida invoca el
                     # LLM independientemente en invoke_per_valida, así que una
                     # puede fallar (fallback) mientras otra tiene análisis real.
-                    row_is_fallback = is_fallback_output(_vn_draft)
+                    # v3: el discriminador vive en el draft estructurado — el
+                    # AnalysisOutput de compat se construye siempre igual.
+                    row_structured = per_valida_drafts_v3.get(vn_num)
+                    row_is_fallback = is_fallback_output(_vn_draft) or is_fallback_output(
+                        row_structured
+                    )
+                    row_structured_json = (
+                        _serializable(row_structured) if row_structured is not None else None
+                    )
 
                     new_row = AthleteAiInsight(
                         athlete_id=athlete_id,
@@ -382,6 +435,7 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                         use_case=use_case,
                         summary_text=vn_summary,  # DISTINTO por válida (v2)
                         recommendations_json=vn_recs,
+                        structured_json=row_structured_json,
                         metrics_snapshot_json=row_snapshot,
                         principles_cited_json=principles,
                         confidence=row_confidence,

@@ -5,16 +5,24 @@
  * `hitl_required`. Renderiza:
  *  - Draft markdown del analyst.
  *  - Feedback del critic (si presente).
- *  - 3 acciones: Aprobar / Editar / Rechazar.
+ *  - 4 acciones: Aprobar / Editar / Rechazar / Descartar análisis.
  *
  * Editar abre un dialog con textarea + preview side-by-side.
+ *
+ * "Descartar análisis" es la salida de emergencia: Aprobar/Editar/Rechazar
+ * reanudan el grafo, pero si el run quedó atascado (el pipeline ya no
+ * puede continuar) ninguna de las tres sirve y el coach se queda
+ * bloqueado — el backend responde 409 a un relanzamiento mientras ese run
+ * siga activo, y un run pausado en HITL no expira solo. Descartar lo lleva
+ * a `cancelled` sin guardar nada, con confirmación previa (AlertDialog)
+ * porque es destructivo e irreversible.
  *
  * El componente NO hace polling — recibe `runId` y `stepId` desde el
  * padre (que sí los polleó vía useRunStatus). El submit dispara
  * `useApproveStep`.
  */
 import { useState } from "react";
-import { AlertCircle, Check, Loader2, Pencil, X } from "lucide-react";
+import { AlertCircle, Check, Loader2, Pencil, Trash2, X } from "lucide-react";
 
 import {
   Dialog,
@@ -25,10 +33,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { MarkdownReportViewer } from "@/components/ai/MarkdownReportViewer";
-import { useApproveStep } from "@/hooks/ai/useRaceRun";
+import { InsightV3Card } from "@/components/athletes/ai/v3/InsightV3Card";
+import { useApproveStep, useCancelRun } from "@/hooks/ai/useRaceRun";
 import { cn } from "@/lib/utils";
 import type { HITLDecisionRequest } from "@/types/raceAnalysis.types";
+import type { InsightV3 } from "@/types/insightV3.types";
 
 export interface CriticIssueLike {
   section?: string;
@@ -41,12 +52,22 @@ interface HITLApprovalCardProps {
   stepId: string;
   /** Markdown del draft del analyst (read-only inicial). */
   draftMarkdown: string;
+  /**
+   * Feature 037 (T301): borrador estructurado v3 del `hitl_gate_review`
+   * (`payload.structured_draft`). Cuando viene, la vista de lectura
+   * renderiza `<InsightV3Card mode="coach">` en vez del markdown crudo —
+   * el editor de "Editar" sigue operando sobre `draftMarkdown` sin cambios
+   * (edita el compat markdown, no el JSON estructurado).
+   */
+  structuredDraft?: InsightV3 | null;
   /** Feedback del critic agent (opcional). */
   criticFeedback?: CriticIssueLike[];
   /** Citas del marco teórico usadas. */
   principlesCited?: string[];
   /** Callback opcional tras decision submitted. */
   onSubmitted?: (decision: HITLDecisionRequest["decision"]) => void;
+  /** Callback opcional tras descartar el análisis (run → `cancelled`). */
+  onCancelled?: () => void;
   className?: string;
 }
 
@@ -54,13 +75,17 @@ export function HITLApprovalCard({
   runId,
   stepId,
   draftMarkdown,
+  structuredDraft = null,
   criticFeedback = [],
   principlesCited = [],
   onSubmitted,
+  onCancelled,
   className,
 }: HITLApprovalCardProps) {
   const mutation = useApproveStep(runId);
+  const cancelMutation = useCancelRun(runId);
   const [editOpen, setEditOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [editedMarkdown, setEditedMarkdown] = useState(draftMarkdown);
   const [rejectionNotes, setRejectionNotes] = useState("");
 
@@ -105,12 +130,33 @@ export function HITLApprovalCard({
     if (ok) setEditOpen(false);
   };
 
+  /** Igual que `submit`: el diálogo se cierra sólo si el POST tuvo éxito,
+   * leyendo el resultado de ESTA invocación (no `cancelMutation.isError`,
+   * que es el estado capturado en el render anterior al click). */
+  const handleConfirmDiscard = async () => {
+    try {
+      await cancelMutation.mutateAsync();
+      setDiscardOpen(false);
+      onCancelled?.();
+    } catch {
+      // El error se muestra dentro del propio AlertDialog.
+    }
+  };
+
+  const cancelling = cancelMutation.isPending;
   const submitting = mutation.isPending;
+  /** Cualquier acción en vuelo bloquea las demás (una sola decisión por run). */
+  const busy = submitting || cancelling;
   const errorMsg = mutation.isError
     ? mutation.error instanceof Error
       ? mutation.error.message
       : "Error enviando la decisión."
     : null;
+  const discardErrorMsg = cancelMutation.isError
+    ? cancelMutation.error instanceof Error
+      ? cancelMutation.error.message
+      : "No se pudo descartar el análisis."
+    : undefined;
 
   return (
     <section
@@ -138,12 +184,16 @@ export function HITLApprovalCard({
         </div>
       </div>
 
-      <div className="rounded-lg bg-white p-1">
-        <MarkdownReportViewer
-          markdown={draftMarkdown}
-          citations={principlesCited}
-          className="ring-0"
-        />
+      <div className="rounded-lg bg-white p-3" data-testid="hitl-draft-view">
+        {structuredDraft ? (
+          <InsightV3Card structured={structuredDraft} mode="coach" />
+        ) : (
+          <MarkdownReportViewer
+            markdown={draftMarkdown}
+            citations={principlesCited}
+            className="ring-0"
+          />
+        )}
       </div>
 
       {criticFeedback.length > 0 && (
@@ -184,7 +234,7 @@ export function HITLApprovalCard({
         <button
           type="button"
           onClick={handleApprove}
-          disabled={submitting}
+          disabled={busy}
           data-testid="hitl-approve-button"
           className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
@@ -198,7 +248,7 @@ export function HITLApprovalCard({
         <button
           type="button"
           onClick={() => setEditOpen(true)}
-          disabled={submitting}
+          disabled={busy}
           data-testid="hitl-edit-button"
           className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
@@ -208,12 +258,26 @@ export function HITLApprovalCard({
         <button
           type="button"
           onClick={handleReject}
-          disabled={submitting}
+          disabled={busy}
           data-testid="hitl-reject-button"
           className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           <X size={16} aria-hidden="true" />
           Rechazar
+        </button>
+        <button
+          type="button"
+          onClick={() => setDiscardOpen(true)}
+          disabled={busy}
+          data-testid="hitl-discard-button"
+          className="inline-flex min-h-12 min-w-12 items-center gap-1.5 rounded-lg border border-charcoal/30 bg-white px-4 py-2 text-sm font-semibold text-charcoal transition-opacity hover:bg-light-gray/40 disabled:opacity-50"
+        >
+          {cancelling ? (
+            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <Trash2 size={16} aria-hidden="true" />
+          )}
+          Descartar análisis
         </button>
 
         <input
@@ -312,6 +376,19 @@ export function HITLApprovalCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={discardOpen}
+        title="Descartar análisis pendiente"
+        description="Se cancelará este análisis sin guardar nada. Podrás volver a lanzarlo."
+        confirmLabel="Descartar análisis"
+        cancelLabel="Conservar"
+        tone="danger"
+        isPending={cancelling}
+        errorMessage={discardErrorMsg}
+        onConfirm={() => void handleConfirmDiscard()}
+        onCancel={() => setDiscardOpen(false)}
+      />
     </section>
   );
 }

@@ -38,12 +38,30 @@ Pipeline evaluado (specs/036 T050): el runner invoca
 (``services/race/ai/nodes/analyst_agent.py``). Antes de T050 este runner
 llamaba al método v1 (``agent.invoke``, prompt de 5 secciones), que ningún
 coach dispara hoy — el gate medía un pipeline fantasma.
+
+Feature 037 (T401) — dos rutas seleccionables por ``RACE_EVAL_VERSION``
+======================================================================
+
+- ``v3`` (**default**): dataset ``evals/race_analyst/golden_v3/``, invoca
+  ``RaceAnalystAgent.invoke_v3`` (salida ``InsightV3``, prompts
+  ``race_analyst_v3`` / ``race_season_summary_v3``), puntúa con
+  ``eval/scorer_v3.py`` + juez ``prompts/judge_v2.md``. Es el pipeline que
+  production usa desde T204.
+- ``v2``: dataset ``evals/race_analyst/golden/``, ruta histórica intacta
+  (``invoke_per_valida`` + ``scorer.py`` + ``judge_v1.md``). Se conserva
+  para el rollback documentado en T204 (``RACE_AI_PROMPT_VERSION=v2``):
+  si se revierte el prompt, el gate debe poder revertirse con él.
+
+Ambas rutas comparten el threshold (``RACE_EVAL_THRESHOLD``, default 0.75),
+el acumulador ``_RUN_RESULTS`` y el scoreboard: en un run solo corre una de
+las dos, así que el promedio nunca mezcla escalas.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -51,13 +69,25 @@ from typing import Any
 import pytest
 
 from app.services.race.eval.scorer import composite_score, rule_based_score
+from app.services.race.eval.scorer_v3 import (
+    case_grounding_numbers,
+    rule_based_score_v3,
+    rule_subscores_v3,
+)
 from app.services.race.schemas import AnalysisInput
 
 GOLDEN_DIR = Path(__file__).parent.parent.parent / "evals" / "race_analyst" / "golden"
+GOLDEN_V3_DIR = (
+    Path(__file__).parent.parent.parent / "evals" / "race_analyst" / "golden_v3"
+)
 RESULTS_DIR = Path(__file__).parent.parent.parent / "evals" / "race_analyst" / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 _DEFAULT_THRESHOLD = 0.75
+
+# Versión del eval a ejecutar. Default v3 (T401): es el pipeline que corre en
+# producción desde T204. ``v2`` conserva la ruta histórica para el rollback.
+_EVAL_VERSION = (os.getenv("RACE_EVAL_VERSION") or "v3").strip().lower()
 
 # Almacén compartido entre tests parametrizados — populado por cada caso,
 # consumido por el test de threshold final + el writer del scoreboard.
@@ -152,6 +182,64 @@ def _derive_is_first_in_season(case_input: dict[str, Any]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Golden v3 (feature 037, T401) — carga y validación de schema
+# ---------------------------------------------------------------------------
+
+
+_REQUIRED_KEYS_V3 = {
+    "case_id",
+    "description",
+    "input",
+    "expected_themes",
+    "forbidden_terms",
+    "expected_headline_keywords",
+    "must_reference_catalog",
+    "max_words",
+    "ideal_output",
+}
+
+
+def _validate_case_schema_v3(case: dict[str, Any], path: Path) -> None:
+    """Valida el schema de un caso golden v3 con mensajes accionables."""
+    missing = _REQUIRED_KEYS_V3 - set(case.keys())
+    assert not missing, f"{path.name}: faltan claves {missing}"
+    assert isinstance(case["input"], dict), f"{path.name}: input debe ser dict"
+    for list_key in ("expected_themes", "forbidden_terms", "expected_headline_keywords"):
+        assert isinstance(case[list_key], list), f"{path.name}: {list_key} debe ser list"
+        assert case[list_key], f"{path.name}: {list_key} no puede estar vacío"
+    assert isinstance(case["must_reference_catalog"], bool), (
+        f"{path.name}: must_reference_catalog debe ser bool"
+    )
+    assert isinstance(case["max_words"], int) and case["max_words"] > 50, (
+        f"{path.name}: max_words debe ser int >50"
+    )
+    assert isinstance(case["ideal_output"], dict), (
+        f"{path.name}: ideal_output debe ser el dict de un InsightV3"
+    )
+
+
+def _load_all_cases_v3() -> list[tuple[str, dict[str, Any]]]:
+    """Carga todos los ``case_*.json`` de ``golden_v3/`` ordenados por filename."""
+    paths = sorted(GOLDEN_V3_DIR.glob("case_*.json"))
+    out: list[tuple[str, dict[str, Any]]] = []
+    for p in paths:
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            pytest.fail(f"JSON inválido en {p.name}: {e}")
+        _validate_case_schema_v3(data, p)
+        out.append((str(data["case_id"]), data))
+    return out
+
+
+def _build_analyst_v3_input(case: dict[str, Any]) -> Any:
+    """Construye el ``AnalystV3Input`` de un caso golden v3."""
+    from app.services.race.agents.analyst import AnalystV3Input
+
+    return AnalystV3Input(**dict(case["input"]))
+
+
+# ---------------------------------------------------------------------------
 # Skip guard: RACE_AI_API_KEY required for the real eval
 # ---------------------------------------------------------------------------
 
@@ -180,6 +268,16 @@ _skip_no_api = pytest.mark.skipif(
     reason="RACE_AI_API_KEY/GOOGLE_API_KEY no disponible; eval real necesita Gemini.",
 )
 
+_skip_unless_v2 = pytest.mark.skipif(
+    _EVAL_VERSION != "v2",
+    reason=f"RACE_EVAL_VERSION={_EVAL_VERSION!r}: la ruta v2 solo corre con 'v2'.",
+)
+
+_skip_unless_v3 = pytest.mark.skipif(
+    _EVAL_VERSION != "v3",
+    reason=f"RACE_EVAL_VERSION={_EVAL_VERSION!r}: la ruta v3 solo corre con 'v3'.",
+)
+
 
 # ---------------------------------------------------------------------------
 # Parametrized run
@@ -187,10 +285,12 @@ _skip_no_api = pytest.mark.skipif(
 
 
 _ALL_CASES = _load_all_cases()
+_ALL_CASES_V3 = _load_all_cases_v3()
 
 
 @pytest.mark.golden
 @_skip_no_api
+@_skip_unless_v2
 @pytest.mark.parametrize(
     "case_id,case",
     _ALL_CASES,
@@ -272,6 +372,79 @@ async def test_golden_case(case_id: str, case: dict[str, Any]) -> None:
 
 @pytest.mark.golden
 @_skip_no_api
+@_skip_unless_v3
+@pytest.mark.parametrize(
+    "case_id,case",
+    _ALL_CASES_V3,
+    ids=[cid for cid, _ in _ALL_CASES_V3],
+)
+async def test_golden_case_v3(case_id: str, case: dict[str, Any]) -> None:
+    """Corre un caso golden v3 contra el agente real y calcula score compuesto.
+
+    Pasos:
+    1. Construye ``AnalystV3Input`` desde ``case['input']`` (misma forma que
+       arma ``nodes/analyst_agent.py::_build_v3_inputs`` en producción).
+    2. Invoca :meth:`RaceAnalystAgent.invoke_v3` con el prompt que
+       corresponde a ``analysis_kind`` (``race_analyst_v3`` o
+       ``race_season_summary_v3``).
+    3. ``rule_based_score_v3`` con los números de los **bloques de datos**
+       del caso — no ``V3CallResult.grounding_numbers``, que incluye las
+       cifras del ejemplo resuelto del prompt y haría invisible a un modelo
+       que las copie (ver docstring de ``scorer_v3``).
+    4. ``llm_judge_score_v3`` (juez v2, neutral 0.5 si el parseo falla).
+    5. ``composite_score(rule, judge)`` y acumulación para el scoreboard.
+
+    El test pasa si el composite es un score válido; el bloqueante es
+    ``test_eval_average_meets_threshold``.
+
+    ``forbidden_names=[]``: los 8 casos son 100 % ficticios, no hay nombre
+    real de un menor que escrubear. Las guardrails de edad y LTAD del
+    prompt/prechecks corren igual.
+    """
+    from app.services.race.agents.analyst import RaceAnalystAgent, v3_prompt_version
+    from app.services.race.eval.judge import llm_judge_score_v3
+    from app.services.race.insight_v3 import render_insight_v3_markdown
+
+    input_ = _build_analyst_v3_input(case)
+    agent = RaceAnalystAgent(prompt_version=v3_prompt_version(input_.analysis_kind))
+    results = await agent.invoke_v3([input_], forbidden_names=[])
+    result = results[input_.valida_num]
+    draft = result.insight
+
+    rule = rule_based_score_v3(
+        draft, case, grounding_numbers=case_grounding_numbers(case)
+    )
+    judge_result = await llm_judge_score_v3(draft, case)
+    composite = composite_score(rule, judge_result.score)
+
+    rendered = render_insight_v3_markdown(draft, input_.athlete_ref)
+    _RUN_RESULTS.append(
+        {
+            "case_id": case_id,
+            "description": case.get("description", ""),
+            "rule_score": rule,
+            "judge_score": judge_result.score,
+            "judge_parse_ok": judge_result.parse_ok,
+            "composite": composite,
+            "word_count": len([w for w in rendered.split() if w]),
+            # En v3 la columna "cites" del scoreboard cuenta principios
+            # citados: el RAG de citas se removió y ``principles_cited`` es
+            # su equivalente verificable (catálogo cerrado).
+            "citations_count": len(draft.principles_cited),
+            "tokens_in": result.metrics.tokens_in,
+            "tokens_out": result.metrics.tokens_out,
+            "cost_usd": result.metrics.cost_usd,
+            "subscores": rule_subscores_v3(
+                draft, case, grounding_numbers=case_grounding_numbers(case)
+            ),
+        }
+    )
+
+    assert 0.0 <= composite <= 1.0
+
+
+@pytest.mark.golden
+@_skip_no_api
 def test_eval_average_meets_threshold() -> None:
     """Test bloqueante: promedio compuesto debe ser ≥ threshold (default 0.75).
 
@@ -289,9 +462,14 @@ def test_eval_average_meets_threshold() -> None:
     avg = sum(r["composite"] for r in _RUN_RESULTS) / len(_RUN_RESULTS)
     _write_scoreboard(_RUN_RESULTS, avg, threshold)
 
+    prompt_hint = (
+        "prompts/race_analyst_v3.md · race_season_summary_v3.md"
+        if _EVAL_VERSION == "v3"
+        else "prompts/race_analyst_v2.md"
+    )
     assert avg >= threshold, (
-        f"Score promedio {avg:.3f} < threshold {threshold:.2f}. "
-        f"Revisar últimos cambios en prompts/race_analyst_v2.md o agents/analyst.py. "
+        f"Score promedio {avg:.3f} < threshold {threshold:.2f} (eval {_EVAL_VERSION}). "
+        f"Revisar últimos cambios en {prompt_hint} o agents/analyst.py. "
         f"Detalle en evals/race_analyst/results/last_run.md."
     )
 
@@ -312,6 +490,7 @@ def _write_scoreboard(results: list[dict[str, Any]], avg: float, threshold: floa
         "# Race Analyst Golden Eval — Last Run",
         "",
         f"- **Fecha:** {now}",
+        f"- **Versión del eval:** {_EVAL_VERSION}",
         f"- **Threshold CI:** {threshold:.2f}",
         f"- **Casos ejecutados:** {len(results)}",
         f"- **Promedio compuesto:** **{avg:.3f}**",
@@ -331,6 +510,22 @@ def _write_scoreboard(results: list[dict[str, Any]], avg: float, threshold: floa
         )
     lines.append("")
     lines.append("> `*` indica que el parser del juez usó fallback neutral 0.5.")
+    if _EVAL_VERSION == "v3":
+        lines.append(
+            "> En v3 la columna `cites` cuenta principios citados "
+            "(`principles_cited`), no chunks de RAG."
+        )
+        sub_rows = [r for r in results if r.get("subscores")]
+        if sub_rows:
+            keys = sorted(sub_rows[0]["subscores"])
+            lines.append("")
+            lines.append("## Sub-rúbricas rule-based (v3)")
+            lines.append("")
+            lines.append("| case_id | " + " | ".join(keys) + " |")
+            lines.append("|---" * (len(keys) + 1) + "|")
+            for r in sub_rows:
+                cells = " | ".join(f"{r['subscores'][k]:.2f}" for k in keys)
+                lines.append(f"| {r['case_id']} | {cells} |")
     lines.append("")
     lines.append("## Descripción de los casos")
     lines.append("")
@@ -602,3 +797,195 @@ def test_lap_filler_fails_when_case_declares_no_lap_data() -> None:
     assert _no_lap_filler_when_absent(clean_md, has_lap_data=False) is True
     # Si el caso SÍ declarara un dato de vueltas, mencionar la cifra es legítimo.
     assert _no_lap_filler_when_absent(filler_md, has_lap_data=True) is True
+
+
+# ---------------------------------------------------------------------------
+# T401 — sanity tests del dataset golden v3 (offline, sin API key)
+#
+# Corren SIEMPRE: validan que el dataset que alimenta el gate sea cargable,
+# construible y consistente antes de gastar un solo token del proveedor.
+# ---------------------------------------------------------------------------
+
+
+def test_v3_loader_finds_at_least_eight_cases() -> None:
+    """AC-7.1: el golden v3 debe tener ≥8 casos."""
+    assert len(_ALL_CASES_V3) >= 8, (
+        f"Se esperaban ≥8 casos golden v3, encontrados {len(_ALL_CASES_V3)} "
+        f"en {GOLDEN_V3_DIR}"
+    )
+
+
+def test_v3_loader_validates_all_case_schemas() -> None:
+    """Re-corre la validación de schema con diagnóstico agregado."""
+    paths = sorted(GOLDEN_V3_DIR.glob("case_*.json"))
+    errors: list[str] = []
+    for p in paths:
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            _validate_case_schema_v3(data, p)
+        except (AssertionError, json.JSONDecodeError) as exc:
+            errors.append(f"{p.name}: {exc}")
+    assert not errors, "Casos golden v3 con schema inválido: " + " | ".join(errors)
+
+
+def test_v3_cases_build_analyst_input_and_ideal_output() -> None:
+    """Cada caso debe construir ``AnalystV3Input`` y validar su ``ideal_output``.
+
+    Previene el modo de falla más caro del eval: descubrir que un JSON tiene
+    un campo inválido cinco minutos después de arrancar, con la mitad de las
+    llamadas al proveedor ya gastadas.
+    """
+    from app.services.race.insight_v3 import InsightV3
+
+    errors: list[str] = []
+    for case_id, case in _ALL_CASES_V3:
+        try:
+            _build_analyst_v3_input(case)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"case_{case_id} input: {exc}")
+        try:
+            InsightV3.model_validate(case["ideal_output"])
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"case_{case_id} ideal_output: {exc}")
+    assert not errors, "Casos golden v3 inválidos: " + " | ".join(errors)
+
+
+def test_v3_ideal_outputs_score_at_least_090_with_rule_scorer() -> None:
+    """El ``ideal_output`` de cada caso debe puntuar ≥0.90 en el scorer v3.
+
+    Doble propósito, por eso vive en el runner y no en los tests unitarios
+    del scorer:
+
+    1. Valida el dataset: si una evidencia del ideal cita un número que no
+       está en los bloques de datos, el caso está mal construido y el gate
+       exigiría al modelo algo imposible.
+    2. Valida el scorer contra un output "de referencia" real y completo,
+       no contra fixtures mínimas.
+
+    No se exige 1.0: las sub-rúbricas ``themes`` y ``word_limits`` son
+    proporcionales y un ideal legítimo puede omitir un theme secundario.
+    """
+    low: list[str] = []
+    for case_id, case in _ALL_CASES_V3:
+        score = rule_based_score_v3(case["ideal_output"], case)
+        if score < 0.90:
+            subs = rule_subscores_v3(case["ideal_output"], case)
+            detail = ", ".join(f"{k}={v:.2f}" for k, v in sorted(subs.items()))
+            low.append(f"case_{case_id}: {score:.3f} ({detail})")
+    assert not low, "Ideales del golden v3 por debajo de 0.90: " + " | ".join(low)
+
+
+def test_v3_dataset_covers_the_required_scenarios() -> None:
+    """El dataset cubre los escenarios exigidos por T401.
+
+    Mini-bambino / bambino / juvenil, N=1, mejora, declive, campeonato,
+    Circa-PHV, sin antropometría, sin ventana de entrenamiento y resumen de
+    temporada. Sin esta aserción el dataset puede degradarse a ocho
+    variantes del mismo caso fácil sin que nadie lo note.
+    """
+    inputs = [case["input"] for _, case in _ALL_CASES_V3]
+    ideals = [case["ideal_output"] for _, case in _ALL_CASES_V3]
+
+    ltad_groups = {str(i.get("ltad_group")) for i in inputs}
+    assert {"mini-bambino", "bambino", "juvenil"} <= ltad_groups
+
+    trends = {str(o.get("trend")) for o in ideals}
+    assert {"improving", "declining", "first_reference"} <= trends
+
+    assert any(i.get("analysis_kind") == "season" for i in inputs), "falta caso de temporada"
+    assert any(
+        (i.get("field_metrics") or {}).get("is_championship") for i in inputs
+    ), "falta caso de campeonato"
+    assert any(
+        (i.get("field_metrics") or {}).get("expected_position") is None
+        and i.get("analysis_kind") != "season"
+        for i in inputs
+    ), "falta caso N=1 sin expectativa calculable"
+    assert any(
+        ((i.get("field_metrics") or {}).get("delta_vs_expected") or 0) > 0
+        for i in inputs
+    ), "falta caso que termine por encima de lo esperado"
+    assert any(i.get("anthro_context") is None for i in inputs), "falta caso sin antropometría"
+    assert any(i.get("training_window") is None for i in inputs), (
+        "falta caso sin ventana de entrenamiento"
+    )
+    assert any(
+        ((i.get("anthro_context") or {}).get("latest") or {}).get("maturation_status")
+        == "Circa-PHV"
+        for i in inputs
+    ), "falta caso Circa-PHV"
+    assert any(
+        (i.get("training_window") or {}).get("attendance_pct", 100) < 60 for i in inputs
+    ), "falta caso con asistencia baja en la ventana"
+
+
+def test_v3_cases_declare_data_gaps_when_a_block_is_missing() -> None:
+    """Si falta antropometría o ventana, el ideal lo declara en ``data_gaps`` (AC-1.2)."""
+    for case_id, case in _ALL_CASES_V3:
+        case_input = case["input"]
+        gaps = " ".join(case["ideal_output"].get("data_gaps") or []).lower()
+        if case_input.get("anthro_context") is None and case_input.get("analysis_kind") != "season":
+            assert "antropometr" in gaps or "maduraci" in gaps, (
+                f"case_{case_id}: sin antropometría pero el ideal no lo declara"
+            )
+        if case_input.get("training_window") is None:
+            assert "asistencia" in gaps or "entrena" in gaps, (
+                f"case_{case_id}: sin ventana de entrenamiento pero el ideal no lo declara"
+            )
+
+
+def test_v3_cases_carry_no_body_composition_data() -> None:
+    """Privacidad (CLAUDE.md, AC-1.3): ni peso, ni IMC, ni estado nutricional.
+
+    Se inspecciona el JSON crudo completo de cada caso — input **e**
+    ``ideal_output`` — porque el fixture es exactamente lo que terminaría en
+    un prompt si alguien lo copiara para depurar.
+    """
+    banned_keys = ("weight", "peso", "bmi", "imc", "nutrition", "nutricional", "z_score", "zscore")
+    # En los valores solo se prohíben las expresiones que SÍ son composición
+    # corporal: "peso corporal" es el nombre de un bloque de fuerza (trabajo
+    # con el propio cuerpo) y "peso centrado" es postura sobre la bici —
+    # ninguno es un dato del menor.
+    banned_value_patterns = (
+        r"\bimc\b",
+        r"estado nutricional",
+        r"índice de masa",
+        r"\d+\s*kg\b",
+        r"kg\s*/\s*m",
+    )
+
+    def _walk_keys(node: Any, path: Path) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                hits = [b for b in banned_keys if b in str(key).lower()]
+                assert not hits, f"{path.name}: clave prohibida {key!r} ({hits})"
+                _walk_keys(value, path)
+        elif isinstance(node, list):
+            for item in node:
+                _walk_keys(item, path)
+
+    for path in sorted(GOLDEN_V3_DIR.glob("case_*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        _walk_keys(data, path)
+        raw = path.read_text(encoding="utf-8").lower()
+        hits = [p for p in banned_value_patterns if re.search(p, raw)]
+        assert not hits, f"{path.name}: contiene composición corporal {hits}"
+
+
+def test_v3_ideal_outputs_use_only_catalog_refs_present_in_the_case() -> None:
+    """Un ``catalog_ref`` del ideal debe existir en el catálogo del propio caso (AC-3.1)."""
+    for case_id, case in _ALL_CASES_V3:
+        catalog = case["input"].get("catalog_context") or {}
+        by_kind = {
+            "technique_skill": {str(s.get("code")) for s in catalog.get("technique_skills") or []},
+            "strength_block": {str(b.get("id")) for b in catalog.get("strength_blocks") or []},
+            "interval_template": {str(t.get("id")) for t in catalog.get("interval_templates") or []},
+        }
+        for action in case["ideal_output"].get("actions") or []:
+            ref = action.get("catalog_ref")
+            if not ref:
+                continue
+            kind = str(ref.get("kind"))
+            assert str(ref.get("code")) in by_kind.get(kind, set()), (
+                f"case_{case_id}: catalog_ref {kind}:{ref.get('code')} no existe en el caso"
+            )

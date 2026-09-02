@@ -136,6 +136,18 @@ async def anonymize(state: dict) -> dict[str, Any]:
             )
         update["coach_notes_by_valida"] = scrubbed_notes
 
+    # Feature 037 (T103) — scrub training_window.coach_feedback con el
+    # superset club_forbidden_names (todo el club, no solo el atleta+padres):
+    # el feedback de sesión puede mencionar a compañeros de equipo.
+    training_window = state.get("training_window")
+    if training_window and training_window.get("coach_feedback"):
+        club_names = state.get("club_forbidden_names") or forbidden_names
+        scrubbed_window = dict(training_window)
+        scrubbed_window["coach_feedback"] = [
+            _scrub_note(item, club_names) for item in training_window["coach_feedback"]
+        ]
+        update["training_window"] = scrubbed_window
+
     return update
 
 

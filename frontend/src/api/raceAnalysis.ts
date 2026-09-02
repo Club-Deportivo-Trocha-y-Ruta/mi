@@ -14,6 +14,7 @@ import type {
   HITLDecisionRequest,
   HITLDecisionResponse,
   RunResultEnvelope,
+  RunState,
   RunStatusResponse,
   StartRunRequest,
   StartRunResponse,
@@ -67,6 +68,39 @@ export async function submitHITLDecision(
   const response = await apiClient.post<HITLDecisionResponse>(
     `${BASE}/runs/${runId}/hitl/${stepId}`,
     body,
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+export interface RunCancelResponse {
+  run_id: string;
+  state: RunState;
+}
+
+/** POST /runs/:id/cancel — descarta un run vivo (`running` /
+ * `hitl_waiting`) sin guardar nada.
+ *
+ * Es la salida de emergencia del coach: un run pausado en un gate HITL no
+ * expira solo mientras el backend siga vivo (la reconciliación de
+ * huérfanos corre únicamente al arrancar el proceso), y el guard de
+ * relanzamiento responde 409 mientras ese run siga activo. Tras cancelar,
+ * el run queda en estado terminal `cancelled` — el polling de
+ * `useRunStatus` se detiene solo (ver `TERMINAL_STATES`).
+ *
+ * Códigos de respuesta:
+ *   200 → cancelado (RunCancelResponse)
+ *   403 → no eres el dueño del run
+ *   404 → el run no existe
+ *   409 → el run ya estaba en un estado terminal
+ */
+export async function cancelRun(
+  runId: string,
+  options?: { signal?: AbortSignal },
+): Promise<RunCancelResponse> {
+  const response = await apiClient.post<RunCancelResponse>(
+    `${BASE}/runs/${runId}/cancel`,
+    undefined,
     { signal: options?.signal },
   );
   return response.data;

@@ -32,6 +32,17 @@ _PRICING_USD_PER_1M: dict[str, tuple[float, float]] = {
     "openai": (0.0, 0.0),
 }
 
+# (input_usd_per_1m, output_usd_per_1m) por modelo — feature 037 (T101).
+# Solo cubre los modelos por-rol nuevos (analyst/critic). Usado por
+# :func:`compute_cost_usd` cuando se pasa ``model`` y hay entrada exacta;
+# si no, cae a la tarifa por proveedor de arriba.
+# - gemini-3.8-flash (analyst, verificado disponible 2026-09-02): 0.75 / 3.75.
+# - gemini-3.5-flash-lite (critic, verificado disponible 2026-09-02): 0.30 / 2.50.
+_PRICING_USD_PER_1M_BY_MODEL: dict[str, tuple[float, float]] = {
+    "gemini-3.8-flash": (0.75, 3.75),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+}
+
 # Prompt version registry — mantener en sincronía con archivos en prompts/.
 # Sirve a auditoría / Langfuse / golden eval para correlacionar outputs con
 # versión exacta del prompt. SIEMPRE bump al editar un prompt.
@@ -42,21 +53,33 @@ PROMPT_VERSION_CRITIC_V2 = "race_critic_v2"
 PROMPT_VERSION_CHAT = "race_chat_v1"
 
 
-def compute_cost_usd(tokens_in: int, tokens_out: int, *, provider: str) -> float:
+def compute_cost_usd(
+    tokens_in: int, tokens_out: int, *, provider: str, model: str | None = None
+) -> float:
     """Calcula costo en USD para una invocación.
 
     Args:
         tokens_in: tokens del prompt enviado al modelo.
         tokens_out: tokens generados por el modelo.
-        provider: ``"anthropic"`` | ``"google"`` — selecciona la tarifa.
+        provider: ``"anthropic"`` | ``"google"`` | ``"openai"`` — tarifa de
+            fallback usada cuando ``model`` es ``None`` o no tiene entrada
+            propia en :data:`_PRICING_USD_PER_1M_BY_MODEL`.
+        model: model_id exacto (ej. ``"gemini-3.8-flash"``). Si tiene tarifa
+            registrada por-modelo, esta gana sobre la tarifa por-proveedor
+            (feature 037, T101 — modelos por rol con costo distinto al
+            default histórico del proveedor).
 
     Returns:
         Costo en USD redondeado a 6 decimales (precisión sub-cent).
 
     Raises:
-        KeyError: proveedor sin tarifa registrada en ``_PRICING_USD_PER_1M``.
+        KeyError: proveedor sin tarifa registrada en ``_PRICING_USD_PER_1M``
+            y sin tarifa por-modelo tampoco.
     """
-    input_rate, output_rate = _PRICING_USD_PER_1M[provider]
+    rates = _PRICING_USD_PER_1M_BY_MODEL.get(model) if model else None
+    if rates is None:
+        rates = _PRICING_USD_PER_1M[provider]
+    input_rate, output_rate = rates
     cost = tokens_in * input_rate / 1_000_000 + tokens_out * output_rate / 1_000_000
     return round(cost, 6)
 

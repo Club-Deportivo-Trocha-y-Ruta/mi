@@ -16,12 +16,13 @@
  *    interrumpir la lectura del usuario.
  *  - Cada nodo es un `<li>` semántico, el wrapper es un `<ol>`.
  */
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Bot,
   Brain,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   Database,
   FileText,
@@ -69,6 +70,42 @@ const GRAPH_NODES: NodeDef[] = [
   { key: "render_outputs", label: "Renderizar informe", icon: FileText },
   { key: "notify_coach", label: "Notificar al coach", icon: Mail },
 ];
+
+/**
+ * Traducción de nodo del grafo → fase en lenguaje de entrenador.
+ *
+ * Los 13 nodos de `GRAPH_NODES` son vocabulario de ingeniería ("Anonimizar
+ * datos", "Rehidratar nombres"): describen el pipeline, no lo que le importa
+ * a quien dirige el club. En la vista compacta mostramos SOLO la fase actual
+ * con estas etiquetas; el detalle por nodo sigue disponible al expandir.
+ *
+ * Varios nodos comparten fase a propósito — el coach no necesita distinguir
+ * entre anonimizar y calcular métricas, ambas son "preparando los datos".
+ */
+const PHASE_BY_NODE: Record<string, string> = {
+  validate_input: "Leyendo los resultados oficiales",
+  load_race_data: "Leyendo los resultados oficiales",
+  anonymize: "Preparando los datos de la carrera",
+  compute_metrics: "Preparando los datos de la carrera",
+  retrieve_principles: "Comparando con la temporada",
+  recall_memory: "Comparando con la temporada",
+  analyst_agent: "Redactando el análisis",
+  critic_agent: "Revisando la calidad del análisis",
+  hitl_gate_review: "Esperando tu aprobación",
+  persist_insight: "Guardando el informe",
+  rehydrate_names: "Guardando el informe",
+  render_outputs: "Guardando el informe",
+  notify_coach: "Guardando el informe",
+};
+
+/** Titular del run: fase actual si está corriendo, si no el estado global. */
+function runHeadline(state: RunState, currentNode: string | null): string {
+  if (state === "hitl_waiting") return "Esperando tu aprobación";
+  if (state === "done") return "Análisis completado";
+  if (state === "failed" || state === "error") return "El análisis falló";
+  if (state === "cancelled") return "Análisis descartado";
+  return (currentNode && PHASE_BY_NODE[currentNode]) || "Preparando el análisis";
+}
 
 type NodeStatus =
   | "pending"
@@ -170,6 +207,14 @@ interface AnalysisRunTimelineProps {
    * componente de run-view, dos densidades.
    */
   variant?: "full" | "compact";
+  /**
+   * Renderiza la vista compacta con un botón "Ver detalle" que despliega la
+   * lista de nodos bajo demanda. Pensado para la vista por deportista: los 13
+   * nodos del pipeline ocupaban ~470px y empujaban el histórico —el contenido
+   * que el coach realmente viene a leer— fuera de la pantalla. El detalle
+   * técnico sigue a un clic para diagnosticar un run atascado.
+   */
+  collapsible?: boolean;
 }
 
 function statusBadge(status: NodeStatus): {
@@ -217,9 +262,12 @@ export function AnalysisRunTimeline({
   className,
   onComplete,
   variant = "full",
+  collapsible = false,
 }: AnalysisRunTimelineProps) {
   const query = useRunStatus(runId);
   const { data, isLoading, isError, error } = query;
+  const [detailOpen, setDetailOpen] = useState(false);
+  const showNodeList = collapsible ? detailOpen : variant === "full";
 
   const nodes: NodeView[] = useMemo(() => {
     if (!data) return GRAPH_NODES.map((n) => ({ ...n, status: "pending" as NodeStatus, durationMs: null }));
@@ -321,53 +369,104 @@ export function AnalysisRunTimeline({
         aria-live="polite"
         aria-atomic="true"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-mid-gray">
-              Estado del análisis
-            </p>
-            <p className="mt-0.5 text-base font-semibold text-charcoal">
-              {state === "running" && "En proceso"}
-              {state === "hitl_waiting" && "Esperando tu aprobación"}
-              {state === "done" && "Completado"}
-              {(state === "failed" || state === "error") && "Falló"}
-              {state === "cancelled" && "Cancelado"}
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          {/* Titular = fase actual en lenguaje de coach (no el nodo técnico).
+              El ícono da la señal de "está pasando algo" que se pierde al
+              quitar la lista de 13 nodos de la vista por defecto. */}
+          <p
+            className="flex items-center gap-2 text-sm font-semibold text-charcoal"
+            data-testid="timeline-headline"
+          >
+            {state === "running" && (
+              <Loader2
+                size={15}
+                className="shrink-0 animate-spin text-mid-gray"
+                aria-hidden="true"
+              />
+            )}
+            {state === "hitl_waiting" && (
+              <PauseCircle
+                size={15}
+                className="shrink-0 text-purple-600"
+                aria-hidden="true"
+              />
+            )}
+            {state === "done" && (
+              <CheckCircle2
+                size={15}
+                className="shrink-0 text-green-600"
+                aria-hidden="true"
+              />
+            )}
+            {(state === "failed" || state === "error") && (
+              <AlertCircle
+                size={15}
+                className="shrink-0 text-red-600"
+                aria-hidden="true"
+              />
+            )}
+            {runHeadline(state, currentNode)}
+          </p>
           {!isTerminalState(state) && (
             <p
-              className="text-xs text-mid-gray"
+              className="text-xs tabular-nums text-mid-gray"
               data-testid="timeline-eta"
             >
-              {eta > 0
-                ? `≈ ${eta}s restantes`
-                : "Calculando tiempo restante..."}
+              {eta > 0 ? `≈ ${eta}s restantes` : "Calculando…"}
             </p>
           )}
         </div>
-        <div
-          className="mt-3 h-2 w-full overflow-hidden rounded-full bg-light-gray"
-          role="progressbar"
-          aria-valuenow={progress}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label="Progreso del análisis"
-        >
+        <div className="mt-2 flex items-center gap-3">
           <div
-            className={cn(
-              "h-full transition-all duration-300",
-              state === "failed" || state === "error"
-                ? "bg-red-500"
-                : "bg-charcoal",
-            )}
-            style={{ width: `${progress}%` }}
-          />
+            className="h-1.5 flex-1 overflow-hidden rounded-full bg-light-gray"
+            role="progressbar"
+            aria-valuenow={progress}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Progreso del análisis"
+          >
+            <div
+              className={cn(
+                "h-full transition-all duration-300",
+                state === "failed" || state === "error"
+                  ? "bg-red-500"
+                  : "bg-charcoal",
+              )}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-xs tabular-nums text-mid-gray">
+            {progress}%
+          </span>
         </div>
+
+        {collapsible && (
+          <button
+            type="button"
+            onClick={() => setDetailOpen((v) => !v)}
+            className={cn(
+              "mt-1 -mb-1 -ml-2 flex min-h-12 items-center gap-1 rounded-lg px-2 text-xs text-mid-gray",
+              "transition-colors hover:bg-light-gray/50 hover:text-charcoal",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+            )}
+            aria-expanded={detailOpen}
+            aria-controls={`timeline-detail-${runId}`}
+            data-testid="timeline-detail-toggle"
+          >
+            {detailOpen ? "Ocultar detalle técnico" : "Ver detalle técnico"}
+            <ChevronDown
+              size={13}
+              aria-hidden="true"
+              className={cn("transition-transform", detailOpen && "rotate-180")}
+            />
+          </button>
+        )}
       </div>
 
-      {variant === "full" && (
+      {showNodeList && (
       <ol
         className="space-y-2"
+        id={`timeline-detail-${runId}`}
         data-testid="timeline-nodes-list"
         aria-label="Lista de nodos del grafo"
       >

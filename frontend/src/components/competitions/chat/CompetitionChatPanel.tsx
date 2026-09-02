@@ -19,58 +19,21 @@
  * Props: { raceEventId: number }
  * Visibilidad: controlada por InsightsTab (solo coach/admin).
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronUp, MessageSquare, Send } from "lucide-react";
-import type { AxiosError } from "axios";
 
-import { chatTurn } from "@/api/raceAnalysis";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useChatSession } from "@/hooks/ai/useChatSession";
 import type { ChatMessage } from "@/types/raceAnalysis.types";
 
 // ---------------------------------------------------------------------------
-// Types
+// Sub-components (compartidos con AthleteAnalystChatPanel)
 // ---------------------------------------------------------------------------
 
-type PanelError =
-  | { kind: "unavailable" }          // 503 — AI disabled
-  | { kind: "turn_error" };          // other errors — retryable, history intact
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function buildUserMessage(content: string): ChatMessage {
-  return {
-    id: crypto.randomUUID(),
-    role: "user",
-    content,
-    ts: new Date().toISOString(),
-  };
-}
-
-function buildAssistantMessage(
-  answer: string,
-  citations: string[],
-  tools: string[],
-): ChatMessage {
-  return {
-    id: crypto.randomUUID(),
-    role: "assistant",
-    content: answer,
-    citations: citations.length > 0 ? citations : undefined,
-    toolsCalled: tools.length > 0 ? tools : undefined,
-    ts: new Date().toISOString(),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function CitationBadge({ citation }: { citation: string }) {
+export function CitationBadge({ citation }: { citation: string }) {
   return (
     <Badge
       variant="secondary"
@@ -82,11 +45,11 @@ function CitationBadge({ citation }: { citation: string }) {
   );
 }
 
-interface MessageBubbleProps {
+export interface MessageBubbleProps {
   message: ChatMessage;
 }
 
-function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   return (
@@ -139,60 +102,17 @@ export interface CompetitionChatPanelProps {
 export function CompetitionChatPanel({
   raceEventId,
 }: CompetitionChatPanelProps) {
-  // Stable session_id per mount.
-  const sessionIdRef = useRef<string>(crypto.randomUUID());
-
   const [isOpen, setIsOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<PanelError | null>(null);
-
-  // Used to scroll to the bottom of the message list after each new message.
-  const listEndRef = useRef<HTMLDivElement>(null);
-
-  async function sendMessage() {
-    const trimmed = query.trim();
-    if (!trimmed || isPending || error?.kind === "unavailable") return;
-
-    // Optimistically append user message and clear input.
-    const userMsg = buildUserMessage(trimmed);
-    setMessages((prev) => [...prev, userMsg]);
-    setQuery("");
-    setIsPending(true);
-    setError(null);
-
-    try {
-      const response = await chatTurn({
-        session_id: sessionIdRef.current,
-        query: trimmed,
-        race_event_id: raceEventId,
-      });
-
-      const assistantMsg = buildAssistantMessage(
-        response.answer,
-        response.citations_used,
-        response.tools_called,
-      );
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      // Scroll into view (guard for jsdom which lacks scrollIntoView).
-      setTimeout(() => {
-        if (typeof listEndRef.current?.scrollIntoView === "function") {
-          listEndRef.current.scrollIntoView({ behavior: "smooth" });
-        }
-      }, 50);
-    } catch (err) {
-      const axiosErr = err as AxiosError;
-      if (axiosErr?.response?.status === 503) {
-        setError({ kind: "unavailable" });
-      } else {
-        setError({ kind: "turn_error" });
-      }
-    } finally {
-      setIsPending(false);
-    }
-  }
+  const {
+    query,
+    setQuery,
+    messages,
+    isPending,
+    error,
+    inputDisabled,
+    sendMessage,
+    listEndRef,
+  } = useChatSession({ raceEventId });
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -200,8 +120,6 @@ export function CompetitionChatPanel({
       void sendMessage();
     }
   }
-
-  const inputDisabled = isPending || error?.kind === "unavailable";
 
   return (
     <section

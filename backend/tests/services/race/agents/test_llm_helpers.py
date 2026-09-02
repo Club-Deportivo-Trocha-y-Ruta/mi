@@ -113,7 +113,9 @@ def test_build_chat_llm_defaults_to_anthropic_when_unset(monkeypatch):
 
     monkeypatch.setattr(settings, "race_ai_provider", "anthropic")
     monkeypatch.setattr(settings, "race_ai_model", "")
-    llm = build_chat_llm(api_key="dummy")
+    # role="chat" no tiene override propio (feature 037, T101) — aísla el
+    # fallback genérico probado aquí de los defaults por-rol de analyst/critic.
+    llm = build_chat_llm(api_key="dummy", role="chat")
     assert llm.model == "claude-sonnet-5"
 
 
@@ -163,7 +165,7 @@ def test_build_chat_llm_google_default_model_is_gemini_3_1_flash_lite(monkeypatc
 
     monkeypatch.setattr(settings, "race_ai_provider", "google")
     monkeypatch.setattr(settings, "race_ai_model", "")
-    llm = build_chat_llm(api_key="dummy")
+    llm = build_chat_llm(api_key="dummy", role="chat")
     assert llm.model == "gemini-3.1-flash-lite"
 
 
@@ -179,11 +181,11 @@ def test_resolve_configured_model_reads_provider_and_model_from_settings(monkeyp
 
     monkeypatch.setattr(settings, "race_ai_provider", "anthropic")
     monkeypatch.setattr(settings, "race_ai_model", "")
-    assert resolve_configured_model() == "claude-sonnet-5"
+    assert resolve_configured_model(role="chat") == "claude-sonnet-5"
 
     monkeypatch.setattr(settings, "race_ai_provider", "google")
     monkeypatch.setattr(settings, "race_ai_model", "")
-    assert resolve_configured_model() == "gemini-3.1-flash-lite"
+    assert resolve_configured_model(role="chat") == "gemini-3.1-flash-lite"
 
 
 def test_resolve_configured_model_prefers_explicit_model_override(monkeypatch):
@@ -193,7 +195,7 @@ def test_resolve_configured_model_prefers_explicit_model_override(monkeypatch):
 
     monkeypatch.setattr(settings, "race_ai_provider", "google")
     monkeypatch.setattr(settings, "race_ai_model", "gemini-custom-pinned")
-    assert resolve_configured_model() == "gemini-custom-pinned"
+    assert resolve_configured_model(role="chat") == "gemini-custom-pinned"
     assert resolve_configured_model(model="explicit-override") == "explicit-override"
 
 
@@ -208,3 +210,111 @@ def test_settings_race_ai_provider_validator_accepts_openai():
     # También normaliza mayúsculas/espacios como los demás proveedores.
     s_upper = Settings(race_ai_provider=" OpenAI ")
     assert s_upper.race_ai_provider == "openai"
+
+
+# ---------------------------------------------------------------------------
+# build_chat_llm(role=...) / resolve_configured_model(role=...) — feature 037, T101
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_configured_model_analyst_role_uses_race_ai_analyst_model(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    monkeypatch.setattr(settings, "race_ai_analyst_model", "gemini-3.8-flash")
+    assert resolve_configured_model(role="analyst") == "gemini-3.8-flash"
+
+
+def test_resolve_configured_model_critic_role_uses_race_ai_critic_model(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    monkeypatch.setattr(settings, "race_ai_critic_model", "gemini-3.1-flash-lite")
+    assert resolve_configured_model(role="critic") == "gemini-3.1-flash-lite"
+
+
+def test_resolve_configured_model_chat_role_ignores_role_settings_uses_legacy(monkeypatch):
+    """'chat' no tiene variable propia — siempre cae a race_ai_model legacy o
+    al default del proveedor, nunca a race_ai_analyst_model/race_ai_critic_model."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    monkeypatch.setattr(settings, "race_ai_analyst_model", "gemini-3.8-flash")
+    monkeypatch.setattr(settings, "race_ai_critic_model", "gemini-3.5-flash-lite")
+    assert resolve_configured_model(role="chat") == "gemini-3.1-flash-lite"
+
+
+def test_resolve_configured_model_role_model_wins_over_legacy_race_ai_model(monkeypatch):
+    """RACE_AI_ANALYST_MODEL/RACE_AI_CRITIC_MODEL, cuando están seteados,
+    ganan sobre race_ai_model legacy para su rol."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "gemini-legacy-pinned")
+    monkeypatch.setattr(settings, "race_ai_analyst_model", "gemini-3.8-flash")
+    assert resolve_configured_model(role="analyst") == "gemini-3.8-flash"
+
+
+def test_resolve_configured_model_falls_back_to_legacy_when_role_model_empty(monkeypatch):
+    """RACE_AI_MODEL legacy sigue mandando cuando el override por-rol está vacío."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "gemini-legacy-pinned")
+    monkeypatch.setattr(settings, "race_ai_analyst_model", "")
+    assert resolve_configured_model(role="analyst") == "gemini-legacy-pinned"
+
+
+def test_build_chat_llm_analyst_role_uses_race_ai_analyst_model(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    monkeypatch.setattr(settings, "race_ai_analyst_model", "gemini-3.8-flash")
+    llm = build_chat_llm(api_key="dummy", role="analyst")
+    assert llm.model == "gemini-3.8-flash"
+
+
+def test_build_chat_llm_critic_role_uses_race_ai_critic_model(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    monkeypatch.setattr(settings, "race_ai_critic_model", "gemini-3.1-flash-lite")
+    llm = build_chat_llm(api_key="dummy", role="critic")
+    assert llm.model == "gemini-3.1-flash-lite"
+
+
+def test_build_chat_llm_explicit_model_wins_over_role(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_analyst_model", "gemini-3.8-flash")
+    llm = build_chat_llm(api_key="dummy", role="analyst", model="explicit-model")
+    assert llm.model == "explicit-model"
+
+
+def test_compute_cost_usd_uses_model_rate_when_known():
+    from app.services.race.agents.pricing import compute_cost_usd
+
+    cost = compute_cost_usd(
+        1_000_000, 1_000_000, provider="google", model="gemini-3.8-flash"
+    )
+    assert cost == 0.75 + 3.75
+
+    cost_critic = compute_cost_usd(
+        1_000_000, 1_000_000, provider="google", model="gemini-3.5-flash-lite"
+    )
+    assert cost_critic == 0.30 + 2.50
+
+
+def test_compute_cost_usd_falls_back_to_provider_rate_when_model_unknown():
+    from app.services.race.agents.pricing import compute_cost_usd
+
+    cost = compute_cost_usd(
+        1_000_000, 1_000_000, provider="google", model="gemini-unknown-model"
+    )
+    assert cost == 0.25 + 1.50

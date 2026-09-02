@@ -31,7 +31,6 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -40,6 +39,7 @@ from app.models.athlete import Athlete
 from app.models.athlete_ai_insight import AthleteAiInsight
 from app.models.user import User, UserRole
 from app.schemas.athlete_race_analysis import (
+    AnswerInsightBody,
     AthleteInsightDetailOut,
     AthleteInsightListResponse,
     AthleteInsightOut,
@@ -53,14 +53,13 @@ from app.schemas.athlete_race_analysis import (
     InsightLink,
     RaceParticipationResponse,
     SeasonSummaryRequest,
-    SeasonSummaryResponse,
+    SeasonSummaryRunResponse,
 )
 from app.schemas.race_ai import (
     MetricsSnapshotV1,
     RunState,
     StartRunResponse,
 )
-from app.services.race.agents.pricing import PROMPT_VERSION_ANALYST_V2
 from app.services.race.analytics_charts import (
     AthleteDidNotParticipate,
     build_distribution,
@@ -70,8 +69,8 @@ from app.services.race.analytics_charts import (
 from app.services.race.ai.budget_guard import BudgetExceededError, check_budget
 from app.services.race.ai.runner import RunBackpressureError, submit_run
 from app.services.race.group_launch import find_active_run
+from app.services.privacy import athlete_has_ai_processing_consent
 from app.services.race.insights_history import (
-    deprecate_previous_active,
     get_athlete_insight,
     get_insight_supersedes_chain,
     list_athlete_insights,
@@ -111,6 +110,13 @@ def _insight_to_out(row: AthleteAiInsight) -> AthleteInsightOut:
     """
     event = row.event
     series = event.series if event is not None else None
+    headline: Optional[str] = None
+    structured_raw = getattr(row, "structured_json", None)
+    if structured_raw is not None:
+        structured_dict = _ensure_json_dict(structured_raw)
+        headline_val = structured_dict.get("headline")
+        if isinstance(headline_val, str) and headline_val.strip():
+            headline = headline_val
     return AthleteInsightOut(
         id=row.id,
         season=row.season,
@@ -129,6 +135,8 @@ def _insight_to_out(row: AthleteAiInsight) -> AthleteInsightOut:
         is_active=bool(row.is_active == 1) if row.is_active is not None else False,
         deprecated_at=row.deprecated_at,
         is_fallback=bool(row.is_fallback),
+        headline=headline,
+        coach_rating=getattr(row, "coach_rating", None),
     )
 
 
@@ -196,11 +204,54 @@ def _maybe_metrics_snapshot(raw: Any) -> MetricsSnapshotV1 | dict[str, Any]:
     return data
 
 
+_TRAINING_DOMAIN = "training"
+
+
+def _structured_for_response(raw: Any, *, for_parent: bool) -> Optional[dict[str, Any]]:
+    """Normaliza ``structured_json`` y aplica la omisión server-side (037).
+
+    En modo parent (data-model.md §API deltas) se omiten:
+    - ``field_reading.expected_position`` / ``delta_vs_expected``.
+    - ``coach_question``.
+    - la evidencia (``evidence``) de las observaciones de dominio
+      ``training`` (deja el resto de la observación intacta).
+    """
+    if raw is None:
+        return None
+    structured = _ensure_json_dict(raw)
+    if not structured:
+        return None
+    if not for_parent:
+        return structured
+
+    structured = dict(structured)
+    field_reading = structured.get("field_reading")
+    if isinstance(field_reading, dict):
+        field_reading = dict(field_reading)
+        field_reading.pop("expected_position", None)
+        field_reading.pop("delta_vs_expected", None)
+        structured["field_reading"] = field_reading
+    structured.pop("coach_question", None)
+
+    observations = structured.get("observations")
+    if isinstance(observations, list):
+        scrubbed_observations = []
+        for obs in observations:
+            if isinstance(obs, dict) and obs.get("domain") == _TRAINING_DOMAIN:
+                obs = dict(obs)
+                obs.pop("evidence", None)
+            scrubbed_observations.append(obs)
+        structured["observations"] = scrubbed_observations
+
+    return structured
+
+
 def _insight_to_detail(
     row: AthleteAiInsight,
     *,
     supersedes: list[InsightLink],
     superseded_by: Optional[InsightLink],
+    for_parent: bool = False,
 ) -> AthleteInsightDetailOut:
     base = _insight_to_out(row)
     snapshot = _ensure_json_dict(row.metrics_snapshot_json)
@@ -226,6 +277,15 @@ def _insight_to_detail(
     except (TypeError, ValueError):
         season_validas_count = None
 
+    coach_answer_text = getattr(row, "coach_answer_text", None)
+    coach_answer_at = getattr(row, "coach_answer_at", None)
+    if for_parent:
+        # Feature 037 (data-model.md §API deltas): coach_answer_* es
+        # contenido coach-only (respuesta a coach_question, que también se
+        # omite arriba).
+        coach_answer_text = None
+        coach_answer_at = None
+
     return AthleteInsightDetailOut(
         **base.model_dump(),
         recommendations=_ensure_json_list(row.recommendations_json),
@@ -235,6 +295,11 @@ def _insight_to_detail(
         superseded_by=superseded_by,
         is_first_in_season=is_first_in_season,
         season_validas_count=season_validas_count,
+        structured=_structured_for_response(
+            getattr(row, "structured_json", None), for_parent=for_parent
+        ),
+        coach_answer_text=coach_answer_text,
+        coach_answer_at=coach_answer_at,
     )
 
 
@@ -332,7 +397,88 @@ async def get_insight_detail(
             superseded_by_link = _link_from_row(next_row)
 
     return _insight_to_detail(
-        row, supersedes=supersedes, superseded_by=superseded_by_link
+        row,
+        supersedes=supersedes,
+        superseded_by=superseded_by_link,
+        for_parent=current_user.role == UserRole.parent,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /insights/{insight_id}/answer (feature 037, T104)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{athlete_id}/race-analysis/insights/{insight_id}/answer",
+    response_model=AthleteInsightDetailOut,
+)
+async def answer_insight(
+    insight_id: int,
+    body: AnswerInsightBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+    athlete: Athlete = Depends(verify_athlete_access),
+) -> AthleteInsightDetailOut:
+    """Responde ``structured_json['coach_question']`` y/o califica el insight.
+
+    Coach/admin only (``_coach_or_admin`` → 403 para parent, mismo patrón
+    que ``POST /season-summary`` y ``GET /runs``). ``verify_athlete_access``
+    ya filtra coach a atletas de sus propios clubes.
+
+    El texto de la respuesta se escrubea con
+    ``services/race/ai/grounding.load_forbidden_names`` (nombres reales del
+    atleta y sus acudientes) ANTES de persistir — nunca guardamos el texto
+    crudo del coach en ``coach_answer_text`` (feature 037, US4, AC-4.2).
+    """
+    if body.answer_text is None and body.rating is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Debe enviar answer_text y/o rating.",
+        )
+
+    row = await get_athlete_insight(db, athlete_id=athlete.id, insight_id=insight_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Insight no encontrado",
+        )
+
+    if body.answer_text is not None:
+        from app.services.race.ai.grounding import load_forbidden_names
+
+        forbidden_names = await load_forbidden_names(
+            db, athlete.id, nickname=getattr(athlete, "nickname", None)
+        )
+        answer_text = body.answer_text
+        for name in forbidden_names:
+            name = name.strip()
+            if name:
+                answer_text = answer_text.replace(name, "[nombre omitido]")
+        row.coach_answer_text = answer_text
+        row.coach_answer_at = _utc_now()
+
+    if body.rating is not None:
+        row.coach_rating = body.rating
+
+    row.updated_at = _utc_now()
+    await db.commit()
+
+    chain_rows = await get_insight_supersedes_chain(db, insight_id=row.id)
+    supersedes = [_link_from_row(r) for r in chain_rows]
+    superseded_by_link: Optional[InsightLink] = None
+    if row.superseded_by_insight_id is not None:
+        next_row = await get_athlete_insight(
+            db, athlete_id=athlete.id, insight_id=int(row.superseded_by_insight_id)
+        )
+        if next_row is not None:
+            superseded_by_link = _link_from_row(next_row)
+
+    return _insight_to_detail(
+        row,
+        supersedes=supersedes,
+        superseded_by=superseded_by_link,
+        for_parent=False,
     )
 
 
@@ -533,6 +679,9 @@ async def _resolve_valida_for_event(
     "/{athlete_id}/race-analysis/runs",
     response_model=StartRunResponse,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        451: {"description": "Sin consentimiento parental vigente para procesamiento con IA."},
+    },
 )
 async def start_athlete_run(
     body: AthleteStartRunBody,
@@ -550,6 +699,20 @@ async def start_athlete_run(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Servicio de IA no disponible (AI_ENABLED=false)",
+        )
+
+    # Consentimiento parental para procesamiento con IA (Ley 1581 art. 9).
+    # Mismo contrato que ``routers/ai.py::_ensure_ai_consent``,
+    # ``routers/race_analysis.py::start_run`` y
+    # ``create_season_summary`` de este mismo router (feature 037, T405).
+    if not await athlete_has_ai_processing_consent(athlete.id, db):
+        raise HTTPException(
+            status_code=status.HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS,
+            detail=(
+                "Falta consentimiento parental vigente con autorización para "
+                "compartir datos con terceros (procesamiento con IA). "
+                "Solicita a la familia renovar el consentimiento."
+            ),
         )
 
     if body.valida_nums and len(body.valida_nums) > 4:
@@ -671,7 +834,7 @@ async def start_athlete_run(
             {
                 "rid": run_id,
                 "gn": "race-analyst",
-                "pv": PROMPT_VERSION_ANALYST_V2,
+                "pv": settings.race_ai_prompt_version,
                 "sa": started_at,
                 "inp": json.dumps(input_payload, ensure_ascii=False, default=str),
                 "uid": current_user.id,
@@ -705,6 +868,11 @@ async def start_athlete_run(
     forbidden_names = await load_forbidden_names(
         db, athlete.id, nickname=getattr(athlete, "nickname", None)
     )
+    # Feature 037 (T204): athlete_sex → athlete_ref del prompt v3
+    # ("el deportista"/"la deportista"), igual que en race_analysis.py.
+    athlete_sex_val: Optional[str] = None
+    if getattr(athlete, "sex", None) is not None:
+        athlete_sex_val = getattr(athlete.sex, "value", None) or str(athlete.sex)
 
     initial_state = {
         "athlete_id": athlete.id,
@@ -714,11 +882,13 @@ async def start_athlete_run(
         "coach_id": current_user.id,
         "explain_mode": body.explain_mode,
         "run_id": run_id,
-        "prompt_version": PROMPT_VERSION_ANALYST_V2,
+        "prompt_version": settings.race_ai_prompt_version,
         "athlete_age": athlete_age,
         "ltad_group": ltad_group_val.value,
         "maturation_status": maturation_status,
         "forbidden_names": forbidden_names,
+        "athlete_sex": athlete_sex_val,
+        "analysis_kind": "valida",
     }
 
     # Reusar el closure de finalize del router race_analysis (idéntica lógica
@@ -866,21 +1036,26 @@ async def list_races(
 
 @router.post(
     "/{athlete_id}/race-analysis/season-summary",
-    response_model=SeasonSummaryResponse,
-    status_code=status.HTTP_201_CREATED,
+    response_model=SeasonSummaryRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def create_season_summary(
     body: SeasonSummaryRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_coach_or_admin),
     athlete: Athlete = Depends(verify_athlete_access),
-) -> SeasonSummaryResponse:
-    """Genera el resumen de temporada v2 on-demand (coach/admin only).
+) -> SeasonSummaryRunResponse:
+    """Lanza el resumen de temporada v3 como un run agéntico (US5, T203).
 
-    Body opcional: si se omite, usa el año actual UTC. Requiere ≥3 válidas
-    con insights activos aprobados para la temporada resuelta. Devuelve el
-    insight persistido con ``valida_num=0`` (sentinel de temporada) y
-    ``prompt_version="race_analyst_v2"``.
+    A diferencia del v2 (invocación síncrona del LLM dentro del request),
+    v3 reusa el mismo grafo LangGraph que ``POST /runs`` — con crítico y
+    HITL — anclado con ``analysis_kind="season"``. Requiere ≥3 válidas con
+    insights activos aprobados para la temporada resuelta (mismo guard de
+    v2). Devuelve ``202 {run_id, status}``; el cliente hace polling de
+    ``GET /api/race-analysis/runs/{run_id}/status`` igual que un análisis
+    por válida. Persistencia final (``valida_num=0``,
+    ``use_case="season_summary_v3"``) queda a cargo de los nodos del grafo
+    (``persist_insight``), no de este endpoint.
     """
     if body is None:
         body = SeasonSummaryRequest()
@@ -893,8 +1068,20 @@ async def create_season_summary(
             detail="Servicio de IA no disponible (AI_ENABLED=false)",
         )
 
+    # Consentimiento parental para procesamiento con IA (Ley 1581 art. 9).
+    # Mismo contrato que ``routers/ai.py::_ensure_ai_consent`` y
+    # ``routers/race_analysis.py::start_run`` (feature 037, T203).
+    if not await athlete_has_ai_processing_consent(athlete.id, db):
+        raise HTTPException(
+            status_code=status.HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS,
+            detail=(
+                "Falta consentimiento parental vigente con autorización para "
+                "compartir datos con terceros (procesamiento con IA). "
+                "Solicita a la familia renovar el consentimiento."
+            ),
+        )
+
     # Verificar budget.
-    from app.services.race.ai.budget_guard import BudgetExceededError, check_budget
     try:
         await check_budget(db)
     except BudgetExceededError as exc:
@@ -936,242 +1123,136 @@ async def create_season_summary(
             ),
         )
 
-    # Cargar progresión agregada (todas las válidas de la temporada).
-    from app.services.race.ai.db import get_session as get_race_session
-    from app.services.race.queries import fetch_results_for_athlete
-    from app.services.race.schemas import AnalysisInput, LTADGroup
+    run_id = uuid.uuid4().hex
+    started_at = _utc_now()
+    prompt_version = "race_season_summary_v3"
 
-    # Cargar forbidden_names dinámicamente desde DB.
-    #
-    # Fix privacidad (fuera de banda, Ley 1581): este bloque consultaba
-    # ``UserModel.full_name`` — columna INEXISTENTE (``app/models/user.py``
-    # solo define ``first_name``/``last_name``). El ``AttributeError`` al
-    # construir el SELECT caía en un ``except Exception`` amplio que solo
-    # logueaba a WARNING, dejando ``forbidden_names=[]`` SIEMPRE: el
-    # guardrail que evita que el LLM mencione el nombre real del menor o de
-    # su familia nunca estuvo activo en producción. Ahora se construye el
-    # nombre desde ``first_name``/``last_name`` y el ``except`` se acota a
-    # ``SQLAlchemyError`` (fallos genuinos de base de datos) para que un
-    # error de programación similar (ej. una columna renombrada de nuevo)
-    # no vuelva a quedar silencioso — se propaga y falla la request en vez
-    # de continuar con el guardrail desactivado.
-    forbidden_names: list[str] = []
+    input_payload = {
+        "athlete_id": athlete.id,
+        "season": body.season,
+        "valida_nums": None,
+        "explain_mode": body.explain_mode,
+        "analysis_kind": "season",
+    }
+
     try:
-        from app.models.athlete import Athlete as AthleteModel, ParentAthlete
-        from app.models.user import User as UserModel
-        from sqlalchemy import select as sa_select
-
-        fn_rows = await db.execute(
-            sa_select(UserModel.first_name, UserModel.last_name).where(
-                UserModel.id == (
-                    sa_select(AthleteModel.user_id)
-                    .where(AthleteModel.id == athlete.id)
-                    .scalar_subquery()
+        await db.execute(
+            text(
+                """
+                INSERT INTO agent_runs (
+                    external_run_id, graph_name, prompt_version, started_at,
+                    status, input_json, requested_by_user_id,
+                    checkpoint_thread_id, explain_mode, athlete_id
+                ) VALUES (
+                    :rid, :gn, :pv, :sa, 'running', :inp, :uid, :tid, :em, :aid
                 )
-            )
-        )
-        fn_row = fn_rows.first()
-        if fn_row is not None:
-            full_name = f"{fn_row.first_name} {fn_row.last_name}".strip()
-            if full_name:
-                forbidden_names.append(full_name)
-
-        # Nicknames y apodos del atleta.
-        if getattr(athlete, "nickname", None):
-            forbidden_names.append(str(athlete.nickname))
-
-        # Nombres de padres vinculados.
-        parent_rows = await db.execute(
-            sa_select(UserModel.first_name, UserModel.last_name)
-            .join(ParentAthlete, UserModel.id == ParentAthlete.parent_id)
-            .where(ParentAthlete.athlete_id == athlete.id)
-        )
-        for prow in parent_rows.all():
-            full_name = f"{prow.first_name} {prow.last_name}".strip()
-            if full_name:
-                forbidden_names.append(full_name)
-
-    except SQLAlchemyError:
-        logger.warning(
-            "season_summary: no se pudieron cargar forbidden_names para atleta "
-            "%d (fallo de base de datos)",
-            athlete.id,
-            exc_info=True,
-        )
-
-    # Construir AnalysisInput con la progresión completa de la temporada.
-
-    # Pseudónimo determinístico para la temporada.
-    season_pseudonym = f"Atleta-{athlete.id % 10000:04d}-T{body.season}"
-
-    async with get_race_session() as race_db:
-        race_results = await fetch_results_for_athlete(
-            race_db, athlete.id, body.season, valida_nums=None
-        )
-
-    progression_records = [
-        {
-            "valida_num": getattr(r, "valida_num", None),
-            "event_id": getattr(r, "event_id", None),
-            "position": getattr(r, "position", None),
-            "race_time_ms": getattr(r, "race_time_ms", None),
-            "points_awarded": getattr(r, "points_awarded", None),
-        }
-        for r in race_results
-    ]
-
-    # Edad y grupo LTAD del atleta.
-    from datetime import date as _date
-
-    athlete_age = 12  # fallback
-    ltad_group_val = LTADGroup.BAMBINO
-    try:
-        if getattr(athlete, "birth_date", None):
-            age_decimal = (_date.today() - athlete.birth_date).days / 365.25
-            athlete_age = int(age_decimal)
-            if athlete_age <= 12:
-                ltad_group_val = LTADGroup.BAMBINO
-            elif athlete_age <= 15:
-                ltad_group_val = LTADGroup.JUVENIL
-            else:
-                ltad_group_val = LTADGroup.JUNIOR
-    except Exception:  # noqa: BLE001
-        pass
-
-    summary_input = AnalysisInput(
-        athlete_pseudonym=season_pseudonym,
-        age=athlete_age,
-        ltad_group=ltad_group_val,
-        progression_df_records=progression_records,
-        podium_context={},
-        memory_recent_insights=[],
-        explain_mode=body.explain_mode,
-        athlete_id=athlete.id,
-        season=body.season,
-    )
-
-    from app.services.race.agents.analyst import PROMPT_VERSION_ANALYST_V2, RaceAnalystAgent
-
-    # T044 (feature 036): adquirir el lock de deduplicación (deprecar el
-    # resumen anterior de esta terna, si existe) ANTES de invocar el LLM,
-    # no después. Antes de este fix, un doble submit corría el pipeline
-    # agéntico completo dos veces; recién al insertar la fila final el
-    # perdedor se enteraba del conflicto (UNIQUE ``uq_insights_active_terna``)
-    # y devolvía un 500 genérico — habiendo YA gastado presupuesto de IA.
-    # Confirmar (commit) esta deprecación de inmediato adelanta la detección
-    # del conflicto en el caso de re-generación (ya existe un resumen activo
-    # para esta terna); cuando es la primera generación de la temporada no
-    # hay nada que deprecar todavía, así que el INSERT final sigue siendo la
-    # fuente de verdad de la deduplicación — por eso también captura
-    # ``IntegrityError`` y responde 409 en vez de 500.
-    try:
-        previous_id: Optional[int] = await deprecate_previous_active(
-            db,
-            athlete_id=athlete.id,
-            season=body.season,
-            valida_num=0,
-            new_insight_id=None,
-        )
-        await db.commit()
-    except Exception as exc:  # noqa: BLE001
-        await db.rollback()
-        logger.exception(
-            "season_summary: no se pudo adquirir el lock de deduplicación"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"No se pudo iniciar el resumen de temporada: {type(exc).__name__}",
-        )
-
-    agent = RaceAnalystAgent(prompt_version=PROMPT_VERSION_ANALYST_V2)
-    summary_output, run_metrics = await agent.invoke_season_summary(
-        summary_input,
-        forbidden_names=forbidden_names,
-    )
-
-    # Persistir el resumen con valida_num=0 (sentinel temporada).
-    now = _utc_now()
-    from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
-    from app.services.race.ai.fallback import is_fallback_output
-
-    try:
-        new_row = AthleteAiInsight(
-            athlete_id=athlete.id,
-            competitor_id=None,
-            event_id=None,
-            agent_run_id=None,
-            generated_by_user_id=current_user.id,
-            season=body.season,
-            valida_num=0,
-            use_case="season_summary_v2",
-            summary_text=(summary_output.raw_markdown or "")[:5000],
-            recommendations_json=[
-                r.model_dump() for r in (summary_output.recommendations or [])
-            ],
-            metrics_snapshot_json={
-                "validas_analyzed": validas_count,
-                "prompt_version": PROMPT_VERSION_ANALYST_V2,
-                "tokens_in": run_metrics.tokens_in,
-                "tokens_out": run_metrics.tokens_out,
-                "cost_usd": run_metrics.cost_usd,
-            },
-            principles_cited_json=[],
-            confidence=InsightConfidence.medium,
-            model="gemini-2.5-flash-lite",
-            prompt_version=PROMPT_VERSION_ANALYST_V2,
-            coach_approved=True,
-            coach_edits_count=0,
-            generated_at=now,
-            approved_at=now,
-            archived_at=None,
-            deprecated_at=None,
-            is_active=1,
-            is_fallback=is_fallback_output(summary_output),
-            created_at=now,
-            updated_at=now,
-        )
-        db.add(new_row)
-        await db.flush()
-
-        if previous_id is not None:
-            from sqlalchemy import update as sa_update
-            await db.execute(
-                sa_update(AthleteAiInsight)
-                .where(AthleteAiInsight.id == previous_id)
-                .values(superseded_by_insight_id=new_row.id, updated_at=now)
-            )
-
-        await db.commit()
-        insight_id = int(new_row.id)
-    except IntegrityError:
-        # T044: otra solicitud ganó la carrera y ya insertó su propio
-        # resumen activo para esta terna mientras este request esperaba al
-        # LLM — 409 específico en vez del 500 genérico de antes.
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Ya existe un resumen de temporada activo para este "
-                "deportista y esta temporada — probablemente otra solicitud "
-                "se adelantó. Recarga la vista antes de reintentar."
+                """
             ),
+            {
+                "rid": run_id,
+                "gn": "race-analyst",
+                "pv": prompt_version,
+                "sa": started_at,
+                "inp": json.dumps(input_payload, ensure_ascii=False, default=str),
+                "uid": current_user.id,
+                "tid": run_id,
+                "em": 1 if body.explain_mode else 0,
+                "aid": athlete.id,
+            },
         )
     except Exception as exc:  # noqa: BLE001
-        await db.rollback()
-        logger.exception("season_summary: persistencia falló")
+        logger.exception("create_season_summary: insert agent_runs falló")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"No se pudo persistir el resumen: {type(exc).__name__}",
+            detail=f"No se pudo crear el run: {type(exc).__name__}",
         )
 
-    return SeasonSummaryResponse(
-        insight_id=insight_id,
-        season=body.season,
-        summary_text=(summary_output.raw_markdown or "")[:5000],
-        prompt_version=PROMPT_VERSION_ANALYST_V2,
-        generated_at=now,
-        validas_analyzed=validas_count,
+    # Contexto del atleta (mismo patrón que start_athlete_run / start_run):
+    # edad, sexo, grupo LTAD, fase madurativa y forbidden_names reales.
+    from app.services.race.ai.grounding import (
+        latest_maturation_status,
+        load_forbidden_names,
+        ltad_group_from_age,
     )
+
+    athlete_sex_val: Optional[str] = None
+    if getattr(athlete, "sex", None) is not None:
+        athlete_sex_val = getattr(athlete.sex, "value", None) or str(athlete.sex)
+
+    athlete_age: Optional[int] = None
+    ltad_group_val: Optional[str] = None
+    maturation_status: Optional[str] = None
+    forbidden_names: list[str] = []
+    if getattr(athlete, "birth_date", None) is not None:
+        age_decimal = (date.today() - athlete.birth_date).days / 365.25
+        athlete_age = int(age_decimal)
+        ltad_group_val = ltad_group_from_age(age_decimal).value
+        maturation_status = await latest_maturation_status(db, athlete.id)
+        forbidden_names = await load_forbidden_names(
+            db, athlete.id, nickname=getattr(athlete, "nickname", None)
+        )
+    else:
+        logger.warning(
+            "create_season_summary: athlete_id=%s sin birth_date; "
+            "athlete_age no inyectado al state",
+            athlete.id,
+        )
+
+    initial_state: dict[str, Any] = {
+        "athlete_id": athlete.id,
+        "season": body.season,
+        "valida_nums": None,
+        "coach_id": current_user.id,
+        "explain_mode": body.explain_mode,
+        "run_id": run_id,
+        "prompt_version": prompt_version,
+        "forbidden_names": forbidden_names,
+        "athlete_sex": athlete_sex_val,
+        "analysis_kind": "season",
+    }
+    if athlete_age is not None:
+        initial_state["athlete_age"] = athlete_age
+    if ltad_group_val is not None:
+        initial_state["ltad_group"] = ltad_group_val
+    initial_state["maturation_status"] = maturation_status
+
+    # Reusar el closure de finalize del router race_analysis (idéntica lógica
+    # de drenado de eventos + actualización de estado).
+    from app.routers.race_analysis import _finalize_run  # import diferido
+
+    async def _on_complete(
+        rid: str,
+        exc: Optional[BaseException],
+        result_state: Optional[dict[str, Any]],
+    ) -> None:
+        from app.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as session:
+            try:
+                await _finalize_run(session, rid, exc, result_state)
+                await session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("_on_complete: finalize_run falló para %s", rid)
+
+    try:
+        await submit_run(run_id, initial_state, on_complete=_on_complete)
+    except RunBackpressureError as exc:
+        try:
+            await db.execute(
+                text(
+                    "UPDATE agent_runs SET status='cancelled', error_message=:em, finished_at=:fa "
+                    "WHERE external_run_id=:rid"
+                ),
+                {"em": f"backpressure: {exc}", "fa": _utc_now(), "rid": run_id},
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("create_season_summary: falló cancelar tras backpressure")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        )
+
+    return SeasonSummaryRunResponse(run_id=run_id, status=RunState.RUNNING.value)
 
 
 __all__ = ["router"]

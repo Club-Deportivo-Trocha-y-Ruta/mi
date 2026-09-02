@@ -10,7 +10,10 @@ on:
       - "backend/app/services/race/agents/**"
       - "backend/app/services/race/prompts/**"
       - "backend/app/services/race/eval/**"
+      - "backend/app/services/race/insight_v3.py"
+      - "backend/app/services/race/ai/prechecks.py"
       - "backend/evals/race_analyst/golden/**"
+      - "backend/evals/race_analyst/golden_v3/**"
       - "backend/tests/evals/**"
   workflow_dispatch:
     inputs:
@@ -68,6 +71,19 @@ jobs:
           RACE_AI_API_KEY: ${{ secrets.RACE_AI_API_KEY }}
           RACE_AI_PROVIDER: google
           RACE_AI_MODEL: gemini-3.1-flash-lite
+          # Feature 037 (T101/T401): el analista y el crítico ya no comparten
+          # modelo. ``build_chat_llm(role=…)`` resuelve
+          # RACE_AI_ANALYST_MODEL / RACE_AI_CRITIC_MODEL y solo cae a
+          # RACE_AI_MODEL cuando la variable del rol está vacía — sin estas
+          # dos el eval v3 mediría el analista con flash-lite, que NO es lo
+          # que corre en producción desde T101 (defaults de config.py).
+          # RACE_AI_MODEL se conserva porque es el que usa el juez del eval
+          # y el agente de chat.
+          RACE_AI_ANALYST_MODEL: gemini-3.8-flash
+          RACE_AI_CRITIC_MODEL: gemini-3.1-flash-lite
+          # Ruta del eval: v3 es el default del runner desde T401; se declara
+          # explícito para que el job sea legible sin abrir el test.
+          RACE_EVAL_VERSION: v3
           # Timeout/tokens/temperatura NO tienen equivalente RACE_AI_* propio
           # — build_chat_llm cae a estos mismos Settings.ai_* para todos los
           # proveedores (ver _llm.py), así que sí aplican aquí.

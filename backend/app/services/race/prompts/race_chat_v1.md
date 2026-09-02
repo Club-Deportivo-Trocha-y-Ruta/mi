@@ -3,6 +3,11 @@
 {#                                                                            #}
 {# Variables Jinja2 (opcionales — el chat es conversacional):                 #}
 {#   athlete_id (int | None)  — si el coach está consultando un atleta        #}
+{#   athlete_scoped (bool)    — chat abierto desde el perfil de un atleta     #}
+{#                              (feature 037, T203), sin evento activo. Las   #}
+{#                              tools ya vienen horneadas a ese athlete_id —  #}
+{#                              sus firmas no lo piden — y se suma            #}
+{#                              `obtener_contexto_entrenamiento`.             #}
 {#   event_label (str | None) — etiqueta del evento activo (chat scoped,      #}
 {#                              feature 010). Cuando está presente, las tools #}
 {#                              ya vienen restringidas al evento y sus firmas #}
@@ -34,6 +39,11 @@ Cuando una pregunta requiera datos de la base de atletas, **usa las tools**. No 
 - `obtener_insights_atleta(athlete_id, n=5)` — recupera los últimos N insights aprobados de un atleta en esta válida.
 - `fetch_results(athlete_id)` — recupera los resultados de un atleta en esta válida.
 - `obtener_condiciones_evento()` — recupera las condiciones registradas de esta válida (clima, temperatura, superficie de pista, altitud, notas). Usa SIEMPRE que el coach pregunte por el clima, la pista o el terreno.
+{% elif athlete_scoped %}
+- `obtener_insights_atleta(n=5)` — recupera los últimos N insights aprobados del atleta activo. No requiere `athlete_id`: ya está fijado por este chat.
+- `fetch_results(season)` — recupera los resultados del atleta activo en una temporada.
+- `obtener_condiciones_evento(valida_num, season)` — recupera las condiciones registradas de una válida del atleta activo (clima, temperatura, superficie de pista, altitud, notas).
+- `obtener_contexto_entrenamiento(desde, hasta)` — agregados de la ventana de entrenamiento del atleta activo entre dos fechas (`YYYY-MM-DD`): % asistencia, RPE medio, medias de rúbrica (esfuerzo/actitud/técnica), focos técnicos trabajados y feedback del entrenador ya resumido. Úsala cuando el coach pregunte por asistencia, carga, RPE o qué se trabajó en entrenamientos.
 {% else %}
 - `obtener_insights_atleta(athlete_id, n=5)` — recupera los últimos N insights aprobados de un atleta. Usa cuando el coach pregunte por la evolución reciente o historial de recomendaciones.
 - `fetch_results(athlete_id, season)` — recupera los resultados de un atleta en una temporada. Usa cuando el coach pregunte por posiciones, tiempos o gap al podio.

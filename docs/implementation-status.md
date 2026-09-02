@@ -632,3 +632,37 @@ A UX-audit-driven bugfix pass on the athlete AI Insights tab (`AthleteAIAnalysis
 - `PdfDownloadButton.tsx` (`components/ai/`) is a complete, backend-connected, tested-quality component mounted nowhere in the tab; wiring it into the coach run-timeline block is a one-line addition for whoever owns `AthleteAIAnalysisTab.tsx` next.
 
 **Status:** 🟡 Functionally complete and verified (all 5 waves' own acceptance criteria hold, full backend+frontend suites green modulo pre-existing/environmental failures, all-new e2e specs green and proven load-bearing) but **not deployed**: everything is uncommitted on `main` by explicit user choice (Decision D6), the golden-eval gate (T059) is still red, and Render's `RACE_AI_PROVIDER`/`RACE_AI_MODEL` were never verified against the Gemini correction (D1) before this review started. No new migration beyond `463c1f0ccb38` (adds `is_fallback`). `tasks.md` checkboxes for waves 2–5 still need marking (Wave 1's are already `[X]`) — left to the user per this task's instructions not to edit `tasks.md`.
+
+---
+
+## Implementation status — AI Insights v3 (specs/037-ai-insights-v3-causal)
+
+Causal, field-relative, prescriptive replacement for the per-válida AI
+analysis contract (supersedes `docs/10-race-results/spec-insights-per-valida-v2.md`
+§4's 3-section markdown output). Full architecture, `InsightV3` contract,
+prechecks, expected-vs-actual method, and rollback in
+`docs/10-race-results/spec-insights-v3.md`; bug-fix details in
+`docs/technical-notes.md` (2026-09-02 entry).
+
+| Wave | Scope | Status |
+|---|---|---|
+| 1 | Data & fixes: `valida_num` population, recommendation-regex relaxation, `athlete_ref` from `Athlete.sex`, per-role model config, `field_metrics.py`, `load_athlete_context` node + loaders, `answer` endpoint + migration, `recall_memory` → `coach_dialogue` | ✅ Complete 2026-09-02 |
+| 2 | LLM layer + frontend contract: `InsightV3` + v3 prompts + `invoke_v3`, deterministic prechecks + critic v3, season-summary-as-graph-run + consent gate + athlete-scoped chat tool, `RACE_AI_PROMPT_VERSION` switch, frontend types/api/hooks/MSW/fixtures | ✅ Complete 2026-09-02 |
+| 3 | UI: `InsightV3Card` (+ sub-blocks) integrated into timeline/hero/HITL, `CoachAnswerForm`, `AthleteAnalystChatPanel`, `SeasonSummaryButton` run-timeline wiring | ✅ Complete 2026-09-02 |
+| 4 | Quality: golden eval v3 (`golden_v3/`, `scorer_v3.py`, `judge_v2.md`), privacy audit (PASS on all six points), docs, backend gaps (451 gate on `start_athlete_run`, `role="chat"`, plural `structured_drafts`) | ✅ Complete 2026-09-02 — SC-1 real-dataset regeneration and the real golden run (`pytest -m golden`, needs `RACE_AI_API_KEY`) still pending |
+
+**Known gaps carried forward from Waves 1-2** (see
+`spec-insights-v3.md`'s runbook section for the full list):
+`start_athlete_run` still lacks the AI-consent 451 gate that `start_run`
+and the season endpoint already have; `chat.py` does not pass
+`role="chat"` explicitly to `build_chat_llm` (harmless, same default);
+`ActionCategory.tactics` degrades to `technique` in the v2-compat
+`AnalysisOutput.recommendations` copy only; `hitl_gate_review`'s
+`structured_draft` payload exposes only the lowest válida of a
+multi-válida run; the v3 season prompt relies on the `trend` field plus
+prechecks rather than a hard N=1 veto; critic model provenance is not
+persisted separately from the analyst's (single `model` column).
+
+**Status:** 🚧 Waves 1-4 complete and integrated on the working tree
+(uncommitted); pending SC-1 verification on the local dataset and the real
+golden eval run in CI.

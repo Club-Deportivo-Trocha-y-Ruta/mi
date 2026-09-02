@@ -1,0 +1,235 @@
+{
+  "case_id": "001",
+  "description": "Mini-bambino (10 años) en mejora sostenida: mejor percentil de la temporada tras la ventana de entrenamiento con mayor asistencia. Pre-PHV, catálogo técnico disponible.",
+  "input": {
+    "valida_num": 4,
+    "analysis_kind": "valida",
+    "athlete_ref": "el deportista",
+    "age": 10,
+    "ltad_group": "mini-bambino",
+    "season": 2026,
+    "validas_count": 4,
+    "valida_label": "Válida 4 · Copa Valle",
+    "race_row": {
+      "valida_num": 4,
+      "event_date": "2026-05-17",
+      "category_code": "INF_A",
+      "position": 2,
+      "race_time_ms": 1760000,
+      "gap_to_winner_ms": 18000,
+      "gap_to_winner_pct": 1.03
+    },
+    "field_metrics": {
+      "event_id": 4104,
+      "valida_num": 4,
+      "event_date": "2026-05-17",
+      "series_kind": "cup",
+      "series_level": "departmental",
+      "is_championship": false,
+      "field_size": 11,
+      "position": 2,
+      "percentile": 90,
+      "race_time_ms": 1760000,
+      "gap_to_p1_ms": 18000,
+      "gap_pct": 1.03,
+      "gap_to_p3_ms": -28000,
+      "category_median_time_ms": 1875000,
+      "gap_to_median_pct": -6.1,
+      "laps_behind": 0,
+      "prior_index": 2.8,
+      "expected_position": 3,
+      "delta_vs_expected": 1,
+      "field_strength": 4.6,
+      "coverage_with_prior": 0.73
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 5,
+        "field_size": 11,
+        "percentile": 60,
+        "gap_pct": 3.44,
+        "gap_to_p3_ms": 34000,
+        "expected_position": 5,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 11,
+        "percentile": 70,
+        "gap_pct": 2.71,
+        "gap_to_p3_ms": 21000,
+        "expected_position": 4,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 3,
+        "field_size": 11,
+        "percentile": 80,
+        "gap_pct": 1.86,
+        "gap_to_p3_ms": 0,
+        "expected_position": 4,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 2,
+        "field_size": 11,
+        "percentile": 90,
+        "gap_pct": 1.03,
+        "gap_to_p3_ms": -28000,
+        "expected_position": 3,
+        "delta_vs_expected": 1
+      }
+    ],
+    "race_meta": "- Clima: soleado\n- Temperatura: 24 °C\n- Superficie de la pista: seca",
+    "anthro_context": {
+      "records_count": 3,
+      "latest": {
+        "evaluation_date": "2026-04-20",
+        "days_before_event": 27,
+        "maturity_offset_years": -3.1,
+        "age_at_phv": 13.4,
+        "maturation_status": "Pre-PHV",
+        "height_percentile": 55
+      },
+      "previous": {
+        "evaluation_date": "2026-01-15",
+        "maturity_offset_years": -3.4,
+        "maturation_status": "Pre-PHV"
+      },
+      "growth_velocity_cm_per_year": 5.2,
+      "months_from_phv": -37.2,
+      "flags": []
+    },
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-04-19",
+      "date_to": "2026-05-17",
+      "sessions_in_window": 12,
+      "attended": 11,
+      "absent": 1,
+      "excused": 0,
+      "attendance_pct": 91.7,
+      "training_hours": 16.5,
+      "rpe_mean": 3.8,
+      "rpe_last7_mean": 3.5,
+      "rpe_prev21_mean": 3.9,
+      "rubric_effort_mean": 4.5,
+      "rubric_attitude_mean": 4.7,
+      "rubric_technique_mean": 3.9,
+      "technical_foci": ["Trazado de curvas", "Frenado modulado"],
+      "skill_codes_worked": ["C", "E"],
+      "strength_sessions": 0,
+      "interval_sessions": 0,
+      "days_since_last_session": 3,
+      "days_since_previous_race": 28,
+      "coach_feedback": ["Sostiene el foco durante todo el circuito de conos"],
+      "strava_load": null
+    },
+    "coach_dialogue": [],
+    "catalog_context": {
+      "technique_skills": [
+        {"code": "A", "name": "Posición neutra/lista y equilibrio", "focus": "Postura atlética, peso centrado, trackstand"},
+        {"code": "C", "name": "Frenado modulado", "focus": "1 dedo por freno, peso atrás, dosificar"},
+        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"},
+        {"code": "G", "name": "Control de presión / terreno", "focus": "Pump, raíces/rocas, drops"}
+      ],
+      "strength_blocks": [
+        {"id": 21, "name": "Fuerza base con peso corporal", "age_band": "10-12"}
+      ],
+      "interval_templates": []
+    },
+    "memory_recent_insights": [
+      "Válida 3 · Copa: entró al percentil 80 con el gap al líder en 1.86%",
+      "Válida 2 · Copa: constancia técnica en curvas, sin cambios de carga"
+    ]
+  },
+  "expected_themes": ["asistencia", "percentil", "curvas"],
+  "forbidden_terms": [
+    "suplementos",
+    "creatina",
+    "potenciómetro",
+    "test de FC máxima",
+    "podio",
+    "ganar",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": ["asistencia", "continuidad", "0:00:18", "percentil"],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "Cerró la válida a 0:00:18 del líder tras la ventana de mayor asistencia del año: la mejora acompaña la continuidad, no un pico aislado.",
+    "field_reading": {
+      "percentile": 90,
+      "expected_position": 3,
+      "actual_position": 2,
+      "delta_vs_expected": 1,
+      "gap_to_p3_hhmmss": "-0:00:28",
+      "series_label": "Válida 4 · Copa Valle",
+      "summary": "Mejor percentil de la temporada y un puesto por encima de lo esperado en un pelotón de fuerza media."
+    },
+    "trend": "improving",
+    "observations": [
+      {
+        "claim": "Rindió por encima de su índice previo y encadena la cuarta mejora consecutiva de percentil en la misma serie.",
+        "evidence": ["percentil 90 con pelotón de 11", "esperada 3 frente a real 2", "gap 1.03% al líder"],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "La ventana previa fue la más constante del ciclo y coincide con el salto de rendimiento, sin subir la intensidad.",
+        "evidence": ["asistencia 91.7%", "11 sesiones asistidas de 12", "RPE medio 3.8"],
+        "domain": "training",
+        "confidence": "high"
+      },
+      {
+        "claim": "Sigue lejos del estirón, así que la ganancia se explica por coordinación y técnica antes que por potencia.",
+        "evidence": ["offset de maduración -3.1 años", "crecimiento 5.2 cm/año"],
+        "domain": "maturation",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Sostener tres sesiones semanales en formato de juego, con el circuito de curvas como bloque central, durante las próximas cuatro semanas.",
+        "category": "technique",
+        "priority": "high",
+        "horizon": "next_week",
+        "catalog_ref": {"kind": "technique_skill", "code": "E", "label": null},
+        "derived_from": 1
+      },
+      {
+        "text": "Agregar quince minutos de frenado modulado antes de cada salida para recortar el tiempo perdido en las zonas técnicas.",
+        "category": "technique",
+        "priority": "med",
+        "horizon": "next_race",
+        "catalog_ref": {"kind": "technique_skill", "code": "C", "label": null},
+        "derived_from": 0
+      }
+    ],
+    "watch_signals": [
+      "Si la asistencia cae por debajo del 80% en la próxima ventana, revisar la carga escolar antes de sumar volumen."
+    ],
+    "coach_question": "¿Qué cambió en la rutina familiar de estas semanas que permitió sostener la asistencia tan alta?",
+    "data_gaps": ["Sin registro de sueño ni de carga escolar para contrastar la constancia observada."],
+    "principles_cited": ["3. Progresión técnica en MTB/XCO"]
+  }
+}

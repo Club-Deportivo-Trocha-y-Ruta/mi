@@ -162,7 +162,11 @@ import {
 import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import type { AthleteOut } from "@/types/athlete.types";
 import { Sex } from "@/types/enums";
-import { doneRunStatusHandler } from "./raceRunTestHandlers";
+import {
+  doneRunStatusHandler,
+  hitlWaitingRunStatusHandler,
+} from "./raceRunTestHandlers";
+import { buildInsightV3 } from "@/test/fixtures/insightV3";
 
 const athlete: AthleteOut = {
   id: 42,
@@ -268,8 +272,8 @@ describe("AthleteAIAnalysisTab", () => {
     await waitFor(() => {
       expect(screen.getByTestId("ai-header-summary")).toBeInTheDocument();
     });
-    // El header expone "Total aprobados: 2" del MSW handler default
-    expect(screen.getByText(/total aprobados:\s*2/i)).toBeInTheDocument();
+    // El header expone el conteo de aprobados del MSW handler default
+    expect(screen.getByText(/2 aprobados/i)).toBeInTheDocument();
     // Badge "Válida IV" (header) — formato romano, feature 036 T032.
     expect(
       screen.getAllByText(/válida\s*iv\b/i).length,
@@ -401,6 +405,73 @@ describe("AthleteAIAnalysisTab", () => {
         "data-state",
         "active",
       );
+    });
+  });
+
+  it("T302 — al generar el resumen de temporada, el run_id se conecta al mismo timeline/HITL que las válidas", async () => {
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
+        HttpResponse.json({
+          items: [mockInsight({ valida_num: 4 })],
+          total: 4,
+          limit: 50,
+          offset: 0,
+        }),
+      ),
+      seasonSummarySuccessHandler,
+      hitlWaitingRunStatusHandler(),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("season-summary-btn")).toBeEnabled();
+    });
+    await user.click(screen.getByTestId("season-summary-btn"));
+
+    // El mismo `AnalysisRunTimeline` real (no mockeado) que usan los runs
+    // por válida debe montarse para el run del resumen de temporada, y al
+    // quedar pausado en `hitl_waiting` también debe aparecer la misma
+    // `HITLApprovalCard`.
+    await waitFor(() => {
+      expect(screen.getByTestId("analysis-run-timeline")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("hitl-approval-card")).toBeInTheDocument();
+    });
+  });
+
+  it("T012b — el run del resumen de temporada también se desmonta al llegar a estado terminal", async () => {
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
+        HttpResponse.json({
+          items: [mockInsight({ valida_num: 4 })],
+          total: 4,
+          limit: 50,
+          offset: 0,
+        }),
+      ),
+      seasonSummarySuccessHandler,
+      doneRunStatusHandler(),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("season-summary-btn")).toBeEnabled();
+    });
+    await user.click(screen.getByTestId("season-summary-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-subtab-history")).toHaveAttribute(
+        "data-state",
+        "active",
+      );
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("analysis-run-timeline"),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -1053,5 +1124,45 @@ describe("AthleteAIAnalysisTab — T012/T013/T014 (árbol real de run+HITL)", ()
     await waitFor(() => {
       expect(screen.queryByTestId("hitl-approval-card")).not.toBeInTheDocument();
     });
+  });
+
+  it("T301 (feature 037) — la card HITL renderiza InsightV3Card cuando el evento hitl_request trae payload.structured_draft", async () => {
+    const structured = buildInsightV3();
+    mswServer.use(
+      http.get("*/api/race-analysis/runs/:runId/status", ({ params }) =>
+        HttpResponse.json({
+          run_id: String(params.runId),
+          state: "hitl_waiting",
+          progress_pct: 70,
+          current_node: "hitl_gate_review",
+          started_at: "2026-08-20T10:00:00Z",
+          estimated_seconds_remaining: 0,
+          last_seq: 1,
+          new_events: [
+            {
+              seq: 1,
+              ts: "2026-08-20T10:00:01Z",
+              type: "hitl_request",
+              node: "hitl_gate_review",
+              payload: {
+                step_id: "hitl-step-v3",
+                draft_markdown: "### Borrador v2 (no debería verse)",
+                structured_draft: structured,
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="coach" />);
+    await startMockRun(user);
+
+    expect(await screen.findByTestId("hitl-approval-card")).toBeInTheDocument();
+    expect(screen.getByTestId("insight-v3-card")).toBeInTheDocument();
+    expect(screen.getByTestId("insight-v3-headline")).toHaveTextContent(
+      structured.headline,
+    );
   });
 });

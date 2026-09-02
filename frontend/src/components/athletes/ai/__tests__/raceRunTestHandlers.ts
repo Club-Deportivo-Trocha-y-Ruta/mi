@@ -23,6 +23,85 @@ export function fixedRunStatusHandler(response: RunStatusResponse) {
   );
 }
 
+/**
+ * Responde HONRANDO el cursor `since`, como hace el backend real
+ * (`GET /runs/{id}/status?since=N` devuelve sólo los eventos con
+ * `seq > N`).
+ *
+ * `fixedRunStatusHandler` reenvía siempre el set completo, así que
+ * cualquier consumidor que pierda su buffer local de eventos sigue
+ * "funcionando" en tests y falla en producción: en cuanto el cursor
+ * alcanza `last_seq`, el backend real deja de reenviar el
+ * `hitl_request` que lleva el `draft_markdown`.
+ */
+export function cursorAwareRunStatusHandler(response: RunStatusResponse) {
+  return http.get("*/api/race-analysis/runs/:runId/status", ({ params, request }) => {
+    const since = Number(new URL(request.url).searchParams.get("since") ?? 0);
+    return HttpResponse.json({
+      ...response,
+      run_id: String(params.runId),
+      new_events: (response.new_events ?? []).filter((e) => e.seq > since),
+    });
+  });
+}
+
+/**
+ * Emite los eventos de forma PROGRESIVA: cada request devuelve como mucho
+ * `batchSize` eventos con `seq > since`, imitando un run que avanza a lo
+ * largo de varios polls.
+ *
+ * Es la única forma de destapar el reparto del stream entre observadores:
+ * con un set estático todos reciben todo en su primer poll y nunca
+ * divergen.
+ */
+export function progressiveRunStatusHandler(
+  allEvents: RunStatusResponse["new_events"],
+  base: Omit<RunStatusResponse, "new_events" | "last_seq">,
+  batchSize = 2,
+) {
+  const maxSeq = allEvents.reduce((m, e) => Math.max(m, e.seq), 0);
+  return http.get("*/api/race-analysis/runs/:runId/status", ({ params, request }) => {
+    const since = Number(new URL(request.url).searchParams.get("since") ?? 0);
+    const pending = allEvents.filter((e) => e.seq > since).slice(0, batchSize);
+    return HttpResponse.json({
+      ...base,
+      run_id: String(params.runId),
+      new_events: pending,
+      last_seq: pending.length ? pending[pending.length - 1].seq : Math.min(since, maxSeq),
+    });
+  });
+}
+
+/**
+ * Simula el estado degradado que se ve en producción: el run está en
+ * `hitl_waiting` pero el cliente arrastra un cursor ya pasado, así que el
+ * backend (que sólo reenvía `seq > since`) no vuelve a mandar el
+ * `hitl_request` con el borrador.
+ *
+ * La PRIMERA request responde con `new_events: []` y un `last_seq` ya
+ * avanzado —el cliente queda sin el evento—; a partir de ahí se comporta
+ * como el backend real. Sólo un refetch con el cursor reiniciado a 0
+ * recupera el borrador.
+ */
+export function staleCursorHitlHandler(
+  event: RunStatusResponse["new_events"][number],
+  base: Omit<RunStatusResponse, "new_events" | "last_seq">,
+) {
+  let firstCall = true;
+  return http.get("*/api/race-analysis/runs/:runId/status", ({ params, request }) => {
+    const since = Number(new URL(request.url).searchParams.get("since") ?? 0);
+    const body = { ...base, run_id: String(params.runId), last_seq: event.seq };
+    if (firstCall) {
+      firstCall = false;
+      return HttpResponse.json({ ...body, new_events: [] });
+    }
+    return HttpResponse.json({
+      ...body,
+      new_events: event.seq > since ? [event] : [],
+    });
+  });
+}
+
 /** Run pausado en `hitl_waiting`, con un evento `hitl_request` con
  * `step_id` + `draft_markdown` — lo mínimo que `AthleteAIAnalysisTab`
  * necesita para derivar `showHITL=true` y montar `HITLApprovalCard`. */

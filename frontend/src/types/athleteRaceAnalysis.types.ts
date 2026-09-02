@@ -82,6 +82,8 @@ export function isMetricsSnapshotV1(
   );
 }
 
+import type { InsightV3 } from "@/types/insightV3.types";
+
 // ---------------------------------------------------------------------------
 // Insights — listado y detalle
 // ---------------------------------------------------------------------------
@@ -149,6 +151,17 @@ export interface AthleteInsightOut {
   is_fallback: boolean;
   /** Solo presente si fue parseado en el cliente (v2 insights). */
   parsed_sections?: InsightParsedSections;
+  /**
+   * Feature 037 (T104) — titular del insight v3, leído server-side de
+   * `structured_json.headline`. `null` para insights v1/v2 (sin
+   * `structured_json`) o si el campo no está presente.
+   */
+  headline?: string | null;
+  /**
+   * Feature 037 (T104) — calificación del coach al insight: `1` = útil,
+   * `-1` = no útil. `null` = sin calificar.
+   */
+  coach_rating?: number | null;
 }
 
 export interface AthleteInsightDetailOut extends AthleteInsightOut {
@@ -161,6 +174,48 @@ export interface AthleteInsightDetailOut extends AthleteInsightOut {
   is_first_in_season?: boolean | null;
   /** Informativo: total de válidas de la temporada con resultados. */
   season_validas_count?: number | null;
+  /**
+   * Feature 037 (T104) — contenido completo de `structured_json`
+   * (`InsightV3.model_dump()`). `null` para insights v1/v2. En modo
+   * parent el backend omite server-side `field_reading.expected_position`
+   * / `delta_vs_expected`, `coach_question` y la evidencia de las
+   * observaciones de dominio `training` — ver data-model.md §API deltas.
+   */
+  structured?: InsightV3 | null;
+  /**
+   * Feature 037 (T104) — respuesta del coach a
+   * `structured.coach_question`, ya escrubeada de nombres prohibidos.
+   * Omitida server-side en modo parent.
+   */
+  coach_answer_text?: string | null;
+  coach_answer_at?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Answer insight — feature 037 (T104/T205)
+// POST /api/athletes/{id}/race-analysis/insights/{insight_id}/answer
+// ---------------------------------------------------------------------------
+
+/**
+ * Body de `answerInsight`. Al menos uno de los dos campos debe venir — el
+ * backend responde 422 si ambos son `undefined`/`null`.
+ */
+export interface AnswerInsightBody {
+  answer_text?: string | null;
+  rating?: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Season summary — feature 037 (T203/T205)
+// Contrato nuevo: POST /season-summary lanza un run agéntico (202) en vez
+// de generar de forma síncrona (200 con summary_text, contrato legacy de
+// feature 036 — ver `SeasonSummaryResponse` en `api/athleteRaceAnalysis.ts`).
+// ---------------------------------------------------------------------------
+
+export interface AthleteSeasonSummaryRunResponse {
+  /** external_run_id (UUID hex) — pollable vía GET /race-analysis/runs/:id/status. */
+  run_id: string;
+  status: string;
 }
 
 export interface AthleteInsightListResponse {

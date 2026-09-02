@@ -196,3 +196,30 @@ async def test_chat_session_ttl_expiry_initializes_fresh(chat_tools):
     second_msgs = llm.calls[1]
     # Sin historial previo: system + human nuevo.
     assert len(second_msgs) == 2
+
+
+async def test_chat_resolves_llm_via_build_chat_llm_with_chat_role(
+    chat_tools, isolated_store, monkeypatch
+):
+    """Sin ``llm`` explícito, ``chat()`` resuelve el modelo con
+    ``build_chat_llm(role="chat")`` — feature 037 (T405): antes llamaba
+    ``build_chat_llm()`` sin rol, así que ``RACE_AI_CHAT_MODEL`` (si algún
+    día se agrega) o el resto de resolución por-rol nunca se ejercitaba
+    para el chat.
+    """
+    import app.services.race.agents.chat as chat_mod
+
+    captured_kwargs: dict = {}
+    fake_llm = FakeChatLLM([StubAIMessage(content="Hola coach.")])
+
+    def _fake_build_chat_llm(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return fake_llm
+
+    monkeypatch.setattr(chat_mod, "build_chat_llm", _fake_build_chat_llm)
+
+    agent = RaceChatAgent(llm=None, tools=chat_tools, session_store=isolated_store)
+    resp = await agent.chat(session_id="sRole", query="hola")
+
+    assert resp.answer == "Hola coach."
+    assert captured_kwargs.get("role") == "chat"

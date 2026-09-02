@@ -24,6 +24,8 @@ import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { useGenerateSeasonSummary } from "@/hooks/athletes/useGenerateSeasonSummary";
 import { useLaunchAthleteAnalysis } from "@/hooks/athletes/useLaunchAthleteAnalysis";
 import { InsightN1Banner } from "./InsightN1Banner";
+import { CoachAnswerForm } from "./CoachAnswerForm";
+import { InsightV3Card } from "./v3/InsightV3Card";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -44,6 +46,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAthleteInsightDetail } from "@/hooks/athletes/useAthleteInsightDetail";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
+import { extractErrorDetail } from "@/lib/apiError";
 import { formatDateTimeCompact } from "@/lib/datetime";
 import {
   confidenceLabel,
@@ -507,6 +510,47 @@ export function InsightsTimeline({
 // InsightCard — card individual con shape por tipo + checkbox multi-select
 // ---------------------------------------------------------------------------
 
+const REGENERATE_ERROR_FALLBACK = "No se pudo regenerar. Intenta de nuevo.";
+const RETRY_ERROR_FALLBACK = "No se pudo reintentar. Intenta de nuevo.";
+
+/**
+ * Alerta de fallo de una acción de fila (Regenerar / Reintentar).
+ *
+ * Antes esto era un `<p>` de 10px encajado en la columna del botón
+ * (`max-w-28 text-right`), dimensionado para la copy genérica de 5 palabras.
+ * Los `detail` reales del backend (`athlete_race_analysis.py`: run activo,
+ * válida ambigua) rondan los 140 caracteres y ahí quedaban ilegibles, así que
+ * la alerta salió de esa columna y ocupa el ancho completo de la fila, debajo
+ * del card — el botón conserva su piso táctil de 48×48px (`min-h-12
+ * min-w-12`) y la fila no se deforma por el largo del mensaje.
+ *
+ * Mismo shape que la alerta de `NewsletterNarrativeEditor.tsx` (ícono +
+ * texto sobre `border-red-200 bg-red-50`); `text-red-800` sobre `bg-red-50`
+ * mantiene el contraste muy por encima de 4.5:1 aun a 12px.
+ */
+function RowActionAlert({
+  message,
+  testId,
+}: {
+  message: string;
+  testId: string;
+}) {
+  return (
+    <div
+      role="alert"
+      data-testid={testId}
+      className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2"
+    >
+      <AlertCircle
+        size={14}
+        className="mt-0.5 shrink-0 text-red-600"
+        aria-hidden="true"
+      />
+      <p className="text-xs leading-relaxed text-red-800">{message}</p>
+    </div>
+  );
+}
+
 interface InsightCardProps {
   athleteId: number;
   insight: AthleteInsightOut;
@@ -548,6 +592,7 @@ function InsightCard({
     regenerate.mutate({
       season: insight.season,
       valida_nums: [insight.valida_num],
+      event_id: insight.event_id,
       explain_mode: false,
     });
   };
@@ -568,6 +613,7 @@ function InsightCard({
     regenerate.mutate({
       season: insight.season,
       valida_nums: [insight.valida_num],
+      event_id: insight.event_id,
       explain_mode: false,
     });
   };
@@ -590,174 +636,214 @@ function InsightCard({
         : "";
 
   return (
-    <div className="relative flex items-start gap-2">
-      {/* Checkbox multi-select (solo coach) — BB4. T091 (feature 036, US6):
-          el tamaño se fija en el propio <input> (antes h-4 w-4, 16px), no en
-          un wrapper con padding — el sweep e2e de target-size.spec.ts mide
-          el boundingBox() real del elemento `input`, así que un wrapper más
-          grande no bastaría. Mismo patrón ya probado en feature 032
-          (`TechniqueAttachPicker.tsx`'s checkbox seleccionable, también
-          h-12 w-12 directo en el input) para alcanzar el piso de 48×48px. */}
-      {showCheckbox && (
-        <div className="flex shrink-0 items-center pt-4 pl-1">
-          <input
-            type="checkbox"
-            id={`insight-checkbox-${insight.id}`}
-            data-testid={`insight-checkbox-${insight.id}`}
-            checked={isSelected}
-            onChange={() => onToggleSelection?.(insight.id)}
-            aria-label={`Seleccionar análisis ${validaLabelWithDate(insight)} para boletín`}
-            className="h-12 w-12 cursor-pointer rounded border-mid-gray accent-primary"
-          />
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={onOpen}
-        data-testid={`insight-card-${insight.id}`}
-        aria-label={`Ver análisis del ${formatDateTimeCompact(insight.generated_at)}, ${validaLabelWithDate(insight)}${isFallback ? ", análisis no disponible" : ""}`}
-        className={cn(
-          "group flex w-full items-start gap-3 rounded-xl bg-white p-4 text-left transition-colors",
-          "hover:bg-light-gray/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-          borderCls,
-          "shadow-card",
+    <div className="relative">
+      <div className="flex items-start gap-2">
+        {/* Checkbox multi-select (solo coach) — BB4. T091 (feature 036, US6):
+            el tamaño se fija en el propio <input> (antes h-4 w-4, 16px), no en
+            un wrapper con padding — el sweep e2e de target-size.spec.ts mide
+            el boundingBox() real del elemento `input`, así que un wrapper más
+            grande no bastaría. Mismo patrón ya probado en feature 032
+            (`TechniqueAttachPicker.tsx`'s checkbox seleccionable, también
+            h-12 w-12 directo en el input) para alcanzar el piso de 48×48px. */}
+        {showCheckbox && (
+          <div className="flex shrink-0 items-center pt-4 pl-1">
+            <input
+              type="checkbox"
+              id={`insight-checkbox-${insight.id}`}
+              data-testid={`insight-checkbox-${insight.id}`}
+              checked={isSelected}
+              onChange={() => onToggleSelection?.(insight.id)}
+              aria-label={`Seleccionar análisis ${validaLabelWithDate(insight)} para boletín`}
+              className="h-12 w-12 cursor-pointer rounded border-mid-gray accent-primary"
+            />
+          </div>
         )}
-      >
-        {/* Ícono según tipo — el marcador de fallback (US4) reemplaza a
-            Trophy/Medal porque el análisis de esta fila no llegó a generarse. */}
-        {isFallback ? (
-          <AlertCircle
-            size={16}
-            className="mt-0.5 shrink-0 text-mid-gray"
+
+        {/* Superficie de la card. Antes el blanco + sombra vivían en el
+            <button> del contenido, así que "Regenerar" quedaba flotando
+            sobre el fondo de la página, sin relación visual con la fila que
+            regenera. Ahora la card envuelve contenido + acción + alerta, y
+            el botón se separa con un divisor en vez de con aire. */}
+        <div
+          data-testid={`insight-surface-${insight.id}`}
+          className={cn(
+            "flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-white shadow-card",
+            borderCls,
+          )}
+        >
+          <div className="flex items-stretch">
+        <button
+          type="button"
+          onClick={onOpen}
+          data-testid={`insight-card-${insight.id}`}
+          aria-label={`Ver análisis del ${formatDateTimeCompact(insight.generated_at)}, ${validaLabelWithDate(insight)}${isFallback ? ", análisis no disponible" : ""}`}
+          className={cn(
+            "group flex min-w-0 flex-1 items-start gap-3 p-4 text-left transition-colors",
+            "hover:bg-light-gray/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50",
+          )}
+        >
+          {/* Ícono según tipo — el marcador de fallback (US4) reemplaza a
+              Trophy/Medal porque el análisis de esta fila no llegó a generarse. */}
+          {isFallback ? (
+            <AlertCircle
+              size={16}
+              className="mt-0.5 shrink-0 text-mid-gray"
+              aria-hidden="true"
+            />
+          ) : (
+            <>
+              {shape === "season-summary" && (
+                <Trophy
+                  size={16}
+                  className="mt-0.5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+              )}
+              {shape === "departamental" && (
+                <Medal
+                  size={16}
+                  className="mt-0.5 shrink-0 text-amber-500"
+                  aria-hidden="true"
+                />
+              )}
+            </>
+          )}
+
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-mid-gray">
+                {formatDateTimeCompact(insight.generated_at)}
+              </span>
+              <Badge variant="secondary">{validaLabelWithDate(insight)}</Badge>
+              {!insight.is_active && (
+                <Badge variant="outline">Histórico</Badge>
+              )}
+              {isFallback && (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-dashed"
+                  data-testid={`insight-fallback-badge-${insight.id}`}
+                >
+                  <AlertCircle size={11} aria-hidden="true" />
+                  Análisis no disponible
+                </Badge>
+              )}
+            </div>
+            {/* `max-w-[75ch]`: en pantalla ancha el resumen corría el ancho
+                completo de la card (~1500px), muy por encima del rango
+                legible de 45–75 caracteres por línea. El clamp de 2 líneas
+                se mantiene; lo que cambia es cuánto texto entra en cada una. */}
+            <p
+              className={cn(
+                "mt-2 line-clamp-2 max-w-[75ch] text-sm leading-relaxed",
+                isFallback ? "italic text-mid-gray" : "text-charcoal",
+              )}
+            >
+              {/* T301 (feature 037): un headline v3 ya viene redactado como
+                  preview de una línea — no hace falta el parsing de v2 ni
+                  el fallback al markdown crudo. `headline` es opcional
+                  (insights v1/v2 no lo traen), así que el resto de la
+                  lógica se conserva intacta como fallback. */}
+              {insight.headline
+                ? insight.headline
+                : insight.prompt_version === PROMPT_VERSION_V2
+                  ? getV2Preview(insight.summary_text)
+                  : insight.summary_text}
+            </p>
+          </div>
+          <ChevronRight
+            size={18}
+            className="mt-1 shrink-0 text-mid-gray transition-transform group-hover:translate-x-0.5"
             aria-hidden="true"
           />
-        ) : (
-          <>
-            {shape === "season-summary" && (
-              <Trophy
-                size={16}
-                className="mt-0.5 shrink-0 text-primary"
-                aria-hidden="true"
-              />
-            )}
-            {shape === "departamental" && (
-              <Medal
-                size={16}
-                className="mt-0.5 shrink-0 text-amber-500"
-                aria-hidden="true"
-              />
-            )}
-          </>
+        </button>
+
+        {/* Regenerar (solo coach) — re-lanza el análisis de esta válida (US6). */}
+        {canRegenerate && (
+          <div className="flex shrink-0 items-center border-l border-light-gray px-1">
+            <button
+              type="button"
+              onClick={handleRegenerate}
+              disabled={regenerate.isPending}
+              data-testid={`insight-regenerate-${insight.id}`}
+              aria-label={`Regenerar análisis ${validaLabelWithDate(insight)}`}
+              className={cn(
+                "flex min-h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-medium",
+                "text-primary transition-colors hover:bg-light-gray/50",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+                "disabled:cursor-not-allowed disabled:opacity-60",
+              )}
+            >
+              {regenerate.isPending ? (
+                <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw size={16} aria-hidden="true" />
+              )}
+              <span className="hidden sm:inline">Regenerar</span>
+            </button>
+          </div>
         )}
 
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-mid-gray">
-              {formatDateTimeCompact(insight.generated_at)}
-            </span>
-            <Badge variant="secondary">{validaLabelWithDate(insight)}</Badge>
-            {!insight.is_active && (
-              <Badge variant="outline">Histórico</Badge>
-            )}
-            {isFallback && (
-              <Badge
-                variant="outline"
-                className="gap-1 border-dashed"
-                data-testid={`insight-fallback-badge-${insight.id}`}
-              >
-                <AlertCircle size={11} aria-hidden="true" />
-                Análisis no disponible
-              </Badge>
-            )}
+        {/* Reintentar (solo coach, solo filas fallback) — US4/T025. El
+            análisis anterior falló; este botón vuelve a lanzarlo (misma
+            válida, o el resumen de temporada cuando valida_num=0). */}
+        {canRetry && (
+          <div className="flex shrink-0 items-center border-l border-light-gray px-1">
+            <button
+              type="button"
+              onClick={handleRetry}
+              disabled={retryPending}
+              data-testid={`insight-retry-${insight.id}`}
+              aria-label={`Reintentar análisis ${validaLabelWithDate(insight)}`}
+              className={cn(
+                "flex min-h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-medium",
+                "text-primary transition-colors hover:bg-light-gray/50",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+                "disabled:cursor-not-allowed disabled:opacity-60",
+              )}
+            >
+              {retryPending ? (
+                <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw size={16} aria-hidden="true" />
+              )}
+              <span className="hidden sm:inline">Reintentar</span>
+            </button>
           </div>
-          <p
-            className={cn(
-              "mt-2 line-clamp-2 text-sm leading-relaxed",
-              isFallback ? "italic text-mid-gray" : "text-charcoal",
-            )}
-          >
-            {insight.prompt_version === PROMPT_VERSION_V2
-              ? getV2Preview(insight.summary_text)
-              : insight.summary_text}
-          </p>
-        </div>
-        <ChevronRight
-          size={18}
-          className="mt-1 shrink-0 text-mid-gray transition-transform group-hover:translate-x-0.5"
-          aria-hidden="true"
-        />
-      </button>
+        )}
+          </div>
 
-      {/* Regenerar (solo coach) — re-lanza el análisis de esta válida (US6). */}
-      {canRegenerate && (
-        <div className="flex shrink-0 flex-col items-end justify-center self-stretch">
-          <button
-            type="button"
-            onClick={handleRegenerate}
-            disabled={regenerate.isPending}
-            data-testid={`insight-regenerate-${insight.id}`}
-            aria-label={`Regenerar análisis ${validaLabelWithDate(insight)}`}
-            className={cn(
-              "flex min-h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-medium",
-              "text-primary transition-colors hover:bg-light-gray/50",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-              "disabled:cursor-not-allowed disabled:opacity-60",
-            )}
-          >
-            {regenerate.isPending ? (
-              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-            ) : (
-              <RefreshCw size={16} aria-hidden="true" />
-            )}
-            <span className="hidden sm:inline">Regenerar</span>
-          </button>
-          {regenerate.isError && (
-            <p
-              role="alert"
-              className="mt-1 max-w-28 text-right text-[10px] leading-tight text-red-700"
-            >
-              No se pudo regenerar. Intenta de nuevo.
-            </p>
+          {/* Fallo de la acción de fila, DENTRO de la card: el error pertenece
+              a esta fila, no a la lista. El mensaje real del backend manda —
+              un 409 de "ya hay un análisis en curso" o de válida ambigua le
+              dice al coach qué hacer, mientras que la copy genérica le pedía
+              justo lo que no funciona ("Intenta de nuevo"). Misma convención
+              que `LaunchAnalysisForm.tsx` y `SeasonSummaryButton.tsx` en este
+              mismo tab: `extractErrorDetail(err, <copy de respaldo>)`. */}
+          {canRegenerate && regenerate.isError && (
+            <div className="px-4 pb-3">
+              <RowActionAlert
+                testId={`insight-regenerate-error-${insight.id}`}
+                message={extractErrorDetail(
+                  regenerate.error,
+                  REGENERATE_ERROR_FALLBACK,
+                )}
+              />
+            </div>
+          )}
+          {canRetry && retryFailed && (
+            <div className="px-4 pb-3">
+              <RowActionAlert
+                testId={`insight-retry-error-${insight.id}`}
+                message={extractErrorDetail(
+                  isSeasonSummaryRow ? seasonRetry.error : regenerate.error,
+                  RETRY_ERROR_FALLBACK,
+                )}
+              />
+            </div>
           )}
         </div>
-      )}
-
-      {/* Reintentar (solo coach, solo filas fallback) — US4/T025. El
-          análisis anterior falló; este botón vuelve a lanzarlo (misma
-          válida, o el resumen de temporada cuando valida_num=0). */}
-      {canRetry && (
-        <div className="flex shrink-0 flex-col items-end justify-center self-stretch">
-          <button
-            type="button"
-            onClick={handleRetry}
-            disabled={retryPending}
-            data-testid={`insight-retry-${insight.id}`}
-            aria-label={`Reintentar análisis ${validaLabelWithDate(insight)}`}
-            className={cn(
-              "flex min-h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-medium",
-              "text-primary transition-colors hover:bg-light-gray/50",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
-              "disabled:cursor-not-allowed disabled:opacity-60",
-            )}
-          >
-            {retryPending ? (
-              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-            ) : (
-              <RefreshCw size={16} aria-hidden="true" />
-            )}
-            <span className="hidden sm:inline">Reintentar</span>
-          </button>
-          {retryFailed && (
-            <p
-              role="alert"
-              className="mt-1 max-w-28 text-right text-[10px] leading-tight text-red-700"
-            >
-              No se pudo reintentar. Intenta de nuevo.
-            </p>
-          )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -868,6 +954,21 @@ function InsightDetailDrawer({
                 : "No fue posible generar este análisis en este momento. Puedes revisar los datos oficiales en la sección de Resultados; tu entrenador podrá volver a intentarlo."}
             </p>
           </div>
+        ) : insight.structured ? (
+          <InsightV3Card
+            structured={insight.structured}
+            mode={mode}
+            footer={
+              mode === "coach" ? (
+                <CoachAnswerForm
+                  athleteId={athleteId}
+                  insightId={insight.id}
+                  initialAnswer={insight.coach_answer_text}
+                  initialRating={insight.coach_rating}
+                />
+              ) : undefined
+            }
+          />
         ) : isV2 && sections ? (
           <InsightV2Sections sections={sections} mode={mode} />
         ) : (

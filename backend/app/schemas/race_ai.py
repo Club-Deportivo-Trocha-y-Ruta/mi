@@ -108,6 +108,21 @@ class StartRunRequest(BaseModel):
         default=False,
         description="Si True, agente narra '¿por qué hago X?' y HITL siempre activo.",
     )
+    # Feature 037 (T101). "valida" = análisis por válida(s) (comportamiento
+    # actual, default). "season" = resumen de temporada (T203 lo conecta a
+    # un endpoint dedicado; aquí se acepta ya para no requerir otro cambio
+    # de contrato cuando ese router se implemente).
+    analysis_kind: str = Field(
+        default="valida",
+        description="Tipo de análisis: 'valida' (default) | 'season'.",
+    )
+
+    @field_validator("analysis_kind")
+    @classmethod
+    def _validate_analysis_kind(cls, v: str) -> str:
+        if v not in {"valida", "season"}:
+            raise ValueError("analysis_kind debe ser 'valida' o 'season'")
+        return v
 
     @field_validator("valida_nums")
     @classmethod

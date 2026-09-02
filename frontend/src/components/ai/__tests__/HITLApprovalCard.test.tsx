@@ -10,6 +10,10 @@ vi.mock("@/api/raceAnalysis", () => ({
   getRunStatus: vi.fn(),
   submitHITLDecision: vi.fn(),
   getRunResult: vi.fn(),
+  // Usado por `useCancelRun` (acción "Descartar análisis"). Su flujo se
+  // prueba con MSW en `HITLApprovalCard.cancel.test.tsx`; aquí sólo hace
+  // falta que el export exista para no romper el mock del módulo.
+  cancelRun: vi.fn(),
 }));
 
 import * as raceApi from "@/api/raceAnalysis";

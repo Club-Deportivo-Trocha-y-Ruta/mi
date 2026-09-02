@@ -1,0 +1,190 @@
+{
+  "case_id": "004",
+  "description": "N=1: primera y única válida con resultado de la temporada. Sin historial comparable y con menos de la mitad del pelotón con índice previo, la expectativa no se calcula. El análisis debe declararse como referencia inicial y no inventar tendencia.",
+  "input": {
+    "valida_num": 1,
+    "analysis_kind": "valida",
+    "athlete_ref": "la deportista",
+    "age": 13,
+    "ltad_group": "bambino",
+    "season": 2026,
+    "validas_count": 1,
+    "valida_label": "Válida 1 · Copa Valle",
+    "race_row": {
+      "valida_num": 1,
+      "event_date": "2026-01-31",
+      "category_code": "INF_B",
+      "position": 7,
+      "race_time_ms": 2310000,
+      "gap_to_winner_ms": 246000,
+      "gap_to_winner_pct": 11.92
+    },
+    "field_metrics": {
+      "event_id": 4401,
+      "valida_num": 1,
+      "event_date": "2026-01-31",
+      "series_kind": "cup",
+      "series_level": "departmental",
+      "is_championship": false,
+      "field_size": 14,
+      "position": 7,
+      "percentile": 53.8,
+      "race_time_ms": 2310000,
+      "gap_to_p1_ms": 246000,
+      "gap_pct": 11.92,
+      "gap_to_p3_ms": 138000,
+      "category_median_time_ms": 2298000,
+      "gap_to_median_pct": 0.52,
+      "laps_behind": 0,
+      "prior_index": null,
+      "expected_position": null,
+      "delta_vs_expected": null,
+      "field_strength": null,
+      "coverage_with_prior": 0.21
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 7,
+        "field_size": 14,
+        "percentile": 53.8,
+        "gap_pct": 11.92,
+        "gap_to_p3_ms": 138000,
+        "expected_position": null,
+        "delta_vs_expected": null
+      }
+    ],
+    "race_meta": "- Clima: soleado\n- Temperatura: 27 °C\n- Superficie de la pista: polvorienta",
+    "anthro_context": {
+      "records_count": 1,
+      "latest": {
+        "evaluation_date": "2026-01-12",
+        "days_before_event": 19,
+        "maturity_offset_years": -0.9,
+        "age_at_phv": 13.9,
+        "maturation_status": "Pre-PHV",
+        "height_percentile": 61
+      },
+      "previous": null,
+      "growth_velocity_cm_per_year": null,
+      "months_from_phv": -10.8,
+      "flags": []
+    },
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-01-03",
+      "date_to": "2026-01-31",
+      "sessions_in_window": 10,
+      "attended": 8,
+      "absent": 1,
+      "excused": 1,
+      "attendance_pct": 80,
+      "training_hours": 12,
+      "rpe_mean": 4.2,
+      "rpe_last7_mean": 4,
+      "rpe_prev21_mean": 4.3,
+      "rubric_effort_mean": 4.1,
+      "rubric_attitude_mean": 4.3,
+      "rubric_technique_mean": 3.4,
+      "technical_foci": ["Posición neutra/lista y equilibrio"],
+      "skill_codes_worked": ["A"],
+      "strength_sessions": 0,
+      "interval_sessions": 0,
+      "days_since_last_session": 4,
+      "days_since_previous_race": null,
+      "coach_feedback": ["Primera pretemporada completa con el grupo"],
+      "strava_load": null
+    },
+    "coach_dialogue": [],
+    "catalog_context": {
+      "technique_skills": [
+        {"code": "A", "name": "Posición neutra/lista y equilibrio", "focus": "Postura atlética, peso centrado, trackstand"},
+        {"code": "B", "name": "Mirada / visión", "focus": "Mirar lejos y donde sí quiero ir"},
+        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"}
+      ],
+      "strength_blocks": [
+        {"id": 22, "name": "Core y estabilidad con peso corporal", "age_band": "12-14"}
+      ],
+      "interval_templates": []
+    },
+    "memory_recent_insights": []
+  },
+  "expected_themes": ["referencia", "primera", "posición esperada"],
+  "forbidden_terms": [
+    "tendencia",
+    "mejoró respecto",
+    "suplementos",
+    "podio",
+    "ganar",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": ["referencia", "primera", "53.8", "mediana"],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "Primera referencia del año: terminó junto a la mediana de la categoría (percentil 53.8) con una pretemporada de asistencia 80%.",
+    "field_reading": {
+      "percentile": 53.8,
+      "expected_position": null,
+      "actual_position": 7,
+      "delta_vs_expected": null,
+      "gap_to_p3_hhmmss": "0:02:18",
+      "series_label": "Válida 1 · Copa Valle",
+      "summary": "Punto de partida de la temporada: mitad de tabla en un pelotón de 14, sin expectativa calculable."
+    },
+    "trend": "first_reference",
+    "observations": [
+      {
+        "claim": "El resultado queda a la altura de la mediana de la categoría, así que sirve como línea base y no como señal de nivel alto ni bajo.",
+        "evidence": ["percentil 53.8 en un pelotón de 14", "gap a la mediana 0.52%"],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "La distancia con el frente se concentra en la parte técnica del circuito, donde la rúbrica de técnica es la más baja de las tres.",
+        "evidence": ["rúbrica de técnica 3.4 frente a esfuerzo 4.1", "gap 11.92% al líder"],
+        "domain": "training",
+        "confidence": "medium"
+      },
+      {
+        "claim": "La pretemporada fue continua y sin picos de esfuerzo, un punto de partida sano para construir sobre él.",
+        "evidence": ["asistencia 80%", "RPE medio 4.2", "8 sesiones asistidas de 10"],
+        "domain": "training",
+        "confidence": "high"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Sumar dos bloques semanales de posición neutra y equilibrio en terreno irregular durante las próximas cuatro semanas.",
+        "category": "technique",
+        "priority": "high",
+        "horizon": "next_week",
+        "catalog_ref": {"kind": "technique_skill", "code": "A", "label": null},
+        "derived_from": 1
+      },
+      {
+        "text": "Mantener la frecuencia actual de sesiones hasta la siguiente válida para poder comparar contra esta línea base.",
+        "category": "volume",
+        "priority": "med",
+        "horizon": "next_race",
+        "catalog_ref": null,
+        "derived_from": 2
+      }
+    ],
+    "watch_signals": [
+      "Si la rúbrica de técnica sigue por debajo de 4 en la próxima ventana, revisar el diseño de los circuitos."
+    ],
+    "coach_question": "¿Cómo llegó al arranque de esta válida en cuanto a nervios y sueño, siendo su primera competencia del año?",
+    "data_gaps": [
+      "Sin válidas previas en la temporada: no hay base para hablar de evolución.",
+      "La posición esperada no se calcula porque menos de la mitad del pelotón tiene historial previo."
+    ],
+    "principles_cited": ["3. Progresión técnica en MTB/XCO"]
+  }
+}

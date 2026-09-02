@@ -86,10 +86,19 @@ export function HeroLastInsightCard({
   }
 
   // ---- Contenido del insight -----------------------------------------------
+  // T301 (feature 037): un insight v3 ya trae `headline` — un titular
+  // redactado por el analista, mejor que la sección "Qué pasó" parseada de
+  // v2 o el markdown crudo. `headline` viene del listado (`AthleteInsightOut`,
+  // T104), a diferencia de `structured` (con `actions`) que solo llega en
+  // el detalle (`AthleteInsightDetailOut`) — por eso este hero no puede
+  // mostrar la primera acción sin una llamada extra al detalle (ver
+  // open_issues del reporte de T301).
   const isV2 = insight.prompt_version === PROMPT_VERSION_V2;
-  const displayText = isV2
-    ? extractSection(insight.summary_text, "Qué pasó") || insight.summary_text
-    : insight.summary_text;
+  const displayText = insight.headline
+    ? insight.headline
+    : isV2
+      ? extractSection(insight.summary_text, "Qué pasó") || insight.summary_text
+      : insight.summary_text;
   // Fallback (US4, feature 036): igual que en InsightsTimeline.tsx — una
   // fila persistida por el camino de FALLA de `deterministic_fallback` no
   // es un análisis real y nunca debe ofrecerse para el boletín, ni siquiera

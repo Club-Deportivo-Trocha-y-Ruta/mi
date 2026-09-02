@@ -29,6 +29,7 @@ import {
 
 import { AnalysisRunTimeline } from "@/components/ai/AnalysisRunTimeline";
 import { HITLApprovalCard } from "@/components/ai/HITLApprovalCard";
+import { AthleteAnalystChatPanel } from "@/components/athletes/ai/AthleteAnalystChatPanel";
 import { ComparatorPanel } from "@/components/athletes/ai/ComparatorPanel";
 import { DistributionChart } from "@/components/athletes/ai/DistributionChart";
 import { EvolutionChart } from "@/components/athletes/ai/EvolutionChart";
@@ -64,11 +65,26 @@ import { confidenceStatus, validaLabel } from "@/lib/insights";
 import { invalidateAthleteAiQueries } from "@/hooks/ai/invalidateAthleteAiQueries";
 import { useRunStatus } from "@/hooks/ai/useRaceRun";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
+import { useAthleteRuns } from "@/hooks/athletes/useAthleteRuns";
 import { useAttachInsightsToNewsletter } from "@/api/athleteNewsletters";
 import type { AttachInsightsRequest } from "@/types/athleteNewsletter.types";
+import type { AthleteRunStatus } from "@/types/athleteRaceAnalysis.types";
 import type { AthleteOut } from "@/types/athlete.types";
+import type { InsightV3 } from "@/types/insightV3.types";
 
 type SubTab = "panorama" | "history" | "evolution" | "distribution" | "launch";
+
+/**
+ * Estados de `agent_runs` que siguen "vivos" y por lo tanto deben
+ * recuperarse al montar el tab: `running` (el pipeline sigue corriendo) y
+ * `awaiting_hitl` (el análisis terminó y espera la decisión del coach).
+ * Los demás (`completed`, `rejected`, `failed`, `cancelled`) son
+ * terminales y pertenecen al histórico, no al timeline en vivo.
+ */
+const ACTIVE_RUN_STATUSES: ReadonlySet<AthleteRunStatus> = new Set<AthleteRunStatus>([
+  "running",
+  "awaiting_hitl",
+]);
 
 const MONTH_ABBR = [
   "ene", "feb", "mar", "abr", "may", "jun",
@@ -195,7 +211,55 @@ export function AthleteAIAnalysisTab({
   const latest = headerQuery.data?.items[0];
   const total = headerQuery.data?.total ?? 0;
 
+  // ── Recuperación de runs activos desde el servidor ──────────────────────
+  //
+  // `activeRunId` es estado local: antes sólo se poblaba cuando el coach
+  // lanzaba el análisis en ESTA instancia de React. Un run en
+  // `awaiting_hitl` (análisis listo, esperando aprobación) desaparecía de
+  // la vista tras un refresh, un cambio de sub-tab o simplemente al volver
+  // al día siguiente — y encima seguía bloqueando con 409 cualquier intento
+  // de relanzar, sin nada en pantalla que lo explicara.
+  //
+  // Mismo patrón que el panel grupal (`hooks/ai/useGroupAnalysis.ts`):
+  // recovery query + efecto que siembra el run activo más reciente.
+  // Diferencia obligada: el endpoint del atleta NO tiene `active_only` —
+  // `GET /api/athletes/{id}/race-analysis/runs` sólo acepta `limit`/`offset`
+  // (ver `list_athlete_runs` en el router; `status` y `season` existen en
+  // `AthleteRunsParams` pero FastAPI los descarta en silencio). Por eso el
+  // filtro por estado se hace en cliente.
+  const runsRecoveryQuery = useAthleteRuns(
+    athlete.id,
+    { limit: 20 },
+    { enabled: mode === "coach" },
+  );
+
+  // Runs que este componente ya adoptó (sembrados o lanzados aquí). Sin
+  // esta marca, al completar un run `handleRunComplete` limpia
+  // `activeRunId` e invalida `athlete-runs`; si el refetch alcanzara a
+  // traer todavía el estado viejo, el efecto de abajo lo volvería a
+  // sembrar y el timeline reaparecería solo.
+  const adoptedRunIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (mode !== "coach") return;
+    if (activeRunId !== null) return;
+    const items = runsRecoveryQuery.data?.items;
+    if (!items || items.length === 0) return;
+    // El backend ordena por `started_at DESC, id DESC`, así que el primer
+    // match es el más reciente.
+    const candidate = items.find(
+      (run) =>
+        ACTIVE_RUN_STATUSES.has(run.status) &&
+        !adoptedRunIdsRef.current.has(run.run_id),
+    );
+    if (!candidate) return;
+    adoptedRunIdsRef.current.add(candidate.run_id);
+    setActiveRunId(candidate.run_id);
+    setHitlStepId(null);
+  }, [mode, activeRunId, runsRecoveryQuery.data]);
+
   const handleStarted = (runId: string) => {
+    adoptedRunIdsRef.current.add(runId);
     setActiveRunId(runId);
     setHitlStepId(null);
     setSubTab("history");
@@ -224,6 +288,27 @@ export function AthleteAIAnalysisTab({
     }
     return undefined;
   }, [statusQuery.data]);
+  // Autorreparación: el run está pausado esperando aprobación pero el
+  // `hitl_request` —el único evento que transporta el `draft_markdown`— no
+  // está en el buffer acumulado. Sin él la card le pide al coach que
+  // apruebe un borrador que no puede leer.
+  //
+  // El buffer vive en refs del hook y el cursor `since` sólo avanza, así
+  // que si el evento no llegó a entrar (buffer perdido tras un remount,
+  // polling reanudado con el cursor ya pasado, respuesta descartada) NUNCA
+  // se vuelve a pedir: el backend sólo reenvía eventos con `seq > since`.
+  // Reiniciamos el cursor UNA vez por run para forzar un refetch completo.
+  const healedRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (runState !== "hitl_waiting") return;
+    if (!activeRunId) return;
+    if (lastHitlEvent) return;
+    if (healedRunRef.current === activeRunId) return;
+    healedRunRef.current = activeRunId;
+    statusQuery.resetEvents();
+    void statusQuery.refetch();
+  }, [runState, activeRunId, lastHitlEvent, statusQuery]);
+
   const hitlStepIdFromEvent =
     typeof lastHitlEvent?.payload?.step_id === "string"
       ? (lastHitlEvent.payload.step_id as string)
@@ -231,13 +316,27 @@ export function AthleteAIAnalysisTab({
   const effectiveStepId = hitlStepId ?? hitlStepIdFromEvent ?? "hitl_default";
   // No mostrar una card de aprobación colgada del último dato bueno si
   // la query de estado ya quedó en error (p. ej. techo de polling T017).
+  // Excepción: si el último estado conocido es `hitl_waiting`, el run está
+  // pausado esperando al coach y sigue vivo — un error transitorio de red
+  // no debe borrarle la card de aprobación de la pantalla.
   const showHITL =
-    !statusQuery.isError &&
+    (!statusQuery.isError || runState === "hitl_waiting") &&
     (runState === "hitl_waiting" || !!hitlStepIdFromEvent);
   const draftMarkdown =
     typeof lastHitlEvent?.payload?.draft_markdown === "string"
       ? (lastHitlEvent.payload.draft_markdown as string)
       : "_(El agente generó un borrador, pero no incluyó el markdown en el evento. Aprueba o rechaza.)_";
+  // Feature 037 (T301): `structured_draft` viaja en el mismo evento
+  // `hitl_request`/`hitl_required` — `InsightV3 | null` (el backend lo
+  // omite en `null` para runs v2, ver `nodes/hitl_gate_review.py`).
+  const structuredDraft =
+    lastHitlEvent?.payload &&
+    typeof lastHitlEvent.payload === "object" &&
+    "structured_draft" in lastHitlEvent.payload &&
+    lastHitlEvent.payload.structured_draft !== null &&
+    typeof lastHitlEvent.payload.structured_draft === "object"
+      ? (lastHitlEvent.payload.structured_draft as InsightV3)
+      : null;
 
   return (
     <section className="space-y-4" data-testid="athlete-ai-analysis-tab">
@@ -276,81 +375,91 @@ export function AthleteAIAnalysisTab({
               </TooltipProvider>
             )}
           </div>
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex shrink-0 flex-col items-end gap-2">
             {mode === "coach" && (
               <SeasonSummaryButton
                 athleteId={athlete.id}
                 analyzedValidasCount={total}
-                onGenerated={(insightId) => {
-                  // T040: deep-link al insight recién creado — mismo patrón
-                  // que PanoramaView#onOpenDetail (abajo): fijar
-                  // selectedInsightId y saltar a Histórico, donde
-                  // InsightDetailDrawer lo abre.
-                  setSelectedInsightId(insightId);
-                  setSubTab("history");
-                }}
+                onRunStarted={handleStarted}
               />
-            )}
-            {headerQuery.isLoading ? (
-              <Skeleton className="h-16 w-48 rounded-lg" />
-            ) : latest ? (
-              <div
-                className="flex flex-col items-end gap-1 rounded-lg bg-light-gray/40 px-3 py-2"
-                data-testid="ai-header-summary"
-              >
-                <span className="text-[10px] font-medium uppercase tracking-wide text-mid-gray">
-                  Último análisis
-                </span>
-                {/* T034 (feature 036, US5): esta línea antes mostraba
-                    `generated_at` — la fecha en que se ESCRIBIÓ el
-                    análisis, no la fecha de la carrera. Eso hacía ver
-                    "reciente" una válida vieja apenas analizada (ej.
-                    generada hoy, sobre la Válida 1 de hace meses),
-                    ocultando que ya hubo carreras más nuevas sin
-                    analizar todavía — la fecha de generación se conserva
-                    abajo, marcada explícitamente como tal. Para el
-                    agregado de temporada (sin `event_id`, `event_date`
-                    null) no hay una fecha de carrera que anclar, así que
-                    cae a la temporada. */}
-                <span
-                  className="text-sm font-semibold text-charcoal"
-                  data-testid="ai-header-race-date"
-                >
-                  {latest.event_date
-                    ? formatRaceDateShort(latest.event_date)
-                    : `Temporada ${latest.season}`}
-                </span>
-                <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  <Badge variant="secondary">
-                    {validaLabel({ valida_num: latest.valida_num, series_kind: latest.series_kind })}
-                  </Badge>
-                  {mode === "coach" && (
-                    <StatusBadge
-                      status={confidenceStatus(latest.confidence).status}
-                      label={confidenceStatus(latest.confidence).label}
-                    />
-                  )}
-                </div>
-                <span className="text-[11px] text-mid-gray">
-                  Generado {formatDateTimeCompact(latest.generated_at)} · Total aprobados: {total}
-                </span>
-              </div>
-            ) : (
-              <p className="text-xs text-mid-gray">Sin análisis aprobados aún.</p>
             )}
           </div>
         </div>
+
+        {/* Franja de "último análisis" — antes era una card flotando a la
+            derecha que dejaba un hueco muerto de ~1000px en el centro. Como
+            fila horizontal a ancho completo la información se lee de corrido
+            y la cabecera baja de ~150px a ~110px. */}
+        {headerQuery.isLoading ? (
+          <Skeleton className="mt-4 h-10 w-full rounded-lg" />
+        ) : latest ? (
+          <div
+            className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-light-gray pt-3"
+            data-testid="ai-header-summary"
+          >
+            <span className="text-[10px] font-medium uppercase tracking-wide text-mid-gray">
+              Último análisis
+            </span>
+            {/* T034 (feature 036, US5): esta línea antes mostraba
+                `generated_at` — la fecha en que se ESCRIBIÓ el análisis, no
+                la fecha de la carrera. Eso hacía ver "reciente" una válida
+                vieja apenas analizada (ej. generada hoy, sobre la Válida 1 de
+                hace meses), ocultando que ya hubo carreras más nuevas sin
+                analizar todavía — la fecha de generación se conserva al
+                final, marcada explícitamente como tal. Para el agregado de
+                temporada (sin `event_id`, `event_date` null) no hay una fecha
+                de carrera que anclar, así que cae a la temporada. */}
+            <span
+              className="text-sm font-semibold text-charcoal"
+              data-testid="ai-header-race-date"
+            >
+              {latest.event_date
+                ? formatRaceDateShort(latest.event_date)
+                : `Temporada ${latest.season}`}
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="secondary">
+                {validaLabel({ valida_num: latest.valida_num, series_kind: latest.series_kind })}
+              </Badge>
+              {mode === "coach" && (
+                <StatusBadge
+                  status={confidenceStatus(latest.confidence).status}
+                  label={confidenceStatus(latest.confidence).label}
+                />
+              )}
+            </div>
+            {/* `ml-auto` empuja la metadata secundaria al extremo: lo primero
+                que se lee es la carrera analizada, no cuándo se generó. */}
+            <span className="text-[11px] text-mid-gray sm:ml-auto">
+              Generado {formatDateTimeCompact(latest.generated_at)} · {total} aprobados
+            </span>
+          </div>
+        ) : (
+          <p className="mt-4 border-t border-light-gray pt-3 text-xs text-mid-gray">
+            Sin análisis aprobados aún.
+          </p>
+        )}
       </div>
 
       {/* Run timeline en vivo — solo coach */}
       {mode === "coach" && activeRunId && (
         <>
-          <AnalysisRunTimeline runId={activeRunId} onComplete={handleRunComplete} />
+          {/* Compacto por defecto (~72px). Antes se renderizaba `full`: los
+              13 nodos del grafo ocupaban ~470px de vocabulario de ingeniería
+              ("Anonimizar datos", "Rehidratar nombres") y empujaban el
+              histórico fuera de la pantalla. El detalle queda a un clic. */}
+          <AnalysisRunTimeline
+            runId={activeRunId}
+            variant="compact"
+            collapsible
+            onComplete={handleRunComplete}
+          />
           {showHITL && (
             <HITLApprovalCard
               runId={activeRunId}
               stepId={effectiveStepId}
               draftMarkdown={draftMarkdown}
+              structuredDraft={structuredDraft}
               onSubmitted={() => setHitlStepId(null)}
             />
           )}
@@ -468,11 +577,14 @@ export function AthleteAIAnalysisTab({
         )}
         {mode === "coach" && (
           <TabsContent value="launch">
-            <LaunchAnalysisForm
-              athleteId={athlete.id}
-              athleteName={`${athlete.first_name} ${athlete.last_name}`.trim()}
-              onStarted={handleStarted}
-            />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start">
+              <LaunchAnalysisForm
+                athleteId={athlete.id}
+                athleteName={`${athlete.first_name} ${athlete.last_name}`.trim()}
+                onStarted={handleStarted}
+              />
+              <AthleteAnalystChatPanel athleteId={athlete.id} />
+            </div>
           </TabsContent>
         )}
       </Tabs>

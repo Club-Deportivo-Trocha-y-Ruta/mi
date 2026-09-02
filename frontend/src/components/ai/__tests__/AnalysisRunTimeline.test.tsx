@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 import { axe } from "jest-axe";
@@ -214,8 +215,13 @@ describe("AnalysisRunTimeline", () => {
           screen.getByTestId("timeline-node-hitl_gate_review"),
         ).toHaveAttribute("data-status", "error"),
       );
-      // Header marca el run como fallido.
-      expect(screen.getByText("Falló")).toBeInTheDocument();
+      // Header marca el run como fallido. Se apunta al testid del titular en
+      // vez de al texto suelto: "Falló" también es el label del badge de un
+      // nodo, así que la aserción por texto no distinguía cuál de los dos
+      // estaba comprobando.
+      expect(screen.getByTestId("timeline-headline")).toHaveTextContent(
+        "El análisis falló",
+      );
     },
   );
 
@@ -366,6 +372,76 @@ describe("AnalysisRunTimeline", () => {
       });
       const results = await axe(container);
       expect(results).toHaveNoViolations();
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Rediseño: vista compacta con detalle bajo demanda
+  // ------------------------------------------------------------------
+
+  describe("collapsible", () => {
+    function mockRunning(currentNode: string | null, state = "running") {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state,
+        progress_pct: 62,
+        current_node: currentNode,
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 30,
+        last_seq: 0,
+        new_events: [],
+      } as never);
+    }
+
+    it("arranca colapsado: sin la lista de 13 nodos del pipeline", async () => {
+      mockRunning("analyst_agent");
+      wrap(<AnalysisRunTimeline runId="r1" variant="compact" collapsible />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("timeline-detail-toggle")).toBeInTheDocument(),
+      );
+      expect(screen.queryByTestId("timeline-nodes-list")).not.toBeInTheDocument();
+    });
+
+    it("traduce el nodo técnico a una fase en lenguaje de entrenador", async () => {
+      mockRunning("anonymize");
+      wrap(<AnalysisRunTimeline runId="r1" variant="compact" collapsible />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("timeline-headline")).toHaveTextContent(
+          "Preparando los datos de la carrera",
+        ),
+      );
+      // El vocabulario de ingeniería no debe aparecer en la vista por defecto.
+      expect(screen.queryByText("Anonimizar datos")).not.toBeInTheDocument();
+    });
+
+    it("expande el detalle técnico al pulsar el toggle", async () => {
+      const user = userEvent.setup();
+      mockRunning("analyst_agent");
+      wrap(<AnalysisRunTimeline runId="r1" variant="compact" collapsible />);
+
+      const toggle = await screen.findByTestId("timeline-detail-toggle");
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+      await user.click(toggle);
+
+      expect(await screen.findByTestId("timeline-nodes-list")).toBeInTheDocument();
+      expect(screen.getByText("Anonimizar datos")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("timeline-detail-toggle"),
+      ).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("sin violaciones de accesibilidad en estado colapsado", async () => {
+      mockRunning("analyst_agent");
+      const { container } = wrap(
+        <AnalysisRunTimeline runId="r1" variant="compact" collapsible />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("timeline-headline")).toBeInTheDocument(),
+      );
+      expect(await axe(container)).toHaveNoViolations();
     });
   });
 });

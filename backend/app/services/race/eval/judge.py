@@ -34,13 +34,21 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "JUDGE_PROMPT_PATH",
+    "JUDGE_V2_PROMPT_PATH",
     "JudgeResult",
     "build_judge_prompt",
+    "build_judge_v2_prompt",
     "llm_judge_score",
+    "llm_judge_score_v3",
     "parse_judge_output",
 ]
 
 JUDGE_PROMPT_PATH = Path(__file__).parent / "prompts" / "judge_v1.md"
+
+# Juez del eval v3 (feature 037, T401). Prompt separado —no una versión
+# nueva del mismo archivo— porque el eval v2 sigue corriendo con
+# ``RACE_EVAL_VERSION=v2`` y debe seguir midiendo con su rúbrica histórica.
+JUDGE_V2_PROMPT_PATH = Path(__file__).parent / "prompts" / "judge_v2.md"
 
 # Score neutral cuando el parseo falla — declarado explícitamente.
 _NEUTRAL_SCORE = 0.5
@@ -231,6 +239,114 @@ async def llm_judge_score(
         call = await call_llm(llm, prompt)
     except Exception as exc:
         logger.warning("llm_judge: llamada al LLM falló (%s) — neutral 0.5", exc)
+        return JudgeResult(score=_NEUTRAL_SCORE, reasoning="llm_error", parse_ok=False)
+
+    return parse_judge_output(call.text)
+
+
+# ---------------------------------------------------------------------------
+# Juez v2 — eval del InsightV3 (feature 037, T401)
+# ---------------------------------------------------------------------------
+
+
+def _render_prompt_file(path: Path, context: dict[str, Any]) -> str:
+    """Renderiza un template Jinja2 del directorio de prompts del eval."""
+    from jinja2 import ChainableUndefined, Environment, FileSystemLoader
+
+    env = Environment(
+        loader=FileSystemLoader(str(path.parent)),
+        autoescape=False,
+        keep_trailing_newline=True,
+        undefined=ChainableUndefined,
+    )
+    return env.get_template(path.name).render(**context)
+
+
+def _insight_to_json(draft: Any) -> str:
+    """Serializa un ``InsightV3`` (o dict) a JSON legible para el juez."""
+    if draft is None:
+        return "null"
+    dump = getattr(draft, "model_dump", None)
+    payload = dump(mode="json") if callable(dump) else draft
+    return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+
+
+def build_judge_v2_prompt(case: dict[str, Any], draft: Any) -> str:
+    """Renderiza ``judge_v2.md`` con el caso golden v3 + el draft real.
+
+    A diferencia de :func:`build_judge_prompt` (v1), el juez recibe **los
+    bloques de datos que vio el analista** (``scorer_v3.case_data_blocks``):
+    sin ellos, la dimensión de precisión sería una opinión y no una
+    verificación. El resto del prompt (método, reglas, ejemplo resuelto)
+    queda fuera a propósito — el juez evalúa el output, no el prompt.
+
+    Args:
+        case: dict del caso golden v3 (``golden_v3/case_NNN.json``).
+        draft: :class:`~app.services.race.insight_v3.InsightV3` o dict.
+
+    Returns:
+        Prompt renderizado. Claves faltantes del caso → defaults vacíos
+        (nunca lanza por un caso golden incompleto; el runner valida el
+        schema por separado).
+    """
+    from app.services.race.eval.scorer_v3 import case_data_blocks
+
+    case_input = dict(case.get("input") or {})
+    return _render_prompt_file(
+        JUDGE_V2_PROMPT_PATH,
+        {
+            "case_id": case.get("case_id", "unknown"),
+            "case_description": case.get("description", ""),
+            "analysis_kind": case_input.get("analysis_kind", "valida"),
+            "athlete_ref": case_input.get("athlete_ref", "la deportista"),
+            "age": case_input.get("age"),
+            "ltad_group": case_input.get("ltad_group", "bambino"),
+            "data_blocks": case_data_blocks(case) or "(sin datos)",
+            "ideal_output_json": _insight_to_json(case.get("ideal_output")),
+            "actual_output_json": _insight_to_json(draft),
+            "expected_themes": list(case.get("expected_themes") or []),
+            "forbidden_terms": list(case.get("forbidden_terms") or []),
+            "expected_headline_keywords": list(
+                case.get("expected_headline_keywords") or []
+            ),
+            "max_words": int(case.get("max_words") or 450),
+        },
+    )
+
+
+async def llm_judge_score_v3(
+    draft: Any,
+    case: dict[str, Any],
+    llm_factory: Optional[Callable[[], Any]] = None,
+) -> JudgeResult:
+    """Invoca el juez v2 sobre un ``InsightV3`` del analista.
+
+    Mismo contrato defensivo que :func:`llm_judge_score`: cualquier fallo
+    del proveedor o del parseo devuelve el neutral 0.5 con
+    ``parse_ok=False`` en vez de propagar (una caída del juez no debe
+    hundir ni inflar el gate).
+
+    Args:
+        draft: draft estructurado a evaluar.
+        case: caso golden v3.
+        llm_factory: callable ``() -> chat_model`` para tests. ``None`` usa
+            :func:`build_chat_llm` con el modelo legacy ``RACE_AI_MODEL``
+            (el juez es deliberadamente independiente de los modelos de
+            analyst/critic: si mejoramos el analista, el juez no cambia).
+    """
+    prompt = build_judge_v2_prompt(case, draft)
+
+    if llm_factory is None:
+        from app.services.race.agents._llm import build_chat_llm
+
+        llm = build_chat_llm(temperature=0.0)  # Determinístico para juez.
+    else:
+        llm = llm_factory()
+
+    try:
+        call = await call_llm(llm, prompt)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("llm_judge_v3: llamada al LLM falló (%s) — neutral 0.5", exc)
         return JudgeResult(score=_NEUTRAL_SCORE, reasoning="llm_error", parse_ok=False)
 
     return parse_judge_output(call.text)

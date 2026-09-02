@@ -38,6 +38,7 @@ __all__ = [
     "AthleteInsightOut",
     "AthleteInsightDetailOut",
     "AthleteInsightListResponse",
+    "AnswerInsightBody",
     "InsightLink",
     "AthleteRunOut",
     "AthleteRunListResponse",
@@ -187,6 +188,24 @@ class AthleteInsightOut(BaseModel):
             "reintentar; el servidor además rechaza adjuntarlo (422)."
         ),
     )
+    headline: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description=(
+            "Titular del insight v3 (feature 037), leído de "
+            "``structured_json['headline']``. ``None`` para insights v1/v2 "
+            "(sin ``structured_json``) o si el campo no está presente."
+        ),
+    )
+    coach_rating: Optional[int] = Field(
+        default=None,
+        ge=-1,
+        le=1,
+        description=(
+            "Calificación del coach al insight (feature 037): "
+            "``1`` = útil, ``-1`` = no útil. ``None`` = sin calificar."
+        ),
+    )
 
 
 class AthleteInsightDetailOut(AthleteInsightOut):
@@ -224,6 +243,27 @@ class AthleteInsightDetailOut(AthleteInsightOut):
             "al momento de generación. Informativo. None para insights v1."
         ),
     )
+    structured: Optional[dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Contenido completo de ``structured_json`` (feature 037, "
+            "InsightV3.model_dump()). ``None`` para insights v1/v2. "
+            "En modo parent, el router omite server-side "
+            "``field_reading.expected_position``/``delta_vs_expected``, "
+            "``coach_question`` y la evidencia de observaciones de dominio "
+            "``training`` — ver ``data-model.md §API deltas``."
+        ),
+    )
+    coach_answer_text: Optional[str] = Field(
+        default=None,
+        max_length=1000,
+        description=(
+            "Respuesta del coach a ``structured['coach_question']`` "
+            "(feature 037), ya escrubeada de nombres prohibidos. Omitido "
+            "server-side en modo parent."
+        ),
+    )
+    coach_answer_at: Optional[datetime] = None
 
 
 class AthleteInsightListResponse(BaseModel):
@@ -233,6 +273,21 @@ class AthleteInsightListResponse(BaseModel):
     total: int = Field(..., ge=0)
     limit: int = Field(..., ge=1, le=100)
     offset: int = Field(..., ge=0)
+
+
+class AnswerInsightBody(BaseModel):
+    """Body para ``POST /insights/{insight_id}/answer`` (feature 037, T104).
+
+    Responde a ``structured_json['coach_question']`` y opcionalmente
+    califica el insight. Ambos campos opcionales — se puede calificar sin
+    texto o viceversa, pero al menos uno debe venir (validado en el
+    router: 422 si ambos son ``None``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer_text: Optional[str] = Field(default=None, max_length=1000)
+    rating: Optional[int] = Field(default=None, ge=-1, le=1)
 
 
 # ---------------------------------------------------------------------------
@@ -632,3 +687,21 @@ class SeasonSummaryResponse(BaseModel):
         ge=3,
         description="Número de válidas que alimentaron el resumen (≥3 requeridas).",
     )
+
+
+class SeasonSummaryRunResponse(BaseModel):
+    """Respuesta de ``POST /race-analysis/season-summary`` (feature 037, T203).
+
+    A partir de 037 este endpoint deja de invocar el LLM de forma síncrona:
+    lanza un run agéntico (``analysis_kind="season"``) sobre el mismo grafo
+    LangGraph que ``POST /runs``, con crítico + HITL. El cliente hace polling
+    de ``GET /api/race-analysis/runs/{run_id}/status`` igual que para un
+    análisis por válida — ``SeasonSummaryResponse`` (arriba) queda en desuso
+    para este endpoint pero se conserva por compatibilidad de otros
+    consumidores del schema.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str = Field(..., min_length=1, max_length=64)
+    status: str = Field(..., description="Estado inicial del run (siempre 'running').")

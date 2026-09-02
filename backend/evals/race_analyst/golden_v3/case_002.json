@@ -1,0 +1,236 @@
+{
+  "case_id": "002",
+  "description": "Bambino (12 años) en declive: pierde tres puestos respecto de lo esperado en la válida con la asistencia más baja del ciclo y RPE alto en los últimos siete días.",
+  "input": {
+    "valida_num": 3,
+    "analysis_kind": "valida",
+    "athlete_ref": "la deportista",
+    "age": 12,
+    "ltad_group": "bambino",
+    "season": 2026,
+    "validas_count": 3,
+    "valida_label": "Válida 3 · Copa Valle",
+    "race_row": {
+      "valida_num": 3,
+      "event_date": "2026-04-19",
+      "category_code": "INF_B",
+      "position": 8,
+      "race_time_ms": 2115000,
+      "gap_to_winner_ms": 168000,
+      "gap_to_winner_pct": 8.63
+    },
+    "field_metrics": {
+      "event_id": 4203,
+      "valida_num": 3,
+      "event_date": "2026-04-19",
+      "series_kind": "cup",
+      "series_level": "departmental",
+      "is_championship": false,
+      "field_size": 12,
+      "position": 8,
+      "percentile": 36.4,
+      "race_time_ms": 2115000,
+      "gap_to_p1_ms": 168000,
+      "gap_pct": 8.63,
+      "gap_to_p3_ms": 97000,
+      "category_median_time_ms": 2072000,
+      "gap_to_median_pct": 2.08,
+      "laps_behind": 0,
+      "prior_index": 4.9,
+      "expected_position": 5,
+      "delta_vs_expected": -3,
+      "field_strength": 6.2,
+      "coverage_with_prior": 0.67
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 5,
+        "field_size": 12,
+        "percentile": 63.6,
+        "gap_pct": 4.55,
+        "gap_to_p3_ms": 48000,
+        "expected_position": 6,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 6,
+        "field_size": 12,
+        "percentile": 54.5,
+        "gap_pct": 5.27,
+        "gap_to_p3_ms": 62000,
+        "expected_position": 5,
+        "delta_vs_expected": -1
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 8,
+        "field_size": 12,
+        "percentile": 36.4,
+        "gap_pct": 8.63,
+        "gap_to_p3_ms": 97000,
+        "expected_position": 5,
+        "delta_vs_expected": -3
+      }
+    ],
+    "race_meta": "- Clima: lluvioso\n- Superficie de la pista: barro",
+    "anthro_context": {
+      "records_count": 2,
+      "latest": {
+        "evaluation_date": "2026-03-05",
+        "days_before_event": 45,
+        "maturity_offset_years": -1.6,
+        "age_at_phv": 13.7,
+        "maturation_status": "Pre-PHV",
+        "height_percentile": 42
+      },
+      "previous": null,
+      "growth_velocity_cm_per_year": 4.4,
+      "months_from_phv": -19.2,
+      "flags": ["stale_measurement_gt_120d"]
+    },
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-03-22",
+      "date_to": "2026-04-19",
+      "sessions_in_window": 9,
+      "attended": 5,
+      "absent": 4,
+      "excused": 0,
+      "attendance_pct": 55.6,
+      "training_hours": 7.5,
+      "rpe_mean": 4.6,
+      "rpe_last7_mean": 5.4,
+      "rpe_prev21_mean": 4.1,
+      "rubric_effort_mean": 3.2,
+      "rubric_attitude_mean": 3.6,
+      "rubric_technique_mean": 3.1,
+      "technical_foci": ["Control de presión / terreno"],
+      "skill_codes_worked": ["G"],
+      "strength_sessions": 1,
+      "interval_sessions": 0,
+      "days_since_last_session": 9,
+      "days_since_previous_race": 50,
+      "coach_feedback": [
+        "Llega tarde y se retira antes del cierre en dos de las últimas sesiones"
+      ],
+      "strava_load": null
+    },
+    "coach_dialogue": [
+      {
+        "generated_at": "2026-03-02",
+        "valida_label": "Válida 2 · Copa Valle",
+        "headline": "Sostuvo el percentil 54.5 pese a una ventana corta de preparación",
+        "coach_question": "¿Hubo alguna molestia física en las semanas previas?",
+        "coach_answer": "No hubo molestias; el colegio cambió el horario de la tarde",
+        "coach_rating": 1
+      }
+    ],
+    "catalog_context": {
+      "technique_skills": [
+        {"code": "C", "name": "Frenado modulado", "focus": "1 dedo por freno, peso atrás, dosificar"},
+        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"},
+        {"code": "G", "name": "Control de presión / terreno", "focus": "Pump, raíces/rocas, drops"}
+      ],
+      "strength_blocks": [
+        {"id": 22, "name": "Core y estabilidad con peso corporal", "age_band": "12-14"}
+      ],
+      "interval_templates": []
+    },
+    "memory_recent_insights": [
+      "Válida 2 · Copa: percentil 54.5 con asistencia estable",
+      "Válida 1 · Copa: mejor registro de la temporada en percentil 63.6"
+    ]
+  },
+  "expected_themes": ["asistencia", "55.6", "carga", "descanso"],
+  "forbidden_terms": [
+    "suplementos",
+    "creatina",
+    "diagnóstico",
+    "lesión confirmada",
+    "podio",
+    "ganar",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": ["asistencia", "55.6", "puestos", "esperada"],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "Perdió 3 puestos respecto de la posición esperada en la ventana con menor asistencia del ciclo: 55.6% frente a un RPE que subió a 5.4.",
+    "field_reading": {
+      "percentile": 36.4,
+      "expected_position": 5,
+      "actual_position": 8,
+      "delta_vs_expected": -3,
+      "gap_to_p3_hhmmss": "0:01:37",
+      "series_label": "Válida 3 · Copa Valle",
+      "summary": "Rindió por debajo de su índice previo y cayó al tercio bajo de un pelotón de 12."
+    },
+    "trend": "declining",
+    "observations": [
+      {
+        "claim": "La caída no es de ritmo puntual: es la primera vez en la temporada que termina por debajo de la mediana de la categoría.",
+        "evidence": ["percentil 36.4 frente a 63.6 en la primera válida", "gap a la mediana 2.08%"],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "La ventana previa se rompió: casi la mitad de las sesiones sin asistir y nueve días sin entrenar antes de competir.",
+        "evidence": ["asistencia 55.6%", "5 sesiones asistidas de 9", "9 días desde la última sesión"],
+        "domain": "training",
+        "confidence": "high"
+      },
+      {
+        "claim": "El esfuerzo percibido subió justo en la última semana mientras la rúbrica de esfuerzo bajó, señal de sesiones sueltas y duras en vez de continuidad.",
+        "evidence": ["RPE 5.4 en los últimos 7 días frente a 4.1 previos", "rúbrica de esfuerzo 3.2"],
+        "domain": "training",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Recuperar cuatro sesiones semanales de baja intensidad antes de la próxima válida, priorizando continuidad sobre intensidad.",
+        "category": "volume",
+        "priority": "high",
+        "horizon": "next_week",
+        "catalog_ref": null,
+        "derived_from": 1
+      },
+      {
+        "text": "Dedicar veinte minutos por sesión a control de presión y terreno en piso húmedo mientras siga la temporada de lluvias.",
+        "category": "technique",
+        "priority": "med",
+        "horizon": "next_race",
+        "catalog_ref": {"kind": "technique_skill", "code": "G", "label": null},
+        "derived_from": 0
+      },
+      {
+        "text": "Cerrar cada semana con un día completo de descanso para bajar el esfuerzo percibido antes de volver a competir.",
+        "category": "recovery",
+        "priority": "med",
+        "horizon": "next_week",
+        "catalog_ref": null,
+        "derived_from": 2
+      }
+    ],
+    "watch_signals": [
+      "Si el RPE de la próxima semana sigue sobre 5, revisar sueño y carga escolar antes de sumar sesiones."
+    ],
+    "coach_question": "¿El cambio de horario del colegio sigue chocando con el entrenamiento de la tarde o apareció algo nuevo en estas semanas?",
+    "data_gaps": ["Antropometría con más de 120 días: no se puede descartar un cambio madurativo reciente."],
+    "principles_cited": ["2. Capacidades físicas y dosificación por edad"]
+  }
+}

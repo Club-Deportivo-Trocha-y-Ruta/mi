@@ -115,3 +115,69 @@ async def test_anonymize_sentinel_no_real_tyr_names_in_events(
                 f"PRIVACY LEAK: nombre real '{banned}' encontrado en events "
                 f"para athlete_id={athlete_id}"
             )
+
+
+@pytest.mark.asyncio
+async def test_anonymize_scrubs_training_window_coach_feedback(
+    configure_db_factory, fake_session
+):
+    """Feature 037 (T103): training_window.coach_feedback se scrubea con
+    club_forbidden_names (superset de todo el club, no solo el atleta+padres)."""
+    configure_db_factory(fake_session)
+    state = {
+        "athlete_id": 7,
+        "competitor_id": 22,
+        "run_id": "abc",
+        "raw_data": [{"athlete_id": 7, "competitor_id": 22}],
+        "club_forbidden_names": ["Juan Pérez Ficticio", "Ana Gómez Ficticio"],
+        "training_window": {
+            "window_days": 28,
+            "coach_feedback": [
+                "Juan Pérez Ficticio mejoró el frenado en curva.",
+                "Buen ritmo sostenido toda la sesión.",
+            ],
+        },
+    }
+    update = await anonymize(state)
+
+    scrubbed = update["training_window"]["coach_feedback"]
+    assert "Juan Pérez Ficticio" not in scrubbed[0]
+    assert scrubbed[1] == "Buen ritmo sostenido toda la sesión."
+    # window_days y demás claves de training_window se preservan intactas.
+    assert update["training_window"]["window_days"] == 28
+
+
+@pytest.mark.asyncio
+async def test_anonymize_falls_back_to_forbidden_names_without_club_superset(
+    configure_db_factory, fake_session
+):
+    """Sin club_forbidden_names en state, usa forbidden_names (atleta+padres)."""
+    configure_db_factory(fake_session)
+    state = {
+        "athlete_id": 7,
+        "competitor_id": 22,
+        "run_id": "abc",
+        "raw_data": [{"athlete_id": 7, "competitor_id": 22}],
+        "forbidden_names": ["Juan Pérez Ficticio"],
+        "training_window": {
+            "coach_feedback": ["Juan Pérez Ficticio faltó a la sesión del jueves."],
+        },
+    }
+    update = await anonymize(state)
+    assert "Juan Pérez Ficticio" not in update["training_window"]["coach_feedback"][0]
+
+
+@pytest.mark.asyncio
+async def test_anonymize_leaves_training_window_untouched_without_coach_feedback(
+    configure_db_factory, fake_session
+):
+    configure_db_factory(fake_session)
+    state = {
+        "athlete_id": 7,
+        "competitor_id": 22,
+        "run_id": "abc",
+        "raw_data": [{"athlete_id": 7, "competitor_id": 22}],
+        "training_window": {"window_days": 28, "coach_feedback": []},
+    }
+    update = await anonymize(state)
+    assert "training_window" not in update

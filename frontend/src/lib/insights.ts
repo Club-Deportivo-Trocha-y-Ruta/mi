@@ -12,6 +12,12 @@
  */
 import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
 import type { ProgressionAssessment } from "@/types/raceAnalysis.types";
+import type {
+  ActionCategory,
+  EvidenceDomain,
+  Horizon,
+  Priority,
+} from "@/types/insightV3.types";
 
 export const PROMPT_VERSION_V2 = "race_analyst_v2";
 
@@ -322,3 +328,76 @@ export const TAPER_GUIDANCE: Record<"A" | "B" | "C", TaperGuidance> = {
     dangerAt: null,
   },
 };
+
+// ---------------------------------------------------------------------------
+// InsightV3 — etiquetas de enums en español (feature 037, T301)
+// ---------------------------------------------------------------------------
+
+/** Etiqueta es-CO del dominio de evidencia de una observación v3. */
+export function evidenceDomainLabel(domain: EvidenceDomain): string {
+  switch (domain) {
+    case "race":
+      return "Carrera";
+    case "field":
+      return "Pista";
+    case "training":
+      return "Entrenamiento";
+    case "maturation":
+      return "Maduración";
+    case "conditions":
+      return "Condiciones";
+    case "history":
+      return "Histórico";
+  }
+}
+
+/** Etiqueta es-CO de la categoría de una acción v3. */
+export function actionCategoryLabel(category: ActionCategory): string {
+  switch (category) {
+    case "technique":
+      return "Técnica";
+    case "volume":
+      return "Volumen";
+    case "recovery":
+      return "Recuperación";
+    case "nutrition":
+      return "Nutrición";
+    case "psychology":
+      return "Psicología";
+    case "tactics":
+      return "Táctica";
+  }
+}
+
+/** Etiqueta es-CO de prioridad de una acción v3. */
+export function priorityLabel(priority: Priority): string {
+  switch (priority) {
+    case "high":
+      return "Prioridad alta";
+    case "med":
+      return "Prioridad media";
+    case "low":
+      return "Prioridad baja";
+  }
+}
+
+/** Variante de `Badge` para la prioridad de una acción v3. */
+export function priorityVariant(
+  priority: Priority,
+): "destructive" | "warning" | "secondary" {
+  if (priority === "high") return "destructive";
+  if (priority === "med") return "warning";
+  return "secondary";
+}
+
+/** Etiqueta es-CO del horizonte temporal de una acción v3. */
+export function horizonLabel(horizon: Horizon): string {
+  switch (horizon) {
+    case "next_week":
+      return "Próxima semana";
+    case "next_race":
+      return "Próxima carrera";
+    case "season":
+      return "Temporada";
+  }
+}

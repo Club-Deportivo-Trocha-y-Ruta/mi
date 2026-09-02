@@ -7,13 +7,11 @@
  * - Feedback de éxito/error inline (no depende de librería toast externa).
  * - Solo se usa en vista coach (AthleteAIAnalysisTab lo monta condicionalmente).
  *
- * La llamada es SÍNCRONA (feature 036, T040): a diferencia de
- * `useLaunchAthleteAnalysis` (que arranca un run agéntico polleable), el
- * backend ya generó y persistió el resumen para cuando la promesa resuelve
- * — nunca hay un "en proceso" que esperar. El feedback de éxito refleja
- * eso, y `onGenerated` expone el `insight_id` recién creado para que quien
- * monte este botón pueda deep-linkear al insight en el histórico (ej.
- * `InsightsTimeline`'s `selectedInsightId`).
+ * Feature 037 (v3): la llamada es ASÍNCRONA — el backend lanza un run
+ * agéntico (`analysis_kind="season"`) y responde 202 con `run_id`. El
+ * resumen pasa por crítico y aprobación del coach como cualquier válida;
+ * `onRunStarted` expone el `run_id` para que quien monte este botón muestre
+ * la línea de tiempo del run (cableado completo en la Wave 3, T302).
  */
 import { useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
@@ -36,22 +34,20 @@ interface SeasonSummaryButtonProps {
   /** Número de válidas ya analizadas (con análisis aprobado) para este atleta. */
   analyzedValidasCount: number;
   /**
-   * Se invoca con el `insight_id` recién creado al terminar con éxito, para
-   * que el padre pueda deep-linkear al insight (ej. controlar
-   * `selectedInsightId` de `InsightsTimeline`). Opcional: si no se provee,
-   * el botón sigue funcionando, solo sin affordance de "Ver resumen".
+   * Se invoca con el `run_id` del run recién lanzado para que el padre pueda
+   * mostrar su progreso (AnalysisRunTimeline + HITL). Opcional.
    */
-  onGenerated?: (insightId: number) => void;
+  onRunStarted?: (runId: string) => void;
 }
 
 export function SeasonSummaryButton({
   athleteId,
   analyzedValidasCount,
-  onGenerated,
+  onRunStarted,
 }: SeasonSummaryButtonProps) {
   const mutation = useGenerateSeasonSummary(athleteId);
   const [feedback, setFeedback] = useState<
-    | { kind: "success"; insightId: number }
+    | { kind: "success"; runId: string }
     | { kind: "error"; message: string }
     | null
   >(null);
@@ -63,9 +59,9 @@ export function SeasonSummaryButton({
     setFeedback(null);
     try {
       const result = await mutation.mutateAsync();
-      setFeedback({ kind: "success", insightId: result.insight_id });
-      onGenerated?.(result.insight_id);
-      setTimeout(() => setFeedback(null), 4000);
+      setFeedback({ kind: "success", runId: result.run_id });
+      onRunStarted?.(result.run_id);
+      setTimeout(() => setFeedback(null), 6000);
     } catch (err) {
       setFeedback({ kind: "error", message: extractErrorDetail(err, ERROR_FALLBACK) });
       setTimeout(() => setFeedback(null), 8000);
@@ -87,7 +83,7 @@ export function SeasonSummaryButton({
       ) : (
         <Sparkles size={14} aria-hidden="true" />
       )}
-      {mutation.isPending ? "Generando…" : "Resumen temporada"}
+      {mutation.isPending ? "Lanzando…" : "Resumen temporada"}
     </Button>
   );
 
@@ -114,25 +110,14 @@ export function SeasonSummaryButton({
       </TooltipProvider>
 
       {feedback?.kind === "success" && (
-        <div className="flex flex-col items-end gap-0.5">
-          <p
-            role="status"
-            className="text-[11px] text-green-700"
-            data-testid="season-summary-success"
-          >
-            Resumen de temporada generado — ya está en el histórico.
-          </p>
-          {onGenerated && (
-            <button
-              type="button"
-              onClick={() => onGenerated(feedback.insightId)}
-              className="text-[11px] font-medium text-primary hover:underline"
-              data-testid="season-summary-view-link"
-            >
-              Ver resumen →
-            </button>
-          )}
-        </div>
+        <p
+          role="status"
+          className="text-[11px] text-green-700"
+          data-testid="season-summary-success"
+        >
+          Resumen de temporada en proceso. Aparecerá en el histórico cuando lo
+          apruebes.
+        </p>
       )}
       {feedback?.kind === "error" && (
         <p

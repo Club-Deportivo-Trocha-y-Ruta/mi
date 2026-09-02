@@ -22,6 +22,9 @@ from app.services.race.prompts import render_prompt
 def _base_ctx(**over):
     ctx = {
         "athlete_pseudonym": "la deportista",
+        # Feature 037 (T101): el template ahora usa {{ athlete_ref }} en vez
+        # de "la deportista" hardcodeado.
+        "athlete_ref": "la deportista",
         "age": 12,
         "ltad_group": "bambino",
         "valida_num": 3,

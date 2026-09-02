@@ -5,8 +5,6 @@ analyst then had no real conditions and fabricated them.
 """
 from __future__ import annotations
 
-from datetime import date
-
 import pytest
 
 from app.services.race.ai.nodes import load_race_data as mod
@@ -48,7 +46,7 @@ async def test_load_race_data_emits_event_conditions(
     async def _fake_fetch_all_season(db, cat, season):
         return []
 
-    async def _fake_resolve_max(db, season, valida_nums):
+    async def _fake_resolve_max(db, season, valida_nums, event_id=None):
         return None
 
     # Válida 4 = recorded (Cali Húmeda/Nublado); válida 3 = all-None (unrecorded).

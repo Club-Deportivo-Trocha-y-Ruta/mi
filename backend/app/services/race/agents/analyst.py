@@ -30,12 +30,30 @@ Decisiones:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
-from typing import Any, Optional
+import time
+from dataclasses import dataclass, field as dc_field
+from typing import Any, NamedTuple, Optional
 
-from app.services.race.agents._llm import LLMCallResult, build_chat_llm, call_llm
-from app.services.race.agents.pricing import PROMPT_VERSION_ANALYST
+from app.services.race.agents._llm import (
+    LLMCallResult,
+    build_chat_llm,
+    call_llm,
+    extract_text,
+    extract_usage,
+    resolve_configured_model,
+)
+from app.services.race.agents.pricing import (
+    PROMPT_VERSION_ANALYST,
+    compute_cost_usd,
+)
+from app.services.race.insight_v3 import (
+    PRINCIPLE_LABELS,
+    InsightV3,
+    extract_numeric_tokens,
+)
 from app.services.race.prompts import render_prompt
 from app.services.race.schemas import (
     AnalysisInput,
@@ -70,10 +88,20 @@ _SECTION_KEYS: dict[str, str] = {
     "proximos pasos": "next_steps",
 }
 
-# Regex: bullet con sufijo "(categoría=X, prioridad=Y)" — case-insensitive.
+# Regex: bullet con sufijo "(categoría=X, prioridad=Y[, horizonte=..][, catálogo=..])".
+# Feature 037 (T101, spec §problem 6): el modelo a veces cierra el bullet con
+# un punto o punto-y-coma final (tras el paréntesis o tras las citas) y la
+# regex original exigía fin de línea inmediato → todo bullet así se
+# descartaba silenciosamente ⇒ ``recommendations_json = []`` en producción.
+# También tolera los campos opcionales "horizonte=…" y "catálogo=…" dentro
+# del paréntesis (no capturados por separado — solo ablandan el match; el
+# parseo estructurado de esos campos es tarea de T201/insight_v3).
 _REC_BULLET_RE = re.compile(
     r"^[-*]\s+(?P<text>.+?)\s*\(\s*categor[ií]a\s*=\s*(?P<cat>[a-z_]+)\s*,\s*"
-    r"prioridad\s*=\s*(?P<prio>low|med|high)\s*\)\s*(?P<cites>(?:\[\d+\]\s*)*)$",
+    r"prioridad\s*=\s*(?P<prio>low|med|high)\s*"
+    r"(?:,\s*horizonte\s*=\s*[^,()]+?)?"
+    r"(?:,\s*cat[aá]logo\s*=\s*[^,()]+?)?"
+    r"\s*\)\s*(?P<cites>(?:\[\d+\]\s*)*)[.;]?\s*$",
     re.IGNORECASE,
 )
 
@@ -355,6 +383,435 @@ def _podium_to_md(podium: dict[str, Any]) -> str:
             f"| {row['position']} | {row['competitor_id']} | {_format_ms_hhmmss(row.get('race_time_ms'))} |"
         )
     return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# v3: análisis estructurado (feature 037, T201)
+# ---------------------------------------------------------------------------
+
+# Versiones v3 del prompt (una por tipo de análisis).
+PROMPT_VERSION_ANALYST_V3 = "race_analyst_v3"
+PROMPT_VERSION_SEASON_SUMMARY_V3 = "race_season_summary_v3"
+
+# Cap de llamadas simultáneas al proveedor. El free tier de Gemini ronda 15
+# RPM y un run puede lanzar 4 válidas × (analyst + critic): con 2 en vuelo el
+# 429 deja de ser el caso común (plan.md §Risks & mitigations).
+_V3_CONCURRENCY = 2
+
+# El analista v3 devuelve JSON con 2-4 observaciones y 2-3 acciones: 1024
+# tokens (default histórico) trunca el objeto a mitad y rompe el parseo.
+_V3_MAX_OUTPUT_TOKENS = 4096
+
+# Topes de tokens del bloque de catálogo — el club puede tener decenas de
+# bloques/plantillas y el prompt no necesita el inventario completo.
+_V3_CATALOG_CAP = 8
+
+# Cuánto texto del intento fallido se le devuelve al modelo en el reintento
+# de reparación (suficiente para que vea su propio error sin duplicar costo).
+_V3_REPAIR_EXCERPT_CHARS = 1500
+
+
+class V3CallResult(NamedTuple):
+    """Resultado de una llamada v3.
+
+    ``grounding_numbers`` son los tokens numéricos del **prompt renderizado**
+    (no del output): el precheck determinista del critic (T202) los usa como
+    verdad de referencia para detectar cifras inventadas.
+    """
+
+    insight: InsightV3
+    metrics: RunMetrics
+    grounding_numbers: list[str]
+
+
+@dataclass(frozen=True)
+class AnalystV3Input:
+    """Input de :meth:`RaceAnalystAgent.invoke_v3` para UNA válida (o temporada).
+
+    Todos los campos llegan ya anonimizados/derivados desde el grafo. No
+    incluye pseudónimo: el prompt v3 se refiere al sujeto solo con
+    ``athlete_ref``, así que el modelo no tiene ningún identificador que
+    pueda re-emitir.
+    """
+
+    valida_num: int
+    analysis_kind: str = "valida"  # "valida" | "season"
+    athlete_ref: str = "la deportista"
+    age: int | None = None
+    ltad_group: str = "bambino"
+    season: int | None = None
+    validas_count: int = 0
+    valida_label: str | None = None
+    race_row: dict[str, Any] | None = None
+    field_metrics: dict[str, Any] | None = None
+    season_rows: list[dict[str, Any]] = dc_field(default_factory=list)
+    race_meta: str | None = None
+    anthro_context: dict[str, Any] | None = None
+    training_window: dict[str, Any] | None = None
+    coach_dialogue: list[dict[str, Any]] = dc_field(default_factory=list)
+    catalog_context: dict[str, Any] = dc_field(default_factory=dict)
+    memory_recent_insights: list[str] = dc_field(default_factory=list)
+
+
+class _InsightV3Error(Exception):
+    """El modelo no produjo un ``InsightV3`` válido tras el reintento."""
+
+
+def _fmt_number(value: Any, suffix: str = "") -> str:
+    """Formatea un número para los bloques del prompt (``—`` si no hay dato).
+
+    Usa ``%g`` para no imprimir decimales espurios: el grounding compara
+    tokens literales, así que ``58.3`` debe verse igual en el prompt y en la
+    evidencia que el modelo copie.
+    """
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, bool):
+        return "sí" if value else "no"
+    if isinstance(value, (int,)):
+        return f"{value}{suffix}"
+    try:
+        return f"{float(value):g}{suffix}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def series_label_v3(field_metrics: dict[str, Any] | None) -> str:
+    """Etiqueta de serie legible a partir de ``FieldMetrics``.
+
+    Campeonatos se rotulan como tales (AC-2.3: nunca se comparan puesto a
+    puesto contra válidas de copa).
+    """
+    if not field_metrics:
+        return ""
+    if field_metrics.get("is_championship"):
+        level = str(field_metrics.get("series_level") or "").lower()
+        return "Cto. Nacional" if level == "national" else "Cto. Departamental"
+    valida_num = field_metrics.get("valida_num")
+    return f"Válida {valida_num} · Copa" if valida_num else "Copa"
+
+
+def _v3_race_block(row: dict[str, Any] | None) -> str | None:
+    """Fila de la carrera analizada → bullets markdown (``None`` si no hay)."""
+    if not row:
+        return None
+    lines = [
+        f"- Fecha: {row.get('event_date') or '—'}",
+        f"- Categoría: {row.get('category_code') or '—'}",
+        f"- Posición: {_fmt_number(row.get('position'))}",
+        f"- Tiempo: {_format_ms_hhmmss(row.get('race_time_ms'))}",
+        f"- Gap al líder: {_format_ms_hhmmss(row.get('gap_to_winner_ms'))}"
+        f" ({_fmt_number(row.get('gap_to_winner_pct'), '%')})",
+    ]
+    return "\n".join(lines)
+
+
+def _v3_field_block(field_metrics: dict[str, Any] | None) -> str | None:
+    """``FieldMetrics`` → bullets markdown (``None`` si no hay métricas)."""
+    if not field_metrics:
+        return None
+    fm = field_metrics
+    lines = [
+        f"- Serie: {series_label_v3(fm) or '—'}",
+        f"- Tamaño del pelotón: {_fmt_number(fm.get('field_size'))}",
+        f"- Percentil: {_fmt_number(fm.get('percentile'))}",
+        f"- Gap al líder: {_format_ms_hhmmss(fm.get('gap_to_p1_ms'))}"
+        f" ({_fmt_number(fm.get('gap_pct'), '%')})",
+        f"- Gap a P3: {_format_ms_hhmmss(fm.get('gap_to_p3_ms'))}",
+        f"- Gap a la mediana de categoría: {_fmt_number(fm.get('gap_to_median_pct'), '%')}",
+        f"- Vueltas abajo: {_fmt_number(fm.get('laps_behind'))}",
+    ]
+    if fm.get("expected_position") is not None:
+        lines.append(
+            f"- Posición esperada: {_fmt_number(fm.get('expected_position'))} "
+            f"(real {_fmt_number(fm.get('position'))}, "
+            f"delta {_fmt_number(fm.get('delta_vs_expected'))})"
+        )
+        lines.append(f"- Fuerza del pelotón: {_fmt_number(fm.get('field_strength'))}")
+    else:
+        # AC-2.2: con <50 % de finishers con índice previo la expectativa no
+        # se calcula. Decirlo explícitamente evita que el modelo la invente.
+        lines.append(
+            "- Posición esperada: no calculable (menos de la mitad del pelotón "
+            "tiene historial previo en la temporada)"
+        )
+    return "\n".join(lines)
+
+
+def _v3_season_block(rows: list[dict[str, Any]] | None) -> str | None:
+    """Tabla de temporada con métricas de pelotón (``None`` si está vacía)."""
+    if not rows:
+        return None
+    header = (
+        "| válida | fecha | serie | posición | pelotón | percentil | gap % | "
+        "gap a P3 | esperada | Δ esperada |"
+    )
+    sep = "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+    lines = [header, sep]
+    for r in rows:
+        lines.append(
+            "| {vn} | {date} | {serie} | {pos} | {size} | {pct} | {gap} | "
+            "{p3} | {exp} | {delta} |".format(
+                vn=_fmt_number(r.get("valida_num")),
+                date=r.get("event_date") or "—",
+                serie=series_label_v3(r) or "—",
+                pos=_fmt_number(r.get("position")),
+                size=_fmt_number(r.get("field_size")),
+                pct=_fmt_number(r.get("percentile")),
+                gap=_fmt_number(r.get("gap_pct"), "%"),
+                p3=_format_ms_hhmmss(r.get("gap_to_p3_ms")),
+                exp=_fmt_number(r.get("expected_position")),
+                delta=_fmt_number(r.get("delta_vs_expected")),
+            )
+        )
+    return "\n".join(lines)
+
+
+def _v3_measurement_timing(days_before_event: Any) -> str:
+    """Texto de la distancia temporal entre la medición y la carrera.
+
+    ``days_before_event`` negativo significa que la medición más cercana es
+    POSTERIOR a la carrera (feature 037: se usa como mejor aproximación de la
+    fase madurativa cuando no hay registro previo, y se declara explícitamente
+    para que ni el analista ni el critic lo tomen por un dato del día).
+    """
+    try:
+        days = int(days_before_event)
+    except (TypeError, ValueError):
+        return "(fecha de medición desconocida)"
+    if days < 0:
+        return f"(medida {abs(days)} días DESPUÉS de la carrera — aproximación)"
+    return f"({days} días antes de la carrera)"
+
+
+def _v3_anthro_block(anthro: dict[str, Any] | None) -> str | None:
+    """``AnthroContext`` → bullets markdown.
+
+    Privacidad (AC-1.3): solo maduración y estatura. Nunca peso, IMC,
+    z-scores ni estado nutricional — esas claves ni siquiera existen en el
+    dict que produce ``athlete_context.load_anthro_context``.
+    """
+    if not anthro:
+        return None
+    latest = anthro.get("latest") or {}
+    lines = [
+        f"- Última evaluación: {latest.get('evaluation_date') or '—'} "
+        f"{_v3_measurement_timing(latest.get('days_before_event'))}",
+        f"- Fase madurativa: {latest.get('maturation_status') or '—'}",
+        f"- Offset de maduración: {_fmt_number(latest.get('maturity_offset_years'))} años "
+        f"({_fmt_number(anthro.get('months_from_phv'))} meses respecto del PHV)",
+        f"- Velocidad de crecimiento: "
+        f"{_fmt_number(anthro.get('growth_velocity_cm_per_year'), ' cm/año')}",
+        f"- Percentil de estatura: {_fmt_number(latest.get('height_percentile'))}",
+    ]
+    flags = anthro.get("flags") or []
+    if flags:
+        lines.append(f"- Alertas: {', '.join(str(f) for f in flags)}")
+    return "\n".join(lines)
+
+
+def _v3_training_block(window: dict[str, Any] | None) -> str | None:
+    """``TrainingWindow`` → bullets markdown (``None`` si no hay ventana)."""
+    if not window:
+        return None
+    tw = window
+    lines = [
+        f"- Ventana: {tw.get('date_from') or '—'} a {tw.get('date_to') or '—'} "
+        f"({_fmt_number(tw.get('window_days'))} días)",
+        f"- Sesiones con registro: {_fmt_number(tw.get('sessions_in_window'))} "
+        f"(asistió {_fmt_number(tw.get('attended'))}, "
+        f"faltó {_fmt_number(tw.get('absent'))}, "
+        f"excusas {_fmt_number(tw.get('excused'))})",
+        f"- Asistencia: {_fmt_number(tw.get('attendance_pct'), '%')}",
+        f"- Horas entrenadas: {_fmt_number(tw.get('training_hours'))}",
+        f"- RPE medio: {_fmt_number(tw.get('rpe_mean'))} "
+        f"(últimos 7 días {_fmt_number(tw.get('rpe_last7_mean'))}, "
+        f"previos {_fmt_number(tw.get('rpe_prev21_mean'))})",
+        f"- Rúbricas — esfuerzo {_fmt_number(tw.get('rubric_effort_mean'))}, "
+        f"actitud {_fmt_number(tw.get('rubric_attitude_mean'))}, "
+        f"técnica {_fmt_number(tw.get('rubric_technique_mean'))}",
+        f"- Sesiones de fuerza: {_fmt_number(tw.get('strength_sessions'))} · "
+        f"con intervalos: {_fmt_number(tw.get('interval_sessions'))}",
+        f"- Días desde la última sesión: {_fmt_number(tw.get('days_since_last_session'))}",
+    ]
+    foci = tw.get("technical_foci") or []
+    if foci:
+        lines.append(f"- Foco técnico trabajado: {', '.join(str(f) for f in foci)}")
+    skills = tw.get("skill_codes_worked") or []
+    if skills:
+        lines.append(f"- Skills del catálogo trabajadas: {', '.join(str(s) for s in skills)}")
+    feedback = tw.get("coach_feedback") or []
+    if feedback:
+        lines.append("- Notas del coach en sesiones (ya anonimizadas):")
+        lines.extend(f"  - {str(f)}" for f in feedback[:3])
+    return "\n".join(lines)
+
+
+def _v3_dialogue_block(dialogue: list[dict[str, Any]] | None) -> str | None:
+    """Diálogo coach ↔ analista de insights previos (US4) → markdown."""
+    if not dialogue:
+        return None
+    lines: list[str] = []
+    for item in dialogue[:3]:
+        label = item.get("valida_label") or item.get("generated_at") or "análisis previo"
+        lines.append(f"- {label}")
+        headline = item.get("headline")
+        if headline:
+            lines.append(f"  - Hallazgo: {headline}")
+        question = item.get("coach_question")
+        if question:
+            lines.append(f"  - Pregunté: {question}")
+        answer = item.get("coach_answer") or item.get("coach_answer_text")
+        if answer:
+            lines.append(f"  - El coach respondió: {answer}")
+        rating = item.get("coach_rating")
+        if rating is not None:
+            lines.append(
+                f"  - Valoración del coach: {'útil' if int(rating) > 0 else 'no útil'}"
+            )
+    return "\n".join(lines) if lines else None
+
+
+def _v3_catalog_block(catalog: dict[str, Any] | None) -> str | None:
+    """Catálogo del club → markdown acotado (``None`` si está vacío)."""
+    if not catalog:
+        return None
+    skills = catalog.get("technique_skills") or []
+    blocks = catalog.get("strength_blocks") or []
+    templates = catalog.get("interval_templates") or []
+    if not skills and not blocks and not templates:
+        return None
+
+    lines: list[str] = []
+    if skills:
+        lines.append("**Skills técnicas** (`technique_skill`, usa el código):")
+        for s in skills[:_V3_CATALOG_CAP]:
+            focus = f" — {s.get('focus')}" if s.get("focus") else ""
+            lines.append(f"- `{s.get('code')}` {s.get('name')}{focus}")
+    if blocks:
+        lines.append("")
+        lines.append("**Bloques de fuerza** (`strength_block`, usa el id):")
+        for b in blocks[:_V3_CATALOG_CAP]:
+            lines.append(f"- `{b.get('id')}` {b.get('name')} ({b.get('age_band') or '—'})")
+    if templates:
+        lines.append("")
+        lines.append("**Plantillas de intervalos** (`interval_template`, usa el id):")
+        for t in templates[:_V3_CATALOG_CAP]:
+            phase = t.get("mesocycle_phase")
+            phase_txt = f", {phase}" if phase else ""
+            lines.append(
+                f"- `{t.get('id')}` {t.get('name')} ({t.get('age_band') or '—'}{phase_txt})"
+            )
+    return "\n".join(lines)
+
+
+def _strip_json_fence(text: str) -> str:
+    """Quita el ```json ... ``` que algunos modelos agregan pese al prompt."""
+    stripped = (text or "").strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```[a-zA-Z]*\s*", "", stripped)
+        stripped = re.sub(r"\s*```$", "", stripped)
+    return stripped.strip()
+
+
+def parse_insight_v3(text: str) -> InsightV3:
+    """Parsea el JSON de un modelo a :class:`InsightV3`.
+
+    Tolera el code fence y texto alrededor del objeto (recorta al primer
+    ``{`` y al último ``}``). Cualquier fallo se propaga como
+    ``ValueError``/``ValidationError`` para que el caller dispare el
+    reintento de reparación.
+    """
+    candidate = _strip_json_fence(text)
+    if not candidate:
+        raise ValueError("respuesta vacía")
+    if not candidate.startswith("{"):
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise ValueError("la respuesta no contiene un objeto JSON")
+        candidate = candidate[start : end + 1]
+    return InsightV3.model_validate(json.loads(candidate))
+
+
+def _forbidden_name_patterns(names: list[str]) -> list[re.Pattern[str]]:
+    """Regex de nombres reales prohibidos (equivalente v3 de guardrails v2).
+
+    ``guardrails.build_race_v2_forbidden_names_rules`` reemplaza siempre por
+    el literal "la deportista"; acá el reemplazo lo decide el caller
+    (``athlete_ref``), por eso se construyen los patrones aparte en vez de
+    reusar aquellas reglas.
+    """
+    patterns: list[re.Pattern[str]] = []
+    for raw in names or []:
+        name = (raw or "").strip()
+        if len(name) < 3:
+            continue
+        patterns.append(re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE))
+    return patterns
+
+
+def scrub_insight_v3(draft: InsightV3, forbidden_names: list[str], athlete_ref: str) -> InsightV3:
+    """Reemplaza nombres reales por ``athlete_ref`` en todo campo de texto.
+
+    Defensa en profundidad: el prompt ya prohíbe nombres propios y el
+    precheck del critic (T202) los detecta, pero una fila persistida con un
+    nombre real de menor es una violación de la Ley 1581 que no puede
+    depender de que el critic corra. Si no hay nombres que prohibir, el
+    draft se devuelve tal cual (sin copia).
+    """
+    patterns = _forbidden_name_patterns(forbidden_names)
+    if not patterns:
+        return draft
+
+    hits = 0
+
+    def _clean(value: str) -> str:
+        nonlocal hits
+        out = value
+        for pattern in patterns:
+            out, count = pattern.subn(athlete_ref, out)
+            hits += count
+        return out
+
+    data = draft.model_dump()
+    data["headline"] = _clean(data["headline"])
+    data["coach_question"] = _clean(data["coach_question"])
+    data["watch_signals"] = [_clean(s) for s in data.get("watch_signals") or []]
+    data["data_gaps"] = [_clean(s) for s in data.get("data_gaps") or []]
+    for obs in data.get("observations") or []:
+        obs["claim"] = _clean(obs["claim"])
+        obs["evidence"] = [_clean(e) for e in obs.get("evidence") or []]
+    for action in data.get("actions") or []:
+        action["text"] = _clean(action["text"])
+    reading = data.get("field_reading")
+    if reading:
+        reading["summary"] = _clean(reading.get("summary") or "")
+
+    if hits:
+        # NUNCA logueamos el nombre detectado (sería el leak que estamos
+        # evitando) — solo el conteo.
+        logger.warning("analyst_v3: %d nombre(s) real(es) escrubeado(s) del draft", hits)
+    return InsightV3.model_validate(data)
+
+
+# Heading que abre el ejemplo resuelto (few-shot) en los prompts v3. Sus cifras
+# son ficticias y NO deben contar como evidencia válida para el grounding.
+_V3_FEW_SHOT_HEADING = "# Ejemplo resuelto"
+
+
+def grounding_source_text(prompt: str) -> str:
+    """Recorta el prompt v3 a la parte que contiene datos reales.
+
+    ``grounding_numbers`` alimenta el precheck de grounding del critic: cada
+    número del draft debe existir en este texto. Si se calculara sobre el
+    prompt completo, las cifras del ejemplo resuelto (few-shot) pasarían por
+    evidencia legítima y un draft que las copiara no sería detectado. Se
+    devuelve todo lo anterior al heading del ejemplo; si el prompt no lo
+    trae, se devuelve íntegro.
+    """
+    idx = prompt.find(_V3_FEW_SHOT_HEADING)
+    return prompt if idx < 0 else prompt[:idx]
 
 
 class RaceAnalystAgent:
@@ -752,6 +1209,9 @@ class RaceAnalystAgent:
 
         return {
             "athlete_pseudonym": input_.athlete_pseudonym,
+            # Feature 037 (T101): "el deportista"/"la deportista" en vez del
+            # "la deportista" hardcodeado en el prompt v2 anterior.
+            "athlete_ref": input_.athlete_ref,
             "age": input_.age,
             "ltad_group": input_.ltad_group.value,
             "valida_num": valida_num,
@@ -773,6 +1233,324 @@ class RaceAnalystAgent:
             "season_comparative": season_comparative_prompt,
             "progression_assessment": input_.progression_assessment,
         }
+
+
+    # -----------------------------------------------------------------------
+    # v3: análisis estructurado (JSON) por válida / temporada
+    # -----------------------------------------------------------------------
+
+    def _build_v3_context(self, input_: AnalystV3Input) -> dict[str, Any]:
+        """Construye el contexto Jinja2 de ``race_analyst_v3`` / ``…_summary_v3``.
+
+        Ambos prompts se renderizan con ``strict=True``, así que este dict
+        SIEMPRE define todas las claves: un bloque sin datos viaja como
+        ``None`` (el template lo convierte en un aviso "SIN DATO" explícito)
+        y nunca como clave ausente.
+
+        ``forbidden_names`` NO se inyecta — igual que en v2, los nombres
+        reales solo alimentan el scrubbing post-generación.
+        """
+        return {
+            "athlete_ref": input_.athlete_ref,
+            "age": input_.age,
+            "ltad_group": input_.ltad_group,
+            "season": input_.season,
+            "validas_count": input_.validas_count,
+            "valida_label": (
+                input_.valida_label or series_label_v3(input_.field_metrics) or None
+            ),
+            "race_block": _v3_race_block(input_.race_row),
+            "field_block": _v3_field_block(input_.field_metrics),
+            "season_block": _v3_season_block(input_.season_rows),
+            "conditions_block": input_.race_meta,
+            "anthro_block": _v3_anthro_block(input_.anthro_context),
+            "training_block": _v3_training_block(input_.training_window),
+            "dialogue_block": _v3_dialogue_block(input_.coach_dialogue),
+            "catalog_block": _v3_catalog_block(input_.catalog_context),
+            "memory_recent_insights": list(input_.memory_recent_insights or [])[:3],
+            "principle_labels": list(PRINCIPLE_LABELS),
+        }
+
+    async def _generate_v3(
+        self, llm: Any, prompt: str, prompt_version: str, timeout: float
+    ) -> tuple[InsightV3, RunMetrics]:
+        """Obtiene un ``InsightV3`` válido del modelo (structured → texto).
+
+        Orden de intentos:
+
+        1. ``llm.with_structured_output(InsightV3)`` — el proveedor fuerza el
+           esquema. Es el camino barato: no hay parseo que pueda fallar.
+        2. JSON en texto (proveedor sin structured output, o structured que
+           falló) + un **único** reintento de reparación en el que se le
+           devuelve al modelo su propio output y el error de validación.
+
+        Raises:
+            _InsightV3Error: ningún intento produjo un objeto válido.
+        """
+        from app.config import settings
+
+        model_id = resolve_configured_model(role="analyst")
+        provider = (settings.race_ai_provider or "anthropic").lower()
+
+        tokens_in = tokens_out = latency_ms = 0
+        cost_usd = 0.0
+
+        def _metrics() -> RunMetrics:
+            return RunMetrics(
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                latency_ms=latency_ms,
+                cost_usd=round(cost_usd, 6),
+                prompt_version=prompt_version,
+            )
+
+        structured, include_raw = _build_structured_llm(llm)
+        if structured is not None:
+            start = time.monotonic()
+            try:
+                insight, raw = await asyncio.wait_for(
+                    _call_structured_v3(structured, prompt, include_raw),
+                    timeout=timeout,
+                )
+                latency_ms += int((time.monotonic() - start) * 1000)
+                text_for_usage = insight.model_dump_json()
+                ti, to = extract_usage(raw, prompt, text_for_usage)
+                tokens_in += ti
+                tokens_out += to
+                cost_usd += compute_cost_usd(ti, to, provider=provider, model=model_id)
+                return insight, _metrics()
+            except Exception as exc:  # noqa: BLE001
+                latency_ms += int((time.monotonic() - start) * 1000)
+                logger.info(
+                    "analyst_v3: structured output no disponible o inválido (%s); "
+                    "reintentando con JSON en texto",
+                    type(exc).__name__,
+                )
+
+        call: LLMCallResult = await asyncio.wait_for(
+            call_llm(llm, prompt, model=model_id), timeout=timeout
+        )
+        tokens_in += call.tokens_in
+        tokens_out += call.tokens_out
+        latency_ms += call.latency_ms
+        cost_usd += call.cost_usd
+        try:
+            return parse_insight_v3(call.text), _metrics()
+        except Exception as exc:  # noqa: BLE001
+            logger.info(
+                "analyst_v3: JSON inválido (%s); intento de reparación (1/1)",
+                type(exc).__name__,
+            )
+            first_error = exc
+            first_text = call.text
+
+        repair = await asyncio.wait_for(
+            call_llm(llm, _v3_repair_prompt(prompt, first_text, first_error), model=model_id),
+            timeout=timeout,
+        )
+        tokens_in += repair.tokens_in
+        tokens_out += repair.tokens_out
+        latency_ms += repair.latency_ms
+        cost_usd += repair.cost_usd
+        try:
+            return parse_insight_v3(repair.text), _metrics()
+        except Exception as exc:  # noqa: BLE001
+            raise _InsightV3Error(
+                f"InsightV3 inválido tras reparación: {type(exc).__name__}"
+            ) from exc
+
+    async def _invoke_single_v3(
+        self,
+        input_: AnalystV3Input,
+        forbidden_names: list[str],
+        timeout: float,
+        semaphore: asyncio.Semaphore,
+    ) -> V3CallResult:
+        """Renderiza el prompt, llama al modelo y escrubea el resultado."""
+        prompt_version = v3_prompt_version(input_.analysis_kind)
+        context = self._build_v3_context(input_)
+        prompt = render_prompt(prompt_version, context, strict=True)
+        grounding_numbers = sorted(
+            extract_numeric_tokens(grounding_source_text(prompt))
+        )
+
+        llm = self._llm or build_chat_llm(
+            role="analyst", max_output_tokens=_V3_MAX_OUTPUT_TOKENS
+        )
+
+        async with semaphore:
+            insight, metrics = await self._generate_v3(
+                llm, prompt, prompt_version, timeout
+            )
+
+        insight = scrub_insight_v3(insight, forbidden_names, input_.athlete_ref)
+        return V3CallResult(
+            insight=insight, metrics=metrics, grounding_numbers=grounding_numbers
+        )
+
+    async def invoke_v3(
+        self,
+        inputs: list[AnalystV3Input],
+        *,
+        forbidden_names: list[str] | None = None,
+        timeout_seconds: float | None = None,
+        concurrency: int = _V3_CONCURRENCY,
+    ) -> dict[int, V3CallResult]:
+        """Genera un :class:`InsightV3` por cada entrada, con cap de concurrencia.
+
+        A diferencia de :meth:`invoke_per_valida`, esta llamada **nunca
+        propaga** una excepción por entrada: una válida que falla recibe el
+        fallback determinista v3 y las demás siguen su curso. El caller
+        distingue el fallback con
+        :func:`app.services.race.ai.fallback.is_fallback_output`.
+
+        Args:
+            inputs: una entrada por válida (``analysis_kind="valida"``) o una
+                sola con ``analysis_kind="season"``.
+            forbidden_names: nombres reales a escrubear del output. NUNCA
+                viajan al prompt.
+            timeout_seconds: timeout por llamada al proveedor. Default:
+                ``Settings.race_ai_v3_timeout_seconds`` (120 s).
+            concurrency: llamadas simultáneas al proveedor (default 2).
+
+        Returns:
+            ``{valida_num: V3CallResult}`` (``valida_num=0`` para temporada).
+        """
+        from app.config import settings
+        from app.services.race.ai.fallback import deterministic_fallback_v3
+
+        timeout = timeout_seconds or float(settings.race_ai_v3_timeout_seconds)
+        semaphore = asyncio.Semaphore(max(1, int(concurrency)))
+        names = list(forbidden_names or [])
+
+        async def _one(input_: AnalystV3Input) -> tuple[int, V3CallResult]:
+            prompt_version = v3_prompt_version(input_.analysis_kind)
+            try:
+                result = await self._invoke_single_v3(input_, names, timeout, semaphore)
+                return input_.valida_num, result
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "analyst_v3: fallo en válida %d — activando fallback v3",
+                    input_.valida_num,
+                    exc_info=True,
+                )
+                return input_.valida_num, V3CallResult(
+                    insight=deterministic_fallback_v3(
+                        analysis_kind=input_.analysis_kind
+                    ),
+                    metrics=RunMetrics(
+                        tokens_in=0,
+                        tokens_out=0,
+                        latency_ms=0,
+                        cost_usd=0.0,
+                        prompt_version=prompt_version,
+                    ),
+                    grounding_numbers=[],
+                )
+
+        gathered = await asyncio.gather(
+            *(_one(i) for i in inputs), return_exceptions=True
+        )
+
+        out: dict[int, V3CallResult] = {}
+        for i, item in enumerate(gathered):
+            if isinstance(item, BaseException):  # pragma: no cover - _one no lanza
+                input_ = inputs[i]
+                logger.error(
+                    "analyst_v3: gather exception para válida %d: %s",
+                    input_.valida_num,
+                    type(item).__name__,
+                )
+                out[input_.valida_num] = V3CallResult(
+                    insight=deterministic_fallback_v3(
+                        analysis_kind=input_.analysis_kind
+                    ),
+                    metrics=RunMetrics(
+                        tokens_in=0,
+                        tokens_out=0,
+                        latency_ms=0,
+                        cost_usd=0.0,
+                        prompt_version=v3_prompt_version(input_.analysis_kind),
+                    ),
+                    grounding_numbers=[],
+                )
+            else:
+                valida_num, result = item
+                out[valida_num] = result
+        return out
+
+
+def v3_prompt_version(analysis_kind: str | None) -> str:
+    """``"season"`` → prompt de temporada; cualquier otro → prompt por válida."""
+    return (
+        PROMPT_VERSION_SEASON_SUMMARY_V3
+        if (analysis_kind or "valida") == "season"
+        else PROMPT_VERSION_ANALYST_V3
+    )
+
+
+def _build_structured_llm(llm: Any) -> tuple[Any | None, bool]:
+    """Devuelve ``(structured_llm, include_raw)`` o ``(None, False)``.
+
+    ``include_raw=True`` conserva el ``AIMessage`` original y con él el
+    ``usage_metadata`` real; si el binding del proveedor no soporta ese
+    kwarg se cae a la variante simple (tokens estimados por caracteres).
+    """
+    factory = getattr(llm, "with_structured_output", None)
+    if factory is None:
+        return None, False
+    try:
+        return factory(InsightV3, include_raw=True), True
+    except TypeError:
+        pass
+    except Exception:  # noqa: BLE001
+        return None, False
+    try:
+        return factory(InsightV3), False
+    except Exception:  # noqa: BLE001
+        return None, False
+
+
+async def _call_structured_v3(
+    structured: Any, prompt: str, include_raw: bool
+) -> tuple[InsightV3, Any]:
+    """Invoca el binding structured y normaliza sus tres formas de respuesta."""
+    from langchain_core.messages import HumanMessage
+
+    response = await structured.ainvoke([HumanMessage(content=prompt)])
+
+    raw: Any = None
+    parsed: Any = response
+    if include_raw and isinstance(response, dict):
+        raw = response.get("raw")
+        error = response.get("parsing_error")
+        if error:
+            raise ValueError(f"parsing_error: {type(error).__name__}")
+        parsed = response.get("parsed")
+
+    if parsed is None:
+        raise ValueError("structured output devolvió parsed=None")
+    if isinstance(parsed, InsightV3):
+        return parsed, raw
+    if isinstance(parsed, dict):
+        return InsightV3.model_validate(parsed), raw
+    return parse_insight_v3(extract_text(parsed)), raw
+
+
+def _v3_repair_prompt(prompt: str, previous_text: str, error: Exception) -> str:
+    """Prompt de reparación: el original + el error + el intento fallido."""
+    excerpt = _strip_json_fence(previous_text or "")[:_V3_REPAIR_EXCERPT_CHARS]
+    return (
+        f"{prompt}\n\n"
+        "# Corrección obligatoria\n\n"
+        "Tu respuesta anterior no fue un objeto JSON válido para el esquema pedido.\n"
+        f"Error del validador: {type(error).__name__}: {str(error)[:300]}\n\n"
+        "Respuesta anterior (recortada):\n\n"
+        f"```\n{excerpt}\n```\n\n"
+        "Devuelve ÚNICAMENTE el objeto JSON corregido, sin texto alrededor, "
+        "sin ```json y respetando las cardinalidades "
+        "(observations 2-4, actions 2-3)."
+    )
 
 
 class _VetoDuroError(Exception):

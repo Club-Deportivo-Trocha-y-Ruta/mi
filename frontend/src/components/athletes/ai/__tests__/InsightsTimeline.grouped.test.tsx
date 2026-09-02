@@ -163,7 +163,7 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("insight-card-30")).toBeInTheDocument();
     });
-    const card = screen.getByTestId("insight-card-30");
+    const card = screen.getByTestId("insight-surface-30");
     // Clase de borde aplicada (Tailwind: border-l-4 border-primary).
     expect(card.className).toMatch(/border-l-4/);
     expect(card.className).toMatch(/border-primary/);
@@ -206,7 +206,7 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("insight-card-40")).toBeInTheDocument();
     });
-    const card = screen.getByTestId("insight-card-40");
+    const card = screen.getByTestId("insight-surface-40");
     expect(card.className).toMatch(/border-l-4/);
     // Borde amber (Tailwind: border-amber-400).
     expect(card.className).toMatch(/border-amber/);
@@ -242,7 +242,7 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("insight-card-41")).toBeInTheDocument();
     });
-    const card = screen.getByTestId("insight-card-41");
+    const card = screen.getByTestId("insight-surface-41");
     expect(card.className).toMatch(/border-l-4/);
     expect(card.className).toMatch(/border-amber/);
     const svgs = card.querySelectorAll("svg");

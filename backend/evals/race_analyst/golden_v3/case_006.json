@@ -1,0 +1,192 @@
+{
+  "case_id": "006",
+  "description": "Sin antropometría: el bloque de maduración no llega al modelo. Con ventana de entrenamiento completa, el análisis debe apoyarse en pelotón + entrenamiento y declarar el vacío madurativo en data_gaps, sin afirmar fase PHV.",
+  "input": {
+    "valida_num": 2,
+    "analysis_kind": "valida",
+    "athlete_ref": "la deportista",
+    "age": 11,
+    "ltad_group": "mini-bambino",
+    "season": 2026,
+    "validas_count": 2,
+    "valida_label": "Válida 2 · Copa Valle",
+    "race_row": {
+      "valida_num": 2,
+      "event_date": "2026-02-28",
+      "category_code": "INF_A",
+      "position": 5,
+      "race_time_ms": 1935000,
+      "gap_to_winner_ms": 111000,
+      "gap_to_winner_pct": 6.08
+    },
+    "field_metrics": {
+      "event_id": 4602,
+      "valida_num": 2,
+      "event_date": "2026-02-28",
+      "series_kind": "cup",
+      "series_level": "departmental",
+      "is_championship": false,
+      "field_size": 10,
+      "position": 5,
+      "percentile": 55.6,
+      "race_time_ms": 1935000,
+      "gap_to_p1_ms": 111000,
+      "gap_pct": 6.08,
+      "gap_to_p3_ms": 63000,
+      "category_median_time_ms": 1962000,
+      "gap_to_median_pct": -1.38,
+      "laps_behind": 0,
+      "prior_index": 5.2,
+      "expected_position": 5,
+      "delta_vs_expected": 0,
+      "field_strength": 5.9,
+      "coverage_with_prior": 0.6
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 6,
+        "field_size": 10,
+        "percentile": 44.4,
+        "gap_pct": 7.91,
+        "gap_to_p3_ms": 88000,
+        "expected_position": 6,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 5,
+        "field_size": 10,
+        "percentile": 55.6,
+        "gap_pct": 6.08,
+        "gap_to_p3_ms": 63000,
+        "expected_position": 5,
+        "delta_vs_expected": 0
+      }
+    ],
+    "race_meta": "- Clima: nublado\n- Superficie de la pista: seca",
+    "anthro_context": null,
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-01-31",
+      "date_to": "2026-02-28",
+      "sessions_in_window": 11,
+      "attended": 9,
+      "absent": 2,
+      "excused": 0,
+      "attendance_pct": 81.8,
+      "training_hours": 13.5,
+      "rpe_mean": 3.9,
+      "rpe_last7_mean": 3.7,
+      "rpe_prev21_mean": 4,
+      "rubric_effort_mean": 4.2,
+      "rubric_attitude_mean": 4.4,
+      "rubric_technique_mean": 3.8,
+      "technical_foci": ["Mirada / visión", "Frenado modulado"],
+      "skill_codes_worked": ["B", "C"],
+      "strength_sessions": 0,
+      "interval_sessions": 0,
+      "days_since_last_session": 2,
+      "days_since_previous_race": 28,
+      "coach_feedback": ["Frena tarde en la bajada larga del circuito"],
+      "strava_load": null
+    },
+    "coach_dialogue": [],
+    "catalog_context": {
+      "technique_skills": [
+        {"code": "B", "name": "Mirada / visión", "focus": "Mirar lejos y donde sí quiero ir"},
+        {"code": "C", "name": "Frenado modulado", "focus": "1 dedo por freno, peso atrás, dosificar"},
+        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"}
+      ],
+      "strength_blocks": [],
+      "interval_templates": []
+    },
+    "memory_recent_insights": [
+      "Válida 1 · Copa: percentil 44.4 y frenadas tardías en la bajada"
+    ]
+  },
+  "expected_themes": ["antropometría", "frenado", "percentil"],
+  "forbidden_terms": [
+    "PHV",
+    "Circa-PHV",
+    "Pre-PHV",
+    "Post-PHV",
+    "estirón",
+    "suplementos",
+    "podio",
+    "ganar",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": ["frenado", "percentil", "55.6", "técnic"],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "Subió al percentil 55.6 sosteniendo la asistencia, pero el tiempo perdido sigue concentrado donde el frenado llega tarde.",
+    "field_reading": {
+      "percentile": 55.6,
+      "expected_position": 5,
+      "actual_position": 5,
+      "delta_vs_expected": 0,
+      "gap_to_p3_hhmmss": "0:01:03",
+      "series_label": "Válida 2 · Copa Valle",
+      "summary": "Rindió exactamente en su expectativa y cruzó por primera vez por encima de la mediana de la categoría."
+    },
+    "trend": "improving",
+    "observations": [
+      {
+        "claim": "El avance es real pero modesto: terminó justo en la posición esperada, así que ganó terreno por mejora propia y no por un pelotón más débil.",
+        "evidence": ["percentil 55.6 frente a 44.4 en la válida previa", "esperada 5 y real 5"],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "El gap al líder se recortó casi dos puntos porcentuales entre válidas con la misma frecuencia de entrenamiento.",
+        "evidence": ["gap 6.08% frente a 7.91% anterior", "asistencia 81.8%"],
+        "domain": "history",
+        "confidence": "high"
+      },
+      {
+        "claim": "La técnica sigue siendo la rúbrica más baja y coincide con la nota del coach sobre frenadas tardías en la bajada.",
+        "evidence": ["rúbrica de técnica 3.8 frente a actitud 4.4", "gap a P3 0:01:03"],
+        "domain": "training",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Trabajar frenado modulado en la bajada larga dos veces por semana, con marcas de referencia para anticipar el punto de frenada.",
+        "category": "technique",
+        "priority": "high",
+        "horizon": "next_week",
+        "catalog_ref": {"kind": "technique_skill", "code": "C", "label": null},
+        "derived_from": 2
+      },
+      {
+        "text": "Sumar un bloque corto de mirada y visión al calentamiento de cada sesión, en formato de juego.",
+        "category": "technique",
+        "priority": "med",
+        "horizon": "next_week",
+        "catalog_ref": {"kind": "technique_skill", "code": "B", "label": null},
+        "derived_from": 2
+      }
+    ],
+    "watch_signals": [
+      "Si la rúbrica de técnica no sube en la próxima ventana, cambiar el circuito antes de sumar más repeticiones."
+    ],
+    "coach_question": "¿La frenada tardía aparece también en los entrenamientos o solo cuando corre con otros al lado?",
+    "data_gaps": [
+      "Sin antropometría registrada: no se puede leer el resultado contra la fase de maduración.",
+      "Sin datos de vueltas ni parciales para ubicar dónde se pierde el tiempo dentro del circuito."
+    ],
+    "principles_cited": ["3. Progresión técnica en MTB/XCO"]
+  }
+}

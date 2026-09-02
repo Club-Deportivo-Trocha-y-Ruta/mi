@@ -92,11 +92,19 @@ def _build_winner_map(all_results: list[Any]) -> dict[int, int | None]:
 def _compacted_season_record(
     r: Any,
     winner_time_ms: int | None,
+    events_by_id: dict[int, Any] | None = None,
 ) -> dict[str, Any]:
     """Versión compacta de un resultado para full_season_results.
 
     Calcula ``gap_to_winner_ms`` y ``gap_pct`` reales a partir del tiempo
     del ganador (position=1) en el mismo event_id.
+
+    Bug fix (feature 037, T101 — spec §problem 4): ``sequence_number`` vive
+    en ``RaceEvent``, NO en ``RaceResult`` — ``getattr(r, "sequence_number",
+    None)`` siempre devolvía ``None`` aquí, así que todo ``full_season_results``
+    tenía ``valida_num=None`` y ``critic_agent._build_ground_truth`` nunca
+    encontraba la fila (ver docstring de esa función). El valor correcto se
+    resuelve vía ``events_by_id[event_id].sequence_number``.
     """
     race_time_ms: int | None = getattr(r, "race_time_ms", None)
     gap_to_winner_ms: int | None = None
@@ -106,10 +114,14 @@ def _compacted_season_record(
         gap_to_winner_ms = race_time_ms - winner_time_ms
         gap_pct = round(gap_to_winner_ms / winner_time_ms * 100.0, 2)
 
+    event_id_val = getattr(r, "event_id", None)
+    event = (events_by_id or {}).get(event_id_val) if event_id_val is not None else None
+    valida_num = getattr(event, "sequence_number", None) if event is not None else None
+
     return {
         "result_id": getattr(r, "id", None),
-        "event_id": getattr(r, "event_id", None),
-        "valida_num": getattr(r, "sequence_number", None),
+        "event_id": event_id_val,
+        "valida_num": valida_num,
         "position": getattr(r, "position", None),
         "race_time_ms": race_time_ms,
         "gap_to_winner_ms": gap_to_winner_ms,
@@ -119,14 +131,29 @@ def _compacted_season_record(
 
 
 async def _resolve_max_launched_date(
-    db: Any, season: int, valida_nums: list[int] | None
+    db: Any, season: int, valida_nums: list[int] | None, event_id: int | None = None
 ) -> Any:
-    """Devuelve la fecha del evento más tardío entre los ``valida_nums`` lanzados.
+    """Devuelve la fecha de corte del contexto histórico del lanzamiento.
 
-    Resuelve por ``sequence_number`` dentro de la temporada solicitada (vía
-    ``RaceSeries.season_year``). Si ningún evento coincide o ninguno tiene
-    fecha → ``None`` (el caller no aplica recorte).
+    Cuando el lanzamiento viene anclado a un ``event_id`` concreto (lo
+    resuelven los routers), la fecha de corte es la de ESE evento. Es el
+    camino correcto y el único exacto: ``sequence_number`` no identifica una
+    carrera dentro de la temporada desde feature 014 — la válida 1 de copa y
+    un campeonato comparten ``sequence_number=1``, así que resolver por
+    número devolvía ``max()`` sobre un conjunto ambiguo y colaba en el
+    "Recorrido hasta aquí" carreras posteriores a la analizada.
+
+    Sin ancla (lanzamiento multi-válida) se cae al criterio por
+    ``sequence_number`` dentro de la temporada solicitada. Si ningún evento
+    coincide o ninguno tiene fecha → ``None`` (el caller no aplica recorte).
     """
+    events = await load_events(db)
+
+    if event_id is not None:
+        anchored = next((e for e in events if e.id == event_id), None)
+        if anchored is not None and anchored.event_date is not None:
+            return anchored.event_date
+
     if not valida_nums:
         return None
     series_in_season = {
@@ -135,7 +162,7 @@ async def _resolve_max_launched_date(
     valida_set = set(valida_nums)
     candidate_dates = [
         e.event_date
-        for e in await load_events(db)
+        for e in events
         if e.series_id in series_in_season
         and e.sequence_number in valida_set
         and e.event_date is not None
@@ -149,10 +176,29 @@ async def load_race_data(state: dict) -> dict[str, Any]:
     athlete_id = state["athlete_id"]
     season = state["season"]
     valida_nums = state.get("valida_nums")
+    event_id = state.get("event_id")
 
     async with get_session() as db:
         # ---- Set filtrado (para el análisis concreto) ----
+        # ``fetch_results_for_athlete`` filtra por ``sequence_number``, que no
+        # es único en la temporada (feature 014). Si el lanzamiento trae ancla
+        # explícita, nos quedamos SOLO con el resultado de ese evento: de lo
+        # contrario un análisis de "válida 1" mezclaría la válida 1 de copa
+        # con los campeonatos que comparten el mismo número.
         results = await fetch_results_for_athlete(db, athlete_id, season, valida_nums)
+        if event_id is not None:
+            anchored_results = [
+                r for r in results if getattr(r, "event_id", None) == event_id
+            ]
+            if anchored_results:
+                results = anchored_results
+            else:
+                logger.warning(
+                    "load_race_data: event_id=%s sin resultado del atleta %s; "
+                    "se conserva el set por sequence_number",
+                    event_id,
+                    athlete_id,
+                )
         serialized = [_serialize_result(r) for r in results]
 
         # ---- Temporada completa (base) ----
@@ -165,9 +211,9 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         # aquí" se acota a las válidas con fecha ≤ última lanzada. Así N=1
         # aplica cuando solo se lanza la primera cronológica y los datos de
         # válidas futuras no contaminan el análisis retrospectivo solicitado.
-        if valida_nums:
+        if valida_nums or event_id is not None:
             max_launched_date = await _resolve_max_launched_date(
-                db, season, valida_nums
+                db, season, valida_nums, event_id
             )
             if max_launched_date is not None:
                 events_all = await load_events(db)
@@ -202,6 +248,11 @@ async def load_race_data(state: dict) -> dict[str, Any]:
                     exc_info=True,
                 )
 
+        # Mapa event_id → RaceEvent, reusado por _compacted_season_record para
+        # resolver ``sequence_number`` (bug fix T101 — ver docstring de esa
+        # función). Cargado una sola vez por lanzamiento (load_events cachea).
+        events_by_id_for_records: dict[int, Any] = {e.id: e for e in await load_events(db)}
+
         # Contar válidas distintas con participación real (excluir DNS/DNF/DSQ).
         seen_validas: set[int | None] = set()
         full_season_records: list[dict[str, Any]] = []
@@ -220,7 +271,9 @@ async def load_race_data(state: dict) -> dict[str, Any]:
                     "gap_to_winner_ms quedará None para ese resultado.",
                     event_id_val,
                 )
-            full_season_records.append(_compacted_season_record(r, winner_time))
+            full_season_records.append(
+                _compacted_season_record(r, winner_time, events_by_id_for_records)
+            )
 
         season_validas_count = len(seen_validas)
         is_first_in_season: bool = season_validas_count <= 1

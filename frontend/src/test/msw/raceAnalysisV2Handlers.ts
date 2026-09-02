@@ -35,13 +35,9 @@ function buildHandler(status: number, body: object) {
  * sin run_id/status/started_at — ver `SeasonSummaryResponse` en
  * `api/athleteRaceAnalysis.ts`.
  */
-export const seasonSummarySuccessHandler = buildHandler(200, {
-  insight_id: 9001,
-  season: 2026,
-  summary_text: "Resumen de temporada de prueba con progreso técnico claro.",
-  prompt_version: "race_analyst_v2",
-  validas_analyzed: 4,
-  generated_at: "2026-05-25T10:00:00Z",
+export const seasonSummarySuccessHandler = buildHandler(202, {
+  run_id: "run-season-9001",
+  status: "queued",
 });
 
 /** Handler error 422 (menos de 3 válidas). */
@@ -104,4 +100,53 @@ export const v2InsightDetailHandler = http.get(
       mockInsightV2Detail({ id: Number(params.insightId) }),
     );
   },
+);
+
+// ---------------------------------------------------------------------------
+// T205 (feature 037) — POST /season-summary, contrato v3 asíncrono
+// (202 {run_id, status}, ver AthleteSeasonSummaryRunResponse). Reemplaza
+// el shape síncrono legacy (SEASON_SUMMARY_PATH arriba) una vez T203
+// migre el backend.
+// ---------------------------------------------------------------------------
+
+/** Handler éxito v3: lanza un run agéntico de season summary. */
+export const seasonSummaryRunSuccessHandler = http.post(
+  SEASON_SUMMARY_PATH,
+  () =>
+    HttpResponse.json(
+      { run_id: "run-season-fake-0001", status: "running" },
+      { status: 202 },
+    ),
+);
+
+/** Handler 451 — consentimiento IA no otorgado (T203). */
+export const seasonSummaryConsentMissingHandler = http.post(
+  SEASON_SUMMARY_PATH,
+  () =>
+    HttpResponse.json(
+      { detail: "Consentimiento de IA requerido." },
+      { status: 451 },
+    ),
+);
+
+// ---------------------------------------------------------------------------
+// T302 (feature 037) — POST /chat, usado por `AthleteAnalystChatPanel`
+// (scope por `athlete_id`) y `CompetitionChatPanel` (scope por
+// `race_event_id`), ambos vía `useChatSession`.
+// ---------------------------------------------------------------------------
+
+const CHAT_PATH = "*/api/race-analysis/chat";
+
+/** Handler éxito — responde con una respuesta fija, sin citas ni tools. */
+export const chatTurnSuccessHandler = http.post(CHAT_PATH, () =>
+  HttpResponse.json({
+    answer: "Respuesta simulada del analista.",
+    citations_used: [],
+    tools_called: [],
+  }),
+);
+
+/** Handler 503 — IA deshabilitada. */
+export const chatTurnUnavailableHandler = http.post(CHAT_PATH, () =>
+  HttpResponse.json({ detail: "IA no disponible." }, { status: 503 }),
 );

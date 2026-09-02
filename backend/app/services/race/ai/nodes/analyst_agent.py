@@ -25,7 +25,11 @@ from typing import Any
 
 from app.services.race.agents.analyst import (
     PROMPT_VERSION_ANALYST_V2,
+    PROMPT_VERSION_ANALYST_V3,
+    PROMPT_VERSION_SEASON_SUMMARY_V3,
+    AnalystV3Input,
     RaceAnalystAgent,
+    v3_prompt_version,
 )
 from app.services.race.ai.events import with_events
 from app.services.race.ai.retry import with_retry
@@ -37,6 +41,26 @@ NODE_NAME = "analyst_agent"
 
 # Cap de válidas por run v2 (debe coincidir con RaceAnalystAgent._V2_CAP).
 _V2_CAP = 4
+
+# Mismo cap para v3: el fan-out sigue siendo una llamada por válida.
+_V3_CAP = 4
+
+# prompt_version que activan la rama v3 (feature 037, T201).
+_V3_PROMPT_VERSIONS = {PROMPT_VERSION_ANALYST_V3, PROMPT_VERSION_SEASON_SUMMARY_V3}
+
+
+def _resolve_athlete_ref(state: dict) -> str:
+    """``athlete_sex`` → referencia de género usada por los prompts.
+
+    Cierra el bug de spec.md §problem 7 ("la deportista" hardcodeado para
+    todo atleta): el router inyecta ``athlete_sex`` (``"M"``/``"F"``/None) y
+    acá se traduce. Sin dato → "la deportista" (default histórico, sin
+    regresión para las filas ya generadas).
+    """
+    sex = state.get("athlete_sex")
+    if isinstance(sex, str) and sex.strip().upper().startswith("M"):
+        return "el deportista"
+    return "la deportista"
 
 
 def _resolve_ltad(state: dict) -> LTADGroup:
@@ -113,6 +137,10 @@ def _build_input(
         progression_assessment=progression_assessment,
         race_meta=race_meta,
         maturation_status=maturation_status,
+        # Feature 037 (T201): cierra el cableado que T101 dejó abierto —
+        # AnalysisInput.athlete_ref existía pero nadie lo llenaba desde
+        # state["athlete_sex"], así que todo insight decía "la deportista".
+        athlete_ref=_resolve_athlete_ref(state),
         athlete_id=state["athlete_id"],
         season=state["season"],
     )
@@ -138,6 +166,10 @@ def _accumulate_metrics(aggregate: dict, run_metrics: Any) -> dict:
 @with_retry(max_attempts=3, backoff=0)
 async def analyst_agent(state: dict) -> dict[str, Any]:
     prompt_version: str = state.get("prompt_version") or "race_analyst_v1"
+
+    # ------------------------------------------------------------------ v3
+    if prompt_version in _V3_PROMPT_VERSIONS:
+        return await _analyst_agent_v3(state)
 
     # ------------------------------------------------------------------ v2
     if prompt_version == PROMPT_VERSION_ANALYST_V2:
@@ -265,6 +297,198 @@ async def _analyst_agent_v2(state: dict) -> dict[str, Any]:
     return {
         "per_valida_drafts": per_valida_drafts,
         "draft_analysis": first_output,  # compat con nodos v1 downstream
+        "aggregate_metrics": aggregate,
+    }
+
+
+def _field_metrics_by_valida(state: dict) -> dict[int, dict]:
+    """``field_context`` (keyed by event_id) → índice por ``valida_num``.
+
+    ``compute_metrics`` indexa por ``event_id`` porque es la única clave
+    única; el analista razona por válida. Cuando hay un evento anclado
+    (``event_id``) su entrada gana, para no confundir la válida N de copa
+    con un campeonato que comparta ``sequence_number``.
+    """
+    field_context: dict = state.get("field_context") or {}
+    by_valida: dict[int, dict] = {}
+    for value in field_context.values():
+        valida_num = value.get("valida_num") if isinstance(value, dict) else None
+        if valida_num is None:
+            continue
+        by_valida.setdefault(int(valida_num), value)
+
+    anchored_id = state.get("event_id")
+    if anchored_id is not None:
+        anchored = field_context.get(anchored_id) or field_context.get(str(anchored_id))
+        if isinstance(anchored, dict) and anchored.get("valida_num") is not None:
+            by_valida[int(anchored["valida_num"])] = anchored
+    return by_valida
+
+
+def _season_rows_for_prompt(state: dict) -> list[dict]:
+    """Filas de temporada con métricas de pelotón, ordenadas cronológicamente."""
+    field_context: dict = state.get("field_context") or {}
+    rows = [v for v in field_context.values() if isinstance(v, dict)]
+    return sorted(rows, key=lambda r: (r.get("event_date") or "", r.get("valida_num") or 0))
+
+
+def _race_meta_for_valida(state: dict, valida_num: int) -> str | None:
+    """Condiciones registradas + nota del coach para esa válida (o ``None``)."""
+    from app.services.race.agents.analyst import format_race_meta
+
+    event_conditions: dict[int, dict] = state.get("event_conditions") or {}
+    race_meta = format_race_meta(event_conditions.get(valida_num))
+
+    coach_notes: dict[int, str | None] = state.get("coach_notes_by_valida") or {}
+    note = coach_notes.get(valida_num)
+    if note:
+        note_line = f"- Nota del entrenador: {note.strip()}"
+        race_meta = f"{race_meta}\n{note_line}" if race_meta else note_line
+    return race_meta
+
+
+def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
+    """Construye una entrada v3 por válida (o una sola para la temporada)."""
+    analysis_kind = state.get("analysis_kind") or "valida"
+    metrics_base = state.get("metrics") or {}
+    progression_all: list[dict] = metrics_base.get("progression", []) or []
+    season_rows = _season_rows_for_prompt(state)
+    memory: list[str] = list(state.get("memory") or [])[:3]
+
+    common = {
+        "athlete_ref": athlete_ref,
+        "age": state.get("athlete_age"),
+        "ltad_group": str(_resolve_ltad(state).value),
+        "season": state.get("season"),
+        "validas_count": int(state.get("season_validas_count") or 0),
+        "season_rows": season_rows,
+        "anthro_context": state.get("anthro_context"),
+        "training_window": state.get("training_window"),
+        "coach_dialogue": list(state.get("coach_dialogue") or []),
+        "catalog_context": dict(state.get("catalog_context") or {}),
+        "memory_recent_insights": memory,
+    }
+
+    if analysis_kind == "season":
+        # La temporada no tiene fila de carrera ni lectura de pelotón propia:
+        # la tabla de temporada es todo el insumo (spec §US5).
+        return [AnalystV3Input(valida_num=0, analysis_kind="season", **common)]
+
+    field_by_valida = _field_metrics_by_valida(state)
+    inputs: list[AnalystV3Input] = []
+    for valida_num in list(state.get("valida_nums") or []):
+        race_row = next(
+            (r for r in progression_all if r.get("valida_num") == valida_num), None
+        )
+        inputs.append(
+            AnalystV3Input(
+                valida_num=valida_num,
+                analysis_kind="valida",
+                race_row=race_row,
+                field_metrics=field_by_valida.get(valida_num),
+                race_meta=_race_meta_for_valida(state, valida_num),
+                **common,
+            )
+        )
+    return inputs
+
+
+async def _analyst_agent_v3(state: dict) -> dict[str, Any]:
+    """Implementación v3: draft estructurado (``InsightV3``) por válida.
+
+    Emite las claves nuevas (``per_valida_drafts_v3``, ``grounding_numbers``)
+    y, por compatibilidad, sigue llenando ``per_valida_drafts`` /
+    ``draft_analysis`` con el markdown renderizado desde el JSON — así HITL,
+    persist, rehydrate y render no necesitan saber que hubo un cambio de
+    contrato (plan.md §State keys).
+    """
+    from app.services.race.ai.fallback import deterministic_fallback_v3
+    from app.services.race.insight_v3 import (
+        insight_v3_sections,
+        insight_v3_to_legacy_recommendations,
+        render_insight_v3_markdown,
+    )
+    from app.services.race.schemas import AnalysisOutput
+
+    analysis_kind = state.get("analysis_kind") or "valida"
+    prompt_version = v3_prompt_version(analysis_kind)
+    athlete_ref = _resolve_athlete_ref(state)
+
+    valida_nums: list[int] = list(state.get("valida_nums") or [])
+    if analysis_kind != "season" and len(valida_nums) > _V3_CAP:
+        raise ValueError(
+            f"Cap v3: máximo {_V3_CAP} válidas por análisis. "
+            "Genera resumen temporada para visión global."
+        )
+
+    anon = state.get("anonymized_data") or {}
+    pseudonym = anon.get("pseudonym") or "AtletaAnonimo"
+    forbidden_names: list[str] = list(
+        state.get("club_forbidden_names") or state.get("forbidden_names") or []
+    )
+
+    inputs = _build_v3_inputs(state, athlete_ref)
+    agent: RaceAnalystAgent = state.get("_analyst_agent") or RaceAnalystAgent(
+        prompt_version=prompt_version
+    )
+
+    if not inputs:
+        # Sin válidas seleccionadas: emitimos el fallback determinista para el
+        # sentinel 0 en vez de dejar el run sin draft.
+        fallback = deterministic_fallback_v3(analysis_kind=analysis_kind)
+        markdown = render_insight_v3_markdown(fallback, athlete_ref)
+        compat = AnalysisOutput(
+            pseudonym=pseudonym,
+            sections=insight_v3_sections(fallback),
+            citations_used=[],
+            recommendations=insight_v3_to_legacy_recommendations(fallback),
+            risk_flags=[],
+            raw_markdown=markdown,
+            word_count=len(markdown.split()),
+        )
+        return {
+            "per_valida_drafts_v3": {0: fallback},
+            "grounding_numbers": {0: []},
+            "per_valida_drafts": {0: compat},
+            "draft_analysis": compat,
+        }
+
+    results = await agent.invoke_v3(inputs, forbidden_names=forbidden_names)
+
+    aggregate = dict(state.get("aggregate_metrics") or {})
+    per_valida_drafts_v3: dict[int, Any] = {}
+    grounding_numbers: dict[int, list[str]] = {}
+    per_valida_drafts: dict[int, Any] = {}
+    first_output: Any = None
+
+    for valida_num in sorted(results):
+        result = results[valida_num]
+        insight = result.insight
+        markdown = render_insight_v3_markdown(insight, athlete_ref)
+        compat = AnalysisOutput(
+            pseudonym=pseudonym,
+            sections=insight_v3_sections(insight),
+            citations_used=[],
+            recommendations=insight_v3_to_legacy_recommendations(insight),
+            risk_flags=[],
+            raw_markdown=markdown,
+            word_count=len(markdown.split()),
+        )
+        per_valida_drafts_v3[valida_num] = insight
+        grounding_numbers[valida_num] = list(result.grounding_numbers)
+        per_valida_drafts[valida_num] = compat
+        aggregate = _accumulate_metrics(aggregate, result.metrics)
+        if first_output is None:
+            first_output = compat
+
+    aggregate["analysis_kind"] = analysis_kind
+    aggregate["season_validas_count"] = int(state.get("season_validas_count") or 0)
+
+    return {
+        "per_valida_drafts_v3": per_valida_drafts_v3,
+        "grounding_numbers": grounding_numbers,
+        "per_valida_drafts": per_valida_drafts,
+        "draft_analysis": first_output,  # compat con nodos v1/v2 downstream
         "aggregate_metrics": aggregate,
     }
 

@@ -10,7 +10,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/api/raceAnalysis", () => ({
   startRun: vi.fn(),
@@ -19,6 +19,7 @@ vi.mock("@/api/raceAnalysis", () => ({
   // T082 (feature 036): `useRunResult` se eliminó de useRaceRun.ts (sin
   // consumidores) — este mock ya no necesita stubbear `getRunResult`.
   reExecuteRun: vi.fn(),
+  cancelRun: vi.fn(),
 }));
 
 import * as raceApi from "@/api/raceAnalysis";
@@ -307,6 +308,10 @@ describe("useApproveStep", () => {
 // `started_at` que manda el servidor — por eso los fixtures de estas
 // pruebas usan fechas fijas de sobra (mismo estilo que el resto del
 // archivo) sin que afecten el resultado.
+//
+// Los fixtures de este bloque usan `running`: es el único estado al que
+// el techo aplica. `hitl_waiting` está exceptuado (un run pausado espera
+// al coach por diseño) y tiene su propio bloque más abajo.
 // ---------------------------------------------------------------------------
 
 describe("useRunStatus — T017 techo duro de polling", () => {
@@ -318,9 +323,9 @@ describe("useRunStatus — T017 techo duro de polling", () => {
     async () => {
       vi.mocked(raceApi.getRunStatus).mockResolvedValue({
         run_id: "stuck-1",
-        state: "hitl_waiting",
+        state: "running",
         progress_pct: 70,
-        current_node: "hitl_gate_review",
+        current_node: "analyst_agent",
         started_at: "2026-05-20T10:00:00Z",
         estimated_seconds_remaining: 0,
         last_seq: 1,
@@ -421,9 +426,9 @@ describe("useRunStatus — T017 techo duro de polling", () => {
       vi.mocked(raceApi.getRunStatus)
         .mockResolvedValueOnce({
           run_id: "orphan-304",
-          state: "hitl_waiting",
+          state: "running",
           progress_pct: 70,
-          current_node: "hitl_gate_review",
+          current_node: "analyst_agent",
           started_at: "2026-05-20T10:00:00Z",
           estimated_seconds_remaining: 0,
           last_seq: 1,
@@ -445,6 +450,139 @@ describe("useRunStatus — T017 techo duro de polling", () => {
       });
       expect((result.current.error as Error).message).toBe(
         RUN_NOT_RESPONDING_MESSAGE,
+      );
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// P0 — el techo de polling NO aplica a un run pausado en `hitl_waiting`.
+//
+// Un run detenido en un gate HITL espera al coach por diseño: no emite
+// eventos y el backend responde 304 mientras nadie decida. Antes de este
+// fix, al cruzar el techo la query pasaba a error con
+// RUN_NOT_RESPONDING_MESSAGE ("Vuelve a lanzarlo"), lo que borraba de
+// pantalla la card de aprobación y dejaba al coach con una instrucción
+// imposible: el guard 409 del backend rechaza relanzar mientras ese run
+// siga vivo.
+//
+// Estas pruebas usan timers falsos para cruzar los 15 minutos reales del
+// techo por defecto (`DEFAULT_MAX_POLLING_MS`) sin overrides, y avanzan
+// el reloj con `advanceTimersByTimeAsync` dentro de `act` (no con
+// `waitFor`, que no coopera bien con timers falsos).
+// ---------------------------------------------------------------------------
+
+describe("useRunStatus — P0 excepción HITL al techo de polling", () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.useRealTimers());
+
+  const hitlWaitingFixture = {
+    run_id: "hitl-paused",
+    state: "hitl_waiting" as const,
+    progress_pct: 70,
+    current_node: "hitl_gate_review",
+    started_at: "2026-05-20T10:00:00Z",
+    estimated_seconds_remaining: 0,
+    last_seq: 1,
+    new_events: [
+      {
+        seq: 1,
+        ts: "2026-05-20T10:00:30Z",
+        type: "hitl_request",
+        node: "hitl_gate_review",
+        payload: { step_id: "hitl-step-1" },
+      },
+    ],
+  };
+
+  it(
+    "(a) run en hitl_waiting con 304 sostenido más de 15 min: la query NO " +
+      "entra en error y el estado sigue siendo hitl_waiting",
+    async () => {
+      vi.useFakeTimers();
+      vi.mocked(raceApi.getRunStatus)
+        .mockResolvedValueOnce(hitlWaitingFixture)
+        // 304 para siempre: el coach todavía no decide.
+        .mockResolvedValue(null);
+
+      const wrapper = createWrapper();
+      const { result } = renderHook(() => useRunStatus("hitl-paused"), {
+        wrapper,
+      });
+
+      // Primer poll (fuera de timer: se dispara al montar).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(result.current.data?.latest.state).toBe("hitl_waiting");
+
+      // Cruza con holgura el techo por defecto (15 min).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(16 * 60 * 1000);
+      });
+
+      expect(result.current.isError).toBe(false);
+      expect(result.current.error).toBeNull();
+      expect(result.current.data?.latest.state).toBe("hitl_waiting");
+      // El evento hitl_request acumulado sigue disponible: es lo que
+      // alimenta la card de aprobación del coach.
+      expect(result.current.data?.events).toHaveLength(1);
+
+      // Sigue escuchando, pero a ritmo lento (~15 s, no ~2 s): en 60 s
+      // más deben caber unas pocas llamadas, no treinta.
+      const callsAfterCeiling = vi.mocked(raceApi.getRunStatus).mock.calls
+        .length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60 * 1000);
+      });
+      const delta =
+        vi.mocked(raceApi.getRunStatus).mock.calls.length - callsAfterCeiling;
+      expect(delta).toBeGreaterThanOrEqual(1);
+      expect(delta).toBeLessThanOrEqual(6);
+    },
+  );
+
+  it(
+    "(b) contraste — run en running con 304 sostenido más de 15 min: sigue " +
+      "lanzando RUN_NOT_RESPONDING_MESSAGE",
+    async () => {
+      vi.useFakeTimers();
+      vi.mocked(raceApi.getRunStatus)
+        .mockResolvedValueOnce({
+          ...hitlWaitingFixture,
+          run_id: "orphan-running",
+          state: "running" as const,
+          current_node: "analyst_agent",
+          new_events: [],
+        })
+        .mockResolvedValue(null);
+
+      const wrapper = createWrapper();
+      const { result } = renderHook(() => useRunStatus("orphan-running"), {
+        wrapper,
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(result.current.data?.latest.state).toBe("running");
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(16 * 60 * 1000);
+      });
+
+      expect(result.current.isError).toBe(true);
+      expect((result.current.error as Error).message).toBe(
+        RUN_NOT_RESPONDING_MESSAGE,
+      );
+
+      // Y el polling se detiene de verdad.
+      const callsAtError = vi.mocked(raceApi.getRunStatus).mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60 * 1000);
+      });
+      expect(vi.mocked(raceApi.getRunStatus).mock.calls.length).toBe(
+        callsAtError,
       );
     },
   );

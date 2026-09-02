@@ -1,0 +1,257 @@
+{
+  "case_id": "005",
+  "description": "Circa-PHV con caída esperable: 13 años, pico de crecimiento en curso (velocidad 9.1 cm/año) y pérdida de percentil pese a asistencia alta. La lectura correcta es madurativa, sin diagnóstico médico y sin subir carga.",
+  "input": {
+    "valida_num": 4,
+    "analysis_kind": "valida",
+    "athlete_ref": "el deportista",
+    "age": 13,
+    "ltad_group": "bambino",
+    "season": 2026,
+    "validas_count": 4,
+    "valida_label": "Válida 4 · Copa Valle",
+    "race_row": {
+      "valida_num": 4,
+      "event_date": "2026-05-17",
+      "category_code": "INF_B",
+      "position": 9,
+      "race_time_ms": 2244000,
+      "gap_to_winner_ms": 204000,
+      "gap_to_winner_pct": 10.0
+    },
+    "field_metrics": {
+      "event_id": 4504,
+      "valida_num": 4,
+      "event_date": "2026-05-17",
+      "series_kind": "cup",
+      "series_level": "departmental",
+      "is_championship": false,
+      "field_size": 13,
+      "position": 9,
+      "percentile": 33.3,
+      "race_time_ms": 2244000,
+      "gap_to_p1_ms": 204000,
+      "gap_pct": 10.0,
+      "gap_to_p3_ms": 126000,
+      "category_median_time_ms": 2196000,
+      "gap_to_median_pct": 2.19,
+      "laps_behind": 0,
+      "prior_index": 5.8,
+      "expected_position": 6,
+      "delta_vs_expected": -3,
+      "field_strength": 5.5,
+      "coverage_with_prior": 0.69
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 13,
+        "percentile": 75,
+        "gap_pct": 4.12,
+        "gap_to_p3_ms": 26000,
+        "expected_position": 5,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 5,
+        "field_size": 13,
+        "percentile": 66.7,
+        "gap_pct": 6.34,
+        "gap_to_p3_ms": 58000,
+        "expected_position": 5,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 7,
+        "field_size": 13,
+        "percentile": 50,
+        "gap_pct": 8.45,
+        "gap_to_p3_ms": 92000,
+        "expected_position": 6,
+        "delta_vs_expected": -1
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 9,
+        "field_size": 13,
+        "percentile": 33.3,
+        "gap_pct": 10.0,
+        "gap_to_p3_ms": 126000,
+        "expected_position": 6,
+        "delta_vs_expected": -3
+      }
+    ],
+    "race_meta": "- Clima: soleado\n- Temperatura: 26 °C\n- Superficie de la pista: seca",
+    "anthro_context": {
+      "records_count": 5,
+      "latest": {
+        "evaluation_date": "2026-05-04",
+        "days_before_event": 13,
+        "maturity_offset_years": -0.2,
+        "age_at_phv": 13.2,
+        "maturation_status": "Circa-PHV",
+        "height_percentile": 74
+      },
+      "previous": {
+        "evaluation_date": "2026-02-02",
+        "maturity_offset_years": -0.7,
+        "maturation_status": "Pre-PHV"
+      },
+      "growth_velocity_cm_per_year": 9.1,
+      "months_from_phv": -2.4,
+      "flags": ["approaching_circa_phv"]
+    },
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-04-19",
+      "date_to": "2026-05-17",
+      "sessions_in_window": 12,
+      "attended": 11,
+      "absent": 1,
+      "excused": 0,
+      "attendance_pct": 91.7,
+      "training_hours": 17,
+      "rpe_mean": 5.6,
+      "rpe_last7_mean": 6.1,
+      "rpe_prev21_mean": 5.4,
+      "rubric_effort_mean": 4.4,
+      "rubric_attitude_mean": 4.5,
+      "rubric_technique_mean": 3.3,
+      "technical_foci": ["Separación cuerpo-bici", "Trazado de curvas"],
+      "skill_codes_worked": ["E", "F"],
+      "strength_sessions": 3,
+      "interval_sessions": 0,
+      "days_since_last_session": 3,
+      "days_since_previous_race": 28,
+      "coach_feedback": [
+        "Se ve descoordinado en los saltos que hacía sueltos hace dos meses"
+      ],
+      "strava_load": null
+    },
+    "coach_dialogue": [
+      {
+        "generated_at": "2026-04-22",
+        "valida_label": "Válida 3 · Copa Valle",
+        "headline": "Perdió percentil pese a sostener la asistencia",
+        "coach_question": "¿Notaste cambios en la coordinación o en la talla en las últimas semanas?",
+        "coach_answer": "Sí, creció bastante desde marzo y se lo ve más largo sobre la bici",
+        "coach_rating": 1
+      }
+    ],
+    "catalog_context": {
+      "technique_skills": [
+        {"code": "A", "name": "Posición neutra/lista y equilibrio", "focus": "Postura atlética, peso centrado, trackstand"},
+        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"},
+        {"code": "F", "name": "Separación cuerpo-bici", "focus": "Levantar rueda, manual, bunny hop"}
+      ],
+      "strength_blocks": [
+        {"id": 22, "name": "Core y estabilidad con peso corporal", "age_band": "12-14"}
+      ],
+      "interval_templates": []
+    },
+    "memory_recent_insights": [
+      "Válida 3 · Copa: percentil 50 con asistencia alta y coordinación irregular",
+      "Válida 2 · Copa: percentil 66.7 sin cambios de carga"
+    ]
+  },
+  "expected_themes": ["Circa-PHV", "crecimiento", "coordinación", "carga"],
+  "forbidden_terms": [
+    "diagnóstico",
+    "lesión confirmada",
+    "suplementos",
+    "creatina",
+    "podio",
+    "ganar",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": ["Circa-PHV", "crecimiento", "9.1", "coordinación"],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "La caída de percentil coincide con el pico de crecimiento (9.1 cm/año, Circa-PHV) y no con una baja de compromiso: la asistencia se mantuvo en 91.7%.",
+    "field_reading": {
+      "percentile": 33.3,
+      "expected_position": 6,
+      "actual_position": 9,
+      "delta_vs_expected": -3,
+      "gap_to_p3_hhmmss": "0:02:06",
+      "series_label": "Válida 4 · Copa Valle",
+      "summary": "Cuarta caída consecutiva de percentil en el mismo pelotón de 13 corredores."
+    },
+    "trend": "declining",
+    "observations": [
+      {
+        "claim": "La pérdida es sostenida y proporcional al avance del estirón, no un mal día puntual.",
+        "evidence": ["percentil 75, 66.7, 50 y 33.3 en las cuatro válidas", "offset de maduración -0.2 años"],
+        "domain": "maturation",
+        "confidence": "high"
+      },
+      {
+        "claim": "El costo se ve en la coordinación: la rúbrica de técnica es la más baja del ciclo mientras esfuerzo y actitud siguen altos.",
+        "evidence": ["rúbrica de técnica 3.3", "rúbrica de esfuerzo 4.4", "rúbrica de actitud 4.5"],
+        "domain": "training",
+        "confidence": "high"
+      },
+      {
+        "claim": "El esfuerzo percibido subió en la última semana con la misma carga de siempre, señal de que el cuerpo está pagando el crecimiento.",
+        "evidence": ["RPE 6.1 en los últimos 7 días frente a 5.4 previos", "crecimiento 9.1 cm/año"],
+        "domain": "training",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Bajar el volumen semanal alrededor de un tercio durante las próximas seis semanas y sostener los días de descanso.",
+        "category": "volume",
+        "priority": "high",
+        "horizon": "next_week",
+        "catalog_ref": null,
+        "derived_from": 0
+      },
+      {
+        "text": "Reemplazar los saltos por trabajo de posición neutra y equilibrio a baja velocidad mientras dure el estirón.",
+        "category": "technique",
+        "priority": "high",
+        "horizon": "next_week",
+        "catalog_ref": {"kind": "technique_skill", "code": "A", "label": null},
+        "derived_from": 1
+      },
+      {
+        "text": "Sumar dos bloques semanales de core y estabilidad con peso corporal para acompañar el cambio de palancas.",
+        "category": "technique",
+        "priority": "med",
+        "horizon": "season",
+        "catalog_ref": {"kind": "strength_block", "code": "22", "label": null},
+        "derived_from": 1
+      }
+    ],
+    "watch_signals": [
+      "Molestias en rodilla o talón: ante cualquier dolor persistente, derivar al profesional de salud.",
+      "Si el esfuerzo percibido sigue sobre 6 con la carga reducida, bajar también la frecuencia."
+    ],
+    "coach_question": "¿Se quejó de molestias en rodillas o talones al bajar de la bici en estas últimas semanas?",
+    "data_gaps": [],
+    "principles_cited": [
+      "1. Desarrollo físico y fisiológico 10-15",
+      "8. Prevención de lesiones y crecimiento"
+    ]
+  }
+}

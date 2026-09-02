@@ -1,0 +1,250 @@
+{
+  "case_id": "008",
+  "description": "Resumen de temporada (analysis_kind=season, valida_num=0): 6 carreras de copa más un campeonato, trayectoria mixta con un bache a mitad de año y recuperación al cierre. Sin fila de carrera ni lectura de pelotón propia: field_reading debe quedar en null.",
+  "input": {
+    "valida_num": 0,
+    "analysis_kind": "season",
+    "athlete_ref": "la deportista",
+    "age": 14,
+    "ltad_group": "juvenil",
+    "season": 2026,
+    "validas_count": 6,
+    "valida_label": null,
+    "race_row": null,
+    "field_metrics": null,
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 6,
+        "field_size": 13,
+        "percentile": 58.3,
+        "gap_pct": 9.42,
+        "gap_to_p3_ms": 96000,
+        "expected_position": 6,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 5,
+        "field_size": 13,
+        "percentile": 66.7,
+        "gap_pct": 7.85,
+        "gap_to_p3_ms": 71000,
+        "expected_position": 5,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 9,
+        "field_size": 14,
+        "percentile": 38.5,
+        "gap_pct": 12.6,
+        "gap_to_p3_ms": 154000,
+        "expected_position": 5,
+        "delta_vs_expected": -4
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 7,
+        "field_size": 13,
+        "percentile": 50,
+        "gap_pct": 10.3,
+        "gap_to_p3_ms": 118000,
+        "expected_position": 6,
+        "delta_vs_expected": -1
+      },
+      {
+        "valida_num": 5,
+        "event_date": "2026-06-21",
+        "series_kind": "championship",
+        "series_level": "departmental",
+        "is_championship": true,
+        "position": 8,
+        "field_size": 19,
+        "percentile": 61.1,
+        "gap_pct": 8.74,
+        "gap_to_p3_ms": 103000,
+        "expected_position": 10,
+        "delta_vs_expected": 2
+      },
+      {
+        "valida_num": 6,
+        "event_date": "2026-08-16",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 13,
+        "percentile": 75,
+        "gap_pct": 6.91,
+        "gap_to_p3_ms": 47000,
+        "expected_position": 5,
+        "delta_vs_expected": 1
+      }
+    ],
+    "race_meta": null,
+    "anthro_context": {
+      "records_count": 4,
+      "latest": {
+        "evaluation_date": "2026-08-03",
+        "days_before_event": 13,
+        "maturity_offset_years": 0.6,
+        "age_at_phv": 13.4,
+        "maturation_status": "Post-PHV",
+        "height_percentile": 63
+      },
+      "previous": {
+        "evaluation_date": "2026-04-06",
+        "maturity_offset_years": 0.2,
+        "maturation_status": "Circa-PHV"
+      },
+      "growth_velocity_cm_per_year": 6.3,
+      "months_from_phv": 7.2,
+      "flags": []
+    },
+    "training_window": {
+      "window_days": 224,
+      "date_from": "2026-01-05",
+      "date_to": "2026-08-16",
+      "sessions_in_window": 96,
+      "attended": 71,
+      "absent": 21,
+      "excused": 4,
+      "attendance_pct": 74,
+      "training_hours": 106.5,
+      "rpe_mean": 4.7,
+      "rpe_last7_mean": 4.4,
+      "rpe_prev21_mean": 4.9,
+      "rubric_effort_mean": 4.3,
+      "rubric_attitude_mean": 4.5,
+      "rubric_technique_mean": 3.7,
+      "technical_foci": ["Trazado de curvas", "Control de presión / terreno", "Cambios y cadencia"],
+      "skill_codes_worked": ["E", "G", "H"],
+      "strength_sessions": 12,
+      "interval_sessions": 8,
+      "days_since_last_session": 4,
+      "days_since_previous_race": 56,
+      "coach_feedback": [
+        "Vuelve a completar las series después del parón de mitad de año"
+      ],
+      "strava_load": null
+    },
+    "coach_dialogue": [
+      {
+        "generated_at": "2026-04-22",
+        "valida_label": "Válida 3 · Copa Valle",
+        "headline": "Caída de percentil coincidente con tres semanas sin entrenar",
+        "coach_question": "¿Qué pasó en las semanas previas a esta válida?",
+        "coach_answer": "Estuvo tres semanas de viaje familiar sin bici",
+        "coach_rating": 1
+      }
+    ],
+    "catalog_context": {
+      "technique_skills": [
+        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"},
+        {"code": "G", "name": "Control de presión / terreno", "focus": "Pump, raíces/rocas, drops"},
+        {"code": "H", "name": "Cambios y cadencia", "focus": "Engranar antes de la subida (cad. ≥70)"}
+      ],
+      "strength_blocks": [
+        {"id": 34, "name": "Fuerza específica de tren inferior", "age_band": "14-16"}
+      ],
+      "interval_templates": [
+        {"id": 47, "name": "Series largas en subida", "age_band": "14-16", "mesocycle_phase": "specific"}
+      ]
+    },
+    "memory_recent_insights": [
+      "Válida 6 · Copa: mejor percentil del año con 75",
+      "Cto. Departamental: 2 puestos por encima de lo esperado en el pelotón más grande"
+    ]
+  },
+  "expected_themes": ["temporada", "asistencia", "campeonato", "mesociclo"],
+  "forbidden_terms": [
+    "suplementos",
+    "creatina",
+    "diagnóstico",
+    "podio",
+    "ganar",
+    "top 5",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": ["temporada", "asistencia", "74", "cierre"],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "La temporada cerró mejor de lo que empezó (gap 9.42% a 6.91%), con el bache de mitad de año explicado por el parón, no por el nivel.",
+    "field_reading": null,
+    "trend": "mixed",
+    "observations": [
+      {
+        "claim": "La curva de gap mejora en las puntas y se rompe solo en el tramo del parón, así que la trayectoria de fondo es ascendente.",
+        "evidence": ["gap 9.42% en la primera fecha", "gap 12.6% en la tercera", "gap 6.91% en la última"],
+        "domain": "history",
+        "confidence": "high"
+      },
+      {
+        "claim": "El campeonato fue la mejor lectura relativa del año pese al puesto: terminó por encima de su expectativa en el pelotón más grande.",
+        "evidence": ["percentil 61.1 en el campeonato", "esperada 10 frente a real 8", "pelotón de 19"],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "La asistencia de la temporada quedó por debajo de lo que sostiene una progresión pareja, con un cuarto de las sesiones sin asistir.",
+        "evidence": ["asistencia 74%", "71 sesiones asistidas de 96", "21 ausencias"],
+        "domain": "training",
+        "confidence": "high"
+      },
+      {
+        "claim": "La técnica sigue siendo la rúbrica más baja del año y es el margen más grande que queda para el próximo ciclo.",
+        "evidence": ["rúbrica de técnica 3.7 frente a esfuerzo 4.3", "8 sesiones con intervalos"],
+        "domain": "training",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Fijar como prioridad del próximo mesociclo sostener la asistencia por encima de la del año, cuidando los meses de viaje familiar.",
+        "category": "volume",
+        "priority": "high",
+        "horizon": "season",
+        "catalog_ref": null,
+        "derived_from": 2
+      },
+      {
+        "text": "Programar un bloque semanal de control de presión y terreno durante las primeras ocho semanas de pretemporada.",
+        "category": "technique",
+        "priority": "high",
+        "horizon": "season",
+        "catalog_ref": {"kind": "technique_skill", "code": "G", "label": null},
+        "derived_from": 3
+      },
+      {
+        "text": "Retomar las series largas en subida una vez por semana en el mesociclo específico, respetando los días de descanso.",
+        "category": "volume",
+        "priority": "med",
+        "horizon": "season",
+        "catalog_ref": {"kind": "interval_template", "code": "47", "label": null},
+        "derived_from": 0
+      }
+    ],
+    "watch_signals": [
+      "Si vuelve a aparecer un parón de tres semanas, planear una rutina mínima con la familia antes del viaje."
+    ],
+    "coach_question": "¿Qué se propone la deportista para la próxima temporada y cuántos días a la semana puede sostener la familia el traslado?",
+    "data_gaps": ["Sin registro de carga por fuera del club durante el parón de mitad de año."],
+    "principles_cited": ["5. Periodización de la temporada"]
+  }
+}

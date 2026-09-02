@@ -767,3 +767,47 @@ export const errorRacesListHandler = http.get(
   "*/api/athletes/:athleteId/race-analysis/races",
   () => new HttpResponse(null, { status: 500 }),
 );
+
+// ---------------------------------------------------------------------------
+// T205 (feature 037) — POST /insights/:id/answer
+// ---------------------------------------------------------------------------
+
+/** Handler éxito: eco del body sobre un detalle base v3. */
+export function answerInsightSuccessHandler(
+  detailFactory: (overrides?: Partial<AthleteInsightDetailOut>) => AthleteInsightDetailOut,
+) {
+  return http.post(
+    "*/api/athletes/:athleteId/race-analysis/insights/:insightId/answer",
+    async ({ request }) => {
+      const body = (await request.json()) as {
+        answer_text?: string;
+        rating?: number;
+      };
+      const now = new Date().toISOString();
+      return HttpResponse.json(
+        detailFactory({
+          ...(body.answer_text !== undefined
+            ? { coach_answer_text: body.answer_text, coach_answer_at: now }
+            : {}),
+          ...(body.rating !== undefined ? { coach_rating: body.rating } : {}),
+        }),
+      );
+    },
+  );
+}
+
+/** Handler 422 — ni `answer_text` ni `rating` en el body. */
+export const answerInsightEmptyBodyHandler = http.post(
+  "*/api/athletes/:athleteId/race-analysis/insights/:insightId/answer",
+  () =>
+    HttpResponse.json(
+      { detail: "Debe enviar answer_text y/o rating." },
+      { status: 422 },
+    ),
+);
+
+/** Handler 403 — modo parent (RBAC denegado). */
+export const answerInsightForbiddenHandler = http.post(
+  "*/api/athletes/:athleteId/race-analysis/insights/:insightId/answer",
+  () => HttpResponse.json({ detail: "No autorizado." }, { status: 403 }),
+);

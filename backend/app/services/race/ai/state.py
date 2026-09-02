@@ -49,6 +49,17 @@ class RaceAnalystState(TypedDict, total=False):
     athlete_id: int
     season: int
     valida_nums: list[int] | None
+    # Ancla explícita al evento analizado (``race_events.id``). La resuelven
+    # los routers de lanzamiento y DEBE viajar en el schema: LangGraph
+    # descarta las claves que no están declaradas aquí, y sin ella el
+    # pipeline solo puede identificar la carrera por ``sequence_number`` —
+    # que NO es único dentro de una temporada (feature 014: la válida 1 de
+    # copa y un campeonato comparten ``sequence_number=1``). Su ausencia
+    # causaba dos fallos: ``persist_insight`` guardaba ``event_id=NULL`` y
+    # ``load_race_data`` recortaba el contexto histórico por la fecha del
+    # evento MÁS TARDÍO que compartiera el número, filtrando carreras
+    # posteriores dentro de un análisis retrospectivo.
+    event_id: int | None
     coach_id: int  # audit
     explain_mode: bool
     # Edad cronológica del atleta calculada en el router desde birth_date.
@@ -72,6 +83,11 @@ class RaceAnalystState(TypedDict, total=False):
     event_conditions: dict[int, dict]
 
     memory: list[str]  # últimos 3 insights del atleta
+    # Feature 037 (T104): últimos 3 insights v3 aprobados (con structured_json),
+    # cada uno {headline, coach_question, coach_answer_text, coach_rating,
+    # valida_label, generated_at}. [] si no hay insights v3 previos o si la
+    # query best-effort falló. Poblado por recall_memory.
+    coach_dialogue: list[dict]
 
     draft_analysis: AnalysisOutput | None
     critic_feedback: CriticFeedback | None
@@ -118,11 +134,57 @@ class RaceAnalystState(TypedDict, total=False):
     # Regla N=1 aplica cuando es True — independiente del tamaño del set.
     is_first_in_season: bool
 
+    # ---- v3: contexto causal por-atleta (feature 037, T103) ----
+    # "valida" (default) | "season" — determina la fecha de referencia y la
+    # ventana usada por load_athlete_context (28 días vs. temporada completa).
+    analysis_kind: str
+
+    # Maduración del atleta a la fecha de referencia — ver
+    # data-model.md §AnthroContext. NUNCA incluye weight_kg/bmi/nutritional_status.
+    # None cuando el atleta no tiene registros hasta esa fecha.
+    anthro_context: dict[str, Any] | None
+
+    # Agregados de asistencia/RPE/rúbricas/foco técnico en la ventana previa
+    # al evento — ver data-model.md §TrainingWindow. None cuando el atleta no
+    # tiene ninguna fila de asistencia en la ventana.
+    training_window: dict[str, Any] | None
+
+    # Catálogo del club (skills técnicas, bloques de fuerza, plantillas de
+    # intervalos) para que las acciones sugeridas referencien recursos reales.
+    catalog_context: dict[str, Any]
+
+    # Nombres reales de TODOS los atletas del club + sus padres/acudientes —
+    # superset de forbidden_names. NUNCA al LLM; solo scrubbing/guardrails.
+    club_forbidden_names: list[str]
+
     # ---- Outputs ----
     rendered_markdown: str
     notified: bool
     no_data_for_season: bool
     status: str
+
+    # ---- v3 (feature 037, T101): input ----
+    # Sexo del atleta ("M"|"F") → resuelve athlete_ref ("el deportista" |
+    # "la deportista") en el prompt v2/v3. None → default "la deportista".
+    athlete_sex: str | None
+    # ---- v3: compute_metrics (T102) ----
+    # {event_id (str): FieldMetrics} — percentil, posición esperada, gap a
+    # P1/P3/mediana, fuerza de campo. Ver data-model.md §FieldMetrics.
+    field_context: dict
+
+    # ---- v3: analyst_agent ----
+    # {valida_num (0=season): InsightV3} — drafts estructurados v3. El
+    # analyst v3 también rellena per_valida_drafts (AnalysisOutput) para
+    # que HITL/persist/render sigan funcionando sin cambios (compat).
+    per_valida_drafts_v3: dict[int, Any]
+    # Tokens numéricos presentes en el prompt renderizado, por válida —
+    # insumo del precheck determinista de grounding del critic v3.
+    grounding_numbers: dict[int, list[str]]
+
+    # ---- v3: critic_agent ----
+    # Issues detectados por los prechecks deterministas (Python, sin LLM),
+    # por válida — se pasan al critic LLM para que no los repita.
+    precheck_issues: dict[int, list[Any]]
 
 
 __all__ = ["RaceAnalystState"]

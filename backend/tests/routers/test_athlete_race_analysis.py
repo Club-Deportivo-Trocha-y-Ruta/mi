@@ -112,6 +112,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_results",
             "athlete_ai_insights",
             "anthropometric_records",
+            "parental_consents",
         )
     ]
     async with eng.begin() as conn:
@@ -302,6 +303,22 @@ async def client_factory(seeded_factory):
 
     yield _build
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _default_ai_consent_granted(monkeypatch):
+    """Consentimiento IA vigente por defecto en toda esta suite (feature 037,
+    T405): estos tests cubren RBAC/filtros/lanzamiento de runs, no el gate de
+    consentimiento en sí — ese vive en ``test_athlete_race_analysis_consent.py``.
+    Sin este default, el fixture del atleta 144 (con padre vinculado pero sin
+    fila ``ParentalConsent``) rompería todos los ``POST /runs`` con 451.
+    """
+    from app.routers import athlete_race_analysis as router_mod
+
+    async def _fake_consent(athlete_id: int, db) -> bool:
+        return True
+
+    monkeypatch.setattr(router_mod, "athlete_has_ai_processing_consent", _fake_consent)
 
 
 # ---------------------------------------------------------------------------
@@ -904,6 +921,105 @@ async def test_post_runs_injects_ltad_and_maturation(client_factory, monkeypatch
     # is not a no-op in the graph path.
     assert "forbidden_names" in initial_state
     assert isinstance(initial_state["forbidden_names"], list)
+
+
+@pytest.mark.asyncio
+async def test_post_runs_default_prompt_version_es_v3(client_factory, monkeypatch):
+    """Feature 037 (T204): el lanzamiento por atleta usa
+    ``settings.race_ai_prompt_version`` (default ``race_analyst_v3``) en vez
+    del ``PROMPT_VERSION_ANALYST_V2`` hardcodeado.
+    """
+    from app.routers import athlete_race_analysis as router_mod
+
+    submit_calls: list[tuple] = []
+
+    async def _fake_submit_run(run_id, initial_state, on_complete=None):
+        submit_calls.append((run_id, initial_state, on_complete))
+
+    async def _fake_check_budget(db):
+        return None
+
+    monkeypatch.setattr(router_mod, "submit_run", _fake_submit_run)
+    monkeypatch.setattr(router_mod, "check_budget", _fake_check_budget)
+    monkeypatch.setattr(settings, "ai_enabled", True)
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    body = {"season": 2026, "valida_nums": [1, 2], "explain_mode": False}
+    async with client_factory(user=coach) as ac:
+        resp = await ac.post(
+            "/api/athletes/144/race-analysis/runs",
+            json=body,
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 201, resp.text
+    _, initial_state, _ = submit_calls[0]
+    assert initial_state["prompt_version"] == "race_analyst_v3"
+    assert initial_state["analysis_kind"] == "valida"
+
+
+@pytest.mark.asyncio
+async def test_post_runs_override_a_v2_para_rollback(client_factory, monkeypatch):
+    """Rollback sin deploy: ``RACE_AI_PROMPT_VERSION=race_analyst_v2``."""
+    from app.routers import athlete_race_analysis as router_mod
+
+    submit_calls: list[tuple] = []
+
+    async def _fake_submit_run(run_id, initial_state, on_complete=None):
+        submit_calls.append((run_id, initial_state, on_complete))
+
+    async def _fake_check_budget(db):
+        return None
+
+    monkeypatch.setattr(router_mod, "submit_run", _fake_submit_run)
+    monkeypatch.setattr(router_mod, "check_budget", _fake_check_budget)
+    monkeypatch.setattr(settings, "ai_enabled", True)
+    monkeypatch.setattr(settings, "race_ai_prompt_version", "race_analyst_v2")
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    body = {"season": 2026, "valida_nums": [1], "explain_mode": False}
+    async with client_factory(user=coach) as ac:
+        resp = await ac.post(
+            "/api/athletes/144/race-analysis/runs",
+            json=body,
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 201, resp.text
+    _, initial_state, _ = submit_calls[0]
+    assert initial_state["prompt_version"] == "race_analyst_v2"
+
+
+@pytest.mark.asyncio
+async def test_post_runs_injects_athlete_sex(client_factory, monkeypatch):
+    """Feature 037 (T204): ``athlete_sex`` viaja al state igual que en
+    ``race_analysis.py::start_run`` — necesario para ``athlete_ref`` v3.
+    Atleta 144 (fixture) sin sexo registrado explícitamente en este test
+    module → la clave debe existir de todas formas (puede ser ``None``).
+    """
+    from app.routers import athlete_race_analysis as router_mod
+
+    submit_calls: list[tuple] = []
+
+    async def _fake_submit_run(run_id, initial_state, on_complete=None):
+        submit_calls.append((run_id, initial_state, on_complete))
+
+    async def _fake_check_budget(db):
+        return None
+
+    monkeypatch.setattr(router_mod, "submit_run", _fake_submit_run)
+    monkeypatch.setattr(router_mod, "check_budget", _fake_check_budget)
+    monkeypatch.setattr(settings, "ai_enabled", True)
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    body = {"season": 2026, "valida_nums": [1], "explain_mode": False}
+    async with client_factory(user=coach) as ac:
+        resp = await ac.post(
+            "/api/athletes/144/race-analysis/runs",
+            json=body,
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 201, resp.text
+    _, initial_state, _ = submit_calls[0]
+    assert "athlete_sex" in initial_state
 
 
 @pytest.mark.asyncio

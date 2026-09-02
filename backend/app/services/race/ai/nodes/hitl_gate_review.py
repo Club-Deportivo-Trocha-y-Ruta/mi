@@ -50,6 +50,51 @@ def _should_interrupt(state: dict) -> bool:
     return must_block or any_blocked or explain or _always_hitl()
 
 
+def _structured_draft(state: dict) -> dict[str, Any] | None:
+    """Primer ``InsightV3`` del run, serializado a JSON (o ``None``).
+
+    El contrato del evento (data-model.md §API deltas) es **singular**:
+    ``structured_draft``. Cuando el run analiza varias válidas se envía la de
+    ``valida_num`` más bajo — la misma que ``draft_analysis`` expone como
+    markdown, para que ambos campos del payload describan el mismo draft.
+    """
+    drafts: dict = state.get("per_valida_drafts_v3") or {}
+    if not drafts:
+        return None
+    try:
+        first_key = sorted(drafts)[0]
+    except TypeError:  # pragma: no cover - claves heterogéneas
+        return None
+    candidate = drafts.get(first_key)
+    dump = getattr(candidate, "model_dump", None)
+    if dump is None:
+        return None
+    try:
+        return dump(mode="json")
+    except Exception:  # noqa: BLE001 - el HITL no puede caerse por serializar
+        return None
+
+
+def _structured_drafts(state: dict) -> dict[Any, dict[str, Any]]:
+    """Todos los ``InsightV3`` del run, serializados, por ``valida_num``.
+
+    Complementa el ``structured_draft`` singular (compat) con el mapeo
+    completo para runs multi-válida (feature 037, T405) — sin romper el
+    contrato existente, que sigue siendo la primera entrada de este dict.
+    """
+    drafts: dict = state.get("per_valida_drafts_v3") or {}
+    result: dict[Any, dict[str, Any]] = {}
+    for key, candidate in drafts.items():
+        dump = getattr(candidate, "model_dump", None)
+        if dump is None:
+            continue
+        try:
+            result[key] = dump(mode="json")
+        except Exception:  # noqa: BLE001 - el HITL no puede caerse por serializar
+            continue
+    return result
+
+
 @with_events(NODE_NAME)
 @with_retry(max_attempts=1, backoff=0)
 async def hitl_gate_review(state: dict) -> dict[str, Any]:
@@ -64,6 +109,14 @@ async def hitl_gate_review(state: dict) -> dict[str, Any]:
         "step": "review",
         "draft_markdown": getattr(draft, "raw_markdown", "") if draft else "",
         "pseudonym": getattr(draft, "pseudonym", "") if draft else "",
+        # Feature 037 (T201): draft estructurado v3 para que la tarjeta de
+        # aprobación muestre bloques (hallazgo, observaciones, acciones) en vez
+        # de markdown crudo. ``None`` en runs v1/v2 → la UI cae al markdown.
+        "structured_draft": _structured_draft(state),
+        # Feature 037 (T405): mapeo completo valida_num → InsightV3 para runs
+        # multi-válida. Compat: ``structured_draft`` sigue siendo la primera
+        # entrada; los consumidores que no lo conozcan lo ignoran sin romper.
+        "structured_drafts": _structured_drafts(state),
         "critic": {
             "approved": getattr(fb, "approved", None) if fb else None,
             "must_block": getattr(fb, "must_block", None) if fb else None,

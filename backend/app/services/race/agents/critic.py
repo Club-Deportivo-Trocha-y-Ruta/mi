@@ -44,6 +44,11 @@ from app.services.race.schemas import (
     RunMetrics,
 )
 
+# Feature 037 (T202): versión v3 del critic (draft estructurado InsightV3 +
+# prechecks deterministas). No vive en pricing.py (fuera de mi ownership de
+# T202) — es una constante local, igual de válida como prompt_version.
+PROMPT_VERSION_CRITIC_V3 = "race_critic_v3"
+
 logger = logging.getLogger(__name__)
 
 _FEATURE_FLAG_ENV = "RACE_AGENT_CRITIC_ENABLED"
@@ -263,3 +268,81 @@ class RaceCriticAgent:
             prompt_version=PROMPT_VERSION_CRITIC_V2,
         )
         return feedback, metrics
+
+    async def invoke_v3(
+        self,
+        draft: Any,
+        ground_truth: str,
+        precheck_issues: list[Any] | None = None,
+    ) -> tuple[CriticFeedback, RunMetrics]:
+        """Revisa un draft estructurado v3 (feature 037, T202).
+
+        Solo evalúa contradicción con ``ground_truth`` y tono — grounding
+        numérico, nombres prohibidos, reglas LTAD y ``catalog_ref`` ya los
+        cubrieron los prechecks deterministas de
+        :func:`app.services.race.ai.prechecks.run_prechecks`; se le pasa un
+        resumen de esos issues (``precheck_summary``) para que el LLM no los
+        repita. Si la flag está OFF, pasa-todo (igual que v1/v2).
+
+        Args:
+            draft: el ``InsightV3`` (o equivalente) ya generado.
+            ground_truth: bloque markdown con los datos reales de la válida.
+            precheck_issues: lista de ``PrecheckIssue`` ya detectados
+                (para excluirlos del prompt vía ``precheck_summary``).
+        """
+        if not _critic_enabled():
+            return _bypass_feedback(), _zero_metrics()
+
+        draft_json = self._draft_to_json(draft)
+        precheck_summary = self._precheck_summary(precheck_issues)
+
+        llm = self._llm or build_chat_llm(role="critic")
+        prompt = render_prompt(
+            "race_critic_v3",
+            {
+                "draft_json": draft_json,
+                "ground_truth": ground_truth,
+                "precheck_summary": precheck_summary,
+            },
+            strict=False,
+        )
+
+        call: LLMCallResult = await call_llm(llm, prompt)
+        feedback = _parse_feedback(call.text)
+
+        metrics = RunMetrics(
+            tokens_in=call.tokens_in,
+            tokens_out=call.tokens_out,
+            latency_ms=call.latency_ms,
+            cost_usd=call.cost_usd,
+            prompt_version=PROMPT_VERSION_CRITIC_V3,
+        )
+        return feedback, metrics
+
+    @staticmethod
+    def _draft_to_json(draft: Any) -> str:
+        if draft is None:
+            return "{}"
+        model_dump_json = getattr(draft, "model_dump_json", None)
+        if callable(model_dump_json):
+            try:
+                return model_dump_json(indent=2)
+            except TypeError:
+                return model_dump_json()
+        try:
+            return json.dumps(draft, ensure_ascii=False, indent=2, default=str)
+        except TypeError:
+            return str(draft)
+
+    @staticmethod
+    def _precheck_summary(precheck_issues: list[Any] | None) -> str:
+        if not precheck_issues:
+            return "(sin issues de los prechecks deterministas)"
+        lines = []
+        for item in precheck_issues:
+            issue = getattr(item, "issue", item)
+            category = getattr(item, "category", None)
+            category_label = getattr(category, "value", category)
+            problem = getattr(issue, "problem", str(issue))
+            lines.append(f"- [{category_label}] {problem}")
+        return "\n".join(lines)

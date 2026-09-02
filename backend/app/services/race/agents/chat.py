@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.race.agents._llm import build_chat_llm, extract_text
 from app.services.race.agents.pricing import PROMPT_VERSION_CHAT
+from app.services.race.ai.athlete_context import load_training_window
 from app.services.race.prompts import render_prompt
 from app.services.race.queries import (
     fetch_event_conditions,
@@ -81,6 +82,7 @@ def _build_obtener_insights_atleta_tool(
     *,
     scope_season: Optional[int] = None,
     scope_valida_num: Optional[int] = None,
+    scope_athlete_id: Optional[int] = None,
 ):
     """Fábrica del tool ``obtener_insights_atleta``.
 
@@ -92,20 +94,13 @@ def _build_obtener_insights_atleta_tool(
             tool filtra insights restringidos a esa (season, valida_num).
             Permite que el LLM no tenga que conocer el contexto de evento.
         scope_valida_num: ver ``scope_season``.
+        scope_athlete_id: cuando se provee (chat con scope de atleta,
+            feature 037 T203), la firma del tool NO pide ``athlete_id`` — el
+            LLM no puede consultar a otro atleta desde este chat.
     """
     from langchain_core.tools import tool
 
-    @tool("obtener_insights_atleta")
-    async def obtener_insights_atleta(athlete_id: int, n: int = 5) -> str:
-        """Recupera los últimos N insights aprobados de un atleta.
-
-        Devuelve un string con los resúmenes formateados o
-        ``"(sin insights persistidos para este atleta)"``.
-
-        Args:
-            athlete_id: PK del atleta en la tabla ``athletes``.
-            n: número máximo de insights (default 5, max 10).
-        """
+    async def _run(athlete_id: int, n: int) -> str:
         if db_factory is None:
             return "(tool no configurado: db_factory faltante)"
         n = max(1, min(int(n), 10))
@@ -175,6 +170,36 @@ def _build_obtener_insights_atleta_tool(
             )
         return "\n".join(out)
 
+    if scope_athlete_id is not None:
+
+        @tool("obtener_insights_atleta")
+        async def obtener_insights_atleta_scoped(n: int = 5) -> str:
+            """Recupera los últimos N insights aprobados del atleta activo.
+
+            El atleta ya está fijado por el contexto de este chat — no
+            requiere ``athlete_id``. Devuelve un string con los resúmenes
+            formateados o ``"(sin insights persistidos para este atleta)"``.
+
+            Args:
+                n: número máximo de insights (default 5, max 10).
+            """
+            return await _run(scope_athlete_id, n)
+
+        return obtener_insights_atleta_scoped
+
+    @tool("obtener_insights_atleta")
+    async def obtener_insights_atleta(athlete_id: int, n: int = 5) -> str:
+        """Recupera los últimos N insights aprobados de un atleta.
+
+        Devuelve un string con los resúmenes formateados o
+        ``"(sin insights persistidos para este atleta)"``.
+
+        Args:
+            athlete_id: PK del atleta en la tabla ``athletes``.
+            n: número máximo de insights (default 5, max 10).
+        """
+        return await _run(athlete_id, n)
+
     return obtener_insights_atleta
 
 
@@ -184,6 +209,7 @@ def _build_fetch_results_tool(
     scope_season: Optional[int] = None,
     scope_valida_num: Optional[int] = None,
     forbidden_names: Optional[list[str]] = None,
+    scope_athlete_id: Optional[int] = None,
 ):
     """Fábrica del tool ``fetch_results``.
 
@@ -260,6 +286,21 @@ def _build_fetch_results_tool(
             return await _run(athlete_id, None)
 
         return fetch_results_scoped
+
+    if scope_athlete_id is not None:
+
+        @tool("fetch_results")
+        async def fetch_results_athlete_scoped(season: int) -> str:
+            """Recupera los resultados de carrera del atleta activo en una temporada.
+
+            El atleta ya está fijado por el contexto de este chat — no
+            requiere ``athlete_id``. Devuelve string formateado con
+            valida_num, posición y tiempo. Si no hay datos: ``"(sin
+            resultados)"``.
+            """
+            return await _run(scope_athlete_id, season)
+
+        return fetch_results_athlete_scoped
 
     @tool("fetch_results")
     async def fetch_results(athlete_id: int, season: int) -> str:
@@ -354,6 +395,77 @@ def _build_obtener_condiciones_evento_tool(
         return await _run(valida_num, season)
 
     return obtener_condiciones_evento
+
+
+def _build_obtener_contexto_entrenamiento_tool(
+    db_factory: Optional[Callable[[], AsyncSession]] = None,
+    *,
+    scope_athlete_id: int,
+):
+    """Fábrica del tool ``obtener_contexto_entrenamiento`` (chat scoped a atleta, feature 037 T203).
+
+    Solo se registra cuando el chat está scoped a un atleta (``athlete_id``
+    sin ``race_event_id`` — ver :meth:`RaceChatAgent.chat`). Devuelve los
+    agregados de la ventana de entrenamiento (:func:`load_training_window`)
+    entre ``desde``/``hasta`` — asistencia %, RPE medio, medias de rúbrica,
+    focos técnicos, feedback del entrenador ya truncado. NUNCA texto libre
+    sin agregar: mismo contrato que ``TrainingWindow`` (data-model.md
+    §TrainingWindow), solo agregados — nunca coach_feedback ilimitado.
+    """
+    import json as _json
+
+    from langchain_core.tools import tool
+    from sqlalchemy import select as sa_select
+
+    from app.models.athlete import Athlete as _AthleteModel
+
+    @tool("obtener_contexto_entrenamiento")
+    async def obtener_contexto_entrenamiento(desde: str, hasta: str) -> str:
+        """Recupera los agregados de entrenamiento del atleta activo en un rango de fechas.
+
+        Úsala cuando el coach pregunte por asistencia, RPE, rúbricas de
+        esfuerzo/actitud/técnica, foco técnico trabajado o carga de
+        entrenamiento reciente del atleta activo. Devuelve un JSON con
+        SOLO agregados (nunca texto libre de sesiones individuales sin
+        resumir). ``"(sin datos de entrenamiento en ese rango)"`` cuando
+        no hay asistencia registrada.
+
+        Args:
+            desde: fecha inicial ``YYYY-MM-DD`` (inclusive).
+            hasta: fecha final ``YYYY-MM-DD`` (inclusive).
+        """
+        if db_factory is None:
+            return "(tool no configurado: db_factory faltante)"
+        from datetime import date as _date
+
+        try:
+            date_from = _date.fromisoformat(desde)
+            date_to = _date.fromisoformat(hasta)
+        except ValueError:
+            return "(fechas inválidas: usa formato YYYY-MM-DD)"
+
+        db = db_factory()
+        try:
+            athlete_row = await db.execute(
+                sa_select(_AthleteModel.club_id).where(_AthleteModel.id == scope_athlete_id)
+            )
+            club_id = athlete_row.scalar_one_or_none()
+            if club_id is None:
+                return "(atleta no encontrado)"
+            window = await load_training_window(
+                db, scope_athlete_id, club_id, date_from, date_to
+            )
+        except Exception as exc:  # pragma: no cover - defensa runtime
+            logger.warning("Error en obtener_contexto_entrenamiento: %s", exc)
+            return f"(error consultando entrenamiento: {type(exc).__name__})"
+        finally:
+            await _safe_close(db)
+
+        if window is None:
+            return "(sin datos de entrenamiento en ese rango)"
+        return _json.dumps(window, ensure_ascii=False, default=str)
+
+    return obtener_contexto_entrenamiento
 
 
 def _build_obtener_resultados_evento_tool(
@@ -590,18 +702,37 @@ class RaceChatAgent:
         scope_valida_num: Optional[int] = None,
         forbidden_names: Optional[list[str]] = None,
         race_event_id: Optional[int] = None,
+        scope_athlete_id: Optional[int] = None,
     ) -> list[Any]:
+        """Arma el set de tools.
+
+        ``scope_athlete_id`` (feature 037, T203): cuando se provee SIN
+        ``race_event_id`` (chat abierto desde el perfil de un atleta, no
+        desde una competencia), las tools quedan horneadas a ese atleta —
+        sus firmas no piden ``athlete_id``, así el LLM no puede consultar a
+        otro atleta desde este chat — y se suma
+        ``obtener_contexto_entrenamiento``. El scope de evento
+        (``race_event_id`` + ``scope_season``/``scope_valida_num``) tiene
+        prioridad: si ambos vienen, el scope de atleta se ignora (un chat
+        abierto desde una competencia sigue restringido a esa competencia,
+        no a un único atleta).
+        """
+        effective_athlete_scope = (
+            scope_athlete_id if race_event_id is None else None
+        )
         tools = [
             _build_obtener_insights_atleta_tool(
                 db_factory,
                 scope_season=scope_season,
                 scope_valida_num=scope_valida_num,
+                scope_athlete_id=effective_athlete_scope,
             ),
             _build_fetch_results_tool(
                 db_factory,
                 scope_season=scope_season,
                 scope_valida_num=scope_valida_num,
                 forbidden_names=forbidden_names,
+                scope_athlete_id=effective_athlete_scope,
             ),
             _build_obtener_condiciones_evento_tool(
                 db_factory,
@@ -617,6 +748,15 @@ class RaceChatAgent:
                 _build_obtener_resultados_evento_tool(
                     db_factory,
                     race_event_id=race_event_id,
+                )
+            )
+        # Ventana de entrenamiento — solo con scope de atleta activo (chat
+        # desde el perfil, no desde una competencia).
+        if effective_athlete_scope is not None:
+            tools.append(
+                _build_obtener_contexto_entrenamiento_tool(
+                    db_factory,
+                    scope_athlete_id=effective_athlete_scope,
                 )
             )
         return tools
@@ -666,12 +806,25 @@ class RaceChatAgent:
             )
             effective_tools = scoped_tools
             effective_tools_by_name = {t.name: t for t in effective_tools}
+        elif athlete_id is not None:
+            # Feature 037 (T203): chat abierto desde el perfil de un atleta
+            # (sin evento activo) — tools horneadas a ese athlete_id, más
+            # `obtener_contexto_entrenamiento`. El coach no puede desviar el
+            # chat a otro atleta desde este contexto.
+            event_label = None
+            athlete_scoped_tools = self._default_tools(
+                self._db_factory,
+                forbidden_names=self._forbidden_names,
+                scope_athlete_id=athlete_id,
+            )
+            effective_tools = athlete_scoped_tools
+            effective_tools_by_name = {t.name: t for t in effective_tools}
         else:
             event_label = None
             effective_tools = self._tools
             effective_tools_by_name = self._tools_by_name
 
-        llm = self._llm or build_chat_llm()
+        llm = self._llm or build_chat_llm(role="chat")
 
         # Bind tools si el LLM soporta — en tests con FakeLLM, asumimos
         # que ya viene bindeado o no necesita.
@@ -682,6 +835,8 @@ class RaceChatAgent:
             prompt_ctx: dict[str, Any] = {}
             if athlete_id:
                 prompt_ctx["athlete_id"] = athlete_id
+            if athlete_id is not None and race_event_id is None:
+                prompt_ctx["athlete_scoped"] = True
             if event_label:
                 prompt_ctx["event_label"] = event_label
             system_prompt = render_prompt(

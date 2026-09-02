@@ -1,0 +1,255 @@
+{
+  "case_id": "003",
+  "description": "Juvenil (14 años) en campeonato departamental con pelotón más fuerte y más numeroso: termina 3 puestos por encima de lo esperado. Hallazgo positivo pese a caer en posición absoluta frente a las válidas de copa.",
+  "input": {
+    "valida_num": 5,
+    "analysis_kind": "valida",
+    "athlete_ref": "el deportista",
+    "age": 14,
+    "ltad_group": "juvenil",
+    "season": 2026,
+    "validas_count": 5,
+    "valida_label": "Cto. Departamental",
+    "race_row": {
+      "valida_num": 5,
+      "event_date": "2026-06-21",
+      "category_code": "PRE_JUV",
+      "position": 6,
+      "race_time_ms": 2760000,
+      "gap_to_winner_ms": 132000,
+      "gap_to_winner_pct": 5.02
+    },
+    "field_metrics": {
+      "event_id": 4305,
+      "valida_num": 5,
+      "event_date": "2026-06-21",
+      "series_kind": "championship",
+      "series_level": "departmental",
+      "is_championship": true,
+      "field_size": 18,
+      "position": 6,
+      "percentile": 70.6,
+      "race_time_ms": 2760000,
+      "gap_to_p1_ms": 132000,
+      "gap_pct": 5.02,
+      "gap_to_p3_ms": 74000,
+      "category_median_time_ms": 2884000,
+      "gap_to_median_pct": -4.3,
+      "laps_behind": 0,
+      "prior_index": 6.7,
+      "expected_position": 9,
+      "delta_vs_expected": 3,
+      "field_strength": 3.9,
+      "coverage_with_prior": 0.83
+    },
+    "season_rows": [
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 10,
+        "percentile": 66.7,
+        "gap_pct": 6.41,
+        "gap_to_p3_ms": 41000,
+        "expected_position": 4,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 3,
+        "field_size": 11,
+        "percentile": 80,
+        "gap_pct": 5.88,
+        "gap_to_p3_ms": 0,
+        "expected_position": 4,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 12,
+        "percentile": 72.7,
+        "gap_pct": 6.15,
+        "gap_to_p3_ms": 36000,
+        "expected_position": 4,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 5,
+        "event_date": "2026-06-21",
+        "series_kind": "championship",
+        "series_level": "departmental",
+        "is_championship": true,
+        "position": 6,
+        "field_size": 18,
+        "percentile": 70.6,
+        "gap_pct": 5.02,
+        "gap_to_p3_ms": 74000,
+        "expected_position": 9,
+        "delta_vs_expected": 3
+      }
+    ],
+    "race_meta": "- Clima: nublado\n- Temperatura: 19 °C\n- Superficie de la pista: seca\n- Altitud: 1650 msnm",
+    "anthro_context": {
+      "records_count": 4,
+      "latest": {
+        "evaluation_date": "2026-06-02",
+        "days_before_event": 19,
+        "maturity_offset_years": 0.8,
+        "age_at_phv": 13.2,
+        "maturation_status": "Post-PHV",
+        "height_percentile": 68
+      },
+      "previous": {
+        "evaluation_date": "2026-03-01",
+        "maturity_offset_years": 0.5,
+        "maturation_status": "Circa-PHV"
+      },
+      "growth_velocity_cm_per_year": 3.6,
+      "months_from_phv": 9.6,
+      "flags": []
+    },
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-05-24",
+      "date_to": "2026-06-21",
+      "sessions_in_window": 14,
+      "attended": 13,
+      "absent": 0,
+      "excused": 1,
+      "attendance_pct": 92.9,
+      "training_hours": 21.5,
+      "rpe_mean": 5.1,
+      "rpe_last7_mean": 4.2,
+      "rpe_prev21_mean": 5.4,
+      "rubric_effort_mean": 4.6,
+      "rubric_attitude_mean": 4.4,
+      "rubric_technique_mean": 4.2,
+      "technical_foci": ["Trazado de curvas", "Cambios y cadencia"],
+      "skill_codes_worked": ["E", "H"],
+      "strength_sessions": 4,
+      "interval_sessions": 3,
+      "days_since_last_session": 2,
+      "days_since_previous_race": 35,
+      "coach_feedback": [
+        "Cierra las series con la misma cadencia con la que arranca"
+      ],
+      "strava_load": null
+    },
+    "coach_dialogue": [
+      {
+        "generated_at": "2026-05-20",
+        "valida_label": "Válida 4 · Copa Valle",
+        "headline": "Sostuvo el percentil 72.7 con la carga más alta del ciclo",
+        "coach_question": "¿Cómo respondió al bloque de fuerza de las últimas semanas?",
+        "coach_answer": "Bien, sin molestias; le costó más el arranque que el final",
+        "coach_rating": 1
+      }
+    ],
+    "catalog_context": {
+      "technique_skills": [
+        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"},
+        {"code": "F", "name": "Separación cuerpo-bici", "focus": "Levantar rueda, manual, bunny hop"},
+        {"code": "H", "name": "Cambios y cadencia", "focus": "Engranar antes de la subida (cad. ≥70)"}
+      ],
+      "strength_blocks": [
+        {"id": 34, "name": "Fuerza específica de tren inferior", "age_band": "14-16"}
+      ],
+      "interval_templates": [
+        {"id": 47, "name": "Series largas en subida", "age_band": "14-16", "mesocycle_phase": "specific"}
+      ]
+    },
+    "memory_recent_insights": [
+      "Válida 4 · Copa: percentil 72.7 con carga alta y buena respuesta al bloque de fuerza",
+      "Válida 3 · Copa: mejor percentil de copa de la temporada con 80"
+    ]
+  },
+  "expected_themes": ["campeonato", "pelotón", "esperada", "cadencia"],
+  "forbidden_terms": [
+    "suplementos",
+    "creatina",
+    "podio",
+    "ganar",
+    "diagnóstico",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": ["esperada", "campeonato", "pelotón", "18"],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "En el campeonato, con el pelotón más grande del año (18), terminó 3 puestos por encima de lo esperado: el retroceso de posición es del contexto, no del rendimiento.",
+    "field_reading": {
+      "percentile": 70.6,
+      "expected_position": 9,
+      "actual_position": 6,
+      "delta_vs_expected": 3,
+      "gap_to_p3_hhmmss": "0:01:14",
+      "series_label": "Cto. Departamental",
+      "summary": "Mejor lectura relativa del año en el pelotón más fuerte y numeroso de la temporada."
+    },
+    "trend": "improving",
+    "observations": [
+      {
+        "claim": "El puesto peor de la temporada esconde el mejor rendimiento relativo: el campeonato dobló el tamaño del pelotón de las copas.",
+        "evidence": ["pelotón de 18 frente a 12 en la válida previa", "esperada 9 frente a real 6"],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "El ritmo se sostuvo hasta el final, con el gap al líder más bajo del año pese al nivel más alto del campo.",
+        "evidence": ["gap 5.02% al líder", "gap a la mediana -4.3%"],
+        "domain": "race",
+        "confidence": "high"
+      },
+      {
+        "claim": "La descarga de la última semana llegó bien dosificada: el esfuerzo percibido bajó sin perder continuidad de sesiones.",
+        "evidence": ["RPE 4.2 en los últimos 7 días frente a 5.4 previos", "asistencia 92.9%"],
+        "domain": "training",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Repetir el mismo esquema de descarga de siete días antes de la próxima competencia de nivel departamental.",
+        "category": "recovery",
+        "priority": "high",
+        "horizon": "next_race",
+        "catalog_ref": null,
+        "derived_from": 2
+      },
+      {
+        "text": "Sostener dos sesiones semanales de cambios y cadencia en subida para defender el ritmo en pelotones grandes.",
+        "category": "technique",
+        "priority": "med",
+        "horizon": "next_week",
+        "catalog_ref": {"kind": "technique_skill", "code": "H", "label": null},
+        "derived_from": 1
+      },
+      {
+        "text": "Mantener el bloque de series largas en subida una vez por semana durante el resto del mesociclo específico.",
+        "category": "volume",
+        "priority": "med",
+        "horizon": "season",
+        "catalog_ref": {"kind": "interval_template", "code": "47", "label": null},
+        "derived_from": 1
+      }
+    ],
+    "watch_signals": [
+      "Vigilar que el esfuerzo percibido no vuelva a 5.4 en semanas sin competencia."
+    ],
+    "coach_question": "¿Cómo se sintió la salida en un pelotón tan numeroso comparada con las largadas de copa?",
+    "data_gaps": [],
+    "principles_cited": ["4. Estrategia y táctica en XCO", "5. Periodización de la temporada"]
+  }
+}

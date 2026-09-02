@@ -37,6 +37,20 @@ Feature 036 (US4, T020) agrega:
   lo asigna ``persist_insight`` a partir del discriminador expuesto por
   ``fallback.py``. Migración ``463c1f0ccb38`` agrega la columna y
   reclasifica filas históricas por texto exacto (backfill único).
+
+Feature 037 (AI Insights v3 — causal, field-relative, prescriptive),
+migración ``d1e2f3a4b5c6`` agrega:
+
+- ``structured_json`` (JSON NULL): ``InsightV3.model_dump()`` (ver
+  ``app/services/race/insight_v3.py``, T201). ``None`` para insights
+  v1/v2 — el router sigue leyendo ``summary_text``/``recommendations_json``
+  para esos.
+- ``coach_answer_text`` (VARCHAR(1000) NULL): respuesta del coach a
+  ``structured_json["coach_question"]``, escrubeada (nombres prohibidos
+  del club) antes de persistir por
+  ``routers/athlete_race_analysis.py::answer_insight``.
+- ``coach_answer_at`` (DATETIME NULL): timestamp de la respuesta.
+- ``coach_rating`` (SMALLINT NULL): ``1`` = útil, ``-1`` = no útil.
 """
 from __future__ import annotations
 
@@ -197,6 +211,19 @@ class AthleteAiInsight(Base):
     # Task #7: bandera idempotente del job de retención (180d post deprecated_at).
     # NULL = aún no scrubeado; NOT NULL = timestamp en que el job redactó PII.
     pii_scrubbed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # --- Feature 037: estructura v3 + diálogo coach -------------------------
+    # ``InsightV3.model_dump()`` cuando el insight se generó con el prompt
+    # v3 (analysis_kind valida|season). None para insights v1/v2.
+    structured_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Respuesta del coach a ``structured_json["coach_question"]``. Escrita
+    # ya escrubeada (nombres prohibidos del club, ``load_forbidden_names``)
+    # por ``routers/athlete_race_analysis.py::answer_insight`` — nunca
+    # texto crudo del coach.
+    coach_answer_text: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    coach_answer_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 1 = útil, -1 = no útil. None = sin calificar.
+    coach_rating: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
     # --- Timestamps --------------------------------------------------------
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

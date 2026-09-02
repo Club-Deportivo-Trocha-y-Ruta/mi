@@ -231,6 +231,21 @@ class AnalysisInput(BaseModel):
             "claim is made in the analysis (no Pre-PHV default)."
         ),
     )
+    # Referencia de género para el prompt (feature 037, T101 — spec §problem
+    # 7: "la deportista" estaba hardcodeado para todo atleta). Derivada de
+    # ``Athlete.sex`` por el router ("M" → "el deportista", "F" o None →
+    # "la deportista", default histórico). SÍ se inyecta al prompt (no es
+    # dato identificable — no hay forma de individualizar al atleta a partir
+    # de un pronombre genérico).
+    athlete_ref: str = Field(
+        default="la deportista",
+        min_length=1,
+        max_length=32,
+        description=(
+            "Referencia de género usada por el prompt en vez de nombre "
+            "propio: 'el deportista' | 'la deportista'."
+        ),
+    )
     # Audit-only — NO se inyecta al prompt:
     athlete_id: int = Field(..., ge=1)
     season: int = Field(..., ge=2000, le=2100)

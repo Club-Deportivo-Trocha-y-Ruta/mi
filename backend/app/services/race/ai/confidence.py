@@ -15,8 +15,10 @@ Reglas (primer match gana) — ver data-model.md:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 
 from app.models.athlete_ai_insight import InsightConfidence
+from app.services.race.ai.prechecks import PrecheckCategory, PrecheckIssue
 from app.services.race.schemas import CriticFeedback, CriticIssueSeverity
 
 
@@ -60,4 +62,40 @@ def compute_confidence(
     return InsightConfidence.high
 
 
-__all__ = ["compute_confidence", "DataCompleteness"]
+def compute_confidence_v3(
+    *,
+    is_fallback: bool,
+    must_block: bool,
+    issues: Iterable[PrecheckIssue] | None,
+    has_training_window: bool,
+    has_anthro: bool,
+    season_n: int,
+) -> InsightConfidence:
+    """Confianza v3 (feature 037, T202) — ver plan.md §Critic v3.
+
+    Reglas (primer match gana):
+
+        fallback OR must_block OR cualquier issue de grounding  → low
+        cualquier issue (de cualquier categoría) OR falta
+        training_window OR falta anthro OR season_n <= 1        → medium
+        en otro caso                                              → high
+    """
+    issues = list(issues or [])
+
+    if is_fallback or must_block:
+        return InsightConfidence.low
+    if any(i.category == PrecheckCategory.GROUNDING for i in issues):
+        return InsightConfidence.low
+
+    if (
+        issues
+        or not has_training_window
+        or not has_anthro
+        or season_n <= 1
+    ):
+        return InsightConfidence.medium
+
+    return InsightConfidence.high
+
+
+__all__ = ["compute_confidence", "compute_confidence_v3", "DataCompleteness"]

@@ -135,6 +135,36 @@ def _resolve_race_api_key(provider: str, explicit: Optional[str]) -> Optional[st
     return None
 
 
+# Rol → nombre del atributo de Settings que trae el override de modelo
+# por-rol (feature 037, T101). "chat" no tiene variable propia: siempre
+# usa ``race_ai_model`` (legacy) o el default del proveedor.
+_ROLE_MODEL_SETTING: dict[str, str] = {
+    "analyst": "race_ai_analyst_model",
+    "critic": "race_ai_critic_model",
+}
+
+
+def _resolve_role_model(role: Optional[str]) -> str:
+    """Resuelve el override de modelo por-rol, o ``""`` si no aplica.
+
+    Orden: ``Settings.race_ai_<role>_model`` (si el rol tiene variable
+    propia y no está vacía) → ``""`` (el caller cae a ``race_ai_model``
+    legacy y luego al default del proveedor).
+
+    ``role=None`` (default) devuelve siempre ``""`` — preserva el
+    comportamiento pre-feature-037 para los callers que NO pasan ``role``
+    explícito (``critic.py``, ``chat.py``, las 3 llamadas de
+    ``analyst.py`` no tocadas por T101): sin ``role`` no hay resolución
+    por-rol, solo ``race_ai_model`` legacy → default del proveedor.
+    """
+    if role is None:
+        return ""
+    setting_name = _ROLE_MODEL_SETTING.get(role)
+    if setting_name is None:
+        return ""
+    return getattr(settings, setting_name, "") or ""
+
+
 def build_chat_llm(
     model: Optional[str] = None,
     temperature: Optional[float] = None,
@@ -142,17 +172,27 @@ def build_chat_llm(
     api_key: Optional[str] = None,
     provider: Optional[str] = None,
     base_url: Optional[str] = None,
+    role: Optional[str] = None,
 ):
     """Factory: construye el chat model LangChain del proveedor configurado.
 
     Args:
         provider: override explícito (``"anthropic"`` | ``"google"`` |
             ``"openai"``). Si ``None``, usa ``Settings.race_ai_provider``.
-        model: override explícito. Si ``None``, usa ``Settings.race_ai_model``
-            o el default del proveedor (:data:`DEFAULT_MODEL_BY_PROVIDER`).
+        model: override explícito. Si ``None``, se resuelve por ``role``
+            (ver :func:`resolve_configured_model`).
         base_url: override explícito del endpoint. Si ``None``, usa
             ``Settings.race_ai_base_url``. Solo lo consume el builder
             ``"openai"`` (Ollama u otro dialecto-OpenAI); el resto lo ignora.
+        role: ``None`` (default, comportamiento legacy) | ``"analyst"`` |
+            ``"critic"`` | ``"chat"`` — feature 037 (T101). Cuando se pasa
+            ``"analyst"``/``"critic"`` explícito, consulta primero
+            ``RACE_AI_ANALYST_MODEL``/``RACE_AI_CRITIC_MODEL`` antes de caer
+            al ``race_ai_model`` legacy. ``"chat"`` y ``None`` se comportan
+            igual (sin variable propia): van directo a ``race_ai_model`` →
+            default del proveedor. ``max_output_tokens`` NO se ajusta
+            automáticamente por rol aquí — el caller de analyst debe pasar
+            4096 explícito (ver ``agents/analyst.py``).
 
     Raises:
         ValueError: proveedor no soportado (no debería ocurrir — el
@@ -167,7 +207,10 @@ def build_chat_llm(
             f"Permitidos: {sorted(_LLM_BUILDERS)}."
         )
     resolved_model = (
-        model or settings.race_ai_model or DEFAULT_MODEL_BY_PROVIDER[resolved_provider]
+        model
+        or _resolve_role_model(role)
+        or settings.race_ai_model
+        or DEFAULT_MODEL_BY_PROVIDER[resolved_provider]
     )
     return builder(
         model=resolved_model,
@@ -180,14 +223,17 @@ def build_chat_llm(
 
 
 def resolve_configured_model(
-    provider: Optional[str] = None, model: Optional[str] = None
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    role: Optional[str] = None,
 ) -> str:
     """Resuelve el ``model_id`` configurado, SIN instanciar el cliente LLM.
 
     Misma resolución de ``model`` que usa internamente :func:`build_chat_llm`
-    (explícito → ``Settings.race_ai_model`` → default del proveedor en
-    :data:`DEFAULT_MODEL_BY_PROVIDER`), expuesta aparte para quien necesite
-    *saber qué modelo se usaría* sin pagar el costo de construir el cliente.
+    (explícito → ``RACE_AI_<ROLE>_MODEL`` por rol → ``Settings.race_ai_model``
+    legacy → default del proveedor en :data:`DEFAULT_MODEL_BY_PROVIDER`),
+    expuesta aparte para quien necesite *saber qué modelo se usaría* sin
+    pagar el costo de construir el cliente.
 
     Feature 036 (T060): ``persist_insight`` la usa para registrar en
     ``AthleteAiInsight.model`` el modelo que realmente generó el análisis.
@@ -196,6 +242,10 @@ def resolve_configured_model(
     proveedor/modelo configurado cambiaba — cada insight persistido
     misreportaba su propia procedencia. Con este helper hay un único lugar
     que sabe resolver "el modelo configurado hoy".
+
+    Feature 037 (T101): ``role`` (``"analyst"`` | ``"critic"`` | ``"chat"``)
+    permite resolver el modelo específico de cada agente cuando corren con
+    modelos distintos (analyst fuerte, critic barato).
 
     A diferencia de ``build_chat_llm``, nunca lanza por proveedor
     desconocido: degrada a la entrada ``"anthropic"`` de
@@ -207,7 +257,7 @@ def resolve_configured_model(
     default_model = DEFAULT_MODEL_BY_PROVIDER.get(
         resolved_provider, DEFAULT_MODEL_BY_PROVIDER["anthropic"]
     )
-    return model or settings.race_ai_model or default_model
+    return model or _resolve_role_model(role) or settings.race_ai_model or default_model
 
 
 @dataclass(frozen=True)
@@ -265,6 +315,7 @@ async def call_llm(
     prompt: str,
     *,
     provider: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> LLMCallResult:
     """Invoca el LLM con un único mensaje y mide métricas.
 
@@ -278,6 +329,9 @@ async def call_llm(
             Si ``None``, se resuelve de ``Settings.race_ai_provider`` — el
             caso común, ya que ``llm`` normalmente viene de
             :func:`build_chat_llm` con el mismo proveedor configurado.
+        model: model_id exacto usado para la tarifa por-modelo (feature 037,
+            T101). Opcional — cuando no se pasa, cae a la tarifa por
+            proveedor como antes.
     """
     from langchain_core.messages import HumanMessage
 
@@ -289,7 +343,9 @@ async def call_llm(
 
     text = extract_text(response)
     tokens_in, tokens_out = extract_usage(response, prompt, text)
-    cost_usd = compute_cost_usd(tokens_in, tokens_out, provider=resolved_provider)
+    cost_usd = compute_cost_usd(
+        tokens_in, tokens_out, provider=resolved_provider, model=model
+    )
 
     return LLMCallResult(
         text=text,

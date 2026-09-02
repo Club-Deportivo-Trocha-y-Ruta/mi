@@ -1,0 +1,209 @@
+{
+  "case_id": "007",
+  "description": "Sin ventana de entrenamiento: el atleta no tiene asistencia registrada en los 28 días previos. El análisis debe leer pelotón + maduración + historia, declarar el vacío en data_gaps y no afirmar nada sobre carga, RPE ni foco técnico.",
+  "input": {
+    "valida_num": 3,
+    "analysis_kind": "valida",
+    "athlete_ref": "el deportista",
+    "age": 15,
+    "ltad_group": "juvenil",
+    "season": 2026,
+    "validas_count": 3,
+    "valida_label": "Válida 3 · Copa Valle",
+    "race_row": {
+      "valida_num": 3,
+      "event_date": "2026-04-19",
+      "category_code": "JUV",
+      "position": 4,
+      "race_time_ms": 2988000,
+      "gap_to_winner_ms": 168000,
+      "gap_to_winner_pct": 5.96
+    },
+    "field_metrics": {
+      "event_id": 4703,
+      "valida_num": 3,
+      "event_date": "2026-04-19",
+      "series_kind": "cup",
+      "series_level": "departmental",
+      "is_championship": false,
+      "field_size": 9,
+      "position": 4,
+      "percentile": 62.5,
+      "race_time_ms": 2988000,
+      "gap_to_p1_ms": 168000,
+      "gap_pct": 5.96,
+      "gap_to_p3_ms": 42000,
+      "category_median_time_ms": 3036000,
+      "gap_to_median_pct": -1.58,
+      "laps_behind": 0,
+      "prior_index": 6.1,
+      "expected_position": 4,
+      "delta_vs_expected": 0,
+      "field_strength": 6.4,
+      "coverage_with_prior": 0.78
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 3,
+        "field_size": 9,
+        "percentile": 75,
+        "gap_pct": 4.02,
+        "gap_to_p3_ms": 0,
+        "expected_position": 4,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 8,
+        "percentile": 57.1,
+        "gap_pct": 5.44,
+        "gap_to_p3_ms": 33000,
+        "expected_position": 4,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 9,
+        "percentile": 62.5,
+        "gap_pct": 5.96,
+        "gap_to_p3_ms": 42000,
+        "expected_position": 4,
+        "delta_vs_expected": 0
+      }
+    ],
+    "race_meta": "- Clima: lluvioso\n- Temperatura: 18 °C\n- Superficie de la pista: barro",
+    "anthro_context": {
+      "records_count": 3,
+      "latest": {
+        "evaluation_date": "2026-03-15",
+        "days_before_event": 35,
+        "maturity_offset_years": 1.4,
+        "age_at_phv": 13.6,
+        "maturation_status": "Post-PHV",
+        "height_percentile": 58
+      },
+      "previous": {
+        "evaluation_date": "2025-12-10",
+        "maturity_offset_years": 1.1,
+        "maturation_status": "Post-PHV"
+      },
+      "growth_velocity_cm_per_year": 2.8,
+      "months_from_phv": 16.8,
+      "flags": []
+    },
+    "training_window": null,
+    "coach_dialogue": [],
+    "catalog_context": {
+      "technique_skills": [
+        {"code": "C", "name": "Frenado modulado", "focus": "1 dedo por freno, peso atrás, dosificar"},
+        {"code": "G", "name": "Control de presión / terreno", "focus": "Pump, raíces/rocas, drops"},
+        {"code": "H", "name": "Cambios y cadencia", "focus": "Engranar antes de la subida (cad. ≥70)"}
+      ],
+      "strength_blocks": [
+        {"id": 34, "name": "Fuerza específica de tren inferior", "age_band": "14-16"}
+      ],
+      "interval_templates": [
+        {"id": 51, "name": "Series cortas en llano", "age_band": "14-16", "mesocycle_phase": "base"}
+      ]
+    },
+    "memory_recent_insights": [
+      "Válida 2 · Copa: percentil 57.1 en un pelotón de 8"
+    ]
+  },
+  "expected_themes": ["asistencia", "sin registro", "barro"],
+  "forbidden_terms": [
+    "RPE",
+    "rúbrica",
+    "asistió",
+    "suplementos",
+    "podio",
+    "ganar",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": ["esperada", "percentil", "62.5", "barro"],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "Tercera válida seguida clavado en su posición esperada: el percentil 62.5 en barro repite el patrón, sin datos de entrenamiento que lo expliquen.",
+    "field_reading": {
+      "percentile": 62.5,
+      "expected_position": 4,
+      "actual_position": 4,
+      "delta_vs_expected": 0,
+      "gap_to_p3_hhmmss": "0:00:42",
+      "series_label": "Válida 3 · Copa Valle",
+      "summary": "Rendimiento estable respecto de su índice previo en un pelotón chico y parejo."
+    },
+    "trend": "stable",
+    "observations": [
+      {
+        "claim": "El rendimiento relativo se estancó: tres válidas seguidas terminando exactamente donde lo ubica su historial.",
+        "evidence": ["esperada 4 y real 4", "percentil 75, 57.1 y 62.5 en la temporada"],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "La distancia con el tercer puesto es corta y se juega en pocos segundos, no en un salto de nivel.",
+        "evidence": ["gap a P3 0:00:42", "gap 5.96% al líder"],
+        "domain": "race",
+        "confidence": "high"
+      },
+      {
+        "claim": "Ya pasó el pico de crecimiento y la velocidad de talla se estabilizó, así que el margen de mejora está en técnica y ritmo, no en esperar maduración.",
+        "evidence": ["crecimiento 2.8 cm/año", "offset de maduración 1.4 años"],
+        "domain": "maturation",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Registrar la asistencia de las próximas cuatro semanas para poder cruzar carga y resultado en la siguiente válida.",
+        "category": "volume",
+        "priority": "high",
+        "horizon": "next_week",
+        "catalog_ref": null,
+        "derived_from": 0
+      },
+      {
+        "text": "Trabajar control de presión y terreno en piso húmedo dos veces por semana mientras siga la temporada de lluvias.",
+        "category": "technique",
+        "priority": "high",
+        "horizon": "next_race",
+        "catalog_ref": {"kind": "technique_skill", "code": "G", "label": null},
+        "derived_from": 1
+      },
+      {
+        "text": "Incorporar el bloque de series cortas en llano una vez por semana durante el mesociclo de base.",
+        "category": "volume",
+        "priority": "med",
+        "horizon": "season",
+        "catalog_ref": {"kind": "interval_template", "code": "51", "label": null},
+        "derived_from": 1
+      }
+    ],
+    "watch_signals": [
+      "Sin registro de sesiones no hay forma de anticipar sobrecarga: cualquier queja de fatiga debe anotarse."
+    ],
+    "coach_question": "¿Estuvo entrenando por fuera del club en estas semanas o hubo una pausa real de actividad?",
+    "data_gaps": [
+      "Sin asistencia registrada en la ventana previa: no hay lectura de carga ni de foco técnico.",
+      "Sin registro de material ni de presión de neumáticos para la carrera en barro."
+    ],
+    "principles_cited": ["3. Progresión técnica en MTB/XCO"]
+  }
+}

@@ -21,11 +21,13 @@
  */
 import { apiClient } from "@/api/client";
 import type {
+  AnswerInsightBody,
   AthleteInsightDetailOut,
   AthleteInsightListResponse,
   AthleteInsightsParams,
   AthleteRunListResponse,
   AthleteRunsParams,
+  AthleteSeasonSummaryRunResponse,
   AthleteStartRunBody,
   AvailableRaceEvent,
   ClubInsightsByRaceResponse,
@@ -61,6 +63,26 @@ export async function getAthleteInsight(
 ): Promise<AthleteInsightDetailOut> {
   const response = await apiClient.get<AthleteInsightDetailOut>(
     `${buildBase(athleteId)}/insights/${insightId}`,
+  );
+  return response.data;
+}
+
+/**
+ * POST /insights/{insight_id}/answer (feature 037, T104/T205).
+ *
+ * Responde a `structured.coach_question` y/o califica el insight
+ * (`rating`: 1 útil / -1 no útil). Al menos un campo del body debe venir
+ * — el backend responde 422 si ambos son `null`/`undefined`. Solo
+ * coach/admin (parent → 403, insight de otro atleta → 404).
+ */
+export async function answerInsight(
+  athleteId: number,
+  insightId: number,
+  body: AnswerInsightBody,
+): Promise<AthleteInsightDetailOut> {
+  const response = await apiClient.post<AthleteInsightDetailOut>(
+    `${buildBase(athleteId)}/insights/${insightId}/answer`,
+    body,
   );
   return response.data;
 }
@@ -112,13 +134,15 @@ export async function startAthleteRun(
 // ---------------------------------------------------------------------------
 
 /**
- * Respuesta REAL de ``POST /season-summary`` (feature 036, T040 —
- * `schemas/athlete_race_analysis.py::SeasonSummaryResponse`). A diferencia
- * de `startAthleteRun`, esta llamada es SÍNCRONA: no hay un run agéntico
- * polleable, así que no existen `run_id`/`status`/`started_at` — para
- * cuando la promesa resuelve, el resumen ya fue generado y persistido.
- * `insight_id` es la PK del insight (`valida_num=0`), útil para
- * deep-linkear al insight recién creado en el histórico.
+ * Shape LEGACY de ``POST /season-summary`` (feature 036, T040 —
+ * `schemas/athlete_race_analysis.py::SeasonSummaryResponse`), síncrono:
+ * no hay run agéntico polleable, así que no existen `run_id`/`status` —
+ * para cuando la promesa resuelve, el resumen ya fue generado y
+ * persistido. `insight_id` es la PK del insight (`valida_num=0`).
+ *
+ * Se mantiene tipado acá solo como referencia histórica — el backend de
+ * este endpoint migra a un contrato asíncrono en feature 037 (T203, ver
+ * `AthleteSeasonSummaryRunResponse` y `generateSeasonSummary` abajo).
  */
 export interface SeasonSummaryResponse {
   insight_id: number;
@@ -129,10 +153,31 @@ export interface SeasonSummaryResponse {
   generated_at: string;
 }
 
+/**
+ * POST /season-summary (feature 037, T203/T205 — contrato v3).
+ *
+ * A diferencia del contrato legacy (feature 036), esta llamada lanza un
+ * run agéntico (`analysis_kind="season"`) y responde `202 {run_id,
+ * status}` de inmediato — el resumen se genera en background y se sigue
+ * con `getRunStatus`/`useRunStatus` como cualquier otro run (ver
+ * `api/raceAnalysis.ts`). El insight resultante aparece en
+ * `getAthleteInsights` una vez el run se aprueba/completa.
+ *
+ * NOTA (T205, honestidad de estado): el router
+ * `POST /athletes/{id}/race-analysis/season-summary` en el backend
+ * **todavía no fue migrado** a este contrato (T203, Wave 2, fuera de mi
+ * propiedad) — hoy sigue respondiendo 200 con el shape
+ * `SeasonSummaryResponse` de arriba. Esta función ya implementa el
+ * contrato de destino documentado en `data-model.md §API deltas` para
+ * que Wave 3 (T302, `SeasonSummaryButton` + `AnalysisRunTimeline`) pueda
+ * integrarse sin re-tocar el cliente HTTP; hasta que T203 aterrice, esta
+ * llamada fallará el parseo de tipos en runtime real (ver open_issues del
+ * reporte de la tarea).
+ */
 export async function generateSeasonSummary(
   athleteId: number,
-): Promise<SeasonSummaryResponse> {
-  const response = await apiClient.post<SeasonSummaryResponse>(
+): Promise<AthleteSeasonSummaryRunResponse> {
+  const response = await apiClient.post<AthleteSeasonSummaryRunResponse>(
     `${buildBase(athleteId)}/season-summary`,
   );
   return response.data;

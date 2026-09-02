@@ -41,6 +41,27 @@ import {
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { InsightsTimeline } from "@/components/athletes/ai/InsightsTimeline";
 
+/**
+ * Detalles literales que arma el backend (`app/routers/athlete_race_analysis.py`)
+ * para los 409 que puede recibir "Reintentar": run activo y válida ambigua en
+ * el lanzamiento por válida, y colisión de resumen activo en el endpoint de
+ * resumen de temporada. La fila fallback por defecto es season 2026,
+ * valida_num 3.
+ */
+const RETRY_ACTIVE_RUN_DETAIL =
+  "Ya hay un análisis en curso para este deportista en la válida 3 de la " +
+  "temporada 2026. Espera a que termine antes de lanzar uno nuevo.";
+
+const RETRY_AMBIGUOUS_VALIDA_DETAIL =
+  "Válida ambigua: #3 → eventos [21, 22]. Hay copa y campeonato con el " +
+  "mismo número en esta temporada; lanza el análisis desde la competición " +
+  "específica.";
+
+const SEASON_SUMMARY_ACTIVE_RUN_DETAIL =
+  "Ya existe un resumen de temporada activo para este deportista y esta " +
+  "temporada — probablemente otra solicitud se adelantó. Recarga la vista " +
+  "antes de reintentar.";
+
 describe("InsightsTimeline — filas fallback (US4, feature 036)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -169,10 +190,10 @@ describe("InsightsTimeline — filas fallback (US4, feature 036)", () => {
     });
   });
 
-  it("muestra estado de error si el reintento falla", async () => {
+  it("muestra el detail del backend cuando el reintento choca con un 409 de run activo", async () => {
     mswServer.use(
       http.post("*/api/athletes/:athleteId/race-analysis/runs", () =>
-        HttpResponse.json({ detail: "boom" }, { status: 500 }),
+        HttpResponse.json({ detail: RETRY_ACTIVE_RUN_DETAIL }, { status: 409 }),
       ),
     );
     const user = userEvent.setup();
@@ -183,7 +204,93 @@ describe("InsightsTimeline — filas fallback (US4, feature 036)", () => {
     await user.click(screen.getByTestId("insight-retry-77"));
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(/no se pudo reintentar/i);
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        RETRY_ACTIVE_RUN_DETAIL,
+      );
+    });
+    expect(
+      screen.queryByText(/no se pudo reintentar\. intenta de nuevo\./i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("muestra el detail del backend cuando el reintento choca con un 409 de válida ambigua", async () => {
+    mswServer.use(
+      http.post("*/api/athletes/:athleteId/race-analysis/runs", () =>
+        HttpResponse.json(
+          { detail: RETRY_AMBIGUOUS_VALIDA_DETAIL },
+          { status: 409 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("insight-retry-77")).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId("insight-retry-77"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /lanza el análisis desde la competición específica\./i,
+      );
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      RETRY_AMBIGUOUS_VALIDA_DETAIL,
+    );
+  });
+
+  // Ver nota equivalente en `InsightsTimeline.regenerate.test.tsx`: sin
+  // `detail`, `extractErrorDetail` usa el `message` de axios; lo verificable
+  // aquí es que el bloque de error exista y no quede vacío.
+  it("sigue mostrando un mensaje no vacío cuando el fallo del reintento no trae detail", async () => {
+    mswServer.use(
+      http.post("*/api/athletes/:athleteId/race-analysis/runs", () =>
+        HttpResponse.json({}, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("insight-retry-77")).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId("insight-retry-77"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("insight-retry-error-77")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByTestId("insight-retry-error-77"),
+    ).not.toBeEmptyDOMElement();
+  });
+
+  it("el Reintentar del resumen de temporada muestra el detail de SU endpoint", async () => {
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
+        HttpResponse.json({
+          items: [mockFallbackSeasonSummaryInsight()],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      ),
+      http.post("*/api/athletes/:athleteId/race-analysis/season-summary", () =>
+        HttpResponse.json(
+          { detail: SEASON_SUMMARY_ACTIVE_RUN_DETAIL },
+          { status: 409 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("insight-retry-78")).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId("insight-retry-78"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        SEASON_SUMMARY_ACTIVE_RUN_DETAIL,
+      );
     });
   });
 

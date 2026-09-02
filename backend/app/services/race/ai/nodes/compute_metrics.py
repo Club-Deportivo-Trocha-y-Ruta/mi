@@ -40,6 +40,8 @@ from app.services.race.ai.db import get_session
 from app.services.race.ai.events import with_events
 from app.services.race.ai.retry import with_retry
 from app.services.race.analytics import athlete_progression, podium_gap
+from app.services.race.field_metrics import compute_field_metrics
+from app.services.race.queries import load_categories, load_events, load_results, load_series
 
 NODE_NAME = "compute_metrics"
 
@@ -210,6 +212,20 @@ async def compute_metrics(state: dict) -> dict[str, Any]:
         podium_full = (
             await podium_gap(db, category_id, season) if category_id is not None else pd.DataFrame()
         )
+        # Feature 037: lectura del atleta contra el pelotón (expected-vs-actual).
+        results = await load_results(db)
+        events = await load_events(db)
+        series = await load_series(db)
+        categories = await load_categories(db)
+
+    field_context = compute_field_metrics(
+        results=results,
+        events=events,
+        series=series,
+        categories=categories,
+        competitor_id=competitor_id,
+        season=season,
+    )
 
     # --- Scrub PII de terceros: filtrar solo la fila del atleta analizado ---
     # ``podium_full`` contiene filas de TODOS los corredores TyR de la
@@ -259,7 +275,9 @@ async def compute_metrics(state: dict) -> dict[str, Any]:
             "progression": _df_to_records(progression),
             "podium_gap": podium_self_records,
             "podium_peers_stats": podium_peers_stats,
+            "field": field_context,
         },
+        "field_context": field_context,
         "season_comparative": season_comparative,
         "progression_assessment": progression_assessment,
     }

@@ -131,6 +131,29 @@ class Settings(BaseSettings):
     # Solo aplica cuando race_ai_provider="openai"; ignorado por los demás.
     race_ai_base_url: str | None = None
 
+    # Modelos por rol (feature 037, T101). Vacío → cae a ``race_ai_model``
+    # (legacy) y, si también está vacío, al default por proveedor en
+    # ``_llm.py::DEFAULT_MODEL_BY_PROVIDER``. ``race_ai_model`` sigue
+    # mandando SIEMPRE para el rol "chat" (no tiene variable propia) — solo
+    # analyst/critic se resuelven por rol.
+    race_ai_analyst_model: str = "gemini-3.8-flash"
+    race_ai_critic_model: str = "gemini-3.1-flash-lite"
+    # Ventana de entrenamiento (días previos al evento) usada por
+    # ``load_athlete_context`` para agregar asistencia/RPE/rúbricas.
+    race_ai_training_window_days: int = 28
+    # Timeout por llamada del analista/crítico v3. El analista v3 usa un modelo
+    # fuerte con prompts largos (≈4k tokens) y salidas JSON de hasta 4096 tokens:
+    # con los 30 s de ``ai_timeout_seconds`` gemini-3.8-flash caía a fallback en
+    # ~1 de cada 3 válidas (SC-1, 2026-09-02).
+    race_ai_v3_timeout_seconds: float = 120.0
+
+    # Prompt v3 por defecto (feature 037, T204): controla el prompt_version
+    # con el que se lanzan los análisis por válida (``race_analysis.py``).
+    # El season-summary siempre usa ``race_season_summary_v3`` (no depende
+    # de este flag). Valor "race_analyst_v2" permite rollback inmediato sin
+    # deploy de código si v3 muestra regresiones en producción.
+    race_ai_prompt_version: str = "race_analyst_v3"
+
     # -----------------------------------------------------------------------
     # Race AI — budget guard (F8A)
     # -----------------------------------------------------------------------
@@ -317,6 +340,17 @@ class Settings(BaseSettings):
         if normalized not in allowed:
             raise ValueError(
                 f"RACE_AI_PROVIDER='{v}' inválido. Permitidos: {sorted(allowed)}."
+            )
+        return normalized
+
+    @field_validator("race_ai_prompt_version")
+    @classmethod
+    def validate_race_ai_prompt_version(cls, v: str, info) -> str:
+        allowed = {"race_analyst_v2", "race_analyst_v3"}
+        normalized = v.lower().strip()
+        if normalized not in allowed:
+            raise ValueError(
+                f"RACE_AI_PROMPT_VERSION='{v}' inválido. Permitidos: {sorted(allowed)}."
             )
         return normalized
 

@@ -2,7 +2,7 @@
  * Tests vitest del SeasonSummaryButton (Task #9).
  *
  * - Disabled si analyzedValidasCount < 3, con tooltip explicativo.
- * - Click dispara mutation y muestra feedback de éxito.
+ * - Click lanza el run (202 {run_id}) y muestra feedback "en proceso".
  * - Error path: muestra feedback de error.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -68,61 +68,41 @@ describe("SeasonSummaryButton", () => {
     expect(btn).not.toBeDisabled();
   });
 
-  it("click dispara mutation y muestra feedback de éxito (llamada síncrona, sin 'en proceso')", async () => {
+  it("click lanza el run y muestra feedback 'en proceso' (feature 037: asíncrono)", async () => {
     mswServer.use(seasonSummarySuccessHandler);
     const user = userEvent.setup();
     renderWithProviders(
       <SeasonSummaryButton athleteId={42} analyzedValidasCount={4} />,
     );
 
-    const btn = screen.getByTestId("season-summary-btn");
-    await user.click(btn);
+    await user.click(screen.getByTestId("season-summary-btn"));
 
     await waitFor(() => {
       expect(screen.getByTestId("season-summary-success")).toBeInTheDocument();
     });
-    // T040: la llamada es síncrona — el resumen ya existe cuando resuelve,
-    // así que "en proceso"/"al completarse" sería falso.
-    expect(screen.getByText(/resumen de temporada generado/i)).toBeInTheDocument();
-    expect(screen.queryByText(/en proceso/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/en proceso/i)).toBeInTheDocument();
+    expect(screen.queryByText(/resumen de temporada generado/i)).not.toBeInTheDocument();
   });
 
-  it("T040: expone insight_id via onGenerated y el link 'Ver resumen' lo reinvoca", async () => {
+  it("expone run_id via onRunStarted", async () => {
     mswServer.use(seasonSummarySuccessHandler);
-    const onGenerated = vi.fn();
+    const onRunStarted = vi.fn();
     const user = userEvent.setup();
     renderWithProviders(
       <SeasonSummaryButton
         athleteId={42}
         analyzedValidasCount={4}
-        onGenerated={onGenerated}
+        onRunStarted={onRunStarted}
       />,
     );
 
     await user.click(screen.getByTestId("season-summary-btn"));
 
     await waitFor(() => {
-      // insight_id=9001 en seasonSummarySuccessHandler.
-      expect(onGenerated).toHaveBeenCalledWith(9001);
+      // run_id="run-season-9001" en seasonSummarySuccessHandler.
+      expect(onRunStarted).toHaveBeenCalledWith("run-season-9001");
     });
-
-    const viewLink = screen.getByTestId("season-summary-view-link");
-    await user.click(viewLink);
-    expect(onGenerated).toHaveBeenCalledTimes(2);
-    expect(onGenerated).toHaveBeenLastCalledWith(9001);
-  });
-
-  it("sin onGenerated no renderiza el link 'Ver resumen' (affordance opcional)", async () => {
-    mswServer.use(seasonSummarySuccessHandler);
-    const user = userEvent.setup();
-    renderWithProviders(
-      <SeasonSummaryButton athleteId={42} analyzedValidasCount={4} />,
-    );
-    await user.click(screen.getByTestId("season-summary-btn"));
-    await waitFor(() => {
-      expect(screen.getByTestId("season-summary-success")).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId("season-summary-view-link")).not.toBeInTheDocument();
+    expect(onRunStarted).toHaveBeenCalledTimes(1);
   });
 
   it("error del backend muestra feedback de error", async () => {

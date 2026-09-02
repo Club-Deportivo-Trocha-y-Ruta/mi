@@ -65,7 +65,6 @@ from app.services.race.ai.budget_guard import (
     BudgetExceededError,
     check_budget,
 )
-from app.services.race.agents.pricing import PROMPT_VERSION_ANALYST_V2
 from app.services.race.ai.runner import (
     RunBackpressureError,
     resume_run,
@@ -79,6 +78,7 @@ from app.schemas.season_panorama import (
 from app.services.permissions import user_club_role
 from app.services.race.season_panorama import fetch_season_panorama
 from app.services.race.run_staleness import mark_run_stale
+from app.services.privacy import athlete_has_ai_processing_consent
 from app.models.club import ClubMember
 from pydantic import BaseModel as _BaseModel
 
@@ -98,6 +98,12 @@ _DB_STATUS_TO_RUN_STATE: dict[str, RunState] = {
     "failed": RunState.FAILED,
     "cancelled": RunState.CANCELLED,
 }
+
+# Estados terminales en DB. Un run en cualquiera de ellos ya no acepta
+# decisiones HITL ni cancelación (ambos endpoints responden 409).
+_TERMINAL_DB_STATUSES: frozenset[str] = frozenset(
+    {"completed", "rejected", "failed", "cancelled"}
+)
 
 # Heurística de progreso: 13 nodos en el grafo (F4).
 _GRAPH_NODE_COUNT = 13
@@ -491,6 +497,19 @@ async def _finalize_run(
 
     events = list((result_state or {}).get("events") or [])
 
+    # El coach pudo descartar el run (POST /runs/{id}/cancel) mientras la
+    # task del grafo seguía viva. `cancelled` es una decisión humana
+    # explícita y terminal: drenamos los eventos que alcanzó a producir el
+    # grafo (audit trail) pero NO reescribimos el estado — si no, un run
+    # descartado "revivía" como completed/failed en el próximo poll.
+    if str(run["status"]) == "cancelled":
+        await _persist_events(db, run_db_id, events)
+        logger.info(
+            "_finalize_run: run %s ya estaba cancelado; no se reescribe estado",
+            external_run_id,
+        )
+        return
+
     if new_status == "failed":
         has_err_event = any(
             str(e.get("type") or "") in {"error", "node_error", "run_failed"}
@@ -545,6 +564,7 @@ def _ensure_run_owner(run: dict[str, Any], user: User) -> None:
         400: {"description": "Input inválido."},
         403: {"description": "Rol no permitido."},
         429: {"description": "Demasiados runs activos (cap=10)."},
+        451: {"description": "Sin consentimiento parental vigente para procesamiento con IA."},
         503: {"description": "AI deshabilitada (AI_ENABLED=false)."},
     },
 )
@@ -564,6 +584,19 @@ async def start_run(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Cap v2: máximo 4 válidas por lanzamiento. Usa resumen temporada para visión global.",
+        )
+
+    # Consentimiento parental para procesamiento con IA (Ley 1581 art. 9).
+    # Mismo contrato que ``routers/ai.py::_ensure_ai_consent`` (feature 037,
+    # T203) — sin autorización de terceros vigente, 451.
+    if not await athlete_has_ai_processing_consent(body.athlete_id, db):
+        raise HTTPException(
+            status_code=status.HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS,
+            detail=(
+                "Falta consentimiento parental vigente con autorización para "
+                "compartir datos con terceros (procesamiento con IA). "
+                "Solicita a la familia renovar el consentimiento."
+            ),
         )
 
     # F8A: Budget guard — chequea ANTES de insertar agent_runs y adquirir
@@ -611,7 +644,7 @@ async def start_run(
             {
                 "rid": run_id,
                 "gn": "race-analyst",
-                "pv": PROMPT_VERSION_ANALYST_V2,
+                "pv": settings.race_ai_prompt_version,
                 "sa": started_at,
                 "inp": json.dumps(input_payload, ensure_ascii=False, default=str),
                 "uid": current_user.id,
@@ -633,11 +666,17 @@ async def start_run(
     ltad_group_val: Optional[str] = None
     maturation_status: Optional[str] = None
     forbidden_names: list[str] = []
+    athlete_sex_val: Optional[str] = None
     if body.athlete_id is not None:
         _athlete_result = await db.execute(
             select(Athlete).where(Athlete.id == body.athlete_id)
         )
         _athlete = _athlete_result.scalar_one_or_none()
+        # Feature 037 (T101): sexo real del atleta → athlete_ref del prompt
+        # ("el deportista"/"la deportista"). No depende de birth_date, así
+        # que se resuelve fuera del bloque siguiente (que sí lo requiere).
+        if _athlete is not None and getattr(_athlete, "sex", None) is not None:
+            athlete_sex_val = getattr(_athlete.sex, "value", None) or str(_athlete.sex)
         if _athlete is not None and _athlete.birth_date is not None:
             # Feature 011: inyectar grupo LTAD + fase madurativa reales (igual
             # que el path per-atleta) para no caer en defaults Pre-PHV/Bambino.
@@ -668,8 +707,15 @@ async def start_run(
         "coach_id": current_user.id,
         "explain_mode": body.explain_mode,
         "run_id": run_id,
-        "prompt_version": PROMPT_VERSION_ANALYST_V2,
+        "prompt_version": settings.race_ai_prompt_version,
         "forbidden_names": forbidden_names,
+        # Feature 037 (T101/T204): athlete_sex/analysis_kind viajan al state
+        # para que analyst.py resuelva athlete_ref y active la rama v3 del
+        # nodo analyst_agent. El prompt_version por defecto es
+        # ``settings.race_ai_prompt_version`` (v3), con rollback a v2 vía
+        # RACE_AI_PROMPT_VERSION sin deploy de código.
+        "athlete_sex": athlete_sex_val,
+        "analysis_kind": body.analysis_kind,
     }
     if athlete_age is not None:
         initial_state["athlete_age"] = athlete_age
@@ -852,7 +898,7 @@ async def submit_hitl_decision(
     # status no se actualizó aún por el grafo). Mantenemos permisivo:
     # si está en estado terminal, 409.
     db_status = str(run["status"])
-    if db_status in {"completed", "rejected", "failed", "cancelled"}:
+    if db_status in _TERMINAL_DB_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Run en estado terminal '{db_status}', no acepta HITL",
@@ -1544,6 +1590,11 @@ class RunInvalidateResponse(_BaseModel):
     stale: bool
 
 
+class RunCancelResponse(_BaseModel):
+    run_id: str
+    state: RunState
+
+
 @router.post(
     "/runs/{run_id}/invalidate",
     response_model=RunInvalidateResponse,
@@ -1571,6 +1622,93 @@ async def invalidate_run(
     _ensure_run_owner(run, current_user)
     await mark_run_stale(db, int(run["id"]))
     return RunInvalidateResponse(run_id=run_id, stale=True)
+
+
+@router.post(
+    "/runs/{run_id}/cancel",
+    response_model=RunCancelResponse,
+    summary="Descarta un análisis en curso o pendiente de revisión",
+    description=(
+        "Lleva un run vivo (``running`` / ``awaiting_hitl``) al estado "
+        "terminal ``cancelled`` sin guardar ningún resultado. Es la única "
+        "salida operativa para un run atascado en un gate HITL: la "
+        "reconciliación de huérfanos sólo corre al arrancar el proceso, así "
+        "que en una instancia viva un run pendiente no expira nunca. Tras "
+        "cancelar, ``find_active_run`` deja de verlo y el coach puede volver "
+        "a lanzar el análisis (desaparece el 409 de 'ya hay un run activo'). "
+        "RBAC coach/admin + owner."
+    ),
+    responses={
+        200: {"model": RunCancelResponse},
+        403: {"description": "No eres owner del run."},
+        404: {"description": "Run no existe."},
+        409: {"description": "Run ya está en estado terminal."},
+    },
+)
+async def cancel_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+) -> RunCancelResponse:
+    """``POST /api/race-analysis/runs/{run_id}/cancel`` (coach/admin)."""
+    run = await _load_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run no encontrado")
+    _ensure_run_owner(run, current_user)
+
+    db_status = str(run["status"])
+    if db_status in _TERMINAL_DB_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Run en estado terminal '{db_status}', no se puede descartar",
+        )
+
+    # Evento de auditoría — el polling del frontend lo ve en el siguiente
+    # ciclo. Va SIN ``node_name``: el timeline sólo reduce eventos con nodo,
+    # y marcar el gate HITL como "done" daría a entender que el paso se
+    # completó, cuando en realidad el coach lo descartó. El tipo es ``done``
+    # porque el ENUM ``agentruneventtype`` no tiene un valor ``cancelled``
+    # (ver migración 7a8b9c0d1e2f) y el run sí queda cerrado aquí.
+    last_seq_val = await _last_seq(db, int(run["id"]))
+    import json
+
+    try:
+        await db.execute(
+            text(
+                """
+                INSERT INTO agent_run_events (
+                    run_id, seq, event_type, node_name, payload_json, created_at
+                ) VALUES (
+                    :rid, :seq, 'done', NULL, :pl, :ts
+                )
+                """
+            ),
+            {
+                "rid": int(run["id"]),
+                "seq": last_seq_val + 1,
+                "pl": json.dumps(
+                    {
+                        "reason": "cancelled_by_coach",
+                        "previous_status": db_status,
+                        "by_user_id": current_user.id,
+                    },
+                    ensure_ascii=False,
+                ),
+                "ts": _utc_now(),
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("cancel_run: insert del evento de cancelación falló")
+
+    await _update_run_status(
+        db,
+        run_id,
+        "cancelled",
+        error_message="Análisis descartado por el coach.",
+    )
+    logger.info("cancel_run: run %s descartado (estado previo %s)", run_id, db_status)
+
+    return RunCancelResponse(run_id=run_id, state=RunState.CANCELLED)
 
 
 @router.post(

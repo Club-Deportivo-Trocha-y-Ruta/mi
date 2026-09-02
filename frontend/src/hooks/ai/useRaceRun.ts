@@ -7,6 +7,9 @@
  *                            terminales {done, failed, cancelled, error}.
  *                            Acumula `new_events` localmente y mantiene
  *                            el cursor `since` (last_seq) para slicing.
+ *                            Tiene un techo duro (`DEFAULT_MAX_POLLING_MS`)
+ *                            para runs huérfanos, del que `hitl_waiting`
+ *                            está exceptuado — ver ahí el porqué.
  *  - `useApproveStep`      → mutation POST /hitl/:step.
  *
  * Notas:
@@ -41,10 +44,12 @@ import {
 } from "@tanstack/react-query";
 
 import {
+  cancelRun,
   getRunStatus,
   reExecuteRun,
   startRun,
   submitHITLDecision,
+  type RunCancelResponse,
 } from "@/api/raceAnalysis";
 import { invalidateAthleteAiQueries } from "@/hooks/ai/invalidateAthleteAiQueries";
 import type {
@@ -73,16 +78,42 @@ export function isTerminalState(state: RunState | undefined | null): boolean {
 }
 
 /**
+ * `hitl_waiting` NO es un estado terminal, pero tampoco es un run vivo que
+ * deba progresar solo: está esperando una decisión humana. Mientras siga
+ * así, el backend responde `304` por diseño (no hay eventos nuevos que
+ * emitir) y esa quietud no significa orfandad — por eso el techo duro de
+ * polling no aplica aquí (ver `DEFAULT_MAX_POLLING_MS`).
+ */
+export function isAwaitingHuman(state: RunState | undefined | null): boolean {
+  return state === "hitl_waiting";
+}
+
+/**
  * T017 — techo duro de polling.
  *
- * Un run que nunca llega a un estado terminal (por ejemplo, quedó
- * huérfano porque Render redesplegó el backend a mitad de un
- * `hitl_waiting`; el checkpoint sqlite del HITL no sobrevive un deploy
- * en el free tier — ver `specs/036-ai-insights-tab-review/research.md`
- * R2) deja de emitir eventos nuevos para siempre: cada poll recibe el
- * mismo `last_seq` y el backend responde 304 indefinidamente. Sin este
- * techo el cliente pollearía por siempre y el coach vería un spinner
- * eterno en vez de un mensaje accionable.
+ * Un run `running` que nunca llega a un estado terminal (por ejemplo,
+ * quedó huérfano porque Render redesplegó el backend a mitad del
+ * pipeline; el checkpoint sqlite no sobrevive un deploy en el free tier
+ * — ver `specs/036-ai-insights-tab-review/research.md` R2) deja de
+ * emitir eventos nuevos para siempre: cada poll recibe el mismo
+ * `last_seq` y el backend responde 304 indefinidamente. Sin este techo
+ * el cliente pollearía por siempre y el coach vería un spinner eterno en
+ * vez de un mensaje accionable.
+ *
+ * EXCEPCIÓN — `hitl_waiting` (ver `isAwaitingHuman`): un run pausado en
+ * un gate HITL está esperando al coach POR DISEÑO. No emite eventos y el
+ * backend responde 304 mientras nadie decida, que es el comportamiento
+ * correcto; ese silencio puede durar horas o días (el coach revisa el
+ * borrador cuando puede). Aplicarle el techo lo marcaba como "no
+ * responde" y borraba de pantalla la card de aprobación, dejando al
+ * coach con una instrucción imposible ("vuelve a lanzarlo"): el guard
+ * 409 del backend rechaza relanzar mientras ese run siga vivo. Por eso,
+ * cuando el último estado conocido es `hitl_waiting`, el techo no corta
+ * con error; sólo baja el ritmo de refetch a
+ * `HITL_WAITING_POLL_INTERVAL_MS` para no golpear el backend cada 2 s
+ * durante horas. Si el run además quedó huérfano estando en
+ * `hitl_waiting`, quien lo limpia es la reconciliación del servidor
+ * (moverá el run a un estado terminal y el polling se detendrá solo).
  *
  * Espejo del lado servidor (`data-model.md`, T016): la reconciliación de
  * runs huérfanos al arrancar usa "un umbral generoso, ≥ 2× la duración
@@ -100,6 +131,12 @@ export function isTerminalState(state: RunState | undefined | null): boolean {
  * ese costo a cambio de no depender de relojes ajenos.
  */
 export const DEFAULT_MAX_POLLING_MS = 15 * 60 * 1000; // 15 minutos
+
+/** Ritmo lento de polling para un run pausado en `hitl_waiting` que ya
+ * pasó el techo: seguimos escuchando (la decisión puede llegar desde otra
+ * pestaña, u otro coach, y el servidor puede reconciliar el run), pero
+ * cada 15 s en vez de cada 2 s. */
+export const HITL_WAITING_POLL_INTERVAL_MS = 15 * 1000; // 15 segundos
 
 /** Copy en español que ve el coach cuando se alcanza el techo — la rama
  * `isError` de `AnalysisRunTimeline` ya renderiza `error.message` tal
@@ -151,6 +188,9 @@ export interface UseRunStatusOptions {
   pollIntervalMs?: number;
   /** Override para tests (T017). Default `DEFAULT_MAX_POLLING_MS`. */
   maxPollingMs?: number;
+  /** Ritmo lento aplicado a un run `hitl_waiting` que pasó el techo.
+   * Override para tests. Default `HITL_WAITING_POLL_INTERVAL_MS`. */
+  hitlIdlePollIntervalMs?: number;
 }
 
 /** Hook polling para el status del run.
@@ -159,6 +199,12 @@ export interface UseRunStatusOptions {
  * de eventos. Cada poll envía `?since=<cursor>` y al recibir nuevos
  * eventos se concatenan. Cuando el state es terminal, el polling se
  * detiene automáticamente vía `refetchInterval` que retorna `false`.
+ *
+ * Al cruzar `maxPollingMs` sin estado terminal la query pasa a error con
+ * `RUN_NOT_RESPONDING_MESSAGE` y el polling se detiene — salvo que el
+ * último estado conocido sea `hitl_waiting`, en cuyo caso el run sigue
+ * vivo esperando al coach y sólo se baja el ritmo a
+ * `hitlIdlePollIntervalMs`. Ver `DEFAULT_MAX_POLLING_MS`.
  */
 export function useRunStatus(
   runId: string | null | undefined,
@@ -171,6 +217,7 @@ export function useRunStatus(
     enabled = true,
     pollIntervalMs = POLL_INTERVAL_MS,
     maxPollingMs = DEFAULT_MAX_POLLING_MS,
+    hitlIdlePollIntervalMs = HITL_WAITING_POLL_INTERVAL_MS,
   } = options;
 
   // Estado mutable fuera del cache: cursor + buffer eventos.
@@ -206,12 +253,15 @@ export function useRunStatus(
       const data = q.state.data;
       if (!data) return pollIntervalMs;
       if (isTerminalState(data.latest.state)) return false;
-      // T017: techo duro alcanzado → dejar de pollear. La query ya quedó
-      // en error (ver queryFn) con RUN_NOT_RESPONDING_MESSAGE.
-      if (
+      const ceilingReached =
         pollingStartedAtRef.current !== null &&
-        Date.now() - pollingStartedAtRef.current >= maxPollingMs
-      ) {
+        Date.now() - pollingStartedAtRef.current >= maxPollingMs;
+      if (ceilingReached) {
+        // Excepción HITL: el run está pausado esperando al coach, no
+        // huérfano. Seguimos escuchando, pero a ritmo lento.
+        if (isAwaitingHuman(data.latest.state)) return hitlIdlePollIntervalMs;
+        // T017: techo duro alcanzado → dejar de pollear. La query ya quedó
+        // en error (ver queryFn) con RUN_NOT_RESPONDING_MESSAGE.
         return false;
       }
       return pollIntervalMs;
@@ -243,8 +293,13 @@ export function useRunStatus(
           // backend sólo respondería 304 para siempre (`last_seq` nunca
           // avanza). Sin este chequeo el techo nunca se alcanzaría por
           // esta rama, que es justo la que toma un run atascado.
+          //
+          // `hitl_waiting` queda excluido: ahí el 304 sostenido es el
+          // comportamiento correcto de un run esperando al coach, no
+          // orfandad (ver `DEFAULT_MAX_POLLING_MS`).
           if (
             !isTerminalState(prev.latest.state) &&
+            !isAwaitingHuman(prev.latest.state) &&
             Date.now() - pollingStartedAtRef.current >= maxPollingMs
           ) {
             throw new Error(RUN_NOT_RESPONDING_MESSAGE);
@@ -270,9 +325,11 @@ export function useRunStatus(
       // DESPUÉS de tener el estado más reciente — así un run que
       // efectivamente termina justo pasado el techo (p. ej. llega a
       // "done" en el mismo poll que lo hubiera superado) se muestra
-      // como terminado, no como "no responde".
+      // como terminado, no como "no responde". Un run en `hitl_waiting`
+      // tampoco se corta: está pausado esperando al coach, por diseño.
       if (
         !isTerminalState(fresh.state) &&
+        !isAwaitingHuman(fresh.state) &&
         Date.now() - pollingStartedAtRef.current >= maxPollingMs
       ) {
         throw new Error(RUN_NOT_RESPONDING_MESSAGE);
@@ -340,6 +397,37 @@ export function useApproveStep(runId: string) {
       // del run. Antes este predicate ad-hoc, además de repetir la lógica
       // del helper, matcheaba por prefijo `"athlete-"` e invalidaba de
       // rebote `athlete-activities` (Strava) y `athlete-newsletter(s)`.
+      void invalidateAthleteAiQueries(queryClient);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 6.4 — useCancelRun (salida de emergencia del coach)
+// ---------------------------------------------------------------------------
+
+/**
+ * Descarta un run vivo (`running` / `hitl_waiting`) sin guardar nada.
+ *
+ * Espejo de `useApproveStep`: misma invalidación (el status del run, para
+ * que el siguiente poll traiga el estado terminal y el evento de
+ * cancelación, y las queries de IA del atleta vía
+ * `invalidateAthleteAiQueries`, porque el run desaparece de los listados
+ * de runs activos y del panorama de temporada).
+ *
+ * Igual que allí, aquí sólo conocemos el `runId` — no el `athleteId` del
+ * run — así que el helper se llama sin ese argumento (invalida las claves
+ * con alcance de atleta para cualquier atleta; ver su docstring).
+ */
+export function useCancelRun(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<RunCancelResponse, unknown, void>({
+    mutationKey: ["race-analysis", "cancel-run", runId],
+    mutationFn: () => cancelRun(runId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: raceRunKeys.status(runId),
+      });
       void invalidateAthleteAiQueries(queryClient);
     },
   });

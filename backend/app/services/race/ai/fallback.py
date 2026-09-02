@@ -30,6 +30,17 @@ sólo *propaguen* el discriminador, sin duplicar la regla de negocio.
 
 from __future__ import annotations
 
+from typing import Any
+
+from app.services.race.insight_v3 import (
+    ActionCategory,
+    ActionV3,
+    EvidenceDomain,
+    Horizon,
+    InsightV3,
+    Observation,
+    Priority as PriorityV3,
+)
 from app.services.race.schemas import AnalysisOutput
 
 _FALLBACK_MARKDOWN = (
@@ -84,7 +95,7 @@ def deterministic_fallback(pseudonym: str) -> AnalysisOutput:
     )
 
 
-def is_fallback_output(output: AnalysisOutput | None) -> bool:
+def is_fallback_output(output: Any | None) -> bool:
     """``True`` ⇔ ``output`` lo produjo el failure path (T022).
 
     Chequeo de identidad de tipo (``isinstance``), no de contenido: no
@@ -93,14 +104,20 @@ def is_fallback_output(output: AnalysisOutput | None) -> bool:
     evalúa ``False`` aquí — es un análisis legítimo bajo la regla N=1,
     no una falla.
 
+    Feature 037 (T201): acepta también el draft estructurado v3 y reconoce
+    el marcador de :func:`deterministic_fallback_v3`. Así ``persist_insight``
+    marca ``is_fallback=True`` aunque el fan-out v3 haya sido el que falló,
+    sin duplicar la regla de negocio en el nodo.
+
     Args:
-        output: el ``AnalysisOutput`` a clasificar, o ``None`` (p.ej. no
-            hubo draft para esa válida).
+        output: el ``AnalysisOutput`` o ``InsightV3`` a clasificar, o
+            ``None`` (p.ej. no hubo draft para esa válida).
 
     Returns:
-        ``True`` sólo para instancias producidas por :func:`deterministic_fallback`.
+        ``True`` sólo para instancias producidas por
+        :func:`deterministic_fallback` o :func:`deterministic_fallback_v3`.
     """
-    return isinstance(output, _FallbackAnalysisOutput)
+    return isinstance(output, (_FallbackAnalysisOutput, _FallbackInsightV3))
 
 
 def deterministic_fallback_n1(pseudonym: str) -> AnalysisOutput:
@@ -147,8 +164,98 @@ def deterministic_fallback_n1(pseudonym: str) -> AnalysisOutput:
     )
 
 
+class _FallbackInsightV3(InsightV3):
+    """Marca los :class:`InsightV3` producidos por el failure path v3.
+
+    Mismo patrón que :class:`_FallbackAnalysisOutput`: subclase sin campos
+    nuevos, para que :func:`is_fallback_output` decida por ``isinstance`` y
+    no inspeccionando el ``headline`` (que cambia con el wording).
+    """
+
+
+_FALLBACK_V3_HEADLINE = "Análisis no disponible"
+
+
+def deterministic_fallback_v3(*, analysis_kind: str = "valida") -> InsightV3:
+    """``InsightV3`` mínimo y honesto cuando el analista v3 no responde.
+
+    Cumple el esquema (2 observaciones, 2 acciones, una pregunta) **sin
+    inventar un solo número**: ninguna evidencia contiene cifras, así que el
+    precheck de grounding (T202) no encuentra violaciones que no existan y
+    la confianza queda en ``low`` por la vía del discriminador
+    ``is_fallback``, no por un falso positivo.
+
+    Las dos acciones son deliberadamente conservadoras: ante la ausencia de
+    análisis, la recomendación segura es no cambiar la carga.
+
+    Args:
+        analysis_kind: ``"valida"`` (default) | ``"season"`` — solo ajusta el
+            wording ("esta carrera" vs. "esta temporada").
+
+    Returns:
+        :class:`InsightV3` marcado (ver :func:`is_fallback_output`).
+    """
+    subject = "esta temporada" if analysis_kind == "season" else "esta carrera"
+    return _FallbackInsightV3(
+        headline=_FALLBACK_V3_HEADLINE,
+        field_reading=None,
+        trend="first_reference",
+        observations=[
+            Observation(
+                claim=(
+                    f"El sistema no pudo generar el análisis automático de {subject}."
+                ),
+                evidence=["Sin respuesta válida del modelo de lenguaje"],
+                domain=EvidenceDomain.RACE,
+                confidence="low",
+            ),
+            Observation(
+                claim=(
+                    "Los datos oficiales siguen disponibles en la plataforma para "
+                    "revisarlos manualmente."
+                ),
+                evidence=["Resultados y asistencia cargados en la plataforma"],
+                domain=EvidenceDomain.RACE,
+                confidence="low",
+            ),
+        ],
+        actions=[
+            ActionV3(
+                text=(
+                    "Mantener el plan de entrenamiento sin cambios hasta contar con "
+                    "un análisis validado."
+                ),
+                category=ActionCategory.VOLUME,
+                priority=PriorityV3.LOW,
+                horizon=Horizon.NEXT_WEEK,
+                catalog_ref=None,
+                derived_from=0,
+            ),
+            ActionV3(
+                text=(
+                    "Sostener los días de descanso habituales mientras se repite el "
+                    "análisis."
+                ),
+                category=ActionCategory.RECOVERY,
+                priority=PriorityV3.LOW,
+                horizon=Horizon.NEXT_WEEK,
+                catalog_ref=None,
+                derived_from=1,
+            ),
+        ],
+        watch_signals=[],
+        coach_question="¿Quieres reintentar el análisis con IA cuando el servicio esté disponible?",
+        data_gaps=[
+            "El modelo de IA no devolvió un análisis válido; no hay lectura de "
+            "pelotón ni de entrenamiento en este registro."
+        ],
+        principles_cited=[],
+    )
+
+
 __all__ = [
     "deterministic_fallback",
     "deterministic_fallback_n1",
+    "deterministic_fallback_v3",
     "is_fallback_output",
 ]

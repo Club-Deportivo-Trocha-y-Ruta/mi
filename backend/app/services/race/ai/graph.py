@@ -4,7 +4,7 @@ Topología (lineal con conditional edges para error handling y fallback):
 
     validate_input
         ├─ errors? → END
-        └─ ok    → load_race_data → anonymize → compute_metrics
+        └─ ok    → load_race_data → load_athlete_context → anonymize → compute_metrics
                                  → recall_memory
                                  → analyst_agent
                                        ├─ failed? → fallback_render →
@@ -42,6 +42,7 @@ from app.services.race.ai.nodes.anonymize import anonymize
 from app.services.race.ai.nodes.compute_metrics import compute_metrics
 from app.services.race.ai.nodes.critic_agent import critic_agent
 from app.services.race.ai.nodes.hitl_gate_review import hitl_gate_review
+from app.services.race.ai.nodes.load_athlete_context import load_athlete_context
 from app.services.race.ai.nodes.load_race_data import load_race_data
 from app.services.race.ai.nodes.notify_coach import notify_coach
 from app.services.race.ai.nodes.persist_insight import persist_insight
@@ -150,6 +151,7 @@ def build_graph(checkpointer: Optional[Any] = None):
     # Registrar nodos.
     sg.add_node("validate_input", validate_input)
     sg.add_node("load_race_data", load_race_data)
+    sg.add_node("load_athlete_context", load_athlete_context)
     sg.add_node("anonymize", anonymize)
     sg.add_node("compute_metrics", compute_metrics)
     sg.add_node("recall_memory", recall_memory)
@@ -168,7 +170,8 @@ def build_graph(checkpointer: Optional[Any] = None):
         _after_validate,
         {END: END, "load_race_data": "load_race_data"},
     )
-    sg.add_edge("load_race_data", "anonymize")
+    sg.add_edge("load_race_data", "load_athlete_context")
+    sg.add_edge("load_athlete_context", "anonymize")
     sg.add_edge("anonymize", "compute_metrics")
     sg.add_edge("compute_metrics", "recall_memory")
     sg.add_edge("recall_memory", "analyst_agent")
