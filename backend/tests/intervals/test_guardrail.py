@@ -62,7 +62,7 @@ from app.models.interval_structure import (
     IntervalTemplate,
     IntervalTemplateBlock,
 )
-from app.models.technique_exercise import AgeBand
+from app.models.interval_structure import AgeBand
 from tests.intervals.conftest import (
     make_client,
     seed_club,

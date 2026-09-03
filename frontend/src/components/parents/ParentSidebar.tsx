@@ -33,6 +33,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   AlertTriangle,
   BarChart3,
+  BookOpen,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -92,13 +93,18 @@ const NAV_ITEMS: ParentNavItem[] = [
  * Exact-match primero, luego el prefijo de ruta más largo gana — mismo
  * algoritmo que `resolveActiveItemId` (ver nota de módulo). Evita que
  * `/parents/training/overview` también encienda "Entrenamientos", y
- * mantiene "Inicio" activo en subrutas como `/my-athletes/:id`.
+ * mantiene "Inicio" activo en subrutas como `/my-athletes/:id`. Recibe la
+ * lista de items en vez de leer el módulo `NAV_ITEMS` porque "Bitácora"
+ * (feature 038) es un item dinámico — su `to` depende del atleta activo.
  */
-function resolveActiveNavId(pathname: string): string | undefined {
-  const exactMatch = NAV_ITEMS.find((item) => item.to === pathname);
+function resolveActiveNavId(
+  pathname: string,
+  items: ParentNavItem[],
+): string | undefined {
+  const exactMatch = items.find((item) => item.to === pathname);
   if (exactMatch) return exactMatch.id;
 
-  const prefixMatches = NAV_ITEMS.filter((item) => pathname.startsWith(`${item.to}/`));
+  const prefixMatches = items.filter((item) => pathname.startsWith(`${item.to}/`));
   if (prefixMatches.length === 0) return undefined;
 
   return prefixMatches.reduce((longest, current) =>
@@ -233,6 +239,7 @@ function ConsentChip({
 export function ParentSidebar({ onNavigate, onClose }: ParentSidebarProps) {
   const { pathname } = useLocation();
   const {
+    athlete: activeAthlete,
     athletes,
     activeAthleteId,
     setActiveAthlete,
@@ -241,7 +248,23 @@ export function ParentSidebar({ onNavigate, onClose }: ParentSidebarProps) {
   const { data: consentStatus, isLoading: isConsentLoading } = useMyConsentStatus();
   const logout = useAuthStore((state) => state.logout);
 
-  const activeNavId = resolveActiveNavId(pathname);
+  // "Bitácora" (feature 038) solo aparece cuando hay un atleta activo
+  // resuelto (hijo único, o selección explícita en multi-hijo) — su ruta
+  // necesita el `athleteId`, a diferencia del resto de items que son
+  // globales al portal.
+  const navItems: ParentNavItem[] = activeAthlete
+    ? [
+        ...NAV_ITEMS,
+        {
+          id: "bitacora",
+          label: "Bitácora",
+          to: `/my-athletes/${activeAthlete.athlete_id}/bitacora`,
+          icon: BookOpen,
+        },
+      ]
+    : NAV_ITEMS;
+
+  const activeNavId = resolveActiveNavId(pathname, navItems);
   const showAthletes = !isAthletesLoading && athletes.length > 0;
   const allAthletesActive = activeAthleteId === null;
 
@@ -328,7 +351,7 @@ export function ParentSidebar({ onNavigate, onClose }: ParentSidebarProps) {
 
       {/* Navegación principal */}
       <nav aria-label="Secciones" className="flex flex-col gap-0.5">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active = item.id === activeNavId;
           return (

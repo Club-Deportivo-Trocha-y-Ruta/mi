@@ -127,7 +127,15 @@ class ParentRegisterOut(BaseModel):
 
 
 class ParentInviteOut(BaseModel):
-    """Representación pública de una invitación (sin exponer el token)."""
+    """Representación pública de una invitación (sin exponer el token).
+
+    ``parent_user_id`` se expone para que el frontend pueda distinguir, en un
+    atleta con varios padres/acudientes vinculados, a cuál de ellos pertenece
+    cada invitación — ``GET /invites`` filtra solo por ``athlete_id`` (un
+    mismo atleta puede tener invitaciones de varios padres), así que sin este
+    campo el cliente no puede evitar mostrar el estado "Cuenta activada" de
+    un padre en la tarjeta de otro.
+    """
 
     id: int
     athlete_id: int
@@ -135,6 +143,7 @@ class ParentInviteOut(BaseModel):
     expires_at: datetime
     used: bool
     created_at: datetime
+    parent_user_id: int | None = None
 
     model_config = {"from_attributes": True}
 

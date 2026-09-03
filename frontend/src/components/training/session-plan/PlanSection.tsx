@@ -1,40 +1,17 @@
 /**
  * PlanSection — sección "Plan" de una sesión de entrenamiento (feature 032,
- * US1, T021/T022): un único lugar para técnica + fuerza + intervalos, en vez
- * de los dos bloques separados y apilados que existían antes en
- * `SessionDetailPage.tsx` ("Bloques de fuerza" y "Estructura de intervalos").
+ * US1, T021/T022): la estructura de intervalos de la sesión, relocada tal
+ * cual desde `SessionDetailPage.tsx:855-1037` (StructureEditor/TemplatePicker,
+ * `AgeGateDialog` sigue disparándose exactamente igual — SC-007) + los
+ * `StructureMatchLink`s de plan-vs-real.
  *
- * Contenido:
- *   - Técnica: `TechniqueAttachPicker` (T015) — siempre inline, la sesión ya
- *     existe y nunca se crea una desde acá.
- *   - Fuerza: la lista de bloques ya adjuntos a esta sesión (con "Quitar de
- *     la sesión", relocada tal cual desde `SessionDetailPage.tsx`) +
- *     `StrengthBlockPicker` (T016) para adjuntar un bloque existente del club
- *     + el link "Armar bloque de fuerza" (T020) que ahora preselecciona esta
- *     sesión vía `?session_id=`.
- *   - Intervalos: bloque sin cambios de lógica, relocado tal cual desde
- *     `SessionDetailPage.tsx:855-1037` (StructureEditor/TemplatePicker,
- *     `AgeGateDialog` sigue disparándose exactamente igual — SC-007) + los
- *     `StructureMatchLink`s de plan-vs-real.
- *
- * Empty state combinado (FR-005, contracts/session-sections.md): mientras
- * NINGÚN tipo tiene contenido todavía, se muestra un solo `EmptyState` con
- * las tres acciones de adjuntar juntas, en vez de tres bloques vacíos por
- * separado. En cuanto un tipo tiene contenido (o el coach ya reveló uno),
- * cada tipo vacío restante muestra su propio prompt inline más chico en vez
- * del picker completo (mirror de la copia vacía que ya existía para fuerza,
- * "Sin bloques de fuerza adjuntos a esta sesión.").
+ * (Las secciones de técnica/gymkhana y bloques de fuerza que vivían acá
+ * fueron retiradas junto con esos catálogos — ver
+ * `docs/implementation-status.md`.)
  */
 import * as React from "react";
 import { Link } from "react-router-dom";
-import {
-  ArrowRight,
-  ClipboardList,
-  Dumbbell,
-  ListTree,
-  Plus,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,13 +24,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { EmptyState } from "@/components/shared/EmptyState";
 import { InstructivoDownloadButton } from "@/components/intervals/InstructivoDownloadButton";
 import { INTERVAL_AGE_BAND_LABEL } from "@/components/intervals/AgeGateDialog";
 import { BLOCK_TYPE_LABEL, HR_ZONE_LABEL } from "@/components/intervals/BlockRow";
 import { extractIntervalValidationError, mapIntervalError } from "@/api/intervals";
-import { useSessionExercises } from "@/hooks/technique/useTechnique";
-import { useDetachBlock, useSessionBlocks } from "@/hooks/strength/useStrength";
 import {
   useDeleteStructure,
   useSaveStructure,
@@ -61,8 +35,6 @@ import {
   useSessionMatch,
   useSessionStructure,
 } from "@/hooks/intervals/useIntervals";
-import { TechniqueAttachPicker } from "./TechniqueAttachPicker";
-import { StrengthBlockPicker } from "./StrengthBlockPicker";
 import type { StructureEditorSubmitInput } from "@/components/intervals/StructureEditor";
 import type { ActivityOut } from "@/types/strava.types";
 import type {
@@ -333,9 +305,6 @@ export function PlanSection({
   isCancelled,
   activities,
 }: PlanSectionProps): React.ReactElement {
-  const [revealedTechnique, setRevealedTechnique] = React.useState(false);
-  const [revealedStrength, setRevealedStrength] = React.useState(false);
-
   // Estructura de intervalos (feature 026) — estado relocado tal cual.
   const [structureMode, setStructureMode] = React.useState<"view" | "create" | "edit">(
     "view",
@@ -347,9 +316,6 @@ export function PlanSection({
     React.useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = React.useState(false);
 
-  const sessionExercisesQuery = useSessionExercises(sessionId);
-  const strengthBlocksQuery = useSessionBlocks(sessionId, !!sessionId);
-  const detachBlockMutation = useDetachBlock();
   const structureQuery = useSessionStructure(sessionId, !!sessionId);
   const saveStructureMutation = useSaveStructure();
   const deleteStructureMutation = useDeleteStructure();
@@ -398,200 +364,10 @@ export function PlanSection({
     [saveTemplateMutation],
   );
 
-  const visibleTechniqueCount = (sessionExercisesQuery.data ?? []).filter(
-    (item) => !item.is_hidden,
-  ).length;
-  const hasTechnique = visibleTechniqueCount > 0;
-  const hasStrength = (strengthBlocksQuery.data?.items.length ?? 0) > 0;
-  const hasIntervals = !!structureQuery.data;
-
-  const stillLoading =
-    sessionExercisesQuery.isLoading ||
-    strengthBlocksQuery.isLoading ||
-    structureQuery.isLoading;
-
-  const showCombinedEmptyState =
-    !stillLoading &&
-    !hasTechnique &&
-    !revealedTechnique &&
-    !hasStrength &&
-    !revealedStrength &&
-    !hasIntervals &&
-    structureMode === "view";
-
-  const techniqueExpanded = hasTechnique || revealedTechnique;
-  const strengthExpanded = hasStrength || revealedStrength;
-
   return (
     <div className="space-y-5">
-      {showCombinedEmptyState ? (
-        <EmptyState
-          icon={ClipboardList}
-          title="Esta sesión todavía no tiene contenido"
-          description="Agregá ejercicios de técnica, un bloque de fuerza o una estructura de intervalos."
-          action={
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <Button
-                type="button"
-                onClick={() => setRevealedTechnique(true)}
-                className="min-h-12 gap-2"
-              >
-                <Sparkles className="h-4 w-4" aria-hidden="true" />
-                Agregar ejercicios de técnica
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setRevealedStrength(true)}
-                className="min-h-12 gap-2"
-              >
-                <Dumbbell className="h-4 w-4" aria-hidden="true" />
-                Agregar bloque de fuerza
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setStructureMode("create")}
-                className="min-h-12 gap-2"
-              >
-                <ListTree className="h-4 w-4" aria-hidden="true" />
-                Crear estructura de intervalos
-              </Button>
-            </div>
-          }
-        />
-      ) : (
-        <>
-          {/* Técnica (feature 018 catálogo, feature 032 adjunto inline) */}
-          <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
-            <h2 className={sectionHeading}>Ejercicios de técnica</h2>
-            {techniqueExpanded ? (
-              <TechniqueAttachPicker sessionId={sessionId} />
-            ) : (
-              <>
-                <p className="text-sm text-mid-gray">
-                  Sin ejercicios de técnica en esta sesión.
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setRevealedTechnique(true)}
-                  className="min-h-12 gap-2"
-                >
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  Agregar ejercicios de técnica
-                </Button>
-              </>
-            )}
-          </div>
-
-          {/* Bloques de fuerza (feature 021, FR-012/FR-013 + feature 032 adjunto) */}
-          <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
-            <div className="flex items-center justify-between">
-              <h2 className={sectionHeading} style={{ marginBottom: 0 }}>
-                Bloques de fuerza
-              </h2>
-              <Link
-                to={`/strength/blocks/new?session_id=${sessionId}`}
-                className="text-sm font-medium text-charcoal underline hover:opacity-70"
-              >
-                Armar bloque de fuerza
-              </Link>
-            </div>
-
-            {strengthBlocksQuery.isLoading && (
-              <div className="h-16 animate-pulse rounded-lg bg-light-gray" />
-            )}
-
-            {strengthBlocksQuery.isError && (
-              <p className="text-sm text-red-600" role="alert">
-                No se pudieron cargar los bloques de fuerza de esta sesión.
-              </p>
-            )}
-
-            {!strengthBlocksQuery.isLoading &&
-              !strengthBlocksQuery.isError &&
-              (strengthBlocksQuery.data?.items.length ?? 0) === 0 && (
-                <p className="text-sm text-mid-gray">
-                  Sin bloques de fuerza adjuntos a esta sesión.
-                </p>
-              )}
-
-            {(strengthBlocksQuery.data?.items.length ?? 0) > 0 && (
-              <ul className="space-y-3" data-testid="session-strength-blocks">
-                {strengthBlocksQuery.data?.items.map((block) => (
-                  <li
-                    key={block.id}
-                    className="rounded-lg px-4 py-3 shadow-ring"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <Link
-                          to={`/strength/blocks/${block.id}`}
-                          className="text-sm font-semibold text-charcoal hover:underline"
-                        >
-                          {block.name}
-                        </Link>
-                        <p className="mt-0.5 text-xs text-mid-gray">
-                          {block.target_age_band} años · {block.total_duration_min} min ·{" "}
-                          {block.entries.length}{" "}
-                          {block.entries.length === 1 ? "ejercicio" : "ejercicios"}
-                        </p>
-                      </div>
-                      {!isCancelled && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            detachBlockMutation.mutate({
-                              blockId: block.id,
-                              trainingSessionId: sessionId,
-                            })
-                          }
-                          disabled={detachBlockMutation.isPending}
-                          className="text-xs font-medium text-red-700 transition-opacity hover:opacity-70 disabled:opacity-50"
-                        >
-                          Quitar de la sesión
-                        </button>
-                      )}
-                    </div>
-                    <ul className="mt-2 space-y-1">
-                      {block.entries.map((entry) => (
-                        <li key={entry.id} className="text-xs text-mid-gray">
-                          {entry.exercise.name} — {entry.duration_min} min
-                          {entry.reps ? ` · ${entry.reps}` : ""}
-                          {entry.is_age_override && (
-                            <span className="ml-1 text-amber-700">(excepción de edad)</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {strengthExpanded ? (
-              <div className="pt-1">
-                <p className="mb-2 text-xs text-mid-gray">
-                  O elegí un bloque existente de la biblioteca del club:
-                </p>
-                <StrengthBlockPicker trainingSessionId={sessionId} />
-              </div>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setRevealedStrength(true)}
-                className="min-h-12 gap-2"
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                Agregar bloque de fuerza
-              </Button>
-            )}
-          </div>
-
-          {/* Estructura de intervalos (feature 026) — sin cambios de lógica */}
-          <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
+      {/* Estructura de intervalos (feature 026) — sin cambios de lógica */}
+      <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
             {structureQuery.isLoading ? (
               <>
                 <h2 className={sectionHeading}>Estructura de intervalos</h2>
@@ -774,8 +550,6 @@ export function PlanSection({
               </>
             )}
           </div>
-        </>
-      )}
 
       {showDeleteStructureModal && structureQuery.data && (
         <Dialog

@@ -111,11 +111,11 @@ async def test_v3_branch_catalog_issue_sanitizes_draft_without_blocking(monkeypa
 
     draft = _DraftWithAction(
         headline="Terminó 5ta",
-        actions=[_Action(text="Practicar habilidad", catalog_ref=_CatalogRef(kind="technique_skill", code="Z"))],
+        actions=[_Action(text="Practicar habilidad", catalog_ref=_CatalogRef(kind="interval_template", code="99"))],
     )
     state = {
         "per_valida_drafts_v3": {1: draft},
-        "catalog_context": {"technique_skills": [{"code": "A"}]},
+        "catalog_context": {"interval_templates": [{"id": "12"}]},
         "_critic_agent": fake,
     }
 

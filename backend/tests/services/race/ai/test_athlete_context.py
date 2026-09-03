@@ -3,8 +3,8 @@
 
 Usa una DB aiosqlite in-memory real (no mocks de ORM) para verificar límites
 de ventana, ausencia de asistencia, ausencia total de claves de peso/IMC/
-nutrición, y el catálogo con los 8 skills A-H. Todos los nombres y fechas de
-fixture son ficticios (CLAUDE.md §Privacidad).
+nutrición, y el catálogo de plantillas de intervalos. Todos los nombres y
+fechas de fixture son ficticios (CLAUDE.md §Privacidad).
 """
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ from app.models import Base
 from app.models.anthropometry import AnthropometricRecord, MaturationStatus, NutritionalStatus
 from app.models.athlete import Athlete, ParentAthlete, Sex
 from app.models.club import Club
-from app.models.technique_skill import TechniqueSkill
 from app.models.training_session import (
     AttendanceStatus,
     SessionAttendance,
@@ -41,18 +40,6 @@ _TABLES = (
     "anthropometric_records",
     "training_sessions",
     "session_attendance",
-    "technique_skills",
-    "technique_materials",
-    "technique_exercises",
-    "technique_exercise_skills",
-    "technique_exercise_materials",
-    "technique_exercise_age_bands",
-    "technique_session_exercises",
-    "strength_exercises",
-    "strength_exercise_age_bands",
-    "strength_blocks",
-    "strength_block_entries",
-    "strength_session_blocks",
     "interval_structures",
     "interval_templates",
     "interval_template_blocks",
@@ -343,25 +330,10 @@ async def test_load_training_window_respects_boundaries_and_aggregates(session: 
 # ---------------------------------------------------------------------------
 
 
-async def test_load_catalog_context_has_all_eight_skills(session: AsyncSession):
+async def test_load_catalog_context_empty_without_templates(session: AsyncSession):
     await _seed_club_and_athlete(session)
-    codes = "ABCDEFGH"
-    for i, code in enumerate(codes):
-        session.add(
-            TechniqueSkill(
-                code=code,
-                name=f"Habilidad {code}",
-                focus=f"Foco ficticio {code}",
-                slug=f"skill-{code.lower()}",
-                sort_order=i,
-            )
-        )
-    await session.flush()
 
     catalog = await mod.load_catalog_context(session, club_id=1, age_band="10-12")
-    assert len(catalog["technique_skills"]) == 8
-    assert {s["code"] for s in catalog["technique_skills"]} == set(codes)
-    assert catalog["strength_blocks"] == []
     assert catalog["interval_templates"] == []
 
 

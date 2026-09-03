@@ -74,6 +74,8 @@ class MyAthleteOut(BaseModel):
     weight_kg: float | None
     # "ok" | "due_soon" | "overdue" | "never"
     measurement_status: str
+    # Bitácoras (feature 038) enviadas y aún no leídas por este padre.
+    unread_newsletters: int = 0
 
     # Se construye manualmente en el router (no desde ORM directo)
     model_config = {"from_attributes": False}

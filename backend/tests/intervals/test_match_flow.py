@@ -105,7 +105,7 @@ from app.models.parental_consent import ParentalConsent
 from app.models.strava_activity import StravaActivity, StravaIngestSource
 from app.models.strava_activity_lap import IntervalMatchResult, MatchTrigger, StravaActivityLap
 from app.models.strava_connection import StravaConnection, StravaConnectionStatus
-from app.models.technique_exercise import AgeBand
+from app.models.interval_structure import AgeBand
 from app.models.training_session import TrainingSession
 from app.models.user import User, UserRole
 from app.routers import activities

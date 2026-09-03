@@ -229,11 +229,11 @@ def test_catalog_ref_missing_code_is_stripped_and_flagged():
         actions=[
             _Action(
                 text="Practicar la habilidad técnica en el próximo entreno",
-                catalog_ref=_CatalogRef(kind="technique_skill", code="Z"),
+                catalog_ref=_CatalogRef(kind="interval_template", code="Z"),
             )
         ]
     )
-    catalog_context = {"technique_skills": [{"code": "A"}, {"code": "B"}]}
+    catalog_context = {"interval_templates": [{"id": "A"}, {"id": "B"}]}
     result = run_prechecks(draft, catalog_context=catalog_context)
     assert any(i.category == PrecheckCategory.CATALOG for i in result.issues)
     assert result.must_block is False
@@ -245,11 +245,11 @@ def test_catalog_ref_valid_code_is_kept():
         actions=[
             _Action(
                 text="Practicar la habilidad técnica en el próximo entreno",
-                catalog_ref=_CatalogRef(kind="technique_skill", code="A"),
+                catalog_ref=_CatalogRef(kind="interval_template", code="A"),
             )
         ]
     )
-    catalog_context = {"technique_skills": [{"code": "A"}, {"code": "B"}]}
+    catalog_context = {"interval_templates": [{"id": "A"}, {"id": "B"}]}
     result = run_prechecks(draft, catalog_context=catalog_context)
     assert not any(i.category == PrecheckCategory.CATALOG for i in result.issues)
     assert result.sanitized_draft.actions[0].catalog_ref.code == "A"
@@ -261,7 +261,7 @@ def test_catalog_ref_no_catalog_context_is_not_flagged():
         actions=[
             _Action(
                 text="Practicar",
-                catalog_ref=_CatalogRef(kind="technique_skill", code="Z"),
+                catalog_ref=_CatalogRef(kind="interval_template", code="Z"),
             )
         ]
     )

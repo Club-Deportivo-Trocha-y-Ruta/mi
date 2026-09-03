@@ -82,11 +82,9 @@ _CASE: dict[str, Any] = {
         },
         "coach_dialogue": [],
         "catalog_context": {
-            "technique_skills": [
-                {"code": "C", "name": "Frenado modulado", "focus": "Dosificar"}
+            "interval_templates": [
+                {"id": "12", "name": "Frenado modulado", "mesocycle_phase": "base"}
             ],
-            "strength_blocks": [],
-            "interval_templates": [],
         },
         "memory_recent_insights": [],
     },
@@ -133,7 +131,7 @@ def _draft(**overrides: Any) -> InsightV3:
                 "category": "technique",
                 "priority": "high",
                 "horizon": "next_week",
-                "catalog_ref": {"kind": "technique_skill", "code": "C", "label": None},
+                "catalog_ref": {"kind": "interval_template", "code": "12", "label": None},
                 "derived_from": 1,
             },
             {
@@ -277,7 +275,7 @@ def test_forbidden_term_zeroes_its_subscore() -> None:
                 "category": "nutrition",
                 "priority": "high",
                 "horizon": "next_week",
-                "catalog_ref": {"kind": "technique_skill", "code": "C", "label": None},
+                "catalog_ref": {"kind": "interval_template", "code": "12", "label": None},
                 "derived_from": 0,
             },
             {
@@ -307,7 +305,7 @@ def test_ltad_violation_detected_by_prechecks_zeroes_forbidden() -> None:
                 "category": "volume",
                 "priority": "high",
                 "horizon": "next_week",
-                "catalog_ref": {"kind": "technique_skill", "code": "C", "label": None},
+                "catalog_ref": {"kind": "interval_template", "code": "12", "label": None},
                 "derived_from": 0,
             },
             {
@@ -346,7 +344,7 @@ def test_unknown_catalog_ref_penalizes_catalog_subscore() -> None:
                 "category": "technique",
                 "priority": "high",
                 "horizon": "next_week",
-                "catalog_ref": {"kind": "technique_skill", "code": "Z", "label": None},
+                "catalog_ref": {"kind": "interval_template", "code": "Z", "label": None},
                 "derived_from": 0,
             },
             {
@@ -456,7 +454,7 @@ def test_themes_are_proportional_not_all_or_nothing() -> None:
                 "category": "volume",
                 "priority": "med",
                 "horizon": "next_race",
-                "catalog_ref": {"kind": "technique_skill", "code": "C", "label": None},
+                "catalog_ref": {"kind": "interval_template", "code": "12", "label": None},
                 "derived_from": 0,
             },
             {

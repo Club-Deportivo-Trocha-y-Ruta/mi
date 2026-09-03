@@ -129,35 +129,42 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
             "Sin nombres reales de atletas."
         ),
     ),
-    "athlete_monthly_newsletter_v1": PromptSpec(
-        template_id="athlete_monthly_newsletter_v1",
-        template_path="athlete_monthly_newsletter_v1.j2",
+    "athlete_monthly_newsletter_v2": PromptSpec(
+        template_id="athlete_monthly_newsletter_v2",
+        template_path="athlete_monthly_newsletter_v2.j2",
         required_keys=frozenset(
             {
                 "period_year",
                 "period_month",
+                "period_label",
+                "athlete_reference",
                 "sessions_present",
                 "sessions_total",
                 "attendance_pct",
                 "attendance_pct_prev_month",
                 "streak_sessions",
-                "athlete_reference",
+                "effort_weeks",
                 "focos_tecnicos",
                 "avg_rpe",
                 "avg_rubric_technique",
-                "total_training_hours",
-                "has_races",
                 "race_results",
-                "num_races",
                 "badges",
+                "planned_focus_groups",
+                "next_race",
+                "previous_stage_title",
+                "analyst_reading_input",
                 "confidence",
+                "only_block",
+                "instruction",
             }
         ),
-        version=1,
+        version=2,
         description=(
-            "Narrativa IA individual para boletín mensual por atleta. "
-            "Salida JSON: {strengths, area_to_develop, milestone}. "
-            "Sin nombres reales. Máx 3 frases por bloque."
+            "Narrativa IA v2 (bitácora de etapa) para boletín mensual por "
+            "atleta. Salida JSON: StageNarrative (stage_title, "
+            "summit_caption, observations, next_segment_text, "
+            "family_compass, analyst_reading). Sin nombres reales. Método "
+            "numerado, no solo prohibiciones (feature 038)."
         ),
     ),
     "session_clarify": PromptSpec(

@@ -19,9 +19,9 @@ Matching strategy
 
 Destination families
 ---------------------
-The eight canonical A-H skills defined in ``app.data.technique_catalog.SKILLS``
-(slug/name copied verbatim from there), plus two presentation-only buckets that
-do not exist in the technique catalog:
+Eight canonical A-H skill families (slug/name kept verbatim from the retired
+technique catalog module), plus two presentation-only buckets that never
+belonged to that catalog:
 
 - ``resistencia_acondicionamiento`` — conditioning/endurance-flavoured focus
   text (zona 2, VO2, umbral, etc.) that is not a PMBIA technical skill at all.
@@ -62,7 +62,7 @@ def _normalize(text: str) -> str:
 
 
 # Priority-ordered (slug, name, keywords). First match wins.
-# Names for A-H are copied verbatim from app.data.technique_catalog.SKILLS.
+# Names for A-H are copied verbatim from the retired technique catalog module.
 _PRIORITY_ORDER: list[tuple[str, str, tuple[str, ...]]] = [
     (
         "posicion",

@@ -27,7 +27,6 @@ class NotificationTemplate(str, Enum):
     CALENDAR_EVENT_INVITE = "calendar_event_invite"
     CALENDAR_EVENT_RESCHEDULED = "calendar_event_rescheduled"
     CALENDAR_EVENT_CANCELLED = "calendar_event_cancelled"
-    ATHLETE_MONTHLY_NEWSLETTER = "athlete_monthly_newsletter"
     # Solo se dispara para válidas tier A o CD (Campeonato Departamental).
     # Las tier B/C quedan en notificación in-app + boletín mensual.
     RACE_INSIGHT_PUBLISHED = "race_insight_published"
@@ -37,6 +36,8 @@ class NotificationTemplate(str, Enum):
     # Cambio de correo del perfil (specs/004-user-profile).
     EMAIL_CHANGE_VERIFY = "email_change_verify"
     EMAIL_CHANGED_NOTICE = "email_changed_notice"
+    # Bitácora de etapa — boletín mensual (feature 038).
+    ATHLETE_STAGE_LOG = "athlete_stage_log"
 
 
 class DocumentTemplate(str, Enum):
@@ -46,7 +47,6 @@ class DocumentTemplate(str, Enum):
     MONTHLY_PROGRESS = "monthly_progress"
     MEDICAL_CLEARANCE = "medical_clearance"
     TRAINING_MONTHLY_REPORT = "training_monthly_report"
-    ATHLETE_MONTHLY_NEWSLETTER = "athlete_monthly_newsletter"
     # Informe Técnico Mensual estilo financiador (Grupo Alto Rendimiento).
     # Solo coach/admin del club — contiene nombres de menores. No distribuir.
     TRAINING_MONTHLY_TECHNICAL_REPORT = "training_monthly_technical_report"
@@ -56,6 +56,8 @@ class DocumentTemplate(str, Enum):
     # Instructivo de sesión de intervalos por marca de ciclocomputador
     # (Garmin / Magene / iGPSport). Sin PII de menores. Feature 026.
     SESSION_INSTRUCTIVO = "session_instructivo"
+    # Bitácora de etapa — boletín mensual en PDF (feature 038).
+    ATHLETE_STAGE_LOG = "athlete_stage_log"
 
 
 class DocumentFormat(str, Enum):

@@ -68,8 +68,8 @@ _CASE: dict[str, Any] = {
             "rpe_mean": 4.2,
         },
         "catalog_context": {
-            "technique_skills": [
-                {"code": "C", "name": "Frenado modulado", "focus": "Dosificar"}
+            "interval_templates": [
+                {"id": "12", "name": "Frenado modulado", "mesocycle_phase": "base"}
             ]
         },
     },
@@ -111,7 +111,7 @@ _CASE: dict[str, Any] = {
                 "category": "technique",
                 "priority": "med",
                 "horizon": "next_race",
-                "catalog_ref": {"kind": "technique_skill", "code": "C", "label": None},
+                "catalog_ref": {"kind": "interval_template", "code": "12", "label": None},
                 "derived_from": 1,
             },
         ],

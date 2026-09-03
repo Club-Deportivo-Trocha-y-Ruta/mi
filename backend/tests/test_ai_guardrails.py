@@ -6,7 +6,7 @@ import pytest
 
 from app.services.ai.errors import LLMSchemaError
 from app.services.ai.guardrails import Guardrails
-from app.services.ai.use_cases.athlete_monthly_newsletter import AthleteNewsletterGuardrails
+from app.services.ai.use_cases.athlete_monthly_newsletter_v2 import StageNarrativeGuardrails
 
 
 # ---------------------------------------------------------------------------
@@ -137,10 +137,10 @@ def test_clean_text_passes_through():
     "desnutricion",
 ])
 def test_newsletter_guardrail_blocks_nutritional_labels(forbidden_term: str):
-    """AthleteNewsletterGuardrails debe rechazar etiquetas diagnósticas nutricionales."""
+    """StageNarrativeGuardrails debe rechazar etiquetas diagnósticas nutricionales."""
     from app.services.ai.errors import LLMSchemaError
 
-    g = AthleteNewsletterGuardrails()
+    g = StageNarrativeGuardrails(forbidden_names=frozenset(), grounding_numbers=set())
     # Texto sintético con suficiente largo (≥10 palabras) para pasar la guardia de
     # MIN_WORDS pero que contiene el término prohibido.
     text = (

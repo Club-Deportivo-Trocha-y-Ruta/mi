@@ -255,7 +255,7 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
     NotificationTemplate.RACE_INSIGHT_PUBLISHED: EmailTemplateSpec(
         template_id=NotificationTemplate.RACE_INSIGHT_PUBLISHED,
         # Subject NO incluye nombre del menor (mismo criterio que
-        # ATHLETE_MONTHLY_NEWSLETTER): visible en previews/push.
+        # ATHLETE_STAGE_LOG): visible en previews/push.
         subject_template=(
             "[Trocha y Ruta] Análisis disponible — Válida {{ valida_label }}"
         ),
@@ -278,14 +278,14 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
             "(quedan en notificación in-app + boletín mensual)."
         ),
     ),
-    NotificationTemplate.ATHLETE_MONTHLY_NEWSLETTER: EmailTemplateSpec(
-        template_id="athlete_monthly_newsletter",
+    NotificationTemplate.ATHLETE_STAGE_LOG: EmailTemplateSpec(
+        template_id="athlete_stage_log",
         # El subject NUNCA expone el nombre del atleta (Ley 1098 + Ley 1581):
         # subjects son visibles en previews, notificaciones push y servidores
         # intermedios. El nombre del atleta solo aparece dentro del cuerpo,
         # que viaja al padre autenticado.
-        subject_template="[Trocha y Ruta] Boletín mensual {{ month_label }} — Seguimiento del atleta",
-        body_path="email/athlete_monthly_newsletter.html",
+        subject_template="[Trocha y Ruta] Bitácora de etapa {{ month_label }} — Seguimiento del atleta",
+        body_path="email/athlete_stage_log.html",
         required_context_keys=frozenset(
             {
                 "parent_name",
@@ -296,9 +296,12 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
             }
         ),
         description=(
-            "Email resumen del boletín mensual individual. Soporte multi-hijo: "
-            "`children` es lista de dicts con datos de cada atleta. "
-            "Antropometría NO incluida en el email — solo en el PDF adjunto."
+            "Email resumen de la bitácora de etapa (feature 038). Soporte "
+            "multi-hijo: `children` es lista de dicts con `stage_log` (ya "
+            "proyectado con to_parent_dto — allow-list) por atleta, más "
+            "`cta_url`/`cta_label` (deep link al portal o 'Activa tu cuenta'). "
+            "NUNCA incluye antropometría ni gráficos de temporada — StageLog no "
+            "los contiene por diseño (003/038)."
         ),
     ),
     NotificationTemplate.PASSWORD_RESET: EmailTemplateSpec(
@@ -437,10 +440,10 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
             "permanece anonimizada."
         ),
     ),
-    DocumentTemplate.ATHLETE_MONTHLY_NEWSLETTER: DocumentTemplateSpec(
-        template_id=DocumentTemplate.ATHLETE_MONTHLY_NEWSLETTER,
+    DocumentTemplate.ATHLETE_STAGE_LOG: DocumentTemplateSpec(
+        template_id=DocumentTemplate.ATHLETE_STAGE_LOG,
         format=DocumentFormat.PDF,
-        template_path="documents/pdf/athlete_monthly_newsletter.html",
+        template_path="documents/pdf/athlete_stage_log.html",
         required_context_keys=frozenset(
             {
                 "athlete_first_name",
@@ -448,16 +451,17 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
                 "club_name",
                 "month_label",
                 "season_year",
-                "email_blocks",
-                "pdf_only_blocks",
-                "ai_narrative",
-                "coach_narrative_overrides",
+                "stage_log",
             }
         ),
         description=(
-            "Boletín mensual individual por atleta en PDF. "
-            "Incluye antropometría completa y gráficos SVG. "
-            "NO enviar el PDF completo por email sin verificar destinatario."
+            "Bitácora de etapa en PDF (feature 038). Máximo 3 páginas: "
+            "1) ruta + cima + observaciones; 2) analista + perfil de esfuerzo "
+            "+ próximo tramo + brújula + insignias/fotos + nota; 3) Anexo de "
+            "crecimiento (antropometría + gráficos de temporada) SOLO cuando "
+            "hay una medición fechada en el mes / hubo carrera en el mes. "
+            "`stage_log` debe llegar YA proyectado con to_parent_dto() — este "
+            "PDF viaja a la familia, igual que el email."
         ),
     ),
     DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT: DocumentTemplateSpec(

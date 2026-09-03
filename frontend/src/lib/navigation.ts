@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BookOpen, CalendarDays, Home, Trophy, Users, UsersRound } from "lucide-react";
+import { CalendarDays, Home, Trophy, Users, UsersRound } from "lucide-react";
 
 import { currentSeason } from "@/lib/datetime";
 
@@ -13,8 +13,8 @@ export type NavRole = "coach" | "admin";
 
 /**
  * Agrupación visual del sidebar (feature 035). NO agrega destinos ni cambia
- * rutas: las mismas 6 `NAV_AREAS` se reparten en dos overlines —
- * «Operación» (el día a día del entrenador) y «Club» (familias/biblioteca).
+ * rutas: las mismas `NAV_AREAS` se reparten en dos overlines —
+ * «Operación» (el día a día del entrenador) y «Club» (familias).
  * `BottomNav`/`MoreSheet` ignoran el grupo por completo.
  */
 export type NavGroupId = "operacion" | "club";
@@ -198,29 +198,6 @@ export const NAV_AREAS: NavArea[] = [
       },
     ],
   },
-  {
-    id: "library",
-    label: "Biblioteca",
-    icon: BookOpen,
-    group: "club",
-    roles: ["coach", "admin"],
-    matchPrefixes: ["/technique", "/strength"],
-    items: [
-      {
-        id: "library.technique",
-        label: "Técnica y gymkhana",
-        to: "/technique",
-        roles: ["coach", "admin"],
-      },
-      {
-        id: "library.strength",
-        label: "Fuerza",
-        to: "/strength",
-        roles: ["coach", "admin"],
-      },
-    ],
-    bottomBarSlot: { admin: true },
-  },
 ];
 
 /**
@@ -294,7 +271,13 @@ export function getGroupedAreas(role: NavRole): NavGroupWithAreas[] {
   })).filter((group) => group.areas.length > 0);
 }
 
-/** Exactly 4 areas assigned a primary bottom-bar slot for `role`, ordered. */
+/**
+ * Areas assigned a primary bottom-bar slot for `role`, ordered. Coach gets 4
+ * (home/training/competitions/athletes); admin gets 3 (home/training/
+ * competitions — Atletas is coach-only and no other area currently fills a
+ * 4th admin slot, unlike the retired "Biblioteca" area). `BottomNav` renders
+ * whatever length this returns, so an uneven count between roles is safe.
+ */
 export function getBottomBarAreas(role: NavRole): NavArea[] {
   return getVisibleAreas(role).filter((area) => area.bottomBarSlot?.[role]);
 }

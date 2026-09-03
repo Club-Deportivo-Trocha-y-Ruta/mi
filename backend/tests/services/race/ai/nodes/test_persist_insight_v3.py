@@ -92,8 +92,8 @@ async def test_recommendations_come_from_actions(configure_db_factory, fake_sess
     assert recs[0]["category"] == "volume"
     assert recs[0]["horizon"] == "next_week"
     assert recs[1]["catalog_ref"] == {
-        "kind": "technique_skill",
-        "code": "D",
+        "kind": "interval_template",
+        "code": "12",
         "label": None,
     }
 

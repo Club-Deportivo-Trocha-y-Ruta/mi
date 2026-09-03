@@ -88,30 +88,38 @@
       "rubric_effort_mean": 4.2,
       "rubric_attitude_mean": 4.4,
       "rubric_technique_mean": 3.8,
-      "technical_foci": ["Mirada / visión", "Frenado modulado"],
-      "skill_codes_worked": ["B", "C"],
-      "strength_sessions": 0,
+      "technical_foci": [
+        "Mirada / visión",
+        "Frenado modulado"
+      ],
       "interval_sessions": 0,
       "days_since_last_session": 2,
       "days_since_previous_race": 28,
-      "coach_feedback": ["Frena tarde en la bajada larga del circuito"],
+      "coach_feedback": [
+        "Frena tarde en la bajada larga del circuito"
+      ],
       "strava_load": null
     },
     "coach_dialogue": [],
     "catalog_context": {
-      "technique_skills": [
-        {"code": "B", "name": "Mirada / visión", "focus": "Mirar lejos y donde sí quiero ir"},
-        {"code": "C", "name": "Frenado modulado", "focus": "1 dedo por freno, peso atrás, dosificar"},
-        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"}
-      ],
-      "strength_blocks": [],
-      "interval_templates": []
+      "interval_templates": [
+        {
+          "id": 1,
+          "name": "Plantilla base de intervalos",
+          "age_band": "10-12",
+          "mesocycle_phase": "base"
+        }
+      ]
     },
     "memory_recent_insights": [
       "Válida 1 · Copa: percentil 44.4 y frenadas tardías en la bajada"
     ]
   },
-  "expected_themes": ["antropometría", "frenado", "percentil"],
+  "expected_themes": [
+    "antropometría",
+    "frenado",
+    "percentil"
+  ],
   "forbidden_terms": [
     "PHV",
     "Circa-PHV",
@@ -125,7 +133,12 @@
     "Thiago",
     "Valentina"
   ],
-  "expected_headline_keywords": ["frenado", "percentil", "55.6", "técnic"],
+  "expected_headline_keywords": [
+    "frenado",
+    "percentil",
+    "55.6",
+    "técnic"
+  ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
@@ -144,19 +157,28 @@
     "observations": [
       {
         "claim": "El avance es real pero modesto: terminó justo en la posición esperada, así que ganó terreno por mejora propia y no por un pelotón más débil.",
-        "evidence": ["percentil 55.6 frente a 44.4 en la válida previa", "esperada 5 y real 5"],
+        "evidence": [
+          "percentil 55.6 frente a 44.4 en la válida previa",
+          "esperada 5 y real 5"
+        ],
         "domain": "field",
         "confidence": "high"
       },
       {
         "claim": "El gap al líder se recortó casi dos puntos porcentuales entre válidas con la misma frecuencia de entrenamiento.",
-        "evidence": ["gap 6.08% frente a 7.91% anterior", "asistencia 81.8%"],
+        "evidence": [
+          "gap 6.08% frente a 7.91% anterior",
+          "asistencia 81.8%"
+        ],
         "domain": "history",
         "confidence": "high"
       },
       {
         "claim": "La técnica sigue siendo la rúbrica más baja y coincide con la nota del coach sobre frenadas tardías en la bajada.",
-        "evidence": ["rúbrica de técnica 3.8 frente a actitud 4.4", "gap a P3 0:01:03"],
+        "evidence": [
+          "rúbrica de técnica 3.8 frente a actitud 4.4",
+          "gap a P3 0:01:03"
+        ],
         "domain": "training",
         "confidence": "medium"
       }
@@ -167,7 +189,11 @@
         "category": "technique",
         "priority": "high",
         "horizon": "next_week",
-        "catalog_ref": {"kind": "technique_skill", "code": "C", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "1",
+          "label": null
+        },
         "derived_from": 2
       },
       {
@@ -175,7 +201,11 @@
         "category": "technique",
         "priority": "med",
         "horizon": "next_week",
-        "catalog_ref": {"kind": "technique_skill", "code": "B", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "1",
+          "label": null
+        },
         "derived_from": 2
       }
     ],
@@ -187,6 +217,8 @@
       "Sin antropometría registrada: no se puede leer el resultado contra la fase de maduración.",
       "Sin datos de vueltas ni parciales para ubicar dónde se pierde el tiempo dentro del circuito."
     ],
-    "principles_cited": ["3. Progresión técnica en MTB/XCO"]
+    "principles_cited": [
+      "3. Progresión técnica en MTB/XCO"
+    ]
   }
 }

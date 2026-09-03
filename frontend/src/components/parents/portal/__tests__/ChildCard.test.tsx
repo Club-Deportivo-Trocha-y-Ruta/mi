@@ -129,4 +129,32 @@ describe("ChildCard", () => {
       expect(link).toHaveAttribute("href", "/my-athletes/7");
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Chip "Nueva bitácora" (feature 038, T303)
+  // -------------------------------------------------------------------------
+  describe("chip 'Nueva bitácora'", () => {
+    it("se muestra cuando unread_newsletters > 0", () => {
+      renderCard(makeAthlete({ unread_newsletters: 2 }));
+      expect(screen.getByTestId("child-card-new-bitacora-chip")).toHaveTextContent(
+        "Nueva bitácora",
+      );
+    });
+
+    it("no se muestra cuando unread_newsletters es 0", () => {
+      renderCard(makeAthlete({ unread_newsletters: 0 }));
+      expect(
+        screen.queryByTestId("child-card-new-bitacora-chip"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("no se muestra cuando unread_newsletters no viene en la respuesta (fallback defensivo)", () => {
+      const athlete = makeAthlete();
+      delete (athlete as Partial<MyAthleteOut>).unread_newsletters;
+      renderCard(athlete);
+      expect(
+        screen.queryByTestId("child-card-new-bitacora-chip"),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

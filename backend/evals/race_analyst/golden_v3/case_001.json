@@ -132,34 +132,39 @@
       "rubric_effort_mean": 4.5,
       "rubric_attitude_mean": 4.7,
       "rubric_technique_mean": 3.9,
-      "technical_foci": ["Trazado de curvas", "Frenado modulado"],
-      "skill_codes_worked": ["C", "E"],
-      "strength_sessions": 0,
+      "technical_foci": [
+        "Trazado de curvas",
+        "Frenado modulado"
+      ],
       "interval_sessions": 0,
       "days_since_last_session": 3,
       "days_since_previous_race": 28,
-      "coach_feedback": ["Sostiene el foco durante todo el circuito de conos"],
+      "coach_feedback": [
+        "Sostiene el foco durante todo el circuito de conos"
+      ],
       "strava_load": null
     },
     "coach_dialogue": [],
     "catalog_context": {
-      "technique_skills": [
-        {"code": "A", "name": "Posición neutra/lista y equilibrio", "focus": "Postura atlética, peso centrado, trackstand"},
-        {"code": "C", "name": "Frenado modulado", "focus": "1 dedo por freno, peso atrás, dosificar"},
-        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"},
-        {"code": "G", "name": "Control de presión / terreno", "focus": "Pump, raíces/rocas, drops"}
-      ],
-      "strength_blocks": [
-        {"id": 21, "name": "Fuerza base con peso corporal", "age_band": "10-12"}
-      ],
-      "interval_templates": []
+      "interval_templates": [
+        {
+          "id": 1,
+          "name": "Plantilla base de intervalos",
+          "age_band": "10-12",
+          "mesocycle_phase": "base"
+        }
+      ]
     },
     "memory_recent_insights": [
       "Válida 3 · Copa: entró al percentil 80 con el gap al líder en 1.86%",
       "Válida 2 · Copa: constancia técnica en curvas, sin cambios de carga"
     ]
   },
-  "expected_themes": ["asistencia", "percentil", "curvas"],
+  "expected_themes": [
+    "asistencia",
+    "percentil",
+    "curvas"
+  ],
   "forbidden_terms": [
     "suplementos",
     "creatina",
@@ -171,7 +176,12 @@
     "Thiago",
     "Valentina"
   ],
-  "expected_headline_keywords": ["asistencia", "continuidad", "0:00:18", "percentil"],
+  "expected_headline_keywords": [
+    "asistencia",
+    "continuidad",
+    "0:00:18",
+    "percentil"
+  ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
@@ -190,19 +200,30 @@
     "observations": [
       {
         "claim": "Rindió por encima de su índice previo y encadena la cuarta mejora consecutiva de percentil en la misma serie.",
-        "evidence": ["percentil 90 con pelotón de 11", "esperada 3 frente a real 2", "gap 1.03% al líder"],
+        "evidence": [
+          "percentil 90 con pelotón de 11",
+          "esperada 3 frente a real 2",
+          "gap 1.03% al líder"
+        ],
         "domain": "field",
         "confidence": "high"
       },
       {
         "claim": "La ventana previa fue la más constante del ciclo y coincide con el salto de rendimiento, sin subir la intensidad.",
-        "evidence": ["asistencia 91.7%", "11 sesiones asistidas de 12", "RPE medio 3.8"],
+        "evidence": [
+          "asistencia 91.7%",
+          "11 sesiones asistidas de 12",
+          "RPE medio 3.8"
+        ],
         "domain": "training",
         "confidence": "high"
       },
       {
         "claim": "Sigue lejos del estirón, así que la ganancia se explica por coordinación y técnica antes que por potencia.",
-        "evidence": ["offset de maduración -3.1 años", "crecimiento 5.2 cm/año"],
+        "evidence": [
+          "offset de maduración -3.1 años",
+          "crecimiento 5.2 cm/año"
+        ],
         "domain": "maturation",
         "confidence": "medium"
       }
@@ -213,7 +234,11 @@
         "category": "technique",
         "priority": "high",
         "horizon": "next_week",
-        "catalog_ref": {"kind": "technique_skill", "code": "E", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "1",
+          "label": null
+        },
         "derived_from": 1
       },
       {
@@ -221,7 +246,11 @@
         "category": "technique",
         "priority": "med",
         "horizon": "next_race",
-        "catalog_ref": {"kind": "technique_skill", "code": "C", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "1",
+          "label": null
+        },
         "derived_from": 0
       }
     ],
@@ -229,7 +258,11 @@
       "Si la asistencia cae por debajo del 80% en la próxima ventana, revisar la carga escolar antes de sumar volumen."
     ],
     "coach_question": "¿Qué cambió en la rutina familiar de estas semanas que permitió sostener la asistencia tan alta?",
-    "data_gaps": ["Sin registro de sueño ni de carga escolar para contrastar la constancia observada."],
-    "principles_cited": ["3. Progresión técnica en MTB/XCO"]
+    "data_gaps": [
+      "Sin registro de sueño ni de carga escolar para contrastar la constancia observada."
+    ],
+    "principles_cited": [
+      "3. Progresión técnica en MTB/XCO"
+    ]
   }
 }

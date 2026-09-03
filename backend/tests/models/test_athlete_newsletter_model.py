@@ -17,12 +17,10 @@ from pydantic import ValidationError
 from app.models.athlete_badge import BadgeSource, BadgeType
 from app.models.athlete_newsletter import NewsletterStatus
 from app.schemas.athlete_newsletter import (
-    AiNarrativeOut,
     AthleteNewsletterBatchCreate,
     AthleteNewsletterCreate,
     AthleteNewsletterPatch,
     AthleteNewsletterRead,
-    NarrativeOverride,
 )
 
 
@@ -40,7 +38,6 @@ def _make_nl_obj(
     status: NewsletterStatus = NewsletterStatus.draft,
     metrics_snapshot: dict | None = None,
     ai_narrative: dict | None = None,
-    coach_narrative_overrides: dict | None = None,
     badges_earned: list | None = None,
     sent_to: list | None = None,
     error_message: str | None = None,
@@ -55,7 +52,6 @@ def _make_nl_obj(
         status=status,
         metrics_snapshot=metrics_snapshot,
         ai_narrative=ai_narrative,
-        coach_narrative_overrides=coach_narrative_overrides,
         badges_earned=badges_earned,
         pdf_storage_url=None,
         pdf_generated_at=None,
@@ -69,17 +65,6 @@ def _make_nl_obj(
         created_at=now,
         updated_at=now,
     )
-
-
-def _valid_ai_narrative() -> dict:
-    return {
-        "strengths": "El atleta mostró gran compromiso en todas las sesiones del mes.",
-        "area_to_develop": "Se recomienda mejorar la técnica de frenado en descensos.",
-        "milestone": "Completó la primera sesión de XCO con ruta completa sin asistencia.",
-        "model": "gemini-2.5-flash",
-        "prompt_version": "athlete_monthly_newsletter_v1",
-        "confidence": "medium",
-    }
 
 
 def _valid_snapshot() -> dict:
@@ -190,48 +175,45 @@ class TestAthleteNewsletterCreate:
 
 
 # ---------------------------------------------------------------------------
-# NarrativeOverride schema
-# ---------------------------------------------------------------------------
-
-
-class TestNarrativeOverride:
-    def test_all_none_by_default(self):
-        n = NarrativeOverride()
-        assert n.strengths is None
-        assert n.area_to_develop is None
-        assert n.milestone is None
-
-    def test_partial_override(self):
-        n = NarrativeOverride(strengths="Buen trabajo en curvas.")
-        assert n.strengths == "Buen trabajo en curvas."
-        assert n.area_to_develop is None
-
-    def test_max_length_enforced(self):
-        with pytest.raises(ValidationError):
-            NarrativeOverride(strengths="x" * 501)
-
-    def test_max_length_boundary(self):
-        n = NarrativeOverride(strengths="x" * 500)
-        assert len(n.strengths) == 500
-
-
-# ---------------------------------------------------------------------------
 # AthleteNewsletterPatch schema
 # ---------------------------------------------------------------------------
 
 
 class TestAthleteNewsletterPatch:
-    def test_valid_patch(self):
-        p = AthleteNewsletterPatch(
-            coach_narrative_overrides=NarrativeOverride(
-                strengths="Gran energía en los entrenamientos."
-            )
-        )
-        assert p.coach_narrative_overrides.strengths == "Gran energía en los entrenamientos."
+    def test_all_fields_optional(self):
+        """Feature 038 (T102): todos los campos son opcionales — un PATCH
+        parcial solo persiste lo enviado."""
+        p = AthleteNewsletterPatch()
+        assert p.stage_overrides is None
+        assert p.hidden_blocks is None
+        assert p.coach_note is None
+        assert p.selected_race_insight_ids is None
 
-    def test_coach_narrative_overrides_required(self):
+    def test_stage_overrides_only(self):
+        p = AthleteNewsletterPatch(stage_overrides={"stage_title": "Etapa 6: subiendo"})
+        assert p.stage_overrides == {"stage_title": "Etapa 6: subiendo"}
+
+    def test_hidden_blocks_allowlist(self):
+        p = AthleteNewsletterPatch(hidden_blocks=["photos", "badges"])
+        assert p.hidden_blocks == ["photos", "badges"]
+
+    def test_hidden_blocks_rejects_unknown_block(self):
         with pytest.raises(ValidationError):
-            AthleteNewsletterPatch()
+            AthleteNewsletterPatch(hidden_blocks=["stage_title"])
+
+    def test_coach_note_within_60_words_ok(self):
+        note = " ".join(["palabra"] * 60)
+        p = AthleteNewsletterPatch(coach_note=note)
+        assert len(p.coach_note.split()) == 60
+
+    def test_coach_note_over_60_words_rejected(self):
+        note = " ".join(["palabra"] * 61)
+        with pytest.raises(ValidationError):
+            AthleteNewsletterPatch(coach_note=note)
+
+    def test_selected_race_insight_ids_accepted(self):
+        p = AthleteNewsletterPatch(selected_race_insight_ids=[10, 20])
+        assert p.selected_race_insight_ids == [10, 20]
 
 
 # ---------------------------------------------------------------------------
@@ -288,34 +270,6 @@ class TestAthleteNewsletterRead:
 
         assert "sent_to" not in data
 
-    def test_ai_narrative_parsed(self):
-        """ai_narrative se parsea a AiNarrativeOut si existe."""
-        obj = _make_nl_obj(ai_narrative=_valid_ai_narrative())
-        read = AthleteNewsletterRead.from_orm_model(obj)
-
-        assert read.ai_narrative is not None
-        assert isinstance(read.ai_narrative, AiNarrativeOut)
-        assert read.ai_narrative.confidence == "medium"
-
-    def test_ai_narrative_none_if_absent(self):
-        obj = _make_nl_obj(ai_narrative=None)
-        read = AthleteNewsletterRead.from_orm_model(obj)
-        assert read.ai_narrative is None
-
-    def test_ai_narrative_none_if_invalid(self):
-        """ai_narrative malformado → None silencioso (no crash)."""
-        obj = _make_nl_obj(ai_narrative={"bad": "data"})
-        read = AthleteNewsletterRead.from_orm_model(obj)
-        assert read.ai_narrative is None
-
-    def test_coach_overrides_parsed(self):
-        overrides = {"strengths": "Buen sprint final.", "area_to_develop": None, "milestone": None}
-        obj = _make_nl_obj(coach_narrative_overrides=overrides)
-        read = AthleteNewsletterRead.from_orm_model(obj)
-
-        assert read.coach_narrative_overrides is not None
-        assert read.coach_narrative_overrides.strengths == "Buen sprint final."
-
     def test_no_metrics_snapshot(self):
         """metrics_snapshot=None devuelve email_blocks=None sin crashear."""
         obj = _make_nl_obj(metrics_snapshot=None)
@@ -343,26 +297,24 @@ class TestAthleteNewsletterRead:
         read = AthleteNewsletterRead.from_orm_model(obj)
         assert read.badges_earned == badges
 
+    def test_stage_fields_default_when_absent(self):
+        """Objetos ORM sin StageLog aún generado (recién creados) no crashean."""
+        obj = _make_nl_obj()
+        read = AthleteNewsletterRead.from_orm_model(obj)
+        assert read.stage_log is None
+        assert read.hidden_blocks == []
+        assert read.delivery == []
 
-# ---------------------------------------------------------------------------
-# AiNarrativeOut schema
-# ---------------------------------------------------------------------------
+    def test_v2_fields_populated_from_orm_object(self):
+        obj = _make_nl_obj()
+        obj.stage_log_json = {"schema_version": 2, "stage_title": "Etapa 6"}
+        obj.stage_overrides = {"stage_title": "Etapa 6: subiendo"}
+        obj.hidden_blocks = ["photos"]
+        obj.coach_note = "Buen mes."
+        obj.read_at = None
 
-
-class TestAiNarrativeOut:
-    def test_valid(self):
-        a = AiNarrativeOut(**_valid_ai_narrative())
-        assert a.confidence in {"low", "medium", "high"}
-
-    def test_missing_strengths_invalid(self):
-        data = _valid_ai_narrative()
-        del data["strengths"]
-        with pytest.raises(ValidationError):
-            AiNarrativeOut(**data)
-
-    def test_all_confidence_levels(self):
-        for conf in ("low", "medium", "high"):
-            data = _valid_ai_narrative()
-            data["confidence"] = conf
-            a = AiNarrativeOut(**data)
-            assert a.confidence == conf
+        read = AthleteNewsletterRead.from_orm_model(obj)
+        assert read.stage_log == {"schema_version": 2, "stage_title": "Etapa 6"}
+        assert read.stage_overrides == {"stage_title": "Etapa 6: subiendo"}
+        assert read.hidden_blocks == ["photos"]
+        assert read.coach_note == "Buen mes."

@@ -17,6 +17,7 @@ import type {
   AttachInsightsRequest,
   AttachInsightsResponse,
   BatchResult,
+  RegenerateBlockRequest,
 } from "@/types/athleteNewsletter.types";
 
 const ATHLETE_BASE = "/api/athletes";
@@ -101,6 +102,8 @@ export async function approveAthleteNewsletter(
 
 export interface SendNewsletterOptions {
   force_individual?: boolean;
+  /** Reenvía aunque el boletín ya esté en status=sent (DeliveryPanel, feature 038). */
+  force_resend?: boolean;
 }
 
 export async function sendAthleteNewsletter(
@@ -110,6 +113,7 @@ export async function sendAthleteNewsletter(
 ): Promise<AthleteNewsletter> {
   const params: Record<string, string> = {};
   if (opts?.force_individual) params.force_individual = "true";
+  if (opts?.force_resend) params.force_resend = "true";
   const response = await apiClient.post<AthleteNewsletter>(
     `${ATHLETE_BASE}/${athleteId}/monthly-newsletters/${newsletterId}/send`,
     undefined,
@@ -158,6 +162,23 @@ export async function downloadNewsletterPdf(
     { responseType: "blob" },
   );
   return response.data as Blob;
+}
+
+/**
+ * Regenera un bloque puntual de la bitácora con IA (feature 038).
+ * 409 si el boletín ya fue enviado; 451 si falta el consentimiento IA;
+ * 503 si el proveedor falla (el bloque queda intacto en el backend).
+ */
+export async function regenerateNewsletterBlock(
+  athleteId: number,
+  newsletterId: number,
+  body: RegenerateBlockRequest,
+): Promise<AthleteNewsletter> {
+  const response = await apiClient.post<AthleteNewsletter>(
+    `${ATHLETE_BASE}/${athleteId}/monthly-newsletters/${newsletterId}/regenerate-block`,
+    body,
+  );
+  return response.data;
 }
 
 // ---------------------------------------------------------------------------

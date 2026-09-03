@@ -1,12 +1,14 @@
-"""Schemas Pydantic para el módulo Boletín Mensual Individual por Atleta (Fase 1.8).
+"""Schemas Pydantic para el módulo Boletín Mensual Individual por Atleta —
+bitácora de etapa (feature 038, StageLog v2; el formato legacy v1 fue
+retirado, ver docs/technical-notes.md).
 
 Contrato de API:
   - AthleteNewsletterCreate: body del POST al crear/regenerar un draft.
   - AthleteNewsletterRead: respuesta estándar (sin pdf_only_blocks — va solo en PDF).
-  - AthleteNewsletterPatch: edición de narrativa (solo coach, solo si status=draft).
+  - AthleteNewsletterPatch: edición de la bitácora (solo coach, solo si status
+    es draft o approved).
   - AthleteNewsletterBatchCreate: body del POST /clubs/{id}/monthly-newsletters/batch.
   - AthleteNewsletterBatchResult: resultado del batch.
-  - NarrativeOverride: estructura de overrides de narrativa IA.
 """
 
 from __future__ import annotations
@@ -19,46 +21,28 @@ from pydantic import BaseModel, Field, model_validator
 from app.models.athlete_newsletter import NewsletterStatus
 
 
-# ---------------------------------------------------------------------------
-# Submodelos de narrativa
-# ---------------------------------------------------------------------------
+# Bloques opcionales que el coach puede ocultar en la bitácora v2 (feature
+# 038, data-model.md §3 — `hidden_blocks`). Duplicado deliberado del literal
+# usado por StageLog (app/services/training/stage_log.py, T101): esta es la
+# validación de forma del PATCH, no depende de ese módulo estar disponible.
+_HIDEABLE_BLOCKS: frozenset[str] = frozenset(
+    {"analyst_reading", "photos", "badges", "coach_note"}
+)
 
-
-class NarrativeOverride(BaseModel):
-    """Edición manual del coach sobre la narrativa IA.
-
-    Solo se permiten campos de texto libre. El coach puede anular uno, dos
-    o los tres campos. Los campos no enviados conservan el valor IA original.
-    El override se aplica en capa de presentación (builder/PDF); el ai_narrative
-    original persiste intacto para auditoría.
-    """
-
-    strengths: str | None = Field(
-        default=None,
-        max_length=500,
-        description="Fortalezas observadas — override manual del coach.",
-    )
-    area_to_develop: str | None = Field(
-        default=None,
-        max_length=500,
-        description="Área a desarrollar — override manual del coach.",
-    )
-    milestone: str | None = Field(
-        default=None,
-        max_length=500,
-        description="Hito del mes — override manual del coach.",
-    )
-
-
-class AiNarrativeOut(BaseModel):
-    """Narrativa IA tal como se persistió (post-guardrails, sin PII)."""
-
-    strengths: str
-    area_to_develop: str
-    milestone: str
-    model: str
-    prompt_version: str
-    confidence: str  # 'low' | 'medium' | 'high'
+# Bloques narrativos v2 regenerables individualmente (feature 038, T201,
+# contracts/api.md §Coach POST .../regenerate-block). Duplicado deliberado
+# del mismo literal en app/services/ai/use_cases/athlete_monthly_newsletter_v2.py
+# — validación de forma del request, no depende de ese módulo.
+_REGENERABLE_BLOCKS: frozenset[str] = frozenset(
+    {
+        "stage_title",
+        "summit_caption",
+        "observations",
+        "next_segment_text",
+        "family_compass",
+        "analyst_reading",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -93,12 +77,91 @@ class AthleteNewsletterCreate(BaseModel):
 
 
 class AthleteNewsletterPatch(BaseModel):
-    """Edición de narrativa del coach. Solo se acepta si status=draft."""
+    """Edición del coach sobre la bitácora (feature 038, StageLog v2).
 
-    coach_narrative_overrides: NarrativeOverride = Field(
-        ...,
-        description="Campos de narrativa a sobrescribir (parcial o total).",
+    ``stage_overrides`` (edición por bloque de la bitácora), ``hidden_blocks``
+    (bloques opcionales ocultos), ``coach_note`` (nota del entrenador,
+    ≤ 60 palabras) y ``selected_race_insight_ids`` (solo reordenar — el
+    router valida que sea una permutación exacta del valor ya guardado; no se
+    puede usar este campo para agregar/quitar insights, eso sigue siendo
+    ``attach-insights``).
+
+    Todos los campos son opcionales — un PATCH parcial solo persiste lo
+    enviado.
+    """
+
+    stage_overrides: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "(v2) Overrides por bloque de la bitácora: stage_title, "
+            "summit_caption, observations, analyst_reading, "
+            "next_segment_text, family_compass. Tipado laxo (dict) porque "
+            "la forma exacta la define StageLog (app/services/training/"
+            "stage_log.py, feature 038 T101)."
+        ),
     )
+    hidden_blocks: list[str] | None = Field(
+        default=None,
+        description=(
+            "(v2) Subconjunto de bloques opcionales a ocultar: "
+            "analyst_reading, photos, badges, coach_note."
+        ),
+    )
+    coach_note: str | None = Field(
+        default=None,
+        max_length=600,
+        description="(v2) Nota del entrenador, primera persona, ≤ 60 palabras.",
+    )
+    selected_race_insight_ids: list[int] | None = Field(
+        default=None,
+        description=(
+            "(v2) Reordena los insights ya adjuntados al boletín. Debe ser "
+            "una permutación exacta de los ids actualmente guardados — el "
+            "router responde 422 si no lo es. Para agregar/quitar insights "
+            "usa POST .../attach-insights."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_coach_note_word_limit(self) -> "AthleteNewsletterPatch":
+        if self.coach_note is not None:
+            word_count = len(self.coach_note.split())
+            if word_count > 60:
+                raise ValueError(
+                    f"coach_note no puede exceder 60 palabras (tiene {word_count})."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_hidden_blocks_allowlist(self) -> "AthleteNewsletterPatch":
+        if self.hidden_blocks is not None:
+            invalid = sorted(set(self.hidden_blocks) - _HIDEABLE_BLOCKS)
+            if invalid:
+                raise ValueError(
+                    f"hidden_blocks contiene bloques no ocultables: {invalid}. "
+                    f"Solo se permite: {sorted(_HIDEABLE_BLOCKS)}."
+                )
+        return self
+
+
+class RegenerateBlockRequest(BaseModel):
+    """Body de ``POST .../monthly-newsletters/{id}/regenerate-block`` (v2).
+
+    ``block`` debe ser uno de los bloques narrativos regenerables de la
+    bitácora (contracts/api.md §Coach). ``instruction`` es una indicación
+    libre opcional del entrenador (ej. "más corto y menciona la lluvia") que
+    se agrega al prompt como contexto adicional para ese bloque.
+    """
+
+    block: Literal[
+        "stage_title",
+        "summit_caption",
+        "observations",
+        "next_segment_text",
+        "family_compass",
+        "analyst_reading",
+    ]
+    instruction: str | None = Field(default=None, max_length=300)
 
 
 class AthleteNewsletterBatchCreate(BaseModel):
@@ -122,11 +185,32 @@ class AthleteNewsletterBatchCreate(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class DeliveryRow(BaseModel):
+    """Estado de entrega/lectura de un boletín para una familia (feature 038).
+
+    Poblado a partir de ``newsletter_delivery_events`` + ``parent_athletes``
+    por el router (requiere sesión de DB — fuera del alcance de T102; ver
+    T202/T203/T401). ``email_masked`` NUNCA expone el email completo
+    (``j***@gmail.com``) — igual criterio que ``sent_to`` en el modelo, que
+    tampoco se serializa nunca en esta respuesta.
+    """
+
+    parent_user_id: int | None = None
+    email_masked: str
+    has_account: bool
+    sent_at: datetime | None = None
+    delivered_at: datetime | None = None
+    opened_at: datetime | None = None
+    web_read_at: datetime | None = None
+    bounced: bool = False
+
+    model_config = {"from_attributes": True}
+
+
 class AthleteNewsletterRead(BaseModel):
-    """Respuesta de lectura de un boletín.
+    """Respuesta de lectura de un boletín (bitácora de etapa, StageLog v2).
 
     NUNCA incluye pdf_only_blocks (antropometría) — esos datos van solo en el PDF.
-    ai_narrative se incluye completa (el coach la ve para revisar).
     sent_to NO se serializa: es PII y solo se almacena en DB.
     """
 
@@ -142,17 +226,53 @@ class AthleteNewsletterRead(BaseModel):
         description="Bloques de contenido para el email (sin antropometría).",
     )
 
-    ai_narrative: AiNarrativeOut | None = Field(
-        default=None,
-        description="Narrativa IA post-guardrails.",
-    )
-    coach_narrative_overrides: NarrativeOverride | None = Field(
-        default=None,
-        description="Overrides manuales del coach.",
-    )
     badges_earned: list[dict[str, Any]] | None = Field(
         default=None,
         description="Snapshot de insignias ganadas en el periodo.",
+    )
+
+    # ── Feature 038 (Bitácora de etapa) ──────────────────────────────────
+    stage_log: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Vista coach del StageLog v2 (incluye block_states y "
+            "grounding_violations). Tipado laxo (dict) — el schema "
+            "estructurado vive en app/services/training/stage_log.py "
+            "(feature 038 T101). NULL solo si la generación falló antes de "
+            "derivar la bitácora."
+        ),
+    )
+    stage_overrides: dict[str, Any] | None = Field(
+        default=None,
+        description="(v2) Overrides por bloque de la bitácora.",
+    )
+    hidden_blocks: list[str] = Field(
+        default_factory=list,
+        description="(v2) Bloques opcionales ocultos por el coach.",
+    )
+    coach_note: str | None = Field(
+        default=None,
+        description="(v2) Nota del entrenador, ya redactada (sin nombres).",
+    )
+    read_at: datetime | None = Field(
+        default=None,
+        description="(v2) Primera lectura web por un padre.",
+    )
+    delivery: list[DeliveryRow] = Field(
+        default_factory=list,
+        description=(
+            "(v2) Estado de entrega/lectura por familia. Poblado por el "
+            "router a partir de newsletter_delivery_events — ver DeliveryRow."
+        ),
+    )
+    selected_race_insight_ids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "(v2) Insights de carrera adjuntados, en el orden elegido por "
+            "el coach (el primero elegible es el usado en analyst_reading). "
+            "Solo IDs — el estudio (AnalystPicker, T302) los usa para "
+            "reordenar vía PATCH; nunca expone structured_json aquí."
+        ),
     )
 
     # pdf_storage_url se omite intencionalmente del contrato API: el PDF
@@ -178,26 +298,21 @@ class AthleteNewsletterRead(BaseModel):
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_orm_model(cls, obj: Any) -> "AthleteNewsletterRead":
-        """Construye el schema extrayendo solo email_blocks del metrics_snapshot."""
+    def from_orm_model(
+        cls,
+        obj: Any,
+        *,
+        delivery: list[DeliveryRow] | None = None,
+    ) -> "AthleteNewsletterRead":
+        """Construye el schema extrayendo solo email_blocks del metrics_snapshot.
+
+        ``delivery`` es opcional: T102 solo agrega la columna de datos; su
+        población real (JOIN a newsletter_delivery_events + parent_athletes,
+        masking de email) requiere una sesión de DB y queda para el router
+        que la consuma en el studio (T202/T203/T401).
+        """
         snapshot = obj.metrics_snapshot or {}
         email_blocks = snapshot.get("email_blocks") if snapshot else None
-
-        ai_raw = obj.ai_narrative
-        ai_out: AiNarrativeOut | None = None
-        if ai_raw:
-            try:
-                ai_out = AiNarrativeOut(**ai_raw)
-            except Exception:
-                pass
-
-        overrides_raw = obj.coach_narrative_overrides
-        overrides_out: NarrativeOverride | None = None
-        if overrides_raw:
-            try:
-                overrides_out = NarrativeOverride(**overrides_raw)
-            except Exception:
-                pass
 
         return cls(
             id=obj.id,
@@ -206,9 +321,14 @@ class AthleteNewsletterRead(BaseModel):
             month=obj.month,
             status=obj.status,
             email_blocks=email_blocks,
-            ai_narrative=ai_out,
-            coach_narrative_overrides=overrides_out,
             badges_earned=obj.badges_earned,
+            stage_log=getattr(obj, "stage_log_json", None),
+            stage_overrides=getattr(obj, "stage_overrides", None),
+            hidden_blocks=getattr(obj, "hidden_blocks", None) or [],
+            coach_note=getattr(obj, "coach_note", None),
+            read_at=getattr(obj, "read_at", None),
+            delivery=delivery or [],
+            selected_race_insight_ids=getattr(obj, "selected_race_insight_ids", None) or [],
             has_pdf=bool(obj.pdf_storage_url or obj.pdf_sha256),
             pdf_generated_at=obj.pdf_generated_at,
             pdf_sha256=obj.pdf_sha256,

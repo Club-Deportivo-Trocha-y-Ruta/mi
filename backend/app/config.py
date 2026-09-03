@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     # Resend (producción) — nunca en repositorio
     resend_api_key: str = ""
 
+    # Webhook de Resend (feature 038, T401) — secreto de firma Svix.
+    # Vacío por defecto: el router responde 404 a cualquier llamada mientras
+    # no esté configurado (feature apagada, opt-in P3).
+    resend_webhook_secret: str = ""
+
     # Remitente
     email_from_address: str = "noreply@trochayruta.co"
     email_from_name: str = "Trocha y Ruta"

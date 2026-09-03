@@ -5,21 +5,25 @@
  * NUNCA incluir `sent_to` — es PII almacenada solo en DB, no expuesta por API.
  */
 
+import type {
+  HideableBlock,
+  RegenerableBlock,
+  StageLog,
+  StageOverrides,
+} from "@/types/stageLog.types";
+
 export type NewsletterStatus = "draft" | "approved" | "sent" | "failed";
 
-export type NarrativeOverride = {
-  strengths?: string | null;
-  area_to_develop?: string | null;
-  milestone?: string | null;
-};
-
-export type AiNarrative = {
-  strengths: string;
-  area_to_develop: string;
-  milestone: string;
-  model: string;
-  prompt_version: string;
-  confidence: "low" | "medium" | "high";
+/** `DeliveryRow` del DTO coach — data-model.md §4. Nunca incluye email en claro. */
+export type DeliveryRow = {
+  parent_user_id: number | null;
+  email_masked: string;
+  has_account: boolean;
+  sent_at: string;
+  delivered_at?: string | null;
+  opened_at?: string | null;
+  web_read_at?: string | null;
+  bounced: boolean;
 };
 
 export type AthleteNewsletter = {
@@ -30,8 +34,6 @@ export type AthleteNewsletter = {
   status: NewsletterStatus;
   /** Bloques de contenido para el email (sin antropometría — esos van solo en PDF). */
   email_blocks: Record<string, unknown> | null;
-  ai_narrative: AiNarrative | null;
-  coach_narrative_overrides: NarrativeOverride | null;
   badges_earned: Array<Record<string, unknown>> | null;
   /**
    * Indicador booleano de existencia de PDF generado.
@@ -49,6 +51,16 @@ export type AthleteNewsletter = {
   created_at: string;
   updated_at: string;
   // NUNCA incluir sent_to — PII solo en DB
+
+  // -- Feature 038 (bitácora) --
+  stage_log: StageLog | null;
+  stage_overrides: StageOverrides | null;
+  hidden_blocks: HideableBlock[];
+  coach_note: string | null;
+  read_at: string | null;
+  delivery: DeliveryRow[];
+  /** Insights adjuntados, en el orden elegido por el coach (AnalystPicker). */
+  selected_race_insight_ids: number[];
 };
 
 export type AthleteNewsletterCreate = {
@@ -58,8 +70,22 @@ export type AthleteNewsletterCreate = {
 };
 
 export type AthleteNewsletterPatch = {
-  coach_narrative_overrides: NarrativeOverride;
+  // -- Feature 038 (bitácora) --
+  stage_overrides?: StageOverrides;
+  hidden_blocks?: HideableBlock[];
+  coach_note?: string | null;
+  /** Reorden únicamente — debe ser una permutación de la lista ya guardada. */
+  selected_race_insight_ids?: number[];
 };
+
+// ---------------------------------------------------------------------------
+// Regenerate block (feature 038)
+// ---------------------------------------------------------------------------
+
+export interface RegenerateBlockRequest {
+  block: RegenerableBlock;
+  instruction?: string;
+}
 
 export type BatchResult = {
   period_year: number;

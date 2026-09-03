@@ -126,7 +126,7 @@ def base_state(**overrides) -> dict:
         "field_context": FIELD_CONTEXT,
         "training_window": TRAINING_WINDOW,
         "anthro_context": None,
-        "catalog_context": {"technique_skills": [{"code": "D", "name": "Descensos"}]},
+        "catalog_context": {"interval_templates": [{"id": "12", "name": "Base aeróbica"}]},
         "coach_dialogue": [{"headline": "Insight previo", "coach_answer": "Todo normal."}],
         "memory": ["Válida III: gap 8.4%"],
         "season_validas_count": 5,
@@ -208,7 +208,7 @@ async def test_v3_input_carries_athlete_context_blocks():
 
     input_ = fake.received_inputs[0]
     assert input_.training_window["attendance_pct"] == 62.5
-    assert input_.catalog_context["technique_skills"][0]["code"] == "D"
+    assert input_.catalog_context["interval_templates"][0]["id"] == "12"
     assert input_.coach_dialogue[0]["coach_answer"] == "Todo normal."
     assert input_.memory_recent_insights == ["Válida III: gap 8.4%"]
     assert input_.season_rows[0]["valida_num"] == 4

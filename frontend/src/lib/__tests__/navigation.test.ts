@@ -23,18 +23,17 @@ function findArea(id: string) {
 
 // T007 — NAV_AREAS shape + full role-visibility matrix (data-model.md §3).
 describe("NAV_AREAS", () => {
-  it("tiene exactamente 6 áreas", () => {
-    expect(NAV_AREAS).toHaveLength(6);
+  it("tiene exactamente 5 áreas", () => {
+    expect(NAV_AREAS).toHaveLength(5);
   });
 
-  it("usa los 6 ids esperados, en orden", () => {
+  it("usa los 5 ids esperados, en orden", () => {
     expect(NAV_AREAS.map((a) => a.id)).toEqual([
       "home",
       "training",
       "competitions",
       "athletes",
       "families",
-      "library",
     ]);
   });
 
@@ -62,17 +61,16 @@ describe("grupos de navegación (feature 035)", () => {
     }
   });
 
-  it("Inicio, Entrenamiento, Competencias y Atletas son «Operación»; Familias y Biblioteca son «Club»", () => {
+  it("Inicio, Entrenamiento, Competencias y Atletas son «Operación»; Familias es «Club»", () => {
     const groupOf = (id: string) => findArea(id).group;
     expect(groupOf("home")).toBe("operacion");
     expect(groupOf("training")).toBe("operacion");
     expect(groupOf("competitions")).toBe("operacion");
     expect(groupOf("athletes")).toBe("operacion");
     expect(groupOf("families")).toBe("club");
-    expect(groupOf("library")).toBe("club");
   });
 
-  it("getGroupedAreas('coach') reparte las 6 áreas: 4 en Operación, 2 en Club", () => {
+  it("getGroupedAreas('coach') reparte las 5 áreas: 4 en Operación, 1 en Club", () => {
     const groups = getGroupedAreas("coach");
     expect(groups.map((g) => g.label)).toEqual(["Operación", "Club"]);
     expect(groups[0].areas.map((a) => a.id)).toEqual([
@@ -81,7 +79,7 @@ describe("grupos de navegación (feature 035)", () => {
       "competitions",
       "athletes",
     ]);
-    expect(groups[1].areas.map((a) => a.id)).toEqual(["families", "library"]);
+    expect(groups[1].areas.map((a) => a.id)).toEqual(["families"]);
   });
 
   it("getGroupedAreas('admin') omite Atletas dentro de Operación", () => {
@@ -91,7 +89,7 @@ describe("grupos de navegación (feature 035)", () => {
       "training",
       "competitions",
     ]);
-    expect(groups[1].areas.map((a) => a.id)).toEqual(["families", "library"]);
+    expect(groups[1].areas.map((a) => a.id)).toEqual(["families"]);
   });
 
   it.each(ROLES)(
@@ -127,16 +125,16 @@ describe("matriz de visibilidad por rol (data-model.md §3)", () => {
     expect(padres?.roles).not.toContain("admin");
   });
 
-  it.each(ROLES)("%s ve Inicio, Entrenamiento, Competencias, Biblioteca", (role) => {
+  it.each(ROLES)("%s ve Inicio, Entrenamiento, Competencias, Familias", (role) => {
     const visibleIds = getVisibleAreas(role).map((a) => a.id);
     expect(visibleIds).toEqual(
-      expect.arrayContaining(["home", "training", "competitions", "library"]),
+      expect.arrayContaining(["home", "training", "competitions", "families"]),
     );
   });
 
-  it("coach ve las 6 áreas; admin ve 5 (sin Atletas)", () => {
-    expect(getVisibleAreas("coach")).toHaveLength(6);
-    expect(getVisibleAreas("admin")).toHaveLength(5);
+  it("coach ve las 5 áreas; admin ve 4 (sin Atletas)", () => {
+    expect(getVisibleAreas("coach")).toHaveLength(5);
+    expect(getVisibleAreas("admin")).toHaveLength(4);
   });
 
   it("Familias sigue visible para admin (Boletines/Informes del club)", () => {
@@ -178,13 +176,9 @@ describe("resolveAreaDefaultTo", () => {
     expect(resolveAreaDefaultTo(training, "admin")).toBe("/calendar");
   });
 
-  it("coach y admin en Atletas/Biblioteca resuelven al item por defecto declarado", () => {
+  it("coach en Atletas resuelve al item por defecto declarado", () => {
     const athletes = findArea("athletes");
     expect(resolveAreaDefaultTo(athletes, "coach")).toBe("/athletes");
-
-    const library = findArea("library");
-    expect(resolveAreaDefaultTo(library, "coach")).toBe("/technique");
-    expect(resolveAreaDefaultTo(library, "admin")).toBe("/technique");
   });
 });
 
@@ -273,20 +267,21 @@ describe("resolveActiveItemId", () => {
 
 // T010 — getBottomBarAreas / getMoreSheetAreas role variants.
 describe("getBottomBarAreas / getMoreSheetAreas", () => {
-  it("getBottomBarAreas('coach') incluye 'athletes' y no 'library'", () => {
+  it("getBottomBarAreas('coach') incluye 'athletes' y no 'families'", () => {
     const ids = getBottomBarAreas("coach").map((a) => a.id);
     expect(ids).toContain("athletes");
-    expect(ids).not.toContain("library");
+    expect(ids).not.toContain("families");
   });
 
-  it("getBottomBarAreas('admin') incluye 'library' y excluye 'athletes'", () => {
+  it("getBottomBarAreas('admin') excluye 'families' y 'athletes'", () => {
     const ids = getBottomBarAreas("admin").map((a) => a.id);
-    expect(ids).toContain("library");
+    expect(ids).not.toContain("families");
     expect(ids).not.toContain("athletes");
   });
 
-  it.each(ROLES)("getBottomBarAreas(%s) devuelve exactamente 4 áreas", (role) => {
-    expect(getBottomBarAreas(role)).toHaveLength(4);
+  it("getBottomBarAreas('coach') devuelve exactamente 4 áreas; admin devuelve 3", () => {
+    expect(getBottomBarAreas("coach")).toHaveLength(4);
+    expect(getBottomBarAreas("admin")).toHaveLength(3);
   });
 
   it.each(ROLES)(

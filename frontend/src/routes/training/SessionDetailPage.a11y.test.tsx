@@ -81,8 +81,8 @@ vi.mock("@/hooks/activities/useUnlinkedActivitiesNearDate", () => ({
   }),
 }));
 
-// PlanSection trae consigo hooks reales de técnica/fuerza/intervalos que no
-// son responsabilidad de este archivo — se mockea con un stub liviano.
+// PlanSection trae consigo hooks reales de intervalos que no son
+// responsabilidad de este archivo — se mockea con un stub liviano.
 vi.mock("@/components/training/session-plan/PlanSection", () => ({
   PlanSection: () => <div data-testid="plan-section-stub">Plan section (stub de test)</div>,
 }));

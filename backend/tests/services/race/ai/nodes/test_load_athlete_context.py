@@ -45,7 +45,7 @@ async def test_load_athlete_context_uses_anchored_event_date(
 
     async def _fake_catalog(db, club_id, age_band):
         captured_dates["age_band"] = age_band
-        return {"technique_skills": [], "strength_blocks": [], "interval_templates": []}
+        return {"interval_templates": []}
 
     async def _fake_forbidden(db, club_id):
         return []
@@ -96,7 +96,7 @@ async def test_load_athlete_context_season_uses_full_year_window(
         return None
 
     async def _fake_catalog(db, club_id, age_band):
-        return {"technique_skills": [], "strength_blocks": [], "interval_templates": []}
+        return {"interval_templates": []}
 
     async def _fake_forbidden(db, club_id):
         return []
@@ -136,7 +136,7 @@ async def test_load_athlete_context_is_best_effort_on_loader_failure(
         return None
 
     async def _fake_catalog(db, club_id, age_band):
-        return {"technique_skills": [], "strength_blocks": [], "interval_templates": []}
+        return {"interval_templates": []}
 
     async def _fake_forbidden(db, club_id):
         return []
@@ -181,8 +181,6 @@ async def test_load_athlete_context_without_club_id_records_error(
 
     assert update["training_window"] is None
     assert update["catalog_context"] == {
-        "technique_skills": [],
-        "strength_blocks": [],
         "interval_templates": [],
     }
     assert update["club_forbidden_names"] == []

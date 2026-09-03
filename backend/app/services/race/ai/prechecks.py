@@ -326,8 +326,6 @@ def _catalog_label(catalog_context: dict | None, kind: str, code: str) -> str | 
     if not catalog_context:
         return None
     key = {
-        "technique_skill": "technique_skills",
-        "strength_block": "strength_blocks",
         "interval_template": "interval_templates",
     }.get(kind, kind)
     for item in catalog_context.get(key) or []:
@@ -345,8 +343,6 @@ def _catalog_codes(catalog_context: dict | None, kind: str) -> set[str]:
     if not catalog_context:
         return set()
     key = {
-        "technique_skill": "technique_skills",
-        "strength_block": "strength_blocks",
         "interval_template": "interval_templates",
     }.get(kind, kind)
     items = catalog_context.get(key) or []

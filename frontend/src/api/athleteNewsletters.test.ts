@@ -140,18 +140,18 @@ describe("createAthleteNewsletter", () => {
 });
 
 describe("patchAthleteNewsletter", () => {
-  it("edita la narrativa del newsletter", async () => {
-    const overrides = { strengths: "Muy constante" };
-    const data = makeNewsletter({ coach_narrative_overrides: overrides });
+  it("edita el coach_note del boletín", async () => {
+    const coachNote = "Muy constante este mes.";
+    const data = makeNewsletter({ coach_note: coachNote });
     mockApi.patch.mockResolvedValueOnce({ data });
     const result = await patchAthleteNewsletter(42, 1, {
-      coach_narrative_overrides: overrides,
+      coach_note: coachNote,
     });
     expect(mockApi.patch).toHaveBeenCalledWith(
       "/api/athletes/42/monthly-newsletters/1",
-      { coach_narrative_overrides: overrides },
+      { coach_note: coachNote },
     );
-    expect(result.coach_narrative_overrides).toEqual(overrides);
+    expect(result.coach_note).toEqual(coachNote);
   });
 });
 
@@ -363,17 +363,17 @@ describe("useSendNewsletter", () => {
 });
 
 describe("usePatchNewsletter", () => {
-  it("guarda overrides de narrativa", async () => {
-    const overrides = { strengths: "Excelente constancia" };
-    const data = makeNewsletter({ coach_narrative_overrides: overrides });
+  it("guarda el coach_note del boletín", async () => {
+    const coachNote = "Excelente constancia este mes.";
+    const data = makeNewsletter({ coach_note: coachNote });
     mockApi.patch.mockResolvedValueOnce({ data });
     const wrapper = createWrapper();
     const { result } = renderHook(() => usePatchNewsletter(42, 1), { wrapper });
     await act(async () => {
-      result.current.mutate({ coach_narrative_overrides: overrides });
+      result.current.mutate({ coach_note: coachNote });
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.coach_narrative_overrides).toEqual(overrides);
+    expect(result.current.data?.coach_note).toEqual(coachNote);
   });
 });
 

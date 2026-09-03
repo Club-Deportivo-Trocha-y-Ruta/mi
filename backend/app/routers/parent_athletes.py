@@ -3,7 +3,7 @@
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,6 +17,7 @@ from app.dependencies import (
 )
 from app.models.anthropometry import AnthropometricRecord
 from app.models.athlete import Athlete, FamilyRelationship, ParentAthlete
+from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 from app.models.club import ClubMember, ClubRole
 from app.models.parent_invite import ParentInvite
 from app.models.user import User, UserRole
@@ -199,6 +200,15 @@ async def my_athletes(
         age_dec = compute_age_decimal(ath.birth_date)
         category = get_category(ath.birth_date.year, ath.sex.value)
 
+        # Bitácoras (feature 038) enviadas y aún no leídas por este padre.
+        unread_stmt = select(func.count()).select_from(AthleteMonthlyNewsletter).where(
+            AthleteMonthlyNewsletter.athlete_id == ath.id,
+            AthleteMonthlyNewsletter.status == NewsletterStatus.sent,
+            AthleteMonthlyNewsletter.read_at.is_(None),
+        )
+        unread_result = await db.execute(unread_stmt)
+        unread_count = unread_result.scalar_one()
+
         output.append(
             MyAthleteOut(
                 athlete_id=ath.id,
@@ -216,6 +226,7 @@ async def my_athletes(
                 measurement_status=_measurement_status(
                     latest.evaluation_date if latest else None
                 ),
+                unread_newsletters=unread_count or 0,
             )
         )
 

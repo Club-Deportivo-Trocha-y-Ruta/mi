@@ -25,19 +25,23 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.athlete import Athlete, ParentAthlete
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
+from app.models.newsletter_delivery_event import DeliveryEventType, NewsletterDeliveryEvent
 from app.models.user import User
 from app.schemas.notification import NotificationResult
-from app.services.notification.email_client import Attachment, BaseEmailClient, OutboundEmail
+from app.services.notification.email_client import (
+    BaseEmailClient,
+    OutboundEmail,
+    ResendEmailClient,
+)
 from app.services.notification.template_registry import TemplateRegistry
+from app.services.training.stage_log import StageLog, to_parent_dto
 
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_ROOT = Path(__file__).parents[3] / "templates"
-
-# Límite de tamaño total de adjuntos por email (Resend limit: 40 MB)
-_MAX_ATTACHMENT_BYTES = 40 * 1024 * 1024
 
 
 @dataclass
@@ -194,7 +198,7 @@ async def _send_for_parent(
     force_individual: bool,
     result: DispatchResult,
 ) -> list[int]:
-    """Envía un email con los newsletters de un padre.
+    """Envía a un padre las bitácoras de sus hijos para el periodo.
 
     Si force_individual=False, verifica que todos los hijos con newsletter
     del periodo estén approved. Si alguno está en draft, bloquea el envío.
@@ -229,22 +233,47 @@ async def _send_for_parent(
         logger.warning("Padre no encontrado | parent_id=%d", parent_id)
         return []
 
-    # Construir adjuntos PDF
-    attachments: list[Attachment] = []
-    total_size = 0
+    return await _send_v2_email(
+        db=db,
+        email_client=email_client,
+        registry=registry,
+        parent=parent,
+        newsletters=newsletters,
+        year=year,
+        month=month,
+        result=result,
+    )
+
+
+async def _send_v2_email(
+    db: AsyncSession,
+    email_client: BaseEmailClient,
+    registry: TemplateRegistry,
+    parent: User,
+    newsletters: list[AthleteMonthlyNewsletter],
+    year: int,
+    month: int,
+    result: DispatchResult,
+) -> list[int]:
+    """Bitácora de etapa (feature 038): deep link al portal (o "Activa tu
+    cuenta" cuando el padre no tiene contraseña definida todavía —
+    invitación pendiente, AC-5.1)."""
+    # `hashed_password` solo se llena cuando el padre acepta la invitación
+    # (ver app/services/invitations.py::accept_invite) — antes de eso el
+    # usuario puede existir "pre-creado" pero sin poder autenticarse.
+    has_account = bool(getattr(parent, "hashed_password", None))
+
     children_data: list[dict[str, Any]] = []
-
     for nl in newsletters:
-        # Cargar PDF desde storage o desde snapshot
-        if nl.pdf_storage_url and nl.pdf_sha256:
-            # En producción: descargar desde SFTP (no implementado aquí — adjuntar solo si está en memoria)
-            # Por ahora, solo incluir si el PDF ya está en memoria (caso de dispatch inmediato)
-            pass
-
-        # Construir datos del hijo para el template email
-        snapshot = nl.metrics_snapshot or {}
-        ai_narrative = nl.ai_narrative
-        overrides = nl.coach_narrative_overrides
+        if not nl.stage_log_json:
+            # Sin stage_log_json no hay nada family-safe que enviar (debería
+            # haberse re-derivado al aprobar; degradar sin romper el envío
+            # de los demás hijos del mismo padre).
+            logger.warning(
+                "Bitácora sin stage_log_json al enviar | newsletter_id=%d",
+                nl.id,
+            )
+            continue
 
         athlete_result = await db.execute(
             select(Athlete).where(Athlete.id == nl.athlete_id)
@@ -253,57 +282,32 @@ async def _send_for_parent(
         if athlete is None:
             continue
 
-        # Defensa en profundidad: aunque el builder ya separa email_blocks
-        # de pdf_only_blocks, blindamos contra regresiones futuras eliminando
-        # cualquier clave de antropometría que pudiera haberse colado.
-        email_blocks_safe = dict(snapshot.get("email_blocks", {}))
-        for forbidden_key in ("anthropometry", "pdf_only_blocks", "charts"):
-            email_blocks_safe.pop(forbidden_key, None)
-        # US3: el subtítulo de antropometría es solo-PDF. Aunque el template de
-        # email no lo renderiza, lo eliminamos del snapshot que viaja al email
-        # como defensa en profundidad (Ley 1581).
-        captions = email_blocks_safe.get("block_captions")
-        if isinstance(captions, dict) and "anthropometry" in captions:
-            captions = {k: v for k, v in captions.items() if k != "anthropometry"}
-            email_blocks_safe["block_captions"] = captions
+        stage_log = StageLog.model_validate(nl.stage_log_json)
+        parent_dto = to_parent_dto(stage_log, nl.hidden_blocks)
 
-        # Defensa en profundidad: quitar el caption antropométrico también de la
-        # narrativa IA antes de enviarla al template de email (solo-PDF).
-        if isinstance(ai_narrative, dict):
-            nar_caps = ai_narrative.get("block_captions")
-            if isinstance(nar_caps, dict) and "anthropometry" in nar_caps:
-                ai_narrative = {
-                    **ai_narrative,
-                    "block_captions": {
-                        k: v for k, v in nar_caps.items() if k != "anthropometry"
-                    },
-                }
+        if has_account:
+            cta_url = (
+                f"{settings.frontend_base_url}/my-athletes/{nl.athlete_id}"
+                f"/bitacora/{nl.id}"
+            )
+            cta_label = "Ver la bitácora completa"
+        else:
+            cta_url = f"{settings.frontend_base_url}/onboarding"
+            cta_label = "Activa tu cuenta"
 
-        child_data: dict[str, Any] = {
-            "athlete_id": nl.athlete_id,
-            "athlete_first_name": athlete.first_name,
-            "email_blocks": email_blocks_safe,
-            "ai_narrative": ai_narrative,
-            "coach_narrative_overrides": overrides,
-        }
-        children_data.append(child_data)
+        children_data.append(
+            {
+                "athlete_id": nl.athlete_id,
+                "athlete_first_name": athlete.first_name,
+                "stage_log": parent_dto,
+                "cta_url": cta_url,
+                "cta_label": cta_label,
+            }
+        )
 
     if not children_data:
         return []
 
-    # Verificar tamaño total
-    if total_size > _MAX_ATTACHMENT_BYTES:
-        logger.warning(
-            "Adjuntos superan límite %dMB | newsletter_ids=%s",
-            _MAX_ATTACHMENT_BYTES // (1024 * 1024),
-            [nl.id for nl in newsletters],
-        )
-        result.errors.append(
-            f"Adjuntos superan {_MAX_ATTACHMENT_BYTES // (1024 * 1024)}MB — reducir número de fotos."
-        )
-        return []
-
-    # Renderizar email
     month_label = _month_label(year, month)
     email_context = {
         "parent_name": parent.first_name,
@@ -313,19 +317,47 @@ async def _send_for_parent(
         "children": children_data,
     }
 
-    html_body = _render_email_template(registry, email_context)
-    subject = _render_subject(registry, email_context)
+    html_body = _render_email_template(
+        registry, email_context, body_path="email/athlete_stage_log.html"
+    )
+    subject = _render_subject(registry, "athlete_stage_log", email_context)
 
     msg = OutboundEmail(
         to_email=parent.email,
         to_name=parent.first_name,
         subject=subject,
         html_body=html_body,
-        template_ref="athlete_monthly_newsletter",
-        attachments=attachments,
+        template_ref="athlete_stage_log",
+        attachments=[],
     )
 
-    # Enviar
+    return await _dispatch_email(
+        db=db,
+        email_client=email_client,
+        parent=parent,
+        newsletters=newsletters,
+        msg=msg,
+        template_ref="athlete_stage_log",
+        result=result,
+    )
+
+
+async def _dispatch_email(
+    db: AsyncSession,
+    email_client: BaseEmailClient,
+    parent: User,
+    newsletters: list[AthleteMonthlyNewsletter],
+    msg: OutboundEmail,
+    template_ref: str,
+    result: DispatchResult,
+) -> list[int]:
+    """Envía ``msg`` y, si tiene éxito, marca ``newsletters`` como enviados y
+    registra un evento ``sent`` por destinatario en ``newsletter_delivery_events``
+    (feature 038, contracts/api.md §Coach POST /{id}/send).
+
+    El único contrato que le importa a esta función es "un
+    ``OutboundEmail`` ya armado" + "la lista de newsletters que representa".
+    """
     send_result: NotificationResult = await email_client.send(msg)
 
     if not send_result.success:
@@ -340,7 +372,8 @@ async def _send_for_parent(
             str(raw_error),
         )[:120]
         logger.error(
-            "Error de email client | template_ref=athlete_monthly_newsletter error=%s",
+            "Error de email client | template_ref=%s error=%s",
+            template_ref,
             safe_error,
         )
         result.errors.append(
@@ -350,18 +383,36 @@ async def _send_for_parent(
 
     # Marcar como sent (sin loguear emails)
     now = datetime.now(timezone.utc)
+    # provider_message_id es el único dato PII-safe que el proveedor
+    # devuelve, y SMTP no lo provee de verdad (retorna un id sintético
+    # "smtp-<template>", no un id real del proveedor) — por eso solo se
+    # persiste con Resend (contracts/api.md).
+    provider_message_id = (
+        send_result.message_id if isinstance(email_client, ResendEmailClient) else None
+    )
+
     sent_ids = []
     for nl in newsletters:
         nl.status = NewsletterStatus.sent
         nl.sent_at = now
         # Guardar emails como referencia (PII — solo en DB, nunca en logs)
         nl.sent_to = [parent.email]
+        db.add(
+            NewsletterDeliveryEvent(
+                newsletter_id=nl.id,
+                parent_user_id=parent.id,
+                event_type=DeliveryEventType.sent,
+                provider_message_id=provider_message_id,
+                occurred_at=now,
+            )
+        )
         await db.flush()
         result.newsletters_sent.append(nl.id)
         sent_ids.append(nl.id)
         logger.info(
-            "Newsletter marcado como sent | newsletter_id=%d template_ref=athlete_monthly_newsletter",
+            "Newsletter marcado como sent | newsletter_id=%d template_ref=%s",
             nl.id,
+            template_ref,
         )
 
     return sent_ids
@@ -410,20 +461,30 @@ async def _check_sibling_newsletters(
     return [nl.id for nl in blocked]
 
 
-def _render_email_template(registry: TemplateRegistry, context: dict[str, Any]) -> str:
-    """Renderiza el template HTML del email."""
+def _render_email_template(
+    registry: TemplateRegistry,
+    context: dict[str, Any],
+    body_path: str = "email/athlete_stage_log.html",
+) -> str:
+    """Renderiza el template HTML del email en ``body_path`` (relativo a
+    ``templates/``). ``registry`` no se usa hoy (la ruta ya viene resuelta
+    en ``body_path``) — se conserva como primer parámetro posicional por
+    compatibilidad con los tests existentes que ya llaman a esta función."""
     jinja_env = Environment(
         loader=FileSystemLoader(str(_TEMPLATES_ROOT)),
         autoescape=select_autoescape(["html"]),
     )
-    template = jinja_env.get_template("email/athlete_monthly_newsletter.html")
+    template = jinja_env.get_template(body_path)
     return template.render(**context)
 
 
-def _render_subject(registry: TemplateRegistry, context: dict[str, Any]) -> str:
-    """Renderiza el subject del email."""
+def _render_subject(
+    registry: TemplateRegistry, template_id: str, context: dict[str, Any]
+) -> str:
+    """Renderiza el subject del email para ``template_id`` (ej.
+    ``"athlete_monthly_newsletter"`` o ``"athlete_stage_log"``)."""
     from jinja2 import Template
-    spec = registry.get_email_spec("athlete_monthly_newsletter")
+    spec = registry.get_email_spec(template_id)
     template = Template(spec.subject_template)
     return template.render(**context)
 

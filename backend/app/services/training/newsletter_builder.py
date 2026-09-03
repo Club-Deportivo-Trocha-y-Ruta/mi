@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import calendar
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -239,6 +239,21 @@ async def build_newsletter_metrics(
     )
 
     # -----------------------------------------------------------------------
+    # Bloque 10 (feature 038): fecha de la primera sesión histórica del
+    # atleta (temporada completa, no solo el mes) — usada por la bitácora
+    # de etapa para numerar la "etapa" y para el waypoint "first_session".
+    # -----------------------------------------------------------------------
+    athlete_first_session_date = await _get_athlete_first_session_date(db, athlete)
+
+    # -----------------------------------------------------------------------
+    # Bloque 11 (pdf_only, feature 038): perfil de esfuerzo semanal
+    # (fecha/asistencia/RPE por sesión del mes) y focos técnicos planificados
+    # en las próximas 4 semanas, agrupados por familia de habilidad (024).
+    # -----------------------------------------------------------------------
+    weekly_block = await _build_weekly_block(db, athlete, month_start, month_end)
+    next_focus_groups_block = await _build_next_focus_groups_block(db, athlete, month_end)
+
+    # -----------------------------------------------------------------------
     # Ensamble final
     # -----------------------------------------------------------------------
     email_blocks: dict[str, Any] = {
@@ -250,6 +265,8 @@ async def build_newsletter_metrics(
         "photos": photos_block,
         "badges": badges_block,
         "support_at_home": support_block,
+        # Feature 038 (bitácora de etapa): fecha ISO o None.
+        "athlete_first_session_date": athlete_first_session_date,
         # La narrativa IA se añade por separado tras correr el use case
         "ai_narrative": None,
     }
@@ -271,6 +288,10 @@ async def build_newsletter_metrics(
         "anthropometry": anthropometry_block,
         # Los gráficos SVG se generan en render time a partir de race_results
         "charts_context": _build_charts_context(race_block),
+        # Feature 038 (bitácora de etapa): perfil de esfuerzo semanal y
+        # focos técnicos planificados de las próximas 4 semanas.
+        "weekly": weekly_block,
+        "next_focus_groups": next_focus_groups_block,
     }
 
     # Inyectar curvas de percentiles solo si hay al menos un indicador con datos
@@ -740,6 +761,130 @@ async def _build_photos_block(
     except Exception as exc:
         logger.warning("Error construyendo bloque de fotos: %s", type(exc).__name__)
         return {"count": 0, "items": []}
+
+
+async def _get_athlete_first_session_date(db: AsyncSession, athlete: Any) -> str | None:
+    """Fecha ISO de la primera sesión de entrenamiento asistida por el
+    atleta (histórico completo de temporada, no solo el mes del boletín).
+
+    Feature 038 (bitácora de etapa): usada por ``stage_log_builder`` para
+    numerar la "etapa" (mes 1 = mes de esta sesión) y para el waypoint
+    ``first_session`` de la ruta del mes. Consulta liviana e independiente
+    del resto del snapshot mensual — se ejecuta siempre, aunque el mes del
+    boletín no sea el primero.
+    """
+    from app.models.training_session import AttendanceStatus, SessionAttendance, SessionStatus, TrainingSession
+
+    result = await db.execute(
+        select(TrainingSession.scheduled_date)
+        .join(SessionAttendance, SessionAttendance.session_id == TrainingSession.id)
+        .where(
+            SessionAttendance.athlete_id == athlete.id,
+            SessionAttendance.status.in_([AttendanceStatus.PRESENTE, AttendanceStatus.TARDE]),
+            TrainingSession.status == SessionStatus.EXECUTED,
+        )
+        .order_by(TrainingSession.scheduled_date.asc())
+        .limit(1)
+    )
+    rows = result.scalars().all()
+    first = rows[0] if rows else None
+    return first.isoformat() if first else None
+
+
+async def _build_weekly_block(
+    db: AsyncSession,
+    athlete: Any,
+    month_start: date,
+    month_end: date,
+) -> list[dict[str, Any]]:
+    """Bloque ``weekly`` (pdf_only, feature 038): una entrada por sesión de
+    entrenamiento EJECUTADA del club en el mes, con la asistencia/RPE/
+    rúbrica de este atleta puntual.
+
+    Se incluye una fila por cada sesión del club (no solo las asistidas) para
+    que ``stage_log_builder.effort_profile`` pueda distinguir "sesiones
+    planificadas" de "sesiones asistidas" por semana ISO — el mismo criterio
+    que ya usa el bloque ``attendance``. Solo PDF: no aporta nada nuevo al
+    email, que ya resume asistencia en el bloque ``attendance``.
+    """
+    from app.models.training_session import AttendanceStatus, SessionAttendance, SessionStatus, TrainingSession
+
+    sessions_result = await db.execute(
+        select(TrainingSession)
+        .where(
+            TrainingSession.club_id == athlete.club_id,
+            TrainingSession.scheduled_date >= month_start,
+            TrainingSession.scheduled_date <= month_end,
+            TrainingSession.status == SessionStatus.EXECUTED,
+        )
+        .order_by(TrainingSession.scheduled_date)
+    )
+    sessions = sessions_result.scalars().all()
+    if not sessions:
+        return []
+
+    session_ids = [s.id for s in sessions]
+    att_result = await db.execute(
+        select(SessionAttendance).where(
+            SessionAttendance.session_id.in_(session_ids),
+            SessionAttendance.athlete_id == athlete.id,
+        )
+    )
+    attendance_by_session = {a.session_id: a for a in att_result.scalars().all()}
+
+    entries: list[dict[str, Any]] = []
+    for s in sessions:
+        att = attendance_by_session.get(s.id)
+        attended = bool(
+            att is not None and att.status in {AttendanceStatus.PRESENTE, AttendanceStatus.TARDE}
+        )
+        rpe = att.rpe_omni if (attended and att is not None) else None
+        rubric_avg = None
+        if attended and att is not None:
+            rubric_values = [
+                v
+                for v in (att.rubric_effort, att.rubric_attitude, att.rubric_technique)
+                if v is not None
+            ]
+            if rubric_values:
+                rubric_avg = round(sum(rubric_values) / len(rubric_values), 1)
+        entries.append(
+            {
+                "date": s.scheduled_date.isoformat() if s.scheduled_date else None,
+                "attended": attended,
+                "rpe": rpe,
+                "rubric_avg": rubric_avg,
+            }
+        )
+    return entries
+
+
+async def _build_next_focus_groups_block(
+    db: AsyncSession,
+    athlete: Any,
+    month_end: date,
+) -> list[dict[str, Any]]:
+    """Bloque ``next_focus_groups`` (pdf_only, feature 038): focos técnicos
+    de sesiones PLANIFICADAS en las próximas 4 semanas, agrupados por
+    familia de habilidad (mismo agrupador ``group_focus_texts`` del bloque
+    ``technical``, para dar consistencia visual entre "lo que se trabajó" y
+    "lo que viene").
+    """
+    from app.models.training_session import SessionStatus, TrainingSession
+
+    horizon_end = month_end + timedelta(days=28)
+    sessions_result = await db.execute(
+        select(TrainingSession).where(
+            TrainingSession.club_id == athlete.club_id,
+            TrainingSession.scheduled_date > month_end,
+            TrainingSession.scheduled_date <= horizon_end,
+            TrainingSession.status == SessionStatus.PLANNED,
+        )
+    )
+    sessions = sessions_result.scalars().all()
+    raw_focus_texts = [s.technical_focus for s in sessions if s.technical_focus]
+    groups = group_focus_texts(raw_focus_texts)
+    return [{"slug": g.slug, "name": g.name, "session_count": g.session_count} for g in groups]
 
 
 def _serialize_badges(badges: list[AthleteBadge]) -> dict[str, Any]:

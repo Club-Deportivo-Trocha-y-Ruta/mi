@@ -1,7 +1,7 @@
 /**
  * Cliente API del módulo Entrenamiento por Intervalos (feature 026).
  *
- * Mirroring de convenciones de `api/strength.ts` (feature 021):
+ * Convenciones:
  * - Cada respuesta del servidor se valida con `.parse()` (allowlist en cliente).
  * - Mapeo de errores HTTP a copy en español neutro (Colombia).
  * - `extractAgeGateError` espeja `extractAgeBandGuardrail`: distingue el guardrail

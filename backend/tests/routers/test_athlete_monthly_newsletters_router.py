@@ -23,10 +23,16 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
+from app.dependencies import get_current_user, get_db
 from app.main import app
-from app.models.athlete_newsletter import NewsletterStatus
+from app.models import Base
+from app.models.athlete import Athlete, Sex
+from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 from app.routers.athlete_monthly_newsletters import _validate_period
 
 
@@ -85,10 +91,9 @@ def make_newsletter(
             "area_to_develop": "Mejorar la técnica de frenado en descensos con curvas.",
             "milestone": "Completó el primer recorrido técnico sin asistencia del entrenador.",
             "model": "fake",
-            "prompt_version": "v1",
+            "prompt_version": "athlete_monthly_newsletter_v2",
             "confidence": "medium",
         },
-        coach_narrative_overrides=None,
         badges_earned=None,
         pdf_storage_url=None,
         pdf_generated_at=None,
@@ -402,7 +407,6 @@ async def test_patch_rejected_if_not_draft():
     """PATCH rechaza con 409 si status != draft."""
     from fastapi import HTTPException
     from app.routers.athlete_monthly_newsletters import _get_newsletter_or_404
-    from app.schemas.athlete_newsletter import AthleteNewsletterPatch, NarrativeOverride
 
     nl = make_newsletter(status=NewsletterStatus.approved)
 
@@ -1102,109 +1106,325 @@ async def test_attach_insights_multiple_invalid_ids_all_reported():
 
 
 # ---------------------------------------------------------------------------
-# Regresión FR-015 (024) — snapshots pre-024 renderizan sin excepción
-# ---------------------------------------------------------------------------
+# PATCH /{id} — bitácora v2 (feature 038, T102)
 #
-# Snapshot "legacy": carece de los campos nuevos de la 024 (focus_groups,
-# weekly_hours_avg/ltad_limit_hours/ltad_status, short_label, streak_sessions)
-# y en su lugar trae la clave vieja `streak_days`. Los templates deben
-# degradar con sus fallbacks (`is defined` / `.get(...)`) sin lanzar.
+# A diferencia de los tests anteriores (mocks vía SimpleNamespace/MagicMock),
+# esta sección usa una DB real (SQLite in-memory) + AsyncClient contra
+# app.main.app, con dependency_overrides en get_db/get_current_user (mismo
+# patrón que tests/routers/test_activities.py). Necesario acá porque el
+# PATCH ahora hace queries reales (forbidden_names para redactar coach_note,
+# permutación de selected_race_insight_ids) que un MagicMock no modela bien
+# a través de múltiples llamadas secuenciales a db.execute.
+# ---------------------------------------------------------------------------
+
+_T102_TABLES = (
+    "users",
+    "clubs",
+    "club_members",
+    "athletes",
+    "athlete_monthly_newsletters",
+    "newsletter_delivery_events",
+)
 
 
-_LEGACY_EMAIL_BLOCKS: dict = {
-    "period": {"year": 2026, "month": 3},
-    "attendance": {
-        "sessions_present": 8,
-        "sessions_total": 10,
-        "attendance_pct": 80.0,
-        "attendance_pct_prev_month": 75.0,
-        "streak_days": 3,  # clave vieja; streak_sessions no existe
-    },
-    "technical": {
-        "focos_tecnicos": ["Frenado"],
-        "avg_rpe": 6.0,
-        "avg_rubric_technique": 3.5,
-        "total_training_hours": 9.0,
-        # sin focus_groups / weekly_hours_avg / ltad_limit_hours / ltad_status
-    },
-    "race_results": {
-        "has_races": True,
-        "results": [
-            {"position": 4, "valida_num": "III", "gap_to_winner_pct": 6.2}
-            # sin "label" ni "short_label"
-        ],
-    },
-    "calendar": {"next_training_sessions": [], "next_race_events": []},
-    "photos": {"count": 0, "items": []},
-    "badges": {"items": [{"badge_type": "attendance_90"}]},
-}
-
-_LEGACY_PDF_ONLY_BLOCKS: dict = {
-    "anthropometry": {"has_records": False},
-    "charts_context": {
-        "has_data": False,
-        "low_confidence": True,
-        "positions": [],
-        "gap_pcts": [],
-        "points_accumulated": [],
-    },
-    "percentile_curves": None,
-}
+@pytest_asyncio.fixture
+async def t102_engine():
+    eng = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    tables = [Base.metadata.tables[t] for t in _T102_TABLES]
+    async with eng.begin() as conn:
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
+    yield eng
+    await eng.dispose()
 
 
-class TestLegacySnapshotBackwardCompat:
-    """FR-015: un snapshot generado antes de la 024 debe renderizar PDF y
-    email sin lanzar excepciones, pese a carecer de los campos nuevos."""
+@pytest_asyncio.fixture
+async def t102_session_factory(t102_engine):
+    return async_sessionmaker(t102_engine, expire_on_commit=False)
+
+
+@pytest_asyncio.fixture
+async def t102_session(t102_session_factory):
+    async with t102_session_factory() as s:
+        yield s
+
+
+@pytest_asyncio.fixture
+async def t102_seed(t102_session):
+    """Club + admin (coach access) + un atleta ficticio (sin datos reales)."""
+    from app.models.club import Club
+    from app.models.user import User, UserRole
+
+    now = datetime.now(timezone.utc)
+    admin = User(
+        id=1,
+        email="admin@test.local",
+        first_name="Admin",
+        last_name="Test",
+        role=UserRole.admin,
+        is_active=True,
+        can_login=True,
+        created_at=now,
+    )
+    club = Club(id=1, name="Club Test", code="CT1", created_at=now)
+    t102_session.add_all([admin, club])
+    await t102_session.flush()
+
+    athlete_user = User(
+        id=2,
+        email=None,
+        first_name="Atleta",
+        last_name="Ficticio",
+        role=UserRole.athlete,
+        is_active=True,
+        can_login=False,
+        created_at=now,
+    )
+    t102_session.add(athlete_user)
+    await t102_session.flush()
+
+    athlete = Athlete(
+        id=5,
+        user_id=2,
+        first_name="Atleta",
+        last_name="Ficticio",
+        birth_date=date(2013, 5, 1),
+        sex=Sex.M,
+        club_id=1,
+        created_by=1,
+    )
+    t102_session.add(athlete)
+    await t102_session.flush()
+    await t102_session.commit()
+    return SimpleNamespace(admin=admin, club=club, athlete=athlete)
+
+
+async def _seed_t102_newsletter(session, **overrides) -> AthleteMonthlyNewsletter:
+    defaults: dict[str, Any] = dict(
+        athlete_id=5,
+        year=2026,
+        month=6,
+        status=NewsletterStatus.draft,
+    )
+    defaults.update(overrides)
+    nl = AthleteMonthlyNewsletter(**defaults)
+    session.add(nl)
+    await session.flush()
+    await session.commit()
+    await session.refresh(nl)
+    return nl
+
+
+@pytest_asyncio.fixture
+async def t102_client_factory(t102_session):
+    made: list[AsyncClient] = []
+
+    def _make(user) -> AsyncClient:
+        async def _override_db():
+            yield t102_session
+
+        async def _override_user():
+            return user
+
+        app.dependency_overrides[get_db] = _override_db
+        app.dependency_overrides[get_current_user] = _override_user
+        client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        made.append(client)
+        return client
+
+    yield _make
+    for c in made:
+        await c.aclose()
+    app.dependency_overrides.clear()
+
+
+class TestPatchStageLogV2:
+    """Feature 038, T102 — PATCH persiste contenido v2 de la bitácora."""
 
     @pytest.mark.asyncio
-    async def test_legacy_snapshot_renders_pdf_without_raising(self):
-        from app.services.notification.athlete_newsletter_pdf import generate_newsletter_pdf
-        from app.services.notification.document_generator import DocumentGenerator
-        from app.services.notification.template_registry import TemplateRegistry
-
-        generator = DocumentGenerator(TemplateRegistry())
-
-        doc, sha256 = await generate_newsletter_pdf(
-            generator=generator,
-            athlete_first_name="Atleta",
-            athlete_last_name="Legacy",
-            athlete_id=5,
-            year=2026,
-            month=3,
-            email_blocks=_LEGACY_EMAIL_BLOCKS,
-            pdf_only_blocks=_LEGACY_PDF_ONLY_BLOCKS,
-            ai_narrative=None,
-            coach_narrative_overrides=None,
-            db=None,  # sin sesión: photos_render degrada a embeddable_count=0
+    async def test_persists_stage_overrides_hidden_blocks_and_coach_note(
+        self, t102_seed, t102_session, t102_client_factory
+    ):
+        nl = await _seed_t102_newsletter(
+            t102_session,
+            pdf_sha256="a" * 64,
         )
+        client = t102_client_factory(t102_seed.admin)
 
-        assert len(doc.data) > 0
-        assert len(sha256) == 64
-
-    def test_legacy_snapshot_renders_email_without_raising(self):
-        from app.services.notification.newsletter_dispatcher import _render_email_template
-        from app.services.notification.template_registry import TemplateRegistry
-
-        registry = TemplateRegistry()
-        context = {
-            "club_name": "Trocha y Ruta",
-            "month_label": "Marzo 2026",
-            "season_year": "2026",
-            "children": [
-                {
-                    "athlete_id": 5,
-                    "athlete_first_name": "Atleta",
-                    "email_blocks": _LEGACY_EMAIL_BLOCKS,
-                    "ai_narrative": None,
-                    "coach_narrative_overrides": None,
-                }
-            ],
+        body = {
+            "stage_overrides": {"stage_title": "Etapa 6: subiendo con fuerza"},
+            "hidden_blocks": ["photos"],
+            "coach_note": "Buen mes, sigan asi con la constancia en cada sesion.",
         }
+        async with client as c:
+            resp = await c.patch(
+                f"/api/athletes/5/monthly-newsletters/{nl.id}", json=body
+            )
 
-        html = _render_email_template(registry, context)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["stage_overrides"] == body["stage_overrides"]
+        assert data["hidden_blocks"] == ["photos"]
+        assert data["coach_note"] == body["coach_note"]
 
-        assert "Atleta" in html
-        # Fallback de streak: usa la clave vieja `streak_days`
-        assert "3 sesiones consecutivas" in html
-        # Fallback de label: usa "Válida <valida_num>" al faltar short_label/label
-        assert "Válida III" in html
+        await t102_session.refresh(nl)
+        assert nl.pdf_sha256 is None, "cualquier PATCH de contenido invalida el PDF"
+
+    @pytest.mark.asyncio
+    async def test_coach_note_redacts_club_athlete_names(
+        self, t102_seed, t102_session, t102_client_factory
+    ):
+        """coach_note pasa por el mismo guard de redacción que la narrativa IA."""
+        nl = await _seed_t102_newsletter(t102_session)
+        client = t102_client_factory(t102_seed.admin)
+
+        body = {"coach_note": "Gran mes para Atleta Ficticio, sigue asi."}
+        async with client as c:
+            resp = await c.patch(
+                f"/api/athletes/5/monthly-newsletters/{nl.id}", json=body
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert "Atleta Ficticio" not in resp.json()["coach_note"]
+        assert "[REDACTADO]" in resp.json()["coach_note"]
+
+    @pytest.mark.asyncio
+    async def test_selected_race_insight_ids_permutation_rejected(
+        self, t102_seed, t102_session, t102_client_factory
+    ):
+        nl = await _seed_t102_newsletter(
+            t102_session, selected_race_insight_ids=[10, 20]
+        )
+        client = t102_client_factory(t102_seed.admin)
+
+        async with client as c:
+            resp = await c.patch(
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json={"selected_race_insight_ids": [10, 20, 30]},
+            )
+
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_selected_race_insight_ids_valid_permutation_reorders(
+        self, t102_seed, t102_session, t102_client_factory
+    ):
+        nl = await _seed_t102_newsletter(
+            t102_session, selected_race_insight_ids=[10, 20]
+        )
+        client = t102_client_factory(t102_seed.admin)
+
+        async with client as c:
+            resp = await c.patch(
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json={"selected_race_insight_ids": [20, 10]},
+            )
+
+        assert resp.status_code == 200, resp.text
+        # selected_race_insight_ids no forma parte de AthleteNewsletterRead
+        # (permanece un detalle interno del router, igual que antes de 038)
+        # — se verifica el valor persistido directamente en DB.
+        await t102_session.refresh(nl)
+        assert nl.selected_race_insight_ids == [20, 10]
+
+    @pytest.mark.asyncio
+    async def test_approved_reverts_to_draft_on_edit(
+        self, t102_seed, t102_session, t102_client_factory
+    ):
+        now = datetime.now(timezone.utc)
+        nl = await _seed_t102_newsletter(
+            t102_session,
+            status=NewsletterStatus.approved,
+            approved_by_user_id=1,
+            approved_at=now,
+        )
+        client = t102_client_factory(t102_seed.admin)
+
+        async with client as c:
+            resp = await c.patch(
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json={"coach_note": "Nota corta de prueba para el mes."},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "draft"
+
+        await t102_session.refresh(nl)
+        assert nl.status == NewsletterStatus.draft
+        assert nl.approved_by_user_id is None
+        assert nl.approved_at is None
+
+    @pytest.mark.asyncio
+    async def test_partial_patch_leaves_unset_fields_untouched(
+        self, t102_seed, t102_session, t102_client_factory
+    ):
+        """Un PATCH que solo toca coach_note no debe tocar stage_overrides
+        ni hidden_blocks."""
+        nl = await _seed_t102_newsletter(t102_session)
+        client = t102_client_factory(t102_seed.admin)
+
+        body = {"coach_note": "Buen esfuerzo este mes en cada sesion de pista."}
+        async with client as c:
+            resp = await c.patch(
+                f"/api/athletes/5/monthly-newsletters/{nl.id}", json=body
+            )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["stage_overrides"] is None
+        assert data["hidden_blocks"] == []
+        assert data["coach_note"] == body["coach_note"]
+
+        await t102_session.refresh(nl)
+        assert nl.stage_overrides is None
+        assert nl.hidden_blocks is None
+
+    @pytest.mark.asyncio
+    async def test_sent_status_rejected_409(
+        self, t102_seed, t102_session, t102_client_factory
+    ):
+        nl = await _seed_t102_newsletter(t102_session, status=NewsletterStatus.sent)
+        client = t102_client_factory(t102_seed.admin)
+
+        async with client as c:
+            resp = await c.patch(
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json={"coach_note": "Intento de edicion tras el envio."},
+            )
+
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_denied_for_parent_role(
+        self, t102_seed, t102_session, t102_client_factory
+    ):
+        from app.models.user import User, UserRole
+
+        parent = User(
+            id=3,
+            email="parent@test.local",
+            first_name="Padre",
+            last_name="Test",
+            role=UserRole.parent,
+            is_active=True,
+            can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        t102_session.add(parent)
+        await t102_session.flush()
+        await t102_session.commit()
+
+        nl = await _seed_t102_newsletter(t102_session)
+        client = t102_client_factory(parent)
+
+        async with client as c:
+            resp = await c.patch(
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json={"coach_note": "Un padre no deberia poder editar esto."},
+            )
+
+        assert resp.status_code == 403

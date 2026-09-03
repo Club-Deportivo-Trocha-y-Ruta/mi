@@ -7,11 +7,9 @@ import { http, HttpResponse } from "msw";
 
 import type {
   AthleteNewsletter,
-  AiNarrative,
   AttachInsightsRequest,
   AttachInsightsResponse,
   BatchResult,
-  NarrativeOverride,
   NewsletterStatus,
 } from "@/types/athleteNewsletter.types";
 
@@ -84,16 +82,6 @@ export function makeNewsletter(
         total: 3,
       },
     },
-    ai_narrative: {
-      strengths:
-        "Demostró constancia en las sesiones y mejoró su técnica de descenso.",
-      area_to_develop: "Trabajar la cadencia en subidas largas.",
-      milestone: "Primera sesión completa sin parar en el circuito técnico.",
-      model: "gemini-2.5-flash-lite",
-      prompt_version: "v1",
-      confidence: "medium",
-    } as AiNarrative,
-    coach_narrative_overrides: null,
     badges_earned: [
       { badge_type: "attendance_90", label: "Asistencia 90%", description: "90% o más este mes" },
     ],
@@ -108,6 +96,14 @@ export function makeNewsletter(
     created_at: "2026-05-01T00:00:00Z",
     updated_at: "2026-05-01T00:00:00Z",
     // NOTE: sent_to is intentionally ABSENT — PII, never in API response
+    // -- Feature 038 (bitácora) — default sin stage_log generado aún --
+    stage_log: null,
+    stage_overrides: null,
+    hidden_blocks: [],
+    coach_note: null,
+    read_at: null,
+    delivery: [],
+    selected_race_insight_ids: [],
     ...overrides,
   };
   return base;
@@ -169,18 +165,18 @@ export const newsletterHandlers = [
     },
   ),
 
-  // PATCH /api/athletes/:athleteId/monthly-newsletters/:id — editar narrativa
+  // PATCH /api/athletes/:athleteId/monthly-newsletters/:id — editar la bitácora
   http.patch(
     "*/api/athletes/:athleteId/monthly-newsletters/:id",
     async ({ params, request }) => {
       const athleteId = Number(params.athleteId);
       const id = Number(params.id);
-      const body = (await request.json()) as { coach_narrative_overrides: NarrativeOverride };
+      const body = (await request.json()) as Partial<AthleteNewsletter>;
       return HttpResponse.json(
         makeNewsletter({
           id,
           athlete_id: athleteId,
-          coach_narrative_overrides: body.coach_narrative_overrides,
+          ...body,
         }),
       );
     },

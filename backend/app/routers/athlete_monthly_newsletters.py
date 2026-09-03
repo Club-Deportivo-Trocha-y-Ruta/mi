@@ -38,6 +38,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.dependencies import (
     get_db,
     get_document_generator,
@@ -49,7 +50,7 @@ from app.dependencies import (
 )
 from app.models.athlete import Athlete
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
-from app.models.club import ClubMember, ClubRole
+from app.models.club import ClubRole
 from app.models.user import User, UserRole
 from app.schemas.athlete_newsletter import (
     AthleteNewsletterBatchCreate,
@@ -59,9 +60,12 @@ from app.schemas.athlete_newsletter import (
     AthleteNewsletterRead,
     AttachInsightsRequest,
     AttachInsightsResponse,
+    DeliveryRow,
     NewsletterStatusSummary,
     NewsletterStatusSummaryItem,
+    RegenerateBlockRequest,
 )
+from app.models.newsletter_delivery_event import DeliveryEventType, NewsletterDeliveryEvent
 from app.services.permissions import user_club_role
 
 logger = logging.getLogger(__name__)
@@ -74,6 +78,104 @@ training_router = APIRouter()
 # ---------------------------------------------------------------------------
 # Helpers internos
 # ---------------------------------------------------------------------------
+
+
+def _mask_email(email: str) -> str:
+    """Enmascara un email para el panel de entrega (`j***@gmail.com`)."""
+    local, _, domain = email.partition("@")
+    if not domain:
+        return "***"
+    masked_local = f"{local[0]}***" if local else "***"
+    return f"{masked_local}@{domain}"
+
+
+async def _build_delivery_rows(db: AsyncSession, newsletter_id: int) -> list[DeliveryRow]:
+    """Arma `delivery: list[DeliveryRow]` a partir de `newsletter_delivery_events`
+    (feature 038, T401). Agrupa por `parent_user_id` cuando está disponible
+    (eventos `sent` / `web_read`); los eventos del webhook de Resend
+    (`delivered`/`opened`/`bounced`) no traen `parent_user_id` — se
+    correlacionan por `provider_message_id` compartido con el evento `sent`.
+    """
+    result = await db.execute(
+        select(NewsletterDeliveryEvent).where(
+            NewsletterDeliveryEvent.newsletter_id == newsletter_id
+        )
+    )
+    events = result.scalars().all()
+    if not events:
+        return []
+
+    # message_id -> parent_user_id, a partir de los eventos `sent`.
+    message_to_parent: dict[str, int] = {}
+    for ev in events:
+        if (
+            ev.event_type == DeliveryEventType.sent
+            and ev.provider_message_id
+            and ev.parent_user_id is not None
+        ):
+            message_to_parent[ev.provider_message_id] = ev.parent_user_id
+
+    rows_by_parent: dict[int, dict] = {}
+
+    def _row(parent_id: int) -> dict:
+        return rows_by_parent.setdefault(
+            parent_id,
+            {
+                "parent_user_id": parent_id,
+                "sent_at": None,
+                "delivered_at": None,
+                "opened_at": None,
+                "web_read_at": None,
+                "bounced": False,
+            },
+        )
+
+    for ev in events:
+        parent_id = ev.parent_user_id
+        if parent_id is None and ev.provider_message_id:
+            parent_id = message_to_parent.get(ev.provider_message_id)
+        if parent_id is None:
+            continue
+
+        row = _row(parent_id)
+        if ev.event_type == DeliveryEventType.sent:
+            if row["sent_at"] is None or ev.occurred_at < row["sent_at"]:
+                row["sent_at"] = ev.occurred_at
+        elif ev.event_type == DeliveryEventType.delivered:
+            row["delivered_at"] = ev.occurred_at
+        elif ev.event_type == DeliveryEventType.opened:
+            row["opened_at"] = ev.occurred_at
+        elif ev.event_type == DeliveryEventType.bounced:
+            row["bounced"] = True
+        elif ev.event_type == DeliveryEventType.web_read:
+            row["web_read_at"] = ev.occurred_at
+
+    if not rows_by_parent:
+        return []
+
+    parent_ids = list(rows_by_parent.keys())
+    users_result = await db.execute(select(User).where(User.id.in_(parent_ids)))
+    users_by_id = {u.id: u for u in users_result.scalars().all()}
+
+    delivery: list[DeliveryRow] = []
+    for parent_id, row in rows_by_parent.items():
+        user = users_by_id.get(parent_id)
+        if user is None or not user.email:
+            continue
+        delivery.append(
+            DeliveryRow(
+                parent_user_id=parent_id,
+                email_masked=_mask_email(user.email),
+                has_account=True,
+                sent_at=row["sent_at"],
+                delivered_at=row["delivered_at"],
+                opened_at=row["opened_at"],
+                web_read_at=row["web_read_at"],
+                bounced=row["bounced"],
+            )
+        )
+    delivery.sort(key=lambda r: r.email_masked)
+    return delivery
 
 
 def _coach_club_ids(user: User) -> set[int]:
@@ -129,6 +231,210 @@ async def _get_newsletter_or_404(
     return nl
 
 
+async def _build_forbidden_names(db: AsyncSession, club_id: int) -> frozenset[str]:
+    """Nombres/apellidos de los atletas del club — input de ``_redact_names``.
+
+    Compartido entre la generación de narrativa IA (v1/v2) y el guard de
+    redacción de ``coach_note`` (feature 038, T102): cualquier texto libre
+    del coach que llegue a una familia pasa por el mismo forbidden-names.
+    """
+    club_athletes_result = await db.execute(
+        select(Athlete).where(Athlete.club_id == club_id)
+    )
+    club_athletes = club_athletes_result.scalars().all()
+    return frozenset(
+        name
+        for a in club_athletes
+        for name in [a.first_name, a.last_name, f"{a.first_name} {a.last_name}"]
+        if name
+    )
+
+
+def _athlete_sex_value(athlete: Athlete) -> str | None:
+    """``Athlete.sex`` como ``str`` plano ("M"/"F"/None) — mismo criterio que
+    ``newsletter_builder._derive_athlete_reference`` (duplicado deliberado,
+    ver comentario ahí: evita acoplar routers a un import de modelo extra)."""
+    sex = getattr(athlete, "sex", None)
+    return sex.value if hasattr(sex, "value") else sex
+
+
+async def _resolve_family_insight(
+    db: AsyncSession,
+    nl: AthleteMonthlyNewsletter,
+    athlete: Athlete,
+    has_ai_consent: bool,
+) -> dict | None:
+    """Traducción familiar del análisis de carrera (037) lista para la
+    narrativa v2 y ``build_stage_log`` (feature 038, T201).
+
+    Combina ``family_translation.select_insight`` (elige el primer
+    ``AthleteAiInsight`` elegible de ``nl.selected_race_insight_ids``) con
+    ``family_translation.filter_for_family`` (recorte determinista) y el
+    ``valida_label`` de la carrera (``RaceEvent.name`` — no reinventa
+    ``race_labels.build_race_label``, fuera de alcance de T201). Retorna
+    ``None`` si no hay insight elegible o el recorte no deja ninguna acción
+    apta para familia (sin llamar nunca a un proveedor de IA).
+    """
+    from app.models.athlete_ai_insight import AthleteAiInsight
+    from app.services.training.family_translation import filter_for_family, select_insight
+    from sqlalchemy.orm import selectinload
+
+    selected = await select_insight(db, nl, has_ai_consent)
+    if selected is None:
+        return None
+    insight_id, insight_v3 = selected
+
+    row_result = await db.execute(
+        select(AthleteAiInsight)
+        .where(AthleteAiInsight.id == insight_id)
+        .options(selectinload(AthleteAiInsight.event))
+    )
+    row = row_result.scalar_one_or_none()
+    valida_label = (row.event.name if row is not None and row.event is not None else "") or ""
+
+    family_input = filter_for_family(insight_v3, valida_label=valida_label)
+    if family_input is None:
+        return None
+    return {**family_input.model_dump(), "source_insight_id": insight_id}
+
+
+async def _previous_stage_texts(
+    db: AsyncSession, athlete_id: int, year: int, month: int
+) -> tuple[str | None, str | None]:
+    """Título (para el prompt) y título+observaciones (para el guardrail de
+    solapamiento) del boletín v2 anterior más reciente del mismo atleta.
+
+    Busca hacia atrás mes a mes, hasta 12 meses, porque puede haber huecos
+    (periodos sin boletín generado) — no asume que el mes previo exista.
+    """
+    prev_year, prev_month = year, month
+    for _ in range(12):
+        prev_month -= 1
+        if prev_month == 0:
+            prev_month = 12
+            prev_year -= 1
+        result = await db.execute(
+            select(AthleteMonthlyNewsletter).where(
+                AthleteMonthlyNewsletter.athlete_id == athlete_id,
+                AthleteMonthlyNewsletter.year == prev_year,
+                AthleteMonthlyNewsletter.month == prev_month,
+            )
+        )
+        prev_nl = result.scalar_one_or_none()
+        if prev_nl is not None and prev_nl.stage_log_json:
+            stage_log = prev_nl.stage_log_json
+            title = stage_log.get("stage_title")
+            observations = stage_log.get("observations") or []
+            claims = " ".join(
+                o.get("claim", "") for o in observations if isinstance(o, dict)
+            )
+            text = f"{title or ''} {claims}".strip() or None
+            return title, text
+    return None, None
+
+
+def _serialize_block_value(value):
+    """JSON-serializa el valor de un bloque narrativo v2 (str, lista de
+    ``Observation`` o modelo Pydantic único) para persistir en ``ai_narrative``."""
+    if isinstance(value, list):
+        return [
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+            for item in value
+        ]
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return value
+
+
+async def _build_v2_stage_log_content(
+    db: AsyncSession,
+    athlete: Athlete,
+    year: int,
+    month: int,
+    metrics_snapshot: dict,
+    forbidden_names: frozenset[str],
+    has_ai_consent: bool,
+    llm_provider,
+    prompt_registry,
+    nl_for_insight_selection: AthleteMonthlyNewsletter,
+) -> tuple[dict | None, dict, str | None]:
+    """Genera ``(ai_narrative_dict, stage_log_json_dict, error_message)`` para
+    la bitácora de etapa (feature 038, T201).
+
+    Nunca lanza: sin consentimiento IA, o ante cualquier fallo del proveedor
+    (timeout/guardrails/error interno), la narrativa queda en ``None`` y
+    ``build_stage_log`` (Wave 1) produce una bitácora 100% estática — AC-2.5,
+    mismo criterio que el flujo v1 (``_generate_newsletter_for_athlete``).
+    """
+    from app.services.ai.errors import LLMSchemaError
+    from app.services.ai.use_cases.athlete_monthly_newsletter_v2 import (
+        AthleteMonthlyNewsletterV2UseCase,
+        StageNarrativeLLMTimeout,
+        build_context_from_metrics_v2,
+    )
+    from app.services.training.stage_log_builder import build_stage_log
+
+    family_input = await _resolve_family_insight(
+        db, nl_for_insight_selection, athlete, has_ai_consent
+    )
+    previous_stage_title, previous_stage_text = await _previous_stage_texts(
+        db, athlete.id, year, month
+    )
+
+    narrative = None
+    error_message: str | None = None
+
+    if has_ai_consent:
+        ctx = build_context_from_metrics_v2(
+            metrics_snapshot,
+            year,
+            month,
+            forbidden_names,
+            athlete_sex=_athlete_sex_value(athlete),
+            analyst_reading_input=family_input,
+            previous_stage_title=previous_stage_title,
+            previous_stage_text=previous_stage_text,
+        )
+        try:
+            uc = AthleteMonthlyNewsletterV2UseCase(provider=llm_provider, registry=prompt_registry)
+            narrative = await uc.run(ctx)
+        except StageNarrativeLLMTimeout:
+            logger.warning(
+                "Timeout IA v2 para bitácora | athlete_id=%d period=%d-%02d",
+                athlete.id, year, month,
+            )
+            error_message = "llm_timeout"
+        except LLMSchemaError as exc:
+            logger.warning(
+                "Error de parseo IA v2 | athlete_id=%d period=%d-%02d error=%s",
+                athlete.id, year, month, type(exc).__name__,
+            )
+            error_message = "guardrails_rejected"
+        except Exception as exc:
+            logger.error(
+                "Error IA v2 inesperado | athlete_id=%d period=%d-%02d error_type=%s",
+                athlete.id, year, month, type(exc).__name__,
+            )
+            error_message = "llm_internal_error"
+
+    ai_narrative_dict = narrative.model_dump() if narrative is not None else None
+
+    stage_log = build_stage_log(
+        metrics_snapshot,
+        narrative,
+        family_input,
+        None,
+        None,
+        None,
+        _athlete_sex_value(athlete),
+        athlete.first_name,
+    )
+    if narrative is not None and narrative.grounding_violations:
+        stage_log.grounding_violations = list(narrative.grounding_violations)
+
+    return ai_narrative_dict, stage_log.model_dump(mode="json"), error_message
+
+
 def _validate_period(year: int, month: int, force: bool = False) -> None:
     """Valida que el periodo está cerrado (no puede generar boletín del mes actual)."""
     today = date.today()
@@ -153,19 +459,9 @@ async def _generate_newsletter_for_athlete(
     llm_provider,
     prompt_registry,
 ) -> AthleteMonthlyNewsletter:
-    """Crea o regenera el borrador del boletín para un atleta."""
+    """Crea o regenera el borrador de la bitácora (StageLog v2) para un atleta."""
     from app.services.privacy import athlete_has_ai_processing_consent
     from app.services.training.newsletter_builder import build_newsletter_metrics
-    from app.services.training.newsletter_static_copy import (
-        COACH_NARRATIVE_UNAVAILABLE,
-        build_static_narrative,
-    )
-    from app.services.ai.use_cases.athlete_monthly_newsletter import (
-        AthleteNewsletterLLMTimeout,
-        AthleteNewsletterUseCase,
-        build_context_from_metrics,
-    )
-    from app.services.ai.errors import LLMSchemaError
 
     # Consentimiento Ley 1581 para procesamiento con IA.
     # US3 (FR-009/FR-010): la ausencia de consentimiento ya NO bloquea el
@@ -196,90 +492,30 @@ async def _generate_newsletter_for_athlete(
     # Construir métricas
     metrics_snapshot = await build_newsletter_metrics(db, athlete.id, year, month)
 
-    # Construir nombres prohibidos para guardrails
-    from sqlalchemy import select as sa_select
-    from app.models.athlete import ParentAthlete
+    # Construir nombres prohibidos para guardrails (compañeros del club)
+    forbidden_names = await _build_forbidden_names(db, athlete.club_id)
 
-    # Compañeros del club (para redacción)
-    club_athletes_result = await db.execute(
-        sa_select(Athlete).where(Athlete.club_id == athlete.club_id)
+    # ``existing`` ya trae ``selected_race_insight_ids`` si el coach adjuntó
+    # insights vía attach-insights antes de generar (upsert). Sin fila
+    # previa, un objeto transitorio (nunca añadido a la sesión) basta para
+    # ``select_insight`` — solo lee athlete_id/year/month/
+    # selected_race_insight_ids, y una lista vacía retorna None de inmediato
+    # sin tocar la DB.
+    nl_for_insight_selection = existing or AthleteMonthlyNewsletter(
+        athlete_id=athlete.id, year=year, month=month, selected_race_insight_ids=None
     )
-    club_athletes = club_athletes_result.scalars().all()
-    forbidden_names: frozenset[str] = frozenset(
-        name
-        for a in club_athletes
-        for name in [a.first_name, a.last_name, f"{a.first_name} {a.last_name}"]
-        if name
+    ai_narrative_dict, stage_log_json, error_message = await _build_v2_stage_log_content(
+        db=db,
+        athlete=athlete,
+        year=year,
+        month=month,
+        metrics_snapshot=metrics_snapshot,
+        forbidden_names=forbidden_names,
+        has_ai_consent=has_ai_consent,
+        llm_provider=llm_provider,
+        prompt_registry=prompt_registry,
+        nl_for_insight_selection=nl_for_insight_selection,
     )
-
-    # Fallback estático determinista: subtítulos por bloque + resumen del mes +
-    # placeholder de la valoración del entrenador. Siempre disponible (sin red).
-    email_blocks_for_static = metrics_snapshot.get("email_blocks", {})
-    static_narrative = build_static_narrative(email_blocks_for_static)
-
-    # Generar narrativa IA (solo con consentimiento).
-    ai_narrative_dict: dict | None = None
-    error_message: str | None = None
-
-    if not has_ai_consent:
-        # Sin consentimiento: NO se llama al LLM. La narrativa del entrenador
-        # queda con placeholder neutro; el resto cae al fallback estático.
-        ai_narrative_dict = {
-            **static_narrative,
-            "strengths": COACH_NARRATIVE_UNAVAILABLE,
-            "area_to_develop": "",
-            "milestone": "",
-        }
-    else:
-        try:
-            ai_use_case = AthleteNewsletterUseCase(
-                provider=llm_provider,
-                registry=prompt_registry,
-            )
-            ai_ctx = build_context_from_metrics(
-                metrics_snapshot=metrics_snapshot,
-                year=year,
-                month=month,
-                forbidden_names=forbidden_names,
-            )
-            ai_result = await ai_use_case.run(ai_ctx)
-            ai_narrative_dict = ai_result.model_dump()
-            # Rellenar con el fallback estático cualquier caption/highlight que la
-            # IA no haya producido (o que el guardrail haya descartado).
-            if not ai_narrative_dict.get("block_captions"):
-                ai_narrative_dict["block_captions"] = static_narrative["block_captions"]
-            if not ai_narrative_dict.get("month_highlights"):
-                ai_narrative_dict["month_highlights"] = static_narrative["month_highlights"]
-        except AthleteNewsletterLLMTimeout:
-            logger.warning(
-                "Timeout IA para boletín | athlete_id=%d period=%d-%02d",
-                athlete.id, year, month,
-            )
-            error_message = "llm_timeout"
-        except LLMSchemaError as exc:
-            logger.warning(
-                "Error guardrails IA | athlete_id=%d period=%d-%02d error=%s",
-                athlete.id, year, month, type(exc).__name__,
-            )
-            # Catálogo de mensajes genéricos — el detalle técnico queda solo en logs
-            # para evitar exponer mensajes del LLM o señales de qué pasó por guardrails.
-            error_message = "guardrails_rejected"
-        except Exception as exc:
-            logger.error(
-                "Error IA inesperado | athlete_id=%d period=%d-%02d error_type=%s",
-                athlete.id, year, month, type(exc).__name__,
-            )
-            error_message = "llm_internal_error"
-
-        # Si la IA falló (timeout/guardrails/interno), degradar a estático en
-        # lugar de dejar el boletín sin contenido legible para la familia.
-        if error_message is not None:
-            ai_narrative_dict = {
-                **static_narrative,
-                "strengths": COACH_NARRATIVE_UNAVAILABLE,
-                "area_to_develop": "",
-                "milestone": "",
-            }
 
     now = datetime.now(timezone.utc)
     # El boletín se considera 'draft' aunque la IA haya fallado: el fallback
@@ -291,7 +527,7 @@ async def _generate_newsletter_for_athlete(
         existing.status = final_status
         existing.metrics_snapshot = metrics_snapshot
         existing.ai_narrative = ai_narrative_dict
-        existing.coach_narrative_overrides = None
+        existing.stage_log_json = stage_log_json
         existing.badges_earned = metrics_snapshot.get("email_blocks", {}).get("badges", {}).get("items")
         existing.generated_by_user_id = current_user.id
         existing.error_message = error_message
@@ -308,7 +544,7 @@ async def _generate_newsletter_for_athlete(
         status=final_status,
         metrics_snapshot=metrics_snapshot,
         ai_narrative=ai_narrative_dict,
-        coach_narrative_overrides=None,
+        stage_log_json=stage_log_json,
         badges_earned=metrics_snapshot.get("email_blocks", {}).get("badges", {}).get("items"),
         generated_by_user_id=current_user.id,
         error_message=error_message,
@@ -530,7 +766,8 @@ async def get_newsletter(
     """Detalle de un boletín."""
     await _verify_coach_athlete_access(db, current_user, athlete_id)
     nl = await _get_newsletter_or_404(db, newsletter_id, athlete_id)
-    return AthleteNewsletterRead.from_orm_model(nl)
+    delivery = await _build_delivery_rows(db, nl.id)
+    return AthleteNewsletterRead.from_orm_model(nl, delivery=delivery)
 
 
 # ---------------------------------------------------------------------------
@@ -549,27 +786,40 @@ async def download_newsletter_pdf(
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     document_generator=Depends(get_document_generator),
 ) -> Response:
-    """Descarga el PDF del boletín (genera si no existe aún)."""
+    """Descarga el PDF de la bitácora (genera si no existe aún).
+
+    ``generate_stage_log_pdf`` — máx. 3 páginas, anexo de crecimiento
+    condicional (solo cuando hubo medición o carrera en el mes).
+    """
     athlete = await _verify_coach_athlete_access(db, current_user, athlete_id)
     nl = await _get_newsletter_or_404(db, newsletter_id, athlete_id)
 
-    from app.services.notification.athlete_newsletter_pdf import generate_newsletter_pdf
+    if not nl.stage_log_json:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este boletín todavía no tiene una bitácora generada.",
+        )
 
     snapshot = nl.metrics_snapshot or {}
-    email_blocks = snapshot.get("email_blocks", {})
     pdf_only_blocks = snapshot.get("pdf_only_blocks", {})
 
-    doc, sha256 = await generate_newsletter_pdf(
+    from app.services.notification.athlete_newsletter_pdf import generate_stage_log_pdf
+    from app.services.training.stage_log import StageLog, to_parent_dto
+
+    stage_log_obj = StageLog.model_validate(nl.stage_log_json)
+    parent_dto = to_parent_dto(stage_log_obj, nl.hidden_blocks)
+
+    doc, sha256 = await generate_stage_log_pdf(
         generator=document_generator,
         athlete_first_name=athlete.first_name,
         athlete_last_name=athlete.last_name,
         athlete_id=athlete.id,
         year=nl.year,
         month=nl.month,
-        email_blocks=email_blocks,
-        pdf_only_blocks=pdf_only_blocks,
-        ai_narrative=nl.ai_narrative,
-        coach_narrative_overrides=nl.coach_narrative_overrides,
+        stage_log=parent_dto,
+        anthropometry=pdf_only_blocks.get("anthropometry"),
+        charts_context=pdf_only_blocks.get("charts_context"),
+        percentile_curves=pdf_only_blocks.get("percentile_curves"),
     )
 
     # Actualizar hash si cambió
@@ -590,6 +840,158 @@ async def download_newsletter_pdf(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/athletes/{athlete_id}/monthly-newsletters/{id}/render?surface=email
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{athlete_id}/monthly-newsletters/{newsletter_id}/render",
+    tags=["athlete-newsletters"],
+)
+async def render_newsletter_surface(
+    athlete_id: int,
+    newsletter_id: int,
+    surface: Literal["email"] = Query(default="email"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    template_registry=Depends(get_template_registry),
+) -> Response:
+    """Devuelve el HTML del email tal como lo verá la familia (feature 038,
+    AC-4.1: toggle "Correo" del studio, ``EmailPreviewFrame`` en un
+    ``<iframe sandbox>``).
+
+    - Único ``surface`` soportado hoy: ``email`` (contracts/api.md §Coach).
+    - El nombre del padre se reemplaza por "Familia" — este preview es
+      accesible al coach, que no debe ver el nombre real de un padre que no
+      sea el suyo (defensa en profundidad, aunque hoy la ruta ya exige que
+      el atleta pertenezca al club del coach).
+    - 409 si ``stage_log_json`` todavía no se derivó — nada family-safe que
+      renderizar (mismo criterio que ``parent_newsletters.py``).
+    - ``Content-Security-Policy: sandbox`` — el HTML nunca debe poder
+      ejecutar scripts ni navegar el resto del studio.
+    """
+    athlete = await _verify_coach_athlete_access(db, current_user, athlete_id)
+    nl = await _get_newsletter_or_404(db, newsletter_id, athlete_id)
+
+    if not nl.stage_log_json:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Este boletín todavía no tiene una bitácora generada para "
+                "previsualizar."
+            ),
+        )
+
+    from app.services.notification.newsletter_dispatcher import _render_email_template
+    from app.services.training.stage_log import StageLog, to_parent_dto
+
+    stage_log_obj = StageLog.model_validate(nl.stage_log_json)
+    parent_dto = to_parent_dto(stage_log_obj, nl.hidden_blocks)
+
+    cta_url = f"{settings.frontend_base_url}/my-athletes/{athlete_id}/bitacora/{nl.id}"
+
+    email_context = {
+        "parent_name": "Familia",
+        "club_name": "Club Deportivo Trocha y Ruta",
+        "month_label": _month_label(nl.year, nl.month),
+        "season_year": str(nl.year),
+        "children": [
+            {
+                "athlete_id": athlete_id,
+                "athlete_first_name": athlete.first_name,
+                "stage_log": parent_dto,
+                "cta_url": cta_url,
+                "cta_label": "Ver la bitácora completa",
+            }
+        ],
+    }
+
+    html = _render_email_template(
+        template_registry, email_context, body_path="email/athlete_stage_log.html"
+    )
+
+    return Response(
+        content=html,
+        media_type="text/html",
+        headers={"Content-Security-Policy": "sandbox"},
+    )
+
+
+def _month_label(year: int, month: int) -> str:
+    months_es = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    ]
+    return f"{months_es[month - 1]} {year}"
+
+
+async def _rederive_stage_log(
+    db: AsyncSession,
+    nl: AthleteMonthlyNewsletter,
+    athlete: Athlete,
+) -> None:
+    """Re-deriva ``stage_log_json`` tras un PATCH que tocó contenido de la bitácora.
+
+    Se protege con un ``except Exception`` amplio (no solo ``ImportError``):
+    la responsabilidad de contenido (``stage_overrides``, ``hidden_blocks``,
+    ``coach_note``) ya se persistió antes de llamar a este helper, así que un
+    fallo acá nunca tira la respuesta 200 del PATCH — el coach sigue viendo
+    el ``stage_log_json`` previo hasta el próximo PATCH o regeneración
+    exitosa.
+
+    ``build_stage_log`` firma:
+    ``build_stage_log(snapshot, narrative, family_input, overrides,
+    coach_note, hidden_blocks, athlete_sex, athlete_first_name) -> StageLog``.
+    """
+    try:
+        from app.services.training.stage_log_builder import build_stage_log
+        from app.services.privacy import athlete_has_ai_processing_consent
+    except Exception as exc:  # noqa: BLE001 — ver docstring: import defensivo
+        logger.debug(
+            "stage_log_builder aun no disponible (o con error de import) — "
+            "PATCH persiste columnas v2 pero no re-deriva stage_log_json "
+            "todavia | newsletter_id=%d error_type=%s",
+            nl.id, type(exc).__name__,
+        )
+        return
+
+    try:
+        consent = await athlete_has_ai_processing_consent(athlete.id, db)
+        # ``_resolve_family_insight`` combina select_insight (037) +
+        # filter_for_family (recorte determinista) + el valida_label del
+        # evento — pasar el tuple crudo de select_insight acá (versión
+        # anterior de este helper) dejaba analyst_reading siempre vacío,
+        # porque build_stage_log espera un Mapping/objeto con
+        # valida_label/source_insight_id, no un tuple (insight_id, InsightV3).
+        family_input = await _resolve_family_insight(db, nl, athlete, consent)
+        stage_log = build_stage_log(
+            nl.metrics_snapshot,
+            nl.ai_narrative,
+            family_input,
+            nl.stage_overrides,
+            nl.coach_note,
+            nl.hidden_blocks,
+            _athlete_sex_value(athlete),
+            athlete.first_name,
+        )
+        if nl.ai_narrative:
+            persisted_violations = nl.ai_narrative.get("grounding_violations")
+            if persisted_violations:
+                stage_log.grounding_violations = list(persisted_violations)
+        nl.stage_log_json = stage_log.model_dump(mode="json")
+    except Exception as exc:
+        # Best-effort: las columnas ya persistieron (stage_overrides,
+        # hidden_blocks, coach_note); si la re-derivación falla el coach
+        # sigue viendo el stage_log_json previo hasta el próximo PATCH o
+        # regeneración exitosa, en vez de perder la edición.
+        logger.warning(
+            "Error re-derivando stage_log_json en PATCH | newsletter_id=%d "
+            "error_type=%s",
+            nl.id, type(exc).__name__,
+        )
+
+
+# ---------------------------------------------------------------------------
 # PATCH /api/athletes/{athlete_id}/monthly-newsletters/{id}
 # ---------------------------------------------------------------------------
 
@@ -606,17 +1008,221 @@ async def patch_newsletter(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> AthleteNewsletterRead:
-    """Edita la narrativa del boletín (solo si status=draft)."""
-    await _verify_coach_athlete_access(db, current_user, athlete_id)
+    """Edita el contenido de la bitácora (feature 038).
+
+    - Se acepta con status ``draft`` o ``approved``; si estaba ``approved``
+      y el PATCH cambió algo, vuelve a ``draft`` (una edición invalida la
+      aprobación previa — feature 038 AC-4.4 / contracts/api.md §Coach
+      PATCH). Cualquier otro estado (``sent``, ``failed``, ``outdated``) →
+      409.
+    - PATCH parcial por diseño: solo se tocan las columnas cuyo campo llegó
+      en el body (``stage_overrides``, ``hidden_blocks``, ``coach_note``,
+      ``selected_race_insight_ids``).
+    - ``selected_race_insight_ids`` solo reordena: debe ser una permutación
+      exacta del valor ya guardado (mismo multiset), si no → 422. Para
+      agregar/quitar insights se usa ``POST .../attach-insights``.
+    - ``coach_note`` pasa por el mismo guard de redacción de nombres
+      (compañeros del club) que la narrativa IA del boletín antes de
+      persistir.
+    - Cualquier PATCH que cambie contenido invalida el PDF ya generado
+      (``pdf_sha256 = None``) para que "Descargar PDF" regenere en la
+      próxima descarga (lógica ya existente, reutilizada acá).
+    """
+    athlete = await _verify_coach_athlete_access(db, current_user, athlete_id)
     nl = await _get_newsletter_or_404(db, newsletter_id, athlete_id)
 
-    if nl.status != NewsletterStatus.draft:
+    if nl.status not in (NewsletterStatus.draft, NewsletterStatus.approved):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Solo se puede editar un boletín en estado 'draft'. Estado actual: '{nl.status.value}'.",
+            detail=(
+                "Solo se puede editar un boletín en estado 'draft' o "
+                f"'approved'. Estado actual: '{nl.status.value}'."
+            ),
         )
 
-    nl.coach_narrative_overrides = body.coach_narrative_overrides.model_dump(exclude_none=True)
+    content_changed = False
+
+    if body.stage_overrides is not None:
+        nl.stage_overrides = body.stage_overrides
+        content_changed = True
+
+    if body.hidden_blocks is not None:
+        nl.hidden_blocks = body.hidden_blocks
+        content_changed = True
+
+    if body.coach_note is not None:
+        from app.services.ai.use_cases.monthly_report import _redact_names
+
+        forbidden_names = await _build_forbidden_names(db, athlete.club_id)
+        nl.coach_note = _redact_names(body.coach_note, forbidden_names) or None
+        content_changed = True
+
+    if body.selected_race_insight_ids is not None:
+        current_ids = nl.selected_race_insight_ids or []
+        if sorted(body.selected_race_insight_ids) != sorted(current_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "selected_race_insight_ids debe ser una permutación de "
+                    "los insights ya adjuntados a este boletín. Usa "
+                    "POST .../attach-insights para agregar o quitar."
+                ),
+            )
+        nl.selected_race_insight_ids = body.selected_race_insight_ids
+        content_changed = True
+
+    if content_changed and nl.status == NewsletterStatus.approved:
+        nl.status = NewsletterStatus.draft
+        nl.approved_by_user_id = None
+        nl.approved_at = None
+
+    if content_changed:
+        nl.pdf_sha256 = None
+        await _rederive_stage_log(db, nl, athlete)
+
+    nl.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    await db.commit()
+
+    return AthleteNewsletterRead.from_orm_model(nl)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/athletes/{athlete_id}/monthly-newsletters/{id}/regenerate-block
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{athlete_id}/monthly-newsletters/{newsletter_id}/regenerate-block",
+    response_model=AthleteNewsletterRead,
+    tags=["athlete-newsletters"],
+)
+async def regenerate_newsletter_block(
+    athlete_id: int,
+    newsletter_id: int,
+    body: RegenerateBlockRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    llm_provider=Depends(get_llm_provider),
+    prompt_registry=Depends(get_prompt_registry),
+) -> AthleteNewsletterRead:
+    """Regenera un único bloque narrativo de la bitácora (feature 038, T201).
+
+    contracts/api.md §Coach POST .../regenerate-block:
+    - 409 si el boletín no es v2, o si ``status == sent``.
+    - 451 si el atleta no tiene consentimiento IA (Ley 1581/2012 Art. 9).
+    - 503 si el proveedor falla (timeout/JSON inválido incluso tras
+      reparación) o si los guardrails rechazan el bloque regenerado — en
+      ambos casos el bloque anterior queda intacto, sin persistir nada.
+    - 200: el bloque queda en ``ai_narrative[block]``, cualquier override
+      manual de ese bloque se limpia (``stage_overrides``), y
+      ``stage_log_json`` se re-deriva (``block_states[block] = "ai"``).
+    """
+    athlete = await _verify_coach_athlete_access(db, current_user, athlete_id)
+    nl = await _get_newsletter_or_404(db, newsletter_id, athlete_id)
+
+    if nl.status == NewsletterStatus.sent:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede regenerar un bloque de un boletín ya enviado.",
+        )
+
+    from app.services.privacy import athlete_has_ai_processing_consent
+
+    has_consent = await athlete_has_ai_processing_consent(athlete.id, db)
+    if not has_consent:
+        raise HTTPException(
+            status_code=status.HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS,
+            detail=(
+                "No se puede regenerar con IA: el atleta no tiene "
+                "consentimiento de procesamiento con IA (Ley 1581/2012 Art. 9)."
+            ),
+        )
+
+    from app.services.ai.errors import LLMSchemaError
+    from app.services.ai.use_cases.athlete_monthly_newsletter_v2 import (
+        AthleteMonthlyNewsletterV2UseCase,
+        StageNarrativeLLMTimeout,
+        build_context_from_metrics_v2,
+    )
+    from app.services.ai.use_cases.monthly_report import _redact_names
+
+    forbidden_names = await _build_forbidden_names(db, athlete.club_id)
+    family_input = await _resolve_family_insight(db, nl, athlete, has_consent)
+    previous_stage_title, previous_stage_text = await _previous_stage_texts(
+        db, athlete.id, nl.year, nl.month
+    )
+
+    ctx = build_context_from_metrics_v2(
+        nl.metrics_snapshot or {},
+        nl.year,
+        nl.month,
+        forbidden_names,
+        athlete_sex=_athlete_sex_value(athlete),
+        analyst_reading_input=family_input,
+        previous_stage_title=previous_stage_title,
+        previous_stage_text=previous_stage_text,
+    )
+
+    # La instrucción libre del coach ("menciona la lluvia") se inserta tal
+    # cual en el prompt (ver athlete_monthly_newsletter_v2.j2 §"Bloque
+    # solicitado") — a diferencia de coach_note (que solo se persiste), este
+    # texto viaja SIEMPRE a un proveedor de IA externo, así que debe pasar
+    # por el mismo guard de redacción de nombres antes de llegar ahí (Ley
+    # 1581 / CLAUDE.md: nunca nombres reales a un proveedor de IA).
+    safe_instruction = (
+        _redact_names(body.instruction, forbidden_names) if body.instruction else None
+    )
+
+    uc = AthleteMonthlyNewsletterV2UseCase(provider=llm_provider, registry=prompt_registry)
+    try:
+        new_value = await uc.regenerate_block(ctx, body.block, instruction=safe_instruction)
+    except (StageNarrativeLLMTimeout, LLMSchemaError) as exc:
+        logger.warning(
+            "Fallo del proveedor IA regenerando bloque | newsletter_id=%d "
+            "block=%s error_type=%s",
+            nl.id, body.block, type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El proveedor de IA no pudo generar el bloque. Intenta de nuevo.",
+        ) from exc
+    except Exception as exc:
+        logger.error(
+            "Error IA inesperado regenerando bloque | newsletter_id=%d "
+            "block=%s error_type=%s",
+            nl.id, body.block, type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El proveedor de IA no pudo generar el bloque. Intenta de nuevo.",
+        ) from exc
+
+    if new_value is None:
+        # Guardrails rechazaron el bloque regenerado (grounding/frase
+        # prohibida/nombre/etc.) — mismo tratamiento que un fallo del
+        # proveedor: el bloque anterior queda intacto, nada se persiste.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El proveedor de IA no generó un bloque válido. Intenta de nuevo.",
+        )
+
+    ai_narrative = dict(nl.ai_narrative or {})
+    ai_narrative[body.block] = _serialize_block_value(new_value)
+    nl.ai_narrative = ai_narrative
+
+    if nl.stage_overrides and body.block in nl.stage_overrides:
+        overrides = dict(nl.stage_overrides)
+        overrides.pop(body.block, None)
+        nl.stage_overrides = overrides or None
+
+    if nl.status == NewsletterStatus.approved:
+        nl.status = NewsletterStatus.draft
+        nl.approved_by_user_id = None
+        nl.approved_at = None
+
+    nl.pdf_sha256 = None
+    await _rederive_stage_log(db, nl, athlete)
     nl.updated_at = datetime.now(timezone.utc)
     await db.flush()
     await db.commit()
@@ -675,6 +1281,13 @@ async def send_newsletter(
     athlete_id: int,
     newsletter_id: int,
     force_individual: bool = Query(default=False),
+    force_resend: bool = Query(
+        default=False,
+        description=(
+            "(feature 038, T302 DeliveryPanel) Reenvía aunque el boletín ya "
+            "esté en status=sent. Sin este flag, un boletín sent → 409."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     email_settings=Depends(get_email_settings),
@@ -683,21 +1296,22 @@ async def send_newsletter(
 ) -> dict:
     """Envía el boletín a los padres del atleta.
 
-    - Requiere status=approved.
+    - Requiere status=approved (o status=sent con force_resend=true).
     - Si el padre tiene otros hijos con newsletter en draft del mismo periodo,
       bloquea el envío a menos que force_individual=true.
-    - Es idempotente: si ya está sent, retorna 409.
+    - Es idempotente: si ya está sent y no se pide force_resend, retorna 409.
     """
     await _verify_coach_athlete_access(db, current_user, athlete_id)
     nl = await _get_newsletter_or_404(db, newsletter_id, athlete_id)
 
-    if nl.status == NewsletterStatus.sent:
+    if nl.status == NewsletterStatus.sent and not force_resend:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Este boletín ya fue enviado. Usa force_resend si necesitas reenviar.",
         )
 
-    if nl.status != NewsletterStatus.approved:
+    resending_sent = force_resend and nl.status == NewsletterStatus.sent
+    if nl.status != NewsletterStatus.approved and not resending_sent:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Solo se puede enviar un boletín aprobado. Estado actual: '{nl.status.value}'.",
@@ -714,7 +1328,7 @@ async def send_newsletter(
         registry=template_registry,
         newsletter_ids=[nl.id],
         force_individual=force_individual,
-        force_resend=False,
+        force_resend=force_resend,
     )
 
     if dispatch_result.newsletters_blocked:

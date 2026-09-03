@@ -4,9 +4,9 @@
  * Cubre:
  *  - Guardrails: sin efecto con foco en <input>/<textarea>/[contenteditable],
  *    ni con un overlay Radix abierto (`[data-state="open"]` en el DOM).
- *  - Cada binding de área: `g` luego `i/e/c/a/f/b` navega al target por
+ *  - Cada binding de área: `g` luego `i/e/c/a/f` navega al target por
  *    defecto de la NavArea correspondiente (home/training/competitions/
- *    athletes/families/library), respetando visibilidad por rol (admin no
+ *    athletes/families), respetando visibilidad por rol (admin no
  *    ve "athletes").
  *  - El chord expira si la segunda tecla no llega a tiempo o no es válida.
  *  - `n` invoca onOpenQuickCreate; `?` invoca onOpenShortcutsHelp.
@@ -90,12 +90,6 @@ describe("useKeyboardShortcuts", () => {
     renderHook(() => useKeyboardShortcuts({ role: "coach" }), { wrapper });
     pressChord("f");
     expect(mockNavigate).toHaveBeenCalledWith("/parents");
-  });
-
-  it("navigates to /technique on g b (Biblioteca)", () => {
-    renderHook(() => useKeyboardShortcuts({ role: "coach" }), { wrapper });
-    pressChord("b");
-    expect(mockNavigate).toHaveBeenCalledWith("/technique");
   });
 
   it("resets the chord if the second key is not a bound area key", () => {

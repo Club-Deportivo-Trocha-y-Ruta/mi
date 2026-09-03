@@ -193,11 +193,11 @@ Datos del ejemplo: percentil 58.3, posición real 7, esperada 5, delta -2, gap a
       "derived_from": 0
     },
     {
-      "text": "Dos bloques de 20 min de descensos y bermas por semana, con circuito de repetición corta.",
-      "category": "technique",
+      "text": "Aplicar la plantilla de intervalos de series cortas dos veces por semana antes de la próxima válida.",
+      "category": "volume",
       "priority": "med",
       "horizon": "next_race",
-      "catalog_ref": {"kind": "technique_skill", "code": "D", "label": null},
+      "catalog_ref": {"kind": "interval_template", "code": "12", "label": null},
       "derived_from": 1
     }
   ],
@@ -230,7 +230,7 @@ Devuelve **solo** un objeto JSON válido con esta forma, sin markdown alrededor 
   "actions": [
     {"text": "str", "category": "technique|volume|recovery|nutrition|psychology|tactics",
      "priority": "low|med|high", "horizon": "next_week|next_race|season",
-     "catalog_ref": {"kind": "technique_skill|strength_block|interval_template", "code": "str", "label": null},
+     "catalog_ref": {"kind": "interval_template", "code": "str", "label": null},
      "derived_from": "int|null"}
   ],
   "watch_signals": ["str"],

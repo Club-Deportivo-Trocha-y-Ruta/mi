@@ -46,23 +46,24 @@ describe("BottomNav — variantes por rol (contracts/mobile-navigation.md)", () 
     expect(linkNames).toEqual(labels);
   });
 
-  it("coach NO ve Biblioteca en la barra (4º slot es Atletas)", () => {
+  it("coach NO ve Familias en la barra (4º slot es Atletas)", () => {
     renderBottomNav("coach");
 
     expect(
-      screen.queryByRole("link", { name: /Biblioteca/ }),
+      screen.queryByRole("link", { name: /Familias/ }),
     ).not.toBeInTheDocument();
   });
 
-  it("admin ve Inicio, Entrenamiento, Competencias, Biblioteca y Más (4º slot sustituido, research R6)", () => {
+  it("admin ve Inicio, Entrenamiento, Competencias y Más — sin 4º slot (research R6)", () => {
     renderBottomNav("admin");
 
-    const labels = ["Inicio", "Entrenamiento", "Competencias", "Biblioteca"];
+    const labels = ["Inicio", "Entrenamiento", "Competencias"];
     for (const label of labels) {
       expect(
         screen.getByRole("link", { name: new RegExp(label) }),
       ).toBeInTheDocument();
     }
+    expect(screen.queryByRole("link", { name: /Familias/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Más/ })).toBeInTheDocument();
   });
 

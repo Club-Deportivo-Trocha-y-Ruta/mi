@@ -131,11 +131,8 @@ def test_invoke_v3_reads_v3_timeout_setting():
 
 def test_catalog_label_resolves_name_for_valid_code():
     catalog = {
-        "technique_skills": [{"code": "H", "name": "Cambios y cadencia", "focus": "x"}],
-        "strength_blocks": [{"id": 2, "name": "Full Body (13-15)"}],
-        "interval_templates": [],
+        "interval_templates": [{"id": 2, "name": "Base aeróbica (13-15)"}],
     }
-    assert _catalog_label(catalog, "technique_skill", "H") == "Cambios y cadencia"
-    assert _catalog_label(catalog, "strength_block", "2") == "Full Body (13-15)"
-    assert _catalog_label(catalog, "technique_skill", "Z") is None
-    assert _catalog_label(None, "technique_skill", "H") is None
+    assert _catalog_label(catalog, "interval_template", "2") == "Base aeróbica (13-15)"
+    assert _catalog_label(catalog, "interval_template", "Z") is None
+    assert _catalog_label(None, "interval_template", "2") is None

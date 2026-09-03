@@ -40,8 +40,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TRAINING_WINDOW_DAYS = 28
 
 _EMPTY_CATALOG: dict[str, list] = {
-    "technique_skills": [],
-    "strength_blocks": [],
     "interval_templates": [],
 }
 

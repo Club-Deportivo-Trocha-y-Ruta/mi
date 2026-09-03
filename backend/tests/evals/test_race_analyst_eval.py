@@ -977,8 +977,6 @@ def test_v3_ideal_outputs_use_only_catalog_refs_present_in_the_case() -> None:
     for case_id, case in _ALL_CASES_V3:
         catalog = case["input"].get("catalog_context") or {}
         by_kind = {
-            "technique_skill": {str(s.get("code")) for s in catalog.get("technique_skills") or []},
-            "strength_block": {str(b.get("id")) for b in catalog.get("strength_blocks") or []},
             "interval_template": {str(t.get("id")) for t in catalog.get("interval_templates") or []},
         }
         for action in case["ideal_output"].get("actions") or []:

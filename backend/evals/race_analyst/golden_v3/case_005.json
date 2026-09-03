@@ -114,7 +114,9 @@
       },
       "growth_velocity_cm_per_year": 9.1,
       "months_from_phv": -2.4,
-      "flags": ["approaching_circa_phv"]
+      "flags": [
+        "approaching_circa_phv"
+      ]
     },
     "training_window": {
       "window_days": 28,
@@ -132,9 +134,10 @@
       "rubric_effort_mean": 4.4,
       "rubric_attitude_mean": 4.5,
       "rubric_technique_mean": 3.3,
-      "technical_foci": ["Separación cuerpo-bici", "Trazado de curvas"],
-      "skill_codes_worked": ["E", "F"],
-      "strength_sessions": 3,
+      "technical_foci": [
+        "Separación cuerpo-bici",
+        "Trazado de curvas"
+      ],
       "interval_sessions": 0,
       "days_since_last_session": 3,
       "days_since_previous_race": 28,
@@ -154,22 +157,26 @@
       }
     ],
     "catalog_context": {
-      "technique_skills": [
-        {"code": "A", "name": "Posición neutra/lista y equilibrio", "focus": "Postura atlética, peso centrado, trackstand"},
-        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"},
-        {"code": "F", "name": "Separación cuerpo-bici", "focus": "Levantar rueda, manual, bunny hop"}
-      ],
-      "strength_blocks": [
-        {"id": 22, "name": "Core y estabilidad con peso corporal", "age_band": "12-14"}
-      ],
-      "interval_templates": []
+      "interval_templates": [
+        {
+          "id": 1,
+          "name": "Plantilla base de intervalos",
+          "age_band": "10-12",
+          "mesocycle_phase": "base"
+        }
+      ]
     },
     "memory_recent_insights": [
       "Válida 3 · Copa: percentil 50 con asistencia alta y coordinación irregular",
       "Válida 2 · Copa: percentil 66.7 sin cambios de carga"
     ]
   },
-  "expected_themes": ["Circa-PHV", "crecimiento", "coordinación", "carga"],
+  "expected_themes": [
+    "Circa-PHV",
+    "crecimiento",
+    "coordinación",
+    "carga"
+  ],
   "forbidden_terms": [
     "diagnóstico",
     "lesión confirmada",
@@ -181,7 +188,12 @@
     "Thiago",
     "Valentina"
   ],
-  "expected_headline_keywords": ["Circa-PHV", "crecimiento", "9.1", "coordinación"],
+  "expected_headline_keywords": [
+    "Circa-PHV",
+    "crecimiento",
+    "9.1",
+    "coordinación"
+  ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
@@ -200,19 +212,29 @@
     "observations": [
       {
         "claim": "La pérdida es sostenida y proporcional al avance del estirón, no un mal día puntual.",
-        "evidence": ["percentil 75, 66.7, 50 y 33.3 en las cuatro válidas", "offset de maduración -0.2 años"],
+        "evidence": [
+          "percentil 75, 66.7, 50 y 33.3 en las cuatro válidas",
+          "offset de maduración -0.2 años"
+        ],
         "domain": "maturation",
         "confidence": "high"
       },
       {
         "claim": "El costo se ve en la coordinación: la rúbrica de técnica es la más baja del ciclo mientras esfuerzo y actitud siguen altos.",
-        "evidence": ["rúbrica de técnica 3.3", "rúbrica de esfuerzo 4.4", "rúbrica de actitud 4.5"],
+        "evidence": [
+          "rúbrica de técnica 3.3",
+          "rúbrica de esfuerzo 4.4",
+          "rúbrica de actitud 4.5"
+        ],
         "domain": "training",
         "confidence": "high"
       },
       {
         "claim": "El esfuerzo percibido subió en la última semana con la misma carga de siempre, señal de que el cuerpo está pagando el crecimiento.",
-        "evidence": ["RPE 6.1 en los últimos 7 días frente a 5.4 previos", "crecimiento 9.1 cm/año"],
+        "evidence": [
+          "RPE 6.1 en los últimos 7 días frente a 5.4 previos",
+          "crecimiento 9.1 cm/año"
+        ],
         "domain": "training",
         "confidence": "medium"
       }
@@ -231,7 +253,11 @@
         "category": "technique",
         "priority": "high",
         "horizon": "next_week",
-        "catalog_ref": {"kind": "technique_skill", "code": "A", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "1",
+          "label": null
+        },
         "derived_from": 1
       },
       {
@@ -239,7 +265,11 @@
         "category": "technique",
         "priority": "med",
         "horizon": "season",
-        "catalog_ref": {"kind": "strength_block", "code": "22", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "1",
+          "label": null
+        },
         "derived_from": 1
       }
     ],

@@ -72,9 +72,9 @@ vi.mock("@/hooks/activities/useUnlinkedActivitiesNearDate", () => ({
   useUnlinkedActivitiesNearDate: vi.fn(),
 }));
 
-// PlanSection (feature 032, US1) trae consigo hooks reales de técnica/fuerza/
-// intervalos (useSessionExercises, useSessionBlocks, useSessionStructure…)
-// que no son responsabilidad de este archivo — se mockea con un stub que
+// PlanSection (feature 032, US1) trae consigo hooks reales de intervalos
+// (useSessionStructure…) que no son responsabilidad de este archivo — se
+// mockea con un stub que
 // incluye un `AgeGateDialog` real y siempre abierto para la aserción de
 // regresión de T025 (SC-007: el diálogo debe seguir abriendo igual desde
 // dentro del contenedor de tabs nuevo).

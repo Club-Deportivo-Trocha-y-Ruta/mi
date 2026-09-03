@@ -97,7 +97,9 @@
       "previous": null,
       "growth_velocity_cm_per_year": 4.4,
       "months_from_phv": -19.2,
-      "flags": ["stale_measurement_gt_120d"]
+      "flags": [
+        "stale_measurement_gt_120d"
+      ]
     },
     "training_window": {
       "window_days": 28,
@@ -115,9 +117,9 @@
       "rubric_effort_mean": 3.2,
       "rubric_attitude_mean": 3.6,
       "rubric_technique_mean": 3.1,
-      "technical_foci": ["Control de presión / terreno"],
-      "skill_codes_worked": ["G"],
-      "strength_sessions": 1,
+      "technical_foci": [
+        "Control de presión / terreno"
+      ],
       "interval_sessions": 0,
       "days_since_last_session": 9,
       "days_since_previous_race": 50,
@@ -137,22 +139,26 @@
       }
     ],
     "catalog_context": {
-      "technique_skills": [
-        {"code": "C", "name": "Frenado modulado", "focus": "1 dedo por freno, peso atrás, dosificar"},
-        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"},
-        {"code": "G", "name": "Control de presión / terreno", "focus": "Pump, raíces/rocas, drops"}
-      ],
-      "strength_blocks": [
-        {"id": 22, "name": "Core y estabilidad con peso corporal", "age_band": "12-14"}
-      ],
-      "interval_templates": []
+      "interval_templates": [
+        {
+          "id": 1,
+          "name": "Plantilla base de intervalos",
+          "age_band": "10-12",
+          "mesocycle_phase": "base"
+        }
+      ]
     },
     "memory_recent_insights": [
       "Válida 2 · Copa: percentil 54.5 con asistencia estable",
       "Válida 1 · Copa: mejor registro de la temporada en percentil 63.6"
     ]
   },
-  "expected_themes": ["asistencia", "55.6", "carga", "descanso"],
+  "expected_themes": [
+    "asistencia",
+    "55.6",
+    "carga",
+    "descanso"
+  ],
   "forbidden_terms": [
     "suplementos",
     "creatina",
@@ -164,7 +170,12 @@
     "Thiago",
     "Valentina"
   ],
-  "expected_headline_keywords": ["asistencia", "55.6", "puestos", "esperada"],
+  "expected_headline_keywords": [
+    "asistencia",
+    "55.6",
+    "puestos",
+    "esperada"
+  ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
@@ -183,19 +194,29 @@
     "observations": [
       {
         "claim": "La caída no es de ritmo puntual: es la primera vez en la temporada que termina por debajo de la mediana de la categoría.",
-        "evidence": ["percentil 36.4 frente a 63.6 en la primera válida", "gap a la mediana 2.08%"],
+        "evidence": [
+          "percentil 36.4 frente a 63.6 en la primera válida",
+          "gap a la mediana 2.08%"
+        ],
         "domain": "field",
         "confidence": "high"
       },
       {
         "claim": "La ventana previa se rompió: casi la mitad de las sesiones sin asistir y nueve días sin entrenar antes de competir.",
-        "evidence": ["asistencia 55.6%", "5 sesiones asistidas de 9", "9 días desde la última sesión"],
+        "evidence": [
+          "asistencia 55.6%",
+          "5 sesiones asistidas de 9",
+          "9 días desde la última sesión"
+        ],
         "domain": "training",
         "confidence": "high"
       },
       {
         "claim": "El esfuerzo percibido subió justo en la última semana mientras la rúbrica de esfuerzo bajó, señal de sesiones sueltas y duras en vez de continuidad.",
-        "evidence": ["RPE 5.4 en los últimos 7 días frente a 4.1 previos", "rúbrica de esfuerzo 3.2"],
+        "evidence": [
+          "RPE 5.4 en los últimos 7 días frente a 4.1 previos",
+          "rúbrica de esfuerzo 3.2"
+        ],
         "domain": "training",
         "confidence": "medium"
       }
@@ -214,7 +235,11 @@
         "category": "technique",
         "priority": "med",
         "horizon": "next_race",
-        "catalog_ref": {"kind": "technique_skill", "code": "G", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "1",
+          "label": null
+        },
         "derived_from": 0
       },
       {
@@ -230,7 +255,11 @@
       "Si el RPE de la próxima semana sigue sobre 5, revisar sueño y carga escolar antes de sumar sesiones."
     ],
     "coach_question": "¿El cambio de horario del colegio sigue chocando con el entrenamiento de la tarde o apareció algo nuevo en estas semanas?",
-    "data_gaps": ["Antropometría con más de 120 días: no se puede descartar un cambio madurativo reciente."],
-    "principles_cited": ["2. Capacidades físicas y dosificación por edad"]
+    "data_gaps": [
+      "Antropometría con más de 120 días: no se puede descartar un cambio madurativo reciente."
+    ],
+    "principles_cited": [
+      "2. Capacidades físicas y dosificación por edad"
+    ]
   }
 }

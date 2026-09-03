@@ -35,7 +35,7 @@ async def test_payload_includes_the_structured_draft(monkeypatch):
     assert structured["headline"] == insight.headline
     # Serializable a JSON: los enums viajan como string, no como objeto Python.
     assert structured["observations"][0]["domain"] == "training"
-    assert structured["actions"][1]["catalog_ref"]["kind"] == "technique_skill"
+    assert structured["actions"][1]["catalog_ref"]["kind"] == "interval_template"
 
 
 @pytest.mark.asyncio

@@ -6,8 +6,12 @@
  * `<nav>` fijo, `md:hidden`, mismo tratamiento del "safe area" del gesto de
  * inicio de Android/iOS. Difiere en dos puntos deliberados del mockup de
  * padres:
- *   - Los cinco destinos son fijos — no hay disparador "Más": el portal de
- *     padres solo tiene 4 áreas + perfil, y todas caben en la barra.
+ *   - Los cinco destinos base son fijos — no hay disparador "Más": el
+ *     portal de padres solo tiene 4 áreas + perfil, y todas caben en la
+ *     barra. "Bitácora" (feature 038) se agrega como sexto slot, entre
+ *     "Resumen" y "Perfil", solo cuando hay un atleta activo resuelto —
+ *     su ruta necesita un `athleteId` (ver `ParentSidebar` para el mismo
+ *     racional del lado del drawer/barra fija).
  *   - El estado activo usa el acento teal (`--color-nav-accent`) en el ICONO,
  *     más una barra indicadora de 16×3px en el borde SUPERIOR del slot — así
  *     lo especifica el mockup. El label se queda en charcoal semibold: el
@@ -24,9 +28,17 @@
  */
 import type { LucideIcon } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import { BarChart3, CalendarDays, ClipboardList, Home, UserRound } from "lucide-react";
+import {
+  BarChart3,
+  BookOpen,
+  CalendarDays,
+  ClipboardList,
+  Home,
+  UserRound,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useActiveAthlete } from "@/hooks/parents/useActiveAthlete";
 
 interface ParentNavSlot {
   id: string;
@@ -58,13 +70,18 @@ const SLOTS: ParentNavSlot[] = [
  * Exact-match primero, luego el prefijo de ruta más largo gana — mismo
  * algoritmo que `resolveActiveItemId` (ver nota de módulo), reimplementado
  * localmente porque `NAV_AREAS`/`NavRole` de `lib/navigation.ts` no
- * modelan el rol "parent".
+ * modelan el rol "parent". Recibe la lista de slots en vez de leer el
+ * módulo `SLOTS` porque "Bitácora" (feature 038) es un slot dinámico — su
+ * `to` depende del atleta activo.
  */
-function resolveActiveSlotId(pathname: string): string | undefined {
-  const exactMatch = SLOTS.find((slot) => slot.to === pathname);
+function resolveActiveSlotId(
+  pathname: string,
+  slots: ParentNavSlot[],
+): string | undefined {
+  const exactMatch = slots.find((slot) => slot.to === pathname);
   if (exactMatch) return exactMatch.id;
 
-  const prefixMatches = SLOTS.filter((slot) => pathname.startsWith(`${slot.to}/`));
+  const prefixMatches = slots.filter((slot) => pathname.startsWith(`${slot.to}/`));
   if (prefixMatches.length === 0) return undefined;
 
   return prefixMatches.reduce((longest, current) =>
@@ -97,7 +114,27 @@ function TopIndicator() {
  */
 export function ParentBottomNav() {
   const { pathname } = useLocation();
-  const activeId = resolveActiveSlotId(pathname);
+  const { athlete: activeAthlete } = useActiveAthlete();
+
+  // "Bitácora" (feature 038) solo aparece cuando hay un atleta activo
+  // resuelto (hijo único, o selección explícita en multi-hijo) — su ruta
+  // necesita el `athleteId`, a diferencia de los demás slots que son
+  // globales al portal. Se inserta antes de "Perfil" para mantener el
+  // orden "áreas de contenido" → "cuenta" del mockup.
+  const slots: ParentNavSlot[] = activeAthlete
+    ? [
+        ...SLOTS.slice(0, -1),
+        {
+          id: "bitacora",
+          label: "Bitácora",
+          to: `/my-athletes/${activeAthlete.athlete_id}/bitacora`,
+          icon: BookOpen,
+        },
+        SLOTS[SLOTS.length - 1],
+      ]
+    : SLOTS;
+
+  const activeId = resolveActiveSlotId(pathname, slots);
 
   return (
     <nav
@@ -105,7 +142,7 @@ export function ParentBottomNav() {
       className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-light-gray bg-white md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      {SLOTS.map((slot) => {
+      {slots.map((slot) => {
         const Icon = slot.icon;
         const active = slot.id === activeId;
         return (

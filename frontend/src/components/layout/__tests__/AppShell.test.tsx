@@ -503,11 +503,11 @@ describe("AppShell", () => {
       expect(linkNames).toEqual(labels);
     });
 
-    it("admin: el 4º slot de la barra inferior es Biblioteca, no Atletas (research.md R6)", () => {
+    it("admin: la barra inferior tiene 3 slots (sin 4º, Atletas ausente — research.md R6)", () => {
       renderShell(UserRole.admin);
 
       const bar = getBottomBar();
-      const labels = ["Inicio", "Entrenamiento", "Competencias", "Biblioteca"];
+      const labels = ["Inicio", "Entrenamiento", "Competencias"];
       for (const label of labels) {
         expect(
           within(bar).getByRole("link", { name: new RegExp(label) }),
@@ -516,10 +516,11 @@ describe("AppShell", () => {
       expect(
         within(bar).queryByRole("link", { name: /Atletas/ }),
       ).not.toBeInTheDocument();
+      expect(within(bar).getAllByRole("link")).toHaveLength(3);
       expect(within(bar).getByRole("button", { name: /Más/ })).toBeInTheDocument();
     });
 
-    it("coach: 'Más' lista las áreas restantes (Familias, Biblioteca) más Mi perfil y Cerrar sesión — sin Salud IA", async () => {
+    it("coach: 'Más' lista las áreas restantes (Familias) más Mi perfil y Cerrar sesión — sin Salud IA", async () => {
       const user = userEvent.setup();
       renderShell(UserRole.coach);
 
@@ -527,9 +528,6 @@ describe("AppShell", () => {
 
       const dialog = screen.getByRole("dialog");
       expect(within(dialog).getByRole("link", { name: "Familias" })).toBeInTheDocument();
-      expect(
-        within(dialog).getByRole("link", { name: "Biblioteca" }),
-      ).toBeInTheDocument();
       expect(within(dialog).getByRole("link", { name: "Mi perfil" })).toHaveAttribute(
         "href",
         "/perfil",
@@ -544,7 +542,7 @@ describe("AppShell", () => {
       expect(within(dialog).queryByRole("link", { name: "Atletas" })).not.toBeInTheDocument();
     });
 
-    it("admin: 'Más' lista Familias más Mi perfil, Salud IA y Cerrar sesión — Atletas ausente por completo (research.md R7) y Biblioteca no se repite (ya está en la barra)", async () => {
+    it("admin: 'Más' lista Familias más Mi perfil, Salud IA y Cerrar sesión — Atletas ausente por completo (research.md R7)", async () => {
       const user = userEvent.setup();
       renderShell(UserRole.admin);
 
@@ -564,9 +562,6 @@ describe("AppShell", () => {
         within(dialog).getByRole("button", { name: "Cerrar sesión" }),
       ).toBeInTheDocument();
       expect(within(dialog).queryByRole("link", { name: "Atletas" })).not.toBeInTheDocument();
-      expect(
-        within(dialog).queryByRole("link", { name: "Biblioteca" }),
-      ).not.toBeInTheDocument();
     });
   });
 

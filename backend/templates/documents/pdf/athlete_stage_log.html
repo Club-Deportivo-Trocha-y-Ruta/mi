@@ -1,0 +1,377 @@
+{% extends "documents/pdf/base/layout.html" %}
+
+{#
+  Bitácora de etapa — PDF v2 (feature 038, content_version=2).
+  Reemplaza a athlete_monthly_newsletter.html para los boletines migrados a
+  la bitácora; ese template v1 sigue existiendo sin cambios para
+  content_version=1 (AC-7.1).
+
+  Variables requeridas (ver template_registry.py):
+    athlete_first_name, athlete_last_name, club_name, month_label, season_year
+    stage_log        — dict YA proyectado con to_parent_dto() (allow-list):
+                        NUNCA incluye block_states, grounding_violations ni
+                        analyst_reading.source_insight_id. Este PDF viaja a la
+                        familia (adjunto del email + descarga del portal), así
+                        que respeta la misma restricción que el DTO del padre.
+    anthro_annex      — dict {has_records, records, latest} SOLO con
+                         mediciones fechadas en el mes (filtrado por
+                         generate_stage_log_pdf), o None. Página 3.
+    charts_annex      — dict charts_context (mismas 3 curvas de temporada del
+                         v1) SOLO cuando hubo carrera en el mes, o None.
+    percentile_annex  — dict percentile_curves, o None (acompaña anthro_annex).
+    photos_render     — no usado acá (StageLog.PhotoView no trae media_id);
+                         las fotos se renderizan directo desde
+                         stage_log.photos[].thumbnail_url.
+
+  Privacidad (Ley 1581/2012):
+    - Antropometría y gráficos de temporada SOLO en el Anexo de crecimiento
+      (página 3, condicional) — nunca en el email ni en la web (003/038).
+    - `stage_log` ya pasó por to_parent_dto(): ninguna clave de uso exclusivo
+      del coach (block_states, grounding_violations, source_insight_id)
+      llega a esta plantilla.
+#}
+
+{% block title %}Bitácora {{ month_label }} — {{ athlete_first_name }}{% endblock %}
+{% block header_right %}Bitácora de Etapa{% endblock %}
+{% block doc_title %}{% endblock %}
+{% block generated_at %}{{ generated_at }}{% endblock %}
+
+{% block body %}
+
+{% from "documents/pdf/_trail.svg.j2" import trail_svg %}
+{% from "documents/pdf/charts/line_positions.svg.jinja" import line_positions %}
+{% from "documents/pdf/charts/gap_pct.svg.jinja" import gap_pct %}
+{% from "documents/pdf/charts/points_accumulated.svg.jinja" import points_accumulated %}
+{% from "documents/pdf/charts/percentile_curves.svg.jinja" import percentile_curves %}
+
+{% set sl = stage_log or {} %}
+{% set trail = sl.get('trail') or [] %}
+{% set summit = sl.get('summit') %}
+{% set observations = sl.get('observations') or [] %}
+{% set analyst_reading = sl.get('analyst_reading') %}
+{% set effort_profile = sl.get('effort_profile') or [] %}
+{% set next_segment = sl.get('next_segment') %}
+{% set family_compass = sl.get('family_compass') %}
+{% set badges = sl.get('badges') or [] %}
+{% set photos = sl.get('photos') or [] %}
+{% set coach_note = sl.get('coach_note') %}
+{% set display_initials = (athlete_first_name[0] ~ (athlete_last_name[0] if athlete_last_name else '')) %}
+
+<!-- ============================================================
+     HERO BAND — identificación visual del atleta + etapa
+============================================================ -->
+<div style="
+  background-color: #8be000;
+  padding: 16pt 18pt;
+  margin-bottom: var(--sp-lg);
+  display: table;
+  width: 100%;
+  min-height: 90pt;
+  page-break-inside: avoid;
+">
+  <div style="display: table-cell; width: 56pt; vertical-align: middle;">
+    <div style="
+      width: 48pt; height: 48pt; border-radius: 24pt;
+      background-color: #ffffff; border: 2pt solid #5fa600;
+      text-align: center; line-height: 48pt;
+      font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif;
+      font-size: 18pt; font-weight: 700; color: #2f2f2f;
+    ">{{ display_initials | upper }}</div>
+  </div>
+  <div style="display: table-cell; vertical-align: middle; padding-left: 12pt;">
+    <p style="margin: 0; font-size: 9pt; font-weight: 700; color: #2f2f2f; text-transform: uppercase; letter-spacing: 0.4pt;">
+      Etapa {{ sl.get('stage_number', '—') }}{% if sl.get('is_current_month') %} · en curso{% endif %} · {{ sl.get('period_label', month_label) }}
+    </p>
+    <p style="
+      margin: 3pt 0 0 0;
+      font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif;
+      font-size: 18pt; font-weight: 700; line-height: 1.2; color: #2f2f2f;
+    ">{{ sl.get('stage_title') or (athlete_first_name | upper) }}</p>
+    <p style="margin: 2pt 0 0 0; font-size: 9pt; color: #374151;">{{ club_name }}</p>
+  </div>
+</div>
+
+<!-- ============================================================
+     RUTA DEL MES
+============================================================ -->
+{% if trail %}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+  <h2 style="break-after: avoid;">Ruta del mes</h2>
+  {{ trail_svg(trail) }}
+</div>
+{% endif %}
+
+<!-- ============================================================
+     CIMA DEL MES
+============================================================ -->
+{% if summit %}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+  <div style="background: #f7fee7; border: 0.5pt solid #d9f99d; border-left: 3pt solid #8be000; padding: 10pt 14pt; border-radius: 3pt;">
+    <p style="margin: 0; font-size: 8pt; color: #4d7c0f; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3pt;">&#127956; Cima del mes</p>
+    <p style="margin: 4pt 0 0 0; font-size: 12pt; font-weight: 700; color: #111827;">{{ summit.get('title') }}</p>
+    {% if summit.get('detail') %}
+    <p style="margin: 2pt 0 0 0; font-size: 9pt; color: #6b7280;">{{ summit.get('detail') }}</p>
+    {% endif %}
+    {% if summit.get('caption') %}
+    <p style="margin: 4pt 0 0 0; font-size: 10pt; color: #374151;">{{ summit.get('caption') }}</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     LO QUE VIO EL ENTRENADOR (observaciones)
+============================================================ -->
+{% if observations %}
+<div style="margin-bottom: var(--sp-lg);">
+  <h2 style="break-after: avoid;">Lo que vio el entrenador</h2>
+  {% for obs in observations %}
+  <div style="break-inside: avoid; margin-bottom: 8pt; background: #fafafa; border: 0.5pt solid #d1d5db; border-left: 3pt solid #2563eb; padding: 9pt 12pt; border-radius: 3pt;">
+    <p style="margin: 0; font-size: 10pt; color: #374151;">{{ obs.get('claim') }}</p>
+    <p style="margin: 3pt 0 0 0; font-size: 8.5pt; color: #6b7280; font-style: italic;">{{ obs.get('evidence') }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ============================================================
+     LECTURA DEL ANALISTA
+============================================================ -->
+{% if analyst_reading %}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+  <h2 style="break-after: avoid;">Lectura del analista</h2>
+  <p style="margin: 0 0 6pt 0; font-size: 8.5pt; color: #6b7280; font-style: italic;">{{ analyst_reading.get('valida_label') }}</p>
+  <div style="background: #eff6ff; border: 0.5pt solid #bfdbfe; padding: 10pt 14pt; border-radius: 3pt;">
+    <p style="margin: 0; font-size: 10pt; color: #1e3a8a; font-weight: 600;">{{ analyst_reading.get('headline_family') }}</p>
+    <p style="margin: 5pt 0 0 0; font-size: 10pt; color: #374151;">{{ analyst_reading.get('action_family') }}</p>
+  </div>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     PERFIL DE ESFUERZO (altimetría semanal)
+============================================================ -->
+{% if effort_profile %}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+  <h2 style="break-after: avoid;">Perfil de esfuerzo</h2>
+  <table class="data-table">
+    <thead>
+      <tr><th>Semana</th><th>Sesiones</th><th>RPE promedio</th></tr>
+    </thead>
+    <tbody>
+      {% for week in effort_profile %}
+      <tr>
+        <td>{{ week.get('week_label') }}</td>
+        <td>{{ week.get('sessions_attended', 0) }}/{{ week.get('sessions_planned', 0) }}</td>
+        <td>{{ "%.1f"|format(week.get('mean_rpe')) if week.get('mean_rpe') is not none else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     PRÓXIMO TRAMO
+============================================================ -->
+{% if next_segment %}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+  <h2 style="break-after: avoid;">Próximo tramo</h2>
+  {% if next_segment.get('text') %}
+  <p style="margin: 0 0 6pt 0; font-size: 10pt; color: #374151;">{{ next_segment.get('text') }}</p>
+  {% endif %}
+  {% if next_segment.get('focus_groups') %}
+  <p style="margin: 0 0 6pt 0; font-size: 9pt; color: #6b7280;">
+    <strong>Focos técnicos:</strong> {{ next_segment.get('focus_groups') | join(", ") }}
+  </p>
+  {% endif %}
+  {% set next_race = next_segment.get('next_race') %}
+  {% if next_race %}
+  <p style="margin: 0; font-size: 9pt; color: #6b7280;">
+    <strong>Próxima carrera:</strong> {{ next_race.get('label') }} — {{ next_race.get('date') | date_es }}
+    {% if next_race.get('venue') %} · {{ next_race.get('venue') }}{% endif %}
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ============================================================
+     BRÚJULA DE LA FAMILIA
+============================================================ -->
+{% if family_compass %}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg); background: #fdf4ff; border: 0.5pt solid #f0abfc; padding: 10pt 14pt; border-radius: 4pt;">
+  <h2 style="margin-top: 0; break-after: avoid;">&#129517; Brújula de la familia</h2>
+  <p style="margin: 0 0 6pt 0; font-size: 10pt;"><strong>Para conversar:</strong> {{ family_compass.get('conversation_question') }}</p>
+  <p style="margin: 0 0 6pt 0; font-size: 10pt;"><strong>Reto del mes:</strong> {{ family_compass.get('monthly_challenge') }}</p>
+  <p style="margin: 0; font-size: 10pt;"><strong>Qué observar:</strong> {{ family_compass.get('what_to_watch') }}</p>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     INSIGNIAS Y FOTOS DEL MES
+============================================================ -->
+{% if badges or photos %}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+  {% if badges %}
+  <h3 style="break-after: avoid;">Insignias del mes</h3>
+  <div>
+    {% for badge in badges %}
+    <span style="display: inline-block; background: #fff7ed; border: 1pt solid #fdba74; padding: 3pt 8pt; border-radius: 10pt; font-size: 9pt; color: #9a3412; margin: 2pt 3pt 2pt 0;">
+      {{ badge.get('label') }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if photos %}
+  <h3 style="break-after: avoid;">Fotos del mes</h3>
+  <div style="display: table; width: 100%; border-spacing: 6pt;">
+    {% for photo in photos %}
+    <div style="display: table-cell; text-align: center; vertical-align: top; padding: 3pt;">
+      <img src="{{ photo.get('thumbnail_url') }}" style="max-width: 80pt; max-height: 60pt; border-radius: 3pt;" alt="Foto de entrenamiento del mes — Club Trocha y Ruta"/>
+      {% if photo.get('caption') %}
+      <p style="font-size: 7pt; color: #6b7280; margin: 2pt 0 0 0; max-width: 80pt;">{{ photo.get('caption') }}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ============================================================
+     NOTA DEL ENTRENADOR
+============================================================ -->
+{% if coach_note %}
+<div style="break-inside: avoid; margin-bottom: var(--sp-lg); background: #f0fdf4; border: 1pt solid #86efac; padding: 10pt 14pt; border-radius: 4pt;">
+  <h3 style="margin-top: 0; break-after: avoid;">Nota del entrenador</h3>
+  <p style="margin: 0; font-size: 10pt; color: #374151; font-style: italic;">&ldquo;{{ coach_note }}&rdquo;</p>
+</div>
+{% endif %}
+
+<!-- ============================================================
+     PÁGINA 3 — ANEXO DE CRECIMIENTO (condicional)
+============================================================ -->
+{% if anthro_annex and anthro_annex.get('has_records') %}
+<div style="page-break-before: always;"></div>
+<div style="margin-bottom: var(--sp-lg);">
+  <h2>Anexo de crecimiento</h2>
+  <p style="font-size: 9pt; color: #6b7280; margin-bottom: 8pt; font-style: italic;">
+    Esta información es confidencial y solo se incluye en este anexo. No se envía por email ni se
+    muestra en el portal. Fuente: Método Mirwald et al. + Referencias OMS/CDC adaptadas para
+    Colombia (Res. 2465/2016). Solo se listan mediciones fechadas en {{ month_label }}.
+  </p>
+
+  <style>
+    table.anthro-table { table-layout: fixed; width: 100%; font-size: 7.5pt; }
+    table.anthro-table th { padding: 3pt 2pt; vertical-align: bottom; }
+    table.anthro-table td { padding: 3pt 2pt; white-space: nowrap; overflow: hidden; }
+    table.anthro-table th.num, table.anthro-table td.num { text-align: center; }
+    table.anthro-table td.na { color: #9ca3af; font-style: italic; }
+    /* La fecha en español largo ("14 de agosto de 2026") no cabe en una
+       columna angosta con nowrap — sin overflow:hidden el texto se salía
+       visualmente encima de la columna de Peso (kg). Se le da más ancho
+       (colgroup abajo) y se permite envolver a dos líneas en vez de
+       desbordar. */
+    table.anthro-table td:first-child { white-space: normal; word-break: break-word; }
+  </style>
+  <table class="data-table anthro-table">
+    <colgroup>
+      <col style="width: 21%;"><col style="width: 7%;"><col style="width: 7%;">
+      <col style="width: 7%;"><col style="width: 9%;"><col style="width: 9%;">
+      <col style="width: 9%;"><col style="width: 9%;"><col style="width: 7%;">
+      <col style="width: 14%;">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th class="num">Peso<br/>(kg)</th>
+        <th class="num">Talla<br/>(cm)</th>
+        <th class="num">IMC</th>
+        <th class="num">Z-<br/>Talla</th>
+        <th class="num">P-<br/>Talla</th>
+        <th class="num">Z-<br/>IMC</th>
+        <th class="num">P-<br/>IMC</th>
+        <th class="num">PHV</th>
+        <th>Maduración</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in anthro_annex.records %}
+      <tr {% if loop.first %}style="background: #f0fdf4; font-weight: bold;"{% endif %}>
+        <td>{{ (r.evaluation_date | date_es) if r.evaluation_date else "—" }}</td>
+        <td class="num">{{ "%.1f"|format(r.weight_kg) if r.weight_kg is not none else "—" }}</td>
+        <td class="num">{{ "%.1f"|format(r.standing_height_cm) if r.standing_height_cm is not none else "—" }}</td>
+        <td class="num">{{ "%.1f"|format(r.bmi) if r.bmi is not none else "—" }}</td>
+        <td class="num">{{ "%.2f"|format(r.height_z_score) if r.height_z_score is not none else "—" }}</td>
+        <td class="num">{{ "%.0f"|format(r.height_percentile) if r.height_percentile is not none else "—" }}</td>
+        <td class="num">{{ "%.2f"|format(r.bmi_z_score) if r.bmi_z_score is not none else "—" }}</td>
+        <td class="num">{{ "%.0f"|format(r.bmi_percentile) if r.bmi_percentile is not none else "—" }}</td>
+        <td class="num">
+          {% if r.maturity_offset is not none %}
+            {{ "+%.2f"|format(r.maturity_offset) if r.maturity_offset >= 0 else "%.2f"|format(r.maturity_offset) }}
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if r.maturation_status == 'Pre-PHV' %}<span style="color: var(--info);">&#9654; Pre-PHV</span>
+          {% elif r.maturation_status == 'Circa-PHV' %}<span style="color: var(--warning);">&#9654; Circa-PHV</span>
+          {% elif r.maturation_status == 'Post-PHV' %}<span style="color: var(--success);">&#10003; Post-PHV</span>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% set latest = anthro_annex.latest %}
+  {% if latest %}
+  <div style="break-inside: avoid; margin-top: 10pt;">
+  <div style="background: #fafafa; border: 0.5pt solid #d1d5db; padding: 10pt; border-radius: 4pt;">
+    <h3 style="margin: 0 0 6pt 0;">Última medición ({{ (latest.evaluation_date | date_es) if latest.evaluation_date else "—" }})</h3>
+    <p style="margin: 0; font-size: 9pt;">
+      Estado: <strong>{{ latest.maturation_status or "—" }}</strong> ·
+      Offset: <strong>{{ "%.2f años"|format(latest.maturity_offset) if latest.maturity_offset is not none else "—" }}</strong>
+    </p>
+    {% if latest.maturation_pedagogy %}
+    <p style="margin: 6pt 0 0 0; font-size: 8.5pt; color: #374151; font-style: italic;">{{ latest.maturation_pedagogy }}</p>
+    {% endif %}
+    {% if latest.training_implications %}
+    <p style="margin: 6pt 0 0 0; font-size: 9pt; color: #374151;"><strong>Orientaciones del entrenador:</strong> {{ latest.training_implications }}</p>
+    {% endif %}
+  </div>
+  </div>
+  {% endif %}
+
+  {% if percentile_annex %}
+  <section style="break-inside: avoid; margin-top: 12pt;">
+    <h3 style="font-size: 10pt; margin: 0 0 6pt 0; break-after: avoid;">Curvas de Percentiles de Referencia</h3>
+    <p style="font-size: 8pt; color: #6b7280; margin: 0 0 8pt 0;">Comparación con población de referencia CDC. La línea negra muestra las mediciones registradas.</p>
+    {% if percentile_annex.height %}{{ percentile_curves(percentile_annex.height) }}{% endif %}
+    {% if percentile_annex.bmi %}{{ percentile_curves(percentile_annex.bmi) }}{% endif %}
+    {% if percentile_annex.weight %}{{ percentile_curves(percentile_annex.weight) }}{% endif %}
+    <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 8pt;">Fuente: tablas CDC 2000 (5-19 años). De acuerdo con Res. 2465/2016 MinSalud Colombia. <strong>No constituye diagnóstico médico.</strong></p>
+  </section>
+  {% endif %}
+
+  {% if charts_annex and charts_annex.get('has_data') %}
+  <div style="break-inside: avoid; margin-top: 12pt;">
+    <h3 style="break-after: avoid;">Evolución en la temporada</h3>
+    <div style="display: table; width: 100%; table-layout: fixed;">
+      <div style="display: table-cell; width: 33.33%; vertical-align: top; padding-right: 4pt;">
+        {{ line_positions(charts_annex.positions, width=175, height=130, low_confidence=charts_annex.low_confidence) }}
+        <p class="caption">Posición menor = mejor rendimiento</p>
+      </div>
+      <div style="display: table-cell; width: 33.33%; vertical-align: top; padding: 0 2pt;">
+        {{ gap_pct(charts_annex.gap_pcts, width=175, height=130, low_confidence=charts_annex.low_confidence) }}
+        <p class="caption">% de distancia al primero (0% = ganador)</p>
+      </div>
+      <div style="display: table-cell; width: 33.34%; vertical-align: top; padding-left: 4pt;">
+        {{ points_accumulated(charts_annex.points_accumulated, width=175, height=130, low_confidence=charts_annex.low_confidence) }}
+        <p class="caption">Puntos acumulados en la temporada</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

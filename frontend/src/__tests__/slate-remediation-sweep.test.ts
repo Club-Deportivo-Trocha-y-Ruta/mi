@@ -11,12 +11,12 @@
  * no slate ever).
  *
  * This test is the CI-runnable guard against regression: it shells out to
- * `grep -rnE '\bslate-[0-9]'` (the exact pattern named by T044) over each of
- * the eight target directories and asserts zero matches. Directories that
- * don't exist in this branch (e.g. `routes/intervals` — intervalos' routes
- * currently live under `routes/training`, per spec 029's surface
- * subtraction) are skipped rather than failing, since an absent directory
- * trivially has zero `slate-*` occurrences.
+ * `grep -rnE '\bslate-[0-9]'` (the exact pattern named by T044) over each
+ * target directory and asserts zero matches. Directories that don't exist in
+ * this branch (e.g. `routes/intervals` — intervalos' routes currently live
+ * under `routes/training`, per spec 029's surface subtraction) are skipped
+ * rather than failing, since an absent directory trivially has zero
+ * `slate-*` occurrences.
  *
  * If this test ever fails, the fix is almost always style-only: swap the
  * reported `slate-*` class for its token equivalent per the remap table
@@ -31,15 +31,11 @@ import { describe, expect, it } from "vitest";
 const FRONTEND_ROOT = process.cwd();
 const SRC_DIR = path.resolve(FRONTEND_ROOT, "src");
 
-// Exact target list from tasks.md T044.
-const TARGET_DIRS = [
-  "routes/technique",
-  "routes/strength",
-  "routes/intervals",
-  "components/technique",
-  "components/strength",
-  "components/intervals",
-];
+// Exact target list from tasks.md T044. `routes/technique`, `routes/strength`,
+// `components/technique` and `components/strength` were removed along with
+// the retired técnica/fuerza catalogs — kept out of this list since they no
+// longer exist anywhere, not just "in this branch".
+const TARGET_DIRS = ["routes/intervals", "components/intervals"];
 
 const SLATE_PATTERN = String.raw`\bslate-[0-9]`;
 

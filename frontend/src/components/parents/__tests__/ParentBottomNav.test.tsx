@@ -1,14 +1,63 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { axe } from "jest-axe";
 
+// Feature 038 (T303): "Bitácora" depende del atleta activo resuelto por
+// useActiveAthlete → useMyAthletes. Se mockea la fuente de datos (mismo
+// patrón que ParentSidebar.test.tsx) y se deja correr el hook real, así el
+// store real de contexto de padres decide el atleta activo.
+vi.mock("@/hooks/parents/useMyAthletes", () => ({
+  useMyAthletes: vi.fn(),
+}));
+
+import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
+import { useParentContextStore } from "@/store/parentContext.store";
+import { FamilyRelationship, MaturationStatus, Sex } from "@/types/enums";
+import type { MyAthleteOut } from "@/types/parent.types";
 import { ParentBottomNav } from "@/components/parents/ParentBottomNav";
 
 // Feature 035 — ParentBottomNav (mockup PadresInicio.dc.html). Cinco slots
 // fijos (sin "Más"), resolución de activo exact-match/longest-prefix
 // (mismo algoritmo que resolveActiveItemId, reimplementado localmente) y
 // tamaño táctil >=48px.
+
+function mkAthlete(id: number, overrides: Partial<MyAthleteOut> = {}): MyAthleteOut {
+  return {
+    athlete_id: id,
+    athlete_first_name: "Valeria",
+    athlete_last_name: "García",
+    birth_date: "2013-06-15",
+    sex: Sex.F,
+    age_decimal: 12.8,
+    category: "Infantil",
+    relationship: FamilyRelationship.madre,
+    latest_anthropometry_date: null,
+    maturation_status: MaturationStatus.CircaPHV,
+    standing_height_cm: null,
+    weight_kg: null,
+    measurement_status: "never",
+    ...overrides,
+  };
+}
+
+function mockAthletes(athletes: MyAthleteOut[]) {
+  vi.mocked(useMyAthletes).mockReturnValue({
+    data: athletes,
+    isLoading: false,
+    isError: false,
+    error: null,
+  } as unknown as ReturnType<typeof useMyAthletes>);
+}
+
+beforeEach(() => {
+  useParentContextStore.setState({ activeAthleteId: null });
+  vi.clearAllMocks();
+  // Sin atleta activo por defecto (0 o 2+ atletas sin selección) — mismo
+  // set de 5 slots que antes de la feature 038, para no romper los tests
+  // preexistentes de estructura/resolución de activo.
+  mockAthletes([]);
+});
 
 function renderBottomNav(initialPath = "/my-athletes") {
   return render(
@@ -151,5 +200,56 @@ describe("ParentBottomNav — accesibilidad", () => {
     const { container } = renderBottomNav();
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+});
+
+// Feature 038, T303 — slot "Bitácora"
+describe("ParentBottomNav — slot 'Bitácora' (feature 038)", () => {
+  it("no aparece cuando no hay atleta activo resuelto (multi-hijo sin selección)", () => {
+    mockAthletes([mkAthlete(7), mkAthlete(9)]);
+    renderBottomNav();
+    expect(screen.queryByRole("link", { name: "Bitácora" })).not.toBeInTheDocument();
+  });
+
+  it("aparece entre 'Resumen' y 'Perfil' cuando el padre tiene un solo hijo", () => {
+    mockAthletes([mkAthlete(7)]);
+    renderBottomNav();
+
+    const nav = screen.getByRole("navigation", { name: "Navegación principal" });
+    const links = Array.from(nav.querySelectorAll("a"));
+
+    expect(links.map((a) => a.textContent?.trim())).toEqual([
+      "Inicio",
+      "Calendario",
+      "Entrenos",
+      "Resumen",
+      "Bitácora",
+      "Perfil",
+    ]);
+    expect(screen.getByRole("link", { name: "Bitácora" })).toHaveAttribute(
+      "href",
+      "/my-athletes/7/bitacora",
+    );
+  });
+
+  it("apunta a la bitácora del atleta seleccionado explícitamente (multi-hijo)", () => {
+    mockAthletes([mkAthlete(7), mkAthlete(9)]);
+    useParentContextStore.setState({ activeAthleteId: 9 });
+    renderBottomNav();
+
+    expect(screen.getByRole("link", { name: "Bitácora" })).toHaveAttribute(
+      "href",
+      "/my-athletes/9/bitacora",
+    );
+  });
+
+  it("marca 'Bitácora' activo en su ruta y en subrutas de detalle", () => {
+    mockAthletes([mkAthlete(7)]);
+    renderBottomNav("/my-athletes/7/bitacora/3");
+
+    expect(screen.getByRole("link", { name: "Bitácora" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 });

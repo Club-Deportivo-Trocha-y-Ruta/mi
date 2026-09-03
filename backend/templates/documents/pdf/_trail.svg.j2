@@ -1,0 +1,70 @@
+{#
+  Macro: "ruta del mes" — trail visual de la bitácora de etapa (feature 038).
+
+  IMPORTANTE (research.md R7 / WeasyPrint): las etiquetas de cada waypoint se
+  renderizan como HTML normal (celdas de tabla), NUNCA como <text> dentro del
+  <svg> — el manejo de texto/fuentes de WeasyPrint dentro de SVG es más débil
+  que su motor HTML normal (ver la lección de 024 FR-010 sobre texto
+  recortado). El <svg> de este macro dibuja SOLO geometría (línea + círculos);
+  usa el mismo layout con "display:table" que el resto de las plantillas PDF
+  de este proyecto (ver athlete_monthly_newsletter.html) en vez de
+  position:absolute, que no tiene precedente probado en este codebase.
+
+  Inputs:
+    waypoints — lista de dicts con {kind, date, label, sublabel, icon,
+                is_future} (StageLog.trail, ya serializado a JSON: `date` es
+                un string ISO "YYYY-MM-DD").
+    width, height — tamaño del SVG decorativo (puntos + línea).
+
+  Output: bloque HTML (línea SVG decorativa + lista HTML de waypoints con
+  icono como texto/emoji, igual criterio que el email — ver
+  templates/email/athlete_stage_log.html).
+#}
+{% macro trail_svg(waypoints, width=460, height=54) %}
+{%- set n = waypoints | length -%}
+{%- set pad = 24 -%}
+{%- set track_w = width - (2 * pad) -%}
+{%- set cy = height / 2 -%}
+<div style="break-inside: avoid;">
+  {%- if n > 0 -%}
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{ width }} {{ height }}" width="100%" height="{{ height }}"
+       preserveAspectRatio="xMidYMid meet" role="img" aria-label="Ruta del mes — línea de tiempo de hitos">
+    <line x1="{{ pad }}" y1="{{ cy }}" x2="{{ width - pad }}" y2="{{ cy }}"
+          stroke="#8be000" stroke-width="2" stroke-dasharray="1,5" stroke-linecap="round"/>
+    {%- for wp in waypoints -%}
+      {%- if n > 1 -%}
+        {%- set cx = pad + (loop.index0 / (n - 1)) * track_w -%}
+      {%- else -%}
+        {%- set cx = width / 2 -%}
+      {%- endif -%}
+      {%- if wp.is_future -%}
+      <circle cx="{{ cx }}" cy="{{ cy }}" r="6" fill="#ffffff" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="2,2"/>
+      {%- else -%}
+      <circle cx="{{ cx }}" cy="{{ cy }}" r="6" fill="#2f2f2f" stroke="#8be000" stroke-width="2"/>
+      {%- endif -%}
+    {%- endfor -%}
+  </svg>
+  {%- endif -%}
+  <div style="display: table; width: 100%; table-layout: fixed; margin-top: 4pt;">
+    {%- for wp in waypoints -%}
+    <div style="display: table-cell; width: {{ (100 / n) | round(2) }}%; vertical-align: top; text-align: center; padding: 0 3pt;">
+      <p style="margin: 0; font-size: 11pt; line-height: 1;">
+        {%- if wp.icon == 'flag' -%}&#128681;
+        {%- elif wp.icon == 'award' -%}&#127941;
+        {%- elif wp.icon == 'flame' -%}&#128293;
+        {%- elif wp.icon == 'star' -%}&#11088;
+        {%- elif wp.icon == 'map-pin' -%}&#128205;
+        {%- elif wp.icon == 'compass' -%}&#129517;
+        {%- else -%}&#8226;
+        {%- endif -%}
+      </p>
+      <p style="margin: 2pt 0 0 0; font-size: 7.5pt; font-weight: 700; color: #1f2937; line-height: 1.3;">{{ wp.label }}</p>
+      {%- if wp.sublabel %}
+      <p style="margin: 1pt 0 0 0; font-size: 7pt; color: #6b7280; line-height: 1.3;">{{ wp.sublabel }}</p>
+      {%- endif %}
+      <p style="margin: 1pt 0 0 0; font-size: 7pt; color: #9ca3af; line-height: 1.3;">{{ wp.date | date_es }}</p>
+    </div>
+    {%- endfor -%}
+  </div>
+</div>
+{% endmacro %}

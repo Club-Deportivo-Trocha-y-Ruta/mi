@@ -2,8 +2,8 @@
  * Keyboard-shortcuts hook (feature 033, US5, T062).
  *
  * Bindings:
- *  - `g` then `i/e/c/a/f/b` — jump to the six 030 `NavArea`s: Inicio,
- *    Entrenamiento, Competencias, Atletas, Familias, Biblioteca (in
+ *  - `g` then `i/e/c/a/f` — jump to the five 030 `NavArea`s: Inicio,
+ *    Entrenamiento, Competencias, Atletas, Familias (in
  *    `frontend/src/lib/navigation.ts`, the single source of truth also
  *    consumed by `SidebarNav`/`BottomNav`/`MoreSheet`). Navigates to
  *    `resolveAreaDefaultTo(area, role)` — the same default target the nav
@@ -46,7 +46,6 @@ export const AREA_ID_BY_SHORTCUT_KEY: Readonly<Record<string, string>> = {
   c: "competitions",
   a: "athletes",
   f: "families",
-  b: "library",
 };
 
 export interface UseKeyboardShortcutsOptions {

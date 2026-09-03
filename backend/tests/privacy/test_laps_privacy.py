@@ -80,7 +80,7 @@ from app.models.strava_activity_lap import (
     StravaActivityLap,
 )
 from app.models.strava_connection import StravaConnection, StravaConnectionStatus
-from app.models.technique_exercise import AgeBand
+from app.models.interval_structure import AgeBand
 from app.models.training_session import SessionKind, TrainingSession
 from app.models.user import User, UserRole
 from app.routers import intervals as intervals_router

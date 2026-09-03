@@ -106,23 +106,24 @@
     "training_window": null,
     "coach_dialogue": [],
     "catalog_context": {
-      "technique_skills": [
-        {"code": "C", "name": "Frenado modulado", "focus": "1 dedo por freno, peso atrás, dosificar"},
-        {"code": "G", "name": "Control de presión / terreno", "focus": "Pump, raíces/rocas, drops"},
-        {"code": "H", "name": "Cambios y cadencia", "focus": "Engranar antes de la subida (cad. ≥70)"}
-      ],
-      "strength_blocks": [
-        {"id": 34, "name": "Fuerza específica de tren inferior", "age_band": "14-16"}
-      ],
       "interval_templates": [
-        {"id": 51, "name": "Series cortas en llano", "age_band": "14-16", "mesocycle_phase": "base"}
+        {
+          "id": 51,
+          "name": "Series cortas en llano",
+          "age_band": "14-16",
+          "mesocycle_phase": "base"
+        }
       ]
     },
     "memory_recent_insights": [
       "Válida 2 · Copa: percentil 57.1 en un pelotón de 8"
     ]
   },
-  "expected_themes": ["asistencia", "sin registro", "barro"],
+  "expected_themes": [
+    "asistencia",
+    "sin registro",
+    "barro"
+  ],
   "forbidden_terms": [
     "RPE",
     "rúbrica",
@@ -134,7 +135,12 @@
     "Thiago",
     "Valentina"
   ],
-  "expected_headline_keywords": ["esperada", "percentil", "62.5", "barro"],
+  "expected_headline_keywords": [
+    "esperada",
+    "percentil",
+    "62.5",
+    "barro"
+  ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
@@ -153,19 +159,28 @@
     "observations": [
       {
         "claim": "El rendimiento relativo se estancó: tres válidas seguidas terminando exactamente donde lo ubica su historial.",
-        "evidence": ["esperada 4 y real 4", "percentil 75, 57.1 y 62.5 en la temporada"],
+        "evidence": [
+          "esperada 4 y real 4",
+          "percentil 75, 57.1 y 62.5 en la temporada"
+        ],
         "domain": "field",
         "confidence": "high"
       },
       {
         "claim": "La distancia con el tercer puesto es corta y se juega en pocos segundos, no en un salto de nivel.",
-        "evidence": ["gap a P3 0:00:42", "gap 5.96% al líder"],
+        "evidence": [
+          "gap a P3 0:00:42",
+          "gap 5.96% al líder"
+        ],
         "domain": "race",
         "confidence": "high"
       },
       {
         "claim": "Ya pasó el pico de crecimiento y la velocidad de talla se estabilizó, así que el margen de mejora está en técnica y ritmo, no en esperar maduración.",
-        "evidence": ["crecimiento 2.8 cm/año", "offset de maduración 1.4 años"],
+        "evidence": [
+          "crecimiento 2.8 cm/año",
+          "offset de maduración 1.4 años"
+        ],
         "domain": "maturation",
         "confidence": "medium"
       }
@@ -184,7 +199,11 @@
         "category": "technique",
         "priority": "high",
         "horizon": "next_race",
-        "catalog_ref": {"kind": "technique_skill", "code": "G", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "51",
+          "label": null
+        },
         "derived_from": 1
       },
       {
@@ -192,7 +211,11 @@
         "category": "volume",
         "priority": "med",
         "horizon": "season",
-        "catalog_ref": {"kind": "interval_template", "code": "51", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "51",
+          "label": null
+        },
         "derived_from": 1
       }
     ],
@@ -204,6 +227,8 @@
       "Sin asistencia registrada en la ventana previa: no hay lectura de carga ni de foco técnico.",
       "Sin registro de material ni de presión de neumáticos para la carrera en barro."
     ],
-    "principles_cited": ["3. Progresión técnica en MTB/XCO"]
+    "principles_cited": [
+      "3. Progresión técnica en MTB/XCO"
+    ]
   }
 }

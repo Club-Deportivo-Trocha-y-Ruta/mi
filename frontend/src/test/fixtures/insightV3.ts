@@ -44,7 +44,7 @@ export function buildInsightV3(overrides?: Partial<InsightV3>): InsightV3 {
         category: "technique",
         priority: "high",
         horizon: "next_week",
-        catalog_ref: { kind: "technique_skill", code: "C", label: "Frenada en curva" },
+        catalog_ref: { kind: "interval_template", code: "12", label: "Base aeróbica" },
         derived_from: 0,
       },
       {

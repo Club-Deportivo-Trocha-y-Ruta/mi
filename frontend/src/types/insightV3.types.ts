@@ -42,8 +42,6 @@ export const Horizon = {
 export type Horizon = (typeof Horizon)[keyof typeof Horizon];
 
 export const CatalogKind = {
-  TECHNIQUE_SKILL: "technique_skill",
-  STRENGTH_BLOCK: "strength_block",
   INTERVAL_TEMPLATE: "interval_template",
 } as const;
 export type CatalogKind = (typeof CatalogKind)[keyof typeof CatalogKind];

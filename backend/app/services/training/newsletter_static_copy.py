@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.training.stage_log import FamilyCompass, NextSegment, Observation, Summit, SummitKind
+
 # Placeholder neutro para la narrativa del entrenador cuando no hay IA/consentimiento.
 # (research.md Open Item — default acordado para la valoración legada).
 COACH_NARRATIVE_UNAVAILABLE = "Valoración del entrenador no disponible este mes."
@@ -304,6 +306,190 @@ SUPPORT_TIP_VARIANTS: dict[str, dict[str, list[str]]] = {
         ],
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# v2 — copia estática de la bitácora de etapa (feature 038, AC-2.5).
+#
+# Estas funciones alimentan ``stage_log_builder.build_stage_log`` cuando no
+# hay narrativa IA (sin consentimiento Ley 1581, o el proveedor falló). A
+# diferencia de la biblioteca v1 de arriba (frases fijas elegidas por
+# umbral), aquí el texto se arma interpolando los números reales del mes
+# (conteos de sesiones, posición de carrera, foco técnico) — nunca una
+# frase genérica fija — porque data-model.md exige que la bitácora nunca se
+# sienta como plantilla, con o sin IA.
+#
+# Reglas de negocio que se preservan en TODAS las variantes:
+#   - Nunca mencionan suplementos ni conteo calórico (mismo no-negociable
+#     que "Cómo apoyar desde casa").
+#   - ``athlete_reference`` (gender-aware: "su hijo"/"su hija"/"su hijo/a")
+#     en vez de nombre o pronombre fijo.
+#   - ``family_compass.conversation_question`` siempre termina en "?"
+#     (garantizado también por el validador del modelo, ver stage_log.py).
+# ---------------------------------------------------------------------------
+
+
+def static_stage_title(email_blocks: dict[str, Any], athlete_reference: str) -> str:
+    """Título de la etapa (≤ 20 palabras), derivado de asistencia y carreras
+    del mes — nunca una frase de plantilla fija."""
+    attendance = email_blocks.get("attendance") or {}
+    race = email_blocks.get("race_results") or {}
+
+    sessions_total = attendance.get("sessions_total") or 0
+    sessions_present = attendance.get("sessions_present") or 0
+    has_races = bool(race.get("has_races"))
+    n_races = len(race.get("results") or [])
+
+    if sessions_total == 0:
+        title = f"Etapa de pausa: sin sesiones de entrenamiento registradas para {athlete_reference}"
+    elif has_races and n_races == 1:
+        title = (
+            f"Una etapa de competencia y {sessions_present} sesiones de "
+            f"entrenamiento para {athlete_reference}"
+        )
+    elif has_races:
+        title = (
+            f"Una etapa con {n_races} carreras y {sessions_present} sesiones "
+            f"de entrenamiento para {athlete_reference}"
+        )
+    else:
+        title = f"Una etapa de {sessions_present} sesiones de entrenamiento para {athlete_reference}"
+
+    return _limit_words_public(title, 20)
+
+
+def static_observations(email_blocks: dict[str, Any], athlete_reference: str) -> list["Observation"]:
+    """0..3 observaciones deterministas ("lo que vio el entrenador"), cada
+    una con al menos un número tomado directamente del snapshot del mes."""
+    observations: list[Observation] = []
+    attendance = email_blocks.get("attendance") or {}
+    technical = email_blocks.get("technical") or {}
+    race = email_blocks.get("race_results") or {}
+
+    sessions_total = attendance.get("sessions_total") or 0
+    sessions_present = attendance.get("sessions_present") or 0
+    attendance_pct = attendance.get("attendance_pct")
+    if sessions_total > 0 and attendance_pct is not None:
+        observations.append(
+            Observation(
+                claim=(
+                    f"{athlete_reference.capitalize()} mantuvo un ritmo de "
+                    "entrenamiento constante este mes."
+                ),
+                evidence=f"Asistió a {sessions_present} de {sessions_total} sesiones ({attendance_pct:.0f} %).",
+                block_ref="attendance",
+            )
+        )
+
+    avg_rpe = technical.get("avg_rpe")
+    total_hours = technical.get("total_training_hours")
+    if avg_rpe is not None and total_hours:
+        observations.append(
+            Observation(
+                claim="El trabajo técnico del mes sostuvo una carga de esfuerzo estable.",
+                evidence=f"Esfuerzo percibido promedio de {avg_rpe} en {total_hours} horas de entrenamiento.",
+                block_ref="technical",
+            )
+        )
+
+    if race.get("has_races"):
+        results = race.get("results") or []
+        ranked = [r for r in results if r.get("position") is not None]
+        if ranked:
+            best = min(ranked, key=lambda r: r["position"])
+            observations.append(
+                Observation(
+                    claim=f"{athlete_reference.capitalize()} sumó experiencia de competencia este mes.",
+                    evidence=f'Terminó en la posición {best["position"]} en la {best.get("label", "carrera")}.',
+                    block_ref="race",
+                )
+            )
+
+    return observations[:3]
+
+
+def static_summit_caption(summit: "Summit", email_blocks: dict[str, Any], athlete_reference: str) -> str:
+    """Leyenda de la cima del mes (≤ 25 palabras), data-driven por tipo de cima."""
+    if summit.kind == SummitKind.RACE:
+        race = email_blocks.get("race_results") or {}
+        results = race.get("results") or []
+        ranked = [r for r in results if r.get("position") is not None]
+        best = min(ranked, key=lambda r: r["position"]) if ranked else None
+        gap_pct = best.get("gap_to_winner_pct") if best else None
+        if gap_pct:
+            text = (
+                f"{athlete_reference.capitalize()} llegó a {gap_pct:.1f} % del "
+                "primer lugar, un resultado que refleja el trabajo de este mes."
+            )
+        else:
+            text = f"{athlete_reference.capitalize()} vivió una experiencia de competencia que suma a su proceso."
+    else:
+        attendance = email_blocks.get("attendance") or {}
+        streak = attendance.get("streak_sessions") or 0
+        if streak:
+            text = f"La mejor sesión del mes llegó dentro de una racha de {streak} entrenamientos consecutivos."
+        else:
+            text = "La mejor sesión del mes reflejó el esfuerzo constante en los entrenamientos."
+
+    return _limit_words_public(text, 25)
+
+
+def static_next_segment(next_segment: "NextSegment", athlete_reference: str) -> str:
+    """Texto del próximo tramo (≤ 40 palabras): focos técnicos + próxima carrera."""
+    parts: list[str] = []
+    if next_segment.focus_groups:
+        groups = ", ".join(next_segment.focus_groups[:4])
+        parts.append(f"Las próximas semanas se enfocan en {groups}")
+    if next_segment.next_race is not None:
+        race_date = next_segment.next_race.date.strftime("%d/%m")
+        parts.append(f"con la mirada puesta en {next_segment.next_race.label} el {race_date}")
+
+    if not parts:
+        text = f"El próximo tramo sigue construyendo la base técnica de {athlete_reference}."
+    else:
+        text = ", ".join(parts) + f" para {athlete_reference}."
+
+    return _limit_words_public(text, 40)
+
+
+def static_family_compass(
+    email_blocks: dict[str, Any],
+    next_segment: "NextSegment | None",
+    athlete_reference: str,
+) -> "FamilyCompass":
+    """Brújula de la familia estática: pregunta, reto del mes (basado en
+    proceso, sin suplementos/calorías) y qué observar en el próximo tramo."""
+    question = f"¿Qué fue lo que más disfrutó {athlete_reference} en la bici este mes?"
+    challenge = (
+        f"Proponle a {athlete_reference} preparar la bici y el equipo antes de "
+        "cada sesión, como parte de su proceso de autonomía."
+    )
+
+    if next_segment is not None and next_segment.focus_groups:
+        watch = f"En las próximas semanas, observen cómo mejora en {next_segment.focus_groups[0]}."
+    elif next_segment is not None and next_segment.next_race is not None:
+        watch = (
+            f"Falta poco para {next_segment.next_race.label}: acompañen el "
+            "proceso de preparación con calma."
+        )
+    else:
+        watch = "Sigan acompañando el proceso de entrenamiento semana a semana, sin presión."
+
+    return FamilyCompass(
+        conversation_question=question,
+        monthly_challenge=challenge,
+        what_to_watch=watch,
+    )
+
+
+def _limit_words_public(value: str, max_words: int) -> str:
+    """Recorta ``value`` a ``max_words`` palabras (misma regla que
+    ``stage_log._limit_words``, duplicada aquí para que este módulo no
+    dependa de un símbolo privado de otro módulo)."""
+    words = value.split()
+    if len(words) <= max_words:
+        return value
+    return " ".join(words[:max_words])
 
 
 def build_static_narrative(email_blocks: dict[str, Any]) -> dict[str, Any]:

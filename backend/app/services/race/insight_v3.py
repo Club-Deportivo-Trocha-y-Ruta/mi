@@ -101,8 +101,6 @@ class Horizon(str, Enum):
 class CatalogKind(str, Enum):
     """Tipo de recurso del catálogo del club referenciado por una acción."""
 
-    TECHNIQUE_SKILL = "technique_skill"
-    STRENGTH_BLOCK = "strength_block"
     INTERVAL_TEMPLATE = "interval_template"
 
 
@@ -184,7 +182,7 @@ class CatalogRef(BaseModel):
         ...,
         min_length=1,
         max_length=32,
-        description="Código de skill técnica ('A'..'H') o id numérico como string.",
+        description="Id numérico de la plantilla de intervalos, como string.",
     )
     label: Optional[str] = Field(
         default=None,

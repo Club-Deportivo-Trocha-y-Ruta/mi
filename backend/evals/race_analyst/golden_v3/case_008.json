@@ -129,9 +129,11 @@
       "rubric_effort_mean": 4.3,
       "rubric_attitude_mean": 4.5,
       "rubric_technique_mean": 3.7,
-      "technical_foci": ["Trazado de curvas", "Control de presión / terreno", "Cambios y cadencia"],
-      "skill_codes_worked": ["E", "G", "H"],
-      "strength_sessions": 12,
+      "technical_foci": [
+        "Trazado de curvas",
+        "Control de presión / terreno",
+        "Cambios y cadencia"
+      ],
       "interval_sessions": 8,
       "days_since_last_session": 4,
       "days_since_previous_race": 56,
@@ -151,16 +153,13 @@
       }
     ],
     "catalog_context": {
-      "technique_skills": [
-        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"},
-        {"code": "G", "name": "Control de presión / terreno", "focus": "Pump, raíces/rocas, drops"},
-        {"code": "H", "name": "Cambios y cadencia", "focus": "Engranar antes de la subida (cad. ≥70)"}
-      ],
-      "strength_blocks": [
-        {"id": 34, "name": "Fuerza específica de tren inferior", "age_band": "14-16"}
-      ],
       "interval_templates": [
-        {"id": 47, "name": "Series largas en subida", "age_band": "14-16", "mesocycle_phase": "specific"}
+        {
+          "id": 47,
+          "name": "Series largas en subida",
+          "age_band": "14-16",
+          "mesocycle_phase": "specific"
+        }
       ]
     },
     "memory_recent_insights": [
@@ -168,7 +167,12 @@
       "Cto. Departamental: 2 puestos por encima de lo esperado en el pelotón más grande"
     ]
   },
-  "expected_themes": ["temporada", "asistencia", "campeonato", "mesociclo"],
+  "expected_themes": [
+    "temporada",
+    "asistencia",
+    "campeonato",
+    "mesociclo"
+  ],
   "forbidden_terms": [
     "suplementos",
     "creatina",
@@ -180,7 +184,12 @@
     "Thiago",
     "Valentina"
   ],
-  "expected_headline_keywords": ["temporada", "asistencia", "74", "cierre"],
+  "expected_headline_keywords": [
+    "temporada",
+    "asistencia",
+    "74",
+    "cierre"
+  ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
@@ -191,25 +200,40 @@
     "observations": [
       {
         "claim": "La curva de gap mejora en las puntas y se rompe solo en el tramo del parón, así que la trayectoria de fondo es ascendente.",
-        "evidence": ["gap 9.42% en la primera fecha", "gap 12.6% en la tercera", "gap 6.91% en la última"],
+        "evidence": [
+          "gap 9.42% en la primera fecha",
+          "gap 12.6% en la tercera",
+          "gap 6.91% en la última"
+        ],
         "domain": "history",
         "confidence": "high"
       },
       {
         "claim": "El campeonato fue la mejor lectura relativa del año pese al puesto: terminó por encima de su expectativa en el pelotón más grande.",
-        "evidence": ["percentil 61.1 en el campeonato", "esperada 10 frente a real 8", "pelotón de 19"],
+        "evidence": [
+          "percentil 61.1 en el campeonato",
+          "esperada 10 frente a real 8",
+          "pelotón de 19"
+        ],
         "domain": "field",
         "confidence": "high"
       },
       {
         "claim": "La asistencia de la temporada quedó por debajo de lo que sostiene una progresión pareja, con un cuarto de las sesiones sin asistir.",
-        "evidence": ["asistencia 74%", "71 sesiones asistidas de 96", "21 ausencias"],
+        "evidence": [
+          "asistencia 74%",
+          "71 sesiones asistidas de 96",
+          "21 ausencias"
+        ],
         "domain": "training",
         "confidence": "high"
       },
       {
         "claim": "La técnica sigue siendo la rúbrica más baja del año y es el margen más grande que queda para el próximo ciclo.",
-        "evidence": ["rúbrica de técnica 3.7 frente a esfuerzo 4.3", "8 sesiones con intervalos"],
+        "evidence": [
+          "rúbrica de técnica 3.7 frente a esfuerzo 4.3",
+          "8 sesiones con intervalos"
+        ],
         "domain": "training",
         "confidence": "medium"
       }
@@ -228,7 +252,11 @@
         "category": "technique",
         "priority": "high",
         "horizon": "season",
-        "catalog_ref": {"kind": "technique_skill", "code": "G", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "47",
+          "label": null
+        },
         "derived_from": 3
       },
       {
@@ -236,7 +264,11 @@
         "category": "volume",
         "priority": "med",
         "horizon": "season",
-        "catalog_ref": {"kind": "interval_template", "code": "47", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "47",
+          "label": null
+        },
         "derived_from": 0
       }
     ],
@@ -244,7 +276,11 @@
       "Si vuelve a aparecer un parón de tres semanas, planear una rutina mínima con la familia antes del viaje."
     ],
     "coach_question": "¿Qué se propone la deportista para la próxima temporada y cuántos días a la semana puede sostener la familia el traslado?",
-    "data_gaps": ["Sin registro de carga por fuera del club durante el parón de mitad de año."],
-    "principles_cited": ["5. Periodización de la temporada"]
+    "data_gaps": [
+      "Sin registro de carga por fuera del club durante el parón de mitad de año."
+    ],
+    "principles_cited": [
+      "5. Periodización de la temporada"
+    ]
   }
 }

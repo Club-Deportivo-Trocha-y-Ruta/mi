@@ -33,6 +33,7 @@ function phvLabel(status: MaturationStatus | null): string {
 export function ChildCard({ athlete }: ChildCardProps) {
   const status = STATUS_CONFIG[athlete.measurement_status];
   const hasAnthropometry = athlete.latest_anthropometry_date !== null;
+  const unreadNewsletters = athlete.unread_newsletters ?? 0;
 
   const heightFormatted = athlete.standing_height_cm
     ? parseFloat(athlete.standing_height_cm).toFixed(1)
@@ -66,11 +67,21 @@ export function ChildCard({ athlete }: ChildCardProps) {
           </p>
         </div>
 
-        <span
-          className={`ml-3 shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${status.textClass} ${status.bgClass}`}
-        >
-          {status.label}
-        </span>
+        <div className="ml-3 flex shrink-0 flex-col items-end gap-1.5">
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${status.textClass} ${status.bgClass}`}
+          >
+            {status.label}
+          </span>
+          {unreadNewsletters > 0 && (
+            <span
+              data-testid="child-card-new-bitacora-chip"
+              className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+            >
+              Nueva bitácora
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Divider */}

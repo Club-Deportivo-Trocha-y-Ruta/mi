@@ -81,5 +81,5 @@ Backend auto-deploys to Render free tier from `main` (`https://mi-2yzi.onrender.
 - **Subagents**: project agents in `.claude/agents/` follow the tiering/team policy documented in `.claude/agents/README.md` (leads = opus, workers = sonnet). The `data-privacy-guard` audit is mandatory for any feature touching athlete-identifiable data.
 
 <!-- SPECKIT START -->
-Most recent feature: `specs/036-ai-insights-tab-review/plan.md` (spec, research, data-model, contracts and quickstart live alongside it). Implementation is complete per `docs/implementation-status.md`, with follow-up still uncommitted in the working tree. No feature is active right now — regenerate this block with `/speckit-agent-context-update` when the next one starts.
+Most recent feature: `specs/038-newsletter-bitacora-redesign/plan.md` (spec, research, data-model, contracts and quickstart live alongside it). Implementation is complete per `docs/implementation-status.md`, with T403 (e2e) and SC-1 (real-dataset regeneration) still pending and the whole feature uncommitted in the working tree. No feature is active right now — regenerate this block with `/speckit-agent-context-update` when the next one starts.
 <!-- SPECKIT END -->

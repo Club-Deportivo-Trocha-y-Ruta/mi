@@ -85,13 +85,13 @@ describe("SidebarNav — filtrado por rol (data-model.md §3)", () => {
     expect(label).toHaveAttribute("href", "/training/athlete-newsletters");
   });
 
-  it("coach y admin ven Inicio, Entrenamiento, Competencias, Biblioteca", () => {
+  it("coach y admin ven Inicio, Entrenamiento, Competencias, Familias", () => {
     for (const role of ["coach", "admin"] as NavRole[]) {
       const { unmount } = renderSidebar(role);
       expect(screen.getByText("Inicio")).toBeInTheDocument();
       expect(screen.getByText("Entrenamiento")).toBeInTheDocument();
       expect(screen.getByText("Competencias")).toBeInTheDocument();
-      expect(screen.getByText("Biblioteca")).toBeInTheDocument();
+      expect(screen.getByText("Familias")).toBeInTheDocument();
       unmount();
     }
   });
@@ -416,7 +416,6 @@ describe("SidebarNav — modo riel (72px)", () => {
       "Competencias",
       "Atletas",
       "Familias",
-      "Biblioteca",
     ]);
   });
 
@@ -453,7 +452,7 @@ describe("SidebarNav — modo riel (72px)", () => {
     ).toBeInTheDocument();
     // Sin pendientes, el nombre es sólo la etiqueta.
     expect(
-      screen.getByRole("link", { name: "Biblioteca" }),
+      screen.getByRole("link", { name: "Familias" }),
     ).toBeInTheDocument();
   });
 

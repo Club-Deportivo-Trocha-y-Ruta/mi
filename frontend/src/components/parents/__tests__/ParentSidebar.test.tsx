@@ -403,4 +403,53 @@ describe("ParentSidebar", () => {
       expect(results).toHaveNoViolations();
     });
   });
+
+  // Feature 038, T303 — entrada de navegación "Bitácora"
+  describe("navegación — entrada 'Bitácora' (feature 038)", () => {
+    it("no aparece con 2 atletas y sin selección (mocks por defecto del describe)", () => {
+      renderSidebar();
+      const nav = screen.getByRole("navigation", { name: "Secciones" });
+      expect(within(nav).queryByRole("link", { name: "Bitácora" })).not.toBeInTheDocument();
+    });
+
+    it("aparece al final de 'Secciones' cuando hay un atleta activo seleccionado", () => {
+      useParentContextStore.setState({ activeAthleteId: 9 });
+      renderSidebar();
+
+      const nav = screen.getByRole("navigation", { name: "Secciones" });
+      const links = within(nav).getAllByRole("link");
+
+      expect(links.map((a) => a.textContent?.trim())).toEqual([
+        "Inicio",
+        "Calendario",
+        "Entrenamientos",
+        "Resumen mensual",
+        "Bitácora",
+      ]);
+      expect(screen.getByRole("link", { name: "Bitácora" })).toHaveAttribute(
+        "href",
+        "/my-athletes/9/bitacora",
+      );
+    });
+
+    it("marca 'Bitácora' activo en subrutas de detalle", () => {
+      useParentContextStore.setState({ activeAthleteId: 9 });
+      renderSidebar({ initialPath: "/my-athletes/9/bitacora/3" });
+
+      expect(screen.getByRole("link", { name: "Bitácora" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    });
+
+    it("aparece cuando el padre solo tiene un hijo (atleta implícito, sin selección)", () => {
+      mockAthletes([mkAthlete(7, "Valeria", { category: "Infantil", age_decimal: 12.8 })]);
+      renderSidebar();
+
+      expect(screen.getByRole("link", { name: "Bitácora" })).toHaveAttribute(
+        "href",
+        "/my-athletes/7/bitacora",
+      );
+    });
+  });
 });

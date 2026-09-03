@@ -71,7 +71,16 @@ export function ParentInviteManager({
   const invitesQuery = useParentInvites(athleteId);
   const createInviteMutation = useCreateParentInvite();
 
-  const invites = invitesQuery.data ?? [];
+  // GET /invites solo filtra por athlete_id — un atleta puede tener varias
+  // invitaciones de padres/acudientes distintos vinculados en paralelo. Sin
+  // este filtro, la tarjeta de un padre recién creado mostraba "Cuenta
+  // activada" con el correo de OTRO padre ya registrado del mismo atleta, y
+  // ocultaba por completo el formulario para invitar al padre correcto.
+  const allInvites = invitesQuery.data ?? [];
+  const invites =
+    parentUserId != null
+      ? allInvites.filter((i) => i.parent_user_id === parentUserId)
+      : allInvites;
   // Most recent invite first
   const sortedInvites = [...invites].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),

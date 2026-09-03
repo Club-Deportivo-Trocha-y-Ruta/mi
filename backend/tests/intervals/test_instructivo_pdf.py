@@ -62,7 +62,7 @@ from app.models.interval_structure import (
     IntervalStructure,
     IntervalStructureBlock,
 )
-from app.models.technique_exercise import AgeBand
+from app.models.interval_structure import AgeBand
 from app.models.training_session import SessionKind, SessionStatus, TrainingSession
 from app.models.user import User, UserRole
 from app.schemas.notification import DocumentFormat, GeneratedDocument

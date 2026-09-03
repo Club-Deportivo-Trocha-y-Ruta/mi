@@ -9,10 +9,7 @@ Incluye:
 - IntervalTemplate        — plantilla reutilizable, independiente de sesión
                             (FR-008)
 - IntervalTemplateBlock   — pasos de una plantilla (copy-on-attach, FR-009)
-
-El enum ``ageband`` se **reutiliza** desde ``app.models.technique_exercise``
-(migración ``e1f2a3b4c5d6``) — no se redefine ni se recrea (misma regla que
-siguió la feature 021).
+- AgeBand                 — banda de edad declarada de estructuras/plantillas
 
 PRIVACIDAD / no-negociables (Ley 1581, menores): el modelo de bloques solo
 declara dimensiones objetivo de zona de FC y **cadencia** — NO existe columna
@@ -37,8 +34,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-# Reutiliza el enum ageband existente (feature 018) — no lo redefinas.
-from app.models.technique_exercise import AgeBand
 
 if TYPE_CHECKING:
     from app.models.club import Club
@@ -70,6 +65,14 @@ class HRZone(str, enum.Enum):
     Z3 = "Z3"
     Z4 = "Z4"
     Z5 = "Z5"
+
+
+class AgeBand(str, enum.Enum):
+    """Banda de edad declarada de una estructura o plantilla de intervalos."""
+
+    BAND_7_9 = "7-9"
+    BAND_10_12 = "10-12"
+    BAND_13_15 = "13-15"
 
 
 class IntervalDurationType(str, enum.Enum):
@@ -260,7 +263,7 @@ class IntervalTemplate(Base):
     created_by_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
-    # Archivado suave (refleja strength_blocks); nunca se borra físicamente.
+    # Archivado suave; nunca se borra físicamente.
     is_archived: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )

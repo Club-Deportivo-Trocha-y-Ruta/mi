@@ -4,7 +4,7 @@
  * T021: Exactly one "Competencias" nav entry for coach; legacy paths redirect
  *       to the canonical destinations inside /competitions/*.
  * T022: Parent role cannot see the insights nav entry, and hitting
- *       coach/admin-only routes like /competitions or /technique is
+ *       coach/admin-only routes like /competitions or /athletes is
  *       blocked (redirect via ProtectedRoute).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -255,7 +255,7 @@ describe("T022 — Parent: sin entrada de insights en sidebar", () => {
   });
 });
 
-describe("T022 — Parent: /competitions y /technique bloqueados por ProtectedRoute", () => {
+describe("T022 — Parent: /competitions y /athletes bloqueados por ProtectedRoute", () => {
   /**
    * ProtectedRoute redirige a ROLE_FALLBACKS[parent] = "/my-athletes"
    * cuando allowedRoles = [coach, admin] y el usuario es parent.
@@ -311,10 +311,10 @@ describe("T022 — Parent: /competitions y /technique bloqueados por ProtectedRo
               }
             />
             <Route
-              path="/technique"
+              path="/athletes"
               element={
                 <InsightsGuard>
-                  <div data-testid="technique-content">Técnica</div>
+                  <div data-testid="athletes-content">Atletas</div>
                 </InsightsGuard>
               }
             />
@@ -336,9 +336,9 @@ describe("T022 — Parent: /competitions y /technique bloqueados por ProtectedRo
     expect(screen.getByTestId("my-athletes")).toBeInTheDocument();
   });
 
-  it("parent en /technique es redirigido", () => {
-    renderProtectedRoutes(UserRole.parent, "/technique");
-    expect(screen.queryByTestId("technique-content")).not.toBeInTheDocument();
+  it("parent en /athletes es redirigido", () => {
+    renderProtectedRoutes(UserRole.parent, "/athletes");
+    expect(screen.queryByTestId("athletes-content")).not.toBeInTheDocument();
     expect(screen.getByTestId("my-athletes")).toBeInTheDocument();
   });
 

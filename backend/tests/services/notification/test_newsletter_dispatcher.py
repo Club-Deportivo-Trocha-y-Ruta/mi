@@ -49,6 +49,20 @@ def make_scalars_result(items: list) -> Any:
     return result
 
 
+def _minimal_stage_log_json(athlete_id: int) -> dict:
+    """Forma mínima válida contra ``StageLog`` (campos obligatorios sin
+    default) — suficiente para que ``_send_v2_email`` la valide y proyecte
+    con ``to_parent_dto`` sin necesitar un fixture completo."""
+    return {
+        "schema_version": 2,
+        "stage_number": 1,
+        "period_label": "Marzo 2026",
+        "athlete_first_name": f"Atleta{athlete_id}",
+        "athlete_reference": "su hijo",
+        "stage_title": "Una etapa de constancia en cada sesión del mes",
+    }
+
+
 def make_newsletter(
     id_: int,
     athlete_id: int,
@@ -57,6 +71,7 @@ def make_newsletter(
     status: NewsletterStatus = NewsletterStatus.approved,
     metrics_snapshot: dict | None = None,
     ai_narrative: dict | None = None,
+    stage_log_json: dict | None = None,
 ) -> Any:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -67,7 +82,10 @@ def make_newsletter(
         status=status,
         metrics_snapshot=metrics_snapshot or {"email_blocks": {}, "pdf_only_blocks": {}},
         ai_narrative=ai_narrative,
-        coach_narrative_overrides=None,
+        stage_log_json=stage_log_json
+        if stage_log_json is not None
+        else _minimal_stage_log_json(athlete_id),
+        hidden_blocks=None,
         badges_earned=None,
         pdf_storage_url=None,
         pdf_sha256=None,

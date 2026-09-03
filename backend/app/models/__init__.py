@@ -57,33 +57,10 @@ from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
 from app.models.athlete_badge import AthleteBadge, BadgeType, BadgeSource
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 
-# Feature 018 — Technique & Gymkhana Library
-from app.models.technique_skill import TechniqueSkill
-from app.models.technique_material import TechniqueMaterial
-from app.models.technique_exercise import (
-    AgeBand,
-    AthleteSkillProgress,
-    ExerciseDifficulty,
-    SessionSegment,
-    SkillProgressStatus,
-    TechniqueExercise,
-    TechniqueExerciseAgeBand,
-    TechniqueSessionExercise,
-    technique_exercise_materials,
-    technique_exercise_skills,
-)
-
-# Feature 021 — Strength Training Exercise Library
-from app.models.strength import (
-    EquipmentKind,
-    MovementCategory,
-    StrengthBlock,
-    StrengthBlockEntry,
-    StrengthExercise,
-    StrengthExerciseAgeBand,
-    StrengthProgressNote,
-    StrengthProgressStatus,
-    StrengthSessionBlock,
+# Feature 038 — Bitácora de etapa (family newsletter redesign)
+from app.models.newsletter_delivery_event import (
+    DeliveryEventType,
+    NewsletterDeliveryEvent,
 )
 
 # Feature 025 — Strava Activity Sync
@@ -96,6 +73,7 @@ from app.models.strava_activity import (
 
 # Feature 026 — Structured Interval Training
 from app.models.interval_structure import (
+    AgeBand,
     HRZone,
     IntervalBlockType,
     IntervalStructure,
@@ -184,29 +162,9 @@ __all__ = [
     "BadgeSource",
     "AthleteMonthlyNewsletter",
     "NewsletterStatus",
-    # Feature 018 — Technique & Gymkhana Library
-    "TechniqueSkill",
-    "TechniqueMaterial",
-    "TechniqueExercise",
-    "TechniqueExerciseAgeBand",
-    "TechniqueSessionExercise",
-    "AthleteSkillProgress",
-    "AgeBand",
-    "ExerciseDifficulty",
-    "SessionSegment",
-    "SkillProgressStatus",
-    "technique_exercise_skills",
-    "technique_exercise_materials",
-    # Feature 021 — Strength Training Exercise Library
-    "StrengthExercise",
-    "StrengthExerciseAgeBand",
-    "StrengthBlock",
-    "StrengthBlockEntry",
-    "StrengthSessionBlock",
-    "StrengthProgressNote",
-    "EquipmentKind",
-    "MovementCategory",
-    "StrengthProgressStatus",
+    # Feature 038 — Bitácora de etapa (family newsletter redesign)
+    "NewsletterDeliveryEvent",
+    "DeliveryEventType",
     # Feature 025 — Strava Activity Sync
     "StravaConnection",
     "StravaConnectionStatus",
@@ -214,6 +172,7 @@ __all__ = [
     "StravaIngestSource",
     "StravaUpstreamState",
     # Feature 026 — Structured Interval Training
+    "AgeBand",
     "IntervalStructure",
     "IntervalStructureBlock",
     "IntervalTemplate",

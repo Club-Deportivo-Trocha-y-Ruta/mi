@@ -57,6 +57,8 @@ import { ParentsListPage } from "@/routes/parents/ParentsListPage";
 import { ParentDetailPage } from "@/routes/parents/ParentDetailPage";
 import { ParentDashboardPage } from "@/routes/parents/ParentDashboardPage";
 import { MyAthleteDetailPage } from "@/routes/parents/MyAthleteDetailPage";
+import { ParentNewsletterListPage } from "@/routes/parents/newsletters/ParentNewsletterListPage";
+import { ParentNewsletterPage } from "@/routes/parents/newsletters/ParentNewsletterPage";
 import { OnboardingPage } from "@/routes/auth/OnboardingPage";
 import { ForgotPasswordPage } from "@/routes/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/routes/auth/ResetPasswordPage";
@@ -69,7 +71,7 @@ import { ReportsListPage } from "@/routes/training/ReportsListPage";
 import { ReportDetailPage } from "@/routes/training/ReportDetailPage";
 import { ProjectProfilePage } from "@/routes/training/ProjectProfilePage";
 import { AthleteNewslettersDashboardPage } from "@/routes/training/AthleteNewslettersDashboardPage";
-import { AthleteNewsletterDetailPage } from "@/routes/training/AthleteNewsletterDetailPage";
+import { AthleteNewsletterStudioPage } from "@/routes/training/AthleteNewsletterStudioPage";
 import { ParentSessionsPage } from "@/routes/parents/training/ParentSessionsPage";
 import { ParentSessionDetailPage } from "@/routes/parents/training/ParentSessionDetailPage";
 import { ParentMonthlyOverviewPage } from "@/routes/parents/training/ParentMonthlyOverviewPage";
@@ -84,33 +86,6 @@ import { CompetitionDetailPage } from "@/routes/competitions/CompetitionDetailPa
 import { CompetitionImportPage } from "@/routes/competitions/CompetitionImportPage";
 import { UserRole } from "@/types/enums";
 
-// Technique & Gymkhana Library (feature 018) — coach/admin only (lazy)
-const CatalogPage = lazy(() =>
-  import("@/routes/technique/CatalogPage").then((m) => ({
-    default: m.CatalogPage,
-  })),
-);
-const ExerciseDetailPage = lazy(() =>
-  import("@/routes/technique/ExerciseDetailPage").then((m) => ({
-    default: m.ExerciseDetailPage,
-  })),
-);
-// Strength & Conditioning Library (feature 021) — coach/admin only (lazy)
-const StrengthCatalogPage = lazy(() =>
-  import("@/routes/strength/CatalogPage").then((m) => ({
-    default: m.CatalogPage,
-  })),
-);
-const StrengthExerciseDetailPage = lazy(() =>
-  import("@/routes/strength/ExerciseDetailPage").then((m) => ({
-    default: m.ExerciseDetailPage,
-  })),
-);
-const StrengthBlockBuilderPage = lazy(() =>
-  import("@/routes/strength/BlockBuilderPage").then((m) => ({
-    default: m.BlockBuilderPage,
-  })),
-);
 // Strava Activity Sync (feature 025) — revisión de actividades, coach/admin only (lazy)
 const ActivityReviewPage = lazy(() =>
   import("@/routes/activities/ActivityReviewPage").then((m) => ({
@@ -265,6 +240,22 @@ export default function App() {
           }
         />
         <Route
+          path="/my-athletes/:athleteId/bitacora"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.parent]}>
+              <ParentNewsletterListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/my-athletes/:athleteId/bitacora/:newsletterId"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.parent]}>
+              <ParentNewsletterPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/admin/ai"
           element={
             <ProtectedRoute allowedRoles={[UserRole.admin]}>
@@ -360,7 +351,7 @@ export default function App() {
           path="/training/athlete-newsletters/:athleteId/:newsletterId"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <AthleteNewsletterDetailPage />
+              <AthleteNewsletterStudioPage />
             </ProtectedRoute>
           }
         />
@@ -544,68 +535,6 @@ export default function App() {
           element={<Navigate to="/competitions" replace />}
         />
 
-        {/* ── Técnica y gymkhana (feature 018) — coach/admin only ── */}
-        <Route
-          path="/technique"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando biblioteca de técnica…" />}>
-                <CatalogPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/technique/exercises/:id"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando ejercicio…" />}>
-                <ExerciseDetailPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-        {/* ── Fuerza y acondicionamiento (feature 021) — coach/admin only ── */}
-        <Route
-          path="/strength"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando biblioteca de fuerza…" />}>
-                <StrengthCatalogPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/strength/exercises/:id"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando ejercicio…" />}>
-                <StrengthExerciseDetailPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/strength/blocks/new"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando armador de bloque…" />}>
-                <StrengthBlockBuilderPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/strength/blocks/:id"
-          element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando bloque…" />}>
-                <StrengthBlockBuilderPage />
-              </Suspense>
-            </ProtectedRoute>
-          }
-        />
         {/* ── Revisión de actividades Strava (feature 025) — coach/admin only ── */}
         <Route
           path="/activities"

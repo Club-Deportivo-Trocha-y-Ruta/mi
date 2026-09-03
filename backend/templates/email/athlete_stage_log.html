@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es-CO" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+  <title>Bitácora de etapa — {{ month_label }}</title>
+  <!--
+    Bitácora de etapa (feature 038, content_version=2) — versión corta.
+    El contenido completo vive en el portal (StageLogView), con un botón de
+    descarga del PDF; este correo es solo el resumen + CTA (AC-5.1).
+    NOTA (QA 2026-09-03): el PDF NO viaja como adjunto real del correo — el
+    caso `attachments=[]` está hardcodeado en
+    `newsletter_dispatcher.py::_send_v2_email` (mismo gap ya documentado en
+    `_send_v1_email`, que solo adjunta "si el PDF ya está en memoria" y
+    nunca lo descarga de SFTP). El copy de este template decía "adjunto" sin
+    que fuera cierto — se corrigió para no prometer un adjunto que nunca
+    llega; implementar el adjunto real (o decidir que el portal-only es
+    suficiente) queda pendiente de una decisión de producto/backend.
+    NUNCA incluye antropometría ni gráficos de temporada — StageLog (v2) no
+    los contiene por diseño (003/038 decisión), así que no hace falta
+    filtrarlos acá como defensa en profundidad (a diferencia del v1).
+    Límite: 8192 chars en <style> (Gmail Android los descarta — el layout
+    inline debe ser correcto sin ellas). Objetivo de tamaño total: ≤ 100 KB.
+  -->
+  <style>
+    body { margin: 0 !important; padding: 0 !important; background-color: #f5f5f5 !important; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+    img { -ms-interpolation-mode: bicubic; display: block; }
+
+    @media only screen and (max-width: 620px) {
+      .email-wrapper { width: 100% !important; max-width: 100% !important; }
+      .child-section { width: 100% !important; }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body { background-color: #1a1a1a !important; }
+      .email-body-outer { background-color: #1a1a1a !important; }
+      .email-wrapper { background-color: #2a2a2a !important; }
+      .content-cell { background-color: #2a2a2a !important; }
+      .child-section-td { background-color: #333333 !important; border-color: #444 !important; }
+      .child-header-td { background-color: #2a2416 !important; border-color: #5a4a1e !important; }
+      .trail-row-td { border-color: #444 !important; }
+      .footer-td { background-color: #222 !important; border-color: #333 !important; }
+      .privacy-td { background-color: #1a1a1a !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<table class="email-body-outer" role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;margin:0;padding:0;">
+  <tr>
+    <td align="center" style="padding:20px 10px;">
+
+      <table class="email-wrapper" role="presentation" width="600" border="0" cellpadding="0" cellspacing="0"
+             style="max-width:600px;width:100%;background-color:#ffffff;">
+
+        <!-- ===== HEADER ===== -->
+        <tr>
+          <td style="background-color:#2f2f2f;padding:20px 24px;border-bottom:4px solid #8be000;">
+            <h1 style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:700;color:#8be000;line-height:1.2;">
+              Club Deportivo Trocha y Ruta
+            </h1>
+            <p style="margin:4px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#cccccc;line-height:1.4;">
+              Bitácora de etapa — {{ month_label }}
+            </p>
+          </td>
+        </tr>
+
+        <!-- ===== CUERPO ===== -->
+        <tr>
+          <td class="content-cell" style="background-color:#ffffff;padding:24px;">
+
+            <p style="margin:0 0 20px 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#374151;line-height:1.5;">
+              Hola <strong style="color:#2f2f2f;">{{ parent_name }}</strong>, esta es la bitácora de
+              {% if children | length == 1 %}
+              <strong style="color:#2f2f2f;">{{ children[0].athlete_first_name }}</strong> este mes.
+              {% else %}
+              tus atletas este mes.
+              {% endif %}
+              El resumen está a continuación; la bitácora completa (ruta, perfil de esfuerzo,
+              lectura del analista y brújula de la familia) está en el portal, con opción de
+              descargarla en PDF.
+            </p>
+
+            <!-- ===== POR CADA ATLETA ===== -->
+            {% for child in children %}
+            {% set sl = child.stage_log or {} %}
+            {% set trail = sl.get('trail') or [] %}
+            {% set summit = sl.get('summit') %}
+            {% set observations = sl.get('observations') or [] %}
+            {% set first_observation = observations[0] if observations else none %}
+
+            <table class="child-section" role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0"
+                   style="width:100%;margin-bottom:20px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+              <!-- Cabecera del atleta -->
+              <tr>
+                <td class="child-header-td" style="background-color:#fefce8;padding:12px 16px;border-bottom:1px solid #fde68a;">
+                  <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.4px;">
+                    Etapa {{ sl.get('stage_number', '—') }} · {{ sl.get('period_label', month_label) }}
+                  </p>
+                  <h2 style="margin:4px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:700;color:#1f2937;line-height:1.3;">
+                    {{ sl.get('stage_title') or child.athlete_first_name }}
+                  </h2>
+                </td>
+              </tr>
+              <!-- Cuerpo del atleta -->
+              <tr>
+                <td class="child-section-td" style="background-color:#ffffff;padding:16px;">
+
+                  <!-- Ruta del mes — tabla-lista de waypoints (sin SVG en email) -->
+                  {% if trail %}
+                  <p style="margin:0 0 6px 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;color:#4b5563;text-transform:uppercase;letter-spacing:0.4px;">
+                    Ruta del mes
+                  </p>
+                  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:14px;">
+                    {% for wp in trail %}
+                    <tr>
+                      <td class="trail-row-td" style="width:26px;vertical-align:top;padding:4px 6px 4px 0;font-size:14px;line-height:1.5;border-bottom:1px solid #f3f4f6;">
+                        {% if wp.icon == 'flag' %}&#128681;
+                        {% elif wp.icon == 'award' %}&#127941;
+                        {% elif wp.icon == 'flame' %}&#128293;
+                        {% elif wp.icon == 'star' %}&#11088;
+                        {% elif wp.icon == 'map-pin' %}&#128205;
+                        {% elif wp.icon == 'compass' %}&#129517;
+                        {% else %}&#8226;
+                        {% endif %}
+                      </td>
+                      <td class="trail-row-td" style="vertical-align:top;padding:4px 0;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;color:#1f2937;line-height:1.5;border-bottom:1px solid #f3f4f6;">
+                        <strong>{{ wp.label }}</strong>{% if wp.sublabel %} — {{ wp.sublabel }}{% endif %}
+                        {% if wp.is_future %}<span style="color:#6b7280;"> (próxima)</span>{% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </table>
+                  {% endif %}
+
+                  <!-- Cima del mes -->
+                  {% if summit %}
+                  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0"
+                         style="width:100%;margin-bottom:14px;background-color:#f7fee7;border-left:3px solid #8be000;">
+                    <tr>
+                      <td style="padding:10px 14px;">
+                        <p style="margin:0 0 3px 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;color:#4d7c0f;text-transform:uppercase;letter-spacing:0.3px;">
+                          &#127956; Cima del mes
+                        </p>
+                        <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#1f2937;line-height:1.5;">
+                          {{ summit.get('title') }}
+                        </p>
+                        {% if summit.get('caption') %}
+                        <p style="margin:3px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;color:#374151;line-height:1.5;">
+                          {{ summit.get('caption') }}
+                        </p>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  </table>
+                  {% endif %}
+
+                  <!-- Primera observación ("lo que vio el entrenador") -->
+                  {% if first_observation %}
+                  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0"
+                         style="width:100%;margin-bottom:4px;background-color:#f9fafb;border-left:3px solid #2563eb;">
+                    <tr>
+                      <td style="padding:10px 14px;">
+                        <p style="margin:0 0 3px 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.3px;">
+                          Lo que vio el entrenador
+                        </p>
+                        <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;color:#374151;line-height:1.5;">
+                          {{ first_observation.get('claim') }}
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                  {% endif %}
+
+                  <!-- CTA -->
+                  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
+                    <tr>
+                      <td align="center">
+                        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td align="center" style="border-radius:6px;background-color:#2f2f2f;">
+                              <a href="{{ child.cta_url }}" target="_blank"
+                                 style="display:inline-block;padding:11px 22px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#8be000;text-decoration:none;border-radius:6px;">
+                                {{ child.cta_label }}
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+            <!-- /bucle atletas -->
+
+            <p style="margin:20px 0 4px 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7280;line-height:1.5;text-align:center;">
+              Descarga la bitácora completa en PDF desde el portal.
+            </p>
+
+          </td>
+        </tr>
+
+        <!-- ===== FOOTER ===== -->
+        <tr>
+          <td class="footer-td" style="background-color:#f9fafb;padding:16px 24px;border-top:1px solid #e5e7eb;">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#374151;line-height:1.5;">
+              Esta bitácora fue preparada por el entrenador de <strong style="color:#2f2f2f;">{{ club_name }}</strong>.
+              Si tienes preguntas, responde a este correo o contacta al entrenador directamente.
+            </p>
+          </td>
+        </tr>
+
+        <!-- ===== NOTA DE PRIVACIDAD ===== -->
+        <tr>
+          <td class="privacy-td" style="background-color:#f5f5f5;padding:12px 24px;border-top:1px solid #f0f0f0;">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#6b7280;line-height:1.5;">
+              <strong style="color:#374151;">Ley 1581/2012 (Habeas Data):</strong>
+              Este correo contiene información personal de un menor de edad.
+              Se envía al padre o tutor autorizado. Para ejercer derechos de acceso, rectificación
+              o cancelación: privacidad@trochyruta.com. No reenviar sin autorización.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+      <!-- /email-wrapper -->
+
+    </td>
+  </tr>
+</table>
+</body>
+</html>

@@ -46,7 +46,7 @@ import pytest
 from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from app.models.technique_exercise import AgeBand
+from app.models.interval_structure import AgeBand
 from app.schemas.intervals import BlockIn
 from app.services.intervals import structures as structures_svc
 from app.services.intervals import templates as templates_svc

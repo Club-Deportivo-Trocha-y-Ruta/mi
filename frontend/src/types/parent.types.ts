@@ -42,6 +42,10 @@ export interface MyAthleteOut {
   standing_height_cm: string | null; // Decimal in Python → string in JSON
   weight_kg: string | null; // Decimal in Python → string in JSON
   measurement_status: "ok" | "due_soon" | "overdue" | "never";
+  // Bitácoras (feature 038) enviadas y aún no leídas por este padre.
+  // Opcional en el tipo: `?? 0` defensivo en el consumidor (ChildCard) por
+  // si el backend de una versión previa a la Wave 2 (T202) no lo incluye.
+  unread_newsletters?: number;
 }
 
 // --- Invitations ---
@@ -69,6 +73,13 @@ export interface ParentInviteOut {
   expires_at: string;
   used: boolean;
   created_at: string;
+  /**
+   * Padre al que pertenece la invitación. `GET /invites` filtra solo por
+   * athlete_id (un atleta puede tener varios padres/acudientes vinculados),
+   * así que un componente que representa a UN padre debe filtrar por este
+   * campo — de lo contrario muestra el estado de otro padre.
+   */
+  parent_user_id?: number | null;
 }
 
 export interface ParentInviteCreatedOut extends ParentInviteOut {

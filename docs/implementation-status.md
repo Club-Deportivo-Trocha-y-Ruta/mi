@@ -666,3 +666,45 @@ persisted separately from the analyst's (single `model` column).
 **Status:** 🚧 Waves 1-4 complete and integrated on the working tree
 (uncommitted); pending SC-1 verification on the local dataset and the real
 golden eval run in CI.
+
+---
+
+## Implementation status — Bitácora de etapa (specs/038-newsletter-bitacora-redesign)
+
+Redesign of the monthly individual newsletter (coach studio + email + PDF)
+around a "stage of the season route" metaphor, adding a first parent-portal
+surface for it. Full spec, data model and API contracts in
+`specs/038-newsletter-bitacora-redesign/`; product summary in
+`docs/06-parents/038-bitacora.md`; cross-cutting technical facts and the
+full test-suite reconciliation in `docs/technical-notes.md`'s own
+2026-09-02 entry. Built as 4 waves of parallel agents with no visibility
+into each other's work, closed by this integration/verification pass.
+
+| Wave | Scope | Status |
+|---|---|---|
+| 1 | Content model & data: `stage_log.py`/`stage_log_builder.py` (waypoints, effort profile, summit, `to_parent_dto` allow-list), migration `6b998c214e5a` (`content_version`, `stage_log_json`, `stage_overrides`, `hidden_blocks`, `coach_note`, `read_at`/`read_by_user_id`, `newsletter_delivery_events` table), `family_translation.py` (037 → family-language translation), `newsletter_static_copy.py` v2 (deterministic fallback for every narrative block) | ✅ Complete 2026-09-02 |
+| 2 | AI v2 + delivery: `athlete_monthly_newsletter_v2.j2` prompt + `StageNarrative` use case (grounding guardrails via `extract_numeric_tokens`), `parent_newsletters.py` router + `unread_newsletters`, email/PDF v2 templates + `newsletter_dispatcher.py` v1/v2 routing + `newsletter_delivery_events(sent)`, frontend contract (types/Zod/api/hooks/MSW/fixtures) | ✅ Complete 2026-09-02 |
+| 3 | UI: `StageLogView` + 10 sub-blocks (coach/parent modes), `AthleteNewsletterStudioPage` (device preview, per-block edit/regenerate/hide, delivery panel), parent list/detail pages + nav entries | ✅ Complete 2026-09-02 |
+| 4 | Quality: Resend webhook (P3, signature verification + idempotency), privacy audit, docs, full-suite verification | ✅ Complete 2026-09-02 — Playwright e2e (T403) and SC-1 real-dataset regeneration still pending |
+
+**Integration verification (this pass, T404/T405):** re-ran the full
+backend and frontend suites and traced every failure to a known cause —
+**zero regressions caused by this feature** (full breakdown in
+`docs/technical-notes.md`). Checked the five highest-risk cross-wave seams
+by hand (both `build_stage_log(...)` call sites against
+`stage_log_builder.py`'s signature, the `extract_numeric_tokens` import
+path, `NewsletterDeliveryEvent`/`DeliveryEventType` naming across all four
+consumers, `StageLogView`'s exports against its two importers, MSW handler
+coverage of every new endpoint) — all correct, no fixes needed. Confirmed
+only one new Alembic head (`6b998c214e5a`, `down_revision="f7a8b9c0d1e3"`);
+`main`'s pre-existing two-head state (unrelated to this feature) is
+unchanged in count.
+
+**Known gaps:**
+- T403 (Playwright e2e coach-studio→send→parent-read, LCP under Fast 3G,
+  Gmail-Android email checklist) — no artifacts in the working tree.
+- SC-1 (regenerate June 2026 for the screenshot athlete + 5 others on the
+  local DB) needs a live MySQL instance — not run in this environment.
+
+**Status:** 🚧 All 4 waves complete and integrated on the working tree
+(uncommitted); pending T403 (e2e) and SC-1 (real-dataset regeneration).

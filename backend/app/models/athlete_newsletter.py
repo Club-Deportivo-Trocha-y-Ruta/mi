@@ -82,12 +82,11 @@ class AthleteMonthlyNewsletter(Base):
     # pdf_only_blocks: todo lo anterior + antropometría completa + gráficos SVG.
     metrics_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    # Narrativa IA estructurada: {strengths, area_to_develop, milestone,
-    #   model, prompt_version, confidence}
+    # Narrativa IA estructurada (StageNarrative — ver
+    # app/services/ai/use_cases/athlete_monthly_newsletter_v2.py): stage_title,
+    # summit_caption, observations, next_segment_text, family_compass,
+    # analyst_reading, model, prompt_version, confidence.
     ai_narrative: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-
-    # Edición manual del coach antes de aprobar
-    coach_narrative_overrides: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Snapshot inmutable de las insignias ganadas en el periodo
     badges_earned: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -122,6 +121,30 @@ class AthleteMonthlyNewsletter(Base):
         comment="IDs ordenados de AthleteAIInsight seleccionados manualmente por el coach",
     )
 
+    # ── Feature 038 (Bitácora de etapa) ──────────────────────────────────
+    # StageLog.model_dump() (vista coach: incluye block_states y
+    # grounding_violations). NULL solo si la generación falló antes de
+    # derivar la bitácora. Se re-deriva en cada PATCH que toque
+    # stage_overrides/hidden_blocks/coach_note.
+    stage_log_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Edición manual del coach por bloque narrativo v2: {block: value} para
+    # stage_title, summit_caption, observations, analyst_reading,
+    # next_segment_text, family_compass.
+    stage_overrides: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Subconjunto de bloques opcionales ocultos por el coach: analyst_reading,
+    # photos, badges, coach_note.
+    hidden_blocks: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # "Nota del entrenador" — texto libre en primera persona, ≤ 60 palabras.
+    # Pasa por _redact_names (nombres prohibidos del club) antes de persistir
+    # — mismo guard que el resto del texto libre del coach en este módulo.
+    coach_note: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    # Primera lectura web de un padre (POST .../newsletters/{id}/read,
+    # idempotente — solo la primera llamada la puebla).
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    read_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -147,4 +170,8 @@ class AthleteMonthlyNewsletter(Base):
     approved_by: Mapped["User | None"] = relationship(
         "User",
         foreign_keys="[AthleteMonthlyNewsletter.approved_by_user_id]",
+    )
+    read_by: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys="[AthleteMonthlyNewsletter.read_by_user_id]",
     )

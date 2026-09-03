@@ -89,30 +89,35 @@
       "rubric_effort_mean": 4.1,
       "rubric_attitude_mean": 4.3,
       "rubric_technique_mean": 3.4,
-      "technical_foci": ["Posición neutra/lista y equilibrio"],
-      "skill_codes_worked": ["A"],
-      "strength_sessions": 0,
+      "technical_foci": [
+        "Posición neutra/lista y equilibrio"
+      ],
       "interval_sessions": 0,
       "days_since_last_session": 4,
       "days_since_previous_race": null,
-      "coach_feedback": ["Primera pretemporada completa con el grupo"],
+      "coach_feedback": [
+        "Primera pretemporada completa con el grupo"
+      ],
       "strava_load": null
     },
     "coach_dialogue": [],
     "catalog_context": {
-      "technique_skills": [
-        {"code": "A", "name": "Posición neutra/lista y equilibrio", "focus": "Postura atlética, peso centrado, trackstand"},
-        {"code": "B", "name": "Mirada / visión", "focus": "Mirar lejos y donde sí quiero ir"},
-        {"code": "E", "name": "Trazado de curvas", "focus": "Mirar la salida, inclinar bici, pedales"}
-      ],
-      "strength_blocks": [
-        {"id": 22, "name": "Core y estabilidad con peso corporal", "age_band": "12-14"}
-      ],
-      "interval_templates": []
+      "interval_templates": [
+        {
+          "id": 1,
+          "name": "Plantilla base de intervalos",
+          "age_band": "10-12",
+          "mesocycle_phase": "base"
+        }
+      ]
     },
     "memory_recent_insights": []
   },
-  "expected_themes": ["referencia", "primera", "posición esperada"],
+  "expected_themes": [
+    "referencia",
+    "primera",
+    "posición esperada"
+  ],
   "forbidden_terms": [
     "tendencia",
     "mejoró respecto",
@@ -123,7 +128,12 @@
     "Thiago",
     "Valentina"
   ],
-  "expected_headline_keywords": ["referencia", "primera", "53.8", "mediana"],
+  "expected_headline_keywords": [
+    "referencia",
+    "primera",
+    "53.8",
+    "mediana"
+  ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
@@ -142,19 +152,29 @@
     "observations": [
       {
         "claim": "El resultado queda a la altura de la mediana de la categoría, así que sirve como línea base y no como señal de nivel alto ni bajo.",
-        "evidence": ["percentil 53.8 en un pelotón de 14", "gap a la mediana 0.52%"],
+        "evidence": [
+          "percentil 53.8 en un pelotón de 14",
+          "gap a la mediana 0.52%"
+        ],
         "domain": "field",
         "confidence": "high"
       },
       {
         "claim": "La distancia con el frente se concentra en la parte técnica del circuito, donde la rúbrica de técnica es la más baja de las tres.",
-        "evidence": ["rúbrica de técnica 3.4 frente a esfuerzo 4.1", "gap 11.92% al líder"],
+        "evidence": [
+          "rúbrica de técnica 3.4 frente a esfuerzo 4.1",
+          "gap 11.92% al líder"
+        ],
         "domain": "training",
         "confidence": "medium"
       },
       {
         "claim": "La pretemporada fue continua y sin picos de esfuerzo, un punto de partida sano para construir sobre él.",
-        "evidence": ["asistencia 80%", "RPE medio 4.2", "8 sesiones asistidas de 10"],
+        "evidence": [
+          "asistencia 80%",
+          "RPE medio 4.2",
+          "8 sesiones asistidas de 10"
+        ],
         "domain": "training",
         "confidence": "high"
       }
@@ -165,7 +185,11 @@
         "category": "technique",
         "priority": "high",
         "horizon": "next_week",
-        "catalog_ref": {"kind": "technique_skill", "code": "A", "label": null},
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "1",
+          "label": null
+        },
         "derived_from": 1
       },
       {
@@ -185,6 +209,8 @@
       "Sin válidas previas en la temporada: no hay base para hablar de evolución.",
       "La posición esperada no se calcula porque menos de la mitad del pelotón tiene historial previo."
     ],
-    "principles_cited": ["3. Progresión técnica en MTB/XCO"]
+    "principles_cited": [
+      "3. Progresión técnica en MTB/XCO"
+    ]
   }
 }

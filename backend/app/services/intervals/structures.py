@@ -52,8 +52,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.interval_structure import IntervalStructure, IntervalStructureBlock
-from app.models.technique_exercise import AgeBand
+from app.models.interval_structure import AgeBand, IntervalStructure, IntervalStructureBlock
 from app.models.training_session import TrainingSession
 from app.schemas.intervals import MIN_CADENCE_RPM, BlockIn
 

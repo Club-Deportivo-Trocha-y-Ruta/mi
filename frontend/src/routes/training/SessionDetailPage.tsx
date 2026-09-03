@@ -555,7 +555,7 @@ export function SessionDetailPage() {
           </div>
         </TabsContent>
 
-        {/* Plan (feature 032): técnica + fuerza + intervalos unificados */}
+        {/* Plan (feature 032): estructura de intervalos */}
         <TabsContent value="plan" data-testid="session-section-plan">
           <h2 ref={planHeadingRef} tabIndex={-1} className="sr-only">
             Plan

@@ -88,8 +88,6 @@ TRAINING_WINDOW = {
     "rubric_attitude_mean": 4.5,
     "rubric_technique_mean": 3.2,
     "technical_foci": ["Descensos y bermas", "Frenada"],
-    "skill_codes_worked": ["D", "F"],
-    "strength_sessions": 2,
     "interval_sessions": 0,
     "days_since_last_session": 3,
     "days_since_previous_race": 21,
@@ -114,8 +112,6 @@ ANTHRO_CONTEXT = {
 }
 
 CATALOG_CONTEXT = {
-    "technique_skills": [{"code": "D", "name": "Descensos", "focus": "control"}],
-    "strength_blocks": [{"id": 3, "name": "Core básico", "age_band": "12-13"}],
     "interval_templates": [
         {"id": 8, "name": "Rodaje ondulado", "age_band": "12-13", "mesocycle_phase": "base"}
     ],
@@ -190,7 +186,7 @@ def test_analyst_prompt_includes_all_data_blocks():
     assert "- Asistencia: 62.5%" in text  # ventana de entrenamiento
     assert "Circa-PHV" in text  # maduración
     assert "- Clima: soleado" in text  # condiciones
-    assert "`D` Descensos" in text  # catálogo
+    assert "`8` Rodaje ondulado" in text  # catálogo
     assert "El coach respondió: Estuvo en semana de exámenes." in text  # diálogo
     assert "Válida III: gap 8.4%" in text  # memoria
 

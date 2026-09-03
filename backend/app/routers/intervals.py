@@ -52,7 +52,7 @@ from app.models.club import Club, ClubMember
 from app.models.interval_structure import IntervalStructure, IntervalTemplate
 from app.models.strava_activity import StravaActivity
 from app.models.strava_activity_lap import IntervalMatchResult, MatchTrigger
-from app.models.technique_exercise import AgeBand
+from app.models.interval_structure import AgeBand
 from app.models.training_session import TrainingSession
 from app.models.user import User, UserRole
 from app.schemas.intervals import (

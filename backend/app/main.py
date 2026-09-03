@@ -9,12 +9,14 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine
-from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, strength, technique, training_sessions
+from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, training_sessions
 from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
 from app.routers.monthly_reports import router as monthly_reports_router, parent_router as parent_monthly_router
 from app.routers.athlete_monthly_newsletters import router as athlete_newsletters_router, clubs_router as newsletter_clubs_router, training_router as newsletter_training_router
+from app.routers.parent_newsletters import router as parent_newsletters_router
+from app.routers.webhooks_resend import router as webhooks_resend_router
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +90,11 @@ app.include_router(anthropometry.router, prefix="/api/athletes", tags=["anthropo
 app.include_router(reports.router, prefix="/api/athletes", tags=["reports"])
 app.include_router(growth.router, prefix="/api", tags=["growth"])
 app.include_router(parent_athletes.router, prefix="/api/parent-athletes", tags=["parent-athletes"])
+app.include_router(
+    parent_newsletters_router,
+    prefix="/api/parents/me/athletes/{athlete_id}/newsletters",
+    tags=["parent-newsletters"],
+)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(consent_public_router, prefix="/api/auth", tags=["consent"])
 app.include_router(consent_router, prefix="/api/me/consent", tags=["consent"])
@@ -107,9 +114,8 @@ app.include_router(newsletter_clubs_router, prefix="/api/clubs", tags=["athlete-
 app.include_router(newsletter_training_router, prefix="/api/training", tags=["athlete-newsletters"])
 app.include_router(club_race_insights_router, prefix="/api/races", tags=["club-race-insights"])
 app.include_router(session_assistant_router, prefix="/api/clubs", tags=["session-assistant"])
-app.include_router(technique.router, prefix="/api/technique", tags=["technique"])
-app.include_router(strength.router, prefix="/api/strength", tags=["strength"])
 app.include_router(intervals.router, prefix="/api/intervals", tags=["intervals"])
+app.include_router(webhooks_resend_router, prefix="/api/webhooks", tags=["webhooks"])
 
 if settings.strava_enabled:
     from app.routers import activities as activities_router_module

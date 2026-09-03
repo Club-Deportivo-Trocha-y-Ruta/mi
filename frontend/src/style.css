@@ -82,6 +82,21 @@
   --color-tier-b: #1cb5c7;
   --color-tier-a: #008492;
 
+  /* Bitácora de etapa (feature 038, T301) — ACOTADA excepción al acento
+     único del design system (docs/05-design-system/design.md §2: "hay
+     exactamente un acento de marca"). Un tono tierra cálido, usado
+     SOLO en dos lugares de la superficie `[data-surface="bitacora"]`:
+     el patrón de terreno/fondo detrás de la "ruta del mes" (TrailRoute)
+     y el texto del chip "Cima del mes" (SummitCard). Nunca transmite
+     estado — el estado siempre usa StatusBadge (icono + texto). Validado
+     como texto grande (>=18px bold) sobre blanco: contraste 4.0:1, cumple
+     el piso AA de 3:1 para texto grande (no cumple el piso de 4.5:1 de
+     texto normal — por eso está restringido a texto grande/negrita y a
+     fondos decorativos de muy baja opacidad, nunca a texto de tamaño
+     estándar). Referencia: specs/038-newsletter-bitacora-redesign/plan.md
+     §"Visual language". Pendiente de revisión por el equipo (ux-researcher). */
+  --color-trail-earth: #b86b3c;
+
   /* Navegación lateral (feature 035) — tinte y acento del estado activo.
      El tinte se calcula sobre la superficie del modo (blanco en claro,
      #1a1a1a en oscuro) para conservar el mismo "peso" percibido en ambos.
@@ -169,6 +184,12 @@
   --color-tier-c: #5bc6d5;
   --color-tier-b: #1cb5c7;
   --color-tier-a: #008492;
+
+  /* Bitácora de etapa (feature 038) — ver el bloque :root de arriba para
+     el racional completo y la validación AA; se mantiene en sync aquí
+     para que las utilidades de Tailwind (text-trail-earth, bg-trail-earth)
+     existan. */
+  --color-trail-earth: #b86b3c;
 
   /* Navegación lateral (feature 035) — ver el bloque :root de arriba para
      el racional completo; se mantiene en sync aquí para que las utilidades
@@ -360,6 +381,35 @@ body {
    Utilities — reutilizables
    ───────────────────────────────────────────── */
 @layer utilities {
+}
+
+/* ─────────────────────────────────────────────
+   Bitácora de etapa (feature 038, T301) — capa visual de la superficie
+   `[data-surface="bitacora"]` (StageLogView y sus bloques). Ver
+   `--color-trail-earth` arriba para la excepción de color acotada.
+   Patrón topográfico ~4% opacidad, solo detrás de TrailRoute (el
+   "terreno" de la ruta) — nunca en el resto de la bitácora, que se
+   mantiene en la paleta neutra + el único acento teal del design system.
+   ───────────────────────────────────────────── */
+[data-surface="bitacora"] .trail-terrain-bg {
+  background-color: var(--color-white);
+  background-image: repeating-radial-gradient(
+      circle at 15% 25%,
+      transparent 0,
+      transparent 16px,
+      color-mix(in srgb, var(--color-trail-earth) 4%, transparent) 17px,
+      color-mix(in srgb, var(--color-trail-earth) 4%, transparent) 18px,
+      transparent 19px
+    ),
+    repeating-radial-gradient(
+      circle at 80% 70%,
+      transparent 0,
+      transparent 22px,
+      color-mix(in srgb, var(--color-trail-earth) 4%, transparent) 23px,
+      color-mix(in srgb, var(--color-trail-earth) 4%, transparent) 24px,
+      transparent 25px
+    );
+  background-size: 160px 160px;
 }
 
 /* ─────────────────────────────────────────────

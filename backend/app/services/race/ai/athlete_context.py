@@ -3,8 +3,8 @@
 Reúnen datos que ya existen en la plataforma pero nunca llegaban al prompt
 del analista: antropometría (solo maduración, jamás peso/IMC/estado
 nutricional), la ventana de entrenamiento previa a la carrera analizada y el
-catálogo del club (habilidades técnicas, bloques de fuerza, plantillas de
-intervalos) para que las acciones sugeridas referencien recursos reales.
+catálogo del club (plantillas de intervalos) para que las acciones sugeridas
+referencien recursos reales.
 
 Todas las funciones son ``async``, reciben una ``AsyncSession`` ya abierta y
 son de solo lectura (nunca ``commit``/``flush`` — el caller es dueño de la
@@ -24,12 +24,9 @@ from sqlalchemy.orm import selectinload
 
 from app.models.anthropometry import AnthropometricRecord
 from app.models.athlete import Athlete, ParentAthlete
-from app.models.technique_exercise import TechniqueExercise, TechniqueSessionExercise
 from app.models.training_session import SessionAttendance, TrainingSession
 from app.models.user import User
 from app.services.measurement_alerts import calculate_growth_velocity, detect_approaching_circa
-from app.services.strength import blocks as strength_blocks_service
-from app.services.technique import catalog as technique_catalog
 from app.services.intervals import templates as interval_templates_service
 from app.services.training.focus_grouping import group_focus_texts
 
@@ -207,13 +204,6 @@ async def load_training_window(
             TrainingSession.scheduled_date <= date_to,
         )
         .options(
-            selectinload(SessionAttendance.session)
-            .selectinload(TrainingSession.technique_exercises)
-            .selectinload(TechniqueSessionExercise.exercise)
-            .selectinload(TechniqueExercise.skills),
-            selectinload(SessionAttendance.session).selectinload(
-                TrainingSession.strength_blocks
-            ),
             selectinload(SessionAttendance.session).selectinload(
                 TrainingSession.interval_structure
             ),
@@ -234,8 +224,6 @@ async def load_training_window(
     attitude_values: list[float] = []
     technique_values: list[float] = []
     focus_texts: list[str] = []
-    skill_codes: set[str] = set()
-    strength_sessions = 0
     interval_sessions = 0
     scheduled_dates: list[date] = []
     feedback_candidates: list[tuple[date, str]] = []
@@ -272,16 +260,6 @@ async def load_training_window(
         if session.technical_focus:
             focus_texts.append(session.technical_focus)
 
-        for tse in session.technique_exercises or []:
-            exercise = tse.exercise
-            if exercise is None:
-                continue
-            for skill in exercise.skills or []:
-                if skill.code:
-                    skill_codes.add(skill.code)
-
-        if session.strength_blocks:
-            strength_sessions += 1
         if session.interval_structure is not None:
             interval_sessions += 1
 
@@ -327,8 +305,6 @@ async def load_training_window(
         "rubric_attitude_mean": _mean(attitude_values),
         "rubric_technique_mean": _mean(technique_values),
         "technical_foci": technical_foci,
-        "skill_codes_worked": sorted(skill_codes),
-        "strength_sessions": strength_sessions,
         "interval_sessions": interval_sessions,
         "days_since_last_session": days_since_last_session,
         "days_since_previous_race": None,  # reserva — la puebla el nodo (necesita fechas de carrera)
@@ -346,20 +322,14 @@ def _days_delta(days: int):
 async def load_catalog_context(
     db: Any, club_id: int, age_band: str | None
 ) -> dict[str, Any]:
-    """Carga el catálogo (skills, bloques de fuerza, plantillas) del club.
+    """Carga el catálogo (plantillas de intervalos) del club.
 
-    ``technique_skills`` son globales (no scoped por club). ``strength_blocks``
-    y ``interval_templates`` sí lo son, y se filtran adicionalmente por
+    ``interval_templates`` es scoped por club, y se filtra adicionalmente por
     ``age_band`` cuando se provee (banda del atleta objetivo).
     """
-    skills = await technique_catalog.list_skills(db)
-    blocks, _total_blocks = await strength_blocks_service.list_blocks(db, club_id=club_id)
-    if age_band is not None:
-        blocks = [b for b in blocks if getattr(b.target_age_band, "value", b.target_age_band) == age_band]
-
     templates_age_band = None
     if age_band is not None:
-        from app.models.technique_exercise import AgeBand
+        from app.models.interval_structure import AgeBand
 
         try:
             templates_age_band = AgeBand(age_band)
@@ -370,17 +340,6 @@ async def load_catalog_context(
     )
 
     return {
-        "technique_skills": [
-            {"code": s.code, "name": s.name, "focus": s.focus} for s in skills
-        ],
-        "strength_blocks": [
-            {
-                "id": b.id,
-                "name": b.name,
-                "age_band": getattr(b.target_age_band, "value", b.target_age_band),
-            }
-            for b in blocks
-        ],
         "interval_templates": [
             {
                 "id": t.id,

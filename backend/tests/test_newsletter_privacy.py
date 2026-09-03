@@ -20,7 +20,6 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -57,7 +56,6 @@ def _make_obj(**overrides) -> SimpleNamespace:
             },
         },
         ai_narrative=None,
-        coach_narrative_overrides=None,
         badges_earned=None,
         pdf_storage_url="newsletters/2026/04/10_1.pdf",
         pdf_generated_at=now,
@@ -144,36 +142,32 @@ class TestEmailSubjectNoAthleteName:
     """El subject del email no expone el nombre del atleta."""
 
     def test_subject_template_does_not_reference_athlete_name(self):
-        spec = EMAIL_TEMPLATES[NotificationTemplate.ATHLETE_MONTHLY_NEWSLETTER]
+        spec = EMAIL_TEMPLATES[NotificationTemplate.ATHLETE_STAGE_LOG]
         assert "athlete_first_name" not in spec.subject_template
         assert "athlete_last_name" not in spec.subject_template
         assert "children[0]" not in spec.subject_template
 
     def test_subject_template_is_generic(self):
-        spec = EMAIL_TEMPLATES[NotificationTemplate.ATHLETE_MONTHLY_NEWSLETTER]
+        spec = EMAIL_TEMPLATES[NotificationTemplate.ATHLETE_STAGE_LOG]
         # Debe ser un texto fijo, sin nombres ni conteos identificadores
-        assert "Boletín" in spec.subject_template
+        assert "Bitácora" in spec.subject_template
         assert "Trocha y Ruta" in spec.subject_template
 
 
 class TestDispatcherSanitization:
     """El dispatcher elimina claves prohibidas y sanitiza errores del provider."""
 
-    def test_dispatcher_source_strips_forbidden_keys(self):
-        """Defensa en profundidad: el código fuente del dispatcher debe
-        eliminar 'anthropometry', 'pdf_only_blocks' y 'charts' del email_blocks
-        antes de pasarlo al template, aunque el builder ya separe."""
+    def test_dispatcher_source_uses_allowlisted_stage_log_projection(self):
+        """Defensa estructural (feature 038): el dispatcher nunca arma el
+        contexto de email a mano — siempre proyecta el StageLog vía
+        ``to_parent_dto`` (allow-list), que por diseño no tiene claves de
+        antropometría / pdf_only_blocks / charts que remover."""
         import inspect
         from app.services.notification import newsletter_dispatcher
 
         source = inspect.getsource(newsletter_dispatcher)
-        # Verificamos las claves prohibidas presentes en el guard
-        assert '"anthropometry"' in source
-        assert '"pdf_only_blocks"' in source
-        assert '"charts"' in source
-        # Y que se hace pop sobre email_blocks_safe
-        assert "email_blocks_safe" in source
-        assert ".pop(" in source
+        assert "to_parent_dto" in source
+        assert "StageLog.model_validate" in source
 
     def test_dispatcher_source_redacts_provider_email_in_errors(self):
         """El dispatcher debe aplicar regex de redacción de emails sobre
@@ -378,8 +372,8 @@ class TestDispatcherLogsNoAnthropometricData:
 
 
 class TestNoDataUriInSnapshotOrEmail:
-    """R3/R16 (024): los data-URI embebidos de fotos son solo-render, nunca
-    persisten en ``metrics_snapshot`` ni llegan a un bloque de email."""
+    """Las fotos de la bitácora viajan siempre por ``thumbnail_url``
+    (``StageLog.photos``, feature 038) — nunca como data-URI embebido."""
 
     def test_metrics_snapshot_serialization_has_no_data_uri(self):
         """El snapshot persistido (email_blocks + pdf_only_blocks) nunca
@@ -397,54 +391,35 @@ class TestNoDataUriInSnapshotOrEmail:
         serialized = json.dumps(obj.metrics_snapshot)
         assert "data:" not in serialized
 
-    @pytest.mark.asyncio
-    async def test_photos_render_data_uri_never_reaches_email_blocks(self):
-        """``build_photos_render`` produce data-URI en render-time, pero ese
-        resultado nunca se mezcla en ``email_blocks`` que el dispatcher envía."""
-        from unittest.mock import patch
-
-        from app.services.notification.media_embedding import build_photos_render
-
-        photo_items = [
-            {"media_id": 1, "thumbnail_url": "https://cdn.example/a.jpg", "caption": "Sesión técnica"},
-        ]
-
-        with patch(
-            "app.services.notification.media_embedding._fetch_storage_paths",
-            new=AsyncMock(return_value={1: "photos/2026/04/a_thumb.jpg"}),
-        ), patch(
-            "app.services.notification.media_embedding._download_thumb_as_data_uri",
-            new=AsyncMock(return_value=("data:image/jpeg;base64,AAAA", 4)),
-        ):
-            photos_render = await build_photos_render(
-                db=object(),  # sesión mockeada vía patches anteriores
-                photo_items=photo_items,
-                eligible_count=1,
-            )
-
-        # `photos_render` sí contiene el data-URI (uso exclusivo de render PDF).
-        assert photos_render["embeddable_count"] == 1
-        assert photos_render["items"][0]["data_uri"].startswith("data:")
-
-        # Pero email_blocks (lo que persiste/viaja al email) nunca lo incluye:
-        # el snapshot original solo tiene `photos.items[].thumbnail_url`, jamás
-        # `photos_render` ni `data_uri`.
-        email_blocks = {
-            "attendance": {"percentage": 92.0},
-            "photos": {"count": 1, "items": photo_items},
-        }
-        import json
-
-        assert "data:" not in json.dumps(email_blocks)
-
     def test_email_rendered_block_contains_no_data_uri(self):
-        """Renderiza el template de email con un `children` fixture completo
-        (sin `photos_render` — el email nunca lo recibe) y confirma ausencia
-        de data-URI en el HTML resultante."""
+        """Renderiza la plantilla de email de la bitácora (v2) con un
+        `children` fixture que incluye una foto (por `thumbnail_url`, nunca
+        embebida) y confirma ausencia de data-URI en el HTML resultante."""
         from app.services.notification.newsletter_dispatcher import _render_email_template
         from app.services.notification.template_registry import TemplateRegistry
+        from app.services.training.stage_log import PhotoView, StageLog, to_parent_dto
 
         registry = TemplateRegistry()
+        stage_log = StageLog(
+            stage_number=1,
+            period_label="Abril 2026",
+            is_current_month=False,
+            athlete_first_name="Atleta",
+            athlete_reference="su hijo",
+            stage_title="Un mes de constancia en cada sesión de entrenamiento",
+            trail=[],
+            summit=None,
+            observations=[],
+            analyst_reading=None,
+            effort_profile=[],
+            next_segment=None,
+            family_compass=None,
+            badges=[],
+            photos=[PhotoView(thumbnail_url="https://cdn.example/a.jpg", caption="Sesión técnica")],
+            coach_note=None,
+            block_states={},
+            grounding_violations=[],
+        )
         context = {
             "club_name": "Trocha y Ruta",
             "month_label": "Abril 2026",
@@ -453,23 +428,13 @@ class TestNoDataUriInSnapshotOrEmail:
                 {
                     "athlete_id": 10,
                     "athlete_first_name": "Atleta",
-                    "email_blocks": {
-                        "attendance": {
-                            "sessions_present": 9,
-                            "sessions_total": 10,
-                            "attendance_pct": 90.0,
-                            "streak_sessions": 4,
-                        },
-                        "technical": {"focos_tecnicos": ["Frenado"]},
-                        "race_results": {"has_races": False, "results": []},
-                        "badges": {"items": []},
-                    },
-                    "ai_narrative": None,
-                    "coach_narrative_overrides": None,
+                    "stage_log": to_parent_dto(stage_log, hidden_blocks=None),
+                    "cta_url": "https://app.trochayruta.local/my-athletes/10/bitacora/1",
+                    "cta_label": "Ver la bitácora completa",
                 }
             ],
         }
-        html = _render_email_template(registry, context)
+        html = _render_email_template(registry, context, body_path="email/athlete_stage_log.html")
         assert "data:" not in html
 
 
@@ -527,12 +492,12 @@ class TestAiNarrativeForbiddenNutritionalTerms:
 
     def test_medical_pattern_blocks_medication_terms(self):
         """El guardrail actual rechaza términos médicos/suplementos en la narrativa."""
-        from app.services.ai.use_cases.athlete_monthly_newsletter import (
-            AthleteNewsletterGuardrails,
+        from app.services.ai.use_cases.athlete_monthly_newsletter_v2 import (
+            StageNarrativeGuardrails,
         )
         from app.services.ai.errors import LLMSchemaError
 
-        guard = AthleteNewsletterGuardrails(forbidden_names=frozenset())
+        guard = StageNarrativeGuardrails(forbidden_names=frozenset(), grounding_numbers=set())
         offending = (
             "Recomendamos suplemento de proteínas en polvo y creatina para mejorar la "
             "recuperación tras las sesiones. Esto debería compensarse con la dosis "

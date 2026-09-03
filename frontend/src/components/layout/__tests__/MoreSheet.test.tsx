@@ -43,11 +43,10 @@ describe("MoreSheet — contenido filtrado por rol (data-model.md §3, R7)", () 
     logout.mockClear();
   });
 
-  it("coach ve Familias y Biblioteca (áreas restantes no promovidas a la barra)", () => {
+  it("coach ve Familias (área restante no promovida a la barra)", () => {
     renderMoreSheet("coach");
 
     expect(screen.getByRole("link", { name: "Familias" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Biblioteca" })).toBeInTheDocument();
   });
 
   it("coach NO ve Inicio/Entrenamiento/Competencias/Atletas dentro del sheet (ya están en la barra)", () => {
@@ -68,14 +67,6 @@ describe("MoreSheet — contenido filtrado por rol (data-model.md §3, R7)", () 
 
     expect(screen.getByRole("link", { name: "Familias" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Atletas" })).not.toBeInTheDocument();
-  });
-
-  it("admin NO ve Biblioteca dentro del sheet (ya ocupa el 4º slot de la barra — research.md R6)", () => {
-    renderMoreSheet("admin");
-
-    expect(
-      screen.queryByRole("link", { name: "Biblioteca" }),
-    ).not.toBeInTheDocument();
   });
 
   it("Familias de admin resuelve a Boletines (no /parents, coach-only)", () => {
@@ -186,7 +177,6 @@ describe("MoreSheet — tamaño de objetivo táctil >=48x48px (FR-005 acceptance
 
     const rows = [
       screen.getByRole("link", { name: "Familias" }),
-      screen.getByRole("link", { name: "Biblioteca" }),
       screen.getByRole("link", { name: "Mi perfil" }),
       screen.getByRole("button", { name: "Cerrar sesión" }),
     ];

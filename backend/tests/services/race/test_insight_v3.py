@@ -73,7 +73,7 @@ def make_insight(**overrides) -> InsightV3:
                 category=ActionCategory.TECHNIQUE,
                 priority=Priority.MED,
                 horizon=Horizon.NEXT_RACE,
-                catalog_ref=CatalogRef(kind=CatalogKind.TECHNIQUE_SKILL, code="D"),
+                catalog_ref=CatalogRef(kind=CatalogKind.INTERVAL_TEMPLATE, code="12"),
                 derived_from=1,
             ),
         ],
@@ -203,7 +203,7 @@ def test_render_action_bullet_is_parseable_by_the_legacy_regex():
 
 def test_render_includes_catalog_ref_in_the_action_bullet():
     md = render_insight_v3_markdown(make_insight())
-    assert "catálogo=technique_skill:D" in md
+    assert "catálogo=interval_template:12" in md
 
 
 def test_render_joins_multiple_evidence_items():

@@ -676,23 +676,11 @@ def _v3_catalog_block(catalog: dict[str, Any] | None) -> str | None:
     """Catálogo del club → markdown acotado (``None`` si está vacío)."""
     if not catalog:
         return None
-    skills = catalog.get("technique_skills") or []
-    blocks = catalog.get("strength_blocks") or []
     templates = catalog.get("interval_templates") or []
-    if not skills and not blocks and not templates:
+    if not templates:
         return None
 
     lines: list[str] = []
-    if skills:
-        lines.append("**Skills técnicas** (`technique_skill`, usa el código):")
-        for s in skills[:_V3_CATALOG_CAP]:
-            focus = f" — {s.get('focus')}" if s.get("focus") else ""
-            lines.append(f"- `{s.get('code')}` {s.get('name')}{focus}")
-    if blocks:
-        lines.append("")
-        lines.append("**Bloques de fuerza** (`strength_block`, usa el id):")
-        for b in blocks[:_V3_CATALOG_CAP]:
-            lines.append(f"- `{b.get('id')}` {b.get('name')} ({b.get('age_band') or '—'})")
     if templates:
         lines.append("")
         lines.append("**Plantillas de intervalos** (`interval_template`, usa el id):")

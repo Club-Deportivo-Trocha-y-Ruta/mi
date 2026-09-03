@@ -53,11 +53,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.interval_structure import (
+    AgeBand,
     IntervalStructure,
     IntervalTemplate,
     IntervalTemplateBlock,
 )
-from app.models.technique_exercise import AgeBand
 from app.schemas.intervals import BlockIn
 from app.services.intervals import structures as structures_service
 

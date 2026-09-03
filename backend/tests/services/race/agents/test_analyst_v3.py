@@ -68,7 +68,7 @@ VALID_PAYLOAD: dict = {
             "category": "technique",
             "priority": "med",
             "horizon": "next_race",
-            "catalog_ref": {"kind": "technique_skill", "code": "D", "label": None},
+            "catalog_ref": {"kind": "interval_template", "code": "12", "label": None},
             "derived_from": 1,
         },
     ],
