@@ -17,8 +17,9 @@ import { Link } from "react-router-dom";
 
 import { AthleteLink } from "@/components/shared/AthleteLink";
 import { ErrorState } from "@/components/shared/ErrorState";
-import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { useAlerts } from "@/hooks/athletes/useAlerts";
+import { STATUS_META } from "@/lib/measurementStatus";
 import { useAuthStore } from "@/store/auth.store";
 import type { AthleteAlert, MeasurementStatus } from "@/types/alerts.types";
 import { UserRole } from "@/types/enums";
@@ -30,22 +31,6 @@ import { UserRole } from "@/types/enums";
  * Mantener sincronizado con el `allowedRoles` de esa ruta.
  */
 const ATHLETES_LIST_ALLOWED_ROLES: readonly UserRole[] = [UserRole.coach];
-
-/**
- * Tono + copy por estado de medición. El tono alimenta a `StatusBadge`, que
- * siempre acompaña el color con ícono y texto (Constitution III) — antes
- * esta tabla pintaba puntos y fondos con colores crudos de Tailwind, fuera
- * del vocabulario de estado del design system.
- */
-const STATUS_META: Record<
-  MeasurementStatus,
-  { tone: Status; rowLabel: string; summaryLabel: string }
-> = {
-  overdue: { tone: "danger", rowLabel: "Vencida", summaryLabel: "vencidas" },
-  due_soon: { tone: "warning", rowLabel: "Próxima", summaryLabel: "próximas" },
-  ok: { tone: "success", rowLabel: "Al día", summaryLabel: "al día" },
-  never: { tone: "neutral", rowLabel: "Sin medir", summaryLabel: "sin medir" },
-};
 
 function formatDaysText(alert: AthleteAlert): string {
   if (alert.measurement_status === "never") return "Sin medición";

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, require_role
+from app.dependencies import get_db, require_role, verify_athlete_access
+from app.models.anthropometry import AnthropometricRecord
+from app.models.athlete import Athlete
 from app.models.growth import GrowthIndicator, GrowthSource
 from app.models.user import UserRole
+from app.schemas.growth import GrowthSummaryOut
 from app.services.growth import get_reference_curve
+from app.services.growth_summary import build_growth_summary
 
 router = APIRouter()
 
@@ -91,4 +98,37 @@ async def get_growth_reference(
         sex=sex,
         source=source.value,
         curves=[CurvePoint(**point) for point in _curve_cache[cache_key]],
+    )
+
+
+@router.get("/athletes/{athlete_id}/growth-summary", response_model=GrowthSummaryOut)
+async def get_growth_summary(
+    db: AsyncSession = Depends(get_db),
+    athlete: Athlete = Depends(verify_athlete_access),
+) -> GrowthSummaryOut:
+    """
+    Resumen de crecimiento decisión-primero para la pestaña del entrenador
+    (feature 040 / US2): etapa, velocidad, próxima medición y alertas,
+    calculados sobre las dos mediciones antropométricas más recientes.
+
+    ``verify_athlete_access`` ya aplica el RBAC (admin: cualquiera; coach:
+    atletas de sus clubes; parent: solo atletas vinculados). No se
+    recalculan Z-scores/percentiles/bandas: se leen tal como fueron
+    guardados por ``POST /athletes/{id}/anthropometry`` (OMS 2007).
+    """
+    result = await db.execute(
+        select(AnthropometricRecord)
+        .where(AnthropometricRecord.athlete_id == athlete.id)
+        .order_by(AnthropometricRecord.evaluation_date.desc())
+        .limit(2)
+    )
+    records = result.scalars().all()
+    latest = records[0] if records else None
+    previous = records[1] if len(records) > 1 else None
+
+    return build_growth_summary(
+        athlete=athlete,
+        latest=latest,
+        previous=previous,
+        today=date.today(),
     )

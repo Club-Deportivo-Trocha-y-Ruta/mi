@@ -1,16 +1,27 @@
-"""Tests del seed offline de datos de referencia CDC LMS (app.seed_growth_data).
+"""Tests del seed offline de datos de referencia CDC/OMS LMS (app.seed_growth_data).
 
-Cubre el contrato C4 (LMS seeding) del feature 003:
+Cubre el contrato C4 (LMS seeding) del feature 003, para el CDC (histórico):
   - Sembrar desde un CSV fixture pequeño puebla growth_reference_lms.
   - Las seis combinaciones (indicator, sex) quedan no vacías cubriendo 24–240.5.
   - Un lookup (age, sex) devuelve los L/M/S del CDC y un z-score esperado.
   - Reejecutar el seed es un no-op (mismo conteo de filas; upsert idempotente).
 
+Y el contrato ``who-lms-seed.md`` del feature 040 (T016), para la OMS —
+referencia única a partir de este feature:
+  - Conteo de filas por (indicator, sex): 168/168/60.
+  - Paridad exacta de 6 tripletas (indicator, sex, age) L/M/S contra
+    ``frontend/src/data/growth-reference-who.json`` (6 decimales).
+  - Reejecutar el seed OMS es un no-op (mismo conteo de filas).
+
 Estrategia: SQLite async in-memory (sin red, sin MySQL). El upsert del seed es
-dialect-aware y usa ON CONFLICT en SQLite.
+dialect-aware y usa ON CONFLICT en SQLite. Los CSV de la OMS son los archivos
+reales vendorizados en ``app/data/who_lms/`` (no fixtures) — el objetivo es
+verificar el contrato del seed real, no solo el parser.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import AsyncGenerator
 
 import pytest
@@ -25,12 +36,21 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
-from app.models.growth import GrowthIndicator, GrowthReferenceLms
+from app.models.growth import GrowthIndicator, GrowthReferenceLms, GrowthSource
 from app.seed_growth_data import (
+    WHO_DATA_DIR,
+    WHO_SOURCES,
     _parse_csv_content,
     bulk_insert_lms,
+    parse_who_csv_file,
 )
 from app.services.growth import calculate_z_score, get_lms_params
+
+# Ruta al JSON fuente del cliente — misma tabla que consume el navegador.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_WHO_JSON_PATH = (
+    _REPO_ROOT / "frontend" / "src" / "data" / "growth-reference-who.json"
+)
 
 # Fila real del CDC: niño masculino, height_for_age, 24 meses.
 # (tomada de statage.csv vendorizado)
@@ -168,3 +188,111 @@ async def test_reseed_is_noop(session_factory) -> None:
             select(func.count()).select_from(GrowthReferenceLms)
         )
         assert first == second == 12
+
+
+# ---------------------------------------------------------------------------
+# OMS 2007 — feature 040, T016. Usa los CSV reales vendorizados en
+# app/data/who_lms/ (no fixtures): el contrato exige que el seed real, tal
+# como corre en producción, cumpla los conteos y la paridad con el JSON.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_who(session: AsyncSession) -> int:
+    total = 0
+    for source_info in WHO_SOURCES:
+        csv_path = WHO_DATA_DIR / source_info["filename"]
+        rows = parse_who_csv_file(csv_path, source_info["indicator"])
+        total += await bulk_insert_lms(session, rows)
+    await session.commit()
+    return total
+
+
+def _indicator_value(indicator: object) -> str:
+    """Normaliza una columna Enum leída por SQLAlchemy a su valor str."""
+    return indicator.value if hasattr(indicator, "value") else str(indicator)
+
+
+@pytest.mark.asyncio
+async def test_who_seed_row_counts_per_indicator_and_sex(session_factory) -> None:
+    async with session_factory() as session:
+        inserted = await _seed_who(session)
+        # 168 (talla) + 168 (IMC) + 60 (peso), por cada uno de los 2 sexos.
+        assert inserted == (168 + 168 + 60) * 2
+
+        result = await session.execute(
+            select(
+                GrowthReferenceLms.indicator,
+                GrowthReferenceLms.sex,
+                func.count(),
+            )
+            .where(GrowthReferenceLms.source == GrowthSource.WHO)
+            .group_by(GrowthReferenceLms.indicator, GrowthReferenceLms.sex)
+        )
+        counts = {
+            (_indicator_value(indicator), sex): cnt
+            for indicator, sex, cnt in result.all()
+        }
+
+        for sex in ("M", "F"):
+            assert counts[("height_for_age", sex)] == 168
+            assert counts[("bmi_for_age", sex)] == 168
+            assert counts[("weight_for_age", sex)] == 60
+
+
+@pytest.mark.asyncio
+async def test_who_reseed_is_noop(session_factory) -> None:
+    async with session_factory() as session:
+        await _seed_who(session)
+        first = await session.scalar(
+            select(func.count())
+            .select_from(GrowthReferenceLms)
+            .where(GrowthReferenceLms.source == GrowthSource.WHO)
+        )
+        # Reejecutar el seed OMS: mismo conteo (upsert idempotente).
+        await _seed_who(session)
+        second = await session.scalar(
+            select(func.count())
+            .select_from(GrowthReferenceLms)
+            .where(GrowthReferenceLms.source == GrowthSource.WHO)
+        )
+        assert first == second == (168 + 168 + 60) * 2
+
+
+# 6 tripletas (indicator, sex, age_months) que cubren ambos sexos, los tres
+# indicadores y ambos extremos del rango de cada uno.
+_WHO_PARITY_SAMPLES: list[tuple[GrowthIndicator, str, float]] = [
+    (GrowthIndicator.height_for_age, "M", 61.5),
+    (GrowthIndicator.height_for_age, "F", 228.5),
+    (GrowthIndicator.bmi_for_age, "M", 120.5),
+    (GrowthIndicator.bmi_for_age, "F", 61.5),
+    (GrowthIndicator.weight_for_age, "M", 61.5),
+    (GrowthIndicator.weight_for_age, "F", 120.5),
+]
+
+
+def _lookup_json_lms(indicator: str, sex: str, age_months: float) -> tuple[float, float, float]:
+    with _WHO_JSON_PATH.open(encoding="utf-8") as fh:
+        data = json.load(fh)
+    points = data["indicators"][indicator][sex]
+    for point in points:
+        if float(point["age"]) == age_months:
+            return float(point["L"]), float(point["M"]), float(point["S"])
+    raise AssertionError(f"No se encontró age={age_months} en {indicator}/{sex}")
+
+
+@pytest.mark.asyncio
+async def test_who_lms_parity_with_client_json(session_factory) -> None:
+    async with session_factory() as session:
+        await _seed_who(session)
+
+        for indicator, sex, age_months in _WHO_PARITY_SAMPLES:
+            params = await get_lms_params(
+                session, indicator, sex, age_months, source=GrowthSource.WHO
+            )
+            assert params is not None
+            L, M, S = params
+            exp_L, exp_M, exp_S = _lookup_json_lms(indicator.value, sex, age_months)
+
+            assert round(L, 6) == round(exp_L, 6)
+            assert round(M, 6) == round(exp_M, 6)
+            assert round(S, 6) == round(exp_S, 6)

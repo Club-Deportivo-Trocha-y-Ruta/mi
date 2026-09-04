@@ -18,6 +18,13 @@ Convenciones:
     se verifica que el atleta tenga consentimiento vigente con
     `third_party_sharing=True`. Si no, se devuelve **451** (Unavailable
     For Legal Reasons).
+  - **Audiencia de la explicación PHV (feature 040, R-12)**: `?audience=
+    family|coach` en los endpoints de `phv-explanation`. `family` es el
+    default (lo que ya consumían padres/coach). `coach` agrega números
+    (velocidad cm/año, meses hasta/desde el PHV) que la versión familiar
+    omite a propósito — solo coach/admin pueden pedirla; un padre que
+    intente `?audience=coach` recibe 403 aunque tenga acceso al atleta.
+    Cada audiencia cachea por separado (`use_case` distinto).
 """
 
 from __future__ import annotations
@@ -25,8 +32,9 @@ from __future__ import annotations
 import logging
 import statistics
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select, text
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,6 +77,40 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _PHV_USE_CASE = "phv_explainer"
+# Feature 040 (R-12): variante para entrenador — mismo texto base, con
+# números (velocidad cm/año, meses hasta/desde el PHV) que la versión
+# familiar omite. `use_case` distinto → fila de caché distinta, misma
+# clave única `(athlete_id, anthropometric_record_id, use_case)`.
+_PHV_COACH_USE_CASE = "phv_explanation_coach"
+
+
+def _use_case_for_audience(audience: Literal["family", "coach"]) -> str:
+    return _PHV_COACH_USE_CASE if audience == "coach" else _PHV_USE_CASE
+
+
+def _ensure_audience_allowed(
+    audience: Literal["family", "coach"], current_user: User
+) -> None:
+    """Solo coach/admin pueden pedir la variante para entrenador.
+
+    Los padres siempre reciben `audience="family"` (es el default y el
+    frontend ni siquiera les ofrece el selector) — esta es la barrera
+    real (defense in depth) para que un padre no pueda leer la variante
+    del entrenador vía query param directo, aunque tenga ownership del
+    atleta.
+    """
+    if audience == "coach" and current_user.role not in (
+        UserRole.coach,
+        UserRole.admin,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Solo el entrenador o el administrador pueden ver la "
+                "explicación en modo entrenador."
+            ),
+        )
+
 
 # RBAC de `/status` (feature 033) — mismo patrón que
 # `race_analysis.py:115` (`_coach_or_admin`): coach y admin pueden leer
@@ -258,8 +300,17 @@ async def ai_status(
     },
 )
 async def get_phv_explanation_cached(
+    audience: Literal["family", "coach"] = Query(
+        "family",
+        description=(
+            "'family' (default) es la explicación para padres. 'coach' "
+            "agrega velocidad cm/año y meses hasta/desde el PHV — solo "
+            "coach/admin."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     athlete: Athlete = Depends(verify_athlete_access),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
     """Devuelve la explicación cacheada para la última medición del atleta.
 
@@ -270,8 +321,10 @@ async def get_phv_explanation_cached(
     Padres pueden leer el caché de sus atletas — `verify_athlete_access`
     (barrera real) ya valida el vínculo padre↔atleta. No se expone
     `generated_by_user_id` en el schema, así que no hay fuga de identidad
-    del coach.
+    del coach. `audience="coach"` está vedado a padres (`_ensure_audience_allowed`).
     """
+    _ensure_audience_allowed(audience, current_user)
+
     latest = await _latest_record(db, athlete.id)
     if latest is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -280,7 +333,7 @@ async def get_phv_explanation_cached(
         select(AthleteAIExplanation).where(
             AthleteAIExplanation.athlete_id == athlete.id,
             AthleteAIExplanation.anthropometric_record_id == latest.id,
-            AthleteAIExplanation.use_case == _PHV_USE_CASE,
+            AthleteAIExplanation.use_case == _use_case_for_audience(audience),
         )
     )
     cached = result.scalar_one_or_none()
@@ -307,12 +360,21 @@ async def get_phv_explanation_cached(
     response_model=PHVExplanationResponse,
 )
 async def phv_explanation(
+    audience: Literal["family", "coach"] = Query(
+        "family",
+        description=(
+            "'family' (default) es la explicación para padres. 'coach' "
+            "agrega velocidad cm/año y meses hasta/desde el PHV — solo "
+            "coach/admin."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     athlete: Athlete = Depends(verify_athlete_access),
     current_user: User = Depends(get_current_user),
     use_case: PHVExplainerUseCase = Depends(get_phv_explainer_use_case),
 ) -> PHVExplanationResponse:
     _forbid_parents(current_user)
+    _ensure_audience_allowed(audience, current_user)
 
     if not settings.ai_enabled:
         raise HTTPException(
@@ -341,6 +403,7 @@ async def phv_explanation(
             athlete=athlete,
             latest_record=history[0],
             history=history,
+            audience=audience,
         )
     except (LLMTimeoutError, LLMUnavailableError) as exc:
         logger.warning("ai.unavailable type=%s", type(exc).__name__)
@@ -365,7 +428,7 @@ async def phv_explanation(
     stmt = mysql_insert(AthleteAIExplanation).values(
         athlete_id=athlete.id,
         anthropometric_record_id=history[0].id,
-        use_case=_PHV_USE_CASE,
+        use_case=_use_case_for_audience(audience),
         text=explanation.text,
         model=explanation.model,
         provider=explanation.provider,

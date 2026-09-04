@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, field_validator
 
 from app.models.anthropometry import MaturationStatus
 
@@ -70,6 +70,9 @@ class AnthropometryOut(BaseModel):
     weight_z_score: float | None = None
     weight_percentile: float | None = None
     nutritional_status: str | None = None
+    # Referencia poblacional usada para los campos anteriores (feature 040).
+    # None = fila legacy aún no recalculada ("referencia anterior" en la UI).
+    growth_source: str | None = None
     # Objeto compuesto (se construye desde el router; no proviene del ORM directamente)
     growth_percentiles: GrowthPercentiles | None = None
     morphology: MorphologyMetrics | None = None

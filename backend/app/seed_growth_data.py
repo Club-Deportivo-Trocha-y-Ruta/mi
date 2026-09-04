@@ -1,14 +1,17 @@
 """
-Script de seed para cargar datos LMS del CDC en growth_reference_lms.
+Script de seed para cargar datos LMS del CDC y de la OMS en growth_reference_lms.
 
 Uso:
     cd backend
     python -m app.seed_growth_data
 
-Lee los CSV del CDC **vendorizados** en ``app/data/cdc_lms/`` (no descarga de
-``cdc.gov``): el seed es determinista, offline e idempotente. Requiere que la
-migración ya esté aplicada (alembic upgrade head). Reejecutar es un no-op
-(upsert por la constraint ``uq_lms_source_indicator_sex_age``).
+Lee los CSV **vendorizados** en ``app/data/cdc_lms/`` (histórico, feature 003)
+y en ``app/data/who_lms/`` (referencia única del feature 040 — ver
+``specs/040-growth-module-redesign/contracts/who-lms-seed.md``); no hay
+descarga de red en ninguno de los dos casos. El seed es determinista, offline
+e idempotente. Requiere que la migración ya esté aplicada (alembic upgrade
+head). Reejecutar es un no-op (upsert por la constraint
+``uq_lms_source_indicator_sex_age``).
 """
 from __future__ import annotations
 
@@ -37,6 +40,17 @@ CDC_SOURCES: list[dict[str, str]] = [
 AGE_MIN_MONTHS: float = 24.0
 AGE_MAX_MONTHS: float = 240.5
 
+# Directorio con los CSV de la OMS vendorizados — referencia única del
+# feature 040 (constantes de referencia poblacional; NO contienen datos de
+# menores). Ver app/data/who_lms/README.md.
+WHO_DATA_DIR: Path = Path(__file__).parent / "data" / "who_lms"
+
+WHO_SOURCES: list[dict[str, str]] = [
+    {"filename": "who_height_for_age.csv", "indicator": "height_for_age"},
+    {"filename": "who_bmi_for_age.csv", "indicator": "bmi_for_age"},
+    {"filename": "who_weight_for_age.csv", "indicator": "weight_for_age"},
+]
+
 BATCH_SIZE: int = 100
 
 
@@ -49,11 +63,19 @@ async def seed_growth_data() -> None:
             total_inserted = 0
             for source_info in CDC_SOURCES:
                 csv_path = DATA_DIR / source_info["filename"]
-                print(f"Cargando {source_info['indicator']} desde {csv_path.name}...")
+                print(f"Cargando {source_info['indicator']} (CDC) desde {csv_path.name}...")
                 rows = parse_csv_file(csv_path, source_info["indicator"])
                 inserted = await bulk_insert_lms(session, rows)
                 total_inserted += inserted
-                print(f"  {source_info['indicator']}: {inserted} filas procesadas")
+                print(f"  {source_info['indicator']} (CDC): {inserted} filas procesadas")
+
+            for source_info in WHO_SOURCES:
+                csv_path = WHO_DATA_DIR / source_info["filename"]
+                print(f"Cargando {source_info['indicator']} (OMS) desde {csv_path.name}...")
+                rows = parse_who_csv_file(csv_path, source_info["indicator"])
+                inserted = await bulk_insert_lms(session, rows)
+                total_inserted += inserted
+                print(f"  {source_info['indicator']} (OMS): {inserted} filas procesadas")
 
             await session.commit()
             print(f"\nTotal: {total_inserted} filas en growth_reference_lms")
@@ -115,6 +137,59 @@ def _parse_csv_content(content: str, indicator: str) -> list[dict[str, Any]]:
         rows.append(
             {
                 "source": "CDC",
+                "indicator": indicator,
+                "sex": sex,
+                "age_months": age_months,
+                "L": l_val,
+                "M": m_val,
+                "S": s_val,
+            }
+        )
+
+    return rows
+
+
+def parse_who_csv_file(csv_path: Path, indicator: str) -> list[dict[str, Any]]:
+    """Lee un CSV vendorizado de la OMS (``app/data/who_lms/``) y retorna filas LMS."""
+    content = csv_path.read_text(encoding="utf-8")
+    return _parse_who_csv_content(content, indicator)
+
+
+def _parse_who_csv_content(content: str, indicator: str) -> list[dict[str, Any]]:
+    """Parsea el contenido CSV de la OMS (separado para pruebas con fixtures).
+
+    A diferencia del CSV del CDC, el formato de la OMS ya trae ``sex`` como
+    ``M``/``F`` y ``age_months`` sin necesidad de filtrar por rango: el
+    exportador (``scripts/export_who_lms_csv.py``) ya recorta cada indicador
+    al rango publicado por la OMS (61.5–228.5 meses para talla/IMC,
+    61.5–120.5 para peso).
+    """
+    reader = csv.DictReader(content.splitlines())
+    rows: list[dict[str, Any]] = []
+
+    for row in reader:
+        sex = (row.get("sex") or "").strip()
+        age_raw = (row.get("age_months") or "").strip()
+        l_raw = (row.get("L") or "").strip()
+        m_raw = (row.get("M") or "").strip()
+        s_raw = (row.get("S") or "").strip()
+
+        if not all([sex, age_raw, l_raw, m_raw, s_raw]):
+            continue
+        if sex not in ("M", "F"):
+            continue
+
+        try:
+            age_months = float(age_raw)
+            l_val = float(l_raw)
+            m_val = float(m_raw)
+            s_val = float(s_raw)
+        except ValueError:
+            continue
+
+        rows.append(
+            {
+                "source": "WHO",
                 "indicator": indicator,
                 "sex": sex,
                 "age_months": age_months,

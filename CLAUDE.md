@@ -81,5 +81,7 @@ Backend auto-deploys to Render free tier from `main` (`https://mi-2yzi.onrender.
 - **Subagents**: project agents in `.claude/agents/` follow the tiering/team policy documented in `.claude/agents/README.md` (leads = opus, workers = sonnet). The `data-privacy-guard` audit is mandatory for any feature touching athlete-identifiable data.
 
 <!-- SPECKIT START -->
-Active feature: `specs/039-season-comparison-groups/plan.md` — season evolution charts read cup rounds and championships as separate comparison groups (spec, research, data-model, contracts and quickstart live alongside it). Planned 2026-09-03 on `main` by owner request (no branch yet); implementation must start on `feat/039-season-comparison-groups`. Previous feature 038 (`specs/038-newsletter-bitacora-redesign/`) is committed, with T403 (e2e) and SC-1 (real-dataset regeneration) still pending — regenerate this block with `/speckit-agent-context-update` when the next one starts.
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+at specs/040-growth-module-redesign/plan.md
 <!-- SPECKIT END -->

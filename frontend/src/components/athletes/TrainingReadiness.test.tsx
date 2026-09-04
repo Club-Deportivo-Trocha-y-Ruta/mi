@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { TrainingReadiness } from "./TrainingReadiness";
 import { MaturationStatus, Sex } from "@/types/enums";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 import type { AthleteDetailOut } from "@/types/athlete.types";
+import type { GrowthSummary } from "@/types/growth.types";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -58,50 +60,81 @@ function makeAthlete(overrides: Partial<AthleteDetailOut> = {}): AthleteDetailOu
   };
 }
 
-// Atleta 10-12 años con Pre-PHV
+// Atleta 10-12 años con Pre-PHV (sin excepciones — coincide con el plan base del grupo)
 const athletePrePHV1012 = makeAthlete({ age_decimal: 11.5 });
 const recordPrePHV = makeRecord({ maturation_status: MaturationStatus.PrePHV });
 
-// Atleta 13-15 años con Post-PHV
+// Atleta 13-15 años con Post-PHV (sin excepciones — coincide con el plan base del grupo)
 const athletePostPHV1315 = makeAthlete({ age_decimal: 14.2, birth_date: "2011-09-01" });
 const recordPostPHV = makeRecord({ maturation_status: MaturationStatus.PostPHV });
 
-// Atleta con Circa-PHV
+// Atleta con Circa-PHV (reglas más restrictivas que el plan base)
 const recordCircaPHV = makeRecord({ maturation_status: MaturationStatus.CircaPHV });
+
+async function expandAllRules() {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /ver todas las reglas/i }));
+}
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe("TrainingReadiness", () => {
-  // 1. Atleta 10-12 años Pre-PHV: "Intervalos alta intensidad" aparece como prohibido (✗)
-  it("para atleta 10-12 Pre-PHV: 'Intervalos alta intensidad' está prohibido", () => {
+  it("para atleta 10-12 Pre-PHV (sin excepciones): no muestra chips de cambio, solo el aviso de 'sin cambios'", () => {
     render(
       <TrainingReadiness
         athlete={athletePrePHV1012}
         latestRecord={recordPrePHV}
       />,
     );
-    expect(screen.getByText("Intervalos alta intensidad")).toBeInTheDocument();
-    // El texto de detalle explica el motivo de la prohibición para este grupo de edad
-    expect(screen.getByText(/solo juego libre/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/sin cambios respecto al plan base/i),
+    ).toBeInTheDocument();
+    // El detalle completo ("solo juego libre") solo vive dentro de "Ver todas las reglas"
+    expect(screen.queryByText(/solo juego libre/i)).not.toBeInTheDocument();
   });
 
-  // 2. Atleta 13-15 años Post-PHV: "Intervalos alta intensidad" aparece como "caution" (Max 2 sesiones)
-  it("para atleta 13-15 Post-PHV: 'Intervalos alta intensidad' permitido con precaución", () => {
+  it("expande 'Ver todas las reglas' y muestra los nueve criterios, incluido el de 10-12 Pre-PHV", async () => {
+    render(
+      <TrainingReadiness
+        athlete={athletePrePHV1012}
+        latestRecord={recordPrePHV}
+      />,
+    );
+    await expandAllRules();
+    expect(screen.getByText("Intervalos alta intensidad")).toBeInTheDocument();
+    expect(screen.getByText(/solo juego libre/i)).toBeInTheDocument();
+    expect(screen.getByText("Fuerza peso externo")).toBeInTheDocument();
+    expect(screen.getByText("Test FC máxima")).toBeInTheDocument();
+  });
+
+  it("para atleta 13-15 Post-PHV (sin excepciones): no muestra chips de cambio", () => {
     render(
       <TrainingReadiness
         athlete={athletePostPHV1315}
         latestRecord={recordPostPHV}
       />,
     );
+    expect(
+      screen.getByText(/sin cambios respecto al plan base/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Max 2 sesiones\/semana/i)).not.toBeInTheDocument();
+  });
+
+  it("expande 'Ver todas las reglas' para 13-15 Post-PHV y ve alta intensidad con precaución", async () => {
+    render(
+      <TrainingReadiness
+        athlete={athletePostPHV1315}
+        latestRecord={recordPostPHV}
+      />,
+    );
+    await expandAllRules();
     expect(screen.getByText("Intervalos alta intensidad")).toBeInTheDocument();
     expect(screen.getByText(/Max 2 sesiones\/semana/i)).toBeInTheDocument();
   });
 
-  // 3. Atleta Circa-PHV: reglas más restrictivas que el grupo de edad
-  //    Intervalos alta intensidad prohibidos (superando incluso las reglas de 13-15)
-  it("para atleta con Circa-PHV: aplica reglas más restrictivas (intervalos prohibidos)", () => {
+  it("para atleta con Circa-PHV: las reglas que difieren del plan base aparecen como chips sin expandir nada", () => {
     const athleteCircaPHV1315 = makeAthlete({ age_decimal: 13.8 });
     render(
       <TrainingReadiness
@@ -109,14 +142,18 @@ describe("TrainingReadiness", () => {
         latestRecord={recordCircaPHV}
       />,
     );
-    // En Circa-PHV varios elementos muestran "Prohibido en Circa-PHV".
-    // Verificamos que hay al menos uno (la regla de intervalos es la más importante).
+    // "Sin cambios" no debe aparecer: sí hay excepciones en Circa-PHV
+    expect(
+      screen.queryByText(/sin cambios respecto al plan base/i),
+    ).not.toBeInTheDocument();
+    // Al menos una regla muestra el texto específico de Circa-PHV, visible sin expandir
     const forbidden = screen.getAllByText(/Prohibido en Circa-PHV/);
     expect(forbidden.length).toBeGreaterThanOrEqual(1);
+    // Las etiquetas de estado usan el vocabulario del contrato (icono + texto, nunca solo color)
+    expect(screen.getAllByText("No permitido").length).toBeGreaterThanOrEqual(1);
   });
 
-  // 4. Alerta de Circa-PHV visible cuando maturation_status === 'Circa-PHV'
-  it("muestra alerta de vulnerabilidad ósea cuando maturation_status es Circa-PHV", () => {
+  it("muestra alerta de vulnerabilidad ósea cuando maturation_status es Circa-PHV (sin prop alerts)", () => {
     render(
       <TrainingReadiness
         athlete={makeAthlete({ age_decimal: 12.5 })}
@@ -128,7 +165,6 @@ describe("TrainingReadiness", () => {
     ).toBeInTheDocument();
   });
 
-  // 5. Sin latestRecord: renderiza sin error
   it("sin latestRecord renderiza sin error", () => {
     expect(() =>
       render(
@@ -137,21 +173,19 @@ describe("TrainingReadiness", () => {
         />,
       ),
     ).not.toThrow();
-    expect(screen.getByText("Recomendaciones de entrenamiento")).toBeInTheDocument();
+    expect(screen.getByText("Qué cambia en el entrenamiento")).toBeInTheDocument();
   });
 
-  // 6. El header siempre muestra el nombre del atleta
-  it("muestra el nombre del atleta en el header", () => {
+  it("no muestra el nombre del atleta como chip (retirado en el rediseño)", () => {
     render(
       <TrainingReadiness
         athlete={makeAthlete({ first_name: "Juan", last_name: "García" })}
         latestRecord={recordPrePHV}
       />,
     );
-    expect(screen.getByText("Juan García")).toBeInTheDocument();
+    expect(screen.queryByText("Juan García")).not.toBeInTheDocument();
   });
 
-  // 7. Para edad fuera del modelo (>15 o <10) muestra mensaje de rango
   it("para edad fuera del modelo (16 años) muestra mensaje de rango", () => {
     render(
       <TrainingReadiness
@@ -162,7 +196,6 @@ describe("TrainingReadiness", () => {
     expect(screen.getByText(/Rango de edad fuera del modelo/i)).toBeInTheDocument();
   });
 
-  // 8. Atleta Pre-PHV NO tiene alerta de vulnerabilidad ósea
   it("atleta Pre-PHV no muestra alerta de vulnerabilidad ósea", () => {
     render(
       <TrainingReadiness
@@ -175,22 +208,7 @@ describe("TrainingReadiness", () => {
     ).not.toBeInTheDocument();
   });
 
-  // 9. Fuerza peso externo prohibida para 10-12 años Pre-PHV
-  it("para 10-12 Pre-PHV: 'Fuerza peso externo' está prohibida", () => {
-    render(
-      <TrainingReadiness
-        athlete={athletePrePHV1012}
-        latestRecord={recordPrePHV}
-      />,
-    );
-    expect(screen.getByText("Fuerza peso externo")).toBeInTheDocument();
-    // Puede haber múltiples textos con "Prohibido en 10-12" (intervalos y fuerza externa)
-    const matches = screen.getAllByText(/Prohibido en 10-12/i);
-    expect(matches.length).toBeGreaterThanOrEqual(1);
-  });
-
-  // 10. Alerta de talla muy baja (height_percentile < 3)
-  it("muestra alerta de 'Talla muy baja' cuando height_percentile < 3", () => {
+  it("muestra alerta de 'Talla muy baja' cuando height_percentile < 3 (sin prop alerts)", () => {
     const recordTallaBaja = makeRecord({
       maturation_status: MaturationStatus.PrePHV,
       height_percentile: 1,
@@ -204,7 +222,6 @@ describe("TrainingReadiness", () => {
     expect(screen.getByText(/Talla muy baja/i)).toBeInTheDocument();
   });
 
-  // 11. La nota al pie menciona LTAD y edad biológica
   it("muestra nota al pie sobre LTAD y edad biológica", () => {
     render(
       <TrainingReadiness
@@ -214,5 +231,90 @@ describe("TrainingReadiness", () => {
     );
     expect(screen.getByText(/LTAD/)).toBeInTheDocument();
     expect(screen.getByText(/edad biológica/i)).toBeInTheDocument();
+  });
+
+  it("G-04: ninguna estimación numérica de FC máxima (lpm) aparece, ni colapsada ni expandida", async () => {
+    render(
+      <TrainingReadiness
+        athlete={athletePrePHV1012}
+        latestRecord={recordPrePHV}
+      />,
+    );
+    expect(screen.queryByText(/lpm/i)).not.toBeInTheDocument();
+    await expandAllRules();
+    expect(screen.getByText("Test FC máxima")).toBeInTheDocument();
+    expect(screen.getByText(/Sin test de FC máxima/i)).toBeInTheDocument();
+    expect(screen.queryByText(/lpm/i)).not.toBeInTheDocument();
+  });
+
+  it("para atleta Circa-PHV no muestra ninguna estimación numérica de FC máxima (lpm)", () => {
+    render(
+      <TrainingReadiness
+        athlete={makeAthlete({ age_decimal: 13.8 })}
+        latestRecord={recordCircaPHV}
+      />,
+    );
+    expect(screen.queryByText(/lpm/i)).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------
+  // Prop `alerts` (GrowthSummary["alerts"]) — reemplaza el cálculo local
+  // ---------------------------------------------------------------------
+
+  it("usa la prop `alerts` en lugar del cálculo local cuando está presente", () => {
+    const summaryAlerts: GrowthSummary["alerts"] = ["circa_phv"];
+    // latestRecord es Pre-PHV (no dispararía la alerta local), pero la prop sí la trae
+    render(
+      <TrainingReadiness
+        athlete={athletePrePHV1012}
+        latestRecord={recordPrePHV}
+        alerts={summaryAlerts}
+      />,
+    );
+    expect(
+      screen.getByText(/máxima vulnerabilidad ósea/i),
+    ).toBeInTheDocument();
+  });
+
+  it("con `alerts` presente pero sin códigos relevantes, no muestra alertas aunque el registro sea Circa-PHV", () => {
+    const summaryAlerts: GrowthSummary["alerts"] = ["rapid_growth"];
+    render(
+      <TrainingReadiness
+        athlete={makeAthlete({ age_decimal: 13.8 })}
+        latestRecord={recordCircaPHV}
+        alerts={summaryAlerts}
+      />,
+    );
+    // La prop manda: como no trae "circa_phv", no se muestra el aviso óseo
+    expect(
+      screen.queryByText(/máxima vulnerabilidad ósea/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("mapea `height_p3` y `bmi_p3` de la prop `alerts` a sus mensajes", () => {
+    const summaryAlerts: GrowthSummary["alerts"] = ["height_p3", "bmi_p3"];
+    render(
+      <TrainingReadiness
+        athlete={athletePrePHV1012}
+        latestRecord={recordPrePHV}
+        alerts={summaryAlerts}
+      />,
+    );
+    expect(screen.getByText(/Talla muy baja/i)).toBeInTheDocument();
+    expect(screen.getByText(/Delgadez severa/i)).toBeInTheDocument();
+  });
+
+  it("con `alerts` como arreglo vacío no muestra ninguna alerta", () => {
+    render(
+      <TrainingReadiness
+        athlete={makeAthlete({ age_decimal: 13.8 })}
+        latestRecord={recordCircaPHV}
+        alerts={[]}
+      />,
+    );
+    expect(
+      screen.queryByText(/máxima vulnerabilidad ósea/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Talla muy baja/i)).not.toBeInTheDocument();
   });
 });

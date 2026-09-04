@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from app.services.ai.context_builders import AthleteAIContextBuilder
 from app.services.ai.guardrails import Guardrails
+from app.services.ai.models import LLMMessage, LLMRequest, LLMResponse
 from app.services.ai.prompts.registry import PromptRegistry
 from app.services.ai.protocols import LLMProvider
 from app.services.ai.use_cases.base import BaseUseCase
@@ -36,6 +37,17 @@ class PHVExplainerUseCase(BaseUseCase):
 
     template_id = "phv_explainer"
 
+    # Feature 040 (R-12): la explicación PHV tiene dos variantes de
+    # plantilla según quién la lee. La familia usa `template_id` (el
+    # default de la clase, sin cambios); el entrenador usa
+    # `phv_explanation_coach` (números explícitos de velocidad/meses que
+    # la versión familiar omite a propósito). El caché las distingue por
+    # `use_case` en el router (`phv_explainer` vs `phv_explanation_coach`).
+    _TEMPLATE_ID_BY_AUDIENCE: dict[str, str] = {
+        "family": "phv_explainer",
+        "coach": "phv_explanation_coach",
+    }
+
     def __init__(
         self,
         provider: LLMProvider,
@@ -53,11 +65,14 @@ class PHVExplainerUseCase(BaseUseCase):
         athlete: "Athlete",
         latest_record: "AnthropometricRecord",
         history: list["AnthropometricRecord"] | None = None,
+        audience: Literal["family", "coach"] = "family",
     ) -> PHVExplanation:
         if latest_record is None:
             raise ValueError(
                 "PHVExplainerUseCase requiere al menos una medición antropométrica."
             )
+        if audience not in self._TEMPLATE_ID_BY_AUDIENCE:
+            raise ValueError(f"audience inválida: {audience!r}")
 
         context = self._context_builder.build(
             athlete, latest_record, history=history
@@ -68,7 +83,8 @@ class PHVExplainerUseCase(BaseUseCase):
         # concurrentes compartiendo el mismo use case se pisen las reglas.
         guardrails = Guardrails(age_group=context.get("age_group"))
 
-        response = await self._ask(context)
+        template_id = self._TEMPLATE_ID_BY_AUDIENCE[audience]
+        response = await self._ask_with_template(template_id, context)
         sanitized = self._scrub(response.text, guardrails=guardrails)
 
         return PHVExplanation(
@@ -79,3 +95,20 @@ class PHVExplainerUseCase(BaseUseCase):
             age_group=context["age_group"],
             maturation_status=context.get("maturation_status", ""),
         )
+
+    async def _ask_with_template(self, template_id: str, context: dict) -> LLMResponse:
+        """Igual que `BaseUseCase._ask`, pero con la plantilla como parámetro.
+
+        `BaseUseCase._ask` siempre usa `self.template_id`. Aquí necesitamos
+        variar la plantilla por `audience` en cada llamada sin mutar
+        `self.template_id`: esta instancia puede compartirse entre requests
+        concurrentes (mismo razonamiento que los guardrails locales arriba),
+        y escribir sobre un atributo compartido dejaría una request de un
+        entrenador pisando la plantilla de una request familiar concurrente.
+        """
+        user_msg = self._registry.render(template_id, context)
+        request = LLMRequest(
+            system=self._registry.system_prompt(),
+            messages=(LLMMessage(role="user", content=user_msg),),
+        )
+        return await self._provider.complete(request)

@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.growth import GrowthSource
 
 if TYPE_CHECKING:
     from app.models.athlete import Athlete
@@ -80,6 +81,12 @@ class AnthropometricRecord(Base):
     weight_percentile: Mapped[Decimal | None] = mapped_column(Numeric(5, 1), nullable=True)
     nutritional_status: Mapped[NutritionalStatus | None] = mapped_column(
         Enum(NutritionalStatus, values_callable=lambda e: [x.value for x in e]),
+        nullable=True,
+    )
+    # Referencia poblacional usada para calcular los campos anteriores (feature 040).
+    # NULL = fila legacy aún no recalculada ("referencia anterior" en la UI).
+    growth_source: Mapped[GrowthSource | None] = mapped_column(
+        Enum(GrowthSource, values_callable=lambda e: [x.value for x in e]),
         nullable=True,
     )
 

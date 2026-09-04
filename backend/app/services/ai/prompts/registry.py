@@ -55,6 +55,28 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
         version=3,
         description="Explicación del resultado PHV para padres.",
     ),
+    "phv_explanation_coach": PromptSpec(
+        template_id="phv_explanation_coach",
+        template_path="phv_explanation_coach_v1.md",
+        required_keys=frozenset(
+            {
+                "age_group",
+                "age_decimal",
+                "sex",
+                "category",
+                "maturation_status",
+                "phv_offset",
+                "age_at_phv",
+                "months_from_phv",
+            }
+        ),
+        version=1,
+        description=(
+            "Explicación del resultado PHV para el entrenador (feature 040, "
+            "R-12): incluye velocidad en cm/año y meses hasta/desde el pico "
+            "que la versión para padres omite."
+        ),
+    ),
     "anthropometric_record_analysis": PromptSpec(
         template_id="anthropometric_record_analysis",
         template_path="anthropometric_record_explainer.j2",

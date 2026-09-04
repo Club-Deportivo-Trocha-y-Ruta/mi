@@ -82,6 +82,11 @@ function makeRecord(overrides: Partial<AnthropometricRecord> = {}): Anthropometr
     weight_z_score: 0.1,
     weight_percentile: 54,
     nutritional_status: "adecuado",
+    // Feature 040 (T025/T026): por defecto el fixture representa un registro
+    // ya recomputado contra OMS 2007, para que useGrowthMetrics use los
+    // Z-score de backend definidos arriba. Los tests de la fuente "pendiente"
+    // sobreescriben este campo explícitamente.
+    growth_source: "WHO",
     ...overrides,
   };
 }
@@ -221,5 +226,65 @@ describe("NutritionalClassification", () => {
     // Debe haber clasificación para ambos indicadores (no "Sin datos")
     // porque los valores de talla (155) y peso (45) son válidos para calcular Z
     expect(screen.queryAllByText("Sin datos").length).toBeLessThan(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Caption de fuente según growth_source (feature 040, T026)
+// ---------------------------------------------------------------------------
+
+describe("NutritionalClassification — caption de fuente", () => {
+  it("con growth_source WHO muestra la fuente OMS 2007 · Res. 2465/2016", () => {
+    render(
+      <NutritionalClassification
+        record={makeRecord({ growth_source: "WHO" })}
+        sex="M"
+        birthDate={BIRTH_DATE}
+      />,
+    );
+    expect(screen.getByText(/OMS 2007 · Res\. 2465\/2016/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Referencia anterior — pendiente de actualizar/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("con growth_source 'CDC' (no recomputado) muestra el aviso 'Referencia anterior — pendiente de actualizar'", () => {
+    render(
+      <NutritionalClassification
+        record={makeRecord({ growth_source: "CDC" })}
+        sex="M"
+        birthDate={BIRTH_DATE}
+      />,
+    );
+    expect(
+      screen.getByText("Referencia anterior — pendiente de actualizar"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/OMS 2007/)).not.toBeInTheDocument();
+  });
+
+  it("con growth_source ausente (registro legado) muestra el aviso 'Referencia anterior — pendiente de actualizar'", () => {
+    render(
+      <NutritionalClassification
+        record={makeRecord({ growth_source: null })}
+        sex="M"
+        birthDate={BIRTH_DATE}
+      />,
+    );
+    expect(
+      screen.getByText("Referencia anterior — pendiente de actualizar"),
+    ).toBeInTheDocument();
+  });
+
+  it("el aviso de IMC en atletas se muestra siempre, sin importar la fuente", () => {
+    render(
+      <NutritionalClassification
+        record={makeRecord({ growth_source: "CDC" })}
+        sex="M"
+        birthDate={BIRTH_DATE}
+      />,
+    );
+    expect(
+      screen.getByText(/El IMC puede subestimar adiposidad en atletas/),
+    ).toBeInTheDocument();
   });
 });

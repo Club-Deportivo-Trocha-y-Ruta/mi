@@ -141,3 +141,90 @@ async def test_history_creates_trend_section():
     await uc.run(_athlete(), rec_recent, history=[rec_recent, rec_old])
     user_msg = fake.last_request.messages[0].content
     assert "Tendencia" in user_msg
+
+
+# ---------------------------------------------------------------------------
+# Audiencia (feature 040, R-12): variante para entrenador
+# ---------------------------------------------------------------------------
+
+
+def _history_with_velocity():
+    """Dos mediciones separadas 12 semanas → 2.0 cm ≈ 8.7 cm/año."""
+    rec_recent = _record()
+    rec_old = SimpleNamespace(
+        **{**vars(_record()), "evaluation_date": date(2026, 1, 1),
+           "standing_height_cm": Decimal("148.0"),
+           "weight_kg": Decimal("38.5")},
+    )
+    return rec_recent, [rec_recent, rec_old]
+
+
+async def test_coach_audience_uses_dedicated_template_with_numbers():
+    """El prompt de entrenador cita velocidad (cm/año) y meses hasta el PHV
+    como números explícitos — la diferencia clave frente a la versión
+    familiar (R-12)."""
+    fake = FakeLLMProvider(canned="ok")
+    uc = PHVExplainerUseCase(fake, PromptRegistry())
+    latest, history = _history_with_velocity()
+
+    await uc.run(_athlete(), latest, history=history, audience="coach")
+
+    user_msg = fake.last_request.messages[0].content
+    assert "8.7 cm/año" in user_msg
+    assert "Meses para el PHV: 18" in user_msg
+    assert "entrenador" in user_msg.lower()
+
+
+async def test_family_audience_is_default_and_omits_coach_numbers():
+    """`audience="family"` (o el default sin especificarlo) sigue rindiendo
+    `phv_explainer.j2` sin tocar su texto — la velocidad numérica en
+    cm/año es exclusiva de la variante de entrenador."""
+    fake_default = FakeLLMProvider(canned="ok")
+    uc_default = PHVExplainerUseCase(fake_default, PromptRegistry())
+    latest, history = _history_with_velocity()
+    await uc_default.run(_athlete(), latest, history=history)
+
+    fake_explicit = FakeLLMProvider(canned="ok")
+    uc_explicit = PHVExplainerUseCase(fake_explicit, PromptRegistry())
+    await uc_explicit.run(_athlete(), latest, history=history, audience="family")
+
+    default_msg = fake_default.last_request.messages[0].content
+    explicit_msg = fake_explicit.last_request.messages[0].content
+    assert default_msg == explicit_msg
+    # El prompt familiar SÍ menciona "cm/año" en los anclajes genéricos
+    # (sin cambios, feature 040 no toca `phv_explainer.j2`), pero nunca
+    # rinde el número calculado de velocidad ni la línea "Meses para el
+    # PHV" — esas son exclusivas de la variante de entrenador.
+    assert "8.7 cm/año" not in default_msg
+    assert "Meses para el PHV" not in default_msg
+
+
+async def test_coach_audience_user_message_has_no_pii():
+    """Igual que `test_user_message_has_no_pii` pero para la variante de
+    entrenador: el saneo de nombres/fecha vive en el context builder, así
+    que aplica a cualquier audiencia."""
+    fake = FakeLLMProvider(canned="ok")
+    uc = PHVExplainerUseCase(fake, PromptRegistry())
+    await uc.run(_athlete(), _record(), audience="coach")
+    user_text = fake.last_request.messages[0].content
+    assert "SECRETO" not in user_text
+    assert "NO_DEBE_SALIR" not in user_text
+    assert "2014-06-15" not in user_text
+
+
+async def test_coach_audience_guardrails_still_scrub_supplements():
+    """Los guardrails de salida (sin suplementos) siguen aplicando en la
+    variante de entrenador — no son exclusivos del prompt familiar."""
+    fake = FakeLLMProvider(
+        canned="Tu deportista está en Pre-PHV. Recomienda creatina para crecer."
+    )
+    uc = PHVExplainerUseCase(fake, PromptRegistry())
+    result = await uc.run(_athlete(), _record(), audience="coach")
+    assert "creatina" not in result.text.lower()
+
+
+async def test_invalid_audience_raises_value_error():
+    fake = FakeLLMProvider()
+    uc = PHVExplainerUseCase(fake, PromptRegistry())
+    with pytest.raises(ValueError, match="audience"):
+        await uc.run(_athlete(), _record(), audience="parent")

@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.models.growth import GrowthIndicator, GrowthSource
 from app.services.training.growth_chart_builder import build_percentile_chart_ctx
 
 
@@ -56,6 +57,23 @@ def _make_ref_curve_bmi():
             "P50": 18.0 + (age - 120) * 0.035,
             "P75": 20.5 + (age - 120) * 0.04,
             "P97": 24.0 + (age - 120) * 0.05,
+        })
+        age += 6.0
+    return out
+
+
+def _make_ref_curve_weight(age_months_min: float = 96.0, age_months_max: float = 120.5):
+    """Curva OMS fake para weight_for_age (solo existe hasta los 10 años)."""
+    out = []
+    age = age_months_min
+    while age <= age_months_max:
+        out.append({
+            "age_months": age,
+            "P3": 20.0 + (age - age_months_min) * 0.05,
+            "P25": 23.0 + (age - age_months_min) * 0.06,
+            "P50": 26.0 + (age - age_months_min) * 0.07,
+            "P75": 29.5 + (age - age_months_min) * 0.08,
+            "P97": 34.0 + (age - age_months_min) * 0.09,
         })
         age += 6.0
     return out
@@ -432,3 +450,136 @@ async def test_bmi_skips_records_with_null_height_or_weight(db_session):
     assert ctx["enough_data"] is True
     # Solo 2 records válidos contribuyeron
     assert len(ctx["athlete"]["points"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# B.1 (feature 040 / T024) — la curva de referencia se pide con fuente OMS
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reference_curve_requested_with_who_source(db_session):
+    """El builder debe solicitar la curva con source=GrowthSource.WHO (no CDC)."""
+    birth = date(2014, 6, 1)
+    records = [
+        _make_record(date(2025, 6, 1), 142.0, 36.0),
+        _make_record(date(2025, 12, 1), 145.0, 38.0),
+    ]
+    mock_get_curve = AsyncMock(return_value=_make_ref_curve_height())
+    with patch("app.services.growth.get_reference_curve", mock_get_curve):
+        ctx = await build_percentile_chart_ctx(
+            db=db_session,
+            athlete_id=1,
+            birth_date=birth,
+            sex="M",
+            records=records,
+            indicator="height",
+        )
+    assert ctx["enough_data"] is True
+    mock_get_curve.assert_awaited_once()
+    _, call_kwargs = mock_get_curve.call_args
+    assert call_kwargs["source"] == GrowthSource.WHO
+    assert call_kwargs["indicator"] == GrowthIndicator.height_for_age
+
+
+# ---------------------------------------------------------------------------
+# B.2 (feature 040 / T024) — peso/edad se omite por encima de los 10 años
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_weight_chart_omitted_when_athlete_older_than_10y(db_session):
+    """Atleta de ~14 años (>120.5 meses): la OMS no publica peso/edad, se omite
+    sin siquiera consultar la curva de referencia."""
+    birth = date(2012, 1, 1)
+    records = [
+        _make_record(date(2026, 1, 1), 160.0, 48.0),  # ~14.0 años
+        _make_record(date(2026, 6, 1), 162.0, 50.0),  # ~14.4 años
+    ]
+    mock_get_curve = AsyncMock(return_value=_make_ref_curve_weight())
+    with patch("app.services.growth.get_reference_curve", mock_get_curve):
+        ctx = await build_percentile_chart_ctx(
+            db=db_session,
+            athlete_id=1,
+            birth_date=birth,
+            sex="M",
+            records=records,
+            indicator="weight",
+        )
+    assert ctx["enough_data"] is False
+    assert ctx["reason_no_data"] == "weight_over_10y"
+    assert ctx["curves"] == {}
+    assert ctx["athlete"]["points"] == []
+    mock_get_curve.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_weight_chart_present_for_athlete_10_or_younger(db_session):
+    """Atleta de ~8 años (<120.5 meses): peso/edad OMS sigue disponible."""
+    birth = date(2018, 1, 1)
+    records = [
+        _make_record(date(2026, 1, 1), 128.0, 25.0),  # ~8.0 años
+        _make_record(date(2026, 6, 1), 130.0, 26.5),  # ~8.4 años
+    ]
+    mock_get_curve = AsyncMock(return_value=_make_ref_curve_weight())
+    with patch("app.services.growth.get_reference_curve", mock_get_curve):
+        ctx = await build_percentile_chart_ctx(
+            db=db_session,
+            athlete_id=1,
+            birth_date=birth,
+            sex="M",
+            records=records,
+            indicator="weight",
+        )
+    assert ctx["enough_data"] is True
+    assert ctx["reason_no_data"] is None
+    mock_get_curve.assert_awaited_once()
+    _, call_kwargs = mock_get_curve.call_args
+    assert call_kwargs["source"] == GrowthSource.WHO
+    assert call_kwargs["indicator"] == GrowthIndicator.weight_for_age
+
+
+@pytest.mark.asyncio
+async def test_weight_chart_boundary_just_under_120_5_months_is_shown(db_session):
+    """120.48 meses (< 120.5): todavía dentro del rango OMS, no se omite."""
+    birth = date(2016, 1, 1)
+    records = [
+        _make_record(date(2025, 6, 1), 138.0, 32.0),   # ~113 meses
+        _make_record(date(2026, 1, 15), 140.0, 34.0),  # ~120.48 meses
+    ]
+    mock_get_curve = AsyncMock(return_value=_make_ref_curve_weight())
+    with patch("app.services.growth.get_reference_curve", mock_get_curve):
+        ctx = await build_percentile_chart_ctx(
+            db=db_session,
+            athlete_id=1,
+            birth_date=birth,
+            sex="M",
+            records=records,
+            indicator="weight",
+        )
+    assert ctx["enough_data"] is True
+    assert ctx["reason_no_data"] is None
+    mock_get_curve.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_weight_chart_boundary_just_over_120_5_months_is_omitted(db_session):
+    """121.03 meses (> 120.5): fuera del rango OMS, se omite."""
+    birth = date(2016, 1, 1)
+    records = [
+        _make_record(date(2025, 6, 1), 138.0, 32.0),  # ~113 meses
+        _make_record(date(2026, 2, 1), 140.5, 34.5),  # ~121.03 meses
+    ]
+    mock_get_curve = AsyncMock(return_value=_make_ref_curve_weight())
+    with patch("app.services.growth.get_reference_curve", mock_get_curve):
+        ctx = await build_percentile_chart_ctx(
+            db=db_session,
+            athlete_id=1,
+            birth_date=birth,
+            sex="M",
+            records=records,
+            indicator="weight",
+        )
+    assert ctx["enough_data"] is False
+    assert ctx["reason_no_data"] == "weight_over_10y"
+    mock_get_curve.assert_not_awaited()

@@ -21,6 +21,14 @@ export interface MorphologyMetrics {
   ape_index_advisory: string | null;
 }
 
+/**
+ * Referencia poblacional usada para calcular los Z-score/percentil/banda
+ * almacenados en el registro. `null` = registro legado aún no recomputado
+ * (feature 040 — la UI debe mostrar "Referencia anterior — pendiente de
+ * actualizar" en ese caso; ver `contracts/band-vocabulary.md`).
+ */
+export type GrowthSource = "WHO" | "CDC" | null;
+
 export interface AnthropometricRecord {
   id: number;
   athlete_id: number;
@@ -48,4 +56,6 @@ export interface AnthropometricRecord {
   weight_percentile?: number | null;
   nutritional_status?: string | null;
   morphology?: MorphologyMetrics | null;
+  /** Referencia usada para los campos anteriores (feature 040). */
+  growth_source?: GrowthSource;
 }

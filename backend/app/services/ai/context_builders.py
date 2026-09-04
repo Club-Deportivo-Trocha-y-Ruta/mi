@@ -116,6 +116,7 @@ ATHLETE_CONTEXT_ALLOWED_KEYS: frozenset[str] = frozenset(
         "category",           # categoría FCC
         "phv_offset",
         "age_at_phv",
+        "months_from_phv",     # |phv_offset| en meses, entero (feature 040, coach)
         "maturation_status",  # "Pre-PHV" | "Circa-PHV" | "Post-PHV"
         # Privacidad: z-scores eliminados a propósito de la allowlist. En bases
         # pequeñas un par (z-altura, z-peso, edad, sexo) puede re-identificar al
@@ -244,6 +245,17 @@ class AthleteAIContextBuilder:
                         if age_at_phv_raw is not None
                         else None
                     ),
+                    # Magnitud en meses de `phv_offset` (feature 040, prompt
+                    # para entrenador): se deriva del mismo valor crudo, así
+                    # que no añade precisión nueva sobre el ya redondeado a
+                    # 1 decimal en años — solo cambia la unidad de lectura.
+                    # El signo (antes/después del pico) lo decide el propio
+                    # template a partir de `phv_offset`.
+                    "months_from_phv": (
+                        round(abs(phv_offset_raw) * 12)
+                        if phv_offset_raw is not None
+                        else None
+                    ),
                     "maturation_status": _maturation_value(latest_record),
                     "evaluation_age_decimal": round(
                         compute_age_decimal(
@@ -285,6 +297,20 @@ class AthleteAIContextBuilder:
             trend = _build_trend(history)
             if trend:
                 ctx["trend"] = trend
+                # Velocidad de crecimiento reciente (talla), derivada del
+                # primer punto de la tendencia (medición más reciente vs la
+                # inmediatamente anterior). Mismo umbral/fórmula que
+                # `build_record_delta` (feature 040, prompt para entrenador);
+                # se omite si el intervalo es demasiado corto para ser
+                # confiable (ruido de medición).
+                most_recent_delta = trend[0]
+                weeks_ago = most_recent_delta["weeks_ago"]
+                if weeks_ago >= MIN_WEEKS_FOR_VELOCITY:
+                    years = weeks_ago / 52.18
+                    if years > 0:
+                        ctx["growth_velocity_cm_per_year"] = round(
+                            most_recent_delta["delta_height_cm"] / years, 1
+                        )
 
         return self._sanitize(ctx)
 

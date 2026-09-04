@@ -11,6 +11,15 @@
  *     → Z(140cm) ≈ -0.43 → percentil ~33 (interpolado a 132.013m)
  *   - bmi_for_age  M@132.5: L=-1.7862, M=16.9392, S=0.1107
  *     → Z(18.0) ≈ 0.53 → percentil ~70
+ *
+ * La banda (`band`) usa el vocabulario `NutritionalStatus` (feature 040,
+ * T006/T007) — no la banda antigua de 5 niveles (`low/watch_low/ok/…`).
+ *
+ * `source` (feature 040, T025): el Z/percentil del backend solo se usa
+ * cuando `record.growth_source === "WHO"` — un registro `CDC`/`null` no debe
+ * mezclar Z-scores de otra población con las curvas OMS del cliente. Las
+ * secciones 4 y 6 fijan `growth_source: "WHO"` en el fixture para ejercer
+ * ese camino explícitamente; la sección 7 cubre el gating en sí.
  */
 
 import { describe, expect, it } from "vitest";
@@ -19,8 +28,8 @@ import { renderHook } from "@testing-library/react";
 import { MaturationStatus } from "@/types/enums";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 
-import { useGrowthMetrics } from "./useGrowthMetrics";
-import type { UseGrowthMetricsArgs } from "./useGrowthMetrics";
+import { useGrowthMetrics } from "../useGrowthMetrics";
+import type { UseGrowthMetricsArgs } from "../useGrowthMetrics";
 
 // ---------------------------------------------------------------------------
 // Fixture base
@@ -84,9 +93,9 @@ describe("useGrowthMetrics — height_for_age", () => {
     expect(metrics!.ageMonths).toBeCloseTo(132, 0);
     // Z-score esperado por LMS OMS 2007 interpolado a edad exacta (132.013m)
     expect(metrics!.zScore).toBeCloseTo(-0.43, 2);
-    // Percentil esperado ≈ 33 (banda ok: -1 ≤ z ≤ 1)
+    // Percentil esperado ≈ 33 (banda talla_adecuada: -1 ≤ z ≤ 2)
     expect(metrics!.percentile).toBeCloseTo(33, 0);
-    expect(metrics!.band).toBe("ok");
+    expect(metrics!.band).toBe("talla_adecuada");
     // Referencia interpolada a 132.013m entre rows 131.5 y 132.5 OMS 2007
     expect(metrics!.reference.L).toBeCloseTo(1.0, 2);
     expect(metrics!.reference.M).toBeCloseTo(142.9, 0);
@@ -116,7 +125,7 @@ describe("useGrowthMetrics — bmi_for_age con bmi backend", () => {
     // Z calculado por LMS WHO 2007 para bmi=18.0, M@132.5
     expect(metrics!.zScore).toBeCloseTo(0.53, 2);
     expect(metrics!.percentile).toBeCloseTo(70, 0);
-    expect(metrics!.band).toBe("ok");
+    expect(metrics!.band).toBe("adecuado");
   });
 });
 
@@ -140,8 +149,8 @@ describe("useGrowthMetrics — bmi_for_age calculado", () => {
     // BMI calculado: 35 / (1.4352^2) ≈ 16.99
     const expectedBmi = weight_kg / Math.pow(standing_height_cm / 100, 2);
     expect(metrics!.value).toBeCloseTo(expectedBmi, 2);
-    // Banda ok para un z moderado
-    expect(["ok", "watch_low"]).toContain(metrics!.band);
+    // Banda adecuada o delgadez para un z moderado
+    expect(["adecuado", "delgadez"]).toContain(metrics!.band);
   });
 });
 
@@ -150,11 +159,12 @@ describe("useGrowthMetrics — bmi_for_age calculado", () => {
 // ---------------------------------------------------------------------------
 
 describe("useGrowthMetrics — backend Z-score preferido", () => {
-  it("usa height_z_score y height_percentile del record cuando están definidos", () => {
+  it("usa height_z_score y height_percentile del record cuando están definidos y growth_source es WHO", () => {
     const record: AnthropometricRecord = {
       ...BASE_RECORD,
       height_z_score: -0.6,
       height_percentile: 27,
+      growth_source: "WHO",
     };
     const metrics = render({ ...BASE_ARGS, record, indicator: "height_for_age" });
 
@@ -164,9 +174,11 @@ describe("useGrowthMetrics — backend Z-score preferido", () => {
     // Percentil exactamente el del backend
     expect(metrics!.percentile).toBe(27);
     // Banda derivada del z backend
-    expect(metrics!.band).toBe("ok"); // -1 ≤ -0.6 ≤ 1
+    expect(metrics!.band).toBe("talla_adecuada"); // -1 ≤ -0.6 ≤ 2
     // value sigue siendo la talla del record
     expect(metrics!.value).toBe(140.0);
+    // Origen declarado explícitamente como "stored" (T025)
+    expect(metrics!.source).toBe("stored");
   });
 
   it("no usa height_z_score para el indicador bmi_for_age", () => {
@@ -241,13 +253,14 @@ describe("useGrowthMetrics — valores inválidos", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Clasificación de bandas por Z-score
+// 6. Clasificación de bandas por Z-score (NutritionalStatus, indicator-aware)
 // ---------------------------------------------------------------------------
 
-describe("useGrowthMetrics — clasificación de bandas GrowthBand", () => {
+describe("useGrowthMetrics — clasificación de bandas NutritionalStatus", () => {
   /**
-   * Construye args con un height_z_score específico (backend) para verificar
-   * la banda sin depender del valor de talla ni del cálculo LMS.
+   * Construye args con un height_z_score específico (backend, growth_source
+   * WHO) para verificar la banda sin depender del valor de talla ni del
+   * cálculo LMS.
    */
   function makeArgsWithZ(z: number): UseGrowthMetricsArgs {
     return {
@@ -256,48 +269,112 @@ describe("useGrowthMetrics — clasificación de bandas GrowthBand", () => {
         ...BASE_RECORD,
         height_z_score: z,
         height_percentile: null, // sin percentil backend → calculará
+        growth_source: "WHO",
       },
       indicator: "height_for_age",
     };
   }
 
-  it("z = -2.1 → banda 'low'", () => {
+  it("z = -2.1 → banda 'retraso_talla'", () => {
     const metrics = render(makeArgsWithZ(-2.1));
-    expect(metrics!.band).toBe("low");
+    expect(metrics!.band).toBe("retraso_talla");
   });
 
-  it("z = -1.5 → banda 'watch_low'", () => {
+  it("z = -1.5 → banda 'riesgo_retraso_talla'", () => {
     const metrics = render(makeArgsWithZ(-1.5));
-    expect(metrics!.band).toBe("watch_low");
+    expect(metrics!.band).toBe("riesgo_retraso_talla");
   });
 
-  it("z = 0 → banda 'ok'", () => {
+  it("z = 0 → banda 'talla_adecuada'", () => {
     const metrics = render(makeArgsWithZ(0));
-    expect(metrics!.band).toBe("ok");
+    expect(metrics!.band).toBe("talla_adecuada");
   });
 
-  it("z = +1.5 → banda 'watch_high'", () => {
+  it("z = +1.5 → banda 'talla_adecuada' (D2: ya no es una banda separada)", () => {
     const metrics = render(makeArgsWithZ(1.5));
-    expect(metrics!.band).toBe("watch_high");
+    expect(metrics!.band).toBe("talla_adecuada");
   });
 
-  it("z = +2.1 → banda 'high'", () => {
+  it("z = +2.1 → banda 'talla_alta'", () => {
     const metrics = render(makeArgsWithZ(2.1));
-    expect(metrics!.band).toBe("high");
+    expect(metrics!.band).toBe("talla_alta");
   });
 
-  it("z exacto en límite -2 → banda 'watch_low' (inclusive)", () => {
+  it("z exacto en límite -2 → banda 'riesgo_retraso_talla' (inclusive)", () => {
     const metrics = render(makeArgsWithZ(-2));
-    expect(metrics!.band).toBe("watch_low");
+    expect(metrics!.band).toBe("riesgo_retraso_talla");
   });
 
-  it("z exacto en límite +1 → banda 'ok' (inclusive)", () => {
+  it("z exacto en límite +1 → banda 'talla_adecuada' (inclusive)", () => {
     const metrics = render(makeArgsWithZ(1));
-    expect(metrics!.band).toBe("ok");
+    expect(metrics!.band).toBe("talla_adecuada");
   });
 
-  it("z exacto en límite +2 → banda 'watch_high' (inclusive)", () => {
+  it("z exacto en límite +2 → banda 'talla_adecuada' (D2: límite superior inclusive)", () => {
     const metrics = render(makeArgsWithZ(2));
-    expect(metrics!.band).toBe("watch_high");
+    expect(metrics!.band).toBe("talla_adecuada");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Gating por growth_source (feature 040, T025) — un solo estándar OMS
+// ---------------------------------------------------------------------------
+
+describe("useGrowthMetrics — gating por growth_source", () => {
+  it("con growth_source ausente (registro legado no recomputado) ignora el Z-score del backend y calcula por LMS", () => {
+    const record: AnthropometricRecord = {
+      ...BASE_RECORD,
+      height_z_score: -0.6, // valor de backend deliberadamente distinto del LMS local (~-0.43)
+      height_percentile: 27,
+      // growth_source no definido — comportamiento por defecto de registros previos a la migración
+    };
+    const metrics = render({ ...BASE_ARGS, record, indicator: "height_for_age" });
+
+    expect(metrics).not.toBeNull();
+    expect(metrics!.source).toBe("computed");
+    // El Z calculado por LMS local (~-0.43), NO el -0.6 del backend
+    expect(metrics!.zScore).toBeCloseTo(-0.43, 2);
+    expect(metrics!.zScore).not.toBe(-0.6);
+  });
+
+  it("con growth_source 'CDC' ignora el Z-score del backend y calcula por LMS", () => {
+    const record: AnthropometricRecord = {
+      ...BASE_RECORD,
+      height_z_score: -0.6,
+      height_percentile: 27,
+      growth_source: "CDC",
+    };
+    const metrics = render({ ...BASE_ARGS, record, indicator: "height_for_age" });
+
+    expect(metrics).not.toBeNull();
+    expect(metrics!.source).toBe("computed");
+    expect(metrics!.zScore).toBeCloseTo(-0.43, 2);
+  });
+
+  it("con growth_source 'WHO' usa el Z-score del backend (source='stored')", () => {
+    const record: AnthropometricRecord = {
+      ...BASE_RECORD,
+      height_z_score: -0.6,
+      height_percentile: 27,
+      growth_source: "WHO",
+    };
+    const metrics = render({ ...BASE_ARGS, record, indicator: "height_for_age" });
+
+    expect(metrics).not.toBeNull();
+    expect(metrics!.source).toBe("stored");
+    expect(metrics!.zScore).toBe(-0.6);
+  });
+
+  it("sin Z-score de backend, source es 'computed' independientemente de growth_source", () => {
+    const record: AnthropometricRecord = {
+      ...BASE_RECORD,
+      height_z_score: null,
+      height_percentile: null,
+      growth_source: "WHO",
+    };
+    const metrics = render({ ...BASE_ARGS, record, indicator: "height_for_age" });
+
+    expect(metrics).not.toBeNull();
+    expect(metrics!.source).toBe("computed");
   });
 });

@@ -58,33 +58,33 @@ const BASE_RECORD: AnthropometricRecord = {
   nutritional_status: "adecuado",
 };
 
-/** Metrics de retorno para banda "ok" (talla adecuada). */
+/** Metrics de retorno para banda "talla_adecuada". */
 const METRICS_OK: GrowthMetrics = {
   value: 155.0,
   ageMonths: 148.5,
   zScore: 0.3,
   percentile: 62,
-  band: "ok",
+  band: "talla_adecuada",
   reference: { L: 1, M: 152, S: 0.047 },
 };
 
-/** Metrics de retorno para banda "low" (talla baja). */
+/** Metrics de retorno para banda "retraso_talla" (talla baja). */
 const METRICS_LOW: GrowthMetrics = {
   value: 128.0,
   ageMonths: 148.5,
   zScore: -2.5,
   percentile: 1,
-  band: "low",
+  band: "retraso_talla",
   reference: { L: 1, M: 152, S: 0.047 },
 };
 
-/** Metrics de retorno para banda "high" (talla muy alta). */
+/** Metrics de retorno para banda "talla_alta". */
 const METRICS_HIGH: GrowthMetrics = {
   value: 178.0,
   ageMonths: 148.5,
   zScore: 2.8,
   percentile: 99,
-  band: "high",
+  band: "talla_alta",
   reference: { L: 1, M: 152, S: 0.047 },
 };
 
@@ -150,7 +150,7 @@ describe("PercentileInterpretationBlock", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  // 4. Toggle detalles tecnicos → muestra Z-score y percentil
+  // 4. Toggle detalles técnicos → muestra Z-score y percentil
   it("al hacer click en toggle muestra Z-score y percentil exactos", () => {
     mockUseGrowthMetrics.mockReturnValue(METRICS_OK);
     renderBlock();
@@ -159,7 +159,7 @@ describe("PercentileInterpretationBlock", () => {
     expect(screen.queryByTestId("technical-details")).not.toBeInTheDocument();
 
     // Click en toggle
-    fireEvent.click(screen.getByRole("button", { name: /Detalles tecnicos/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Detalles técnicos/i }));
 
     // Detalles visibles con Z y percentil
     const details = screen.getByTestId("technical-details");
@@ -173,7 +173,7 @@ describe("PercentileInterpretationBlock", () => {
     mockUseGrowthMetrics.mockReturnValue(METRICS_OK);
     renderBlock();
 
-    const btn = screen.getByRole("button", { name: /Detalles tecnicos/i });
+    const btn = screen.getByRole("button", { name: /Detalles técnicos/i });
     fireEvent.click(btn);
     expect(screen.getByTestId("technical-details")).toBeInTheDocument();
 
@@ -195,7 +195,7 @@ describe("PercentileInterpretationBlock", () => {
     mockUseGrowthMetrics.mockReturnValue(METRICS_LOW);
     renderBlock();
 
-    fireEvent.click(screen.getByRole("button", { name: /Detalles tecnicos/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Detalles técnicos/i }));
 
     const details = screen.getByTestId("technical-details");
     expect(details.textContent).toMatch(/Z=-2\.50/);
@@ -207,7 +207,7 @@ describe("PercentileInterpretationBlock", () => {
     mockUseGrowthMetrics.mockReturnValue(METRICS_HIGH);
     renderBlock();
 
-    fireEvent.click(screen.getByRole("button", { name: /Detalles tecnicos/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Detalles técnicos/i }));
 
     const details = screen.getByTestId("technical-details");
     expect(details.textContent).toMatch(/Z=\+2\.80/);
@@ -219,7 +219,7 @@ describe("PercentileInterpretationBlock", () => {
     const bmiMetrics: GrowthMetrics = {
       ...METRICS_OK,
       value: 18.7,
-      band: "ok",
+      band: "adecuado",
     };
     mockUseGrowthMetrics.mockReturnValue(bmiMetrics);
     renderBlock({ indicator: "bmi_for_age" });
@@ -232,7 +232,7 @@ describe("PercentileInterpretationBlock", () => {
     const weightMetrics: GrowthMetrics = {
       ...METRICS_OK,
       value: 35.5,
-      band: "ok",
+      band: "talla_adecuada",
     };
     mockUseGrowthMetrics.mockReturnValue(weightMetrics);
     renderBlock({ indicator: "weight_for_age" });

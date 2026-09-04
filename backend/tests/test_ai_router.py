@@ -313,7 +313,12 @@ def _parent_user():
     )
 
 
-def _cached_explanation(record_id: int = 1, *, text: str = "cache hit"):
+def _cached_explanation(
+    record_id: int = 1,
+    *,
+    text: str = "cache hit",
+    use_case: str = "phv_explainer",
+):
     """Fila simulada de `athlete_ai_explanations`."""
     from datetime import datetime, timezone
 
@@ -321,7 +326,7 @@ def _cached_explanation(record_id: int = 1, *, text: str = "cache hit"):
         id=10,
         athlete_id=42,
         anthropometric_record_id=record_id,
-        use_case="phv_explainer",
+        use_case=use_case,
         text=text,
         model="cached-model",
         provider="anthropic",
@@ -557,3 +562,178 @@ class TestPostPHVExplanationCacheUpsert:
         assert resp.status_code == 503
         # Solo se ejecutó la query de history; el upsert no se intentó.
         assert len(session.executed) == 1
+
+
+# ---------------------------------------------------------------------------
+# Audiencia (feature 040, R-12): `?audience=family|coach`
+# ---------------------------------------------------------------------------
+
+
+class TestPHVExplanationAudience:
+    """`audience=coach` agrega números (velocidad, meses) vedados a padres;
+    cachea aparte de la variante familiar vía `use_case`."""
+
+    async def test_get_coach_audience_forbidden_for_parent(
+        self, http_client, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        app.dependency_overrides[get_current_user] = _parent_user
+        app.dependency_overrides[verify_athlete_access] = _athlete
+        app.dependency_overrides[get_db] = lambda: _QueueSession([])
+
+        resp = await http_client.get(
+            "/api/ai/athletes/42/phv-explanation", params={"audience": "coach"}
+        )
+        assert resp.status_code == 403
+
+    async def test_get_family_audience_still_allowed_for_parent(
+        self, http_client, monkeypatch
+    ):
+        """Regresión: el nuevo query param no rompe el flujo de padres
+        (default `family`, sin cambios de comportamiento)."""
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        app.dependency_overrides[get_current_user] = _parent_user
+        app.dependency_overrides[verify_athlete_access] = _athlete
+        session = _QueueSession([
+            _ScalarResult(scalar=_record()),
+            _ScalarResult(scalar=_cached_explanation(text="texto para padres")),
+        ])
+        app.dependency_overrides[get_db] = lambda: session
+
+        resp = await http_client.get(
+            "/api/ai/athletes/42/phv-explanation", params={"audience": "family"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["text"] == "texto para padres"
+
+    async def test_get_coach_audience_allowed_for_admin_no_records(
+        self, http_client, monkeypatch
+    ):
+        """Sin mediciones el resultado es 204 (no 403): admin sí puede pedir
+        `audience=coach`, la barrera de rol no debe interferir con el flujo
+        normal de "sin datos"."""
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        app.dependency_overrides[get_current_user] = _admin_user
+        app.dependency_overrides[verify_athlete_access] = _athlete
+        app.dependency_overrides[get_db] = lambda: _QueueSession(
+            [_ScalarResult(scalar=None)]
+        )
+
+        resp = await http_client.get(
+            "/api/ai/athletes/42/phv-explanation", params={"audience": "coach"}
+        )
+        assert resp.status_code == 204
+
+    async def test_get_coach_audience_reads_coach_cache_row(
+        self, http_client, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        app.dependency_overrides[get_current_user] = _coach_user
+        app.dependency_overrides[verify_athlete_access] = _athlete
+        session = _QueueSession([
+            _ScalarResult(scalar=_record()),
+            _ScalarResult(
+                scalar=_cached_explanation(
+                    text="texto para entrenador",
+                    use_case="phv_explanation_coach",
+                )
+            ),
+        ])
+        app.dependency_overrides[get_db] = lambda: session
+
+        resp = await http_client.get(
+            "/api/ai/athletes/42/phv-explanation", params={"audience": "coach"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["text"] == "texto para entrenador"
+
+    async def test_get_cache_filter_use_case_differs_per_audience(
+        self, http_client, monkeypatch
+    ):
+        """Garantía real de que family/coach cachean aparte: el SELECT de
+        caché filtra por un `use_case` distinto según `audience` (no solo
+        un mock que "adivina" la respuesta esperada)."""
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        app.dependency_overrides[get_current_user] = _coach_user
+        app.dependency_overrides[verify_athlete_access] = _athlete
+
+        for audience, expected_use_case in (
+            ("family", "phv_explainer"),
+            ("coach", "phv_explanation_coach"),
+        ):
+            session = _QueueSession([
+                _ScalarResult(scalar=_record()),
+                _ScalarResult(scalar=None),
+            ])
+            app.dependency_overrides[get_db] = lambda: session
+
+            resp = await http_client.get(
+                "/api/ai/athletes/42/phv-explanation",
+                params={"audience": audience},
+            )
+            assert resp.status_code == 204
+
+            cache_select = session.executed[1]
+            compiled = cache_select.compile()
+            assert compiled.params["use_case_1"] == expected_use_case
+
+    async def test_post_coach_audience_persists_with_coach_use_case(
+        self, http_client, monkeypatch
+    ):
+        from sqlalchemy.dialects.mysql.dml import Insert as MySQLInsert
+
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        fake = FakeLLMProvider(canned="Tu deportista está en Pre-PHV.")
+        app.dependency_overrides[get_llm_provider] = lambda: fake
+        app.dependency_overrides[get_current_user] = _coach_user
+        app.dependency_overrides[verify_athlete_access] = _athlete
+        session = _QueueSession([_ScalarResult(items=[_record()])])
+        app.dependency_overrides[get_db] = lambda: session
+
+        resp = await http_client.post(
+            "/api/ai/athletes/42/phv-explanation", params={"audience": "coach"}
+        )
+        assert resp.status_code == 200, resp.text
+
+        upsert_stmt = session.executed[1]
+        assert isinstance(upsert_stmt, MySQLInsert)
+        compiled = upsert_stmt.compile()
+        assert compiled.params["use_case"] == "phv_explanation_coach"
+
+    async def test_post_family_default_still_persists_with_family_use_case(
+        self, http_client, monkeypatch
+    ):
+        """Regresión: sin `audience` explícito el use_case sigue siendo el
+        histórico `phv_explainer` — no invalida caché ya existente."""
+        from sqlalchemy.dialects.mysql.dml import Insert as MySQLInsert
+
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        fake = FakeLLMProvider(canned="Su hijo está en Pre-PHV.")
+        app.dependency_overrides[get_llm_provider] = lambda: fake
+        app.dependency_overrides[get_current_user] = _coach_user
+        app.dependency_overrides[verify_athlete_access] = _athlete
+        session = _QueueSession([_ScalarResult(items=[_record()])])
+        app.dependency_overrides[get_db] = lambda: session
+
+        resp = await http_client.post("/api/ai/athletes/42/phv-explanation")
+        assert resp.status_code == 200, resp.text
+
+        upsert_stmt = session.executed[1]
+        assert isinstance(upsert_stmt, MySQLInsert)
+        compiled = upsert_stmt.compile()
+        assert compiled.params["use_case"] == "phv_explainer"
+
+    async def test_post_coach_audience_still_forbidden_for_parent(
+        self, http_client, monkeypatch
+    ):
+        """`_forbid_parents` ya bloqueaba todo POST de padres; confirma que
+        agregar `audience` no abre una rendija."""
+        monkeypatch.setattr(settings, "ai_enabled", True)
+        app.dependency_overrides[get_current_user] = _parent_user
+        app.dependency_overrides[verify_athlete_access] = _athlete
+        app.dependency_overrides[get_db] = lambda: _QueueSession([])
+
+        resp = await http_client.post(
+            "/api/ai/athletes/42/phv-explanation", params={"audience": "coach"}
+        )
+        assert resp.status_code == 403

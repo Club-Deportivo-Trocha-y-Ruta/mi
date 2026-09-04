@@ -103,7 +103,7 @@ export function PercentileInterpretationBlock({
     <div
       className={`rounded-xl p-4 ${bg}`}
       role="region"
-      aria-label={`Interpretacion ${indicator}`}
+      aria-label={`Interpretación ${indicator}`}
     >
       {/* Franja superior: dot + label + valor */}
       <div className="flex items-center gap-2">
@@ -120,7 +120,7 @@ export function PercentileInterpretationBlock({
       {/* Frase narrativa */}
       <p className="mt-2 text-sm text-charcoal">{spec.narrative}</p>
 
-      {/* Toggle detalles tecnicos */}
+      {/* Toggle detalles técnicos */}
       {!hideAdvanced && (
         <div className="mt-3">
           <button
@@ -129,7 +129,7 @@ export function PercentileInterpretationBlock({
             className="text-xs text-mid-gray underline-offset-2 hover:underline focus:outline-none"
             aria-expanded={showDetails}
           >
-            {showDetails ? "Ocultar detalles" : "Detalles tecnicos"}
+            {showDetails ? "Ocultar detalles" : "Detalles técnicos"}
           </button>
 
           {showDetails && (

@@ -31,8 +31,10 @@ test('E2E-007: historial de mediciones muestra registros en orden descendente', 
   await expect(page).toHaveURL(/\/athletes\/\d+/);
   await anthroResponse;
 
-  // El detalle auto-selecciona el tab "Crecimiento" si hay mediciones.
-  // Cambiamos al tab "Antropometría" para ver el historial de registros.
+  // Seleccionamos el tab "Antropometría" explícitamente — no dependemos de
+  // ninguna auto-selección de tab por parte de la página (ese comportamiento
+  // se retira en el rediseño del módulo de crecimiento, feature 040) — para
+  // ver el historial de registros.
   await page.getByRole('button', { name: /antropometr[ií]a/i }).click();
 
   // El historial en desktop (viewport 1280px) usa el testid -desktop;
@@ -87,10 +89,13 @@ test('E2E-008: gráficas de crecimiento se renderizan sin errores de consola', a
   await page.getByRole('link', { name: /^Ver$/ }).first().click();
   await expect(page).toHaveURL(/\/athletes\/\d+/);
 
-  // El detalle auto-selecciona el tab "Crecimiento" cuando hay mediciones,
-  // que monta las gráficas. Localizar la sección (Recharts renderiza SVG).
+  // Seleccionamos el tab "Crecimiento" explícitamente — no dependemos de
+  // ninguna auto-selección de tab por parte de la página (ese comportamiento
+  // se retira en el rediseño del módulo de crecimiento, feature 040) — para
+  // montar las gráficas. Localizar la sección (Recharts renderiza SVG).
   // Timeout amplio por la carga de useAnthropometry bajo concurrencia.
-  const chartsSection = page.getByTestId('growth-charts');
+  await page.getByRole('button', { name: /crecimiento/i }).click();
+  const chartsSection = page.getByTestId('growth-curve');
   await expect(chartsSection).toBeVisible({ timeout: 15_000 });
 
   // Verificar que se renderizan elementos SVG (Recharts)

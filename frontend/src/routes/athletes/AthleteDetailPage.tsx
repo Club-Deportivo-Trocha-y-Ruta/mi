@@ -20,18 +20,12 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 
-import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { ActivityCard } from "@/components/activities/ActivityCard";
 import { ConnectionStatusBadge } from "@/components/activities/ConnectionStatusBadge";
 import { AnthropometryForm } from "@/components/athletes/AnthropometryForm";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
-import { GrowthCharts } from "@/components/athletes/GrowthCharts";
 import { LinkedParentsCard } from "@/components/athletes/LinkedParentsCard";
-import { MorphologyCard } from "@/components/athletes/MorphologyCard";
-import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
-import { ResearchReferences } from "@/components/athletes/ResearchReferences";
-import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
 import { AthleteNewslettersTabPanel } from "@/components/training/AthleteNewslettersTabPanel";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -57,6 +51,15 @@ import { MaturationStatus, UserRole } from "@/types/enums";
 const AthleteAIAnalysisTab = lazy(() =>
   import("@/components/athletes/ai/AthleteAIAnalysisTab").then((m) => ({
     default: m.AthleteAIAnalysisTab,
+  })),
+);
+
+// T042 (feature 040, US2): el tab Crecimiento arrastra `GrowthCharts`
+// (recharts) — mismo patrón lazy-load que Insights IA, así el chunk de
+// entrada deja de importar recharts de forma estática (research.md R-08).
+const GrowthTab = lazy(() =>
+  import("@/components/athletes/growth/GrowthTab").then((m) => ({
+    default: m.GrowthTab,
   })),
 );
 
@@ -423,6 +426,28 @@ function AiTabSkeleton() {
   );
 }
 
+// T042 (feature 040, US2) — fallback mientras se descarga el chunk lazy de
+// GrowthTab. Sólo cubre la carga del chunk en sí (una vez, por visita); el
+// propio GrowthTab ya tiene sus estados de carga de datos (skeleton del
+// resumen, etc.) para cuando el chunk ya está montado.
+function GrowthTabSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando crecimiento…"
+      className="space-y-4"
+    >
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[...Array(4)].map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="h-64 w-full rounded-xl" />
+    </div>
+  );
+}
+
 export function AthleteDetailPage() {
   const { id } = useParams();
   const athleteId = Number(id);
@@ -487,8 +512,6 @@ export function AthleteDetailPage() {
   });
 
   const records = anthropometryQuery.data ?? [];
-  // API devuelve registros ordenados desc (más reciente primero).
-  const latestRecord = records[0];
 
   useEffect(() => {
     if (!hasSetInitialTab && records.length > 0) {
@@ -537,10 +560,6 @@ export function AthleteDetailPage() {
 
   const athlete = athleteQuery.data;
   const latest = athlete.latest_anthropometry;
-
-  const phvAgeMonths = latestRecord?.age_at_phv
-    ? latestRecord.age_at_phv * 12
-    : undefined;
 
   const tabClasses = (tab: Tab) =>
     cn(
@@ -840,33 +859,17 @@ export function AthleteDetailPage() {
 
       {/* Tab content — Crecimiento */}
       {activeTab === "growth" && records.length > 0 && (
-        <div className="space-y-5">
-          <NutritionalClassification
-            record={latestRecord}
-            sex={athlete.sex}
-            birthDate={athlete.birth_date}
-          />
-          <div className="rounded-xl bg-white p-5 shadow-card">
-            <GrowthCharts
-              records={records}
-              sex={athlete.sex}
-              birthDate={athlete.birth_date}
-              phvAgeMonths={phvAgeMonths}
-              ageDecimal={athlete.age_decimal ?? undefined}
-            />
-          </div>
-          <TrainingReadiness
+        // T042 (feature 040, US2): key={athlete.id} fuerza un remount
+        // limpio al cambiar de atleta (mismo criterio que
+        // AthleteAIAnalysisTab, ver comentario de su Suspense más abajo).
+        <Suspense fallback={<GrowthTabSkeleton />}>
+          <GrowthTab
+            key={athlete.id}
             athlete={athlete}
-            latestRecord={latestRecord}
+            mode="coach"
+            onRecordMeasurement={() => updateTab("anthropometry")}
           />
-          <MorphologyCard latestRecord={latestRecord} />
-          <PHVExplanationCard
-            athleteId={athlete.id}
-            hasRecords={records.length > 0}
-            onMeasurementCTA={() => updateTab("anthropometry")}
-          />
-          <ResearchReferences />
-        </div>
+        </Suspense>
       )}
     </section>
   );

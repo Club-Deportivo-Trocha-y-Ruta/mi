@@ -62,8 +62,8 @@ vi.mock("@/components/athletes/AnthropometryForm", () => ({
 vi.mock("@/components/athletes/AnthropometryHistory", () => ({
   AnthropometryHistory: () => <div data-testid="anthropometry-history">AnthropometryHistory</div>,
 }));
-vi.mock("@/components/athletes/GrowthCharts", () => ({
-  GrowthCharts: () => <div data-testid="growth-charts">GrowthCharts</div>,
+vi.mock("@/components/athletes/growth/GrowthCurveSection", () => ({
+  GrowthCurveSection: () => <div data-testid="growth-curve">GrowthCurveSection</div>,
 }));
 vi.mock("@/components/athletes/NutritionalClassification", () => ({
   NutritionalClassification: () => (

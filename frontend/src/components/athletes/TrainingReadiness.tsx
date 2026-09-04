@@ -1,20 +1,36 @@
+import { AlertCircle, AlertTriangle, ChevronDown } from "lucide-react";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
+import {
+  differsFromDefault,
+  rulesFor,
+  type AgeGroup,
+  type RuleStatus,
+  type Stage,
+  type TrainingRule,
+} from "@/lib/growth/rules";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 import type { AthleteDetailOut } from "@/types/athlete.types";
 import { MaturationStatus } from "@/types/enums";
+import type { GrowthSummary } from "@/types/growth.types";
 
 interface TrainingReadinessProps {
   athlete: AthleteDetailOut;
   latestRecord?: AnthropometricRecord;
-}
-
-type RuleStatus = "allowed" | "caution" | "forbidden";
-type AgeGroup = "10-12" | "13-15";
-
-interface TrainingRule {
-  id: string;
-  label: string;
-  status: RuleStatus;
-  detail: string;
+  /**
+   * Alertas del resumen de crecimiento (`useGrowthSummary`). Cuando se
+   * provee, sustituye por completo el cálculo local `buildAlerts` — cuando
+   * es `undefined` (uso independiente, p. ej. en las pruebas del
+   * componente) se conserva ese cálculo local para que el componente siga
+   * funcionando de forma autónoma.
+   */
+  alerts?: GrowthSummary["alerts"];
 }
 
 interface AlertItem {
@@ -22,31 +38,11 @@ interface AlertItem {
   message: string;
 }
 
-const STATUS_ICON: Record<RuleStatus, string> = {
-  allowed: "✓",
-  caution: "⚠",
-  forbidden: "✗",
-};
-
-const STATUS_COLORS: Record<RuleStatus, { icon: string; bg: string; text: string; border: string }> = {
-  allowed: {
-    icon: "text-green-600",
-    bg: "bg-green-50",
-    text: "text-green-800",
-    border: "border-green-200",
-  },
-  caution: {
-    icon: "text-yellow-600",
-    bg: "bg-yellow-50",
-    text: "text-yellow-800",
-    border: "border-yellow-200",
-  },
-  forbidden: {
-    icon: "text-red-600",
-    bg: "bg-red-50",
-    text: "text-red-800",
-    border: "border-red-200",
-  },
+/** Mapeo de `RuleStatus` (lib/growth/rules.ts) a `StatusBadge` (icono + etiqueta, nunca solo color). */
+const STATUS_BADGE: Record<RuleStatus, { status: Status; label: string }> = {
+  allowed: { status: "success", label: "Permitido" },
+  caution: { status: "warning", label: "Con cuidado" },
+  forbidden: { status: "danger", label: "No permitido" },
 };
 
 function getAgeGroup(ageDecimal: number | null): AgeGroup | null {
@@ -56,160 +52,42 @@ function getAgeGroup(ageDecimal: number | null): AgeGroup | null {
   return null;
 }
 
-function buildRules(
-  ageGroup: AgeGroup,
-  isCircaPHV: boolean,
-): TrainingRule[] {
-  const rules: TrainingRule[] = [
-    isCircaPHV
-      ? {
-          id: "high-intensity",
-          label: "Intervalos alta intensidad",
-          status: "forbidden",
-          detail: "Prohibido en Circa-PHV",
-        }
-      : ageGroup === "10-12"
-      ? {
-          id: "high-intensity",
-          label: "Intervalos alta intensidad",
-          status: "forbidden",
-          detail: "Prohibido en 10-12 años — solo juego libre",
-        }
-      : {
-          id: "high-intensity",
-          label: "Intervalos alta intensidad",
-          status: "caution",
-          detail: "Max 2 sesiones/semana",
-        },
+/**
+ * Alertas calculadas a partir del `GrowthSummary.alerts` del backend
+ * (mismo vocabulario que `contracts/growth-summary-api.md`). Solo se
+ * traducen a mensaje los tres códigos con implicación directa sobre las
+ * reglas de entrenamiento; `rapid_growth` / `approaching_circa` /
+ * `phase_changed` se muestran en `GrowthAlerts` (fuera de este bloque).
+ */
+function buildAlertsFromSummary(
+  summaryAlerts: GrowthSummary["alerts"],
+): AlertItem[] {
+  const alerts: AlertItem[] = [];
 
-    isCircaPHV
-      ? {
-          id: "bodyweight",
-          label: "Fuerza peso corporal",
-          status: "caution",
-          detail: "Volumen reducido — Circa-PHV",
-        }
-      : {
-          id: "bodyweight",
-          label: "Fuerza peso corporal",
-          status: "allowed",
-          detail: "Permitido en todos los grupos",
-        },
+  if (summaryAlerts.includes("circa_phv")) {
+    alerts.push({
+      level: "warning",
+      message:
+        "Fase de máxima vulnerabilidad ósea. Vigilar Osgood-Schlatter. Priorizar técnica sobre condición.",
+    });
+  }
+  if (summaryAlerts.includes("height_p3")) {
+    alerts.push({
+      level: "danger",
+      message: "Talla muy baja (P<3). Derivar a médico.",
+    });
+  }
+  if (summaryAlerts.includes("bmi_p3")) {
+    alerts.push({
+      level: "danger",
+      message: "Delgadez severa (P<3). Derivar a nutricionista.",
+    });
+  }
 
-    isCircaPHV
-      ? {
-          id: "external-load",
-          label: "Fuerza peso externo",
-          status: "forbidden",
-          detail: "Prohibido en Circa-PHV",
-        }
-      : ageGroup === "10-12"
-      ? {
-          id: "external-load",
-          label: "Fuerza peso externo",
-          status: "forbidden",
-          detail: "Prohibido en 10-12 años",
-        }
-      : {
-          id: "external-load",
-          label: "Fuerza peso externo",
-          status: "caution",
-          detail: "Progresión: bandas → mancuernas",
-        },
-
-    isCircaPHV
-      ? {
-          id: "weekly-hours",
-          label: "Horas/semana",
-          status: "caution",
-          detail: "Reducir 20-30% del plan habitual",
-        }
-      : ageGroup === "10-12"
-      ? {
-          id: "weekly-hours",
-          label: "Horas/semana",
-          status: "allowed",
-          detail: "3-5 h/semana (edad mínima regla)",
-        }
-      : {
-          id: "weekly-hours",
-          label: "Horas/semana",
-          status: "allowed",
-          detail: "5-10 h/semana",
-        },
-
-    {
-      id: "cadence",
-      label: "Cadencia mínima",
-      status: "allowed",
-      detail:
-        isCircaPHV || ageGroup === "13-15"
-          ? "75 rpm — nunca < 60 rpm"
-          : "70 rpm — nunca < 60 rpm",
-    },
-
-    isCircaPHV
-      ? {
-          id: "max-hr",
-          label: "Test FC máxima",
-          status: "forbidden",
-          detail: "Prohibido en Circa-PHV — estimada: 197 lpm",
-        }
-      : ageGroup === "10-12"
-      ? {
-          id: "max-hr",
-          label: "Test FC máxima",
-          status: "forbidden",
-          detail: "Estimada: 197 lpm — sin test",
-        }
-      : {
-          id: "max-hr",
-          label: "Test FC máxima",
-          status: "allowed",
-          detail: "Permitido con supervisión",
-        },
-
-    isCircaPHV
-      ? {
-          id: "powermeter",
-          label: "Potenciómetro",
-          status: "forbidden",
-          detail: "Prohibido en Circa-PHV",
-        }
-      : ageGroup === "10-12"
-      ? {
-          id: "powermeter",
-          label: "Potenciómetro",
-          status: "forbidden",
-          detail: "Prohibido en menores de 13 años",
-        }
-      : {
-          id: "powermeter",
-          label: "Potenciómetro",
-          status: "allowed",
-          detail: "Permitido (solo > 13 años)",
-        },
-
-    {
-      id: "intensity",
-      label: "Distribución Z1-Z2 / Z3-Z5",
-      status: "allowed",
-      detail:
-        isCircaPHV || ageGroup === "10-12" ? "90% / 10%" : "80% / 20%",
-    },
-
-    {
-      id: "ratio",
-      label: "Ratio entreno:competencia",
-      status: "allowed",
-      detail:
-        isCircaPHV || ageGroup === "10-12" ? "70 : 30" : "60 : 40",
-    },
-  ];
-
-  return rules;
+  return alerts;
 }
 
+/** Cálculo local de respaldo — usado cuando el componente se renderiza sin `alerts` (uso independiente). */
 function buildAlerts(
   latestRecord: AnthropometricRecord | undefined,
   isCircaPHV: boolean,
@@ -229,7 +107,7 @@ function buildAlerts(
     if (hp !== null && hp < 3) {
       alerts.push({
         level: "danger",
-        message: "Talla muy baja (P<3). Derivar a medico.",
+        message: "Talla muy baja (P<3). Derivar a médico.",
       });
     }
     const bp = latestRecord.bmi_percentile != null ? Number(latestRecord.bmi_percentile) : null;
@@ -256,40 +134,36 @@ const PHV_BADGE_COLORS: Record<MaturationStatus, string> = {
   [MaturationStatus.PostPHV]: "bg-green-100 text-green-800",
 };
 
-interface RuleCardProps {
+interface RuleRowProps {
   rule: TrainingRule;
 }
 
-function RuleCard({ rule }: RuleCardProps) {
-  const colors = STATUS_COLORS[rule.status];
+function RuleRow({ rule }: RuleRowProps) {
+  const badge = STATUS_BADGE[rule.status];
   return (
-    <div className={`rounded-lg border p-3 ${colors.bg} ${colors.border}`}>
-      <div className="flex items-start gap-2">
-        <span className={`text-base font-bold leading-tight ${colors.icon}`}>
-          {STATUS_ICON[rule.status]}
-        </span>
-        <div className="min-w-0">
-          <p className={`text-sm font-medium ${colors.text}`}>{rule.label}</p>
-          <p className={`mt-0.5 text-xs opacity-80 ${colors.text}`}>{rule.detail}</p>
-        </div>
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-border-gray bg-white p-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-charcoal">{rule.topic}</p>
+        <p className="mt-0.5 text-xs text-mid-gray">{rule.text}</p>
       </div>
+      <StatusBadge status={badge.status} label={badge.label} />
     </div>
   );
 }
 
-export function TrainingReadiness({ athlete, latestRecord }: TrainingReadinessProps) {
+export function TrainingReadiness({ athlete, latestRecord, alerts }: TrainingReadinessProps) {
   const ageGroup = getAgeGroup(athlete.age_decimal);
   const matStatus = latestRecord?.maturation_status ?? null;
   const isCircaPHV = matStatus === MaturationStatus.CircaPHV;
 
   if (ageGroup === null) {
     return (
-      <div className="rounded-xl bg-white p-5 shadow-card">
+      <div className="rounded-xl bg-white p-5 shadow-card" data-testid="growth-rules">
         <h4
           className="font-display mb-2 text-sm text-charcoal"
           style={{ letterSpacing: "0.2px" }}
         >
-          Recomendaciones de entrenamiento
+          Qué cambia en el entrenamiento
         </h4>
         <p className="text-sm text-mid-gray">
           Rango de edad fuera del modelo (10-15 años).
@@ -298,23 +172,22 @@ export function TrainingReadiness({ athlete, latestRecord }: TrainingReadinessPr
     );
   }
 
-  const rules = buildRules(ageGroup, isCircaPHV);
-  const alerts = buildAlerts(latestRecord, isCircaPHV);
+  const stage: Stage = matStatus ?? "any";
+  const rules = rulesFor(ageGroup, stage);
+  const changedRules = rules.filter(differsFromDefault);
+  const alertItems = alerts !== undefined ? buildAlertsFromSummary(alerts) : buildAlerts(latestRecord, isCircaPHV);
 
   return (
-    <div className="rounded-xl bg-white p-5 space-y-4 shadow-card">
+    <div className="rounded-xl bg-white p-5 space-y-4 shadow-card" data-testid="growth-rules">
       {/* Header */}
       <div>
         <h4
           className="font-display text-sm text-charcoal"
           style={{ letterSpacing: "0.2px" }}
         >
-          Recomendaciones de entrenamiento
+          Qué cambia en el entrenamiento
         </h4>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full bg-light-gray px-2.5 py-1 text-charcoal">
-            {athlete.first_name} {athlete.last_name}
-          </span>
           <span className="rounded-full bg-light-gray px-2.5 py-1 text-charcoal">
             {athlete.age_decimal?.toFixed(1) ?? "—"} años
           </span>
@@ -333,30 +206,48 @@ export function TrainingReadiness({ athlete, latestRecord }: TrainingReadinessPr
       </div>
 
       {/* Alertas */}
-      {alerts.length > 0 && (
+      {alertItems.length > 0 && (
         <div className="space-y-2">
-          {alerts.map((alert, idx) => (
-            <div
-              key={idx}
-              className={`rounded-lg border p-3 text-sm ${
-                alert.level === "danger"
-                  ? "border-red-200 bg-red-50 text-red-800"
-                  : "border-amber-200 bg-amber-50 text-amber-800"
-              }`}
-            >
-              {alert.level === "danger" ? "⬤ " : "⚠ "}
-              {alert.message}
-            </div>
+          {alertItems.map((alert, idx) => (
+            <Alert key={idx} variant={alert.level === "danger" ? "destructive" : "warning"}>
+              {alert.level === "danger" ? (
+                <AlertCircle aria-hidden="true" />
+              ) : (
+                <AlertTriangle aria-hidden="true" />
+              )}
+              <AlertDescription>{alert.message}</AlertDescription>
+            </Alert>
           ))}
         </div>
       )}
 
-      {/* Grid de reglas */}
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {rules.map((rule) => (
-          <RuleCard key={rule.id} rule={rule} />
-        ))}
-      </div>
+      {/* Reglas que difieren del plan base del grupo de edad */}
+      {changedRules.length > 0 ? (
+        <div className="space-y-2">
+          {changedRules.map((rule) => (
+            <RuleRow key={rule.id} rule={rule} />
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-mid-gray">
+          Sin cambios respecto al plan base para este grupo de edad.
+        </p>
+      )}
+
+      {/* Detalle completo de las nueve reglas */}
+      <Collapsible>
+        <CollapsibleTrigger className="flex min-h-12 w-full items-center justify-between gap-2 rounded-lg border border-border-gray px-3 text-sm font-medium text-charcoal transition-colors hover:bg-light-gray [&[data-state=open]_svg]:rotate-180">
+          Ver todas las reglas
+          <ChevronDown size={16} aria-hidden="true" className="shrink-0 transition-transform" />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="grid gap-2 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+            {rules.map((rule) => (
+              <RuleRow key={rule.id} rule={rule} />
+            ))}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       {/* Nota al pie */}
       <p

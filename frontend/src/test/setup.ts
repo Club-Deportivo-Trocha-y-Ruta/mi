@@ -9,6 +9,7 @@ import {
   clubInsightsByRaceHandler,
 } from "./msw/athleteRaceAnalysisHandlers";
 import { sessionAssistantHandlers } from "./msw/sessionAssistantHandlers";
+import { growthSummaryHandlers } from "./msw/growthSummaryHandlers";
 
 // Extend Vitest's expect with jest-axe matchers (idempotente: extend
 // usa Object.assign internamente, así que múltiples llamadas son no-op).
@@ -20,6 +21,7 @@ export const mswServer = setupServer(
   ...athleteRaceAnalysisHandlers,
   clubInsightsByRaceHandler,
   ...sessionAssistantHandlers,
+  ...growthSummaryHandlers,
 );
 
 beforeAll(() => mswServer.listen({ onUnhandledRequest: "bypass" }));

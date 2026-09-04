@@ -88,6 +88,14 @@ export function NutritionalClassification({
       }
     : null;
 
+  // Fuente de la clasificación (feature 040, T026 — un solo estándar OMS):
+  // "stored" solo aparece cuando el hook usó el Z-score del backend, lo que
+  // exige `record.growth_source === "WHO"` (ver useGrowthMetrics). Si ningún
+  // indicador visible viene de ahí, el registro no ha sido recomputado
+  // todavía y el pie debe avisarlo (`contracts/band-vocabulary.md`).
+  const usesWhoReference =
+    heightMetrics?.source === "stored" || bmiMetrics?.source === "stored";
+
   return (
     <div className="rounded-xl bg-white p-5 shadow-card">
       <h4
@@ -114,9 +122,15 @@ export function NutritionalClassification({
         className="mt-3 space-y-1 pt-3"
         style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
       >
-        <p className="text-xs text-mid-gray">
-          Fuente: OMS 2007 / Res. 2465/2016 — MinSalud Colombia
-        </p>
+        {usesWhoReference ? (
+          <p className="text-xs text-mid-gray">
+            Fuente: OMS 2007 · Res. 2465/2016 — MinSalud Colombia
+          </p>
+        ) : (
+          <p className="text-xs text-mid-gray">
+            Referencia anterior — pendiente de actualizar
+          </p>
+        )}
         <p className="text-xs text-mid-gray">
           El IMC puede subestimar adiposidad en atletas. Úsese como referencia.
         </p>

@@ -17,7 +17,7 @@ import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { ActivityCard } from "@/components/activities/ActivityCard";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
-import { GrowthCharts } from "@/components/athletes/GrowthCharts";
+import { GrowthCurveSection } from "@/components/athletes/growth/GrowthCurveSection";
 import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
 import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -191,15 +191,6 @@ export function MyAthleteDetailPage() {
 
   const athlete = athleteQuery.data;
   const latest = athlete.latest_anthropometry;
-
-  const phvAgeMonths =
-    records.length > 0
-      ? (() => {
-          const lastRecord = records[records.length - 1];
-          if (!lastRecord.age_at_phv) return undefined;
-          return lastRecord.age_at_phv * 12;
-        })()
-      : undefined;
 
   const tabClasses = (tab: Tab) =>
     cn(
@@ -402,7 +393,7 @@ export function MyAthleteDetailPage() {
       {activeTab === "growth" && records.length > 0 && (
         <div className="space-y-5">
           <NutritionalClassification
-            record={records[records.length - 1]}
+            record={records[0]}
             sex={athlete.sex}
             birthDate={athlete.birth_date}
           />
@@ -415,13 +406,7 @@ export function MyAthleteDetailPage() {
             />
           </div>
           <div className="rounded-xl bg-white p-5 shadow-card">
-            <GrowthCharts
-              records={records}
-              sex={athlete.sex}
-              birthDate={athlete.birth_date}
-              phvAgeMonths={phvAgeMonths}
-              ageDecimal={athlete.age_decimal ?? undefined}
-            />
+            <GrowthCurveSection athlete={athlete} records={records} mode="parent" />
           </div>
           <PHVExplanationCard
             athleteId={athleteId}

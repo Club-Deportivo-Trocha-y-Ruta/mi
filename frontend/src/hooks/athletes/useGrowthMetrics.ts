@@ -9,11 +9,25 @@
  * Fuente de referencia: WHO 2007 Growth Reference (5-19 anios).
  * Cumple Resolucion MinSalud Colombia 2465/2016.
  * Fórmula LMS: WHO Technical Report Series (Cole & Green, 1992).
+ *
+ * Prioridad Z/percentil (feature 040, T025 — un solo estándar de referencia):
+ *   - El Z-score/percentil almacenado en el backend solo se usa cuando
+ *     `record.growth_source === "WHO"` (la Resolución 2465/2016 usa OMS 2007;
+ *     un registro `CDC`/`null` fue calculado contra otra población y NO debe
+ *     mezclarse con las curvas OMS que dibuja este módulo).
+ *   - En cualquier otro caso (registro legado sin recomputar, `growth_source`
+ *     ausente o `CDC`) se recalcula localmente con la tabla OMS del cliente.
+ *   - `source` en el resultado indica cuál de los dos caminos se tomó, para
+ *     que los llamadores (p. ej. `NutritionalClassification`) muestren el
+ *     aviso "Referencia anterior — pendiente de actualizar" cuando corresponda
+ *     (`contracts/band-vocabulary.md`).
  */
 
 import { useMemo } from "react";
 
 import whoData from "@/data/growth-reference-who.json";
+import { classifyBand } from "@/lib/growth/bands";
+import type { NutritionalStatus } from "@/lib/growth/bands";
 import {
   ageMonthsFromDates,
   interpolateReferenceRow,
@@ -27,7 +41,13 @@ import type { AnthropometricRecord } from "@/types/anthropometry.types";
 // Tipos públicos
 // ---------------------------------------------------------------------------
 
-export type GrowthBand = "low" | "watch_low" | "ok" | "watch_high" | "high";
+/**
+ * Banda antigua de 5 niveles. Re-exportada únicamente por compatibilidad —
+ * `PercentileCurves.tsx` todavía la importa desde este módulo para su propia
+ * clasificación local (se refactoriza en una ola posterior). El resultado de
+ * este hook usa el vocabulario nuevo (`NutritionalStatus`, ver `band` abajo).
+ */
+export type { GrowthBand } from "@/lib/growth/bands";
 
 export interface GrowthMetrics {
   /** Valor del indicador: cm para talla, kg para peso, kg/m² para BMI. */
@@ -38,10 +58,19 @@ export interface GrowthMetrics {
   zScore: number;
   /** Percentil entero (1-99). */
   percentile: number;
-  /** Clasificación clínica OMS por bandas de Z-score. */
-  band: GrowthBand;
+  /** Clasificación OMS por Z-score, alineada 1:1 con el enum del backend. */
+  band: NutritionalStatus;
   /** Referencia LMS interpolada usada en el cálculo (útil para tooltips/debug). */
   reference: { L: number; M: number; S: number };
+  /**
+   * Origen del Z-score/percentil/banda devueltos:
+   *   - "stored": vienen del backend porque `record.growth_source === "WHO"`.
+   *   - "computed": se calcularon en el cliente contra la tabla OMS (registro
+   *     legado `CDC`/`null` o sin Z-score de backend para este indicador).
+   * Opcional solo por compatibilidad con mocks/fixtures existentes que aún no
+   * lo declaran — el hook siempre lo devuelve.
+   */
+  source?: "stored" | "computed";
 }
 
 export interface UseGrowthMetricsArgs {
@@ -64,23 +93,6 @@ interface WhoData {
 }
 
 const who = whoData as WhoData;
-
-/**
- * Clasifica el Z-score en una banda clínica según cortes OMS estándar.
- *
- * low        : z < -2     (por debajo del percentil ~2)
- * watch_low  : -2 ≤ z < -1 (por debajo del percentil ~16)
- * ok         : -1 ≤ z ≤ 1  (percentil ~16 a ~84)
- * watch_high : 1 < z ≤ 2   (por encima del percentil ~84)
- * high       : z > 2       (por encima del percentil ~98)
- */
-function classifyBand(z: number): GrowthBand {
-  if (z < -2) return "low";
-  if (z < -1) return "watch_low";
-  if (z <= 1) return "ok";
-  if (z <= 2) return "watch_high";
-  return "high";
-}
 
 /**
  * Extrae el valor del indicador desde el registro.
@@ -157,8 +169,10 @@ function extractBackendZ(
 /**
  * Calcula métricas de crecimiento LMS para un registro antropométrico.
  *
- * - Prioriza Z-score del backend cuando existe para el indicador correcto.
- * - Si no hay datos backend, interpola la tabla OMS y aplica la fórmula LMS.
+ * - Prioriza el Z-score del backend cuando existe para el indicador correcto
+ *   Y `record.growth_source === "WHO"` (ver `source` en el resultado).
+ * - En cualquier otro caso interpola la tabla OMS del cliente y aplica la
+ *   fórmula LMS.
  * - Retorna `null` si el valor es inválido, la edad está fuera de rango o no
  *   hay filas de referencia disponibles.
  */
@@ -188,10 +202,15 @@ export function useGrowthMetrics(args: UseGrowthMetricsArgs): GrowthMetrics | nu
 
     const reference = { L: refRow.L, M: refRow.M, S: refRow.S };
 
-    // 6. Priorizar backend Z-score si corresponde exactamente al indicador
+    // 6. Priorizar Z-score del backend SOLO si el registro fue calculado con
+    //    la misma referencia (OMS 2007) que dibuja este módulo. Un registro
+    //    `growth_source === "CDC"` (o `null`, legado sin recomputar) tiene un
+    //    Z-score de otra población — usarlo aquí produciría un número
+    //    inconsistente con las curvas OMS que se muestran junto a él.
     const backendZ = extractBackendZ(record, indicator);
+    const canUseStored = backendZ !== null && record.growth_source === "WHO";
 
-    if (backendZ !== null) {
+    if (canUseStored && backendZ !== null) {
       const zScore = backendZ.zScore;
       const percentile =
         backendZ.percentile != null
@@ -202,12 +221,14 @@ export function useGrowthMetrics(args: UseGrowthMetricsArgs): GrowthMetrics | nu
         ageMonths,
         zScore,
         percentile,
-        band: classifyBand(zScore),
+        band: classifyBand(indicator, zScore),
         reference,
+        source: "stored",
       };
     }
 
-    // 7. Calcular Z-score por LMS
+    // 7. Calcular Z-score por LMS (registro sin Z de backend, o Z de backend
+    //    que no es OMS-conformante todavía).
     const zScore = zScoreFromLMS(value, refRow.L, refRow.M, refRow.S);
     const percentile = percentileFromZ(zScore);
 
@@ -216,8 +237,9 @@ export function useGrowthMetrics(args: UseGrowthMetricsArgs): GrowthMetrics | nu
       ageMonths,
       zScore,
       percentile,
-      band: classifyBand(zScore),
+      band: classifyBand(indicator, zScore),
       reference,
+      source: "computed",
     };
   }, [record, sex, birthDate, indicator]);
 }

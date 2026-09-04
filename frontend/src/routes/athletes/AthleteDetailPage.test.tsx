@@ -44,8 +44,8 @@ vi.mock("@/components/athletes/AnthropometryHistory", () => ({
   AnthropometryHistory: () => <div data-testid="anthropometry-history">AnthropometryHistory</div>,
 }));
 
-vi.mock("@/components/athletes/GrowthCharts", () => ({
-  GrowthCharts: () => <div data-testid="growth-charts">GrowthCharts</div>,
+vi.mock("@/components/athletes/growth/GrowthCurveSection", () => ({
+  GrowthCurveSection: () => <div data-testid="growth-curve">GrowthCurveSection</div>,
 }));
 
 vi.mock("@/components/athletes/NutritionalClassification", () => ({
@@ -276,7 +276,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       expect(screen.getByTestId("anthropometry-form")).toBeInTheDocument();
     });
 
-    it("NO renderiza GrowthCharts en tab Antropometría", async () => {
+    it("NO renderiza GrowthCurveSection en tab Antropometría", async () => {
       vi.mocked(athletesApi.getAthlete).mockResolvedValue(mockAthleteWithLatest);
       vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([recordA, recordB]);
 
@@ -284,7 +284,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       await act(async () => {
         await userEvent.click(await screen.findByRole("button", { name: /Antropometría/i }));
       });
-      expect(screen.queryByTestId("growth-charts")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("growth-curve")).not.toBeInTheDocument();
     });
 
     it("NO renderiza PercentileCurves en tab Antropometría", async () => {
@@ -309,21 +309,26 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([recordA, recordB]);
     });
 
-    it("renderiza NutritionalClassification", async () => {
+    // Feature 040 (US2, T041): en modo coach `NutritionalClassification` deja de
+    // renderizarse — sus dos clasificaciones (talla/IMC) las muestra ahora
+    // `GrowthStatusRow` con los valores ya calculados en el servidor
+    // (`useGrowthSummary`). Sigue vigente en modo padre (`MyAthleteDetailPage`).
+    it("NO renderiza NutritionalClassification en modo coach", async () => {
       renderPage();
       // Con registros, la página abre Crecimiento como tab inicial (useEffect)
-      expect(await screen.findByTestId("nutritional-classification")).toBeInTheDocument();
+      await screen.findByTestId("growth-curve");
+      expect(screen.queryByTestId("nutritional-classification")).not.toBeInTheDocument();
     });
 
-    it("renderiza GrowthCharts", async () => {
+    it("renderiza GrowthCurveSection", async () => {
       renderPage();
-      expect(await screen.findByTestId("growth-charts")).toBeInTheDocument();
+      expect(await screen.findByTestId("growth-curve")).toBeInTheDocument();
     });
 
-    it("renderiza una sola instancia de GrowthCharts (sin duplicados)", async () => {
+    it("renderiza una sola instancia de GrowthCurveSection (sin duplicados)", async () => {
       renderPage();
-      await screen.findByTestId("growth-charts");
-      expect(screen.getAllByTestId("growth-charts")).toHaveLength(1);
+      await screen.findByTestId("growth-curve");
+      expect(screen.getAllByTestId("growth-curve")).toHaveLength(1);
     });
 
     it("renderiza TrainingReadiness", async () => {
@@ -341,11 +346,13 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       expect(await screen.findByTestId("research-references")).toBeInTheDocument();
     });
 
-    it("NO renderiza AnthropometryHistory en tab Crecimiento", async () => {
+    // Feature 040 (US2, T041): el árbol de `contracts/growth-tab-ui.md` incluye
+    // `AnthropometryHistory` (modo compacto) dentro del tab Crecimiento.
+    it("renderiza AnthropometryHistory (compacto) en tab Crecimiento", async () => {
       renderPage();
       // Esperar a que el tab Crecimiento esté activo
-      await screen.findByTestId("growth-charts");
-      expect(screen.queryByTestId("anthropometry-history")).not.toBeInTheDocument();
+      await screen.findByTestId("growth-curve");
+      expect(screen.getByTestId("anthropometry-history")).toBeInTheDocument();
     });
 
     it("Tab Crecimiento no aparece si no hay registros", async () => {
@@ -370,16 +377,16 @@ describe("AthleteDetailPage — refactor Opción C", () => {
     it("navegar a Antropometría desde Crecimiento muestra AnthropometryHistory", async () => {
       renderPage();
       // Esperar tab Crecimiento activo
-      await screen.findByTestId("growth-charts");
+      await screen.findByTestId("growth-curve");
 
       await act(async () => {
         await userEvent.click(screen.getByRole("button", { name: /Antropometría/i }));
       });
       expect(screen.getByTestId("anthropometry-history")).toBeInTheDocument();
-      expect(screen.queryByTestId("growth-charts")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("growth-curve")).not.toBeInTheDocument();
     });
 
-    it("volver a Crecimiento desde Antropometría restaura GrowthCharts", async () => {
+    it("volver a Crecimiento desde Antropometría restaura GrowthCurveSection", async () => {
       renderPage();
       // Ir a Antropometría
       await act(async () => {
@@ -391,8 +398,10 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       await act(async () => {
         await userEvent.click(screen.getByRole("button", { name: /Crecimiento/i }));
       });
-      expect(screen.getByTestId("growth-charts")).toBeInTheDocument();
-      expect(screen.queryByTestId("anthropometry-history")).not.toBeInTheDocument();
+      expect(screen.getByTestId("growth-curve")).toBeInTheDocument();
+      // Feature 040 (US2, T041): `AnthropometryHistory` vive ahora en ambos
+      // tabs, así que al volver debe seguir montada — y una sola vez.
+      expect(screen.getAllByTestId("anthropometry-history")).toHaveLength(1);
     });
 
     it("navegar a Info general oculta contenido de Antropometría", async () => {
@@ -406,7 +415,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
         await userEvent.click(screen.getByRole("button", { name: /Info general/i }));
       });
       expect(screen.queryByTestId("anthropometry-history")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("growth-charts")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("growth-curve")).not.toBeInTheDocument();
     });
 
     it("tab Antropometría conserva estado de anulación (cancelar form) tras ida y vuelta", async () => {
@@ -452,7 +461,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       expect(screen.queryByTestId("phv-explanation-card")).not.toBeInTheDocument();
     });
 
-    it("tras navegar al tab Antropometría vía CTA no se renderiza GrowthCharts", async () => {
+    it("tras navegar al tab Antropometría vía CTA no se renderiza GrowthCurveSection", async () => {
       renderPage();
       await screen.findByTestId("phv-explanation-card");
 
@@ -460,7 +469,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
         await userEvent.click(screen.getByRole("button", { name: /Agregar medicion/i }));
       });
 
-      expect(screen.queryByTestId("growth-charts")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("growth-curve")).not.toBeInTheDocument();
     });
   });
 
@@ -489,10 +498,10 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       expect(screen.getAllByText("Sub-15").length).toBeGreaterThanOrEqual(1);
     });
 
-    it("info general no renderiza GrowthCharts", async () => {
+    it("info general no renderiza GrowthCurveSection", async () => {
       renderPage();
       await screen.findByText(/Datos del atleta/i);
-      expect(screen.queryByTestId("growth-charts")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("growth-curve")).not.toBeInTheDocument();
     });
 
     it("info general no renderiza AnthropometryHistory", async () => {
@@ -507,7 +516,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
 
       renderPage();
       // Esperar el tab activo inicial (Crecimiento con records)
-      await screen.findByTestId("growth-charts");
+      await screen.findByTestId("growth-curve");
 
       await act(async () => {
         await userEvent.click(screen.getByRole("button", { name: /Info general/i }));
@@ -541,12 +550,12 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       expect(screen.getByTestId("newsletters-tab-panel")).toBeInTheDocument();
     });
 
-    it("tab Boletines activo no renderiza GrowthCharts ni AnthropometryHistory", async () => {
+    it("tab Boletines activo no renderiza GrowthCurveSection ni AnthropometryHistory", async () => {
       renderPage();
       await act(async () => {
         await userEvent.click(await screen.findByTestId("athlete-tab-newsletters"));
       });
-      expect(screen.queryByTestId("growth-charts")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("growth-curve")).not.toBeInTheDocument();
       expect(screen.queryByTestId("anthropometry-history")).not.toBeInTheDocument();
     });
   });
@@ -641,14 +650,14 @@ describe("MyAthleteDetailPage — vista padres (coach es AthleteDetailPage)", ()
     expect(await screen.findByRole("button", { name: /Crecimiento/i })).toBeInTheDocument();
   });
 
-  it("tab Crecimiento muestra GrowthCharts (vista padres también tiene gráficas)", async () => {
+  it("tab Crecimiento muestra GrowthCurveSection (vista padres también tiene gráficas)", async () => {
     vi.mocked(athletesApi.getAthlete).mockResolvedValue(mockAthleteWithLatest);
     vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([recordA, recordB]);
     renderParentPage();
     await act(async () => {
       await userEvent.click(await screen.findByRole("button", { name: /Crecimiento/i }));
     });
-    expect(screen.getByTestId("growth-charts")).toBeInTheDocument();
+    expect(screen.getByTestId("growth-curve")).toBeInTheDocument();
   });
 
   it("tab Crecimiento muestra NutritionalClassification (vista padres)", async () => {

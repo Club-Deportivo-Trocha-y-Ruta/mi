@@ -56,9 +56,13 @@ _INDICATOR_TO_GROWTH: dict[str, GrowthIndicator] = {
     "weight": GrowthIndicator.weight_for_age,
 }
 
-# Edad mínima/máxima del CDC que queremos cubrir (meses)
-_CDC_AGE_MIN: float = 60.0    # 5 años
-_CDC_AGE_MAX: float = 228.0   # 19 años
+# Edad mínima/máxima que queremos cubrir con la referencia OMS 2007 (meses)
+_AGE_MIN: float = 60.0    # 5 años
+_AGE_MAX: float = 228.0   # 19 años
+
+# La OMS solo publica peso/edad hasta los 10 años (feature 040 / R-02); por
+# encima de este umbral el gráfico de peso se omite (nunca se clasifica).
+_WEIGHT_AGE_MAX_MONTHS: float = 120.5
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +216,19 @@ async def build_percentile_chart_ctx(
     if not records or len(records) < 2:
         return _empty_ctx(indicator, label, sex, "insufficient_records")
 
+    # Peso/edad no existe en la referencia OMS 2007 por encima de los 10 años
+    # (feature 040 / R-02): se omite el gráfico sin siquiera consultar la
+    # curva de referencia. El peso sigue visible como medición cruda + tendencia
+    # en otra parte del boletín; aquí solo se omite la clasificación/curva.
+    if indicator == "weight":
+        eval_ages_months = [
+            _age_months_from_birth(birth_date, r.evaluation_date)
+            for r in records
+            if r.evaluation_date is not None
+        ]
+        if eval_ages_months and max(eval_ages_months) > _WEIGHT_AGE_MAX_MONTHS:
+            return _empty_ctx(indicator, label, sex, "weight_over_10y")
+
     # -----------------------------------------------------------------------
     # Construir puntos del atleta
     # -----------------------------------------------------------------------
@@ -247,15 +264,15 @@ async def build_percentile_chart_ctx(
     min_age = min(a[0] for a in athlete_raw)
     max_age = max(a[0] for a in athlete_raw)
 
-    # Verificar rango etario cubierto por CDC
-    if max_age < _CDC_AGE_MIN or min_age > _CDC_AGE_MAX:
+    # Verificar rango etario cubierto por la referencia OMS
+    if max_age < _AGE_MIN or min_age > _AGE_MAX:
         return _empty_ctx(indicator, label, sex, "age_out_of_range")
 
     # -----------------------------------------------------------------------
     # Dominio de ejes
     # -----------------------------------------------------------------------
-    x_min = max(_CDC_AGE_MIN, min_age - 12.0)
-    x_max = min(_CDC_AGE_MAX, max_age + 24.0)
+    x_min = max(_AGE_MIN, min_age - 12.0)
+    x_max = min(_AGE_MAX, max_age + 24.0)
 
     # -----------------------------------------------------------------------
     # Curvas de referencia (solo rango relevante)
@@ -269,7 +286,7 @@ async def build_percentile_chart_ctx(
             db=db,
             indicator=growth_indicator,
             sex=sex,
-            source=GrowthSource.CDC,
+            source=GrowthSource.WHO,
             age_range=(x_min, x_max),
         )
     except Exception:

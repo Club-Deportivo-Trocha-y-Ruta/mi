@@ -33,6 +33,11 @@ from app.services.phv import calculate_mirwald_offset
 
 router = APIRouter()
 
+# La OMS 2007 solo publica peso/edad hasta los 10 años (feature 040 / R-02).
+# Por encima de este umbral (en meses) weight_z_score/weight_percentile se
+# guardan en NULL: no existe referencia poblacional con la que clasificarlos.
+WEIGHT_AGE_MAX_MONTHS: float = 120.5
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -131,6 +136,7 @@ async def create_anthropometry(
     )
 
     # Calcular percentiles de crecimiento (graceful fallback si tabla LMS vacía)
+    # Feature 040: la OMS 2007 es la única referencia poblacional del servidor.
     age_months = age * 12
     try:
         growth = await calculate_growth_percentiles(
@@ -139,7 +145,7 @@ async def create_anthropometry(
             standing_height_cm=float(body.standing_height_cm),
             sex=athlete.sex.value,
             age_months=age_months,
-            source=GrowthSource.CDC,
+            source=GrowthSource.WHO,
         )
     except Exception:
         growth = None
@@ -147,6 +153,11 @@ async def create_anthropometry(
     # Si todos los z-scores son None la tabla LMS está vacía — tratar como sin datos
     if growth is not None and growth.height_z_score is None and growth.bmi_z_score is None:
         growth = None
+
+    # La OMS no publica peso/edad por encima de los 10 años (feature 040 / R-02):
+    # weight_z_score/weight_percentile se guardan en NULL para esas edades, sin
+    # importar lo que haya calculado calculate_growth_percentiles.
+    weight_over_who_range = age_months > WEIGHT_AGE_MAX_MONTHS
 
     # BMI desacoplado de la tabla LMS (feature 003 / FR-001a): se calcula y
     # persiste SIEMPRE que haya peso y talla, sin depender de las constantes de
@@ -175,10 +186,17 @@ async def create_anthropometry(
         bmi=bmi_decimal,
         bmi_z_score=growth.bmi_z_score if growth else None,
         bmi_percentile=growth.bmi_percentile if growth else None,
-        weight_z_score=growth.weight_z_score if growth else None,
-        weight_percentile=growth.weight_percentile if growth else None,
+        weight_z_score=(
+            growth.weight_z_score if growth and not weight_over_who_range else None
+        ),
+        weight_percentile=(
+            growth.weight_percentile if growth and not weight_over_who_range else None
+        ),
         # nutritional_status almacena la clasificación IMC/E (la más clínica)
         nutritional_status=growth.nutritional_status_bmi if growth else None,
+        # Referencia poblacional usada para los campos anteriores (feature 040):
+        # todo registro nuevo se calcula contra la OMS 2007.
+        growth_source=GrowthSource.WHO,
     )
     db.add(record)
     await db.flush()
