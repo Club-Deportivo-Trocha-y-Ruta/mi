@@ -42,11 +42,15 @@ Modules still uncovered (wave 2+)
 ----------------------------------
 - ``app/services/race/agents/analyst.py`` (5 raw-SQL sites)
 - ``app/services/race/agents/chat.py`` (4 raw-SQL sites)
-- ``app/services/race/analytics_charts.py`` — build_evolution
-  (1 remaining raw-SQL site; build_distribution covered here)
 - ``app/services/race/agents/_llm.py`` (2 raw-SQL sites)
 - ``app/services/race/ai/nodes/load_race_data.py`` (1 raw-SQL site)
 - ``app/services/race/ai/nodes/budget_guard.py`` (1 raw-SQL site under ai/)
+
+``build_evolution`` (feature 039, T018) now has its own case below —
+verifica que los campos derivados de grupo de comparación
+(``series_id``/``series_name``/``series_level``, ``groups``) sobrevivan al
+dialecto MySQL, donde ``race_series.kind``/``level`` pueden volver como
+string plano en vez del enum de Python (aiosqlite conserva el enum).
 """
 from __future__ import annotations
 
@@ -56,12 +60,18 @@ from datetime import date, datetime, timezone
 import pytest
 
 from app.models.race_result import ResultStatus
+from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.models.user import UserRole
+from app.schemas.athlete_race_analysis import EvolutionMetric
 from app.services.race.ai.anonymizer import make_pseudonym
 from app.services.race.ai.db import set_db_factory
 from app.services.race.ai.nodes.recall_memory import recall_memory
 from app.services.race.ai.nodes.rehydrate_names import _fetch_athlete_name
-from app.services.race.analytics_charts import _build_pseudonym, build_distribution
+from app.services.race.analytics_charts import (
+    _build_pseudonym,
+    build_distribution,
+    build_evolution,
+)
 from app.services.race.standings import get_event_standings
 from tests.fixtures.race_history_fixtures import (
     create_athlete,
@@ -420,4 +430,131 @@ async def test_pseudonym_stable_and_namespaced(mysql_session):
     # Different namespaces must not collide for typical IDs.
     assert make_pseudonym(1) != _build_pseudonym(1), (
         "Athlete pseudonym and competitor pseudonym must differ (different namespaces)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 7: build_evolution — grupos de comparación (feature 039, T018)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.mysql
+async def test_build_evolution_returns_series_fields_and_groups_mysql(mysql_session):
+    """``build_evolution`` debe exponer ``series_id``/``series_name``/
+    ``series_level`` en cada punto y una lista ``groups`` no vacía bajo
+    MySQL 8.4 (feature 039).
+
+    Pre-implementación (TDD-rojo): ``EvolutionPoint``/``EvolutionResponse``
+    no tienen estos campos todavía — el acceso por atributo debe lanzar
+    ``AttributeError``.
+
+    IDs: 901+ (club/user/athlete 901, copa 9010, campeonato 9020,
+    categoría 901, eventos 90101/90201).
+    """
+    await create_club(mysql_session, club_id=901, code="tyr901")
+    await create_user(mysql_session, user_id=901, role=UserRole.coach)
+    await create_user(mysql_session, user_id=902, role=UserRole.athlete, can_login=False)
+    await create_athlete(
+        mysql_session, athlete_id=901, club_id=901, user_id=902, created_by=901,
+    )
+    await create_race_category(mysql_session, category_id=901, code="INF_A_MYSQL039")
+
+    await create_race_series(
+        mysql_session,
+        series_id=9010,
+        season_year=2026,
+        name="Copa MySQL Test",
+        kind=RaceSeriesKind.cup,
+    )
+    await create_race_series(
+        mysql_session,
+        series_id=9020,
+        season_year=2026,
+        name="Campeonato Departamental MySQL Test",
+        kind=RaceSeriesKind.championship,
+        level=RaceSeriesLevel.departmental,
+    )
+
+    await create_race_event(
+        mysql_session,
+        event_id=90101,
+        series_id=9010,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        created_by_user_id=901,
+    )
+    await create_race_event(
+        mysql_session,
+        event_id=90201,
+        series_id=9020,
+        sequence_number=1,
+        event_date=date(2026, 6, 20),
+        created_by_user_id=901,
+    )
+    await mysql_session.commit()
+
+    # Pelotón mínimo por evento: ganador (P1) + el atleta (P2).
+    for event_id in (90101, 90201):
+        winner_cid = event_id * 10 + 1
+        await create_race_competitor(
+            mysql_session,
+            competitor_id=winner_cid,
+            normalized_name=f"winner{event_id}",
+            display_name=f"Winner {event_id}",
+        )
+        await create_race_result(
+            mysql_session,
+            event_id=event_id,
+            category_id=901,
+            competitor_id=winner_cid,
+            position=1,
+            race_time_ms=1_800_000,
+            status=ResultStatus.FINISHED,
+            created_by_user_id=901,
+        )
+        athlete_cid = event_id * 10 + 2
+        await create_race_competitor(
+            mysql_session,
+            competitor_id=athlete_cid,
+            normalized_name=f"athlete{event_id}",
+            display_name=f"Athlete {event_id}",
+            athlete_id=901,
+        )
+        await create_race_result(
+            mysql_session,
+            event_id=event_id,
+            category_id=901,
+            competitor_id=athlete_cid,
+            athlete_id=901,
+            position=2,
+            race_time_ms=1_810_000,
+            status=ResultStatus.FINISHED,
+            created_by_user_id=901,
+        )
+    await mysql_session.commit()
+
+    result = await build_evolution(
+        mysql_session,
+        athlete_id=901,
+        season=2026,
+        metric=EvolutionMetric.RANKING,
+    )
+
+    assert len(result.series) == 2, f"Esperaba 2 puntos, obtuve {len(result.series)}"
+    expected_names = {"Copa MySQL Test", "Campeonato Departamental MySQL Test"}
+    for point in result.series:
+        assert point.series_id in (9010, 9020), (
+            f"series_id inesperado: {point.series_id!r}"
+        )
+        assert point.series_name in expected_names, (
+            f"series_name inesperado: {point.series_name!r}"
+        )
+        assert point.series_level in ("departmental", "national"), (
+            f"series_level inesperado: {point.series_level!r}"
+        )
+
+    assert result.groups, "groups no debe estar vacío"
+    group_series_ids = {g.series_id for g in result.groups}
+    assert group_series_ids == {9010, 9020}, (
+        f"groups debe cubrir ambas series (copa + campeonato). Recibí: {group_series_ids}"
     )

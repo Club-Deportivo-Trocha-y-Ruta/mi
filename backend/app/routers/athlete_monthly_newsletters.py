@@ -802,6 +802,7 @@ async def download_newsletter_pdf(
 
     snapshot = nl.metrics_snapshot or {}
     pdf_only_blocks = snapshot.get("pdf_only_blocks", {})
+    email_blocks = snapshot.get("email_blocks", {})
 
     from app.services.notification.athlete_newsletter_pdf import generate_stage_log_pdf
     from app.services.training.stage_log import StageLog, to_parent_dto
@@ -820,6 +821,7 @@ async def download_newsletter_pdf(
         anthropometry=pdf_only_blocks.get("anthropometry"),
         charts_context=pdf_only_blocks.get("charts_context"),
         percentile_curves=pdf_only_blocks.get("percentile_curves"),
+        race_results=email_blocks.get("race_results"),
     )
 
     # Actualizar hash si cambió

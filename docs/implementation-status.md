@@ -708,3 +708,33 @@ unchanged in count.
 
 **Status:** 🚧 All 4 waves complete and integrated on the working tree
 (uncommitted); pending T403 (e2e) and SC-1 (real-dataset regeneration).
+
+## Implementation status — Season Comparison Groups (specs/039-season-comparison-groups)
+
+> Fixes the "Evolución en la temporada" charts (family newsletter and athlete
+> detail) mixing Copa Valle rounds with the Departmental and National
+> Championships. A championship races a different field, so its position and
+> gap are not comparable with a cup round on the same line — the fix
+> introduces a **derived comparison group** (cup = its series; championship =
+> its own single-race group) computed at read time from `race_series.kind` /
+> `id` / `level`, with **no schema change**. Every consumer — newsletter, the
+> coach/parent evolution chart, and the AI pipeline — now reads one group at
+> a time. Full spec, design, data model and API contracts in
+> `specs/039-season-comparison-groups/`.
+
+| Step | Scope | Status |
+|---|---|---|
+| Foundational | Pure module `services/race/comparison_groups.py` (`build_comparison_group`, `group_label`, `split_progression`); `analytics.athlete_progression` gains `event_id` / `series_id` / `series_name` / `comparison_group` columns | ✅ Complete 2026-09-03 |
+| US1 — Newsletter | `newsletter_builder._build_race_block` splits the season history into `cups[]` / `championships[]`, deduped by `event_id` across linked competitor rows; `_build_charts_context` renders one chart set per cup; new `championship_card.html.jinja` stat-tile partial; the season section of `athlete_stage_log.html` was moved out of the anthropometry annex — it no longer requires a growth record in the month, only a cup or a championship raced in the season | ✅ Complete 2026-09-03 |
+| US2 — Athlete detail / `GET /evolution` | `series_id` query param + `groups[]` / `selected_group` added to `GET /api/athletes/{id}/race-analysis/evolution` (additive, backward compatible); `EvolutionChart` gains a "Competencia" selector (cups first, then championships by date); new `ChampionshipReadingCard` (position, field size, gap %, percentile); `MiniSparkline` restricted to the first cup only | ✅ Complete 2026-09-03 |
+| US3 — AI pipeline | `metrics.progression_groups` (cups/championships split) added to `RaceAnalysisState`; race resolution anchored by `event_id` — never `valida_num` alone — via `_find_analyzed_record`; `_compute_season_comparative` restricted to earlier rounds of the same `series_id`; `_event_label` removed in favor of `race_labels.build_race_label`; inviolable rule 10 added to `race_analyst_v3.md` (a championship is never comparable with a cup round); golden case `case_009.json` (national championship) authored | ✅ Complete 2026-09-03 |
+| US3 — Golden evaluation gate (T040) | `pytest -m golden`, blocking threshold ≥ 0.75 (`RACE_EVAL_THRESHOLD`) | ⏳ **Pending** — run today with the real Gemini key: cases 001–002 scored 0.840/0.820, then the Gemini free-tier quota was exhausted (HTTP 429 `RESOURCE_EXHAUSTED` on `gemini-3.8-flash`), so cases 003–009 fell back to the deterministic path and were not measured. The scoreboard file was restored to its pre-run version. The gate is open — neither passed nor failed — until the quota resets and the run is repeated in full |
+| US4 — Multi-cup | Tests proving a season with two cups keeps each cup separate: two newsletter chart blocks with independent accumulated points, `groups[]` order/default in `/evolution`, no cross-cup priors in the AI season comparative | ✅ Complete 2026-09-03 |
+| Polish | `data-privacy-guard` audit, full quality gates, `quickstart.md` walkthrough, integration review, docs (this entry) | 🚧 In progress — offline gates green (backend `pytest` default lane, `ruff check` on touched files, `tsc --noEmit`, `vitest` with one pre-existing unrelated flake in `src/lib/__tests__/datetime.test.ts`); privacy audit, quickstart walkthrough, integration review and post-deploy smoke not yet recorded |
+| Deploy | Deploy to Render (backend) / Cloudflare Pages (frontend) | ⏳ Pending |
+
+> Branch `feat/039-season-comparison-groups`; all changes are uncommitted in
+> the working tree. No Alembic migration — every comparison group is derived
+> at read time from `race_series` columns already introduced by feature 014
+> (`docs/implementation-status.md`'s own entry above) and consumed as-is by
+> feature 016's `event_id`-based race identity.

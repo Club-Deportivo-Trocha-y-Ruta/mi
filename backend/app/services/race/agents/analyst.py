@@ -35,7 +35,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field as dc_field
-from typing import Any, NamedTuple, Optional
+from typing import Any, Callable, NamedTuple, Optional
 
 from app.services.race.agents._llm import (
     LLMCallResult,
@@ -298,11 +298,128 @@ def _format_ms_hhmmss(ms: Any) -> str:
     return f"{sign}{h:d}:{m:02d}:{s:02d}"
 
 
-def _progression_to_md(records: list[dict[str, Any]]) -> str:
-    """Convierte records de progresión a tabla markdown corta."""
-    if not records:
-        return "_(sin resultados previos en esta temporada)_"
-    headers = ["valida_num", "event_date", "position", "race_time", "points_awarded"]
+def _progression_series_label(record: dict[str, Any]) -> str:
+    """Etiqueta de serie de una fila de progresión (feature 039, T034).
+
+    Mismos textos que :func:`series_label_v3` — ``"Válida N · Copa"``,
+    ``"Cto. Departamental"``, ``"Cto. Nacional"`` — pero derivados de
+    ``series_kind``/``series_level`` de la fila en vez de ``FieldMetrics``.
+
+    Sin esta columna el modelo ve un ``valida_num`` ambiguo: desde spec 014
+    un campeonato lleva ``sequence_number=1`` igual que la Válida I, así que
+    la tabla "Recorrido hasta acá" mostraba dos filas "1" indistinguibles e
+    invitaba a compararlas puesto a puesto. Las filas previas a la feature
+    039 no traen ``series_kind`` y caen a copa, que es lo que eran.
+    """
+    kind = getattr(record.get("series_kind"), "value", record.get("series_kind"))
+    if str(kind or "cup").lower() == "championship":
+        level = getattr(record.get("series_level"), "value", record.get("series_level"))
+        return "Cto. Nacional" if str(level or "").lower() == "national" else "Cto. Departamental"
+    valida_num = record.get("valida_num")
+    return f"Válida {valida_num} · Copa" if valida_num is not None else "Copa"
+
+
+def _row_kind(record: dict[str, Any]) -> str:
+    """Normaliza ``series_kind`` de una fila de temporada → ``"cup"``/``"championship"``.
+
+    Cae a ``"cup"`` cuando la clave falta o es desconocida: filas previas a
+    la feature 039 (o ``field_metrics`` sin ``series_id``) siguen siendo
+    tratadas como copa, igual que :func:`_progression_series_label` y
+    :func:`series_label_v3`.
+    """
+    kind = getattr(record.get("series_kind"), "value", record.get("series_kind"))
+    return "championship" if str(kind or "cup").lower() == "championship" else "cup"
+
+
+def _split_rows_by_kind(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Separa filas de temporada en ``(copa, campeonato)`` por ``series_kind``."""
+    cup_rows: list[dict[str, Any]] = []
+    championship_rows: list[dict[str, Any]] = []
+    for r in rows:
+        (championship_rows if _row_kind(r) == "championship" else cup_rows).append(r)
+    return cup_rows, championship_rows
+
+
+def _group_cup_rows_by_series(
+    cup_rows: list[dict[str, Any]],
+) -> list[tuple[str | None, list[dict[str, Any]]]]:
+    """Agrupa filas de copa por ``series_id`` cuando el dato está disponible.
+
+    ``field_metrics`` (consumido por ``_v3_season_block``) no trae
+    ``series_id`` — en ese caso devuelve un único grupo sin rótulo, igual
+    que el comportamiento previo a la feature 039. Las filas de
+    ``athlete_progression`` (consumidas por ``_progression_to_md``) sí lo
+    traen, así que ahí sí se abre una sub-tabla por copa.
+    """
+    if not any(r.get("series_id") is not None for r in cup_rows):
+        return [(None, cup_rows)]
+    order: list[Any] = []
+    groups: dict[Any, list[dict[str, Any]]] = {}
+    for r in cup_rows:
+        key = r.get("series_id")
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(r)
+    return [(groups[key][0].get("series_name") or "Copa", groups[key]) for key in order]
+
+
+_SEASON_SPLIT_HEADING_CUPS = "**Válidas de copa**"
+_SEASON_SPLIT_HEADING_CHAMPIONSHIPS = (
+    "**Campeonatos (pelotón propio, no comparable con la copa)**"
+)
+
+
+def _render_split_tables(
+    rows: list[dict[str, Any]],
+    render_table: Callable[[list[dict[str, Any]]], str],
+    *,
+    group_cups: bool,
+) -> str:
+    """Arma el markdown de temporada, separando copa vs. campeonato (F-4).
+
+    Con ambos tipos presentes: dos tablas rotuladas — nunca una sola donde
+    el modelo pueda leer puestos consecutivos de series distintas como
+    comparables (regla 10 del prompt v3). Con un solo tipo presente,
+    mantiene el formato de una única tabla sin encabezado (compatibilidad
+    con los casos golden y fixtures previos a esta separación).
+    """
+    cup_rows, championship_rows = _split_rows_by_kind(rows)
+
+    def _cup_block() -> str:
+        if not group_cups:
+            return render_table(cup_rows)
+        groups = _group_cup_rows_by_series(cup_rows)
+        if len(groups) == 1 and groups[0][0] is None:
+            return render_table(cup_rows)
+        return "\n\n".join(f"*{name}*\n\n{render_table(g_rows)}" for name, g_rows in groups)
+
+    if cup_rows and championship_rows:
+        return "\n\n".join(
+            [
+                _SEASON_SPLIT_HEADING_CUPS,
+                _cup_block(),
+                _SEASON_SPLIT_HEADING_CHAMPIONSHIPS,
+                render_table(championship_rows),
+            ]
+        )
+    if cup_rows:
+        return _cup_block()
+    return render_table(championship_rows)
+
+
+def _render_progression_table(records: list[dict[str, Any]]) -> str:
+    """Tabla markdown corta de records de progresión (una sola serie/kind)."""
+    headers = [
+        "valida_num",
+        "serie",
+        "event_date",
+        "position",
+        "race_time",
+        "points_awarded",
+    ]
     lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
     for r in records:
         race_time_fmt = _format_ms_hhmmss(r.get("race_time_ms"))
@@ -314,6 +431,7 @@ def _progression_to_md(records: list[dict[str, Any]]) -> str:
         position_fmt = str(position) if position is not None else "—"
         row = [
             str(r.get("valida_num", "")),
+            _progression_series_label(r),
             str(r.get("event_date", "")),
             position_fmt,
             race_time_fmt,
@@ -321,6 +439,20 @@ def _progression_to_md(records: list[dict[str, Any]]) -> str:
         ]
         lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines)
+
+
+def _progression_to_md(records: list[dict[str, Any]]) -> str:
+    """Convierte records de progresión a tabla(s) markdown corta(s).
+
+    Feature 039 (F-4): cuando la temporada mezcla válidas de copa y
+    campeonatos, separa en dos tablas rotuladas (agrupando las copas por
+    ``series_id`` cuando el dato está presente — una sub-tabla por copa
+    con su nombre). Con un solo tipo de fila mantiene la tabla única de
+    siempre.
+    """
+    if not records:
+        return "_(sin resultados previos en esta temporada)_"
+    return _render_split_tables(records, _render_progression_table, group_cups=True)
 
 
 # Etiquetas de display para SurfaceCondition (valores enum en minúscula).
@@ -538,10 +670,8 @@ def _v3_field_block(field_metrics: dict[str, Any] | None) -> str | None:
     return "\n".join(lines)
 
 
-def _v3_season_block(rows: list[dict[str, Any]] | None) -> str | None:
-    """Tabla de temporada con métricas de pelotón (``None`` si está vacía)."""
-    if not rows:
-        return None
+def _render_season_table(rows: list[dict[str, Any]]) -> str:
+    """Tabla markdown de métricas de pelotón por válida (una sola serie/kind)."""
     header = (
         "| válida | fecha | serie | posición | pelotón | percentil | gap % | "
         "gap a P3 | esperada | Δ esperada |"
@@ -565,6 +695,20 @@ def _v3_season_block(rows: list[dict[str, Any]] | None) -> str | None:
             )
         )
     return "\n".join(lines)
+
+
+def _v3_season_block(rows: list[dict[str, Any]] | None) -> str | None:
+    """Tabla de temporada con métricas de pelotón (``None`` si está vacía).
+
+    Feature 039 (F-4): mismo criterio de separación que
+    :func:`_progression_to_md` — copa y campeonato nunca comparten tabla
+    cuando ambos aparecen en la temporada. ``field_metrics`` no trae
+    ``series_id``, así que las copas nunca se sub-agrupan aquí (queda para
+    cuando ese dato exista en este bloque).
+    """
+    if not rows:
+        return None
+    return _render_split_tables(rows, _render_season_table, group_cups=True)
 
 
 def _v3_measurement_timing(days_before_event: Any) -> str:

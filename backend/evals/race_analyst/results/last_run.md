@@ -1,39 +1,52 @@
 # Race Analyst Golden Eval — Last Run
 
-- **Fecha:** 2026-09-01 15:15:39 UTC
+- **Fecha:** 2026-09-04 13:42:00 UTC
+- **Versión del eval:** v3
+- **Modelo del analista en esta corrida:** `gemini-3.1-flash-lite` (override `RACE_AI_ANALYST_MODEL` por cuota agotada del tier gratuito de `gemini-3.8-flash`, 20 solicitudes/día compartidas con producción). Con `gemini-3.8-flash` (2026-09-03) los casos 001/002 puntuaron 0.840/0.820 antes del 429.
 - **Threshold CI:** 0.75
-- **Casos ejecutados:** 11
-- **Promedio compuesto:** **0.651**
-- **Verdict:** FAIL
+- **Casos ejecutados:** 9
+- **Promedio compuesto:** **0.821**
+- **Verdict:** PASS
 
 ## Detalle por caso
 
 | case_id | rule | judge | composite | words | cites | tokens_in | tokens_out | cost_usd |
 |---|---|---|---|---|---|---|---|---|
-| 001 | 0.700 | 0.900 | 0.820 | 300 | 0 | 2768 | 487 | 0.001423 |
-| 002 | 0.500 | 0.700 | 0.620 | 257 | 0 | 2759 | 431 | 0.001336 |
-| 003 | 0.700 | 0.700 | 0.700 | 292 | 0 | 2763 | 456 | 0.001375 |
-| 004 | 0.700 | 0.600 | 0.640 | 270 | 0 | 2774 | 446 | 0.001362 |
-| 005 | 0.700 | 0.700 | 0.700 | 231 | 0 | 2498 | 358 | 0.001161 |
-| 006 | 0.700 | 0.600 | 0.640 | 304 | 0 | 2773 | 496 | 0.001437 |
-| 007 | 0.700 | 0.600 | 0.640 | 300 | 0 | 2792 | 477 | 0.001414 |
-| 008 | 0.800 | 0.600 | 0.680 | 317 | 0 | 2772 | 511 | 0.001460 |
-| 009 | 0.700 | 0.800 | 0.760 | 281 | 0 | 2762 | 432 | 0.001339 |
-| 010 | 0.500 | 0.000 | 0.200 | 16 | 0 | 0 | 0 | 0.000000 |
-| 011 | 0.700 | 0.800 | 0.760 | 267 | 0 | 2725 | 439 | 0.001340 |
+| 001 | 1.000 | 0.733 | 0.840 | 264 | 3 | 3432 | 725 | 0.001945 |
+| 002 | 0.925 | 0.733 | 0.810 | 247 | 3 | 3500 | 658 | 0.001862 |
+| 003 | 1.000 | 0.667 | 0.800 | 238 | 3 | 3650 | 715 | 0.001985 |
+| 004 | 0.967 | 0.883 | 0.916 | 255 | 2 | 3148 | 716 | 0.001861 |
+| 005 | 0.975 | 0.633 | 0.770 | 285 | 3 | 3562 | 781 | 0.002062 |
+| 006 | 0.833 | 0.833 | 0.833 | 278 | 2 | 3234 | 764 | 0.001955 |
+| 007 | 0.850 | 0.567 | 0.680 | 305 | 2 | 3194 | 773 | 0.001958 |
+| 008 | 0.975 | 0.833 | 0.890 | 228 | 3 | 3246 | 690 | 0.001847 |
+| 009 | 0.975 | 0.767 | 0.850 | 277 | 3 | 3818 | 752 | 0.002083 |
 
 > `*` indica que el parser del juez usó fallback neutral 0.5.
+> En v3 la columna `cites` cuenta principios citados (`principles_cited`), no chunks de RAG.
+
+## Sub-rúbricas rule-based (v3)
+
+| case_id | catalog | coach_question | forbidden | grounding | headline | schema | themes | word_limits |
+|---|---|---|---|---|---|---|---|---|
+| 001 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| 002 | 0.50 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.75 | 1.00 |
+| 003 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| 004 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.67 | 1.00 |
+| 005 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.75 | 1.00 |
+| 006 | 1.00 | 1.00 | 1.00 | 1.00 | 0.00 | 1.00 | 0.33 | 1.00 |
+| 007 | 1.00 | 1.00 | 0.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| 008 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.75 | 1.00 |
+| 009 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.75 | 1.00 |
 
 ## Descripción de los casos
 
-- **001**: Atleta 10 años (mini-bambino) en INF_A con progresión positiva sostenida 4 válidas y podio recurrente; categoría diversión + ventana entrenabilidad.
-- **002**: Atleta 12 años (bambino) con gap creciente al podio en INF_B: regresión que requiere replanteo, no presión.
-- **003**: Atleta 13 años (juvenil) con alta dispersión: 3 podios + 1 DNF mecánico. Mostrar análisis de consistencia técnica sin penalizar por el DNF.
-- **004**: Atleta 14 años (juvenil) en transición PJUV → JUV, mostrar diferencias de carga y enfoque LTAD para el cambio categórico.
-- **005**: Atleta 11 años (bambino) en su primera temporada con sólo 2 válidas (n=2). El análisis debe marcar baja confianza y enfocar en diversión + adaptación.
-- **006**: Atleta 15 años (juvenil) en tapering pre-Campeonato Departamental (carrera A). Recomendaciones de carga descendente y descanso.
-- **007**: Atleta 10 años (mini-bambino) con brote de crecimiento detectado en antropometría reciente: cargas previas excesivas → fatiga visible. Reducir, no diagnosticar.
-- **008**: Atleta 13 años (juvenil) con estancamiento técnico: cadencia observada en video <70 rpm. Recomendar trabajo específico de pedaleo y cadencia.
-- **009**: Atleta 12 años (bambino) con DNF en V-IV por mecánico (pinchazo). 3 carreras previas con mejora sostenida. No penalizar al atleta.
-- **010**: Atleta femenina 14 años (juvenil) en PJUV_F: evolución sólida con primer podio reciente. Recomendaciones equilibradas con perspectiva de género (sin estereotipos).
-- **011**: Atleta 13 años (juvenil) con mejora sostenida en descensos tras trabajo técnico específico; caso diseñado para ejercer season_comparative con 2+ válidas previas (specs/036 T053, camino 'con historial' del prompt v2 — antes nunca evaluado).
+- **001**: Mini-bambino (10 años) en mejora sostenida: mejor percentil de la temporada tras la ventana de entrenamiento con mayor asistencia. Pre-PHV, catálogo técnico disponible.
+- **002**: Bambino (12 años) en declive: pierde tres puestos respecto de lo esperado en la válida con la asistencia más baja del ciclo y RPE alto en los últimos siete días.
+- **003**: Juvenil (14 años) en campeonato departamental con pelotón más fuerte y más numeroso: termina 3 puestos por encima de lo esperado. Hallazgo positivo pese a caer en posición absoluta frente a las válidas de copa.
+- **004**: N=1: primera y única válida con resultado de la temporada. Sin historial comparable y con menos de la mitad del pelotón con índice previo, la expectativa no se calcula. El análisis debe declararse como referencia inicial y no inventar tendencia.
+- **005**: Circa-PHV con caída esperable: 13 años, pico de crecimiento en curso (velocidad 9.1 cm/año) y pérdida de percentil pese a asistencia alta. La lectura correcta es madurativa, sin diagnóstico médico y sin subir carga.
+- **006**: Sin antropometría: el bloque de maduración no llega al modelo. Con ventana de entrenamiento completa, el análisis debe apoyarse en pelotón + entrenamiento y declarar el vacío madurativo en data_gaps, sin afirmar fase PHV.
+- **007**: Sin ventana de entrenamiento: el atleta no tiene asistencia registrada en los 28 días previos. El análisis debe leer pelotón + maduración + historia, declarar el vacío en data_gaps y no afirmar nada sobre carga, RPE ni foco técnico.
+- **008**: Resumen de temporada (analysis_kind=season, valida_num=0): 6 carreras de copa más un campeonato, trayectoria mixta con un bache a mitad de año y recuperación al cierre. Sin fila de carrera ni lectura de pelotón propia: field_reading debe quedar en null.
+- **009**: Bambino (13 años) en campeonato NACIONAL: pelotón de 34 y gap de 35.6% frente a una temporada de copa con pelotones de 11-12 y un departamental de 18. El análisis debe leer el campeonato por percentil, tamaño y fuerza del pelotón, sin comparar el puesto ni el gap contra las válidas de copa (regla inviolable 10).

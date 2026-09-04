@@ -209,6 +209,7 @@ async def download_parent_newsletter_pdf(
 
     snapshot = nl.metrics_snapshot or {}
     pdf_only_blocks = snapshot.get("pdf_only_blocks", {})
+    email_blocks = snapshot.get("email_blocks", {})
     stage_log = StageLog.model_validate(nl.stage_log_json)
     dto = to_parent_dto(stage_log, nl.hidden_blocks)
 
@@ -223,6 +224,7 @@ async def download_parent_newsletter_pdf(
         anthropometry=pdf_only_blocks.get("anthropometry"),
         charts_context=pdf_only_blocks.get("charts_context"),
         percentile_curves=pdf_only_blocks.get("percentile_curves"),
+        race_results=email_blocks.get("race_results"),
     )
 
     if nl.pdf_sha256 != sha256:

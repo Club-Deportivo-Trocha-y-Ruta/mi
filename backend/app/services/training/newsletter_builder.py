@@ -59,6 +59,26 @@ def _row_str(row: Any, col: str) -> str | None:
     return s
 
 
+def _row_int(row: Any, col: str) -> int | None:
+    """Extrae una columna de una fila de DataFrame como int, o None.
+
+    Igual que :func:`_row_str` pero sin forzar a texto — para columnas
+    numéricas (``event_id``/``series_id``, feature 039) que pueden faltar
+    por completo en DataFrames de compatibilidad (dobles de test anteriores
+    a esta feature que mockean ``athlete_progression`` con un subconjunto de
+    columnas), en cuyo caso ``row[col]`` lanzaría ``KeyError`` en vez de
+    devolver ``NaN``.
+    """
+    try:
+        val = row[col]
+    except (KeyError, IndexError):
+        return None
+    s = str(val).strip() if val is not None else ""
+    if s in ("", "nan", "<NA>", "None", "NaN"):
+        return None
+    return int(val)
+
+
 def _race_short_label(
     series_kind: str | None,
     series_level: str | None,
@@ -539,17 +559,32 @@ async def _build_race_block(
     """Resultados de carreras del mes: posición, gap, ranking club, proyección.
 
     Reutiliza funciones de services/race/analytics.py.
+
+    Feature 039 (grupos de comparación): además del histórico plano
+    ``progression_history`` (conservado un release por compatibilidad), el
+    bloque emite ``cups[]`` (una entrada por copa, con su propio historial
+    de válidas — ``comparison_groups.split_progression``) y
+    ``championships[]`` (una ``ChampionshipReading`` por campeonato,
+    construida con ``field_metrics.compute_field_metrics`` — la misma
+    lectura "atleta contra su pelotón" que usa la IA, ver research.md D3).
+    Ver ``contracts/newsletter-context.md`` para la forma exacta.
     """
     try:
         import pandas as pd
         from app.models.race_competitor import RaceCompetitor
         from app.services.race.analytics import athlete_progression
+        from app.services.race.comparison_groups import split_progression
 
         comp_result = await db.execute(
             select(RaceCompetitor).where(RaceCompetitor.athlete_id == athlete_id)
         )
         competitors = comp_result.scalars().all()
         if not competitors:
+            # Forma original (pre-039): sin cups/championships. Un llamador
+            # sin ningún RaceCompetitor no tiene grupos de comparación que
+            # ofrecer, y algunos tests de regresión (N:1 competitors, feature
+            # anterior a la 039) comparan esta estructura por igualdad
+            # exacta — no agregar claves nuevas acá.
             return {"has_races": False, "competitor_id": None, "results": [], "projection": None}
 
         primary_competitor_id = competitors[0].id
@@ -564,8 +599,20 @@ async def _build_race_block(
             return {"has_races": False, "competitor_id": primary_competitor_id, "results": [], "projection": None}
 
         progression_df = pd.concat(progression_dfs, ignore_index=True)
-        # Dedup por event_date: mismo atleta corrió un evento bajo nombres distintos
-        progression_df = progression_df.drop_duplicates(subset=["event_date"], keep="first")
+        # Dedup por event_id (039): dos RaceCompetitor distintos vinculados al
+        # mismo atleta (dos matches de identidad del mismo corredor) pueden
+        # reportar el MISMO evento — event_date ya no alcanza como clave
+        # porque dos copas, o una copa y un campeonato, pueden compartir
+        # fecha (D8). event_id identifica la válida/evento sin ambigüedad.
+        #
+        # Compat: dobles de test anteriores a esta feature (o cualquier otro
+        # llamador) que mockean ``athlete_progression`` sin la columna
+        # ``event_id`` (añadida en T007) caen de vuelta al criterio previo
+        # —dedupe por fecha— en vez de reventar con KeyError.
+        if "event_id" in progression_df.columns:
+            progression_df = progression_df.drop_duplicates(subset=["event_id"], keep="first")
+        else:
+            progression_df = progression_df.drop_duplicates(subset=["event_date"], keep="first")
 
         # Filtrar solo el mes actual
         month_start_str = f"{year}-{month:02d}-01"
@@ -581,7 +628,18 @@ async def _build_race_block(
             for _, row in month_results.iterrows()
             if row["category_code"]
         }
-        category_labels = await _lookup_category_labels(db, category_codes)
+        # Códigos de categoría de TODA la temporada (039): los campeonatos y
+        # las copas de meses anteriores caen fuera de `month_results`, pero
+        # `cups[]`/`championships[]` cubren la temporada completa — sin esta
+        # unión, category_label quedaría None para esas filas.
+        season_category_codes = {
+            str(row["category_code"])
+            for _, row in progression_df.iterrows()
+            if row["category_code"]
+        }
+        category_labels = await _lookup_category_labels(
+            db, category_codes | season_category_codes
+        )
 
         results_serialized = []
         for _, row in month_results.iterrows():
@@ -605,18 +663,24 @@ async def _build_race_block(
                 "gap_to_winner_pct": float(row["gap_to_winner_pct"]) if row["gap_to_winner_pct"] is not None and str(row["gap_to_winner_pct"]) not in ("nan", "None") else None,
             })
 
-        # Historial completo serializado (para gráficos SVG)
+        # Historial completo serializado (para gráficos SVG). 039: agrega
+        # event_id/series_id/series_name/category_code/season_year — el
+        # dedupe por evento y el agrupamiento en cups[]/championships[] de
+        # abajo (comparison_groups.split_progression) los necesitan.
         all_results = []
         for _, row in progression_df.iterrows():
             try:
                 pos = int(row["position"]) if str(row["position"]) != "<NA>" else None
                 pts = int(row["points_awarded"]) if str(row["points_awarded"]) != "<NA>" else 0
-                gap = int(row["gap_to_winner_ms"]) if str(row["gap_to_winner_ms"]) != "<NA>" else None
                 gap_pct = float(row["gap_to_winner_pct"]) if str(row["gap_to_winner_pct"]) not in ("nan", "<NA>", "None") else None
                 valida_num = int(row["valida_num"]) if str(row["valida_num"]) != "<NA>" else None
                 series_kind = _row_str(row, "series_kind") or "cup"
                 series_level = _row_str(row, "series_level") or "departmental"
                 location = _row_str(row, "location")
+                event_id = _row_int(row, "event_id")
+                series_id = _row_int(row, "series_id")
+                series_name = _row_str(row, "series_name")
+                category_code = _row_str(row, "category_code")
                 all_results.append({
                     "valida_num": valida_num,
                     "event_date": str(row["event_date"]),
@@ -627,21 +691,135 @@ async def _build_race_block(
                     "series_level": series_level,
                     "location": location,
                     "label": _race_short_label(series_kind, series_level, valida_num),
+                    "event_id": event_id,
+                    "series_id": series_id,
+                    "series_name": series_name,
+                    "category_code": category_code,
+                    # split_progression()/group_label() (comparison_groups.py)
+                    # necesitan season_year por fila; athlete_progression() no
+                    # lo expone como columna (no season-filtrado, ver su
+                    # docstring), así que se usa el `year` del boletín — el
+                    # mismo criterio que ya asume `athlete_id`/`year` en la
+                    # firma de esta función para el resto del bloque.
+                    "season_year": year,
                 })
             except Exception:
                 continue
+
+        split = split_progression(all_results)
+        _cup_history_keys = (
+            "event_id", "valida_num", "event_date", "position", "points_awarded",
+            "gap_to_winner_pct", "series_kind", "series_level", "location", "label",
+        )
+        cups = [
+            {
+                "series_id": cup.series_id,
+                "label": cup.label,
+                "history": [
+                    {key: history_row.get(key) for key in _cup_history_keys}
+                    for history_row in cup.rows
+                ],
+            }
+            for cup in split.cups
+        ]
+
+        # --- championships[]: lectura "atleta contra su pelotón" (D3) ------
+        # Un campeonato reúne un pelotón propio (spec 014/023) — no se lee
+        # con las columnas de la copa (position/gap_to_winner_pct relativas a
+        # SU pelotón de copa) sino con field_metrics.compute_field_metrics,
+        # la misma función que ya alimenta a la IA (percentil consistente
+        # entre boletín e insight, research D3).
+        championship_event_ids = {
+            row["event_id"]
+            for row in all_results
+            if row["series_kind"] == "championship" and row["event_id"] is not None
+        }
+        championships: list[dict[str, Any]] = []
+        if championship_event_ids:
+            from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
+            from app.services.race.field_metrics import compute_field_metrics
+            from app.services.race.queries import (
+                load_categories as _fm_load_categories,
+                load_events as _fm_load_events,
+                load_results as _fm_load_results,
+                load_series as _fm_load_series,
+            )
+            from app.services.race.race_labels import build_race_label
+
+            fm_results = await _fm_load_results(db)
+            fm_events = await _fm_load_events(db)
+            fm_series = await _fm_load_series(db)
+            fm_categories = await _fm_load_categories(db)
+
+            history_by_event_id = {row["event_id"]: row for row in all_results}
+            # Dedupe por event_id (D8): dos RaceCompetitor del mismo atleta
+            # pueden tener cada uno un RaceResult en el mismo campeonato — se
+            # conserva el primero encontrado (mismo criterio que el dedupe
+            # de progression_df arriba).
+            seen_event_ids: set[int] = set()
+
+            for c in competitors:
+                field_metrics_by_event = compute_field_metrics(
+                    fm_results, fm_events, fm_series, fm_categories, c.id, year
+                )
+                for event_id, fm in field_metrics_by_event.items():
+                    if (
+                        event_id not in championship_event_ids
+                        or event_id in seen_event_ids
+                        or fm.get("series_kind") != "championship"
+                    ):
+                        continue
+                    seen_event_ids.add(event_id)
+
+                    history_row = history_by_event_id.get(event_id, {})
+                    level_str = fm.get("series_level") or history_row.get("series_level") or "departmental"
+                    valida_num = fm.get("valida_num") or history_row.get("valida_num") or 1
+                    location = history_row.get("location")
+                    category_code = history_row.get("category_code")
+
+                    championships.append({
+                        "event_id": event_id,
+                        "label": _race_readable_label("championship", level_str, valida_num),
+                        "short_label": build_race_label(
+                            RaceSeriesKind.championship,
+                            valida_num,
+                            location,
+                            level=RaceSeriesLevel(level_str),
+                        ),
+                        "level": level_str,
+                        "location": location,
+                        "event_date": history_row.get("event_date") or fm.get("event_date"),
+                        "category_label": category_labels.get(category_code) if category_code else None,
+                        "finished": fm.get("position") is not None,
+                        "position": fm.get("position"),
+                        "field_size": fm.get("field_size"),
+                        "gap_pct": fm.get("gap_pct"),
+                        "percentile": fm.get("percentile"),
+                    })
+
+            championships.sort(key=lambda ch: ch["event_date"] or "")
 
         return {
             "has_races": len(results_serialized) > 0,
             "competitor_id": primary_competitor_id,
             "results": results_serialized,
             "progression_history": all_results,
+            "cups": cups,
+            "championships": championships,
             "projection": None,  # Se puede completar con next_event_id cuando se conozca
         }
 
     except Exception as exc:
         logger.warning("Error construyendo bloque de carreras: %s", type(exc).__name__)
-        return {"has_races": False, "competitor_id": None, "results": [], "projection": None}
+        return {
+            "has_races": False,
+            "competitor_id": None,
+            "results": [],
+            "progression_history": [],
+            "cups": [],
+            "championships": [],
+            "projection": None,
+        }
 
 
 async def _build_calendar_block(
@@ -1178,6 +1356,82 @@ def _build_charts_context(race_block: dict[str, Any]) -> dict[str, Any]:
     """Prepara el contexto para los macros SVG de gráficos.
 
     Los gráficos se renderizan en el template PDF a partir de estos datos.
+
+    Feature 039 (grupos de comparación): cuando ``race_block`` trae la clave
+    ``cups`` (aunque sea una lista vacía — lo que emite la versión actual de
+    ``_build_race_block``), las tres curvas se agrupan por copa en
+    ``cups[]`` — cada copa dibuja su propia evolución, nunca mezclada con
+    otra copa ni con los campeonatos (contrato:
+    ``contracts/newsletter-context.md``). ``has_data`` es ``True`` solo si
+    alguna copa tiene al menos una válida en su historial.
+
+    Retrocompatibilidad: si ``race_block`` NO trae la clave ``cups`` (dicts
+    armados a mano por tests anteriores a esta feature, o un
+    ``metrics_snapshot`` persistido antes del deploy), se conserva el
+    comportamiento previo tal cual — una única curva plana a partir de
+    ``progression_history`` — vía :func:`_build_charts_context_legacy`. El
+    contrato es explícito: "claves ausentes → tratadas como listas vacías,
+    sin error".
+    """
+    cups_block = race_block.get("cups")
+    if cups_block is None:
+        return _build_charts_context_legacy(race_block)
+
+    championships_block = race_block.get("championships") or []
+
+    cups_ctx: list[dict[str, Any]] = []
+    for cup in cups_block:
+        history = cup.get("history") or []
+        positions: list[dict[str, Any]] = []
+        gap_pcts: list[dict[str, Any]] = []
+        points_acc: list[dict[str, Any]] = []
+        acc = 0
+        # Mismo criterio que la curva legacy: eje X ordinal (1..N) dentro de
+        # la copa — ``history`` ya llega ordenado cronológicamente por
+        # ``comparison_groups.split_progression``.
+        for idx, row in enumerate(history, start=1):
+            v = row.get("valida_num")
+            pos = row.get("position")
+            gap = row.get("gap_to_winner_pct")
+            pts = row.get("points_awarded", 0) or 0
+            label = row.get("label") or _race_short_label(
+                row.get("series_kind"), row.get("series_level"), v
+            )
+            acc += pts
+            positions.append({"x": idx, "label": label, "y": pos})
+            gap_pcts.append({"x": idx, "label": label, "y": gap})
+            points_acc.append({"x": idx, "label": label, "y": acc})
+
+        n_samples = len([p for p in positions if p["y"] is not None])
+        cups_ctx.append({
+            "series_id": cup.get("series_id"),
+            "label": cup.get("label"),
+            "n_samples": n_samples,
+            "low_confidence": n_samples < 5,
+            "positions": positions,
+            "gap_pcts": gap_pcts,
+            "points_accumulated": points_acc,
+        })
+
+    return {
+        # "Al menos una copa con filas" (contrato) — no basta con que exista
+        # la clave `cups`; una temporada solo-campeonatos también la trae,
+        # vacía.
+        "has_data": any(cup.get("history") for cup in cups_block),
+        "has_championship": bool(championships_block),
+        "cups": cups_ctx,
+    }
+
+
+def _build_charts_context_legacy(race_block: dict[str, Any]) -> dict[str, Any]:
+    """Comportamiento pre-039 de ``_build_charts_context``: una única curva
+    plana (copas y campeonatos intercalados por orden cronológico, sin
+    agrupar). Se conserva sin cambios para dos casos:
+
+    - Tests anteriores a esta feature que arman ``race_block`` a mano sin la
+      clave ``cups``.
+    - ``metrics_snapshot`` ya persistidos antes del deploy de la 039 (el
+      contrato exige degradar sin error, no reinterpretar el dato viejo).
     """
     history = race_block.get("progression_history", [])
     has_championship = any(row.get("series_kind") == "championship" for row in history)

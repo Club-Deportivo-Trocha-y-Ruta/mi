@@ -89,10 +89,23 @@ def _build_winner_map(all_results: list[Any]) -> dict[int, int | None]:
     return winner_map
 
 
+def _enum_value(value: Any) -> Any:
+    """Devuelve ``value.value`` si es un enum, o ``value`` tal cual.
+
+    Mismo patrón dual-driver que ``analytics.py``: aiosqlite conserva el enum
+    de Python (``RaceSeriesKind.cup``) mientras que otros caminos de
+    serialización entregan el string crudo (``"cup"``). El state de LangGraph
+    se persiste en el checkpointer sqlite, así que aquí solo pueden viajar
+    valores JSON-serializables.
+    """
+    return getattr(value, "value", value)
+
+
 def _compacted_season_record(
     r: Any,
     winner_time_ms: int | None,
     events_by_id: dict[int, Any] | None = None,
+    series_by_id: dict[int, Any] | None = None,
 ) -> dict[str, Any]:
     """Versión compacta de un resultado para full_season_results.
 
@@ -105,6 +118,19 @@ def _compacted_season_record(
     tenía ``valida_num=None`` y ``critic_agent._build_ground_truth`` nunca
     encontraba la fila (ver docstring de esa función). El valor correcto se
     resuelve vía ``events_by_id[event_id].sequence_number``.
+
+    Feature 039 (T032): el registro agrega ``series_id`` / ``series_kind`` /
+    ``series_level`` (resueltos vía ``events_by_id[event_id].series_id`` →
+    ``series_by_id``) y ``event_date`` (ISO). Sin ellos, ``valida_num`` es
+    ambiguo dentro de la temporada — desde spec 014 la Válida I de copa y un
+    campeonato comparten ``sequence_number=1``, así que
+    ``compute_metrics._compute_season_comparative`` necesita la serie para
+    aislar el grupo de comparación y la fecha para ordenar los antecedentes.
+
+    Cuando el evento o la serie no se pueden resolver se cae a
+    ``cup``/``departmental``, el mismo default defensivo de
+    ``analytics.athlete_progression``: así el camino "válida por número"
+    sigue funcionando con fixtures que no cargan series.
     """
     race_time_ms: int | None = getattr(r, "race_time_ms", None)
     gap_to_winner_ms: int | None = None
@@ -118,10 +144,22 @@ def _compacted_season_record(
     event = (events_by_id or {}).get(event_id_val) if event_id_val is not None else None
     valida_num = getattr(event, "sequence_number", None) if event is not None else None
 
+    event_date = getattr(event, "event_date", None) if event is not None else None
+    event_date_iso = event_date.isoformat() if hasattr(event_date, "isoformat") else event_date
+
+    series_id = getattr(event, "series_id", None) if event is not None else None
+    series = (series_by_id or {}).get(series_id) if series_id is not None else None
+    series_kind = _enum_value(getattr(series, "kind", None)) if series is not None else None
+    series_level = _enum_value(getattr(series, "level", None)) if series is not None else None
+
     return {
         "result_id": getattr(r, "id", None),
         "event_id": event_id_val,
         "valida_num": valida_num,
+        "event_date": event_date_iso,
+        "series_id": series_id,
+        "series_kind": series_kind or "cup",
+        "series_level": series_level or "departmental",
         "position": getattr(r, "position", None),
         "race_time_ms": race_time_ms,
         "gap_to_winner_ms": gap_to_winner_ms,
@@ -252,6 +290,10 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         # resolver ``sequence_number`` (bug fix T101 — ver docstring de esa
         # función). Cargado una sola vez por lanzamiento (load_events cachea).
         events_by_id_for_records: dict[int, Any] = {e.id: e for e in await load_events(db)}
+        # Mapa series_id → RaceSeries (feature 039, T032): aporta kind/level a
+        # cada registro para que el grupo de comparación no dependa de
+        # ``valida_num``, que es ambiguo dentro de la temporada (spec 014).
+        series_by_id_for_records: dict[int, Any] = {s.id: s for s in await load_series(db)}
 
         # Contar válidas distintas con participación real (excluir DNS/DNF/DSQ).
         seen_validas: set[int | None] = set()
@@ -272,7 +314,12 @@ async def load_race_data(state: dict) -> dict[str, Any]:
                     event_id_val,
                 )
             full_season_records.append(
-                _compacted_season_record(r, winner_time, events_by_id_for_records)
+                _compacted_season_record(
+                    r,
+                    winner_time,
+                    events_by_id_for_records,
+                    series_by_id_for_records,
+                )
             )
 
         season_validas_count = len(seen_validas)

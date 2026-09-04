@@ -431,6 +431,10 @@ async def test_evolution_response_only_exposes_aggregated_fields(coach_client):
     # cerrado de EvolutionPoint (extra="forbid") garantiza esto, pero acá
     # validamos también que no se haya leak-eado nada.
     # series_kind y label son datos públicos de federación (T025/T026).
+    # series_id/series_name/series_level/comparison_group/field_size/
+    # percentile son el grupo de comparación derivado (feature 039) — datos
+    # agregados/públicos de federación, no PII. position/gap_pct (F-1 / B-2)
+    # son el propio resultado del atleta, tampoco PII de terceros.
     expected_keys = {
         "valida_num",
         "event_id",
@@ -439,6 +443,24 @@ async def test_evolution_response_only_exposes_aggregated_fields(coach_client):
         "unit",
         "series_kind",
         "label",
+        "series_id",
+        "series_name",
+        "series_level",
+        "comparison_group",
+        "field_size",
+        "percentile",
+        "position",
+        "gap_pct",
     }
     for point in body.get("series", []):
         assert set(point.keys()) <= expected_keys
+    # ``groups``/``selected_group`` (feature 039) tampoco deben filtrar PII.
+    for group in body.get("groups", []):
+        assert set(group.keys()) <= {
+            "comparison_group",
+            "series_id",
+            "kind",
+            "level",
+            "label",
+            "n_points",
+        }

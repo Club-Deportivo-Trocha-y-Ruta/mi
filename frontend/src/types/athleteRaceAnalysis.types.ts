@@ -130,6 +130,17 @@ export interface AthleteInsightOut {
    * mismas condiciones que `event_date`.
    */
   series_kind: "cup" | "championship" | null;
+  /**
+   * Feature 039 (T038) — nivel de la serie de campeonato vinculada
+   * (`"departmental"` | `"national"`); las copas no tienen nivel. Fuente
+   * para distinguir "Cto. Departamental" de "Cto. Nacional" en
+   * `lib/insights.ts#validaLabel` — ausente (`undefined`)/`null` cae al
+   * default "departamental" (insights previos a la feature, o sin
+   * `series_kind === "championship"`). Opcional por el mismo motivo
+   * aditivo que `EvolutionPoint.series_level` (no rompe fixtures/tests
+   * previos a la feature).
+   */
+  series_level?: SeriesLevel | null;
   use_case: string;
   summary_text: string;
   confidence: InsightConfidence;
@@ -263,6 +274,24 @@ export interface AthleteStartRunBody {
 // Analytics — evolution + distribution
 // ---------------------------------------------------------------------------
 
+/** Nivel de una serie de campeonato (`race_series.level`); ignorado para copas. */
+export type SeriesLevel = "departmental" | "national";
+
+/**
+ * Grupo de comparación (feature 039) — mirror de
+ * `contracts/evolution-api.md` / `data-model.md` §1. Cada copa y cada
+ * campeonato de la temporada es su propio grupo; nunca se mezclan en la
+ * misma serie del gráfico (research.md D1/D5).
+ */
+export interface ComparisonGroupOption {
+  comparison_group: string;
+  series_id: number;
+  kind: "cup" | "championship";
+  level: SeriesLevel;
+  label: string;
+  n_points: number;
+}
+
 export interface EvolutionPoint {
   valida_num: number;
   event_id: number;
@@ -271,6 +300,29 @@ export interface EvolutionPoint {
   unit: string;
   series_kind: "cup" | "championship";
   label: string;
+  /**
+   * Feature 039 — campos aditivos de `data-model.md` §5. Opcionales para no
+   * romper fixtures/tests previos a la feature (que construyen
+   * `EvolutionPoint` sin grupo de comparación, p. ej.
+   * `cupAndChampionshipConflictHandler`) — el backend real siempre los
+   * envía una vez desplegada la feature.
+   */
+  series_id?: number;
+  series_name?: string;
+  series_level?: SeriesLevel;
+  comparison_group?: string;
+  field_size?: number | null;
+  percentile?: number | null;
+  /**
+   * Feature 039 (fix B-2/F-1) — posición cruda de llegada (`null` en
+   * DNF/DNS/DSQ) y gap % frente al ganador de la categoría
+   * (`100 * (tiempo - tiempo_ganador) / tiempo_ganador`, `null` cuando no
+   * aplica). Expuestos para cualquier `metric` — no dependen del selector
+   * activo (`contracts/evolution-api.md`). Opcionales por el mismo motivo
+   * aditivo que el resto de campos de esta sección.
+   */
+  position?: number | null;
+  gap_pct?: number | null;
 }
 
 export interface EvolutionResponse {
@@ -278,6 +330,10 @@ export interface EvolutionResponse {
   metric: EvolutionMetric;
   series: EvolutionPoint[];
   confidence: AnalysisConfidence;
+  /** Feature 039 — aditivo, ver nota de opcionalidad en `EvolutionPoint`. */
+  groups?: ComparisonGroupOption[];
+  /** Feature 039 — eco del `series_id` aplicado (`null` sin filtro). */
+  selected_group?: string | null;
 }
 
 export interface DistributionPoint {
@@ -317,6 +373,10 @@ export interface RaceParticipationOption {
   event_name: string;
   location: string | null;
   label: string;
+  /** Feature 039 — aditivo, ver nota de opcionalidad en `EvolutionPoint`. */
+  series_id?: number;
+  series_name?: string;
+  series_level?: SeriesLevel;
 }
 
 export interface RaceParticipationResponse {

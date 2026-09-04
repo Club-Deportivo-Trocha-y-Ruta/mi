@@ -246,12 +246,34 @@ def test_prompt_declares_the_closed_principle_catalog():
 
 
 def test_season_prompt_renders_the_season_table():
+    """``season_rows`` mezcla copa + campeonato → dos tablas rotuladas (F-4)."""
     text = render(
         full_input(valida_num=0, analysis_kind="season"), PROMPT_VERSION_SEASON_SUMMARY_V3
     )
+    assert "**Válidas de copa**" in text
+    assert "**Campeonatos (pelotón propio, no comparable con la copa)**" in text
     assert "| válida | fecha | serie | posición | pelotón | percentil |" in text
     assert "| 4 | 2026-05-10 | Válida 4 · Copa | 7 | 18 | 58.3 | 9.4% |" in text
     assert "Cto. Departamental" in text
+    # La fila de campeonato aparece después del encabezado de campeonatos,
+    # nunca en la misma tabla que la fila de copa.
+    cup_idx = text.index("**Válidas de copa**")
+    champ_heading_idx = text.index("**Campeonatos (pelotón propio")
+    champ_row_idx = text.index("| 99 |")
+    assert cup_idx < champ_heading_idx < champ_row_idx
+
+
+def test_season_prompt_season_table_single_kind_has_no_heading():
+    """Con un solo tipo de fila (solo copa) no aparece ningún encabezado (F-4)."""
+    text = render(
+        full_input(
+            valida_num=0, analysis_kind="season", season_rows=[FIELD_METRICS_V4]
+        ),
+        PROMPT_VERSION_SEASON_SUMMARY_V3,
+    )
+    assert "**Válidas de copa**" not in text
+    assert "**Campeonatos" not in text
+    assert "| válida | fecha | serie | posición | pelotón | percentil |" in text
 
 
 def test_season_prompt_asks_for_three_priorities_and_one_question():

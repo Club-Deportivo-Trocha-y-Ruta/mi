@@ -103,10 +103,10 @@ def _link_from_row(row: AthleteAiInsight) -> InsightLink:
 def _insight_to_out(row: AthleteAiInsight) -> AthleteInsightOut:
     """Mapea ORM → schema público.  Filtra ``athlete_id`` / ``competitor_id``.
 
-    ``event_date``/``series_kind`` (T030, feature 036) vienen del ``event``
-    (y su ``series``) eager-cargados por ``insights_history`` — nunca
-    disparan un lazy-load implícito, que rompería en contexto async con
-    ``MissingGreenlet``.
+    ``event_date``/``series_kind``/``series_level`` (T030 feature 036,
+    T038 feature 039) vienen del ``event`` (y su ``series``) eager-cargados
+    por ``insights_history`` — nunca disparan un lazy-load implícito, que
+    rompería en contexto async con ``MissingGreenlet``.
     """
     event = row.event
     series = event.series if event is not None else None
@@ -124,6 +124,7 @@ def _insight_to_out(row: AthleteAiInsight) -> AthleteInsightOut:
         event_id=row.event_id,
         event_date=event.event_date if event is not None else None,
         series_kind=series.kind.value if series is not None else None,
+        series_level=series.level.value if series is not None else None,
         use_case=row.use_case,
         summary_text=row.summary_text,
         confidence=row.confidence,
@@ -986,15 +987,33 @@ async def get_distribution(
 async def get_evolution(
     season: int = Query(..., ge=2020, le=2100),
     metric: EvolutionMetric = Query(default=EvolutionMetric.PODIUM_GAP_MS),
+    series_id: Optional[int] = Query(
+        default=None,
+        ge=1,
+        description=(
+            "Filtro opcional de grupo de comparación (feature 039): PK de "
+            "``race_series``. Restringe ``series`` a esa sola serie (copa o "
+            "campeonato); ``groups`` sigue viniendo con la temporada "
+            "completa. Un ``series_id`` que no corresponde a ninguna serie "
+            "del atleta devuelve ``series=[]`` con 200 (nunca 404)."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     athlete: Athlete = Depends(verify_athlete_access),
 ) -> EvolutionResponse:
+    """Serie cronológica de una métrica del atleta en una temporada.
+
+    RBAC vía ``verify_athlete_access`` (sin cambios): admin/coach/padre del
+    propio atleta → 200; padre de otro atleta → 403/404, con o sin
+    ``series_id`` — el filtro no abre una vía de acceso paralela.
+    """
     return await build_evolution(
         db,
         athlete_id=athlete.id,
         season=season,
         metric=metric,
+        series_id=series_id,
     )
 
 

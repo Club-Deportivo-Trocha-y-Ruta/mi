@@ -281,12 +281,87 @@ class TestAthleteProgression:
         df = await athlete_progression(analytics_session, competitor_id=99999)
         assert df.empty
         # Pero las columnas deben estar presentes para que .to_dict("records") sea estable.
+        # (feature 039): event_id/series_id/series_name/comparison_group habilitan
+        # deduplicar por evento y derivar el grupo de comparación (copa vs.
+        # campeonato) sin tocar la DB — ver comparison_groups.py (T005/T007).
         expected_cols = {
             "valida_num", "event_date", "category_code", "position",
             "race_time_ms", "points_awarded", "gap_to_winner_ms", "gap_to_winner_pct",
             "series_kind", "series_level", "location",
+            "event_id", "series_id", "series_name", "comparison_group",
         }
         assert expected_cols == set(df.columns)
+
+
+# ===========================================================================
+# 1b. athlete_progression — columnas de comparison groups (feature 039)
+# ===========================================================================
+
+
+class TestAthleteProgressionComparisonGroups:
+    """Cubre ``event_id``/``series_id``/``series_name``/``comparison_group``.
+
+    Usa el escenario real (aiosqlite in-memory) de
+    ``tests/fixtures/race_groups.py`` — una copa de 5 válidas + un
+    campeonato departamental + uno nacional, todos del mismo atleta y
+    competidor. Esto ejercita ``athlete_progression`` contra una
+    ``AsyncSession`` real, no el ``FakeAsyncSession`` de este archivo,
+    porque necesitamos dos series ``kind='championship'`` (el fixture local
+    ``analytics_session`` solo siembra una copa).
+    """
+
+    @pytest.mark.asyncio
+    async def test_cup_rows_carry_event_id_series_id_name_and_comparison_group(
+        self, race_groups_base_season
+    ):
+        scenario = race_groups_base_season
+        df = await athlete_progression(scenario.session, competitor_id=scenario.competitor_id)
+
+        cup_rows = df[df["series_kind"] == "cup"]
+        assert len(cup_rows) == 5
+        # event_id identifica cada válida de forma única y en orden cronológico.
+        assert list(cup_rows["event_id"]) == scenario.cup_event_ids
+        assert set(cup_rows["series_id"]) == {scenario.cup_series_id}
+        assert set(cup_rows["series_name"]) == {scenario.cup_series_name}
+        assert set(cup_rows["comparison_group"]) == {f"cup:{scenario.cup_series_id}"}
+
+    @pytest.mark.asyncio
+    async def test_championship_rows_carry_series_id_name_and_comparison_group(
+        self, race_groups_base_season
+    ):
+        scenario = race_groups_base_season
+        df = await athlete_progression(scenario.session, competitor_id=scenario.competitor_id)
+
+        champ_rows = df[df["series_kind"] == "championship"]
+        assert len(champ_rows) == 2
+
+        cd_row = champ_rows[champ_rows["event_id"] == scenario.departmental_event_id].iloc[0]
+        assert cd_row["series_id"] == scenario.departmental_series_id
+        assert cd_row["series_name"] == scenario.departmental_series_name
+        assert cd_row["comparison_group"] == f"championship:{scenario.departmental_series_id}"
+
+        cn_row = champ_rows[champ_rows["event_id"] == scenario.national_event_id].iloc[0]
+        assert cn_row["series_id"] == scenario.national_series_id
+        assert cn_row["series_name"] == scenario.national_series_name
+        assert cn_row["comparison_group"] == f"championship:{scenario.national_series_id}"
+
+        # Departamental y nacional son series distintas → grupos distintos,
+        # aunque ambos compartan sequence_number=1 (spec 014) y kind (spec 039).
+        assert cd_row["comparison_group"] != cn_row["comparison_group"]
+
+    @pytest.mark.asyncio
+    async def test_dnf_championship_row_still_carries_its_own_comparison_group(
+        self, race_groups_dnf_championship
+    ):
+        """Un DNF no tiene posición/tiempo, pero sigue perteneciendo a su
+        propio grupo de comparación (no se mezcla con la copa)."""
+        scenario = race_groups_dnf_championship
+        df = await athlete_progression(scenario.session, competitor_id=scenario.competitor_id)
+
+        cn_row = df[df["event_id"] == scenario.national_event_id].iloc[0]
+        assert cn_row["position"] is None or str(cn_row["position"]) == "<NA>"
+        assert cn_row["series_id"] == scenario.national_series_id
+        assert cn_row["comparison_group"] == f"championship:{scenario.national_series_id}"
 
 
 # ===========================================================================

@@ -10,7 +10,10 @@
  * el control de visibilidad (modo coach vs parent) se hace en los
  * componentes que consumen estas utilidades.
  */
-import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
+import type {
+  AnalysisConfidence,
+  InsightConfidence,
+} from "@/types/athleteRaceAnalysis.types";
 import type { ProgressionAssessment } from "@/types/raceAnalysis.types";
 import type {
   ActionCategory,
@@ -137,6 +140,14 @@ export interface ValidaLabelInput {
    */
   series_kind?: string | null;
   /**
+   * Feature 039 (T039) — nivel del campeonato (`"departmental"` |
+   * `"national"`); decide "Cto. Departamental" vs "Cto. Nacional" cuando
+   * `isChampionship` es `true`. Ignorado para válidas regulares.
+   * `null`/`undefined` → default "departamental", para llamadores legacy
+   * que aún no exponen este campo (mismo criterio que `series_kind`).
+   */
+  series_level?: string | null;
+  /**
    * No afecta el texto devuelto — aceptados para que los llamadores puedan
    * pasar el insight/ítem del contrato tal cual, sin desestructurar. Ambos
    * pueden ser `null` (insight sin evento vinculado).
@@ -147,7 +158,8 @@ export interface ValidaLabelInput {
 
 /**
  * Etiqueta legible y única para una válida/campeonato/agregado de temporada:
- * "Válida III", "Cto. Departamental", "Resumen de temporada" o "—".
+ * "Válida III", "Cto. Departamental", "Cto. Nacional", "Resumen de
+ * temporada" o "—".
  *
  * Fuente única de verdad para este dato en toda la app (feature 036, T032)
  * — reemplaza los antiguos `validaLabel` (arábigo, este mismo módulo) y
@@ -160,6 +172,13 @@ export interface ValidaLabelInput {
  * (T030) — ese chequeo numérico sobrevive únicamente como fallback para
  * llamadores que todavía no exponen `series_kind`.
  *
+ * Feature 039 (T039): dentro de un campeonato, `series_level` decide
+ * "Cto. Departamental" vs "Cto. Nacional" — un campeonato reúne un pelotón
+ * distinto según su nivel (`contracts/ai-context.md`). `null`/`undefined`
+ * (insights previos a la feature, o llamadores que no lo exponen aún, ej.
+ * `ComparatorPanel.tsx`/`ClubInsightByRaceItem`) cae al default histórico
+ * "departamental" — ningún llamador existente cambia de texto.
+ *
  * Acepta un número plano (atajo retrocompatible, ej. selectores que solo
  * conocen el número de válida) o el objeto `ValidaLabelInput` con el
  * contrato completo.
@@ -167,16 +186,47 @@ export interface ValidaLabelInput {
 export function validaLabel(
   input: number | null | undefined | ValidaLabelInput,
 ): string {
-  const { valida_num: num, series_kind: seriesKind } =
-    typeof input === "object" && input !== null ? input : { valida_num: input, series_kind: undefined };
+  const {
+    valida_num: num,
+    series_kind: seriesKind,
+    series_level: seriesLevel,
+  } =
+    typeof input === "object" && input !== null
+      ? input
+      : { valida_num: input, series_kind: undefined, series_level: undefined };
 
   if (num === null || num === undefined) return "—";
   if (num === 0) return "Resumen de temporada";
 
   const isChampionship = seriesKind != null ? seriesKind === "championship" : num === 99;
-  if (isChampionship) return "Cto. Departamental";
+  if (isChampionship) {
+    return seriesLevel === "national" ? "Cto. Nacional" : "Cto. Departamental";
+  }
 
   return `Válida ${VALIDA_ROMAN_NUMERALS[num] ?? num}`;
+}
+
+/**
+ * Umbrales de confianza estadística sobre un conjunto de puntos —
+ * réplica en cliente de `analytics_charts.py::_confidence_from_n`
+ * (feature 039, F-2): `n<3` → `"low"`, `n>=8` → `"high"`, resto
+ * `"medium"`. Cuenta solo puntos con `value` no-nulo (DNF/DNS no cuentan
+ * como muestra útil), igual que el backend.
+ *
+ * Usado por `EvolutionChart` para derivar el aviso de confianza sobre el
+ * grupo efectivamente mostrado (`displaySeries`) cuando la respuesta del
+ * backend todavía no viene filtrada por `series_id` — en ese caso
+ * `EvolutionResponse.confidence` está calculado sobre TODA la temporada,
+ * no sobre el grupo por defecto que el cliente ya está mostrando
+ * (`contracts/evolution-api.md` FR-009).
+ */
+export function confidenceForPoints(
+  points: Array<{ value: number | null }>,
+): AnalysisConfidence {
+  const n = points.filter((p) => p.value !== null).length;
+  if (n < 3) return "low";
+  if (n >= 8) return "high";
+  return "medium";
 }
 
 /**

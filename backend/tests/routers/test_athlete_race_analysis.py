@@ -605,6 +605,80 @@ async def test_get_insight_detail_exposes_event_date_and_series_kind(
 
 
 @pytest.mark.asyncio
+async def test_get_insights_exposes_series_level(seeded_factory, client_factory):
+    """T038 (feature 039): el payload de insights expone ``series_level``
+    resuelto vía ``event_id`` → ``race_series.level``. Un insight anclado a
+    un campeonato nacional expone ``'national'``; el agregado de temporada
+    (sin ``event_id``) expone ``None`` — igual que ``series_kind`` (T030)."""
+    async with seeded_factory() as s:
+        from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
+
+        await create_race_series(
+            s,
+            series_id=3,
+            season_year=2026,
+            name="Campeonato Nacional Fedeciclismo",
+            kind=RaceSeriesKind.championship,
+            level=RaceSeriesLevel.national,
+        )
+        await create_race_event(
+            s,
+            event_id=3,
+            series_id=3,
+            sequence_number=1,
+            name="Campeonato Nacional",
+            event_date=date(2026, 8, 15),
+        )
+        national_insight = await create_insight(
+            s,
+            athlete_id=144,
+            season=2026,
+            valida_num=None,
+            event_id=3,
+            coach_approved=True,
+            is_active=1,
+        )
+        season_aggregate = await create_insight(
+            s,
+            athlete_id=144,
+            season=2026,
+            valida_num=0,
+            use_case="season_summary_v2",
+            event_id=None,
+            coach_approved=True,
+            is_active=1,
+        )
+        await s.commit()
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    async with client_factory(user=coach) as ac:
+        resp = await ac.get(
+            "/api/athletes/144/race-analysis/insights",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 200
+    items = {item["id"]: item for item in resp.json()["items"]}
+
+    national_item = items[national_insight.id]
+    assert national_item["series_kind"] == "championship"
+    assert national_item["series_level"] == "national"
+
+    aggregate_item = items[season_aggregate.id]
+    assert aggregate_item["event_id"] is None
+    assert aggregate_item["series_kind"] is None
+    assert aggregate_item["series_level"] is None
+
+    # El detalle expone lo mismo que el listado.
+    async with client_factory(user=coach) as ac:
+        detail_resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{national_insight.id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["series_level"] == "national"
+
+
+@pytest.mark.asyncio
 async def test_get_insights_orders_by_race_date_not_generated_at(
     seeded_factory, client_factory
 ):

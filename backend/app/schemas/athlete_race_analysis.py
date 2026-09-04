@@ -47,6 +47,7 @@ __all__ = [
     "EvolutionMetric",
     "EvolutionPoint",
     "EvolutionResponse",
+    "ComparisonGroupOption",
     "DistributionPoint",
     "DistributionCurvePoint",
     "DistributionResponse",
@@ -155,6 +156,17 @@ class AthleteInsightOut(BaseModel):
             "campeonato (departamental u otro). None si no hay event_id. "
             "Serializa como string; nunca expone el enum interno "
             "RaceSeriesKind (feature 036, T030)."
+        ),
+    )
+    series_level: Optional[Literal["departmental", "national"]] = Field(
+        default=None,
+        description=(
+            "Ámbito territorial de la serie del evento (race_series.level), "
+            "resuelto vía event_id. 'departmental' o 'national' — las copas "
+            "también cargan un level (default 'departmental') pero el "
+            "cliente sólo lo usa para etiquetar campeonatos (feature 039). "
+            "None si no hay event_id. Serializa como string; nunca expone "
+            "el enum interno RaceSeriesLevel."
         ),
     )
     use_case: str = Field(..., max_length=32)
@@ -398,6 +410,116 @@ class EvolutionPoint(BaseModel):
             "``'Cto. Dep. — Ginebra'``. Nunca re-derivar desde el frontend."
         ),
     )
+    # --- Grupo de comparación derivado (feature 039) ---------------------
+    series_id: int = Field(
+        ..., ge=1, description="PK de ``race_series`` a la que pertenece el evento."
+    )
+    series_name: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Nombre de la serie sin el año (``race_series.name``). Para "
+            "copas es la base del rótulo del grupo (``'{series_name} "
+            "{season}'``); para campeonatos es informativo — el rótulo del "
+            "grupo usa ``build_race_label``."
+        ),
+    )
+    series_level: Literal["departmental", "national"] = Field(
+        ...,
+        description=(
+            "Ámbito territorial de la serie (``race_series.level``). Las "
+            "copas siempre traen ``'departmental'`` por default de columna "
+            "— ignorado al construir su etiqueta."
+        ),
+    )
+    comparison_group: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Clave estable del grupo de comparación derivado (feature 039, "
+            "research D1): ``f'cup:{series_id}'`` o "
+            "``f'championship:{series_id}'``. Construida por "
+            "``services/race/comparison_groups.build_comparison_group``."
+        ),
+    )
+    field_size: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Número de corredores que terminaron (FINISHED) en la misma "
+            "(evento, categoría) del atleta — incluye al propio atleta si "
+            "terminó. ``None`` si no hay datos de la categoría."
+        ),
+    )
+    percentile: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description=(
+            "Percentil posicional (research D3): "
+            "``100 * (1 - (position - 1) / (field_size - 1))``, "
+            "``field_size <= 1`` → ``100.0``. Distinto del percentil por "
+            "tiempo de ``EvolutionMetric.PERCENTILE`` — este campo se "
+            "calcula siempre, independiente de la métrica solicitada. "
+            "``None`` si el atleta no finalizó (DNF/DNS/DSQ)."
+        ),
+    )
+    position: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Posición final del atleta en la categoría del evento (feature "
+            "039, B-2). Se expone para cualquier métrica solicitada, no "
+            "solo ``metric=ranking``. ``None`` si no finalizó (DNF/DNS/DSQ)."
+        ),
+    )
+    gap_pct: Optional[float] = Field(
+        default=None,
+        description=(
+            "Gap porcentual al ganador de la categoría del evento (feature "
+            "039, B-2): ``100 * (race_time_ms - winner_time_ms) / "
+            "winner_time_ms``, redondeado a 1 decimal. ``0.0`` para el "
+            "propio ganador. Se expone para cualquier métrica solicitada. "
+            "``None`` si no finalizó o no hay tiempo del ganador."
+        ),
+    )
+
+
+class ComparisonGroupOption(BaseModel):
+    """Un grupo de comparación disponible para la temporada (feature 039).
+
+    Deriva de ``race_series`` — no se persiste (research D1). Cada
+    campeonato es su propia serie con un único evento (INV-2); cada copa es
+    un grupo con N válidas. ``GET /evolution`` siempre devuelve la lista
+    completa de grupos, aplique o no el filtro ``series_id``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    comparison_group: str = Field(..., min_length=1)
+    series_id: int = Field(..., ge=1)
+    kind: Literal["cup", "championship"] = Field(
+        ..., description="Tipo de serie. Serializa como string."
+    )
+    level: Literal["departmental", "national"] = Field(
+        ..., description="Ámbito territorial. Ignorado en el rótulo de las copas."
+    )
+    label: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Rótulo legible del grupo: ``'{nombre} {temporada}'`` para "
+            "copas, ``build_race_label(...)`` para campeonatos."
+        ),
+    )
+    n_points: int = Field(
+        ...,
+        ge=0,
+        description=(
+            "Carreras del atleta en este grupo con valor no nulo para la "
+            "métrica solicitada (excluye DNF/DNS/DSQ)."
+        ),
+    )
 
 
 class EvolutionResponse(BaseModel):
@@ -409,6 +531,23 @@ class EvolutionResponse(BaseModel):
     metric: EvolutionMetric
     series: list[EvolutionPoint] = Field(default_factory=list)
     confidence: AnalysisConfidence
+    groups: list[ComparisonGroupOption] = Field(
+        default_factory=list,
+        description=(
+            "Grupos de comparación de la temporada completa (copas por "
+            "válida más temprana, luego campeonatos por fecha) — feature "
+            "039. Poblado siempre, incluso cuando ``series_id`` filtra "
+            "``series`` a un solo grupo."
+        ),
+    )
+    selected_group: Optional[str] = Field(
+        default=None,
+        description=(
+            "Eco de ``comparison_group`` del ``series_id`` aplicado. "
+            "``None`` si no se envió ``series_id`` o si no corresponde a "
+            "ningún grupo del atleta en la temporada."
+        ),
+    )
 
 
 class DistributionPoint(BaseModel):
@@ -532,6 +671,15 @@ class RaceParticipationOption(BaseModel):
             "Ejemplo: ``'Válida 2 — Ginebra'`` o ``'Cto. Dep. — Ginebra'``. "
             "El frontend NO debe re-derivar esta etiqueta."
         ),
+    )
+    series_id: int = Field(
+        ..., ge=1, description="PK de ``race_series`` a la que pertenece el evento (feature 039)."
+    )
+    series_name: str = Field(
+        ..., min_length=1, description="Nombre de la serie sin el año (``race_series.name``)."
+    )
+    series_level: Literal["departmental", "national"] = Field(
+        ..., description="Ámbito territorial de la serie (``race_series.level``)."
     )
 
 

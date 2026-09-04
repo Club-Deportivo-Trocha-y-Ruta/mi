@@ -480,6 +480,38 @@ describe("InsightsTimeline", () => {
       expect(screen.queryByText(/invalid date/i)).not.toBeInTheDocument();
     });
 
+    it("muestra 'Cto. Nacional' cuando series_level='national' (feature 039)", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/insights",
+          () =>
+            HttpResponse.json({
+              items: [
+                mockInsight({
+                  id: 303,
+                  valida_num: 8,
+                  event_id: 200,
+                  event_date: "2026-06-12",
+                  series_kind: "championship",
+                  series_level: "national",
+                }),
+              ],
+              total: 1,
+              limit: 50,
+              offset: 0,
+            }),
+        ),
+      );
+      renderWithProviders(<InsightsTimeline athleteId={42} mode="coach" />);
+      await waitFor(() => {
+        expect(screen.getByTestId("insight-card-303")).toBeInTheDocument();
+      });
+      const card = screen.getByTestId("insight-card-303");
+      expect(card).toHaveTextContent("Cto. Nacional");
+      // No debe confundirse con el default departamental ni mostrar ambas.
+      expect(card).not.toHaveTextContent("Cto. Departamental");
+    });
+
     it("no reordena el listado del backend — respeta el orden por fecha de carrera del servidor", async () => {
       mswServer.use(
         http.get(

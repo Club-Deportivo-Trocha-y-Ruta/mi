@@ -255,11 +255,15 @@ function formatRaceDate(isoDate: string): string {
  * una fecha de carrera que no existe.
  */
 function validaLabelWithDate(
-  insight: Pick<AthleteInsightOut, "valida_num" | "series_kind" | "event_date">,
+  insight: Pick<
+    AthleteInsightOut,
+    "valida_num" | "series_kind" | "series_level" | "event_date"
+  >,
 ): string {
   const label = validaLabel({
     valida_num: insight.valida_num,
     series_kind: insight.series_kind,
+    series_level: insight.series_level,
   });
   return insight.event_date
     ? `${label} · ${formatRaceDate(insight.event_date)}`

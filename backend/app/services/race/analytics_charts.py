@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.schemas.athlete_race_analysis import (
     AnalysisConfidence,
+    ComparisonGroupOption,
     DistributionCurvePoint,
     DistributionPoint,
     DistributionResponse,
@@ -42,6 +43,7 @@ from app.schemas.athlete_race_analysis import (
     RaceParticipationOption,
     RaceParticipationResponse,
 )
+from app.services.race.comparison_groups import build_comparison_group, group_label
 from app.services.race.race_labels import build_race_label
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,76 @@ def _confidence_from_n(n: int) -> AnalysisConfidence:
     return AnalysisConfidence.medium
 
 
+def _build_comparison_groups(
+    group_rows: list[dict[str, Any]], *, season: int
+) -> list[ComparisonGroupOption]:
+    """Deriva ``groups`` a partir de TODAS las filas de la temporada.
+
+    Se calcula sobre el conjunto completo (antes del filtro opcional
+    ``series_id`` de :func:`build_evolution`) — el contrato exige que
+    ``groups`` viaje completo incluso cuando ``series`` viene filtrada
+    (research D4, ``contracts/evolution-api.md``).
+
+    Orden: copas por la fecha de su válida más temprana, luego campeonatos
+    por fecha (research D1/D2 — mismo criterio que
+    ``comparison_groups.split_progression``, reimplementado aquí porque
+    opera sobre filas de query cruda, no sobre ``athlete_progression``).
+    """
+    by_group: dict[str, dict[str, Any]] = {}
+    for row in group_rows:
+        series_id = row["series_id"]
+        if series_id is None:
+            continue
+        cg = build_comparison_group(row["kind"], series_id)
+        entry = by_group.get(cg)
+        if entry is None:
+            entry = {
+                "series_id": series_id,
+                "series_name": row["series_name"],
+                "kind": row["kind"],
+                "level": row["level"],
+                "location": row["location"],
+                "first_event_date": row["event_date"],
+                "n_points": 0,
+            }
+            by_group[cg] = entry
+        elif row["event_date"] < entry["first_event_date"]:
+            entry["first_event_date"] = row["event_date"]
+            entry["location"] = row["location"]
+        if row["value"] is not None:
+            entry["n_points"] += 1
+
+    cups = sorted(
+        (e for e in by_group.values() if e["kind"] == RaceSeriesKind.cup.value),
+        key=lambda e: e["first_event_date"],
+    )
+    championships = sorted(
+        (e for e in by_group.values() if e["kind"] == RaceSeriesKind.championship.value),
+        key=lambda e: e["first_event_date"],
+    )
+
+    options: list[ComparisonGroupOption] = []
+    for entry in (*cups, *championships):
+        label = group_label(
+            kind=entry["kind"],
+            level=entry["level"],
+            name=entry["series_name"],
+            season_year=season,
+            location=entry["location"],
+        )
+        options.append(
+            ComparisonGroupOption(
+                comparison_group=build_comparison_group(entry["kind"], entry["series_id"]),
+                series_id=entry["series_id"],
+                kind=entry["kind"],
+                level=entry["level"],
+                label=label,
+                n_points=entry["n_points"],
+            )
+        )
+    return options
+
+
 def _build_pseudonym(competitor_id: int) -> str:
     """Pseudónimo determinístico por competidor.
 
@@ -110,6 +182,7 @@ async def build_evolution(
     athlete_id: int,
     season: int,
     metric: EvolutionMetric,
+    series_id: Optional[int] = None,
 ) -> EvolutionResponse:
     """Serie cronológica de una métrica del atleta en una temporada.
 
@@ -117,18 +190,32 @@ async def build_evolution(
         athlete_id: PK ``athletes.id`` (el verificación de acceso vive en el router).
         season: Año de temporada — filtra vía ``race_series.season_year``.
         metric: ``podium_gap_ms`` / ``ranking`` / ``time_ms``.
+        series_id: filtro opcional de grupo de comparación (feature 039,
+            research D4). Restringe ``series`` a esa sola serie —
+            ``groups`` sigue viniendo completo (temporada entera) y
+            ``confidence`` se recalcula sobre la serie YA filtrada. Un
+            ``series_id`` que no corresponde a ninguna serie del atleta en
+            la temporada devuelve ``series=[]`` (nunca 404 — contrato
+            ``evolution-api.md``).
 
     Returns:
         :class:`EvolutionResponse` con un punto por evento donde el atleta
         compitió. Valores ``None`` para DNF/DNS/DSQ o cuando no se puede
-        calcular gap (p.ej. el atleta es P1 → gap=0 explícito).
+        calcular gap (p.ej. el atleta es P1 → gap=0 explícito). Incluye
+        ``groups`` (grupos de comparación derivados, feature 039) y
+        ``selected_group`` (eco del filtro aplicado).
 
     Notas SQL:
         - ``ix_race_results_athlete_event`` evita full scan.
         - JOIN con ``race_events`` + ``race_series`` para filtrar season.
         - Subquery ``cat_stats`` calcula tiempo de P1 por (event, category)
-          para podium_gap.
+          para podium_gap — sus agregados FINISHED-only también sirven de
+          ``field_size`` (research D3, mismo criterio que
+          ``field_metrics.compute_field_metrics``).
         - Filtro ``rr.deleted_at IS NULL`` aplica siempre.
+        - Una sola query: el filtro ``series_id`` se aplica en Python
+          DESPUÉS de calcular ``groups`` sobre el resultado completo — no
+          hay un segundo roundtrip a la base de datos (research D4).
     """
     unit = {
         EvolutionMetric.PODIUM_GAP_MS: "ms",
@@ -154,6 +241,8 @@ async def build_evolution(
                 rr.race_time_ms,
                 e.sequence_number AS valida_num,
                 e.event_date,
+                s.id             AS series_id,
+                s.name           AS series_name,
                 s.kind           AS series_kind,
                 s.level          AS series_level,
                 e.location       AS location
@@ -168,13 +257,13 @@ async def build_evolution(
             SELECT
                 rr.event_id,
                 rr.category_id,
-                MIN(rr.race_time_ms) AS time_min_ms,
-                MAX(rr.race_time_ms) AS time_max_ms,
-                COUNT(*)             AS cat_size
+                MIN(rr.race_time_ms)   AS time_min_ms,
+                MAX(rr.race_time_ms)   AS time_max_ms,
+                COUNT(*)               AS cat_size,
+                COUNT(rr.race_time_ms) AS cat_size_with_time
             FROM race_results rr
             WHERE rr.deleted_at IS NULL
               AND rr.status = 'finished'
-              AND rr.race_time_ms IS NOT NULL
               AND rr.event_id IN (SELECT event_id FROM athlete_results)
             GROUP BY rr.event_id, rr.category_id
         )
@@ -188,6 +277,9 @@ async def build_evolution(
             cs.time_min_ms AS winner_time_ms,
             cs.time_max_ms,
             cs.cat_size,
+            cs.cat_size_with_time,
+            ar.series_id,
+            ar.series_name,
             ar.series_kind,
             ar.series_level,
             ar.location
@@ -203,6 +295,7 @@ async def build_evolution(
     rows = result.fetchall() if hasattr(result, "fetchall") else list(result)
 
     series: list[EvolutionPoint] = []
+    group_rows: list[dict[str, Any]] = []
     for row in rows:
         m = row._mapping if hasattr(row, "_mapping") else {}
 
@@ -223,11 +316,14 @@ async def build_evolution(
         winner_time_ms = _get("winner_time_ms", 6)
         time_max_ms = _get("time_max_ms", 7)
         cat_size = _get("cat_size", 8)
-        series_kind_raw = _get("series_kind", 9)
-        series_level_raw = _get("series_level", 10)
-        location_raw = _get("location", 11)
+        cat_size_with_time = _get("cat_size_with_time", 9)
+        series_id_raw = _get("series_id", 10)
+        series_name_raw = _get("series_name", 11)
+        series_kind_raw = _get("series_kind", 12)
+        series_level_raw = _get("series_level", 13)
+        location_raw = _get("location", 14)
 
-        if event_id is None or event_date is None:
+        if event_id is None or event_date is None or series_id_raw is None:
             continue
 
         value: Optional[float] = None
@@ -251,13 +347,16 @@ async def build_evolution(
         elif metric == EvolutionMetric.PERCENTILE:
             # Percentil por TIEMPO (override coach real 2026-05-25).
             # n<5 → ocultar (consistente con comparador, fila se omite).
+            # F-8: el umbral de 5 se mide sobre filas CON tiempo registrado
+            # (``cat_size_with_time``), no sobre el total de finishers
+            # (``cat_size``) — un finisher sin tiempo no aporta al percentil.
             if (
                 finished
                 and race_time_ms is not None
                 and winner_time_ms is not None
                 and time_max_ms is not None
-                and cat_size is not None
-                and int(cat_size) >= 5
+                and cat_size_with_time is not None
+                and int(cat_size_with_time) >= 5
             ):
                 t = int(race_time_ms)
                 t_min = int(winner_time_ms)
@@ -296,6 +395,50 @@ async def build_evolution(
             level=level_enum,
         )
 
+        series_id_val = int(series_id_raw)
+        # F-10: EvolutionPoint.series_name declara min_length=1 — un NULL de
+        # BD (race_series.name es NOT NULL hoy, pero el fallback degrada en
+        # vez de romper con un 500 si eso cambia) no puede convertirse en "".
+        series_name_val = str(series_name_raw) if series_name_raw is not None else "Serie"
+        comparison_group_val = build_comparison_group(kind_enum, series_id_val)
+
+        # field_size / percentile posicional (research D3, F-8): mismo
+        # criterio que field_metrics.compute_field_metrics — field_size
+        # cuenta TODOS los FINISHED del (evento, categoría), tengan o no
+        # tiempo registrado (cs.cat_size ya excluye DNF/DNS/DSQ vía el
+        # filtro status='finished' del CTE, sin exigir race_time_ms IS NOT
+        # NULL); percentile solo se calcula si el atleta terminó y hay
+        # pelotón. El guard de ≥5 del percentil por TIEMPO usa
+        # cat_size_with_time en su lugar (arriba) — no confundir ambos.
+        field_size: Optional[int] = int(cat_size) if cat_size is not None else None
+        percentile: Optional[float] = None
+        if finished and position is not None and cat_size is not None:
+            n_field = int(cat_size)
+            pct = (
+                100.0
+                if n_field <= 1
+                else 100.0 * (1.0 - (int(position) - 1) / (n_field - 1))
+            )
+            percentile = round(pct, 1)
+
+        # position/gap_pct (feature 039, F-1 / B-2): expuestos siempre,
+        # independiente de la métrica solicitada — la tarjeta de campeonato
+        # del frontend los necesita aunque ``metric`` sea otra cosa.
+        position_val: Optional[int] = (
+            int(position) if (finished and position is not None) else None
+        )
+        gap_pct_val: Optional[float] = None
+        if (
+            finished
+            and race_time_ms is not None
+            and winner_time_ms is not None
+            and int(winner_time_ms) > 0
+        ):
+            gap_pct_val = round(
+                100.0 * (int(race_time_ms) - int(winner_time_ms)) / int(winner_time_ms),
+                1,
+            )
+
         series.append(
             EvolutionPoint(
                 valida_num=int(valida_num) if valida_num is not None else 0,
@@ -305,16 +448,48 @@ async def build_evolution(
                 unit=unit,
                 series_kind=kind_enum.value,
                 label=event_label,
+                series_id=series_id_val,
+                series_name=series_name_val,
+                series_level=level_enum.value,
+                comparison_group=comparison_group_val,
+                field_size=field_size,
+                percentile=percentile,
+                position=position_val,
+                gap_pct=gap_pct_val,
             )
         )
+        group_rows.append(
+            {
+                "series_id": series_id_val,
+                "series_name": series_name_val,
+                "kind": kind_enum.value,
+                "level": level_enum.value,
+                "location": location_str,
+                "event_date": event_date,
+                "value": value,
+            }
+        )
 
-    # Confianza: cuenta puntos con valor no-nulo (los que sirven al usuario).
-    n_valid = sum(1 for p in series if p.value is not None)
+    groups = _build_comparison_groups(group_rows, season=season)
+
+    filtered_series = series
+    selected_group: Optional[str] = None
+    if series_id is not None:
+        filtered_series = [p for p in series if p.series_id == series_id]
+        matched_group = next((g for g in groups if g.series_id == series_id), None)
+        if matched_group is not None:
+            selected_group = matched_group.comparison_group
+
+    # Confianza: cuenta puntos con valor no-nulo (los que sirven al usuario),
+    # calculada sobre la serie YA filtrada por series_id (research D4).
+    n_valid = sum(1 for p in filtered_series if p.value is not None)
     return EvolutionResponse(
         season=season,
         metric=metric,
-        series=series,
+        series=filtered_series,
         confidence=_confidence_from_n(n_valid),
+        groups=groups,
+        selected_group=selected_group,
     )
 
 
@@ -586,6 +761,8 @@ async def list_athlete_races(
         SELECT
             e.id             AS event_id,
             e.sequence_number,
+            s.id             AS series_id,
+            s.name           AS series_name,
             s.kind           AS series_kind,
             s.level          AS series_level,
             e.event_date,
@@ -600,6 +777,8 @@ async def list_athlete_races(
         GROUP BY
             e.id,
             e.sequence_number,
+            s.id,
+            s.name,
             s.kind,
             s.level,
             e.event_date,
@@ -626,13 +805,20 @@ async def list_athlete_races(
 
         event_id_raw   = _get("event_id", 0)
         seq_num_raw    = _get("sequence_number", 1)
-        series_kind_raw = _get("series_kind", 2)
-        series_level_raw = _get("series_level", 3)
-        event_date_raw = _get("event_date", 4)
-        event_name_raw = _get("event_name", 5)
-        location_raw   = _get("location", 6)
+        series_id_raw  = _get("series_id", 2)
+        series_name_raw = _get("series_name", 3)
+        series_kind_raw = _get("series_kind", 4)
+        series_level_raw = _get("series_level", 5)
+        event_date_raw = _get("event_date", 6)
+        event_name_raw = _get("event_name", 7)
+        location_raw   = _get("location", 8)
 
-        if event_id_raw is None or event_date_raw is None or event_name_raw is None:
+        if (
+            event_id_raw is None
+            or event_date_raw is None
+            or event_name_raw is None
+            or series_id_raw is None
+        ):
             continue
 
         # Normalizar series_kind: MySQL puede devolver el valor enum como string
@@ -667,6 +853,11 @@ async def list_athlete_races(
                 event_name=str(event_name_raw),
                 location=location_str,
                 label=label,
+                series_id=int(series_id_raw),
+                # F-10: mismo fallback que build_evolution — RaceParticipationOption
+                # también declara min_length=1.
+                series_name=str(series_name_raw) if series_name_raw is not None else "Serie",
+                series_level=level_enum.value,
             )
         )
 

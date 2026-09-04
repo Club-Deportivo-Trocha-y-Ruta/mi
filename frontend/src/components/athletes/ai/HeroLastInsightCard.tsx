@@ -117,7 +117,11 @@ export function HeroLastInsightCard({
           {formatDateTimeCompact(insight.generated_at)}
         </span>
         <Badge variant="secondary">
-          {validaLabel({ valida_num: insight.valida_num, series_kind: insight.series_kind })}
+          {validaLabel({
+            valida_num: insight.valida_num,
+            series_kind: insight.series_kind,
+            series_level: insight.series_level,
+          })}
         </Badge>
         {/* T096c (feature 036, US6): "válida" es jerga del club (una fecha
             de la Copa Valle que cuenta para la tabla de posiciones de la

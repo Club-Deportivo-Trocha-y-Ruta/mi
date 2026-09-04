@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.services.race.agents.analyst import (
     PROMPT_VERSION_ANALYST_V2,
     PROMPT_VERSION_ANALYST_V3,
@@ -33,6 +34,7 @@ from app.services.race.agents.analyst import (
 )
 from app.services.race.ai.events import with_events
 from app.services.race.ai.retry import with_retry
+from app.services.race.race_labels import build_race_label
 from app.services.race.schemas import AnalysisInput, LTADGroup
 
 logger = logging.getLogger(__name__)
@@ -94,6 +96,119 @@ def _resolve_age(state: dict) -> int:
         age,
     )
     return 12
+
+
+# ---------------------------------------------------------------------------
+# Resolución de la carrera analizada (feature 039, T035)
+# ---------------------------------------------------------------------------
+#
+# Desde spec 014 la válida I de una copa y un campeonato pueden compartir
+# ``sequence_number``, así que ``metrics.progression`` puede traer dos filas
+# con el mismo ``valida_num``. Reglas de ``contracts/ai-context.md``:
+#
+#   1. Con ``state["event_id"]`` (lanzamiento anclado desde la competencia),
+#      la fila analizada es la que tiene ese ``event_id`` — nunca solo por
+#      ``valida_num``.
+#   2. Sin ancla, ``valida_num`` resuelve SOLO entre filas de copa; un
+#      campeonato únicamente se analiza vía lanzamiento anclado.
+#
+# Ambas reglas degradan sin romper los states viejos: una fila sin
+# ``series_kind`` cuenta como copa y, si el ancla no aparece en la
+# progresión, se cae al match por ``valida_num``.
+
+
+def _is_championship_row(row: dict) -> bool:
+    """``True`` si la fila de progresión corresponde a un campeonato.
+
+    Tolerante con filas legadas: ``series_kind`` ausente/desconocido ⇒ copa.
+    """
+    kind = row.get("series_kind")
+    kind_value = getattr(kind, "value", kind)
+    return str(kind_value or "").lower() == RaceSeriesKind.championship.value
+
+
+def _same_event(row: dict, event_id: Any) -> bool:
+    """Compara ``row["event_id"]`` con el ancla tolerando int vs str."""
+    raw = row.get("event_id")
+    if raw is None or event_id is None:
+        return False
+    return str(raw) == str(event_id)
+
+
+def _cup_rows_for_valida(rows: list[dict], valida_num: int) -> list[dict]:
+    """Filas de copa con ese ``valida_num`` (regla 2)."""
+    return [
+        r
+        for r in rows
+        if r.get("valida_num") == valida_num and not _is_championship_row(r)
+    ]
+
+
+def _records_for_valida(
+    rows: list[dict], valida_num: int, anchored_event_id: Any
+) -> list[dict]:
+    """Filas de progresión que describen la carrera analizada.
+
+    ``valida_num == 0`` es el sentinel de "toda la progresión" (temporada)
+    y se respeta tal cual. Con ancla se devuelve exactamente la fila
+    anclada; sin ella, solo las filas de copa de esa válida.
+    """
+    if valida_num == 0:
+        return list(rows)
+    if anchored_event_id is not None:
+        anchored = [r for r in rows if _same_event(r, anchored_event_id)]
+        if anchored:
+            return anchored
+    return _cup_rows_for_valida(rows, valida_num)
+
+
+def _resolve_race_row(
+    rows: list[dict], valida_num: int, anchored_event_id: Any
+) -> dict | None:
+    """Fila única de la carrera analizada (``None`` si no hay candidata)."""
+    records = _records_for_valida(rows, valida_num, anchored_event_id)
+    return records[0] if records else None
+
+
+def _valida_label(race_row: dict | None, field_metrics: dict | None) -> str | None:
+    """Etiqueta canónica de la carrera analizada para el prompt v3.
+
+    Delega en ``race_labels.build_race_label`` con el ``series_level``, así
+    un campeonato nacional se rotula ``"Cto. Nal. — {ciudad}"`` y nunca
+    como una válida más (AC-2.3 / regla 10 del prompt v3). Devuelve ``None``
+    cuando no hay metadatos de serie — ahí el agente cae en
+    ``series_label_v3(field_metrics)``, el comportamiento previo.
+    """
+    sources = [s for s in (race_row, field_metrics) if isinstance(s, dict)]
+    if not sources:
+        return None
+
+    def pick(key: str) -> Any:
+        for source in sources:
+            value = source.get(key)
+            if value not in (None, ""):
+                return value
+        return None
+
+    kind_raw = pick("series_kind")
+    if kind_raw is None and pick("is_championship"):
+        kind_raw = RaceSeriesKind.championship.value
+    if kind_raw is None:
+        return None
+
+    level_raw = pick("series_level")
+    try:
+        kind = RaceSeriesKind(str(getattr(kind_raw, "value", kind_raw)))
+        level = (
+            RaceSeriesLevel(str(getattr(level_raw, "value", level_raw)))
+            if level_raw
+            else RaceSeriesLevel.departmental
+        )
+        sequence_number = int(pick("valida_num") or 1)
+    except (ValueError, TypeError):
+        return None
+
+    return build_race_label(kind, sequence_number, pick("location"), level=level)
 
 
 def _build_input(
@@ -237,12 +352,12 @@ async def _analyst_agent_v2(state: dict) -> dict[str, Any]:
     )
 
     # Construir pares (valida_num, AnalysisInput) filtrando por válida.
+    # T035: la fila se resuelve por el ancla state["event_id"] y, sin ancla,
+    # solo entre filas de copa (vn == 0 sigue significando "toda la progresión").
+    anchored_event_id = state.get("event_id")
     pairs: list[tuple[int, AnalysisInput]] = []
     for vn in valida_nums:
-        records_for_vn = [
-            r for r in progression_all
-            if r.get("valida_num") == vn or vn == 0
-        ]
+        records_for_vn = _records_for_valida(progression_all, vn, anchored_event_id)
         race_meta = format_race_meta(event_conditions.get(vn))
 
         # T021 — append scrubbed coach note to race_meta so the analyst
@@ -325,6 +440,26 @@ def _field_metrics_by_valida(state: dict) -> dict[int, dict]:
     return by_valida
 
 
+def _field_metrics_for_row(
+    field_context: dict,
+    field_by_valida: dict[int, dict],
+    race_row: dict | None,
+    valida_num: int,
+) -> dict | None:
+    """Métricas de pelotón de la carrera resuelta.
+
+    Busca primero por el ``event_id`` de la fila analizada — así la válida
+    anclada usa SU entrada y no la de otra carrera que comparta
+    ``valida_num``. Sin coincidencia cae al índice por válida.
+    """
+    event_id = race_row.get("event_id") if isinstance(race_row, dict) else None
+    if event_id is not None:
+        entry = field_context.get(event_id) or field_context.get(str(event_id))
+        if isinstance(entry, dict):
+            return entry
+    return field_by_valida.get(valida_num)
+
+
 def _season_rows_for_prompt(state: dict) -> list[dict]:
     """Filas de temporada con métricas de pelotón, ordenadas cronológicamente."""
     field_context: dict = state.get("field_context") or {}
@@ -374,18 +509,25 @@ def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
         # la tabla de temporada es todo el insumo (spec §US5).
         return [AnalystV3Input(valida_num=0, analysis_kind="season", **common)]
 
+    field_context: dict = state.get("field_context") or {}
     field_by_valida = _field_metrics_by_valida(state)
+    anchored_event_id = state.get("event_id")
     inputs: list[AnalystV3Input] = []
     for valida_num in list(state.get("valida_nums") or []):
-        race_row = next(
-            (r for r in progression_all if r.get("valida_num") == valida_num), None
+        race_row = _resolve_race_row(progression_all, valida_num, anchored_event_id)
+        # El pelotón se busca por el event_id de la fila resuelta (única clave
+        # única); si esa entrada no existe se cae al índice por válida, que ya
+        # prefiere el evento anclado.
+        field_metrics = _field_metrics_for_row(
+            field_context, field_by_valida, race_row, valida_num
         )
         inputs.append(
             AnalystV3Input(
                 valida_num=valida_num,
                 analysis_kind="valida",
+                valida_label=_valida_label(race_row, field_metrics),
                 race_row=race_row,
-                field_metrics=field_by_valida.get(valida_num),
+                field_metrics=field_metrics,
                 race_meta=_race_meta_for_valida(state, valida_num),
                 **common,
             )

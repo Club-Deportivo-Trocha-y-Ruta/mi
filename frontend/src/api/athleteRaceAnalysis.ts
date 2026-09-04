@@ -210,14 +210,22 @@ export async function getAthleteRaces(
   return response.data;
 }
 
+/**
+ * `seriesId` (feature 039, `contracts/evolution-api.md`) restringe la
+ * respuesta al grupo de comparación (copa o campeonato) indicado — se omite
+ * del querystring cuando es `undefined` para pedir la temporada completa.
+ */
 export async function getAthleteEvolution(
   athleteId: number,
   season: number,
   metric: EvolutionMetric,
+  seriesId?: number,
 ): Promise<EvolutionResponse> {
+  const params: Record<string, unknown> = { season, metric };
+  if (seriesId !== undefined) params.series_id = seriesId;
   const response = await apiClient.get<EvolutionResponse>(
     `${buildBase(athleteId)}/evolution`,
-    { params: { season, metric } },
+    { params },
   );
   return response.data;
 }

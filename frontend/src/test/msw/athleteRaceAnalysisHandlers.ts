@@ -19,11 +19,15 @@ import type {
   AthleteRunOut,
   AvailableRaceEvent,
   ClubInsightsByRaceResponse,
+  ComparisonGroupOption,
   DistributionResponse,
+  EvolutionPoint,
   EvolutionResponse,
   MetricsSnapshotV1,
+  RaceParticipationOption,
   RaceParticipationResponse,
   SeasonPanoramaResponse,
+  SeriesLevel,
 } from "@/types/athleteRaceAnalysis.types";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +71,15 @@ export function mockInsight(
   const finalValidaNum = overrides?.valida_num ?? 4;
   const defaultSeriesKind: AthleteInsightOut["series_kind"] =
     finalValidaNum === 99 ? "championship" : "cup";
+  // Feature 039 (T039) — `series_level` solo aplica a campeonatos. El
+  // default sigue al `series_kind` FINAL (override explícito gana sobre el
+  // fallback numérico) para que un caller que pase `series_kind:
+  // "championship"` sin `valida_num: 99` (campeonato moderno con su propio
+  // número de secuencia, ver nota arriba) también reciba "departmental" por
+  // defecto en vez de `undefined`.
+  const finalSeriesKind = overrides?.series_kind ?? defaultSeriesKind;
+  const defaultSeriesLevel: AthleteInsightOut["series_level"] =
+    finalSeriesKind === "championship" ? "departmental" : null;
   return {
     id: 1,
     season: 2026,
@@ -74,6 +87,7 @@ export function mockInsight(
     event_id: 100,
     event_date: "2026-05-17",
     series_kind: defaultSeriesKind,
+    series_level: defaultSeriesLevel,
     use_case: "race_analysis",
     summary_text:
       "Resumen del desempeño del deportista en Válida IV. Mostró " +
@@ -188,6 +202,29 @@ export function mockRun(overrides?: Partial<AthleteRunOut>): AthleteRunOut {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Feature 039 (grupos de comparación).
+//
+// T024 añadió estos campos de forma nativa a `EvolutionPoint`,
+// `EvolutionResponse` y `RaceParticipationOption` en
+// `@/types/athleteRaceAnalysis.types` (todos opcionales — ver la nota de
+// back-compat en ese archivo). Los alias de abajo quedan solo para no
+// romper imports existentes de este módulo; el shape real vive en el tipo
+// compartido, no aquí.
+// ---------------------------------------------------------------------------
+
+export type SeriesLevelMock = SeriesLevel;
+export type ComparisonGroupOptionMock = ComparisonGroupOption;
+export type EvolutionPointWithGroups = EvolutionPoint;
+export type EvolutionResponseWithGroups = EvolutionResponse;
+
+/** n<3 → low, n>=8 → high, en medio → medium (contracts/evolution-api.md). */
+function evolutionConfidenceFor(n: number): "low" | "medium" | "high" {
+  if (n < 3) return "low";
+  if (n >= 8) return "high";
+  return "medium";
+}
+
 export function mockEvolution(
   overrides?: Partial<EvolutionResponse>,
 ): EvolutionResponse {
@@ -195,6 +232,17 @@ export function mockEvolution(
     season: 2026,
     metric: "podium_gap_ms",
     confidence: "high",
+    selected_group: null,
+    groups: [
+      {
+        comparison_group: "cup:1",
+        series_id: 1,
+        kind: "cup",
+        level: "departmental",
+        label: "Copa Valle de Ciclomontañismo 2026",
+        n_points: 4,
+      },
+    ],
     series: [
       {
         valida_num: 1,
@@ -204,6 +252,14 @@ export function mockEvolution(
         unit: "ms",
         series_kind: "cup",
         label: "Válida I — Sevilla",
+        series_id: 1,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:1",
+        field_size: 11,
+        percentile: 70.0,
+        position: 4,
+        gap_pct: 6.7,
       },
       {
         valida_num: 2,
@@ -213,6 +269,14 @@ export function mockEvolution(
         unit: "ms",
         series_kind: "cup",
         label: "Válida II — Ginebra",
+        series_id: 1,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:1",
+        field_size: 12,
+        percentile: 75.0,
+        position: 4,
+        gap_pct: 5.3,
       },
       {
         valida_num: 3,
@@ -222,6 +286,14 @@ export function mockEvolution(
         unit: "ms",
         series_kind: "cup",
         label: "Válida III — La Cumbre",
+        series_id: 1,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:1",
+        field_size: 10,
+        percentile: 60.0,
+        position: 5,
+        gap_pct: 3.3,
       },
       {
         valida_num: 4,
@@ -231,6 +303,14 @@ export function mockEvolution(
         unit: "ms",
         series_kind: "cup",
         label: "Válida IV — Cali",
+        series_id: 1,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:1",
+        field_size: 13,
+        percentile: 80.0,
+        position: 3,
+        gap_pct: 2.5,
       },
     ],
     ...overrides,
@@ -524,6 +604,726 @@ export const dnfChampionshipHandler = http.get(
   },
 );
 
+// ---------------------------------------------------------------------------
+// T003 (feature 039) — grupos de comparación en `GET .../evolution`.
+// Los tres handlers siguientes leen `?series_id=` de la query string: sin el
+// parámetro devuelven la temporada completa (todos los grupos concatenados);
+// con un `series_id` conocido filtran `series` a ese grupo y fijan
+// `selected_group`; con uno desconocido devuelven `series: []` con `groups`
+// poblado y `confidence: "low"` (contracts/evolution-api.md).
+// ---------------------------------------------------------------------------
+
+/**
+ * Handler T003 — tres grupos en la misma temporada: una copa de 5 válidas
+ * (series_id=12) + un campeonato departamental (series_id=31) + uno
+ * nacional (series_id=44). Fixture de referencia de
+ * `contracts/evolution-api.md`.
+ */
+export const multiGroupEvolutionHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/evolution",
+  ({ request }) => {
+    const url = new URL(request.url);
+    const seriesIdParam = url.searchParams.get("series_id");
+    const seriesId = seriesIdParam !== null ? Number(seriesIdParam) : null;
+
+    const groups: ComparisonGroupOptionMock[] = [
+      {
+        comparison_group: "cup:12",
+        series_id: 12,
+        kind: "cup",
+        level: "departmental",
+        label: "Copa Valle de Ciclomontañismo 2026",
+        n_points: 5,
+      },
+      {
+        comparison_group: "championship:31",
+        series_id: 31,
+        kind: "championship",
+        level: "departmental",
+        label: "Cto. Dep. — Ginebra",
+        n_points: 1,
+      },
+      {
+        comparison_group: "championship:44",
+        series_id: 44,
+        kind: "championship",
+        level: "national",
+        label: "Cto. Nal. — Pereira",
+        n_points: 1,
+      },
+    ];
+
+    const allSeries: EvolutionPointWithGroups[] = [
+      {
+        valida_num: 1,
+        event_id: 91,
+        event_date: "2026-01-31",
+        value: 120_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida I — Sevilla",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 11,
+        percentile: 70.0,
+        position: 4,
+        gap_pct: 6.7,
+      },
+      {
+        valida_num: 2,
+        event_id: 92,
+        event_date: "2026-02-28",
+        value: 95_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida II — Ginebra",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 12,
+        percentile: 75.0,
+        position: 4,
+        gap_pct: 5.3,
+      },
+      {
+        valida_num: 3,
+        event_id: 93,
+        event_date: "2026-04-19",
+        value: 60_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida III — La Cumbre",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 10,
+        percentile: 60.0,
+        position: 5,
+        gap_pct: 3.3,
+      },
+      {
+        valida_num: 4,
+        event_id: 94,
+        event_date: "2026-05-17",
+        value: 45_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida IV — Cali",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 13,
+        percentile: 80.0,
+        position: 3,
+        gap_pct: 2.5,
+      },
+      {
+        valida_num: 5,
+        event_id: 95,
+        event_date: "2026-06-14",
+        value: 50_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida V — Yumbo",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 11,
+        percentile: 72.0,
+        position: 4,
+        gap_pct: 2.8,
+      },
+      {
+        valida_num: 1,
+        event_id: 200,
+        event_date: "2026-07-05",
+        value: 98_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Dep. — Ginebra",
+        series_id: 31,
+        series_name: "Campeonato Departamental",
+        series_level: "departmental",
+        comparison_group: "championship:31",
+        field_size: 34,
+        percentile: 69.7,
+        position: 11,
+        gap_pct: 5.4,
+      },
+      {
+        valida_num: 1,
+        event_id: 300,
+        event_date: "2026-08-22",
+        value: 105_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Nal. — Pereira",
+        series_id: 44,
+        series_name: "Campeonato Nacional",
+        series_level: "national",
+        comparison_group: "championship:44",
+        field_size: 40,
+        percentile: 55.0,
+        position: 19,
+        gap_pct: 5.8,
+      },
+    ];
+
+    if (seriesId === null) {
+      return HttpResponse.json(
+        mockEvolution({
+          confidence: evolutionConfidenceFor(allSeries.length),
+          groups,
+          selected_group: null,
+          series: allSeries,
+        }),
+      );
+    }
+
+    const matchedGroup = groups.find((g) => g.series_id === seriesId) ?? null;
+    const filtered = allSeries.filter((point) => point.series_id === seriesId);
+
+    return HttpResponse.json(
+      mockEvolution({
+        confidence: evolutionConfidenceFor(filtered.length),
+        groups,
+        selected_group: matchedGroup?.comparison_group ?? null,
+        series: filtered,
+      }),
+    );
+  },
+);
+
+/**
+ * Handler T003 — solo campeonatos en la temporada (sin copa): el
+ * departamental (series_id=31) y el nacional (series_id=44). `cups[]` debe
+ * quedar vacío en cualquier consumidor que lea `groups`.
+ */
+export const championshipOnlyEvolutionHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/evolution",
+  ({ request }) => {
+    const url = new URL(request.url);
+    const seriesIdParam = url.searchParams.get("series_id");
+    const seriesId = seriesIdParam !== null ? Number(seriesIdParam) : null;
+
+    const groups: ComparisonGroupOptionMock[] = [
+      {
+        comparison_group: "championship:31",
+        series_id: 31,
+        kind: "championship",
+        level: "departmental",
+        label: "Cto. Dep. — Ginebra",
+        n_points: 1,
+      },
+      {
+        comparison_group: "championship:44",
+        series_id: 44,
+        kind: "championship",
+        level: "national",
+        label: "Cto. Nal. — Pereira",
+        n_points: 1,
+      },
+    ];
+
+    const allSeries: EvolutionPointWithGroups[] = [
+      {
+        valida_num: 1,
+        event_id: 200,
+        event_date: "2026-07-05",
+        value: 98_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Dep. — Ginebra",
+        series_id: 31,
+        series_name: "Campeonato Departamental",
+        series_level: "departmental",
+        comparison_group: "championship:31",
+        field_size: 34,
+        percentile: 69.7,
+        position: 11,
+        gap_pct: 5.4,
+      },
+      {
+        valida_num: 1,
+        event_id: 300,
+        event_date: "2026-08-22",
+        value: 105_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Nal. — Pereira",
+        series_id: 44,
+        series_name: "Campeonato Nacional",
+        series_level: "national",
+        comparison_group: "championship:44",
+        field_size: 40,
+        percentile: 55.0,
+        position: 19,
+        gap_pct: 5.8,
+      },
+    ];
+
+    const matchedGroup =
+      seriesId === null ? null : groups.find((g) => g.series_id === seriesId) ?? null;
+    const filtered =
+      seriesId === null
+        ? allSeries
+        : allSeries.filter((point) => point.series_id === seriesId);
+
+    return HttpResponse.json(
+      mockEvolution({
+        confidence: evolutionConfidenceFor(filtered.length),
+        groups,
+        selected_group: matchedGroup?.comparison_group ?? null,
+        series: filtered,
+      }),
+    );
+  },
+);
+
+/**
+ * Handler T003 — dos copas + un campeonato en la misma temporada (fixture
+ * US4 "liga departamental en paralelo", spec.md línea 70): Copa Valle
+ * (series_id=12, 3 válidas) + Liga Departamental (series_id=20, 2 fechas) +
+ * campeonato departamental (series_id=31). `groups` ordena copas por primera
+ * válida corrida y luego campeonatos.
+ */
+export const twoCupsEvolutionHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/evolution",
+  ({ request }) => {
+    const url = new URL(request.url);
+    const seriesIdParam = url.searchParams.get("series_id");
+    const seriesId = seriesIdParam !== null ? Number(seriesIdParam) : null;
+
+    const groups: ComparisonGroupOptionMock[] = [
+      {
+        comparison_group: "cup:12",
+        series_id: 12,
+        kind: "cup",
+        level: "departmental",
+        label: "Copa Valle de Ciclomontañismo 2026",
+        n_points: 3,
+      },
+      {
+        comparison_group: "cup:20",
+        series_id: 20,
+        kind: "cup",
+        level: "departmental",
+        label: "Liga Departamental de Ciclomontañismo 2026",
+        n_points: 2,
+      },
+      {
+        comparison_group: "championship:31",
+        series_id: 31,
+        kind: "championship",
+        level: "departmental",
+        label: "Cto. Dep. — Ginebra",
+        n_points: 1,
+      },
+    ];
+
+    const allSeries: EvolutionPointWithGroups[] = [
+      {
+        valida_num: 1,
+        event_id: 91,
+        event_date: "2026-01-31",
+        value: 120_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida I — Sevilla",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 11,
+        percentile: 70.0,
+        position: 4,
+        gap_pct: 6.7,
+      },
+      {
+        valida_num: 2,
+        event_id: 92,
+        event_date: "2026-02-28",
+        value: 95_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida II — Ginebra",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 12,
+        percentile: 75.0,
+        position: 4,
+        gap_pct: 5.3,
+      },
+      {
+        valida_num: 3,
+        event_id: 93,
+        event_date: "2026-04-19",
+        value: 60_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida III — La Cumbre",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 10,
+        percentile: 60.0,
+        position: 5,
+        gap_pct: 3.3,
+      },
+      {
+        valida_num: 1,
+        event_id: 96,
+        event_date: "2026-02-10",
+        value: 130_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Fecha I — Palmira",
+        series_id: 20,
+        series_name: "Liga Departamental de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:20",
+        field_size: 9,
+        percentile: 55.0,
+        position: 5,
+        gap_pct: 7.2,
+      },
+      {
+        valida_num: 2,
+        event_id: 97,
+        event_date: "2026-03-15",
+        value: 110_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Fecha II — Buga",
+        series_id: 20,
+        series_name: "Liga Departamental de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:20",
+        field_size: 9,
+        percentile: 62.0,
+        position: 4,
+        gap_pct: 6.1,
+      },
+      {
+        valida_num: 1,
+        event_id: 200,
+        event_date: "2026-07-05",
+        value: 98_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Dep. — Ginebra",
+        series_id: 31,
+        series_name: "Campeonato Departamental",
+        series_level: "departmental",
+        comparison_group: "championship:31",
+        field_size: 34,
+        percentile: 69.7,
+        position: 11,
+        gap_pct: 5.4,
+      },
+    ];
+
+    if (seriesId === null) {
+      return HttpResponse.json(
+        mockEvolution({
+          confidence: evolutionConfidenceFor(allSeries.length),
+          groups,
+          selected_group: null,
+          series: allSeries,
+        }),
+      );
+    }
+
+    const matchedGroup = groups.find((g) => g.series_id === seriesId) ?? null;
+    const filtered = allSeries.filter((point) => point.series_id === seriesId);
+
+    return HttpResponse.json(
+      mockEvolution({
+        confidence: evolutionConfidenceFor(filtered.length),
+        groups,
+        selected_group: matchedGroup?.comparison_group ?? null,
+        series: filtered,
+      }),
+    );
+  },
+);
+
+/**
+ * Handler F-2 (feature 039, checklist `integration-review.md` §D) — copa de
+ * 7 válidas (series_id=12) + campeonato departamental (series_id=31) +
+ * campeonato nacional (series_id=44): 9 puntos en la temporada completa
+ * (confianza `"high"`, `n>=8`) pero la copa por sí sola tiene 7 puntos
+ * (confianza `"medium"`, `3<=n<8`). Sin `series_id` en la query, el grupo
+ * por defecto (primera copa) debe leer su propia confianza — no la de la
+ * temporada — para decidir si muestra el aviso de baja confianza.
+ */
+export const sevenCupRoundsTwoChampionshipsEvolutionHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/evolution",
+  ({ request }) => {
+    const url = new URL(request.url);
+    const seriesIdParam = url.searchParams.get("series_id");
+    const seriesId = seriesIdParam !== null ? Number(seriesIdParam) : null;
+
+    const groups: ComparisonGroupOptionMock[] = [
+      {
+        comparison_group: "cup:12",
+        series_id: 12,
+        kind: "cup",
+        level: "departmental",
+        label: "Copa Valle de Ciclomontañismo 2026",
+        n_points: 7,
+      },
+      {
+        comparison_group: "championship:31",
+        series_id: 31,
+        kind: "championship",
+        level: "departmental",
+        label: "Cto. Dep. — Ginebra",
+        n_points: 1,
+      },
+      {
+        comparison_group: "championship:44",
+        series_id: 44,
+        kind: "championship",
+        level: "national",
+        label: "Cto. Nal. — Pereira",
+        n_points: 1,
+      },
+    ];
+
+    const cupSeries: EvolutionPointWithGroups[] = Array.from(
+      { length: 7 },
+      (_, i) => ({
+        valida_num: i + 1,
+        event_id: 90 + i,
+        event_date: `2026-0${i + 1}-15`,
+        value: 120_000 - i * 5_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: `Válida ${i + 1}`,
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 11,
+        percentile: 70.0,
+        position: 4,
+        gap_pct: 6.7,
+      }),
+    );
+
+    const allSeries: EvolutionPointWithGroups[] = [
+      ...cupSeries,
+      {
+        valida_num: 1,
+        event_id: 200,
+        event_date: "2026-07-05",
+        value: 98_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Dep. — Ginebra",
+        series_id: 31,
+        series_name: "Campeonato Departamental",
+        series_level: "departmental",
+        comparison_group: "championship:31",
+        field_size: 34,
+        percentile: 69.7,
+        position: 11,
+        gap_pct: 5.4,
+      },
+      {
+        valida_num: 1,
+        event_id: 300,
+        event_date: "2026-08-22",
+        value: 105_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Nal. — Pereira",
+        series_id: 44,
+        series_name: "Campeonato Nacional",
+        series_level: "national",
+        comparison_group: "championship:44",
+        field_size: 40,
+        percentile: 55.0,
+        position: 19,
+        gap_pct: 5.8,
+      },
+    ];
+
+    if (seriesId === null) {
+      return HttpResponse.json(
+        mockEvolution({
+          confidence: evolutionConfidenceFor(allSeries.length), // 9 → "high"
+          groups,
+          selected_group: null,
+          series: allSeries,
+        }),
+      );
+    }
+
+    const matchedGroup = groups.find((g) => g.series_id === seriesId) ?? null;
+    const filtered = allSeries.filter((point) => point.series_id === seriesId);
+
+    return HttpResponse.json(
+      mockEvolution({
+        confidence: evolutionConfidenceFor(filtered.length),
+        groups,
+        selected_group: matchedGroup?.comparison_group ?? null,
+        series: filtered,
+      }),
+    );
+  },
+);
+
+/**
+ * Handler F-2 (feature 039) — copa de solo 2 válidas (series_id=12) +
+ * campeonato departamental (series_id=31) + campeonato nacional
+ * (series_id=44): la temporada completa suma 4 puntos (confianza
+ * `"medium"`, oculta el aviso si se usa `response.confidence` a secas) pero
+ * la copa por sí sola tiene 2 puntos (confianza `"low"`) — el caso que
+ * demuestra el bug de F-2: sin el fix, el aviso de baja confianza NO
+ * aparecería al ver solo la copa por defecto pese a tener una muestra
+ * insuficiente.
+ */
+export const twoRoundCupWithChampionshipsEvolutionHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/evolution",
+  ({ request }) => {
+    const url = new URL(request.url);
+    const seriesIdParam = url.searchParams.get("series_id");
+    const seriesId = seriesIdParam !== null ? Number(seriesIdParam) : null;
+
+    const groups: ComparisonGroupOptionMock[] = [
+      {
+        comparison_group: "cup:12",
+        series_id: 12,
+        kind: "cup",
+        level: "departmental",
+        label: "Copa Valle de Ciclomontañismo 2026",
+        n_points: 2,
+      },
+      {
+        comparison_group: "championship:31",
+        series_id: 31,
+        kind: "championship",
+        level: "departmental",
+        label: "Cto. Dep. — Ginebra",
+        n_points: 1,
+      },
+      {
+        comparison_group: "championship:44",
+        series_id: 44,
+        kind: "championship",
+        level: "national",
+        label: "Cto. Nal. — Pereira",
+        n_points: 1,
+      },
+    ];
+
+    const allSeries: EvolutionPointWithGroups[] = [
+      {
+        valida_num: 1,
+        event_id: 91,
+        event_date: "2026-01-31",
+        value: 120_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida I — Sevilla",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 11,
+        percentile: 70.0,
+        position: 4,
+        gap_pct: 6.7,
+      },
+      {
+        valida_num: 2,
+        event_id: 92,
+        event_date: "2026-02-28",
+        value: 95_000,
+        unit: "ms",
+        series_kind: "cup",
+        label: "Válida II — Ginebra",
+        series_id: 12,
+        series_name: "Copa Valle de Ciclomontañismo",
+        series_level: "departmental",
+        comparison_group: "cup:12",
+        field_size: 12,
+        percentile: 75.0,
+        position: 4,
+        gap_pct: 5.3,
+      },
+      {
+        valida_num: 1,
+        event_id: 200,
+        event_date: "2026-07-05",
+        value: 98_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Dep. — Ginebra",
+        series_id: 31,
+        series_name: "Campeonato Departamental",
+        series_level: "departmental",
+        comparison_group: "championship:31",
+        field_size: 34,
+        percentile: 69.7,
+        position: 11,
+        gap_pct: 5.4,
+      },
+      {
+        valida_num: 1,
+        event_id: 300,
+        event_date: "2026-08-22",
+        value: 105_000,
+        unit: "ms",
+        series_kind: "championship",
+        label: "Cto. Nal. — Pereira",
+        series_id: 44,
+        series_name: "Campeonato Nacional",
+        series_level: "national",
+        comparison_group: "championship:44",
+        field_size: 40,
+        percentile: 55.0,
+        position: 19,
+        gap_pct: 5.8,
+      },
+    ];
+
+    if (seriesId === null) {
+      return HttpResponse.json(
+        mockEvolution({
+          confidence: evolutionConfidenceFor(allSeries.length), // 4 → "medium"
+          groups,
+          selected_group: null,
+          series: allSeries,
+        }),
+      );
+    }
+
+    const matchedGroup = groups.find((g) => g.series_id === seriesId) ?? null;
+    const filtered = allSeries.filter((point) => point.series_id === seriesId);
+
+    return HttpResponse.json(
+      mockEvolution({
+        confidence: evolutionConfidenceFor(filtered.length),
+        groups,
+        selected_group: matchedGroup?.comparison_group ?? null,
+        series: filtered,
+      }),
+    );
+  },
+);
+
 export const lowConfidenceDistributionHandler = http.get(
   "*/api/athletes/:athleteId/race-analysis/distribution",
   () => {
@@ -716,10 +1516,16 @@ export const errorSeasonPanoramaHandler = http.get(
 // GET /api/athletes/:id/race-analysis/races?season=YYYY
 // ---------------------------------------------------------------------------
 
+// T024 añadió `series_id`/`series_name`/`series_level` de forma nativa a
+// `RaceParticipationOption` — alias mantenidos solo por compatibilidad de
+// imports (ver nota de la feature 039 más arriba en este archivo).
+export type RaceParticipationOptionWithSeries = RaceParticipationOption;
+export type RaceParticipationResponseWithSeries = RaceParticipationResponse;
+
 /** Lista realista con una válida de copa y el campeonato departamental. */
 export const mockRaceParticipationList = (
-  overrides?: Partial<RaceParticipationResponse>,
-): RaceParticipationResponse => ({
+  overrides?: Partial<RaceParticipationResponseWithSeries>,
+): RaceParticipationResponseWithSeries => ({
   season: 2026,
   items: [
     {
@@ -730,6 +1536,9 @@ export const mockRaceParticipationList = (
       event_name: "Válida I Sevilla",
       location: "Sevilla",
       label: "Válida I — Sevilla",
+      series_id: 12,
+      series_name: "Copa Valle de Ciclomontañismo",
+      series_level: "departmental",
     },
     {
       event_id: 200,
@@ -739,6 +1548,9 @@ export const mockRaceParticipationList = (
       event_name: "Campeonato Departamental",
       location: "Ginebra",
       label: "Cto. Dep. — Ginebra",
+      series_id: 31,
+      series_name: "Campeonato Departamental",
+      series_level: "departmental",
     },
   ],
   ...overrides,

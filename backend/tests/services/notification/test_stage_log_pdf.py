@@ -27,7 +27,10 @@ from datetime import date
 import pdfplumber
 import pytest
 
-from app.services.notification.athlete_newsletter_pdf import generate_stage_log_pdf
+from app.services.notification.athlete_newsletter_pdf import (
+    _build_stage_log_pdf_context,
+    generate_stage_log_pdf,
+)
 from app.services.notification.document_generator import DocumentGenerator
 from app.services.notification.template_registry import TemplateRegistry
 from app.services.training.stage_log import (
@@ -290,6 +293,29 @@ _CHARTS_CTX = {
     "points_accumulated": [{"x": 1, "y": 20}, {"x": 2, "y": 70}, {"x": 3, "y": 110}],
 }
 
+# email_blocks.race_results (feature 039, contracts/newsletter-context.md) —
+# solo el bloque "championships" importa para el gate F-9.
+_RACE_RESULTS_CTX = {
+    "has_races": True,
+    "cups": [],
+    "championships": [
+        {
+            "event_id": 6011,
+            "label": "Campeonato Departamental",
+            "short_label": "Cto. Dep.",
+            "level": "departmental",
+            "location": "Ginebra",
+            "event_date": "2026-06-20",
+            "category_label": "Prejuvenil A Femenino",
+            "finished": True,
+            "position": 4,
+            "field_size": 20,
+            "gap_pct": 4.2,
+            "percentile": 84.2,
+        }
+    ],
+}
+
 
 # ---------------------------------------------------------------------------
 # Helper de render
@@ -417,6 +443,60 @@ async def test_charts_present_when_race_and_anthro_in_month():
 
 
 # ---------------------------------------------------------------------------
+# F-9 — "Campeonatos" comparte el gate has_race_this_month con charts_annex.
+#
+# Prueba directa de ``_build_stage_log_pdf_context`` (función pura) en vez
+# de renderizar el PDF: WeasyPrint no carga en este entorno local (ver nota
+# del módulo), así que un test que dependa de él quedaría igual de rojo que
+# los de arriba sin poder confirmar el fix. El contexto es exactamente lo
+# que ``generate_stage_log_pdf`` le pasa al template — probarlo cubre el
+# gate sin depender de libgobject.
+# ---------------------------------------------------------------------------
+
+
+def test_context_drops_race_results_without_race_this_month():
+    """Mes sin carrera (summit.kind != race) → ``race_results`` es ``None``
+    en el contexto, aunque el llamador sí lo haya pasado poblado (F-9)."""
+    dto = to_parent_dto(_no_race_month_stage_log(), hidden_blocks=None)
+    context = _build_stage_log_pdf_context(
+        athlete_first_name="Atleta",
+        athlete_last_name="Prueba",
+        year=2026,
+        month=5,
+        stage_log=dto,
+        anthropometry=None,
+        charts_context=None,
+        percentile_curves=None,
+        race_results=_RACE_RESULTS_CTX,
+        club_name="Trocha y Ruta",
+        season_year=None,
+    )
+    assert context["race_results"] is None
+    assert context["charts_annex"] is None
+
+
+def test_context_keeps_race_results_with_race_this_month():
+    """Mes con carrera (summit.kind == race) → ``race_results`` llega intacto
+    al contexto, con su bloque ``championships`` disponible para el template."""
+    dto = to_parent_dto(_full_month_stage_log(), hidden_blocks=None)
+    context = _build_stage_log_pdf_context(
+        athlete_first_name="Atleta",
+        athlete_last_name="Prueba",
+        year=2026,
+        month=6,
+        stage_log=dto,
+        anthropometry=None,
+        charts_context=None,
+        percentile_curves=None,
+        race_results=_RACE_RESULTS_CTX,
+        club_name="Trocha y Ruta",
+        season_year=None,
+    )
+    assert context["race_results"] == _RACE_RESULTS_CTX
+    assert context["race_results"]["championships"][0]["position"] == 4
+
+
+# ---------------------------------------------------------------------------
 # Privacidad — el PDF nunca imprime claves de uso exclusivo del coach
 # ---------------------------------------------------------------------------
 
@@ -427,3 +507,112 @@ async def test_pdf_never_prints_source_insight_id():
     contexto del PDF (defensa en profundidad: se verifica en el texto)."""
     pdf_bytes = await _render(_full_month_stage_log())
     assert "99" not in _all_text(pdf_bytes)
+
+
+# ---------------------------------------------------------------------------
+# Válvula de paginación — mes cargado al tope sigue en ≤ 3 páginas
+# ---------------------------------------------------------------------------
+
+
+def _photo_data_uri() -> str:
+    """Miniatura real (data-URI) para que el bloque de fotos ocupe altura.
+
+    Con una URL remota el `<img>` no carga en el entorno de test y la sección
+    de fotos mide casi nada — justo lo que este test necesita medir.
+    """
+    import base64
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 300), (140, 200, 60)).save(buf, format="JPEG")
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _heaviest_month_stage_log() -> StageLog:
+    """Mes en el peor caso admitido por el modelo: 3 observaciones largas, el
+    tope de fotos (`_PHOTO_SOFT_CAP` = 8), muchas insignias, 5 semanas de
+    esfuerzo y nota del entrenador al límite de palabras."""
+    sl = _full_month_stage_log()
+    uri = _photo_data_uri()
+    sl.photos = [
+        PhotoView(thumbnail_url=uri, caption="Entrenamiento en pista, sesión de técnica de curvas")
+        for _ in range(8)
+    ]
+    sl.badges = list(sl.badges) + [
+        BadgeView(code=f"extra_{i}", label=f"Insignia larga número {i}") for i in range(6)
+    ]
+    sl.effort_profile = list(sl.effort_profile) + [
+        EffortWeek(week_label="29 jun–5 jul", sessions_planned=3, sessions_attended=3, mean_rpe=5.0)
+    ]
+    sl.observations = [
+        obs.model_copy(
+            update={
+                "claim": (
+                    "Sostuvo el ritmo del grupo de punta durante la segunda vuelta completa, "
+                    "algo que no había logrado en ninguna de las válidas anteriores."
+                ),
+                "evidence": "Parciales de la válida 3: vuelta 2 a cuatro segundos del líder.",
+            }
+        )
+        for obs in sl.observations
+    ]
+    sl.stage_title = (
+        "Una etapa sólida con la mejor carrera de la temporada y una progresión técnica clara"
+    )
+    sl.coach_note = (
+        "Vamos muy bien este mes, sigamos con la misma constancia en los entrenamientos y "
+        "cuidando el descanso entre sesiones para llegar enteros a la próxima válida del "
+        "calendario departamental."
+    )
+    return sl
+
+
+async def test_heaviest_month_with_annex_still_within_three_pages():
+    """Un mes cargado al tope + anexo sigue en ≤ 3 páginas (AC-5.2).
+
+    El anexo abre página propia, así que el cuerpo debe caber en dos; cuando no
+    cabe, ``generate_stage_log_pdf`` recompone el documento sin ese salto en vez
+    de dejar una página casi vacía y crecer a cuatro.
+    """
+    pdf_bytes = await _render(
+        _heaviest_month_stage_log(),
+        anthropometry=_ANTHRO_IN_MONTH,
+        charts_context=_CHARTS_CTX,
+    )
+    assert _page_count(pdf_bytes) <= 3
+    assert "Anexo de crecimiento" in _all_text(pdf_bytes)
+
+
+# ---------------------------------------------------------------------------
+# Galería de fotos — tope de 4 en el PDF, resto en el portal
+# ---------------------------------------------------------------------------
+
+
+async def test_photo_gallery_caps_at_four_and_points_to_portal():
+    """El PDF muestra hasta 4 fotos grandes; el resto se anuncia con una nota.
+
+    El portal (`PhotosGrid`) sí muestra todas — el tope es del PDF, que tiene
+    un presupuesto de 3 páginas y no puede permitirse una segunda fila.
+    """
+    sl = _full_month_stage_log()
+    uri = _photo_data_uri()
+    sl.photos = [
+        PhotoView(thumbnail_url=uri, caption=f"Foto número {i}") for i in range(7)
+    ]
+    text = _all_text(await _render(sl))
+
+    assert "Foto número 3" in text  # la cuarta, la última que entra
+    assert "Foto número 4" not in text  # la quinta ya no se dibuja
+    assert "Hay 3 fotos más del mes en el portal." in text
+
+
+async def test_photo_gallery_without_extras_has_no_portal_note():
+    """Con 4 fotos o menos no se anuncia nada: no hay fotos fuera del PDF."""
+    sl = _full_month_stage_log()
+    uri = _photo_data_uri()
+    sl.photos = [PhotoView(thumbnail_url=uri, caption="Salida del sábado") for _ in range(4)]
+    text = _all_text(await _render(sl))
+
+    assert "Salida del sábado" in text
+    assert "en el portal." not in text

@@ -52,6 +52,7 @@ from app.services.race.queries import (
     results_to_df as _results_df,
 )
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
+from app.services.race.comparison_groups import build_comparison_group
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,16 @@ async def athlete_progression(db: AsyncSession, competitor_id: int) -> pd.DataFr
         - ``points_awarded``     (int)
         - ``gap_to_winner_ms``   (int o nullable; 0 para P1)
         - ``gap_to_winner_pct``  (float o nullable; ej. 12.5 = +12.5%)
+        - ``series_kind``        (str; ``cup`` o ``championship``)
+        - ``series_level``       (str; ``departmental`` o ``national``)
+        - ``location``           (str o ``None``)
+        - ``event_id``           (int; identifica la válida — feature 039,
+          permite deduplicar por evento en lugar de por fecha)
+        - ``series_id``          (int; PK de ``race_series`` — clave del
+          grupo de comparación)
+        - ``series_name``        (str o ``None``; ``race_series.name``)
+        - ``comparison_group``   (str; ``"cup:{series_id}"`` o
+          ``"championship:{series_id}"`` — ver ``comparison_groups.py``)
 
         Ordenado ascendente por ``event_date``. Filtra ``deleted_at IS NULL``.
         Si el competidor no tiene resultados, devuelve DataFrame vacío con
@@ -98,19 +109,31 @@ async def athlete_progression(db: AsyncSession, competitor_id: int) -> pd.DataFr
     categories = await _load_categories(db)
     series = await _load_series(db)
 
-    # Mapa series_id → (kind, level) para etiquetar campeonatos vs copas.
-    # Los campeonatos llevan sequence_number=1 (spec 014) y colisionarían con
-    # la Válida I si el eje del gráfico usara valida_num; por eso el boletín
-    # necesita saber el kind/level para construir la etiqueta correcta.
-    series_meta = {
-        s.id: (
-            s.kind.value if isinstance(s.kind, RaceSeriesKind) else str(s.kind),
-            (
+    # Mapa series_id → metadatos de la serie, para etiquetar campeonatos vs
+    # copas y derivar el grupo de comparación (feature 039). Los campeonatos
+    # llevan sequence_number=1 (spec 014) y colisionarían con la Válida I si
+    # el eje del gráfico usara valida_num; por eso el boletín necesita saber
+    # el kind/level para construir la etiqueta correcta, y series_id/name
+    # para agrupar copas vs. campeonatos sin mezclarlos (research D1/D2).
+    series_meta: dict[int, dict[str, Any]] = {
+        s.id: {
+            "kind": (
+                s.kind.value
+                if isinstance(s.kind, RaceSeriesKind)
+                # Defensivo: fixtures que instancian ``RaceSeries`` sin pasar
+                # ``kind`` (Python no aplica el ``default=`` de la columna
+                # fuera de un flush real) dejan el atributo en ``None`` — cae
+                # a "cup", igual que el fallback ya existente para ``level``.
+                else (str(s.kind) if s.kind else "cup")
+            ),
+            "level": (
                 s.level.value
                 if isinstance(getattr(s, "level", None), RaceSeriesLevel)
                 else (str(s.level) if getattr(s, "level", None) else "departmental")
             ),
-        )
+            "name": s.name,
+            "season_year": s.season_year,
+        }
         for s in series
     }
 
@@ -126,6 +149,10 @@ async def athlete_progression(db: AsyncSession, competitor_id: int) -> pd.DataFr
         "series_kind",
         "series_level",
         "location",
+        "event_id",
+        "series_id",
+        "series_name",
+        "comparison_group",
     ]
 
     if not results:
@@ -159,13 +186,29 @@ async def athlete_progression(db: AsyncSession, competitor_id: int) -> pd.DataFr
     df = df.merge(df_c, on="category_id", how="left")
     df = df.merge(winners, on=["event_id", "category_id"], how="left")
 
-    # Derivar kind/level de la serie de cada evento (para etiquetar campeonatos).
+    # Derivar kind/level/name de la serie de cada evento (para etiquetar
+    # campeonatos vs. copas y para el grupo de comparación — feature 039).
+    _default_meta: dict[str, Any] = {
+        "kind": "cup",
+        "level": "departmental",
+        "name": None,
+        "season_year": None,
+    }
     df["series_kind"] = df["series_id"].map(
-        lambda sid: series_meta.get(sid, ("cup", "departmental"))[0]
+        lambda sid: series_meta.get(sid, _default_meta)["kind"]
     )
     df["series_level"] = df["series_id"].map(
-        lambda sid: series_meta.get(sid, ("cup", "departmental"))[1]
+        lambda sid: series_meta.get(sid, _default_meta)["level"]
     )
+    df["series_name"] = df["series_id"].map(
+        lambda sid: series_meta.get(sid, _default_meta)["name"]
+    )
+    # Grupo de comparación derivado (research D1): "cup:{id}" /
+    # "championship:{id}". No se persiste — es función pura de kind+series_id.
+    df["comparison_group"] = [
+        build_comparison_group(kind, int(sid))
+        for kind, sid in zip(df["series_kind"], df["series_id"])
+    ]
 
     # Calcular gap al ganador.
     # gap_ms = race_time_ms - winner_time_ms (0 si es P1; NaN si DNF/DSQ).

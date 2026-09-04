@@ -14,6 +14,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: vi.fn((sel: (s: unknown) => unknown) =>
@@ -49,6 +50,8 @@ vi.mock("@/components/ai/AnalysisRunTimeline", () => ({
   AnalysisRunTimeline: () => <div data-testid="mock-run-timeline">run</div>,
 }));
 
+import { mswServer } from "@/test/setup";
+import { mockEvolution } from "@/test/msw/athleteRaceAnalysisHandlers";
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import type { AthleteOut } from "@/types/athlete.types";
@@ -211,5 +214,51 @@ describe("AthleteAIAnalysisTab — vista parent (v2)", () => {
     expect(
       screen.queryByTestId(/^insight-checkbox-/),
     ).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Feature 039 (T028) — grupos de comparación de temporada.
+  // -------------------------------------------------------------------------
+
+  it("modo parent nunca expone el nombre de un competidor en el widget de evolución", async () => {
+    // El sub-tab por defecto es "Panorama", que monta `MiniSparkline` SIN
+    // mockear en este archivo (a diferencia de `EvolutionChart`, sí
+    // mockeado arriba) — es el único contenido "evolución" realmente
+    // renderizado aquí. `data-model.md` (§ChampionshipReading) es
+    // explícito: la serie de evolución "Never includes names, bibs or
+    // competitor ids". Simulamos un backend que rompiera esa invariante
+    // (mismo espíritu que el fixture `display_name="Winner Real"` del
+    // test de privacidad del backend,
+    // tests/routers/test_athlete_race_analysis_privacy.py) y confirmamos
+    // que el cliente nunca lo pinta: `MiniSparkline` solo lee `roman` y
+    // `value` de cada punto, así que un campo extra con datos de un
+    // tercero no tiene por dónde filtrarse al DOM.
+    const LEAKED_COMPETITOR_NAME = "Camila Rodríguez Rival Ficticia";
+    mswServer.use(
+      http.get(
+        "*/api/athletes/:athleteId/race-analysis/evolution",
+        () => {
+          const base = mockEvolution();
+          const series = base.series.map((point, idx) =>
+            idx === 0
+              ? { ...point, competitor_display_name: LEAKED_COMPETITOR_NAME }
+              : point,
+          );
+          return HttpResponse.json({ ...base, series });
+        },
+      ),
+    );
+
+    renderWithProviders(<AthleteAIAnalysisTab athlete={athlete} mode="parent" />);
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("mini-evolution-sparkline"),
+      ).toBeInTheDocument();
+    });
+
+    const tree =
+      screen.getByTestId("athlete-ai-analysis-tab").textContent ?? "";
+    expect(tree).not.toContain(LEAKED_COMPETITOR_NAME);
+    expect(tree).not.toContain("Rodríguez");
   });
 });

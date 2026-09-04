@@ -419,7 +419,11 @@ export function AthleteAIAnalysisTab({
             </span>
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge variant="secondary">
-                {validaLabel({ valida_num: latest.valida_num, series_kind: latest.series_kind })}
+                {validaLabel({
+                  valida_num: latest.valida_num,
+                  series_kind: latest.series_kind,
+                  series_level: latest.series_level,
+                })}
               </Badge>
               {mode === "coach" && (
                 <StatusBadge

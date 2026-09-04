@@ -15,13 +15,20 @@ export function useAthleteEvolution(
   athleteId: number,
   season: number | null | undefined,
   metric: EvolutionMetric | null | undefined,
+  /**
+   * Feature 039 — grupo de comparación (copa o campeonato) a filtrar en el
+   * backend. `undefined` pide la temporada completa (todos los grupos).
+   * Forma parte de la queryKey para que cada selección de grupo tenga su
+   * propia entrada de caché.
+   */
+  seriesId?: number,
 ) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
-    queryKey: ["athlete-evolution", athleteId, season, metric],
+    queryKey: ["athlete-evolution", athleteId, season, metric, seriesId],
     queryFn: () => {
       if (!season || !metric) throw new Error("season y metric requeridos");
-      return getAthleteEvolution(athleteId, season, metric);
+      return getAthleteEvolution(athleteId, season, metric, seriesId);
     },
     enabled:
       !!accessToken &&

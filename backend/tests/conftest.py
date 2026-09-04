@@ -9,6 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.main import app
 from app.models import Base
 
+# Fixtures de escenarios "comparison groups" (feature 039) — registradas como
+# plugin para estar disponibles en toda la suite sin import explícito, igual
+# que cualquier fixture de un conftest.py normal.
+pytest_plugins = ["tests.fixtures.race_groups"]
+
 
 @pytest.fixture
 async def client():

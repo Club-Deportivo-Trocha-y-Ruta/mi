@@ -57,6 +57,35 @@ vi.mock("@/components/athletes/ai/InsightsTimeline", () => ({
 vi.mock("@/components/athletes/ai/EvolutionChart", () => ({
   EvolutionChart: () => <div>evolution</div>,
 }));
+
+// T020 (feature 039) — dos tests de este archivo importan el EvolutionChart
+// REAL (vía `vi.importActual`, más abajo) para correr axe sobre el selector
+// "Competencia" + la tarjeta de campeonato. Recharts real cuelga en jsdom
+// sin ResizeObserver (mismo comentario que EvolutionChart.test.tsx) — se
+// mockea aquí con el mismo patrón liviano, superset de lo que usan
+// EvolutionChart y MiniSparkline (ambos SÍ se montan de verdad en este
+// archivo).
+vi.mock("recharts", () => ({
+  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="recharts-container">{children}</div>
+  ),
+  LineChart: ({
+    children,
+    data,
+  }: {
+    children: React.ReactNode;
+    data: unknown[];
+  }) => (
+    <div data-testid="line-chart" data-points={data.length}>
+      {children}
+    </div>
+  ),
+  Line: () => <svg data-testid="recharts-line" />,
+  CartesianGrid: () => <div data-testid="recharts-grid" />,
+  XAxis: () => <div data-testid="recharts-x" />,
+  YAxis: () => <div data-testid="recharts-y" />,
+  Tooltip: () => <div data-testid="recharts-tooltip" />,
+}));
 vi.mock("@/components/athletes/ai/ComparatorPanel", () => ({
   ComparatorPanel: () => <div>compare</div>,
 }));
@@ -71,6 +100,7 @@ vi.mock("@/components/ai/AnalysisRunTimeline", () => ({
 }));
 
 import { mswServer } from "@/test/setup";
+import { multiGroupEvolutionHandler } from "@/test/msw/athleteRaceAnalysisHandlers";
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
 import { PanoramaView } from "@/components/athletes/ai/PanoramaView";
@@ -307,4 +337,47 @@ describe("a11y — race-analysis v2 layout", () => {
   // NOTA: a11y del Timeline agrupado real está cubierta en
   // InsightsTimeline.grouped.test.tsx — aquí no se importa para evitar
   // conflicto con el mock global de InsightsTimeline declarado arriba.
+
+  // ------------------------------------------------------------------
+  // T020 (feature 039) — EvolutionChart real (bypaseando el mock de arriba
+  // vía `vi.importActual`) con el selector "Competencia": 0 violaciones
+  // tanto en la vista de copa por defecto como tras elegir un campeonato
+  // (ChampionshipReadingCard + tabla). TDD-red: ambos tests fallan porque
+  // el selector/la tarjeta todavía no existen (T025/T026).
+  // ------------------------------------------------------------------
+
+  it("T020 — EvolutionChart real (multiGroupEvolutionHandler, vista copa) sin violaciones a11y", async () => {
+    const { EvolutionChart: RealEvolutionChart } = await vi.importActual<
+      typeof import("@/components/athletes/ai/EvolutionChart")
+    >("@/components/athletes/ai/EvolutionChart");
+    mswServer.use(multiGroupEvolutionHandler);
+    const { container } = renderWithProviders(
+      <RealEvolutionChart athleteId={42} defaultSeason={2026} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("evolution-group-select")).toBeInTheDocument();
+    });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it("T020 — EvolutionChart real (multiGroupEvolutionHandler, tras elegir un campeonato) sin violaciones a11y", async () => {
+    const { EvolutionChart: RealEvolutionChart } = await vi.importActual<
+      typeof import("@/components/athletes/ai/EvolutionChart")
+    >("@/components/athletes/ai/EvolutionChart");
+    mswServer.use(multiGroupEvolutionHandler);
+    const user = userEvent.setup();
+    const { container } = renderWithProviders(
+      <RealEvolutionChart athleteId={42} defaultSeason={2026} />,
+    );
+    const groupSelect = await screen.findByTestId("evolution-group-select");
+    await user.selectOptions(groupSelect, "44"); // Cto. Nal. — Pereira
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("championship-reading-card"),
+      ).toBeInTheDocument();
+    });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
 });

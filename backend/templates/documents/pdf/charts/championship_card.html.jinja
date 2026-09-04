@@ -1,0 +1,62 @@
+{#
+  Tarjeta de lectura de un campeonato (feature 039).
+
+  Un campeonato reúne un pelotón propio, distinto al de las válidas de copa
+  (spec 014/023) — por eso se lee como una tarjeta de estadísticas puntuales
+  (Posición / Pelotón / Gap al P1 / Percentil) en vez de un punto más sobre
+  la línea de evolución de la copa (research.md D3/D5, contracts/
+  newsletter-context.md §Card partial).
+
+  Entrada: un dict ``ChampionshipReading`` — ver
+  ``newsletter_builder._build_race_block`` → ``championships[]``:
+    label, short_label, level, location, event_date, category_label,
+    finished, position, field_size, gap_pct, percentile.
+
+  ``finished`` en ``false`` (DNF/DSQ) reemplaza las cuatro estadísticas por
+  la nota "No completó la prueba." — no tiene sentido mostrar celdas vacías
+  cuando ya sabemos la razón. Ausencia de la clave ``finished`` (snapshots
+  viejos) se trata como "sí terminó" (comportamiento previo implícito).
+
+  Estilo: mismos tokens de texto del resto de la bitácora (#374151 texto
+  principal, #6b7280 texto secundario) — nunca un color de serie de gráfico
+  sobre texto (research D13).
+#}
+{% macro championship_card(reading) %}
+{%- set heading_parts = [] -%}
+{%- if reading.get('label') -%}{%- set _ = heading_parts.append(reading.get('label')) -%}{%- endif -%}
+{%- if reading.get('location') -%}{%- set _ = heading_parts.append(reading.get('location')) -%}{%- endif -%}
+{%- if reading.get('event_date') -%}{%- set _ = heading_parts.append(reading.get('event_date') | date_es) -%}{%- endif -%}
+<div style="break-inside: avoid; margin-bottom: 8pt; background: #fafafa; border: 0.5pt solid #d1d5db; border-left: 3pt solid #6b7280; padding: 9pt 12pt; border-radius: 3pt;">
+  <p style="margin: 0 0 6pt 0; font-size: 9pt; font-weight: 700; color: #374151;">{{ heading_parts | join(' · ') }}</p>
+  {%- if not reading.get('finished', True) %}
+  <p style="margin: 0; font-size: 9pt; color: #6b7280; font-style: italic;">No completó la prueba.</p>
+  {%- else %}
+  <div style="display: table; width: 100%; table-layout: fixed;">
+    <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
+      <p style="margin: 0; font-size: 8pt; color: #6b7280;">Posición</p>
+      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('position') is not none %}P{{ reading.get('position') }}{% else %}—{% endif %}</p>
+    </div>
+    <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
+      <p style="margin: 0; font-size: 8pt; color: #6b7280;">Pelotón</p>
+      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">
+        {%- if reading.get('field_size') is not none -%}
+          {%- if reading.get('category_label') -%}
+            {{ reading.get('field_size') }} en {{ reading.get('category_label') }}
+          {%- else -%}
+            {{ reading.get('field_size') }} corredores
+          {%- endif -%}
+        {%- else -%}—{%- endif -%}
+      </p>
+    </div>
+    <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
+      <p style="margin: 0; font-size: 8pt; color: #6b7280;">Gap al P1</p>
+      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('gap_pct') is not none %}+{{ "%.1f"|format(reading.get('gap_pct')) }} %{% else %}—{% endif %}</p>
+    </div>
+    <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
+      <p style="margin: 0; font-size: 8pt; color: #6b7280;">Percentil</p>
+      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('percentile') is not none %}{{ "%.0f"|format(reading.get('percentile')) }}{% else %}—{% endif %}</p>
+    </div>
+  </div>
+  {%- endif %}
+</div>
+{% endmacro %}

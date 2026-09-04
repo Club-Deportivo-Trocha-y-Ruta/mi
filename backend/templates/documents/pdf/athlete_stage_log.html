@@ -16,16 +16,27 @@
     anthro_annex      — dict {has_records, records, latest} SOLO con
                          mediciones fechadas en el mes (filtrado por
                          generate_stage_log_pdf), o None. Página 3.
-    charts_annex      — dict charts_context (mismas 3 curvas de temporada del
-                         v1) SOLO cuando hubo carrera en el mes, o None.
+    charts_annex      — dict charts_context; desde la feature 039 trae
+                         `cups[]` (una entrada por copa, con sus 3 curvas de
+                         temporada) SOLO cuando hubo carrera en el mes, o
+                         None. Snapshots anteriores a la 039 traen las claves
+                         planas heredadas y se ignoran (sin error).
+    race_results      — dict email_blocks.race_results (feature 039); de acá
+                         se lee `championships[]` para las tarjetas de
+                         campeonato. F-9: mismo gate "hubo carrera en el mes"
+                         que charts_annex — generate_stage_log_pdf() envía
+                         None cuando has_race_this_month es False.
     percentile_annex  — dict percentile_curves, o None (acompaña anthro_annex).
     photos_render     — no usado acá (StageLog.PhotoView no trae media_id);
                          las fotos se renderizan directo desde
                          stage_log.photos[].thumbnail_url.
 
   Privacidad (Ley 1581/2012):
-    - Antropometría y gráficos de temporada SOLO en el Anexo de crecimiento
-      (página 3, condicional) — nunca en el email ni en la web (003/038).
+    - Antropometría SOLO en el Anexo de crecimiento (página 3, condicional).
+      Los datos de temporada (curvas por copa y tarjetas de campeonato) van
+      en su propia página condicional, independiente del anexo desde la
+      feature 039 — ninguno de los dos viaja en el email ni en la web
+      (003/038).
     - `stage_log` ya pasó por to_parent_dto(): ninguna clave de uso exclusivo
       del coach (block_states, grounding_violations, source_insight_id)
       llega a esta plantilla.
@@ -38,11 +49,19 @@
 
 {% block body %}
 
+{% from "documents/pdf/_icons.svg.j2" import pdf_icon %}
 {% from "documents/pdf/_trail.svg.j2" import trail_svg %}
 {% from "documents/pdf/charts/line_positions.svg.jinja" import line_positions %}
 {% from "documents/pdf/charts/gap_pct.svg.jinja" import gap_pct %}
-{% from "documents/pdf/charts/points_accumulated.svg.jinja" import points_accumulated %}
+{# Gráfica "Puntos acumulados" desactivada por decisión de producto (2026-09-04):
+   no aporta lectura útil a la familia — la posición y el gap % ya cuentan la
+   historia, y la curva de puntos siempre sube, así que no diferencia un mes
+   bueno de uno malo. Se deja comentada (macro, celdas y contexto siguen
+   existiendo) para poder reactivarla sin rehacer el bloque.
+   {% from "documents/pdf/charts/points_accumulated.svg.jinja" import points_accumulated %}
+#}
 {% from "documents/pdf/charts/percentile_curves.svg.jinja" import percentile_curves %}
+{% from "documents/pdf/charts/championship_card.html.jinja" import championship_card %}
 
 {% set sl = stage_log or {} %}
 {% set trail = sl.get('trail') or [] %}
@@ -57,16 +76,38 @@
 {% set coach_note = sl.get('coach_note') %}
 {% set display_initials = (athlete_first_name[0] ~ (athlete_last_name[0] if athlete_last_name else '')) %}
 
+{#
+  Compactación vertical propia de la bitácora (2026-09-04). El anexo de
+  crecimiento abre página con ``page-break-before: always``, así que el cuerpo
+  debe caber en 2 páginas para que el documento cierre en 3 (AC-5.2). Con los
+  márgenes por defecto de ``base/layout.html`` el cuerpo se pasaba por ~70pt y
+  la "Nota del entrenador" quedaba sola en una página casi vacía. Se recortan
+  solo los espacios en blanco (títulos, párrafos y separación entre secciones);
+  ningún tamaño de letra ni color cambia. Ámbito: esta plantilla únicamente —
+  `layout.html` lo comparten los otros PDF del proyecto.
+#}
+<style>
+  /* Margen vertical de página propio: `base/layout.html` usa 28mm arriba y
+     abajo (pensado para documentos de una página); la bitácora necesita el
+     cuerpo completo en 2 páginas y 24mm sigue dejando sitio de sobra para el
+     encabezado corrido y el pie legal. Solo afecta a esta plantilla. */
+  @page { margin: 24mm 18mm 24mm 18mm; }
+  h2 { margin: 10pt 0 6pt 0; }
+  h3 { margin: 9pt 0 5pt 0; }
+  p { margin-bottom: 6pt; }
+  .sl-section { margin-bottom: 10pt; }
+</style>
+
 <!-- ============================================================
      HERO BAND — identificación visual del atleta + etapa
 ============================================================ -->
 <div style="
   background-color: #8be000;
-  padding: 16pt 18pt;
-  margin-bottom: var(--sp-lg);
+  padding: 10pt 16pt;
+  margin-bottom: 10pt;
   display: table;
   width: 100%;
-  min-height: 90pt;
+  min-height: 64pt;
   page-break-inside: avoid;
 ">
   <div style="display: table-cell; width: 56pt; vertical-align: middle;">
@@ -95,7 +136,7 @@
      RUTA DEL MES
 ============================================================ -->
 {% if trail %}
-<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+<div class="sl-section" style="break-inside: avoid;">
   <h2 style="break-after: avoid;">Ruta del mes</h2>
   {{ trail_svg(trail) }}
 </div>
@@ -105,9 +146,9 @@
      CIMA DEL MES
 ============================================================ -->
 {% if summit %}
-<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
-  <div style="background: #f7fee7; border: 0.5pt solid #d9f99d; border-left: 3pt solid #8be000; padding: 10pt 14pt; border-radius: 3pt;">
-    <p style="margin: 0; font-size: 8pt; color: #4d7c0f; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3pt;">&#127956; Cima del mes</p>
+<div class="sl-section" style="break-inside: avoid;">
+  <div style="background: #f7fee7; border: 0.5pt solid #d9f99d; border-left: 3pt solid #8be000; padding: 8pt 12pt; border-radius: 3pt;">
+    <p style="margin: 0; font-size: 8pt; color: #4d7c0f; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3pt;">{{ pdf_icon('mountain', size=10, color='#4d7c0f') }} Cima del mes</p>
     <p style="margin: 4pt 0 0 0; font-size: 12pt; font-weight: 700; color: #111827;">{{ summit.get('title') }}</p>
     {% if summit.get('detail') %}
     <p style="margin: 2pt 0 0 0; font-size: 9pt; color: #6b7280;">{{ summit.get('detail') }}</p>
@@ -123,10 +164,10 @@
      LO QUE VIO EL ENTRENADOR (observaciones)
 ============================================================ -->
 {% if observations %}
-<div style="margin-bottom: var(--sp-lg);">
+<div class="sl-section">
   <h2 style="break-after: avoid;">Lo que vio el entrenador</h2>
   {% for obs in observations %}
-  <div style="break-inside: avoid; margin-bottom: 8pt; background: #fafafa; border: 0.5pt solid #d1d5db; border-left: 3pt solid #2563eb; padding: 9pt 12pt; border-radius: 3pt;">
+  <div style="break-inside: avoid; margin-bottom: 6pt; background: #fafafa; border: 0.5pt solid #d1d5db; border-left: 3pt solid #2563eb; padding: 7pt 11pt; border-radius: 3pt;">
     <p style="margin: 0; font-size: 10pt; color: #374151;">{{ obs.get('claim') }}</p>
     <p style="margin: 3pt 0 0 0; font-size: 8.5pt; color: #6b7280; font-style: italic;">{{ obs.get('evidence') }}</p>
   </div>
@@ -138,7 +179,7 @@
      LECTURA DEL ANALISTA
 ============================================================ -->
 {% if analyst_reading %}
-<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+<div class="sl-section" style="break-inside: avoid;">
   <h2 style="break-after: avoid;">Lectura del analista</h2>
   <p style="margin: 0 0 6pt 0; font-size: 8.5pt; color: #6b7280; font-style: italic;">{{ analyst_reading.get('valida_label') }}</p>
   <div style="background: #eff6ff; border: 0.5pt solid #bfdbfe; padding: 10pt 14pt; border-radius: 3pt;">
@@ -152,7 +193,7 @@
      PERFIL DE ESFUERZO (altimetría semanal)
 ============================================================ -->
 {% if effort_profile %}
-<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+<div class="sl-section" style="break-inside: avoid;">
   <h2 style="break-after: avoid;">Perfil de esfuerzo</h2>
   <table class="data-table">
     <thead>
@@ -175,7 +216,7 @@
      PRÓXIMO TRAMO
 ============================================================ -->
 {% if next_segment %}
-<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
+<div class="sl-section" style="break-inside: avoid;">
   <h2 style="break-after: avoid;">Próximo tramo</h2>
   {% if next_segment.get('text') %}
   <p style="margin: 0 0 6pt 0; font-size: 10pt; color: #374151;">{{ next_segment.get('text') }}</p>
@@ -199,8 +240,8 @@
      BRÚJULA DE LA FAMILIA
 ============================================================ -->
 {% if family_compass %}
-<div style="break-inside: avoid; margin-bottom: var(--sp-lg); background: #fdf4ff; border: 0.5pt solid #f0abfc; padding: 10pt 14pt; border-radius: 4pt;">
-  <h2 style="margin-top: 0; break-after: avoid;">&#129517; Brújula de la familia</h2>
+<div style="break-inside: avoid; margin-bottom: 10pt; background: #fdf4ff; border: 0.5pt solid #f0abfc; padding: 10pt 14pt; border-radius: 4pt;">
+  <h2 style="margin-top: 0; break-after: avoid;">{{ pdf_icon('compass', size=14, color='#a21caf') }} Brújula de la familia</h2>
   <p style="margin: 0 0 6pt 0; font-size: 10pt;"><strong>Para conversar:</strong> {{ family_compass.get('conversation_question') }}</p>
   <p style="margin: 0 0 6pt 0; font-size: 10pt;"><strong>Reto del mes:</strong> {{ family_compass.get('monthly_challenge') }}</p>
   <p style="margin: 0; font-size: 10pt;"><strong>Qué observar:</strong> {{ family_compass.get('what_to_watch') }}</p>
@@ -208,11 +249,35 @@
 {% endif %}
 
 <!-- ============================================================
+     NOTA DEL ENTRENADOR
+============================================================ -->
+{% if coach_note %}
+<div style="break-inside: avoid; margin-bottom: 10pt; background: #f0fdf4; border: 1pt solid #86efac; padding: 10pt 14pt; border-radius: 4pt;">
+  <h3 style="margin-top: 0; break-after: avoid;">Nota del entrenador</h3>
+  <p style="margin: 0; font-size: 10pt; color: #374151; font-style: italic;">&ldquo;{{ coach_note }}&rdquo;</p>
+</div>
+{% endif %}
+
+{#
+  Orden (2026-09-04): la nota del entrenador cierra la parte narrativa y las
+  fotos quedan como cierre visual del documento. Antes iba después de la
+  galería y, en un mes cargado, era el bloque que se desbordaba a una tercera
+  página casi vacía: al ir delante ocupa el hueco que queda en la segunda y
+  deja la galería —más compacta— como único bloque de la tercera, donde el
+  anexo ya cabe pegado a ella.
+#}
+<!-- ============================================================
      INSIGNIAS Y FOTOS DEL MES
 ============================================================ -->
-{% if badges or photos %}
-<div style="break-inside: avoid; margin-bottom: var(--sp-lg);">
-  {% if badges %}
+{#
+  Insignias y fotos son DOS bloques independientes a propósito (2026-09-04):
+  agrupados bajo un único `break-inside: avoid` formaban un bloque alto e
+  indivisible que, cuando no cabía, saltaba entero y dejaba media página en
+  blanco — con el anexo abriendo página después, eso convertía la bitácora en
+  un documento de 4 páginas. Separados, cada uno se acomoda por su cuenta.
+#}
+{% if badges %}
+<div class="sl-section" style="break-inside: avoid;">
   <h3 style="break-after: avoid;">Insignias del mes</h3>
   <div>
     {% for badge in badges %}
@@ -221,30 +286,48 @@
     </span>
     {% endfor %}
   </div>
-  {% endif %}
-  {% if photos %}
-  <h3 style="break-after: avoid;">Fotos del mes</h3>
-  <div style="display: table; width: 100%; border-spacing: 6pt;">
-    {% for photo in photos %}
-    <div style="display: table-cell; text-align: center; vertical-align: top; padding: 3pt;">
-      <img src="{{ photo.get('thumbnail_url') }}" style="max-width: 80pt; max-height: 60pt; border-radius: 3pt;" alt="Foto de entrenamiento del mes — Club Trocha y Ruta"/>
-      {% if photo.get('caption') %}
-      <p style="font-size: 7pt; color: #6b7280; margin: 2pt 0 0 0; max-width: 80pt;">{{ photo.get('caption') }}</p>
-      {% endif %}
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
 </div>
 {% endif %}
 
-<!-- ============================================================
-     NOTA DEL ENTRENADOR
-============================================================ -->
-{% if coach_note %}
-<div style="break-inside: avoid; margin-bottom: var(--sp-lg); background: #f0fdf4; border: 1pt solid #86efac; padding: 10pt 14pt; border-radius: 4pt;">
-  <h3 style="margin-top: 0; break-after: avoid;">Nota del entrenador</h3>
-  <p style="margin: 0; font-size: 10pt; color: #374151; font-style: italic;">&ldquo;{{ coach_note }}&rdquo;</p>
+{#
+  Galería del PDF: hasta 4 fotos en una sola fila, grandes y todas del mismo
+  tamaño (2026-09-04). Antes se metían en una fila TODAS las fotos del mes
+  (hasta 8, `_PHOTO_SOFT_CAP`), cada una con su proporción original: salían
+  miniaturas ilegibles, desalineadas y con el pie partido en varias líneas.
+  El PDF muestra ahora una selección y remite al portal por el resto — el
+  documento tiene un presupuesto de 3 páginas (AC-5.2) y una segunda fila de
+  fotos se lo come. El marco de alto fijo con `object-fit: cover` (encuadre
+  alto, `center 35%`, para no cortar caras) iguala verticales y horizontales;
+  `overflow: hidden` + `font-size: 0` evitan que el texto `alt` se desborde
+  sobre las celdas vecinas cuando una miniatura no carga.
+#}
+{% if photos %}
+{% set shown_photos = photos[:4] %}
+{% set hidden_photos = (photos | length) - (shown_photos | length) %}
+<div class="sl-section" style="break-inside: avoid;">
+  <h3 style="break-after: avoid;">Fotos del mes</h3>
+  <div style="display: table; width: 100%; border-spacing: 5pt;">
+    <div style="display: table-row;">
+      {% for photo in shown_photos %}
+      <div style="display: table-cell; width: 25%; text-align: center; vertical-align: top;">
+        <div style="height: 100pt; overflow: hidden; border-radius: 3pt; font-size: 0; background: #f3f4f6;">
+          <img src="{{ photo.get('thumbnail_url') }}" style="width: 100%; height: 100pt; object-fit: cover; object-position: center 35%;" alt="Foto de entrenamiento del mes — Club Trocha y Ruta"/>
+        </div>
+        {% if photo.get('caption') %}
+        <p style="font-size: 7pt; color: #6b7280; margin: 3pt 0 0 0; line-height: 1.25;">{{ photo.get('caption') | truncate(48, True, '…') }}</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% for _ in range(4 - (shown_photos | length)) %}
+      <div style="display: table-cell; width: 25%;"></div>
+      {% endfor %}
+    </div>
+  </div>
+  {% if hidden_photos > 0 %}
+  <p style="font-size: 8pt; color: #6b7280; margin: 5pt 0 0 0; font-style: italic;">
+    {% if hidden_photos == 1 %}Hay 1 foto más del mes en el portal.{% else %}Hay {{ hidden_photos }} fotos más del mes en el portal.{% endif %}
+  </p>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -252,8 +335,17 @@
      PÁGINA 3 — ANEXO DE CRECIMIENTO (condicional)
 ============================================================ -->
 {% if anthro_annex and anthro_annex.get('has_records') %}
+{#
+  El anexo abre página propia (es material confidencial que se lee aparte).
+  ``annex_page_break`` permite renunciar a ese salto en la segunda pasada de
+  ``generate_stage_log_pdf`` — ver la nota allí: sin la válvula, un mes muy
+  cargado dejaba la "Nota del entrenador" sola en una página casi vacía y el
+  documento crecía a 4 páginas.
+#}
+{% if annex_page_break | default(true) %}
 <div style="page-break-before: always;"></div>
-<div style="margin-bottom: var(--sp-lg);">
+{% endif %}
+<div class="sl-section">
   <h2>Anexo de crecimiento</h2>
   <p style="font-size: 9pt; color: #6b7280; margin-bottom: 8pt; font-style: italic;">
     Esta información es confidencial y solo se incluye en este anexo. No se envía por email ni se
@@ -351,24 +443,93 @@
     <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 8pt;">Fuente: tablas CDC 2000 (5-19 años). De acuerdo con Res. 2465/2016 MinSalud Colombia. <strong>No constituye diagnóstico médico.</strong></p>
   </section>
   {% endif %}
+</div>
+{% endif %}
 
-  {% if charts_annex and charts_annex.get('has_data') %}
+<!-- ============================================================
+     PÁGINA 4 — TEMPORADA DE COMPETENCIAS (condicional, independiente
+     del anexo de crecimiento)
+============================================================ -->
+{#
+  Feature 039 — grupos de comparación: una copa nunca comparte gráfico con
+  otra copa ni con un campeonato (research D1/D2). ``charts_annex.cups``
+  ausente (snapshot anterior a esta feature) se trata como lista vacía —
+  contrato: "claves ausentes → listas vacías, sin error". Esta sección NO
+  depende de que haya mediciones antropométricas en el mes (FR-004/FR-005).
+#}
+{% set season_cups = (charts_annex.get('cups') if charts_annex else none) or [] %}
+{% set season_championships = (race_results.get('championships') if race_results else none) or [] %}
+{#
+  F-5 — snapshots persistidos ANTES de la feature 039 no traen
+  ``charts_annex.cups``: solo las claves planas heredadas
+  ``positions``/``gap_pcts``/``points_accumulated`` a nivel raíz de
+  ``charts_annex`` (el "gráfico mixto" que esta feature reemplaza). Sin
+  este bloque, re-descargar un boletín viejo pierde su página de temporada
+  en silencio. Con ``cups`` presente (snapshot nuevo) este bloque no
+  aplica — las claves planas ya no se leen en ese caso.
+#}
+{% set legacy_positions = (charts_annex.get('positions') if charts_annex else none) or [] %}
+{% set legacy_gap_pcts = (charts_annex.get('gap_pcts') if charts_annex else none) or [] %}
+{% set legacy_points = (charts_annex.get('points_accumulated') if charts_annex else none) or [] %}
+{% set has_legacy_season_data = (not season_cups) and (legacy_positions or legacy_gap_pcts or legacy_points) %}
+{% if season_cups or season_championships or has_legacy_season_data %}
+<div style="margin-top: 14pt; margin-bottom: 10pt;">
+  {% for cup in season_cups %}
+  <div style="break-inside: avoid; margin-top: 12pt;">
+    <h3 style="break-after: avoid;">Evolución en la {{ cup.get('label') }}</h3>
+    <div style="display: table; width: 100%; table-layout: fixed;">
+      <div style="display: table-cell; width: 50%; vertical-align: top; padding-right: 4pt;">
+        {{ line_positions(cup.get('positions'), width=175, height=112, low_confidence=cup.get('low_confidence')) }}
+        <p class="caption">Posición menor = mejor rendimiento</p>
+      </div>
+      <div style="display: table-cell; width: 50%; vertical-align: top; padding-left: 4pt;">
+        {{ gap_pct(cup.get('gap_pcts'), width=175, height=112, low_confidence=cup.get('low_confidence')) }}
+        <p class="caption">% de distancia al primero (0% = ganador)</p>
+      </div>
+      {# "Puntos acumulados" desactivada — ver nota del import arriba.
+      <div style="display: table-cell; width: 33.34%; vertical-align: top; padding-left: 4pt;">
+        {{ points_accumulated(cup.get('points_accumulated'), width=175, height=112, low_confidence=cup.get('low_confidence')) }}
+        <p class="caption">Puntos acumulados en la temporada</p>
+      </div>
+      #}
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if has_legacy_season_data %}
   <div style="break-inside: avoid; margin-top: 12pt;">
     <h3 style="break-after: avoid;">Evolución en la temporada</h3>
     <div style="display: table; width: 100%; table-layout: fixed;">
-      <div style="display: table-cell; width: 33.33%; vertical-align: top; padding-right: 4pt;">
-        {{ line_positions(charts_annex.positions, width=175, height=130, low_confidence=charts_annex.low_confidence) }}
+      <div style="display: table-cell; width: 50%; vertical-align: top; padding-right: 4pt;">
+        {{ line_positions(legacy_positions, width=175, height=112, low_confidence=charts_annex.get('low_confidence')) }}
         <p class="caption">Posición menor = mejor rendimiento</p>
       </div>
-      <div style="display: table-cell; width: 33.33%; vertical-align: top; padding: 0 2pt;">
-        {{ gap_pct(charts_annex.gap_pcts, width=175, height=130, low_confidence=charts_annex.low_confidence) }}
+      <div style="display: table-cell; width: 50%; vertical-align: top; padding-left: 4pt;">
+        {{ gap_pct(legacy_gap_pcts, width=175, height=112, low_confidence=charts_annex.get('low_confidence')) }}
         <p class="caption">% de distancia al primero (0% = ganador)</p>
       </div>
+      {# "Puntos acumulados" desactivada — ver nota del import arriba.
       <div style="display: table-cell; width: 33.34%; vertical-align: top; padding-left: 4pt;">
-        {{ points_accumulated(charts_annex.points_accumulated, width=175, height=130, low_confidence=charts_annex.low_confidence) }}
+        {{ points_accumulated(legacy_points, width=175, height=112, low_confidence=charts_annex.get('low_confidence')) }}
         <p class="caption">Puntos acumulados en la temporada</p>
       </div>
+      #}
     </div>
+  </div>
+  {% endif %}
+
+  {#
+    Campeonatos: pelotón propio, distinto al de la(s) copa(s) de arriba — se
+    lee como tarjeta, no como línea de evolución (D5). Independiente de si
+    hubo copa este mes: una temporada solo-campeonatos igual debe mostrarlos.
+  #}
+  {% if season_championships %}
+  <div style="break-inside: avoid; margin-top: 12pt;">
+    <h3 style="break-after: avoid;">Campeonatos</h3>
+    {% for championship in season_championships %}
+    {{ championship_card(championship) }}
+    {% endfor %}
+    <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 4pt;">Un campeonato reúne un pelotón distinto al de la copa: se lee por separado y no se compara con las válidas.</p>
   </div>
   {% endif %}
 </div>

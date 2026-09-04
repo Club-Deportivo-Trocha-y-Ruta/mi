@@ -17,10 +17,13 @@
     width, height — tamaño del SVG decorativo (puntos + línea).
 
   Output: bloque HTML (línea SVG decorativa + lista HTML de waypoints con
-  icono como texto/emoji, igual criterio que el email — ver
-  templates/email/athlete_stage_log.html).
+  icono SVG inline vía `pdf_icon` — ver `_icons.svg.j2`). A diferencia del
+  email (templates/email/athlete_stage_log.html), aquí el icono NO puede ser
+  un emoji: el PDF se compone con DejaVu Sans y los emojis salen como cuadrito
+  "tofu" (□).
 #}
-{% macro trail_svg(waypoints, width=460, height=54) %}
+{% from "documents/pdf/_icons.svg.j2" import pdf_icon %}
+{% macro trail_svg(waypoints, width=460, height=42) %}
 {%- set n = waypoints | length -%}
 {%- set pad = 24 -%}
 {%- set track_w = width - (2 * pad) -%}
@@ -49,14 +52,7 @@
     {%- for wp in waypoints -%}
     <div style="display: table-cell; width: {{ (100 / n) | round(2) }}%; vertical-align: top; text-align: center; padding: 0 3pt;">
       <p style="margin: 0; font-size: 11pt; line-height: 1;">
-        {%- if wp.icon == 'flag' -%}&#128681;
-        {%- elif wp.icon == 'award' -%}&#127941;
-        {%- elif wp.icon == 'flame' -%}&#128293;
-        {%- elif wp.icon == 'star' -%}&#11088;
-        {%- elif wp.icon == 'map-pin' -%}&#128205;
-        {%- elif wp.icon == 'compass' -%}&#129517;
-        {%- else -%}&#8226;
-        {%- endif -%}
+        {{ pdf_icon(wp.icon, size=13, color='#4d7c0f') }}
       </p>
       <p style="margin: 2pt 0 0 0; font-size: 7.5pt; font-weight: 700; color: #1f2937; line-height: 1.3;">{{ wp.label }}</p>
       {%- if wp.sublabel %}

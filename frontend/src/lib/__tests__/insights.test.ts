@@ -317,4 +317,47 @@ describe("validaLabel", () => {
       ).toBe("—");
     });
   });
+
+  describe("series_level — Cto. Nacional vs Departamental (feature 039, T039)", () => {
+    it("series_level='national' → Cto. Nacional", () => {
+      expect(
+        validaLabel({
+          valida_num: 1,
+          series_kind: "championship",
+          series_level: "national",
+        }),
+      ).toBe("Cto. Nacional");
+    });
+
+    it("series_level='departmental' → Cto. Departamental (explícito, no solo default)", () => {
+      expect(
+        validaLabel({
+          valida_num: 1,
+          series_kind: "championship",
+          series_level: "departmental",
+        }),
+      ).toBe("Cto. Departamental");
+    });
+
+    it("series_level null/undefined cae al default histórico 'Cto. Departamental'", () => {
+      expect(
+        validaLabel({ valida_num: 1, series_kind: "championship", series_level: null }),
+      ).toBe("Cto. Departamental");
+      expect(
+        validaLabel({
+          valida_num: 1,
+          series_kind: "championship",
+          series_level: undefined,
+        }),
+      ).toBe("Cto. Departamental");
+    });
+
+    it("series_level='national' no afecta una válida regular (series_kind='cup')", () => {
+      // El nivel solo tiene sentido para campeonatos — una válida de copa
+      // nunca debe leer "Nacional" así el caller lo pase por error.
+      expect(
+        validaLabel({ valida_num: 3, series_kind: "cup", series_level: "national" }),
+      ).toBe("Válida III");
+    });
+  });
 });

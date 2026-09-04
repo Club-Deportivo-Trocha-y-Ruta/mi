@@ -14,7 +14,7 @@
  */
 import { Children, cloneElement, isValidElement } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
@@ -116,10 +116,15 @@ vi.mock("recharts", () => ({
 import { mswServer } from "@/test/setup";
 import {
   cupAndChampionshipConflictHandler,
+  championshipOnlyEvolutionHandler,
   dnfChampionshipHandler,
   emptyEvolutionHandler,
   lowConfidenceEvolutionHandler,
   mockEvolution,
+  multiGroupEvolutionHandler,
+  sevenCupRoundsTwoChampionshipsEvolutionHandler,
+  twoCupsEvolutionHandler,
+  twoRoundCupWithChampionshipsEvolutionHandler,
 } from "@/test/msw/athleteRaceAnalysisHandlers";
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
 import { EvolutionChart } from "@/components/athletes/ai/EvolutionChart";
@@ -518,6 +523,368 @@ describe("EvolutionChart", () => {
         .getByText("Cto. Dep. — Ginebra")
         .closest("tr");
       expect(champRow).toHaveClass("text-amber-700");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T019 (feature 039) — selector "Competencia": separa copa y campeonatos en
+  // grupos de comparación independientes (research.md D5/D6, contracts/
+  // evolution-api.md). TDD-red: EvolutionChart.tsx aún NO implementa el
+  // selector (`data-testid="evolution-group-select"`) ni la tarjeta de
+  // campeonato (`data-testid="championship-reading-card"`) — todo este
+  // bloque debe fallar hasta que T025/T026 aterricen.
+  //
+  // Contrato de UI asumido por estos tests (no hay implementación todavía,
+  // así que se fija aquí como especificación para T026):
+  //   - <select data-testid="evolution-group-select"> con label accesible
+  //     "Competencia" (sr-only, mismo patrón que evo-season/evo-metric).
+  //   - value de cada <option> = String(group.series_id).
+  //   - orden de <option>: copas primero (por su válida más temprana), luego
+  //     campeonatos por fecha — el orden que ya entrega `groups` (D4).
+  //   - selección por defecto: la primera copa; si no hay copas, el primer
+  //     campeonato (championshipOnlyEvolutionHandler).
+  //   - elegir un grupo campeonato renderiza `championship-reading-card` +
+  //     la tabla existente, SIN LineChart (D5 — un solo punto es una
+  //     tarjeta, no una gráfica de una barra).
+  //   - cambiar de temporada resetea la selección — la siguiente consulta al
+  //     backend no debe llevar `series_id` (data-model.md §8).
+  // ---------------------------------------------------------------------------
+
+  describe("T019 — selector de grupos de comparación (Competencia)", () => {
+    it("el selector 'Competencia' se puebla desde groups en orden copa → CD → CN, con la primera copa seleccionada por defecto", async () => {
+      mswServer.use(multiGroupEvolutionHandler);
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+
+      const groupSelect = (await screen.findByTestId(
+        "evolution-group-select",
+      )) as HTMLSelectElement;
+      expect(screen.getByRole("combobox", { name: /competencia/i })).toBe(
+        groupSelect,
+      );
+
+      const optionTexts = Array.from(groupSelect.options).map(
+        (o) => o.textContent,
+      );
+      expect(optionTexts).toEqual([
+        "Copa Valle de Ciclomontañismo 2026",
+        "Cto. Dep. — Ginebra",
+        "Cto. Nal. — Pereira",
+      ]);
+
+      // Copa (series_id=12) seleccionada por defecto.
+      expect(groupSelect.value).toBe("12");
+    });
+
+    it("en la vista de copa (grupo por defecto) ni la leyenda ni la tabla muestran etiquetas 'Cto.'", async () => {
+      const user = userEvent.setup();
+      mswServer.use(multiGroupEvolutionHandler);
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+
+      await screen.findByTestId("evolution-group-select");
+      await waitFor(() =>
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument(),
+      );
+
+      // Leyenda accesible <ol> de la gráfica: solo válidas de copa. Acotamos
+      // la búsqueda a la lista para no chocar con el propio <option> del
+      // selector (que sí contiene "Cto. Dep." / "Cto. Nal." como texto).
+      const legend = screen.getByRole("list", {
+        name: /etiquetas del eje de evolución/i,
+      });
+      expect(
+        within(legend).queryByText(/cto\.?\s*(dep|nal)\./i),
+      ).not.toBeInTheDocument();
+
+      // Twin de tabla: mismo resultado.
+      await user.click(screen.getByTestId("evolution-tab-table"));
+      const table = await screen.findByTestId("evolution-table");
+      expect(
+        within(table).queryByText(/cto\.?\s*(dep|nal)\./i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("elegir el campeonato nacional muestra championship-reading-card (Posición/Pelotón/Gap al P1/Percentil) + tabla, sin línea de recharts, etiquetado 'Cto. Nal.'", async () => {
+      const user = userEvent.setup();
+      mswServer.use(multiGroupEvolutionHandler);
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+
+      const groupSelect = (await screen.findByTestId(
+        "evolution-group-select",
+      )) as HTMLSelectElement;
+      await user.selectOptions(groupSelect, "44"); // Cto. Nal. — Pereira
+
+      const card = await screen.findByTestId("championship-reading-card");
+      expect(card).toHaveTextContent(/cto\.?\s*nal\./i);
+      expect(card).toHaveTextContent(/posición/i);
+      expect(card).toHaveTextContent(/pelotón/i);
+      expect(card).toHaveTextContent(/gap al p1/i);
+      expect(card).toHaveTextContent(/percentil/i);
+      // field_size=40, percentile=55.0 del punto seleccionado (research.md D3).
+      expect(card).toHaveTextContent("40");
+      expect(card).toHaveTextContent(/55(\.0)?/);
+      // Fix B-2/F-1 — position=19, gap_pct=5.8 del mismo punto: las cuatro
+      // lecturas se rellenan bajo la métrica DEFAULT (podium_gap_ms), no
+      // solo cuando el selector está en "ranking"/"podium_gap_ms".
+      expect(card).toHaveTextContent("P19");
+      expect(card).toHaveTextContent("+5.8 %");
+
+      // Ninguna gráfica de línea — D5: grupo de una sola carrera es tarjeta,
+      // no chart (ni el testid del stub de <Line>, ni el LineChart mock).
+      expect(screen.queryByTestId("line-chart")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("recharts-line")).not.toBeInTheDocument();
+
+      // La tabla sigue disponible (twin accesible del card).
+      expect(screen.getByTestId("evolution-table")).toBeInTheDocument();
+    });
+
+    it("fix B-2/F-1 — las cuatro lecturas del campeonato nacional se mantienen intactas al cambiar el metric select a 'ranking'", async () => {
+      const user = userEvent.setup();
+      mswServer.use(multiGroupEvolutionHandler);
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+
+      const groupSelect = (await screen.findByTestId(
+        "evolution-group-select",
+      )) as HTMLSelectElement;
+      await user.selectOptions(groupSelect, "44"); // Cto. Nal. — Pereira
+      await screen.findByTestId("championship-reading-card");
+
+      const metricSelect = screen.getByTestId(
+        "evolution-metric-select",
+      ) as HTMLSelectElement;
+      await user.selectOptions(metricSelect, "ranking");
+
+      const card = await screen.findByTestId("championship-reading-card");
+      // Mismo punto (position/gap_pct no dependen de `metric`, ver
+      // contracts/evolution-api.md) — las cuatro lecturas se mantienen.
+      expect(card).toHaveTextContent(/posición/i);
+      expect(card).toHaveTextContent("P19");
+      expect(card).toHaveTextContent(/pelotón/i);
+      expect(card).toHaveTextContent("40");
+      expect(card).toHaveTextContent(/gap al p1/i);
+      expect(card).toHaveTextContent("+5.8 %");
+      expect(card).toHaveTextContent(/percentil/i);
+      expect(card).toHaveTextContent(/55(\.0)?/);
+    });
+
+    it("cambiar la temporada resetea el grupo seleccionado — la siguiente consulta no envía series_id", async () => {
+      mswServer.use(multiGroupEvolutionHandler);
+      const calls: string[] = [];
+      const onRequestStart = ({ request }: { request: Request }) => {
+        if (request.url.includes("/race-analysis/evolution")) {
+          calls.push(new URL(request.url).search);
+        }
+      };
+      mswServer.events.on("request:start", onRequestStart);
+
+      try {
+        const user = userEvent.setup();
+        renderWithProviders(
+          <EvolutionChart athleteId={42} defaultSeason={2026} />,
+        );
+
+        const groupSelect = (await screen.findByTestId(
+          "evolution-group-select",
+        )) as HTMLSelectElement;
+        await user.selectOptions(groupSelect, "44");
+        await waitFor(() => {
+          expect(calls.some((s) => s.includes("series_id=44"))).toBe(true);
+        });
+
+        calls.length = 0;
+        await user.selectOptions(
+          screen.getByTestId("evolution-season-select"),
+          "2025",
+        );
+        await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+        expect(calls.every((s) => !s.includes("series_id"))).toBe(true);
+      } finally {
+        mswServer.events.removeListener("request:start", onRequestStart);
+      }
+    });
+
+    it("con championshipOnlyEvolutionHandler (temporada sin copa) selecciona el primer campeonato por defecto", async () => {
+      mswServer.use(championshipOnlyEvolutionHandler);
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+
+      const groupSelect = (await screen.findByTestId(
+        "evolution-group-select",
+      )) as HTMLSelectElement;
+      // Cto. Dep. — Ginebra (series_id=31) es cronológicamente el primero.
+      expect(groupSelect.value).toBe("31");
+      const card = await screen.findByTestId("championship-reading-card");
+      expect(card).toHaveTextContent(/cto\.?\s*dep\./i);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // T043 (feature 039, US4) — twoCupsEvolutionHandler: dos copas paralelas
+  // (Copa Valle + Liga Departamental) más un campeonato en la misma
+  // temporada (spec.md US4 escenario 2/3). Prueba por render que el
+  // selector nunca mezcla las rondas de una copa con las de la otra.
+  // ---------------------------------------------------------------------------
+
+  describe("T043 — dos copas en la misma temporada (twoCupsEvolutionHandler)", () => {
+    it("el selector 'Competencia' lista ambas copas por su label (en el orden de groups) y el campeonato, con la primera copa seleccionada por defecto", async () => {
+      mswServer.use(twoCupsEvolutionHandler);
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+
+      const groupSelect = (await screen.findByTestId(
+        "evolution-group-select",
+      )) as HTMLSelectElement;
+
+      const optionTexts = Array.from(groupSelect.options).map(
+        (o) => o.textContent,
+      );
+      expect(optionTexts).toEqual([
+        "Copa Valle de Ciclomontañismo 2026",
+        "Liga Departamental de Ciclomontañismo 2026",
+        "Cto. Dep. — Ginebra",
+      ]);
+
+      // Copa Valle (series_id=12) es la primera copa que entrega `groups`
+      // (por su válida más temprana raced) — queda seleccionada por
+      // defecto sin ninguna interacción del usuario.
+      expect(groupSelect.value).toBe("12");
+    });
+
+    it("elegir la segunda copa (Liga Departamental) refetchea con series_id=20 y muestra solo sus rondas — ninguna etiqueta de la primera copa aparece en la leyenda ni en la tabla", async () => {
+      mswServer.use(twoCupsEvolutionHandler);
+      const calls: string[] = [];
+      const onRequestStart = ({ request }: { request: Request }) => {
+        if (request.url.includes("/race-analysis/evolution")) {
+          calls.push(new URL(request.url).search);
+        }
+      };
+      mswServer.events.on("request:start", onRequestStart);
+
+      try {
+        const user = userEvent.setup();
+        renderWithProviders(
+          <EvolutionChart athleteId={42} defaultSeason={2026} />,
+        );
+
+        const groupSelect = (await screen.findByTestId(
+          "evolution-group-select",
+        )) as HTMLSelectElement;
+        await waitFor(() =>
+          expect(screen.getByTestId("line-chart")).toBeInTheDocument(),
+        );
+
+        await user.selectOptions(groupSelect, "20"); // Liga Departamental
+
+        // El componente refetchea con `series_id` en la query string
+        // (contracts/evolution-api.md) — no filtra la respuesta ya
+        // cacheada de la copa por defecto.
+        await waitFor(() => {
+          expect(calls.some((s) => s.includes("series_id=20"))).toBe(true);
+        });
+
+        await waitFor(() => {
+          expect(screen.getByTestId("line-chart")).toHaveAttribute(
+            "data-points",
+            "2",
+          );
+        });
+
+        // Leyenda accesible <ol>: solo las 2 fechas de la Liga
+        // Departamental — ninguna "Válida" de la Copa Valle.
+        const legend = screen.getByRole("list", {
+          name: /etiquetas del eje de evolución/i,
+        });
+        expect(
+          within(legend).getByText("Fecha I — Palmira"),
+        ).toBeInTheDocument();
+        expect(
+          within(legend).getByText("Fecha II — Buga"),
+        ).toBeInTheDocument();
+        expect(within(legend).queryByText(/válida/i)).not.toBeInTheDocument();
+
+        // Twin de tabla: mismo resultado.
+        await user.click(screen.getByTestId("evolution-tab-table"));
+        const table = await screen.findByTestId("evolution-table");
+        expect(
+          within(table).getByText("Fecha I — Palmira"),
+        ).toBeInTheDocument();
+        expect(
+          within(table).getByText("Fecha II — Buga"),
+        ).toBeInTheDocument();
+        expect(within(table).queryByText(/válida/i)).not.toBeInTheDocument();
+      } finally {
+        mswServer.events.removeListener("request:start", onRequestStart);
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // F-2 (checklist `integration-review.md` §D) — el aviso de confianza baja
+  // debe reflejar el grupo mostrado en pantalla, no `response.confidence`
+  // cuando este viene calculado sobre la temporada completa (render inicial,
+  // sin `series_id` explícito). `confidenceForPoints` (lib/insights.ts)
+  // replica los umbrales del backend sobre `displaySeries`.
+  // ---------------------------------------------------------------------------
+
+  describe("F-2 — aviso de confianza deriva del grupo mostrado, no de la temporada completa", () => {
+    it("copa de 7 válidas + 2 campeonatos (temporada 'high' por conteo=9): sin aviso en el render inicial, coherente con la copa sola en 'medium'", async () => {
+      mswServer.use(sevenCupRoundsTwoChampionshipsEvolutionHandler);
+      renderWithProviders(<EvolutionChart athleteId={42} defaultSeason={2026} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument();
+      });
+      // Se muestran las 7 válidas de la copa (grupo por defecto), no los 9
+      // puntos de la temporada completa.
+      expect(screen.getByTestId("line-chart")).toHaveAttribute(
+        "data-points",
+        "7",
+      );
+      expect(screen.queryByRole("note")).not.toBeInTheDocument();
+
+      // Elegir la misma copa explícitamente (series_id=12): el backend
+      // devuelve confidence="medium" para esos 7 puntos filtrados — el
+      // estado (sin aviso) se mantiene igual, confirmando la coherencia.
+      const user = userEvent.setup();
+      const groupSelect = screen.getByTestId(
+        "evolution-group-select",
+      ) as HTMLSelectElement;
+      await user.selectOptions(groupSelect, "12");
+      await waitFor(() => {
+        expect(screen.getByTestId("line-chart")).toHaveAttribute(
+          "data-points",
+          "7",
+        );
+      });
+      expect(screen.queryByRole("note")).not.toBeInTheDocument();
+    });
+
+    it("copa de 2 válidas + 2 campeonatos (temporada 'medium' por conteo=4): el aviso de baja confianza SÍ aparece en el render inicial porque refleja la copa sola (n=2), no la temporada", async () => {
+      mswServer.use(twoRoundCupWithChampionshipsEvolutionHandler);
+      renderWithProviders(<EvolutionChart athleteId={42} defaultSeason={2026} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument();
+      });
+      expect(screen.getByTestId("line-chart")).toHaveAttribute(
+        "data-points",
+        "2",
+      );
+      await waitFor(() => {
+        expect(screen.getByRole("note")).toBeInTheDocument();
+      });
+      expect(
+        screen.getByText(/muestra insuficiente.*n<3/i),
+      ).toBeInTheDocument();
     });
   });
 });

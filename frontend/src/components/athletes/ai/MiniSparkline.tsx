@@ -38,10 +38,23 @@ const ROMAN: Record<number, string> = {
  * `isChampionship` viene de `EvolutionPoint.series_kind` (siempre presente
  * en este endpoint — feature 014/016), no del `valida_num === 99` retirado
  * (feature 036, T030): un campeonato moderno trae su propio `valida_num` de
- * secuencia dentro de la serie y aun así debe leerse "CD" en el tooltip.
+ * secuencia dentro de la serie y aun así debe leerse "Cto." en el tooltip.
+ *
+ * Fix F-2 (integration-review.md) — el nivel del campeonato viene de
+ * `EvolutionPoint.series_level` (`"departmental"` | `"national"`, feature
+ * 039). Antes se devolvía `"CD"` sin condicionar, así que un campeonato
+ * nacional aislado (temporada con `groups.length <= 1`, el único caso en
+ * que el filtro de copa no se activa y un punto de campeonato llega hasta
+ * acá) mostraba la etiqueta equivocada. `series_level` ausente (fixtures
+ * previas a la feature) cae al default "departmental" — mismo criterio que
+ * `championshipDotLabel` en `EvolutionChart.tsx`.
  */
-function romanForValida(num: number, isChampionship: boolean): string {
-  if (isChampionship) return "CD";
+export function romanForValida(
+  num: number,
+  isChampionship: boolean,
+  seriesLevel?: string,
+): string {
+  if (isChampionship) return seriesLevel === "national" ? "CN" : "CD";
   if (num === 0) return "Σ";
   return ROMAN[num] ?? String(num);
 }
@@ -50,15 +63,41 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
   const season = getCurrentSeason();
   const query = useAthleteEvolution(athleteId, season, EvolutionMetric.RANKING);
 
+  const groups = query.data?.groups ?? [];
+  const firstCupGroup = groups.find((g) => g.kind === "cup");
+  // Feature 039 (research.md D5/D11) — el sparkline solo lee la copa: un
+  // campeonato es una carrera suelta, no "una válida más" de la tendencia.
+  // Solo activamos el filtro cuando la temporada trae más de un grupo
+  // (multi-copa/campeonato) — con 0-1 grupos no hay nada que separar y
+  // preservamos el comportamiento anterior a la feature (fixtures cuyos
+  // puntos no traen `series_id` por punto, p. ej.
+  // `cupAndChampionshipConflictHandler`).
+  const seasonHasOnlyChampionships = groups.length > 1 && !firstCupGroup;
+
   const chartData = useMemo(() => {
     if (!query.data) return [];
-    return query.data.series
+    let source = query.data.series;
+    if (groups.length > 1) {
+      if (!firstCupGroup) {
+        source = [];
+      } else {
+        const filtered = query.data.series.filter(
+          (p) => p.series_id === firstCupGroup.series_id,
+        );
+        source = filtered.length > 0 ? filtered : query.data.series;
+      }
+    }
+    return source
       .filter((p) => p.value !== null)
       .map((p) => ({
-        roman: romanForValida(p.valida_num, p.series_kind === "championship"),
+        roman: romanForValida(
+          p.valida_num,
+          p.series_kind === "championship",
+          p.series_level,
+        ),
         value: p.value as number,
       }));
-  }, [query.data]);
+  }, [query.data, groups.length, firstCupGroup]);
 
   if (query.isLoading) {
     return (
@@ -76,6 +115,21 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
 
   // Error silencioso — Panorama no debe bloquearse por un error del sparkline.
   if (query.isError) return null;
+
+  // Empty state feature 039 — la temporada solo tiene campeonatos, ninguna
+  // copa (research.md D13): distinto del "faltan datos" genérico de abajo.
+  if (seasonHasOnlyChampionships) {
+    return (
+      <div
+        data-testid="mini-evolution-sparkline"
+        className="rounded-xl bg-white px-4 py-5 text-center shadow-card"
+      >
+        <p className="text-xs text-mid-gray">
+          Sin válidas de copa en esta temporada.
+        </p>
+      </div>
+    );
+  }
 
   // Empty state: menos de 2 puntos.
   if (chartData.length < 2) {

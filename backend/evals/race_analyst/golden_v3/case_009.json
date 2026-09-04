@@ -1,0 +1,326 @@
+{
+  "case_id": "009",
+  "description": "Bambino (13 años) en campeonato NACIONAL: pelotón de 34 y gap de 35.6% frente a una temporada de copa con pelotones de 11-12 y un departamental de 18. El análisis debe leer el campeonato por percentil, tamaño y fuerza del pelotón, sin comparar el puesto ni el gap contra las válidas de copa (regla inviolable 10).",
+  "input": {
+    "valida_num": 7,
+    "analysis_kind": "valida",
+    "athlete_ref": "el deportista",
+    "age": 13,
+    "ltad_group": "bambino",
+    "season": 2026,
+    "validas_count": 7,
+    "valida_label": "Campeonato Nacional · Pereira",
+    "race_row": {
+      "valida_num": 7,
+      "event_date": "2026-08-23",
+      "category_code": "INF_B",
+      "position": 11,
+      "race_time_ms": 3336000,
+      "gap_to_winner_ms": 876000,
+      "gap_to_winner_pct": 35.6
+    },
+    "field_metrics": {
+      "event_id": 4907,
+      "valida_num": 7,
+      "event_date": "2026-08-23",
+      "series_kind": "championship",
+      "series_level": "national",
+      "is_championship": true,
+      "field_size": 34,
+      "position": 11,
+      "percentile": 69.7,
+      "race_time_ms": 3336000,
+      "gap_to_p1_ms": 876000,
+      "gap_pct": 35.6,
+      "gap_to_p3_ms": 810000,
+      "category_median_time_ms": 3540000,
+      "gap_to_median_pct": -5.8,
+      "laps_behind": 1,
+      "prior_index": 7.2,
+      "expected_position": 13,
+      "delta_vs_expected": 2,
+      "field_strength": 8.6,
+      "coverage_with_prior": 0.53
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 11,
+        "percentile": 70,
+        "gap_pct": 8.9,
+        "gap_to_p3_ms": 62000,
+        "expected_position": 5,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 11,
+        "percentile": 70,
+        "gap_pct": 8.2,
+        "gap_to_p3_ms": 55000,
+        "expected_position": 4,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 12,
+        "percentile": 72.7,
+        "gap_pct": 7.4,
+        "gap_to_p3_ms": 48000,
+        "expected_position": 4,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 3,
+        "field_size": 11,
+        "percentile": 80,
+        "gap_pct": 6.8,
+        "gap_to_p3_ms": 0,
+        "expected_position": 4,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 5,
+        "event_date": "2026-06-14",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 5,
+        "field_size": 11,
+        "percentile": 60,
+        "gap_pct": 9.1,
+        "gap_to_p3_ms": 74000,
+        "expected_position": 4,
+        "delta_vs_expected": -1
+      },
+      {
+        "valida_num": 6,
+        "event_date": "2026-07-12",
+        "series_kind": "championship",
+        "series_level": "departmental",
+        "is_championship": true,
+        "position": 2,
+        "field_size": 18,
+        "percentile": 94.1,
+        "gap_pct": 2.9,
+        "gap_to_p3_ms": -41000,
+        "expected_position": 5,
+        "delta_vs_expected": 3
+      },
+      {
+        "valida_num": 7,
+        "event_date": "2026-08-23",
+        "series_kind": "championship",
+        "series_level": "national",
+        "is_championship": true,
+        "position": 11,
+        "field_size": 34,
+        "percentile": 69.7,
+        "gap_pct": 35.6,
+        "gap_to_p3_ms": 810000,
+        "expected_position": 13,
+        "delta_vs_expected": 2
+      }
+    ],
+    "race_meta": "- Clima: soleado\n- Temperatura: 26 °C\n- Superficie de la pista: seca\n- Altitud: 1411 msnm",
+    "anthro_context": {
+      "records_count": 4,
+      "latest": {
+        "evaluation_date": "2026-08-02",
+        "days_before_event": 21,
+        "maturity_offset_years": -0.6,
+        "age_at_phv": 13.6,
+        "maturation_status": "Circa-PHV",
+        "height_percentile": 62
+      },
+      "previous": {
+        "evaluation_date": "2026-05-04",
+        "maturity_offset_years": -0.9,
+        "maturation_status": "Circa-PHV"
+      },
+      "growth_velocity_cm_per_year": 6.4,
+      "months_from_phv": -7.2,
+      "flags": []
+    },
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-07-26",
+      "date_to": "2026-08-23",
+      "sessions_in_window": 13,
+      "attended": 12,
+      "absent": 1,
+      "excused": 0,
+      "attendance_pct": 92.3,
+      "training_hours": 18.5,
+      "rpe_mean": 4.9,
+      "rpe_last7_mean": 4.3,
+      "rpe_prev21_mean": 5.1,
+      "rubric_effort_mean": 4.5,
+      "rubric_attitude_mean": 4.4,
+      "rubric_technique_mean": 4.0,
+      "technical_foci": [
+        "Arranque en pelotón numeroso",
+        "Trazado de curvas"
+      ],
+      "interval_sessions": 2,
+      "days_since_last_session": 3,
+      "days_since_previous_race": 42,
+      "coach_feedback": [
+        "Mantiene la ubicación en la primera vuelta cuando la salida es en grupo cerrado"
+      ],
+      "strava_load": null
+    },
+    "coach_dialogue": [
+      {
+        "generated_at": "2026-07-15",
+        "valida_label": "Cto. Departamental",
+        "headline": "Percentil 94.1 en el pelotón departamental de 18",
+        "coach_question": "¿Cómo llegó a la salida del departamental después del receso?",
+        "coach_answer": "Llegó descansado, entrenó completo las dos semanas previas",
+        "coach_rating": 1
+      }
+    ],
+    "catalog_context": {
+      "interval_templates": [
+        {
+          "id": 23,
+          "name": "Arranques y salidas en grupo",
+          "age_band": "12-14",
+          "mesocycle_phase": "competitive"
+        }
+      ]
+    },
+    "memory_recent_insights": [
+      "Cto. Departamental: percentil 94.1 en el pelotón más numeroso de la temporada hasta esa fecha",
+      "Válida 5 · Copa: percentil 60 con la asistencia más baja del ciclo"
+    ]
+  },
+  "expected_themes": [
+    "percentil",
+    "pelotón",
+    "34",
+    "asistencia"
+  ],
+  "forbidden_terms": [
+    "cayó posiciones",
+    "cayó puestos",
+    "perdió posiciones",
+    "perdió puestos",
+    "retrocedió posiciones",
+    "retrocedió puestos",
+    "posiciones respecto a la válida",
+    "puestos respecto a la válida",
+    "retrocedió respecto a la válida",
+    "peor puesto que en la válida",
+    "suplementos",
+    "creatina",
+    "diagnóstico",
+    "podio",
+    "ganar",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": [
+    "percentil",
+    "pelotón",
+    "34",
+    "nacional"
+  ],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "Sostuvo el percentil 69.7 en un pelotón nacional de 34, el triple del de copa, tras la ventana de entrenamiento más constante del semestre.",
+    "field_reading": {
+      "percentile": 69.7,
+      "expected_position": 13,
+      "actual_position": 11,
+      "delta_vs_expected": 2,
+      "gap_to_p3_hhmmss": "0:13:30",
+      "series_label": "Cto. Nacional",
+      "summary": "Puesto 11 entre 34, dos por encima de lo esperado dentro de esta misma carrera, en el pelotón más numeroso del año."
+    },
+    "trend": "first_reference",
+    "observations": [
+      {
+        "claim": "El campeonato nacional es su primera referencia en un pelotón de este tamaño: el puesto se lee dentro de esta carrera, no contra las válidas de copa.",
+        "evidence": [
+          "pelotón de 34",
+          "percentil 69.7",
+          "esperada 13 frente a real 11"
+        ],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "El gap de 35.6% y la vuelta abajo describen el ritmo de cabeza de este campeonato, no un retroceso: quedó por debajo de la mediana del campo.",
+        "evidence": [
+          "gap 35.6% al líder",
+          "1 vuelta abajo",
+          "gap a la mediana -5.8%"
+        ],
+        "domain": "race",
+        "confidence": "high"
+      },
+      {
+        "claim": "La ventana previa fue la más constante del ciclo y llegó descargado, con el esfuerzo percibido más bajo en la última semana.",
+        "evidence": [
+          "asistencia 92.3%",
+          "12 sesiones asistidas de 13",
+          "RPE 4.3 en los últimos 7 días frente a 5.1 previos"
+        ],
+        "domain": "training",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Trabajar arranques y salidas en grupo cerrado dos veces por semana durante cuatro semanas, para defender la ubicación en la primera vuelta de pelotones numerosos.",
+        "category": "tactics",
+        "priority": "high",
+        "horizon": "next_race",
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "23",
+          "label": null
+        },
+        "derived_from": 0
+      },
+      {
+        "text": "Sostener el mismo ritmo de sesiones de la ventana previa hasta el cierre de temporada, priorizando continuidad sobre intensidad.",
+        "category": "volume",
+        "priority": "med",
+        "horizon": "season",
+        "catalog_ref": null,
+        "derived_from": 2
+      }
+    ],
+    "watch_signals": [
+      "Si la asistencia baja del 85% en las próximas tres semanas, revisar la carga escolar antes de sumar volumen."
+    ],
+    "coach_question": "¿Cómo vivió la largada con 34 corredores en la parrilla comparada con las salidas que ya conoce?",
+    "data_gaps": [
+      "Sin registro de sueño ni de descanso durante el viaje en los días previos a la carrera."
+    ],
+    "principles_cited": [
+      "4. Estrategia y táctica en XCO",
+      "5. Periodización de la temporada"
+    ]
+  }
+}

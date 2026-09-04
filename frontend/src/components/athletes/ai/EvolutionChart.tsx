@@ -29,27 +29,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAthleteEvolution } from "@/hooks/athletes/useAthleteEvolution";
 import { cn } from "@/lib/utils";
+import { confidenceForPoints } from "@/lib/insights";
 import { EvolutionMetric } from "@/types/athleteRaceAnalysis.types";
-
-function formatMs(ms: number, unit: string): string {
-  if (unit === "ms") {
-    if (ms >= 60_000) {
-      const totalSec = ms / 1000;
-      const min = Math.floor(totalSec / 60);
-      const sec = (totalSec - min * 60).toFixed(1);
-      return `${min}:${sec.padStart(4, "0")}`;
-    }
-    return `${(ms / 1000).toFixed(2)} s`;
-  }
-  if (unit === "rank") return `P${Math.round(ms)}`;
-  if (unit === "pct") return `${Math.round(ms)}`;
-  return `${ms} ${unit}`;
-}
-
-function formatValue(value: number | null, unit: string): string {
-  if (value === null) return "—";
-  return formatMs(value, unit);
-}
+import type {
+  ComparisonGroupOption,
+  EvolutionPoint,
+} from "@/types/athleteRaceAnalysis.types";
+import { ChampionshipReadingCard } from "@/components/athletes/ai/ChampionshipReadingCard";
+import { formatMs, formatValue } from "@/lib/evolutionFormat";
 
 interface EvolutionChartProps {
   athleteId: number;
@@ -84,40 +71,89 @@ export function EvolutionChart({
   const [metric, setMetric] = useState<EvolutionMetric>(
     EvolutionMetric.PODIUM_GAP_MS,
   );
+  // Feature 039 (D6/D4) — grupo de comparación elegido explícitamente por
+  // el usuario en el selector "Competencia". `undefined` = sin elección
+  // explícita todavía: se pide la temporada completa (sin `series_id`) y
+  // el grupo por defecto (primera copa, si no hay copas el primer
+  // campeonato) se resuelve filtrando esa respuesta en el cliente — así
+  // el render inicial no paga una segunda ida y vuelta al backend.
+  // Cambiar de temporada resetea la elección (data-model.md §8).
+  const [selectedSeriesId, setSelectedSeriesId] = useState<
+    number | undefined
+  >(undefined);
 
-  const query = useAthleteEvolution(athleteId, season, metric);
+  const query = useAthleteEvolution(athleteId, season, metric, selectedSeriesId);
+
+  const groups: ComparisonGroupOption[] = query.data?.groups ?? [];
+
+  const defaultGroupId = useMemo(() => {
+    if (groups.length === 0) return undefined;
+    const firstCup = groups.find((g) => g.kind === "cup");
+    return (firstCup ?? groups[0]).series_id;
+  }, [groups]);
+
+  const activeGroupId = selectedSeriesId ?? defaultGroupId;
+  const activeGroup = groups.find((g) => g.series_id === activeGroupId);
+  const isChampionshipView = activeGroup?.kind === "championship";
+
+  // Serie a mostrar: si el backend ya filtró (pedimos con `series_id`,
+  // `selected_group` viene poblado) usamos `series` tal cual. Si no
+  // (respuesta sin filtrar, temporada completa) filtramos en el cliente
+  // por el grupo activo — con fallback a la serie completa cuando el
+  // filtro no matchea nada (fixtures anteriores a esta feature, cuyos
+  // puntos no traen `series_id`: back-compat, contracts/evolution-api.md
+  // "clients that ignore groups keep working").
+  const displaySeries = useMemo((): EvolutionPoint[] => {
+    if (!query.data) return [];
+    if (query.data.selected_group || activeGroupId === undefined) {
+      return query.data.series;
+    }
+    const filtered = query.data.series.filter(
+      (p) => p.series_id === activeGroupId,
+    );
+    return filtered.length > 0 ? filtered : query.data.series;
+  }, [query.data, activeGroupId]);
 
   // Datos: solo puntos finitos (con valor numérico) para el LineChart.
   // Keyed por event_id para que copa y campeonato con mismo valida_num
   // no colisionen en el eje categorical.
-  const chartData = useMemo(() => {
-    if (!query.data) return [];
-    return query.data.series
-      .filter((p) => p.value !== null)
-      .map((p) => ({
-        event_id: p.event_id,
-        label: p.label,
-        series_kind: p.series_kind,
-        event_date: p.event_date,
-        value: p.value as number,
-      }));
-  }, [query.data]);
+  const chartData = useMemo(
+    () => displaySeries.filter((p) => p.value !== null).map(toChartPoint),
+    [displaySeries],
+  );
 
   // Mapa event_id → label para el tickFormatter del XAxis.
   const labelByEventId = useMemo(() => {
-    if (!query.data) return new Map<number, string>();
-    return new Map(query.data.series.map((p) => [p.event_id, p.label]));
-  }, [query.data]);
+    return new Map(displaySeries.map((p) => [p.event_id, p.label]));
+  }, [displaySeries]);
 
   const dnfPoints = useMemo(() => {
-    if (!query.data) return [];
-    return query.data.series.filter((p) => p.value === null);
-  }, [query.data]);
+    return displaySeries.filter((p) => p.value === null);
+  }, [displaySeries]);
+
+  // Feature 039 (F-2 fix) — el aviso de confianza baja debe reflejar el
+  // grupo mostrado, no la temporada completa. Cuando la respuesta llega
+  // sin filtrar (`selected_group` null: sin elección explícita todavía)
+  // `query.data.confidence` está calculado sobre TODA la temporada — lo
+  // derivamos en cliente sobre `displaySeries` (el grupo por defecto ya
+  // resuelto) con los mismos umbrales que el backend
+  // (`confidenceForPoints`). Una vez que el usuario elige una `series_id`
+  // explícita, el backend ya filtra y su `confidence` es correcto para
+  // ese grupo — se usa tal cual.
+  const effectiveConfidence = query.data?.selected_group
+    ? query.data.confidence
+    : confidenceForPoints(displaySeries);
 
   const isRanking = metric === EvolutionMetric.RANKING;
   const unit = query.data?.series[0]?.unit ?? (isRanking ? "rank" : "ms");
 
   const seasonOptions = buildSeasonOptions(getDefaultSeason());
+
+  const subtitle = isChampionshipView
+    ? "Resultado frente a su propio pelotón."
+    : activeGroup
+      ? `Tendencia a lo largo de las válidas de ${activeGroup.label}.`
+      : "Tendencia a lo largo de las válidas de la temporada.";
 
   return (
     <section
@@ -134,9 +170,7 @@ export function EvolutionChart({
             <Calendar size={16} aria-hidden="true" />
             Evolución
           </h3>
-          <p className="mt-0.5 text-xs text-mid-gray">
-            Tendencia a lo largo de las válidas de la temporada.
-          </p>
+          <p className="mt-0.5 text-xs text-mid-gray">{subtitle}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <label className="sr-only" htmlFor="evo-season">
@@ -145,9 +179,16 @@ export function EvolutionChart({
           <select
             id="evo-season"
             value={season}
-            onChange={(e) => setSeason(Number(e.target.value))}
+            onChange={(e) => {
+              setSeason(Number(e.target.value));
+              // Feature 039 (data-model.md §8) — cambiar de temporada
+              // resetea la elección de grupo: el default (primera copa)
+              // se vuelve a resolver contra los grupos de la temporada
+              // nueva.
+              setSelectedSeriesId(undefined);
+            }}
             className={cn(
-              "rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+              "min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
               "shadow-ring",
             )}
             data-testid="evolution-season-select"
@@ -166,7 +207,7 @@ export function EvolutionChart({
             value={metric}
             onChange={(e) => setMetric(e.target.value as EvolutionMetric)}
             className={cn(
-              "rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+              "min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
               "shadow-ring",
             )}
             data-testid="evolution-metric-select"
@@ -177,6 +218,29 @@ export function EvolutionChart({
               </option>
             ))}
           </select>
+          {groups.length > 0 && (
+            <>
+              <label className="sr-only" htmlFor="evo-group">
+                Competencia
+              </label>
+              <select
+                id="evo-group"
+                value={activeGroupId ?? ""}
+                onChange={(e) => setSelectedSeriesId(Number(e.target.value))}
+                className={cn(
+                  "min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+                  "shadow-ring",
+                )}
+                data-testid="evolution-group-select"
+              >
+                {groups.map((g) => (
+                  <option key={g.series_id} value={g.series_id}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
       </header>
 
@@ -201,7 +265,29 @@ export function EvolutionChart({
 
       {!query.isLoading && !query.isError && query.data && (
         <>
-          {chartData.length === 0 ? (
+          {isChampionshipView ? (
+            // Feature 039 (D5) — un grupo de campeonato tiene un único
+            // evento (INV-2): se lee como tarjeta de estadísticas + la
+            // tabla twin, nunca como gráfica de un solo punto.
+            <div className="space-y-3">
+              {displaySeries[0] && activeGroup ? (
+                <>
+                  <ChampionshipReadingCard
+                    point={displaySeries[0]}
+                    group={activeGroup}
+                  />
+                  <EvolutionTable
+                    points={displaySeries.map(toChartPoint)}
+                    unit={unit}
+                  />
+                </>
+              ) : (
+                <div className="rounded-lg bg-light-gray/30 p-6 text-center text-sm text-mid-gray">
+                  Sin datos para esta temporada/métrica.
+                </div>
+              )}
+            </div>
+          ) : chartData.length === 0 ? (
             <div className="rounded-lg bg-light-gray/30 p-6 text-center text-sm text-mid-gray">
               Sin datos para esta temporada/métrica.
             </div>
@@ -294,8 +380,9 @@ export function EvolutionChart({
             </Tabs>
           )}
 
-          {/* Disclaimer si confidence baja */}
-          {query.data.confidence === "low" && (
+          {/* Disclaimer si confidence baja — no aplica a un campeonato: es
+              una sola carrera leída como tarjeta, no una tendencia. */}
+          {!isChampionshipView && effectiveConfidence === "low" && (
             <div
               role="note"
               className={cn(
@@ -310,7 +397,9 @@ export function EvolutionChart({
             </div>
           )}
 
-          {dnfPoints.length > 0 && (
+          {/* El "no finalizó" de un campeonato ya lo cubre el estado propio
+              de ChampionshipReadingCard ("No completó la prueba."). */}
+          {!isChampionshipView && dnfPoints.length > 0 && (
             <div className="rounded-lg bg-light-gray/30 px-3 py-2 text-xs text-mid-gray">
               <span className="font-medium">No finalizó:</span>{" "}
               {dnfPoints.map((p) => p.label).join(", ")}
@@ -331,8 +420,33 @@ interface EvolutionChartPoint {
   event_id: number;
   label: string;
   series_kind: string;
+  /** Feature 039 (D7) — level-aware, alimenta el texto del ChampionshipDot
+   *  y de los twins de leyenda/tabla. Ausente en fixtures previas a la
+   *  feature (fallback a "Cto. Dep." en `championshipDotLabel`). */
+  series_level?: string;
   event_date: string;
-  value: number;
+  value: number | null;
+}
+
+/** Mapea un `EvolutionPoint` de la API al shape mínimo que usan el chart,
+ *  la leyenda `<ol>` y la tabla — reutilizado tanto en la vista de copa
+ *  (con `value` filtrado a no-nulo) como en la tarjeta de campeonato (un
+ *  único punto, puede ser DNF). */
+function toChartPoint(p: EvolutionPoint): EvolutionChartPoint {
+  return {
+    event_id: p.event_id,
+    label: p.label,
+    series_kind: p.series_kind,
+    series_level: p.series_level,
+    event_date: p.event_date,
+    value: p.value,
+  };
+}
+
+/** "Cto. Dep." / "Cto. Nal." según `series_level` (D7) — "departmental" por
+ *  defecto para fixtures que aún no traen el campo. */
+function championshipDotLabel(seriesLevel?: string): string {
+  return seriesLevel === "national" ? "Cto. Nal." : "Cto. Dep.";
 }
 
 /** Render function pasado a `<Line dot={...}>` — recharts invoca esto por
@@ -344,7 +458,14 @@ function renderEvolutionDot(props: DotItemDotProps) {
   const key = `evo-dot-${index}`;
 
   if (point?.series_kind === "championship") {
-    return <ChampionshipDot key={key} cx={cx} cy={cy} />;
+    return (
+      <ChampionshipDot
+        key={key}
+        cx={cx}
+        cy={cy}
+        label={championshipDotLabel(point.series_level)}
+      />
+    );
   }
 
   return (
@@ -352,12 +473,20 @@ function renderEvolutionDot(props: DotItemDotProps) {
   );
 }
 
-/** Marcador diamante ("Cto. Dep.") — contracts/chart-style.md §"Championship
- *  on-point marking". Mismo color que la serie propia (identidad, no
- *  polaridad); anillo de 2px en el color de superficie para legibilidad
- *  sobre la línea; etiqueta directa además de (no en reemplazo de) la
- *  leyenda `<ol>` accesible. */
-function ChampionshipDot({ cx, cy }: { cx: number; cy: number }) {
+/** Marcador diamante ("Cto. Dep." / "Cto. Nal.") — contracts/chart-style.md
+ *  §"Championship on-point marking". Mismo color que la serie propia
+ *  (identidad, no polaridad); anillo de 2px en el color de superficie para
+ *  legibilidad sobre la línea; etiqueta directa además de (no en
+ *  reemplazo de) la leyenda `<ol>` accesible. */
+function ChampionshipDot({
+  cx,
+  cy,
+  label,
+}: {
+  cx: number;
+  cy: number;
+  label: string;
+}) {
   const half = 6; // radio ~6 → diamante de 12x12px, sobre el piso de 8px
   return (
     <g>
@@ -379,7 +508,7 @@ function ChampionshipDot({ cx, cy }: { cx: number; cy: number }) {
         fontWeight={600}
         fill="var(--color-charcoal)"
       >
-        Cto. Dep.
+        {label}
       </text>
     </g>
   );
