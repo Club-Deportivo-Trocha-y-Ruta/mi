@@ -57,6 +57,10 @@ const captured = vi.hoisted(() => ({
     indicator: GrowthIndicator;
     records: { id: number }[];
     phvAgeMonths?: number;
+    preset?: "coach" | "family";
+  },
+  table: null as null | {
+    preset?: "coach" | "family";
   },
 }));
 
@@ -93,7 +97,10 @@ vi.mock("@/components/athletes/growth/PercentileChart", () => ({
 }));
 
 vi.mock("@/components/athletes/growth/PercentileTable", () => ({
-  PercentileTable: () => <div data-testid="mock-table" />,
+  PercentileTable: (props: (typeof captured)["table"]) => {
+    captured.table = props;
+    return <div data-testid="mock-table" />;
+  },
 }));
 
 vi.mock("@/components/athletes/PercentileInterpretationBlock", () => ({
@@ -182,6 +189,7 @@ function makeUser(role: UserRole, overrides: Partial<MeResponse> = {}): MeRespon
 beforeEach(() => {
   captured.toolbar = null;
   captured.chart = null;
+  captured.table = null;
   mockToPng.mockReset();
 });
 
@@ -306,6 +314,42 @@ describe("GrowthCurveSection — toggle de vista", () => {
       expect(screen.queryByTestId("mock-chart")).not.toBeInTheDocument();
       expect(screen.getByTestId("mock-table")).toBeInTheDocument();
     });
+  });
+
+  // El proposal §5.2 pide "table view available" también para la familia: el
+  // toggle no puede quedar visible pero inerte (regresión encontrada en el
+  // gate de la ola US4).
+  it("en modo padre el toggle de vista funciona y monta la tabla con preset family", async () => {
+    const user = userEvent.setup();
+    render(
+      <GrowthCurveSection athlete={makeAthlete()} records={oneRecord} mode="parent" />,
+    );
+
+    expect(screen.getByTestId("mock-chart")).toBeInTheDocument();
+    expect(captured.chart!.preset).toBe("family");
+
+    await user.click(screen.getByRole("button", { name: "mock-toggle-view" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-table")).toBeInTheDocument();
+    });
+    expect(captured.table!.preset).toBe("family");
+  });
+
+  it("en modo coach la gráfica y la tabla usan el preset de coach", async () => {
+    const user = userEvent.setup();
+    render(
+      <GrowthCurveSection athlete={makeAthlete()} records={oneRecord} mode="coach" />,
+    );
+
+    expect(captured.chart!.preset).toBe("coach");
+
+    await user.click(screen.getByRole("button", { name: "mock-toggle-view" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-table")).toBeInTheDocument();
+    });
+    expect(captured.table!.preset).toBe("coach");
   });
 });
 

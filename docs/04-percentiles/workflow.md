@@ -1,5 +1,7 @@
 # Workflow — WHO/CDC Growth Percentiles + Curves + Decision Support
 
+> **Superseded by `docs/18-growth-module-redesign/proposal.md` / `specs/040-growth-module-redesign`** (2026-09-04). The dual CDC/WHO reference this workflow built is retired: WHO 2007 is now the single reference standard, computed and persisted server-side (`growth_source` column). The `Crecimiento` tab, the growth-summary endpoint and the family view described below have been rebuilt; this document is kept for historical context on the original data model and LMS math, which are otherwise unchanged. Current implementation status: `docs/implementation-status.md`'s "Growth module redesign" entry.
+
 **Date:** 2026-04-14
 **Context:** Integrate growth indicators (WHO/CDC percentiles) into the existing anthropometry system, to evaluate whether an athlete is within optimal ranges and make decisions about specific training based on age and maturation.
 **Prerequisites:** Phase 1 complete (auth + athletes + anthropometry PHV operational)

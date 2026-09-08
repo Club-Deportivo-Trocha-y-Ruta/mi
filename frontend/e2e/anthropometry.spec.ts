@@ -1,5 +1,6 @@
 // Requiere: docker compose up
 import { test, expect } from '@playwright/test';
+import { gotoDemoAthlete } from './helpers/demo-athlete';
 
 const COACH_EMAIL = 'entrenador@trochyruta.com';
 const COACH_PASSWORD = 'Coach2026!';
@@ -13,18 +14,9 @@ async function loginAsCoach(page: import('@playwright/test').Page) {
 }
 
 async function navigateToFirstAthlete(page: import('@playwright/test').Page) {
-  await page.getByRole('link', { name: /atletas/i }).click();
-  await expect(page).toHaveURL(/\/athletes/);
-  // Las filas de la tabla no navegan al hacer click; el link "Ver" de la
-  // fila sí. Esperamos la respuesta de antropometría para no asertar contra
-  // el skeleton de carga (estabilidad bajo workers paralelos).
-  const anthroResponse = page.waitForResponse(
-    (r) => /\/anthropometry/.test(r.url()) && r.status() === 200,
-    { timeout: 30_000 },
-  );
-  await page.getByRole('link', { name: /^Ver$/ }).first().click();
-  await expect(page).toHaveURL(/\/athletes\/\d+/);
-  await anthroResponse;
+  // Atleta demo resuelto por API (con mediciones sembradas): el orden de la
+  // tabla cambia cuando `athletes.spec.ts` crea atletas en paralelo.
+  await gotoDemoAthlete(page);
 }
 
 // E2E-005 — Registrar medición antropométrica y ver PHV calculado

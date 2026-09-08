@@ -55,7 +55,7 @@ string plano en vez del enum de Python (aiosqlite conserva el enum).
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 import pytest
 
@@ -276,7 +276,7 @@ async def test_build_distribution_mysql_sum_types(mysql_session):
         mysql_session,
         athlete_id=701,
         season=2026,
-        valida_num=1,
+        event_id=701,
         include_display_name=False,
     )
 

@@ -155,3 +155,61 @@ describe("filterReferenceRows", () => {
     expect(filterReferenceRows(rows, 73, 74)).toEqual([{ age: 72 }, { age: 78 }]);
   });
 });
+
+/**
+ * SC-008 (feature 040, T055) — medición del criterio de legibilidad,
+ * enmendado el 2026-09-04 en `spec.md`: sobre un fixture de TRES mediciones
+ * en 14 meses, las mediciones deben ocupar ≥ 18 % del ancho de la curva y
+ * al menos el DOBLE de lo que ocupaban en la gráfica retirada (rango OMS
+ * completo 5–19 años), y dos mediciones consecutivas deben quedar a ≥ 60 px
+ * en un viewport de 1024 px.
+ *
+ * La cifra original ("≥ 60 % del ancho") era inalcanzable bajo FR-011 para
+ * cualquier edad: el padding fijo de −24/+36 meses ya suma 60 meses de
+ * contexto clínico, así que 14 meses de mediciones nunca pueden pasar de
+ * 14/74 ≈ 19 % sin romper ese padding.
+ *
+ * Geometría del plot usada para los píxeles (conservadora, de
+ * `PercentileChart.tsx`): viewport 1024 − 48 (padding horizontal de página)
+ * − 40 (padding de la tarjeta) = 936 px de contenedor; menos el margen
+ * `left: 8` + `right: 24` del `ComposedChart` y el `width={40}` del
+ * `YAxis` ⇒ 864 px de área de trazado.
+ */
+describe("SC-008 — legibilidad de la ventana por defecto", () => {
+  /** Tres mediciones ficticias separadas 7 meses (14 meses en total). */
+  const RECORD_AGES_MONTHS = [144, 151, 158];
+  const MEASUREMENT_SPAN_MONTHS = 158 - 144;
+  const CONSECUTIVE_GAP_MONTHS = 7;
+  const VIEWPORT_PX = 1024;
+  const PLOT_WIDTH_PX = VIEWPORT_PX - 48 - 40 - (8 + 24 + 40);
+
+  const widthOf = ([min, max]: [number, number]) => max - min;
+
+  const autoWidth = widthOf(computeAgeWindow(RECORD_AGES_MONTHS, "auto"));
+  const fullWidth = widthOf(computeAgeWindow(RECORD_AGES_MONTHS, "full"));
+  const autoShare = MEASUREMENT_SPAN_MONTHS / autoWidth;
+  const fullShare = MEASUREMENT_SPAN_MONTHS / fullWidth;
+
+  it("las mediciones ocupan ≥ 18 % del ancho de la ventana por defecto", () => {
+    expect(autoWidth).toBe(74); // [120, 194] meses
+    expect(autoShare).toBeGreaterThanOrEqual(0.18);
+  });
+
+  it("ocupan al menos el doble que en la gráfica retirada (rango completo)", () => {
+    expect(fullWidth).toBe(167); // [61.5, 228.5] meses
+    expect(fullShare).toBeLessThan(0.09);
+    expect(autoShare / fullShare).toBeGreaterThanOrEqual(2);
+  });
+
+  it("dos mediciones consecutivas quedan a ≥ 60 px en un viewport de 1024 px", () => {
+    const gapPx = (CONSECUTIVE_GAP_MONTHS / autoWidth) * PLOT_WIDTH_PX;
+    expect(gapPx).toBeGreaterThanOrEqual(60);
+  });
+
+  it("el toggle 'Ver 5–19 años' restituye el rango completo de referencia", () => {
+    expect(computeAgeWindow(RECORD_AGES_MONTHS, "full")).toEqual([
+      AGE_WINDOW_MIN_MONTHS,
+      AGE_WINDOW_MAX_MONTHS,
+    ]);
+  });
+});

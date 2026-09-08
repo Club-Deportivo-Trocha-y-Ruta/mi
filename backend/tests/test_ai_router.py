@@ -20,7 +20,6 @@ from app.dependencies import (
     get_current_user,
     get_db,
     get_llm_provider,
-    require_role,
     verify_athlete_access,
 )
 from app.main import app

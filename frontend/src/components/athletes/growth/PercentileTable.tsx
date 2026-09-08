@@ -32,6 +32,15 @@ export interface PercentileTableProps {
   indicator: GrowthIndicator;
   sex: "M" | "F";
   birthDate: string;
+  /**
+   * `"family"` (modo padre) suprime las columnas Z y Percentil y muestra la
+   * etiqueta familiar de la banda en vez de la clínica — FR-016: la vista de
+   * familia "MUST NOT show Z-scores, percentiles … clinical headline labels".
+   * `docs/18-growth-module-redesign/proposal.md` §5.2 exige que la vista de
+   * tabla siga disponible para la familia ("table view available"), así que
+   * la alternativa accesible a la gráfica no se oculta: se filtra.
+   */
+  preset?: "coach" | "family";
 }
 
 const VALUE_FORMATTER: Record<GrowthIndicator, (value: number) => string> = {
@@ -67,6 +76,7 @@ interface PercentileTableRowProps {
   indicator: GrowthIndicator;
   sex: "M" | "F";
   birthDate: string;
+  isFamily: boolean;
 }
 
 /**
@@ -75,7 +85,13 @@ interface PercentileTableRowProps {
  * referencia OMS 5–19 años), mismo criterio de omisión que la tabla sr-only
  * que reemplaza.
  */
-function PercentileTableRow({ record, indicator, sex, birthDate }: PercentileTableRowProps) {
+function PercentileTableRow({
+  record,
+  indicator,
+  sex,
+  birthDate,
+  isFamily,
+}: PercentileTableRowProps) {
   const metrics = useGrowthMetrics({ record, sex, birthDate, indicator });
   if (metrics === null) return null;
 
@@ -86,16 +102,30 @@ function PercentileTableRow({ record, indicator, sex, birthDate }: PercentileTab
       <TableCell>{formatMonthYear(record.evaluation_date)}</TableCell>
       <TableCell className="tabular-nums">{(metrics.ageMonths / 12).toFixed(1)} años</TableCell>
       <TableCell className="tabular-nums">{VALUE_FORMATTER[indicator](metrics.value)}</TableCell>
-      <TableCell className="tabular-nums">{formatZScore(metrics.zScore)}</TableCell>
-      <TableCell className="tabular-nums">P{Math.round(metrics.percentile)}</TableCell>
+      {!isFamily && (
+        <>
+          <TableCell className="tabular-nums">{formatZScore(metrics.zScore)}</TableCell>
+          <TableCell className="tabular-nums">P{Math.round(metrics.percentile)}</TableCell>
+        </>
+      )}
       <TableCell>
-        <StatusBadge status={vocab.tone} label={vocab.coachLabel} />
+        <StatusBadge
+          status={vocab.tone}
+          label={isFamily ? vocab.familyLabel : vocab.coachLabel}
+        />
       </TableCell>
     </TableRow>
   );
 }
 
-export function PercentileTable({ records, indicator, sex, birthDate }: PercentileTableProps) {
+export function PercentileTable({
+  records,
+  indicator,
+  sex,
+  birthDate,
+  preset = "coach",
+}: PercentileTableProps) {
+  const isFamily = preset === "family";
   // Más reciente primero — mismo criterio que `AnthropometryHistory.tsx`.
   const sorted = [...records].sort(
     (a, b) => new Date(b.evaluation_date).getTime() - new Date(a.evaluation_date).getTime(),
@@ -116,9 +146,13 @@ export function PercentileTable({ records, indicator, sex, birthDate }: Percenti
           <TableHead scope="col">Mes</TableHead>
           <TableHead scope="col">Edad</TableHead>
           <TableHead scope="col">Valor</TableHead>
-          <TableHead scope="col">Z</TableHead>
-          <TableHead scope="col">Percentil</TableHead>
-          <TableHead scope="col">Banda</TableHead>
+          {!isFamily && (
+            <>
+              <TableHead scope="col">Z</TableHead>
+              <TableHead scope="col">Percentil</TableHead>
+            </>
+          )}
+          <TableHead scope="col">{isFamily ? "Estado" : "Banda"}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -129,6 +163,7 @@ export function PercentileTable({ records, indicator, sex, birthDate }: Percenti
             indicator={indicator}
             sex={sex}
             birthDate={birthDate}
+            isFamily={isFamily}
           />
         ))}
       </TableBody>

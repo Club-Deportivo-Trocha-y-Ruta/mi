@@ -14,6 +14,15 @@ import type {
   PHVExplanationResponse,
 } from "@/types/ai.types";
 
+/** Audiencia de la explicación PHV (feature 040, US4, R-12).
+ *
+ * `"family"` (default) es la variante para padres — sin números de
+ * velocidad/meses. `"coach"` agrega velocidad cm/año y meses hasta/desde
+ * el PHV; el backend la restringe a coach/admin (`_ensure_audience_allowed`
+ * en `routers/ai.py`) devolviendo 403 si un padre la pide igual.
+ */
+export type PHVAudience = "family" | "coach";
+
 /** Llama POST /api/ai/athletes/{id}/phv-explanation.
  *
  * El backend toma la última medición y hasta 3 anteriores para construir
@@ -22,12 +31,15 @@ import type {
  */
 export async function getPHVExplanation(
   athleteId: number,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; audience?: PHVAudience },
 ): Promise<PHVExplanationResponse> {
   const response = await apiClient.post<unknown>(
     `/api/ai/athletes/${athleteId}/phv-explanation`,
     undefined,
-    { signal: options?.signal },
+    {
+      signal: options?.signal,
+      params: { audience: options?.audience ?? "family" },
+    },
   );
   // Zod aplica allowlist defensiva contra PII filtrada por error.
   return phvExplanationResponseSchema.parse(response.data);
@@ -42,12 +54,13 @@ export async function getPHVExplanation(
  */
 export async function getPHVExplanationCached(
   athleteId: number,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; audience?: PHVAudience },
 ): Promise<PHVExplanationResponse | null> {
   const response = await apiClient.get<unknown>(
     `/api/ai/athletes/${athleteId}/phv-explanation`,
     {
       signal: options?.signal,
+      params: { audience: options?.audience ?? "family" },
       validateStatus: (status) => status === 200 || status === 204,
     },
   );

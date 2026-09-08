@@ -9,6 +9,7 @@ Requiere que las tablas ya existan (alembic upgrade head).
 
 import asyncio
 from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,9 +25,98 @@ from app.models import (
     Sex,
 )
 from app.models.athlete import ParentAthlete, FamilyRelationship
+from app.models.anthropometry import AnthropometricRecord
+from app.models.growth import GrowthSource
 from app.models.parental_consent import ParentalConsent
 from app.models.privacy_policy import PrivacyPolicy
 from app.services.auth import hash_password
+from app.services.category import compute_age_decimal
+from app.services.growth import calculate_growth_percentiles
+from app.services.phv import calculate_mirwald_offset
+
+
+# Mediciones sintéticas del atleta demo (feature 040). Valores inventados y
+# plausibles para un niño de ~11-12 años; no corresponden a ninguna persona.
+# Tres registros separados por 4-5 meses para que el tab Crecimiento, la curva
+# y la vista de familia tengan historial (velocidad, próxima medición) en el
+# stack de desarrollo / e2e sin depender de datos reales.
+DEMO_ANTHROPOMETRY = [
+    # (fecha, peso kg, talla de pie cm, talla sentado cm, envergadura cm)
+    # Todas anteriores al 2026-04-14 (fecha que registra `e2e/anthropometry.spec.ts`
+    # con talla 155.0) para que esa medición quede como la más reciente y la
+    # velocidad calculada siga siendo positiva y plausible.
+    (date(2025, 6, 15), "40.00", "150.0", "76.5", "151.0"),
+    (date(2025, 10, 15), "41.00", "152.0", "77.3", "153.0"),
+    (date(2026, 2, 15), "42.00", "154.0", "78.0", "155.0"),
+]
+
+# La OMS no publica peso/edad por encima de los 10 años (misma regla que
+# ``app.routers.anthropometry.WEIGHT_AGE_MAX_MONTHS``).
+_WEIGHT_AGE_MAX_MONTHS = 120.5
+
+
+async def seed_demo_anthropometry(
+    session: AsyncSession, athlete: Athlete, evaluator: User
+) -> int:
+    """Crea las mediciones demo replicando los cálculos del endpoint POST."""
+    created = 0
+    for eval_date, weight, height, sitting, arm_span in DEMO_ANTHROPOMETRY:
+        age = compute_age_decimal(athlete.birth_date, eval_date)
+        phv = calculate_mirwald_offset(
+            sex=athlete.sex.value,
+            age=age,
+            weight=float(weight),
+            standing_height=float(height),
+            sitting_height=float(sitting),
+        )
+        age_months = age * 12
+        try:
+            growth = await calculate_growth_percentiles(
+                db=session,
+                weight_kg=float(weight),
+                standing_height_cm=float(height),
+                sex=athlete.sex.value,
+                age_months=age_months,
+                source=GrowthSource.WHO,
+            )
+        except Exception:  # noqa: BLE001 — tabla LMS ausente: se siembra sin percentiles
+            growth = None
+        if growth is not None and growth.height_z_score is None and growth.bmi_z_score is None:
+            growth = None
+        weight_in_range = age_months <= _WEIGHT_AGE_MAX_MONTHS
+        bmi_value = float(weight) / (float(height) / 100) ** 2
+
+        session.add(
+            AnthropometricRecord(
+                athlete_id=athlete.id,
+                evaluation_date=eval_date,
+                weight_kg=Decimal(weight),
+                standing_height_cm=Decimal(height),
+                arm_span_cm=Decimal(arm_span),
+                sitting_height_cm=Decimal(sitting),
+                leg_length_cm=phv["leg_length_cm"],
+                leg_sitting_ratio=phv["leg_sitting_ratio"],
+                maturity_offset=phv["maturity_offset"],
+                age_at_phv=phv["age_at_phv"],
+                maturation_status=phv["maturation_status"],
+                training_implications=phv["training_implications"],
+                evaluated_by=evaluator.id,
+                height_z_score=growth.height_z_score if growth else None,
+                height_percentile=growth.height_percentile if growth else None,
+                bmi=Decimal(str(round(bmi_value, 2))),
+                bmi_z_score=growth.bmi_z_score if growth else None,
+                bmi_percentile=growth.bmi_percentile if growth else None,
+                weight_z_score=growth.weight_z_score if growth and weight_in_range else None,
+                weight_percentile=(
+                    growth.weight_percentile if growth and weight_in_range else None
+                ),
+                nutritional_status=growth.nutritional_status_bmi if growth else None,
+                growth_source=GrowthSource.WHO,
+            )
+        )
+        created += 1
+    await session.flush()
+    return created
 
 
 async def seed(session: AsyncSession) -> None:
@@ -138,6 +228,11 @@ async def seed(session: AsyncSession) -> None:
             )
         )
 
+    # --- Mediciones antropométricas demo del primer atleta ---
+    demo_records = 0
+    if first_athlete is not None:
+        demo_records = await seed_demo_anthropometry(session, first_athlete, coach)
+
     # --- Padre de prueba ---
     parent = User(
         email="padre@trochayruta.com",
@@ -205,6 +300,7 @@ async def seed(session: AsyncSession) -> None:
     print(f"  Admin: {admin.email} / Admin2026!")
     print(f"  Coach: {coach.email} / Coach2026!")
     print(f"  Atletas: {len(athletes_data)} creados")
+    print(f"  Mediciones demo: {demo_records} creadas")
     print(f"  Padre: {parent.email} / Parent2026!")
 
 

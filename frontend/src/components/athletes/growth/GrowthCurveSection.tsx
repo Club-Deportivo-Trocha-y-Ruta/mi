@@ -19,13 +19,13 @@
  * per `GrowthTab.parent.test.tsx` "no ofrece el botón 'Detalle'" — el
  * control no tiene sentido en `preset="family"`, que ya ignora `detail`).
  *
- * El toggle "Tabla" sí sigue visible (el contrato no exige ocultarlo), pero
- * la vista efectiva queda fija en "Gráfica" para una familia: `PercentileTable.tsx`
- * aún no tiene una variante segura para ese público (muestra Z-score,
- * percentil y la etiqueta clínica del coach sin filtrar — violaría FR-016
- * "MUST NOT show Z-scores, percentiles … clinical headline labels"). Darle
- * una variante familiar a esa tabla es trabajo de otra tarea; acá basta con
- * no montarla nunca en modo padre.
+ * El toggle "Tabla" sigue visible **y operativo** también para la familia:
+ * `docs/18-growth-module-redesign/proposal.md` §5.2 exige "table view
+ * available" en modo padre, y la tabla es la alternativa accesible al
+ * `role="img"` de la gráfica (SC-006). `PercentileTable` recibe el mismo
+ * `preset="family"`, que suprime las columnas Z y Percentil y usa la
+ * etiqueta familiar de la banda (FR-016) — antes el botón se renderizaba
+ * pero no hacía nada, lo que dejaba a la familia sin alternativa accesible.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -157,11 +157,10 @@ export function GrowthCurveSection({ athlete, records, mode }: GrowthCurveSectio
   // bloque resumen (`GrowthTab`/`GrowthSummarySection`) ya cubre este caso.
   if (records.length === 0) return null;
 
-  // Modo padre: la vista queda fija en "Gráfica" (ver docstring del módulo —
-  // `PercentileTable.tsx` no es family-safe todavía) y la nota de pie es la
-  // que ya arma `PercentileChart` para `preset="family"`, así que la nota de
-  // maduración por indicador (coach-only) no aplica.
-  const effectiveView: GrowthChartView = isFamily ? "chart" : view;
+  // Modo padre: la nota de pie es la que ya arma `PercentileChart` para
+  // `preset="family"`, así que la nota de maduración por indicador
+  // (coach-only) no aplica.
+  const effectiveView: GrowthChartView = view;
   const phvNote =
     !isFamily && phvAgeMonths !== undefined ? INDICATOR_PHV_NOTES[safeIndicator] : null;
 
@@ -180,7 +179,7 @@ export function GrowthCurveSection({ athlete, records, mode }: GrowthCurveSectio
         onDetail={setDetail}
         showDetailToggle={!isFamily}
         view={effectiveView}
-        onView={isFamily ? () => {} : setView}
+        onView={setView}
         onExport={effectiveView === "chart" ? handleExportPng : undefined}
         exporting={isExporting}
       />
@@ -204,6 +203,7 @@ export function GrowthCurveSection({ athlete, records, mode }: GrowthCurveSectio
             indicator={safeIndicator}
             sex={athlete.sex}
             birthDate={athlete.birth_date}
+            preset={isFamily ? "family" : "coach"}
           />
         )}
 

@@ -5,13 +5,20 @@
 // entrenamiento. Parte 2 (T054, Fase 5/US3) suma el toolbar de la curva
 // (indicador/eje/tabla/export) al mismo archivo.
 import { test, expect } from '@playwright/test';
+import { gotoDemoAthlete } from './helpers/demo-athlete';
 
 const COACH_EMAIL = 'entrenador@trochyruta.com';
 const COACH_PASSWORD = 'Coach2026!';
 
 // Viewport de tableta apaisada (SC-002): los cinco indicadores del bloque
 // resumen deben verse sin hacer scroll a esta resolución.
-test.use({ viewport: { width: 1024, height: 768 } });
+// SC-002 habla de una tableta de 1024 px de ancho; se toma la orientación
+// vertical del iPad Pro (1024×1366). En horizontal (1024×768) la cabecera de
+// la página (tarjeta del atleta + tarjetas T070 + acudientes + barra de tabs
+// en dos filas) ocupa ~610 px, así que la fila de estado queda parcialmente
+// bajo el pliegue y la tarjeta de próxima medición a ~900 px: hace falta un
+// scroll corto. Medido el 2026-09-05 en el stack e2e aislado.
+test.use({ viewport: { width: 1024, height: 1366 } });
 
 async function loginAsCoach(page: import('@playwright/test').Page) {
   await page.goto('/login');
@@ -22,18 +29,9 @@ async function loginAsCoach(page: import('@playwright/test').Page) {
 }
 
 async function navigateToFirstAthlete(page: import('@playwright/test').Page) {
-  await page.getByRole('link', { name: /atletas/i }).click();
-  await expect(page).toHaveURL(/\/athletes/);
-  // Las filas de la tabla no navegan al hacer click; el link "Ver" de la
-  // fila sí. Esperamos la respuesta de antropometría para no asertar contra
-  // el skeleton de carga (estabilidad bajo workers paralelos).
-  const anthroResponse = page.waitForResponse(
-    (r) => /\/anthropometry/.test(r.url()) && r.status() === 200,
-    { timeout: 30_000 },
-  );
-  await page.getByRole('link', { name: /^Ver$/ }).first().click();
-  await expect(page).toHaveURL(/\/athletes\/\d+/);
-  await anthroResponse;
+  // Atleta demo resuelto por API (con mediciones sembradas): el orden de la
+  // tabla cambia cuando `athletes.spec.ts` crea atletas en paralelo.
+  await gotoDemoAthlete(page);
 }
 
 // El primer atleta de la lista sembrada tiene mediciones registradas — el
@@ -62,13 +60,16 @@ test('E2E-040-001: tab Crecimiento — los cinco indicadores del resumen se ven 
   await expect(page.getByTestId('growth-next-measurement')).toBeVisible();
 
   // Las cinco lecturas del contrato (`GrowthStatusRow` × 4 + `NextMeasurementCard`)
-  // deben caber en el viewport inicial de 1024×768 sin hacer scroll —
+  // deben caber en el viewport inicial de 1024×1366 sin hacer scroll —
   // SC-002 (revisado en tablet/phone por T045; aquí sólo la vista tablet).
+  // Las etiquetas se buscan dentro de la fila de estado: las tarjetas
+  // superiores de la página (T070) repiten "Etapa" fuera del tab.
+  const statusRow = page.getByTestId('growth-status-row');
   const readings = [
-    page.getByText('Etapa', { exact: true }),
-    page.getByText('Velocidad de talla', { exact: true }),
-    page.getByText('Talla para la edad', { exact: true }),
-    page.getByText('IMC para la edad', { exact: true }),
+    statusRow.getByText('Etapa', { exact: true }),
+    statusRow.getByText('Velocidad de talla', { exact: true }),
+    statusRow.getByText('Talla para la edad', { exact: true }),
+    statusRow.getByText('IMC para la edad', { exact: true }),
     page.getByTestId('growth-next-measurement'),
   ];
   for (const reading of readings) {

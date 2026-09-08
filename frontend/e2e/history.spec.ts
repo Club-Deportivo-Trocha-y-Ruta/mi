@@ -1,5 +1,6 @@
 // Requiere: docker compose up
 import { test, expect } from '@playwright/test';
+import { gotoDemoAthlete } from './helpers/demo-athlete';
 
 const COACH_EMAIL = 'entrenador@trochyruta.com';
 const COACH_PASSWORD = 'Coach2026!';
@@ -16,20 +17,9 @@ async function loginAsCoach(page: import('@playwright/test').Page) {
 test('E2E-007: historial de mediciones muestra registros en orden descendente', async ({ page }) => {
   await loginAsCoach(page);
 
-  // Navegar a atletas y abrir el primero (las filas no son clickeables; el
-  // link "Ver" de la fila navega al detalle).
-  await page.getByRole('link', { name: /atletas/i }).click();
-  await expect(page).toHaveURL(/\/athletes/);
-  // Esperamos la respuesta del GET de antropometría que dispara la carga del
-  // detalle: así no asertamos contra el skeleton (evita flake bajo carga
-  // paralela, donde la query puede entrar en reintentos).
-  const anthroResponse = page.waitForResponse(
-    (r) => /\/anthropometry/.test(r.url()) && r.status() === 200,
-    { timeout: 30_000 },
-  );
-  await page.getByRole('link', { name: /^Ver$/ }).first().click();
-  await expect(page).toHaveURL(/\/athletes\/\d+/);
-  await anthroResponse;
+  // Abrir el atleta demo (resuelto por API, con mediciones sembradas): el
+  // orden de la tabla cambia cuando `athletes.spec.ts` crea atletas en paralelo.
+  await gotoDemoAthlete(page);
 
   // Seleccionamos el tab "Antropometría" explícitamente — no dependemos de
   // ninguna auto-selección de tab por parte de la página (ese comportamiento
@@ -83,11 +73,8 @@ test('E2E-008: gráficas de crecimiento se renderizan sin errores de consola', a
 
   await loginAsCoach(page);
 
-  // Ir al detalle de un atleta con mediciones (el link "Ver" navega; la fila no).
-  await page.getByRole('link', { name: /atletas/i }).click();
-  await expect(page).toHaveURL(/\/athletes/);
-  await page.getByRole('link', { name: /^Ver$/ }).first().click();
-  await expect(page).toHaveURL(/\/athletes\/\d+/);
+  // Ir al detalle del atleta demo con mediciones (resuelto por API).
+  await gotoDemoAthlete(page);
 
   // Seleccionamos el tab "Crecimiento" explícitamente — no dependemos de
   // ninguna auto-selección de tab por parte de la página (ese comportamiento

@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import { MaturationStatus } from "@/types/enums";
 
 interface PHVBadgeProps {
@@ -6,23 +6,24 @@ interface PHVBadgeProps {
   size?: "sm" | "md";
 }
 
-function badgeClasses(status: MaturationStatus | null): string {
-  if (status === MaturationStatus.PrePHV) return "bg-blue-100 text-blue-700";
-  if (status === MaturationStatus.CircaPHV) return "bg-amber-100 text-amber-700";
-  if (status === MaturationStatus.PostPHV) return "bg-green-100 text-green-700";
-  return "bg-light-gray text-mid-gray";
-}
+/**
+ * Mapeo de `MaturationStatus` a `StatusBadge` (icono + etiqueta, nunca solo
+ * color — constitution III). Pre-PHV es neutral (fase temprana, sin
+ * urgencia), Circa-PHV es warning (ventana de máxima vulnerabilidad ósea) y
+ * Post-PHV es success (brote de crecimiento completado).
+ */
+const STATUS_MAP: Record<MaturationStatus, { status: Status; label: string }> = {
+  [MaturationStatus.PrePHV]: { status: "neutral", label: "Pre-PHV" },
+  [MaturationStatus.CircaPHV]: { status: "warning", label: "Circa-PHV" },
+  [MaturationStatus.PostPHV]: { status: "success", label: "Post-PHV" },
+};
 
 export function PHVBadge({ status, size = "sm" }: PHVBadgeProps) {
+  const badge = status !== null ? STATUS_MAP[status] : { status: "neutral" as Status, label: "Sin evaluar" };
+
   return (
-    <span
-      className={cn(
-        "inline-block rounded-full font-medium",
-        size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm",
-        badgeClasses(status),
-      )}
-    >
-      {status ?? "Sin evaluar"}
+    <span className={size === "md" ? "text-sm" : undefined}>
+      <StatusBadge status={badge.status} label={badge.label} />
     </span>
   );
 }

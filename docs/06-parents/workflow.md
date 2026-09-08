@@ -23,7 +23,7 @@
 - Push/email notifications to parents
 - Integration with Spond for family communication
 - Athlete portal (own login)
-- Clinical/family toggle mode in percentiles
+- ~~Clinical/family toggle mode in percentiles~~ — done: family-language growth view shipped in `specs/040-growth-module-redesign` (US4, 2026-09-04), see `docs/implementation-status.md`
 
 ---
 

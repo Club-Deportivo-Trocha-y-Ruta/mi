@@ -26,6 +26,7 @@
  * Run just this file: `cd frontend && npx playwright test e2e/coach-navigation.spec.ts`
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
+import { realTokens } from './helpers/session';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -81,6 +82,7 @@ const TOKENS = {
 };
 
 async function setupAuth(page: Page, user: typeof COACH_USER): Promise<void> {
+  const liveTokens = await realTokens(page.request, user.role as 'coach' | 'admin');
   await page.addInitScript(
     ({ tokens, sessionUser }) => {
       sessionStorage.setItem(
@@ -97,7 +99,7 @@ async function setupAuth(page: Page, user: typeof COACH_USER): Promise<void> {
         }),
       );
     },
-    { tokens: TOKENS, sessionUser: user },
+    { tokens: liveTokens, sessionUser: user },
   );
 }
 
@@ -319,7 +321,10 @@ test.describe("Feature 030 (T033) — coach/admin navigation: sidebar vs. bottom
     await expect(bottomNav(page)).toBeHidden();
   });
 
-  test("admin login shows Biblioteca (not Atletas) in the bottom bar's 4th slot", async ({
+  // La "Biblioteca" (catálogo técnico/fuerza) se retiró en la feature 038;
+  // desde entonces el admin ve tres áreas + "Más" (`lib/navigation.ts`,
+  // `bottomBarSlot`), y "Atletas" sigue siendo exclusiva del coach.
+  test("admin login omits Atletas in the bottom bar (3 areas + Más)", async ({
     page,
   }) => {
     await page.setViewportSize(MOBILE_VIEWPORT);
@@ -332,10 +337,10 @@ test.describe("Feature 030 (T033) — coach/admin navigation: sidebar vs. bottom
     await expect(bar.getByRole("link", { name: "Inicio" })).toBeVisible();
     await expect(bar.getByRole("link", { name: "Entrenamiento" })).toBeVisible();
     await expect(bar.getByRole("link", { name: "Competencias" })).toBeVisible();
-    await expect(bar.getByRole("link", { name: "Biblioteca" })).toBeVisible();
+    await expect(bar.getByRole("link", { name: "Biblioteca" })).toHaveCount(0);
     await expect(bar.getByRole("link", { name: "Atletas" })).toHaveCount(0);
     await expect(bar.getByRole("button", { name: /Más/ })).toBeVisible();
-    await expect(bar.locator("a, button")).toHaveCount(5);
+    await expect(bar.locator("a, button")).toHaveCount(4);
   });
 
   test("every bottom-bar and 'Más' sheet control measures >=48x48px (coach)", async ({

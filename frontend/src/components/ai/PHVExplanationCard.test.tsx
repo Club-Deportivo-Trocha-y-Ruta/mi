@@ -434,4 +434,66 @@ describe("PHVExplanationCard", () => {
       ).not.toBeInTheDocument();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Audiencia (feature 040, US4, R-12) — título fijo + audience por modo
+  // -------------------------------------------------------------------------
+
+  describe("audiencia", () => {
+    it('título es siempre "Explicación PHV" (idle coach, sin depender de audience)', async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(null);
+
+      render(<PHVExplanationCard athleteId={1} hasRecords={true} />, {
+        wrapper: withQuery(),
+      });
+
+      expect(
+        await screen.findByRole("heading", { name: "Explicación PHV" }),
+      ).toBeInTheDocument();
+    });
+
+    it('modo readOnly sin `audience` explícito consulta con audience="family" (default padres)', async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(cachedResponse);
+
+      render(
+        <PHVExplanationCard athleteId={7} hasRecords={true} readOnly />,
+        { wrapper: withQuery() },
+      );
+
+      await waitFor(() =>
+        expect(aiApi.getPHVExplanationCached).toHaveBeenCalledWith(7, {
+          audience: "family",
+        }),
+      );
+    });
+
+    it('modo coach sin `audience` explícito consulta con audience="coach" (default coach)', async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(null);
+
+      render(<PHVExplanationCard athleteId={9} hasRecords={true} />, {
+        wrapper: withQuery(),
+      });
+
+      await waitFor(() =>
+        expect(aiApi.getPHVExplanationCached).toHaveBeenCalledWith(9, {
+          audience: "coach",
+        }),
+      );
+    });
+
+    it('respeta `audience="family"` explícito pasado a la card en modo coach', async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(null);
+
+      render(
+        <PHVExplanationCard athleteId={9} hasRecords={true} audience="family" />,
+        { wrapper: withQuery() },
+      );
+
+      await waitFor(() =>
+        expect(aiApi.getPHVExplanationCached).toHaveBeenCalledWith(9, {
+          audience: "family",
+        }),
+      );
+    });
+  });
 });

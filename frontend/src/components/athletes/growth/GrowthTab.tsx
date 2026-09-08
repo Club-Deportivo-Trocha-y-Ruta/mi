@@ -7,47 +7,57 @@
  * Composición modo coach (orden fijo del contrato — T038-T040 ya
  * entregaron `GrowthStatusRow`/`NextMeasurementCard`/`GrowthAlerts` y el
  * `TrainingReadiness` refactorizado; T052 reemplaza el slot temporal de
- * `GrowthCharts` por `GrowthCurveSection`):
+ * `GrowthCharts` por `GrowthCurveSection`; T068 inserta `MaturationTimeline`
+ * justo después de la curva):
  *
  *   GrowthAlerts → GrowthStatusRow → NextMeasurementCard → TrainingReadiness
- *   → GrowthCurveSection → MorphologyCard → PHVExplanationCard →
- *   AnthropometryHistory (compacto) → ResearchReferences.
+ *   → GrowthCurveSection → MaturationTimeline → MorphologyCard →
+ *   PHVExplanationCard → AnthropometryHistory (compacto) → ResearchReferences.
  *
  * `NutritionalClassification` deja de usarse en modo coach: sus dos
  * clasificaciones (talla/IMC) ahora las muestra `GrowthStatusRow` con datos
  * ya calculados en el servidor (`useGrowthSummary`), sin duplicar el
  * cálculo LMS en el cliente.
  *
- * Composición modo padre (paridad con el comportamiento actual de
- * `MyAthleteDetailPage.tsx`; el diseño familiar narrativo —
- * `FamilyStageCard` / `FamilyBandCards` sin numerales— llega en la Fase 6,
- * US4): NutritionalClassification → AnthropometryHistory(parent) →
- * GrowthCurveSection → PHVExplanationCard(readOnly). `ResearchReferences` es
- * exclusivo del coach (`contracts/growth-tab-ui.md` §Component tree), así
- * que el modo padre no la incluye.
+ * Composición modo padre (feature 040, US4, T062 — reemplaza la paridad
+ * provisional con `MyAthleteDetailPage.tsx` de las fases previas): tarjetas
+ * familiares (`FamilyStageCard` → `FamilyBandCards`, sin numerales) →
+ * `GrowthCurveSection` (preset familiar) → `PHVExplanationCard` (solo
+ * lectura, `audience="family"`) → `AnthropometryHistory` (modo padre). Nada
+ * más: sin `GrowthAlerts`/`GrowthStatusRow`/`NextMeasurementCard` (esos
+ * tres son el bloque resumen del coach), ni `TrainingReadiness`,
+ * `MorphologyCard`, `MaturationTimeline` o `ResearchReferences` (exclusivos
+ * del coach per `contracts/growth-tab-ui.md` §Component tree).
  *
  * Datos: `useAnthropometry(athlete.id)` (existente, ya cacheada por la
  * página contenedora — misma query key, sin refetch adicional) +
- * `useGrowthSummary(athlete.id)` (nueva, feature 040). Cada uno de los
- * demás componentes hijos (`AnthropometryHistory`, `GrowthCurveSection`,
+ * `useGrowthSummary(athlete.id)` (nueva, feature 040): el modo padre solo
+ * usa `summary.stage` / `summary.latest_evaluation_date` (tarjeta de etapa)
+ * y `summary.latest` (tarjetas de banda) — ambos ya reflejan la medición
+ * más reciente calculada en el servidor, así ninguna tarjeta familiar
+ * necesita ordenar `records` por fecha ella misma. Cada uno de los demás
+ * componentes hijos (`AnthropometryHistory`, `GrowthCurveSection`,
  * `TrainingReadiness`, `MorphologyCard`, `PHVExplanationCard`) sigue
  * gobernando sus propios estados de carga/vacío/error; este componente
- * sólo gestiona el bloque de resumen (`GrowthAlerts`/`GrowthStatusRow`/
- * `NextMeasurementCard`) que depende del endpoint nuevo, per la tabla de
- * estados de `contracts/growth-tab-ui.md` (fila "Status row / next
- * measurement"). Un error en `growth-summary` no tumba el resto del tab.
+ * sólo gestiona el bloque de resumen (coach: `GrowthAlerts`/
+ * `GrowthStatusRow`/`NextMeasurementCard`; padre: tarjetas familiares) que
+ * depende del endpoint nuevo, per la tabla de estados de
+ * `contracts/growth-tab-ui.md` (filas "Status row / next measurement" y
+ * "Family cards"). Un error en `growth-summary` no tumba el resto del tab.
  */
 import { TrendingUp } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 
 import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
+import { FamilyBandCards } from "@/components/athletes/growth/FamilyBandCards";
+import { FamilyStageCard } from "@/components/athletes/growth/FamilyStageCard";
 import { GrowthAlerts } from "@/components/athletes/growth/GrowthAlerts";
 import { GrowthCurveSection } from "@/components/athletes/growth/GrowthCurveSection";
 import { GrowthStatusRow } from "@/components/athletes/growth/GrowthStatusRow";
+import { MaturationTimeline } from "@/components/athletes/growth/MaturationTimeline";
 import { NextMeasurementCard } from "@/components/athletes/growth/NextMeasurementCard";
 import { MorphologyCard } from "@/components/athletes/MorphologyCard";
-import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
 import { ResearchReferences } from "@/components/athletes/ResearchReferences";
 import { TrainingReadiness } from "@/components/athletes/TrainingReadiness";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -190,12 +200,19 @@ function CoachGrowthTab({
         <GrowthCurveSection athlete={athlete} records={records} mode="coach" />
       </div>
 
+      <MaturationTimeline
+        stage={summaryQuery.data?.stage ?? null}
+        maturityOffset={summaryQuery.data?.maturity_offset ?? null}
+        ageAtPhv={summaryQuery.data?.age_at_phv ?? null}
+      />
+
       <MorphologyCard latestRecord={latestRecord} />
 
       <PHVExplanationCard
         athleteId={athlete.id}
         hasRecords={records.length > 0}
         onMeasurementCTA={onRecordMeasurement}
+        audience="coach"
       />
 
       <div className="rounded-xl bg-white p-5 shadow-card">
@@ -213,45 +230,81 @@ function CoachGrowthTab({
 }
 
 // ---------------------------------------------------------------------------
-// Modo padre — paridad con `MyAthleteDetailPage.tsx` de hoy (T062 rediseña
-// esta rama en la Fase 6, US4)
+// Modo padre (feature 040, US4, T062) — tarjetas familiares narrativas.
 // ---------------------------------------------------------------------------
 
-function ParentGrowthTab({
-  athlete,
-  records,
-  anthropometryQuery,
-  latestRecord,
-}: ModeProps) {
+/** Skeleton del bloque de tarjetas familiares mientras carga `useGrowthSummary`. */
+function FamilyCardsSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando etapa de desarrollo…"
+      className="space-y-3"
+    >
+      <Skeleton className="h-20 w-full rounded-xl" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-xl" />
+      </div>
+    </div>
+  );
+}
+
+interface FamilyCardsSectionProps {
+  summaryQuery: UseQueryResult<GrowthSummary, Error>;
+  sex: AthleteDetailOut["sex"];
+}
+
+/** `FamilyStageCard` → `FamilyBandCards`, gobernadas por `useGrowthSummary`
+ *  (fila "Family cards" de la tabla de estados de `contracts/growth-tab-ui.md`). */
+function FamilyCardsSection({ summaryQuery, sex }: FamilyCardsSectionProps) {
+  if (summaryQuery.isLoading) {
+    return <FamilyCardsSkeleton />;
+  }
+
+  if (summaryQuery.isError) {
+    return (
+      <ErrorState
+        message="No se pudo cargar el crecimiento."
+        onRetry={() => {
+          void summaryQuery.refetch();
+        }}
+      />
+    );
+  }
+
+  const summary = summaryQuery.data;
+
+  if (!summary || summary.records_count === 0) {
+    return <EmptyState icon={TrendingUp} title="Aún no hay mediciones" />;
+  }
+
+  return (
+    <>
+      <FamilyStageCard
+        stage={summary.stage}
+        latestEvaluationDate={summary.latest_evaluation_date}
+        sex={sex}
+      />
+      <FamilyBandCards latest={summary.latest} />
+    </>
+  );
+}
+
+/**
+ * Orden fijo del contrato (`contracts/growth-tab-ui.md` §Component tree,
+ * también resumido en el docstring del módulo): tarjetas familiares → curva
+ * familiar → IA de solo lectura → historial. Nada de `GrowthAlerts`/
+ * `GrowthStatusRow`/`NextMeasurementCard` (bloque resumen exclusivo del
+ * coach) ni de `TrainingReadiness`/`MorphologyCard`/`ResearchReferences`.
+ */
+function ParentGrowthTab({ athlete, records, anthropometryQuery }: ModeProps) {
+  const summaryQuery = useGrowthSummary(athlete.id);
+
   return (
     <div className="space-y-5">
-      {latestRecord ? (
-        <NutritionalClassification
-          record={latestRecord}
-          sex={athlete.sex}
-          birthDate={athlete.birth_date}
-        />
-      ) : anthropometryQuery.isLoading ? (
-        <Skeleton className="h-32 w-full rounded-xl" />
-      ) : anthropometryQuery.isError ? (
-        <ErrorState
-          message="No se pudo cargar el crecimiento."
-          onRetry={() => {
-            void anthropometryQuery.refetch();
-          }}
-        />
-      ) : (
-        <EmptyState icon={TrendingUp} title="Aún no hay mediciones" />
-      )}
-
-      <div className="rounded-xl bg-white p-5 shadow-card">
-        <AnthropometryHistory
-          records={records}
-          isLoading={anthropometryQuery.isLoading}
-          athleteId={athlete.id}
-          mode="parent"
-        />
-      </div>
+      <FamilyCardsSection summaryQuery={summaryQuery} sex={athlete.sex} />
 
       <div className="rounded-xl bg-white p-5 shadow-card">
         <GrowthCurveSection athlete={athlete} records={records} mode="parent" />
@@ -261,7 +314,17 @@ function ParentGrowthTab({
         athleteId={athlete.id}
         hasRecords={records.length > 0}
         readOnly
+        audience="family"
       />
+
+      <div className="rounded-xl bg-white p-5 shadow-card">
+        <AnthropometryHistory
+          records={records}
+          isLoading={anthropometryQuery.isLoading}
+          athleteId={athlete.id}
+          mode="parent"
+        />
+      </div>
     </div>
   );
 }

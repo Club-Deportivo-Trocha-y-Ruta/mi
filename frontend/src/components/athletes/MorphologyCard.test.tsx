@@ -75,6 +75,14 @@ describe("MorphologyCard", () => {
     expect(screen.getByText("+2.0 cm")).toBeInTheDocument();
   });
 
+  it("renderiza las 4 métricas base como shared/StatCard (shadow-card)", () => {
+    render(<MorphologyCard latestRecord={makeRecord()} />);
+    const tallaValue = screen.getByText("155.0 cm");
+    const statCardRoot = tallaValue.closest(".shadow-card");
+    expect(statCardRoot).not.toBeNull();
+    expect(statCardRoot).toHaveClass("rounded-xl");
+  });
+
   it("renderiza badge de bike fit estándar", () => {
     render(<MorphologyCard latestRecord={makeRecord()} />);
     expect(screen.getByText("Estándar")).toBeInTheDocument();

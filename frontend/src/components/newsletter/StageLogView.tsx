@@ -20,11 +20,19 @@
  * únicamente en `mode="coach"` — el DTO de padres nunca la incluye
  * (`to_parent_dto`, data-model.md §1), así que en `mode="parent"` no hay
  * nada que ocultar (el campo no llega).
+ *
+ * `EffortProfile` (recharts) se carga con `React.lazy` — feature 040 (US5,
+ * T071): este componente lo importan `ParentNewsletterPage.tsx` y
+ * `studio/BlockPanel.tsx` de forma estática desde `App.tsx` (ninguna de las
+ * dos rutas es lazy), así que un import estático de `EffortProfile` aquí
+ * arrastraba recharts al chunk de entrada (`check:chunks`, SC-005). El
+ * resto de bloques no usa recharts y sigue estático.
  */
+import { lazy, Suspense } from "react";
+
 import { AnalystReading } from "./AnalystReading";
 import { BadgesRow } from "./BadgesRow";
 import { CoachNote } from "./CoachNote";
-import { EffortProfile } from "./EffortProfile";
 import { FamilyCompass } from "./FamilyCompass";
 import { NextSegment } from "./NextSegment";
 import { ObservationsList } from "./ObservationsList";
@@ -33,6 +41,10 @@ import { StageHeader } from "./StageHeader";
 import { SummitCard } from "./SummitCard";
 import { TrailRoute } from "./TrailRoute";
 import type { ParentStageLog, StageLog } from "@/types/stageLog.types";
+
+const EffortProfile = lazy(() =>
+  import("./EffortProfile").then((m) => ({ default: m.EffortProfile })),
+);
 
 export interface StageLogViewProps {
   stageLog: StageLog | ParentStageLog;
@@ -99,7 +111,9 @@ export function StageLogView({ stageLog, mode }: StageLogViewProps) {
 
       {stageLog.effort_profile.length > 0 && (
         <div data-block="effort-profile">
-          <EffortProfile weeks={stageLog.effort_profile} />
+          <Suspense fallback={null}>
+            <EffortProfile weeks={stageLog.effort_profile} />
+          </Suspense>
         </div>
       )}
 

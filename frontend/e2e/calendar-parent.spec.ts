@@ -10,6 +10,7 @@
  *   se envía athlete_id cuando se elige "Todos"
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { realTokens } from './helpers/session';
 
 const PARENT_USER = {
   id: 3,
@@ -103,6 +104,7 @@ interface MockState {
 }
 
 async function setupAuth(page: Page) {
+  const liveTokens = await realTokens(page.request, 'parent');
   await page.addInitScript(({ tokens, user }) => {
     sessionStorage.setItem(
       'auth-session',
@@ -117,7 +119,7 @@ async function setupAuth(page: Page) {
         version: 0,
       }),
     );
-  }, { tokens: FAKE_TOKENS, user: PARENT_USER });
+  }, { tokens: liveTokens, user: PARENT_USER });
 }
 
 async function mockBackendForParent(page: Page): Promise<MockState> {

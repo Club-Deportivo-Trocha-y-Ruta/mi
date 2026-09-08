@@ -51,10 +51,17 @@ function BandCard({ title, tooltip, reading, indicator, testId }: BandCardProps)
           {tooltip && (
             <Tooltip>
               <TooltipTrigger asChild>
+                {/*
+                  Área táctil de 48×48 (SC-006 / constitution III) con
+                  márgenes negativos para que el glifo siga midiendo ~20 px y
+                  la fila del título no crezca: el `-m-3.5` deja una huella de
+                  20 px en el layout, pero el `hit area` real del botón es de
+                  48 px en ambos ejes.
+                */}
                 <button
                   type="button"
                   aria-label={`Más información sobre ${title}`}
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-mid-gray transition-colors hover:text-charcoal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                  className="-m-3.5 inline-flex h-12 w-12 items-center justify-center rounded-full text-mid-gray transition-colors hover:text-charcoal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                 >
                   <Info size={13} aria-hidden="true" />
                 </button>

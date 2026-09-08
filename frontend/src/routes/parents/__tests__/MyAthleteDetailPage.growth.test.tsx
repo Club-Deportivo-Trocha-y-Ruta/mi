@@ -1,19 +1,29 @@
 /**
- * Regresión — MyAthleteDetailPage (padre) debe clasificar la medición MÁS
+ * Regresión — MyAthleteDetailPage (padre) debe reflejar la medición MÁS
  * RECIENTE, no la más antigua (spec 040, defecto G-0x del audit
  * `docs/18-growth-module-redesign/proposal.md`).
+ *
+ * Reescrito para feature 040, US4 (T062): el tab Crecimiento ya no clasifica
+ * en el cliente vía `NutritionalClassification` (`records[0]` directo) —
+ * ahora monta el `GrowthTab` compartido en modo padre, cuyas tarjetas
+ * familiares (`FamilyStageCard`/`FamilyBandCards`, sin mockear) leen
+ * `GrowthSummary.latest`/`.stage` de `GET .../growth-summary` (servidor).
+ * Esta suite ahora vigila la misma regresión de orden un nivel más arriba:
+ * que el fixture MSW de `growth-summary` (que representa el cálculo del
+ * servidor sobre la medición más reciente) sea lo que efectivamente se
+ * pinta, y que la banda de la medición más antigua nunca aparezca.
  *
  * El backend devuelve los registros antropométricos ordenados
  * `evaluation_date` DESC (ver `backend/app/routers/anthropometry.py`, más
  * reciente primero). Este archivo NO mockea `useAnthropometry`: ejercita la
  * capa HTTP real (axios) contra un handler MSW que responde con tres
- * registros ya ordenados newest-first, igual que el backend — así el test
- * detecta si el componente vuelve a asumir el orden equivocado (`records.at(-1)`
- * en vez de `records[0]`).
+ * registros ya ordenados newest-first, igual que el backend — así el
+ * segundo test detecta si la página volviera a reordenar/recortar la lista
+ * antes de dársela a `GrowthCurveSection`.
  *
- * Antes del fix (T005): el componente usaba `records[records.length - 1]`
- * (el registro más antiguo) tanto para `NutritionalClassification` como para
- * `phvAgeMonths` — este test falla contra ese código.
+ * FR-016 (`contracts/growth-tab-ui.md`): la vista familiar no debe mostrar
+ * Z-score/percentil/etiqueta clínica — el primer test ahora también vigila
+ * eso, además de "más reciente, no más antigua".
  *
  * Privacidad Ley 1581: fixtures 100% sintéticos (ningún atleta real), sin
  * fecha de nacimiento real ni nombre de un menor real.
@@ -33,8 +43,14 @@ vi.mock("@/hooks/athletes/useAthlete", () => ({
   useAthlete: vi.fn(),
 }));
 
-// NO mockeamos useAnthropometry ni NutritionalClassification: son el objeto
-// de esta regresión (orden de records + clasificación resultante).
+// NO mockeamos useAnthropometry: es el objeto de esta regresión (orden de
+// `records` reenviado a `GrowthCurveSection`). Tampoco mockeamos
+// `FamilyStageCard`/`FamilyBandCards` (dentro de `GrowthTab`, sin mockear
+// más abajo): son las que ahora reflejan "más reciente, no más antigua" a
+// partir de `GrowthSummary.latest`/`.stage` — el fixture MSW de
+// `growth-summary` (ver `beforeEach`) es la fuente de esa banda/etapa.
+// `ResearchReferences` ya no se mockea: `GrowthTab` en modo padre no la
+// monta (exclusiva del coach, `contracts/growth-tab-ui.md`).
 
 // Sub-componentes pesados ajenos al objeto de este archivo — mismo criterio
 // que MyAthleteDetailPage.test.tsx / MyAthleteDetailPage.activities.test.tsx.
@@ -43,9 +59,6 @@ vi.mock("@/components/athletes/AthleteInfoCard", () => ({
 }));
 vi.mock("@/components/athletes/AnthropometryHistory", () => ({
   AnthropometryHistory: () => <div data-testid="anthropometry-history">AnthropometryHistory</div>,
-}));
-vi.mock("@/components/athletes/ResearchReferences", () => ({
-  ResearchReferences: () => <div data-testid="research-references">ResearchReferences</div>,
 }));
 vi.mock("@/components/ai/PHVExplanationCard", () => ({
   PHVExplanationCard: () => <div data-testid="phv-explanation-card">PHVExplanationCard</div>,
@@ -73,7 +86,9 @@ vi.mock("@/components/athletes/growth/GrowthCurveSection", () => ({
 
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { MyAthleteDetailPage } from "../MyAthleteDetailPage";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { mswServer } from "@/test/setup";
+import { makeGrowthSummary } from "@/test/msw/growthSummaryHandlers";
 import { MaturationStatus, Sex } from "@/types/enums";
 import type { AthleteDetailOut } from "@/types/athlete.types";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
@@ -173,6 +188,10 @@ function mockAthleteHook() {
   } as unknown as ReturnType<typeof useAthlete>);
 }
 
+// `FamilyBandCards` (dentro de `GrowthTab`, sin mockear) usa el tooltip de
+// la tarjeta de IMC (`@/components/ui/tooltip`), que requiere un
+// `TooltipProvider` ancestro — en la app real lo pone `App.tsx`; acá se
+// envuelve el render, mismo criterio que `FamilyBandCards.test.tsx`.
 function renderAthletePage() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -183,9 +202,11 @@ function renderAthletePage() {
   return render(
     <MemoryRouter initialEntries={[`/my-athletes/${MY_ATHLETE_ID}`]}>
       <QueryClientProvider client={queryClient}>
-        <Routes>
-          <Route path="/my-athletes/:id" element={<MyAthleteDetailPage />} />
-        </Routes>
+        <TooltipProvider delayDuration={0}>
+          <Routes>
+            <Route path="/my-athletes/:id" element={<MyAthleteDetailPage />} />
+          </Routes>
+        </TooltipProvider>
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -201,7 +222,29 @@ async function openGrowthTab() {
 // Suite
 // ---------------------------------------------------------------------------
 
-describe("MyAthleteDetailPage (padre) — clasifica la medición más reciente", () => {
+// `GrowthSummary` que representa lo que el servidor calcularía sobre
+// `NEWEST_RECORD` (record_id=3, banda de talla `retraso_talla` — coincide
+// con `height_z_score=-2.5`, ver `lib/growth/bands.ts::BAND_VOCABULARY`).
+// El punto de esta regresión ya no es "¿el cliente clasifica bien
+// `records[0]`?" (eso ahora lo hace el servidor) sino "¿la página pinta lo
+// que el servidor le manda para la medición más reciente, sin mezclar la
+// banda de una medición vieja?" — de ahí que el fixture use explícitamente
+// la banda opuesta a `OLDEST_RECORD` (`talla_alta`) para que un regreso al
+// bug de orden sea detectable.
+const NEWEST_SUMMARY = makeGrowthSummary({
+  athlete_id: MY_ATHLETE_ID,
+  latest_evaluation_date: NEWEST_RECORD.evaluation_date,
+  stage: MaturationStatus.CircaPHV,
+  latest: {
+    record_id: NEWEST_RECORD.id,
+    growth_source: "WHO",
+    height: { value: 155.0, z_score: -2.5, percentile: 1, band: "retraso_talla" },
+    bmi: { value: 18.7, z_score: -0.2, percentile: 42, band: "adecuado" },
+    weight: null,
+  },
+});
+
+describe("MyAthleteDetailPage (padre) — refleja la medición más reciente", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAthleteHook();
@@ -209,22 +252,30 @@ describe("MyAthleteDetailPage (padre) — clasifica la medición más reciente",
       http.get("*/api/athletes/:athleteId/anthropometry", () =>
         HttpResponse.json(RECORDS_NEWEST_FIRST),
       ),
+      http.get("*/api/athletes/:athleteId/growth-summary", () =>
+        HttpResponse.json(NEWEST_SUMMARY),
+      ),
     );
   });
 
-  it("usa el registro más reciente (records[0]) para la clasificación nutricional, no el más antiguo", async () => {
-    renderAthletePage();
+  it("la tarjeta familiar de talla refleja la banda de la medición MÁS RECIENTE, no la más antigua, y sin numerales clínicos (FR-016)", async () => {
+    const { container } = renderAthletePage();
     await openGrowthTab();
 
-    // Banda del registro MÁS RECIENTE (height_z_score = -2.5 → "Talla baja").
-    expect(await screen.findByText("Talla baja")).toBeInTheDocument();
-    // Banda del registro MÁS ANTIGUO (height_z_score = +2.5 → "Talla muy
-    // alta") NUNCA debe aparecer — sería la señal del bug de orden invertido.
-    expect(screen.queryByText("Talla muy alta")).not.toBeInTheDocument();
+    // Banda de `NEWEST_RECORD` (retraso_talla → familyLabel "Por debajo del
+    // rango esperado", `lib/growth/bands.ts`).
+    expect(
+      await screen.findByText("Por debajo del rango esperado"),
+    ).toBeInTheDocument();
+    // Banda de `OLDEST_RECORD` (talla_alta → "Por encima del promedio")
+    // NUNCA debe aparecer — sería la señal del bug de orden invertido.
+    expect(screen.queryByText("Por encima del promedio")).not.toBeInTheDocument();
 
-    // El Z-score mostrado debe corresponder al registro más reciente.
-    expect(screen.getByText(/Z=-2\.50/)).toBeInTheDocument();
-    expect(screen.queryByText(/Z=\+2\.50/)).not.toBeInTheDocument();
+    // FR-016: la vista familiar no muestra Z-score/percentil/"offset".
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/Z=/);
+    expect(text).not.toMatch(/P\d{1,2}\b/);
+    expect(text).not.toMatch(/offset/i);
   });
 
   it("entrega la curva de crecimiento con los registros en orden newest-first", async () => {
@@ -237,5 +288,30 @@ describe("MyAthleteDetailPage (padre) — clasifica la medición más reciente",
     // recibiría la lista invertida y la línea del atleta/PHV saldría del
     // registro equivocado.
     expect(growthCurve).toHaveAttribute("data-record-ids", "3,2,1");
+  });
+
+  // T073 (gate de integración, feature 040) — FR-020 llevó las tarjetas
+  // superiores de esta página al `growth-summary` del servidor (T070), pero
+  // esta página ES la vista familiar: FR-016 prohíbe percentiles y etiquetas
+  // clínicas de etapa en cualquier superficie que ve un padre, no sólo
+  // dentro del tab Crecimiento. Estas tarjetas quedan por encima de los tabs
+  // y por eso escapan a `GrowthTab.parent.test.tsx` (T056).
+  it("las tarjetas superiores usan lenguaje familiar: sin percentil ni etiqueta clínica de etapa (FR-016)", async () => {
+    const { container } = renderAthletePage();
+
+    // Las tarjetas se pintan desde el resumen del servidor (no desde
+    // `athlete.latest_anthropometry`, que en la fixture es `null`).
+    expect(await screen.findByText("155 cm")).toBeInTheDocument();
+
+    // Etapa en lenguaje familiar, nunca la sigla clínica ("Circa-PHV").
+    expect(screen.getByText("Pico de crecimiento")).toBeInTheDocument();
+
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/PHV/);
+    // `\b` no basta: en `textContent` las tarjetas quedan pegadas
+    // ("P1Velocidad"), así que se busca la P de percentil seguida de dígitos
+    // en cualquier posición.
+    expect(text).not.toMatch(/P\d{1,2}/);
+    expect(text).not.toMatch(/Z=/);
   });
 });

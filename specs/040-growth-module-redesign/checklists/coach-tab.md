@@ -120,7 +120,7 @@ Zero navigations away are required. The moderated timing test with the club's co
 | T052 — replace the slot, delete the old components | react-ui-engineer | **Done** | `GrowthTab.tsx` (both modes) and `MyAthleteDetailPage.tsx` now render `GrowthCurveSection`; the dead `phvAgeMonths` plumbing is gone from both call sites (the section derives it internally from the newest record). `git status` confirms `GrowthCharts.tsx`, `GrowthCharts.test.tsx`, `PercentileCurves.tsx`, `PercentileCurves.test.tsx`, `PercentileCurves.a11y.test.tsx` deleted (plus the untracked `PercentileCurves.characterization.test.tsx`). `e2e/history.spec.ts:98` now targets `growth-curve`. Barrel `growth/index.ts` exports the four new components + types. **Re-homing of T011 checked by the gate**: PHV/PWV marker matrix → `PercentileChart.test.tsx`; PNG filename without PII → `GrowthCurveSection.test.tsx`; sr-only rows → superseded by the now-visible `PercentileTable`; bio-axis tick relabeling → added to `PercentileChart.test.tsx`. The legend-toggle behaviour was **deliberately not** re-homed: the redesign's legend is static (R-06/R-07/R-08), a documented scope decision, not a lost assertion. |
 | T053 — diacritics | react-ui-engineer | **Done** | "Interpretacion" → "Interpretación" and "Detalles tecnicos" → "Detalles técnicos" in `PercentileInterpretationBlock.tsx` (+ the 5 matching regexes in its sibling test). The new toolbar shipped with correct diacritics already. Grep gate result below. |
 | T054 — Playwright `e2e/growth.spec.ts` part 2 | qa-engineer | **Deferred — written, not executed** (accepted, see *Deferrals*) | `E2E-040-002` added alongside the untouched `E2E-040-001`, covering all four required surfaces and ordered to match the real component logic (the "Biológica" toggle only exists while the indicator is not IMC, so it is exercised **before** switching to IMC). `npx tsc --noEmit -p .` → **0 errors**. Execution blocked by the same `loginAsCoach` 401 that already blocked T044; the worker proved it is not caused by this file by running the repo's untouched `e2e/auth.spec.ts::E2E-001`, which fails identically. |
-| T055 — wave review | engineering-lead | **Not done — see the SC-008 finding** | Tokens audit passes; SC-008 as written does **not** hold and cannot hold under FR-011. Section below. |
+| T055 — wave review | engineering-lead | **Done 2026-09-04** (closed by the Phase 7 gate, T073) | Tokens audit passes. SC-008 **as amended 2026-09-04 in `spec.md:168`** (option 1 of the three the Phase 5 gate put to the owner) is met and measured — see *SC-008 — re-measured against the amended criterion* below. The original "≥ 60 %" finding and its arithmetic remain recorded further down for the record. |
 
 ## Verification commands run by the gate
 
@@ -139,7 +139,22 @@ Zero navigations away are required. The moderated timing test with the club's co
 |---|---|---|---|
 | `src/lib/__tests__/datetime.test.ts > currentSeason` | 1 failed | 1 failed at `HEAD` (recorded by the Phase 4 gate's clean-worktree run) | `git diff HEAD -- frontend/src/lib/datetime.ts frontend/src/lib/__tests__/datetime.test.ts` → **empty**: both the source and the test are byte-identical to `HEAD`, so the branch cannot have caused the failure. Root cause is environmental: the test's own control line asserts `new Date("2027-01-01T02:00:00Z").getFullYear() === 2027`, which is false on this machine (`Intl…timeZone` = `America/Bogota`, UTC−5 → 2026-12-31 local). **Pre-existing, timezone-dependent, unrelated to feature 040.** |
 
-## SC-008 — measured, and **not met** (blocking finding for the owner)
+## SC-008 — re-measured against the amended criterion (T055 closed, 2026-09-04)
+
+The owner took **option 1** below: `spec.md:168` now reads "≥ 18 % of the curve width, more than twice the retired full-range chart (8.4 %), and ≥ 60 px between consecutive measurements at 1024 px". Re-measured by the Phase 7 gate against the **shipped** `frontend/src/lib/growth/window.ts` (constants read from the source, not hard-coded in the assertion), on the contract fixture of three measurements 7 months apart (ages 144 / 151 / 158 months = 14 months of span):
+
+| Amended clause | Required | Measured | Verdict |
+|---|---|---|---|
+| Share of the default window covered by the measurements | ≥ 18 % | `computeAgeWindow([144,151,158], "auto")` → `[120, 194]`, width **74 mo**; 14 / 74 = **18.92 %** | **PASS** |
+| Improvement over the retired full-range chart | ≥ 2× | full range `[61.5, 228.5]` = 167 mo → 14 / 167 = 8.38 %; 18.92 / 8.38 = **2.26×** | **PASS** |
+| Distance between consecutive measurements at 1024 px | ≥ 60 px | plot area = 1024 − 48 (page padding) − 40 (card padding) − (8 `margin.left` + 24 `margin.right` + 40 `YAxis width`) = **864 px**; 7 / 74 × 864 = **81.7 px** | **PASS** |
+| "Ver 5–19 años" restores the full reference range | must hold | `computeAgeWindow(ages, "full")` → `[61.5, 228.5]` | **PASS** |
+
+The plot geometry above is not an estimate: `margin={{ top: 24, right: 24, left: 8, bottom: 8 }}` and `<YAxis … width={40} />` were read out of `frontend/src/components/athletes/growth/PercentileChart.tsx` (lines 572 and 591–596) by the gate.
+
+**Evidence**: `cd frontend && npx vitest run src/lib/growth/window.test.ts` → **28/28 pass**, including the four cases of the `describe("SC-008 — legibilidad de la ventana por defecto")` block that encode exactly the table above. The criterion is therefore regression-guarded, not just measured once.
+
+## SC-008 — original measurement against the pre-amendment criterion (historical record)
 
 The task asked for SC-008 to be measured on a three-measurement fixture. It was, against the real `computeAgeWindow` constants read out of `frontend/src/lib/growth/window.ts`:
 
@@ -159,7 +174,7 @@ Secondary observation: the spec's stated baseline ("under 5 % today") also does 
 2. **Amend FR-011 to proportional padding**, e.g. `pad = max(6, 0.35 × span)` per side, which puts a 14-month span at ~59 % while still showing context. Requires reworking `computeAgeWindow`, the T046 tests and the T047 chart expectations.
 3. Keep both and accept a documented, permanent gap — not recommended; an unachievable success criterion will resurface at every future gate.
 
-Until one of these is chosen, **T055 stays unchecked in `tasks.md`** and Phase 5 is not signed off.
+**Resolved 2026-09-04**: the owner chose **option 1**. `spec.md:168` carries the amended criterion with an inline amendment note, `window.test.ts` encodes it, and T055 is marked `[X]` in `tasks.md` by the Phase 7 gate (T073). FR-011 and `computeAgeWindow` were **not** changed — the padding is still −24/+36 months.
 
 ## Fixes applied by the gate
 
@@ -351,3 +366,48 @@ The gate did **not** retune `computeAgeWindow`. Overriding a `MUST` (FR-011) so 
 
 **Signed**: `engineering-lead` (wave gate, Phase 5 / US3 — third pass) — 2026-09-04
 **Verdict**: Phase 5 **FAIL**, unchanged in outcome and sharpened in analysis. **T046–T053 verified complete** and correctly marked `[X]`; typecheck clean, 1307/1307 tests green on the wave's paths, 3882/3883 on the full suite with the one failure proven pre-existing, both token greps and the diacritics gate clean, zero regressions. **T054 deferred** with an accepted environment + privacy reason. **T055 is OPEN and escalated**: SC-008 measures 18.92 % against a required 60 %, is unreachable at any athlete age under FR-011, and the padding rule previously floated as the alternative fix does not reach 60 % either — leaving "amend SC-008" as the single viable resolution, which only the owner may authorise.
+
+---
+
+# T055 — CLOSED (fourth pass, 2026-09-04, Phase 7 gate)
+
+**Owner**: `engineering-lead` (wave gate) · **Trigger**: the owner amended **SC-008** in `spec.md` line 168 to the achieved-and-measurable form recommended by the third pass (option 1). The criterion is now: *measurements span ≥ 18 % of the curve width, ≥ 2× the retired full-range chart, and ≥ 60 px between consecutive points at 1024 px*, with the amendment note kept inline in the spec.
+
+## Measurement against the shipped `frontend/src/lib/growth/window.ts`
+
+Fixture (synthetic, no athlete data): three measurements 7 months apart over 14 months, at ages **144 / 151 / 158 months**.
+
+| Quantity | Value | Source |
+|---|---|---|
+| Default window (`computeAgeWindow(ages, "auto")`) | `[120, 194]` months → **74 months** wide | FR-011 padding −24 / +36 |
+| Full reference window (`"full"`) | `[61.5, 228.5]` months → **167 months** wide | retired chart's range |
+| Measurement span / default width | 14 / 74 = **18.92 %** | ≥ 18 % ✅ |
+| Measurement span / full width | 14 / 167 = **8.38 %** | the retired baseline |
+| Improvement factor | 18.92 / 8.38 = **2.26×** | ≥ 2× ✅ |
+| Distance between consecutive points at 1024 px | (7 / 74) × 864 px = **81.7 px** | ≥ 60 px ✅ |
+
+Plot geometry used for the pixel figure, read off `PercentileChart.tsx` and deliberately conservative: viewport 1024 px − 48 px page padding − 40 px card padding = 936 px container; minus the `ComposedChart` `margin` (`left: 8`, `right: 24`) and the `YAxis` `width={40}` ⇒ **864 px** of plot area. A wider container only increases the gap.
+
+**Verification**: the three figures are now a permanent regression test, not a one-off calculation — `describe("SC-008 — legibilidad de la ventana por defecto")` in `frontend/src/lib/growth/window.test.ts`, asserting the 18 % floor, the ≥ 2× ratio, the 60 px floor and that the "Ver 5–19 años" toggle still restores `[61.5, 228.5]`. If anyone retunes `computeAgeWindow`, SC-008 fails in CI instead of silently drifting.
+
+```
+cd frontend && npx vitest run src/lib/growth/window.test.ts   → 28/28 pass (was 24; +4 SC-008 cases)
+```
+
+## Tokens audit (T055, second half)
+
+| Gate | Result |
+|---|---|
+| `grep -rn "#[0-9a-fA-F]\{6\}\|#[0-9a-fA-F]\{3\}\b" frontend/src/components/athletes/growth/` | **no matches** ✅ |
+| `grep -rn "rgba\?(\|hsl(" frontend/src/components/athletes/growth/` | **no matches** ✅ |
+| `grep -rnE "(bg\|text\|border\|fill\|stroke)-(red\|blue\|green\|amber\|yellow\|orange\|purple\|pink\|indigo\|teal\|cyan\|emerald\|lime\|rose\|violet\|sky\|fuchsia)-[0-9]{2,3}" frontend/src/components/athletes/growth/` | **no matches** ✅ (raw Tailwind palette, not just hex) |
+| `grep -rn "Cronologica\|Biologica\|tecnicos" frontend/src` | 3 matches, all identifiers (`focos_tecnicos` API field / `focos-tecnicos` test id), **zero display copy** ✅ |
+
+`PercentileChart.tsx` resolves every colour through `var(--color-*)`: `border-gray` (grid), `charcoal` (P50), `mid-gray` (outer percentiles, axes), `light-gray` (P3–P97 band), `primary` (athlete series only), `white` (dot ring), and `success`/`warning`/`danger` **only** for the nutritional-band dot in the tooltip — which is `aria-hidden` and always paired with the band's text label, so colour is never the sole channel (FR-018 / Constitution III).
+
+## Follow-up from the third pass — closed
+
+The stale header docstring of `frontend/src/lib/growth/window.ts` (which still claimed "≥ 60 % del ancho") was rewritten in this pass to the amended SC-008 wording, with the measured 18.9 % / 8.4 % / 2.26× figures and a pointer to the new test.
+
+**Signed**: `engineering-lead` (wave gate, Phase 7 / T055 close-out) — 2026-09-04
+**Verdict**: **T055 PASS**. SC-008 as amended is met with margin on all three clauses and is now pinned by a regression test; the tokens and diacritics gates are clean. Phase 5 is signed.

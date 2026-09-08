@@ -243,3 +243,87 @@ describe("PercentileTable — valores mostrados", () => {
     expect(dateCell.textContent).toMatch(/2026/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 4. preset="family" — alternativa accesible para la familia (FR-016)
+//
+// `docs/18-growth-module-redesign/proposal.md` §5.2 exige que la vista de
+// tabla siga disponible en modo padre ("table view available"), pero FR-016
+// prohíbe mostrarle Z-scores, percentiles y las etiquetas clínicas del coach.
+// ---------------------------------------------------------------------------
+
+describe("PercentileTable — preset family", () => {
+  it("no expone las columnas Z ni Percentil", () => {
+    render(
+      <PercentileTable
+        records={[makeRecord({ id: 1 })]}
+        indicator="height_for_age"
+        sex="M"
+        birthDate={BASE_BIRTH_DATE}
+        preset="family"
+      />,
+    );
+
+    const table = screen.getByRole("table");
+    const headers = within(table)
+      .getAllByRole("columnheader")
+      .map((h) => (h.textContent ?? "").trim().toLowerCase());
+
+    expect(headers).not.toContain("z");
+    expect(headers).not.toContain("percentil");
+    expect(headers).toContain("estado");
+    // Las columnas que sí sobreviven (mes-año, edad, valor) siguen presentes.
+    expect(headers).toContain("mes");
+    expect(headers).toContain("edad");
+    expect(headers).toContain("valor");
+  });
+
+  it("no imprime el Z-score ni el percentil en ninguna celda", () => {
+    render(
+      <PercentileTable
+        records={[makeRecord({ id: 1 })]}
+        indicator="height_for_age"
+        sex="M"
+        birthDate={BASE_BIRTH_DATE}
+        preset="family"
+      />,
+    );
+
+    const table = screen.getByRole("table");
+    // +0.30 (Z formateado) y P62 (percentil) son los valores del mock.
+    expect(table.textContent).not.toMatch(/\+0\.30/);
+    expect(table.textContent).not.toMatch(/\bP62\b/);
+  });
+
+  it("usa la etiqueta familiar de la banda, nunca la clínica del coach", () => {
+    render(
+      <PercentileTable
+        records={[makeRecord({ id: 1 })]}
+        indicator="height_for_age"
+        sex="M"
+        birthDate={BASE_BIRTH_DATE}
+        preset="family"
+      />,
+    );
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Dentro del rango esperado")).toBeInTheDocument();
+    expect(within(table).queryByText("Adecuada")).not.toBeInTheDocument();
+  });
+
+  it("por defecto (sin preset) sigue siendo la tabla de coach con Z y percentil", () => {
+    render(
+      <PercentileTable
+        records={[makeRecord({ id: 1 })]}
+        indicator="height_for_age"
+        sex="M"
+        birthDate={BASE_BIRTH_DATE}
+      />,
+    );
+
+    const table = screen.getByRole("table");
+    expect(table.textContent).toMatch(/\+0\.30/);
+    expect(table.textContent).toMatch(/P62/);
+    expect(within(table).getByText("Adecuada")).toBeInTheDocument();
+  });
+});

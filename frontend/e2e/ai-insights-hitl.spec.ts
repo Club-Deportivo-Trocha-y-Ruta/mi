@@ -32,6 +32,7 @@
  * Privacidad: todo nombre de atleta/coach en este archivo es sintético.
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
+import { realTokens } from './helpers/session';
 
 // ---------------------------------------------------------------------------
 // Fixtures — sintéticos, nunca nombres reales (Ley 1581)
@@ -145,12 +146,13 @@ function editedInsight(id: number, text: string): InsightFixture {
 // Helpers de red — idioma de e2e/cold-start.spec.ts (predicados de URL)
 // ---------------------------------------------------------------------------
 
-/** Solo peticiones al backend (:8000), nunca a los archivos fuente de Vite (:5173). */
+/** Solo peticiones al backend (:8000), nunca a los archivos fuente de Vite (:5173, o `E2E_APP_PORT`). */
 function isBackend(url: URL): boolean {
-  return url.port !== "5173";
+  return url.port !== (process.env.E2E_APP_PORT ?? "5173");
 }
 
 async function setupAuthCoach(page: Page): Promise<void> {
+  const liveTokens = await realTokens(page.request, 'coach');
   await page.addInitScript(
     ({ tokens, user }) => {
       sessionStorage.setItem(
@@ -166,7 +168,7 @@ async function setupAuthCoach(page: Page): Promise<void> {
         }),
       );
     },
-    { tokens: TOKENS, user: COACH },
+    { tokens: liveTokens, user: COACH },
   );
 }
 

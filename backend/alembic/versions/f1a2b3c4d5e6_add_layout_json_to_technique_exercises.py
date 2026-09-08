@@ -51,7 +51,15 @@ def upgrade() -> None:
     # Import the pre-computed backfill map from the data module.
     # The import is deferred to upgrade() so that the migration file itself
     # never executes side-effects at module import time (Alembic convention).
-    from app.data.technique_catalog import GYMKHANA_LAYOUT_BACKFILL  # noqa: PLC0415
+    # The catalog data module was retired together with its tables
+    # (see d0e1f2a3b4c5_remove_technique_strength_catalog). A fresh database
+    # replaying history no longer has the module, and the rows seeded here
+    # would be dropped a few revisions later anyway — skip the seed instead
+    # of failing the whole upgrade chain.
+    try:
+        from app.data.technique_catalog import GYMKHANA_LAYOUT_BACKFILL  # noqa: PLC0415
+    except ModuleNotFoundError:
+        return
 
     bind = op.get_bind()
 

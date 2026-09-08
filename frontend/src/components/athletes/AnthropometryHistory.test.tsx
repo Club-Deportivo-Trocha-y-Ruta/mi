@@ -284,4 +284,40 @@ describe("AnthropometryHistory", () => {
       expect(screen.getByText(/Envergadura: 162/)).toBeInTheDocument();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Modo familia (feature 040, FR-016): sin offset, etapa clínica ni edad PHV
+  // -------------------------------------------------------------------------
+  describe("en modo parent", () => {
+    it("oculta las columnas clínicas de la tabla y de las tarjetas móviles", () => {
+      render(
+        <AnthropometryHistory records={[record1, record2]} isLoading={false} mode="parent" />
+      );
+      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByText("Peso")).toBeInTheDocument();
+      expect(screen.queryByText("Offset")).not.toBeInTheDocument();
+      expect(screen.queryByText("Estado PHV")).not.toBeInTheDocument();
+      expect(screen.queryByText("Edad PHV")).not.toBeInTheDocument();
+      expect(screen.queryByText(/Offset:/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Pre-PHV|Circa-PHV|Post-PHV/)).not.toBeInTheDocument();
+    });
+
+    it("oculta el offset, la edad al PHV, el estado y las implicaciones en el detalle", async () => {
+      const user = userEvent.setup();
+      render(<AnthropometryHistory records={[record1]} isLoading={false} mode="parent" />);
+      await user.click(screen.getAllByText("01/06/2025")[0]);
+      expect(screen.getByText(/Peso: 43/)).toBeInTheDocument();
+      expect(screen.queryByText(/Maturity Offset/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Edad al PHV/)).not.toBeInTheDocument();
+      expect(screen.queryByText("Estado:")).not.toBeInTheDocument();
+      expect(screen.queryByText(/Implicaciones de entrenamiento/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Pre-PHV/)).not.toBeInTheDocument();
+    });
+
+    it("en modo coach sigue mostrando las columnas clínicas", () => {
+      render(<AnthropometryHistory records={[record1]} isLoading={false} mode="coach" />);
+      expect(screen.getByText("Estado PHV")).toBeInTheDocument();
+      expect(screen.getByText("Edad PHV")).toBeInTheDocument();
+    });
+  });
 });

@@ -81,7 +81,5 @@ Backend auto-deploys to Render free tier from `main` (`https://mi-2yzi.onrender.
 - **Subagents**: project agents in `.claude/agents/` follow the tiering/team policy documented in `.claude/agents/README.md` (leads = opus, workers = sonnet). The `data-privacy-guard` audit is mandatory for any feature touching athlete-identifiable data.
 
 <!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
-at specs/040-growth-module-redesign/plan.md
+Active feature: `specs/040-growth-module-redesign/plan.md` — WHO 2007 becomes the single reference standard for the `Crecimiento` tab (replacing the CDC/server vs WHO/client double standard), with a decision-first coach tab (`GET /growth-summary`), a readable windowed percentile curve, a family-language parent view, and shared-component/lazy-chunk coherence (spec, research, data-model, contracts and quickstart live alongside it). All five user stories are code-complete on `feat/040-growth-module-redesign` (Setup through part of US4 committed in `046569f`, the rest uncommitted); deferred on infrastructure grounds: T027/T028 (real-MySQL `_test` recompute, dev-stack PDF regen) and the five Playwright specs (`specs/040-growth-module-redesign/checklists/integration-review.md` §4 — a pre-existing migration bug unrelated to this feature blocks any fresh database). T077–T079 (quickstart walkthrough, post-deploy smoke, PR description) have not run yet — regenerate this block with `/speckit-agent-context-update` when the next feature starts.
 <!-- SPECKIT END -->

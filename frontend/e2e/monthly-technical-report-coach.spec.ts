@@ -23,6 +23,7 @@
  * Ver docs/11-informe-tecnico-mensual/e2e.md.
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
+import { realTokens } from './helpers/session';
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -188,6 +189,7 @@ const PROJECT_PROFILE_FIXTURE = {
 
 async function setupAuth(page: Page) {
   // Inyecta sesión autenticada en sessionStorage (formato del Zustand store).
+  const liveTokens = await realTokens(page.request, 'coach');
   await page.addInitScript(
     ({ tokens, user }) => {
       sessionStorage.setItem(
@@ -204,7 +206,7 @@ async function setupAuth(page: Page) {
         }),
       );
     },
-    { tokens: FAKE_TOKENS, user: COACH_USER },
+    { tokens: liveTokens, user: COACH_USER },
   );
 }
 

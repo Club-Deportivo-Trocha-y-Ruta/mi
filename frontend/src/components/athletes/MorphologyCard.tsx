@@ -1,5 +1,6 @@
 import { AlertTriangle, Bike, Info, Ruler } from "lucide-react";
 
+import { StatCard } from "@/components/shared/StatCard";
 import type {
   AnthropometricRecord,
   BikeFitCategory,
@@ -38,30 +39,13 @@ function MorphologyContent({ morphology, armSpanCm, standingHeightCm }: InfoBloc
     <div className="space-y-4">
       {/* Métricas base */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-lg bg-light-gray p-3">
-          <p className="text-xs uppercase tracking-wide text-mid-gray">Talla</p>
-          <p className="mt-1 text-lg font-semibold text-charcoal">
-            {standingHeightCm.toFixed(1)} cm
-          </p>
-        </div>
-        <div className="rounded-lg bg-light-gray p-3">
-          <p className="text-xs uppercase tracking-wide text-mid-gray">Envergadura</p>
-          <p className="mt-1 text-lg font-semibold text-charcoal">
-            {armSpanCm.toFixed(1)} cm
-          </p>
-        </div>
-        <div className="rounded-lg bg-light-gray p-3">
-          <p className="text-xs uppercase tracking-wide text-mid-gray">Δ talla–enverg.</p>
-          <p className="mt-1 text-lg font-semibold text-charcoal">
-            {formatDelta(morphology.arm_span_height_delta_cm)}
-          </p>
-        </div>
-        <div className="rounded-lg bg-light-gray p-3">
-          <p className="text-xs uppercase tracking-wide text-mid-gray">Ape index</p>
-          <p className="mt-1 text-lg font-semibold text-charcoal">
-            {morphology.ape_index.toFixed(3)}
-          </p>
-        </div>
+        <StatCard label="Talla" value={`${standingHeightCm.toFixed(1)} cm`} />
+        <StatCard label="Envergadura" value={`${armSpanCm.toFixed(1)} cm`} />
+        <StatCard
+          label="Δ talla–enverg."
+          value={formatDelta(morphology.arm_span_height_delta_cm)}
+        />
+        <StatCard label="Ape index" value={morphology.ape_index.toFixed(3)} />
       </div>
 
       {/* Cribado postural */}

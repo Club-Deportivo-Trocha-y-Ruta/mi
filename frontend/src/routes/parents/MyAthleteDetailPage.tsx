@@ -1,29 +1,23 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
-  Activity,
-  AlertTriangle,
   Bike,
-  CalendarDays,
   Info,
-  Ruler,
   Sparkles,
   TrendingUp,
   User,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
-import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { ActivityCard } from "@/components/activities/ActivityCard";
-import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
-import { GrowthCurveSection } from "@/components/athletes/growth/GrowthCurveSection";
-import { NutritionalClassification } from "@/components/athletes/NutritionalClassification";
-import { ResearchReferences } from "@/components/athletes/ResearchReferences";
+import { StatCard } from "@/components/shared/StatCard";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { getMeasurementStatusMeta } from "@/lib/measurementStatus";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
+import { useGrowthSummary } from "@/hooks/athletes/useGrowthSummary";
 import { useAthleteActivities } from "@/hooks/activities/useAthleteActivities";
 import { MaturationStatus, Sex } from "@/types/enums";
 
@@ -36,34 +30,55 @@ const AthleteAIAnalysisTab = lazy(() =>
   })),
 );
 
+// T062 (feature 040, US4): el tab Crecimiento pasa a ser el `GrowthTab`
+// compartido con la vista coach (modo padre: tarjetas familiares narrativas
+// + curva simplificada + IA de solo lectura) — mismo patrón lazy-load que
+// `AthleteDetailPage.tsx` (T042), así el chunk de entrada tampoco arrastra
+// recharts desde el lado padre.
+const GrowthTab = lazy(() =>
+  import("@/components/athletes/growth/GrowthTab").then((m) => ({
+    default: m.GrowthTab,
+  })),
+);
+
 type Tab = "info" | "growth" | "activities" | "ai-analysis";
 
 const ACTIVITIES_PAGE_SIZE = 10;
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  subtitle,
-  colorClass,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  subtitle?: string;
-  colorClass?: string;
-}) {
-  return (
-    <div className="rounded-xl bg-white p-4 shadow-card">
-      <div className="flex items-center gap-2 text-mid-gray">
-        <Icon size={16} />
-        <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
-      </div>
-      <p className={cn("mt-1.5 text-2xl font-bold", colorClass ?? "text-charcoal")}>{value}</p>
-      {subtitle && <p className="mt-0.5 text-xs text-mid-gray">{subtitle}</p>}
-    </div>
-  );
+const MONTHS_ES_SHORT = [
+  "ene", "feb", "mar", "abr", "may", "jun",
+  "jul", "ago", "sep", "oct", "nov", "dic",
+];
+
+/**
+ * Fecha corta "12 dic 2026" a partir de un `YYYY-MM-DD` plano (sin hora) —
+ * feature 040 (US5, T070). Se parte el string en vez de `new Date(...)`:
+ * una fecha sin hora se interpreta como medianoche UTC y, formateada en
+ * `America/Bogota` (UTC-5), puede retroceder un día — mismo criterio que
+ * `AnthropometryHistory.tsx::formatDate` / `NextMeasurementCard.tsx::formatDueDate`.
+ */
+function formatSummaryDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split("-");
+  const label = MONTHS_ES_SHORT[Number(month) - 1] ?? month;
+  return `${Number(day)} ${label} ${year}`;
 }
+
+/**
+ * Etapa de maduración en lenguaje familiar para la tarjeta superior
+ * (feature 040, T073 sobre T070). Esta página es la vista familiar completa,
+ * no sólo su tab Crecimiento: FR-016 prohíbe la sigla clínica ("Pre-PHV",
+ * "Circa-PHV", "Post-PHV") en cualquier superficie que ve un padre, y estas
+ * tarjetas quedan por encima de los tabs.
+ *
+ * Versión corta de la frase de `growth/FamilyStageCard.tsx::stageMessage`
+ * (la tarjeta de dentro del tab, que sí tiene espacio para la frase
+ * completa). Si cambia una, cambiar la otra.
+ */
+const FAMILY_STAGE_LABEL: Record<MaturationStatus, string> = {
+  [MaturationStatus.PrePHV]: "Desarrollo temprano",
+  [MaturationStatus.CircaPHV]: "Pico de crecimiento",
+  [MaturationStatus.PostPHV]: "Crecimiento estabilizándose",
+};
 
 // T096 (feature 036, US6) — fallback mientras se descarga el chunk lazy de
 // AthleteAIAnalysisTab. Sólo cubre la carga del chunk en sí (una vez, por
@@ -88,35 +103,26 @@ function AiTabSkeleton() {
   );
 }
 
-function phvColor(status: string | undefined | null): string {
-  if (status === MaturationStatus.PrePHV) return "text-blue-700";
-  if (status === MaturationStatus.CircaPHV) return "text-amber-700";
-  if (status === MaturationStatus.PostPHV) return "text-green-700";
-  return "text-charcoal";
-}
-
-function phvParentMessage(status: string | undefined | null, sex: Sex): string {
-  const pronoun = sex === Sex.F ? "hija" : "hijo";
-  if (status === MaturationStatus.PrePHV)
-    return `Tu ${pronoun} está en etapa de desarrollo temprano`;
-  if (status === MaturationStatus.CircaPHV)
-    return `Tu ${pronoun} está en su pico de crecimiento — etapa clave`;
-  if (status === MaturationStatus.PostPHV)
-    return `El crecimiento de tu ${pronoun} se está estabilizando`;
-  return "";
-}
-
-function formatRelativeDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) return "hoy";
-  if (diffDays === 1) return "hace 1 día";
-  if (diffDays < 30) return `hace ${diffDays} días`;
-  const diffMonths = Math.floor(diffDays / 30);
-  if (diffMonths === 1) return "hace 1 mes";
-  return `hace ${diffMonths} meses`;
+// T062 (feature 040, US4) — fallback mientras se descarga el chunk lazy de
+// GrowthTab. Mismo criterio que AiTabSkeleton/GrowthTabSkeleton de
+// `AthleteDetailPage.tsx` (vista coach): sólo cubre la carga del chunk en
+// sí, el propio GrowthTab gestiona sus estados de carga de datos.
+function GrowthTabSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando crecimiento…"
+      className="space-y-4"
+    >
+      <Skeleton className="h-24 w-full rounded-xl" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-xl" />
+      </div>
+      <Skeleton className="h-64 w-full rounded-xl" />
+    </div>
+  );
 }
 
 export function MyAthleteDetailPage() {
@@ -125,6 +131,11 @@ export function MyAthleteDetailPage() {
   const athleteId = Number(id);
   const athleteQuery = useAthlete(athleteId, Number.isFinite(athleteId));
   const anthropometryQuery = useAnthropometry(athleteId);
+  // T070 (feature 040, US5): las tarjetas superiores (etapa, talla + P,
+  // velocidad, próxima medición) leen del resumen calculado en el servidor,
+  // no de `athlete.latest_anthropometry` — mismo criterio que
+  // `AthleteDetailPage.tsx` (vista coach).
+  const growthSummaryQuery = useGrowthSummary(athleteId, Number.isFinite(athleteId));
   // RBAC (padre solo ve actividades de su propio hijo) se aplica en backend —
   // ver docstring de useAthleteActivities. Query no habilitada hasta tener
   // un athleteId válido, mismo criterio que el resto de la página.
@@ -190,7 +201,6 @@ export function MyAthleteDetailPage() {
   if (!athleteQuery.data) return null;
 
   const athlete = athleteQuery.data;
-  const latest = athlete.latest_anthropometry;
 
   const tabClasses = (tab: Tab) =>
     cn(
@@ -214,42 +224,55 @@ export function MyAthleteDetailPage() {
       {/* Hero Card */}
       <AthleteInfoCard athlete={athlete} backUrl={null} editUrl={null} />
 
-      {/* Stat Cards Row — 3 cards: Edad, Talla, Ultima medicion */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard
-          icon={Activity}
-          label="Edad"
-          value={athlete.age_decimal?.toFixed(1) ?? "—"}
-          subtitle={athlete.category ?? undefined}
-        />
-        {latest ? (
-          <>
+      {/* Stat Cards Row — feature 040 (US5, T070): etapa, talla, velocidad y
+          estado de próxima medición, todo desde el resumen de crecimiento
+          calculado en el servidor — mismo criterio que `AthleteDetailPage.tsx`
+          (vista coach), salvo que aquí la etapa va en lenguaje familiar y la
+          talla no lleva percentil (FR-016, vista familiar). */}
+      {(() => {
+        const summary = growthSummaryQuery.data;
+        const isLoading = growthSummaryQuery.isLoading;
+        const height = summary?.latest?.height ?? null;
+        const velocity = summary?.velocity ?? null;
+        const measurement = summary?.measurement;
+        const measurementMeta = measurement ? getMeasurementStatusMeta(measurement.status) : null;
+
+        return (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard
-              icon={Ruler}
+              label="Etapa"
+              value={summary?.stage ? FAMILY_STAGE_LABEL[summary.stage] : "—"}
+              isLoading={isLoading}
+            />
+            <StatCard
               label="Talla"
-              value={`${latest.standing_height_cm} cm`}
-              subtitle={
-                latest.height_percentile != null
-                  ? `P${Math.round(latest.height_percentile)}`
-                  : undefined
+              value={height ? `${height.value} cm` : "—"}
+              hint={height ? undefined : "Sin medición registrada"}
+              isLoading={isLoading}
+            />
+            <StatCard
+              label="Velocidad de talla"
+              value={velocity ? `${velocity.cm_per_year} cm/año` : "—"}
+              hint={velocity ? undefined : "Se necesitan 2 mediciones"}
+              isLoading={isLoading}
+            />
+            <StatCard
+              label="Próxima medición"
+              value={
+                measurement?.next_due_date
+                  ? formatSummaryDate(measurement.next_due_date)
+                  : "Sin medición"
+              }
+              isLoading={isLoading}
+              badge={
+                measurementMeta && (
+                  <StatusBadge status={measurementMeta.tone} label={measurementMeta.rowLabel} />
+                )
               }
             />
-            <StatCard
-              icon={CalendarDays}
-              label="Ult. medición"
-              value={latest.evaluation_date}
-              subtitle={formatRelativeDate(latest.evaluation_date)}
-            />
-          </>
-        ) : (
-          <div
-            className="col-span-1 flex items-center justify-center rounded-xl bg-white p-4 text-sm text-mid-gray sm:col-span-2 shadow-ring"
-            style={{ borderStyle: "dashed" }}
-          >
-            Sin mediciones registradas
           </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-2">
@@ -338,41 +361,11 @@ export function MyAthleteDetailPage() {
               </div>
             </dl>
           </div>
-
-          {/* Estado PHV con lenguaje para padres */}
-          {latest && latest.maturation_status && (
-            <div
-              className={cn(
-                "rounded-xl p-5",
-                latest.maturation_status === MaturationStatus.CircaPHV
-                  ? "border border-amber-200 bg-amber-50"
-                  : "bg-white shadow-card",
-              )}
-            >
-              <div className="mb-3 flex items-center gap-2">
-                {latest.maturation_status === MaturationStatus.CircaPHV && (
-                  <AlertTriangle size={16} className="text-amber-500" />
-                )}
-                <span
-                  className="font-display text-sm text-charcoal"
-                  style={{ letterSpacing: "0.2px" }}
-                >
-                  Etapa de desarrollo
-                </span>
-                <span className="ml-auto text-xs text-mid-gray">
-                  Evaluado: {latest.evaluation_date}
-                </span>
-              </div>
-              <p
-                className={cn(
-                  "text-sm font-medium",
-                  phvColor(latest.maturation_status),
-                )}
-              >
-                {phvParentMessage(latest.maturation_status, athlete.sex)}
-              </p>
-            </div>
-          )}
+          {/* La etapa de desarrollo ("Estado PHV con lenguaje para padres")
+              vivía acá duplicada del tab Crecimiento — T062 (feature 040,
+              US4) la retira: el tab Crecimiento ya la muestra vía
+              `FamilyStageCard`, con la fecha de evaluación ofuscada a
+              "mes año" (esta versión mostraba el día exacto). */}
         </div>
       )}
 
@@ -389,32 +382,16 @@ export function MyAthleteDetailPage() {
         </Suspense>
       )}
 
-      {/* Tab content — Crecimiento */}
+      {/* Tab content — Crecimiento (feature 040, US4, T062): `GrowthTab`
+          compartido con la vista coach en modo padre (tarjetas familiares
+          narrativas → curva simplificada → IA de solo lectura → historial).
+          key={athlete.id} fuerza un remount limpio al cambiar de atleta,
+          mismo criterio que AthleteAIAnalysisTab arriba y que
+          AthleteDetailPage.tsx (vista coach). */}
       {activeTab === "growth" && records.length > 0 && (
-        <div className="space-y-5">
-          <NutritionalClassification
-            record={records[0]}
-            sex={athlete.sex}
-            birthDate={athlete.birth_date}
-          />
-          <div className="rounded-xl bg-white p-5 shadow-card">
-            <AnthropometryHistory
-              records={records}
-              isLoading={anthropometryQuery.isLoading}
-              athleteId={athleteId}
-              mode="parent"
-            />
-          </div>
-          <div className="rounded-xl bg-white p-5 shadow-card">
-            <GrowthCurveSection athlete={athlete} records={records} mode="parent" />
-          </div>
-          <PHVExplanationCard
-            athleteId={athleteId}
-            hasRecords={records.length > 0}
-            readOnly
-          />
-          <ResearchReferences />
-        </div>
+        <Suspense fallback={<GrowthTabSkeleton />}>
+          <GrowthTab key={athlete.id} athlete={athlete} mode="parent" />
+        </Suspense>
       )}
 
       {/* Tab content — Actividades (feature 025, T036). Solo lectura: sin

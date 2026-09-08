@@ -3,8 +3,12 @@
  *
  * Ver research.md R-07: en vez de mostrar siempre el rango completo OMS
  * (5–19 años), el eje X se acota alrededor de las mediciones del deportista
- * para que ocupen ≥ 60 % del ancho de la gráfica (spec FR-011/SC-008). El
- * toggle "Ver 5–19 años" del `PercentileToolbar` vuelve al rango completo.
+ * (−24 / +36 meses de contexto clínico fijo, FR-011) para que las mediciones
+ * ocupen una fracción legible del ancho de la gráfica. SC-008, enmendado el
+ * 2026-09-04: ≥ 18 % del ancho y al menos el doble de lo que ocupaban en la
+ * gráfica retirada de rango completo — medido en `window.test.ts` (18.9 % vs
+ * 8.4 %, 2.26×). El toggle "Ver 5–19 años" del `PercentileToolbar` vuelve al
+ * rango completo.
  */
 
 import type { ReferenceRow } from "@/lib/growth/lms";

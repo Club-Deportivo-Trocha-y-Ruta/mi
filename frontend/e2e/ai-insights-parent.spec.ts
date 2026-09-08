@@ -25,6 +25,7 @@
  * sintético (Ley 1581 — estos fixtures quedan commiteados en git).
  */
 import { test, expect, type Page } from "@playwright/test";
+import { realTokens } from './helpers/session';
 
 // ---------------------------------------------------------------------------
 // Fixtures — sintéticos, nunca nombres reales (Ley 1581)
@@ -132,10 +133,11 @@ const OTHER_CHILD_MARKER = "MARCADOR-NO-DEBERIA-VERSE-OTRO-ATLETA";
 // ---------------------------------------------------------------------------
 
 function isBackend(url: URL): boolean {
-  return url.port !== "5173";
+  return url.port !== (process.env.E2E_APP_PORT ?? "5173");
 }
 
 async function setupAuthParent(page: Page): Promise<void> {
+  const liveTokens = await realTokens(page.request, 'parent');
   await page.addInitScript(
     ({ tokens, user }) => {
       sessionStorage.setItem(
@@ -151,7 +153,7 @@ async function setupAuthParent(page: Page): Promise<void> {
         }),
       );
     },
-    { tokens: TOKENS, user: PARENT },
+    { tokens: liveTokens, user: PARENT },
   );
 }
 

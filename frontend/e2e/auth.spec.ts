@@ -76,8 +76,15 @@ test('E2E-010: logout limpia sesión y redirige a /login', async ({ page }) => {
   await page.getByRole('button', { name: /ingresar/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 
-  // Click en logout
-  await page.getByRole('button', { name: /cerrar sesión/i }).click();
+  // Click en logout: desde feature 028 vive dentro del menú de usuario
+  // (`UserMenu.tsx`, trigger `user-menu-trigger`, item `role=menuitem`).
+  await page.getByTestId('user-menu-trigger').click();
+  const logoutItem = page.getByRole('menuitem', { name: /cerrar sesión/i });
+  // Radix abre el menú con animación; bajo carga (suite completa, 5 workers)
+  // el click auto-esperado llegó a agotar el timeout — se espera el ítem
+  // visible y se fuerza el click (el ítem ya está resuelto y estable).
+  await expect(logoutItem).toBeVisible({ timeout: 15_000 });
+  await logoutItem.click({ force: true });
 
   // Redirige a /login
   await expect(page).toHaveURL(/\/login/);

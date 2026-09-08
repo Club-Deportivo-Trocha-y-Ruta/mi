@@ -14,6 +14,7 @@
     "test:training": "vitest run src/routes/training src/routes/parents/training src/components/training src/components/parents src/api/trainingSessions.test.ts src/test/integration",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:e2e:isolated": "./scripts/e2e-stack.sh up && E2E_APP_PORT=5175 E2E_API_BASE_URL=http://localhost:8001 playwright test",
     "test:mutation": "stryker run",
     "check:chunks": "bash scripts/check-chart-chunk.sh"
   },

@@ -275,7 +275,15 @@ def upgrade() -> None:
         return
 
     # Import the pure-data module — no DB imports, no side-effects.
-    from app.data.strength_catalog import EXERCISES  # noqa: PLC0415
+    # The catalog data module was retired together with its tables
+    # (see d0e1f2a3b4c5_remove_technique_strength_catalog). A fresh database
+    # replaying history no longer has the module, and the rows seeded here
+    # would be dropped a few revisions later anyway — skip the seed instead
+    # of failing the whole upgrade chain.
+    try:
+        from app.data.strength_catalog import EXERCISES  # noqa: PLC0415
+    except ModuleNotFoundError:
+        return
 
     dialect = bind.dialect.name  # "mysql" | "mariadb" | "sqlite"
 

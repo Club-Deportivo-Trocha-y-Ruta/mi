@@ -6,12 +6,18 @@
  *    NextMeasurementCard → TrainingReadiness → GrowthCurveSection (T052)
  *    → MorphologyCard → PHVExplanationCard → AnthropometryHistory (coach) →
  *    ResearchReferences.
- *  - Composición modo padre (paridad con `MyAthleteDetailPage.tsx` de hoy):
- *    NutritionalClassification → AnthropometryHistory(parent) →
- *    GrowthCurveSection → PHVExplanationCard(readOnly); sin `TrainingReadiness`,
- *    `MorphologyCard`, `ResearchReferences` ni el bloque resumen.
  *  - Estados de carga/vacío/error del bloque resumen (fila "Status row /
  *    next measurement" de la tabla de estados del contrato).
+ *
+ * La composición del modo padre (rediseño familiar narrativo, feature 040
+ * US4, T062) tiene su propio archivo dedicado y mucho más exhaustivo:
+ * `GrowthTab.parent.test.tsx` (T056) — cubre `FamilyStageCard`/
+ * `FamilyBandCards`/curva familiar/IA de solo lectura/historial, orden,
+ * privacidad (sin Z-score/percentil/offset/bibliografía) y a11y. Este
+ * archivo ya no incluye una suite "modo padre" propia (el diseño de
+ * paridad-con-`MyAthleteDetailPage.tsx` que cubría quedó obsoleto al
+ * aterrizar T062: `NutritionalClassification` dejó de montarse en modo
+ * padre).
  *
  * Los hijos "pesados" existentes (`GrowthCurveSection`, `TrainingReadiness`,
  * `MorphologyCard`, `PHVExplanationCard`, `AnthropometryHistory`,
@@ -61,12 +67,6 @@ vi.mock("@/components/athletes/growth/GrowthCurveSection", () => ({
 
 vi.mock("@/components/athletes/MorphologyCard", () => ({
   MorphologyCard: () => <div data-testid="morphology-card">MorphologyCard</div>,
-}));
-
-vi.mock("@/components/athletes/NutritionalClassification", () => ({
-  NutritionalClassification: () => (
-    <div data-testid="nutritional-classification">NutritionalClassification</div>
-  ),
 }));
 
 vi.mock("@/components/athletes/ResearchReferences", () => ({
@@ -294,54 +294,7 @@ describe("GrowthTab", () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Modo padre — paridad con MyAthleteDetailPage.tsx de hoy
-  // -------------------------------------------------------------------------
-
-  describe("modo padre", () => {
-    it("renderiza NutritionalClassification, AnthropometryHistory(parent), GrowthCurveSection y PHVExplanationCard(readOnly) en orden", async () => {
-      const { container } = renderGrowthTab({ mode: "parent" });
-
-      const classification = await screen.findByTestId("nutritional-classification");
-      const history = screen.getByTestId("anthropometry-history");
-      const charts = screen.getByTestId("growth-curve");
-      const phv = screen.getByTestId("phv-explanation-card");
-
-      expect(history).toHaveAttribute("data-mode", "parent");
-      expect(phv).toHaveAttribute("data-readonly", "true");
-
-      const all = Array.from(container.querySelectorAll("[data-testid]"));
-      const positions = [classification, history, charts, phv].map((el) => all.indexOf(el));
-      for (let i = 1; i < positions.length; i += 1) {
-        expect(positions[i]).toBeGreaterThan(positions[i - 1]);
-      }
-    });
-
-    it("NO renderiza piezas exclusivas del coach (bloque resumen, reglas, morfología, referencias)", async () => {
-      renderGrowthTab({ mode: "parent" });
-      await screen.findByTestId("nutritional-classification");
-
-      expect(screen.queryByTestId("growth-status-row")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("growth-next-measurement")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("training-readiness")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("morphology-card")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("research-references")).not.toBeInTheDocument();
-    });
-
-    it('no muestra el botón "Agregar medicion" (PHVExplanationCard readOnly)', async () => {
-      renderGrowthTab({ mode: "parent" });
-      await screen.findByTestId("phv-explanation-card");
-      expect(screen.queryByRole("button", { name: /Agregar medicion/i })).not.toBeInTheDocument();
-    });
-
-    it('muestra "Aún no hay mediciones" cuando no hay registros', async () => {
-      vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([]);
-      renderGrowthTab({ mode: "parent" });
-
-      expect(await screen.findByText("Aún no hay mediciones")).toBeInTheDocument();
-      expect(screen.queryByTestId("nutritional-classification")).not.toBeInTheDocument();
-      // AnthropometryHistory sigue montado (maneja su propio estado vacío).
-      expect(screen.getByTestId("anthropometry-history")).toBeInTheDocument();
-    });
-  });
+  // Modo padre: cubierto exhaustivamente por `GrowthTab.parent.test.tsx`
+  // (T056) desde que T062 reemplazó la paridad-con-`MyAthleteDetailPage.tsx`
+  // por el diseño familiar narrativo — ver docstring del módulo.
 });

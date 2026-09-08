@@ -74,8 +74,11 @@ describe("usePHVExplanation", () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(result.current.data).toEqual(mockResponse);
+      // Feature 040 (US4, R-12): `audience` por defecto es "family" — el
+      // hook la reenvía siempre a `getPHVExplanation`.
       expect(aiApi.getPHVExplanation).toHaveBeenCalledWith(42, {
         signal: undefined,
+        audience: "family",
       });
     });
 
@@ -90,8 +93,25 @@ describe("usePHVExplanation", () => {
       await waitFor(() =>
         expect(aiApi.getPHVExplanation).toHaveBeenCalledWith(42, {
           signal: controller.signal,
+          audience: "family",
         }),
       );
+    });
+
+    it('reenvía audience="coach" cuando se pasa explícitamente (feature 040, US4)', async () => {
+      vi.mocked(aiApi.getPHVExplanation).mockResolvedValue(mockResponse);
+      const wrapper = createWrapper();
+      const { result } = renderHook(() => usePHVExplanation(42, "coach"), {
+        wrapper,
+      });
+
+      result.current.mutate();
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(aiApi.getPHVExplanation).toHaveBeenCalledWith(42, {
+        signal: undefined,
+        audience: "coach",
+      });
     });
   });
 
@@ -156,7 +176,55 @@ describe("usePHVExplanationCached", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockResponse);
-    expect(aiApi.getPHVExplanationCached).toHaveBeenCalledWith(42);
+    expect(aiApi.getPHVExplanationCached).toHaveBeenCalledWith(42, {
+      audience: "family",
+    });
+  });
+
+  it('reenvía audience="coach" cuando se pasa explícitamente (feature 040, US4)', async () => {
+    vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(mockResponse);
+    const wrapper = createWrapper();
+    const { result } = renderHook(
+      () => usePHVExplanationCached(42, true, "coach"),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(aiApi.getPHVExplanationCached).toHaveBeenCalledWith(42, {
+      audience: "coach",
+    });
+  });
+
+  it("particiona la caché por audience: family y coach no comparten query key", async () => {
+    const familyResponse = { ...mockResponse, text: "Texto familia" };
+    const coachResponse = { ...mockResponse, text: "Texto coach" };
+    vi.mocked(aiApi.getPHVExplanationCached).mockImplementation(
+      async (_athleteId, options) =>
+        options?.audience === "coach" ? coachResponse : familyResponse,
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+
+    const { result } = renderHook(
+      () => ({
+        family: usePHVExplanationCached(42, true, "family"),
+        coach: usePHVExplanationCached(42, true, "coach"),
+      }),
+      { wrapper },
+    );
+
+    await waitFor(() => {
+      expect(result.current.family.isSuccess).toBe(true);
+      expect(result.current.coach.isSuccess).toBe(true);
+    });
+    expect(result.current.family.data?.text).toBe("Texto familia");
+    expect(result.current.coach.data?.text).toBe("Texto coach");
   });
 
   it("retorna null cuando el backend responde 204 (cache miss)", async () => {

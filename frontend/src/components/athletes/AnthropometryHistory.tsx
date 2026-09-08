@@ -32,6 +32,10 @@ export function AnthropometryHistory({
 }: AnthropometryHistoryProps) {
   const [selectedRecord, setSelectedRecord] =
     useState<AnthropometricRecord | null>(null);
+  // FR-016 (feature 040, US4): la familia nunca ve el offset de madurez, la
+  // etiqueta clínica de etapa ni la edad estimada del PHV — esos campos son
+  // exclusivos del coach. En modo padre el historial se limita a las medidas.
+  const showClinical = mode === "coach";
 
   // Cierra el modal al presionar Escape para accesibilidad por teclado.
   useEffect(() => {
@@ -85,13 +89,15 @@ export function AnthropometryHistory({
                 <span className="text-sm font-medium text-charcoal" data-testid="record-date">
                   {formatDate(record.evaluation_date)}
                 </span>
-                <PHVBadge status={record.maturation_status} />
+                {showClinical && <PHVBadge status={record.maturation_status} />}
               </div>
               <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                 <span className="text-mid-gray">Peso: <span className="text-charcoal">{record.weight_kg} kg</span></span>
                 <span className="text-mid-gray">Talla: <span className="text-charcoal">{record.standing_height_cm} cm</span></span>
                 <span className="text-mid-gray">Sentado: <span className="text-charcoal">{record.sitting_height_cm} cm</span></span>
-                <span className="text-mid-gray">Offset: <span className="font-medium text-charcoal">{formatOffset(record.maturity_offset)}</span></span>
+                {showClinical && (
+                  <span className="text-mid-gray">Offset: <span className="font-medium text-charcoal">{formatOffset(record.maturity_offset)}</span></span>
+                )}
                 {record.arm_span_cm != null && (
                   <span className="text-mid-gray">Enverg.: <span className="text-charcoal">{record.arm_span_cm} cm</span></span>
                 )}
@@ -114,9 +120,13 @@ export function AnthropometryHistory({
               <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Peso</th>
               <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Talla</th>
               <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Talla sentado</th>
-              <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Offset</th>
-              <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Estado PHV</th>
-              <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Edad PHV</th>
+              {showClinical && (
+                <>
+                  <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Offset</th>
+                  <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Estado PHV</th>
+                  <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Edad PHV</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -136,13 +146,17 @@ export function AnthropometryHistory({
                 <td className="px-3 py-2.5 text-charcoal">{record.weight_kg} kg</td>
                 <td className="px-3 py-2.5 text-charcoal">{record.standing_height_cm} cm</td>
                 <td className="px-3 py-2.5 text-charcoal">{record.sitting_height_cm} cm</td>
-                <td className="px-3 py-2.5 font-medium text-charcoal">
-                  {formatOffset(record.maturity_offset)}
-                </td>
-                <td className="px-3 py-2.5">
-                  <PHVBadge status={record.maturation_status} />
-                </td>
-                <td className="px-3 py-2.5 text-mid-gray">{record.age_at_phv} años</td>
+                {showClinical && (
+                  <>
+                    <td className="px-3 py-2.5 font-medium text-charcoal">
+                      {formatOffset(record.maturity_offset)}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <PHVBadge status={record.maturation_status} />
+                    </td>
+                    <td className="px-3 py-2.5 text-mid-gray">{record.age_at_phv} años</td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
@@ -194,15 +208,19 @@ export function AnthropometryHistory({
               </p>
               <p>Long. pierna: {selectedRecord.leg_length_cm} cm</p>
               <p>Ratio pierna/sentado: {selectedRecord.leg_sitting_ratio}</p>
-              <p>Maturity Offset: {formatOffset(selectedRecord.maturity_offset)}</p>
-              <p>Edad al PHV: {selectedRecord.age_at_phv} años</p>
-              <div className="flex items-center gap-2">
-                <span>Estado:</span>
-                <PHVBadge status={selectedRecord.maturation_status} />
-              </div>
+              {showClinical && (
+                <>
+                  <p>Maturity Offset: {formatOffset(selectedRecord.maturity_offset)}</p>
+                  <p>Edad al PHV: {selectedRecord.age_at_phv} años</p>
+                  <div className="flex items-center gap-2">
+                    <span>Estado:</span>
+                    <PHVBadge status={selectedRecord.maturation_status} />
+                  </div>
+                </>
+              )}
             </div>
 
-            {selectedRecord.training_implications && (
+            {showClinical && selectedRecord.training_implications && (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                 <p className="mb-1 font-medium">Implicaciones de entrenamiento:</p>
                 <p>{selectedRecord.training_implications}</p>

@@ -220,7 +220,7 @@ async def build_newsletter_metrics(
     # -----------------------------------------------------------------------
     # Bloque 6: Badges ganados en el periodo
     # -----------------------------------------------------------------------
-    badges = await evaluate_and_persist_badges(db, athlete_id, year, month)
+    await evaluate_and_persist_badges(db, athlete_id, year, month)
     # También recuperar los que ya existían (evaluate es idempotente)
     all_badges = await get_badges_for_period(db, athlete_id, year, month)
     badges_block = _serialize_badges(all_badges)
@@ -1342,6 +1342,11 @@ async def _build_percentile_charts_block(
             }
             continue
 
+        # Feature 040 (R-02): la OMS no publica peso/edad por encima de los
+        # 10 años — la gráfica de peso se omite del anexo (no se dibuja un
+        # marco vacío) cuando el atleta ya superó ese rango.
+        if indicator == "weight" and ctx.get("reason_no_data") == "weight_over_10y":
+            continue
         charts[indicator] = dict(ctx)
         if ctx["enough_data"]:
             has_any_data = True

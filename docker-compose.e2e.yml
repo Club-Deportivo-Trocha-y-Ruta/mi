@@ -1,0 +1,49 @@
+# docker-compose.e2e.yml — override for the ISOLATED Playwright E2E stack.
+#
+# This stack is completely separate from the developer's day-to-day "me"
+# compose project (real club data, ports 8000/3306/8025). It uses its own
+# compose project name, its own host ports and its own named MySQL volume so
+# it can be started, seeded and torn down without ever touching the running
+# "me" stack.
+#
+# Usage (see frontend/scripts/e2e-stack.sh for the full bring-up/verify flow):
+#   docker compose -p trocha-e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+#
+# Notes:
+# - docker-compose.override.yml is NOT picked up here (compose only merges
+#   files passed with -f), so the backend runs the production-shaped
+#   entrypoint.sh (migrations → WHO/CDC seed → anthropometry backfill →
+#   demo seed when APP_ENV=development → uvicorn), not the dev bind-mount
+#   command.
+# - MYSQL_*/JWT_* keep coming from the base docker-compose.yml, which
+#   interpolates them from the root .env at the host level — this file never
+#   reads or copies that file.
+# - AI/Strava are disabled here (fake provider, no external calls) so the
+#   seed and every request are deterministic and offline for Playwright.
+services:
+  backend:
+    # !override replaces the base "8000:8000" mapping instead of appending to
+    # it (plain lists merge by concatenation in compose) — without it, up
+    # would try to publish this project's backend on host port 8000 too,
+    # which is already bound by the developer's "me" stack.
+    ports: !override
+      - "8001:8000"
+    environment:
+      - APP_ENV=development
+      - CORS_ORIGINS=http://localhost:5175
+      - AI_ENABLED=false
+      - AI_PROVIDER=fake
+      - STRAVA_ENABLED=false
+
+  mailhog:
+    ports: !override
+      - "8026:8025"
+
+  mysql:
+    ports: !override
+      - "3307:3306"
+    volumes: !override
+      - mysql_data_e2e:/var/lib/mysql
+
+volumes:
+  mysql_data_e2e:

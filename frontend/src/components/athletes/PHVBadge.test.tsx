@@ -30,35 +30,36 @@ describe("PHVBadge", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Clases de color correctas
+  // Mapeo a StatusBadge (icono + color por estado, nunca solo color)
   // -------------------------------------------------------------------------
-  describe("cuando se aplican clases de color", () => {
-    it("debería aplicar clases azul (blue) para Pre-PHV", () => {
+  describe("cuando se delega en StatusBadge", () => {
+    it("Pre-PHV usa el tono neutral (bg-light-gray)", () => {
       render(<PHVBadge status={MaturationStatus.PrePHV} />);
-      const badge = screen.getByText("Pre-PHV");
-      expect(badge.className).toContain("bg-blue-100");
-      expect(badge.className).toContain("text-blue-700");
+      const badge = screen.getByText("Pre-PHV").closest("span");
+      expect(badge?.className).toContain("bg-light-gray");
     });
 
-    it("debería aplicar clases ámbar (amber) para Circa-PHV", () => {
+    it("Circa-PHV usa el tono warning", () => {
       render(<PHVBadge status={MaturationStatus.CircaPHV} />);
-      const badge = screen.getByText("Circa-PHV");
-      expect(badge.className).toContain("bg-amber-100");
-      expect(badge.className).toContain("text-amber-700");
+      const badge = screen.getByText("Circa-PHV").closest("span");
+      expect(badge?.className).toContain("bg-warning/10");
     });
 
-    it("debería aplicar clases verde (green) para Post-PHV", () => {
+    it("Post-PHV usa el tono success", () => {
       render(<PHVBadge status={MaturationStatus.PostPHV} />);
-      const badge = screen.getByText("Post-PHV");
-      expect(badge.className).toContain("bg-green-100");
-      expect(badge.className).toContain("text-green-700");
+      const badge = screen.getByText("Post-PHV").closest("span");
+      expect(badge?.className).toContain("bg-success/10");
     });
 
-    it("debería aplicar clases slate para estado null (Sin evaluar)", () => {
+    it("Sin evaluar (status null) usa el tono neutral", () => {
       render(<PHVBadge status={null} />);
-      const badge = screen.getByText("Sin evaluar");
-      expect(badge.className).toContain("bg-light-gray");
-      expect(badge.className).toContain("text-mid-gray");
+      const badge = screen.getByText("Sin evaluar").closest("span");
+      expect(badge?.className).toContain("bg-light-gray");
+    });
+
+    it("cada estado trae un ícono (nunca solo color)", () => {
+      const { container } = render(<PHVBadge status={MaturationStatus.CircaPHV} />);
+      expect(container.querySelector("svg")).toBeInTheDocument();
     });
   });
 
@@ -66,47 +67,14 @@ describe("PHVBadge", () => {
   // Tamaños
   // -------------------------------------------------------------------------
   describe("cuando se aplica el prop size", () => {
-    it("debería usar clases sm por defecto", () => {
-      render(<PHVBadge status={MaturationStatus.PrePHV} />);
-      const badge = screen.getByText("Pre-PHV");
-      expect(badge.className).toContain("text-xs");
+    it("no agrega clases de tamaño extra por defecto (sm)", () => {
+      const { container } = render(<PHVBadge status={MaturationStatus.PrePHV} />);
+      expect(container.firstElementChild?.className).not.toContain("text-sm");
     });
 
-    it("debería usar clases md cuando size='md'", () => {
-      render(<PHVBadge status={MaturationStatus.PrePHV} size="md" />);
-      const badge = screen.getByText("Pre-PHV");
-      expect(badge.className).toContain("text-sm");
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Estructura del elemento
-  // -------------------------------------------------------------------------
-  describe("estructura del componente", () => {
-    it("debería renderizar como un elemento span", () => {
-      render(<PHVBadge status={MaturationStatus.PrePHV} />);
-      const badge = screen.getByText("Pre-PHV");
-      expect(badge.tagName).toBe("SPAN");
-    });
-
-    it("debería incluir las clases base de estilo en todos los estados", () => {
-      const { rerender } = render(<PHVBadge status={MaturationStatus.PrePHV} />);
-      const baseClasses = ["inline-block", "rounded-full", "font-medium"];
-
-      for (const status of [MaturationStatus.PrePHV, MaturationStatus.CircaPHV, MaturationStatus.PostPHV, null]) {
-        rerender(<PHVBadge status={status} />);
-        const text = status ?? "Sin evaluar";
-        const badge = screen.getByText(text);
-        for (const cls of baseClasses) {
-          expect(badge.className).toContain(cls);
-        }
-      }
-    });
-
-    it("no debería renderizar nada vacío — siempre tiene texto", () => {
-      render(<PHVBadge status={null} />);
-      const badge = screen.getByText("Sin evaluar");
-      expect(badge.textContent).toBeTruthy();
+    it("agrega text-sm en el contenedor cuando size='md'", () => {
+      const { container } = render(<PHVBadge status={MaturationStatus.PrePHV} size="md" />);
+      expect(container.firstElementChild?.className).toContain("text-sm");
     });
   });
 
@@ -116,22 +84,22 @@ describe("PHVBadge", () => {
   describe("cuando se comparan colores entre estados", () => {
     it("Pre-PHV y Post-PHV deberían tener clases de fondo distintas", () => {
       const { unmount } = render(<PHVBadge status={MaturationStatus.PrePHV} />);
-      const preBg = screen.getByText("Pre-PHV").className;
+      const preBg = screen.getByText("Pre-PHV").closest("span")?.className;
       unmount();
 
       render(<PHVBadge status={MaturationStatus.PostPHV} />);
-      const postBg = screen.getByText("Post-PHV").className;
+      const postBg = screen.getByText("Post-PHV").closest("span")?.className;
 
       expect(preBg).not.toBe(postBg);
     });
 
     it("Circa-PHV y Pre-PHV deberían tener clases de color distintas", () => {
       const { unmount } = render(<PHVBadge status={MaturationStatus.CircaPHV} />);
-      const circaClasses = screen.getByText("Circa-PHV").className;
+      const circaClasses = screen.getByText("Circa-PHV").closest("span")?.className;
       unmount();
 
       render(<PHVBadge status={MaturationStatus.PrePHV} />);
-      const preClasses = screen.getByText("Pre-PHV").className;
+      const preClasses = screen.getByText("Pre-PHV").closest("span")?.className;
 
       expect(circaClasses).not.toBe(preClasses);
     });

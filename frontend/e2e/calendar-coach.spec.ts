@@ -12,6 +12,7 @@
  * los 249 tests pytest. Aquí validamos el flujo de UI end-to-end.
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { realTokens } from './helpers/session';
 
 const COACH_USER = {
   id: 1,
@@ -81,6 +82,7 @@ const EVENT_DETAIL = {
 
 async function setupAuth(page: Page) {
   // Inyecta sesión autenticada en sessionStorage (formato del Zustand store).
+  const liveTokens = await realTokens(page.request, 'coach');
   await page.addInitScript(({ tokens, user }) => {
     sessionStorage.setItem(
       'auth-session',
@@ -95,7 +97,7 @@ async function setupAuth(page: Page) {
         version: 0,
       }),
     );
-  }, { tokens: FAKE_TOKENS, user: COACH_USER });
+  }, { tokens: liveTokens, user: COACH_USER });
 }
 
 async function mockBackendForCoach(page: Page, opts: { events?: any[]; created?: any } = {}) {

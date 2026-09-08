@@ -7,6 +7,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
+import { PHVBadge } from "@/components/athletes/PHVBadge";
 import {
   differsFromDefault,
   rulesFor,
@@ -122,18 +123,6 @@ function buildAlerts(
   return alerts;
 }
 
-const PHV_LABELS: Record<MaturationStatus, string> = {
-  [MaturationStatus.PrePHV]: "Pre-PHV",
-  [MaturationStatus.CircaPHV]: "Circa-PHV",
-  [MaturationStatus.PostPHV]: "Post-PHV",
-};
-
-const PHV_BADGE_COLORS: Record<MaturationStatus, string> = {
-  [MaturationStatus.PrePHV]: "bg-blue-100 text-blue-800",
-  [MaturationStatus.CircaPHV]: "bg-amber-100 text-amber-800",
-  [MaturationStatus.PostPHV]: "bg-green-100 text-green-800",
-};
-
 interface RuleRowProps {
   rule: TrainingRule;
 }
@@ -194,11 +183,7 @@ export function TrainingReadiness({ athlete, latestRecord, alerts }: TrainingRea
           <span className="rounded-full bg-light-gray px-2.5 py-1 text-charcoal">
             {athlete.category ?? "Sin categoría"}
           </span>
-          {matStatus && (
-            <span className={`rounded-full px-2.5 py-1 font-medium ${PHV_BADGE_COLORS[matStatus]}`}>
-              {PHV_LABELS[matStatus]}
-            </span>
-          )}
+          {matStatus && <PHVBadge status={matStatus} />}
           <span className="rounded-full bg-light-gray px-2.5 py-1 text-charcoal">
             Grupo: {ageGroup} años
           </span>

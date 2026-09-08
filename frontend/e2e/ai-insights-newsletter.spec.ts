@@ -31,6 +31,7 @@
  * Privacidad: todo nombre de atleta/coach en este archivo es sintético.
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
+import { realTokens } from './helpers/session';
 
 // ---------------------------------------------------------------------------
 // Fixtures — sintéticos, nunca nombres reales (Ley 1581)
@@ -152,10 +153,11 @@ function fallbackInsight(id: number, validaNum: number): InsightFixture {
 // ---------------------------------------------------------------------------
 
 function isBackend(url: URL): boolean {
-  return url.port !== "5173";
+  return url.port !== (process.env.E2E_APP_PORT ?? "5173");
 }
 
 async function setupAuthCoach(page: Page): Promise<void> {
+  const liveTokens = await realTokens(page.request, 'coach');
   await page.addInitScript(
     ({ tokens, user }) => {
       sessionStorage.setItem(
@@ -171,7 +173,7 @@ async function setupAuthCoach(page: Page): Promise<void> {
         }),
       );
     },
-    { tokens: TOKENS, user: COACH },
+    { tokens: liveTokens, user: COACH },
   );
 }
 
@@ -370,7 +372,7 @@ test.describe("Feature 036 — barra sticky del boletín, de punta a punta (T074
     ];
     await expect(
       page.getByRole("heading", {
-        name: new RegExp(`Boletín de ${monthNames[NL_MONTH - 1]} ${NL_YEAR}`, "i"),
+        name: new RegExp(`Bitácora de ${monthNames[NL_MONTH - 1]} ${NL_YEAR}`, "i"),
       }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Borrador/i).first()).toBeVisible();

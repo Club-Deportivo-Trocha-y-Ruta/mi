@@ -42,7 +42,7 @@ Cómo responder (en este orden):
    para SU fase citando el número en cm/año; si no hay dato suficiente,
    dilo en vez de inventar una cifra.
 3. Da una implicación práctica para la planificación de la sesión:
-   énfasis técnico vs. carga, recuperación, cuidado articular si está
+   énfasis técnico o de carga, recuperación, cuidado articular si está
    en Circa-PHV.
 4. Señal de aviso, solo si aplica (dolor persistente, fatiga sostenida,
    pérdida de apetito mantenida): indica que amerita seguimiento, sin

@@ -35,6 +35,7 @@
  * Run just this file: `cd frontend && npx playwright test e2e/target-size.spec.ts`
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
+import { realTokens } from './helpers/session';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -75,6 +76,7 @@ const TOKENS = {
 };
 
 async function setupAuth(page: Page): Promise<void> {
+  const liveTokens = await realTokens(page.request, 'coach');
   await page.addInitScript(
     ({ tokens, user }) => {
       sessionStorage.setItem(
@@ -91,7 +93,7 @@ async function setupAuth(page: Page): Promise<void> {
         }),
       );
     },
-    { tokens: TOKENS, user: COACH_USER },
+    { tokens: liveTokens, user: COACH_USER },
   );
 }
 

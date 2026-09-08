@@ -15,6 +15,7 @@
  * valida el flujo de UI end-to-end con mocks deterministas.
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
+import { realTokens } from './helpers/session';
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -160,6 +161,7 @@ function makeNewsletterFixture(
 
 async function setupAuth(page: Page) {
   // Inyecta sesión autenticada en sessionStorage (formato del Zustand store).
+  const liveTokens = await realTokens(page.request, 'coach');
   await page.addInitScript(
     ({ tokens, user }) => {
       sessionStorage.setItem(
@@ -176,7 +178,7 @@ async function setupAuth(page: Page) {
         }),
       );
     },
-    { tokens: FAKE_TOKENS, user: COACH_USER },
+    { tokens: liveTokens, user: COACH_USER },
   );
 }
 

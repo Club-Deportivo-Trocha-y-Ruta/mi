@@ -239,6 +239,22 @@ function renderPage(athleteId = "1") {
   );
 }
 
+/**
+ * Abre el tab Crecimiento haciendo clic, igual que la entrenadora en la app.
+ *
+ * Feature 040 (US5, T070 / FR-020): la página ya NO salta sola a Crecimiento
+ * cuando detecta registros — abre siempre en "Info general" salvo que la URL
+ * traiga `?tab=`. El botón sólo existe una vez cargados los registros, por eso
+ * se espera con `findByRole` antes del clic; `GrowthTab` es `React.lazy`, así
+ * que los asserts posteriores deben usar `findBy*` (no `getBy*`).
+ */
+async function openGrowthTab() {
+  const tab = await screen.findByRole("button", { name: /Crecimiento/i });
+  await act(async () => {
+    await userEvent.click(tab);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Suites de tests
 // ---------------------------------------------------------------------------
@@ -312,37 +328,45 @@ describe("AthleteDetailPage — refactor Opción C", () => {
     // Feature 040 (US2, T041): en modo coach `NutritionalClassification` deja de
     // renderizarse — sus dos clasificaciones (talla/IMC) las muestra ahora
     // `GrowthStatusRow` con los valores ya calculados en el servidor
-    // (`useGrowthSummary`). Sigue vigente en modo padre (`MyAthleteDetailPage`).
+    // (`useGrowthSummary`). Feature 040 (US4, T062) retiró también el uso en
+    // modo padre (`MyAthleteDetailPage`) — ver describe "MyAthleteDetailPage
+    // — vista padres" más abajo: sus tarjetas familiares (`FamilyStageCard`/
+    // `FamilyBandCards`) reemplazan a `NutritionalClassification` ahí.
     it("NO renderiza NutritionalClassification en modo coach", async () => {
       renderPage();
-      // Con registros, la página abre Crecimiento como tab inicial (useEffect)
+      await openGrowthTab();
       await screen.findByTestId("growth-curve");
       expect(screen.queryByTestId("nutritional-classification")).not.toBeInTheDocument();
     });
 
     it("renderiza GrowthCurveSection", async () => {
       renderPage();
+      await openGrowthTab();
       expect(await screen.findByTestId("growth-curve")).toBeInTheDocument();
     });
 
     it("renderiza una sola instancia de GrowthCurveSection (sin duplicados)", async () => {
       renderPage();
+      await openGrowthTab();
       await screen.findByTestId("growth-curve");
       expect(screen.getAllByTestId("growth-curve")).toHaveLength(1);
     });
 
     it("renderiza TrainingReadiness", async () => {
       renderPage();
+      await openGrowthTab();
       expect(await screen.findByTestId("training-readiness")).toBeInTheDocument();
     });
 
     it("renderiza PHVExplanationCard", async () => {
       renderPage();
+      await openGrowthTab();
       expect(await screen.findByTestId("phv-explanation-card")).toBeInTheDocument();
     });
 
     it("renderiza ResearchReferences", async () => {
       renderPage();
+      await openGrowthTab();
       expect(await screen.findByTestId("research-references")).toBeInTheDocument();
     });
 
@@ -350,7 +374,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
     // `AnthropometryHistory` (modo compacto) dentro del tab Crecimiento.
     it("renderiza AnthropometryHistory (compacto) en tab Crecimiento", async () => {
       renderPage();
-      // Esperar a que el tab Crecimiento esté activo
+      await openGrowthTab();
       await screen.findByTestId("growth-curve");
       expect(screen.getByTestId("anthropometry-history")).toBeInTheDocument();
     });
@@ -376,7 +400,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
 
     it("navegar a Antropometría desde Crecimiento muestra AnthropometryHistory", async () => {
       renderPage();
-      // Esperar tab Crecimiento activo
+      await openGrowthTab();
       await screen.findByTestId("growth-curve");
 
       await act(async () => {
@@ -395,10 +419,8 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       expect(screen.getByTestId("anthropometry-history")).toBeInTheDocument();
 
       // Volver a Crecimiento
-      await act(async () => {
-        await userEvent.click(screen.getByRole("button", { name: /Crecimiento/i }));
-      });
-      expect(screen.getByTestId("growth-curve")).toBeInTheDocument();
+      await openGrowthTab();
+      expect(await screen.findByTestId("growth-curve")).toBeInTheDocument();
       // Feature 040 (US2, T041): `AnthropometryHistory` vive ahora en ambos
       // tabs, así que al volver debe seguir montada — y una sola vez.
       expect(screen.getAllByTestId("anthropometry-history")).toHaveLength(1);
@@ -449,7 +471,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
 
     it("click en 'Agregar medicion' en tab Crecimiento navega a tab Antropometría", async () => {
       renderPage();
-      // Esperar tab Crecimiento (tab inicial cuando hay records)
+      await openGrowthTab();
       await screen.findByTestId("phv-explanation-card");
 
       await act(async () => {
@@ -463,6 +485,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
 
     it("tras navegar al tab Antropometría vía CTA no se renderiza GrowthCurveSection", async () => {
       renderPage();
+      await openGrowthTab();
       await screen.findByTestId("phv-explanation-card");
 
       await act(async () => {
@@ -480,7 +503,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
   describe("Tab Info general", () => {
     it("muestra 'Datos del atleta' con datos básicos del atleta", async () => {
       renderPage();
-      // Info general es el tab inicial cuando no hay registros
+      // FR-020: "Info general" es siempre el tab inicial (haya o no registros)
       expect(await screen.findByText(/Datos del atleta/i)).toBeInTheDocument();
     });
 
@@ -515,7 +538,7 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([recordA, recordB]);
 
       renderPage();
-      // Esperar el tab activo inicial (Crecimiento con records)
+      await openGrowthTab();
       await screen.findByTestId("growth-curve");
 
       await act(async () => {
@@ -660,15 +683,12 @@ describe("MyAthleteDetailPage — vista padres (coach es AthleteDetailPage)", ()
     expect(screen.getByTestId("growth-curve")).toBeInTheDocument();
   });
 
-  it("tab Crecimiento muestra NutritionalClassification (vista padres)", async () => {
-    vi.mocked(athletesApi.getAthlete).mockResolvedValue(mockAthleteWithLatest);
-    vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([recordA, recordB]);
-    renderParentPage();
-    await act(async () => {
-      await userEvent.click(await screen.findByRole("button", { name: /Crecimiento/i }));
-    });
-    expect(screen.getByTestId("nutritional-classification")).toBeInTheDocument();
-  });
+  // Feature 040 (US4, T062): `NutritionalClassification` ya no se monta en
+  // el tab Crecimiento del padre — `GrowthTab mode="parent"` la reemplazó
+  // por las tarjetas familiares narrativas (`FamilyStageCard`/
+  // `FamilyBandCards`, sin numerales). Cobertura dedicada y exhaustiva en
+  // `components/athletes/growth/__tests__/GrowthTab.parent.test.tsx` y
+  // `routes/parents/__tests__/MyAthleteDetailPage.growth.test.tsx`.
 
   it("muestra mensaje de error si el atleta no carga", async () => {
     vi.mocked(athletesApi.getAthlete).mockRejectedValue(new Error("Forbidden"));
@@ -699,13 +719,9 @@ describe("MyAthleteDetailPage — vista padres (coach es AthleteDetailPage)", ()
       expect(card).toHaveAttribute("data-readonly", "true");
     });
 
-    it("renderiza ResearchReferences al cambiar al tab Crecimiento", async () => {
-      renderParentPage();
-      await act(async () => {
-        await userEvent.click(await screen.findByRole("button", { name: /Crecimiento/i }));
-      });
-      expect(screen.getByTestId("research-references")).toBeInTheDocument();
-    });
+    // Feature 040 (US4, T062): `ResearchReferences` es exclusivo del coach
+    // (`contracts/growth-tab-ui.md` §Component tree) — `GrowthTab
+    // mode="parent"` ya no la monta.
 
     it("NO muestra el botón Generar ni Regenerar en el tab Crecimiento del padre", async () => {
       renderParentPage();

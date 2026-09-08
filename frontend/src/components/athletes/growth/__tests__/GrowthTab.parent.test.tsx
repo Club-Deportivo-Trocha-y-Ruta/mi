@@ -162,6 +162,7 @@ vi.mock("@/components/ai/PHVExplanationCard", () => ({
 // ---------------------------------------------------------------------------
 
 import { GrowthTab } from "@/components/athletes/growth/GrowthTab";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import * as athletesApi from "@/api/athletes";
 import * as growthApi from "@/api/growth";
 import { makeGrowthSummary } from "@/test/msw/growthSummaryHandlers";
@@ -261,6 +262,10 @@ function makeParentSummary(overrides: Parameters<typeof makeGrowthSummary>[0] = 
   });
 }
 
+// `FamilyBandCards` (T058, montada en modo padre desde T062) usa el tooltip
+// de la tarjeta de IMC (`@/components/ui/tooltip`), que requiere un
+// `TooltipProvider` ancestro — en la app real lo pone `App.tsx`; acá se
+// envuelve el render, mismo criterio que `FamilyBandCards.test.tsx`.
 function renderParentTab(props: Partial<React.ComponentProps<typeof GrowthTab>> = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -270,7 +275,9 @@ function renderParentTab(props: Partial<React.ComponentProps<typeof GrowthTab>> 
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <GrowthTab athlete={mockAthlete} mode="parent" {...props} />
+      <TooltipProvider delayDuration={0}>
+        <GrowthTab athlete={mockAthlete} mode="parent" {...props} />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }

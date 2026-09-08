@@ -89,7 +89,7 @@ export const BAND_VOCABULARY: Record<NutritionalStatus, BandVocabularyEntry> = {
     coachLabel: "Talla alta",
     familyLabel: "Por encima del promedio",
     narrative:
-      "La estatura está significativamente por encima del promedio. No es patológico; útil considerar estado de maduración biológica.",
+      "La estatura está significativamente por encima del promedio. No es un problema de salud; puede relacionarse con su etapa de maduración biológica.",
     tone: "neutral",
     referral: false,
   },
@@ -97,21 +97,22 @@ export const BAND_VOCABULARY: Record<NutritionalStatus, BandVocabularyEntry> = {
     coachLabel: "Delgadez",
     familyLabel: "Por debajo del rango esperado",
     narrative:
-      "El IMC está por debajo del rango saludable. En atleta activo descartar disponibilidad energética insuficiente. Recomendamos evaluación nutricional.",
+      "El peso para su estatura está por debajo del rango esperado. En quienes entrenan con regularidad, esto puede indicar que la alimentación no está cubriendo el gasto de energía. Recomendamos una evaluación nutricional.",
     tone: "danger",
     referral: true,
   },
   delgadez: {
     coachLabel: "Riesgo de delgadez",
     familyLabel: "Un poco por debajo del rango",
-    narrative: "El IMC está un poco bajo. Vigilamos que la alimentación sea suficiente para el entrenamiento.",
+    narrative:
+      "El peso para su estatura está un poco bajo. Vigilamos que la alimentación sea suficiente para el entrenamiento.",
     tone: "warning",
     referral: false,
   },
   adecuado: {
     coachLabel: "Adecuado",
     familyLabel: "Dentro del rango esperado",
-    narrative: "El IMC está dentro del rango saludable para su edad.",
+    narrative: "El peso para su estatura está dentro del rango esperado para su edad.",
     tone: "success",
     referral: false,
   },
@@ -119,14 +120,15 @@ export const BAND_VOCABULARY: Record<NutritionalStatus, BandVocabularyEntry> = {
     coachLabel: "Sobrepeso",
     familyLabel: "Por encima del rango esperado",
     narrative:
-      "El IMC está en el límite superior. En ciclistas que entrenan con regularidad puede reflejar mayor masa muscular. Se monitorea la tendencia.",
+      "El peso para su estatura está en el límite superior. En ciclistas que entrenan con regularidad, esto puede reflejar mayor masa muscular. Seguimos la tendencia en las próximas mediciones.",
     tone: "warning",
     referral: false,
   },
   obesidad: {
     coachLabel: "Obesidad",
     familyLabel: "Por encima del rango esperado",
-    narrative: "El IMC está por encima del rango saludable. Requiere evaluación; muy raro en atletas activos.",
+    narrative:
+      "El peso para su estatura está por encima del rango esperado. Es poco frecuente en deportistas activos; recomendamos una evaluación para tener claridad.",
     tone: "danger",
     referral: true,
   },

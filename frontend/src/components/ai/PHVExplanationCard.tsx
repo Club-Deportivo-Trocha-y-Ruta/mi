@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { mapAIError } from "@/api/ai";
+import { mapAIError, type PHVAudience } from "@/api/ai";
 import { AIGeneratedContent } from "@/components/ai/AIGeneratedContent";
 import {
   usePHVExplanation,
@@ -18,6 +18,14 @@ interface PHVExplanationCardProps {
   /** Modo solo lectura para padres: muestra el contenido cacheado pero
    *  no instancia la mutación ni ofrece acciones de generación/regeneración. */
   readOnly?: boolean;
+  /**
+   * Audiencia de la explicación (feature 040, US4, R-12). `GrowthTab` la
+   * pasa según el modo: `"family"` (default) en modo padre — siempre con
+   * `readOnly` —, `"coach"` en modo coach. El backend rechaza `"coach"`
+   * para roles distintos de coach/admin (403), así que un padre nunca debe
+   * recibir este prop en `"coach"`.
+   */
+  audience?: PHVAudience;
   className?: string;
 }
 
@@ -44,13 +52,15 @@ function pendingMessage(elapsedSeconds: number): string {
 function PHVExplanationReadOnly({
   athleteId,
   hasRecords,
+  audience,
   className,
 }: {
   athleteId: number;
   hasRecords: boolean;
+  audience: PHVAudience;
   className?: string;
 }) {
-  const cachedQuery = usePHVExplanationCached(athleteId, hasRecords);
+  const cachedQuery = usePHVExplanationCached(athleteId, hasRecords, audience);
 
   // Loading de caché
   if (cachedQuery.isLoading) {
@@ -140,6 +150,7 @@ export function PHVExplanationCard({
   hasRecords,
   onMeasurementCTA,
   readOnly = false,
+  audience,
   className,
 }: PHVExplanationCardProps) {
   // Modo solo lectura: despacha al componente dedicado que no instancia mutation
@@ -148,41 +159,46 @@ export function PHVExplanationCard({
       <PHVExplanationReadOnly
         athleteId={athleteId}
         hasRecords={hasRecords}
+        audience={audience ?? "family"}
         className={className}
       />
     );
   }
 
-  // Modo coach: componente original inalterado
+  // Modo coach: componente original, ahora con audiencia parametrizable.
   return (
     <PHVExplanationCoach
       athleteId={athleteId}
       hasRecords={hasRecords}
       onMeasurementCTA={onMeasurementCTA}
+      audience={audience ?? "coach"}
       className={className}
     />
   );
 }
 
 // ---------------------------------------------------------------------------
-// PHVExplanationCoach — Lógica completa del coach (original, sin cambios).
-// Extraída a un componente propio para que el conditional dispatch de
-// PHVExplanationCard sea válido en React (hooks no condicionales).
+// PHVExplanationCoach — Lógica completa del coach, ahora con `audience`
+// parametrizable (feature 040, US4, R-12). Extraída a un componente propio
+// para que el conditional dispatch de PHVExplanationCard sea válido en
+// React (hooks no condicionales).
 // ---------------------------------------------------------------------------
 
 function PHVExplanationCoach({
   athleteId,
   hasRecords,
   onMeasurementCTA,
+  audience,
   className,
 }: {
   athleteId: number;
   hasRecords: boolean;
   onMeasurementCTA?: () => void;
+  audience: PHVAudience;
   className?: string;
 }) {
-  const cachedQuery = usePHVExplanationCached(athleteId, hasRecords);
-  const mutation = usePHVExplanation(athleteId);
+  const cachedQuery = usePHVExplanationCached(athleteId, hasRecords, audience);
+  const mutation = usePHVExplanation(athleteId, audience);
   const abortRef = useRef<AbortController | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -376,11 +392,12 @@ function PHVExplanationCoach({
           className="font-display text-sm text-charcoal"
           style={{ letterSpacing: "0.2px" }}
         >
-          Explicación PHV para padres
+          Explicación PHV
         </h4>
         <p className="mt-1 text-xs text-mid-gray">
-          Genera con IA una explicación clara del estado PHV del atleta.
-          Revísala antes de compartirla con la familia.
+          {audience === "coach"
+            ? "Genera con IA una explicación del estado PHV del atleta, con velocidad de talla y tiempo hasta/desde el PHV."
+            : "Genera con IA una explicación clara del estado PHV del atleta. Revísala antes de compartirla con la familia."}
         </p>
       </div>
       <button

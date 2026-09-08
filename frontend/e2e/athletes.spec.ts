@@ -17,7 +17,7 @@ test('E2E-003: crear atleta masculino muestra categoría Pre-juvenil A', async (
   await loginAsCoach(page);
 
   // Navegar a sección de atletas
-  await page.getByRole('link', { name: /atletas/i }).click();
+  await page.getByRole('link', { name: 'Atletas', exact: true }).click();
   await expect(page).toHaveURL(/\/athletes/);
 
   // Abrir formulario de creación. El acceso es un link "+ Agregar atleta"
@@ -49,7 +49,7 @@ test('E2E-003: crear atleta masculino muestra categoría Pre-juvenil A', async (
 test('E2E-004: crear atleta femenino muestra categoría Infantil B femenino', async ({ page }) => {
   await loginAsCoach(page);
 
-  await page.getByRole('link', { name: /atletas/i }).click();
+  await page.getByRole('link', { name: 'Atletas', exact: true }).click();
   await expect(page).toHaveURL(/\/athletes/);
   await page.getByRole('link', { name: /agregar atleta/i }).first().click();
   await expect(page).toHaveURL(/\/athletes\/new/);

@@ -22,11 +22,11 @@
 | **T024** — chart builder on WHO + weight chart omitted > 10 y | ✅ Done | `cd backend && .venv/bin/python -m pytest tests/services/training/test_growth_chart_builder.py -q` → green, incl. both 120.5-month boundary cases and `reason_no_data == "weight_over_10y"`. |
 | **T025** — `useGrowthMetrics` trusts stored values only when `growth_source === "WHO"`, exposes `source` | ✅ Done | `cd frontend && npx vitest run src/hooks/athletes` → **21/21**. |
 | **T026** — tooltip + sr-only table read stored Z/percentile; source caption in `NutritionalClassification` | ✅ Done | `cd frontend && npx vitest run src/components/athletes` → green; T011 characterization suite **16/16 unchanged**. Caption matches `contracts/band-vocabulary.md`. |
-| **T027** — migration + seed + recompute on a real MySQL `_test` DB | ⏸️ **Deferred** | `TEST_DATABASE_URL` **not set** in this environment; `pytest -m mysql` → **7 skipped, 3922 deselected**. See §5. |
-| **T028** — regenerate one family newsletter PDF on the dev stack | ⏸️ **Deferred** (partially pre-verified) | End-to-end PDF needs the dev stack + a seeded test athlete. Both assertions pre-verified offline — see §5. |
+| **T027** — migration + seed + recompute on a real MySQL `_test` DB | ✅ **Done 2026-09-05** | Isolated stack MySQL (`trocha-e2e`, :3307), database `trocha_ruta_test`: full Alembic chain from empty, WHO seed 336/336/120 rows, recompute run, `pytest -m mysql` 7/7. Evidence in §5. |
+| **T028** — regenerate one family newsletter PDF on the dev stack | ✅ **Done 2026-09-05** | Isolated stack, synthetic demo athlete (12.2 y), April 2026 bitácora: caption reads OMS 2007, no CDC string, weight chart absent. One builder fix applied (see §5). |
 | **T029** — wave review, SC-001 signed | ✅ Done | See §3. |
 
-**Result**: 12 of 14 tasks verified complete; T027 and T028 deferred with accepted infrastructure reasons.
+**Result**: 14 of 14 tasks verified complete (T027 and T028 closed on 2026-09-05 on the isolated e2e stack — see §5).
 
 ---
 
@@ -79,24 +79,25 @@ The helper is deliberately duplicated rather than imported (to keep the hook moc
 
 ---
 
-## 5. Deferred tasks
+## 5. T027 / T028 — closed on the isolated e2e stack (2026-09-05)
+
+Both tasks were originally deferred because the only reachable database was the developer's compose project `me` (real club data). They were closed on the **isolated** stack (`docker compose -p trocha-e2e`, see `checklists/e2e-stack.md`), which holds only the synthetic development seed.
 
 ### T027 — real MySQL `_test` database
-**Reason**: `TEST_DATABASE_URL` is not set in this environment. A socket probe (no credentials printed) found `127.0.0.1:3306` open and `mysql:3306` unresolvable (docker-compose-only hostname), but without `TEST_DATABASE_URL` there is no `_test` database name or credentials to connect with, and reading `.env*` is forbidden.
-**Evidence**: `cd backend && .venv/bin/python -m pytest -m mysql -q` → `7 skipped, 3922 deselected`.
-**To close**: export `TEST_DATABASE_URL=mysql+aiomysql://…/<name>_test`, then run `alembic upgrade head`, the seed, `python -m app.scripts.backfill_anthropometry`, and `pytest -m mysql`; record row counts (expect 336/336/120 WHO rows) and the band-change summary (ids only) here.
-**Owner**: `database-architect`.
 
-### T028 — family newsletter PDF on the dev stack
-**Reason**: needs `docker compose up` plus a seeded test athlete. The docker daemon is running, but the app database is not reachable for this session (same blocker as T027).
-**Partially pre-verified offline**, so the residual risk is low:
-- WeasyPrint native libs work locally with the documented fallback: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` → `WeasyPrint import: OK 68.1`, and `pytest tests/services/notification/test_stage_log_pdf.py` → **15 passed** (vs 13 failures without the variable — an env-var issue, not a code defect).
-- "Weight chart absent above 10 y" is pinned by unit tests at the builder level, including both 120.5-month boundary cases.
-- "Label reads OMS 2007" **was not true before this review** — see §6.
-**To close**: bring up the dev stack, regenerate one PDF for a test athlete, confirm visually.
-**Owner**: `qa-engineer`.
+- Blocker removed first: `alembic upgrade head` crashed on any fresh database because three historical migrations imported catalog modules deleted by feature 038 (`e1f2a3b4c5d6`, `f1a2b3c4d5e6`, `a7b8c9d0e1f2`). They now skip their seed block when the module is missing (the tables are dropped by `d0e1f2a3b4c5` anyway). Full chain replays from empty on MySQL 8.4.
+- Database `trocha_ruta_test` created on the isolated MySQL (:3307); inside the backend container: `alembic upgrade head` → `python -m app.seed_growth_data` → `python -m app.scripts.backfill_anthropometry`.
+- Row counts in `growth_reference_lms` after the seed: WHO `height_for_age` 168 M + 168 F = **336**, WHO `bmi_for_age` **336**, WHO `weight_for_age` 60 + 60 = **120** (CDC rows untouched: 218/218/219 per sex; 2 102 rows total).
+- Recompute on the empty `_test` DB: 0 scanned, 0 band changes (expected). Recompute on the demo database (synthetic athlete, 7 records already `growth_source=WHO`): 0 recalculated, 0 band changes; `./data/growth_band_changes_20260905.json` written (ids only).
+- `pytest -m mysql` against `TEST_DATABASE_URL=…/trocha_ruta_test`: **7 passed**. One pre-existing failure fixed on the way: `tests/services/race/test_mysql_dialect.py::test_build_distribution_mysql_sum_types` still passed `valida_num=` to `build_distribution`, whose signature moved to `event_id=` in feature 039.
+- The real-data band-change report (counts for the club's athletes) can only be produced by the production recompute at deploy time — it stays in T078's hand-off.
 
----
+### T028 — family newsletter PDF
+
+- Demo seed extended with three synthetic anthropometry records (`backend/scripts/seed.py::seed_demo_anthropometry`, dates before 2026-04-14 so the e2e-created record stays the latest) so the bitácora has a growth annex.
+- April 2026 bitácora for the demo athlete (12.2 y) generated through `POST /api/athletes/1/monthly-newsletters` and downloaded via `/pdf` (4 pages, WeasyPrint inside the container).
+- Assertions on the extracted text: `OMS 2007` ×3, `CDC` ×0, `Talla (cm)` ×1, `IMC (kg/m²)` ×1, `Peso (kg)` ×0.
+- Fix applied: the first render still drew an **empty weight frame** ("Peso (kg) 11a 12a 13a 14a — Datos de referencia no disponibles") because `_build_percentile_charts_block` kept the `weight_over_10y` context and the template rendered it. The block now omits the weight chart entirely above 10 y (`newsletter_builder.py`), which is what R-02 / this task require. Tests: `test_newsletter_builder_percentile_curves.py`, `test_growth_chart_builder.py`, `test_newsletter_pdf_groups.py` — 34 passed.
 
 ## 6. Fixes applied by the wave gate
 
@@ -126,4 +127,4 @@ The helper is deliberately duplicated rather than imported (to keep the hook moc
 
 - **Phase 5 (T050/T051)**: `PercentileChart.tsx` and `PercentileTable.tsx` must consume a single shared stored-value helper instead of re-duplicating `extractStoredZ`, to keep SC-001 structurally guaranteed after `PercentileCurves.tsx` is deleted in T052.
 - **`frontend/src/components/athletes/ResearchReferences.tsx`** still lists "CDC — Growth Charts Data Files" as a bibliography entry. Legitimate as a citation, but confirm during Phase 7 that it is not read as the app's active standard.
-- T027 and T028 must be closed before the US1 deploy is called done.
+- T027 and T028 closed 2026-09-05 (§5); the production band-change report remains a T078 hand-off.

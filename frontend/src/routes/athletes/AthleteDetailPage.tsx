@@ -4,7 +4,6 @@ import {
   Activity,
   AlertTriangle,
   Bike,
-  CalendarDays,
   ExternalLink,
   Info,
   Link2,
@@ -17,7 +16,6 @@ import {
   Unlink,
   User,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 
 import { ActivityCard } from "@/components/activities/ActivityCard";
@@ -29,13 +27,17 @@ import { LinkedParentsCard } from "@/components/athletes/LinkedParentsCard";
 import { AthleteNewslettersTabPanel } from "@/components/training/AthleteNewslettersTabPanel";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { StatCard } from "@/components/shared/StatCard";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { formatDateMedium } from "@/lib/datetime";
+import { getMeasurementStatusMeta } from "@/lib/measurementStatus";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
+import { useGrowthSummary } from "@/hooks/athletes/useGrowthSummary";
 import { useAthleteActivities } from "@/hooks/activities/useAthleteActivities";
 import {
   useConnectStrava,
@@ -43,7 +45,7 @@ import {
   useStravaConnection,
 } from "@/hooks/activities/useStravaConnection";
 import { useAuthStore } from "@/store/auth.store";
-import { MaturationStatus, UserRole } from "@/types/enums";
+import { UserRole } from "@/types/enums";
 
 // T096 (feature 036, US6): Insights IA — arrastra recharts (EvolutionChart,
 // DistributionChart) al bundle sin importar si el tab se abre o no. Mismo
@@ -87,52 +89,25 @@ function parseTabParam(raw: string | null): Tab | null {
   return null;
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  subtitle,
-  colorClass,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  subtitle?: string;
-  colorClass?: string;
-}) {
-  return (
-    <div className="rounded-xl bg-white p-4 shadow-card">
-      <div className="flex items-center gap-2 text-mid-gray">
-        <Icon size={16} />
-        <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
-      </div>
-      <p className={cn("mt-1.5 text-2xl font-bold", colorClass ?? "text-charcoal")}>{value}</p>
-      {subtitle && <p className="mt-0.5 text-xs text-mid-gray">{subtitle}</p>}
-    </div>
-  );
-}
-
-function phvColor(status: string | undefined | null): string {
-  if (status === MaturationStatus.PrePHV) return "text-blue-700";
-  if (status === MaturationStatus.CircaPHV) return "text-amber-700";
-  if (status === MaturationStatus.PostPHV) return "text-green-700";
-  return "text-charcoal";
-}
-
-function formatRelativeDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) return "hoy";
-  if (diffDays === 1) return "hace 1 día";
-  if (diffDays < 30) return `hace ${diffDays} días`;
-  const diffMonths = Math.floor(diffDays / 30);
-  if (diffMonths === 1) return "hace 1 mes";
-  return `hace ${diffMonths} meses`;
-}
-
 const ACTIVITIES_PAGE_SIZE = 10;
+
+const MONTHS_ES_SHORT = [
+  "ene", "feb", "mar", "abr", "may", "jun",
+  "jul", "ago", "sep", "oct", "nov", "dic",
+];
+
+/**
+ * Fecha corta "12 dic 2026" a partir de un `YYYY-MM-DD` plano (sin hora) —
+ * feature 040 (US5, T070). Se parte el string en vez de `new Date(...)`:
+ * una fecha sin hora se interpreta como medianoche UTC y, formateada en
+ * `America/Bogota` (UTC-5), puede retroceder un día — mismo criterio que
+ * `AnthropometryHistory.tsx::formatDate` / `NextMeasurementCard.tsx::formatDueDate`.
+ */
+function formatSummaryDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split("-");
+  const label = MONTHS_ES_SHORT[Number(month) - 1] ?? month;
+  return `${Number(day)} ${label} ${year}`;
+}
 
 /**
  * StravaTabPanel — tarjeta de conexión Strava + listado de actividades
@@ -453,6 +428,11 @@ export function AthleteDetailPage() {
   const athleteId = Number(id);
   const athleteQuery = useAthlete(athleteId, Number.isFinite(athleteId));
   const anthropometryQuery = useAnthropometry(athleteId);
+  // T070 (feature 040, US5): las tarjetas superiores (etapa, talla + P,
+  // velocidad, próxima medición) leen del resumen calculado en el servidor,
+  // no de `athlete.latest_anthropometry` (FR-020) — se piden siempre, no
+  // sólo cuando el tab Crecimiento está activo.
+  const growthSummaryQuery = useGrowthSummary(athleteId, Number.isFinite(athleteId));
   const role = useAuthStore((s) => s.user?.role);
   const isParent = role === UserRole.parent;
 
@@ -466,9 +446,6 @@ export function AthleteDetailPage() {
     rawTabFromUrl === "newsletters" && isParent ? null : rawTabFromUrl;
   const [activeTab, setActiveTab] = useState<Tab>(tabFromUrl ?? "info");
   const [showForm, setShowForm] = useState(false);
-  // Si el tab vino por URL, ya consideramos el "tab inicial" decidido —
-  // no queremos que el efecto de records lo sobrescriba a "growth".
-  const [hasSetInitialTab, setHasSetInitialTab] = useState(tabFromUrl !== null);
   const [reportSent, setReportSent] = useState(false);
   const reportSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -492,7 +469,6 @@ export function AthleteDetailPage() {
     const urlTab = rawUrlTab === "newsletters" && isParent ? null : rawUrlTab;
     if (urlTab && urlTab !== activeTab) {
       setActiveTab(urlTab);
-      setHasSetInitialTab(true);
     }
     // No incluimos activeTab para no entrar en loop al setear desde updateTab.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -513,12 +489,9 @@ export function AthleteDetailPage() {
 
   const records = anthropometryQuery.data ?? [];
 
-  useEffect(() => {
-    if (!hasSetInitialTab && records.length > 0) {
-      setActiveTab("growth");
-      setHasSetInitialTab(true);
-    }
-  }, [records.length, hasSetInitialTab]);
+  // FR-020 (feature 040, US5): la página YA NO salta sola al tab Crecimiento
+  // en cuanto detecta registros — abre siempre en "Info general" salvo que
+  // la URL pida otro tab explícitamente (ver `tabFromUrl` arriba).
 
   useEffect(() => {
     return () => {
@@ -574,49 +547,50 @@ export function AthleteDetailPage() {
       {/* Hero Card */}
       <AthleteInfoCard athlete={athlete} />
 
-      {/* Stat Cards Row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
-          icon={Activity}
-          label="Edad"
-          value={athlete.age_decimal?.toFixed(1) ?? "—"}
-          subtitle={athlete.category ?? undefined}
-        />
-        {latest ? (
-          <>
+      {/* Stat Cards Row — feature 040 (US5, T070): etapa, talla + percentil,
+          velocidad y estado de próxima medición, todo desde el resumen de
+          crecimiento calculado en el servidor (FR-020), no de
+          `athlete.latest_anthropometry`. */}
+      {(() => {
+        const summary = growthSummaryQuery.data;
+        const isLoading = growthSummaryQuery.isLoading;
+        const height = summary?.latest?.height ?? null;
+        const velocity = summary?.velocity ?? null;
+        const measurement = summary?.measurement;
+        const measurementMeta = measurement ? getMeasurementStatusMeta(measurement.status) : null;
+
+        return (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatCard label="Etapa" value={summary?.stage ?? "—"} isLoading={isLoading} />
             <StatCard
-              icon={TrendingUp}
-              label="Offset PHV"
-              value={`${latest.maturity_offset >= 0 ? "+" : ""}${latest.maturity_offset.toFixed(1)}`}
-              subtitle={latest.maturation_status}
-              colorClass={phvColor(latest.maturation_status)}
+              label="Talla"
+              value={height ? `${height.value} cm` : "—"}
+              hint={height ? `P${Math.round(height.percentile)}` : "Sin referencia para la edad"}
+              isLoading={isLoading}
             />
             <StatCard
-              icon={Ruler}
-              label="Talla"
-              value={`${latest.standing_height_cm} cm`}
-              subtitle={
-                latest.height_percentile != null
-                  ? `P${Math.round(latest.height_percentile)}`
-                  : undefined
+              label="Velocidad de talla"
+              value={velocity ? `${velocity.cm_per_year} cm/año` : "—"}
+              hint={velocity ? undefined : "Se necesitan 2 mediciones"}
+              isLoading={isLoading}
+            />
+            <StatCard
+              label="Próxima medición"
+              value={
+                measurement?.next_due_date
+                  ? formatSummaryDate(measurement.next_due_date)
+                  : "Sin medición"
+              }
+              isLoading={isLoading}
+              badge={
+                measurementMeta && (
+                  <StatusBadge status={measurementMeta.tone} label={measurementMeta.rowLabel} />
+                )
               }
             />
-            <StatCard
-              icon={CalendarDays}
-              label="Ult. medición"
-              value={latest.evaluation_date}
-              subtitle={formatRelativeDate(latest.evaluation_date)}
-            />
-          </>
-        ) : (
-          <div
-            className="col-span-1 flex items-center justify-center rounded-xl bg-white p-4 text-sm text-mid-gray shadow-ring lg:col-span-3"
-            style={{ borderStyle: "dashed" }}
-          >
-            Sin mediciones antropométricas registradas
           </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* Parents */}
       <LinkedParentsCard athleteId={athlete.id} />

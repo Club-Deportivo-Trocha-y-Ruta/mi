@@ -738,3 +738,46 @@ unchanged in count.
 > at read time from `race_series` columns already introduced by feature 014
 > (`docs/implementation-status.md`'s own entry above) and consumed as-is by
 > feature 016's `event_id`-based race identity.
+
+## Implementation status — Growth module redesign (specs/040-growth-module-redesign)
+
+> Rewrites the `Crecimiento` tab on the athlete detail page (coach and parent
+> modes). The tab classified the same measurement against two population
+> references at once (server-side CDC, client-side WHO 2007), opened on
+> near-empty longitudinal charts instead of the coach's real decision inputs,
+> and reused coach-grade components for parents with a defect that classified
+> the **oldest** record instead of the latest. Audit with `file:line` evidence
+> in `docs/18-growth-module-redesign/proposal.md`; full spec/plan/contracts in
+> `specs/040-growth-module-redesign/`. Five user stories, organized as one
+> phase per story after a foundational wave; per-wave verification detail in
+> `specs/040-growth-module-redesign/checklists/`.
+
+| Phase | Scope | Status |
+|---|---|---|
+| Setup | Build-size baseline (`checklists/build-baseline.md`: entry 336.68 kB gzip + a 107.39 kB gzip recharts chunk statically imported and module-preloaded), `growth/` component-folder skeleton, `npm run check:chunks` gate script | ✅ Complete 2026-09-04 |
+| Foundational | Regression fix: parent view classified `records[records.length - 1]` (oldest) instead of `records[0]` (latest) in `MyAthleteDetailPage.tsx`; `bands.ts` rebuilt around the 9-value `NutritionalStatus` vocabulary with an indicator-aware `classifyBand` (parity-checked against `services/growth.py`); numeric max-HR estimate ("197 lpm") removed from `TrainingReadiness.tsx`; `STATUS_META` extracted to shared `lib/measurementStatus.ts`; additive nullable `anthropometric_records.growth_source` column (migration `2a8baa967cc6`) | ✅ Complete 2026-09-04 |
+| US1 — One reference standard | WHO 2007 LMS vendored and seeded (336/336/120 rows height/BMI/weight, deterministic CSV exporter with a provenance README); `POST /anthropometry` now persists `growth_source="WHO"` and nulls weight above 120.5 months; idempotent recompute (`backfill_anthropometry.py`) with a band-change report keyed by `athlete_id`/`record_id` only; chart builder reads WHO and omits the weight chart above 10 y; tile/chart/table all resolve Z and percentile from the same stored value (SC-001) | ✅ Complete 2026-09-04 — **T027** (run migration+seed+recompute on a real MySQL `_test` DB) and **T028** (regenerate one family PDF on the dev stack) deferred: this environment has no `TEST_DATABASE_URL` and no reachable dev-stack database (see "Deferred items" below) |
+| US2 — Decision-first coach tab | New `GET /api/athletes/{id}/growth-summary` (one query, two rows — `backend/app/services/growth_summary.py` + `routers/growth.py`); `GrowthTab.tsx` composition in decision-first order (alerts → status row → next-measurement card → training-rule chips → chart → morphology → AI explanation → history); `TrainingReadiness.tsx` reads a shared `lib/growth/rules.ts` table instead of inline logic | ✅ Complete 2026-09-04 — **T044** (Playwright, part 1) written and statically valid, not executed (see "Deferred items") |
+| US3 — Readable curve | `PercentileCurves.tsx` (875 LOC) split into `GrowthCurveSection` / `PercentileChart` / `PercentileToolbar` / `PercentileTable`, each behind a characterization-test safety net; windowed x-axis (last 3 measurements or 18 months, whichever is wider — SC-008 amended in `spec.md` after the Phase 5 gate escalated the original ≥ 50 % criterion as unreachable with typical ≤ 10-measurement histories); explicit "Tabla" view of the charted data alongside the chart | ✅ Complete 2026-09-04 — **T054** (Playwright, part 2) written, not executed |
+| US4 — Family view | `FamilyStageCard` / `FamilyBandCards` (family copy only — no Z-score, no percentile, no clinical label, per FR-016); `preset="family"` on the shared curve (athlete line + P50 + P3–P97 band, no PHV/PWV marker, no axis/detail toggles); PHV explainer gained an `audience: "family" \| "coach"` parameter (`?audience=coach` is coach/admin-only, 403 for a parent) so the same use case serves both a family-language and a coach-language explanation from one cache, partitioned by `use_case`; family copy reviewed end to end (clinical jargon removed, full diacritics); mandatory privacy audit **PASSED** with 0 critical/high findings (`checklists/privacy.md`) | ✅ Complete 2026-09-04 — **T064** (Playwright) written, not executed |
+| US5 — Product coherence | New `MaturationTimeline.tsx` (pure CSS/flex, no chart library, `role="img"` text alternative) placed in coach mode after the curve; `MorphologyCard` tiles moved onto shared `StatCard`, `PHVBadge` onto shared `StatusBadge` (icon + label, never colour alone) with the per-page PHV colour maps deleted; page-local `StatCard` and the auto-select-growth effect removed from both detail pages, top tiles now fed by `useGrowthSummary`; growth tab and its WHO JSON moved to a lazy chunk — full before/after bundle numbers in `checklists/build-baseline.md` | ✅ Complete 2026-09-04 — **T072**'s Playwright leg (`growth.spec.ts`, `growth-parent.spec.ts`, `history.spec.ts`, `anthropometry.spec.ts`, `target-size.spec.ts`) deferred; every other leg (typecheck, full `vitest`, growth/a11y suites) is green. Integration review signed in `checklists/integration-review.md` (T073), which also found and fixed one FR-016 violation the Phase 6 privacy audit could not see (coach-tab tile copy landed on the parent page by T070; fixed same-day) |
+| Polish | Docs (this entry + `docs/technical-notes.md`, `docs/04-percentiles/workflow.md`, `docs/06-parents/workflow.md`, `docs/README.md`), `CLAUDE.md` managed-block refresh, `quickstart.md` walkthrough, post-deploy smoke, PR description | 🚧 In progress — this docs pass (T074–T076) done; `quickstart.md` walkthrough (T077), post-deploy smoke (T078) and the PR description (T079) not yet run |
+
+**Bundle result (SC-005, T071, `checklists/build-baseline.md`)**: entry chunk
+336.68 → 283.38 kB gzip; the growth tab is now its own lazy chunk
+(`GrowthTab-*.js`, 17.42 kB gzip, well under the 150 kB budget); the recharts
+chunk and the WHO LMS JSON are no longer statically imported by, or
+module-preloaded from, the entry — `npm run check:chunks` is green. Effective
+first-paint JS (entry + the one still-module-preloaded chunk, same
+methodology as the Setup baseline) dropped 158.90 kB gzip, against a ≥ 100 kB
+target. The entry route stays above the Constitution IV 250 kB budget
+(283.38 kB) — a pre-existing violation, reduced but not closed by this
+feature; closing it needs a separate `App.tsx` route-splitting pass, out of
+scope here (`plan.md` Complexity Tracking).
+
+**Close-out on the isolated e2e stack (2026-09-05)** — every item deferred on 2026-09-04 except the post-deploy smoke is now closed; evidence in the named checklists:
+
+- **T027** (`checklists/reference-standard.md` §5) — database `trocha_ruta_test` on the isolated MySQL: full Alembic chain from empty (after fixing three historical migrations that imported modules deleted by feature 038), WHO seed 336/336/120 rows, recompute run (0 band changes on synthetic data), `pytest -m mysql` 7/7.
+- **T028** (`checklists/reference-standard.md` §5) — April 2026 bitácora for the synthetic demo athlete (12.2 y): caption OMS 2007, no CDC string, weight chart absent. Builder fix: the annex used to draw an empty weight frame above 10 y.
+- **T044 / T054 / T064 / T072 Playwright leg** (`checklists/frontend-gate.md`) — `growth.spec.ts`, `growth-parent.spec.ts`, `history.spec.ts`, `anthropometry.spec.ts`, `auth.spec.ts`, `athletes.spec.ts` green on the isolated stack. Two product defects found and fixed (family history table still showing PHV offset/stage/age — FR-016; empty weight chart in the PDF — R-02). `target-size.spec.ts` stays red on a pre-existing 48 px-vs-44 px conflict with the feature-033 design system, and the real-data specs of older features need seed data the demo stack does not have — both outside this feature, documented in the checklist.
+- **T078** — post-deploy smoke: still pending the owner's merge + Render deploy (steps verbatim in `tasks.md`; the production band-change report is produced by the startup recompute).
