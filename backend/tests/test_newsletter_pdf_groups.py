@@ -24,7 +24,8 @@ y ``tests/test_newsletter_svg_charts.py``: este entorno de desarrollo no
 tiene las librerías nativas de WeasyPrint (pango/glib) instaladas
 (``OSError: cannot load library 'libgobject-2.0-0'``); en Docker/Render sí
 están presentes. El entorno Jinja2 y sus filtros (``markdown``, ``hms``,
-``date_es``) son los mismos que usa ``DocumentGenerator`` en producción.
+``date_es``, ``num_es``) son los mismos que usa ``DocumentGenerator`` en
+producción.
 
 Nombres y datos ficticios (CLAUDE.md, Ley 1581) — mismo escenario narrativo
 que ``tests/fixtures/race_groups.py`` (Copa Valle de Ciclomontañismo 2026,
@@ -40,6 +41,7 @@ from app.services.notification.document_generator import (
     _render_markdown,
 )
 from app.services.utils.dates_es import format_date_es
+from app.services.utils.numbers_es import format_number_es
 
 _TEMPLATE = "documents/pdf/athlete_stage_log.html"
 
@@ -55,6 +57,7 @@ def _env() -> Environment:
     env.filters["markdown"] = _render_markdown
     env.filters["hms"] = _format_hms
     env.filters["date_es"] = format_date_es
+    env.filters["num_es"] = format_number_es
     return env
 
 

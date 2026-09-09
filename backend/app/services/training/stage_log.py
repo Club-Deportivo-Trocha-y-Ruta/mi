@@ -342,6 +342,15 @@ BADGE_LABELS: dict[str, str] = {
     "attendance_100": "Asistencia 100 %",
     "attendance_90": "Asistencia 90 %",
     "attendance_75": "Asistencia 75 %",
+    # "Primer podio": la insignia se otorga UNA sola vez por atleta (el
+    # primer podio histórico), así que la etiqueta conserva el "Primer" —
+    # llamarla solo "Podio" la haría parecer recurrente y le quitaría el
+    # carácter de hito, que es justo lo que la familia celebra. Lo que sí
+    # cambió el 2026-09-08 es el criterio: badge_evaluator.first_podium
+    # ahora exige posición ≤3 (podio clásico) en vez de ≤5, para que la
+    # palabra "podio" diga la verdad — la Copa Valle premia hasta el puesto
+    # 5, pero con parrillas reales de 5 a 7 corredores un "top 5" no
+    # distinguía nada.
     "first_podium": "Primer podio",
     "mtp": "Mejor tiempo personal",
     "top10": "Top 10",

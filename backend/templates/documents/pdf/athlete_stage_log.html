@@ -197,14 +197,14 @@
   <h2 style="break-after: avoid;">Perfil de esfuerzo</h2>
   <table class="data-table">
     <thead>
-      <tr><th>Semana</th><th>Sesiones</th><th>RPE promedio</th></tr>
+      <tr><th>Semana</th><th>Sesiones</th><th>Esfuerzo (0–10)</th></tr>
     </thead>
     <tbody>
       {% for week in effort_profile %}
       <tr>
         <td>{{ week.get('week_label') }}</td>
         <td>{{ week.get('sessions_attended', 0) }}/{{ week.get('sessions_planned', 0) }}</td>
-        <td>{{ "%.1f"|format(week.get('mean_rpe')) if week.get('mean_rpe') is not none else "—" }}</td>
+        <td>{{ week.get('mean_rpe') | num_es(1) if week.get('mean_rpe') is not none else "—" }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -370,8 +370,8 @@
     <colgroup>
       <col style="width: 21%;"><col style="width: 7%;"><col style="width: 7%;">
       <col style="width: 7%;"><col style="width: 9%;"><col style="width: 9%;">
-      <col style="width: 9%;"><col style="width: 9%;"><col style="width: 7%;">
-      <col style="width: 14%;">
+      <col style="width: 9%;"><col style="width: 9%;">
+      <col style="width: 21%;">
     </colgroup>
     <thead>
       <tr>
@@ -383,26 +383,27 @@
         <th class="num">P-<br/>Talla</th>
         <th class="num">Z-<br/>IMC</th>
         <th class="num">P-<br/>IMC</th>
-        <th class="num">PHV</th>
         <th>Maduración</th>
       </tr>
     </thead>
     <tbody>
+      {# La columna cruda "PHV" (desfase en años) se retiró (2026-09-08): la
+         columna Maduración ya dice lo mismo en palabras (Pre/Circa/Post-PHV)
+         y el desfase exacto de la medición más reciente sigue disponible,
+         en español y con signo, en el bloque "Última medición" de abajo —
+         mostrar el número dos veces sin explicación era la jerga que
+         disparó este arreglo (CLAUDE.md: sin LTAD/PHV sin traducir en
+         superficies de familia). #}
       {% for r in anthro_annex.records %}
       <tr {% if loop.first %}style="background: #f0fdf4; font-weight: bold;"{% endif %}>
         <td>{{ (r.evaluation_date | date_es) if r.evaluation_date else "—" }}</td>
-        <td class="num">{{ "%.1f"|format(r.weight_kg) if r.weight_kg is not none else "—" }}</td>
-        <td class="num">{{ "%.1f"|format(r.standing_height_cm) if r.standing_height_cm is not none else "—" }}</td>
-        <td class="num">{{ "%.1f"|format(r.bmi) if r.bmi is not none else "—" }}</td>
-        <td class="num">{{ "%.2f"|format(r.height_z_score) if r.height_z_score is not none else "—" }}</td>
-        <td class="num">{{ "%.0f"|format(r.height_percentile) if r.height_percentile is not none else "—" }}</td>
-        <td class="num">{{ "%.2f"|format(r.bmi_z_score) if r.bmi_z_score is not none else "—" }}</td>
-        <td class="num">{{ "%.0f"|format(r.bmi_percentile) if r.bmi_percentile is not none else "—" }}</td>
-        <td class="num">
-          {% if r.maturity_offset is not none %}
-            {{ "+%.2f"|format(r.maturity_offset) if r.maturity_offset >= 0 else "%.2f"|format(r.maturity_offset) }}
-          {% else %}—{% endif %}
-        </td>
+        <td class="num">{{ r.weight_kg | num_es(1) if r.weight_kg is not none else "—" }}</td>
+        <td class="num">{{ r.standing_height_cm | num_es(1) if r.standing_height_cm is not none else "—" }}</td>
+        <td class="num">{{ r.bmi | num_es(1) if r.bmi is not none else "—" }}</td>
+        <td class="num">{{ r.height_z_score | num_es(2) if r.height_z_score is not none else "—" }}</td>
+        <td class="num">{{ r.height_percentile | num_es(0) if r.height_percentile is not none else "—" }}</td>
+        <td class="num">{{ r.bmi_z_score | num_es(2) if r.bmi_z_score is not none else "—" }}</td>
+        <td class="num">{{ r.bmi_percentile | num_es(0) if r.bmi_percentile is not none else "—" }}</td>
         <td>
           {% if r.maturation_status == 'Pre-PHV' %}<span style="color: var(--info);">&#9654; Pre-PHV</span>
           {% elif r.maturation_status == 'Circa-PHV' %}<span style="color: var(--warning);">&#9654; Circa-PHV</span>
@@ -421,7 +422,7 @@
     <h3 style="margin: 0 0 6pt 0;">Última medición ({{ (latest.evaluation_date | date_es) if latest.evaluation_date else "—" }})</h3>
     <p style="margin: 0; font-size: 9pt;">
       Estado: <strong>{{ latest.maturation_status or "—" }}</strong> ·
-      Offset: <strong>{{ "%.2f años"|format(latest.maturity_offset) if latest.maturity_offset is not none else "—" }}</strong>
+      Desfase de maduración: <strong>{{ (latest.maturity_offset | num_es(2, sign=True)) ~ " años" if latest.maturity_offset is not none else "—" }}</strong>
     </p>
     {% if latest.maturation_pedagogy %}
     <p style="margin: 6pt 0 0 0; font-size: 8.5pt; color: #374151; font-style: italic;">{{ latest.maturation_pedagogy }}</p>
@@ -437,10 +438,45 @@
   <section style="break-inside: avoid; margin-top: 12pt;">
     <h3 style="font-size: 10pt; margin: 0 0 6pt 0; break-after: avoid;">Curvas de Percentiles de Referencia</h3>
     <p style="font-size: 8pt; color: #6b7280; margin: 0 0 8pt 0;">Comparación con población de referencia OMS 2007. La línea negra muestra las mediciones registradas.</p>
-    {% if percentile_annex.height %}{{ percentile_curves(percentile_annex.height) }}{% endif %}
-    {% if percentile_annex.bmi %}{{ percentile_curves(percentile_annex.bmi) }}{% endif %}
-    {% if percentile_annex.weight %}{{ percentile_curves(percentile_annex.weight) }}{% endif %}
+    {#
+      Dos columnas (2026-09-08), mismo patrón `display: table` que la
+      sección de evolución de temporada (ver más abajo, "Evolución en la
+      {{ copa }}"): a ancho casi completo cada curva quedaba sola en su
+      propia página (mes cargado real: 7 páginas). El ancho/alto que se le
+      pasa a la macro deja de ser el default (500x320, que no coincidía con
+      el viewBox real del SVG, ver `chart.viewbox`) y pasa a ser el propio
+      `chart.width`/`chart.height` que ya calculó `growth_chart_builder.py`
+      (400x260) — antes el mismatch entre ambos desalineaba los ticks de
+      los ejes respecto a las curvas; ahora, al ser explícito, coincide
+      siempre sin importar el tamaño final (el `<svg>` sigue escalando a
+      `width: 100%` del contenedor, así que el recorte a 2 columnas viene
+      del `table-cell` de 50%, no de este número).
+    #}
+    <div style="display: table; width: 100%; table-layout: fixed;">
+      <div style="display: table-cell; width: 50%; vertical-align: top; padding-right: 4pt;">
+        {% if percentile_annex.height %}{{ percentile_curves(percentile_annex.height, width=percentile_annex.height.width, height=percentile_annex.height.height) }}{% endif %}
+      </div>
+      <div style="display: table-cell; width: 50%; vertical-align: top; padding-left: 4pt;">
+        {% if percentile_annex.bmi %}{{ percentile_curves(percentile_annex.bmi, width=percentile_annex.bmi.width, height=percentile_annex.bmi.height) }}{% endif %}
+      </div>
+    </div>
+    {% if percentile_annex.weight %}
+    <div style="display: table; width: 100%; table-layout: fixed; margin-top: 4pt;">
+      <div style="display: table-cell; width: 50%; vertical-align: top; padding-right: 4pt;">
+        {{ percentile_curves(percentile_annex.weight, width=percentile_annex.weight.width, height=percentile_annex.weight.height) }}
+      </div>
+      <div style="display: table-cell; width: 50%;"></div>
+    </div>
+    {% endif %}
     <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 8pt;">Fuente: OMS 2007 · Res. 2465/2016 — MinSalud Colombia (referencia 5-19 años; peso para la edad solo hasta los 10 años). <strong>No constituye diagnóstico médico.</strong></p>
+    {#
+      Glosario en el mismo tono/estilo del pie de "Campeonatos de la
+      temporada" (ver más abajo) — el layout a dos columnas de arriba dejó
+      espacio vertical de sobra en esta página (verificado con el PDF real
+      de un mes cargado, ver informe de la tarea), así que sí cabe sin
+      empujar el anexo a una página más.
+    #}
+    <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 4pt; line-height: 1.4;"><strong>Percentil:</strong> imagine una fila de 100 niñas o niños de la misma edad y sexo, ordenados por esta medida. El percentil dice cuántos quedan por debajo: 76 significa 76 por debajo y 23 por encima. No es una nota ni un objetivo, solo indica en qué parte del rango está. <strong>Z-score:</strong> la misma idea en otra escala, donde 0 es justo la mitad de esa fila.</p>
   </section>
   {% endif %}
 </div>
@@ -484,7 +520,7 @@
       </div>
       <div style="display: table-cell; width: 50%; vertical-align: top; padding-left: 4pt;">
         {{ gap_pct(cup.get('gap_pcts'), width=175, height=112, low_confidence=cup.get('low_confidence')) }}
-        <p class="caption">% de distancia al primero (0% = ganador)</p>
+        <p class="caption">Gap: cuánto tardó de más que el mejor tiempo, en % de ese tiempo</p>
       </div>
       {# "Puntos acumulados" desactivada — ver nota del import arriba.
       <div style="display: table-cell; width: 33.34%; vertical-align: top; padding-left: 4pt;">
@@ -506,7 +542,7 @@
       </div>
       <div style="display: table-cell; width: 50%; vertical-align: top; padding-left: 4pt;">
         {{ gap_pct(legacy_gap_pcts, width=175, height=112, low_confidence=charts_annex.get('low_confidence')) }}
-        <p class="caption">% de distancia al primero (0% = ganador)</p>
+        <p class="caption">Gap: cuánto tardó de más que el mejor tiempo, en % de ese tiempo</p>
       </div>
       {# "Puntos acumulados" desactivada — ver nota del import arriba.
       <div style="display: table-cell; width: 33.34%; vertical-align: top; padding-left: 4pt;">
@@ -525,11 +561,26 @@
   #}
   {% if season_championships %}
   <div style="break-inside: avoid; margin-top: 12pt;">
-    <h3 style="break-after: avoid;">Campeonatos</h3>
+    <h3 style="break-after: avoid;">Campeonatos de la temporada</h3>
     {% for championship in season_championships %}
     {{ championship_card(championship) }}
     {% endfor %}
-    <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 4pt;">Un campeonato reúne un pelotón distinto al de la copa: se lee por separado y no se compara con las válidas.</p>
+    {#
+      Glosario en lenguaje de familia. "Gap al P1" y "percentil" son los dos
+      términos que una familia no tiene por qué conocer y que hasta ahora
+      aparecían como columnas de la tarjeta sin explicación.
+
+      Va dentro de este pie, y no en un bloque propio de la sección de
+      temporada, por presupuesto vertical: el pie solo se dibuja cuando hay
+      tarjetas de campeonato, mientras que un bloque en la sección de
+      temporada también afectaría al mes más cargado sin campeonatos, que ya
+      agota su límite de páginas (ver
+      ``test_heaviest_month_with_annex_still_within_three_pages``).
+
+      Texto descriptivo, nunca evaluativo: explica cómo leer el número, sin
+      calificar el desempeño.
+    #}
+    <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 4pt; line-height: 1.4;">Un campeonato reúne un pelotón distinto al de la copa: se lee por separado y no se compara con las válidas. <strong>Gap al P1:</strong> cuánto tardó de más que el mejor tiempo de su categoría, en porcentaje de ese tiempo — en una carrera de 40 minutos, 1,5&nbsp;% son unos 36 segundos. <strong>Percentil:</strong> de sus rivales de categoría, qué porcentaje terminó por detrás. El primer puesto marca 100 y el último 0: un P2 entre 5 marca 75, porque dejó atrás a 3 de los otros 4.</p>
   </div>
   {% endif %}
 </div>

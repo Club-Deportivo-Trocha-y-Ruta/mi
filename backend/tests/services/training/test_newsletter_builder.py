@@ -148,27 +148,32 @@ async def test_build_newsletter_metrics_has_both_blocks():
             # Next training sessions (calendar block)
             return make_scalars_result([])
         elif call_count == 9:
-            # Sessions (photos block)
+            # RaceEvent: próximas carreras del calendario real (calendar
+            # block). Vacío → el bloque cae a la lista literal de respaldo,
+            # que es lo que este test quiere ejercitar.
             return make_scalars_result([])
         elif call_count == 10:
+            # Sessions (photos block)
+            return make_scalars_result([])
+        elif call_count == 11:
             # Athlete (badge evaluator)
             return make_scalars_result([athlete])
-        elif call_count == 11:
+        elif call_count == 12:
             # TrainingSession (badge evaluator attendance)
             return make_scalars_result(sessions)
-        elif call_count == 12:
+        elif call_count == 13:
             # SessionAttendance (badge evaluator)
             return make_scalars_result(attendances)
-        elif call_count == 13:
+        elif call_count == 14:
             # _upsert_badge check (attendance_100)
             return make_scalars_result([])  # no existe aún
-        elif call_count == 14:
+        elif call_count == 15:
             # RaceCompetitor (badge evaluator race)
             return make_scalars_result([])
-        elif call_count == 15:
+        elif call_count == 16:
             # get_badges_for_period
             return make_scalars_result([])
-        elif call_count == 16:
+        elif call_count == 17:
             # AnthropometricRecord (anthropometry block)
             return make_scalars_result([])
         else:

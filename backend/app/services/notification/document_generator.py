@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 from app.schemas.notification import DocumentFormat, DocumentRequest, GeneratedDocument
 from app.services.notification.template_registry import TemplateRegistry
 from app.services.utils.dates_es import format_date_es
+from app.services.utils.numbers_es import format_number_es
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ class DocumentGenerator:
         self._jinja.filters["markdown"] = _render_markdown
         self._jinja.filters["hms"] = _format_hms
         self._jinja.filters["date_es"] = format_date_es
+        self._jinja.filters["num_es"] = format_number_es
 
         # Nombre del club para enriquecer contexto automáticamente
         self._club_name: str = getattr(settings, "club_name", "Trocha y Ruta") if settings else "Trocha y Ruta"

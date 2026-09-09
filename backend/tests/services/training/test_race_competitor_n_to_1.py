@@ -64,6 +64,16 @@ def make_scalars_result(items: list) -> Any:
     return result
 
 
+def make_rows_result(rows: list[tuple]) -> Any:
+    """Fake resultado para la query de conteo de parrilla (`.all()` plano de
+    tuplas ``(event_id, category_id, count)``), usada por
+    ``_evaluate_race_badges`` para el umbral de credibilidad de las insignias
+    top10/first_podium."""
+    result = MagicMock()
+    result.all.return_value = rows
+    return result
+
+
 def make_athlete(id_: int = 100, club_id: int = 10) -> Any:
     """Fixture genérica — nombres ficticios, NUNCA un menor real del club."""
     return SimpleNamespace(
@@ -335,7 +345,10 @@ async def test_evaluate_race_badges_n2_competitors_no_raises_and_picks_best():
     # 1. select(RaceCompetitor) → [comp_a, comp_b]
     # 2. select(RaceEvent) → [event_e1]
     # 3. select(RaceResult) [eventos del mes] → [result_a, result_b]
-    # (top10 emitido sin queries adicionales — no hay podio P1/P2/P3, no se entra a MTP)
+    # 4. conteo de parrilla por (event_id, category_id) → parrilla creíble
+    #    (16 ≥ 15, umbral top10) para (900, 1) — misma categoría en ambos
+    #    resultados (make_race_result fija category_id=1).
+    # (no hay podio P1-5, no se entra a MTP)
     call_count = 0
 
     async def mock_execute(stmt):
@@ -347,6 +360,8 @@ async def test_evaluate_race_badges_n2_competitors_no_raises_and_picks_best():
             return make_scalars_result([event_e1])
         elif call_count == 3:
             return make_scalars_result([result_a, result_b])
+        elif call_count == 4:
+            return make_rows_result([(900, 1, 16)])
         return make_scalars_result([])
 
     db.execute = mock_execute
@@ -355,7 +370,7 @@ async def test_evaluate_race_badges_n2_competitors_no_raises_and_picks_best():
 
     badge_types = [b["badge_type"] for b in badge_datas]
     assert BadgeType.top10 in badge_types, (
-        "Debe emitirse badge top10 (P8 ≤ 10)"
+        "Debe emitirse badge top10 (P8 ≤ 10, parrilla ≥15 creíble)"
     )
 
     top10_badge = next(b for b in badge_datas if b["badge_type"] == BadgeType.top10)
@@ -388,8 +403,10 @@ async def test_evaluate_race_badges_n2_podium_no_previous():
     # 1. RaceCompetitor → [comp_a, comp_b]
     # 2. RaceEvent → [event_e1]
     # 3. RaceResult (mes) → [result_a, result_b]
-    # 4. RaceResult prev podium (join RaceEvent < month_start) → [] (no previo)
-    # 5. RaceResult prev times (MTP) → [] (sin previo)
+    # 4. conteo de parrilla por (event_id, category_id) → parrilla creíble
+    #    (16 ≥15 top10, ≥8 first_podium) para (900, 1)
+    # 5. RaceResult prev podium (join RaceEvent < month_start) → [] (no previo)
+    # 6. RaceResult prev times (MTP) → [] (sin previo)
     call_count = 0
 
     async def mock_execute(stmt):
@@ -402,8 +419,10 @@ async def test_evaluate_race_badges_n2_podium_no_previous():
         elif call_count == 3:
             return make_scalars_result([result_a, result_b])
         elif call_count == 4:
-            return make_scalars_result([])  # sin podio previo
+            return make_rows_result([(900, 1, 16)])
         elif call_count == 5:
+            return make_scalars_result([])  # sin podio previo
+        elif call_count == 6:
             return make_scalars_result([])  # sin tiempos previos
         return make_scalars_result([])
 
@@ -533,6 +552,10 @@ async def test_evaluate_race_badges_single_competitor_still_works():
             return make_scalars_result([event_e1])
         elif call_count == 3:
             return make_scalars_result([result])
+        elif call_count == 4:
+            # Conteo de parrilla por (event_id, category_id): parrilla
+            # creíble (≥15) para el umbral de top10.
+            return make_rows_result([(900, 1, 16)])
         return make_scalars_result([])
 
     db.execute = mock_execute

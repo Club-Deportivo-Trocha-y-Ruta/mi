@@ -76,3 +76,6 @@ docs/11-informe-tecnico-mensual/referencias/*.docx
 docs/11-informe-tecnico-mensual/referencias/*.md
 !docs/11-informe-tecnico-mensual/referencias/README.md
 docs/11-informe-tecnico-mensual/referencias/imagenes-agosto-2026/
+
+# ─── Bitácoras generadas localmente (datos de menores — NO versionar) ─────────
+output/

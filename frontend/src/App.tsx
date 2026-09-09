@@ -47,44 +47,191 @@ const SeasonInsightsPage = lazy(
   () => import("@/routes/competitions/SeasonInsightsPage"),
 );
 import { useAuthStore } from "@/store/auth.store";
-import { AIHealthPage } from "@/routes/admin/AIHealthPage";
 import { LoginPage } from "@/routes/auth/LoginPage";
-import { DashboardPage } from "@/routes/dashboard/DashboardPage";
-import { AthletesListPage } from "@/routes/athletes/AthletesListPage";
-import { AthleteDetailPage } from "@/routes/athletes/AthleteDetailPage";
-import { AthleteFormPage } from "@/routes/athletes/AthleteFormPage";
-import { ParentsListPage } from "@/routes/parents/ParentsListPage";
-import { ParentDetailPage } from "@/routes/parents/ParentDetailPage";
-import { ParentDashboardPage } from "@/routes/parents/ParentDashboardPage";
-import { MyAthleteDetailPage } from "@/routes/parents/MyAthleteDetailPage";
-import { ParentNewsletterListPage } from "@/routes/parents/newsletters/ParentNewsletterListPage";
-import { ParentNewsletterPage } from "@/routes/parents/newsletters/ParentNewsletterPage";
 import { OnboardingPage } from "@/routes/auth/OnboardingPage";
 import { ForgotPasswordPage } from "@/routes/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/routes/auth/ResetPasswordPage";
 import { PrivacyPage } from "@/routes/PrivacyPage";
 import { NotFoundPage } from "@/routes/NotFoundPage";
-import { SessionsListPage } from "@/routes/training/SessionsListPage";
-import { SessionFormPage } from "@/routes/training/SessionFormPage";
-import { SessionDetailPage } from "@/routes/training/SessionDetailPage";
-import { ReportsListPage } from "@/routes/training/ReportsListPage";
-import { ReportDetailPage } from "@/routes/training/ReportDetailPage";
-import { ProjectProfilePage } from "@/routes/training/ProjectProfilePage";
-import { AthleteNewslettersDashboardPage } from "@/routes/training/AthleteNewslettersDashboardPage";
-import { AthleteNewsletterStudioPage } from "@/routes/training/AthleteNewsletterStudioPage";
-import { ParentSessionsPage } from "@/routes/parents/training/ParentSessionsPage";
-import { ParentSessionDetailPage } from "@/routes/parents/training/ParentSessionDetailPage";
-import { ParentMonthlyOverviewPage } from "@/routes/parents/training/ParentMonthlyOverviewPage";
-import { CalendarPage } from "@/routes/calendar/CalendarPage";
-import { EventFormPage } from "@/routes/calendar/EventFormPage";
-import { ParentCalendarPage } from "@/routes/parents/calendar/ParentCalendarPage";
-import { ParentEventDetailPage } from "@/routes/parents/calendar/ParentEventDetailPage";
-import { ParentCompetitionResultsPage } from "@/routes/parents/competitions/ParentCompetitionResultsPage";
-import { CompetitionsListPage } from "@/routes/competitions/CompetitionsListPage";
-import { CompetitionFormPage } from "@/routes/competitions/CompetitionFormPage";
-import { CompetitionDetailPage } from "@/routes/competitions/CompetitionDetailPage";
-import { CompetitionImportPage } from "@/routes/competitions/CompetitionImportPage";
 import { UserRole } from "@/types/enums";
+
+// Dashboard (coach/admin) — lazy: evita cargarlo para padres.
+const DashboardPage = lazy(() =>
+  import("@/routes/dashboard/DashboardPage").then((m) => ({
+    default: m.DashboardPage,
+  })),
+);
+
+// Deportistas (coach) — lazy.
+const AthletesListPage = lazy(() =>
+  import("@/routes/athletes/AthletesListPage").then((m) => ({
+    default: m.AthletesListPage,
+  })),
+);
+const AthleteDetailPage = lazy(() =>
+  import("@/routes/athletes/AthleteDetailPage").then((m) => ({
+    default: m.AthleteDetailPage,
+  })),
+);
+const AthleteFormPage = lazy(() =>
+  import("@/routes/athletes/AthleteFormPage").then((m) => ({
+    default: m.AthleteFormPage,
+  })),
+);
+
+// Padres (coach) — lazy.
+const ParentsListPage = lazy(() =>
+  import("@/routes/parents/ParentsListPage").then((m) => ({
+    default: m.ParentsListPage,
+  })),
+);
+const ParentDetailPage = lazy(() =>
+  import("@/routes/parents/ParentDetailPage").then((m) => ({
+    default: m.ParentDetailPage,
+  })),
+);
+
+// Padre (rol parent) — lazy.
+const ParentDashboardPage = lazy(() =>
+  import("@/routes/parents/ParentDashboardPage").then((m) => ({
+    default: m.ParentDashboardPage,
+  })),
+);
+const MyAthleteDetailPage = lazy(() =>
+  import("@/routes/parents/MyAthleteDetailPage").then((m) => ({
+    default: m.MyAthleteDetailPage,
+  })),
+);
+const ParentNewsletterListPage = lazy(() =>
+  import("@/routes/parents/newsletters/ParentNewsletterListPage").then(
+    (m) => ({ default: m.ParentNewsletterListPage }),
+  ),
+);
+const ParentNewsletterPage = lazy(() =>
+  import("@/routes/parents/newsletters/ParentNewsletterPage").then((m) => ({
+    default: m.ParentNewsletterPage,
+  })),
+);
+
+// Admin — lazy.
+const AIHealthPage = lazy(() =>
+  import("@/routes/admin/AIHealthPage").then((m) => ({
+    default: m.AIHealthPage,
+  })),
+);
+
+// Entrenamiento (coach/admin) — lazy.
+const SessionsListPage = lazy(() =>
+  import("@/routes/training/SessionsListPage").then((m) => ({
+    default: m.SessionsListPage,
+  })),
+);
+const SessionFormPage = lazy(() =>
+  import("@/routes/training/SessionFormPage").then((m) => ({
+    default: m.SessionFormPage,
+  })),
+);
+const SessionDetailPage = lazy(() =>
+  import("@/routes/training/SessionDetailPage").then((m) => ({
+    default: m.SessionDetailPage,
+  })),
+);
+const ReportsListPage = lazy(() =>
+  import("@/routes/training/ReportsListPage").then((m) => ({
+    default: m.ReportsListPage,
+  })),
+);
+const ReportDetailPage = lazy(() =>
+  import("@/routes/training/ReportDetailPage").then((m) => ({
+    default: m.ReportDetailPage,
+  })),
+);
+const ProjectProfilePage = lazy(() =>
+  import("@/routes/training/ProjectProfilePage").then((m) => ({
+    default: m.ProjectProfilePage,
+  })),
+);
+const AthleteNewslettersDashboardPage = lazy(() =>
+  import("@/routes/training/AthleteNewslettersDashboardPage").then((m) => ({
+    default: m.AthleteNewslettersDashboardPage,
+  })),
+);
+const AthleteNewsletterStudioPage = lazy(() =>
+  import("@/routes/training/AthleteNewsletterStudioPage").then((m) => ({
+    default: m.AthleteNewsletterStudioPage,
+  })),
+);
+
+// Entrenamiento (rol parent) — lazy.
+const ParentSessionsPage = lazy(() =>
+  import("@/routes/parents/training/ParentSessionsPage").then((m) => ({
+    default: m.ParentSessionsPage,
+  })),
+);
+const ParentSessionDetailPage = lazy(() =>
+  import("@/routes/parents/training/ParentSessionDetailPage").then((m) => ({
+    default: m.ParentSessionDetailPage,
+  })),
+);
+const ParentMonthlyOverviewPage = lazy(() =>
+  import("@/routes/parents/training/ParentMonthlyOverviewPage").then((m) => ({
+    default: m.ParentMonthlyOverviewPage,
+  })),
+);
+
+// Calendario (coach/admin) — lazy: saca los 6 paquetes @fullcalendar/* del
+// chunk de entrada (nadie debería pagar ese peso sin abrir el calendario).
+const CalendarPage = lazy(() =>
+  import("@/routes/calendar/CalendarPage").then((m) => ({
+    default: m.CalendarPage,
+  })),
+);
+const EventFormPage = lazy(() =>
+  import("@/routes/calendar/EventFormPage").then((m) => ({
+    default: m.EventFormPage,
+  })),
+);
+
+// Calendario (rol parent) — lazy.
+const ParentCalendarPage = lazy(() =>
+  import("@/routes/parents/calendar/ParentCalendarPage").then((m) => ({
+    default: m.ParentCalendarPage,
+  })),
+);
+const ParentEventDetailPage = lazy(() =>
+  import("@/routes/parents/calendar/ParentEventDetailPage").then((m) => ({
+    default: m.ParentEventDetailPage,
+  })),
+);
+
+// Resultados de competencia (rol parent) — lazy.
+const ParentCompetitionResultsPage = lazy(() =>
+  import("@/routes/parents/competitions/ParentCompetitionResultsPage").then(
+    (m) => ({ default: m.ParentCompetitionResultsPage }),
+  ),
+);
+
+// Competencias (coach/admin) — lazy.
+const CompetitionsListPage = lazy(() =>
+  import("@/routes/competitions/CompetitionsListPage").then((m) => ({
+    default: m.CompetitionsListPage,
+  })),
+);
+const CompetitionFormPage = lazy(() =>
+  import("@/routes/competitions/CompetitionFormPage").then((m) => ({
+    default: m.CompetitionFormPage,
+  })),
+);
+const CompetitionDetailPage = lazy(() =>
+  import("@/routes/competitions/CompetitionDetailPage").then((m) => ({
+    default: m.CompetitionDetailPage,
+  })),
+);
+const CompetitionImportPage = lazy(() =>
+  import("@/routes/competitions/CompetitionImportPage").then((m) => ({
+    default: m.CompetitionImportPage,
+  })),
+);
 
 // Strava Activity Sync (feature 025) — revisión de actividades, coach/admin only (lazy)
 const ActivityReviewPage = lazy(() =>
@@ -171,7 +318,9 @@ export default function App() {
           path="/dashboard"
           element={
             <ProtectedRoute allowedRoles={[UserRole.admin, UserRole.coach]}>
-              <DashboardPage />
+              <Suspense fallback={<RouteFallback label="Cargando panel..." />}>
+                <DashboardPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -179,7 +328,9 @@ export default function App() {
           path="/athletes"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach]}>
-              <AthletesListPage />
+              <Suspense fallback={<RouteFallback label="Cargando deportistas..." />}>
+                <AthletesListPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -187,7 +338,9 @@ export default function App() {
           path="/athletes/new"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach]}>
-              <AthleteFormPage mode="create" />
+              <Suspense fallback={<RouteFallback label="Cargando formulario de deportista..." />}>
+                <AthleteFormPage mode="create" />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -195,7 +348,9 @@ export default function App() {
           path="/athletes/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach]}>
-              <AthleteDetailPage />
+              <Suspense fallback={<RouteFallback label="Cargando deportista..." />}>
+                <AthleteDetailPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -203,7 +358,9 @@ export default function App() {
           path="/athletes/:id/edit"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach]}>
-              <AthleteFormPage mode="edit" />
+              <Suspense fallback={<RouteFallback label="Cargando formulario de deportista..." />}>
+                <AthleteFormPage mode="edit" />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -211,7 +368,9 @@ export default function App() {
           path="/parents"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach]}>
-              <ParentsListPage />
+              <Suspense fallback={<RouteFallback label="Cargando padres..." />}>
+                <ParentsListPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -219,7 +378,9 @@ export default function App() {
           path="/parents/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach]}>
-              <ParentDetailPage />
+              <Suspense fallback={<RouteFallback label="Cargando padre..." />}>
+                <ParentDetailPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -227,7 +388,9 @@ export default function App() {
           path="/my-athletes"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <ParentDashboardPage />
+              <Suspense fallback={<RouteFallback label="Cargando mis deportistas..." />}>
+                <ParentDashboardPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -235,7 +398,9 @@ export default function App() {
           path="/my-athletes/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <MyAthleteDetailPage />
+              <Suspense fallback={<RouteFallback label="Cargando deportista..." />}>
+                <MyAthleteDetailPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -243,7 +408,9 @@ export default function App() {
           path="/my-athletes/:athleteId/bitacora"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <ParentNewsletterListPage />
+              <Suspense fallback={<RouteFallback label="Cargando bitácoras..." />}>
+                <ParentNewsletterListPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -251,7 +418,9 @@ export default function App() {
           path="/my-athletes/:athleteId/bitacora/:newsletterId"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <ParentNewsletterPage />
+              <Suspense fallback={<RouteFallback label="Cargando bitácora..." />}>
+                <ParentNewsletterPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -259,7 +428,9 @@ export default function App() {
           path="/admin/ai"
           element={
             <ProtectedRoute allowedRoles={[UserRole.admin]}>
-              <AIHealthPage />
+              <Suspense fallback={<RouteFallback label="Cargando estado de IA..." />}>
+                <AIHealthPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -267,7 +438,9 @@ export default function App() {
           path="/training/sessions"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <SessionsListPage />
+              <Suspense fallback={<RouteFallback label="Cargando sesiones..." />}>
+                <SessionsListPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -285,7 +458,9 @@ export default function App() {
           path="/training/sessions/new"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <SessionFormPage mode="create" />
+              <Suspense fallback={<RouteFallback label="Cargando formulario de sesión..." />}>
+                <SessionFormPage mode="create" />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -293,7 +468,9 @@ export default function App() {
           path="/training/sessions/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <SessionDetailPage />
+              <Suspense fallback={<RouteFallback label="Cargando sesión..." />}>
+                <SessionDetailPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -301,7 +478,9 @@ export default function App() {
           path="/training/sessions/:id/edit"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <SessionFormPage mode="edit" />
+              <Suspense fallback={<RouteFallback label="Cargando formulario de sesión..." />}>
+                <SessionFormPage mode="edit" />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -319,7 +498,9 @@ export default function App() {
           path="/training/reports"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <ReportsListPage />
+              <Suspense fallback={<RouteFallback label="Cargando informes..." />}>
+                <ReportsListPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -327,7 +508,9 @@ export default function App() {
           path="/training/reports/project-profile"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <ProjectProfilePage />
+              <Suspense fallback={<RouteFallback label="Cargando perfil de proyección..." />}>
+                <ProjectProfilePage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -335,7 +518,9 @@ export default function App() {
           path="/training/reports/:year/:month"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <ReportDetailPage />
+              <Suspense fallback={<RouteFallback label="Cargando informe..." />}>
+                <ReportDetailPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -343,7 +528,9 @@ export default function App() {
           path="/training/athlete-newsletters"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <AthleteNewslettersDashboardPage />
+              <Suspense fallback={<RouteFallback label="Cargando bitácoras..." />}>
+                <AthleteNewslettersDashboardPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -351,7 +538,9 @@ export default function App() {
           path="/training/athlete-newsletters/:athleteId/:newsletterId"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <AthleteNewsletterStudioPage />
+              <Suspense fallback={<RouteFallback label="Cargando editor de bitácora..." />}>
+                <AthleteNewsletterStudioPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -359,7 +548,9 @@ export default function App() {
           path="/parents/training/sessions"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <ParentSessionsPage />
+              <Suspense fallback={<RouteFallback label="Cargando sesiones..." />}>
+                <ParentSessionsPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -367,7 +558,9 @@ export default function App() {
           path="/parents/training/sessions/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <ParentSessionDetailPage />
+              <Suspense fallback={<RouteFallback label="Cargando sesión..." />}>
+                <ParentSessionDetailPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -375,7 +568,9 @@ export default function App() {
           path="/parents/training/overview"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <ParentMonthlyOverviewPage />
+              <Suspense fallback={<RouteFallback label="Cargando resumen mensual..." />}>
+                <ParentMonthlyOverviewPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -384,7 +579,9 @@ export default function App() {
           path="/calendar"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <CalendarPage />
+              <Suspense fallback={<RouteFallback label="Cargando calendario..." />}>
+                <CalendarPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -392,7 +589,9 @@ export default function App() {
           path="/calendar/events/new"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <EventFormPage mode="create" />
+              <Suspense fallback={<RouteFallback label="Cargando formulario de evento..." />}>
+                <EventFormPage mode="create" />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -400,7 +599,9 @@ export default function App() {
           path="/calendar/events/:id/edit"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <EventFormPage mode="edit" />
+              <Suspense fallback={<RouteFallback label="Cargando formulario de evento..." />}>
+                <EventFormPage mode="edit" />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -410,7 +611,9 @@ export default function App() {
           path="/parents/calendar"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <ParentCalendarPage />
+              <Suspense fallback={<RouteFallback label="Cargando calendario..." />}>
+                <ParentCalendarPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -418,7 +621,9 @@ export default function App() {
           path="/parents/calendar/events/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <ParentEventDetailPage />
+              <Suspense fallback={<RouteFallback label="Cargando evento..." />}>
+                <ParentEventDetailPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -428,7 +633,9 @@ export default function App() {
           path="/parents/competitions/:raceEventId"
           element={
             <ProtectedRoute allowedRoles={[UserRole.parent]}>
-              <ParentCompetitionResultsPage />
+              <Suspense fallback={<RouteFallback label="Cargando resultados..." />}>
+                <ParentCompetitionResultsPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -446,7 +653,9 @@ export default function App() {
           path="/competitions"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <CompetitionsListPage />
+              <Suspense fallback={<RouteFallback label="Cargando competencias..." />}>
+                <CompetitionsListPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -454,7 +663,9 @@ export default function App() {
           path="/competitions/new"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <CompetitionFormPage mode="create" />
+              <Suspense fallback={<RouteFallback label="Cargando formulario de competencia..." />}>
+                <CompetitionFormPage mode="create" />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -462,7 +673,9 @@ export default function App() {
           path="/competitions/import"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <CompetitionImportPage />
+              <Suspense fallback={<RouteFallback label="Cargando importación..." />}>
+                <CompetitionImportPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -470,7 +683,9 @@ export default function App() {
           path="/competitions/:id"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <CompetitionDetailPage />
+              <Suspense fallback={<RouteFallback label="Cargando competencia..." />}>
+                <CompetitionDetailPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -478,7 +693,9 @@ export default function App() {
           path="/competitions/:id/edit"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <CompetitionFormPage mode="edit" />
+              <Suspense fallback={<RouteFallback label="Cargando formulario de competencia..." />}>
+                <CompetitionFormPage mode="edit" />
+              </Suspense>
             </ProtectedRoute>
           }
         />
@@ -486,7 +703,9 @@ export default function App() {
           path="/competitions/:id/import"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <CompetitionImportPage />
+              <Suspense fallback={<RouteFallback label="Cargando importación..." />}>
+                <CompetitionImportPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />

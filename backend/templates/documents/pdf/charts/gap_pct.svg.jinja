@@ -3,9 +3,20 @@
      points — lista de {x: valida_num, y: gap_pct|null}
      width / height / low_confidence
    Output: bloque HTML con título <p> + SVG (sin título dentro del SVG)
+
+   Dato ausente (``y`` null, ej. válida sin cronometraje): antes se filtraba
+   en silencio (``selectattr("y", "ne", none)``), así que esta gráfica
+   podía mostrar menos puntos que su pareja `line_positions` (misma lista de
+   válidas) sin ninguna señal — invitaba a leer "subió/bajó" comparando
+   puntos que en realidad no son válidas consecutivas. Ahora cada punto de
+   `points` se dibuja: los que tienen dato, como antes; los que no, como un
+   marcador hueco con etiqueta "s/d" en el centro vertical del área de
+   dibujo — nunca se inventa una altura — y la línea roja NO lo toca por
+   ningún lado (hueco visible en la polilínea en vez de un salto oculto).
 #}
 {% macro gap_pct(points, width=420, height=160, low_confidence=false) %}
-{%- set valid_points = points | selectattr("y", "ne", none) | list -%}
+{%- set all_points = points or [] -%}
+{%- set valid_points = all_points | selectattr("y", "ne", none) | list -%}
 {%- set pad_left = 45 -%}
 {%- set pad_right = 20 -%}
 {%- set pad_top = 16 -%}
@@ -22,25 +33,35 @@
   {%- if valid_points | length > 0 -%}
     {%- set max_y = valid_points | map(attribute="y") | max -%}
     {%- set max_y = [max_y, 5] | max -%}
-    {%- set min_x = valid_points | map(attribute="x") | min -%}
-    {%- set max_x = valid_points | map(attribute="x") | max -%}
+    {%- set min_x = all_points | map(attribute="x") | min -%}
+    {%- set max_x = all_points | map(attribute="x") | max -%}
     {%- set x_range = [(max_x - min_x), 1] | max -%}
+    {%- set mid_cy = pad_top + (chart_h / 2) -%}
     <!-- Línea 0% (P1) — etiqueta al extremo derecho sobre la línea, sin overlap con datos -->
     <line x1="{{ pad_left }}" y1="{{ pad_top }}" x2="{{ pad_left + chart_w }}" y2="{{ pad_top }}" stroke="#22c55e" stroke-dasharray="3,2" stroke-width="1" opacity="0.6"/>
     <text x="{{ pad_left + chart_w - 2 }}" y="{{ pad_top + 8 }}" font-size="7" fill="#15803d" text-anchor="end">P1=0%</text>
     {%- set prev_cx = namespace(val=none) -%}
     {%- set prev_cy = namespace(val=none) -%}
-    {%- for pt in valid_points -%}
+    {%- for pt in all_points -%}
       {%- set cx = pad_left + ((pt.x - min_x) / x_range) * chart_w -%}
-      {%- set cy = pad_top + (pt.y / max_y) * chart_h -%}
-      {%- if prev_cx.val is not none -%}
-        <line x1="{{ prev_cx.val }}" y1="{{ prev_cy.val }}" x2="{{ cx }}" y2="{{ cy }}" stroke="#dc2626" stroke-width="2"/>
+      {%- if pt.y is none -%}
+        <!-- Dato ausente: marcador hueco, sin línea que entre ni salga de él -->
+        <circle cx="{{ cx }}" cy="{{ mid_cy }}" r="4" fill="white" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="2,1.5"/>
+        <text x="{{ cx }}" y="{{ mid_cy - 7 }}" text-anchor="middle" font-size="7" fill="#6b7280" font-style="italic">s/d</text>
+        <text x="{{ cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#555">{{ pt.label or ('V' ~ pt.x) }}</text>
+        {%- set prev_cx.val = none -%}
+        {%- set prev_cy.val = none -%}
+      {%- else -%}
+        {%- set cy = pad_top + (pt.y / max_y) * chart_h -%}
+        {%- if prev_cx.val is not none -%}
+          <line x1="{{ prev_cx.val }}" y1="{{ prev_cy.val }}" x2="{{ cx }}" y2="{{ cy }}" stroke="#dc2626" stroke-width="2"/>
+        {%- endif -%}
+        <circle cx="{{ cx }}" cy="{{ cy }}" r="4" fill="#dc2626"/>
+        <text x="{{ cx }}" y="{{ [pad_top - 2, cy - 5] | max }}" text-anchor="middle" font-size="8" fill="#991b1b">{{ pt.y | num_es(1) }}%</text>
+        <text x="{{ cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#555">{{ pt.label or ('V' ~ pt.x) }}</text>
+        {%- set prev_cx.val = cx -%}
+        {%- set prev_cy.val = cy -%}
       {%- endif -%}
-      <circle cx="{{ cx }}" cy="{{ cy }}" r="4" fill="#dc2626"/>
-      <text x="{{ cx }}" y="{{ [pad_top - 2, cy - 5] | max }}" text-anchor="middle" font-size="8" fill="#991b1b">{{ "%.1f"|format(pt.y) }}%</text>
-      <text x="{{ cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#555">{{ pt.label or ('V' ~ pt.x) }}</text>
-      {%- set prev_cx.val = cx -%}
-      {%- set prev_cy.val = cy -%}
     {%- endfor -%}
     <!-- Etiqueta Y -->
     <text x="{{ pad_left - 3 }}" y="{{ pad_top + chart_h }}" text-anchor="end" font-size="8" fill="#666">{{ "%.0f"|format(max_y) }}%</text>

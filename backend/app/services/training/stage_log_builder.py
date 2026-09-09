@@ -53,6 +53,7 @@ from app.services.training.newsletter_static_copy import (
     static_stage_title,
     static_summit_caption,
 )
+from app.services.utils.numbers_es import format_number_es
 from app.services.training.stage_log import (
     AnalystReading,
     BadgeView,
@@ -184,7 +185,7 @@ def _race_position_gap_sublabel(result: Mapping[str, Any]) -> str | None:
     if position == 1 or gap_pct is None:
         return None
     try:
-        return f"+{float(gap_pct):.1f} % al P1"
+        return f"{format_number_es(gap_pct, 1, sign=True)} % al P1"
     except (TypeError, ValueError):
         return None
 
@@ -300,7 +301,7 @@ def trail_waypoints(
             if best_date is not None:
                 rubric_avg = best.get("rubric_avg")
                 label = (
-                    f"Mejor sesión · técnica {rubric_avg}/5"
+                    f"Mejor sesión · técnica {format_number_es(rubric_avg, 1)}/5"
                     if rubric_avg is not None
                     else f"Mejor sesión · RPE {best.get('rpe')}"
                 )
@@ -425,7 +426,7 @@ def summit(snapshot: dict[str, Any]) -> Summit | None:
         gap_pct = best.get("gap_to_winner_pct")
         detail_parts = [best.get("category_label")]
         if position != 1 and gap_pct is not None:
-            detail_parts.append(f"+{float(gap_pct):.1f} % al P1")
+            detail_parts.append(f"{format_number_es(gap_pct, 1, sign=True)} % al P1")
         detail = " · ".join(p for p in detail_parts if p) or None
         return Summit(
             kind=SummitKind.RACE,
