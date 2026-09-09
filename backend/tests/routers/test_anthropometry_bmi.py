@@ -47,6 +47,7 @@ from app.models.growth import GrowthSource
 from app.models.user import User, UserRole
 from app.routers import anthropometry as anthropometry_router
 from app.seed_growth_data import _parse_who_csv_content, bulk_insert_lms
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # CSV LMS mínimo (formato OMS: ``sex,age_months,L,M,S``) cubriendo la edad/sexo
 # del atleta de prueba (varón ~11 años). Valores sintéticos, no reales — solo
@@ -153,7 +154,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     )
     tables = [
         Base.metadata.tables[t]
-        for t in ("athletes", "anthropometric_records", "growth_reference_lms")
+        for t in ("athletes", "anthropometric_records", "growth_reference_lms", *AUDIT_TABLES)
     ]
     async with eng.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))

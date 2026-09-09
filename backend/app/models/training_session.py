@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    PrimaryKeyConstraint,
     String,
     Text,
     Time,
@@ -21,6 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.mixins import ActorTimestampMixin, UpdatedByMixin
 
 if TYPE_CHECKING:
     from app.models.athlete import Athlete
@@ -150,7 +152,7 @@ class TrainingSession(Base):
     )
 
 
-class SessionAttendance(Base):
+class SessionAttendance(UpdatedByMixin, Base):
     """Asistencia y rúbrica de un atleta en una sesión de entrenamiento."""
 
     __tablename__ = "session_attendance"
@@ -202,6 +204,10 @@ class SessionAttendance(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    recorded_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relaciones
     session: Mapped[TrainingSession] = relationship(
@@ -215,7 +221,7 @@ class SessionAttendance(Base):
     )
 
 
-class MonthlyReport(Base):
+class MonthlyReport(ActorTimestampMixin, Base):
     """Reporte mensual generado por IA con métricas agregadas del club."""
 
     __tablename__ = "monthly_reports"
@@ -246,6 +252,16 @@ class MonthlyReport(Base):
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     coach_observations: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    previous_approved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    previous_approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
 
     # Relaciones
     club: Mapped[Club] = relationship(
@@ -255,4 +271,37 @@ class MonthlyReport(Base):
     generator: Mapped[User] = relationship(
         "User",
         foreign_keys="[MonthlyReport.generated_by_user_id]",
+    )
+
+
+class TrainingSessionCoach(Base):
+    """Coach(es) asignados a una sesión de entrenamiento (bridge N:M, 041)."""
+
+    __tablename__ = "training_session_coaches"
+    __table_args__ = (
+        PrimaryKeyConstraint("session_id", "coach_user_id"),
+        Index("ix_tsc_coach_user_id", "coach_user_id"),
+    )
+
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    coach_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    added_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    # Relaciones
+    session: Mapped[TrainingSession] = relationship(
+        "TrainingSession",
+        foreign_keys="[TrainingSessionCoach.session_id]",
+    )
+    coach: Mapped[User] = relationship(
+        "User",
+        foreign_keys="[TrainingSessionCoach.coach_user_id]",
     )

@@ -25,11 +25,14 @@ Downgrade:
 from __future__ import annotations
 
 import json
+import logging
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # revision identifiers
@@ -58,7 +61,12 @@ def upgrade() -> None:
     # of failing the whole upgrade chain.
     try:
         from app.data.technique_catalog import GYMKHANA_LAYOUT_BACKFILL  # noqa: PLC0415
-    except ModuleNotFoundError:
+    except ImportError:
+        logger.info(
+            "f1a2b3c4d5e6: app.data.technique_catalog is unavailable "
+            "(module retired downstream) — skipping layout_json backfill, "
+            "column add proceeds and stays NULL."
+        )
         return
 
     bind = op.get_bind()

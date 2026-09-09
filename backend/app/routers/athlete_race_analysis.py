@@ -37,7 +37,9 @@ from app.config import settings
 from app.dependencies import get_current_user, get_db, require_role, verify_athlete_access
 from app.models.athlete import Athlete
 from app.models.athlete_ai_insight import AthleteAiInsight
+from app.models.audit_log import AuditAction
 from app.models.user import User, UserRole
+from app.services.audit import AuditEntityType, record_audit
 from app.schemas.athlete_race_analysis import (
     AnswerInsightBody,
     AthleteInsightDetailOut,
@@ -445,6 +447,8 @@ async def answer_insight(
             detail="Insight no encontrado",
         )
 
+    changed_fields: list[str] = []
+
     if body.answer_text is not None:
         from app.services.race.ai.grounding import load_forbidden_names
 
@@ -458,11 +462,29 @@ async def answer_insight(
                 answer_text = answer_text.replace(name, "[nombre omitido]")
         row.coach_answer_text = answer_text
         row.coach_answer_at = _utc_now()
+        row.coach_answer_by_user_id = current_user.id
+        changed_fields.extend(
+            ["coach_answer_text", "coach_answer_at", "coach_answer_by_user_id"]
+        )
 
     if body.rating is not None:
         row.coach_rating = body.rating
+        changed_fields.append("coach_rating")
 
     row.updated_at = _utc_now()
+
+    if changed_fields:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.athlete_ai_insight,
+            entity_id=row.id,
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
+            changed_fields=changed_fields,
+        )
+
     await db.commit()
 
     chain_rows = await get_insight_supersedes_chain(db, insight_id=row.id)

@@ -55,6 +55,7 @@ from app.main import app
 from app.models import Base
 from app.models.user import UserRole
 from app.routers.race_analysis import _admin_only, _coach_or_admin
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
@@ -144,6 +145,7 @@ async def session_factory() -> async_sessionmaker[AsyncSession]:
         "race_categories",
         "race_competitors",
         "race_results",
+        *AUDIT_TABLES,
     ]
     tables = [Base.metadata.tables[t] for t in table_names]
 

@@ -62,6 +62,7 @@ from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 from app.services.race.standings import get_event_standings
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # ---------------------------------------------------------------------------
 # Engine / session fixture (real aiosqlite, same pattern as router tests)
@@ -102,6 +103,7 @@ async def engine():
             "race_categories",
             "race_competitors",
             "race_results",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

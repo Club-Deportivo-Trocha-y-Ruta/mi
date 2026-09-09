@@ -23,10 +23,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
+from app.models.audit_log import AuditAction
 from app.models.race_event import RaceEvent
 from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.models.user import User, UserRole
 from app.schemas.race_series import RaceSeriesCreate, RaceSeriesListResponse, RaceSeriesRead
+from app.services.audit import AuditEntityType, record_audit
+from app.services.request_context import AuditContext, get_request_context
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +138,7 @@ async def create_race_series(
     current_user: User = Depends(
         require_role([UserRole.admin, UserRole.coach])
     ),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> RaceSeriesRead:
     """Crea una nueva serie de competencias.
 
@@ -172,6 +176,17 @@ async def create_race_series(
     )
     db.add(series)
     await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.race_series,
+        entity_id=series.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        request_id=ctx.request_id,
+    )
 
     logger.info(
         "race_series_create series_id=%s kind=%s user_id=%s",

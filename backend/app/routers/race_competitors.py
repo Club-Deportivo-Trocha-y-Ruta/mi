@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
+from app.models.audit_log import AuditAction
 from app.models.club import ClubRole
 from app.models.user import User, UserRole
 from app.schemas.race_competitor import (
@@ -57,6 +58,8 @@ from app.services.race.competitor_linking import (
     suggest_competitors_for_new_athlete,
     unlink_competitor,
 )
+from app.services.audit import AuditEntityType, record_audit
+from app.services.request_context import AuditContext, get_request_context
 
 logger = logging.getLogger(__name__)
 
@@ -354,6 +357,7 @@ async def link_competitor(
     body: CompetitorLinkRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> CompetitorLinkResponse:
     """Enlaza un competitor a un athlete y propaga a sus race_results.
 
@@ -395,6 +399,23 @@ async def link_competitor(
             detail=str(exc),
         )
 
+    if not result.already_linked:
+        # Fila-resumen: el detalle propio del enlace ya vive en
+        # `race_competitor_link_audit` (services/race/competitor_linking.py);
+        # esta fila es solo el índice club-wide que apunta a ese detalle.
+        await record_audit(
+            db,
+            action=AuditAction.link,
+            entity_type=AuditEntityType.race_competitor,
+            entity_id=result.competitor_id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=None,
+            athlete_id=result.athlete_id,
+            meta={"results_count": result.results_propagated},
+            request_id=ctx.request_id,
+        )
+
     return CompetitorLinkResponse(
         competitor_id=result.competitor_id,
         athlete_id=result.athlete_id,
@@ -418,6 +439,7 @@ async def unlink_competitor_endpoint(
     competitor_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> CompetitorUnlinkResponse:
     """Desvincula competitor del athlete y propaga NULL a race_results.
 
@@ -456,6 +478,8 @@ async def unlink_competitor_endpoint(
             # para limpiar el state inconsistente.
             pass
 
+    previously_linked_athlete_id = competitor.athlete_id
+
     try:
         result_obj = await unlink_competitor(
             db, competitor_id=competitor_id, user_id=current_user.id
@@ -464,6 +488,23 @@ async def unlink_competitor_endpoint(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
+        )
+
+    if result_obj.was_linked:
+        # Fila-resumen: el detalle propio del desenlace ya vive en
+        # `race_competitor_link_audit`; esta fila es solo el índice
+        # club-wide que apunta a ese detalle.
+        await record_audit(
+            db,
+            action=AuditAction.unlink,
+            entity_type=AuditEntityType.race_competitor,
+            entity_id=result_obj.competitor_id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=None,
+            athlete_id=previously_linked_athlete_id,
+            meta={"results_count": result_obj.results_propagated},
+            request_id=ctx.request_id,
         )
 
     return CompetitorUnlinkResponse(

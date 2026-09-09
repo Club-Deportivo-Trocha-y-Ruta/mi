@@ -66,6 +66,7 @@ from tests.fixtures.race_history_fixtures import (
     create_race_series,
     create_user,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +96,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "training_sessions",
             "session_media",
             "session_media_athlete",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

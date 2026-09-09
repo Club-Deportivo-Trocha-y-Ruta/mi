@@ -36,6 +36,7 @@ from app.services.notification.email_client import (
     OutboundEmail,
     ResendEmailClient,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.notification.template_registry import TemplateRegistry
 from app.services.training.stage_log import StageLog, to_parent_dto
 
@@ -62,6 +63,7 @@ async def dispatch_newsletters(
     newsletter_ids: list[int],
     force_individual: bool = False,
     force_resend: bool = False,
+    actor: User | None = None,
 ) -> DispatchResult:
     """Envía los newsletters indicados a los padres.
 
@@ -124,6 +126,7 @@ async def dispatch_newsletters(
                 newsletters=parent_newsletters,
                 force_individual=force_individual,
                 result=result,
+                actor=actor,
             )
             if sent_ids:
                 result.emails_sent += 1
@@ -197,6 +200,7 @@ async def _send_for_parent(
     newsletters: list[AthleteMonthlyNewsletter],
     force_individual: bool,
     result: DispatchResult,
+    actor: User | None = None,
 ) -> list[int]:
     """Envía a un padre las bitácoras de sus hijos para el periodo.
 
@@ -242,6 +246,7 @@ async def _send_for_parent(
         year=year,
         month=month,
         result=result,
+        actor=actor,
     )
 
 
@@ -254,6 +259,7 @@ async def _send_v2_email(
     year: int,
     month: int,
     result: DispatchResult,
+    actor: User | None = None,
 ) -> list[int]:
     """Bitácora de etapa (feature 038): deep link al portal (o "Activa tu
     cuenta" cuando el padre no tiene contraseña definida todavía —
@@ -339,6 +345,7 @@ async def _send_v2_email(
         msg=msg,
         template_ref="athlete_stage_log",
         result=result,
+        actor=actor,
     )
 
 
@@ -350,6 +357,7 @@ async def _dispatch_email(
     msg: OutboundEmail,
     template_ref: str,
     result: DispatchResult,
+    actor: User | None = None,
 ) -> list[int]:
     """Envía ``msg`` y, si tiene éxito, marca ``newsletters`` como enviados y
     registra un evento ``sent`` por destinatario en ``newsletter_delivery_events``
@@ -391,6 +399,12 @@ async def _dispatch_email(
         send_result.message_id if isinstance(email_client, ResendEmailClient) else None
     )
 
+    athlete_ids = [nl.athlete_id for nl in newsletters]
+    athletes_result = await db.execute(
+        select(Athlete.id, Athlete.club_id).where(Athlete.id.in_(athlete_ids))
+    )
+    club_by_athlete = dict(athletes_result.all())
+
     sent_ids = []
     for nl in newsletters:
         nl.status = NewsletterStatus.sent
@@ -407,6 +421,20 @@ async def _dispatch_email(
             )
         )
         await db.flush()
+        if actor is not None:
+            await record_audit(
+                db,
+                action=AuditAction.send,
+                entity_type=AuditEntityType.athlete_monthly_newsletter,
+                entity_id=nl.id,
+                actor=actor,
+                club_id=club_by_athlete.get(nl.athlete_id),
+                athlete_id=nl.athlete_id,
+                meta={
+                    "document_kind": "newsletter_email",
+                    "recipients_count": len(nl.sent_to or []),
+                },
+            )
         result.newsletters_sent.append(nl.id)
         sent_ids.append(nl.id)
         logger.info(

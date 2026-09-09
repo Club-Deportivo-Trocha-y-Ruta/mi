@@ -21,6 +21,15 @@ from app.models.training_session import (
 )
 from app.models.user import User
 from app.schemas.training_session import TrainingSessionCreate, TrainingSessionUpdate
+from app.services.audit import (
+    VALUE_ALLOWLIST,
+    AuditAction,
+    AuditEntityType,
+    CancelReasonCode,
+    compute_changed_fields,
+    record_audit,
+)
+from app.services.request_context import AuditContext
 
 if TYPE_CHECKING:
     from app.services.notification.service import NotificationService
@@ -109,6 +118,7 @@ async def create_session(
     club_id: int,
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
+    ctx: AuditContext | None = None,
 ) -> TrainingSession:
     """
     Crea una sesión planificada y genera filas de asistencia para cada atleta
@@ -151,8 +161,24 @@ async def create_session(
             )
         )
 
+    if ctx is not None:
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.training_session,
+            entity_id=session.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=club_id,
+            meta={
+                "convocados_count": len(payload.convocados_athlete_ids),
+                "event_date": session.scheduled_date.isoformat(),
+            },
+            request_id=ctx.request_id,
+        )
+
     # Crear CalendarEvent paralelo en la misma transacción
-    await _create_parallel_calendar_event(db, session, payload, coach, club_id)
+    await _create_parallel_calendar_event(db, session, payload, coach, club_id, ctx)
 
     await db.commit()
 
@@ -591,13 +617,17 @@ async def _create_parallel_calendar_event(
     payload: "TrainingSessionCreate",
     coach: User,
     club_id: int,
+    ctx: AuditContext | None = None,
 ) -> None:
     """Crea el CalendarEvent paralelo a una TrainingSession recién creada.
 
     Operación silenciosa: si falla (ej. datos inconsistentes), loguea y continúa
-    para no bloquear la creación de la sesión.
+    para no bloquear la creación de la sesión. El registro de auditoría queda
+    FUERA del try/except silencioso — una fila de auditoría nunca se descarta
+    en silencio (contracts/audit-recording.md §1.3).
     NO dispara notificaciones CALENDAR_EVENT_INVITE — la sesión ya usa TRAINING_SESSION_INVITE.
     """
+    created_event_id: int | None = None
     try:
         from datetime import datetime, timezone as tz, timedelta
 
@@ -644,6 +674,7 @@ async def _create_parallel_calendar_event(
 
         # Enlazar la sesión al evento
         session.calendar_event_id = event.id
+        created_event_id = event.id
 
         logger.debug(
             "CalendarEvent paralelo creado | session_id=%s event_id=%s",
@@ -657,6 +688,19 @@ async def _create_parallel_calendar_event(
             type(exc).__name__,
         )
 
+    if ctx is not None and created_event_id is not None:
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.calendar_event,
+            entity_id=created_event_id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=club_id,
+            meta={"event_date": session.scheduled_date.isoformat()},
+            request_id=ctx.request_id,
+        )
+
 
 async def update_session(
     db: AsyncSession,
@@ -665,6 +709,7 @@ async def update_session(
     *,
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
+    ctx: AuditContext | None = None,
 ) -> TrainingSession:
     """Actualiza campos editables de una sesión planificada.
 
@@ -685,6 +730,25 @@ async def update_session(
 
     for field, value in update_data.items():
         setattr(session, field, value)
+
+    if ctx is not None:
+        changed_fields, diff = compute_changed_fields(
+            before=previous_values,
+            after=update_data,
+            allow_list=VALUE_ALLOWLIST[AuditEntityType.training_session],
+        )
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.training_session,
+            entity_id=session.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=session.club_id,
+            changed_fields=changed_fields,
+            diff=diff,
+            request_id=ctx.request_id,
+        )
 
     await db.commit()
     refreshed = await get_session(db, session.id)
@@ -727,7 +791,9 @@ async def update_session(
     return refreshed
 
 
-async def execute_session(db: AsyncSession, session_id: int) -> TrainingSession:
+async def execute_session(
+    db: AsyncSession, session_id: int, *, ctx: AuditContext | None = None
+) -> TrainingSession:
     """
     Marca la sesión como ejecutada y registra el timestamp.
     Lanza ValueError si ya fue ejecutada o cancelada.
@@ -742,6 +808,18 @@ async def execute_session(db: AsyncSession, session_id: int) -> TrainingSession:
     session.status = SessionStatus.EXECUTED
     session.executed_at = datetime.now(timezone.utc)
 
+    if ctx is not None:
+        await record_audit(
+            db,
+            action=AuditAction.execute,
+            entity_type=AuditEntityType.training_session,
+            entity_id=session.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=session.club_id,
+            request_id=ctx.request_id,
+        )
+
     await db.commit()
     refreshed = await get_session(db, session.id)
     assert refreshed is not None
@@ -754,8 +832,10 @@ async def cancel_session(
     *,
     send_notification: bool = False,
     reason: str | None = None,
+    reason_code: CancelReasonCode | None = None,
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
+    ctx: AuditContext | None = None,
 ) -> TrainingSession:
     """Soft delete: cambia el estado a CANCELLED sin borrar registros.
 
@@ -774,6 +854,20 @@ async def cancel_session(
     convocados_snapshot = [a.athlete_id for a in (session.attendances or [])]
 
     session.status = SessionStatus.CANCELLED
+
+    if ctx is not None:
+        await record_audit(
+            db,
+            action=AuditAction.cancel,
+            entity_type=AuditEntityType.training_session,
+            entity_id=session.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=session.club_id,
+            reason_code=reason_code,
+            request_id=ctx.request_id,
+        )
+
     await db.commit()
     refreshed = await get_session(db, session.id)
     assert refreshed is not None
@@ -807,6 +901,7 @@ async def update_convocatoria(
     send_notification: bool = False,
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
+    ctx: AuditContext | None = None,
 ) -> list[SessionAttendance]:
     """Bulk-set de convocatoria; si `send_notification`, notifica a los nuevos
     convocados con `training_session_invite`.
@@ -820,7 +915,11 @@ async def update_convocatoria(
     previous_ids = {a.athlete_id for a in (session.attendances or [])}
 
     attendances = await attendance_svc.bulk_upsert_convocatoria(
-        db=db, session_id=session_id, athlete_ids=athlete_ids
+        db=db,
+        session_id=session_id,
+        athlete_ids=athlete_ids,
+        club_id=session.club_id,
+        ctx=ctx,
     )
 
     added_ids = [aid for aid in athlete_ids if aid not in previous_ids]

@@ -29,6 +29,7 @@ from app.models.training_session import (
 )
 from app.models.user import User, UserRole
 from app.services.race.ai import athlete_context as mod
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
@@ -43,6 +44,7 @@ _TABLES = (
     "interval_structures",
     "interval_templates",
     "interval_template_blocks",
+    *AUDIT_TABLES,
 )
 
 

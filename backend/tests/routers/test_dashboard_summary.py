@@ -75,6 +75,7 @@ from tests.fixtures.race_history_fixtures import (
     link_user_to_club,
 )
 from tests.helpers.query_counting import count_selects
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
@@ -89,6 +90,7 @@ _TABLES = (
     "athlete_ai_insights",
     "training_sessions",
     "session_attendance",
+    *AUDIT_TABLES,
 )
 
 _BOGOTA = ZoneInfo("America/Bogota")

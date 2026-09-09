@@ -22,10 +22,13 @@ named ENUM types on MySQL/MariaDB.
 """
 from __future__ import annotations
 
+import logging
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # revision identifiers
@@ -282,7 +285,12 @@ def upgrade() -> None:
     # of failing the whole upgrade chain.
     try:
         from app.data.strength_catalog import EXERCISES  # noqa: PLC0415
-    except ModuleNotFoundError:
+    except ImportError:
+        logger.info(
+            "a7b8c9d0e1f2: app.data.strength_catalog is unavailable "
+            "(module retired downstream) — skipping strength training "
+            "catalog seed, schema-only upgrade proceeds."
+        )
         return
 
     dialect = bind.dialect.name  # "mysql" | "mariadb" | "sqlite"

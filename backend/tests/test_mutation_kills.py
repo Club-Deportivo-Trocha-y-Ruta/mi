@@ -45,6 +45,7 @@ from app.services.permissions import (
 )
 from app.services.phv import calculate_mirwald_offset
 from app.services import password_reset as pr_svc
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +70,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
         "users", "clubs", "club_members", "athletes", "parent_athlete",
         "training_sessions", "session_attendance",
         "password_reset_tokens",
+        *AUDIT_TABLES,
     ]
     tables = [Base.metadata.tables[t] for t in tables_needed if t in Base.metadata.tables]
     async with eng.begin() as conn:

@@ -61,7 +61,15 @@ export const PERSIST_ALLOWLIST_PREFIXES: readonly (readonly unknown[])[] = [
   // athlete ids/names/session content — data-privacy-guard reviewed
   // (research.md R9).
   ["dashboard", "coach-summary"],
+  // Feature 041 — closed catalogue of audit reason codes/labels only
+  // (no club/athlete/person data), same shape as ["revision-reasons"].
+  ["audit-reason-codes"],
 ] as const;
+
+// Feature 041 — deliberately NOT allow-listed: ["audit", …] (club/athlete
+// audit-log history). Contract audit-log-api.md §11: rows carry
+// `athlete_id` and the actor's (coach/admin) display name — do not add a
+// prefix for it without a fresh privacy ruling.
 
 /** True when `key`'s leading elements match `prefix` element-by-element. */
 function keyMatchesPrefix(key: QueryKey, prefix: readonly unknown[]): boolean {

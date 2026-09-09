@@ -14,10 +14,13 @@
  */
 import type { APIRequestContext } from '@playwright/test';
 
-export type SeedRole = 'coach' | 'admin' | 'parent';
+export type SeedRole = 'coach' | 'coach2' | 'admin' | 'parent';
 
 const CREDENTIALS: Record<SeedRole, { email: string; password: string }> = {
   coach: { email: 'entrenador@trochyruta.com', password: 'Coach2026!' },
+  // Segundo coach del mismo club (feature 041 — gobernanza multi-coach),
+  // sembrado en backend/scripts/seed.py junto al coach original.
+  coach2: { email: 'entrenador2@trochyruta.com', password: 'Coach2026!' },
   admin: { email: 'admin@trochyruta.com', password: 'Admin2026!' },
   parent: { email: 'padre@trochayruta.com', password: 'Parent2026!' },
 };

@@ -54,6 +54,7 @@ from app.models.race_import import RaceImport, RaceImportStatus
 from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +72,7 @@ _TABLES = [
     "race_categories",
     "race_competitors",
     "race_results",
+    *AUDIT_TABLES,
 ]
 
 

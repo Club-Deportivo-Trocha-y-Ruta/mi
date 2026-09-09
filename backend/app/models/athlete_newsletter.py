@@ -145,6 +145,20 @@ class AthleteMonthlyNewsletter(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
+    # ── Feature 041 (Multi-coach governance) ─────────────────────────────
+    coach_note_author_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    coach_note_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    last_edited_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    edit_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),

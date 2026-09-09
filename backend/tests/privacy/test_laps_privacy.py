@@ -97,6 +97,7 @@ from app.schemas.intervals import (
 )
 from app.services.intervals import match_runner
 from app.services.strava.token_store import encrypt_token
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # NOTE: no module-level ``pytestmark = pytest.mark.asyncio`` — ``pytest.ini``
 # fija ``asyncio_mode = "auto"`` en todo el repo (misma nota que
@@ -267,6 +268,7 @@ _TABLES = (
     "interval_structure_blocks",
     "strava_activity_laps",
     "interval_match_results",
+    *AUDIT_TABLES,
 )
 
 

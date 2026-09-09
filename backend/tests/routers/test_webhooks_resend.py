@@ -45,6 +45,7 @@ from tests.fixtures.race_history_fixtures import (
     create_user,
     link_parent_to_athlete,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 _TEST_SECRET = "whsec_" + base64.b64encode(b"0123456789abcdef0123456789abcdef").decode()
 _PARENT_EMAIL = "padre@test.com"
@@ -99,6 +100,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "anthropometric_records",
             "athlete_monthly_newsletters",
             "newsletter_delivery_events",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

@@ -18,9 +18,16 @@ from app.models.calendar_event import (
     EventStatus,
     EventType,
 )
+from app.services.audit import (
+    AuditAction,
+    AuditEntityType,
+    CancelReasonCode,
+    record_audit,
+)
 from app.services.calendar import notifications as _notif_module
 
 if TYPE_CHECKING:
+    from app.models.training_session import TrainingSession
     from app.models.user import User
     from app.schemas.calendar import AudienceCreate, EventCreate, EventListQuery, EventUpdate
     from app.services.notification.service import NotificationService
@@ -146,12 +153,31 @@ async def create_event(
     await db.flush()
 
     # Integración con TrainingSession
+    created_ts = None
     if payload.event_type == EventType.TRAINING_SESSION:
-        await _handle_training_session_creation(
+        created_ts = await _handle_training_session_creation(
             db=db,
             event=event,
             payload=payload,
             user=user,
+            club_id=club_id,
+        )
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.calendar_event,
+        entity_id=event.id,
+        actor=user,
+        club_id=club_id,
+    )
+    if created_ts is not None:
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.training_session,
+            entity_id=created_ts.id,
+            actor=user,
             club_id=club_id,
         )
 
@@ -187,8 +213,13 @@ async def _handle_training_session_creation(
     payload: "EventCreate",
     user: "User",
     club_id: int,
-) -> None:
-    """Crea o enlaza TrainingSession para un event_type=TRAINING_SESSION."""
+) -> "TrainingSession | None":
+    """Crea o enlaza TrainingSession para un event_type=TRAINING_SESSION.
+
+    Devuelve la ``TrainingSession`` recién creada, o ``None`` si el evento
+    solo se enlazó a una sesión ya existente (esa fila ya tiene su propia
+    fila ``training_session``·``create`` de auditoría).
+    """
     from app.models.training_session import (
         AttendanceStatus,
         SessionAttendance,
@@ -210,7 +241,7 @@ async def _handle_training_session_creation(
         )
         # Actualizar event_data con el ts_id
         event.event_data = {"training_session_id": existing_ts_id}
-        return
+        return None
 
     # Calcular duración en minutos
     delta_seconds = int((payload.end_at - payload.start_at).total_seconds())
@@ -244,6 +275,8 @@ async def _handle_training_session_creation(
                 status=AttendanceStatus.AUSENTE,
             )
         )
+
+    return ts
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +404,16 @@ async def update_event(
     update_data = payload.model_dump(exclude_unset=True)
     schedule_changed = any(k in update_data for k in ("start_at", "end_at", "location"))
 
+    # Snapshot previo para el diff de auditoría (record_audit filtra por
+    # VALUE_ALLOWLIST[calendar_event]; los campos no admitidos solo quedan
+    # nombrados en changed_fields, sin valor).
+    audit_diff: dict[str, tuple[object, object]] = {
+        field: (getattr(event, field), update_data[field])
+        for field in update_data
+        if hasattr(event, field) and getattr(event, field) != update_data[field]
+    }
+    audit_changed_fields = list(update_data.keys())
+
     # BE-2: validar reasignación de race_event_id.
     if "race_event_id" in update_data:
         new_rid = update_data["race_event_id"]
@@ -392,6 +435,17 @@ async def update_event(
     # Propagar al TrainingSession enlazado
     if event.event_type == EventType.TRAINING_SESSION:
         await _propagate_to_training_session(db, event, update_data)
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.calendar_event,
+        entity_id=event.id,
+        actor=user,
+        club_id=event.club_id,
+        changed_fields=audit_changed_fields,
+        diff=audit_diff,
+    )
 
     await db.commit()
     refreshed = await get_event(db, event.id)
@@ -472,6 +526,7 @@ async def cancel_event(
     if event.status == EventStatus.CANCELLED:
         raise ValueError("El evento ya está cancelado")
 
+    previous_status = event.status
     event.status = EventStatus.CANCELLED
 
     # Propagar a TrainingSession
@@ -485,6 +540,26 @@ async def cancel_event(
                 .where(TrainingSession.id == ts_id)
                 .values(status=SessionStatus.CANCELLED)
             )
+
+    # NOTA (T023): `cancel_event` todavía recibe `reason` como texto libre
+    # (backend/app/routers/calendar.py:402); `contracts/audit-recording.md`
+    # exige un `reason_code` del catálogo cerrado `CancelReasonCode` para
+    # (calendar_event, cancel) (REASON_REQUIRED). T063
+    # (`contracts/session-coaches.md` §7.2) reemplaza este parámetro por
+    # `EventCancelIn.reason_code` tipado y persistido en
+    # `cancellation_reason_code`; hasta entonces se usa un valor cerrado por
+    # defecto para no bloquear la cancelación ni inventar un código nuevo.
+    await record_audit(
+        db,
+        action=AuditAction.cancel,
+        entity_type=AuditEntityType.calendar_event,
+        entity_id=event.id,
+        actor=user,
+        club_id=event.club_id,
+        changed_fields=["status"],
+        diff={"status": (previous_status.value, EventStatus.CANCELLED.value)},
+        reason_code=CancelReasonCode.cancel_organizer_cancelled,
+    )
 
     await db.commit()
     refreshed = await get_event(db, event.id)
@@ -541,6 +616,7 @@ async def reschedule_event(
 async def delete_event_permanent(
     db: AsyncSession,
     event: CalendarEvent,
+    user: "User",
 ) -> None:
     """Borra permanentemente un CalendarEvent de la base de datos.
 
@@ -549,6 +625,9 @@ async def delete_event_permanent(
     el evento. Las tablas event_audiences y event_attendances se limpian
     automáticamente via FK ON DELETE CASCADE.
     """
+    event_id = event.id
+    club_id = event.club_id
+
     if event.event_type == EventType.TRAINING_SESSION:
         from app.models.training_session import TrainingSession
 
@@ -556,7 +635,24 @@ async def delete_event_permanent(
         if ts_id:
             ts = await db.get(TrainingSession, ts_id)
             if ts:
+                await record_audit(
+                    db,
+                    action=AuditAction.delete,
+                    entity_type=AuditEntityType.training_session,
+                    entity_id=ts.id,
+                    actor=user,
+                    club_id=club_id,
+                )
                 await db.delete(ts)
+
+    await record_audit(
+        db,
+        action=AuditAction.delete,
+        entity_type=AuditEntityType.calendar_event,
+        entity_id=event_id,
+        actor=user,
+        club_id=club_id,
+    )
 
     await db.delete(event)
     await db.commit()

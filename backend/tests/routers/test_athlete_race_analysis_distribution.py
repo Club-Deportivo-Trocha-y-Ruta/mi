@@ -60,6 +60,7 @@ from tests.fixtures.race_history_fixtures import (
     link_user_to_club,
 )
 from app.models.race_result import ResultStatus
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +103,7 @@ _TABLES = (
     "race_results",
     "athlete_ai_insights",
     "anthropometric_records",
+    *AUDIT_TABLES,
 )
 
 

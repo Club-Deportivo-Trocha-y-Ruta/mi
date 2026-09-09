@@ -43,6 +43,8 @@ from app.services.permissions import (
     coach_club_ids as _coach_club_ids,
     parent_athlete_ids,
 )
+from app.models.audit_log import AuditAction
+from app.services.audit import AuditEntityType, record_audit
 
 router = APIRouter()
 
@@ -113,6 +115,16 @@ async def create_athlete(
     )
     db.add(member)
     await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.athlete,
+        entity_id=athlete.id,
+        actor=current_user,
+        club_id=body.club_id,
+        athlete_id=athlete.id,
+    )
 
     # -----------------------------------------------------------------------
     # Email de bienvenida (Paso 11)
@@ -320,6 +332,18 @@ async def update_athlete(
 
     await db.flush()
 
+    if update_data:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.athlete,
+            entity_id=athlete.id,
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
+            changed_fields=sorted(update_data.keys()),
+        )
+
     return _enrich_athlete(athlete)
 
 
@@ -353,8 +377,30 @@ async def delete_athlete(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes acceso a este atleta",
             )
+        # Guard interino (T002): hasta que T040 reemplace el borrado por
+        # archivado, solo un admin puede eliminar un atleta.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un administrador puede eliminar un atleta por ahora.",
+        )
 
     user_id = athlete.user_id
+
+    # NOTA (T022, alcance): el archivado formal por columnas
+    # (deleted_at/deleted_by_user_id/deleted_reason_code) descrito en
+    # contracts/athlete-archive.md es un rediseño de este endpoint que no
+    # corresponde a la instrumentación de auditoría — se deja fuera de esta
+    # oleada (ver blockers del reporte de T022). Mientras tanto se registra
+    # con action=delete, reflejando fielmente el borrado físico actual.
+    await record_audit(
+        db,
+        action=AuditAction.delete,
+        entity_type=AuditEntityType.athlete,
+        entity_id=athlete.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+    )
 
     await db.execute(delete(ParentalConsent).where(ParentalConsent.athlete_id == athlete_id))
     await db.execute(delete(AthleteAIExplanation).where(AthleteAIExplanation.athlete_id == athlete_id))

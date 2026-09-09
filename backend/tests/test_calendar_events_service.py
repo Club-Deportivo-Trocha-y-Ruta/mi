@@ -19,6 +19,19 @@ from app.models.calendar_event import (
 )
 from app.schemas.calendar import AudienceCreate, EventCreate, EventUpdate
 from app.services.calendar import events as events_svc
+from app.services.request_context import request_id_scope
+
+
+@pytest.fixture(autouse=True)
+def _bind_request_id():
+    """Los tests de este módulo llaman a la capa de servicio directamente,
+    fuera de una petición HTTP, así que no hay `RequestIdMiddleware` que
+    ligue un `request_id` al ContextVar. `record_audit` (feature 041,
+    `contracts/audit-recording.md` §1.2 paso 3) lo exige siempre, por lo que
+    cada test se envuelve en el mismo `request_id_scope` que usan los
+    llamadores no-HTTP (`app/services/request_context.py`)."""
+    with request_id_scope():
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +104,17 @@ def _make_payload(
 
 def _make_db() -> AsyncMock:
     db = AsyncMock()
-    db.add = MagicMock()
+    _next_id = {"n": 900}
+
+    def _add_assigns_id(obj):
+        # Simula el autoincrement de SQLAlchemy tras el flush: los objetos
+        # sin id obtienen uno consecutivo al agregarse a la sesión, para que
+        # `record_audit` (feature 041) tenga un `entity_id` válido.
+        if getattr(obj, "id", None) is None:
+            _next_id["n"] += 1
+            obj.id = _next_id["n"]
+
+    db.add = MagicMock(side_effect=_add_assigns_id)
     db.flush = AsyncMock()
     db.commit = AsyncMock()
     db.execute = AsyncMock()

@@ -41,6 +41,7 @@ from tests.fixtures.race_history_fixtures import (
     create_user,
     link_user_to_club,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 _AGENT_RUNS_FULL_DDL = """
@@ -86,6 +87,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_series",
             "race_events",
             "athlete_ai_insights",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

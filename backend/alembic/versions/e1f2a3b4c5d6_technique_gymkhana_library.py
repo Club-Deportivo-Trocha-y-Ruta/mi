@@ -24,10 +24,13 @@ on MySQL/MariaDB.
 """
 from __future__ import annotations
 
+import logging
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # revision identifiers
@@ -278,7 +281,12 @@ def upgrade() -> None:
             MATERIALS,
             SKILLS,
         )
-    except ModuleNotFoundError:
+    except ImportError:
+        logger.info(
+            "e1f2a3b4c5d6: app.data.technique_catalog is unavailable "
+            "(module retired downstream) — skipping technique/gymkhana "
+            "catalog seed, schema-only upgrade proceeds."
+        )
         return
 
     dialect = bind.dialect.name  # "mysql" | "mariadb" | "sqlite"

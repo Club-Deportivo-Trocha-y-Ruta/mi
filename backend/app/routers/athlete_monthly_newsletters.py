@@ -66,6 +66,7 @@ from app.schemas.athlete_newsletter import (
     RegenerateBlockRequest,
 )
 from app.models.newsletter_delivery_event import DeliveryEventType, NewsletterDeliveryEvent
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.permissions import user_club_role
 
 logger = logging.getLogger(__name__)
@@ -458,6 +459,7 @@ async def _generate_newsletter_for_athlete(
     force: bool,
     llm_provider,
     prompt_registry,
+    audit_meta: dict | None = None,
 ) -> AthleteMonthlyNewsletter:
     """Crea o regenera el borrador de la bitácora (StageLog v2) para un atleta."""
     from app.services.privacy import athlete_has_ai_processing_consent
@@ -535,6 +537,16 @@ async def _generate_newsletter_for_athlete(
         existing.pdf_generated_at = None
         existing.pdf_sha256 = None
         await db.flush()
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.athlete_monthly_newsletter,
+            entity_id=existing.id,
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
+            meta=audit_meta,
+        )
         return existing
 
     nl = AthleteMonthlyNewsletter(
@@ -553,6 +565,16 @@ async def _generate_newsletter_for_athlete(
     )
     db.add(nl)
     await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.athlete_monthly_newsletter,
+        entity_id=nl.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        meta=audit_meta,
+    )
     return nl
 
 
@@ -625,6 +647,7 @@ async def batch_create_newsletters(
                 force=body.force,
                 llm_provider=llm_provider,
                 prompt_registry=prompt_registry,
+                audit_meta={"athlete_count": total},
             )
             newsletter_ids.append(nl.id)
             if nl.status == NewsletterStatus.failed:
@@ -1043,14 +1066,18 @@ async def patch_newsletter(
         )
 
     content_changed = False
+    was_approved = nl.status == NewsletterStatus.approved
+    changed_fields: list[str] = []
 
     if body.stage_overrides is not None:
         nl.stage_overrides = body.stage_overrides
         content_changed = True
+        changed_fields.append("stage_overrides")
 
     if body.hidden_blocks is not None:
         nl.hidden_blocks = body.hidden_blocks
         content_changed = True
+        changed_fields.append("hidden_blocks")
 
     if body.coach_note is not None:
         from app.services.ai.use_cases.monthly_report import _redact_names
@@ -1058,6 +1085,7 @@ async def patch_newsletter(
         forbidden_names = await _build_forbidden_names(db, athlete.club_id)
         nl.coach_note = _redact_names(body.coach_note, forbidden_names) or None
         content_changed = True
+        changed_fields.append("coach_note")
 
     if body.selected_race_insight_ids is not None:
         current_ids = nl.selected_race_insight_ids or []
@@ -1072,11 +1100,15 @@ async def patch_newsletter(
             )
         nl.selected_race_insight_ids = body.selected_race_insight_ids
         content_changed = True
+        changed_fields.append("selected_race_insight_ids")
 
+    became_unapproved = False
     if content_changed and nl.status == NewsletterStatus.approved:
         nl.status = NewsletterStatus.draft
         nl.approved_by_user_id = None
         nl.approved_at = None
+        became_unapproved = True
+        changed_fields.append("status")
 
     if content_changed:
         nl.pdf_sha256 = None
@@ -1084,6 +1116,30 @@ async def patch_newsletter(
 
     nl.updated_at = datetime.now(timezone.utc)
     await db.flush()
+
+    if content_changed:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.athlete_monthly_newsletter,
+            entity_id=nl.id,
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
+            changed_fields=sorted(set(changed_fields)),
+            diff={"status": ("approved", "draft")} if became_unapproved else None,
+        )
+        if was_approved and became_unapproved:
+            await record_audit(
+                db,
+                action=AuditAction.unapprove,
+                entity_type=AuditEntityType.athlete_monthly_newsletter,
+                entity_id=nl.id,
+                actor=current_user,
+                club_id=athlete.club_id,
+                athlete_id=athlete.id,
+            )
+
     await db.commit()
 
     return AthleteNewsletterRead.from_orm_model(nl)
@@ -1227,6 +1283,17 @@ async def regenerate_newsletter_block(
     await _rederive_stage_log(db, nl, athlete)
     nl.updated_at = datetime.now(timezone.utc)
     await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.athlete_monthly_newsletter,
+        entity_id=nl.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        changed_fields=["ai_narrative"],
+        meta={"block": body.block},
+    )
     await db.commit()
 
     return AthleteNewsletterRead.from_orm_model(nl)
@@ -1249,7 +1316,7 @@ async def approve_newsletter(
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> AthleteNewsletterRead:
     """Aprueba el boletín (draft → approved)."""
-    await _verify_coach_athlete_access(db, current_user, athlete_id)
+    athlete = await _verify_coach_athlete_access(db, current_user, athlete_id)
     nl = await _get_newsletter_or_404(db, newsletter_id, athlete_id)
 
     if nl.status != NewsletterStatus.draft:
@@ -1264,6 +1331,15 @@ async def approve_newsletter(
     nl.approved_at = now
     nl.updated_at = now
     await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.approve,
+        entity_type=AuditEntityType.athlete_monthly_newsletter,
+        entity_id=nl.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete_id,
+    )
     await db.commit()
 
     return AthleteNewsletterRead.from_orm_model(nl)
@@ -1331,6 +1407,7 @@ async def send_newsletter(
         newsletter_ids=[nl.id],
         force_individual=force_individual,
         force_resend=force_resend,
+        actor=current_user,
     )
 
     if dispatch_result.newsletters_blocked:
@@ -1391,7 +1468,7 @@ async def attach_insights(
     from app.models.athlete_ai_insight import AthleteAiInsight
 
     # 1. Verificar acceso al atleta
-    await _verify_coach_athlete_access(db, current_user, athlete_id)
+    athlete = await _verify_coach_athlete_access(db, current_user, athlete_id)
 
     # 2. Resolver year/month con default Colombia
     tz_bogota = ZoneInfo("America/Bogota")
@@ -1458,6 +1535,17 @@ async def attach_insights(
         nl.selected_race_insight_ids = existing_ids + new_ids
         nl.updated_at = now_utc
         await db.flush()
+        if new_ids:
+            await record_audit(
+                db,
+                action=AuditAction.link,
+                entity_type=AuditEntityType.athlete_monthly_newsletter,
+                entity_id=nl.id,
+                actor=current_user,
+                club_id=athlete.club_id,
+                athlete_id=athlete_id,
+                changed_fields=["selected_race_insight_ids"],
+            )
     else:
         # Crear newsletter mínimo con status draft
         nl = AthleteMonthlyNewsletter(
@@ -1472,6 +1560,15 @@ async def attach_insights(
         db.add(nl)
         await db.flush()
         created = True
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.athlete_monthly_newsletter,
+            entity_id=nl.id,
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete_id,
+        )
 
     await db.commit()
 

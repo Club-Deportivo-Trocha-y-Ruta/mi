@@ -34,6 +34,8 @@ from app.models import Base
 from app.models.athlete import Athlete, Sex
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 from app.routers.athlete_monthly_newsletters import _validate_period
+from app.services.request_context import request_id_scope
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -671,12 +673,13 @@ async def test_attach_insights_creates_newsletter_when_not_exists():
         new_callable=AsyncMock,
         return_value="coach",
     ):
-        result = await attach_insights(
-            athlete_id=5,
-            body=body,
-            db=db,
-            current_user=coach,
-        )
+        with request_id_scope():
+            result = await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
 
     assert result.created is True
     assert result.newsletter_id == 42
@@ -726,16 +729,21 @@ async def test_attach_insights_appends_to_existing_newsletter():
         new_callable=AsyncMock,
         return_value="coach",
     ):
-        result = await attach_insights(
-            athlete_id=5,
-            body=body,
-            db=db,
-            current_user=coach,
-        )
+        with request_id_scope():
+            result = await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
 
     assert result.created is False
     assert result.selected_race_insight_ids == [10, 20, 30]
-    db.add.assert_not_called()
+    # No se crea un nuevo AthleteMonthlyNewsletter (append sobre el existente);
+    # db.add sí se llama una vez para la fila de auditoría (T026, action=link).
+    added_types = [type(call.args[0]).__name__ for call in db.add.call_args_list]
+    assert "AthleteMonthlyNewsletter" not in added_types
+    assert added_types == ["AuditLog"]
 
 
 @pytest.mark.asyncio
@@ -1047,12 +1055,13 @@ async def test_attach_insights_custom_year_month():
         new_callable=AsyncMock,
         return_value="coach",
     ):
-        result = await attach_insights(
-            athlete_id=5,
-            body=body,
-            db=db,
-            current_user=coach,
-        )
+        with request_id_scope():
+            result = await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
 
     assert result.year == 2025
     assert result.month == 1
@@ -1124,6 +1133,7 @@ _T102_TABLES = (
     "athletes",
     "athlete_monthly_newsletters",
     "newsletter_delivery_events",
+    *AUDIT_TABLES,
 )
 
 

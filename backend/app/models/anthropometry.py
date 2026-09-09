@@ -18,6 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.growth import GrowthSource
+from app.models.mixins import ActorTimestampMixin
 
 if TYPE_CHECKING:
     from app.models.athlete import Athlete
@@ -44,7 +45,7 @@ class NutritionalStatus(str, enum.Enum):
     obesidad = "obesidad"
 
 
-class AnthropometricRecord(Base):
+class AnthropometricRecord(ActorTimestampMixin, Base):
     __tablename__ = "anthropometric_records"
     __table_args__ = (
         Index("ix_anthro_athlete_date", "athlete_id", "evaluation_date"),

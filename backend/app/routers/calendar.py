@@ -32,6 +32,7 @@ from app.schemas.calendar import (
     EventUpdate,
     RSVPUpdate,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.calendar import attendances as attendance_svc
 from app.services.calendar import events as events_svc
 from app.services.permissions import (
@@ -169,6 +170,19 @@ async def _get_event_or_404(db: AsyncSession, event_id: int):
             detail=f"Evento {event_id} no encontrado",
         )
     return event
+
+
+async def _get_existing_attendance(db: AsyncSession, event_id: int, athlete_id: int):
+    """Busca el registro de asistencia previo (para distinguir create/update en auditoría)."""
+    from app.models.calendar_event import EventAttendance
+
+    result = await db.execute(
+        select(EventAttendance).where(
+            EventAttendance.event_id == event_id,
+            EventAttendance.athlete_id == athlete_id,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 def _event_to_list_item(event, viewer: User | None = None) -> EventListItem:
@@ -464,7 +478,7 @@ async def delete_calendar_event_permanent(
             detail="No tienes permisos para borrar este evento permanentemente",
         )
 
-    await events_svc.delete_event_permanent(db, event)
+    await events_svc.delete_event_permanent(db, event, user=current_user)
 
 
 # ---------------------------------------------------------------------------
@@ -493,7 +507,15 @@ async def rsvp_calendar_event(
             detail="No tienes permisos para registrar RSVP en este evento",
         )
 
+    # `attendance_svc.rsvp` hace su propio upsert + commit
+    # (`services/calendar/attendances.py:27-70`, archivo no instrumentado
+    # por T023 — fuera de calendar.py/events.py). Se determina si la fila
+    # ya existía ANTES de llamar al servicio para distinguir create/update,
+    # y la fila de auditoría se encola aquí: como el servicio ya hizo su
+    # propio commit, esta fila viaja en el commit implícito del request
+    # (`app/dependencies.py`), no en la misma transacción de negocio.
     try:
+        pre_existing = await _get_existing_attendance(db, event.id, body.athlete_id)
         attendance = await attendance_svc.rsvp(
             db=db,
             event=event,
@@ -506,6 +528,21 @@ async def rsvp_calendar_event(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
+
+    await record_audit(
+        db,
+        action=AuditAction.update if pre_existing else AuditAction.create,
+        entity_type=AuditEntityType.event_attendance,
+        entity_id=attendance.id,
+        actor=current_user,
+        club_id=event.club_id,
+        athlete_id=body.athlete_id,
+        changed_fields=["rsvp_status"],
+        diff={"rsvp_status": (
+            pre_existing.rsvp_status.value if pre_existing and pre_existing.rsvp_status else None,
+            body.rsvp_status.value,
+        )},
+    )
 
     return EventAttendanceRead.model_validate(attendance)
 

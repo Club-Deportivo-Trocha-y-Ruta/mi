@@ -15,6 +15,14 @@ from app.schemas.club import (
     ClubOut,
     ClubUpdate,
 )
+from app.services.audit import (
+    AuditAction,
+    AuditEntityType,
+    VALUE_ALLOWLIST,
+    compute_changed_fields,
+    record_audit,
+    snapshot,
+)
 
 router = APIRouter()
 
@@ -41,6 +49,19 @@ async def create_club(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Ya existe un club con el código '{body.code}'",
         )
+
+    # Auditoría (feature 041, contracts/audit-recording.md §4.2): club_id es
+    # el del propio club recién creado.
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.club,
+        entity_id=club.id,
+        actor=current_user,
+        club_id=club.id,
+        changed_fields=["name", "code", "location"],
+    )
+
     return ClubOut.model_validate(club)
 
 
@@ -100,9 +121,28 @@ async def update_club(
             detail="Club no encontrado",
         )
 
+    audit_fields = ("name", "location", "is_active")
+    before = snapshot(club, *audit_fields)
+
     update_data = body.model_dump(exclude_none=True)
     for field, value in update_data.items():
         setattr(club, field, value)
+
+    after = snapshot(club, *audit_fields)
+    changed_fields, diff = compute_changed_fields(
+        before, after, VALUE_ALLOWLIST.get(AuditEntityType.club, frozenset())
+    )
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.club,
+        entity_id=club.id,
+        actor=current_user,
+        club_id=club.id,
+        changed_fields=changed_fields,
+        diff=diff,
+    )
 
     await db.flush()
     return ClubOut.model_validate(club)
@@ -154,6 +194,16 @@ async def add_member(
             status_code=status.HTTP_409_CONFLICT,
             detail="El usuario ya es miembro de este club",
         )
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.club_member,
+        entity_id=member.id,
+        actor=current_user,
+        club_id=club_id,
+        changed_fields=["club_id", "user_id", "role_in_club"],
+    )
 
     # Recargar con el usuario para que el model_validator pueda aplanar los campos
     await db.refresh(member, attribute_names=["user"])

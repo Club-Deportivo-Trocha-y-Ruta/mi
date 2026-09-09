@@ -22,6 +22,7 @@ from app.schemas.training_session import (
     NarrativeBlock,
     ParentMonthlySummary,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.permissions import parent_athlete_ids
 from app.services.training.metrics import compute_monthly_metrics
 
@@ -192,6 +193,7 @@ async def generate_monthly_report(
     now = datetime.now(timezone.utc)
 
     if existing is not None and force_regenerate:
+        was_approved = existing.status == MonthlyReportStatus.APPROVED
         existing.ai_summary = ai_summary
         existing.metrics_snapshot = metrics_dict
         existing.coach_observations = coach_observations
@@ -202,6 +204,28 @@ async def generate_monthly_report(
             existing.narrative_blocks = new_narrative_blocks
         existing.competition_results = competition_results_json
         await db.flush()
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.monthly_report,
+            entity_id=existing.id,
+            actor=generator_user,
+            club_id=club_id,
+            changed_fields=["status", "year", "month"],
+            diff={"status": (
+                MonthlyReportStatus.APPROVED.value if was_approved else MonthlyReportStatus.DRAFT.value,
+                MonthlyReportStatus.DRAFT.value,
+            )} if was_approved else None,
+        )
+        if was_approved:
+            await record_audit(
+                db,
+                action=AuditAction.unapprove,
+                entity_type=AuditEntityType.monthly_report,
+                entity_id=existing.id,
+                actor=generator_user,
+                club_id=club_id,
+            )
         try:
             await db.commit()
         except Exception:
@@ -224,6 +248,14 @@ async def generate_monthly_report(
     )
     db.add(report)
     await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.monthly_report,
+        entity_id=report.id,
+        actor=generator_user,
+        club_id=club_id,
+    )
     try:
         await db.commit()
     except Exception:
@@ -806,6 +838,8 @@ async def update_report_blocks(
             "Usa force_regenerate=true para regenerarlo."
         )
 
+    previous_status = report.status
+
     # Actualizar final_text por clave
     if blocks:
         current_blocks: dict = dict(report.narrative_blocks or {})
@@ -819,6 +853,42 @@ async def update_report_blocks(
         report.status = new_status
 
     await db.flush()
+
+    changed_fields = ["narrative_blocks"] if blocks else []
+    diff: dict[str, tuple] | None = None
+    if new_status is not None and new_status != previous_status:
+        changed_fields.append("status")
+        diff = {"status": (previous_status.value, new_status.value)}
+    if editor_user is not None:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.monthly_report,
+            entity_id=report.id,
+            actor=editor_user,
+            club_id=club_id,
+            changed_fields=changed_fields,
+            diff=diff,
+        )
+        if new_status == MonthlyReportStatus.APPROVED and previous_status != MonthlyReportStatus.APPROVED:
+            await record_audit(
+                db,
+                action=AuditAction.approve,
+                entity_type=AuditEntityType.monthly_report,
+                entity_id=report.id,
+                actor=editor_user,
+                club_id=club_id,
+            )
+        elif new_status == MonthlyReportStatus.DRAFT and previous_status == MonthlyReportStatus.APPROVED:
+            await record_audit(
+                db,
+                action=AuditAction.unapprove,
+                entity_type=AuditEntityType.monthly_report,
+                entity_id=report.id,
+                actor=editor_user,
+                club_id=club_id,
+            )
+
     try:
         await db.commit()
     except Exception:
@@ -842,6 +912,7 @@ async def regenerate_block(
     month: int,
     block_key: str,
     blocks_use_case: "MonthlyReportBlocksUseCase",
+    editor_user: User | None = None,
 ) -> MonthlyReport:
     """Regenera el ``ai_draft`` de un único bloque con la IA.
 
@@ -919,6 +990,17 @@ async def regenerate_block(
     report.narrative_blocks = current_blocks
 
     await db.flush()
+    if editor_user is not None:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.monthly_report,
+            entity_id=report.id,
+            actor=editor_user,
+            club_id=club_id,
+            changed_fields=["narrative_blocks"],
+            meta={"period": f"{year}-{month:02d}"},
+        )
     try:
         await db.commit()
     except Exception:

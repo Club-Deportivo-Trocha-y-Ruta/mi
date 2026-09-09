@@ -32,6 +32,7 @@ from app.models.athlete import Athlete, FamilyRelationship, ParentAthlete, Sex
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 from app.services.ai.providers.fake import FakeLLMProvider
 from app.services.ai.prompts.registry import PromptRegistry
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 _TABLES = (
     "users",
@@ -42,6 +43,7 @@ _TABLES = (
     "newsletter_delivery_events",
     "parent_athlete",
     "parental_consents",
+    *AUDIT_TABLES,
 )
 
 _SNAPSHOT = {

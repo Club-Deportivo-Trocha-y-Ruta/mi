@@ -44,6 +44,7 @@ from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 _TABLES = [
     "users",
@@ -56,6 +57,7 @@ _TABLES = [
     "race_categories",
     "race_competitors",
     "race_results",
+    *AUDIT_TABLES,
 ]
 
 _SERIES_URL = "/api/race-analysis/race-series/"

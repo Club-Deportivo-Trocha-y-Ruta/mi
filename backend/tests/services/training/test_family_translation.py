@@ -58,6 +58,7 @@ from tests.fixtures.race_history_fixtures import (
     create_race_series,
     create_user,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +274,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_events",
             "athlete_ai_insights",
             "athlete_monthly_newsletters",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

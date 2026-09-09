@@ -80,6 +80,8 @@ from app.services.race.season_panorama import fetch_season_panorama
 from app.services.race.run_staleness import mark_run_stale
 from app.services.privacy import athlete_has_ai_processing_consent
 from app.models.club import ClubMember
+from app.services.audit import AuditAction, AuditEntityType, record_audit
+from app.services.request_context import current_request_id, system_context
 from pydantic import BaseModel as _BaseModel
 
 logger = logging.getLogger(__name__)
@@ -151,7 +153,7 @@ async def _load_run(db: AsyncSession, external_run_id: str) -> Optional[dict[str
             """
             SELECT id, external_run_id, status, started_at, finished_at,
                    input_json, final_output_json, error_message,
-                   requested_by_user_id, explain_mode
+                   requested_by_user_id, explain_mode, athlete_id
             FROM agent_runs
             WHERE external_run_id = :rid
             LIMIT 1
@@ -193,7 +195,20 @@ async def _load_run(db: AsyncSession, external_run_id: str) -> Optional[dict[str
         "error_message": _g("error_message", 7),
         "requested_by_user_id": _g("requested_by_user_id", 8),
         "explain_mode": _g("explain_mode", 9),
+        "athlete_id": _g("athlete_id", 10),
     }
+
+
+async def _resolve_athlete_club(db: AsyncSession, athlete_id: Optional[int]) -> Optional[int]:
+    """``club_id`` del atleta (escalera §1.6 paso 2 de audit-recording.md).
+
+    ``agent_runs`` no tiene columna ``club_id`` propia — se resuelve siempre
+    vía el club del atleta que el run analiza.
+    """
+    if athlete_id is None:
+        return None
+    result = await db.execute(select(Athlete.club_id).where(Athlete.id == athlete_id))
+    return result.scalar_one_or_none()
 
 
 async def _load_events_since(
@@ -446,6 +461,8 @@ async def _finalize_run(
     external_run_id: str,
     exc: Optional[BaseException],
     result_state: Optional[dict[str, Any]],
+    *,
+    origin_request_id: Optional[str] = None,
 ) -> None:
     """Cierre atómico de un run: drena eventos + actualiza estado terminal.
 
@@ -536,6 +553,26 @@ async def _finalize_run(
         new_status,
         error_message=err,
         final_output=final_payload,
+    )
+
+    # Cierre del run (§3.3, §4.9): actor_kind=system, sin request HTTP en
+    # scope (esta sesión se abre después de que la respuesta ya volvió al
+    # cliente) — el request_id viaja explícito, capturado en el closure de
+    # quien lanzó/reanudó el run.
+    ctx = system_context(job="agent_run_complete", request_id=origin_request_id)
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.agent_run,
+        entity_id=run_db_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=await _resolve_athlete_club(db, run.get("athlete_id")),
+        athlete_id=run.get("athlete_id"),
+        changed_fields=["status"],
+        diff={"status": (str(run["status"]), new_status)},
+        meta={"job": "agent_run_complete"},
+        request_id=ctx.request_id,
     )
 
 
@@ -659,6 +696,21 @@ async def start_run(
             detail=f"No se pudo crear el run: {type(exc).__name__}",
         )
 
+    # Fila de auditoría del lanzamiento (§4.9 audit-recording.md): un run
+    # NUEVO es siempre ``create``, sea cual sea el punto de entrada (club,
+    # atleta o resumen de temporada, o el re-lanzamiento vía /re-execute).
+    _new_run_row = await _load_run(db, run_id)
+    if _new_run_row is not None:
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.agent_run,
+            entity_id=int(_new_run_row["id"]),
+            actor=current_user,
+            club_id=await _resolve_athlete_club(db, body.athlete_id),
+            athlete_id=body.athlete_id,
+        )
+
     # Calcular edad del atleta para inyectarla en el state del grafo.
     # Si el atleta no existe (body.athlete_id inválido), continuamos sin edad
     # y el nodo analyst_agent emitirá un warning explícito.
@@ -726,6 +778,11 @@ async def start_run(
     if body.athlete_id is not None and _athlete is not None:
         initial_state["maturation_status"] = maturation_status
 
+    # Capturado ANTES de spawnear el background task: la sesión de
+    # ``_on_complete`` corre fuera del scope HTTP (§3.3), así que el
+    # request_id del lanzamiento viaja explícito por closure.
+    _launch_request_id = current_request_id()
+
     async def _on_complete(
         rid: str,
         exc: Optional[BaseException],
@@ -735,7 +792,9 @@ async def start_run(
 
         async with AsyncSessionLocal() as session:
             try:
-                await _finalize_run(session, rid, exc, result_state)
+                await _finalize_run(
+                    session, rid, exc, result_state, origin_request_id=_launch_request_id
+                )
                 await session.commit()
             except Exception:  # noqa: BLE001
                 logger.exception("_on_complete: finalize_run falló para %s", rid)
@@ -950,6 +1009,37 @@ async def submit_hitl_decision(
     except Exception:  # noqa: BLE001
         logger.exception("submit_hitl_decision: insert evento hitl_response falló")
 
+    # FR-028: quién resolvió el gate queda en ``agent_runs`` (no solo en el
+    # payload del evento) y en la fila de auditoría — accept/edit=approve,
+    # reject=unapprove (audit-recording.md §4.9; los tres verbos NO son
+    # intercambiables, ver la nota de esa sección).
+    decided_at = _utc_now()
+    await db.execute(
+        text(
+            "UPDATE agent_runs SET decided_by_user_id = :uid, decided_at = :dat "
+            "WHERE id = :rid"
+        ),
+        {"uid": current_user.id, "dat": decided_at, "rid": int(run["id"])},
+    )
+    _hitl_is_reject = body.decision == HITLDecision.REJECT
+    _hitl_audit_meta: dict[str, Any] = {
+        "step_id": step_id,
+        "previous_status": db_status,
+    }
+    if not _hitl_is_reject:
+        _hitl_audit_meta["has_edits"] = bool(body.edits)
+    await record_audit(
+        db,
+        action=AuditAction.unapprove if _hitl_is_reject else AuditAction.approve,
+        entity_type=AuditEntityType.agent_run,
+        entity_id=int(run["id"]),
+        actor=current_user,
+        club_id=await _resolve_athlete_club(db, run.get("athlete_id")),
+        athlete_id=run.get("athlete_id"),
+        changed_fields=["decided_by_user_id", "decided_at"],
+        meta=_hitl_audit_meta,
+    )
+
     # Reanudar grafo en background.
     #
     # Fix BUG-002: la reanudación tras HITL ejecuta nodos post-gate
@@ -967,6 +1057,10 @@ async def submit_hitl_decision(
     # del finalize (que por sí solo lo marcaría ``completed``).
     is_reject = body.decision == HITLDecision.REJECT
 
+    # Capturado ANTES de spawnear el background task — ver la misma nota en
+    # ``start_run``.
+    _resume_request_id = current_request_id()
+
     async def _on_complete(
         rid: str,
         exc: Optional[BaseException],
@@ -976,7 +1070,9 @@ async def submit_hitl_decision(
 
         async with AsyncSessionLocal() as session:
             try:
-                await _finalize_run(session, rid, exc, result_state)
+                await _finalize_run(
+                    session, rid, exc, result_state, origin_request_id=_resume_request_id
+                )
                 # Tras reject, el grafo igual completa los nodos post-HITL
                 # (persist con archived_at, etc.). El status correcto es
                 # ``rejected`` — _finalize_run lo dejaría como ``completed``.
@@ -1621,6 +1717,17 @@ async def invalidate_run(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run no encontrado")
     _ensure_run_owner(run, current_user)
     await mark_run_stale(db, int(run["id"]))
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.agent_run,
+        entity_id=int(run["id"]),
+        actor=current_user,
+        club_id=await _resolve_athlete_club(db, run.get("athlete_id")),
+        athlete_id=run.get("athlete_id"),
+        changed_fields=["stale_since"],
+        meta={"stale": True},
+    )
     return RunInvalidateResponse(run_id=run_id, stale=True)
 
 
@@ -1706,6 +1813,16 @@ async def cancel_run(
         "cancelled",
         error_message="Análisis descartado por el coach.",
     )
+    await record_audit(
+        db,
+        action=AuditAction.cancel,
+        entity_type=AuditEntityType.agent_run,
+        entity_id=int(run["id"]),
+        actor=current_user,
+        club_id=await _resolve_athlete_club(db, run.get("athlete_id")),
+        athlete_id=run.get("athlete_id"),
+        meta={"previous_status": db_status},
+    )
     logger.info("cancel_run: run %s descartado (estado previo %s)", run_id, db_status)
 
     return RunCancelResponse(run_id=run_id, state=RunState.CANCELLED)
@@ -1777,7 +1894,23 @@ async def re_execute_run(
 
     # Delegar al launcher canónico (valida AI_ENABLED, budget, backpressure).
     # El run viejo conserva su marca stale; el nuevo run lo supersede.
-    return await start_run(body=body, db=db, current_user=current_user)
+    # ``start_run`` ya deja su propia fila ``create`` para el run nuevo; esta
+    # fila adicional ``execute`` es la que documenta la relación de
+    # supersesión (§4.9: los tres verbos no son intercambiables).
+    response = await start_run(body=body, db=db, current_user=current_user)
+    _new_run = await _load_run(db, response.run_id)
+    if _new_run is not None:
+        await record_audit(
+            db,
+            action=AuditAction.execute,
+            entity_type=AuditEntityType.agent_run,
+            entity_id=int(_new_run["id"]),
+            actor=current_user,
+            club_id=await _resolve_athlete_club(db, athlete_id),
+            athlete_id=athlete_id,
+            meta={"supersedes_run_id": int(run["id"])},
+        )
+    return response
 
 
 # ---------------------------------------------------------------------------

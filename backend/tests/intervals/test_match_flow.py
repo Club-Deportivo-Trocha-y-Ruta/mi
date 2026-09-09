@@ -112,6 +112,7 @@ from app.routers import activities
 from app.routers import intervals as intervals_router
 from app.services.intervals import match_runner
 from app.services.strava.client import StravaAPIError, StravaClient
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
@@ -132,6 +133,7 @@ _TABLES = (
     "interval_structure_blocks",
     "strava_activity_laps",
     "interval_match_results",
+    *AUDIT_TABLES,
 )
 
 

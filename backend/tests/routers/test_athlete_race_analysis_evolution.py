@@ -56,6 +56,7 @@ from tests.fixtures.race_history_fixtures import (
     create_user,
     link_user_to_club,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +99,7 @@ _TABLES = (
     "race_results",
     "athlete_ai_insights",
     "anthropometric_records",
+    *AUDIT_TABLES,
 )
 
 

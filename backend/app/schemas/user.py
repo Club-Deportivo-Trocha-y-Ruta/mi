@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator
 
 from app.models.user import UserRole
+from app.services.audit import AccountStateReasonCode
 
 
 class UserCreate(BaseModel):
@@ -27,6 +28,12 @@ class UserUpdate(BaseModel):
     last_name: str | None = None
     phone: str | None = None
     is_active: bool | None = None
+    # Motivo de la desactivación/reactivación (feature 041, T021 mínimo viable
+    # para que record_audit pueda exigirlo en `deactivate`, por
+    # contracts/audit-recording.md §4.2). Nunca se persiste en `users` — solo
+    # viaja a `audit_log.reason_code`. La validación fina por grupo y el
+    # copy 422 completo quedan a cargo de T046 (contracts/staff-admin.md §4).
+    reason_code: AccountStateReasonCode | None = None
 
 
 class UserOut(BaseModel):

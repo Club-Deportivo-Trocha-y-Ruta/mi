@@ -45,6 +45,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.dependencies import get_current_user, get_db, get_task_dispatcher, verify_athlete_access
 from app.models.athlete import Athlete
+from app.models.strava_activity import StravaActivity
 from app.models.strava_connection import StravaConnection, StravaConnectionStatus
 from app.models.user import User
 from app.schemas.strava import (
@@ -53,7 +54,14 @@ from app.schemas.strava import (
     ReconcileResultOut,
     StravaWebhookEvent,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.notification.task_dispatcher import TaskDispatcher
+from app.services.request_context import (
+    cron_context,
+    current_request_id,
+    new_request_id,
+    webhook_context,
+)
 from app.services.strava import oauth
 from app.services.strava.client import StravaClient
 from app.services.strava.ingest import process_webhook_event
@@ -159,6 +167,7 @@ async def start_strava_connect(
 )
 async def disconnect_strava(
     athlete: Athlete = Depends(verify_athlete_access),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Desconexión iniciada por la familia/coach/admin (FR-014).
@@ -186,6 +195,17 @@ async def disconnect_strava(
     connection.status = StravaConnectionStatus.disconnected
     connection.disconnected_at = datetime.now(timezone.utc)
     await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.unlink,
+        entity_type=AuditEntityType.strava_connection,
+        entity_id=connection.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        request_id=current_request_id() or new_request_id(),
+    )
 
     logger.info(
         "strava_connection_disconnected",
@@ -305,6 +325,21 @@ async def strava_oauth_callback(
     connection.last_error = None
 
     await db.flush()
+
+    acting_user = await db.get(User, user_id)
+    athlete_row = await db.get(Athlete, athlete_id)
+    if acting_user is not None and athlete_row is not None:
+        await record_audit(
+            db,
+            action=AuditAction.link,
+            entity_type=AuditEntityType.strava_connection,
+            entity_id=connection.id,
+            actor=acting_user,
+            club_id=athlete_row.club_id,
+            athlete_id=athlete_id,
+            request_id=current_request_id() or new_request_id(),
+        )
+
     logger.info(
         "strava_connection_established",
         extra={"athlete_id": athlete_id},
@@ -344,6 +379,65 @@ async def validate_strava_webhook(
     return {"hub.challenge": hub_challenge}
 
 
+async def _record_webhook_audit(session: AsyncSession, event: StravaWebhookEvent) -> None:
+    """Registra la fila de auditoría del evento de webhook ya procesado
+    (§3.3: la tupla se registra aquí porque el POST del webhook solo hace
+    ACK y está exento — el worker diferido es el único sitio con datos
+    suficientes para resolver ``athlete_id``/``club_id``).
+    """
+    ctx = webhook_context(job="strava_webhook")
+
+    connection = await session.scalar(
+        select(StravaConnection).where(
+            StravaConnection.strava_athlete_id == event.owner_id
+        )
+    )
+    if connection is None:
+        return
+
+    athlete_row = await session.get(Athlete, connection.athlete_id)
+    club_id = athlete_row.club_id if athlete_row is not None else None
+
+    if event.object_type == "athlete":
+        await record_audit(
+            session,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.strava_connection,
+            entity_id=connection.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=club_id,
+            athlete_id=connection.athlete_id,
+            changed_fields=["status"],
+            meta={"job": "strava_webhook"},
+            request_id=ctx.request_id,
+        )
+        return
+
+    activity = await session.scalar(
+        select(StravaActivity).where(
+            StravaActivity.strava_activity_id == event.object_id
+        )
+    )
+    if activity is None:
+        return
+
+    action = AuditAction.create if event.aspect_type == "create" else AuditAction.update
+    await record_audit(
+        session,
+        action=action,
+        entity_type=AuditEntityType.strava_activity,
+        entity_id=activity.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=club_id,
+        athlete_id=connection.athlete_id,
+        changed_fields=None if action == AuditAction.create else ["upstream_state"],
+        meta={"job": "strava_webhook"},
+        request_id=ctx.request_id,
+    )
+
+
 async def _process_webhook_event_deferred(event: StravaWebhookEvent) -> None:
     """Procesamiento diferido de un evento de webhook (ejecuta DESPUÉS del
     ACK ``200 {}``).
@@ -359,6 +453,7 @@ async def _process_webhook_event_deferred(event: StravaWebhookEvent) -> None:
     async with AsyncSessionLocal() as session:
         try:
             await process_webhook_event(event, session)
+            await _record_webhook_audit(session, event)
             await session.commit()
         except Exception:  # noqa: BLE001
             await session.rollback()
@@ -429,5 +524,36 @@ async def run_strava_reconcile(
             detail="Token de reconciliación inválido.",
         )
 
+    connections_result = await db.execute(
+        select(StravaConnection).where(
+            StravaConnection.status == StravaConnectionStatus.active
+        )
+    )
+    connections_before = {c.id: c for c in connections_result.scalars().all()}
+
     result = await reconcile_all(db)
+
+    # services/strava/reconcile.py (fuera del alcance de esta tarea) solo
+    # retorna contadores agregados, sin ids de actividad — así que la
+    # granularidad auditable disponible aquí es por conexión procesada, no
+    # por strava_activity individual (contracts/audit-recording.md §4.12
+    # pide lo segundo; ver nota de la tarea T029).
+    ctx = cron_context(job="strava_reconcile")
+    for connection_id, connection in connections_before.items():
+        await db.refresh(connection)
+        athlete_row = await db.get(Athlete, connection.athlete_id)
+        club_id = athlete_row.club_id if athlete_row is not None else None
+        await record_audit(
+            db,
+            action=AuditAction.execute,
+            entity_type=AuditEntityType.strava_connection,
+            entity_id=connection_id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=club_id,
+            athlete_id=connection.athlete_id,
+            meta={"job": "strava_reconcile"},
+            request_id=ctx.request_id,
+        )
+
     return ReconcileResultOut(**result)

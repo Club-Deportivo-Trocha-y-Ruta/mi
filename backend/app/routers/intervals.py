@@ -73,7 +73,9 @@ from app.schemas.intervals import (
     TemplateOut,
     TemplateUpdate,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.intervals import match_runner
+from app.services.request_context import current_request_id, new_request_id
 from app.services.intervals import structures as structures_svc
 from app.services.intervals import templates as templates_svc
 from app.services.notification.document_generator import DocumentGenerator
@@ -812,6 +814,17 @@ async def recalculate_match(
         structure_id=structure.id,
         strava_activity_id=activity.id,
         triggered_by=MatchTrigger.manual,
+    )
+    await record_audit(
+        db,
+        action=AuditAction.execute,
+        entity_type=AuditEntityType.interval_structure,
+        entity_id=structure.id,
+        actor=current_user,
+        club_id=club_id,
+        athlete_id=activity.athlete_id,
+        meta={"related_entity_id": activity.id},
+        request_id=current_request_id() or new_request_id(),
     )
     return RecalculateOut(status="computing")
 

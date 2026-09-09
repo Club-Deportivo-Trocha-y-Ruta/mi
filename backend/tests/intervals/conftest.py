@@ -77,6 +77,7 @@ from app.models import Base
 from app.models.club import Club, ClubMember, ClubRole
 from app.models.training_session import SessionKind, SessionStatus, TrainingSession
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # ---------------------------------------------------------------------------
 # Tables included in the aiosqlite create_all subset
@@ -104,6 +105,7 @@ _TABLES = (
     "interval_structure_blocks",
     "interval_templates",
     "interval_template_blocks",
+    *AUDIT_TABLES,
 )
 
 

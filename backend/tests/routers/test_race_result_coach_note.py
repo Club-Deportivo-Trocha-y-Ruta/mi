@@ -52,6 +52,7 @@ from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # Endpoint prefixes
 _BASE_EVENTS = "/api/race-analysis/race-events"
@@ -117,6 +118,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_categories",
             "race_competitors",
             "race_results",
+            *AUDIT_TABLES,
         )
     ]
     async with engine.begin() as conn:

@@ -47,6 +47,7 @@ from app.models.club import Club, ClubMember, ClubRole
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +84,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_events",
             "calendar_events",
             "event_audiences",
+            *AUDIT_TABLES,
         )
     ]
     async with engine.begin() as conn:

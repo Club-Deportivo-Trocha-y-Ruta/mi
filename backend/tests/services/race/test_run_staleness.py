@@ -41,6 +41,7 @@ from tests.fixtures.race_history_fixtures import (
     create_race_series,
     create_user,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 _TABLES = [
     "users",
@@ -56,6 +57,7 @@ _TABLES = [
     "athlete_ai_insights",
     "agent_runs",
     "athlete_monthly_newsletters",
+    *AUDIT_TABLES,
 ]
 
 

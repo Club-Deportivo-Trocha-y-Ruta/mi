@@ -27,6 +27,8 @@ from app.schemas.session_media import (
     SessionMediaReadParent,
     SessionMediaUpdate,
 )
+from app.services.audit import AuditAction, AuditEntityType, CancelReasonCode, record_audit
+from app.services.request_context import AuditContext, get_request_context
 from app.schemas.training_session import (
     AttendanceBulkSet,
     AttendanceRead,
@@ -270,6 +272,7 @@ async def create_training_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     notification_service=Depends(get_notification_service),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> TrainingSessionRead:
     # El club_id se infiere del primer club del coach; si es admin puede especificar.
     # Tomamos el club del coach según sus membresías.
@@ -304,6 +307,7 @@ async def create_training_session(
             club_id=club_id,
             notification_service=notification_service,
             dispatcher=dispatcher,
+            ctx=ctx,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -391,6 +395,7 @@ async def update_training_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     notification_service=Depends(get_notification_service),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> TrainingSessionRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -411,6 +416,7 @@ async def update_training_session(
             body,
             notification_service=notification_service,
             dispatcher=dispatcher,
+            ctx=ctx,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -431,6 +437,7 @@ async def execute_training_session(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> TrainingSessionRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -443,7 +450,7 @@ async def execute_training_session(
             )
 
     try:
-        executed = await training_svc.sessions.execute_session(db, session_id)
+        executed = await training_svc.sessions.execute_session(db, session_id, ctx=ctx)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -464,9 +471,11 @@ async def cancel_training_session(
     background_tasks: BackgroundTasks,
     notify: bool = Query(default=False, description="Si True, envía email de cancelación a padres."),
     reason: str | None = Query(default=None, max_length=300, description="Motivo opcional para el email."),
+    reason_code: CancelReasonCode = Query(description="Motivo de cancelación del catálogo cerrado (auditoría)."),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     notification_service=Depends(get_notification_service),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> None:
     session = await _get_session_or_404(db, session_id)
 
@@ -494,8 +503,10 @@ async def cancel_training_session(
             session_id,
             send_notification=notify,
             reason=reason,
+            reason_code=reason_code,
             notification_service=notification_service,
             dispatcher=dispatcher,
+            ctx=ctx,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -577,6 +588,7 @@ async def bulk_set_convocatoria(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     notification_service=Depends(get_notification_service),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> list[AttendanceRead]:
     # Acepta tanto el formato nuevo (AttendanceBulkSet) como la lista plana
     # legacy `[1, 2, 3]` para no romper consumidores existentes.
@@ -624,6 +636,7 @@ async def bulk_set_convocatoria(
         send_notification=send_notification,
         notification_service=notification_service,
         dispatcher=dispatcher,
+        ctx=ctx,
     )
     return [_attendance_to_read(a) for a in attendances]
 
@@ -643,6 +656,7 @@ async def update_attendance(
     body: AttendanceUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> AttendanceRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -660,6 +674,8 @@ async def update_attendance(
             session_id=session_id,
             athlete_id=athlete_id,
             payload=body,
+            club_id=session.club_id,
+            ctx=ctx,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -693,6 +709,7 @@ async def upload_route_file(
     file: Annotated[UploadFile, File(description="Archivo .gpx o .fit del recorrido (GPX máx 5 MB, FIT máx 1 MB)")],
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> TrainingSessionRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -777,6 +794,19 @@ async def upload_route_file(
 
     # Actualizar route_file_path en la sesión
     session.route_file_path = relative_path
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.training_session,
+        entity_id=session.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=session.club_id,
+        changed_fields=["route_file_path"],
+        request_id=ctx.request_id,
+    )
+
     await db.commit()
     await db.refresh(session)
 
@@ -842,6 +872,7 @@ async def upload_session_media(
     caption: Annotated[str | None, Form(max_length=280)] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> SessionMediaRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -914,6 +945,19 @@ async def upload_session_media(
     )
     media.athletes = athletes
     db.add(media)
+    await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.session_media,
+        entity_id=media.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=session.club_id,
+        request_id=ctx.request_id,
+    )
+
     await db.commit()
     await db.refresh(media)
     # Recargar la relación athletes
@@ -956,6 +1000,7 @@ async def delete_session_media(
     media_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> None:
     session = await _get_session_or_404(db, session_id)
     if current_user.role == UserRole.coach:
@@ -983,6 +1028,18 @@ async def delete_session_media(
 
     media.deleted_at = datetime.now(timezone.utc)
     storage_path = media.storage_path
+
+    await record_audit(
+        db,
+        action=AuditAction.archive,
+        entity_type=AuditEntityType.session_media,
+        entity_id=media.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=session.club_id,
+        request_id=ctx.request_id,
+    )
+
     await db.commit()
 
     try:
@@ -1000,6 +1057,7 @@ async def update_session_media(
     payload: SessionMediaUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> SessionMediaRead:
     session = await _get_session_or_404(db, session_id)
     if current_user.role == UserRole.coach:
@@ -1025,14 +1083,31 @@ async def update_session_media(
             detail="Media no encontrada.",
         )
 
+    changed_fields: list[str] = []
+
     if payload.caption is not None:
         media.caption = payload.caption
+        changed_fields.append("caption")
 
     if payload.athlete_ids is not None:
         athletes = await _validate_athlete_ids_for_session(
             db, session_id, payload.athlete_ids
         )
         media.athletes = athletes
+        changed_fields.append("athlete_ids")
+
+    if changed_fields:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.session_media,
+            entity_id=media.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=session.club_id,
+            changed_fields=changed_fields,
+            request_id=ctx.request_id,
+        )
 
     await db.commit()
     await db.refresh(media)

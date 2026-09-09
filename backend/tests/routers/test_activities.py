@@ -67,6 +67,7 @@ from app.models.training_session import (
 )
 from app.models.user import User, UserRole
 from app.routers import activities
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
@@ -90,6 +91,7 @@ _TABLES = (
     # any match result for the pair.
     "interval_structures",
     "interval_match_results",
+    *AUDIT_TABLES,
 )
 
 

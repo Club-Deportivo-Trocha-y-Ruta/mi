@@ -47,6 +47,7 @@ from tests.fixtures.race_history_fixtures import (
     link_parent_to_athlete,
     link_user_to_club,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +66,7 @@ _TABLES_NEEDED = [
     "race_competitors",
     "race_results",
     "athlete_ai_insights",
+    *AUDIT_TABLES,
 ]
 
 

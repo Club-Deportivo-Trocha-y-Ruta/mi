@@ -8,9 +8,12 @@ Endpoints:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db, require_role
+from app.models.athlete import Athlete
+from app.models.audit_log import AuditAction
 from app.models.user import User, UserRole
 from app.schemas.privacy_policy import (
     ConsentEventOut,
@@ -19,9 +22,11 @@ from app.schemas.privacy_policy import (
     ConsentWithdrawIn,
     PrivacyPolicyOut,
 )
+from app.services.audit import AuditEntityType, record_audit
 from app.services.privacy import (
     get_active_policy,
     get_consent_status,
+    get_current_consent_for_athlete,
     renew_consent,
     withdraw_consent,
 )
@@ -104,6 +109,12 @@ async def renew_my_consent(
     ip_address: str | None = request.client.host if request.client else None
     user_agent: str | None = request.headers.get("user-agent")
 
+    athlete_result = await db.execute(select(Athlete).where(Athlete.id == body.athlete_id))
+    athlete = athlete_result.scalar_one_or_none()
+    club_id = athlete.club_id if athlete is not None else None
+
+    previous = await get_current_consent_for_athlete(current_user.id, body.athlete_id, db)
+
     new_consent = await renew_consent(
         parent_user_id=current_user.id,
         athlete_id=body.athlete_id,
@@ -115,6 +126,29 @@ async def renew_my_consent(
         db=db,
         accept_third_party_sharing=body.accept_third_party_sharing,
     )
+
+    if previous is not None:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.parental_consent,
+            entity_id=previous.id,
+            actor=current_user,
+            club_id=club_id,
+            athlete_id=body.athlete_id,
+            changed_fields=["withdrawn_at", "withdrawal_reason"],
+        )
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.parental_consent,
+        entity_id=new_consent.id,
+        actor=current_user,
+        club_id=club_id,
+        athlete_id=body.athlete_id,
+    )
+
     return _to_consent_event_out(new_consent)
 
 
@@ -143,6 +177,22 @@ async def withdraw_my_consent(
         reason=body.reason,
         db=db,
     )
+
+    athlete_result = await db.execute(select(Athlete).where(Athlete.id == body.athlete_id))
+    athlete = athlete_result.scalar_one_or_none()
+    club_id = athlete.club_id if athlete is not None else None
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.parental_consent,
+        entity_id=consent.id,
+        actor=current_user,
+        club_id=club_id,
+        athlete_id=body.athlete_id,
+        changed_fields=["withdrawn_at", "withdrawal_reason"],
+    )
+
     return _to_consent_event_out(consent)
 
 

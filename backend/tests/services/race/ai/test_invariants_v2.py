@@ -79,6 +79,7 @@ from tests.services.race.ai.conftest import (
     make_analysis_output,
     make_zero_metrics,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +427,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_competitors",
             "race_results",
             "athlete_ai_insights",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

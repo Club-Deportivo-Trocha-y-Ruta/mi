@@ -42,8 +42,10 @@ from app.config import settings
 from app.models.anthropometry import AnthropometricRecord
 from app.models.athlete import Athlete
 from app.models.growth import GrowthSource
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.category import compute_age_decimal
 from app.services.growth import calculate_growth_percentiles, classify_nutritional_status_height
+from app.services.request_context import system_context
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +98,7 @@ async def backfill_anthropometry(session: AsyncSession) -> BackfillSummary:
 
     # Cache de (birth_date, sex) por atleta para evitar N consultas repetidas
     athlete_cache: dict[int, Athlete] = {}
+    ctx = system_context(job="anthropometry_backfill")
 
     for record in records:
         summary.scanned += 1
@@ -133,11 +136,11 @@ async def backfill_anthropometry(session: AsyncSession) -> BackfillSummary:
         except Exception:
             growth = None
 
-        changed = False
+        changed_fields: list[str] = []
 
         if record.bmi != new_bmi:
             record.bmi = new_bmi
-            changed = True
+            changed_fields.append("bmi")
 
         if growth is not None:
             for attr, value in (
@@ -150,16 +153,29 @@ async def backfill_anthropometry(session: AsyncSession) -> BackfillSummary:
             ):
                 if value is not None and getattr(record, attr) != value:
                     setattr(record, attr, value)
-                    changed = True
+                    changed_fields.append(attr)
             if (
                 growth.nutritional_status_bmi is not None
                 and record.nutritional_status != growth.nutritional_status_bmi
             ):
                 record.nutritional_status = growth.nutritional_status_bmi
-                changed = True
+                changed_fields.append("nutritional_status")
 
-        if changed:
+        if changed_fields:
             summary.updated += 1
+            await record_audit(
+                session,
+                action=AuditAction.update,
+                entity_type=AuditEntityType.anthropometric_record,
+                entity_id=record.id,
+                actor=ctx.actor,
+                actor_kind=ctx.actor_kind,
+                club_id=athlete.club_id,
+                athlete_id=record.athlete_id,
+                changed_fields=changed_fields,
+                meta={"job": "anthropometry_backfill"},
+                request_id=ctx.request_id,
+            )
         else:
             summary.skipped += 1
 
@@ -230,6 +246,7 @@ async def recompute_to_source(
     records = result.scalars().all()
 
     athlete_cache: dict[int, Athlete] = {}
+    ctx = system_context(job="anthropometry_backfill")
 
     for record in records:
         if not _needs_recompute(record, target):
@@ -294,6 +311,30 @@ async def recompute_to_source(
         record.growth_source = target
 
         summary.recomputed += 1
+
+        await record_audit(
+            session,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.anthropometric_record,
+            entity_id=record.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=athlete.club_id,
+            athlete_id=record.athlete_id,
+            changed_fields=[
+                "bmi",
+                "height_z_score",
+                "height_percentile",
+                "bmi_z_score",
+                "bmi_percentile",
+                "weight_z_score",
+                "weight_percentile",
+                "nutritional_status",
+                "growth_source",
+            ],
+            meta={"job": "anthropometry_backfill"},
+            request_id=ctx.request_id,
+        )
 
         band_changed = False
         if (

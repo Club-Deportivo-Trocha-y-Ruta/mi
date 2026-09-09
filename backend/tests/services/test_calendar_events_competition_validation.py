@@ -34,6 +34,7 @@ from app.models.calendar_event import EventStatus, EventType
 from app.models.user import UserRole
 from app.schemas.calendar import EventCreate, EventUpdate
 from app.services.calendar import events as events_svc
+from app.services.request_context import request_id_scope
 
 from tests.fixtures.race_history_fixtures import (
     create_calendar_event,
@@ -42,6 +43,7 @@ from tests.fixtures.race_history_fixtures import (
     create_race_series,
     create_user,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -68,12 +70,23 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "calendar_events",
             "event_audiences",
             "event_attendances",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
     yield eng
     await eng.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _bind_request_id():
+    """Estos tests llaman a la capa de servicio directamente, fuera de una
+    petición HTTP, así que no hay `RequestIdMiddleware` que ligue un
+    `request_id` al ContextVar. `record_audit` (feature 041,
+    `contracts/audit-recording.md` §1.2 paso 3) lo exige siempre."""
+    with request_id_scope():
+        yield
 
 
 @pytest_asyncio.fixture

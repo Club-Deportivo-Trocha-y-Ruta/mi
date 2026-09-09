@@ -50,7 +50,9 @@ from app.schemas.strava import (
     SessionSuggestionListOut,
     SessionSuggestionOut,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.intervals.match_runner import run_match_deferred
+from app.services.request_context import current_request_id, new_request_id
 from app.services.notification.task_dispatcher import TaskDispatcher
 from app.services.permissions import (
     can_link_activity,
@@ -465,6 +467,22 @@ async def link_activity(
             )
 
     await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.unlink if body.training_session_id is None else AuditAction.link,
+        entity_type=AuditEntityType.strava_activity,
+        entity_id=activity.id,
+        actor=current_user,
+        club_id=activity.athlete.club_id,
+        athlete_id=activity.athlete_id,
+        meta=(
+            {"related_entity_id": body.training_session_id}
+            if body.training_session_id is not None
+            else None
+        ),
+        request_id=current_request_id() or new_request_id(),
+    )
 
     return _serialize_activity_out(activity)
 

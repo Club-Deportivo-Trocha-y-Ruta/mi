@@ -28,6 +28,7 @@ from app.models.athlete import Athlete, ParentAthlete
 from app.models.club import Club
 from app.models.user import User, UserRole
 from app.services.permissions import allowed_athlete_ids_for
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # ---------------------------------------------------------------------------
 # SQLite in-memory engine (reuses the standard pattern)
@@ -50,7 +51,7 @@ async def sqlite_engine() -> AsyncEngine:
 
     tables = [
         Base.metadata.tables[t]
-        for t in ("users", "clubs", "club_members", "athletes", "parent_athlete")
+        for t in ("users", "clubs", "club_members", "athletes", "parent_athlete", *AUDIT_TABLES)
     ]
     async with engine.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))

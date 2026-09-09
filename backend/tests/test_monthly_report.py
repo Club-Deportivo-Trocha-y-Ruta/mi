@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.schemas.training_session import MonthlyMetrics, ParentMonthlySummary
+from app.services.request_context import request_id_scope
 from app.services.training.reports import (
     _validate_period,
     generate_monthly_report,
@@ -139,7 +140,12 @@ class TestGenerateMonthlyReport:
             return result
 
         db.execute = mock_execute
-        db.add = MagicMock()
+
+        def _fake_add(obj):
+            if getattr(obj, "id", None) is None:
+                obj.id = 1
+
+        db.add = MagicMock(side_effect=_fake_add)
         db.flush = AsyncMock()
 
         metrics = _make_empty_metrics()
@@ -178,17 +184,19 @@ class TestGenerateMonthlyReport:
 
                 db.execute = mock_execute2
 
-                report = await generate_monthly_report(
-                    db=db,
-                    club_id=1,
-                    year=2026,
-                    month=3,
-                    generator_user=coach,
-                    ai_use_case=ai_use_case,
-                )
+                with request_id_scope():
+                    report = await generate_monthly_report(
+                        db=db,
+                        club_id=1,
+                        year=2026,
+                        month=3,
+                        generator_user=coach,
+                        ai_use_case=ai_use_case,
+                    )
 
         assert report is not None
-        db.add.assert_called_once()
+        # db.add se llama para el reporte y para la fila de auditoría (T025).
+        db.add.assert_called()
         db.flush.assert_called()
 
     @pytest.mark.asyncio
@@ -250,15 +258,16 @@ class TestGenerateMonthlyReport:
             "app.services.training.reports.compute_monthly_metrics",
             AsyncMock(return_value=metrics),
         ), patch("app.services.training.reports._validate_period"):
-            report = await generate_monthly_report(
-                db=db,
-                club_id=1,
-                year=2026,
-                month=3,
-                generator_user=coach,
-                force_regenerate=True,
-                ai_use_case=ai_use_case,
-            )
+            with request_id_scope():
+                report = await generate_monthly_report(
+                    db=db,
+                    club_id=1,
+                    year=2026,
+                    month=3,
+                    generator_user=coach,
+                    force_regenerate=True,
+                    ai_use_case=ai_use_case,
+                )
 
         # Debe retornar el existente modificado (no un objeto nuevo)
         assert report is existing
@@ -294,7 +303,12 @@ class TestGenerateMonthlyReport:
             return result
 
         db.execute = mock_execute
-        db.add = MagicMock()
+
+        def _fake_add(obj):
+            if getattr(obj, "id", None) is None:
+                obj.id = 1
+
+        db.add = MagicMock(side_effect=_fake_add)
         db.flush = AsyncMock()
 
         standard_keys = [
@@ -329,14 +343,15 @@ class TestGenerateMonthlyReport:
             "app.services.training.reports.compute_monthly_metrics",
             AsyncMock(return_value=metrics),
         ), patch("app.services.training.reports._validate_period"):
-            report = await generate_monthly_report(
-                db=db,
-                club_id=1,
-                year=2026,
-                month=3,
-                generator_user=coach,
-                blocks_use_case=blocks_use_case,
-            )
+            with request_id_scope():
+                report = await generate_monthly_report(
+                    db=db,
+                    club_id=1,
+                    year=2026,
+                    month=3,
+                    generator_user=coach,
+                    blocks_use_case=blocks_use_case,
+                )
 
         # run_all_blocks se invocó sin block_keys explícito (deja que el use
         # case decida el listado estándar — no hay lista hardcodeada aquí).

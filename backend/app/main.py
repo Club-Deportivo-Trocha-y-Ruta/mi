@@ -1,4 +1,5 @@
 import logging
+import logging.config
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -17,6 +18,60 @@ from app.routers.monthly_reports import router as monthly_reports_router, parent
 from app.routers.athlete_monthly_newsletters import router as athlete_newsletters_router, clubs_router as newsletter_clubs_router, training_router as newsletter_training_router
 from app.routers.parent_newsletters import router as parent_newsletters_router
 from app.routers.webhooks_resend import router as webhooks_resend_router
+from app.services.request_context import RequestIdMiddleware
+
+class RequestIdLogFilter(logging.Filter):
+    """Inyecta ``request_id`` en cada registro de los loggers ``app.*``.
+
+    Lee el ContextVar de ``app.services.request_context`` (feature 041,
+    contrato ``audit-recording.md`` §3.1 / research R-05). Ese módulo lo crea
+    otra tarea de la misma oleada, así que el import es tolerante: si aún no
+    existe (o no expone ``current_request_id``), se usa ``"-"`` como valor
+    por defecto en vez de tumbar el arranque de la app.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        request_id = "-"
+        try:
+            from app.services.request_context import current_request_id
+
+            request_id = current_request_id() or "-"
+        except Exception:  # noqa: BLE001 — módulo/función aún no disponibles.
+            request_id = "-"
+        record.request_id = request_id
+        return True
+
+
+logging.config.dictConfig(
+    {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "filters": {
+            "request_id": {"()": RequestIdLogFilter},
+        },
+        "formatters": {
+            "default": {
+                "()": "uvicorn.logging.DefaultFormatter",
+                "fmt": "%(levelprefix)s [%(request_id)s] %(name)s: %(message)s",
+                "use_colors": None,
+            },
+        },
+        "handlers": {
+            "app_console": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+                "filters": ["request_id"],
+            },
+        },
+        "loggers": {
+            "app": {
+                "handlers": ["app_console"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+    }
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +116,10 @@ app.add_middleware(
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "If-Match"],  # ← + If-Match (R-15)
+    expose_headers=["ETag", "X-Request-Id"],                               # ← new, both values
 )
+app.add_middleware(RequestIdMiddleware)                                    # ← last = outermost
 
 
 @app.exception_handler(Exception)

@@ -61,6 +61,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.dependencies import get_db, require_role
 from app.models.athlete import Athlete
+from app.models.audit_log import AuditAction
 from app.models.club import ClubMember, ClubRole
 from app.models.race_category import RaceCategory
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
@@ -87,11 +88,13 @@ from app.schemas.race_imports import (
     TyrAthleteRef,
     UploadUserRef,
 )
+from app.services.audit import AuditEntityType, record_audit
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
 from app.services.race.revision import detect_revision
 from app.services.race.revision_diff_view import build_event_diff_view
 from app.services.race.run_staleness import invalidate_runs_for_event
+from app.services.request_context import AuditContext, get_request_context
 from app.services.training import storage_sftp
 
 logger = logging.getLogger(__name__)
@@ -374,6 +377,7 @@ async def parse_import(
     # ---------------------------------------------------------------
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> ImportParseResponse:
     """Endpoint 1 wizard (parse) — sube PDFs, valida, parsea, crea pending.
 
@@ -624,6 +628,17 @@ async def parse_import(
     )
     db.add(race_import)
     await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.race_import,
+        entity_id=race_import.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        request_id=ctx.request_id,
+    )
 
     # F-UP-REV2: detección de revisión post-parse
     # Si existe `(series, valida_num)` con committed previo y SHA distinto,
@@ -1007,6 +1022,7 @@ async def commit_import(
     body: ImportCommitRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> ImportCommitResponse:
     """Endpoint 3 wizard (commit) — promueve pending → committed con resolved matches."""
     imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
@@ -1153,6 +1169,30 @@ async def commit_import(
     if is_revision:
         imp.revision_reason = body.revision_reason.value
     await db.flush()
+
+    # El ingestor ya hizo su propio commit interno (comentario arriba: "el
+    # ingestor hace commit/rollback sobre la misma session"), así que esta
+    # fila de auditoría viaja en la transacción siguiente que abre `get_db`
+    # al hacer flush/commit al final del request — no en la transacción de
+    # negocio original, que ya cerró.
+    await record_audit(
+        db,
+        action=AuditAction.execute,
+        entity_type=AuditEntityType.race_import,
+        entity_id=imp.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=["status"],
+        diff={"status": (RaceImportStatus.pending.value, RaceImportStatus.committed.value)},
+        meta={
+            "race_event_id": int(report.event_id) if report.event_id is not None else None,
+            "is_revision": is_revision,
+            "results_count": report.results_inserted,
+            "competitors_count": report.competitors_created,
+        },
+        request_id=ctx.request_id,
+    )
 
     # PR5 (D5): si fue una re-ingesta (revisión), marcamos como stale los
     # análisis IA basados en los resultados ahora corregidos + boletines

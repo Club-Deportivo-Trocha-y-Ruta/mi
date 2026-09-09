@@ -52,6 +52,7 @@ from app.schemas.training_session import (
     MonthlyReportRead,
     ParentMonthlySummary,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.notification.service import NotificationService
 from app.services.permissions import can_view_monthly_report, user_club_role
 from app.services.training.reports import (
@@ -396,6 +397,7 @@ async def regenerate_report_block(
             month=month,
             block_key=block_key,
             blocks_use_case=blocks_use_case,
+            editor_user=current_user,
         )
     except ValueError as exc:
         msg = str(exc)
@@ -771,6 +773,7 @@ async def upsert_project_profile(
     profile = result.scalar_one_or_none()
 
     data = body.model_dump()
+    is_create = profile is None
     if profile is None:
         profile = ClubProjectProfile(club_id=club_id, **data)
         db.add(profile)
@@ -779,6 +782,15 @@ async def upsert_project_profile(
             setattr(profile, key, value)
 
     await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.create if is_create else AuditAction.update,
+        entity_type=AuditEntityType.club_project_profile,
+        entity_id=profile.id,
+        actor=current_user,
+        club_id=club_id,
+        changed_fields=None if is_create else sorted(data.keys()),
+    )
     try:
         await db.commit()
     except Exception:
@@ -822,6 +834,7 @@ async def patch_project_profile(
     profile = result.scalar_one_or_none()
 
     data = body.model_dump(exclude_unset=True)
+    is_create = profile is None
     if profile is None:
         profile = ClubProjectProfile(club_id=club_id, **data)
         db.add(profile)
@@ -830,6 +843,15 @@ async def patch_project_profile(
             setattr(profile, key, value)
 
     await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.create if is_create else AuditAction.update,
+        entity_type=AuditEntityType.club_project_profile,
+        entity_id=profile.id,
+        actor=current_user,
+        club_id=club_id,
+        changed_fields=None if is_create else sorted(data.keys()),
+    )
     try:
         await db.commit()
     except Exception:

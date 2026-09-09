@@ -430,3 +430,39 @@ async def athlete_activity_scope(
     de aplicar filtros adicionales de club/sesion.
     """
     return await allowed_athlete_ids_for(user, db)
+
+
+# ---------------------------------------------------------------------------
+# Permisos del historial de auditoria (feature 041)
+# ---------------------------------------------------------------------------
+
+
+def can_view_audit(user: User, club_id: int) -> bool:
+    """FR-006/FR-007: solo admin y coaches del propio club leen el historial.
+
+    Sincrona a proposito: ``get_current_user`` ya trae ``club_memberships``
+    con ``selectinload`` (``app/dependencies.py``), asi que resolver la
+    membresia en memoria evita el SELECT extra que si paga
+    ``user_club_role`` y deja el endpoint del club en 2 queries
+    (contracts/audit-log-api.md §4.2).
+
+    No confundir con ``can_view_monthly_report``: esa funcion retorna
+    ``True`` para cualquier padre en la vista agregada, comportamiento que
+    FR-006 prohibe explicitamente para el historial de auditoria.
+    """
+    if user.role == UserRole.admin:
+        return True
+    if user.role == UserRole.coach:
+        return club_id in coach_club_ids(user)
+    return False
+
+
+# NOTA (contracts/audit-log-api.md §4.3): no existe un
+# ``can_view_athlete_audit`` separado en este modulo. El endpoint
+# ``GET /api/athletes/{athlete_id}/audit-log`` combina, en este orden,
+# ``require_role([UserRole.admin, UserRole.coach])`` (rechaza parent/athlete
+# antes de tocar la base de datos) y ``verify_athlete_access``
+# (``app/dependencies.py``), que ya resuelve el 404 de atleta desconocido y
+# el 403 de coach de otro club. Duplicar esa logica aqui reintroduciria el
+# error de copy-paste que el contrato senala explicitamente para
+# ``can_view_monthly_report``.
