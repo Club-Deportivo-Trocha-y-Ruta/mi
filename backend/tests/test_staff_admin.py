@@ -35,7 +35,6 @@ from app.models.audit_log import AuditLog
 from app.models.club import ClubMember
 from app.models.user import User, UserRole
 from app.services.auth import hash_password
-
 from tests.fixtures.two_coaches import TwoCoachesScenario
 
 pytestmark = pytest.mark.asyncio
@@ -358,3 +357,248 @@ class TestNoPasswordLeakage:
             message = record.getMessage()
             assert "sin.contrasena@example.org" not in message
             assert "password" not in message.lower() or "reset" in message.lower()
+
+
+# ---------------------------------------------------------------------------
+# GET /api/users — hallazgo F1: qué ve un coach de sus colegas
+# (brechas A7 y A9 de checklists/integration-review.md)
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def _coach_client_with_membership(
+    session_factory: async_sessionmaker[AsyncSession],
+    user_id: int,
+    club_id: int,
+):
+    """Cliente de coach cuyo doble sí pertenece a un club.
+
+    El doble compartido de ``tests/fixtures/two_coaches.py`` trae
+    ``club_memberships=[]``, con lo que ``list_users`` devuelve lista vacía
+    para cualquier coach: sirve para las rutas que no miran la membresía, no
+    para estas. No se toca el fixture compartido —lo están usando otras
+    pruebas— y se arma acá el doble mínimo que estas necesitan.
+    """
+    from types import SimpleNamespace
+
+    from app.dependencies import get_current_user, get_db
+    from app.models.club import ClubRole
+
+    async def _override_db():
+        async with session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    def _override_current_user():
+        return SimpleNamespace(
+            id=user_id,
+            first_name="Test",
+            last_name="Actor",
+            display_name="Test Actor",
+            email=f"actor{user_id}@test.local",
+            role=UserRole.coach,
+            can_login=True,
+            is_active=True,
+            club_memberships=[
+                SimpleNamespace(club_id=club_id, role_in_club=ClubRole.coach)
+            ],
+        )
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_current_user] = _override_current_user
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
+
+
+class TestCoachSeesStaffWithoutContactDetails:
+    """F1 — un coach enumeraba personal con correo, teléfono y quién creó
+    cada cuenta.
+
+    La lista se conserva a propósito: el filtro "Entrenador" del historial
+    (US1) y el selector de entrenadores a cargo (US4) la necesitan, y la
+    atribución por nombre es de lo que trata la feature. Lo que se recorta es
+    el contacto. Ver el comentario de la decisión en
+    ``app/routers/users.py::list_users``.
+    """
+
+    async def test_coach_still_sees_the_other_coach_of_the_club(
+        self,
+        two_coaches_scenario: TwoCoachesScenario,
+        two_coaches_session_factory: async_sessionmaker[AsyncSession],
+    ):
+        async with _coach_client_with_membership(
+            two_coaches_session_factory,
+            two_coaches_scenario.coach_a_user_id,
+            two_coaches_scenario.club_id,
+        ) as coach_a_client:
+            resp = await coach_a_client.get("/api/users", params={"role": "coach"})
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        ids = {item["id"] for item in items}
+        assert two_coaches_scenario.coach_b_user_id in ids, (
+            "US1/US4 dependen de que un coach pueda listar a los coaches de su "
+            "club para poblar el filtro del historial y el selector de sesión"
+        )
+        colega = next(
+            item
+            for item in items
+            if item["id"] == two_coaches_scenario.coach_b_user_id
+        )
+        # Lo que un selector necesita sí viaja.
+        assert colega["first_name"]
+        assert colega["last_name"]
+        assert colega["role"] == "coach"
+        assert "is_active" in colega
+
+    async def test_coach_does_not_see_contact_details_of_other_staff(
+        self,
+        two_coaches_scenario: TwoCoachesScenario,
+        two_coaches_session_factory: async_sessionmaker[AsyncSession],
+    ):
+        async with _coach_client_with_membership(
+            two_coaches_session_factory,
+            two_coaches_scenario.coach_a_user_id,
+            two_coaches_scenario.club_id,
+        ) as coach_a_client:
+            resp = await coach_a_client.get("/api/users")
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+
+        staff_ajeno = [
+            item
+            for item in items
+            if item["role"] in ("coach", "admin")
+            and item["id"] != two_coaches_scenario.coach_a_user_id
+        ]
+        assert staff_ajeno, "el escenario debe traer al menos un colega"
+        for item in staff_ajeno:
+            assert item["email"] is None, item
+            assert item["phone"] is None, item
+            assert item["created_by_display_name"] is None, item
+
+    async def test_coach_still_sees_their_own_contact_details(
+        self,
+        two_coaches_scenario: TwoCoachesScenario,
+        two_coaches_session_factory: async_sessionmaker[AsyncSession],
+    ):
+        async with _coach_client_with_membership(
+            two_coaches_session_factory,
+            two_coaches_scenario.coach_a_user_id,
+            two_coaches_scenario.club_id,
+        ) as coach_a_client:
+            resp = await coach_a_client.get("/api/users")
+        assert resp.status_code == 200
+        propia = next(
+            item
+            for item in resp.json()["items"]
+            if item["id"] == two_coaches_scenario.coach_a_user_id
+        )
+        assert propia["email"] is not None
+
+    async def test_admin_keeps_the_full_payload(
+        self, admin_client, two_coaches_scenario: TwoCoachesScenario
+    ):
+        resp = await admin_client.get("/api/users", params={"role": "coach"})
+        assert resp.status_code == 200
+        colega = next(
+            item
+            for item in resp.json()["items"]
+            if item["id"] == two_coaches_scenario.coach_b_user_id
+        )
+        assert colega["email"] is not None, (
+            "el recorte es solo para el coach: /admin/usuarios sigue "
+            "necesitando el correo"
+        )
+
+    async def test_coach_keeps_full_contact_of_parents(
+        self,
+        two_coaches_scenario: TwoCoachesScenario,
+        two_coaches_session_factory: async_sessionmaker[AsyncSession],
+    ):
+        """Gestionar a las familias del club es parte del trabajo del coach:
+        el recorte no puede alcanzar a ``role=parent``.
+        """
+        # El escenario compartido no le da al padre una fila en
+        # `club_members`, y la rama de coach de `list_users` hace JOIN contra
+        # esa tabla: sin la membresía, la aserción no probaría nada. El engine
+        # es in-memory y de alcance por prueba, así que se siembra acá en vez
+        # de tocar el fixture compartido, que están usando otras pruebas.
+        from app.models.club import ClubMember, ClubRole
+
+        async with two_coaches_session_factory() as session:
+            session.add(
+                ClubMember(
+                    user_id=two_coaches_scenario.parent_user_id,
+                    club_id=two_coaches_scenario.club_id,
+                    role_in_club=ClubRole.parent,
+                )
+            )
+            await session.commit()
+
+        async with _coach_client_with_membership(
+            two_coaches_session_factory,
+            two_coaches_scenario.coach_a_user_id,
+            two_coaches_scenario.club_id,
+        ) as coach_a_client:
+            resp = await coach_a_client.get("/api/users", params={"role": "parent"})
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        padre = next(
+            item
+            for item in items
+            if item["id"] == two_coaches_scenario.parent_user_id
+        )
+        assert padre["email"] is not None
+
+
+class TestUsersDeniedPaths:
+    """A9 — rutas denegadas que no tenían prueba propia."""
+
+    async def test_parent_cannot_list_users(self, parent_client):
+        resp = await parent_client.get("/api/users")
+        assert resp.status_code == 403
+
+    async def test_parent_cannot_create_staff(
+        self, parent_client, two_coaches_scenario: TwoCoachesScenario
+    ):
+        resp = await parent_client.post(
+            "/api/users",
+            json={
+                "email": "intruso@example.org",
+                "first_name": "Persona",
+                "last_name": "Ficticia",
+                "role": "coach",
+                "club_id": two_coaches_scenario.club_id,
+            },
+        )
+        assert resp.status_code == 403
+
+    async def test_coach_cannot_deactivate_another_coach(
+        self, coach_a_client, two_coaches_scenario: TwoCoachesScenario
+    ):
+        """US3 AS5 — el coach no puede editar ni desactivar a otro coach.
+        Es la mitad de F1 que sí estaba bien resuelta y no tenía prueba.
+        """
+        resp = await coach_a_client.patch(
+            f"/api/users/{two_coaches_scenario.coach_b_user_id}",
+            json={"is_active": False},
+        )
+        assert resp.status_code == 403
+
+    async def test_admin_cannot_deactivate_themselves(
+        self, admin_client, two_coaches_scenario: TwoCoachesScenario
+    ):
+        """Un admin que se autodesactiva deja al club sin quien administre."""
+        resp = await admin_client.patch(
+            f"/api/users/{two_coaches_scenario.admin_user_id}",
+            json={"is_active": False},
+        )
+        assert resp.status_code in (400, 403, 409), resp.text

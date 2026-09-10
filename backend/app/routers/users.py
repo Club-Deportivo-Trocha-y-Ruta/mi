@@ -391,18 +391,53 @@ async def list_users(
     count_result = await db.execute(count_query)
     total = count_result.scalar_one()
 
+    # Hallazgo F1 (revisión de la fase 5, CWE-284/CWE-639): un coach recibía
+    # correo, teléfono y quién creó la cuenta de todo el personal de su club.
+    #
+    # La corrección que proponía la revisión —negarle al coach la lista de
+    # coaches y admins— no se puede aplicar tal cual: la propia feature 041 la
+    # necesita. El filtro "Entrenador" del historial (US1,
+    # `hooks/governance/useClubStaff.ts`) y el selector de entrenadores a cargo
+    # de una sesión (US4, `hooks/training/useClubCoaches.ts`) piden
+    # `GET /api/users?role=coach` **como coach**, y la atribución por nombre es
+    # justamente de lo que trata la feature.
+    #
+    # Decisión (corrida nocturna 2, tomada sin supervisión): se conserva la
+    # lista y se recorta la carga. Un coach ve de sus colegas lo que un
+    # selector necesita —id, nombre, rol, estado— y nada de contacto. US3 AS5
+    # habla de no poder crear, editar ni desactivar a otro coach o admin, y de
+    # que la pantalla de gestión le sea negada; eso lo siguen garantizando
+    # `update_user`, `delete_user` y el portón de `/admin/usuarios`.
+    #
+    # El recorte se limita a las filas de personal: sobre `role=parent` el
+    # coach conserva el contacto completo, porque gestionar a las familias de
+    # su club es parte de su trabajo (`api/parents.ts` consume este mismo
+    # endpoint). Su propia fila tampoco se recorta.
+    redact_staff_contact = current_user.role == UserRole.coach
+
+    def _is_redacted(u: User) -> bool:
+        return (
+            redact_staff_contact
+            and u.id != current_user.id
+            and u.role in (UserRole.admin, UserRole.coach)
+        )
+
     items = [
         UserOut(
             id=u.id,
-            email=u.email,
+            email=None if _is_redacted(u) else u.email,
             first_name=u.first_name,
             last_name=u.last_name,
-            phone=u.phone,
+            phone=None if _is_redacted(u) else u.phone,
             role=u.role,
             is_active=u.is_active,
             can_login=u.can_login,
             created_at=u.created_at,
-            created_by_display_name=u.creator.display_name if u.creator else None,
+            created_by_display_name=(
+                None
+                if _is_redacted(u)
+                else (u.creator.display_name if u.creator else None)
+            ),
         )
         for u in users
     ]
