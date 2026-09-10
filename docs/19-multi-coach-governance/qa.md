@@ -113,23 +113,26 @@ but not yet *provably observed to write* a row. Treat "the coverage gate is gree
 route is silently unaudited," not as "every audited route's row is verified correct" —
 the latter is what the dynamic half will eventually prove, once it has cases.
 
-### 3.3 What is still outside both registries
+### 3.3 What is still outside both registries — now closed
 
-20 of 111 routes in the registry remain `Exempt("pending instrumentation")` — a real gap,
-not a false negative in the test. Two of them are family-link writes
+Earlier in the same night run, 20 of 111 routes sat as `Exempt("pending instrumentation")`
+— a real gap, not a false negative in the test (reopened as T030 after the corrida-2
+review). As of the closing pass (corrida 3, 2026-09-10, commit `a943642`), **all 20 are
+instrumented**; `test_audit_coverage.py` passes with 0 pending exemptions. The two
+family-link writes FR-001 explicitly wants attributed
 (`POST /api/parent-athletes`, `POST /api/auth/parent-register`,
-`DELETE /api/parent-athletes/{id}`) that FR-001 explicitly wants attributed; the rest are
-mutating/exporting GETs and the interval-training module. Full list and the task tracking
-it: `specs/041-multi-coach-governance/tasks.md` T030 (reopened 2026-09-10).
+`DELETE /api/parent-athletes/{id}`) are audited like every other write.
 
-One additional route is exempted **by design decision, not oversight**: `POST
+One route was resolved as a **genuine exemption, not an instrumentation gap**: `POST
 /api/race-analysis/imports/{parse_id}/dry-run`. The contract originally expected it to
 record `race_import`·`update` with a `dry_run` status transition, but `dry_run_import`
 never actually assigns that status — the ingestor runs in-memory and leaves no persistent
-write. Recording an `update` here would audit a write that did not happen, and the spec's
-decision 2 (§0 of `research.md`) is explicit that reads are not audited. Left as an open
-decision for the owner (emit the real status transition, or formalize the exemption) —
-see `technical-notes.md` (2026-09-10).
+write, so recording an `update` would audit a write that did not happen, and the spec's
+decision 2 is explicit that reads are not audited. The owner could not be reached
+overnight, so the decision taken (documented in `app/services/audit.py` itself, next to
+the exemption) is to formalize it as a §4.14 exemption rather than change
+`dry_run_import`'s behaviour — reversible in one line if the owner prefers the other
+resolution (make the status transition real). See `technical-notes.md` (2026-09-10).
 
 ## 4. Playwright / e2e
 
@@ -161,17 +164,51 @@ criterion, not an automated assertion. It has not been run — it needs a live U
 actual coach, neither of which this environment has. Record the result here as a dated
 addendum when it is run.
 
-## 5. Privacy and the open findings from the corrida-2 security review
+## 5. Privacy — the mandatory audit (T091) and the corrida-2/3 security findings
 
-The mandatory `data-privacy-guard` audit for the whole feature (task T091) has **not**
-run yet — it is a separate, explicit task, not implied by the offline test suite passing.
-`backend/tests/test_audit_privacy.py` continuously scans every produced `audit_log` row
-against `VALUE_ALLOWLIST`/`META_ALLOWLIST` for every fixture-driven write in the suite,
-which is necessary but not sufficient for the full audit T091 asks for.
+### 5.1 Mandatory privacy audit (T091) — done, APROBADO with caveats
 
-A **security review of the club-scope change itself** (T080) did run, on 2026-09-10, and
-found two findings that reached a minor's data — **both fixed and committed** (`8ca2870`,
-see `design.md` §2.1 and `technical-notes.md` for the full account):
+`data-privacy-guard` ran the full mandatory audit against the feature's diff, recorded in
+`specs/041-multi-coach-governance/checklists/privacy-audit.md`. All 7 checklist points
+verdict **Cumple**:
+
+| # | Point | Verdict |
+|---|---|---|
+| 1 | `audit_log.diff_json`/`meta_json` respect `VALUE_ALLOWLIST`/`META_ALLOWLIST` | Cumple |
+| 2 | Family-facing schemas (newsletter, sessions, calendar) carry no attribution fields | Cumple, **1 fix applied in the same pass** |
+| 3 | Family PDF/email carry no coach name where the contract forbids it | Cumple |
+| 4 | Logs carry `request_id`, never the request body | Cumple |
+| 5 | Exports audited by document type + `athlete_id` only | Cumple |
+| 6 | Versioned fixtures/seeds are synthetic | Cumple |
+| 7 | Per-coach activity report and per-coach AI spend expose adult staff only | Cumple |
+
+**Fix applied during the audit** ("hallazgo A", committed in `a943642` together with H3–H7
+below): `TrainingSessionReadParent` was returning `created_by_user_id` — a raw, unresolved
+staff id — to the family. The contract's rule ("no coach identity of any kind reaches a
+parent, not even an unresolved id") already excluded `coaches`/`has_active_coach` from that
+schema but had missed this field; both the Pydantic schema and the response-model exclusion
+in `training_sessions.py` now drop it.
+
+**Closing verdict**: *"APROBADO para publicación desde el punto de vista de privacidad"*,
+with one explicit caveat carried forward from every other section of this document —
+**nothing in this audit ran against a real database or a live app**; it is 100% code
+reading plus one offline unit test for the fix itself. Before a production release,
+someone with `TEST_DATABASE_URL` or the Docker stack should run
+`pytest tests/test_audit_privacy.py tests/test_coach_activity.py tests/test_session_coaches.py
+backend/tests/test_training_session_router.py -m mysql` and confirm the privacy-named tests
+in those files are still green with the fix applied — verbatim what the audit itself asks
+for, restated here so it is not lost.
+
+**One pre-existing finding noted but explicitly not fixed** (outside this feature's diff,
+so outside the audit's stated scope): `rsvp_by_user_id` in `app/routers/calendar.py` has
+an incidental issue the audit flagged but did not correct, being pre-existing in `main`.
+Worth a look the next time `calendar.py` is touched.
+
+### 5.2 Security review of the club-scope change (T080) — both minor-data findings fixed
+
+A **security review of the club-scope change itself** ran on 2026-09-10 and found two
+findings that reached a minor's data — **both fixed and committed** (`8ca2870`, see
+`design.md` §2.1 and `technical-notes.md` for the full account):
 
 - **H1** — a coach of another club could launch an AI analysis on an athlete who was not
   theirs, via `POST /api/race-analysis/runs` / the group launch, because neither checked
@@ -179,21 +216,23 @@ see `design.md` §2.1 and `technical-notes.md` for the full account):
 - **H2** — `GET /race-events/{id}/runs` returned another club's minor's name, athlete id,
   and a valid run id to any authenticated coach.
 
-Six smaller findings from the same review carry **no minor's data** (adult staff names
-and spend figures, or endpoint-shape inconsistencies) and were open as of the last
-recorded state (2026-09-10, corrida 2's closing addendum):
+Six smaller findings from the same review touched only adult staff data (names, spend
+figures) or endpoint-shape inconsistencies, never a minor's data. **All six are now fixed
+and committed** (`a943642`, corrida 3, same night run):
 
-| # | Finding | Where | Status as of this doc pass |
+| # | Finding | Where | Fix |
 |---|---|---|---|
-| H3 | `GET /admin/ai-usage`, now reachable by coaches, returns spend and names for **every** club's staff, not just the caller's own | `app/routers/race_analysis.py` (RBAC), `budget_guard.py` (`_QUERY_SPEND_BY_USER`) | A club-scoping fix (`visible_user_ids` on `spend_by_user_last_30d`, folding out-of-club spend into one unnamed "Otros clubes" bucket) was **present but uncommitted** in the working tree at the time this document was written — its final, committed state is unverified here. Check `git log -- backend/app/services/race/ai/budget_guard.py` for the current state before relying on this row. |
-| H4 | `GET /imports/` returns the full cross-club import list to any coach | `app/routers/race_imports.py::list_imports` | Open, unverified as fixed. |
-| H5 | `user#{id}` fallback still appears in the imports listing, contradicting FR-013 and the contract's own §4.1 | `app/routers/race_imports.py` | Open. |
-| H6 | `_admin_only` is dead code; the `/admin/ai-usage` prefix no longer means admin-only | `app/routers/race_analysis.py` | Open — a documentation/naming hazard for the next reviewer, not a data leak by itself. |
-| H7 | An import created by the **administrator** is unreachable by any coach — `import_club_ids` resolves only through `role_in_club='coach'` memberships, so the admin-authored-import set is empty and the authorship fallback leaves only the admin able to continue it | `app/services/permissions.py::import_club_ids` | Open. Fails closed (an inconvenience, not a leak) but will surface in production as "no puedo continuar el cargue" for a coach trying to finish an admin-started import. |
+| H3 | `GET /admin/ai-usage`, reachable by coaches, returned spend and names for **every** club's staff | `race_analysis.py` (new `_coach_visible_staff_ids`), `budget_guard.py::spend_by_user_last_30d` | A coach now sees identity + individual spend only for staff of their own club(s); everyone else's spend is folded into one unnamed "Otros clubes" bucket. The reconciliation invariant (sum of returned rows equals the club-wide total) is preserved — the fold sums cost, never drops it. Admin behaviour (`visible_user_ids=None`) is unchanged. |
+| H4 | `GET /imports/` returned the full cross-club import list to any coach | `race_imports.py::list_imports` | Filtered in SQL (not in Python, so `total`/pagination stay correct) to imports uploaded by a coach-or-admin member of the requester's own club(s), with an authorship fallback (a coach always sees their own uploads even if club resolution fails) that never widens access. |
+| H5 | `user#{id}` fallback appeared in the imports listing, contradicting FR-013 | `race_imports.py` | Replaced with the same human fallback text used elsewhere in the feature ("Usuario no disponible") when the uploader can't be resolved. |
+| H6 | `_admin_only` was dead code; the `/admin/ai-usage` prefix no longer meant admin-only | `race_analysis.py` | Docstring and RBAC comment corrected to state the route is coach+admin with a club-scoped breakdown; the route path itself is unchanged (kept for frontend contract stability). `_admin_only` is still imported by test files outside this feature's scope and was left in place rather than deleted. |
+| H7 | An import created by the **administrator** was unreachable by any coach | `permissions.py::import_club_ids` | Widened to resolve through `(coach, admin)` memberships instead of `coach` only — an admin-uploaded import now resolves to the club's coaches too. `run_club_ids` (a sibling helper) deliberately keeps the narrower `coach`-only behaviour; the two were never meant to share it (a parent who is also a coach elsewhere must never leak a club through that path). |
 
-**Do not treat H3's row above as "fixed"** without re-checking the committed state — it
-was mid-edit, by a different agent, at doc-writing time; documenting it as closed here
-would be a false all-clear the next reader could not catch.
+Test coverage added alongside: `backend/tests/test_race_imports_club_scope.py`,
+`backend/tests/test_spend_by_user.py`, plus fixture updates in
+`backend/tests/routers/test_race_event_runs.py` (declaring the requesting coach's club,
+made mandatory by the corrida-2 scope fix). All in the offline lane — not yet run against
+MySQL, same caveat as everywhere else in this document.
 
 ## 6. Fixtures and privacy invariants in tests
 
@@ -214,12 +253,16 @@ In priority order, based on what each step would actually catch:
 
 1. Point `TEST_DATABASE_URL` at a real MySQL 8.4 `_test` database and run `pytest -m
    mysql` — closes §2 entirely, including confirming `alembic upgrade head` actually
-   works from empty.
-2. Bring up the isolated e2e stack and run `npm run test:e2e:isolated` — closes §4,
-   confirms the migration-bug fix works live, not just by code review.
-3. Re-check the committed state of H3–H7 (§5) and the 20 pending-instrumentation routes
-   (§3.3) against `git log`/`tasks.md`, since both were mid-flight at the time of this
-   documentation pass.
-4. Run the mandatory `data-privacy-guard` audit (T091) — the automated privacy scan in
-   §6 is necessary but was explicitly scoped as not sufficient by the feature's own plan.
-5. Run the moderated SC-002 usability check with the club's actual coach.
+   works from empty. This is the single highest-value remaining step: T091's own verdict,
+   the migration fix, H3–H7's new tests, and the concurrency guarantee are all
+   code-reviewed and offline-tested, not live-verified, for exactly this reason.
+2. Bring up the isolated e2e stack and run `npm run test:e2e:isolated` (T092, not
+   started) — closes §4, confirms the migration-bug fix works live, not just by code
+   review, and finally exercises the five specs this feature adds.
+3. Run T095's full gate list (`ruff check`, `pytest`, `pytest -m mysql`, `npm run build`,
+   `npm test`, `npm run test:e2e`) and T096's quickstart walkthrough with two real coaches
+   — neither has run in this environment; SC-002 (§4) is T096's moderated leg.
+4. T093/T094 (this documentation) and T091 (privacy audit, §5.1, APROBADO) are done. T080
+   (security review, §5.2) and T030 (coverage gate closure, §3.3) are done and committed.
+   What remains before the feature can be called verified is entirely the live-stack work
+   in steps 1–3 above, plus T097's post-deploy smoke once merged and deployed.

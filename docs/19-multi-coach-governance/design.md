@@ -118,11 +118,16 @@ at least 20 characters). `backend/tests/test_audit_coverage.py` walks every
 POST/PUT/PATCH/DELETE plus the mutating/exporting GETs of the instrumentation matrix and
 fails if a route is in neither registry, or in both.
 
-As of this doc pass the gate is **real but only half-complete** — see `qa.md` §3 for the
-honest account of what the static half proves, what the dynamic half does not yet cover,
-and the 20 routes still marked `Exempt("pending instrumentation")`. This is intentionally
-not glossed over: two earlier "closed" markings on this exact gate (T018, T030) turned out
-to be premature, caught only by the corrida-2 integration review
+The static half (reachability) is real and, as of the closing pass (corrida 3,
+2026-09-10, commit `a943642`), the pending-instrumentation gap is closed: the 20 routes
+that used to sit as `Exempt("pending instrumentation")` are now all instrumented, and one
+(`POST /api/race-analysis/imports/{parse_id}/dry-run`) resolved to a genuine, documented
+exemption instead. The gate now runs with 0 pending exemptions. The **dynamic half**
+(actually executing a route and asserting a row landed) still collects zero cases — no
+`Audited` entry declares a `request_factory` yet, which needs the `client` fixture (a real
+database connection) to complete. See `qa.md` §3 for the full, honest account, including
+why two earlier "closed" markings on this exact gate (T018, T030) turned out to be
+premature before this pass — caught only by the corrida-2 integration review
 (`specs/041-multi-coach-governance/checklists/integration-review.md` — search "compuerta
 FR-009").
 

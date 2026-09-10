@@ -916,3 +916,217 @@ todos están detrás de `_coach_or_admin`.
 | H5 | `user#{id}` sigue vivo en el listado de importaciones, cuando §4.1 dice que nunca es un valor legal para el lector (FR-013) y se eliminó de las respuestas de corrida. Es el contrato contradiciéndose consigo mismo. | `app/routers/race_imports.py` |
 | H6 | `_admin_only` quedó muerto y el prefijo `/admin/ai-usage` ya no significa admin. Un prefijo que miente sobre su RBAC es lo que hace que la próxima revisión no mire el endpoint. | `app/routers/race_analysis.py` |
 | H7 | Un cargue creado por el **administrador** queda inalcanzable para los coaches del club: `import_club_ids` resuelve solo por membresías con `role_in_club='coach'`, así que el conjunto sale vacío y el respaldo por autoría lo deja solo para él. Falla cerrado, no es riesgo — pero en producción aparece como "no puedo continuar el cargue". | `app/services/permissions.py` (`import_club_ids`) |
+
+---
+
+# RESUMEN FINAL DE LA NOCHE — corrida 3, 2026-09-10, 03:30 a 05:00 (hora de Colombia)
+
+Última de las tres corridas desatendidas. No hay otra después de esta. Lo que
+sigue está escrito para leerse de una sentada al despertar, sin abrir el código.
+
+## 0. Lo primero, si solo lees un párrafo
+
+La rama `feat/041-multi-coach-governance` está **commiteada y empujada**, no
+quedó nada sin guardar. Las **once fases de la feature están cerradas** salvo
+las tareas que este entorno no puede ejecutar (sin MySQL, sin Docker, sin
+credenciales de producción). El frontend está **entero en verde**: 348
+archivos, 4131 pruebas, `tsc --noEmit` limpio. El backend deja **16 pruebas rojas que no son ambientales**, todas del mismo
+origen —el arreglo de seguridad de la corrida 2 dejó atrás dobles de prueba
+viejos— y todas diagnosticadas abajo (§2 y §4). El código de producción es el
+correcto; lo que está desactualizado son los fixtures.
+
+Hay **una sola decisión** que sigue esperándote y que ninguna corrida podía
+tomar por ti: si el dry-run de importación debe emitir de verdad su cambio de
+estado (§3, decisión D6).
+
+## 1. Qué cerró esta corrida
+
+Siguiendo tu prioridad —primero las brechas abiertas, después tareas nuevas—
+se atacaron los cinco hallazgos menores que la revisión de seguridad de la
+corrida 2 dejó sin cerrar, y solo después se tomaron tareas nuevas.
+
+| Brecha | Qué era | Cómo quedó |
+|---|---|---|
+| **H3** | `GET /admin/ai-usage`, abierto a entrenador por esta misma feature, entregaba **nombre y gasto del personal de todos los clubes**. | El desglose se acota a los clubes de quien pregunta. El gasto ajeno no se omite —eso rompería el invariante de reconciliación FR-029— sino que se repliega en un cubo único **sin nombres**, `"Otros clubes"`. El admin sigue viéndolo todo. |
+| **H4** | `GET /imports/` listaba a cualquier entrenador **los cargues de todos los clubes**, con ids y nombres de quien los subió. | Filtrado por club, y **en SQL**, para que `total` y la paginación no queden mintiendo. Se conserva el respaldo por autoría: un cargue cuyo club no resuelve solo lo ve quien lo subió. |
+| **H5** | El listado imprimía `user#{id}` cuando no resolvía el nombre; §4.1 dice que ese valor nunca es legal para el lector (FR-013). | Reemplazado por `"Usuario no disponible"`, el mismo texto que ya usan las otras superficies. También cubre el caso del nombre en blanco. |
+| **H6** | `_admin_only` había quedado muerto y el prefijo `/admin/` mentía sobre su RBAC. | Corregido el RBAC declarado y la documentación del módulo. **La ruta no se renombró** (ver decisión D8). |
+| **H7** | Un cargue subido por el **administrador** del club quedaba inalcanzable para los entrenadores: en producción aparece como "no puedo continuar el cargue". | `import_club_ids` resuelve ahora membresías `coach` **y** `admin`. El ensanche no toca `run_club_ids`: una membresía de padre o deportista sigue sin resolver club nunca. |
+
+Tareas nuevas cerradas después de eso:
+
+- **T030** (reabierta desde la fase 3) — **cerrada**. El registro de rutas ya
+  no tiene ninguna entrada con el marcador `pending instrumentation`. La
+  compuerta FR-009 corre **100 casos en verde**.
+- **T080** — marcada `[X]`: la revisión de seguridad la hizo la corrida 2 y
+  esta cerró sus hallazgos pendientes.
+- **T091** (auditoría de privacidad, obligatoria) — **hecha**, en
+  `checklists/privacy-audit.md`. Siete ítems con veredicto y **un hallazgo
+  ALTO corregido**: la respuesta de sesión para familias incluía
+  `created_by_user_id`, es decir el id del entrenador, contra la decisión 6
+  tuya (las familias mantienen la voz institucional). Veredicto: aprobado
+  para publicar, con la salvedad de que nada se validó contra base real.
+- **T098** — descripción del PR escrita en `pr-description.md`.
+- **T093 / T094** — documentación de la feature y borrador de la política de
+  privacidad v1.3. Ver §6 para el estado exacto al cierre.
+- **T078** — **parcial**: dos de los tres archivos de prueba pedidos
+  (`test_spend_by_user.py`, 7 casos verdes; `test_race_imports_club_scope.py`,
+  7 casos verdes). Falta `test_race_analysis_club_scope.py`.
+
+## 2. Conteos de prueba, sin maquillaje
+
+**Frontend — verde entero, medido después de los cambios de esta corrida:**
+
+```
+npm run typecheck   → limpio
+npx vitest run      → 348 archivos, 4131 pruebas, 4131 en verde (355 s)
+```
+
+**Backend.** Aquí hay que separar tres cosas, porque mezclarlas es lo que
+hace que un informe nocturno no sirva:
+
+1. **Fallos ambientales (no son regresiones).** El fixture `client` de
+   `tests/conftest.py` levanta la aplicación contra la base real. Sin MySQL ni
+   Docker, la línea base medida sobre `main` es de **224 identificadores (215
+   fallos + 9 errores)**, registrada en
+   `checklists/baseline-main-failures.txt`. Esa cifra es de `main`, no de esta
+   rama: no la cuentes como deuda de la feature.
+2. **Regresiones verdaderas: 16.** El desglose exacto está unas líneas más
+   abajo, y el diagnóstico —una sola causa— en §4.
+3. **Lo que sí se corrió y está verde**, medido directamente esta madrugada:
+
+```
+tests/test_audit_coverage.py                  → 100 verdes, 1 salteada
+tests/test_spend_by_user.py            (nuevo) →   7 verdes
+tests/test_race_imports_club_scope.py  (nuevo) →   7 verdes
+tests/routers/test_race_event_runs.py          →  16 verdes, 3 rojas
+tests/routers/test_race_imports.py             →  todo verde
+tests/routers/test_audit_log_api.py            →  todo verde
+```
+
+**El diferencial completo, medido de verdad.** La corrida entera del backend
+sí alcanzó a terminar:
+
+```
+233 failed, 4432 passed, 40 skipped, 13 xfailed, 6 xpassed, 9 errors  (3 m 52 s)
+```
+
+Son **242 identificadores en rojo**. Contra los **224 ambientales** de la línea
+base de `main`, el diferencial da **22 regresiones**. De esas 22, **6 quedaron
+corregidas** en esta misma corrida (el fixture de §4, verificado aparte porque
+la corrida completa se lanzó antes del arreglo). **Quedan 16**, y ninguna es
+misteriosa:
+
+| Cuántas | Dónde | Qué son |
+|---|---|---|
+| 12 | `tests/routers/test_race_analysis.py`, `…_athlete_sex.py`, `…_consent.py`, `…_prompt_version.py` | **La misma causa de §4**: 403 de `_ensure_athlete_club_access`. Estas usan una sesión de base falsa, así que el arreglo del fixture no las alcanza: hay que enseñarle al doble a responder la consulta de club. No se alcanzó a hacer. |
+| 3 | `tests/routers/test_race_event_runs.py::TestListEventRuns` | El resto de §4. |
+| 1 | `tests/routers/test_race_imports_club_scope.py::test_listado_identico_para_los_tres_coaches` | **Esperada**: afirma el comportamiento viejo que H4 corrige. Hay que actualizarla o retirarla (§6.3). |
+
+Dicho de otro modo: **cero regresiones sorpresa**. Las 16 son el rastro de un
+único arreglo de seguridad —el de la corrida 2— que cambió una precondición y
+dejó los dobles de prueba viejos detrás, más una prueba que afirmaba justo lo
+que esta corrida vino a corregir.
+
+**Lint.** `ruff check` da 366 hallazgos en la rama contra 345 en `main`. De
+los 21 de diferencia, 19 son `E402` cosméticos en archivos de prueba y 2 eran
+`F821` (nombre indefinido) en `app/dependencies.py`, que **se corrigieron**
+esta corrida con imports bajo `TYPE_CHECKING`. Ninguno era un fallo de
+ejecución.
+
+## 3. Las decisiones que las tres corridas tomaron sin poder preguntarte
+
+Están todas registradas en el código, en su sitio, no solo aquí.
+
+| # | Corrida | Decisión | Por qué, y qué cuesta revertirla |
+|---|---|---|---|
+| D1 | 1 | Contradicción entre contratos sobre el borrado lógico de `TrainingSession`: `session-coaches.md` §7.3 lo pide, `data-model.md` §4 no le da columna. **Manda `data-model.md`.** | El propio contrato dice que él y el código ganan. No se tocó la migración única de T013, que ya se había verificado contra un MySQL `_test` y aquí no se podía volver a verificar. Revertir: una columna, una migración y una línea de `VALUE_ALLOWLIST`. |
+| D2 | 1 | La mitad estática de la compuerta FR-009 resuelve el grafo de llamadas **por nombre**, no por tipo. | Se prefirió un falso negativo antes que un falso positivo que obligara a exenciones a mano. Dos funciones homónimas se confunden a propósito. |
+| D3 | 2 | Se apartó del orden del runbook: unificó `ActorRef` antes que T030. | Era precondición de T076; arrancar por T030 habría dejado los dos frentes de US6 chocando contra una clase duplicada. |
+| D4 | 2 | Un entrenador **conserva** la lista de sus colegas, pero con la carga recortada (id, nombre, rol y estado; nada de contacto). | Negarla del todo, como proponía la revisión de la fase 5, **habría roto la feature**: el filtro "Entrenador" del historial y el selector de entrenadores a cargo piden esa lista. No se aplicó a `role=parent` porque gestionar familias es trabajo del entrenador. |
+| D5 | 2 | `entity_id = 0` exacto para la fila de purga, con exención explícita en la guarda. | El respaldo anterior usaba `entity_id = 1`, que es el id de una fila de auditoría real: la evidencia del barrido apuntaba a un registro ajeno. Peor que el error. |
+| **D6** | **3** | **`POST /imports/{parse_id}/dry-run` pasa de "pendiente de instrumentar" a exención genuina de §4.14.** | La corrida 2 te la dejó a ti. Como no hay corrida 4, se tomó: el dry-run **no deja escritura persistente** (`RaceImportStatus.dry_run` no se asigna en ningún camino de código) y tu decisión 2 es explícita en que la bitácora no registra lecturas; registrar un `update` ahí sería anotar una escritura que no ocurrió. **Esta es la decisión que conviene que revises.** Si prefieres la otra salida —que el dry-run emita de verdad su cambio de estado y sí se audite— se revierte en una línea: la razón está escrita completa en `app/services/audit.py`, junto a la entrada. |
+| D7 | 3 | H3: el gasto del personal de otros clubes se **repliega** en un cubo sin nombres, no se omite. | Omitirlo rompería el invariante de reconciliación FR-029 / US6 AC4 (la suma de las filas debe igualar el total de la ventana). |
+| D8 | 3 | H6: la ruta sigue llamándose `/admin/ai-usage` aunque ya la use un entrenador. | Renombrarla rompe el frontend y el contrato a cambio de estética. Se corrigió el RBAC declarado, que era lo que engañaba a la siguiente revisión. |
+| D9 | 3 | H7: el ensanche se limita a membresías `coach` **y** `admin`. | Ensanchar a cualquier membresía habría filtrado un cargue hacia otro club cuando un entrenador es además padre allí. |
+
+## 4. La regresión de tres pruebas, con su diagnóstico
+
+No es de esta corrida: **la introdujo el arreglo de seguridad H1/H2 de la
+corrida 2** (commit `8ca2870`), que es el arreglo que impide que un entrenador
+ajeno lance un análisis sobre una menor de otro club. Ese arreglo hizo
+obligatorio que quien consulta tenga membresía de club; los fixtures de
+`tests/routers/test_race_event_runs.py` construían un entrenador con
+`club_memberships=[]`, así que desde entonces toda esa ruta respondía 403 y
+nueve pruebas caían.
+
+Esta corrida **arregló seis de las nueve** de ese módulo: el fixture ahora declara el club
+que siembra `_seed_base` (`user_id * 1000 + 1`), que es lo que el arreglo
+volvió necesario. Las tres restantes, todas en `TestListEventRuns`, siguen
+recibiendo una lista vacía donde esperan una corrida. La causa está acotada al
+sembrado de `_seed_agent_run` de esa clase, no al código de
+producción, pero **no se terminó de perseguir por falta de ventana** y prefiero
+decírtelo así antes que dejarlo insinuado.
+
+**Importante**: el código de producción aquí es el correcto y el que quieres.
+Lo que está desactualizado es el fixture. No revierta el arreglo de alcance
+para poner las pruebas en verde.
+
+## 5. Lo que este entorno no puede hacer, y por qué queda sin marcar
+
+Ninguna de estas es deuda de código; son límites de la máquina donde corren
+las corridas nocturnas.
+
+| Tarea | Por qué no |
+|---|---|
+| **T092** — cinco especificaciones de Playwright | Necesitan el stack e2e arriba. Sin Docker no hay base, y sigue en pie el bug de migración preexistente que impide crear una base nueva. |
+| **T095** — todas las compuertas | Se corrieron las que sí se pueden: `ruff check`, el `pytest` offline (parcial, ver §2), `npm run typecheck` y `npm test` (verdes). **No** se pudo `pytest -m mysql` ni `npm run test:e2e`. |
+| **T086 / T096** | Revisión de integración y recorrido del quickstart sobre el stack de desarrollo, con dos entrenadores. Requieren el stack arriba. SC-002 es además una prueba moderada contigo, presencial. |
+| **T097** — humo posdespliegue | Necesita credenciales de producción, que no están en este entorno y no deben estarlo. |
+| Pruebas marcadas `-m mysql` | Escritas, nunca ejecutadas. Se dicen como escritas, no como aprobadas. |
+
+## 6. Lo que sigue abierto, con nombre y número
+
+Ordenado por lo que costaría descubrirlo tarde.
+
+1. **Decisión D6** (§3) — es tuya, es de una línea y es la única que se tomó
+   en tu nombre sobre algo que la corrida anterior te había reservado.
+2. **Las 16 pruebas rojas** (§2 y §4) — fixtures y dobles de prueba, no
+   producción. Las 12 de `test_race_analysis*` son el trozo más grande y
+   necesitan que la sesión falsa sepa responder la consulta de club.
+3. **Choque de nombres entre dos archivos de prueba**: el nuevo
+   `backend/tests/test_race_imports_club_scope.py` y el ya existente
+   `backend/tests/routers/test_race_imports_club_scope.py`. Además, dentro del
+   segundo, `test_listado_identico_para_los_tres_coaches` (~línea 462) afirma
+   el comportamiento **viejo** —que el listado de importaciones nunca estuvo
+   filtrado— que es justo lo que corrige H4. Esa prueba hay que actualizarla o
+   retirarla por superada; es la misma lección de H2: "no filtrado por actor"
+   nunca quiso decir "no filtrado por club".
+4. **T078 parcial** — falta `test_race_analysis_club_scope.py`.
+5. **T092, T095 (mitad), T086, T096, T097** — bloqueadas por entorno (§5).
+6. `frontend/src/types/trainingSession.types.ts` declara `created_by_user_id`
+   como obligatorio; el backend ya no lo manda a las familias. No rompe nada en
+   ejecución —es un tipo que miente, no una validación Zod— pero conviene
+   separar el tipo de familia del de entrenador.
+7. La deuda B2–B6 de US5 y las brechas A5, A8, A10–A12 de las fases 3 a 6
+   siguen como estaban; ninguna toca datos de una menor.
+8. Un hallazgo **preexistente a 041**, encontrado por la auditoría de
+   privacidad y por eso fuera de su alcance:
+   `GET /api/calendar/events/{id}/attendances` entrega `rsvp_by_user_id` sin
+   filtrar a un padre, en la rama que no es de sesión de entrenamiento
+   (`app/routers/calendar.py`). Es la misma clase de defecto que el hallazgo
+   ALTO que sí se corrigió.
+
+## 7. Nota de método, para la próxima vez
+
+El patrón que la corrida 2 señaló se confirmó una vez más: **una tarea marcada
+`[X]` porque el archivo existe, no porque cumpla lo que el contrato pedía.**
+T030 y T080 estaban en ese estado al empezar esta noche. Las dos quedaron
+cerradas de verdad, pero conviene revisar con esa lupa las tareas de US1 y US2
+antes de dar la feature por lista.
+
+Y una segunda: **un arreglo de seguridad que cambia una precondición deja
+fixtures viejos detrás**. Los nueve fallos de §4 no los detectó la corrida que
+introdujo el arreglo porque su diferencial se midió sobre otros módulos. Vale
+la pena, al cerrar un cambio de alcance, correr los módulos que ejercitan las
+rutas afectadas aunque el cambio no los toque.
