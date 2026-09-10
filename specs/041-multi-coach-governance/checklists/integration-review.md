@@ -640,7 +640,11 @@ Otras vías:
   sin usar y quedan 4 cosméticos (`E402` de imports tardíos deliberados y dos
   `F841`). `ruff` tampoco está limpio en `main`, así que hoy no es una compuerta
   que pase.
-- Frontend: `npm run typecheck` **limpio**.
+- Frontend: `npm run typecheck` **limpio** y `npm test` (vitest) **344 archivos,
+  4071 pruebas, todas verdes**. La oleada 5 reportaba un fallo suelto en
+  `src/lib/__tests__/datetime.test.ts`; hoy también pasa.
+- `npm run test:e2e` (Playwright): **no se ejecutó**. Necesita levantar la pila
+  completa y sigue bloqueado por el mismo defecto de migración ajeno a esta feature.
 
 ## 7. Brechas abiertas para la corrida siguiente
 
