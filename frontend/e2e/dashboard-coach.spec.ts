@@ -300,16 +300,28 @@ async function mockSessionDetailApi(page: Page): Promise<void> {
     (url) => isBackend(url) && url.pathname === `/api/intervals/sessions/${SESSION_ID}/structure`,
     jsonRoute({ detail: "not found" }, 404),
   );
+  // Catálogo de motivos (feature 041, cancelación con motivo). Sin este mock
+  // el token falso recibe 401 y, según la carrera, cierra la sesión.
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/audit/reason-codes",
+    jsonRoute({ items: [] }),
+  );
 }
 
-/** `/competitions/{id}` — default "info" tab only needs the event itself
- * (InfoTab is presentational; the series-level lookup only fires for
- * championships, and this fixture is a regular válida). */
+/** `/competitions/{id}` — default "info" tab needs the event itself plus the
+ * staff list that `ActorChip` resolves "Creado por" from (feature 041); the
+ * series-level lookup only fires for championships, and this fixture is a
+ * regular válida. Without the staff mock the fake token hits the real API,
+ * gets a 401 and the session is logged out before the heading renders. */
 async function mockCompetitionDetailApi(page: Page): Promise<void> {
   await page.route(
     (url) =>
       isBackend(url) && url.pathname === `/api/race-analysis/race-events/${FUTURE_RACE_EVENT_ID}`,
     jsonRoute(FUTURE_RACE_EVENT_DETAIL),
+  );
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/users",
+    jsonRoute({ items: [], total: 0 }),
   );
 }
 

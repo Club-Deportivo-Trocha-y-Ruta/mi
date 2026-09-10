@@ -173,7 +173,10 @@ async def backfill_anthropometry(session: AsyncSession) -> BackfillSummary:
                 club_id=athlete.club_id,
                 athlete_id=record.athlete_id,
                 changed_fields=changed_fields,
-                meta={"job": "anthropometry_backfill"},
+                meta={
+                    "job": "anthropometry_backfill",
+                    "event_date": record.evaluation_date.isoformat(),
+                },
                 request_id=ctx.request_id,
             )
         else:
@@ -332,7 +335,10 @@ async def recompute_to_source(
                 "nutritional_status",
                 "growth_source",
             ],
-            meta={"job": "anthropometry_backfill"},
+            meta={
+                "job": "anthropometry_backfill",
+                "event_date": record.evaluation_date.isoformat(),
+            },
             request_id=ctx.request_id,
         )
 

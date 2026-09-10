@@ -268,18 +268,20 @@ class TestCreateUser:
             json={"email": "admin@trochyruta.com", "password": "Admin2026!"},
         )
         token = login.json()["access_token"]
+        club_id = await _seed_club_id(client, token)
         email = f"dup-{uuid4().hex[:8]}@test.com"
 
-        # Crear usuario por primera vez
+        # Crear usuario por primera vez. Desde 041 el personal exige club y no
+        # recibe contraseña (contracts/staff-admin.md §1.2).
         first = await client.post(
             "/api/users",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "email": email,
-                "password": "Coach2026!",
                 "first_name": "Primero",
                 "last_name": "Usuario",
                 "role": "coach",
+                "club_id": club_id,
             },
         )
         assert first.status_code == 201
@@ -290,10 +292,10 @@ class TestCreateUser:
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "email": email,
-                "password": "Coach2026!",
                 "first_name": "Segundo",
                 "last_name": "Usuario",
                 "role": "coach",
+                "club_id": club_id,
             },
         )
         assert second.status_code == 409
@@ -418,18 +420,19 @@ class TestUpdateUser:
             json={"email": "admin@trochyruta.com", "password": "Admin2026!"},
         )
         token = login.json()["access_token"]
+        club_id = await _seed_club_id(client, token)
 
-        # Crear usuario para editar
+        # Crear usuario para editar (personal: club obligatorio, sin contraseña)
         email = f"edit-me-{uuid4().hex[:8]}@test.com"
         create_resp = await client.post(
             "/api/users",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "email": email,
-                "password": "Coach2026!",
                 "first_name": "Antes",
                 "last_name": "Apellido",
                 "role": "coach",
+                "club_id": club_id,
             },
         )
         assert create_resp.status_code == 201

@@ -284,6 +284,11 @@ async def create_user(
                 dispatcher=dispatcher,
             )
 
+    # Commit explícito: el de `get_db` corre después de enviar la respuesta
+    # (FastAPI ≥0.118), y el refetch de `/admin/usuarios` tras el 201 leía la
+    # lista sin la cuenta nueva.
+    await db.commit()
+
     new_user.created_by_display_name = (
         current_user.display_name if current_user else None
     )
@@ -556,7 +561,9 @@ async def update_user(
         reason_code=body.reason_code,
     )
 
-    await db.flush()
+    # Mismo motivo que en create_user: confirmar antes de responder para que
+    # el refetch tras activar/desactivar lea el estado nuevo.
+    await db.commit()
 
     return target
 

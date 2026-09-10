@@ -1192,3 +1192,94 @@ confirma los guards de rol correctos para las tres pantallas nuevas
 `/training/reports/actividad-entrenadores` coach+admin), y los tamaños de
 bundle de la tabla de T095 arriba. No sustituye el recorrido en vivo de
 `quickstart.md` que T086/T096 piden.
+
+---
+
+# Corrida local en vivo (T095 completa, T086, T096 parcial), 2026-09-10
+
+**Ambiente**: máquina del dueño con Docker. Stack e2e aislado `trocha-e2e`
+(API :8001, MySQL :3307, MailHog :8026, datos sintéticos) y un contenedor
+`mysql:8.4` desechable para los carriles `mysql` y `client`. El proyecto `me`
+(datos reales) y producción no se tocaron. Ningún dato de menor en este registro:
+solo conteos, ids sintéticos y nombres de adultos de la semilla.
+
+## 1. Compuertas (T095)
+
+| Compuerta | Resultado |
+|---|---|
+| Stack aislado desde volumen vacío | Arranca: `alembic upgrade head` completo, confirma T001 en vivo. |
+| `pytest -m mysql` | **17 passed**, estable en dos corridas. Nunca se había ejecutado; tenía cuatro defectos de arnés (§3.1). |
+| Pruebas del fixture `client` contra MySQL real (migrado + semilla, overrides `MYSQL_*`) | Verde salvo `test_past_date_returns_422`, `test_set_audiences_borra_y_reinserta` y `test_event_data_competition_valid`, las tres ya rotas en `main` y escondidas en la línea base ambiental. |
+| `pytest` offline | **222 failed / 4463 passed**. Diferencial contra `checklists/baseline-main-failures.txt`: 14 nuevas, todas WeasyPrint sin `libgobject` (pasan con `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`); 16 de `main` ya pasan. **0 regresiones.** |
+| `npm run build` + `check:chunks` | Verde. Entrada 311,6 kB / **89,3 kB gzip** frente a 1094 kB / 283,4 kB gzip en `main` (42 rutas lazy frente a 7). Rutas nuevas: ClubHistory 2,26 · ArchivedAthletes 2,41 · CoachActivity 3,22 · Staff 4,15 kB gzip. |
+| `npm test` / `typecheck` | 4131 pruebas verdes tras hacer independiente de la zona horaria el control de `datetime.test.ts` (fallaba en un equipo configurado en Bogotá; preexistente). |
+| Specs e2e de 041 (serie) | **12 passed, 1 skipped** (`E2E-CACT-003` se salta si el selector no tiene opciones bajo carga). |
+| `npm run test:e2e` completo | **84 passed / 43 failed / 11 skipped** de 138. Por archivo coincide con la línea base aislada de 040 (73/42/10 de 125) salvo `dashboard-coach` (2 pruebas rotas por 041, corregidas, 21/21 en tres repeticiones) e `invitations` (+1, spec con ids de la base real; la semilla de `coach2` corrió al padre sintético del id 4 al 5). El resto (`target-size`, specs con ids reales) es preexistente. |
+
+## 2. Recorrido del quickstart (T086 / T096)
+
+| Escenario | Resultado |
+|---|---|
+| 2 — privacidad | 277 filas de auditoría, 14 pares entidad/acción: 0 claves prohibidas, 0 nombres de atleta, 0 claves de medida, 0 filas sin `request_id`; 0 `"first_name"` en logs del backend. En la respuesta: 0 `user#`, 0 "usuario ID", 0 actores sin nombre. |
+| 3 — quién lee el historial | coach/coach2/admin 200, padre 403 en ambos endpoints, club ajeno 403, `X-Request-Id` de 32 hex expuesto por CORS, 10 lecturas no cambian `total` ni `MAX(id)`. |
+| 4 — archivar | Con historial: 204; coach 404 en el detalle, ausente del listado, 403 con `include_archived`; admin ve `deleted_at`, motivo y `deleted_by` resuelto; restaurar solo admin; historial del atleta en orden (create → archive → restore). **Defecto corregido**: la creación de sesión aceptaba convocar a un atleta archivado (§3.2). |
+| 5 — desactivar, no destruir | Desactivar 200 con `diff_json` correcto, login "Usuario desactivado" 401, token viejo 401, 61 entradas pasadas con nombre, autodesactivación 403, reactivación OK. `DELETE` de personal da 403, no 409: contradicción de contratos (§4). |
+| 6 — alta de personal | Sin club → 422 con la copia del contrato; con contraseña → 422; correo de contraseña con enlace y sin contraseña. **Defecto corregido**: la fila nueva no aparecía (§3.2). El cronómetro de 2 minutos no se midió. |
+| 7 — coentrenadores y correos | V1 422; `coaches` en orden y `has_active_coach`; filtro por coach; correos a la familia: invitación nombra al creador, edición y cancelación nombran al coach que actuó, los tres listan a ambos. Coach único inactivo → `has_active_coach=false`. |
+| 8 — asistencia | Registrado por Juan Diaz, editado por Beto Coach; auditoría solo con nombres de campo; el payload de familia no trae `coaches`, `recorded_by` ni `created_by_user_id`. |
+| 9 — conflicto en el boletín | Cubierto por `newsletter-conflict.spec.ts` (verde) y la prueba real de dos sesiones InnoDB. |
+| 10 / 11 | **No recorribles en el stack aislado**: el proveedor IA falso no pasa el mínimo de 50 palabras del informe mensual (`LLMSchemaError` → 500, preexistente) y la semilla no trae eventos ni resultados de carrera. Solo por pruebas automáticas. |
+| 12 — actividad por coach | 200 para personal, padre 403, `from>to` y 400 días 422, club desconocido 404, tarjetas con nombre resuelto. |
+| 13 — nombres de autor | UI: `/club/historial` con oraciones, filtros y paginación sin ids crudos; tab Historial del atleta con 5 entradas y la exportación de PDF. Oraciones de sesión con fecha y motivo tras la corrección §3.2. **SC-002 sin correr** (presencial). |
+| 14 — retención | Sobre MySQL real: vista previa 1/0 sin tocar filas; `--apply` con el mismo corte 1/1 conserva la fila de 23 meses y escribe una fila de purga (`entity_id=0`, `retention_24m`, `removed_count: 1`); repetición 0/0 sin fila nueva; rechazos 1/1/1/2; la URL nunca aparece en stdout/stderr. |
+| Navegación por rol | Admin ve Historial del club, Personal del club y Atletas archivados; el coach ve "Gobierno" → `/club/historial` y es redirigido de `/admin/usuarios` a `/dashboard`. |
+
+## 3. Qué se corrigió
+
+### 3.1 Arnés del carril `mysql`
+
+1. `test_audit_mysql.py` migraba en el mismo esquema donde `mysql_session`
+   (alcance de sesión) mantiene una transacción abierta → `DROP TABLE` bloqueado
+   por locks de metadatos para siempre. Ahora usa `<nombre>_migrations_test`.
+2. `alembic/env.py` pisaba la URL del llamador → respeta `Config.attributes`.
+3. Semilla pre-041 sin `created_at`; T20 violaba la FK real de `club_id`.
+4. El caso 8 de concurrencia era un `pytest.skip` incondicional → prueba real.
+
+### 3.2 Producto
+
+- **Commit después de responder** en `POST`/`PATCH /api/users` (FastAPI 0.135
+  cierra las dependencias `yield` de alcance request después de enviar la
+  respuesta): commit explícito. Lectura inmediata tras crear: 5/5.
+- **Convocatoria al crear sesión** sin validar (preexistente en `main`): 400 para
+  ids archivados o de otro club, con prueba.
+- **403 del historial para el padre** con la copia genérica del contrato §4.4, con prueba.
+- **`{fecha}` perdido** en toda escritura que no cambia la fecha: los escritores
+  guardan `meta_json.event_date` (sesión, calendario, medición, backfill), con 5 pruebas.
+- **Rutas `/athletes*`** abiertas al admin (archivar es `[admin, coach]` en la API).
+
+### 3.3 Pruebas
+
+- 15 dobles de `race_analysis*`/`race_event_runs` con membresía de club (deuda de H1/H2).
+- 4 pruebas del fixture `client` alineadas con contratos de 041.
+- `datetime.test.ts` independiente de la zona horaria.
+- Specs e2e: `alertdialog`, `club_id` del atleta sintético, `user` inyectado,
+  mocks de `/api/users` y `/api/audit/reason-codes` en `dashboard-coach`.
+
+## 4. Decisiones que quedan para el dueño
+
+1. **Ventana read-after-write en toda la app**: solo se corrigieron las dos rutas
+   de personal; el resto de rutas que dependen del commit implícito de `get_db`
+   tiene el mismo riesgo.
+2. **`DELETE` de personal: 403 o 409**. `contracts/staff-admin.md` §5 lo deja en
+   403 incondicional; `athlete-archive.md` §8 y el quickstart esperan 409. En
+   ningún caso se borra la cuenta.
+3. **Preexistentes, fuera de 041**: mes en inglés en los asuntos de correo de
+   sesión (`strftime("%B")` con locale C); `LLMSchemaError` → 500; tres pruebas
+   del fixture `client` desactualizadas; `invitations.spec.ts` con ids reales.
+4. **Stash del 2026-09-09 17:18** (39 archivos de trabajo de 041) sin revisar.
+
+## 5. Lo que sigue abierto
+
+- **SC-002** (T096): prueba moderada presencial con el entrenador del club.
+- **T097**: requiere PR, merge y despliegue; la rama va 50 commits por delante de `main`.
+- Nada de esta corrida está commiteado.

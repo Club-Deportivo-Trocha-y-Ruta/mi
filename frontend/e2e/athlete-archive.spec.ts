@@ -28,30 +28,52 @@ async function loginAsAdmin(page: Page) {
   await expect(page).not.toHaveURL(/\/login/);
 }
 
-/** Crea un atleta sintético directo por API (coach), para no acoplar el spec a un wizard largo. */
-async function createSyntheticAthlete(request: APIRequestContext): Promise<number> {
+/**
+ * Crea un atleta sintético directo por API (coach), para no acoplar el spec
+ * a un wizard largo. Devuelve también el `lastName` único de esta corrida
+ * (incluye el timestamp) — el stack e2e acumula atletas sintéticos de
+ * corridas anteriores (ver CLAUDE.md del task: "make specs robust to
+ * re-runs"), así que filtrar solo por el prefijo `ArchivoE2E` produce
+ * "strict mode violation" de Playwright (varias filas matchean) apenas la
+ * segunda vez que corre este spec contra el mismo stack.
+ */
+async function createSyntheticAthlete(
+  request: APIRequestContext,
+): Promise<{ id: number; lastName: string }> {
   const tokens = await realTokens(request, 'coach');
-  const stamp = Date.now();
+  const headers = { Authorization: `Bearer ${tokens.access_token}` };
+  // `club_id` es obligatorio en `AthleteCreate` (backend/app/schemas/athlete.py) —
+  // se toma del propio coach en vez de asumir club 1 (multi-club, feature 041).
+  const meRes = await request.get(`${apiBaseUrl()}/api/auth/me`, { headers });
+  expect(meRes.ok(), `GET /auth/me falló: ${meRes.status()}`).toBeTruthy();
+  const me = (await meRes.json()) as { club_ids: number[] };
+  // `Date.now()` solo no basta: E2E-ARCH-001 y E2E-ARCH-002 corren en
+  // paralelo (workers distintos) y pueden pedir la marca de tiempo en el
+  // mismo milisegundo, colisionando en el mismo `last_name` — dos filas
+  // distintas con el mismo texto rompen los locators por substring de
+  // ambos tests ("strict mode violation"). Se agrega un sufijo aleatorio.
+  const lastName = `ArchivoE2E${Date.now()}${Math.floor(Math.random() * 1_000_000)}`;
   const res = await request.post(`${apiBaseUrl()}/api/athletes`, {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
+    headers,
     data: {
       first_name: 'Atleta',
-      last_name: `ArchivoE2E${stamp}`,
+      last_name: lastName,
       birth_date: '2014-05-10',
       sex: 'M',
       club_join_date: '2025-01-10',
+      club_id: me.club_ids[0],
     },
   });
   expect(res.ok(), `creación de atleta sintético falló: ${res.status()}`).toBeTruthy();
   const body = (await res.json()) as { id: number };
-  return body.id;
+  return { id: body.id, lastName };
 }
 
 test.describe('Athlete archive E2E', () => {
   test('E2E-ARCH-001: archivar un atleta lo quita de la lista activa y lo muestra en el archivo admin', async ({
     page,
   }) => {
-    const athleteId = await createSyntheticAthlete(page.request);
+    const { id: athleteId, lastName } = await createSyntheticAthlete(page.request);
 
     await loginAsAdmin(page);
     await page.goto(`/athletes/${athleteId}/edit`);
@@ -70,20 +92,20 @@ test.describe('Athlete archive E2E', () => {
 
     // No aparece en la lista activa.
     await page.goto('/athletes');
-    await expect(page.getByText(new RegExp(`ArchivoE2E`))).toHaveCount(0);
+    await expect(page.getByText(lastName)).toHaveCount(0);
 
     // Sí aparece en la vista admin de archivados, con evidencia intacta
     // (el registro sigue existiendo — restaurable, no borrado).
     await page.goto('/admin/atletas-archivados');
     await expect(page.getByTestId('archived-athletes-page')).toBeVisible({ timeout: 10_000 });
-    const archivedRow = page.getByTestId('archived-athlete-row').filter({ hasText: 'ArchivoE2E' });
+    const archivedRow = page.getByTestId('archived-athlete-row').filter({ hasText: lastName });
     await expect(archivedRow).toBeVisible({ timeout: 10_000 });
   });
 
   test('E2E-ARCH-002: restaurar un atleta archivado lo devuelve a la lista activa (solo admin)', async ({
     page,
   }) => {
-    const athleteId = await createSyntheticAthlete(page.request);
+    const { id: athleteId, lastName } = await createSyntheticAthlete(page.request);
 
     // Archiva por API directamente (coach) para llegar rápido al estado a probar.
     const tokens = await realTokens(page.request, 'coach');
@@ -97,24 +119,30 @@ test.describe('Athlete archive E2E', () => {
     await page.goto('/admin/atletas-archivados');
     await expect(page.getByTestId('archived-athletes-page')).toBeVisible({ timeout: 10_000 });
 
-    const archivedRow = page.getByTestId('archived-athlete-row').filter({ hasText: 'ArchivoE2E' });
+    const archivedRow = page.getByTestId('archived-athlete-row').filter({ hasText: lastName });
     await expect(archivedRow).toBeVisible({ timeout: 10_000 });
 
     await archivedRow.getByTestId('restore-athlete-button').click();
-    const restoreDialog = page.getByRole('dialog');
+    // `RestoreAthleteDialog` usa el `AlertDialog` de Radix (role="alertdialog",
+    // no "dialog" — components/athletes/RestoreAthleteDialog.tsx), con su
+    // propio testid `restore-athlete-dialog`.
+    const restoreDialog = page.getByTestId('restore-athlete-dialog');
     await expect(restoreDialog).toBeVisible();
-    const reasonControl = restoreDialog.getByRole('combobox').first();
-    if (await reasonControl.count()) {
-      await reasonControl.click();
-      await page.getByRole('option').first().click();
-    }
-    await restoreDialog.getByRole('button', { name: /restaurar|confirmar/i }).click();
+    // El motivo es obligatorio (handleConfirm bloquea sin él) — nunca opcional.
+    await restoreDialog.getByTestId('restore-reason-select').click();
+    await page.getByRole('option').first().click();
+    await restoreDialog.getByTestId('restore-confirm-button').click();
 
     // Ya no está en la lista de archivados.
     await expect(archivedRow).toHaveCount(0, { timeout: 10_000 });
 
-    // Vuelve a aparecer como atleta activo.
+    // Vuelve a aparecer como atleta activo. `AthletesTable` renderiza la
+    // fila dos veces — `<ul className="... md:hidden">` (mobile) seguido de
+    // `<table>` (desktop, `hidden md:block`) — ambas en el DOM a la vez;
+    // en el viewport desktop por defecto de Playwright la `<ul>` (la
+    // primera coincidencia en el DOM) queda oculta por CSS, así que se
+    // toma la última coincidencia (la fila de la tabla) en vez de `.first()`.
     await page.goto('/athletes');
-    await expect(page.getByText(new RegExp(`ArchivoE2E`))).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(lastName).last()).toBeVisible({ timeout: 10_000 });
   });
 });

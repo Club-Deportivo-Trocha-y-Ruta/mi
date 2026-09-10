@@ -249,18 +249,16 @@ Registradas en `checklists/integration-review.md`, cada una con su motivo:
 
 | Tarea | Por qué sigue abierta |
 |---|---|
-| T030 (US1) | Reabierta: quedó 1 de 19 rutas pendientes de instrumentar sin cerrar a propósito (el `dry-run` de importaciones, ver §5); las otras 18 ya se instrumentaron en la segunda corrida nocturna. |
-| T078 (US6) | Las pruebas de backend del alcance por club (corrida B decide la corrida de A, comete la importación de A, 403 de otro club, suma del gasto por entrenador) no se escribieron todavía. |
-| T080 (US6) | La revisión de seguridad sí se ejecutó y cerró los dos hallazgos altos (H1, H2) con corrección y prueba de regresión, pero deja cinco hallazgos menores abiertos (gasto de IA y listado de importaciones sin acotar por club, un valor de actor no válido que sigue vivo, un prefijo `/admin` que ya no refleja su RBAC, y una importación del administrador inalcanzable para los entrenadores del club); no se cierra hasta que el dueño decida qué hacer con esos cinco. |
-| T086 (US7) | Integración de las fases 5 a 9 en el stack de desarrollo (escenarios 4–12 de `quickstart.md`, navegación por rol, tamaño de los tres bundles perezosos nuevos) requiere un stack en ejecución que ninguna de las tres corridas tuvo disponible. |
-| T091 | Auditoría obligatoria de privacidad de toda la feature, que corresponde a `data-privacy-guard`; no se ejecutó como revisión formal independiente. |
-| T092 | Los cinco specs de Playwright siguen bloqueados por un defecto de migración preexistente y ajeno a esta feature que impide levantar una base de datos nueva para el stack de e2e. |
-| T093 | Documentación en `docs/19-multi-coach-governance/` y las entradas de `docs/technical-notes.md` / `docs/implementation-status.md` no se redactaron todavía. |
-| T094 | El borrador de la política de privacidad v1.3 (plural de entrenadores) es deliberadamente un artefacto fuera del alcance liberado de esta feature; no se escribió en estas corridas. |
-| T095 | Las compuertas completas (`pytest -m mysql`, `npm run test:e2e` incluidos) no se pueden correr sin MySQL ni Docker en este entorno. |
-| T096 | El recorrido guiado de `quickstart.md` con dos entrenadores exige el mismo stack en vivo que T086 y T092. |
-| T097 | El humo posdespliegue necesita credenciales de producción que no están disponibles en este entorno. |
-| T098 | Esta tarea: se cierra con este documento. |
+> Actualizada el 2026-09-10 tras la verificación local en vivo
+> (`checklists/integration-review.md`, sección final). T030, T078, T080, T086, T091,
+> T092, T093, T094, T095 y T098 quedaron cerradas; estas son las únicas abiertas:
+
+| Tarea | Por qué sigue abierta |
+|---|---|
+| T096 | Recorrido del quickstart hecho en el stack aislado (escenarios 2–9 y 12–14 en vivo; 10 y 11 solo por pruebas, sin IA real ni datos de carrera). Falta **SC-002**, la prueba moderada presencial con el entrenador del club. |
+| T097 | El humo posdespliegue requiere este PR mergeado y desplegado, y las credenciales del dueño. |
+
+Decisiones que la verificación dejó para el dueño: la ventana read-after-write del commit implícito de `get_db` en el resto de la app (solo se corrigieron las rutas de personal), y la contradicción entre contratos sobre el `DELETE` de personal (403 frente a 409).
 
 ---
 

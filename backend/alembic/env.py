@@ -7,7 +7,12 @@ from app.config import settings
 from app.models import Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url_sync)
+# A programmatic caller (tests/test_audit_mysql.py) pins its `_test` database
+# through `Config.attributes`; the CLI and entrypoint.sh keep using settings.
+config.set_main_option(
+    "sqlalchemy.url",
+    config.attributes.get("sqlalchemy.url") or settings.database_url_sync,
+)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

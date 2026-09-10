@@ -66,6 +66,50 @@ interface SharedNewsletterState {
   coachNote: string | null;
 }
 
+/**
+ * StageLog v2 mínimo pero completo (`AthleteNewsletterStudioPage` renderiza
+ * el estado "Esta bitácora todavía no tiene contenido generado" cuando
+ * `stage_log` es `null` — ver `backend/app/schemas/athlete_newsletter.py:257`
+ * y `frontend/src/routes/training/AthleteNewsletterStudioPage.tsx:370`).
+ * Datos 100% ficticios (privacidad de menores, CLAUDE.md).
+ */
+function makeStageLog(coachNote: string | null) {
+  return {
+    schema_version: 2,
+    stage_number: 3,
+    period_label: "Mayo 2026",
+    is_current_month: false,
+    athlete_first_name: "Atleta Demo",
+    athlete_reference: "su hija",
+    stage_title: "Un mes de trabajo técnico sostenido",
+    trail: [],
+    summit: null,
+    observations: [
+      {
+        claim: "La asistencia se mantuvo estable durante el mes.",
+        evidence: "8 de 9 sesiones planificadas (89 %)",
+        block_ref: "attendance",
+      },
+    ],
+    analyst_reading: null,
+    effort_profile: [],
+    next_segment: null,
+    family_compass: null,
+    badges: [],
+    photos: [],
+    coach_note: coachNote,
+    block_states: {
+      stage_title: "ai",
+      summit_caption: "empty",
+      observations: "ai",
+      analyst_reading: "empty",
+      next_segment_text: "empty",
+      family_compass: "empty",
+    },
+    grounding_violations: [],
+  };
+}
+
 function makeNewsletter(state: SharedNewsletterState) {
   return {
     id: NEWSLETTER_ID,
@@ -75,11 +119,17 @@ function makeNewsletter(state: SharedNewsletterState) {
     status: "draft",
     edit_version: state.editVersion,
     email_blocks: {},
-    ai_narrative: null,
-    coach_narrative_overrides: null,
     coach_note: state.coachNote,
+    coach_note_author: null,
+    coach_note_updated_at: null,
+    last_edited_by: null,
+    generated_by: null,
+    approved_by: null,
+    stage_log: makeStageLog(state.coachNote),
     stage_overrides: {},
     hidden_blocks: [],
+    read_at: null,
+    delivery: [],
     selected_race_insight_ids: [],
     badges_earned: [],
     has_pdf: false,
@@ -128,10 +178,19 @@ async function mockBackend(
 
       if (method === "PATCH") {
         const body = route.request().postDataJSON() as {
-          expected_version: number;
           coach_note?: string;
         };
-        if (body.expected_version !== state.editVersion) {
+        // 041 contracts/concurrency-and-approvals.md §2.1: el cliente real
+        // (`frontend/src/api/athleteNewsletters.ts::patchAthleteNewsletter`)
+        // SIEMPRE manda la precondición como header `If-Match: W/"<version>"`
+        // cuando `expected_version` viene definido — nunca en el body (se
+        // extrae y se descarta antes del PATCH). El fallback de body es solo
+        // para clientes que no puedan mandar el header.
+        const ifMatch = route.request().headers()["if-match"];
+        const expectedVersion = ifMatch
+          ? Number(ifMatch.replace(/^W\//, "").replace(/"/g, ""))
+          : undefined;
+        if (expectedVersion !== state.editVersion) {
           // 041 §2.5 — conflicto de versión: el único 409 con current_version.
           return route.fulfill({
             status: 409,
@@ -209,19 +268,26 @@ test.describe("Newsletter concurrent-edit conflict E2E", () => {
     await openStudio(pageA);
     await openStudio(pageB);
 
-    // coach2 (Bruno) guarda primero — su PATCH usa expected_version=1,
-    // coincide, éxito, edit_version pasa a 2.
-    const noteFieldB = pageB.getByTestId("coach-note");
-    await noteFieldB.fill("Nota de Bruno: excelente sesión técnica esta semana.");
-    await noteFieldB.blur();
+    // coach2 (Bruno) guarda primero — el bloque "Nota del entrenador" solo
+    // se edita vía el flujo de BlockCard: Editar → textarea → Guardar (no
+    // hay un input plano `coach-note` — ver BlockCard.tsx). Su PATCH manda
+    // If-Match: W/"1", coincide, éxito, edit_version pasa a 2.
+    await pageB.getByTestId("block-edit-coach-note").click();
+    await pageB
+      .getByLabel("Editar Nota del entrenador")
+      .fill("Nota de Bruno: excelente sesión técnica esta semana.");
+    await pageB.getByTestId("block-save-coach-note").click();
+    await expect(pageB.getByTestId("toast-success")).toBeVisible({ timeout: 5_000 });
     await expect(pageB.getByTestId("newsletter-conflict-dialog")).toHaveCount(0);
 
     // coach (Ana) sigue viendo edit_version=1 en su formulario local y
-    // guarda ahora — su PATCH manda expected_version=1, pero el estado
+    // guarda ahora — su PATCH manda If-Match: W/"1", pero el estado
     // "compartido" ya está en 2 → 409 con current_version=2.
-    const noteFieldA = pageA.getByTestId("coach-note");
-    await noteFieldA.fill("Nota de Ana: trabajar cadencia en subidas.");
-    await noteFieldA.blur();
+    await pageA.getByTestId("block-edit-coach-note").click();
+    await pageA
+      .getByLabel("Editar Nota del entrenador")
+      .fill("Nota de Ana: trabajar cadencia en subidas.");
+    await pageA.getByTestId("block-save-coach-note").click();
 
     // El diálogo bloqueante de conflicto aparece.
     await expect(pageA.getByTestId("newsletter-conflict-dialog")).toBeVisible({

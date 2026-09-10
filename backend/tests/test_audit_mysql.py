@@ -26,12 +26,13 @@ what a real deploy runs. Rows are synthetic scheduling/report metadata only
 (club/session/report ids, no athlete, no minor data) — nothing here needs a
 privacy review.
 
-**Cannot run on this machine**: there is no MySQL 8.4 instance available in
-this environment (only offline aiosqlite is wired up here), so this module
-has been written and statically reviewed (imports cleanly, mirrors the
-project's existing `-m mysql` fixture conventions in `tests/conftest.py`) but
-has **not** been executed against a real `_test` database. That verification
-is an open blocker — see the task's `blockers` note. Run with::
+The module walks the Alembic chain in its own sibling database
+(``<name>_migrations_test``, created and dropped here), never in the
+``TEST_DATABASE_URL`` database itself: the session-scoped ``mysql_session``
+of ``tests/conftest.py`` keeps a transaction open on that schema, and the
+``DROP TABLE`` of ``clean_schema`` would wait forever on its metadata locks
+when both run in one ``-m mysql`` session. The MySQL user therefore needs the
+``CREATE``/``DROP`` database privilege. Run with::
 
     TEST_DATABASE_URL="mysql+aiomysql://root:testroot@127.0.0.1:3306/trocha_ruta_test" \\
         pytest -m mysql -q backend/tests/test_audit_mysql.py
@@ -39,6 +40,7 @@ is an open blocker — see the task's `blockers` note. Run with::
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -46,6 +48,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL, make_url
 
 pytestmark = pytest.mark.mysql
 
@@ -54,8 +57,9 @@ REVISION = "45cd705c6b54"
 DOWN_REVISION = "2a8baa967cc6"
 
 
-def _require_test_url() -> str:
-    """``TEST_DATABASE_URL`` (aiomysql, async) -> pymysql (sync), for Alembic.
+def _require_test_url() -> URL:
+    """``TEST_DATABASE_URL`` (aiomysql, async) -> pymysql (sync) URL of the
+    sibling ``<name>_migrations_test`` database, for Alembic.
 
     Mirrors the safety rule of the ``mysql_engine`` fixture in
     ``tests/conftest.py``: skip when unset, hard-fail when the database name
@@ -73,19 +77,32 @@ def _require_test_url() -> str:
             f"TEST_DATABASE_URL apunta a la base '{db_name}', que no termina "
             "en '_test'. Abortando para proteger datos de dev/prod."
         )
-    return url.replace("mysql+aiomysql://", "mysql+pymysql://", 1)
+    return make_url(url).set(
+        drivername="mysql+pymysql",
+        database=f"{db_name.removesuffix('_test')}_migrations_test",
+    )
 
 
 def _alembic_config(sync_url: str) -> Config:
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", sync_url)
+    # Read by alembic/env.py; set_main_option alone is overwritten there.
+    cfg.attributes["sqlalchemy.url"] = sync_url
     return cfg
 
 
 @pytest.fixture(scope="module")
-def sync_url() -> str:
-    return _require_test_url()
+def sync_url() -> Iterator[str]:
+    url = _require_test_url()
+    # URL.set() ignores None, so point the server engine at a schema that
+    # always exists instead of clearing the database.
+    server = create_engine(url.set(database="information_schema"), future=True)
+    with server.begin() as conn:
+        conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{url.database}`"))
+    yield url.render_as_string(hide_password=False)
+    with server.begin() as conn:
+        conn.execute(text(f"DROP DATABASE IF EXISTS `{url.database}`"))
+    server.dispose()
 
 
 @pytest.fixture
@@ -114,16 +131,17 @@ def _seed_pre041_fixtures(engine) -> dict[str, int]:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO clubs (id, name, code, is_active) "
-                "VALUES (9001, 'Club Prueba Migración', 'MIG9001', 1)"
+                "INSERT INTO clubs (id, name, code, is_active, created_at) "
+                "VALUES (9001, 'Club Prueba Migración', 'MIG9001', 1, NOW())"
             )
         )
         conn.execute(
             text(
                 "INSERT INTO users "
-                "(id, email, first_name, last_name, role, is_active, can_login) "
+                "(id, email, first_name, last_name, role, is_active, can_login, "
+                "created_at) "
                 "VALUES (9001, 'coach9001@example.test', 'Coach', 'Nueve', "
-                "'coach', 1, 1)"
+                "'coach', 1, 1, NOW())"
             )
         )
         conn.execute(

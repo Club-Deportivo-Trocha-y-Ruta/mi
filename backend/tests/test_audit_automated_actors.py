@@ -403,7 +403,10 @@ class TestAnthropometryBackfillAudit:
         assert row.entity_id == 1
         assert row.athlete_id == 400
         assert row.club_id == 1
-        assert row.meta_json == {"job": "anthropometry_backfill"}
+        assert row.meta_json == {
+            "job": "anthropometry_backfill",
+            "event_date": "2026-01-01",
+        }
         assert "bmi" in row.changed_fields
 
         await engine.dispose()

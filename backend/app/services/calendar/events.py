@@ -179,6 +179,7 @@ async def create_event(
         entity_id=event.id,
         actor=user,
         club_id=club_id,
+        meta={"event_date": event.start_at.date().isoformat()},
     )
     if created_ts is not None:
         await record_audit(
@@ -188,6 +189,7 @@ async def create_event(
             entity_id=created_ts.id,
             actor=user,
             club_id=club_id,
+            meta={"event_date": created_ts.scheduled_date.isoformat()},
         )
 
     await db.commit()
@@ -484,6 +486,7 @@ async def update_event(
         club_id=event.club_id,
         changed_fields=audit_changed_fields,
         diff=audit_diff,
+        meta={"event_date": event.start_at.date().isoformat()},
     )
 
     await db.commit()
@@ -609,6 +612,7 @@ async def cancel_event(
                         )
                     },
                     reason_code=reason_code,
+                    meta={"event_date": ts.scheduled_date.isoformat()},
                     request_id=ctx.request_id,
                 )
 
@@ -633,6 +637,7 @@ async def cancel_event(
             "cancellation_reason_code": (None, reason_code.value),
         },
         reason_code=reason_code,
+        meta={"event_date": event.start_at.date().isoformat()},
         request_id=ctx.request_id,
     )
 
@@ -751,6 +756,7 @@ async def delete_event_permanent(
                     actor_kind=ctx.actor_kind,
                     club_id=club_id,
                     changed_fields=ts_changed_fields,
+                    meta={"event_date": ts.scheduled_date.isoformat()},
                     request_id=ctx.request_id,
                 )
 
@@ -766,6 +772,7 @@ async def delete_event_permanent(
         actor_kind=ctx.actor_kind,
         club_id=club_id,
         changed_fields=["deleted_at", "deleted_by_user_id"],
+        meta={"event_date": event.start_at.date().isoformat()},
         request_id=ctx.request_id,
     )
 

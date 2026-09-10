@@ -568,14 +568,83 @@ async def test_list_endpoint_exposes_edit_version(
 
 
 @pytest.mark.mysql
-async def test_two_sessions_only_one_update_takes_effect() -> None:
+async def test_two_sessions_only_one_update_takes_effect(mysql_engine) -> None:
     """Igual que §9.1 pero con el dialecto real y dos sesiones simultáneas.
 
     Requiere ``TEST_DATABASE_URL`` (mysql+aiomysql, base terminada en
-    ``_test``). Sin MySQL disponible en el entorno de desarrollo offline esta
-    prueba nunca se ejecuta; queda escrita porque el contrato §9 la exige y
-    porque sqlite no reproduce el bloqueo de fila de InnoDB.
+    ``_test``); sqlite no reproduce el bloqueo de fila de InnoDB. Las dos
+    sesiones leen la v4; la primera reclama la versión y retiene el candado,
+    la segunda queda esperando en su UPDATE y, cuando la primera confirma,
+    su ``WHERE edit_version = 4`` ya no encuentra fila.
     """
-    pytest.skip(
-        "Requiere MySQL real (-m mysql + TEST_DATABASE_URL); ver contrato §9.8."
-    )
+    import asyncio
+
+    from app.models.user import UserRole
+    from app.routers.athlete_monthly_newsletters import _claim_version
+    from tests.fixtures.race_history_fixtures import create_user
+    from tests.fixtures.two_coaches import ATHLETE_USER_ID
+
+    factory = async_sessionmaker(mysql_engine, expire_on_commit=False)
+    async with factory() as session:
+        # seed_two_coaches no crea la cuenta del atleta; sqlite no aplica la FK
+        # athletes.user_id → users.id, InnoDB sí.
+        await create_user(
+            session, user_id=ATHLETE_USER_ID, role=UserRole.athlete, can_login=False
+        )
+        scenario = await seed_two_coaches(session)
+    try:
+        nl_id = await _seed_newsletter(factory, scenario, edit_version=4)
+        now = datetime.now(timezone.utc)
+
+        async with factory() as session_a, factory() as session_b:
+            nl_a = await session_a.get(AthleteMonthlyNewsletter, nl_id)
+            nl_b = await session_b.get(AthleteMonthlyNewsletter, nl_id)
+            assert nl_a.edit_version == nl_b.edit_version == 4
+
+            assert await _claim_version(
+                session_a, nl_a, 4, scenario.coach_a_user_id, now
+            )
+            claim_b = asyncio.create_task(
+                _claim_version(session_b, nl_b, 4, scenario.coach_b_user_id, now)
+            )
+            await asyncio.sleep(0.5)
+            assert not claim_b.done(), "el UPDATE de B debía esperar el candado de fila"
+
+            await session_a.commit()
+            assert await asyncio.wait_for(claim_b, timeout=10) is False
+            await session_b.rollback()
+
+        reloaded = await _reload(factory, nl_id)
+        assert reloaded.edit_version == 5
+        assert reloaded.last_edited_by_user_id == scenario.coach_a_user_id
+    finally:
+        # La base del carril es compartida por toda la sesión de pytest y los
+        # ids fijos de R-32 chocan con otras pruebas mysql (p. ej. el 901).
+        from sqlalchemy import text as sa_text
+
+        async with mysql_engine.begin() as conn:
+            await conn.execute(sa_text("SET FOREIGN_KEY_CHECKS = 0"))
+            for stmt in (
+                "DELETE FROM athlete_monthly_newsletters WHERE athlete_id = :athlete",
+                "DELETE FROM parent_athlete WHERE athlete_id = :athlete",
+                "DELETE FROM athletes WHERE id = :athlete",
+                "DELETE FROM club_members WHERE club_id IN (:club, :other_club)",
+                "DELETE FROM users WHERE id IN (:admin, :coach_a, :coach_b, "
+                ":other_coach, :parent, :athlete_user)",
+                "DELETE FROM clubs WHERE id IN (:club, :other_club)",
+            ):
+                await conn.execute(
+                    sa_text(stmt),
+                    {
+                        "athlete": scenario.athlete_id,
+                        "club": scenario.club_id,
+                        "other_club": scenario.other_club_id,
+                        "admin": scenario.admin_user_id,
+                        "coach_a": scenario.coach_a_user_id,
+                        "coach_b": scenario.coach_b_user_id,
+                        "other_coach": scenario.other_club_coach_user_id,
+                        "parent": scenario.parent_user_id,
+                        "athlete_user": scenario.athlete_user_id,
+                    },
+                )
+            await conn.execute(sa_text("SET FOREIGN_KEY_CHECKS = 1"))

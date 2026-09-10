@@ -67,6 +67,7 @@ _TABLES = (
     "session_media_athlete",
     "calendar_events",
     "event_audiences",
+    "event_attendances",
     *AUDIT_TABLES,
 )
 
@@ -745,6 +746,150 @@ async def test_b16_cancel_with_a_valid_code_audits_it(
     assert rows[0].reason_code == "cancel_weather"
     assert rows[0].actor_user_id == scenario.coach_b_user_id
     assert rows[0].diff_json["status"]["after"] == "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Fix: `{fecha}` en las plantillas de §7.5 (contracts/audit-log-api.md) —
+# `record_audit` debe llevar `meta_json.event_date` en cada escritura
+# auditada de `training_session`, no solo cuando `scheduled_date` cambia, o
+# `render_sentence` degrada al genérico de §7.4 por no poder resolver
+# `{fecha}`.
+# ---------------------------------------------------------------------------
+
+
+async def test_update_session_audit_row_carries_event_date_and_full_sentence(
+    scenario, client_factory, session_factory
+):
+    from app.services.audit import render_sentence
+    from app.services.utils.dates_es import format_date_es
+
+    async with client_factory(scenario.coach_a_user_id) as client:
+        created = await _create_session(client, scenario)
+        session_id = created.json()["id"]
+        # `location` no cambia `scheduled_date`: antes del fix esta fila
+        # perdía `{fecha}` porque `_resolve_placeholder` solo miraba el diff
+        # de `scheduled_date`/`start_at`.
+        resp = await client.patch(
+            f"/api/training-sessions/{session_id}",
+            json={"location": "Pista nueva ficticia", "send_notification": False},
+        )
+    assert resp.status_code == 200, resp.text
+
+    rows = await _audit_rows(
+        session_factory, AuditEntityType.training_session, AuditAction.update
+    )
+    assert len(rows) == 1
+    assert rows[0].meta_json["event_date"] == FUTURE_DATE.isoformat()
+
+    sentence = render_sentence(rows[0], "Coach Ficticio A")
+    assert sentence == (
+        "Coach Ficticio A actualizó la sesión de entrenamiento del "
+        f"{format_date_es(FUTURE_DATE)}."
+    )
+    assert "actualizó la ficha" not in sentence  # nunca el genérico de §7.4
+
+
+async def test_execute_session_audit_row_carries_event_date(
+    scenario, client_factory, session_factory
+):
+    from app.services.audit import render_sentence
+    from app.services.utils.dates_es import format_date_es
+
+    async with client_factory(scenario.coach_a_user_id) as client:
+        created = await _create_session(client, scenario)
+        session_id = created.json()["id"]
+        resp = await client.post(f"/api/training-sessions/{session_id}/execute")
+    assert resp.status_code == 200, resp.text
+
+    rows = await _audit_rows(
+        session_factory, AuditEntityType.training_session, AuditAction.execute
+    )
+    assert len(rows) == 1
+    assert rows[0].meta_json["event_date"] == FUTURE_DATE.isoformat()
+
+    sentence = render_sentence(rows[0], "Coach Ficticio A")
+    assert sentence == (
+        "Coach Ficticio A marcó como ejecutada la sesión de entrenamiento "
+        f"del {format_date_es(FUTURE_DATE)}."
+    )
+
+
+async def test_cancel_session_audit_row_carries_event_date_and_reason(
+    scenario, client_factory, session_factory
+):
+    """Reproduce el bug reportado: "Juan Diaz canceló la sesión de
+    entrenamiento." sin fecha ni motivo — cae al genérico porque `{fecha}`
+    no se podía resolver (`cancel` no cambia `scheduled_date`)."""
+    from app.services.audit import render_sentence
+    from app.services.utils.dates_es import format_date_es
+
+    async with client_factory(scenario.coach_b_user_id) as client:
+        created = await _create_session(client, scenario)
+        session_id = created.json()["id"]
+        resp = await client.delete(
+            f"/api/training-sessions/{session_id}",
+            params={"reason_code": "cancel_weather"},
+        )
+    assert resp.status_code == 204, resp.text
+
+    rows = await _audit_rows(
+        session_factory, AuditEntityType.training_session, AuditAction.cancel
+    )
+    assert len(rows) == 1
+    assert rows[0].meta_json["event_date"] == FUTURE_DATE.isoformat()
+
+    sentence = render_sentence(rows[0], "Coach Ficticio B")
+    assert sentence == (
+        "Coach Ficticio B canceló la sesión de entrenamiento del "
+        f"{format_date_es(FUTURE_DATE)} (Clima adverso)."
+    )
+    assert sentence != "Coach Ficticio B canceló la sesión de entrenamiento."
+
+
+async def test_cancel_calendar_event_audit_row_carries_event_date(
+    scenario, client_factory, session_factory
+):
+    """Mismo fix que las pruebas de arriba, pero para `calendar_event`·
+    `cancel`: "Juan Diaz canceló el evento del calendario." sin fecha."""
+    from app.services.audit import render_sentence
+    from app.services.utils.dates_es import format_date_es
+
+    event_start = f"{FUTURE_DATE.isoformat()}T09:00:00Z"
+    event_end = f"{FUTURE_DATE.isoformat()}T11:00:00Z"
+
+    async with client_factory(scenario.coach_a_user_id) as client:
+        created = await client.post(
+            "/api/calendar/events",
+            json={
+                "event_type": "club_event",
+                "title": "Reunión ficticia de club",
+                "start_at": event_start,
+                "end_at": event_end,
+                "audiences": [],
+            },
+        )
+        assert created.status_code == 201, created.text
+        event_id = created.json()["id"]
+
+        resp = await client.request(
+            "DELETE",
+            f"/api/calendar/events/{event_id}",
+            json={"reason_code": "cancel_weather"},
+        )
+    assert resp.status_code == 204, resp.text
+
+    rows = await _audit_rows(
+        session_factory, AuditEntityType.calendar_event, AuditAction.cancel
+    )
+    assert len(rows) == 1
+    assert rows[0].meta_json["event_date"] == FUTURE_DATE.isoformat()
+
+    sentence = render_sentence(rows[0], "Coach Ficticio A")
+    assert sentence == (
+        "Coach Ficticio A canceló el evento del calendario del "
+        f"{format_date_es(FUTURE_DATE)} (Clima adverso)."
+    )
+    assert sentence != "Coach Ficticio A canceló el evento del calendario."
 
 
 # ---------------------------------------------------------------------------

@@ -426,8 +426,9 @@ class TestCancelTrainingSession:
         club_id = await _get_club_id(client, headers)
         session = await self._create_session(client, headers, club_id)
 
+        # Desde 041 cancelar exige un motivo del catálogo `cancel_*` (§7.1).
         resp = await client.delete(
-            f"/api/training-sessions/{session['id']}",
+            f"/api/training-sessions/{session['id']}?reason_code=cancel_weather",
             headers=headers,
         )
         assert resp.status_code == 204
@@ -439,7 +440,10 @@ class TestCancelTrainingSession:
         session_id = session["id"]
 
         await client.post(f"/api/training-sessions/{session_id}/execute", headers=headers)
-        resp = await client.delete(f"/api/training-sessions/{session_id}", headers=headers)
+        resp = await client.delete(
+            f"/api/training-sessions/{session_id}?reason_code=cancel_weather",
+            headers=headers,
+        )
         assert resp.status_code == 409
 
     async def test_parent_cannot_cancel_403(self, client: AsyncClient):

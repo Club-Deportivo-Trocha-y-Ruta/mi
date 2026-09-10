@@ -373,6 +373,23 @@ async def create_training_session(
             )
         club_id = next(iter(admin_clubs))
 
+    # Misma regla que la convocatoria de una sesión existente (041
+    # athlete-archive §5): un id archivado o de otro club es 400. Antes la
+    # creación no validaba los convocados.
+    result = await db.execute(
+        select(Athlete.id).where(
+            Athlete.id.in_(body.convocados_athlete_ids),
+            Athlete.club_id == club_id,
+            Athlete.deleted_at.is_(None),
+        )
+    )
+    invalid_ids = set(body.convocados_athlete_ids) - set(result.scalars().all())
+    if invalid_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Los siguientes atletas no pertenecen al club: {sorted(invalid_ids)}",
+        )
+
     from app.services.notification.task_dispatcher import TaskDispatcher
 
     dispatcher = TaskDispatcher(background_tasks)
@@ -966,6 +983,7 @@ async def upload_route_file(
         actor_kind=ctx.actor_kind,
         club_id=session.club_id,
         changed_fields=["route_file_path"],
+        meta={"event_date": session.scheduled_date.isoformat()},
         request_id=ctx.request_id,
     )
 

@@ -331,6 +331,22 @@ async def test_club_audit_log_forbids_coach_of_other_club(
 
 
 @pytest.mark.asyncio
+async def test_club_audit_log_forbids_parent_with_generic_message(
+    two_coaches_session_factory, two_coaches_scenario, audit_client_factory
+):
+    """§4.4: padre y deportista reciben el texto genérico en ambos endpoints;
+    el texto "de este club" queda para el coach sin membresía."""
+    scenario = two_coaches_scenario
+    await _seed_audit_rows(two_coaches_session_factory, scenario)
+
+    async with audit_client_factory(scenario.parent_user_id) as client:
+        resp = await client.get(f"/api/clubs/{scenario.club_id}/audit-log")
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "No tienes permisos para esta acción"
+
+
+@pytest.mark.asyncio
 async def test_athlete_audit_log_forbids_coach_of_other_club(
     two_coaches_session_factory, two_coaches_scenario, audit_client_factory
 ):

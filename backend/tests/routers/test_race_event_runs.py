@@ -795,12 +795,14 @@ class TestListEventRuns:
         self, http_client, session_factory
     ):
         """active_only=false includes terminal runs from last 7 days."""
+        # user_id=10 coincide con el coach autenticado por ``http_client``
+        # (club_ids=(10 * 1000 + 1,)); ver docstring de ``_make_user``.
         seed = await _seed_base(
             session_factory,
             n_athletes=2,
             event_id=43,
             series_id=2,
-            user_id=11,
+            user_id=10,
         )
         aid0, aid1 = seed["athlete_ids"]
 
@@ -832,12 +834,13 @@ class TestListEventRuns:
         self, http_client, session_factory
     ):
         """Run with stale_since IS NOT NULL → stale=true, state=hitl_waiting."""
+        # user_id=10 coincide con el coach autenticado por ``http_client``.
         seed = await _seed_base(
             session_factory,
             n_athletes=1,
             event_id=44,
             series_id=3,
-            user_id=12,
+            user_id=10,
         )
         aid = seed["athlete_ids"][0]
 
@@ -865,12 +868,13 @@ class TestListEventRuns:
         self, http_client, session_factory
     ):
         """Run with stale_since IS NULL → stale=false."""
+        # user_id=10 coincide con el coach autenticado por ``http_client``.
         seed = await _seed_base(
             session_factory,
             n_athletes=1,
             event_id=45,
             series_id=4,
-            user_id=13,
+            user_id=10,
         )
         aid = seed["athlete_ids"][0]
 

@@ -297,12 +297,14 @@ describe("currentSeason", () => {
 
   it("usa el año en CLUB_TIMEZONE (Bogotá) y no el año naive de new Date().getFullYear()", () => {
     // 2027-01-01T02:00:00Z = 2026-12-31 21:00 en Bogotá (UTC-5): en el club
-    // todavía es 2026, aunque un cálculo naive con la TZ del runtime (este
-    // entorno de pruebas corre en UTC) ya reportaría 2027.
+    // todavía es 2026, aunque un cálculo naive con la TZ del runtime en UTC ya
+    // reportaría 2027.
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2027-01-01T02:00:00Z"));
 
-    expect(new Date().getFullYear()).toBe(2027); // control: confirma el cruce naive de año
+    // control en UTC explícito: con getFullYear() el control dependía de la TZ
+    // de la máquina y fallaba en un equipo configurado en Bogotá.
+    expect(new Date().getUTCFullYear()).toBe(2027);
     expect(currentSeason()).toBe(2026);
   });
 

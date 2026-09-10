@@ -27,15 +27,28 @@ function mailhogBaseUrl(): string {
 
 async function setupAuthForRole(page: Page, role: 'coach' | 'coach2') {
   const tokens = await realTokens(page.request, role);
+  // `SessionCoachesField` prellena el chip del propio entrenador leyendo
+  // `useAuthStore(s => s.user)` (ver componente) — el store no hace fetchMe
+  // proactivo al montar si ya hay `accessToken` en sessionStorage (solo lo
+  // hace tras login por UI o al refrescar un token vencido). Con `user: null`
+  // inyectado el chip nunca aparece. Se resuelve al vuelo, igual que
+  // `newsletter-conflict.spec.ts::setupAuth`.
+  const meRes = await page.request.get(`${apiBaseUrl()}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
+  });
+  if (!meRes.ok()) {
+    throw new Error(`setupAuthForRole: GET /auth/me (${role}) devolvió ${meRes.status()}`);
+  }
+  const sessionUser = await meRes.json();
   await page.addInitScript(
-    ({ accessToken, refreshToken }) => {
+    ({ accessToken, refreshToken, user }) => {
       sessionStorage.setItem(
         'auth-session',
         JSON.stringify({
           state: {
             accessToken,
             refreshToken,
-            user: null,
+            user,
             isAuthenticated: true,
             isLoading: false,
           },
@@ -43,7 +56,7 @@ async function setupAuthForRole(page: Page, role: 'coach' | 'coach2') {
         }),
       );
     },
-    { accessToken: tokens.access_token, refreshToken: tokens.refresh_token },
+    { accessToken: tokens.access_token, refreshToken: tokens.refresh_token, user: sessionUser },
   );
 }
 

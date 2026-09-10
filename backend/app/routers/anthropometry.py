@@ -211,6 +211,7 @@ async def create_anthropometry(
         actor=current_user,
         club_id=athlete.club_id,
         athlete_id=athlete.id,
+        meta={"event_date": record.evaluation_date.isoformat()},
     )
 
     # -----------------------------------------------------------------------

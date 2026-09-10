@@ -298,9 +298,15 @@ async def list_club_audit_log(
 ) -> AuditListOut:
     """FR-006/US1 AS8: historial del club, admin y coaches del club."""
     if not can_view_audit(current_user, club_id):
+        # §4.4: padre/deportista reciben el texto genérico de require_role; el
+        # texto "de este club" es solo para el coach sin membresía.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permisos para ver el historial de este club.",
+            detail=(
+                "No tienes permisos para ver el historial de este club."
+                if current_user.role == UserRole.coach
+                else "No tienes permisos para esta acción"
+            ),
         )
 
     _validate_date_range(from_date, to_date)

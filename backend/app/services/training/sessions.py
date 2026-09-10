@@ -1121,6 +1121,7 @@ async def update_session(
             club_id=session.club_id,
             changed_fields=changed_fields,
             diff=diff,
+            meta={"event_date": session.scheduled_date.isoformat()},
             request_id=ctx.request_id,
         )
 
@@ -1207,6 +1208,7 @@ async def execute_session(
             diff={
                 "status": (previous_status.value, SessionStatus.EXECUTED.value)
             },
+            meta={"event_date": session.scheduled_date.isoformat()},
             request_id=ctx.request_id,
         )
 
@@ -1270,6 +1272,7 @@ async def cancel_session(
                 "status": (previous_status.value, SessionStatus.CANCELLED.value)
             },
             reason_code=AuditReasonCode(reason_code.value),
+            meta={"event_date": session.scheduled_date.isoformat()},
             request_id=ctx.request_id,
         )
 

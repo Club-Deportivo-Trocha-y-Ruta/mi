@@ -164,6 +164,21 @@ resolution (make the status transition real). See `technical-notes.md` (2026-09-
 
 ## 4. Playwright / e2e
 
+> **Update 2026-09-10 (local run, isolated `trocha-e2e` stack)** — everything below this
+> note describes the state before a live stack was available and is kept for history.
+> The stack booted on an empty volume, which confirms the T001 migration fix live. The
+> five feature specs run **12 passed, 1 skipped** serially (`E2E-CACT-003` skips when the
+> coach selector has no options under load), after fixing spec bugs (`alertdialog` role,
+> synthetic athlete `club_id`, injected `user`) and one product defect (staff create/update
+> committed after the response — see `technical-notes.md`). The full suite ran
+> **84 passed / 43 failed / 11 skipped** of 138; per file it matches feature 040's
+> isolated-stack baseline (73/42/10 of 125) except `dashboard-coach` (two tests broken by
+> this feature's unmocked `ActorChip` staff request and reason-code catalogue — mocks added,
+> 21/21 over three repeats) and `invitations` (+1: the spec targets real-database ids, and
+> the `coach2` seed shifted the synthetic parent from id 4 to 5). The remaining failures
+> (`target-size` debt, specs with real-database ids) are pre-existing.
+> **SC-002 is still not run** — it is the moderated, in-person test with the club's coach.
+
 **Not executed**, for two independent, additive reasons:
 
 1. **No live stack in this environment.** All three night runs ran with no Docker and no
@@ -279,6 +294,14 @@ MySQL, same caveat as everywhere else in this document.
   "Ana Coach" / "Bruno Coach" names or numeric illustrative figures.
 
 ## 7. Summary — what to do before calling this feature verified
+
+> **Update 2026-09-10 (local run)**: steps 1–4 below are done — the 16 stale doubles were
+> fixed, `pytest -m mysql` ran green on a real MySQL 8.4 `_test` database, the isolated
+> e2e stack booted and the full suite ran, and the quickstart was walked live except
+> scenarios 10–11 (no real AI or race data on the isolated stack) and SC-002. What
+> remains: **SC-002** (moderated, in person) and **T097** (after merge and deploy). Full
+> record in `specs/041-multi-coach-governance/checklists/integration-review.md`, last
+> section. The list below is kept as written before that run.
 
 In priority order, based on what each step would actually catch:
 

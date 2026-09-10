@@ -60,11 +60,28 @@ def _patch_athlete_select(fake_db, athlete_row):
     ``select(Athlete.deleted_at)`` para el filtro de archivado — esa
     consulta de una sola columna debe responder con el valor escalar de
     ``deleted_at``, no con la fila completa.
+
+    Desde la feature 041 (T080, hallazgo H1), ``start_run`` dispara PRIMERO
+    un ``select(Athlete.club_id)`` (``_ensure_athlete_club_access``) — antes
+    incluso del select de archivado. Esa consulta también matchea
+    "FROM athletes" por substring, así que sin distinguirla el club
+    resuelto sería ``None`` (o la fila completa del atleta, ni siquiera un
+    int) y el coach fake de ``coach_client`` — sin membresía de club — se
+    quedaría afuera con 403 en vez de llegar al escenario que el test
+    realmente quiere ejercitar. La delegamos a ``original_execute``, que
+    (ver ``tests/routers/conftest.py::FakeSession``) ya responde con el
+    club del coach fake por defecto.
     """
     original_execute = fake_db.execute
 
     async def _patched_execute(stmt, params=None):
         sql = getattr(stmt, "text", None) or str(stmt)
+        # ``select(Athlete.club_id)`` — chequeo de alcance por club, se
+        # resuelve siempre contra el club del coach fake (ver conftest),
+        # independientemente de si el atleta "existe" para efectos del
+        # lookup de sexo que este helper simula.
+        if sql.lstrip().startswith("SELECT athletes.club_id"):
+            return await original_execute(stmt, params)
         # ``select(Athlete.deleted_at)`` (columna única) vs. ``select(Athlete)``
         # (entidad completa, que también incluye "athletes.deleted_at" en su
         # lista de columnas) — se distinguen por el inicio del SELECT.

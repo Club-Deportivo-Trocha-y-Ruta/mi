@@ -348,7 +348,7 @@ export default function App() {
         <Route
           path="/athletes"
           element={
-            <ProtectedRoute allowedRoles={[UserRole.coach]}>
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando deportistas..." />}>
                 <AthletesListPage />
               </Suspense>
@@ -358,7 +358,7 @@ export default function App() {
         <Route
           path="/athletes/new"
           element={
-            <ProtectedRoute allowedRoles={[UserRole.coach]}>
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando formulario de deportista..." />}>
                 <AthleteFormPage mode="create" />
               </Suspense>
@@ -368,17 +368,25 @@ export default function App() {
         <Route
           path="/athletes/:id"
           element={
-            <ProtectedRoute allowedRoles={[UserRole.coach]}>
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando deportista..." />}>
                 <AthleteDetailPage />
               </Suspense>
             </ProtectedRoute>
           }
         />
+        {/*
+          041 contracts/athlete-archive.md §1: `DELETE /api/athletes/{id}`
+          (archive) is `require_role([admin, coach])` at the API — an admin
+          must be able to reach the archive button here, same as every other
+          operational route in this file (`[coach, admin]` is the
+          established pattern; these four `/athletes*` routes were the only
+          outliers still coach-only, pre-dating 041).
+        */}
         <Route
           path="/athletes/:id/edit"
           element={
-            <ProtectedRoute allowedRoles={[UserRole.coach]}>
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando formulario de deportista..." />}>
                 <AthleteFormPage mode="edit" />
               </Suspense>

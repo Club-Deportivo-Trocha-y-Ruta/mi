@@ -286,6 +286,28 @@ async def test_admin_include_archived_shows_archived_with_evidence(scenario, cli
     assert archived_row["deleted_reason_code"] == "athlete_left_club"
 
 
+async def test_coach_cannot_convoke_archived_athlete_on_session_create(
+    scenario, client_factory
+):
+    """§5: la convocatoria rechaza un id archivado con 400, también al crear
+    la sesión (antes solo lo hacía la edición de convocatoria)."""
+    async with client_factory(COACH_ID) as client:
+        resp = await client.post(
+            "/api/training-sessions",
+            json={
+                "scheduled_date": "2026-10-20",
+                "scheduled_start_time": "08:00:00",
+                "duration_min": 60,
+                "location": "Pista ficticia",
+                "technical_focus": "Técnica",
+                "convocados_athlete_ids": [ACTIVE_ATHLETE_ID, ARCHIVED_ATHLETE_ID],
+            },
+        )
+    assert resp.status_code == 400
+    assert str(ARCHIVED_ATHLETE_ID) in resp.json()["detail"]
+    assert str(ACTIVE_ATHLETE_ID) not in resp.json()["detail"]
+
+
 async def test_coach_athlete_detail_404_for_archived(scenario, client_factory):
     async with client_factory(COACH_ID) as client:
         resp = await client.get(f"/api/athletes/{ARCHIVED_ATHLETE_ID}")

@@ -567,10 +567,14 @@ async def test_t20_frontera_de_microsegundos_en_mysql(
     ``data-model.md`` §1: en SQLite no significa nada, por eso vive acá.
     """
     cutoff = datetime(2024, 5, 5, 4, 3, 2, 500000)
+    # Sin club: en MySQL la FK de audit_log.club_id es real y la base del carril
+    # no siembra clubes; la frontera no depende del club.
     vieja = _audit_row(
-        occurred_at=cutoff - timedelta(microseconds=1), entity_id=920001
+        occurred_at=cutoff - timedelta(microseconds=1),
+        entity_id=920001,
+        club_id=None,
     )
-    nueva = _audit_row(occurred_at=cutoff, entity_id=920002)
+    nueva = _audit_row(occurred_at=cutoff, entity_id=920002, club_id=None)
     mysql_session.add_all([vieja, nueva])
     await mysql_session.commit()
 

@@ -109,16 +109,15 @@ test.describe('Staff admin E2E', () => {
 
     // Desactivar (no DELETE): abrir el diálogo de estado, elegir motivo y confirmar.
     await row.getByRole('button', { name: /desactivar/i }).click();
-    const stateDialog = page.getByRole('dialog');
-    await expect(stateDialog).toBeVisible();
+    // StaffStateDialog va sobre ConfirmDialog (AlertDialog de Radix): rol
+    // `alertdialog`, no `dialog`. Desactivar exige motivo del catálogo cerrado.
+    const stateDialog = page.getByRole('alertdialog');
+    await expect(stateDialog.getByTestId('staff-state-dialog')).toBeVisible();
 
-    // Selecciona un motivo del catálogo cerrado si el diálogo lo pide (select/radio).
-    const reasonControl = stateDialog.getByRole('combobox').first();
-    if (await reasonControl.count()) {
-      await reasonControl.click();
-      await page.getByRole('option').first().click();
-    }
-    await stateDialog.getByRole('button', { name: /desactivar|confirmar/i }).click();
+    await stateDialog.getByTestId('staff-reason-select').click();
+    await page.getByRole('option').first().click();
+    await stateDialog.getByRole('button', { name: 'Desactivar', exact: true }).click();
+    await expect(stateDialog).toBeHidden({ timeout: 10_000 });
 
     // La fila sigue existiendo (no fue borrada) pero ahora está inactiva.
     await expect(row).toBeVisible({ timeout: 10_000 });
