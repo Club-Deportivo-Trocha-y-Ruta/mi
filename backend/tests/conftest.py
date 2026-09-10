@@ -4,6 +4,12 @@ import os
 # mandar trazas desde la suite.
 os.environ["LANGFUSE_ENABLED"] = "false"
 
+# Idem AI_PROVIDER/RACE_AI_PROVIDER: un .env local con un proveedor de costo
+# $0 (openai/claude-cli, ver pricing.py) rompe silenciosamente asserts como
+# `cost_usd > 0` en tests que no fijan el proveedor explícitamente.
+os.environ["AI_PROVIDER"] = "google"
+os.environ["RACE_AI_PROVIDER"] = ""
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
