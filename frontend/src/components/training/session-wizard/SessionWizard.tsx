@@ -14,6 +14,7 @@ import {
 } from "@/api/trainingSessions";
 import { useAuthStore } from "@/store/auth.store";
 import { useFormDraft } from "@/hooks/useFormDraft";
+import { extractErrorDetail } from "@/lib/apiError";
 import {
   STEP_ATHLETES_FIELDS,
   STEP_GENERAL_FIELDS,
@@ -341,11 +342,14 @@ export function SessionWizard({
       clearDraft();
       finishSuccess(saved.id);
       setSubmitting(false);
-    } catch {
+    } catch (err) {
       setSubmitError(
-        isEdit
-          ? "No se pudo guardar los cambios. Revisa tu conexión e intenta de nuevo."
-          : "No se pudo crear la sesión. Revisa tu conexión e intenta de nuevo.",
+        extractErrorDetail(
+          err,
+          isEdit
+            ? "No se pudo guardar los cambios. Revisa tu conexión e intenta de nuevo."
+            : "No se pudo crear la sesión. Revisa tu conexión e intenta de nuevo.",
+        ),
       );
       setSubmitting(false);
     }
