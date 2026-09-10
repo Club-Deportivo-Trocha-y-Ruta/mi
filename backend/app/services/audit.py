@@ -591,7 +591,22 @@ async def record_audit(
         entity_type = AuditEntityType(entity_type)
     except ValueError as exc:
         raise AuditContractError(f"Unknown AuditEntityType: {entity_type!r}") from exc
-    if entity_id is None or entity_id <= 0:
+    # Excepción única y deliberada al `entity_id > 0`: la fila de la purga de
+    # retención. Una purga no habla de **una** entidad, sino de un barrido, así
+    # que `contracts/retention-purge.md` §1.4 y `data-model.md` §1.3 le fijan el
+    # centinela `entity_id = 0`.
+    #
+    # Sin esta excepción los dos contratos se contradicen y la purga entera
+    # revienta contra esta guarda. La alternativa que se descartó —que la purga
+    # escribiera con `entity_id = 1`— era peor que el error: 1 es el id de una
+    # fila de auditoría real, así que la evidencia del barrido quedaría
+    # apuntando a un registro ajeno.
+    _is_purge_sentinel = (
+        entity_type == AuditEntityType.audit_log
+        and action == AuditAction.purge
+        and entity_id == 0
+    )
+    if not _is_purge_sentinel and (entity_id is None or entity_id <= 0):
         raise AuditContractError(f"entity_id must be a positive int, got {entity_id!r}")
 
     # 2. actor coherence
@@ -735,12 +750,9 @@ async def record_audit(
 # instrumentation". **Actualízalo cada vez que voltees una entrada**: durante
 # dos oleadas afirmó que ninguna ruta estaba instrumentada mucho después de
 # dejar de ser cierto, y eso fue justo lo que dejó pasar T030 como cerrada
-# sin estarlo. Hoy quedan diez, todas de auto-servicio de la persona o de
-# vínculos familiares: `auth/parent-register`, `auth/password-reset/confirm`,
-# `profile/basic`, `profile/change-password`, `profile/change-email/confirm`,
-# las tres de `parent-athletes`, el "marcar leído" del boletín de familia y
-# el dry-run de importación. Cada una es un TODO real de quien instrumente
-# ese sitio.
+# sin estarlo. Hoy queda **una sola**:
+# ``POST /api/race-analysis/imports/{parse_id}/dry-run``. Es un TODO real de
+# quien instrumente ese sitio, no un resto de la oleada 1.
 # ---------------------------------------------------------------------------
 
 
@@ -797,20 +809,35 @@ _AUTH_PROFILE: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/auth/refresh"): Exempt(
         "Token exchange in memory; no row is written."
     ),
-    ("POST", "/api/auth/parent-register"): Exempt(_PENDING),
+    ("POST", "/api/auth/parent-register"): Audited(
+        frozenset(
+            {
+                AuditEntityType.user,
+                AuditEntityType.parent_athlete,
+                AuditEntityType.parent_invite,
+            }
+        ),
+        min_rows=3,
+    ),
     ("POST", "/api/auth/password-reset/request"): Exempt(
         "Writes only a single-use reset token. Recording it (success or "
         "failure) would turn the history into an account-enumeration oracle."
     ),
-    ("POST", "/api/auth/password-reset/confirm"): Exempt(_PENDING),
-    ("PATCH", "/api/profile/basic"): Exempt(_PENDING),
-    ("POST", "/api/profile/change-password"): Exempt(_PENDING),
+    ("POST", "/api/auth/password-reset/confirm"): Audited(
+        frozenset({AuditEntityType.user})
+    ),
+    ("PATCH", "/api/profile/basic"): Audited(frozenset({AuditEntityType.user})),
+    ("POST", "/api/profile/change-password"): Audited(
+        frozenset({AuditEntityType.user})
+    ),
     ("POST", "/api/profile/change-email/request"): Exempt(
         "Writes only a pending-verification token; the account is unchanged "
         "and the response is deliberately neutral against enumeration. The "
         "applied change is audited at /change-email/confirm."
     ),
-    ("POST", "/api/profile/change-email/confirm"): Exempt(_PENDING),
+    ("POST", "/api/profile/change-email/confirm"): Audited(
+        frozenset({AuditEntityType.user})
+    ),
 }
 
 #: §4.2 Staff and clubs — 6 keys, all audited.
@@ -865,9 +892,15 @@ _ATHLETES: dict[tuple[str, str], AuditPolicy] = {
 #: §4.4 Parent links and consent — 5 keys, 2 audited (the consent
 #: renew/withdraw endpoints) and 3 still pending.
 _PARENTS_CONSENT: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/parent-athletes"): Exempt(_PENDING),
-    ("POST", "/api/parent-athletes/invite"): Exempt(_PENDING),
-    ("DELETE", "/api/parent-athletes/{relation_id}"): Exempt(_PENDING),
+    ("POST", "/api/parent-athletes"): Audited(
+        frozenset({AuditEntityType.parent_athlete})
+    ),
+    ("POST", "/api/parent-athletes/invite"): Audited(
+        frozenset({AuditEntityType.parent_invite, AuditEntityType.parent_athlete})
+    ),
+    ("DELETE", "/api/parent-athletes/{relation_id}"): Audited(
+        frozenset({AuditEntityType.parent_athlete})
+    ),
     ("POST", "/api/me/consent/renew"): Audited(
         frozenset({AuditEntityType.parental_consent})
     ),
@@ -988,7 +1021,7 @@ _NEWSLETTERS: dict[tuple[str, str], AuditPolicy] = {
     (
         "POST",
         "/api/parents/me/athletes/{athlete_id}/newsletters/{newsletter_id}/read",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.athlete_monthly_newsletter})),
 }
 
 #: §4.9 AI runs and insights — 12 keys, 3 genuinely exempt, 9 pending.

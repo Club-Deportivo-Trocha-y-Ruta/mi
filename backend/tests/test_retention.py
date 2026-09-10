@@ -227,14 +227,11 @@ async def test_t4_la_purga_queda_registrada(session: AsyncSession) -> None:
     assert len(filas) == 1
     fila = filas[0]
     assert fila.entity_type == AuditEntityType.audit_log.value
-    # `retention-purge.md` §1.4 y `data-model.md` §1.3 fijan el sentinela 0,
-    # pero `record_audit` valida `entity_id > 0` (`audit-recording.md` §1.2).
-    # Mientras ese choque de contratos se resuelva en `app/services/audit.py`,
-    # la fila se escribe con el respaldo positivo. Ver PURGE_ENTITY_ID_FALLBACK.
-    assert fila.entity_id in {
-        retention.PURGE_ENTITY_ID,
-        retention.PURGE_ENTITY_ID_FALLBACK,
-    }
+    # El sentinela del contrato, exacto: `retention-purge.md` §1.4 y
+    # `data-model.md` §1.3 fijan `entity_id = 0` porque una purga no habla de
+    # una fila concreta. `record_audit` exige `entity_id > 0` para todo lo
+    # demás y exime este único par (`audit_log`·`purge`) de forma explícita.
+    assert fila.entity_id == retention.PURGE_ENTITY_ID == 0
     assert fila.actor_user_id is None
     assert fila.actor_kind == AuditActorKind.cron
     assert fila.actor_role is None

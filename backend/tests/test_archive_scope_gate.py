@@ -123,6 +123,19 @@ ARCHIVE_SCOPE_EXEMPT: dict[tuple[str, str], str] = {
     "pasado. §5.3 'cualquier consulta que reconstruye un período cerrado' "
     "— filtrar aquí descartaría silenciosamente la evidencia de entrega de "
     "un atleta archivado después del envío. No dispara ningún correo nuevo",
+    (
+        "services/coach_activity.py",
+        "compute_coach_activity",
+    ): "informe de actividad por entrenador (US7, T081): reconstruye un "
+    "período cerrado. ``contracts/coach-activity-report.md`` §1.4 lo dice "
+    "literalmente — 'those sessions and attendance rows still count — a "
+    "report reconstructing a past period must not filter "
+    "athletes.deleted_at' — remitiendo a ``data-model.md`` §8.1 'Sites "
+    "that must not filter'. Archivar a un menor no puede reescribir el "
+    "trabajo que un adulto hizo en ese mes. El único uso del atleta aquí "
+    "es el alcance por club de ``agent_runs`` (``athlete_id`` → "
+    "``club_id``): ni su id ni su nombre salen jamás en el payload, que "
+    "son nombres de personal adulto y enteros",
 }
 
 
@@ -300,10 +313,19 @@ def test_archive_scope_exempt_matches_contract_section_5_3():
         "routers/race_analysis.py",
         "routers/strava_integration.py",
         "routers/webhooks_resend.py",
+        # Añadido en T081 (feature 041, US7): una sola entrada,
+        # ``services/coach_activity.py::compute_coach_activity``, el informe
+        # de actividad por entrenador. Es un reconstructor de período
+        # cerrado — §1.4 del contrato lo lista entre los sitios que NO deben
+        # filtrar ``deleted_at``. Sus dos sitios de riesgo
+        # (``Athlete.club_id`` y ``join(Athlete``) viven en la misma
+        # función, así que suman una única entrada al conteo.
+        "services/coach_activity.py",
     }
     actual_files = {relative_path for relative_path, _ in ARCHIVE_SCOPE_EXEMPT}
     assert actual_files == expected_files
-    assert len(ARCHIVE_SCOPE_EXEMPT) == 10
+    # 10 exenciones revisadas hasta G15 + 1 de T081 (ver comentario arriba).
+    assert len(ARCHIVE_SCOPE_EXEMPT) == 11
 
 
 def test_gate_actually_detects_an_unfiltered_query(tmp_path, monkeypatch):

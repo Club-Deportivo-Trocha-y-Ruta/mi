@@ -1,8 +1,11 @@
 """Route-registry audit coverage (FR-009), T018.
 
 `contracts/audit-recording.md` §7/§9 T4. Estado real del registro a hoy:
-`AUDITED_ROUTES` tiene 111 claves, 81 de ellas `Audited` y el resto `Exempt`
-(`app/services/audit.py`). Lo que se comprueba aquí:
+`AUDITED_ROUTES` tiene 111 claves, 99 de ellas `Audited` y el resto `Exempt`
+(`app/services/audit.py`). De las exentas, once son las exenciones genuinas
+de §4.14 y **una sola** sigue con el marcador "pending instrumentation":
+`POST /api/race-analysis/imports/{parse_id}/dry-run`. Lo que se comprueba
+aquí:
 
   T4.1 — registry completeness: every mutating route (POST/PUT/PATCH/DELETE)
          plus every `MUTATING_GETS` member (§4.13) has a registry entry.

@@ -37,7 +37,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditAction, AuditActorKind, AuditLog
 from app.services.audit import (
-    AuditContractError,
     AuditEntityType,
     AuditReasonCode,
     record_audit,
@@ -63,17 +62,6 @@ DEFAULT_RETENTION_MONTHS = 24
 #: fila concreta de ``audit_log`` sino de un rango completo, así que no hay
 #: clave primaria real que citar.
 PURGE_ENTITY_ID = 0
-
-#: Sentinela de respaldo. ``retention-purge.md`` §1.4 y ``data-model.md`` §1.3
-#: fijan ``entity_id = 0``, pero ``contracts/audit-recording.md`` §1.2 exige
-#: ``entity_id > 0`` y ``record_audit`` lo valida así hoy
-#: (``app/services/audit.py``). Es un choque entre contratos hermanos que se
-#: resuelve en ``audit.py``, no acá: mientras tanto se intenta el sentinela del
-#: contrato y, si la validación lo rechaza, se reintenta con el menor entero
-#: positivo — siempre a través de ``record_audit``, que sigue siendo el único
-#: punto de construcción de una fila de auditoría. El día que la guarda acepte
-#: el 0, este módulo lo usa solo, sin cambios.
-PURGE_ENTITY_ID_FALLBACK = 1
 
 #: Slug de ``meta_json.job`` para este trabajo. Debe existir en
 #: ``AUDIT_JOB_SLUGS`` (``app/services/audit.py``) o ``record_audit`` rechaza
@@ -206,8 +194,6 @@ async def _queue_purge_row(
 
     Siempre por ``record_audit``: es el único punto de construcción de una fila
     de auditoría en toda la aplicación (``contracts/audit-recording.md`` §5).
-    Lo único que se negocia acá es el sentinela de ``entity_id`` — ver
-    ``PURGE_ENTITY_ID_FALLBACK``.
     """
     meta = {
         "job": PURGE_JOB_SLUG,
@@ -232,12 +218,7 @@ async def _queue_purge_row(
             request_id=request_id,
         )
 
-    try:
-        row = await _write(PURGE_ENTITY_ID)
-    except AuditContractError as exc:
-        if "entity_id" not in str(exc):
-            raise
-        row = await _write(PURGE_ENTITY_ID_FALLBACK)
+    row = await _write(PURGE_ENTITY_ID)
     if row is None:  # pragma: no cover - ``purge`` nunca cae en el no-op de R7
         raise RuntimeError("record_audit no encoló la fila de purga")
     return row

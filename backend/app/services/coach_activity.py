@@ -349,6 +349,15 @@ async def compute_coach_activity(
     # --- Bloque 4: runs agénticos lanzados (§3, nota 4) --------------------
     # Alcance por club vía el atleta; los runs sin atleta se atribuyen al
     # club cuando quien los lanzó es entrenador de ese club.
+    #
+    # A propósito SIN ``Athlete.deleted_at.is_(None)``: este informe
+    # reconstruye un período cerrado y §1.4 del contrato lo pone por escrito
+    # ("a report reconstructing a past period must not filter
+    # athletes.deleted_at", ``data-model.md`` §8.1). Archivar a un menor no
+    # puede borrar el trabajo que un adulto hizo ese mes. La exención está
+    # registrada, con esa razón, en ``ARCHIVE_SCOPE_EXEMPT``
+    # (``tests/test_archive_scope_gate.py``). El atleta solo se usa como
+    # criterio de alcance: ni su id ni su nombre salen en el payload.
     ai_scope = [Athlete.club_id == club_id]
     if coach_ids:
         ai_scope.append(
