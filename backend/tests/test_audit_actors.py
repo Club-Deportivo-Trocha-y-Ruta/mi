@@ -42,8 +42,9 @@ class TestCreateUserAudit:
             resp = await client.post(
                 "/api/users",
                 json={
-                    "email": "nuevo.coach@test.local",
-                    "password": "unaClaveSegura1",
+                    "email": "nuevo.coach@test.com",
+                    # T051: la contraseña no viaja aquí; la persona la define
+                    # desde el correo de bienvenida (staff-admin.md §1.4).
                     "first_name": "Nuevo",
                     "last_name": "Entrenador",
                     "role": "coach",
@@ -87,7 +88,7 @@ class TestUpdateUserAudit:
                 f"/api/users/{s.coach_b_user_id}", json={"is_active": False}
             )
         assert resp.status_code == 422
-        assert resp.json()["detail"] == "Debes seleccionar un motivo para esta acción."
+        assert resp.json()["detail"] == "Debes indicar el motivo de la desactivación"
 
     @pytest.mark.asyncio
     async def test_deactivate_with_reason_code_records_deactivate_row(
@@ -245,45 +246,50 @@ class TestDeleteUserAudit:
             await session.commit()
 
         async with two_coaches_client_factory(s.admin_user_id, UserRole.admin) as client:
-            resp = await client.delete(
+            resp = await client.request(
+                "DELETE",
                 f"/api/users/{s.parent_user_id}",
-                params={"reason_code": "parent_family_request"},
+                json={"reason_code": "parent_family_request"},
             )
-        assert resp.status_code == 204, resp.text
+        # T046 endureció la regla: esta cuenta tiene actividad registrada por
+        # partida triple (consentimiento otorgado, otro usuario creado por ella
+        # y filas de auditoría a su nombre), así que ya no se elimina — se
+        # desactiva. El defecto de T021 que anulaba `created_by` deja de ser
+        # alcanzable, que es una garantía más fuerte que la de la oleada 3.
+        assert resp.status_code == 409, resp.text
 
         async with two_coaches_session_factory() as session:
-            # El defecto preexistente (T021, §10): ya NO se anula created_by.
             still_created = await session.execute(
                 select(User).where(User.id == 95000)
             )
             child = still_created.scalar_one()
             assert child.created_by == s.parent_user_id
 
-            deleted = await session.execute(select(User).where(User.id == s.parent_user_id))
-            assert deleted.scalar_one_or_none() is None
+            survivor = await session.execute(
+                select(User).where(User.id == s.parent_user_id)
+            )
+            assert survivor.scalar_one_or_none() is not None
 
+        # Un rechazo no escribe historial: no hay fila `delete` de usuario, ni
+        # `unlink` del vínculo con el atleta, ni borrado del consentimiento.
+        # La evidencia de la familia queda intacta, que es lo que US2 protege.
         user_rows = await _rows_for(
             two_coaches_session_factory, entity_type="user", entity_id=s.parent_user_id
         )
-        assert len(user_rows) == 1
-        assert user_rows[0].action == AuditAction.delete
-        assert user_rows[0].reason_code == "parent_family_request"
-        request_id = user_rows[0].request_id
+        assert [r for r in user_rows if r.action == AuditAction.delete] == []
 
-        unlink_rows = await _rows_for(two_coaches_session_factory, entity_type="parent_athlete")
-        unlink_rows = [r for r in unlink_rows if r.request_id == request_id]
-        assert len(unlink_rows) == 1
-        assert unlink_rows[0].action == AuditAction.unlink
-        assert unlink_rows[0].athlete_id == s.athlete_id
-        assert unlink_rows[0].club_id == s.club_id
-
-        consent_rows = await _rows_for(
-            two_coaches_session_factory, entity_type="parental_consent"
+        unlink_rows = await _rows_for(
+            two_coaches_session_factory, entity_type="parent_athlete"
         )
-        consent_rows = [r for r in consent_rows if r.request_id == request_id]
-        assert len(consent_rows) == 1
-        assert consent_rows[0].action == AuditAction.delete
-        assert consent_rows[0].athlete_id == s.athlete_id
+        assert [r for r in unlink_rows if r.action == AuditAction.unlink] == []
+
+        async with two_coaches_session_factory() as session:
+            surviving_consent = await session.execute(
+                select(ParentalConsent).where(
+                    ParentalConsent.parent_user_id == s.parent_user_id
+                )
+            )
+            assert surviving_consent.scalars().first() is not None
 
 
 class TestClubAudit:

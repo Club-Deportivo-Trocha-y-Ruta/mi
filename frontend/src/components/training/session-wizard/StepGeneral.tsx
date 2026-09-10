@@ -6,6 +6,7 @@ import type {
 } from "react-hook-form";
 
 import { DurationPicker } from "@/components/training/DurationPicker";
+import { SessionCoachesField } from "@/components/training/SessionCoachesField";
 import type { TrainingSessionFormValues } from "@/schemas/trainingSession.schema";
 
 const labelClass = "block text-sm font-medium text-charcoal";
@@ -145,6 +146,18 @@ export function StepGeneral({ register, control, errors, aiSeededFields }: StepG
           </p>
         )}
       </div>
+
+      <Controller
+        name="coach_user_ids"
+        control={control}
+        render={({ field }) => (
+          <SessionCoachesField
+            value={field.value ?? []}
+            onChange={field.onChange}
+            error={errors.coach_user_ids?.message}
+          />
+        )}
+      />
 
       <div>
         <label htmlFor="description-input" className={labelClass}>

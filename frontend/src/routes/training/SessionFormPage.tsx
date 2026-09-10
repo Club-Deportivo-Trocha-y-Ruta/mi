@@ -64,6 +64,11 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
       strava_url: s.strava_url ?? "",
       coach_notes: s.coach_notes ?? "",
       convocados_athlete_ids: (attendanceQuery.data ?? []).map((a) => a.athlete_id),
+      // Feature 041 (T066) — prellenado de edición (contracts/session-coaches.md
+      // §10.1). En creación, `SessionCoachesField` se autocompleta con el
+      // entrenador autenticado (ver su docstring); aquí no hace falta porque
+      // solo se alcanza esta rama en modo edición.
+      coach_user_ids: (s.coaches ?? []).map((c) => c.user_id),
     };
   }, [isEdit, sessionQuery.data, attendanceQuery.data, assistantState]);
 

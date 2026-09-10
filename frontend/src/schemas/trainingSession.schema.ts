@@ -57,6 +57,18 @@ export const trainingSessionCreateSchema = z.object({
   convocados_athlete_ids: z
     .array(z.number())
     .min(1, "Debes convocar al menos un atleta"),
+  // Feature 041 — gobernanza multi-coach (contracts/session-coaches.md
+  // §10.2). Opcional en el form: si aún no se inicializó (creación antes del
+  // primer render de `SessionCoachesField`, o un caller que no lo pasa),
+  // dejarlo `undefined` no debe romper `TrainingSessionFormValues` en los
+  // demás puntos que arman el objeto (asistente IA, tests). El `.min(1)`
+  // replica la regla del servidor (V1/V6) para el caso en que SÍ llegue
+  // inicializado pero vacío — la UI ya bloquea vaciar del todo desde
+  // `SessionCoachesField` (no se puede quitar el último chip).
+  coach_user_ids: z
+    .array(z.number())
+    .min(1, "Selecciona al menos un entrenador")
+    .optional(),
 });
 
 // Campos validados por paso del asistente. Se usan con RHF `trigger(fields)`
@@ -70,6 +82,7 @@ export const STEP_GENERAL_FIELDS = [
   "description",
   "session_kind",
   "objectives",
+  "coach_user_ids",
 ] as const;
 
 export const STEP_ATHLETES_FIELDS = ["convocados_athlete_ids"] as const;

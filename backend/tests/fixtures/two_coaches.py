@@ -69,6 +69,10 @@ _TABLES = (
     "club_members",
     "athletes",
     "parent_athlete",
+    # T051: crear personal manda el correo para definir la contraseña por la vía
+    # de `password_reset`, así que el alta escribe aquí aunque la prueba solo
+    # mire usuarios y membresías.
+    "password_reset_tokens",
     *AUDIT_TABLES,
 )
 
@@ -281,10 +285,15 @@ async def two_coaches_client_factory(
                     raise
 
         def _override_current_user():
+            # El doble tiene que exponer todo atributo del actor que lea el
+            # código de producción. `display_name` (FR-013) se sumó a `User`
+            # con esta feature y su ausencia aquí se manifestaba como un 500
+            # en `POST /api/users`, no como un fallo de prueba legible.
             return SimpleNamespace(
                 id=user_id,
                 first_name="Test",
                 last_name="Actor",
+                display_name="Test Actor",
                 email=f"actor{user_id}@test.local",
                 role=role,
                 can_login=True,

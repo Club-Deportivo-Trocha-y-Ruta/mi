@@ -898,7 +898,13 @@ class TestAuditInstrumentationTrainingSessions:
             convocados_athlete_ids=[100, 101],
         )
 
-        with _patch.object(_sessions_svc, "_assert_coach_in_club", new=_AsyncMock()):
+        # Estas dos pruebas miran la fila de auditoría, no la validación de
+        # entrenadores: esa tiene sus propios casos en test_session_coaches.py
+        # y con un ``db`` simulado no hay filas que consultar.
+        with (
+            _patch.object(_sessions_svc, "_assert_coach_in_club", new=_AsyncMock()),
+            _patch.object(_sessions_svc, "_assert_eligible_coaches", new=_AsyncMock()),
+        ):
             await _sessions_svc.create_session(
                 db=db, payload=payload, coach=coach, club_id=7, ctx=ctx
             )
@@ -942,7 +948,13 @@ class TestAuditInstrumentationTrainingSessions:
             convocados_athlete_ids=[100],
         )
 
-        with _patch.object(_sessions_svc, "_assert_coach_in_club", new=_AsyncMock()):
+        # Estas dos pruebas miran la fila de auditoría, no la validación de
+        # entrenadores: esa tiene sus propios casos en test_session_coaches.py
+        # y con un ``db`` simulado no hay filas que consultar.
+        with (
+            _patch.object(_sessions_svc, "_assert_coach_in_club", new=_AsyncMock()),
+            _patch.object(_sessions_svc, "_assert_eligible_coaches", new=_AsyncMock()),
+        ):
             await _sessions_svc.create_session(
                 db=db, payload=payload, coach=coach, club_id=7
             )
@@ -962,7 +974,7 @@ class TestAuditInstrumentationTrainingSessions:
         result_mock.scalars = _MagicMock(return_value=scalars_mock)
         db = _build_mock_db(add_calls, execute_result=result_mock)
 
-        await _sessions_svc.execute_session(db, session_id=42, ctx=ctx)
+        await _sessions_svc.execute_session(db, session_id=42, ctx=ctx, actor=coach)
 
         audit_rows = [c for c in add_calls if isinstance(c, _AuditLog)]
         assert len(audit_rows) == 1
@@ -987,7 +999,7 @@ class TestAuditInstrumentationTrainingSessions:
         db = _build_mock_db(add_calls, execute_result=result_mock)
 
         with pytest.raises(Exception):
-            await _sessions_svc.cancel_session(db, session_id=42, ctx=ctx)
+            await _sessions_svc.cancel_session(db, session_id=42, ctx=ctx, actor=coach)
 
     async def test_cancel_session_with_reason_code_queues_audit_row(self):
         coach = _mock_coach(1)
@@ -1007,6 +1019,7 @@ class TestAuditInstrumentationTrainingSessions:
             db,
             session_id=42,
             ctx=ctx,
+            actor=coach,
             reason_code=_CancelReasonCode.cancel_weather,
         )
 
@@ -1037,6 +1050,7 @@ class TestAuditInstrumentationTrainingSessions:
             session_id=42,
             payload=TrainingSessionUpdate(location="Bosque Municipal"),
             ctx=ctx,
+            actor=coach,
         )
 
         assert not any(isinstance(c, _AuditLog) for c in add_calls)
@@ -1075,6 +1089,7 @@ class TestAuditInstrumentationAttendance:
             athlete_ids=[100, 101],
             club_id=7,
             ctx=ctx,
+            actor=coach,
         )
 
         audit_rows = [c for c in add_calls if isinstance(c, _AuditLog)]
@@ -1110,6 +1125,7 @@ class TestAuditInstrumentationAttendance:
             payload=_AttendanceUpdate(status=_AttendanceStatus.PRESENTE),
             club_id=7,
             ctx=ctx,
+            actor=coach,
         )
 
         audit_rows = [c for c in add_calls if isinstance(c, _AuditLog)]

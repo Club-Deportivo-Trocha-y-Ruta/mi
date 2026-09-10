@@ -65,6 +65,8 @@ const ERROR_TARGET_ID: Record<string, string> = {
   route_text: "route_text-input",
   strava_url: "strava_url-input",
   coach_notes: "coach_notes-input",
+  // Feature 041 (T066) — contracts/session-coaches.md §10.2.
+  coach_user_ids: "session-coaches-field",
 };
 
 export interface SessionWizardProps {
@@ -105,6 +107,10 @@ function buildCreatePayload(
     coach_notes: v.coach_notes || null,
     convocados_athlete_ids: v.convocados_athlete_ids,
     send_notification: notify,
+    // Feature 041 (T066) — conjunto COMPLETO de reemplazo (§3.2); si el
+    // campo nunca se inicializó, `undefined` se omite del body y el backend
+    // deja solo al creador como entrenador.
+    coach_user_ids: v.coach_user_ids,
   };
 }
 
@@ -125,6 +131,10 @@ function buildUpdatePayload(
     strava_url: v.strava_url || null,
     coach_notes: v.coach_notes || null,
     send_notification: notify,
+    // Feature 041 (T066) — conjunto COMPLETO de reemplazo (§3.2); si el
+    // campo nunca se inicializó, `undefined` se omite del body y el backend
+    // deja los entrenadores sin cambios.
+    coach_user_ids: v.coach_user_ids,
   };
 }
 
