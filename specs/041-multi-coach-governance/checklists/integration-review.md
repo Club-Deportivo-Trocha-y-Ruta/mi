@@ -696,11 +696,18 @@ completa: es lo que quedó hecho y lo que quedó a medias.
 
 ## Riesgo introducido y cerrado dentro de la misma corrida
 
-T069 es un cambio **incompatible** para el cliente: hasta que el estudio de
-bitácora mande la precondición, todo guardado desde la interfaz responde 428. Se
-lanzaron T073 y T074 en la misma ventana para cerrarlo. **Si el commit de T073 no
-está en la rama, ese 428 está vivo y es lo primero que debe mirar la corrida
-siguiente.**
+T069 es un cambio **incompatible** para el cliente: sin precondición, todo
+guardado desde la interfaz responde 428. **Quedó cerrado dentro de la misma
+ventana**: T073 hace que cada guardado mande `If-Match` con la versión cargada,
+y T074 muestra la evidencia de aprobación del informe. Frontend al cerrar:
+`npm run typecheck` limpio y `npm test` con **344 archivos y 4093 pruebas en
+verde**.
+
+El conflicto se resolvió como pide el contrato y como pide el sentido común: el
+diálogo bloquea, ofrece recargar y **el borrador local sobrevive** hasta que la
+persona decida; la sincronización en segundo plano no lo pisa mientras haya
+conflicto, y la mutación no reintenta un 409 para no convertirlo en un segundo
+sobrescrito.
 
 ## Deuda concreta que deja US5
 
@@ -711,3 +718,26 @@ siguiente.**
 | B3 | `templates/email/athlete_stage_log.html` **no renderiza `coach_note` en absoluto**. §3.2 dice que la familia sí debe ver el texto de la nota (sin autor). Es una brecha preexistente de la feature 038, no de 041, pero la fila de esa matriz está sin cumplir del lado del texto. | `backend/templates/email/athlete_stage_log.html` |
 | B4 | La atomicidad de la reserva de versión bajo concurrencia real **no está verificada**: sqlite no reproduce el bloqueo de fila de InnoDB. La prueba de dos sesiones existe, está marcada `-m mysql` y se salta. | `backend/tests/routers/test_newsletter_concurrency.py::test_two_sessions_only_one_update_takes_effect` |
 | B5 | T072 queda parcial: faltan las extensiones a `test_newsletter_privacy.py`. | `backend/tests/test_newsletter_privacy.py` |
+| B6 | La firma de la nota del entrenador quedó como párrafo suelto en la página, no dentro de la tarjeta "Nota del entrenador" como pide §6.4: `BlockCard` necesita un `byline` y `BlockPanel` recibir autor y fecha. La copia y el `data-testid` ya son los definitivos, así que moverlo es cosmético. | `frontend/src/components/newsletter/studio/BlockCard.tsx`, `BlockPanel.tsx`; provisional en `AthleteNewsletterStudioPage.tsx` |
+
+## Dónde empezar la corrida siguiente
+
+Estado al cerrar esta ventana: **fase 6 (US4) completa**; **fase 7 (US5) con el
+backend y el frontend hechos**, sin T072 terminada. Todo está commiteado y
+empujado a `feat/041-multi-coach-governance`; no queda nada sin guardar.
+
+Orden sugerido:
+
+1. **T072** — cerrar lo que falta: extender `backend/tests/test_newsletter_privacy.py`.
+2. **Unificar `ActorRef`** (deuda B1) antes de que aparezca un tercero. Es barato
+   ahora y caro más tarde.
+3. **Fase 8 (US6, T075–T080)** — regla de club para corridas de IA e
+   importaciones, y gasto por entrenador.
+4. Con tiempo: **T030** (las 20 rutas todavía marcadas "pending instrumentation",
+   §1.2) y **A2** (la mitad de FR-009 que hoy hace `skip`, §1.3). Las dos son
+   deuda de US1 dada por cerrada antes de tiempo, y las dos se ven pequeñas hasta
+   que alguien confía en la compuerta.
+
+Para medir regresiones sin volver a correr `main`, usar
+`checklists/baseline-main-failures.txt`; el comando está en su cabecera. Al
+cerrar esta corrida el diferencial era **cero regresiones**.
