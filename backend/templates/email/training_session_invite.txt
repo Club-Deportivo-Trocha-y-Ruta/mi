@@ -15,7 +15,8 @@ Foco técnico:      {{ technical_focus }}
 {% if coach_names|length > 1 %}Entrenadores a cargo:{% else %}Entrenador a cargo:{% endif %} {{ coaches_text }}
 
 Asegúrate de que {{ athlete_name }} llegue con la hidratación y el equipo de
-protección completo.
+protección completo. Ante cualquier duda, puedes comunicarte directamente con
+el entrenador.
 
 ---
 Esta notificación fue generada automáticamente porque {{ athlete_name }} fue

@@ -22,14 +22,12 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
@@ -53,7 +51,6 @@ from app.dependencies import get_current_user, get_db
 from app.main import app
 from tests.helpers.app_routes import api_route_paths
 from app.models import Base
-from app.models.athlete import FamilyRelationship, Sex
 from app.models.club import ClubRole
 from app.models.parental_consent import ParentalConsent
 from app.models.privacy_policy import PrivacyPolicy

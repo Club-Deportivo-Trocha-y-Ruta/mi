@@ -24,7 +24,7 @@ Ley 1581).
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import date, datetime, time, timezone
+from datetime import date, time
 from decimal import Decimal
 
 import pytest
@@ -33,7 +33,6 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )

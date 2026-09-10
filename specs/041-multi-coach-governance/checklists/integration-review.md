@@ -544,3 +544,100 @@ La revisión de la fase 5 los había clasificado como "ruido ambiental, verifica
 | F1 — un coach puede enumerar personal vía `GET /api/users` | **Abierta** | `backend/app/routers/users.py:306,354-386`. Fuera del alcance de esta corrida. |
 | F2 — `GET /api/clubs/{id}` expone miembros a cualquier autenticado | **Abierta** | Preexistente a 041. `backend/app/routers/clubs.py:72-104`. |
 | F3 — sin pruebas denegadas para F1, autodesactivación de admin, padre en `users.py` | **Abierta** | `backend/tests/test_staff_admin.py`. |
+
+## 4. US4 — veredictos AS1 a AS7
+
+Sin stack en vivo no se ejecutó el escenario de `quickstart.md`; cada veredicto se
+apoya en el código y en pruebas que sí se corrieron.
+
+| # | Escenario (US4) | Veredicto | Evidencia |
+|---|---|---|---|
+| AS1 | Al crear una sesión queda el creador como entrenador por defecto y el asistente ofrece a los demás entrenadores activos del club | **Cumple** | Sin `coach_user_ids` el servicio deja al creador como único entrenador (`test_session_coaches.py::test_b01_…`). El selector `SessionCoachesField` se precarga con el entrenador autenticado y lista solo `role=coach` activos (FR-024), salvo los ya asignados que se desactivaron después (V5). |
+| AS2 | Con dos entrenadores, la invitación, el cambio y la cancelación listan a ambos y nombran a quien actúa | **Cumple** | `_load_session_coach` —que respondía siempre el creador— está eliminado. `test_b08_cancel_by_coach_b_names_b_not_creator_a` corre contra base de datos real: coach A crea con A y B, coach B cancela, y el correo trae `acting_coach_name = B` con ambos en `coaches_text`. `test_b09_…` cubre la edición. Las seis plantillas (HTML y texto) llevan la copia de §5.2. |
+| AS3 | Quitar al último entrenador se rechaza | **Cumple** | V1 responde 422 en creación y edición (`test_b04_…`) y V6 responde 409 en el servicio (`test_b05_…`), con el bloqueo `FOR UPDATE` al recalcular el conjunto. En el frontend la última ficha no se puede quitar y el motivo se anuncia por `aria-describedby`. |
+| AS4 | La asistencia registra quién la puso y quién la editó por última vez | **Cumple** | `recorded_by_user_id` se fija solo si estaba en `NULL` **y** la edición trae datos reales; `updated_by_user_id` siempre (`test_b12_…`). La fila vacía de la convocatoria no atribuye a nadie (`test_placeholder_row_has_no_attribution`). |
+| AS5 | Sacar a un atleta del roster archiva en vez de destruir y el administrador puede leerlo | **Cumple** | Con datos se archiva, sin datos (marcador vacío) se borra, y volver a convocar desarchiva —el paso que faltaría para dejar la fila invisible para siempre— (`test_b10_b11_…`). `GET …/attendance?include_archived=true` es solo de administrador; coach o familia reciben 403. |
+| AS6 | La ejecución registra qué entrenador la marcó | **Cumple** | `execute_session` exige `actor` sin valor por defecto y la fila de auditoría lleva el diff de `status`. Que el argumento sea obligatorio está fijado por contrato en `TestActorAndReasonCodeContract`. |
+| AS7 | El filtro por entrenador acota sesiones y calendario | **Cumple** | Sesiones: `coach_user_id` sobre el puente (`test_b13_…`), y un padre que lo manda recibe 403. Calendario: coincide por creador directo o por el puente de la sesión enlazada, y los cumpleaños virtuales se excluyen mientras el filtro esté puesto, para que la vista por entrenador no descuadre con la general. |
+
+**Privacidad de US4 (Ley 1581)**: la carga de la familia no gana ningún campo. Se
+comprueba explícitamente que `TrainingSessionReadParent` no trae `coaches` ni
+`has_active_coach` y que `AttendanceReadParent` no trae quién registró ni quién
+editó (`test_b14_…`); las filas de auditoría de este dominio no llevan nombre de
+menor ni texto de retroalimentación (`test_b18_…`). Los correos nombran
+entrenadores, que son personas adultas.
+
+## 5. G15 cerrada — el atleta archivado desaparece de verdad
+
+La compuerta `tests/test_archive_scope_gate.py` está **verde**: ya no queda ninguna
+consulta de `Athlete` sin filtrar ni exentar. De los 20 sitios que la fase 4 dejó
+abiertos, 13 se filtran y 7 quedan exentos con motivo escrito
+(`ARCHIVE_SCOPE_EXEMPT` pasó de 6 a 10 entradas; quien agregue otra debe subir
+también el `len` de `test_archive_scope_exempt_matches_contract_section_5_3`).
+
+Las exenciones son deliberadas y de la misma familia: consultas que resuelven
+`athlete_id → club_id` solo para poner `club_id` en una fila de auditoría
+(`race_analysis._resolve_athlete_club`, `strava_integration._athlete_club_ids`),
+el webhook de Resend —que registra entregas de un boletín **ya enviado**, y
+filtrarlo borraría evidencia de un período cerrado— y la redacción de nombres del
+reporte mensual. §5.3 del contrato pide exactamente eso: no se filtra lo que
+reconstruye el pasado, se filtra lo que actúa sobre el presente.
+
+Lo que sí cambió de comportamiento, y es lo que más importa:
+
+- **Ningún correo a la familia sale ya por un atleta archivado.** Convocatoria,
+  cambio y cancelación de sesión (tres consultas gemelas en
+  `services/training/sessions.py`) y los avisos de calendario
+  (`services/calendar/notifications.py`) filtran ahora en el último paso antes
+  del envío.
+- **El despachador de insights de IA no tenía ningún portón de archivado**: un
+  insight aprobado antes de archivar seguía llegando a la familia. Se añadió
+  `SKIPPED_ARCHIVED_ATHLETE`, evaluado antes de resolver destinatarios, así que
+  no sale ni correo ni notificación en la aplicación.
+- **La familia ya no puede renovar ni revocar consentimiento de un atleta
+  archivado** (404), y la comprobación corre *antes* de mutar, no después.
+
+## 6. Suite — medida diferencialmente contra `main`
+
+Entorno construido desde cero en esta corrida; `main` se midió en un *worktree*
+aparte (`/tmp/base041`, `86e0208`) con el mismo intérprete y las mismas
+dependencias, así que la comparación es válida.
+
+| Corrida | Resultado |
+|---|---|
+| `main` (`86e0208`) | **215 fallos + 9 errores = 224**, 3700 pasan |
+| `feat/041-multi-coach-governance` | **211 fallos + 9 errores = 220**, 4137 pasan |
+
+Diferencia sobre los identificadores de prueba:
+
+| Cubo | Cuenta |
+|---|---|
+| Fallan en `main` y siguen fallando (ambiental: fixture `client` → MySQL real) | **220** |
+| **Fallan solo en esta rama (regresiones)** | **0** |
+| Pasan en la rama y fallan en `main` | 4 |
+
+**Cero regresiones.** La progresión de la feature es 23 (oleada 3) → 48 (oleada 4)
+→ 8 más ~99 de ruido sin clasificar (oleada 5) → **0** (esta corrida). Las 220 que
+quedan son todas el problema ambiental preexistente y ninguna es de código: el
+fixture `client` de `tests/conftest.py` levanta la aplicación contra la base de
+datos real y aquí no hay MySQL ni Docker.
+
+Las 4 que la rama arregla respecto de `main` son
+`tests/test_training_session_notifications.py` (`test_happy_path_two_convocados_two_parents`,
+`test_throttle_second_call_skipped`, `test_update_session_with_changes_dispatches_updated_template`,
+`test_cancel_session_with_flag_dispatches_cancelled_template`): tenían escrita a
+mano una fecha "futura" (`date(2026, 5, 20)`) que el calendario ya dejó atrás, así
+que toda comprobación de `is_future` se cortaba en silencio y los envíos daban
+cero **sin lanzar ninguna excepción**. Ahora se calcula desde hoy. Conviene
+buscar ese patrón en el resto de la suite: falla por reloj de pared, no por código.
+
+Otras vías:
+
+- `pytest -m mysql`: **no se puede ejecutar aquí**. Las pruebas se escriben, no se
+  corren, y así queda dicho.
+- `ruff check`: 370 hallazgos en la rama frente a 345 en `main`. Los 25 de
+  diferencia están todos en archivos de prueba nuevos; se limpiaron los imports
+  sin usar y quedan 4 cosméticos (`E402` de imports tardíos deliberados y dos
+  `F841`). `ruff` tampoco está limpio en `main`, así que hoy no es una compuerta
+  que pase.
+- Frontend: `npm run typecheck` **limpio**.

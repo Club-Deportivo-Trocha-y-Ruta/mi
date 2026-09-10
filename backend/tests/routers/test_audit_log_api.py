@@ -45,7 +45,7 @@ from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models.athlete import Athlete
 from app.models.audit_log import AuditAction, AuditActorKind
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.services.audit import AuditEntityType, AuditReasonCode
 from app.services.request_context import request_id_scope
 from app.services.audit import record_audit
