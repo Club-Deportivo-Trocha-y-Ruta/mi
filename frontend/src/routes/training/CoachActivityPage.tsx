@@ -318,7 +318,9 @@ export function CoachActivityPage() {
       {activityQuery.isError && (
         <ErrorState
           message="No se pudo cargar la actividad por entrenador."
-          onRetry={() => activityQuery.refetch()}
+          onRetry={async () => {
+            await activityQuery.refetch();
+          }}
           isColdStart={isColdStartError(activityQuery.error)}
         />
       )}

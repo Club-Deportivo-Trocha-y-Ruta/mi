@@ -15,7 +15,8 @@ y puede afirmar el efecto que de verdad importa: tras cancelar,
 
 RBAC (caminos denegados obligatorios):
   - parent → 403 (rol no permitido, vía ``require_role`` real).
-  - coach que no es dueño del run → 403.
+  - coach de otro club → 403 (el alcance es el club, no la autoría:
+    ``contracts/scope-ai-imports.md`` §1.4).
   - run ya terminal → 409.
   - admin sobre run ajeno → 200.
 """

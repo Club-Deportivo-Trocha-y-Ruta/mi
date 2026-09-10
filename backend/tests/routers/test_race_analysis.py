@@ -54,11 +54,16 @@ class TestAuth:
         resp = await parent_client.get("/api/race-analysis/runs/abc/status")
         assert resp.status_code == 403
 
-    async def test_403_coach_no_puede_admin_metrics(self, coach_client):
+    async def test_200_coach_puede_admin_metrics(self, coach_client):
+        """El coach ve el consumo de IA (contrato scope-ai-imports §7.2).
+
+        US6 AC4 ensancha el RBAC de ``/admin/ai-usage`` de sólo-admin a
+        coach+admin: el entrenador necesita saber quién consume el
+        presupuesto compartido. No hay datos de menores en esta superficie,
+        sólo nombres de staff adulto y montos.
+        """
         resp = await coach_client.get("/api/race-analysis/admin/ai-usage")
-        # coach_client tiene override de _coach_or_admin pero NO de
-        # _admin_only — el endpoint usa _admin_only así que rechaza.
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
 
 # ===========================================================================
@@ -521,9 +526,12 @@ class TestBackpressure:
 
 
 class TestAdminMetrics:
-    async def test_403_si_no_admin(self, coach_client):
+    async def test_200_si_coach(self, coach_client, fake_db):
+        """RBAC ensanchado a coach+admin (§7.2); el cuerpo llega completo."""
+        fake_db.seed_insight(cost_total=0.004, requested_by_user_id=10)
         resp = await coach_client.get("/api/race-analysis/admin/ai-usage")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        assert "by_coach" in resp.json()
 
     async def test_admin_agrega_insights(self, admin_client, fake_db):
         # Seed 3 insights con costos variados.
@@ -564,10 +572,18 @@ class TestAdminMetrics:
             "latency_ms_p95",
             "fail_rate",
             "by_prompt_version",
+            "by_coach",
         }
         assert set(body.keys()) == expected_keys
         for entry in body["by_prompt_version"]:
             assert {"prompt_version", "run_count", "cost_usd_total"} == set(entry.keys())
+        # Gasto por entrenador (§7.2): mismos nombres de campo que el
+        # hermano ``by_prompt_version``, más el ``user_id`` que puede ser
+        # ``null`` en el cubo "Sin atribuir".
+        for entry in body["by_coach"]:
+            assert {"user_id", "display_name", "run_count", "cost_usd_total"} == set(
+                entry.keys()
+            )
 
     async def test_admin_zero_insights(self, admin_client):
         """Sin insights, los totales son 0 y fail_rate=0 (no division by zero)."""
