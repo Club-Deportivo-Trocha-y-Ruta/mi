@@ -858,3 +858,61 @@ error**: 1 es el id de una fila de auditoría real, así que la evidencia del
 barrido quedaba apuntando a un registro ajeno. Ahora la guarda exime
 explícitamente ese único par (`audit_log`·`purge`), el respaldo desapareció y
 la prueba exige el 0 exacto del contrato.
+
+## 6. T080 encontró dos fugas altas, y la peor era de datos de una menor
+
+La revisión de seguridad del cambio de alcance no salió limpia, y lo que
+encontró vale más que el propio cambio de alcance. Ambos hallazgos están
+**corregidos** en esta corrida (commit `8ca2870`).
+
+**H1 — un entrenador de otro club podía lanzar un análisis sobre una menor
+ajena.** `POST /api/race-analysis/runs` y el lanzamiento grupal no miraban el
+club del deportista. Consecuencias reales, no teóricas: el nombre de la menor
+entraba en `forbidden_names` y **salía hacia el proveedor de IA**; se
+persistía un insight en su ficha; la fila de auditoría quedaba con el club de
+ella y un actor que no le pertenece; y el presupuesto de IA, que es uno solo y
+club-wide, lo podía agotar alguien de afuera. La corrida nacía además
+inalcanzable para quien la lanzó, porque el chequeo de club sí actúa al
+leerla.
+
+**H2 — el listado de corridas de un evento entregaba el nombre completo de una
+menor de otro club.** `GET /race-events/{id}/runs` resolvía nombres desde los
+resultados sin filtrar por club. Es la asimetría listado/detalle en su peor
+dirección: el detalle estaba bien cerrado (403), pero el listado ya había
+entregado el nombre, el `athlete_id` y un `run_id` **válido y ajeno** — que es
+la única forma práctica de conseguir ids de corrida de otro club, porque son
+`uuid4`.
+
+**Raíz común, y por qué se escapó**: el contrato marcó esa ruta como "no
+cambiada por este contrato, ya era no filtrada por actor". No filtrar *por
+actor* era correcto; no filtrar *por club* no. Y la matriz §1.4 cubre
+**operar** un registro que ya existe — **crear** no aparece en ninguna fila.
+Las otras dos superficies de lanzamiento (`athlete_race_analysis.py`) sí
+estaban acotadas por `verify_athlete_access`; estas dos se quedaron sin
+equivalente.
+
+Una válida la corren menores de varios clubes y el evento es de un tercero, así
+que **el club no se puede inferir nunca del evento, solo del deportista**. Por
+eso el filtro quedó en `resolve_group_members`, que es de donde cuelgan los
+dos agujeros. El chequeo de club va **antes** que el de archivado: si no, la
+diferencia entre 404 y 403 le confirma a un entrenador ajeno que ese id existe
+y está archivado.
+
+**Lo que T080 verificó y descartó** (vale tanto como los hallazgos): el bypass
+del administrador es único y no alcanzable por otro rol; el respaldo por
+autoría solo dispara con el conjunto de clubes vacío, así que nunca ensancha;
+las siete llamadas de §2 están las siete; el orden 404-antes-que-403 es
+consistente en las siete rutas, así que **no** existe el oráculo por
+diferencia de orden que se temía; y el endpoint de gasto no puede filtrar un
+dato de menor —se rastrearon los cuatro sitios que escriben sus columnas y
+todos están detrás de `_coach_or_admin`.
+
+**Hallazgos menores que quedan abiertos** (ninguno toca datos de un menor):
+
+| # | Qué | Dónde |
+|---|---|---|
+| H3 | `GET /admin/ai-usage`, ahora abierto a coach, entrega nombre y gasto del staff de **todos** los clubes, no solo del propio. Metadato de adulto y dinero, pero contradice la regla que este mismo cambio establece. | `app/routers/race_analysis.py` (RBAC) y `budget_guard.py` (`_QUERY_SPEND_BY_USER`, sin cláusula de club) |
+| H4 | `GET /imports/` devuelve a cualquier coach la lista completa de cargues de todos los clubes. El oráculo 403/404 de `_load_pending_import` es ruido al lado de esto. | `app/routers/race_imports.py` (`list_imports`) |
+| H5 | `user#{id}` sigue vivo en el listado de importaciones, cuando §4.1 dice que nunca es un valor legal para el lector (FR-013) y se eliminó de las respuestas de corrida. Es el contrato contradiciéndose consigo mismo. | `app/routers/race_imports.py` |
+| H6 | `_admin_only` quedó muerto y el prefijo `/admin/ai-usage` ya no significa admin. Un prefijo que miente sobre su RBAC es lo que hace que la próxima revisión no mire el endpoint. | `app/routers/race_analysis.py` |
+| H7 | Un cargue creado por el **administrador** queda inalcanzable para los coaches del club: `import_club_ids` resuelve solo por membresías con `role_in_club='coach'`, así que el conjunto sale vacío y el respaldo por autoría lo deja solo para él. Falla cerrado, no es riesgo — pero en producción aparece como "no puedo continuar el cargue". | `app/services/permissions.py` (`import_club_ids`) |
