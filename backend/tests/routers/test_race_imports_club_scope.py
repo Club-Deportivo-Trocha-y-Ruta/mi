@@ -17,7 +17,7 @@ Privacidad (Ley 1581): todos los nombres son sintéticos.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import AsyncGenerator
 
@@ -590,10 +590,3 @@ async def test_cargue_sin_club_resoluble_solo_lo_abre_su_autor(
             await client.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
         ).status_code != 403
     app.dependency_overrides.clear()
-
-
-# ===========================================================================
-# Fecha ficticia usada por el arnés — mantiene explícito que nada acá es real
-# ===========================================================================
-
-assert date(2026, 5, 17).year == 2026
