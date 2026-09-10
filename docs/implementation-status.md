@@ -781,3 +781,64 @@ scope here (`plan.md` Complexity Tracking).
 - **T028** (`checklists/reference-standard.md` §5) — April 2026 bitácora for the synthetic demo athlete (12.2 y): caption OMS 2007, no CDC string, weight chart absent. Builder fix: the annex used to draw an empty weight frame above 10 y.
 - **T044 / T054 / T064 / T072 Playwright leg** (`checklists/frontend-gate.md`) — `growth.spec.ts`, `growth-parent.spec.ts`, `history.spec.ts`, `anthropometry.spec.ts`, `auth.spec.ts`, `athletes.spec.ts` green on the isolated stack. Two product defects found and fixed (family history table still showing PHV offset/stage/age — FR-016; empty weight chart in the PDF — R-02). `target-size.spec.ts` stays red on a pre-existing 48 px-vs-44 px conflict with the feature-033 design system, and the real-data specs of older features need seed data the demo stack does not have — both outside this feature, documented in the checklist.
 - **T078** — post-deploy smoke: still pending the owner's merge + Render deploy (steps verbatim in `tasks.md`; the production band-change report is produced by the startup recompute).
+
+## Implementation status — Multi-coach governance (specs/041-multi-coach-governance)
+
+> Onboards a second coach with the same club-wide access as the first, and adds what was
+> missing for that to be safe: an append-only club-wide audit trail (`audit_log`,
+> `record_audit`) attributing every write to a person or an automated actor; athlete
+> removal that archives instead of destroying (parental-consent evidence, measurements
+> and history survive, an admin can restore); a club-scope rule that replaces the
+> creator-lock on AI runs and race imports; co-coached training sessions with truthful
+> family notifications (the coach who acted, not the one who planned); optimistic
+> concurrency on the newsletter studio; a minimal staff admin screen; a per-coach activity
+> report; and a 24-month retention purge for `audit_log` with a preview-then-confirm CLI
+> and a GitHub Actions schedule. Built across three unattended night runs (2026-09-09/10)
+> with no Docker and no live MySQL available in any of them — every item below marked
+> "unverified live" needs a real database or a live stack to be confirmed, not more
+> reading. Full detail: `docs/19-multi-coach-governance/{design.md,runbook.md,qa.md}`;
+> requirements in `specs/041-multi-coach-governance/spec.md` (FR-001..FR-034,
+> SC-001..SC-010).
+
+| Phase | Scope | Status |
+|---|---|---|
+| Setup / Unblock | Import-safety fix on the three pre-existing migrations that block a fresh database (`try/except ImportError`, unverified live — see "Deferred/unverified" below); interim admin-only guard on athlete delete (removed again once US2 landed); shared two-coaches-same-club pytest fixture; `coach2` e2e seed identity; CORS `If-Match`/`X-Request-Id`/`ETag` headers | ✅ Complete |
+| Foundational | `audit_log` model (5 indexes, `fsp=6` on `occurred_at`), `record_audit`/`compute_changed_fields`, closed catalogues (`AuditEntityType`, `AuditAction`, `AuditReasonCode` + 5 sub-enums, allow-lists), `ActorTimestampMixin`/`UpdatedByMixin`, single Alembic revision `45cd705c6b54_multi_coach_governance.py`, `request_context.py` + `RequestIdMiddleware`, append-only proof, coverage-registry skeleton | ✅ Complete |
+| US1 — Change history | Club/athlete history endpoints, Spanish sentence catalogue, RBAC (`can_view_audit`), frontend `ClubHistoryPage`/`AthleteHistoryPanel`; FR-009 coverage gate — **closed 2026-09-10**: the 20 `pending instrumentation` routes are instrumented and the import dry-run resolved to a genuine §4.14 exemption (owner-reversible decision, see `qa.md` §3.3) | ✅ Complete 2026-09-10 |
+| US2 — Archive instead of destroy | Athlete archive/restore, `deleted_at IS NULL` at 13 read sites + 7 written exemptions with their own scope gate, staff-delete refusal (409 → deactivate) with `created_by` no longer nulled on parent delete, frontend archive dialog + admin archived-athletes view | ✅ Complete |
+| US3 — Staff admin | `/admin/usuarios`: create coach (club mandatory), list/filter/deactivate, role-coherence validation, coach fully excluded from the screen and its actions | ✅ Complete |
+| US4 — Co-coached sessions | `training_session_coaches` bridge, minimum-one invariant under a row lock, acting-coach (not creator) named in family emails, attendance `recorded_by`/`updated_by`, roster removal archives instead of deletes, coach filter on sessions/calendar | ✅ Complete |
+| US5 — Concurrency and approvals | Newsletter `edit_version` + `If-Match` (409 stale / 428 missing), coach-note authorship (coach/admin only, verified absent from the real rendered family PDF and email), monthly-report approval evidence surviving regeneration | ✅ Complete |
+| US6 — Club scope for AI runs/imports | `_ensure_run_owner` deleted, club-scope rule via `ensure_run_club_access`/`ensure_import_club_access`, `decided_by`/`committed_by` attribution, per-coach AI spend on the admin page; **T080 security review found two real cross-club leaks to a minor's data (H1/H2), fixed same day**, plus six adult-data/shape findings (H3–H7), all closed in the closing pass | 🚧 Backend/frontend/security review done; **T078 (dedicated backend test file `test_race_analysis_club_scope.py`) not written** — the club-scope behaviour it would assert is covered indirectly by other tests, but the task itself is open |
+| US7 — Per-coach activity report | `GET /api/clubs/{club_id}/coach-activity` (mandatory `from`/`to`, reconciling per-coach sums against club totals per SC-008), `CoachActivityPage`, `ActorChip` replacing raw "Creado por usuario ID" surfaces, FR-031 regression guard (club-wide reports unchanged) | 🚧 Backend + frontend done; **T086 (integration review of Phases 5–9 on a live dev stack) not run** — no live stack available |
+| US8 — Retention purge | `retention.py` (preview/apply, one purge row per club), Typer CLI (dry-run default), `.github/workflows/audit-retention.yml` (preview always, apply only on manual `confirm=true`), append-only proof extended to cover it | ✅ Complete — **never executed against a live database or the actual GitHub Actions runner in this environment** (see `runbook.md` §5.8) |
+| Polish | Mandatory privacy audit (T091, `checklists/privacy-audit.md`, **APROBADO** on all 7 points with one fix applied — a raw coach id was leaking into the family session schema); this docs pass (T093/T094 — design/runbook/qa/policy-draft, `technical-notes.md`, this entry); PR description (T098, `specs/041-multi-coach-governance/pr-description.md`) | 🚧 T091/T093/T094/T098 done; **T092** (5 Playwright specs), **T095** (full gate run: `ruff`, `pytest -m mysql`, `npm run build/test/test:e2e`), **T096** (quickstart walkthrough with two real coaches, SC-001..SC-010) and **T097** (post-deploy smoke) all pending — every one needs a live stack, a live database, or a deploy this environment does not have |
+
+**Deferred / unverified for the same structural reason (no Docker, no MySQL, in any of
+the three night runs)** — code-reviewed and offline-tested, not live-confirmed:
+
+- `alembic upgrade head` from empty for this feature's own migration, and for the
+  import-safety fix on the three pre-existing migrations it depends on to reach a fresh
+  database at all (the same defect feature 040 had already fixed on its own,
+  not-yet-`main` branch — see `docs/technical-notes.md`'s 2026-09-05 entry for that
+  earlier fix, and the 2026-09-10 entry for why it had to be redone here).
+- Every `pytest -m mysql` case this feature adds (`test_audit_mysql.py`, the `mysql`-only
+  cases of `test_retention.py`, the real-concurrency newsletter test).
+- The five Playwright specs (T092) and the isolated e2e stack they need.
+- The `.github/workflows/audit-retention.yml` schedule itself, and the Hostinger
+  remote-MySQL-access precondition it needs before it can run unattended
+  (`runbook.md` §5.5).
+
+**Not fixed, logged for the owner** (deliberate, not oversight — see `technical-notes.md`
+2026-09-10 for each): the `race_events.py` coach-only/admin-403 inconsistency (two
+endpoints, pre-existing, unrelated to attribution); the AI-spend-overrun email (pre-existing
+`TODO` in `budget_guard.py`, untouched); DB-level hardening of `audit_log` (no trigger, no
+dedicated grant — deferred by design, `runbook.md` §6).
+
+**Not released**: the privacy-policy v1.3 wording (`docs/19-multi-coach-governance/policy-v1.3-draft.md`)
+is a draft only, per FR-033 — bundling it into a live policy version, picking an effective
+date, and triggering the consent-renewal flow are explicitly out of scope for this feature.
+
+> Branch `feat/041-multi-coach-governance`. No deploy yet — Render/Cloudflare Pages deploy
+> and T097's post-deploy smoke are pending the owner's merge, same pattern as the two
+> features before it in this table.

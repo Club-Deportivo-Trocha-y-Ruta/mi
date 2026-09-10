@@ -12,9 +12,37 @@ specifically — the honest limits of what a "green" result actually proves.
 | Default (offline, aiosqlite in-memory) | `pytest` | Primary lane. Every unit/service/router test for this feature runs here. Two-coaches-same-club fixture (`backend/tests/fixtures/two_coaches.py`, registered as a pytest plugin) backs every story's tests. |
 | `mysql` (real MySQL, `-m mysql`) | `pytest -m mysql` | **Written, never executed in this environment.** See §2. |
 | `golden` | `pytest -m golden` | Not touched by this feature — no change to the race-analyst prompt/pipeline itself. |
-| Frontend unit | `npm test` (vitest) | Green as of the last recorded run in the integration review — 344 files / 4093+ tests, see `checklists/integration-review.md`. |
+| Frontend unit | `npm test` (vitest) | Green — 348 files / 4131 tests, measured after the closing pass (corrida 3). |
 | Frontend typecheck | `npm run typecheck` | Green. |
 | Playwright e2e | `npm run test:e2e:isolated` | **Not executed.** See §4. |
+
+### Backend suite, closing-pass numbers, without cosmetics
+
+A full offline `pytest` run at the end of the third night run (2026-09-10) measured
+233 failed, 4432 passed, 40 skipped, 13 xfailed, 6 xpassed, 9 errors — 242 red
+identifiers. `main`'s own baseline (no MySQL, no Docker, measured the same way, recorded
+in `checklists/baseline-main-failures.txt`) is 224 red identifiers, all from the `client`
+fixture requiring a real database. The delta is **16 real regressions**, not the 22 the
+raw subtraction suggests — 6 of those 22 were fixed within the same closing pass and
+re-verified separately. All 16 trace to **one root cause**, not sixteen: the H1/H2
+cross-club security fix (`8ca2870`, corrida 2) made a club-membership check mandatory on
+the runs-listing path, and several test doubles in
+`tests/routers/test_race_analysis*.py`/`test_race_event_runs.py` build a coach with no
+club membership — they now hit `403` where they used to hit `200`. **The production code
+is correct; the test doubles are stale.** Do not revert the security fix to turn these
+green. Fixing them is filling in the same fake-session/fixture doubles with a club
+membership, the same change `test_race_event_runs.py`'s fixtures already received for the
+6 of 9 cases that were fixed in the closing pass — 3 remain in `TestListEventRuns`,
+traced to that class's own `_seed_agent_run` helper, not to production code, and not
+finished for lack of time.
+
+**A second, unrelated loose end from the same pass**: `backend/tests/test_race_imports_club_scope.py`
+(new, H4's tests) and `backend/tests/routers/test_race_imports_club_scope.py` (pre-existing)
+now share a name in two different directories — not a collection error, but confusing.
+The pre-existing file's `test_listado_identico_para_los_tres_coaches` (~line 462) asserts
+the **old**, unfiltered `GET /imports/` behaviour that H4 deliberately changed; it needs
+updating or retiring, not left as a passing assertion of behaviour the feature intentionally
+removed.
 
 ### Why the offline lane is trustworthy here despite no MySQL
 
@@ -200,9 +228,12 @@ in those files are still green with the fix applied — verbatim what the audit 
 for, restated here so it is not lost.
 
 **One pre-existing finding noted but explicitly not fixed** (outside this feature's diff,
-so outside the audit's stated scope): `rsvp_by_user_id` in `app/routers/calendar.py` has
-an incidental issue the audit flagged but did not correct, being pre-existing in `main`.
-Worth a look the next time `calendar.py` is touched.
+so outside the audit's stated scope, pre-existing in `main`): `GET
+/api/calendar/events/{id}/attendances` returns `rsvp_by_user_id` unfiltered to a parent on
+the non-training-session branch (`app/routers/calendar.py`) — the same class of defect as
+the T091 fix above (a raw coach/staff id reaching a family), just outside this feature's
+diff. Worth fixing the next time `calendar.py` is touched, flagged here so it is not
+forgotten between now and then.
 
 ### 5.2 Security review of the club-scope change (T080) — both minor-data findings fixed
 
@@ -251,18 +282,35 @@ MySQL, same caveat as everywhere else in this document.
 
 In priority order, based on what each step would actually catch:
 
-1. Point `TEST_DATABASE_URL` at a real MySQL 8.4 `_test` database and run `pytest -m
+1. **Fix the 16 known-cause test regressions first** (§1's closing-pass numbers) — a
+   next-session task, not a live-stack one. All 16 trace to stale test doubles that
+   predate the H1/H2 club-membership check and need a club membership added to their
+   fixture, same fix already applied to 6 of 9 cases in `test_race_event_runs.py`.
+   Resolve the `test_race_imports_club_scope.py` name collision (two files, two
+   directories) in the same pass and retire/update
+   `tests/routers/test_race_imports_club_scope.py::test_listado_identico_para_los_tres_coaches`,
+   which asserts the pre-H4 unfiltered behaviour. Write the missing T078 test file,
+   `backend/tests/test_race_analysis_club_scope.py` (the other two of three exist and are
+   green). **Do not revert the H1/H2 club-access check to make these pass** — the
+   production code is correct, the fixtures are stale.
+2. Point `TEST_DATABASE_URL` at a real MySQL 8.4 `_test` database and run `pytest -m
    mysql` — closes §2 entirely, including confirming `alembic upgrade head` actually
-   works from empty. This is the single highest-value remaining step: T091's own verdict,
-   the migration fix, H3–H7's new tests, and the concurrency guarantee are all
-   code-reviewed and offline-tested, not live-verified, for exactly this reason.
-2. Bring up the isolated e2e stack and run `npm run test:e2e:isolated` (T092, not
+   works from empty. This is the highest-value live-stack step: T091's own verdict, the
+   migration fix, H3–H7's new tests, and the concurrency guarantee are all code-reviewed
+   and offline-tested, not live-verified, for exactly this reason.
+3. Bring up the isolated e2e stack and run `npm run test:e2e:isolated` (T092, not
    started) — closes §4, confirms the migration-bug fix works live, not just by code
    review, and finally exercises the five specs this feature adds.
-3. Run T095's full gate list (`ruff check`, `pytest`, `pytest -m mysql`, `npm run build`,
+4. Run T095's full gate list (`ruff check`, `pytest`, `pytest -m mysql`, `npm run build`,
    `npm test`, `npm run test:e2e`) and T096's quickstart walkthrough with two real coaches
    — neither has run in this environment; SC-002 (§4) is T096's moderated leg.
-4. T093/T094 (this documentation) and T091 (privacy audit, §5.1, APROBADO) are done. T080
+5. Small, low-risk cleanup along the way: `frontend/src/types/trainingSession.types.ts`
+   still declares `created_by_user_id` as required on the parent-facing type even though
+   the backend stopped sending it (T091's fix, §5.1) — a type that lies, not a runtime
+   break (nothing validates against it at runtime), but worth splitting the family type
+   from the coach type next time that file is touched.
+6. T093/T094 (this documentation) and T091 (privacy audit, §5.1, APROBADO) are done. T080
    (security review, §5.2) and T030 (coverage gate closure, §3.3) are done and committed.
-   What remains before the feature can be called verified is entirely the live-stack work
-   in steps 1–3 above, plus T097's post-deploy smoke once merged and deployed.
+   What remains before the feature can be called verified is step 1 (a normal follow-up
+   session, no special environment needed) plus the live-stack work in steps 2–4, plus
+   T097's post-deploy smoke once merged and deployed.
