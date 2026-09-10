@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
+import { axe, toHaveNoViolations } from "jest-axe";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionsTable } from "./SessionsTable";
 import type { TrainingSession } from "@/types/trainingSession.types";
+
+expect.extend(toHaveNoViolations);
 
 function makeSession(overrides?: Partial<TrainingSession>): TrainingSession {
   return {
@@ -185,6 +188,35 @@ describe("SessionsTable", () => {
     it("no muestra el marcador 'Hoy' cuando la sesión no es de hoy", () => {
       renderTable([makeSession({ id: 1, scheduled_date: "2026-06-20" })]);
       expect(screen.queryByText("Hoy")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("marcador 'Entrenador inactivo' (feature 041 — gobernanza multi-coach)", () => {
+    it("muestra el marcador con texto accesible cuando has_active_coach es false", () => {
+      renderTable([makeSession({ id: 1, has_active_coach: false })]);
+      const flags = screen.getAllByTestId("session-inactive-coach-flag");
+      expect(flags.length).toBeGreaterThanOrEqual(1);
+      flags.forEach((flag) => expect(flag).toHaveTextContent("Entrenador inactivo"));
+    });
+
+    it("no muestra el marcador cuando has_active_coach es true", () => {
+      renderTable([makeSession({ id: 1, has_active_coach: true })]);
+      expect(screen.queryByTestId("session-inactive-coach-flag")).not.toBeInTheDocument();
+    });
+
+    it("no muestra el marcador cuando has_active_coach no viene en el payload", () => {
+      renderTable([makeSession({ id: 1 })]);
+      expect(screen.queryByTestId("session-inactive-coach-flag")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("accesibilidad (jest-axe)", () => {
+    it("no tiene violaciones con una fila marcada como entrenador inactivo", async () => {
+      const { container } = renderTable([
+        makeSession({ id: 1, has_active_coach: false }),
+      ]);
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
     });
   });
 });

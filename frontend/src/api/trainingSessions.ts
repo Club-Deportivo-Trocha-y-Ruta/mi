@@ -24,14 +24,27 @@ import type {
 
 const BASE = "/api/training-sessions";
 
+/**
+ * Feature 041 — gobernanza multi-coach (T067, contracts/session-coaches.md
+ * §8.1, §10.3). `coach_user_id` no se agregó al `SessionFilters` compartido
+ * en `types/trainingSession.types.ts` porque ese archivo pertenece a T066 en
+ * esta ola (fuera de alcance/tocable por T067) — se modela aquí como una
+ * extensión local, aditiva, del mismo tipo. Un parent que lo envíe recibe
+ * 403 del backend; `fetchParentSessions` (más abajo) nunca lo agrega.
+ */
+export interface SessionFiltersWithCoach extends SessionFilters {
+  coach_user_id?: number | null;
+}
+
 export async function fetchTrainingSessions(
-  filters?: SessionFilters,
+  filters?: SessionFiltersWithCoach,
 ): Promise<TrainingSession[]> {
   const params: Record<string, string> = {};
   if (filters?.from_date) params.from = filters.from_date;
   if (filters?.to_date) params.to = filters.to_date;
   if (filters?.status) params.status = filters.status;
   if (filters?.athlete_id) params.athlete_id = String(filters.athlete_id);
+  if (filters?.coach_user_id != null) params.coach_user_id = String(filters.coach_user_id);
   const response = await apiClient.get<TrainingSession[]>(BASE, { params });
   return response.data;
 }
@@ -82,7 +95,7 @@ export async function cancelTrainingSession(
   return response.data;
 }
 
-export function useTrainingSessions(filters?: SessionFilters, enabled = true) {
+export function useTrainingSessions(filters?: SessionFiltersWithCoach, enabled = true) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   // Privacy R2: userId va al inicio del key (después del namespace) para

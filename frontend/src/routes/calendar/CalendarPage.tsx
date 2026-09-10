@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { CalendarShell, type CalendarView } from "@/components/calendar/CalendarShell";
 import { CalendarFiltersBar } from "@/components/calendar/FiltersBar";
 import { EventDrawer } from "@/components/calendar/EventDrawer";
+import { CoachFilter } from "@/components/audit/CoachFilter";
 import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
 import {
@@ -11,6 +12,7 @@ import {
   type SiblingViewTabsItem,
 } from "@/components/layout/SiblingViewTabs";
 import { useCalendarEvents } from "@/api/calendar";
+import { useClubStaff } from "@/hooks/governance/useClubStaff";
 import { useCalendarFiltersStore } from "@/store/calendarFilters.store";
 import type { CalendarEventListItem } from "@/types/calendar.types";
 
@@ -52,12 +54,20 @@ export function CalendarPage() {
 
   const { eventTypes, athleteId, category } = useCalendarFiltersStore();
 
+  // Feature 041 — filtro "Entrenador" (contracts/session-coaches.md §8.2,
+  // §10.3). `useCalendarFiltersStore` es de otra tarea de esta ola (fuera
+  // del alcance de archivos que T067 puede tocar) — se modela como estado
+  // local no persistido; ver reporte de T067 para el seguimiento.
+  const [coachUserId, setCoachUserId] = useState<number | null>(null);
+  const { coaches, isLoading: isStaffLoading } = useClubStaff();
+
   const eventsQuery = useCalendarEvents({
     from: rangeFrom ?? currentMonthRange().from,
     to: rangeTo ?? currentMonthRange().to,
     event_types: eventTypes.length > 0 ? eventTypes : undefined,
     athlete_id: athleteId,
     category: category,
+    coach_user_id: coachUserId,
   });
 
   const events: CalendarEventListItem[] = eventsQuery.data ?? [];
@@ -122,6 +132,17 @@ export function CalendarPage() {
         <SiblingViewTabs items={TRAINING_SIBLING_VIEWS} />
 
         <CalendarFiltersBar />
+
+        <div className="rounded-xl bg-white p-4 shadow-card">
+          <CoachFilter
+            coaches={coaches}
+            value={coachUserId}
+            onChange={setCoachUserId}
+            disabled={isStaffLoading}
+            showClear={coachUserId != null}
+            onClear={() => setCoachUserId(null)}
+          />
+        </div>
 
         {eventsQuery.isError && (
           <ErrorState

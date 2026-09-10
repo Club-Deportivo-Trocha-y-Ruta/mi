@@ -302,6 +302,19 @@ export function EventDrawer({
     );
   }
 
+  /**
+   * Feature 041 — el diálogo de cancelación no cierra ante un error; solo
+   * muestra el mensaje en línea. Un 409 significa que otro entrenador ya
+   * canceló el evento entre que se abrió el diálogo y se confirmó
+   * (contracts/session-coaches.md §7, F-07) — se distingue del resto de
+   * errores para que el usuario entienda que no hay nada que reintentar.
+   */
+  const cancelErrorMessage = cancelMutation.isError
+    ? (cancelMutation.error as { response?: { status?: number } })?.response?.status === 409
+      ? "Este evento ya está cancelado."
+      : "No se pudo cancelar el evento. Intenta de nuevo."
+    : undefined;
+
   function handleConfirmDelete() {
     if (!eventId) return;
     deletePermanentMutation.mutate(
@@ -490,6 +503,7 @@ export function EventDrawer({
         open={confirmCancel}
         eventTitle={event?.title}
         isPending={cancelMutation.isPending}
+        errorMessage={cancelErrorMessage}
         onCancel={() => setConfirmCancel(false)}
         onConfirm={handleConfirmCancel}
       />

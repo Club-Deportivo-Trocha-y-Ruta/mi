@@ -22,6 +22,14 @@ interface ParentSessionCardProps {
   athleteAgeDecimal?: number | null;
 }
 
+// Feature 041 — gobernanza multi-coach (T067). Decisión: NO se agrega el
+// nombre de los entrenadores a esta card. contracts/session-coaches.md §3.1
+// dice explícitamente que `TrainingSessionReadParent` queda sin cambios —
+// FR-025 pone el nombre del entrenador solo en el email de la familia, nunca
+// en una pantalla, y un test del contrato (§12, B-14) exige que el payload
+// del padre NO traiga `coaches`. Esta card sigue sin mostrar "el entrenador"
+// como persona (solo como rol, si acaso) — ver reporte de T067.
+
 const COMMENT_PREVIEW_CHARS = 90;
 
 // Wave 5: microcopy pedagógico aplicado a cada label de rúbrica.
