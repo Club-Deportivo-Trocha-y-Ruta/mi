@@ -592,6 +592,148 @@ describe("ReportDetailPage — coach", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Tests — evidencia de aprobación (feature 041, T074)
+// Contrato: specs/041-multi-coach-governance/contracts/concurrency-and-approvals.md §7
+// ---------------------------------------------------------------------------
+
+describe("ReportDetailPage — evidencia de aprobación", () => {
+  it("aprobación vigente con autor conocido: 'Aprobado por X el D'", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        status: "approved",
+        approved_by: { user_id: 9, display_name: "Bruno Coach" },
+        approved_at: "2026-09-09T14:02:11",
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+    const approval = screen.getByTestId("report-approval");
+    // Fecha vía formatDateMedium — se verifica por partes (día/mes
+    // abreviado/año) como en frontend/src/lib/__tests__/datetime.test.ts,
+    // sin acoplarse a la puntuación exacta que aporta el ICU de la runtime.
+    expect(approval).toHaveTextContent(/Aprobado por Bruno Coach el/);
+    expect(approval.textContent).toContain("09");
+    expect(approval.textContent).toContain("2026");
+    expect(approval.textContent?.toLowerCase()).toMatch(/sept/);
+    expect(screen.queryByTestId("report-approval-legacy")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("report-previous-approval")).not.toBeInTheDocument();
+  });
+
+  it("aprobación heredada (legacy): 'aprobado (sin registro de autor)' sin inventar un nombre", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        status: "approved",
+        approved_by: null,
+        approved_at: "2026-01-05T09:00:00",
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+    expect(screen.getByTestId("report-approval-legacy")).toHaveTextContent(
+      "Aprobado (sin registro de autor)",
+    );
+    expect(screen.queryByTestId("report-approval")).not.toBeInTheDocument();
+    // Nunca debe inventar un nombre de coach para una fila heredada.
+    expect(screen.queryByText(/Aprobado por/i)).not.toBeInTheDocument();
+  });
+
+  it("aprobación previa conservada tras una regeneración: 'Aprobado anteriormente por X el D', solo en draft", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        status: "draft",
+        approved_by: null,
+        approved_at: null,
+        previous_approved_by: { user_id: 7, display_name: "Ana Coach" },
+        previous_approved_at: "2026-04-03T10:12:00",
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+    const previous = screen.getByTestId("report-previous-approval");
+    expect(previous).toHaveTextContent(/Aprobado anteriormente por Ana Coach el/);
+    expect(previous.textContent).toContain("03");
+    expect(previous.textContent).toContain("2026");
+    expect(previous.textContent?.toLowerCase()).toMatch(/abr/);
+    expect(previous.className).toEqual(expect.stringContaining("text-mid-gray"));
+    expect(screen.queryByTestId("report-approval")).not.toBeInTheDocument();
+  });
+
+  it("no renderiza evidencia de aprobación cuando ningún campo está presente (informe sin aprobar)", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        status: "draft",
+        approved_by: null,
+        approved_at: null,
+        previous_approved_by: null,
+        previous_approved_at: null,
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+    expect(screen.queryByTestId("report-approval")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("report-approval-legacy")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("report-previous-approval")).not.toBeInTheDocument();
+  });
+
+  it("'previous_approved_by' no se renderiza si el informe ya está aprobado de nuevo (FR: la evidencia vigente domina)", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        status: "approved",
+        approved_by: { user_id: 9, display_name: "Bruno Coach" },
+        approved_at: "2026-09-09T14:02:11",
+        previous_approved_by: { user_id: 7, display_name: "Ana Coach" },
+        previous_approved_at: "2026-04-03T10:12:00",
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    renderPage();
+    expect(screen.getByTestId("report-approval")).toBeInTheDocument();
+    expect(screen.queryByTestId("report-previous-approval")).not.toBeInTheDocument();
+  });
+
+  it("no expone ningún id numérico de usuario en la evidencia de aprobación (FR-013)", () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        status: "approved",
+        approved_by: { user_id: 9, display_name: "Bruno Coach" },
+        approved_at: "2026-09-09T14:02:11",
+        previous_approved_by: { user_id: 7, display_name: "Ana Coach" },
+        previous_approved_at: "2026-04-03T10:12:00",
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    const { container } = renderPage();
+    // "9" y "7" son los user_id — no deben aparecer como texto suelto en el
+    // bloque de evidencia (solo dentro de nombres/fechas ya formateados).
+    expect(container.textContent).not.toMatch(/\buser_id\b/);
+    expect(screen.getByTestId("report-approval").textContent).not.toMatch(/^\s*9\s*$/);
+  });
+
+  it("no tiene violaciones de axe con evidencia de aprobación visible", async () => {
+    vi.mocked(useMonthlyReport).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeReport({
+        status: "draft",
+        approved_by: null,
+        approved_at: null,
+        previous_approved_by: { user_id: 7, display_name: "Ana Coach" },
+        previous_approved_at: "2026-04-03T10:12:00",
+      }),
+    } as unknown as ReturnType<typeof useMonthlyReport>);
+    const { container } = renderPage();
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tests — fallback sin club / sin acceso
 //
 // El Informe Técnico Mensual es interno del club: la ruta está protegida con

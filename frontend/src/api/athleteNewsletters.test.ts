@@ -153,6 +153,23 @@ describe("patchAthleteNewsletter", () => {
     );
     expect(result.coach_note).toEqual(coachNote);
   });
+
+  // 041 §2.2/§6.1 (T073) — regresión: sin esta precondición, TODO guardado
+  // desde el estudio devuelve 428. expected_version viaja como header
+  // If-Match (forma débil), nunca como campo del body.
+  it("envía expected_version como header If-Match, nunca en el body", async () => {
+    const data = makeNewsletter({ coach_note: "Nota" });
+    mockApi.patch.mockResolvedValueOnce({ data });
+    await patchAthleteNewsletter(42, 1, {
+      coach_note: "Nota",
+      expected_version: 7,
+    });
+    expect(mockApi.patch).toHaveBeenCalledWith(
+      "/api/athletes/42/monthly-newsletters/1",
+      { coach_note: "Nota" },
+      { headers: { "If-Match": 'W/"7"' } },
+    );
+  });
 });
 
 describe("approveAthleteNewsletter", () => {
@@ -256,6 +273,28 @@ describe("manejo de errores HTTP", () => {
       response: { status: 409, data: { detail: "Hermano en draft" } },
     };
     expect(parseApiError(axiosErr, "fallback")).toBe("Hermano en draft");
+  });
+
+  it("428 con detail — parseApiError devuelve el detail del servidor", async () => {
+    const { parseApiError } = await import("./athleteNewsletters");
+    const axiosErr = {
+      isAxiosError: true,
+      response: {
+        status: 428,
+        data: { detail: "Falta la versión del boletín (If-Match). Recarga la bitácora antes de guardar." },
+      },
+    };
+    expect(parseApiError(axiosErr, "fallback")).toBe(
+      "Falta la versión del boletín (If-Match). Recarga la bitácora antes de guardar.",
+    );
+  });
+
+  it("428 sin detail — parseApiError devuelve el mensaje genérico", async () => {
+    const { parseApiError } = await import("./athleteNewsletters");
+    const axiosErr = { isAxiosError: true, response: { status: 428, data: {} } };
+    expect(parseApiError(axiosErr, "fallback")).toBe(
+      "Falta la versión del boletín. Recarga la bitácora antes de guardar.",
+    );
   });
 
   it("500 — parseApiError devuelve error de servidor", async () => {

@@ -29,7 +29,11 @@ vi.mock("@/hooks/athletes/useAthlete", () => ({
 }));
 
 import { mswServer } from "@/test/setup";
-import { newsletterHandlers } from "@/test/msw/newsletterHandlers";
+import {
+  newsletterHandlers,
+  patchVersionConflictHandler,
+  patchPreconditionRequiredHandler,
+} from "@/test/msw/newsletterHandlers";
 import { stageLogHandlers, makeV2Newsletter } from "@/test/msw/stageLogHandlers";
 import { AthleteNewsletterStudioPage } from "@/routes/training/AthleteNewsletterStudioPage";
 
@@ -245,6 +249,243 @@ describe("AthleteNewsletterStudioPage", () => {
     const { container } = renderStudio();
     await waitFor(() => expect(screen.getByTestId("newsletter-studio-page")).toBeInTheDocument());
     const results = await axe(container, { iframes: false });
+    expect(results).toHaveNoViolations();
+  });
+
+  // -------------------------------------------------------------------------
+  // Concurrencia optimista (041 §2/§6, T073)
+  // -------------------------------------------------------------------------
+
+  /** Abre la edición del bloque "header" y escribe `value`, sin guardar aún. */
+  async function typeHeaderEdit(value: string) {
+    await waitFor(() => expect(screen.getByTestId("block-card-header")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("block-edit-header"));
+    fireEvent.change(screen.getByLabelText("Editar Título de la etapa"), {
+      target: { value },
+    });
+  }
+
+  it("guardar envía la precondición de versión cargada como header If-Match (regresión T073)", async () => {
+    mswServer.use(useV2DetailHandler({ edit_version: 4 }));
+    let ifMatch: string | null = null;
+    mswServer.use(
+      http.patch(
+        "*/api/athletes/:athleteId/monthly-newsletters/:id",
+        async ({ request, params }) => {
+          ifMatch = request.headers.get("If-Match");
+          const body = (await request.json()) as { stage_overrides?: unknown };
+          return HttpResponse.json(
+            makeV2Newsletter({
+              id: Number(params.id),
+              athlete_id: Number(params.athleteId),
+              edit_version: 5,
+              stage_overrides: body.stage_overrides ?? null,
+            }),
+          );
+        },
+      ),
+    );
+    renderStudio();
+    await typeHeaderEdit("Un título editado por el coach");
+    fireEvent.click(screen.getByTestId("block-save-header"));
+
+    await waitFor(() => expect(ifMatch).toBe('W/"4"'));
+  });
+
+  it("409 con current_version abre el diálogo de conflicto con la copia exacta", async () => {
+    mswServer.use(useV2DetailHandler({ edit_version: 4 }));
+    renderStudio();
+    await typeHeaderEdit("Texto que no se debe perder");
+    mswServer.use(patchVersionConflictHandler(6));
+    fireEvent.click(screen.getByTestId("block-save-header"));
+
+    const dialog = await screen.findByTestId("newsletter-conflict-dialog");
+    expect(
+      within(dialog).getByText("Otro entrenador guardó cambios"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "Otro entrenador guardó cambios en este boletín mientras lo editabas. Tu texto sigue acá: cópialo si lo necesitas y luego recarga para trabajar sobre la última versión.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByTestId("newsletter-conflict-reload")).toBeInTheDocument();
+    expect(within(dialog).getByTestId("newsletter-conflict-keep-editing")).toBeInTheDocument();
+  });
+
+  it("el draft no se pierde tras el 409: el texto sigue en el textarea, sin refetch", async () => {
+    mswServer.use(useV2DetailHandler({ edit_version: 4 }));
+    let getCallCount = 0;
+    mswServer.use(
+      http.get(
+        "*/api/athletes/:athleteId/monthly-newsletters/:id",
+        ({ params }) => {
+          getCallCount += 1;
+          return HttpResponse.json(
+            makeV2Newsletter({
+              id: Number(params.id),
+              athlete_id: Number(params.athleteId),
+              edit_version: 4,
+              selected_race_insight_ids: [17],
+            }),
+          );
+        },
+      ),
+    );
+    renderStudio();
+    await typeHeaderEdit("Texto que no se debe perder");
+    const getCallsBeforeSave = getCallCount;
+    mswServer.use(patchVersionConflictHandler(6));
+    fireEvent.click(screen.getByTestId("block-save-header"));
+
+    await screen.findByTestId("newsletter-conflict-dialog");
+    // BlockCard cierra el modo edición al guardar (optimista, feature 038);
+    // lo que "no se pierde" es overridesDraft — el preview sigue mostrando
+    // el texto del coach, nunca revertido por el 409.
+    expect(screen.getByTestId("block-card-header")).toHaveTextContent(
+      "Texto que no se debe perder",
+    );
+    // Ningún GET adicional: el conflicto no dispara un refetch en segundo plano.
+    expect(getCallCount).toBe(getCallsBeforeSave);
+  });
+
+  it("'Seguir editando' cierra el diálogo, mantiene el banner y el draft", async () => {
+    mswServer.use(useV2DetailHandler({ edit_version: 4 }));
+    renderStudio();
+    await typeHeaderEdit("Texto que no se debe perder");
+    mswServer.use(patchVersionConflictHandler(6));
+    fireEvent.click(screen.getByTestId("block-save-header"));
+
+    await screen.findByTestId("newsletter-conflict-dialog");
+    fireEvent.click(screen.getByTestId("newsletter-conflict-keep-editing"));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("newsletter-conflict-dialog")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("newsletter-conflict-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("block-card-header")).toHaveTextContent(
+      "Texto que no se debe perder",
+    );
+  });
+
+  it("'Recargar' invalida la query una sola vez, limpia el banner y resiembra el draft del servidor", async () => {
+    mswServer.use(useV2DetailHandler({ edit_version: 4 }));
+    let getCallCount = 0;
+    mswServer.use(
+      http.get(
+        "*/api/athletes/:athleteId/monthly-newsletters/:id",
+        ({ params }) => {
+          getCallCount += 1;
+          return HttpResponse.json(
+            makeV2Newsletter({
+              id: Number(params.id),
+              athlete_id: Number(params.athleteId),
+              edit_version: getCallCount === 1 ? 4 : 6,
+              // updated_at debe cambiar entre llamadas: el efecto de
+              // resiembra del draft (AthleteNewsletterStudioPage:131-140)
+              // dispara con [newsletter.id, newsletter.updated_at] — sin un
+              // updated_at distinto el refetch no resiembra overridesDraft.
+              updated_at:
+                getCallCount === 1 ? "2026-05-01T00:00:00Z" : "2026-05-02T09:00:00Z",
+              stage_overrides:
+                getCallCount === 1 ? null : { stage_title: "Título de otro entrenador" },
+            }),
+          );
+        },
+      ),
+    );
+    renderStudio();
+    await typeHeaderEdit("Texto que no se debe perder");
+    const getCallsBeforeSave = getCallCount;
+    mswServer.use(patchVersionConflictHandler(6));
+    fireEvent.click(screen.getByTestId("block-save-header"));
+    await screen.findByTestId("newsletter-conflict-dialog");
+
+    fireEvent.click(screen.getByTestId("newsletter-conflict-reload"));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("newsletter-conflict-dialog")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("newsletter-conflict-banner")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("block-card-header")).toHaveTextContent(
+        "Título de otro entrenador",
+      ),
+    );
+    // Exactamente un GET adicional (el refetch disparado por invalidateQueries).
+    expect(getCallCount).toBe(getCallsBeforeSave + 1);
+  });
+
+  it("428 muestra el toast de versión faltante, no el diálogo de conflicto", async () => {
+    mswServer.use(useV2DetailHandler({ edit_version: 4 }));
+    renderStudio();
+    await typeHeaderEdit("Un título");
+    mswServer.use(patchPreconditionRequiredHandler);
+    fireEvent.click(screen.getByTestId("block-save-header"));
+
+    await waitFor(() => expect(screen.getByTestId("toast-error")).toBeInTheDocument());
+    expect(screen.queryByTestId("newsletter-conflict-dialog")).not.toBeInTheDocument();
+  });
+
+  it("no reintenta el PATCH tras un 409 de versión vencida (R-16): una sola llamada de red", async () => {
+    mswServer.use(useV2DetailHandler({ edit_version: 4 }));
+    let patchCallCount = 0;
+    mswServer.use(
+      http.patch(
+        "*/api/athletes/:athleteId/monthly-newsletters/:id",
+        () => {
+          patchCallCount += 1;
+          return HttpResponse.json(
+            { detail: "Otro entrenador guardó cambios.", current_version: 6 },
+            { status: 409 },
+          );
+        },
+      ),
+    );
+    renderStudio();
+    await typeHeaderEdit("Un título");
+    fireEvent.click(screen.getByTestId("block-save-header"));
+
+    await screen.findByTestId("newsletter-conflict-dialog");
+    expect(patchCallCount).toBe(1);
+  });
+
+  it("coach-note-byline muestra autor y fecha, y está ausente sin nota", async () => {
+    mswServer.use(
+      useV2DetailHandler({
+        coach_note: "Nos vemos en la próxima válida.",
+        coach_note_author: { user_id: 7, display_name: "Ana Coach" },
+        coach_note_updated_at: "2026-09-02T15:41:08Z",
+      }),
+    );
+    renderStudio();
+    await waitFor(() => expect(screen.getByTestId("coach-note-byline")).toBeInTheDocument());
+    expect(screen.getByTestId("coach-note-byline")).toHaveTextContent("Nota escrita por Ana Coach");
+  });
+
+  it("coach-note-byline está ausente cuando no hay nota del entrenador", async () => {
+    mswServer.use(useV2DetailHandler({ coach_note: null, coach_note_author: null }));
+    renderStudio();
+    await waitFor(() => expect(screen.getByTestId("newsletter-studio-page")).toBeInTheDocument());
+    expect(screen.queryByTestId("coach-note-byline")).not.toBeInTheDocument();
+  });
+
+  it("sin violaciones de accesibilidad con el diálogo de conflicto abierto y cerrado", async () => {
+    mswServer.use(useV2DetailHandler({ edit_version: 4 }));
+    const { container } = renderStudio();
+    await typeHeaderEdit("Un título");
+    mswServer.use(patchVersionConflictHandler(6));
+    fireEvent.click(screen.getByTestId("block-save-header"));
+    await screen.findByTestId("newsletter-conflict-dialog");
+
+    let results = await axe(container, { iframes: false });
+    expect(results).toHaveNoViolations();
+
+    fireEvent.click(screen.getByTestId("newsletter-conflict-keep-editing"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("newsletter-conflict-dialog")).not.toBeInTheDocument(),
+    );
+
+    results = await axe(container, { iframes: false });
     expect(results).toHaveNoViolations();
   });
 });

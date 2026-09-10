@@ -36,6 +36,11 @@ function parseApiError(err: unknown, fallback: string): string {
     if (status === 404) return "El boletín no fue encontrado.";
     if (status === 409 && detail) return String(detail);
     if (status === 409) return "Conflicto: el boletín ya existe o está en un estado que no permite esta operación.";
+    // 041 §2.5 — falta la precondición de versión (If-Match/expected_version).
+    // El detail del backend ya trae la copia correcta ("Recarga la bitácora
+    // antes de guardar."); el fallback cubre solo el caso sin body legible.
+    if (status === 428 && detail) return String(detail);
+    if (status === 428) return "Falta la versión del boletín. Recarga la bitácora antes de guardar.";
     if (status === 500) return "Error interno del servidor. Intenta de nuevo más tarde.";
     if (detail) return String(detail);
   }
@@ -78,15 +83,32 @@ export async function createAthleteNewsletter(
   return response.data;
 }
 
+/**
+ * `expected_version` (041 §2.2) es la precondición de concurrencia
+ * optimista, nunca un campo real del payload: se extrae acá y viaja
+ * siempre como header `If-Match` en forma débil (`W/"<n>"`, aceptada por
+ * el backend igual que la fuerte). CORS ya expone `If-Match` en
+ * `allow_headers` (`backend/app/main.py`), así que no hace falta el
+ * fallback de body del contrato §6.1 ("si R-15 se difiere") — R-15 ya
+ * aterrizó en esta rama.
+ *
+ * Si el caller no manda `expected_version` (hooks que aún no migraron a
+ * la precondición), el PATCH sale sin `If-Match` y el backend responde
+ * 428 — más seguro que inventar una versión en el cliente.
+ */
 export async function patchAthleteNewsletter(
   athleteId: number,
   newsletterId: number,
   payload: AthleteNewsletterPatch,
 ): Promise<AthleteNewsletter> {
-  const response = await apiClient.patch<AthleteNewsletter>(
-    `${ATHLETE_BASE}/${athleteId}/monthly-newsletters/${newsletterId}`,
-    payload,
-  );
+  const { expected_version, ...body } = payload;
+  const url = `${ATHLETE_BASE}/${athleteId}/monthly-newsletters/${newsletterId}`;
+  const response =
+    expected_version != null
+      ? await apiClient.patch<AthleteNewsletter>(url, body, {
+          headers: { "If-Match": `W/"${expected_version}"` },
+        })
+      : await apiClient.patch<AthleteNewsletter>(url, body);
   return response.data;
 }
 
