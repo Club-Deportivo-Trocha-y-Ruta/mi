@@ -666,3 +666,48 @@ Ordenadas por lo que costaría descubrirlas tarde, no por tamaño.
 | A12 | Las pantallas de familia (`ParentSessionCard`, `ParentSessionDetailPage`) no muestran hoy ningún nombre de entrenador. Cuando se agreguen, deben reutilizar el mismo plural de los correos ("Entrenador a cargo" / "Entrenadores a cargo") en vez de inventar copia nueva. | `frontend/src/components/parents/ParentSessionCard.tsx`, `frontend/src/routes/parents/training/ParentSessionDetailPage.tsx` |
 | A13 | 4 hallazgos cosméticos de `ruff` en archivos de prueba nuevos (`E402` de imports tardíos, dos `F841`). | `backend/tests/test_archived_athlete_absent.py`, `backend/tests/test_audit_athletes.py` |
 | — | Sin MySQL ni Docker: la vía `-m mysql` no corre, T027/T028 siguen diferidas y las especificaciones de Playwright siguen bloqueadas. **T097 (humo posdespliegue) no se puede hacer aquí**: necesita credenciales de producción que no están en este entorno; queda sin marcar a propósito. | — |
+
+---
+
+# Adenda — fase 7 (US5) en la misma corrida
+
+Con US4 cerrada y tiempo de ventana restante, se avanzó el backend de US5
+(T069, T070, T071). Se anota aparte porque no es una revisión de integración
+completa: es lo que quedó hecho y lo que quedó a medias.
+
+## Lo que quedó funcionando
+
+- **Concurrencia optimista en la bitácora (T069)**. El `PATCH` exige la versión
+  que el coach tenía a la vista, por `If-Match` o por `expected_version`. Stale →
+  409 con `current_version`; sin precondición → 428; malformada o en desacuerdo
+  con el cuerpo → 400; bitácora ya enviada → 409 sin `current_version`. La
+  reserva es una `UPDATE ... WHERE edit_version = :esperada` decidida por
+  `rowcount`, no una comparación en Python. 30 casos verdes.
+- **Autoría de la nota del entrenador (T070)**, incluido el borrado de la nota:
+  quién la quitó también queda registrado. La matriz de exposición de §3.2 se
+  comprobó de verdad, no por lectura: se renderiza el **PDF familiar real** con
+  WeasyPrint y se cuenta cero apariciones del apellido del entrenador, lo mismo
+  con el correo, y hay una barrera de esquema que rechaza la clave aunque se
+  inyecte en el JSON guardado.
+- **Evidencia de aprobación del reporte mensual (T071)**. Regenerar copia
+  `approved_by`/`approved_at` a `previous_approved_*` antes de limpiarlos. La
+  prueba de regresión se validó extrayendo el `reports.py` de `HEAD` y
+  ejecutándola contra él: falla, como debe.
+
+## Riesgo introducido y cerrado dentro de la misma corrida
+
+T069 es un cambio **incompatible** para el cliente: hasta que el estudio de
+bitácora mande la precondición, todo guardado desde la interfaz responde 428. Se
+lanzaron T073 y T074 en la misma ventana para cerrarlo. **Si el commit de T073 no
+está en la rama, ese 428 está vivo y es lo primero que debe mirar la corrida
+siguiente.**
+
+## Deuda concreta que deja US5
+
+| # | Deuda | Dónde |
+|---|---|---|
+| B1 | `ActorRef` quedó **duplicado**: `NewsletterActorRef` en `app/schemas/athlete_newsletter.py` y otro `ActorRef` local en `app/schemas/training_session.py`. El contrato lo pone en `app/schemas/audit.py`, que no lo define pese a que T031 figura hecha. Hay que unificarlo antes de que aparezca un tercero. | `backend/app/schemas/athlete_newsletter.py`, `backend/app/schemas/training_session.py`, `backend/app/schemas/audit.py` |
+| B2 | `AthleteMonthlyNewsletter` no tiene relaciones ORM para `coach_note_author_id` ni `last_edited_by_user_id`; los nombres se resuelven con un `select(User)` explícito por respuesta. Sin N+1, pero el contrato pedía `selectinload`. | `backend/app/models/athlete_newsletter.py` |
+| B3 | `templates/email/athlete_stage_log.html` **no renderiza `coach_note` en absoluto**. §3.2 dice que la familia sí debe ver el texto de la nota (sin autor). Es una brecha preexistente de la feature 038, no de 041, pero la fila de esa matriz está sin cumplir del lado del texto. | `backend/templates/email/athlete_stage_log.html` |
+| B4 | La atomicidad de la reserva de versión bajo concurrencia real **no está verificada**: sqlite no reproduce el bloqueo de fila de InnoDB. La prueba de dos sesiones existe, está marcada `-m mysql` y se salta. | `backend/tests/routers/test_newsletter_concurrency.py::test_two_sessions_only_one_update_takes_effect` |
+| B5 | T072 queda parcial: faltan las extensiones a `test_newsletter_privacy.py`. | `backend/tests/test_newsletter_privacy.py` |
