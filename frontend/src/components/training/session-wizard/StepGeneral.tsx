@@ -34,9 +34,17 @@ interface StepGeneralProps {
   errors: FieldErrors<TrainingSessionFormValues>;
   /** Fields pre-filled by the AI assistant; shows a marker that clears on edit. */
   aiSeededFields?: Set<string>;
+  /** Club al que pertenece la sesión — acota el picker de `SessionCoachesField`. */
+  clubId?: number;
 }
 
-export function StepGeneral({ register, control, errors, aiSeededFields }: StepGeneralProps) {
+export function StepGeneral({
+  register,
+  control,
+  errors,
+  aiSeededFields,
+  clubId,
+}: StepGeneralProps) {
   const seeded = aiSeededFields ?? new Set<string>();
 
   return (
@@ -155,6 +163,7 @@ export function StepGeneral({ register, control, errors, aiSeededFields }: StepG
             value={field.value ?? []}
             onChange={field.onChange}
             error={errors.coach_user_ids?.message}
+            clubId={clubId}
           />
         )}
       />

@@ -121,6 +121,7 @@ export function SessionFormPage({ mode }: SessionFormPageProps) {
           mode={mode}
           defaultValues={defaults}
           sessionId={isEdit ? sessionId : undefined}
+          clubId={isEdit ? sessionQuery.data?.club_id : undefined}
           loadedUpdatedAt={isEdit ? sessionQuery.data?.updated_at : undefined}
           initialAthleteIds={defaults.convocados_athlete_ids}
           aiSeededFields={

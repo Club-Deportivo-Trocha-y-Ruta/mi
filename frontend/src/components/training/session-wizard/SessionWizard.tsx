@@ -82,6 +82,8 @@ export interface SessionWizardProps {
   aiSeededFields?: Set<string>;
   /** Justificación generada por el asistente IA (solo lectura); se muestra como aviso informativo. */
   draftNotes?: string | null;
+  /** Solo en edición: club de la sesión cargada — acota el picker de entrenadores. */
+  clubId?: number;
 }
 
 type SubmitOutcome =
@@ -146,10 +148,15 @@ export function SessionWizard({
   initialAthleteIds = [],
   aiSeededFields,
   draftNotes,
+  clubId,
 }: SessionWizardProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  // En creación no hay sesión cargada todavía: se acota al club del propio
+  // entrenador/admin autenticado (`SessionCoachesField`/`useClubCoaches`).
+  const ownClubId = useAuthStore((s) => s.user?.club_ids?.[0]);
+  const effectiveClubId = clubId ?? ownClubId;
   const isEdit = mode === "edit";
 
   const createMutation = useCreateTrainingSession();
@@ -534,6 +541,7 @@ export function SessionWizard({
               control={control}
               errors={errors}
               aiSeededFields={activeSeededFields}
+              clubId={effectiveClubId}
             />
           )}
           {step === 2 && <StepAthletes control={control} errors={errors} />}

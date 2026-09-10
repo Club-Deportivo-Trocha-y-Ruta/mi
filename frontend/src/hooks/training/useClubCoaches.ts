@@ -11,14 +11,14 @@
  * alimentar el filtro del historial de auditoría con una forma de dato
  * distinta — `{ id, displayName }` — y sin soporte de `club_id`).
  *
- * Decisión T066: `clubId` queda soportado en la firma pero hoy ningún
- * llamador lo pasa — el endpoint ya acota los resultados al club del
- * entrenador que llama (`backend/app/routers/users.py:140-210`), así que un
- * entrenador de un solo club obtiene el resultado correcto sin el filtro.
- * Acotar explícitamente al club de la sesión en modo edición (§10.1)
- * requeriría propagar `session.club_id` desde `SessionFormPage`/
- * `SessionWizard` hasta `StepGeneral`, cambio que se dejó fuera para no
- * tocar más superficie de la necesaria en esta tarea — ver reporte de T066.
+ * `clubId` se propaga desde `SessionFormPage` → `SessionWizard` →
+ * `StepGeneral` (sesión cargada en edición; club del propio usuario en
+ * creación). Es imprescindible para un `admin`: sin `club_id`, el branch
+ * admin de `GET /api/users` (`backend/app/routers/users.py:329-358`) no
+ * filtra por club y devuelve entrenadores de todos los clubes. Para un
+ * `coach` el backend ya acota por sus propios clubes aunque `club_id` venga
+ * vacío (`backend/app/routers/users.py:359-391`), así que el filtro es
+ * redundante pero inofensivo en ese caso.
  */
 import { useQuery } from "@tanstack/react-query";
 
