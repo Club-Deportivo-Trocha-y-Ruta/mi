@@ -184,7 +184,7 @@ def _resolve_database_url(database_url: str | None) -> str:
             from app.config import settings
 
             url = settings.database_url
-        except Exception as exc:  # noqa: BLE001 - cualquier fallo es el mismo rechazo
+        except Exception as exc:  # cualquier fallo termina en el mismo rechazo
             raise Refusal(
                 "No se pudo resolver la base de datos. Define "
                 "AUDIT_RETENTION_DATABASE_URL o corre desde backend/ con .env."

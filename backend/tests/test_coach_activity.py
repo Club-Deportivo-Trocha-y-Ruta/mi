@@ -183,7 +183,7 @@ async def _seed_activity(session: AsyncSession, sc: TwoCoachesScenario) -> None:
     - Runs de IA: club 3, A 2, B 1.
     - Resultados: importaciones club 2 (A 1, B 1), revisiones club 3
       (A 2, B 1), vínculos club 2 (A 1, B 1).
-    - ``audit_log``: club 6, A 4, B 2.
+    - ``audit_log``: club 6 (A 3, B 2 y 1 del administrador).
     """
     a = sc.coach_a_user_id
     b = sc.coach_b_user_id
@@ -1115,8 +1115,8 @@ async def test_documentos_y_conteo_de_historial(
         "exports": 1,
     }
     # El total del club incluye la fila del administrador; la suma de las
-    # filas por entrenador (4 + 2) no tiene por qué igualarlo.
-    assert rows[sc.coach_a_user_id]["audit_entries_count"] == 4
+    # filas por entrenador (3 + 2) no tiene por qué igualarlo.
+    assert rows[sc.coach_a_user_id]["audit_entries_count"] == 3
     assert rows[sc.coach_b_user_id]["audit_entries_count"] == 2
     assert body["club_totals"]["audit_entries_count"] == 6
 

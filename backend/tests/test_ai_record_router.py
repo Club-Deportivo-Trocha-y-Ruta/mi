@@ -107,12 +107,18 @@ class _QueueSession:
     def __init__(self, responses):
         self._responses = list(responses)
         self.executed: list = []
+        #: Filas encoladas con `db.add(...)` — hoy solo la de `audit_log`
+        #: que escribe `record_audit` tras el upsert (T030).
+        self.added: list = []
 
     async def execute(self, stmt):
         self.executed.append(stmt)
         if not self._responses:
             return _ScalarResult()
         return self._responses.pop(0)
+
+    def add(self, obj) -> None:
+        self.added.append(obj)
 
 
 @pytest.fixture
@@ -218,11 +224,15 @@ class TestPostMeasurementExplanation:
         app.dependency_overrides[verify_athlete_access] = _athlete
         # 1: get_record_or_404 returns target
         # 2: priors query returns []
-        # 3: upsert (no result needed)
+        # 3: pre-SELECT del caché (T030) — vacío ⇒ fila de auditoría `create`
+        # 4: upsert (no result needed)
+        # 5: re-SELECT del id insertado, para el `entity_id` de la auditoría
         session = _QueueSession([
             _ScalarResult(scalar=target),
             _ScalarResult(items=[]),
+            _ScalarResult(scalar=None),
             _ScalarResult(),
+            _ScalarResult(scalar=7),
         ])
         app.dependency_overrides[get_db] = lambda: session
 
@@ -250,7 +260,9 @@ class TestPostMeasurementExplanation:
         session = _QueueSession([
             _ScalarResult(scalar=target),
             _ScalarResult(items=[prior]),
-            _ScalarResult(),
+            _ScalarResult(scalar=None),   # pre-SELECT del caché (T030)
+            _ScalarResult(),              # upsert
+            _ScalarResult(scalar=7),      # id de la fila insertada
         ])
         app.dependency_overrides[get_db] = lambda: session
 

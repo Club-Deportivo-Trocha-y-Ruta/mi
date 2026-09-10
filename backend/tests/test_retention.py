@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
-from typing import AsyncGenerator
 from uuid import uuid4
 
 import pytest
@@ -85,7 +85,7 @@ async def _create_subset(engine: AsyncEngine) -> None:
 
 
 @pytest_asyncio.fixture
-async def engine() -> AsyncGenerator[AsyncEngine, None]:
+async def engine() -> AsyncGenerator[AsyncEngine]:
     eng = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         future=True,
@@ -105,7 +105,7 @@ async def factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
 @pytest_asyncio.fixture
 async def session(
     factory: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[AsyncSession, None]:
+) -> AsyncGenerator[AsyncSession]:
     async with factory() as s:
         yield s
 

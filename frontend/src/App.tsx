@@ -166,6 +166,12 @@ const ProjectProfilePage = lazy(() =>
     default: m.ProjectProfilePage,
   })),
 );
+// Feature 041 — gobernanza multi-coach, US7 (informe de actividad por entrenador).
+const CoachActivityPage = lazy(() =>
+  import("@/routes/training/CoachActivityPage").then((m) => ({
+    default: m.CoachActivityPage,
+  })),
+);
 const AthleteNewslettersDashboardPage = lazy(() =>
   import("@/routes/training/AthleteNewslettersDashboardPage").then((m) => ({
     default: m.AthleteNewslettersDashboardPage,
@@ -555,6 +561,16 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando perfil de proyección..." />}>
                 <ProjectProfilePage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/training/reports/actividad-entrenadores"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando actividad por entrenador…" />}>
+                <CoachActivityPage />
               </Suspense>
             </ProtectedRoute>
           }

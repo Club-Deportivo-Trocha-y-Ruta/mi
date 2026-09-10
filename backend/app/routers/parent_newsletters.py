@@ -294,8 +294,17 @@ async def mark_parent_newsletter_read(
         # Solo NOMBRES de columna: `read_at` y `read_by_user_id` no están en
         # `VALUE_ALLOWLIST[athlete_monthly_newsletter]`, y ningún texto
         # narrativo de la bitácora toca la fila.
+        # `deleted_at.is_(None)` no es decorativo: la compuerta de alcance de
+        # archivo (`tests/test_archive_scope_gate.py`) exige el filtro en toda
+        # consulta a `Athlete`, y `_verify_parent_athlete_link` ya descartó
+        # atletas archivados unas líneas arriba (FR-014).
         club_id = (
-            await db.execute(select(Athlete.club_id).where(Athlete.id == athlete_id))
+            await db.execute(
+                select(Athlete.club_id).where(
+                    Athlete.id == athlete_id,
+                    Athlete.deleted_at.is_(None),
+                )
+            )
         ).scalar_one_or_none()
         await record_audit(
             db,

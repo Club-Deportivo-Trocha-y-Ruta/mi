@@ -333,7 +333,7 @@ async def coach_client(
 async def coach2_client(
     sqlite_engine, db_session_factory, seed_test_data, override_storage
 ):
-    """Cliente coach id=20 — usado para tests de ownership cross-coach."""
+    """Cliente coach id=20 — usado para los tests de acceso entre coaches."""
     async def _override_db():
         async with db_session_factory() as session:
             try:

@@ -93,8 +93,9 @@ def _record():
 
 
 class _FakeResult:
-    def __init__(self, items):
+    def __init__(self, items, *, scalar=None):
         self._items = items
+        self._scalar = scalar
 
     def scalars(self):
         return self
@@ -102,15 +103,33 @@ class _FakeResult:
     def all(self):
         return self._items
 
+    def scalar_one_or_none(self):
+        return self._scalar
+
 
 class _FakeSession:
-    """Stub mínimo de AsyncSession — solo soporta `.execute(...)`."""
+    """Stub mínimo de AsyncSession — `.execute(...)` y `.add(...)`.
 
-    def __init__(self, records):
+    `explanation_id` es lo que responde cualquier `scalar_one_or_none()`.
+    El POST consulta el caché de explicaciones antes del upsert (T030,
+    `routers/ai.py::_cached_explanation_id`) para decidir si la fila de
+    auditoría es `create` o `update`; un id positivo equivale al caso
+    "ya había una explicación cacheada".
+
+    `add()` recibe la fila de `audit_log` que encola `record_audit`; queda
+    guardada en `added` por si un test quiere inspeccionarla.
+    """
+
+    def __init__(self, records, *, explanation_id: int = 1):
         self._records = records
+        self._explanation_id = explanation_id
+        self.added: list = []
 
     async def execute(self, _stmt):
-        return _FakeResult(self._records)
+        return _FakeResult(self._records, scalar=self._explanation_id)
+
+    def add(self, obj) -> None:
+        self.added.append(obj)
 
 
 class _ScalarResult:
@@ -144,6 +163,9 @@ class _QueueSession:
     def __init__(self, responses):
         self._responses = list(responses)
         self.executed: list = []
+        #: Filas encoladas con `db.add(...)` — hoy solo las de `audit_log`
+        #: que escribe `record_audit` (T030).
+        self.added: list = []
 
     async def execute(self, stmt):
         self.executed.append(stmt)
@@ -151,6 +173,9 @@ class _QueueSession:
             # default no-op: devuelve resultado vacío
             return _ScalarResult()
         return self._responses.pop(0)
+
+    def add(self, obj) -> None:
+        self.added.append(obj)
 
 
 @pytest.fixture
@@ -515,23 +540,30 @@ class TestPostPHVExplanationCacheUpsert:
         app.dependency_overrides[get_current_user] = _coach_user
         app.dependency_overrides[verify_athlete_access] = _athlete
 
-        # 1ra execute: history (4 records). 2da: upsert.
-        history_result = _ScalarResult(items=[_record()])
-        upsert_result = _ScalarResult()
-        session = _QueueSession([history_result, upsert_result])
+        # 1ra execute: history (4 records). 2da: pre-SELECT del caché (T030,
+        # decide create vs update en la fila de auditoría). 3ra: upsert.
+        # 4ta: re-SELECT del id recién insertado, para `entity_id`.
+        session = _QueueSession([
+            _ScalarResult(items=[_record()]),   # history
+            _ScalarResult(scalar=None),         # caché vacío ⇒ audit `create`
+            _ScalarResult(),                    # upsert
+            _ScalarResult(scalar=7),            # id de la fila insertada
+        ])
         app.dependency_overrides[get_db] = lambda: session
 
         resp = await http_client.post("/api/ai/athletes/42/phv-explanation")
         assert resp.status_code == 200, resp.text
 
-        # Verifica que se ejecutaron exactamente 2 statements y el segundo
+        # Verifica que se ejecutaron exactamente 4 statements y el tercero
         # fue un INSERT MySQL sobre la tabla del caché.
-        assert len(session.executed) == 2
-        upsert_stmt = session.executed[1]
+        assert len(session.executed) == 4
+        upsert_stmt = session.executed[2]
         assert isinstance(upsert_stmt, MySQLInsert), (
-            "el segundo execute debe ser un INSERT MySQL (upsert)"
+            "el tercer execute debe ser un INSERT MySQL (upsert)"
         )
         assert upsert_stmt.table.name == AthleteAIExplanation.__tablename__
+        # Y que quedó encolada la fila de auditoría de la generación.
+        assert len(session.added) == 1
 
     async def test_parent_forbidden(self, http_client, monkeypatch):
         monkeypatch.setattr(settings, "ai_enabled", True)
@@ -686,7 +718,12 @@ class TestPHVExplanationAudience:
         app.dependency_overrides[get_llm_provider] = lambda: fake
         app.dependency_overrides[get_current_user] = _coach_user
         app.dependency_overrides[verify_athlete_access] = _athlete
-        session = _QueueSession([_ScalarResult(items=[_record()])])
+        session = _QueueSession([
+            _ScalarResult(items=[_record()]),   # history
+            _ScalarResult(scalar=None),         # pre-SELECT del caché (T030)
+            _ScalarResult(),                    # upsert
+            _ScalarResult(scalar=7),            # id de la fila insertada
+        ])
         app.dependency_overrides[get_db] = lambda: session
 
         resp = await http_client.post(
@@ -694,7 +731,7 @@ class TestPHVExplanationAudience:
         )
         assert resp.status_code == 200, resp.text
 
-        upsert_stmt = session.executed[1]
+        upsert_stmt = session.executed[2]
         assert isinstance(upsert_stmt, MySQLInsert)
         compiled = upsert_stmt.compile()
         assert compiled.params["use_case"] == "phv_explanation_coach"
@@ -711,13 +748,18 @@ class TestPHVExplanationAudience:
         app.dependency_overrides[get_llm_provider] = lambda: fake
         app.dependency_overrides[get_current_user] = _coach_user
         app.dependency_overrides[verify_athlete_access] = _athlete
-        session = _QueueSession([_ScalarResult(items=[_record()])])
+        session = _QueueSession([
+            _ScalarResult(items=[_record()]),   # history
+            _ScalarResult(scalar=None),         # pre-SELECT del caché (T030)
+            _ScalarResult(),                    # upsert
+            _ScalarResult(scalar=7),            # id de la fila insertada
+        ])
         app.dependency_overrides[get_db] = lambda: session
 
         resp = await http_client.post("/api/ai/athletes/42/phv-explanation")
         assert resp.status_code == 200, resp.text
 
-        upsert_stmt = session.executed[1]
+        upsert_stmt = session.executed[2]
         assert isinstance(upsert_stmt, MySQLInsert)
         compiled = upsert_stmt.compile()
         assert compiled.params["use_case"] == "phv_explainer"
