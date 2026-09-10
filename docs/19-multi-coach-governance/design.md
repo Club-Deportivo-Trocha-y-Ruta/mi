@@ -185,13 +185,16 @@ code path but about launch/list surfaces the contract had marked "unchanged" on 
 
 Both are fixed and committed (`8ca2870`). See `technical-notes.md` (2026-09-10) for the
 full root-cause note and what the review verified and ruled out. Six smaller findings from
-the same review (H3–H7 — an AI-spend endpoint not yet club-scoped for coaches, an
-unfiltered imports listing, a stale `user#{id}` fallback, a dead RBAC guard, and an
-admin-authored import unreachable by any coach) carry **no minor's data** and are tracked
-as open follow-ups — see `qa.md` §5 and `technical-notes.md` for their status as of this
-doc pass; at least one (H3, spend-by-coach club scoping) had an uncommitted fix in
-progress in the working tree at the time this document was written and its final state is
-unverified here.
+the same review (H3–H7 — an AI-spend endpoint not club-scoped for coaches, an unfiltered
+imports listing, a stale `user#{id}` fallback, a dead RBAC guard, and an admin-authored
+import unreachable by any coach) carried **no minor's data** and were closed in the same
+night run's final pass (`a943642`): AI spend for a coach now folds every other club's
+staff into one unnamed "Otros clubes" bucket instead of naming them; the imports list is
+now filtered in SQL to the requester's own club(s), with an authorship fallback; the
+`user#{id}` fallback is gone; the RBAC docstring on `/admin/ai-usage` states its real,
+coach+admin scope; and `import_club_ids` now resolves through `(coach, admin)`
+memberships so an admin-uploaded import is reachable by the club's coaches. Full
+before/after detail: `qa.md` §5.2.
 
 ## 3. Co-coached sessions
 
@@ -229,6 +232,13 @@ email template now receives the **acting** coach plus the full `coaches[]` list,
 verified test (`test_b08_cancel_by_coach_b_names_b_not_creator_a`) exercises this against a
 real database: A creates with A+B, B cancels, and the dispatched email's
 `acting_coach_name` is B.
+
+The family-facing schema (`TrainingSessionReadParent`) never carries `coaches` or
+`has_active_coach` (verified by test) and, since a fix applied during the mandatory T091
+privacy audit, no longer carries `created_by_user_id` either — the same "no coach identity
+of any kind, not even an unresolved id" rule the contract states for the named fields also
+holds for the raw id, and the schema and the response-model exclusion in
+`training_sessions.py` now both enforce it.
 
 ### 3.3 Attendance and feedback attribution
 
