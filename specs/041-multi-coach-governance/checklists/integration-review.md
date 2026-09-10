@@ -713,7 +713,7 @@ sobrescrito.
 
 | # | Deuda | Dónde |
 |---|---|---|
-| B1 | `ActorRef` quedó **duplicado**: `NewsletterActorRef` en `app/schemas/athlete_newsletter.py` y otro `ActorRef` local en `app/schemas/training_session.py`. El contrato lo pone en `app/schemas/audit.py`, que no lo define pese a que T031 figura hecha. Hay que unificarlo antes de que aparezca un tercero. | `backend/app/schemas/athlete_newsletter.py`, `backend/app/schemas/training_session.py`, `backend/app/schemas/audit.py` |
+| B1 | `ActorRef` quedó **duplicado** y la causa raíz es una cuarta tarea dada por cerrada antes de tiempo: **T031 figura `[X]` pero nunca creó `ActorRef`**. `app/schemas/audit.py` define `AuditDiffValue`, `AuditEntryDetail`, `AuditEntryOut`, `AuditListOut`, `AuditReasonCodeOut` y `AuditReasonCodeListOut`, y resuelve al actor con campos planos (`actor_user_id` / `actor_display_name`), no con el modelo anidado que el contrato pide. Sin la clase canónica, cada tarea posterior se hizo la suya: `NewsletterActorRef` en `athlete_newsletter.py:219` y otro `ActorRef` en `training_session.py:420`, idénticos. **Unificar antes de que aparezca un tercero**; la forma plana de `AuditEntryOut` ya está consumida por el frontend, así que esa no se toca. | `backend/app/schemas/audit.py`, `backend/app/schemas/athlete_newsletter.py:219`, `backend/app/schemas/training_session.py:420` |
 | B2 | `AthleteMonthlyNewsletter` no tiene relaciones ORM para `coach_note_author_id` ni `last_edited_by_user_id`; los nombres se resuelven con un `select(User)` explícito por respuesta. Sin N+1, pero el contrato pedía `selectinload`. | `backend/app/models/athlete_newsletter.py` |
 | B3 | `templates/email/athlete_stage_log.html` **no renderiza `coach_note` en absoluto**. §3.2 dice que la familia sí debe ver el texto de la nota (sin autor). Es una brecha preexistente de la feature 038, no de 041, pero la fila de esa matriz está sin cumplir del lado del texto. | `backend/templates/email/athlete_stage_log.html` |
 | B4 | La atomicidad de la reserva de versión bajo concurrencia real **no está verificada**: sqlite no reproduce el bloqueo de fila de InnoDB. La prueba de dos sesiones existe, está marcada `-m mysql` y se salta. | `backend/tests/routers/test_newsletter_concurrency.py::test_two_sessions_only_one_update_takes_effect` |
@@ -729,8 +729,15 @@ empujado a `feat/041-multi-coach-governance`; no queda nada sin guardar.
 Orden sugerido:
 
 1. **Unificar `ActorRef`** (deuda B1) antes de que aparezca un tercero. Hoy hay
-   dos definiciones equivalentes y el contrato lo quiere en `app/schemas/audit.py`.
-   Es barato ahora y caro más tarde.
+   dos definiciones equivalentes porque T031 nunca creó la canónica. No se hizo en
+   esta corrida a propósito: quedaban veinticinco minutos, la rama estaba verde y
+   empujada, y tocar tres módulos de esquemas sin margen para verificar de verdad
+   era mal negocio. Es media hora de trabajo tranquilo, no un apagón.
+
+   Un patrón que ya se repite cuatro veces (T018, T030, T031 y, antes, T050):
+   **una tarea se marca `[X]` cuando el archivo existe, no cuando cumple lo que el
+   contrato pedía.** Conviene revisar con esa lupa las tareas cerradas de US1
+   antes de dar la feature por lista.
 2. **Fase 8 (US6, T075–T080)** — regla de club para corridas de IA e
    importaciones, y gasto por entrenador.
 3. Con tiempo: **T030** (las 20 rutas todavía marcadas "pending instrumentation",
