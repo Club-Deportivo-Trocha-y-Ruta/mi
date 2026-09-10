@@ -25,6 +25,32 @@ from app.services.audit import AuditEntityType, AuditReasonGroup
 DiffScalar = str | int | float | bool | list[str] | None
 
 
+class ActorRef(BaseModel):
+    """Referencia mínima a un actor humano adulto: id + nombre para mostrar.
+
+    Definición canónica de ``ActorRef = { user_id, display_name }``
+    (``contracts/concurrency-and-approvals.md`` §1.2 y §2, que lo ubica
+    justamente en este módulo). T031 no llegó a crearla y cada tarea
+    posterior declaró la suya —
+    ``NewsletterActorRef`` en ``app/schemas/athlete_newsletter.py`` y otra
+    ``ActorRef`` en ``app/schemas/training_session.py``—, así que ambas se
+    unificaron aquí y aquellas quedaron como alias de compatibilidad.
+
+    ``display_name`` es ``User.display_name`` (``first_name last_name``) y
+    debe resolver también para cuentas desactivadas (FR-013); el objeto
+    entero es ``None`` solo cuando la FK es ``NULL``.
+
+    Privacidad (Ley 1581): esto es SIEMPRE staff adulto — nunca un menor —
+    y solo viaja en superficies de coach o administrador. Un deportista
+    jamás aparece como ``generated_by`` / ``approved_by`` / ``decided_by``.
+    """
+
+    user_id: int
+    display_name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AuditDiffValue(BaseModel):
     """Valor antes/después de un campo permitido por la allow-list."""
 

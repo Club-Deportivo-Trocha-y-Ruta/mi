@@ -11,6 +11,10 @@ from app.models.training_session import (
     SessionKind,
     SessionStatus,
 )
+# `ActorRef` se define canónicamente en `app/schemas/audit.py` (041, deuda B1).
+# Se importa —y se reexporta— acá porque `app/routers/monthly_reports.py` y los
+# esquemas de reporte mensual de este módulo lo consumen desde esta ruta.
+from app.schemas.audit import ActorRef as ActorRef
 from app.schemas.session_media import SessionMediaRead, SessionMediaReadParent
 
 
@@ -415,26 +419,6 @@ class CompetitionResultItem(BaseModel):
     event_id: int = 0
     series_kind: str | None = None
     awards_points: bool = True
-
-
-class ActorRef(BaseModel):
-    """Referencia mínima a un actor humano adulto: id + nombre para mostrar.
-
-    Espejo de ``ActorRef = { user_id, display_name }``
-    (contracts/concurrency-and-approvals.md §2), que el contrato ubica
-    canónicamente en ``app/schemas/audit.py``. T071 no tiene ese archivo entre
-    los suyos (ver README de la tarea), así que se declara aquí — igual de
-    additive, mismo shape — en vez de bloquear esta entrega en una
-    reconciliación de dueños de archivo. Si ``app/schemas/audit.py`` termina
-    definiendo su propio ``ActorRef``, este debería fusionarse con aquel.
-
-    Nunca lleva datos de un menor: el único actor que viaja aquí es un adulto
-    (coach o admin) — un atleta jamás aparece como ``generated_by``/
-    ``approved_by``/``updated_by`` de un reporte mensual.
-    """
-
-    user_id: int
-    display_name: str
 
 
 class MonthlyReportRead(BaseModel):

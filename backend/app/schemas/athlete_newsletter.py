@@ -20,6 +20,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.athlete_newsletter import NewsletterStatus
+from app.schemas.audit import ActorRef
 
 
 # Bloques opcionales que el coach puede ocultar en la bitácora v2 (feature
@@ -216,28 +217,11 @@ class DeliveryRow(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class NewsletterActorRef(BaseModel):
-    """Referencia a un miembro del staff en una superficie de atribución (041 §1.2).
-
-    Forma idéntica al ``ActorRef`` que ``contracts/concurrency-and-approvals.md``
-    §1.2 ubica en ``app/schemas/audit.py``. Decisión (041 T069): ese módulo
-    compartido todavía no existe y lo está tocando otro frente de la feature,
-    así que se declara acá — igual que ``SessionCoachOut`` en
-    ``app/schemas/training_session.py`` — para no crear un conflicto de
-    edición. Consolidar en un único ``ActorRef`` cuando ese schema aterrice.
-
-    ``display_name`` es ``User.display_name`` (``first_name last_name``) y debe
-    resolver también para cuentas desactivadas (FR-013); el objeto entero es
-    ``None`` solo cuando la FK es ``NULL``.
-
-    Privacidad (Ley 1581): esto es SIEMPRE staff adulto — nunca un menor — y
-    solo viaja en superficies coach/admin.
-    """
-
-    user_id: int
-    display_name: str
-
-    model_config = {"from_attributes": True}
+#: Alias de compatibilidad. La definición canónica de ``ActorRef`` vive en
+#: ``app/schemas/audit.py`` (``contracts/concurrency-and-approvals.md`` §1.2);
+#: este nombre se mantiene porque `app/routers/athlete_monthly_newsletters.py`
+#: y las pruebas de la bitácora ya lo importan desde acá (041, deuda B1).
+NewsletterActorRef = ActorRef
 
 
 class AthleteNewsletterRead(BaseModel):
