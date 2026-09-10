@@ -77,7 +77,11 @@ from app.schemas.season_panorama import (
     SeasonPanoramaAthleteItem,
     SeasonPanoramaResponse,
 )
-from app.services.permissions import ensure_run_club_access, user_club_role
+from app.services.permissions import (
+    coach_club_ids,
+    ensure_run_club_access,
+    user_club_role,
+)
 from app.services.race.season_panorama import fetch_season_panorama
 from app.services.race.run_staleness import mark_run_stale
 from app.services.privacy import athlete_has_ai_processing_consent
@@ -267,6 +271,53 @@ async def _resolve_athlete_club(db: AsyncSession, athlete_id: Optional[int]) -> 
         return None
     result = await db.execute(select(Athlete.club_id).where(Athlete.id == athlete_id))
     return result.scalar_one_or_none()
+
+
+def _launcher_club_ids(user: User) -> Optional[set[int]]:
+    """Clubes por los que se acota una superficie de evento, o ``None``.
+
+    ``None`` significa "sin filtro" y es exclusivo del administrador, que
+    conserva el mismo bypass que en ``permissions.py``. Un entrenador queda
+    acotado a sus clubes; si no tiene ninguno, el conjunto vacío no devuelve
+    deportistas, que es lo correcto.
+    """
+    if user.role == UserRole.admin:
+        return None
+    return coach_club_ids(user)
+
+
+async def _ensure_athlete_club_access(
+    db: AsyncSession, athlete_id: Optional[int], user: User
+) -> None:
+    """Exige que el atleta a analizar sea del club de quien lanza.
+
+    Hallazgos H1 y H2 de la revisión de seguridad de US6 (T080). La matriz de
+    ``contracts/scope-ai-imports.md`` §1.4 cubre **operar** una corrida que ya
+    existe, pero no **crearla**, y ese hueco dejaba que un entrenador de otro
+    club lanzara un análisis sobre una menor ajena: el nombre de la menor
+    entraba en ``forbidden_names`` y salía hacia el proveedor de IA, se
+    persistía un insight en su ficha, y la fila de auditoría quedaba con el
+    club de ella y un actor que no le pertenece. La corrida nacía además
+    inalcanzable para quien la lanzó, porque el chequeo de club sí actúa al
+    leerla.
+
+    Las otras dos superficies de lanzamiento
+    (``app/routers/athlete_race_analysis.py``) ya estaban acotadas por
+    ``verify_athlete_access``; estas dos se quedaron sin equivalente. Esto es
+    ese equivalente.
+
+    El administrador mantiene su bypass, igual que en ``permissions.py``.
+    """
+    if athlete_id is None or user.role == UserRole.admin:
+        return
+    club_id = await _resolve_athlete_club(db, athlete_id)
+    if club_id is None or club_id not in coach_club_ids(user):
+        # Mismo texto que el 403 de las rutas de corrida, para no abrir un
+        # oráculo por diferencia de mensaje.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes acceso a este atleta",
+        )
 
 
 async def _load_events_since(
@@ -669,6 +720,12 @@ async def start_run(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Cap v2: máximo 4 válidas por lanzamiento. Usa resumen temporada para visión global.",
         )
+
+    # El atleta tiene que ser del club de quien lanza (hallazgo H1 de T080).
+    # Va **antes** del chequeo de archivado a propósito: si no, la diferencia
+    # entre 404 y 403 le confirma a un entrenador de otro club que ese id
+    # existe y está archivado.
+    await _ensure_athlete_club_access(db, body.athlete_id, current_user)
 
     # No se puede lanzar un análisis IA para un atleta archivado
     # (contracts/athlete-archive.md §5.2).
@@ -2080,6 +2137,12 @@ async def launch_race_event_group(
             db=db,
             race_event_id=race_event_id,
             athlete_ids=body.athlete_ids,
+            # Hallazgo H1 (T080): una válida la corren menores de varios
+            # clubes. Sin este filtro el lanzamiento grupal abría una corrida
+            # por cada menor del evento, incluidas las de otros clubes, y
+            # mandaba sus nombres al proveedor de IA. El administrador manda
+            # `None` y sigue viendo todo.
+            club_ids=_launcher_club_ids(current_user),
             explain_mode=body.explain_mode,
             requested_by_user_id=current_user.id,
         )
@@ -2150,7 +2213,17 @@ async def list_race_event_runs(
     )
 
     try:
-        return await list_event_runs(db=db, race_event_id=race_event_id, active_only=active_only)
+        # Hallazgo H2 (T080): este listado resuelve nombres de deportistas
+        # a partir de los resultados del evento. Sin acotarlo por club le
+        # entregaba a un entrenador de otro club el nombre completo de una
+        # menor ajena junto con un `run_id` válido — que es, además, la única
+        # forma práctica de conseguir ids de corrida ajenos, porque son uuid4.
+        return await list_event_runs(
+            db=db,
+            race_event_id=race_event_id,
+            active_only=active_only,
+            club_ids=_launcher_club_ids(current_user),
+        )
     except RaceEventNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

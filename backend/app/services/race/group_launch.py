@@ -186,6 +186,7 @@ async def resolve_group_members(
     db: AsyncSession,
     race_event_id: int,
     athlete_ids: Optional[list[int]],
+    club_ids: Optional[set[int]] = None,
 ) -> list[Member]:
     """Return distinct club athletes with results in the given event.
 
@@ -195,6 +196,16 @@ async def resolve_group_members(
     - ``race_results.athlete_id IS NOT NULL``
     - ``race_results.deleted_at IS NULL``
     - When ``athlete_ids`` is not None: ``athlete_id IN athlete_ids``
+    - When ``club_ids`` is not None: ``athletes.club_id IN club_ids``
+
+    ``club_ids`` acota el resultado a los clubes de quien pregunta y es el
+    arreglo de los hallazgos H1 y H2 de la revisión de seguridad de US6
+    (T080): una carrera es de un tercero y en ella corren menores de varios
+    clubes, así que sin este filtro el listado de corridas de un evento le
+    entregaba a un entrenador de otro club el **nombre completo** de una menor
+    ajena junto con un ``run_id`` válido, y el lanzamiento grupal abría una
+    corrida por cada una de esas menores. ``None`` = sin filtro, que es lo que
+    pasa el administrador.
 
     Display name convention: ``"{first_name} {last_name}"`` — identical to
     ``season_panorama`` (``race_analysis.py`` line 1438) and
@@ -224,6 +235,11 @@ async def resolve_group_members(
 
     if athlete_ids is not None:
         stmt = stmt.where(Athlete.id.in_(athlete_ids))
+
+    if club_ids is not None:
+        # Conjunto vacío → ningún miembro. Es lo correcto: un coach sin club
+        # no tiene deportistas que analizar, y `in_(())` no devuelve filas.
+        stmt = stmt.where(Athlete.club_id.in_(club_ids))
 
     result = await db.execute(stmt)
     rows = result.all()
@@ -443,6 +459,7 @@ async def launch_group(
     athlete_ids: Optional[list[int]],
     explain_mode: bool,
     requested_by_user_id: int,
+    club_ids: Optional[set[int]] = None,
 ) -> GroupRunLaunchResponse:
     """Launch group analysis for all (or a subset of) athletes in an event.
 
@@ -481,7 +498,7 @@ async def launch_group(
         EventHasNoResultsError: no results in event AND athlete_ids is None.
     """
     season, valida_num = await resolve_event_scope(db, race_event_id)
-    members = await resolve_group_members(db, race_event_id, athlete_ids)
+    members = await resolve_group_members(db, race_event_id, athlete_ids, club_ids)
 
     if not members and athlete_ids is None:
         raise EventHasNoResultsError(race_event_id)
@@ -673,6 +690,7 @@ async def list_event_runs(
     db: AsyncSession,
     race_event_id: int,
     active_only: bool = True,
+    club_ids: Optional[set[int]] = None,
 ) -> RaceEventRunsResponse:
     """List analysis runs associated with the given race event.
 
@@ -699,7 +717,9 @@ async def list_event_runs(
     season, valida_num = await resolve_event_scope(db, race_event_id)
 
     # Resolve athlete_ids with results in the event (for final filtering).
-    members = await resolve_group_members(db, race_event_id, athlete_ids=None)
+    members = await resolve_group_members(
+        db, race_event_id, athlete_ids=None, club_ids=club_ids
+    )
     athlete_id_to_name: dict[int, str] = {m.athlete_id: m.display_name for m in members}
     if not athlete_id_to_name:
         # No results in event → return empty list (not an error for list endpoint).
