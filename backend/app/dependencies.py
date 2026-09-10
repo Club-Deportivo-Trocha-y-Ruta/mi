@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator, Callable
+from typing import TYPE_CHECKING
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -10,6 +11,11 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.user import User, UserRole
+
+if TYPE_CHECKING:  # sólo para las anotaciones; en runtime se importan dentro
+    # de cada función para no crear ciclos con los modelos.
+    from app.models.athlete import Athlete
+    from app.services.notification.task_dispatcher import TaskDispatcher
 
 bearer_scheme = HTTPBearer()
 
@@ -102,7 +108,7 @@ async def _verify_athlete_access(
     justamente poder leer quién archivó al atleta y con qué motivo.
     """
     from app.models.athlete import Athlete, ParentAthlete
-    from app.models.club import ClubMember, ClubRole
+    from app.models.club import ClubRole
 
     # Cargar el atleta
     result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))

@@ -69,7 +69,20 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
+def _make_user(
+    role: UserRole, user_id: int = 10, club_ids: tuple[int, ...] = ()
+) -> SimpleNamespace:
+    """Usuario falso para ``dependency_overrides``.
+
+    ``club_ids`` alimenta ``club_memberships``, que es lo que lee
+    ``permissions.coach_club_ids``. Desde el arreglo de alcance por club de
+    la feature 041 (H1/H2: un entrenador ajeno no puede lanzar ni listar
+    corridas de una menor de otro club), un coach sin membresías no alcanza
+    ningún deportista, así que el fixture del coach debe declarar el club
+    que siembra ``_seed_base`` o toda la ruta responde 403.
+    """
+    from app.models.club import ClubRole
+
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
@@ -78,7 +91,10 @@ def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=cid, role_in_club=ClubRole.coach)
+            for cid in club_ids
+        ],
     )
 
 
@@ -395,7 +411,10 @@ async def http_client(session_factory):
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[_coach_or_admin] = lambda: _make_user(UserRole.coach, 10)
+    # El club sembrado por ``_seed_base`` es ``user_id * 1000 + 1``.
+    app.dependency_overrides[_coach_or_admin] = lambda: _make_user(
+        UserRole.coach, 10, club_ids=(10 * 1000 + 1,)
+    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

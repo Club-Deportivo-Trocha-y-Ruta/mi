@@ -54,7 +54,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,7 +89,7 @@ from app.schemas.race_imports import (
     UploadUserRef,
 )
 from app.services.audit import AuditEntityType, record_audit
-from app.services.permissions import ensure_import_club_access
+from app.services.permissions import coach_club_ids, ensure_import_club_access
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
 from app.services.race.revision import detect_revision
@@ -1245,7 +1245,15 @@ async def list_imports(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> ImportListResponse:
-    """Endpoint 4 wizard (histórico) — lista paginada de imports."""
+    """Endpoint 4 wizard (histórico) — lista paginada de imports.
+
+    Alcance por club (H4, contracts/scope-ai-imports.md §1/§6): el admin ve
+    todo; un coach solo ve los cargues cuyo club (resuelto vía
+    ``import_club_ids`` — membresía del uploader) coincide con alguno de los
+    suyos, más — respaldo de autoría, igual que ``_has_club_access`` — sus
+    propios cargues cuando el club no resuelve. Filtrado en SQL para que
+    ``limit``/``offset`` y ``total`` sigan siendo correctos.
+    """
     stmt = select(RaceImport)
     count_stmt = select(RaceImport)
     if status_filter:
@@ -1258,6 +1266,32 @@ async def list_imports(
             )
         stmt = stmt.where(RaceImport.status == status_enum)
         count_stmt = count_stmt.where(RaceImport.status == status_enum)
+
+    if current_user.role != UserRole.admin:
+        # Usuarios coach-o-admin de los clubes del solicitante: cualquier
+        # cargue subido por alguno de ellos resuelve al club del solicitante
+        # (misma regla que ``import_club_ids``/``_has_club_access``).
+        requester_club_ids = coach_club_ids(current_user)
+        same_club_user_ids: set[int] = set()
+        if requester_club_ids:
+            members_result = await db.execute(
+                select(ClubMember.user_id).where(
+                    ClubMember.club_id.in_(requester_club_ids),
+                    ClubMember.role_in_club.in_([ClubRole.coach, ClubRole.admin]),
+                )
+            )
+            same_club_user_ids = {int(uid) for uid in members_result.scalars().all()}
+
+        # Respaldo por autoría: un cargue cuyo club no resuelve solo queda
+        # alcanzable por quien lo subió (nunca ensancha el acceso).
+        scope_filter = RaceImport.imported_by_user_id == current_user.id
+        if same_club_user_ids:
+            scope_filter = or_(
+                RaceImport.imported_by_user_id.in_(same_club_user_ids),
+                scope_filter,
+            )
+        stmt = stmt.where(scope_filter)
+        count_stmt = count_stmt.where(scope_filter)
 
     # Total para paginación
     total_result = await db.execute(count_stmt)
@@ -1283,11 +1317,14 @@ async def list_imports(
     items: list[ImportListItem] = []
     for imp in imports:
         u = users_by_id.get(imp.imported_by_user_id)
+        # FR-013 / contracts/scope-ai-imports.md §4.1: nunca un identificador
+        # crudo (`user#{id}`) llega al lector — el join sin resolver (FK
+        # borrada o editada a mano, o nombre vacío) cae en el mismo texto
+        # humano que usan run_status/audit ("Usuario no disponible").
+        joined_name = f"{u.first_name} {u.last_name}".strip() if u else ""
         uploader = UploadUserRef(
             id=imp.imported_by_user_id,
-            full_name=(
-                f"{u.first_name} {u.last_name}".strip() if u else f"user#{imp.imported_by_user_id}"
-            ),
+            full_name=joined_name or "Usuario no disponible",
         )
         n_results = (imp.stats_json or {}).get("results_inserted", 0)
         items.append(

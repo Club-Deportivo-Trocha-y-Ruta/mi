@@ -2,10 +2,9 @@
 
 `contracts/audit-recording.md` §7/§9 T4. Estado real del registro a hoy:
 `AUDITED_ROUTES` tiene 111 claves, 99 de ellas `Audited` y el resto `Exempt`
-(`app/services/audit.py`). De las exentas, once son las exenciones genuinas
-de §4.14 y **una sola** sigue con el marcador "pending instrumentation":
-`POST /api/race-analysis/imports/{parse_id}/dry-run`. Lo que se comprueba
-aquí:
+(`app/services/audit.py`). Desde 2026-09-10 **todas** las exentas son
+exenciones genuinas de §4.14 con su razón revisada: ya no queda ninguna con
+el marcador "pending instrumentation". Lo que se comprueba aquí:
 
   T4.1 — registry completeness: every mutating route (POST/PUT/PATCH/DELETE)
          plus every `MUTATING_GETS` member (§4.13) has a registry entry.
@@ -47,10 +46,11 @@ from app.services.audit import (
 from tests.helpers.app_routes import iter_api_routes
 from tests.helpers.audit_reachability import reaches_record_audit
 
-#: The exact eleven §4.14 exemptions — the only ones with a genuine,
-#: reviewed reason. Every other `Exempt` entry in the registry today carries
-#: the wave-1 placeholder ("pending instrumentation") and is expected to
-#: disappear from this set, one entry at a time, as Phase 3 instruments it.
+#: The exact twelve §4.14 exemptions — every `Exempt` entry in the registry,
+#: each with a genuine reviewed reason. The wave-1 placeholder
+#: ("pending instrumentation") is gone: the last holder, the import dry-run,
+#: became a settled exemption on 2026-09-10 because the route performs no
+#: persistent write (see its reason in `app/services/audit.py`).
 GENUINE_EXEMPTIONS: frozenset[tuple[str, str]] = frozenset(
     {
         ("POST", "/api/auth/login"),
@@ -67,6 +67,7 @@ GENUINE_EXEMPTIONS: frozenset[tuple[str, str]] = frozenset(
             "/api/athletes/{athlete_id}/monthly-newsletters/{newsletter_id}/render",
         ),
         ("GET", "/api/training-sessions/{session_id}/media"),
+        ("POST", "/api/race-analysis/imports/{parse_id}/dry-run"),
     }
 )
 
@@ -176,7 +177,7 @@ def test_exempt_reasons_are_at_least_twenty_characters() -> None:
 def test_genuine_exemption_set_matches_section_4_14_exactly() -> None:
     """T4.3 (part 2) — the *genuinely justified* exemptions (i.e. every
     `Exempt` whose reason is not the wave-1 placeholder) equal §4.14's
-    eleven keys exactly. Any entry outside `GENUINE_EXEMPTIONS` with a real
+    twelve keys exactly. Any entry outside `GENUINE_EXEMPTIONS` with a real
     reason is undocumented; any `GENUINE_EXEMPTIONS` key without a real
     reason regressed to the placeholder.
     """

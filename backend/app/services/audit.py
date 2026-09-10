@@ -798,10 +798,8 @@ MUTATING_GETS: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
-_PENDING = "pending instrumentation"
-
 #: §4.1 Auth and profile — 9 keys, 4 genuinely exempt (login/refresh/
-#: password-reset request/change-email request), 5 pending.
+#: password-reset request/change-email request); el resto instrumentadas.
 _AUTH_PROFILE: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/auth/login"): Exempt(
         "Read-only credential check; no row is written."
@@ -1085,11 +1083,27 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
     #
     # Registrar aquí un `update` sería anotar una escritura que no sucedió, y
     # la decisión 2 del dueño es explícita en que la bitácora no registra
-    # lecturas. Las dos salidas —emitir de verdad el cambio de estado, o
-    # convertirla en exención genuina de §4.14— cambian el contrato o el
-    # comportamiento del asistente de importación, así que se deja marcada
-    # como pendiente en vez de resolverla sin quien pueda decidirlo.
-    ("POST", "/api/race-analysis/imports/{parse_id}/dry-run"): Exempt(_PENDING),
+    # lecturas.
+    #
+    # Decisión de la corrida 3 (2026-09-10), tomada sin poder preguntar: de las
+    # dos salidas —emitir de verdad el cambio de estado, o convertirla en
+    # exención genuina de §4.14— se toma la segunda. Es la que describe lo que
+    # el código hace hoy, no cambia el comportamiento del asistente de
+    # importación, y deja de presentar como olvido lo que ya es análisis
+    # cerrado. Si el dueño prefiere la primera salida, se revierte en una
+    # línea: `dry_run_import` asigna `RaceImportStatus.dry_run` y esta entrada
+    # vuelve a ser `Audited({AuditEntityType.race_import})`, como describe
+    # §4.10 del contrato.
+    ("POST", "/api/race-analysis/imports/{parse_id}/dry-run"): Exempt(
+        "Dry-run of a race-results import "
+        "(routers/race_imports.py): the ingestor runs with `dry_run=True` and "
+        "leaves no persistent write — `RaceImportStatus.dry_run` is never "
+        "assigned by any code path, as the enum's own docstring records. "
+        "Contract §4.10 describes it as `race_import`·`update`, but that "
+        "update does not happen; recording one would enter a write that never "
+        "occurred, and per owner decision 2 the log never records reads. "
+        "Settled as a §4.14 exemption, not pending instrumentation."
+    ),
     ("POST", "/api/race-analysis/imports/{parse_id}/commit"): Audited(
         frozenset({AuditEntityType.race_import})
     ),

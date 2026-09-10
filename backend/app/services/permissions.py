@@ -106,19 +106,29 @@ async def user_club_role(
 # ---------------------------------------------------------------------------
 
 
-async def _coach_membership_club_ids(db: AsyncSession, user_id: int) -> set[int]:
-    """Clubes donde ``user_id`` figura como coach en ``club_members``.
+async def _coach_membership_club_ids(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    roles: tuple[ClubRole, ...] = (ClubRole.coach,),
+) -> set[int]:
+    """Clubes donde ``user_id`` figura con alguno de ``roles`` en ``club_members``.
 
     Se consulta contra la tabla (no contra ``user.club_memberships``) porque
     el usuario en cuestión es el *autor* de la fila, no quien hace la
     petición: su relación no está cargada en esta sesión.
+
+    ``roles`` por defecto es solo ``coach`` — ``run_club_ids`` depende de que
+    una membresía de padre/atleta NUNCA resuelva un club (§1.1 paso 4): un
+    coach que además es padre en otro club no debe filtrarse ahí. Solo
+    ``import_club_ids`` (H7) ensancha explícitamente a ``(coach, admin)``.
     """
     if user_id is None:
         return set()
     result = await db.execute(
         select(ClubMember.club_id).where(
             ClubMember.user_id == user_id,
-            ClubMember.role_in_club == ClubRole.coach,
+            ClubMember.role_in_club.in_(roles),
         )
     )
     return {int(cid) for cid in result.scalars().all() if cid is not None}
@@ -178,8 +188,18 @@ async def import_club_ids(db: AsyncSession, imp: RaceImport) -> set[int]:
     ``race_imports`` / ``race_series`` / ``race_events`` no tienen
     ``club_id``: las carreras son competencias de terceros, no filas del
     club. El único vínculo veraz es la membresía de quien cargó el archivo.
+
+    H7: se ensancha a ``(coach, admin)`` — a diferencia de ``run_club_ids``,
+    aquí SÍ corresponde, porque un cargue subido por el admin del club debe
+    seguir siendo alcanzable por los coaches del club (si se limitara a
+    ``coach``, el admin-uploader resolvería a un set vacío y el respaldo por
+    autoría dejaría el cargue inalcanzable para todos menos ese admin).
     """
-    return await _coach_membership_club_ids(db, getattr(imp, "imported_by_user_id", None))
+    return await _coach_membership_club_ids(
+        db,
+        getattr(imp, "imported_by_user_id", None),
+        roles=(ClubRole.coach, ClubRole.admin),
+    )
 
 
 def _has_club_access(

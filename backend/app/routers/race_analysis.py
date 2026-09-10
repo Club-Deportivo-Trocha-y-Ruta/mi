@@ -7,10 +7,18 @@ Endpoints (F5, design.md §9):
 - ``GET /runs/{run_id}/result`` — output final (AnalysisOutput JSON).
 - ``GET /runs/{run_id}/pdf`` — renderiza PDF con weasyprint.
 - ``POST /chat`` — chat consultivo (sin streaming, JSON completo).
-- ``GET /admin/ai-usage?days=30`` — métricas agregadas (admin).
+- ``GET /admin/ai-usage?days=30`` — métricas agregadas (coach o admin; ver
+  nota RBAC abajo).
 
 Convenciones:
-- RBAC: coach + admin (excepto admin/* → admin only). Padres NO acceden.
+- RBAC: coach + admin en TODOS los endpoints, incluido ``/admin/ai-usage``
+  (feature 041, §7.2) — el prefijo ``admin/`` de la ruta es histórico y se
+  conserva por contrato con el frontend, pero ya no implica admin-only. El
+  desglose por entrenador (``by_coach``) SÍ está acotado: un coach sólo ve
+  la identidad y el gasto individual del staff de SUS propios clubes; el
+  gasto de staff de otros clubes se repliega en una fila agregada
+  ``"Otros clubes"`` sin nombres (hallazgo H3). El admin sigue viendo a
+  todo el mundo. Padres NO acceden a ningún endpoint de este router.
 - Persistencia: SQL crudo via ``text()`` contra ``agent_runs`` /
   ``agent_run_events`` / ``athlete_ai_insights`` (modelos SQLAlchemy
   diferidos a F8B).
@@ -85,7 +93,7 @@ from app.services.permissions import (
 from app.services.race.season_panorama import fetch_season_panorama
 from app.services.race.run_staleness import mark_run_stale
 from app.services.privacy import athlete_has_ai_processing_consent
-from app.models.club import ClubMember
+from app.models.club import ClubMember, ClubRole
 from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
 from app.services.request_context import current_request_id, system_context
 from pydantic import BaseModel as _BaseModel
@@ -127,6 +135,15 @@ _EVENTS_PER_POLL_MAX = 200
 
 
 _coach_or_admin = require_role([UserRole.coach, UserRole.admin])
+# NOTA (hallazgo H6, feature 041): ningún endpoint de ESTE router usa ya
+# ``_admin_only`` como ``Depends()`` — ``/admin/ai-usage`` pasó a
+# ``_coach_or_admin`` con el desglose acotado por club (ver
+# ``_coach_visible_staff_ids``). El símbolo se conserva porque
+# ``tests/routers/conftest.py`` y ``tests/routers/test_race_event_runs.py``
+# (fuera del alcance de este cambio) todavía lo importan para
+# ``app.dependency_overrides[_admin_only] = ...`` — borrarlo rompe la
+# colección de esos módulos con un ``ImportError``. Si una limpieza futura
+# retira esos overrides, este símbolo puede eliminarse en el mismo cambio.
 _admin_only = require_role([UserRole.admin])
 
 
@@ -284,6 +301,32 @@ def _launcher_club_ids(user: User) -> Optional[set[int]]:
     if user.role == UserRole.admin:
         return None
     return coach_club_ids(user)
+
+
+async def _coach_visible_staff_ids(db: AsyncSession, user: User) -> set[int]:
+    """Staff (coach/admin) visible para ``user`` en ``GET /admin/ai-usage``.
+
+    Hallazgo H3 (feature 041): abrir ``/admin/ai-usage`` a coaches sin acotar
+    ``spend_by_user_last_30d`` filtraba nombre y gasto de IA de TODO el staff
+    de TODOS los clubes. El alcance correcto es: todo usuario con membresía
+    ``coach`` o ``admin`` en ``club_members`` en cualquier club donde
+    ``user`` mismo sea coach, más siempre el propio id de ``user`` (así un
+    coach recién asignado a un club sin otro staff todavía se ve a sí
+    mismo). Sólo se llama para un coach — el admin no lo necesita
+    (``visible_user_ids=None`` en el router deja pasar a todos).
+    """
+    club_ids = coach_club_ids(user)
+    visible: set[int] = {user.id}
+    if not club_ids:
+        return visible
+    result = await db.execute(
+        select(ClubMember.user_id).where(
+            ClubMember.club_id.in_(club_ids),
+            ClubMember.role_in_club.in_([ClubRole.coach, ClubRole.admin]),
+        )
+    )
+    visible.update(int(uid) for uid in result.scalars().all() if uid is not None)
+    return visible
 
 
 async def _ensure_athlete_club_access(
@@ -1722,6 +1765,17 @@ async def admin_ai_usage(
 
     # Gasto por entrenador (§7.2) — aditivo; el servicio ya resuelve nombres
     # por lote, así que son dos queries más, nunca N+1.
+    #
+    # Hallazgo H3: el admin ve a todo el staff (visible_user_ids=None,
+    # comportamiento histórico); un coach sólo ve identidad + gasto
+    # individual del staff de SUS propios clubes — el resto se repliega en
+    # una fila agregada "Otros clubes" sin nombres (ver
+    # ``spend_by_user_last_30d``/``_coach_visible_staff_ids``).
+    visible_user_ids = (
+        None
+        if current_user.role == UserRole.admin
+        else await _coach_visible_staff_ids(db, current_user)
+    )
     by_coach = [
         AIUsageByCoach(
             user_id=s.user_id,
@@ -1729,7 +1783,9 @@ async def admin_ai_usage(
             run_count=s.run_count,
             cost_usd_total=s.cost_usd_total,
         )
-        for s in await spend_by_user_last_30d(db, days=days)
+        for s in await spend_by_user_last_30d(
+            db, days=days, visible_user_ids=visible_user_ids
+        )
     ]
 
     return AIUsageResponse(

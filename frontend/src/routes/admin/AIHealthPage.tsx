@@ -53,6 +53,22 @@ function formatUsd(amount: number): string {
 }
 
 /**
+ * Clave estable de fila. El identificador del usuario cuando existe; si no,
+ * un slug de la etiqueta del cubo. Los cubos agregados —"Sin atribuir" y, para
+ * un entrenador, "Otros clubes"— llegan ambos con `user_id` nulo, así que la
+ * clave no puede salir del id o las dos filas colisionarían (feature 041, H3).
+ */
+function spendRowKey(row: AIUsageByCoach): string {
+  if (row.user_id !== null && row.user_id !== undefined) return String(row.user_id);
+  return row.display_name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
  * AISpendByCoachSection — tabla de gasto de IA por entrenador (feature 041,
  * gobernanza multi-coach, US6, §7.3). Consulta independiente de
  * `useAIHealth`: un fallo aquí nunca oculta la tarjeta de proveedor/modelo,
@@ -124,9 +140,9 @@ function AISpendByCoachSection() {
             <TableBody>
               {rows.map((row) => (
                 <TableRow
-                  key={row.user_id ?? "sin-atribuir"}
+                  key={spendRowKey(row)}
                   className="h-12"
-                  data-testid={`ai-spend-row-${row.user_id ?? "sin-atribuir"}`}
+                  data-testid={`ai-spend-row-${spendRowKey(row)}`}
                 >
                   <TableCell>{row.display_name}</TableCell>
                   <TableCell className="tabular-nums">{row.run_count}</TableCell>

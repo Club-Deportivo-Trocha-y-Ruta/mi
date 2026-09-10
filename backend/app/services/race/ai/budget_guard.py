@@ -168,6 +168,12 @@ async def _sum_cost_last_30d(db: AsyncSession) -> float:
 #: nacieron sin ``generated_by_user_id``.
 UNATTRIBUTED_LABEL = "Sin atribuir"
 
+#: Etiqueta del cubo de repliegue (hallazgo H3, feature 041): cuando la
+#: llamada llega con ``visible_user_ids`` acotado (coach), todo gasto de
+#: staff FUERA de ese conjunto se agrega en una sola fila con esta etiqueta
+#: — nunca se resuelve ni se devuelve el nombre de esos usuarios.
+OTHER_CLUBS_LABEL = "Otros clubes"
+
 
 @dataclass(frozen=True)
 class UserSpend:
@@ -225,16 +231,32 @@ def _row_get(row: object, name: str, idx: int) -> object:
 
 
 async def spend_by_user_last_30d(
-    db: AsyncSession, *, days: int = 30
+    db: AsyncSession,
+    *,
+    days: int = 30,
+    visible_user_ids: set[int] | None = None,
 ) -> list[UserSpend]:
     """Gasto de IA de la ventana móvil, agrupado por quien lanzó el análisis.
 
     Dos queries fijas — la agregación y una resolución de nombres por lote —
     nunca N+1 (§10). El cubo sin atribuir se etiqueta ``"Sin atribuir"``.
 
+    Args:
+        visible_user_ids: acota qué filas conservan su identidad. ``None``
+            (default) conserva el comportamiento histórico — el admin ve a
+            todo el staff. Con un ``set``, cada ``uid`` que NO está en él se
+            repliega en una única fila adicional ``OTHER_CLUBS_LABEL`` que
+            suma su ``run_count`` y su costo (hallazgo H3, feature 041): un
+            coach al que se le amplió el acceso a este endpoint NUNCA debe
+            ver el nombre ni el gasto individual de staff de otro club. El
+            cubo sin atribuir (``uid is None``) es una fila aparte y no se
+            repliega junto con "Otros clubes" — conserva su propia etiqueta.
+            Los nombres de los usuarios replegados jamás se resuelven.
+
     Invariante de reconciliación (FR-029, US6 AC4): la suma de
     ``cost_usd_total`` de las filas devueltas iguala ``_sum_cost_last_30d``
-    dentro de ``1e-6`` para ``days=30``.
+    dentro de ``1e-6`` para ``days=30`` — el repliegue conserva el gasto
+    (suma), nunca lo descarta.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     result = await db.execute(text(_QUERY_SPEND_BY_USER), {"cutoff": cutoff})
@@ -257,9 +279,29 @@ async def spend_by_user_last_30d(
             cost = 0.0
         buckets.append((uid, run_count, cost))
 
-    names = await _resolve_staff_names(db, {uid for uid, _, _ in buckets if uid is not None})
+    # Sin acotar (admin): comportamiento histórico, sin repliegue.
+    if visible_user_ids is None:
+        visible_buckets = buckets
+        folded_run_count = 0
+        folded_cost = 0.0
+    else:
+        visible_buckets = []
+        folded_run_count = 0
+        folded_cost = 0.0
+        for uid, run_count, cost in buckets:
+            if uid is None or uid in visible_user_ids:
+                visible_buckets.append((uid, run_count, cost))
+            else:
+                folded_run_count += run_count
+                folded_cost += cost
 
-    return [
+    # Los ids replegados NUNCA entran a la resolución de nombres — ni
+    # siquiera por lote (invariante de privacidad del hallazgo H3).
+    names = await _resolve_staff_names(
+        db, {uid for uid, _, _ in visible_buckets if uid is not None}
+    )
+
+    out = [
         UserSpend(
             user_id=uid,
             display_name=(
@@ -268,8 +310,20 @@ async def spend_by_user_last_30d(
             cost_usd_total=cost,
             run_count=run_count,
         )
-        for uid, run_count, cost in buckets
+        for uid, run_count, cost in visible_buckets
     ]
+
+    if visible_user_ids is not None and folded_run_count > 0:
+        out.append(
+            UserSpend(
+                user_id=None,
+                display_name=OTHER_CLUBS_LABEL,
+                cost_usd_total=folded_cost,
+                run_count=folded_run_count,
+            )
+        )
+
+    return out
 
 
 async def _resolve_staff_names(db: AsyncSession, ids: set[int]) -> dict[int, str]:
@@ -396,6 +450,7 @@ async def check_budget(
 
 
 __all__ = [
+    "OTHER_CLUBS_LABEL",
     "UNATTRIBUTED_LABEL",
     "BudgetExceededError",
     "UserSpend",

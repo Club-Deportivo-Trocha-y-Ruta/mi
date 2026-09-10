@@ -210,11 +210,14 @@ class TrainingSessionRead(BaseModel):
 
 
 class TrainingSessionReadParent(BaseModel):
-    """Respuesta de sesión para padres — omite coach_notes y route_file_path."""
+    """Respuesta de sesión para padres — omite coach_notes, route_file_path y
+    created_by_user_id (T091 privacy audit, 041: la familia nunca ve, ni
+    siquiera como id sin resolver, qué entrenador está detrás de la sesión —
+    FR-032/§3.1, misma regla que ya aplicaba a `coaches`/`has_active_coach`).
+    """
 
     id: int
     club_id: int
-    created_by_user_id: int
     status: SessionStatus
     scheduled_date: date
     scheduled_start_time: time

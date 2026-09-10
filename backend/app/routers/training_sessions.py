@@ -191,6 +191,10 @@ def _session_to_read_parent(session, children_ids: set[int]) -> TrainingSessionR
             # en pantalla; los nombres van únicamente en el email (§5).
             "coaches",
             "has_active_coach",
+            # T091 privacy audit (041): created_by_user_id es un id interno de
+            # personal — la misma regla de "ningún entrenador en pantalla"
+            # aplica aunque sea un id sin resolver, no solo un nombre.
+            "created_by_user_id",
         }
     )
     data["attendance_summary"] = summary
