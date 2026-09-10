@@ -1135,3 +1135,60 @@ fixtures viejos detrás**. Los nueve fallos de §4 no los detectó la corrida qu
 introdujo el arreglo porque su diferencial se midió sobre otros módulos. Vale
 la pena, al cerrar un cambio de alcance, correr los módulos que ejercitan las
 rutas afectadas aunque el cambio no los toque.
+
+---
+
+# Corrida en ambiente de nube (T078, T092, T095 parcial), 2026-09-10
+
+**Ambiente**: sesión de Claude Code on the web, contenedor efímero. Docker
+está instalado pero el daemon no arranca (`ulimit`: `Operation not permitted`
+dentro del sandbox) — se confirma de nuevo lo que las corridas nocturnas ya
+habían encontrado: **sin MySQL real ni stack e2e alcanzable aquí**, ni con
+`docker compose up` ni de ninguna otra forma.
+
+**T078 — cerrada.** La cobertura de §11 ya existía completa y commiteada
+(`tests/routers/test_race_analysis_club_scope.py`, `tests/test_race_imports_club_scope.py`,
+`tests/test_spend_by_user.py`, `tests/services/race/ai/test_spend_by_user.py`).
+Se encontró y corrigió el único cabo suelto que quedaba anotado en §6.3/ítem 3
+de la sección anterior: `test_listado_identico_para_los_tres_coaches` en
+`tests/routers/test_race_imports_club_scope.py` afirmaba el comportamiento
+anterior a H4 (sin filtro por club); ahora `coach_c` (otro club) espera lista
+vacía y `coach_a`/`coach_b` (mismo club) siguen viendo lo mismo entre sí.
+Renombrada a `test_listado_filtrado_por_club_no_por_autor`. Los 4 fallos
+restantes en `tests/routers/test_race_analysis.py` (`TestStartRun`,
+`TestBackpressure`, `TestBudgetGuard`×2) son un gap de fixture preexistente y
+fuera de alcance: `_ensure_athlete_club_access` (H1/T080) hace ahora una
+consulta real de membresía de club que el `FakeSession` de esos tests no
+siembra — no es una aserción de club-scope desactualizada, es la sesión falsa
+que no sabe responder esa consulta.
+
+**T092 — cerrada con reserva.** Los 5 specs de Playwright pedidos
+(`staff-admin`, `athlete-archive`, `session-coaches`, `newsletter-conflict`,
+`coach-activity`) se escribieron contra los contratos y los componentes/
+testids reales; `tsc --noEmit` limpio. No se pudieron ejecutar contra el
+stack e2e real (sin Docker/MySQL/MailHog aquí) — quedan escritos, no
+verificados en ejecución.
+
+**T095 — mitad ejecutada.**
+
+| Compuerta | Resultado |
+|---|---|
+| `ruff check` (backend) | **No es un gate real hoy**: sin `[tool.ruff]` en `pyproject.toml` ni uso en CI. `main` ya tiene 3417 hallazgos con las reglas por defecto de ruff 0.15.8; esta rama suma ~358 más. Señalado, no corregido — arreglar miles de hallazgos de lint preexistentes no es parte de esta feature. |
+| `pytest` (offline, aiosqlite) | **226 failed, 4439 passed, 40 skipped, 13 xfailed, 6 xpassed, 9 errors** (7 m 57 s). Confirmado contra un *worktree* de `main`: el mismo fallo puntual (`tests/test_users.py::TestCreateUser::test_admin_creates_coach`) también falla en `main`, con `sqlalchemy.exc.OperationalError: Can't connect to MySQL server on 'localhost'` — este sandbox no tiene MySQL, y un subconjunto de tests (no marcados `-m mysql`) lo requieren igual. Las `ERROR` de `test_document_generator`/`test_email_client`/`test_notification_changes` son por dependencias nativas/SMTP ausentes en la imagen, también preexistentes. Cero regresiones nuevas atribuibles a esta sesión; una corrección neta (el fix de T078 arriba). |
+| `pytest -m mysql` | **No ejecutado** — no hay MySQL real disponible en este contenedor. |
+| `npm run build` | **Verde.** Las 3 rutas lazy nuevas (`ArchivedAthletesPage` 2.30 kB, `CoachActivityPage` 3.10 kB, `StaffPage` 3.99 kB gzip) muy por debajo del límite de 150 kB; sin warnings nuevos de tamaño de chunk atribuibles a esta feature. |
+| `npm run typecheck` | **Verde**, 0 errores. |
+| `npm test` (vitest) | **Verde: 348 archivos, 4131 tests, todos pasan.** |
+| `npm run test:e2e` | **No ejecutado** — requiere el stack e2e aislado (backend+MySQL+MailHog), no disponible aquí. |
+
+**T086 / T096 / T097 — siguen bloqueadas, confirmado de nuevo.** Mismo motivo
+que las corridas anteriores: T086 y T096 necesitan el stack de desarrollo
+arriba con dos entrenadores reales navegando (y SC-002 es explícitamente una
+prueba presencial con el entrenador del club); T097 necesita credenciales de
+producción que no deben existir en este entorno. Se verificó estáticamente lo
+que sí se puede sin stack: el registro de rutas en `frontend/src/App.tsx`
+confirma los guards de rol correctos para las tres pantallas nuevas
+(`/admin/usuarios` y `/admin/atletas-archivados` solo admin;
+`/training/reports/actividad-entrenadores` coach+admin), y los tamaños de
+bundle de la tabla de T095 arriba. No sustituye el recorrido en vivo de
+`quickstart.md` que T086/T096 piden.
