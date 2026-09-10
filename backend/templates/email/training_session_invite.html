@@ -3,7 +3,8 @@
 {#
   Notificación a padres/acudientes sobre sesión de entrenamiento planificada.
   Variables requeridas: parent_name, athlete_name, session_date, session_time,
-                        location, technical_focus, duration_min, coach_name, club_name
+                        location, technical_focus, duration_min, club_name,
+                        acting_coach_name, coach_names, coaches_text
 #}
 
 {% block title %}Entrenamiento {{ session_date }} — {{ club_name }}{% endblock %}
@@ -14,7 +15,7 @@
 <p>Hola {{ parent_name }},</p>
 
 <p>
-  El entrenador <strong>{{ coach_name }}</strong> del <strong>{{ club_name }}</strong>
+  El entrenador <strong>{{ acting_coach_name }}</strong> del <strong>{{ club_name }}</strong>
   ha planificado una sesión de entrenamiento para <strong>{{ athlete_name }}</strong>.
 </p>
 
@@ -60,6 +61,12 @@
         {{ technical_focus }}
       </td>
     </tr>
+    <tr>
+      <td style="font-size: 13px; color: #898989; padding: 5px 0; width: 160px;">
+        <strong style="color: #2f2f2f;">{% if coach_names|length > 1 %}Entrenadores a cargo:{% else %}Entrenador a cargo:{% endif %}</strong>
+      </td>
+      <td style="font-size: 13px; color: #333333; padding: 5px 0;">{{ coaches_text }}</td>
+    </tr>
   </table>
 </div>
 
@@ -78,6 +85,6 @@
 
 <p>
   Saludos,<br>
-  <strong>{{ coach_name }} — {{ club_name }}</strong>
+  <strong>{{ coaches_text }} — {{ club_name }}</strong>
 </p>
 {% endblock %}

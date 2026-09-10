@@ -30,7 +30,8 @@ const rowClass =
 /**
  * "Más" bottom sheet (feature 030, US3) — the 5th bottom-bar slot's target.
  * Lists the role-visible NavAreas not already promoted to the bottom bar,
- * then account actions (Mi perfil / Salud IA admin-only / Cerrar sesión).
+ * then account actions (Mi perfil / Salud IA — coach + admin since feature
+ * 041 US6 §7.3 / Cerrar sesión).
  * Built on the existing ui/sheet.tsx primitive (Radix Dialog under the
  * hood) — focus trap, Escape-to-close, and focus return to the trigger are
  * inherited, no bespoke a11y logic here. Every row wraps in `SheetClose`
@@ -74,7 +75,9 @@ export function MoreSheet({ role, open, onOpenChange }: MoreSheetProps) {
               </Link>
             </SheetClose>
 
-            {role === "admin" && (
+            {/* Feature 041 (gobernanza multi-coach, US6, §7.3): visible
+                también al entrenador, no solo al admin. */}
+            {(role === "admin" || role === "coach") && (
               <SheetClose asChild>
                 <Link to="/admin/ai" className={rowClass}>
                   <Activity className="h-4 w-4 shrink-0" aria-hidden="true" />

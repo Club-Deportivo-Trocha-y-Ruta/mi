@@ -54,13 +54,14 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_db, require_role
 from app.models.athlete import Athlete
+from app.models.audit_log import AuditAction
 from app.models.club import ClubMember, ClubRole
 from app.models.race_category import RaceCategory
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
@@ -87,11 +88,14 @@ from app.schemas.race_imports import (
     TyrAthleteRef,
     UploadUserRef,
 )
+from app.services.audit import AuditEntityType, record_audit
+from app.services.permissions import coach_club_ids, ensure_import_club_access
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
 from app.services.race.revision import detect_revision
 from app.services.race.revision_diff_view import build_event_diff_view
 from app.services.race.run_staleness import invalidate_runs_for_event
+from app.services.request_context import AuditContext, get_request_context
 from app.services.training import storage_sftp
 
 logger = logging.getLogger(__name__)
@@ -374,6 +378,7 @@ async def parse_import(
     # ---------------------------------------------------------------
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> ImportParseResponse:
     """Endpoint 1 wizard (parse) — sube PDFs, valida, parsea, crea pending.
 
@@ -625,6 +630,17 @@ async def parse_import(
     db.add(race_import)
     await db.flush()
 
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.race_import,
+        entity_id=race_import.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        request_id=ctx.request_id,
+    )
+
     # F-UP-REV2: detección de revisión post-parse
     # Si existe `(series, valida_num)` con committed previo y SHA distinto,
     # marcamos `will_be_revision=true`. SHA byte-exacto ya fue bloqueado arriba
@@ -689,7 +705,14 @@ async def _load_pending_import(
     *,
     for_update: bool = False,
 ) -> RaceImport:
-    """Carga un RaceImport pending por id + verifica ownership (admin bypass)."""
+    """Carga un RaceImport pending por id + verifica alcance por club.
+
+    El chequeo de club (``ensure_import_club_access``, contrato
+    scope-ai-imports §6.1) reemplazó al viejo creator-lock: cualquier coach
+    del club puede continuar el cargue que empezó otro coach del mismo club.
+    Las dos ramas 404 de arriba (id desconocido, estado ya no ``pending``) se
+    evalúan primero y no cambian.
+    """
     stmt = select(RaceImport).where(RaceImport.id == parse_id)
     if for_update:
         # Serializa commits concurrentes del mismo parse_id (MySQL InnoDB).
@@ -710,15 +733,7 @@ async def _load_pending_import(
                 f"(actual: {imp.status.value}). No se puede dry-run/commit."
             ),
         )
-    # Ownership: admin bypass; coach solo sobre sus propios parses.
-    if (
-        current_user.role != UserRole.admin
-        and imp.imported_by_user_id != current_user.id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes acceso a este parse_id (ownership cross-coach).",
-        )
+    await ensure_import_club_access(db, imp, current_user)
     return imp
 
 
@@ -916,7 +931,10 @@ async def dry_run_import(
     )
     athletes: list[Athlete] = []
     if coach_club_ids:
-        athletes_stmt = select(Athlete).where(Athlete.club_id.in_(coach_club_ids))
+        athletes_stmt = select(Athlete).where(
+            Athlete.club_id.in_(coach_club_ids),
+            Athlete.deleted_at.is_(None),
+        )
         athletes = list((await db.execute(athletes_stmt)).scalars().all())
 
     # Pre-cargar RaceCategory por code para el boost por edad del matcher.
@@ -1007,6 +1025,7 @@ async def commit_import(
     body: ImportCommitRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> ImportCommitResponse:
     """Endpoint 3 wizard (commit) — promueve pending → committed con resolved matches."""
     imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
@@ -1154,6 +1173,30 @@ async def commit_import(
         imp.revision_reason = body.revision_reason.value
     await db.flush()
 
+    # El ingestor ya hizo su propio commit interno (comentario arriba: "el
+    # ingestor hace commit/rollback sobre la misma session"), así que esta
+    # fila de auditoría viaja en la transacción siguiente que abre `get_db`
+    # al hacer flush/commit al final del request — no en la transacción de
+    # negocio original, que ya cerró.
+    await record_audit(
+        db,
+        action=AuditAction.execute,
+        entity_type=AuditEntityType.race_import,
+        entity_id=imp.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=["status"],
+        diff={"status": (RaceImportStatus.pending.value, RaceImportStatus.committed.value)},
+        meta={
+            "race_event_id": int(report.event_id) if report.event_id is not None else None,
+            "is_revision": is_revision,
+            "results_count": report.results_inserted,
+            "competitors_count": report.competitors_created,
+        },
+        request_id=ctx.request_id,
+    )
+
     # PR5 (D5): si fue una re-ingesta (revisión), marcamos como stale los
     # análisis IA basados en los resultados ahora corregidos + boletines
     # enviados como outdated (D3). NO se re-ejecuta nada automáticamente —
@@ -1202,7 +1245,15 @@ async def list_imports(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> ImportListResponse:
-    """Endpoint 4 wizard (histórico) — lista paginada de imports."""
+    """Endpoint 4 wizard (histórico) — lista paginada de imports.
+
+    Alcance por club (H4, contracts/scope-ai-imports.md §1/§6): el admin ve
+    todo; un coach solo ve los cargues cuyo club (resuelto vía
+    ``import_club_ids`` — membresía del uploader) coincide con alguno de los
+    suyos, más — respaldo de autoría, igual que ``_has_club_access`` — sus
+    propios cargues cuando el club no resuelve. Filtrado en SQL para que
+    ``limit``/``offset`` y ``total`` sigan siendo correctos.
+    """
     stmt = select(RaceImport)
     count_stmt = select(RaceImport)
     if status_filter:
@@ -1215,6 +1266,32 @@ async def list_imports(
             )
         stmt = stmt.where(RaceImport.status == status_enum)
         count_stmt = count_stmt.where(RaceImport.status == status_enum)
+
+    if current_user.role != UserRole.admin:
+        # Usuarios coach-o-admin de los clubes del solicitante: cualquier
+        # cargue subido por alguno de ellos resuelve al club del solicitante
+        # (misma regla que ``import_club_ids``/``_has_club_access``).
+        requester_club_ids = coach_club_ids(current_user)
+        same_club_user_ids: set[int] = set()
+        if requester_club_ids:
+            members_result = await db.execute(
+                select(ClubMember.user_id).where(
+                    ClubMember.club_id.in_(requester_club_ids),
+                    ClubMember.role_in_club.in_([ClubRole.coach, ClubRole.admin]),
+                )
+            )
+            same_club_user_ids = {int(uid) for uid in members_result.scalars().all()}
+
+        # Respaldo por autoría: un cargue cuyo club no resuelve solo queda
+        # alcanzable por quien lo subió (nunca ensancha el acceso).
+        scope_filter = RaceImport.imported_by_user_id == current_user.id
+        if same_club_user_ids:
+            scope_filter = or_(
+                RaceImport.imported_by_user_id.in_(same_club_user_ids),
+                scope_filter,
+            )
+        stmt = stmt.where(scope_filter)
+        count_stmt = count_stmt.where(scope_filter)
 
     # Total para paginación
     total_result = await db.execute(count_stmt)
@@ -1240,11 +1317,14 @@ async def list_imports(
     items: list[ImportListItem] = []
     for imp in imports:
         u = users_by_id.get(imp.imported_by_user_id)
+        # FR-013 / contracts/scope-ai-imports.md §4.1: nunca un identificador
+        # crudo (`user#{id}`) llega al lector — el join sin resolver (FK
+        # borrada o editada a mano, o nombre vacío) cae en el mismo texto
+        # humano que usan run_status/audit ("Usuario no disponible").
+        joined_name = f"{u.first_name} {u.last_name}".strip() if u else ""
         uploader = UploadUserRef(
             id=imp.imported_by_user_id,
-            full_name=(
-                f"{u.first_name} {u.last_name}".strip() if u else f"user#{imp.imported_by_user_id}"
-            ),
+            full_name=joined_name or "Usuario no disponible",
         )
         n_results = (imp.stats_json or {}).get("results_inserted", 0)
         items.append(

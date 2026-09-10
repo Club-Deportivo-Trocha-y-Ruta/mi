@@ -22,6 +22,8 @@
  */
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { isAxiosError } from "axios";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Send } from "lucide-react";
 
 import {
@@ -31,6 +33,7 @@ import {
   useDownloadNewsletterPdf,
   parseApiError,
 } from "@/api/athleteNewsletters";
+import { useAuthStore } from "@/store/auth.store";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useUpdateStageLog } from "@/hooks/training/useUpdateStageLog";
 import { useRegenerateBlock } from "@/hooks/training/useRegenerateBlock";
@@ -43,8 +46,32 @@ import { DeliveryPanel } from "@/components/newsletter/studio/DeliveryPanel";
 import { StatusStepper } from "@/components/newsletter/studio/StatusStepper";
 import { RegenerateDialog } from "@/components/newsletter/studio/RegenerateDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { applyOverrides, clearOverrideBlock } from "@/lib/applyOverrides";
+import { formatDate } from "@/lib/datetime";
 import type { RegenerableBlock, StageOverrides, HideableBlock } from "@/types/stageLog.types";
+
+/**
+ * 041 §2.5: el único 409 de este router que trae `current_version` es el
+ * de versión vencida (US5) — los demás 409 (boletín ya enviado, hermano en
+ * draft, etc.) son terminales y siguen el camino del toast de error de
+ * siempre. Esta función es la frontera entre ambos caminos.
+ */
+function getStaleVersionConflict(err: unknown): number | null {
+  if (!isAxiosError(err) || err.response?.status !== 409) return null;
+  const data = err.response.data as { current_version?: unknown } | undefined;
+  return typeof data?.current_version === "number" ? data.current_version : null;
+}
 
 const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -113,6 +140,14 @@ export function AthleteNewsletterStudioPage() {
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
   const [showSendConfirm, setShowSendConfirm] = useState(false);
   const [showResendConfirm, setShowResendConfirm] = useState(false);
+  // 041 §6.2 — conflicto de versión (US5). `conflict` sobrevive a cerrar el
+  // diálogo (banner pinneado); `conflictDialogOpen` solo controla si el
+  // AlertDialog bloqueante está visible en este momento.
+  const [conflict, setConflict] = useState<{ currentVersion: number | null } | null>(null);
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+
+  const queryClient = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.id ?? null);
 
   const newsletterQuery = useAthleteNewsletter(athleteId, newsletterId);
   const newsletter = newsletterQuery.data;
@@ -129,6 +164,11 @@ export function AthleteNewsletterStudioPage() {
   // draft arranca desde la verdad del servidor — nunca se acumulan ediciones
   // "fantasma" que ya fueron persistidas.
   useEffect(() => {
+    // 041 §6.2 — con un conflicto abierto, un refetch en segundo plano NUNCA
+    // debe pisar lo que el coach está mirando/escribiendo. Solo la acción
+    // explícita "Recargar" (handleReloadConflict) limpia `conflict`, y recién
+    // ahí este efecto vuelve a correr con los datos ya invalidados.
+    if (conflict) return;
     if (newsletter?.stage_overrides) {
       setOverridesDraft(newsletter.stage_overrides as StageOverrides);
     } else if (newsletter) {
@@ -142,6 +182,30 @@ export function AthleteNewsletterStudioPage() {
     setTimeout(() => setToast(null), 5000);
   }
 
+  /**
+   * Rama común de `onError` para todo `updateStageLog.mutate` (041 §6.2/6.3):
+   * un 409 con `current_version` abre el diálogo bloqueante y NUNCA descarta
+   * el draft local; cualquier otro error sigue el toast de siempre.
+   */
+  function handleUpdateError(err: unknown, fallback: string) {
+    const currentVersion = getStaleVersionConflict(err);
+    if (currentVersion !== null) {
+      setConflict({ currentVersion });
+      setConflictDialogOpen(true);
+      return;
+    }
+    showToast("error", parseApiError(err, fallback));
+  }
+
+  /** "Recargar" (diálogo o banner pinneado) — única forma de limpiar `conflict`. */
+  function handleReloadConflict() {
+    void queryClient.invalidateQueries({
+      queryKey: ["athlete-newsletter", userId, athleteId, newsletterId],
+    });
+    setConflict(null);
+    setConflictDialogOpen(false);
+  }
+
   function scrollToBlock(dataBlock: string) {
     if (typeof document === "undefined") return;
     const el = document.querySelector(`[data-block="${dataBlock}"]`);
@@ -149,23 +213,25 @@ export function AthleteNewsletterStudioPage() {
   }
 
   function handleSaveBlock(_block: RegenerableBlock, patch: Partial<StageOverrides>) {
+    if (!newsletter) return;
     const merged: StageOverrides = { ...overridesDraft, ...patch };
     setOverridesDraft(merged);
     updateStageLog.mutate(
-      { stage_overrides: merged },
+      { stage_overrides: merged, expectedVersion: newsletter.edit_version },
       {
         onSuccess: () => showToast("success", "Bloque guardado."),
-        onError: (err) => showToast("error", parseApiError(err, "No se pudo guardar el bloque.")),
+        onError: (err) => handleUpdateError(err, "No se pudo guardar el bloque."),
       },
     );
   }
 
   function handleSaveCoachNote(note: string) {
+    if (!newsletter) return;
     updateStageLog.mutate(
-      { coach_note: note },
+      { coach_note: note, expectedVersion: newsletter.edit_version },
       {
         onSuccess: () => showToast("success", "Nota del entrenador guardada."),
-        onError: (err) => showToast("error", parseApiError(err, "No se pudo guardar la nota.")),
+        onError: (err) => handleUpdateError(err, "No se pudo guardar la nota."),
       },
     );
   }
@@ -177,18 +243,19 @@ export function AthleteNewsletterStudioPage() {
       ? current.filter((b) => b !== block)
       : [...current, block];
     updateStageLog.mutate(
-      { hidden_blocks: next },
+      { hidden_blocks: next, expectedVersion: newsletter.edit_version },
       {
-        onError: (err) => showToast("error", parseApiError(err, "No se pudo actualizar el bloque.")),
+        onError: (err) => handleUpdateError(err, "No se pudo actualizar el bloque."),
       },
     );
   }
 
   function handleReorderInsights(newOrder: number[]) {
+    if (!newsletter) return;
     updateStageLog.mutate(
-      { selected_race_insight_ids: newOrder },
+      { selected_race_insight_ids: newOrder, expectedVersion: newsletter.edit_version },
       {
-        onError: (err) => showToast("error", parseApiError(err, "No se pudo reordenar el análisis.")),
+        onError: (err) => handleUpdateError(err, "No se pudo reordenar el análisis."),
       },
     );
   }
@@ -333,6 +400,23 @@ export function AthleteNewsletterStudioPage() {
         onHideToggle={handleHideToggle}
         onScrollToBlock={scrollToBlock}
       />
+      {/*
+        041 §6.4 — autoría de la nota del entrenador, superficie SOLO
+        coach/admin (esta ruta ya está protegida por rol — App.tsx). Ubicación
+        ideal per contrato: dentro de la BlockCard "Nota del entrenador"
+        (BlockCard.tsx/BlockPanel.tsx) vía un prop `byline`; esos archivos
+        pertenecen a otro frente de esta feature y no se tocan acá — ver
+        reporte de T073. Se muestra acá, junto al panel de bloques, en vez de
+        omitirse.
+      */}
+      {newsletter.coach_note && newsletter.coach_note_author && (
+        <p className="px-1 text-xs text-mid-gray" data-testid="coach-note-byline">
+          Nota escrita por {newsletter.coach_note_author.display_name}
+          {newsletter.coach_note_updated_at
+            ? ` · ${formatDate(newsletter.coach_note_updated_at)}`
+            : ""}
+        </p>
+      )}
       <AnalystPicker
         athleteId={athleteId}
         selectedInsightIds={newsletter.selected_race_insight_ids ?? []}
@@ -385,6 +469,26 @@ export function AthleteNewsletterStudioPage() {
             Cerrar
           </button>
         </div>
+      )}
+
+      {/*
+        041 §6.3 — banner pinneado: se queda visible mientras `conflict` esté
+        activo, incluso si el coach cierra el diálogo con "Seguir editando",
+        para que nunca pierda de vista que Guardar volverá a fallar.
+      */}
+      {conflict && (
+        <Alert variant="warning" data-testid="newsletter-conflict-banner">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+            <span>Este boletín cambió en el servidor. Guardar volverá a fallar hasta que recargues.</span>
+            <button
+              type="button"
+              onClick={handleReloadConflict}
+              className="inline-flex min-h-12 items-center rounded-lg bg-charcoal px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-charcoal"
+            >
+              Recargar
+            </button>
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Header */}
@@ -522,6 +626,52 @@ export function AthleteNewsletterStudioPage() {
         onConfirm={handleRegenerateConfirm}
         onCancel={() => setRegenerateTarget(null)}
       />
+
+      {/*
+        041 §6.3 — diálogo bloqueante de conflicto de versión (US5). No usa
+        `ConfirmDialog` (components/shared) porque el contrato pide las
+        primitivas de `components/ui/alert-dialog` directamente, con test ids
+        propios; además "Seguir editando" acá NO limpia `conflict` (el banner
+        pinneado debe seguir visible), a diferencia del Cancelar genérico de
+        ConfirmDialog.
+      */}
+      <AlertDialog
+        open={conflictDialogOpen}
+        onOpenChange={(next) => {
+          // Cubre Escape y el click del propio Cancel: ambos deben
+          // comportarse como "Seguir editando" — cierran el diálogo pero
+          // dejan `conflict` (y por lo tanto el banner y el draft) intactos.
+          if (!next) setConflictDialogOpen(false);
+        }}
+      >
+        <AlertDialogContent data-testid="newsletter-conflict-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Otro entrenador guardó cambios</AlertDialogTitle>
+            <AlertDialogDescription>
+              Otro entrenador guardó cambios en este boletín mientras lo editabas. Tu texto sigue
+              acá: cópialo si lo necesitas y luego recarga para trabajar sobre la última versión.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="newsletter-conflict-keep-editing" className="min-h-12">
+              Seguir editando
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="newsletter-conflict-reload"
+              className="min-h-12"
+              onClick={(event) => {
+                // AlertDialogAction es un Close de Radix y cerraría el
+                // diálogo antes de correr la invalidación; lo prevenimos
+                // porque `handleReloadConflict` ya controla el cierre.
+                event.preventDefault();
+                handleReloadConflict();
+              }}
+            >
+              Recargar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

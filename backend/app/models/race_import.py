@@ -40,6 +40,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.mixins import ActorTimestampMixin
 
 if TYPE_CHECKING:
     from app.models.race_event import RaceEvent
@@ -78,7 +79,7 @@ class RaceImportKind(str, enum.Enum):
     both = "both"
 
 
-class RaceImport(Base):
+class RaceImport(ActorTimestampMixin, Base):
     """Registro de cada PDF procesado (RESULTADOS o GENERAL).
 
     El ``sha256`` se calcula sobre el contenido del PDF — sirve como clave de
@@ -178,6 +179,14 @@ class RaceImport(Base):
     # el texto, solo ``len(reason)``.
     revision_reason: Mapped[Optional[str]] = mapped_column(
         String(300), nullable=True
+    )
+
+    # ---------------------------------------------------------------------
+    # Feature 041: atribución de commit (distinta de imported_by_user_id)
+    # ---------------------------------------------------------------------
+    committed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    committed_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     # ---------------------------------------------------------------------

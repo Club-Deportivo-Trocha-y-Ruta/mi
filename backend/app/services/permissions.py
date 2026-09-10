@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     # estatico — evita el import en tiempo de ejecucion mientras el modulo
     # aun no existe (`from __future__ import annotations` difiere la
     # evaluacion de anotaciones).
+    from app.models.race_import import RaceImport
     from app.models.strava_activity import StravaActivity
 
 
@@ -61,9 +63,19 @@ def require_role(user_role: UserRole, allowed_roles: list[UserRole]) -> None:
 
 
 async def parent_athlete_ids(db: AsyncSession, user_id: int) -> list[int]:
-    """Retorna los IDs de atletas vinculados a un usuario padre."""
+    """Retorna los IDs de atletas vinculados a un usuario padre.
+
+    Un atleta archivado desaparece de toda superficie de padre (FR-014):
+    se excluye aquí para que los ~20 sitios que consumen este helper hereden
+    el filtro sin duplicar la condición.
+    """
     result = await db.execute(
-        select(ParentAthlete.athlete_id).where(ParentAthlete.parent_id == user_id)
+        select(ParentAthlete.athlete_id)
+        .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
+        .where(
+            ParentAthlete.parent_id == user_id,
+            Athlete.deleted_at.is_(None),
+        )
     )
     return list(result.scalars().all())
 
@@ -84,6 +96,158 @@ async def user_club_role(
         )
     )
     return result.scalar_one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Alcance por club para runs agénticos e importaciones de resultados
+# (contracts/scope-ai-imports.md §1). Regla única que reemplaza el
+# creator-lock: *cualquier cosa del club la puede operar cualquier coach del
+# club; el admin siempre; el coach de otro club nunca.*
+# ---------------------------------------------------------------------------
+
+
+async def _coach_membership_club_ids(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    roles: tuple[ClubRole, ...] = (ClubRole.coach,),
+) -> set[int]:
+    """Clubes donde ``user_id`` figura con alguno de ``roles`` en ``club_members``.
+
+    Se consulta contra la tabla (no contra ``user.club_memberships``) porque
+    el usuario en cuestión es el *autor* de la fila, no quien hace la
+    petición: su relación no está cargada en esta sesión.
+
+    ``roles`` por defecto es solo ``coach`` — ``run_club_ids`` depende de que
+    una membresía de padre/atleta NUNCA resuelva un club (§1.1 paso 4): un
+    coach que además es padre en otro club no debe filtrarse ahí. Solo
+    ``import_club_ids`` (H7) ensancha explícitamente a ``(coach, admin)``.
+    """
+    if user_id is None:
+        return set()
+    result = await db.execute(
+        select(ClubMember.club_id).where(
+            ClubMember.user_id == user_id,
+            ClubMember.role_in_club.in_(roles),
+        )
+    )
+    return {int(cid) for cid in result.scalars().all() if cid is not None}
+
+
+def _athlete_id_from_input_json(raw: Any) -> int | None:
+    """``input_json['athlete_id']`` — respaldo permanente de §1.1 paso 2.
+
+    Las filas históricas de ``agent_runs`` quedaron con ``athlete_id`` en
+    NULL (§1.3): el backfill B7 sólo alcanza a las que traen el id dentro
+    del JSON, así que la lectura del JSON se mantiene para siempre.
+    """
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(raw, dict):
+        return None
+    value = raw.get("athlete_id")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+async def run_club_ids(db: AsyncSession, run: dict[str, Any]) -> set[int]:
+    """Clubes a los que pertenece un run agéntico (§1.1).
+
+    Escalera: ``agent_runs.athlete_id`` → ``input_json['athlete_id']`` →
+    ``athletes.club_id`` → clubes donde el solicitante es coach → ``set()``.
+
+    ``deleted_at`` NO se filtra: un run sobre un deportista archivado sigue
+    siendo abrible (data-model §8.1).
+    """
+    athlete_id = run.get("athlete_id")
+    if athlete_id is None:
+        athlete_id = _athlete_id_from_input_json(run.get("input_json"))
+
+    if athlete_id is not None:
+        result = await db.execute(
+            select(Athlete.club_id).where(Athlete.id == int(athlete_id))
+        )
+        club_id = result.scalar_one_or_none()
+        if club_id is not None:
+            return {int(club_id)}
+
+    # Paso 4 — sólo cuando los pasos 1-3 no resolvieron nada.
+    return await _coach_membership_club_ids(db, run.get("requested_by_user_id"))
+
+
+async def import_club_ids(db: AsyncSession, imp: RaceImport) -> set[int]:
+    """Clubes a los que pertenece un cargue de resultados (§1.2).
+
+    ``race_imports`` / ``race_series`` / ``race_events`` no tienen
+    ``club_id``: las carreras son competencias de terceros, no filas del
+    club. El único vínculo veraz es la membresía de quien cargó el archivo.
+
+    H7: se ensancha a ``(coach, admin)`` — a diferencia de ``run_club_ids``,
+    aquí SÍ corresponde, porque un cargue subido por el admin del club debe
+    seguir siendo alcanzable por los coaches del club (si se limitara a
+    ``coach``, el admin-uploader resolvería a un set vacío y el respaldo por
+    autoría dejaría el cargue inalcanzable para todos menos ese admin).
+    """
+    return await _coach_membership_club_ids(
+        db,
+        getattr(imp, "imported_by_user_id", None),
+        roles=(ClubRole.coach, ClubRole.admin),
+    )
+
+
+def _has_club_access(
+    club_ids: set[int], user: User, *, legacy_owner_id: int | None
+) -> bool:
+    """Matriz de decisión de §1.4 (el admin ya salió antes de llamar aquí).
+
+    El respaldo por autoría sólo aplica cuando el club es irresoluble: nunca
+    ensancha el acceso, sólo evita que una fila sin club quede inalcanzable
+    para quien la creó.
+    """
+    if club_ids:
+        return bool(coach_club_ids(user) & club_ids)
+    return legacy_owner_id is not None and legacy_owner_id == user.id
+
+
+async def ensure_run_club_access(
+    db: AsyncSession, run: dict[str, Any], user: User
+) -> None:
+    """Lanza 403 si ``user`` no es coach de ningún club del run (§1.4, §2)."""
+    if user.role == UserRole.admin:
+        return
+    club_ids = await run_club_ids(db, run)
+    if _has_club_access(
+        club_ids, user, legacy_owner_id=run.get("requested_by_user_id")
+    ):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No tienes acceso a este run",
+    )
+
+
+async def ensure_import_club_access(
+    db: AsyncSession, imp: RaceImport, user: User
+) -> None:
+    """Lanza 403 si ``user`` no es coach de ningún club del cargue (§6.1)."""
+    if user.role == UserRole.admin:
+        return
+    club_ids = await import_club_ids(db, imp)
+    if _has_club_access(
+        club_ids, user, legacy_owner_id=getattr(imp, "imported_by_user_id", None)
+    ):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No tienes acceso a este cargue de resultados: pertenece a otro club.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -258,10 +422,14 @@ async def can_view_calendar_event(
         # El padre los ve si tiene al menos un atleta en el club del evento.
         if event.event_type == EventType.BIRTHDAY:  # type: ignore[attr-defined]
             from app.models.athlete import Athlete  # late import
+            # FR-014: un atleta archivado no da visibilidad de eventos al padre.
+            # ``parent_athlete_ids`` ya excluye archivados, pero el filtro se
+            # repite aquí porque esta consulta es la que decide la visibilidad.
             result = await db.execute(
                 select(Athlete.id).where(
                     Athlete.id.in_(athlete_ids),
                     Athlete.club_id == event.club_id,  # type: ignore[attr-defined]
+                    Athlete.deleted_at.is_(None),
                 )
             )
             return result.first() is not None
@@ -347,8 +515,13 @@ async def can_view_activity(
         return True
 
     if user.role == UserRole.coach:
+        # FR-014: para el coach, un atleta archivado no resuelve club y la
+        # autorización cae a False (el admin sí conserva el acceso, arriba).
         result = await db.execute(
-            select(Athlete.club_id).where(Athlete.id == athlete_id)
+            select(Athlete.club_id).where(
+                Athlete.id == athlete_id,
+                Athlete.deleted_at.is_(None),
+            )
         )
         club_id = result.scalar_one_or_none()
         if club_id is None:
@@ -382,8 +555,13 @@ async def can_link_activity(
         return True
 
     if user.role == UserRole.coach:
+        # FR-014: no se puede vincular ni desvincular actividad de un atleta
+        # archivado — la consulta no lo resuelve y la autorización cae a False.
         result = await db.execute(
-            select(Athlete.club_id).where(Athlete.id == activity.athlete_id)
+            select(Athlete.club_id).where(
+                Athlete.id == activity.athlete_id,
+                Athlete.deleted_at.is_(None),
+            )
         )
         club_id = result.scalar_one_or_none()
         if club_id is None:
@@ -430,3 +608,39 @@ async def athlete_activity_scope(
     de aplicar filtros adicionales de club/sesion.
     """
     return await allowed_athlete_ids_for(user, db)
+
+
+# ---------------------------------------------------------------------------
+# Permisos del historial de auditoría (feature 041)
+# ---------------------------------------------------------------------------
+
+
+def can_view_audit(user: User, club_id: int) -> bool:
+    """FR-006/FR-007: solo admin y coaches del propio club leen el historial.
+
+    Síncrona a propósito: ``get_current_user`` ya trae ``club_memberships``
+    con ``selectinload`` (``app/dependencies.py``), así que resolver la
+    membresía en memoria evita el SELECT extra que sí paga
+    ``user_club_role`` y deja el endpoint del club en 2 queries
+    (contracts/audit-log-api.md §4.2).
+
+    No confundir con ``can_view_monthly_report``: esa función retorna
+    ``True`` para cualquier padre en la vista agregada, comportamiento que
+    FR-006 prohíbe explícitamente para el historial de auditoría.
+    """
+    if user.role == UserRole.admin:
+        return True
+    if user.role == UserRole.coach:
+        return club_id in coach_club_ids(user)
+    return False
+
+
+# NOTA (contracts/audit-log-api.md §4.3): no existe un
+# ``can_view_athlete_audit`` separado en este módulo. El endpoint
+# ``GET /api/athletes/{athlete_id}/audit-log`` combina, en este orden,
+# ``require_role([UserRole.admin, UserRole.coach])`` (rechaza parent/athlete
+# antes de tocar la base de datos) y ``verify_athlete_access``
+# (``app/dependencies.py``), que ya resuelve el 404 de atleta desconocido y
+# el 403 de coach de otro club. Duplicar esa lógica aquí reintroduciría el
+# error de copy-paste que el contrato señala explícitamente para
+# ``can_view_monthly_report``.

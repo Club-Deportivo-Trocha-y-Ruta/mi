@@ -25,6 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
+from app.services.audit import AuditAction, AuditEntityType, record_audit
+from app.services.request_context import system_context
 
 # Directorio con los CSV del CDC vendorizados (constantes de referencia
 # poblacional; NO contienen datos de menores). Ver app/data/cdc_lms/README.md.
@@ -76,6 +78,22 @@ async def seed_growth_data() -> None:
                 inserted = await bulk_insert_lms(session, rows)
                 total_inserted += inserted
                 print(f"  {source_info['indicator']} (OMS): {inserted} filas procesadas")
+
+            # Una sola fila resumen por invocación (§3.3 audit-recording.md):
+            # datos de referencia poblacional, sin club ni deportista, sin
+            # identidad individual por fila sembrada.
+            ctx = system_context(job="lms_seed")
+            await record_audit(
+                session,
+                action=AuditAction.execute,
+                entity_type=AuditEntityType.growth_reference_lms,
+                entity_id=1,
+                actor=ctx.actor,
+                actor_kind=ctx.actor_kind,
+                club_id=None,
+                meta={"job": "lms_seed", "rows": total_inserted},
+                request_id=ctx.request_id,
+            )
 
             await session.commit()
             print(f"\nTotal: {total_inserted} filas en growth_reference_lms")

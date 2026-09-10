@@ -44,6 +44,7 @@ from tests.fixtures.race_history_fixtures import (
     link_parent_to_athlete,
     link_user_to_club,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 @pytest_asyncio.fixture
@@ -63,6 +64,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "athletes",
             "parent_athlete",
             "athlete_ai_insights",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

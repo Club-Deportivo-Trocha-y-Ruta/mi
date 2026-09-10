@@ -22,6 +22,10 @@ vi.mock("@/api/calendar", () => ({
   useDeleteCalendarEventPermanent: vi.fn(),
 }));
 
+vi.mock("@/hooks/governance/useClubStaff", () => ({
+  useClubStaff: vi.fn(),
+}));
+
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: (selector: (s: { user: { first_name: string; last_name: string; role: string } }) => unknown) =>
     selector({
@@ -63,8 +67,14 @@ vi.mock("@/components/calendar/CalendarShell", () => ({
 }));
 
 import { useCalendarEvents, useCalendarEvent, useCancelCalendarEvent, useDeleteCalendarEventPermanent } from "@/api/calendar";
+import { useClubStaff } from "@/hooks/governance/useClubStaff";
 import { CalendarPage } from "./CalendarPage";
 import { makeCalendarListItem } from "@/test/msw/calendarHandlers";
+
+const STAFF_COACHES = [
+  { id: 10, displayName: "Ana Coach" },
+  { id: 11, displayName: "Beto Coach" },
+];
 
 const noopMutation = {
   mutate: vi.fn(),
@@ -112,6 +122,10 @@ describe("CalendarPage", () => {
       isLoading: false,
       isError: false,
     } as ReturnType<typeof useCalendarEvent>);
+    vi.mocked(useClubStaff).mockReturnValue({
+      coaches: STAFF_COACHES,
+      isLoading: false,
+    } as unknown as ReturnType<typeof useClubStaff>);
   });
 
   it("renders page title", () => {
@@ -292,6 +306,45 @@ describe("CalendarPage", () => {
     renderPage();
     // Filter bar contains event type buttons
     expect(screen.getByText("Entrenamiento")).toBeInTheDocument();
+  });
+
+  describe("filtro de entrenador (feature 041)", () => {
+    beforeEach(() => {
+      vi.mocked(useCalendarEvents).mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: false,
+      } as unknown as ReturnType<typeof useCalendarEvents>);
+    });
+
+    it("lista los entrenadores del club en el selector", () => {
+      renderPage();
+      expect(screen.getByRole("option", { name: "Ana Coach" })).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "Beto Coach" })).toBeInTheDocument();
+    });
+
+    it("al elegir un entrenador, agrega coach_user_id a los filtros de la consulta", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.selectOptions(screen.getByLabelText("Entrenador"), "11");
+
+      const calls = vi.mocked(useCalendarEvents).mock.calls;
+      expect(
+        calls.some((call) => (call[0] as { coach_user_id?: number | null })?.coach_user_id === 11),
+      ).toBe(true);
+    });
+
+    it('al volver a "Todos los entrenadores" envía coach_user_id null', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.selectOptions(screen.getByLabelText("Entrenador"), "11");
+      await user.selectOptions(screen.getByLabelText("Entrenador"), "");
+
+      const lastCall = vi.mocked(useCalendarEvents).mock.calls.at(-1);
+      expect((lastCall?.[0] as { coach_user_id?: number | null })?.coach_user_id).toBeNull();
+    });
   });
 
   it("navigates to the new-event form with the clicked date when an empty day is clicked", async () => {

@@ -307,8 +307,14 @@ class TestBirthdayMutationsBlocked:
             "app.services.calendar.events.get_event",
             AsyncMock(return_value=ev),
         ):
-            resp = await client.delete(
+            # T063: la cancelación exige un motivo en el cuerpo, y esa
+            # validación corre antes que la comprobación de cumpleaños. Se
+            # manda un motivo válido para que lo que se compruebe siga siendo
+            # el 400 del evento virtual y no un 422 de forma.
+            resp = await client.request(
+                "DELETE",
                 f"/api/calendar/events/{ev.id}",
+                json={"reason_code": "cancel_organizer_cancelled"},
                 headers={"Authorization": "Bearer fake"},
             )
         assert resp.status_code == 400

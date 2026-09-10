@@ -140,7 +140,10 @@ async def list_birthday_events_in_range(
     if from_date > to_date:
         return []
 
-    stmt = select(Athlete).where(Athlete.club_id == club_id)
+    stmt = select(Athlete).where(
+        Athlete.club_id == club_id,
+        Athlete.deleted_at.is_(None),
+    )
     if athlete_ids is not None:
         if not athlete_ids:
             return []
@@ -177,7 +180,10 @@ async def get_birthday_event(
     year, athlete_id = decoded
 
     result = await db.execute(
-        select(Athlete).where(Athlete.id == athlete_id)
+        select(Athlete).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
     )
     athlete = result.scalar_one_or_none()
     if athlete is None:

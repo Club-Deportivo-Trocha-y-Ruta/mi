@@ -50,6 +50,7 @@ from app.models.user import UserRole
 
 from tests.fixtures.race_groups import CLUB_ID, COACH_USER_ID, seed_base_season
 from tests.fixtures.race_history_fixtures import create_user, link_parent_to_athlete
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # ---------------------------------------------------------------------------
 # Engine SQLite in-memory (mismo DDL que test_athlete_race_analysis_races.py)
@@ -73,6 +74,8 @@ CREATE TABLE agent_runs (
     explain_mode INTEGER NOT NULL DEFAULT 0,
     cost_usd NUMERIC NULL,
     athlete_id INTEGER NULL,
+    decided_by_user_id INTEGER,
+    decided_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 )
@@ -91,6 +94,7 @@ _TABLES = (
     "race_results",
     "athlete_ai_insights",
     "anthropometric_records",
+    *AUDIT_TABLES,
 )
 
 

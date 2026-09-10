@@ -64,6 +64,7 @@ from app.services.race.competitor_linking import (
     suggest_competitors_for_new_athlete,
     unlink_competitor,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +105,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_competitors",
             "race_results",
             "race_competitor_link_audit",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

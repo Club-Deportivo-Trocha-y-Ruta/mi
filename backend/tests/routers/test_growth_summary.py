@@ -50,10 +50,11 @@ from app.models.athlete import Athlete, FamilyRelationship, ParentAthlete, Sex
 from app.models.club import ClubRole
 from app.models.growth import GrowthSource
 from app.models.user import UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
-_TABLES = ("athletes", "anthropometric_records", "parent_athlete")
+_TABLES = ("athletes", "anthropometric_records", "parent_athlete", *AUDIT_TABLES)
 
 _TODAY = date.today()
 _BIRTH_DATE = date(2013, 1, 1)  # atleta ficticio, ~13 años — no es un dato real

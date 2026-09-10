@@ -16,13 +16,22 @@ import { expect, type APIRequestContext, type Page } from '@playwright/test';
 export const COACH_EMAIL = 'entrenador@trochyruta.com';
 export const COACH_PASSWORD = 'Coach2026!';
 
+// Segundo coach del mismo club (feature 041 — gobernanza multi-coach), mismas
+// credenciales sintéticas que `frontend/e2e/helpers/session.ts` (`coach2`).
+export const COACH2_EMAIL = 'entrenador2@trochyruta.com';
+export const COACH2_PASSWORD = 'Coach2026!';
+
 export function apiBaseUrl(): string {
   return process.env.E2E_API_BASE_URL ?? 'http://localhost:8000';
 }
 
-async function apiToken(request: APIRequestContext): Promise<string> {
+async function apiToken(
+  request: APIRequestContext,
+  email: string = COACH_EMAIL,
+  password: string = COACH_PASSWORD,
+): Promise<string> {
   const res = await request.post(`${apiBaseUrl()}/api/auth/login`, {
-    data: { email: COACH_EMAIL, password: COACH_PASSWORD },
+    data: { email, password },
   });
   expect(res.ok(), 'login por API del coach demo').toBeTruthy();
   const body = (await res.json()) as { access_token: string };
@@ -33,8 +42,12 @@ async function apiToken(request: APIRequestContext): Promise<string> {
  * Devuelve el id del atleta demo: el de menor id que tenga mediciones.
  * Si ninguno tiene, devuelve el de menor id (el sembrado primero).
  */
-export async function resolveDemoAthleteId(request: APIRequestContext): Promise<number> {
-  const token = await apiToken(request);
+export async function resolveDemoAthleteId(
+  request: APIRequestContext,
+  email: string = COACH_EMAIL,
+  password: string = COACH_PASSWORD,
+): Promise<number> {
+  const token = await apiToken(request, email, password);
   const headers = { Authorization: `Bearer ${token}` };
   const listRes = await request.get(`${apiBaseUrl()}/api/athletes`, { headers });
   expect(listRes.ok(), 'listado de atletas por API').toBeTruthy();
@@ -54,10 +67,14 @@ export async function resolveDemoAthleteId(request: APIRequestContext): Promise<
 }
 
 /** Login del coach por la UI (mismo flujo que los specs históricos). */
-export async function loginAsCoach(page: Page): Promise<void> {
+export async function loginAsCoach(
+  page: Page,
+  email: string = COACH_EMAIL,
+  password: string = COACH_PASSWORD,
+): Promise<void> {
   await page.goto('/login');
-  await page.getByRole('textbox', { name: /correo/i }).fill(COACH_EMAIL);
-  await page.getByRole('textbox', { name: /contraseña/i }).fill(COACH_PASSWORD);
+  await page.getByRole('textbox', { name: /correo/i }).fill(email);
+  await page.getByRole('textbox', { name: /contraseña/i }).fill(password);
   await page.getByRole('button', { name: /iniciar sesión|ingresar/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }

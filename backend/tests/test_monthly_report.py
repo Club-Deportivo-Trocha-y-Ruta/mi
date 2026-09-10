@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.schemas.training_session import MonthlyMetrics, ParentMonthlySummary
+from app.services.request_context import request_id_scope
 from app.services.training.reports import (
     _validate_period,
     generate_monthly_report,
@@ -139,7 +140,12 @@ class TestGenerateMonthlyReport:
             return result
 
         db.execute = mock_execute
-        db.add = MagicMock()
+
+        def _fake_add(obj):
+            if getattr(obj, "id", None) is None:
+                obj.id = 1
+
+        db.add = MagicMock(side_effect=_fake_add)
         db.flush = AsyncMock()
 
         metrics = _make_empty_metrics()
@@ -178,17 +184,19 @@ class TestGenerateMonthlyReport:
 
                 db.execute = mock_execute2
 
-                report = await generate_monthly_report(
-                    db=db,
-                    club_id=1,
-                    year=2026,
-                    month=3,
-                    generator_user=coach,
-                    ai_use_case=ai_use_case,
-                )
+                with request_id_scope():
+                    report = await generate_monthly_report(
+                        db=db,
+                        club_id=1,
+                        year=2026,
+                        month=3,
+                        generator_user=coach,
+                        ai_use_case=ai_use_case,
+                    )
 
         assert report is not None
-        db.add.assert_called_once()
+        # db.add se llama para el reporte y para la fila de auditoría (T025).
+        db.add.assert_called()
         db.flush.assert_called()
 
     @pytest.mark.asyncio
@@ -250,15 +258,16 @@ class TestGenerateMonthlyReport:
             "app.services.training.reports.compute_monthly_metrics",
             AsyncMock(return_value=metrics),
         ), patch("app.services.training.reports._validate_period"):
-            report = await generate_monthly_report(
-                db=db,
-                club_id=1,
-                year=2026,
-                month=3,
-                generator_user=coach,
-                force_regenerate=True,
-                ai_use_case=ai_use_case,
-            )
+            with request_id_scope():
+                report = await generate_monthly_report(
+                    db=db,
+                    club_id=1,
+                    year=2026,
+                    month=3,
+                    generator_user=coach,
+                    force_regenerate=True,
+                    ai_use_case=ai_use_case,
+                )
 
         # Debe retornar el existente modificado (no un objeto nuevo)
         assert report is existing
@@ -294,7 +303,12 @@ class TestGenerateMonthlyReport:
             return result
 
         db.execute = mock_execute
-        db.add = MagicMock()
+
+        def _fake_add(obj):
+            if getattr(obj, "id", None) is None:
+                obj.id = 1
+
+        db.add = MagicMock(side_effect=_fake_add)
         db.flush = AsyncMock()
 
         standard_keys = [
@@ -329,14 +343,15 @@ class TestGenerateMonthlyReport:
             "app.services.training.reports.compute_monthly_metrics",
             AsyncMock(return_value=metrics),
         ), patch("app.services.training.reports._validate_period"):
-            report = await generate_monthly_report(
-                db=db,
-                club_id=1,
-                year=2026,
-                month=3,
-                generator_user=coach,
-                blocks_use_case=blocks_use_case,
-            )
+            with request_id_scope():
+                report = await generate_monthly_report(
+                    db=db,
+                    club_id=1,
+                    year=2026,
+                    month=3,
+                    generator_user=coach,
+                    blocks_use_case=blocks_use_case,
+                )
 
         # run_all_blocks se invocó sin block_keys explícito (deja que el use
         # case decida el listado estándar — no hay lista hardcodeada aquí).
@@ -490,9 +505,14 @@ class TestGetMonthlyReportAthleteNames:
         report_res.scalar_one_or_none.return_value = report
         athletes_res = MagicMock()
         athletes_res.scalars.return_value.all.return_value = [athlete]
+        # T071: `get_monthly_report` ahora resuelve los ActorRef
+        # (generated_by/approved_by/previous_approved_by/updated_by) con un
+        # tercer SELECT sobre `users` (`_attach_actor_refs`).
+        actors_res = MagicMock()
+        actors_res.scalars.return_value.all.return_value = []
 
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[report_res, athletes_res])
+        db.execute = AsyncMock(side_effect=[report_res, athletes_res, actors_res])
 
         coach = _make_user(1)
         coach.role = UserRole.coach
@@ -518,9 +538,14 @@ class TestGetMonthlyReportAthleteNames:
 
         report_res = MagicMock()
         report_res.scalar_one_or_none.return_value = report
+        # T071: `_attach_actor_refs` corre para todo rol (coach y padre) —
+        # un padre no consulta atletas, pero sí resuelve ActorRef (y luego
+        # el router vuelve a limpiar previous_approved_* para él).
+        actors_res = MagicMock()
+        actors_res.scalars.return_value.all.return_value = []
 
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[report_res])
+        db.execute = AsyncMock(side_effect=[report_res, actors_res])
 
         parent = _make_user(2)
         parent.role = UserRole.parent
@@ -536,8 +561,12 @@ class TestGetMonthlyReportAthleteNames:
         # Padre NUNCA recibe nombres de menores ni observaciones del coach.
         assert out.athlete_names == {}
         assert out.coach_observations is None
-        # Solo hubo 1 query (reporte); no se consultaron atletas.
-        assert db.execute.await_count == 1
+        # Padre nunca recibe evidencia de una aprobación superada (T071 §5.4).
+        assert out.previous_approved_by is None
+        assert out.previous_approved_at is None
+        # 2 queries: reporte + resolución de ActorRef; no se consultaron
+        # atletas (esa rama está gateada por `not is_parent`).
+        assert db.execute.await_count == 2
 
 
 # ---------------------------------------------------------------------------

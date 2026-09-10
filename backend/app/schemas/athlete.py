@@ -5,6 +5,7 @@ from pydantic import BaseModel, field_validator
 from app.models.anthropometry import MaturationStatus
 from app.models.athlete import Sex
 from app.schemas.anthropometry import AnthropometryOut, GrowthPercentiles
+from app.services.audit import AthleteArchiveReasonCode, AthleteRestoreReasonCode
 
 
 class AthleteCreate(BaseModel):
@@ -43,6 +44,31 @@ class AthleteUpdate(BaseModel):
         return v
 
 
+class AthleteArchiveIn(BaseModel):
+    """Cuerpo de ``DELETE /api/athletes/{id}`` (contracts/athlete-archive.md §1).
+
+    ``reason_code`` es obligatorio: cerrar el motivo a un catálogo evita que
+    un coach escriba el nombre de un menor en un campo libre (FR-003).
+    """
+
+    reason_code: AthleteArchiveReasonCode
+
+
+class AthleteRestoreIn(BaseModel):
+    """Cuerpo de ``POST /api/athletes/{id}/restore`` (contracts/athlete-archive.md §2)."""
+
+    reason_code: AthleteRestoreReasonCode
+
+
+class AthleteDeletedByOut(BaseModel):
+    """Autor resuelto del archivado — nunca un id crudo (FR-013)."""
+
+    user_id: int
+    display_name: str
+
+    model_config = {"from_attributes": True}
+
+
 class AthleteOut(BaseModel):
     id: int
     user_id: int
@@ -58,6 +84,11 @@ class AthleteOut(BaseModel):
     created_at: datetime
     parental_consent_obtained: bool = False
     parental_consent_date: datetime | None = None
+    # Solo poblados para admin en GET /api/athletes?include_archived=true
+    # (contracts/athlete-archive.md §4); ausentes/null para coach y parent.
+    deleted_at: datetime | None = None
+    deleted_reason_code: str | None = None
+    deleted_by: AthleteDeletedByOut | None = None
 
     model_config = {"from_attributes": True}
 

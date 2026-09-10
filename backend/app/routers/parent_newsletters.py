@@ -46,6 +46,7 @@ from app.models.athlete import Athlete
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 from app.models.user import User, UserRole
 from app.schemas.parent_newsletter import ParentNewsletterListItem, ParentNewsletterOut
+from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
 from app.services.permissions import parent_athlete_ids
 from app.services.training.stage_log import StageLog, to_parent_dto
 
@@ -192,7 +193,16 @@ async def download_parent_newsletter_pdf(
     await _verify_parent_athlete_link(db, current_user, athlete_id)
     nl = await _get_sent_bitacora_or_404(db, athlete_id, newsletter_id)
 
-    athlete_result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    # FR-014: el PDF de la bitácora es superficie de familia — un atleta
+    # archivado ya no se descarga (``_verify_parent_athlete_link`` arriba ya
+    # lo excluye vía ``parent_athlete_ids``; el filtro se repite aquí para
+    # que la consulta sea correcta por sí sola).
+    athlete_result = await db.execute(
+        select(Athlete).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
+    )
     athlete = athlete_result.scalar_one_or_none()
     if athlete is None:
         raise HTTPException(
@@ -233,6 +243,19 @@ async def download_parent_newsletter_pdf(
         await db.flush()
         await db.commit()
 
+    # Fila de exportación en CADA descarga (§4.13 audit-recording.md,
+    # peligro #1): no solo cuando el hash cambió.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.athlete_monthly_newsletter,
+        entity_id=nl.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        meta={"document_kind": AuditDocumentKind.newsletter_pdf.value},
+    )
+
     return Response(
         content=doc.data,
         media_type="application/pdf",
@@ -261,6 +284,39 @@ async def mark_parent_newsletter_read(
     if nl.read_at is None:
         nl.read_at = datetime.now(timezone.utc)
         nl.read_by_user_id = current_user.id
+
+        # Auditoría (feature 041, contracts/audit-recording.md §4.8): la
+        # marca de lectura la escribe la familia — `actor_kind=user`,
+        # `actor_role=parent`. Que el padre no pueda leer el historial
+        # (FR-006) no exime su escritura. La fila se encola ANTES del flush
+        # para compartir la unidad de trabajo (§1.3); `club_id` sale del club
+        # del atleta (§1.6, paso 3: la bitácora no tiene columna de club).
+        # Solo NOMBRES de columna: `read_at` y `read_by_user_id` no están en
+        # `VALUE_ALLOWLIST[athlete_monthly_newsletter]`, y ningún texto
+        # narrativo de la bitácora toca la fila.
+        # `deleted_at.is_(None)` no es decorativo: la compuerta de alcance de
+        # archivo (`tests/test_archive_scope_gate.py`) exige el filtro en toda
+        # consulta a `Athlete`, y `_verify_parent_athlete_link` ya descartó
+        # atletas archivados unas líneas arriba (FR-014).
+        club_id = (
+            await db.execute(
+                select(Athlete.club_id).where(
+                    Athlete.id == athlete_id,
+                    Athlete.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.athlete_monthly_newsletter,
+            entity_id=nl.id,
+            actor=current_user,
+            club_id=club_id,
+            athlete_id=athlete_id,
+            changed_fields=["read_at", "read_by_user_id"],
+        )
+
         await db.flush()
 
         try:

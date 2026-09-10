@@ -116,6 +116,10 @@ class AgentRun(Base):
     # NULL = vigente. NOT NULL = stale desde ese timestamp. Sin default →
     # migración no bloqueante; filas existentes quedan NULL (vigentes).
     stale_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    decided_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 

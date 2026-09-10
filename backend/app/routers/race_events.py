@@ -34,7 +34,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
+from app.models.audit_log import AuditAction
 from app.models.race_event import RaceEvent, RaceEventStatus
+from app.models.race_event_roster import RaceEventRoster
 from app.models.race_result import RaceResult
 from app.models.user import User, UserRole
 from app.schemas.race_event import (
@@ -54,8 +56,10 @@ import app.services.race.results_read as results_svc
 import app.services.race.roster as roster_svc
 import app.services.race.standings as standings_svc
 from app.models.race_series import RaceSeries, RaceSeriesKind
+from app.services.audit import AuditEntityType, record_audit
 from app.services.permissions import allowed_athlete_ids_for
 from app.services.race.series_rules import assert_championship_single_event, derive_event_fields_for_series
+from app.services.request_context import AuditContext, get_request_context
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +291,7 @@ async def add_race_event_roster_entry(
     body: RosterEntryCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> RosterEntryRead:
     """Añade un atleta del club a la nómina de convocados del evento.
 
@@ -305,6 +310,17 @@ async def add_race_event_roster_entry(
         race_event_id,
         payload=body,
         created_by_user_id=current_user.id,
+    )
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.race_event_roster,
+        entity_id=entry.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        athlete_id=entry.athlete_id,
+        request_id=ctx.request_id,
     )
     logger.info(
         "race_events_roster_add race_event_id=%s entry_id=%s user_id=%s",
@@ -331,6 +347,7 @@ async def update_race_event_roster_entry(
     body: RosterEntryUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> RosterEntryRead:
     """Actualización parcial del estado y/o nota de una entrada de nómina.
 
@@ -343,12 +360,26 @@ async def update_race_event_roster_entry(
     - 422: valor fuera de rango.
     - 403: usuario sin rol coach o admin.
     """
+    updated_fields = sorted(body.model_dump(exclude_unset=True).keys())
     entry = await roster_svc.update_roster_entry(
         db,
         race_event_id,
         entry_id=entry_id,
         payload=body,
     )
+    if updated_fields:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.race_event_roster,
+            entity_id=entry.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=None,
+            athlete_id=entry.athlete_id,
+            changed_fields=updated_fields,
+            request_id=ctx.request_id,
+        )
     logger.info(
         "race_events_roster_update race_event_id=%s entry_id=%s user_id=%s",
         race_event_id,
@@ -373,6 +404,7 @@ async def delete_race_event_roster_entry(
     entry_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> None:
     """Elimina un atleta de la nómina de convocados del evento.
 
@@ -383,10 +415,28 @@ async def delete_race_event_roster_entry(
     - 404: entrada o evento no existe.
     - 403: usuario sin rol coach o admin.
     """
+    # Snapshot del athlete_id antes de borrar — la fila deja de existir tras
+    # `delete_roster_entry` y `roster_svc` no lo devuelve.
+    entry_result = await db.execute(
+        select(RaceEventRoster.athlete_id).where(RaceEventRoster.id == entry_id)
+    )
+    entry_athlete_id = entry_result.scalar_one_or_none()
+
     await roster_svc.delete_roster_entry(
         db,
         race_event_id,
         entry_id=entry_id,
+    )
+    await record_audit(
+        db,
+        action=AuditAction.delete,
+        entity_type=AuditEntityType.race_event_roster,
+        entity_id=entry_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        athlete_id=entry_athlete_id,
+        request_id=ctx.request_id,
     )
     logger.info(
         "race_events_roster_delete race_event_id=%s entry_id=%s user_id=%s",
@@ -453,6 +503,7 @@ async def create_race_event(
     body: RaceEventCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> RaceEventRead:
     """Crea un nuevo evento de carrera vacío (sin resultados).
 
@@ -514,11 +565,42 @@ async def create_race_event(
         payload=derived_body,
         user_id=current_user.id,
     )
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.race_event,
+        entity_id=event.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        request_id=ctx.request_id,
+    )
 
     # FR-024: create a linked CalendarEvent unless the caller opts out.
     if body.create_calendar_event:
         from app.services.race.calendar_sync import create_linked_calendar_event
-        await create_linked_calendar_event(db=db, race_event=event, user=current_user)
+        cal = await create_linked_calendar_event(db=db, race_event=event, user=current_user)
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.calendar_event,
+            entity_id=cal.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=None,
+            request_id=ctx.request_id,
+        )
+        await record_audit(
+            db,
+            action=AuditAction.link,
+            entity_type=AuditEntityType.race_event,
+            entity_id=event.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=None,
+            meta={"related_entity_id": cal.id},
+            request_id=ctx.request_id,
+        )
 
     return RaceEventRead.model_validate(event)
 
@@ -538,6 +620,7 @@ async def update_race_event(
     body: RaceEventUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> RaceEventRead:
     """Actualización parcial de metadata de un evento.
 
@@ -552,11 +635,24 @@ async def update_race_event(
     - 422: valor fuera de rango.
     - 403: usuario sin rol coach o admin.
     """
+    updated_fields = sorted(body.model_dump(exclude_unset=True).keys())
     event = await race_events_svc.update_race_event(
         db=db,
         race_event_id=race_event_id,
         payload=body,
     )
+    if updated_fields:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.race_event,
+            entity_id=event.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=None,
+            changed_fields=updated_fields,
+            request_id=ctx.request_id,
+        )
     return RaceEventRead.model_validate(event)
 
 
@@ -574,6 +670,7 @@ async def delete_race_event(
     race_event_id: int,
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(require_role([UserRole.admin])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> None:
     """Elimina un evento de carrera si no tiene dependencias.
 
@@ -591,6 +688,16 @@ async def delete_race_event(
     - 403: usuario sin rol admin.
     """
     await race_events_svc.delete_race_event(db=db, race_event_id=race_event_id)
+    await record_audit(
+        db,
+        action=AuditAction.delete,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        request_id=ctx.request_id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -607,6 +714,7 @@ async def cleanup_duplicate_race_event(
     race_event_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> None:
     """Elimina una válida **duplicada sin resultados** junto con su evento de calendario.
 
@@ -622,6 +730,17 @@ async def cleanup_duplicate_race_event(
     - 403: usuario sin rol coach.
     """
     await race_events_svc.cleanup_duplicate_race_event(db=db, race_event_id=race_event_id)
+    await record_audit(
+        db,
+        action=AuditAction.delete,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        meta={"job": "duplicate_cleanup"},
+        request_id=ctx.request_id,
+    )
     logger.info(
         "race_event_cleanup_request race_event_id=%s user_id=%s",
         race_event_id,
@@ -645,6 +764,7 @@ async def link_calendar_event(
     body: CalendarLinkRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> CalendarLinkRead:
     """Asocia un ``CalendarEvent`` de tipo *competition* ya existente con esta válida.
 
@@ -676,6 +796,17 @@ async def link_calendar_event(
         calendar_event_id=body.calendar_event_id,
         user=current_user,
     )
+    await record_audit(
+        db,
+        action=AuditAction.link,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        meta={"related_entity_id": cal.id},
+        request_id=ctx.request_id,
+    )
 
     logger.info(
         "race_events_calendar_link race_event_id=%s cal_id=%s user_id=%s",
@@ -701,6 +832,7 @@ async def create_calendar_event_for_race_event(
     race_event_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> CalendarAutoCreateRead:
     """Crea un ``CalendarEvent`` all-day de tipo *competition* y lo vincula a la válida.
 
@@ -738,6 +870,27 @@ async def create_calendar_event_for_race_event(
         user=current_user,
         all_day=True,
     )
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.calendar_event,
+        entity_id=cal.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        request_id=ctx.request_id,
+    )
+    await record_audit(
+        db,
+        action=AuditAction.link,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        meta={"related_entity_id": cal.id},
+        request_id=ctx.request_id,
+    )
     await db.commit()
 
     logger.info(
@@ -768,6 +921,7 @@ async def update_race_event_conditions(
     body: RaceEventConditionsUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> RaceEventConditionsRead:
     """Actualización parcial de condiciones de carrera de un ``RaceEvent``.
 
@@ -818,6 +972,18 @@ async def update_race_event_conditions(
         setattr(event, campo, valor)
 
     await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.race_event,
+        entity_id=event.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=sorted(campos_actualizados.keys()),
+        request_id=ctx.request_id,
+    )
 
     # Log mínimo: campos modificados (no sus valores — weather_notes es texto libre)
     logger.info(
@@ -877,6 +1043,7 @@ async def set_race_result_coach_note(
     body: CoachNoteUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> ResultRow:
     """Escribe (o reemplaza) la nota cualitativa del entrenador para un resultado.
 
@@ -922,6 +1089,19 @@ async def set_race_result_coach_note(
 
     await db.flush()
 
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.race_result,
+        entity_id=race_result.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        athlete_id=race_result.athlete_id,
+        changed_fields=["coach_note", "coach_note_author_id", "coach_note_updated_at"],
+        request_id=ctx.request_id,
+    )
+
     logger.info(
         "race_result_coach_note_set result_id=%s athlete_id=%s user_id=%s",
         result_id,
@@ -946,6 +1126,7 @@ async def clear_race_result_coach_note(
     result_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> ResultRow:
     """Elimina la nota cualitativa del entrenador de un resultado.
 
@@ -976,6 +1157,19 @@ async def clear_race_result_coach_note(
         race_result.coach_note_author_id = None
         race_result.coach_note_updated_at = None
         await db.flush()
+
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.race_result,
+            entity_id=race_result.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=None,
+            athlete_id=race_result.athlete_id,
+            changed_fields=["coach_note", "coach_note_author_id", "coach_note_updated_at"],
+            request_id=ctx.request_id,
+        )
 
     logger.info(
         "race_result_coach_note_clear result_id=%s athlete_id=%s user_id=%s",

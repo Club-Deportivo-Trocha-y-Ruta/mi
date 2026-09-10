@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.mixins import UpdatedByMixin
 
 if TYPE_CHECKING:
     from app.models.agent_run import AgentRun
@@ -39,11 +40,12 @@ class FamilyRelationship(str, enum.Enum):
     acudiente = "acudiente"
 
 
-class Athlete(Base):
+class Athlete(UpdatedByMixin, Base):
     __tablename__ = "athletes"
     __table_args__ = (
         Index("ix_athletes_club_id", "club_id"),
         Index("ix_athletes_created_by", "created_by"),
+        Index("ix_athletes_deleted_at", "deleted_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -67,6 +69,11 @@ class Athlete(Base):
     parental_consent_date: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, default=None
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    deleted_reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     # Usuario vinculado al atleta (1-a-1)
     user: Mapped[User] = relationship(

@@ -45,6 +45,7 @@ from tests.fixtures.race_history_fixtures import (
     create_race_series,
     create_user,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 _TABLES_NEEDED = [
     "users",
@@ -58,6 +59,7 @@ _TABLES_NEEDED = [
     "race_competitors",
     "race_results",
     "race_result_revisions",
+    *AUDIT_TABLES,
 ]
 
 

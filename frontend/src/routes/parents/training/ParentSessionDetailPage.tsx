@@ -43,6 +43,12 @@ function SkeletonCard() {
   );
 }
 
+// Feature 041 — gobernanza multi-coach (T067). Decisión: esta página NO
+// agrega el nombre de los entrenadores. contracts/session-coaches.md §3.1
+// dice explícitamente que `TrainingSessionReadParent` queda sin cambios —
+// FR-025 pone el nombre del entrenador solo en el email de la familia, nunca
+// en una pantalla, y un test del contrato (§12, B-14) exige que el payload
+// del padre NO traiga `coaches`. Ver reporte de T067.
 export function ParentSessionDetailPage() {
   const { id } = useParams();
   const sessionId = Number(id);

@@ -46,6 +46,7 @@ from tests.fixtures.race_history_fixtures import (
     create_user,
 )
 from app.models.user import UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +75,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_series",
             "race_events",
             "athlete_ai_insights",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

@@ -68,6 +68,9 @@ class SessionMedia(Base):
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     session: Mapped["TrainingSession"] = relationship(
         "TrainingSession",

@@ -55,6 +55,7 @@ from app.main import app
 from app.models import Base
 from app.models.user import UserRole
 from app.routers.race_analysis import _admin_only, _coach_or_admin
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
@@ -68,7 +69,20 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
+def _make_user(
+    role: UserRole, user_id: int = 10, club_ids: tuple[int, ...] = ()
+) -> SimpleNamespace:
+    """Usuario falso para ``dependency_overrides``.
+
+    ``club_ids`` alimenta ``club_memberships``, que es lo que lee
+    ``permissions.coach_club_ids``. Desde el arreglo de alcance por club de
+    la feature 041 (H1/H2: un entrenador ajeno no puede lanzar ni listar
+    corridas de una menor de otro club), un coach sin membresías no alcanza
+    ningún deportista, así que el fixture del coach debe declarar el club
+    que siembra ``_seed_base`` o toda la ruta responde 403.
+    """
+    from app.models.club import ClubRole
+
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
@@ -77,7 +91,10 @@ def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=cid, role_in_club=ClubRole.coach)
+            for cid in club_ids
+        ],
     )
 
 
@@ -103,6 +120,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     checkpoint_thread_id TEXT NOT NULL,
     explain_mode    INTEGER NOT NULL DEFAULT 0,
     stale_since     TEXT,
+    decided_by_user_id INTEGER,
+    decided_at      TEXT,
     created_at      TEXT,
     updated_at      TEXT
 )
@@ -144,6 +163,7 @@ async def session_factory() -> async_sessionmaker[AsyncSession]:
         "race_categories",
         "race_competitors",
         "race_results",
+        *AUDIT_TABLES,
     ]
     tables = [Base.metadata.tables[t] for t in table_names]
 
@@ -391,7 +411,10 @@ async def http_client(session_factory):
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[_coach_or_admin] = lambda: _make_user(UserRole.coach, 10)
+    # El club sembrado por ``_seed_base`` es ``user_id * 1000 + 1``.
+    app.dependency_overrides[_coach_or_admin] = lambda: _make_user(
+        UserRole.coach, 10, club_ids=(10 * 1000 + 1,)
+    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -772,12 +795,14 @@ class TestListEventRuns:
         self, http_client, session_factory
     ):
         """active_only=false includes terminal runs from last 7 days."""
+        # user_id=10 coincide con el coach autenticado por ``http_client``
+        # (club_ids=(10 * 1000 + 1,)); ver docstring de ``_make_user``.
         seed = await _seed_base(
             session_factory,
             n_athletes=2,
             event_id=43,
             series_id=2,
-            user_id=11,
+            user_id=10,
         )
         aid0, aid1 = seed["athlete_ids"]
 
@@ -809,12 +834,13 @@ class TestListEventRuns:
         self, http_client, session_factory
     ):
         """Run with stale_since IS NOT NULL → stale=true, state=hitl_waiting."""
+        # user_id=10 coincide con el coach autenticado por ``http_client``.
         seed = await _seed_base(
             session_factory,
             n_athletes=1,
             event_id=44,
             series_id=3,
-            user_id=12,
+            user_id=10,
         )
         aid = seed["athlete_ids"][0]
 
@@ -842,12 +868,13 @@ class TestListEventRuns:
         self, http_client, session_factory
     ):
         """Run with stale_since IS NULL → stale=false."""
+        # user_id=10 coincide con el coach autenticado por ``http_client``.
         seed = await _seed_base(
             session_factory,
             n_athletes=1,
             event_id=45,
             series_id=4,
-            user_id=13,
+            user_id=10,
         )
         aid = seed["athlete_ids"][0]
 

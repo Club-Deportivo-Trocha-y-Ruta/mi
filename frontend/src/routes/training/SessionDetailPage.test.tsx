@@ -104,8 +104,29 @@ import {
 } from "@/api/trainingSessions";
 import { useSessionActivities } from "@/hooks/activities/useSessionActivities";
 import { useUnlinkedActivitiesNearDate } from "@/hooks/activities/useUnlinkedActivitiesNearDate";
+import { apiClient } from "@/api/client";
 import { SessionDetailPage } from "./SessionDetailPage";
 import type { TrainingSession, Attendance } from "@/types/trainingSession.types";
+
+// jsdom no implementa estas APIs de puntero/scroll que Radix Select usa
+// internamente (el picker de motivo de cancelación, feature 041).
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+}
+if (!Element.prototype.releasePointerCapture) {
+  Element.prototype.releasePointerCapture = () => {};
+}
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
+async function selectCancelReason() {
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("combobox", { name: /Motivo de la cancelación/i }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Reprogramada" }));
+}
 
 const mutationStub = {
   mutate: vi.fn(),
@@ -224,6 +245,21 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
   } as unknown as ReturnType<typeof useUnlinkedActivitiesNearDate>);
+  // Catálogo cerrado de motivos de cancelación (feature 041), consultado
+  // por el Select real de NotifyParentsDialog al abrir el diálogo.
+  vi.mocked(apiClient.get).mockImplementation((url: string) => {
+    if (url.includes("/api/audit/reason-codes")) {
+      return Promise.resolve({
+        data: {
+          items: [
+            { code: "cancel_weather", label: "Clima adverso", group: "cancel" },
+            { code: "cancel_rescheduled", label: "Reprogramada", group: "cancel" },
+          ],
+        },
+      });
+    }
+    return Promise.resolve({ data: {} });
+  });
 });
 
 describe("SessionDetailPage", () => {
@@ -294,7 +330,7 @@ describe("SessionDetailPage", () => {
       expect(screen.getByRole("alertdialog")).toHaveTextContent(/cancelación/i);
     });
 
-    it("confirmar cancelación con 'Enviar notificación' llama la mutación con notify=true", () => {
+    it("confirmar cancelación con 'Enviar notificación' llama la mutación con notify=true", async () => {
       const mutate = vi.fn();
       vi.mocked(useCancelTrainingSession).mockReturnValue({
         ...mutationStub,
@@ -302,14 +338,24 @@ describe("SessionDetailPage", () => {
       } as unknown as ReturnType<typeof useCancelTrainingSession>);
       renderPage();
       fireEvent.click(screen.getByTestId("cancel-session-button"));
+      await selectCancelReason();
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: /Enviar notificación/i }),
+        ).toBeEnabled(),
+      );
       fireEvent.click(screen.getByRole("button", { name: /Enviar notificación/i }));
       expect(mutate).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 1, notify: true }),
+        expect.objectContaining({
+          id: 1,
+          notify: true,
+          reasonCode: "cancel_rescheduled",
+        }),
         expect.any(Object),
       );
     });
 
-    it("confirmar cancelación con 'No enviar' llama la mutación con notify=false", () => {
+    it("confirmar cancelación con 'No enviar' llama la mutación con notify=false", async () => {
       const mutate = vi.fn();
       vi.mocked(useCancelTrainingSession).mockReturnValue({
         ...mutationStub,
@@ -317,9 +363,17 @@ describe("SessionDetailPage", () => {
       } as unknown as ReturnType<typeof useCancelTrainingSession>);
       renderPage();
       fireEvent.click(screen.getByTestId("cancel-session-button"));
+      await selectCancelReason();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /No enviar/i })).toBeEnabled(),
+      );
       fireEvent.click(screen.getByRole("button", { name: /No enviar/i }));
       expect(mutate).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 1, notify: false }),
+        expect.objectContaining({
+          id: 1,
+          notify: false,
+          reasonCode: "cancel_rescheduled",
+        }),
         expect.any(Object),
       );
     });

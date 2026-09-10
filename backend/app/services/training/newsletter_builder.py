@@ -168,8 +168,14 @@ async def build_newsletter_metrics(
     """
     from app.models.athlete import Athlete
 
+    # FR-014 (contract athlete-archive.md §5.2): no se construyen métricas de
+    # boletín para un atleta archivado — el boletín es superficie de familia y
+    # un archivado no debe generar contenido nuevo.
     athlete_result = await db.execute(
-        select(Athlete).where(Athlete.id == athlete_id)
+        select(Athlete).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
     )
     athlete = athlete_result.scalar_one_or_none()
     if athlete is None:
@@ -364,6 +370,10 @@ async def _build_attendance_block(
         select(SessionAttendance).where(
             SessionAttendance.session_id.in_(session_ids),
             SessionAttendance.athlete_id == athlete.id,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
     )
     attendances = att_result.scalars().all()
@@ -437,6 +447,10 @@ async def _get_prev_month_attendance(
         select(SessionAttendance).where(
             SessionAttendance.session_id.in_(session_ids),
             SessionAttendance.athlete_id == athlete.id,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
     )
     attendances = att_result.scalars().all()
@@ -503,6 +517,10 @@ async def _build_technical_block(
         select(SessionAttendance).where(
             SessionAttendance.session_id.in_(session_ids),
             SessionAttendance.athlete_id == athlete.id,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
     )
     attendances = att_result.scalars().all()
@@ -849,8 +867,9 @@ async def _build_calendar_block(
             "duration_min": s.duration_min,
         })
 
-    # Próximos eventos de carrera del calendario (Calendario Copa Valle)
-    next_races = _get_upcoming_copa_valle_races(month_end)
+    # Próximas carreras: del calendario real (`race_events`), con la lista
+    # literal solo como red de seguridad — ver `_get_upcoming_copa_valle_races`.
+    next_races = await _get_upcoming_races(db, month_end)
 
     return {
         "next_training_sessions": sessions_out,
@@ -858,14 +877,66 @@ async def _build_calendar_block(
     }
 
 
+_ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
+
+
+async def _get_upcoming_races(db: AsyncSession, after_date: date) -> list[dict[str, Any]]:
+    """Próximas carreras a partir de ``race_events`` — el calendario real.
+
+    Sustituye a la lista literal de :func:`_get_upcoming_copa_valle_races`,
+    que quedaba desactualizada en silencio: en septiembre de 2026 anunciaba
+    a las familias una válida en Roldanillo el 12 de septiembre cuando el
+    calendario oficial la fija el 8 de noviembre, y el boletín no tenía
+    forma de notarlo porque nunca miraba la base.
+
+    La lista literal se conserva como red de seguridad y solo entra cuando
+    no hay ningún evento futuro cargado, para no dejar el bloque "Próximo
+    tramo" vacío en un club que aún no registre su calendario.
+    """
+    from app.models.race_event import RaceEvent, RaceEventStatus
+
+    result = await db.execute(
+        select(RaceEvent)
+        .where(
+            RaceEvent.event_date > after_date,
+            RaceEvent.status != RaceEventStatus.CANCELLED,
+        )
+        .order_by(RaceEvent.event_date)
+        .limit(3)
+    )
+    events = result.scalars().all()
+    if not events:
+        return _get_upcoming_copa_valle_races(after_date)
+
+    out: list[dict[str, Any]] = []
+    for e in events:
+        seq = e.sequence_number
+        label = _ROMAN[seq] if isinstance(seq, int) and 0 < seq < len(_ROMAN) else str(seq or "")
+        out.append({
+            "valida": label,
+            "date": e.event_date.isoformat(),
+            "location": e.location or "",
+            # `is_championship` es el único dato de importancia que el modelo
+            # expone hoy; el resto de las carreras se anuncian sin etiqueta de
+            # prioridad, que es una decisión del entrenador y no del calendario.
+            "priority": "A" if e.is_championship else None,
+        })
+    return out
+
+
 def _get_upcoming_copa_valle_races(after_date: date) -> list[dict[str, Any]]:
-    """Retorna las próximas válidas de la Copa Valle 2026 tras la fecha dada."""
+    """Red de seguridad: calendario oficial Copa Valle 2026 (afiche de la
+    Comisión Vallecaucana). Solo se usa cuando ``race_events`` no tiene
+    ninguna carrera futura cargada — ver :func:`_get_upcoming_races`."""
     calendar_copa_valle_2026 = [
+        {"valida": "I", "date": "2026-02-01", "location": "Sevilla", "priority": "B"},
+        {"valida": "II", "date": "2026-03-01", "location": "Ginebra", "priority": "B"},
+        {"valida": "III", "date": "2026-04-19", "location": "La Cumbre", "priority": "B"},
         {"valida": "IV", "date": "2026-05-17", "location": "Cali", "priority": "A"},
-        {"valida": "CD", "date": "2026-06-12", "location": "Ginebra", "priority": "A"},
-        {"valida": "V", "date": "2026-08-01", "location": "Palmira", "priority": "B"},
-        {"valida": "VI", "date": "2026-09-12", "location": "Roldanillo", "priority": "A"},
-        {"valida": "VII", "date": "2026-10-18", "location": "Yumbo", "priority": "B"},
+        {"valida": "CD", "date": "2026-06-14", "location": "Ginebra", "priority": "A"},
+        {"valida": "V", "date": "2026-08-02", "location": "Palmira", "priority": "B"},
+        {"valida": "VI", "date": "2026-10-18", "location": "Yumbo", "priority": "B"},
+        {"valida": "VII", "date": "2026-11-08", "location": "Roldanillo", "priority": "A"},
     ]
     result = []
     for event in calendar_copa_valle_2026:
@@ -960,6 +1031,10 @@ async def _get_athlete_first_session_date(db: AsyncSession, athlete: Any) -> str
             SessionAttendance.athlete_id == athlete.id,
             SessionAttendance.status.in_([AttendanceStatus.PRESENTE, AttendanceStatus.TARDE]),
             TrainingSession.status == SessionStatus.EXECUTED,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
         .order_by(TrainingSession.scheduled_date.asc())
         .limit(1)
@@ -1006,6 +1081,10 @@ async def _build_weekly_block(
         select(SessionAttendance).where(
             SessionAttendance.session_id.in_(session_ids),
             SessionAttendance.athlete_id == athlete.id,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
     )
     attendance_by_session = {a.session_id: a for a in att_result.scalars().all()}

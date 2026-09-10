@@ -207,15 +207,18 @@ class TestRegenerateReportBlockRouterHappyPath:
             "app.services.training.reports.compute_monthly_metrics",
             AsyncMock(return_value=metrics),
         ):
-            out = await regenerate_report_block(
-                club_id=1,
-                year=2026,
-                month=6,
-                block_key="plan_entrenamiento",
-                db=db,
-                current_user=coach,
-                blocks_use_case=blocks_use_case,
-            )
+            from app.services.request_context import request_id_scope
+
+            with request_id_scope():
+                out = await regenerate_report_block(
+                    club_id=1,
+                    year=2026,
+                    month=6,
+                    block_key="plan_entrenamiento",
+                    db=db,
+                    current_user=coach,
+                    blocks_use_case=blocks_use_case,
+                )
 
         blocks_use_case.run_block.assert_awaited_once()
         called_block_key = blocks_use_case.run_block.await_args.args[1]

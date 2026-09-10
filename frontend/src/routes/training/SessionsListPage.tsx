@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { SiblingViewTabs } from "@/components/layout/SiblingViewTabs";
+import { CoachFilter } from "@/components/audit/CoachFilter";
 import { NotifyParentsDialog } from "@/components/training/NotifyParentsDialog";
 import { SessionFiltersBar } from "@/components/training/SessionFiltersBar";
 import { SessionsTable } from "@/components/training/SessionsTable";
@@ -15,6 +16,7 @@ import {
   useExecuteTrainingSession,
   useTrainingSessions,
 } from "@/api/trainingSessions";
+import { useClubStaff } from "@/hooks/governance/useClubStaff";
 import { todayISODate } from "@/lib/datetime";
 import { useTrainingFiltersStore } from "@/store/trainingFiltersStore";
 import type { TrainingSession } from "@/types/trainingSession.types";
@@ -46,10 +48,19 @@ function compareScheduled(a: TrainingSession, b: TrainingSession): number {
 export function SessionsListPage() {
   const { from_date, to_date, status } = useTrainingFiltersStore();
 
+  // Feature 041 — filtro "Entrenador" (contracts/session-coaches.md §10.3).
+  // El contrato persiste este campo en `useTrainingFiltersStore`, pero ese
+  // store es de otra tarea de esta ola (fuera del alcance de archivos que
+  // T067 puede tocar) — se modela como estado local no persistido; ver
+  // reporte de T067 para el seguimiento de esta decisión.
+  const [coachUserId, setCoachUserId] = useState<number | null>(null);
+  const { coaches, isLoading: isStaffLoading } = useClubStaff();
+
   const filters = {
     from_date,
     to_date,
     ...(status ? { status } : {}),
+    ...(coachUserId != null ? { coach_user_id: coachUserId } : {}),
   };
 
   const sessionsQuery = useTrainingSessions(filters);
@@ -72,8 +83,9 @@ export function SessionsListPage() {
     () => ({
       from_date: todayISODate(),
       to_date: addDaysISO(todayISODate(), FALLBACK_WINDOW_DAYS),
+      ...(coachUserId != null ? { coach_user_id: coachUserId } : {}),
     }),
-    [],
+    [coachUserId],
   );
   const fallbackQuery = useTrainingSessions(fallbackFilters, needsFallback);
 
@@ -125,6 +137,17 @@ export function SessionsListPage() {
       />
 
       <SessionFiltersBar />
+
+      <div className="rounded-xl bg-white p-4 shadow-card">
+        <CoachFilter
+          coaches={coaches}
+          value={coachUserId}
+          onChange={setCoachUserId}
+          disabled={isStaffLoading}
+          showClear={coachUserId != null}
+          onClear={() => setCoachUserId(null)}
+        />
+      </div>
 
       {sessionsQuery.isLoading && (
         <div className="space-y-2 rounded-xl bg-white p-4 shadow-ring">
@@ -221,18 +244,18 @@ export function SessionsListPage() {
             ? "No se pudo cancelar la sesión. Intenta de nuevo."
             : null
         }
-        onSend={(reason) => {
-          if (cancelTarget) {
+        onSend={(reason, reasonCode) => {
+          if (cancelTarget && reasonCode) {
             cancelMutation.mutate(
-              { id: cancelTarget.id, notify: true, reason },
+              { id: cancelTarget.id, notify: true, reason, reasonCode },
               { onSettled: () => setCancelTarget(null) },
             );
           }
         }}
-        onSkip={() => {
-          if (cancelTarget) {
+        onSkip={(reasonCode) => {
+          if (cancelTarget && reasonCode) {
             cancelMutation.mutate(
-              { id: cancelTarget.id, notify: false },
+              { id: cancelTarget.id, notify: false, reasonCode },
               { onSettled: () => setCancelTarget(null) },
             );
           }

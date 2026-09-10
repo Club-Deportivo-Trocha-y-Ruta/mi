@@ -34,6 +34,8 @@ from app.models import Base
 from app.models.athlete import Athlete, Sex
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 from app.routers.athlete_monthly_newsletters import _validate_period
+from app.services.request_context import request_id_scope
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -63,13 +65,14 @@ def make_user(
     )
 
 
-def make_athlete(id_: int = 5, club_id: int = 1) -> Any:
+def make_athlete(id_: int = 5, club_id: int = 1, deleted_at: Any = None) -> Any:
     return SimpleNamespace(
         id=id_,
         club_id=club_id,
         first_name="Atleta",
         last_name="Test",
         birth_date=date(2012, 3, 15),
+        deleted_at=deleted_at,
     )
 
 
@@ -671,12 +674,13 @@ async def test_attach_insights_creates_newsletter_when_not_exists():
         new_callable=AsyncMock,
         return_value="coach",
     ):
-        result = await attach_insights(
-            athlete_id=5,
-            body=body,
-            db=db,
-            current_user=coach,
-        )
+        with request_id_scope():
+            result = await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
 
     assert result.created is True
     assert result.newsletter_id == 42
@@ -726,16 +730,21 @@ async def test_attach_insights_appends_to_existing_newsletter():
         new_callable=AsyncMock,
         return_value="coach",
     ):
-        result = await attach_insights(
-            athlete_id=5,
-            body=body,
-            db=db,
-            current_user=coach,
-        )
+        with request_id_scope():
+            result = await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
 
     assert result.created is False
     assert result.selected_race_insight_ids == [10, 20, 30]
-    db.add.assert_not_called()
+    # No se crea un nuevo AthleteMonthlyNewsletter (append sobre el existente);
+    # db.add sí se llama una vez para la fila de auditoría (T026, action=link).
+    added_types = [type(call.args[0]).__name__ for call in db.add.call_args_list]
+    assert "AthleteMonthlyNewsletter" not in added_types
+    assert added_types == ["AuditLog"]
 
 
 @pytest.mark.asyncio
@@ -1047,12 +1056,13 @@ async def test_attach_insights_custom_year_month():
         new_callable=AsyncMock,
         return_value="coach",
     ):
-        result = await attach_insights(
-            athlete_id=5,
-            body=body,
-            db=db,
-            current_user=coach,
-        )
+        with request_id_scope():
+            result = await attach_insights(
+                athlete_id=5,
+                body=body,
+                db=db,
+                current_user=coach,
+            )
 
     assert result.year == 2025
     assert result.month == 1
@@ -1124,6 +1134,7 @@ _T102_TABLES = (
     "athletes",
     "athlete_monthly_newsletters",
     "newsletter_delivery_events",
+    *AUDIT_TABLES,
 )
 
 
@@ -1262,7 +1273,9 @@ class TestPatchStageLogV2:
         }
         async with client as c:
             resp = await c.patch(
-                f"/api/athletes/5/monthly-newsletters/{nl.id}", json=body
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json=body,
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text
@@ -1285,7 +1298,9 @@ class TestPatchStageLogV2:
         body = {"coach_note": "Gran mes para Atleta Ficticio, sigue asi."}
         async with client as c:
             resp = await c.patch(
-                f"/api/athletes/5/monthly-newsletters/{nl.id}", json=body
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json=body,
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text
@@ -1305,6 +1320,7 @@ class TestPatchStageLogV2:
             resp = await c.patch(
                 f"/api/athletes/5/monthly-newsletters/{nl.id}",
                 json={"selected_race_insight_ids": [10, 20, 30]},
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 422
@@ -1322,6 +1338,7 @@ class TestPatchStageLogV2:
             resp = await c.patch(
                 f"/api/athletes/5/monthly-newsletters/{nl.id}",
                 json={"selected_race_insight_ids": [20, 10]},
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text
@@ -1348,6 +1365,7 @@ class TestPatchStageLogV2:
             resp = await c.patch(
                 f"/api/athletes/5/monthly-newsletters/{nl.id}",
                 json={"coach_note": "Nota corta de prueba para el mes."},
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text
@@ -1370,7 +1388,9 @@ class TestPatchStageLogV2:
         body = {"coach_note": "Buen esfuerzo este mes en cada sesion de pista."}
         async with client as c:
             resp = await c.patch(
-                f"/api/athletes/5/monthly-newsletters/{nl.id}", json=body
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json=body,
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text

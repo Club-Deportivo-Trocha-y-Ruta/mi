@@ -15,7 +15,8 @@ y puede afirmar el efecto que de verdad importa: tras cancelar,
 
 RBAC (caminos denegados obligatorios):
   - parent → 403 (rol no permitido, vía ``require_role`` real).
-  - coach que no es dueño del run → 403.
+  - coach de otro club → 403 (el alcance es el club, no la autoría:
+    ``contracts/scope-ai-imports.md`` §1.4).
   - run ya terminal → 409.
   - admin sobre run ajeno → 200.
 """
@@ -23,7 +24,7 @@ RBAC (caminos denegados obligatorios):
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator
 
@@ -40,8 +41,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.dependencies import get_current_user, get_db
 from app.main import app
+from app.models import Base
+from app.models.club import ClubRole
 from app.models.user import UserRole
 from app.services.race.group_launch import find_active_run
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
@@ -65,6 +69,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     checkpoint_thread_id TEXT NOT NULL,
     explain_mode    INTEGER NOT NULL DEFAULT 0,
     stale_since     TEXT,
+    decided_by_user_id INTEGER,
+    decided_at      TEXT,
     created_at      TEXT,
     updated_at      TEXT
 )
@@ -87,7 +93,16 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _make_user(role: UserRole, user_id: int) -> SimpleNamespace:
+def _make_user(
+    role: UserRole, user_id: int, club_ids: tuple[int, ...] = (1,)
+) -> SimpleNamespace:
+    """Usuario falso con membresías de coach.
+
+    El alcance de un run ya no es la autoría sino el club
+    (``contracts/scope-ai-imports.md`` §1.4), así que el arnés tiene que
+    poder decir en qué club está cada coach. El atleta sembrado vive en el
+    club 1, que es el default.
+    """
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
@@ -96,25 +111,106 @@ def _make_user(role: UserRole, user_id: int) -> SimpleNamespace:
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=cid, role_in_club=ClubRole.coach)
+            for cid in club_ids
+        ],
     )
 
 
 @pytest_asyncio.fixture
 async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    # _resolve_athlete_club (app/routers/race_analysis.py) hace un SELECT
+    # ORM sobre Athlete.club_id para poblar audit_log.club_id, y record_audit
+    # escribe en audit_log — ambos tocan tablas reales que este arnés no
+    # creaba. Se registran los modelos y se crean vía Base.metadata igual
+    # que en test_race_event_runs.py.
+    from app.models.user import User as _U  # noqa: F401
+    from app.models.club import Club as _Cl, ClubMember as _CM  # noqa: F401
+    from app.models.athlete import Athlete as _A  # noqa: F401
+
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         future=True,
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
+
+    table_names = ["users", "clubs", "club_members", "athletes", *AUDIT_TABLES]
+    tables = [Base.metadata.tables[t] for t in table_names]
+
     async with engine.begin() as conn:
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
         await conn.execute(text(_AGENT_RUNS_DDL))
         await conn.execute(text(_AGENT_RUN_EVENTS_DDL))
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        await _seed_athlete(session)
+        await session.commit()
+
     yield factory
     await engine.dispose()
+
+
+async def _seed_athlete(session: AsyncSession) -> None:
+    """Fila mínima para que ``_resolve_athlete_club`` resuelva club_id=1."""
+    from app.models.athlete import Athlete, Sex
+    from app.models.club import Club
+    from app.models.user import User
+
+    club_user = User(
+        id=1,
+        email="coach-club@test.local",
+        hashed_password="x",
+        first_name="Coach",
+        last_name="Club",
+        role=UserRole.coach,
+        is_active=True,
+        can_login=True,
+        created_at=_utc_now(),
+    )
+    session.add(club_user)
+    await session.flush()
+
+    club = Club(
+        id=1,
+        name="Club Test",
+        code="CLT",
+        created_at=_utc_now(),
+        is_active=True,
+    )
+    session.add(club)
+    await session.flush()
+
+    athlete_user = User(
+        id=144,
+        email="atleta144@test.local",
+        hashed_password="x",
+        first_name="Atleta",
+        last_name="Test",
+        role=UserRole.coach,
+        is_active=True,
+        can_login=True,
+        created_at=_utc_now(),
+    )
+    session.add(athlete_user)
+    await session.flush()
+
+    session.add(
+        Athlete(
+            id=144,
+            user_id=144,
+            club_id=1,
+            first_name="Atleta",
+            last_name="Ficticio",
+            birth_date=date(2013, 1, 1),
+            sex=Sex.M,
+            created_by=1,
+            created_at=_utc_now(),
+        )
+    )
+    await session.flush()
 
 
 @pytest_asyncio.fixture
@@ -126,7 +222,9 @@ async def client_factory(session_factory):
     perdería al cerrar la sesión y el test no vería el cambio.
     """
 
-    async def _make(user_id: int, role: UserRole) -> AsyncClient:
+    async def _make(
+        user_id: int, role: UserRole, club_ids: tuple[int, ...] = (1,)
+    ) -> AsyncClient:
         async def _override_db() -> AsyncGenerator[AsyncSession, None]:
             async with session_factory() as session:
                 try:
@@ -137,7 +235,9 @@ async def client_factory(session_factory):
                     raise
 
         app.dependency_overrides[get_db] = _override_db
-        app.dependency_overrides[get_current_user] = lambda: _make_user(role, user_id)
+        app.dependency_overrides[get_current_user] = lambda: _make_user(
+            role, user_id, club_ids
+        )
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     yield _make
@@ -223,11 +323,12 @@ async def test_parent_no_puede_cancelar_403(client_factory, session_factory):
     assert (await _fetch_run(session_factory, "run-hitl"))["status"] == "awaiting_hitl"
 
 
-async def test_coach_no_owner_403(client_factory, session_factory):
+async def test_coach_otro_club_403(client_factory, session_factory):
     await _seed_run(session_factory)
 
-    # coach 99 no es el dueño (owner = 10).
-    async with await client_factory(99, UserRole.coach) as client:
+    # El coach 99 es coach del club 2; el run es del club 1 (§1.4). El 403
+    # prueba la regla de club, no una lista de membresías vacía.
+    async with await client_factory(99, UserRole.coach, (2,)) as client:
         resp = await client.post("/api/race-analysis/runs/run-hitl/cancel")
 
     assert resp.status_code == 403

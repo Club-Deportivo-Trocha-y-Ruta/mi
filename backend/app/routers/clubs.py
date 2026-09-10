@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.dependencies import get_current_user, get_db, require_role
 from app.models.club import Club, ClubMember
 from app.models.user import User, UserRole
+from app.routers.users import role_in_club_for
 from app.schemas.club import (
     ClubCreate,
     ClubDetailOut,
@@ -14,6 +15,14 @@ from app.schemas.club import (
     ClubMemberOut,
     ClubOut,
     ClubUpdate,
+)
+from app.services.audit import (
+    AuditAction,
+    AuditEntityType,
+    VALUE_ALLOWLIST,
+    compute_changed_fields,
+    record_audit,
+    snapshot,
 )
 
 router = APIRouter()
@@ -41,6 +50,19 @@ async def create_club(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Ya existe un club con el código '{body.code}'",
         )
+
+    # Auditoría (feature 041, contracts/audit-recording.md §4.2): club_id es
+    # el del propio club recién creado.
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.club,
+        entity_id=club.id,
+        actor=current_user,
+        club_id=club.id,
+        changed_fields=["name", "code", "location"],
+    )
+
     return ClubOut.model_validate(club)
 
 
@@ -100,9 +122,28 @@ async def update_club(
             detail="Club no encontrado",
         )
 
+    audit_fields = ("name", "location", "is_active")
+    before = snapshot(club, *audit_fields)
+
     update_data = body.model_dump(exclude_none=True)
     for field, value in update_data.items():
         setattr(club, field, value)
+
+    after = snapshot(club, *audit_fields)
+    changed_fields, diff = compute_changed_fields(
+        before, after, VALUE_ALLOWLIST.get(AuditEntityType.club, frozenset())
+    )
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.club,
+        entity_id=club.id,
+        actor=current_user,
+        club_id=club.id,
+        changed_fields=changed_fields,
+        diff=diff,
+    )
 
     await db.flush()
     return ClubOut.model_validate(club)
@@ -141,6 +182,20 @@ async def add_member(
             detail="Usuario no encontrado",
         )
 
+    # Coherencia de rol (FR-022, contracts/staff-admin.md §2): el rol en el
+    # club nunca puede contradecir el rol de la cuenta — hoy un padre podía
+    # quedar archivado como `coach` en un club porque `role_in_club` se
+    # escribía verbatim.
+    expected_role = role_in_club_for(target_user.role)
+    if body.role_in_club != expected_role:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "El rol en el club debe coincidir con el rol de la cuenta "
+                f"(se esperaba '{expected_role.value}')"
+            ),
+        )
+
     member = ClubMember(
         club_id=club_id,
         user_id=body.user_id,
@@ -154,6 +209,16 @@ async def add_member(
             status_code=status.HTTP_409_CONFLICT,
             detail="El usuario ya es miembro de este club",
         )
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.club_member,
+        entity_id=member.id,
+        actor=current_user,
+        club_id=club_id,
+        changed_fields=["club_id", "user_id", "role_in_club"],
+    )
 
     # Recargar con el usuario para que el model_validator pueda aplanar los campos
     await db.refresh(member, attribute_names=["user"])

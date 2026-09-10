@@ -402,6 +402,13 @@ export function ReportsListPage() {
           >
             Datos del proyecto
           </Link>
+          <Link
+            to="/training/reports/actividad-entrenadores"
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+            data-testid="coach-activity-link"
+          >
+            Actividad por entrenador
+          </Link>
           <button
             type="button"
             onClick={() => {

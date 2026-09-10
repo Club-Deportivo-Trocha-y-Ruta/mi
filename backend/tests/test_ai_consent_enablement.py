@@ -149,11 +149,17 @@ class _ScalarResult:
 class _QueueSession:
     def __init__(self, responses):
         self._responses = list(responses)
+        #: Filas encoladas con `db.add(...)` — hoy solo la de `audit_log`
+        #: que escribe `record_audit` tras el upsert (T030).
+        self.added: list = []
 
     async def execute(self, _stmt):
         if not self._responses:
             return _ScalarResult()
         return self._responses.pop(0)
+
+    def add(self, obj) -> None:
+        self.added.append(obj)
 
 
 def _coach_user():
@@ -333,7 +339,9 @@ class TestPHVExplanationConsentGate:
 
         session = _QueueSession([
             _ScalarResult(items=[_record_stub()]),   # history
+            _ScalarResult(scalar=None),               # pre-SELECT caché (T030)
             _ScalarResult(),                          # upsert
+            _ScalarResult(scalar=7),                  # id de la fila insertada
         ])
         app.dependency_overrides[get_db] = lambda: session
 

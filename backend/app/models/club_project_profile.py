@@ -15,12 +15,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.mixins import UpdatedByMixin
 
 if TYPE_CHECKING:
     from app.models.club import Club
 
 
-class ClubProjectProfile(Base):
+class ClubProjectProfile(UpdatedByMixin, Base):
     """Perfil de proyecto del club (1:1 con ``clubs``).
 
     Metadata estática del "Informe Técnico Mensual" estilo financiador:
@@ -55,6 +56,9 @@ class ClubProjectProfile(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     # Relación 1:1 con el club

@@ -2,8 +2,11 @@ Sesión de entrenamiento cancelada — {{ club_name }}
 
 Hola {{ parent_name }},
 
-El entrenador {{ coach_name }} del {{ club_name }} ha CANCELADO la sesión a la
+El entrenador {{ acting_coach_name }} del {{ club_name }} ha CANCELADO la sesión a la
 que {{ athlete_name }} estaba convocado/a.
+{% if coach_names|length > 1 %}
+La sesión estaba a cargo de {{ coaches_text }}.
+{% endif %}
 
 DETALLES DE LA SESIÓN CANCELADA
 -------------------------------
@@ -20,4 +23,4 @@ información, comunícate directamente con el entrenador.
 Esta notificación fue generada automáticamente por el sistema del club.
 
 Saludos,
-{{ coach_name }} — {{ club_name }}
+{{ coaches_text }} — {{ club_name }}

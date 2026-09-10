@@ -123,17 +123,51 @@ class TestCalendarEventModel:
 
     def test_fk_club_restrict(self):
         fk = next(
-            fk for fk in CalendarEvent.__table__.foreign_keys
-            if "clubs" in fk.target_fullname
+            fk for fk in CalendarEvent.__table__.columns["club_id"].foreign_keys
         )
+        assert fk.target_fullname == "clubs.id"
         assert fk.ondelete == "RESTRICT"
 
     def test_fk_creator_restrict(self):
+        # Hay varias FK a "users" (creador, cancelador, eliminador, editor de
+        # la feature 041): hay que apuntar a la columna del creador de forma
+        # explícita en vez de tomar "la primera FK a users" con next(), porque
+        # __table__.foreign_keys no está ordenado.
         fk = next(
-            fk for fk in CalendarEvent.__table__.foreign_keys
-            if "users" in fk.target_fullname
+            fk for fk in CalendarEvent.__table__.columns[
+                "created_by_user_id"
+            ].foreign_keys
         )
+        assert fk.target_fullname == "users.id"
         assert fk.ondelete == "RESTRICT"
+
+    def test_fk_cancelled_by_set_null(self):
+        fk = next(
+            fk for fk in CalendarEvent.__table__.columns[
+                "cancelled_by_user_id"
+            ].foreign_keys
+        )
+        assert fk.target_fullname == "users.id"
+        assert fk.ondelete == "SET NULL"
+
+    def test_fk_deleted_by_set_null(self):
+        fk = next(
+            fk for fk in CalendarEvent.__table__.columns[
+                "deleted_by_user_id"
+            ].foreign_keys
+        )
+        assert fk.target_fullname == "users.id"
+        assert fk.ondelete == "SET NULL"
+
+    def test_fk_updated_by_set_null(self):
+        # Columna de atribución de la feature 041 (UpdatedByMixin).
+        fk = next(
+            fk for fk in CalendarEvent.__table__.columns[
+                "updated_by_user_id"
+            ].foreign_keys
+        )
+        assert fk.target_fullname == "users.id"
+        assert fk.ondelete == "SET NULL"
 
     def test_has_audiences_relationship(self):
         assert hasattr(CalendarEvent, "audiences")

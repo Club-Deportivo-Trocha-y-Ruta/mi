@@ -32,6 +32,7 @@ from app.services.training.newsletter_builder import (
     _build_anthropometry_block,
     _anthropometry_unavailable_reason,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +49,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     )
     tables = [
         Base.metadata.tables[t]
-        for t in ("athletes", "anthropometric_records")
+        for t in ("athletes", "anthropometric_records", *AUDIT_TABLES)
     ]
     async with eng.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))

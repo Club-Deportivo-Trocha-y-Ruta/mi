@@ -24,10 +24,21 @@ const CALENDAR_AVAILABLE_ROOT = [
 
 const BASE = "/api/calendar/events";
 
+/**
+ * Feature 041 — gobernanza multi-coach (T067, contracts/session-coaches.md
+ * §8.2, §10.3). `coach_user_id` no se agregó a `CalendarFilters`
+ * (`types/calendar.types.ts`) para mantener el cambio acotado al archivo que
+ * T067 tiene asignado — se modela aquí como extensión local aditiva del
+ * mismo tipo. Un parent que lo envíe recibe 403 del backend.
+ */
+export interface CalendarFiltersWithCoach extends CalendarFilters {
+  coach_user_id?: number | null;
+}
+
 // ─── API functions ────────────────────────────────────────────────────────────
 
 export async function fetchCalendarEvents(
-  filters: CalendarFilters,
+  filters: CalendarFiltersWithCoach,
 ): Promise<CalendarEventListItem[]> {
   const params: Record<string, string | string[]> = {
     from: filters.from,
@@ -41,6 +52,9 @@ export async function fetchCalendarEvents(
   }
   if (filters.category) {
     params.category = filters.category;
+  }
+  if (filters.coach_user_id != null) {
+    params.coach_user_id = String(filters.coach_user_id);
   }
   const response = await apiClient.get<CalendarEventListItem[]>(BASE, {
     params,
@@ -81,11 +95,11 @@ export async function updateCalendarEvent(
 
 export async function cancelCalendarEvent(
   id: number,
-  reason?: string,
+  reasonCode: string,
 ): Promise<CalendarEventRead> {
-  const params: Record<string, string> = {};
-  if (reason) params.reason = reason;
-  const response = await apiClient.delete<CalendarEventRead>(`${BASE}/${id}`, { params });
+  const response = await apiClient.delete<CalendarEventRead>(`${BASE}/${id}`, {
+    data: { reason_code: reasonCode },
+  });
   return response.data;
 }
 
@@ -134,7 +148,7 @@ export async function getAvailableRaceEvents(
 
 // ─── TanStack Query hooks ─────────────────────────────────────────────────────
 
-export function useCalendarEvents(filters: CalendarFilters) {
+export function useCalendarEvents(filters: CalendarFiltersWithCoach) {
   const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
     queryKey: ["calendar", "events", filters],
@@ -197,8 +211,8 @@ export function useUpdateCalendarEvent() {
 export function useCancelCalendarEvent() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
-      cancelCalendarEvent(id, reason),
+    mutationFn: ({ id, reasonCode }: { id: number; reasonCode: string }) =>
+      cancelCalendarEvent(id, reasonCode),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
       void queryClient.invalidateQueries({

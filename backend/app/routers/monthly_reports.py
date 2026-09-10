@@ -47,11 +47,13 @@ from app.schemas.club_project_profile import (
 )
 from app.schemas.notification import DocumentFormat, DocumentRequest, DocumentTemplate
 from app.schemas.training_session import (
+    ActorRef,
     MonthlyReportBlocksUpdate,
     MonthlyReportCreate,
     MonthlyReportRead,
     ParentMonthlySummary,
 )
+from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
 from app.services.notification.service import NotificationService
 from app.services.permissions import can_view_monthly_report, user_club_role
 from app.services.training.reports import (
@@ -94,8 +96,48 @@ def _get_monthly_report_blocks_use_case(
 # ---------------------------------------------------------------------------
 
 
+async def _attach_actor_refs(db: AsyncSession, report: MonthlyReport, out: MonthlyReportRead) -> None:
+    """Resuelve `generated_by`/`approved_by`/`previous_approved_by`/`updated_by`
+    a `ActorRef` (FR-010, §5.5).
+
+    Los `*_user_id` no tienen una relación ORM cargada aquí (no hay
+    `selectinload` en este router para estas cuatro FKs opcionales), así que
+    se resuelven con un único JOIN manual por id — nunca N+1, y nunca se
+    expone un id de usuario "pelado" en la respuesta sin su `display_name`.
+    """
+    user_ids = {
+        uid
+        for uid in (
+            report.generated_by_user_id,
+            report.approved_by_user_id,
+            report.previous_approved_by_user_id,
+            report.updated_by_user_id,
+        )
+        if uid is not None
+    }
+    if not user_ids:
+        return
+    users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+    users_by_id = {u.id: u for u in users_result.scalars().all()}
+
+    def _ref(user_id: int | None) -> ActorRef | None:
+        user = users_by_id.get(user_id) if user_id is not None else None
+        if user is None:
+            return None
+        return ActorRef(user_id=user.id, display_name=user.display_name)
+
+    out.generated_by = _ref(report.generated_by_user_id)
+    out.approved_by = _ref(report.approved_by_user_id)
+    out.previous_approved_by = _ref(report.previous_approved_by_user_id)
+    out.updated_by = _ref(report.updated_by_user_id)
+
+
 def _build_report_read(report: MonthlyReport, is_parent: bool) -> MonthlyReportRead:
-    """Convierte ORM → schema aplicando filtros de privacidad por rol."""
+    """Convierte ORM → schema aplicando filtros de privacidad por rol.
+
+    No resuelve los `ActorRef` (requiere `await db.execute`, ver
+    `_attach_actor_refs`) — cada call site los completa por separado.
+    """
     out = MonthlyReportRead.model_validate(report)
     if is_parent:
         # Padres NO reciben narrativa interna del coach ni nombres de otros menores
@@ -103,6 +145,11 @@ def _build_report_read(report: MonthlyReport, is_parent: bool) -> MonthlyReportR
         out.narrative_blocks = None
         out.competition_results = None
         out.athlete_names = {}
+        # FR-010 §5.4: `previous_approved_*` es evidencia de gobernanza interna
+        # del club (quién aprobó una versión que luego fue regenerada), no
+        # progreso del atleta — nunca se expone a padres.
+        out.previous_approved_by = None
+        out.previous_approved_at = None
         # Padres NO reciben attendance_by_athlete: contiene IDs de todos los
         # atletas del club (categoría ALTA — Ley 1581). Tampoco reciben
         # session_detail: expone lugar/hora exactos de cada sesión y conteos
@@ -195,12 +242,13 @@ async def create_monthly_report(
     out = MonthlyReportRead.model_validate(report)
     # Coach/admin recibe nombres reales
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     out.athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
         for a in athletes_result.scalars().all()
     }
+    await _attach_actor_refs(db, report, out)
     return out
 
 
@@ -238,7 +286,13 @@ async def list_monthly_reports(
     )
     reports = result.scalars().all()
     is_parent = current_user.role == UserRole.parent
-    return [_build_report_read(r, is_parent) for r in reports]
+    outs = [_build_report_read(r, is_parent) for r in reports]
+    for r, out in zip(reports, outs):
+        await _attach_actor_refs(db, r, out)
+        if is_parent:
+            out.previous_approved_by = None
+            out.previous_approved_at = None
+    return outs
 
 
 # ---------------------------------------------------------------------------
@@ -289,12 +343,19 @@ async def get_monthly_report(
 
     if not is_parent:
         athletes_result = await db.execute(
-            select(Athlete).where(Athlete.club_id == club_id)
+            select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
         )
         out.athlete_names = {
             str(a.id): f"{a.first_name} {a.last_name}"
             for a in athletes_result.scalars().all()
         }
+
+    await _attach_actor_refs(db, report, out)
+    if is_parent:
+        # `_attach_actor_refs` acaba de repoblar `previous_approved_*`
+        # incondicionalmente — volver a limpiarlo para padres (§5.4).
+        out.previous_approved_by = None
+        out.previous_approved_at = None
 
     return out
 
@@ -349,12 +410,13 @@ async def patch_report_blocks(
 
     out = MonthlyReportRead.model_validate(report)
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     out.athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
         for a in athletes_result.scalars().all()
     }
+    await _attach_actor_refs(db, report, out)
     return out
 
 
@@ -396,6 +458,7 @@ async def regenerate_report_block(
             month=month,
             block_key=block_key,
             blocks_use_case=blocks_use_case,
+            editor_user=current_user,
         )
     except ValueError as exc:
         msg = str(exc)
@@ -407,12 +470,13 @@ async def regenerate_report_block(
 
     out = MonthlyReportRead.model_validate(report)
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     out.athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
         for a in athletes_result.scalars().all()
     }
+    await _attach_actor_refs(db, report, out)
     return out
 
 
@@ -471,7 +535,7 @@ async def download_monthly_report_pdf(
 
     # Nombres reales de atletas
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
@@ -546,6 +610,18 @@ async def download_monthly_report_pdf(
 
     generated = await notification_service.generate_document_only(doc_request)
 
+    # Fila de exportación (§4.13 audit-recording.md): SOLO el tipo de
+    # documento, nunca su contenido.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.monthly_report,
+        entity_id=report.id,
+        actor=current_user,
+        club_id=club_id,
+        meta={"document_kind": AuditDocumentKind.monthly_report_pdf.value},
+    )
+
     return Response(
         content=generated.data,
         media_type=generated.content_type,
@@ -616,7 +692,7 @@ async def download_monthly_report_docx(
 
     # Nombres reales de atletas
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
@@ -690,6 +766,18 @@ async def download_monthly_report_docx(
     )
 
     generated = await notification_service.generate_document_only(doc_request)
+
+    # Fila de exportación (§4.13 audit-recording.md): SOLO el tipo de
+    # documento, nunca su contenido.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.monthly_report,
+        entity_id=report.id,
+        actor=current_user,
+        club_id=club_id,
+        meta={"document_kind": AuditDocumentKind.monthly_report_docx.value},
+    )
 
     filename = f"informe-tecnico-{report.year}-{report.month:02d}.docx"
 
@@ -771,6 +859,7 @@ async def upsert_project_profile(
     profile = result.scalar_one_or_none()
 
     data = body.model_dump()
+    is_create = profile is None
     if profile is None:
         profile = ClubProjectProfile(club_id=club_id, **data)
         db.add(profile)
@@ -779,6 +868,15 @@ async def upsert_project_profile(
             setattr(profile, key, value)
 
     await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.create if is_create else AuditAction.update,
+        entity_type=AuditEntityType.club_project_profile,
+        entity_id=profile.id,
+        actor=current_user,
+        club_id=club_id,
+        changed_fields=None if is_create else sorted(data.keys()),
+    )
     try:
         await db.commit()
     except Exception:
@@ -822,6 +920,7 @@ async def patch_project_profile(
     profile = result.scalar_one_or_none()
 
     data = body.model_dump(exclude_unset=True)
+    is_create = profile is None
     if profile is None:
         profile = ClubProjectProfile(club_id=club_id, **data)
         db.add(profile)
@@ -830,6 +929,15 @@ async def patch_project_profile(
             setattr(profile, key, value)
 
     await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.create if is_create else AuditAction.update,
+        entity_type=AuditEntityType.club_project_profile,
+        entity_id=profile.id,
+        actor=current_user,
+        club_id=club_id,
+        changed_fields=None if is_create else sorted(data.keys()),
+    )
     try:
         await db.commit()
     except Exception:

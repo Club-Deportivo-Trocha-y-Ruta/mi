@@ -30,12 +30,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MonthlyMetricsTable } from "@/components/training/MonthlyMetricsTable";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateMedium, formatDateTime } from "@/lib/datetime";
 import { triggerBlobDownload } from "@/lib/download";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
 import type {
   MonthlyMetricsSnapshot,
+  MonthlyReportActorRef,
   NarrativeBlock,
   NarrativeBlockKey,
   CompetitionResult,
@@ -116,6 +117,65 @@ function StatusBadge({ status }: { status: "draft" | "approved" | undefined }) {
     >
       Borrador
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ReportApprovalEvidence — evidencia de aprobación (feature 041, T074)
+// Contrato: specs/041-multi-coach-governance/contracts/concurrency-and-approvals.md §7
+//
+// Tres estados posibles, renderizados bajo el StatusBadge:
+//   1. Aprobación vigente con autor conocido → "Aprobado por {nombre} el {fecha}".
+//   2. Aprobación vigente heredada (legacy): el informe fue aprobado antes de
+//      esta feature — `approved_at` existe pero `approved_by` es null porque
+//      el backfill (plan.md §Aproximación) nunca inventa un autor. Se muestra
+//      como aprobado, sin atribuir a ningún coach — nunca se sustituye por un
+//      nombre adivinado.
+//   3. Aprobación anterior conservada: una regeneración limpió la aprobación
+//      vigente pero la evidencia sobrevive (T071). Solo se muestra mientras
+//      el informe sigue en "draft" — si se vuelve a aprobar, la línea 1 pasa
+//      a ser la fuente de verdad vigente.
+// Los dos primeros estados son mutuamente excluyentes (approved_by y el caso
+// legacy nunca coexisten); el tercero puede coexistir con cualquiera de los
+// dos anteriores tras un ciclo de regeneración + nueva aprobación.
+function ReportApprovalEvidence({
+  approvedBy,
+  approvedAt,
+  previousApprovedBy,
+  previousApprovedAt,
+  status,
+}: {
+  approvedBy: MonthlyReportActorRef | null | undefined;
+  approvedAt: string | null | undefined;
+  previousApprovedBy: MonthlyReportActorRef | null | undefined;
+  previousApprovedAt: string | null | undefined;
+  status: "draft" | "approved" | undefined;
+}) {
+  const showCurrent = !!approvedBy;
+  const showLegacy = !approvedBy && !!approvedAt;
+  const showPrevious = !!previousApprovedBy && status === "draft";
+
+  if (!showCurrent && !showLegacy && !showPrevious) return null;
+
+  return (
+    <div className="mt-1 flex flex-col gap-0.5">
+      {showCurrent && (
+        <p className="text-xs text-mid-gray" data-testid="report-approval">
+          Aprobado por {approvedBy!.display_name} el {formatDateMedium(approvedAt)}
+        </p>
+      )}
+      {showLegacy && (
+        <p className="text-xs text-mid-gray" data-testid="report-approval-legacy">
+          Aprobado (sin registro de autor)
+        </p>
+      )}
+      {showPrevious && (
+        <p className="text-xs text-mid-gray" data-testid="report-previous-approval">
+          Aprobado anteriormente por {previousApprovedBy!.display_name} el{" "}
+          {formatDateMedium(previousApprovedAt)}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -463,6 +523,13 @@ function CoachEditorView({
               </h1>
               <StatusBadge status={report.status} />
             </div>
+            <ReportApprovalEvidence
+              approvedBy={report.approved_by}
+              approvedAt={report.approved_at}
+              previousApprovedBy={report.previous_approved_by}
+              previousApprovedAt={report.previous_approved_at}
+              status={report.status}
+            />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {/* Aprobar */}

@@ -543,7 +543,7 @@ export function PercentileChart({
   if (referenceState.status === "loading") {
     return (
       <div role="status" aria-busy="true" aria-label="Cargando curva de crecimiento…">
-        <Skeleton className="relative aspect-[3/2] w-full min-h-[280px] rounded-xl" />
+        <Skeleton className="relative aspect-[3/2] w-full min-h-[280px] max-h-[480px] rounded-xl" />
       </div>
     );
   }
@@ -567,7 +567,11 @@ export function PercentileChart({
 
   return (
     <div>
-      <div role="img" aria-label={ariaLabel} className="relative aspect-[3/2] w-full min-h-[280px]">
+      <div
+        role="img"
+        aria-label={ariaLabel}
+        className="relative aspect-[3/2] w-full min-h-[280px] max-h-[480px]"
+      >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartRows} margin={{ top: 24, right: 24, left: 8, bottom: 8 }}>
             <CartesianGrid stroke="var(--color-border-gray)" />

@@ -30,13 +30,24 @@ from app.routers.race_analysis import (
     get_race_chat_agent,
 )
 
+# Club "hogar" del coach de ``coach_client``/``admin_client`` y del atleta
+# que ``FakeSession`` resuelve para ``select(Athlete.club_id)`` (hallazgo
+# H1/T080: ``_ensure_athlete_club_access`` en ``POST /runs`` exige una
+# membresía de club real, así que el coach fake y el atleta fake tienen que
+# coincidir en éste club para que los tests preexistentes sigan viendo 201).
+FAKE_COACH_CLUB_ID = 100
+
 
 # ---------------------------------------------------------------------------
 # Fake users
 # ---------------------------------------------------------------------------
 
 
-def make_user(role: UserRole, user_id: int = 1) -> SimpleNamespace:
+def make_user(
+    role: UserRole, user_id: int = 1, club_ids: tuple[int, ...] = ()
+) -> SimpleNamespace:
+    from app.models.club import ClubRole
+
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
@@ -45,7 +56,10 @@ def make_user(role: UserRole, user_id: int = 1) -> SimpleNamespace:
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=cid, role_in_club=ClubRole.coach)
+            for cid in club_ids
+        ],
     )
 
 
@@ -64,6 +78,21 @@ class FakeRow:
 
     def __getitem__(self, idx: int) -> Any:
         return list(self._mapping.values())[idx]
+
+
+class FakeScalarResult:
+    """Imita el resultado de un ``select(Columna)`` de una sola columna.
+
+    ``scalar_one_or_none()`` en SQLAlchemy real devuelve el valor pelado
+    (p. ej. un ``int``), no una ``Row`` — a diferencia de ``FakeResult``,
+    pensado para selects multi-columna donde el router usa ``FakeRow``.
+    """
+
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> Any:
+        return self._value
 
 
 class FakeResult:
@@ -99,6 +128,12 @@ class FakeSession:
         self.executed: list[tuple[str, dict]] = []
         self._next_run_db_id = 1
         self._next_event_id = 1
+        # ``select(Athlete.club_id)`` (``_resolve_athlete_club`` /
+        # ``_ensure_athlete_club_access``, T080 H1) — el atleta fake vive en
+        # el mismo club que el coach de ``coach_client``/``admin_client``
+        # por defecto. Ajustable por test si algún caso necesita simular un
+        # atleta de otro club.
+        self.athlete_club_id: Optional[int] = FAKE_COACH_CLUB_ID
 
     # ---- helpers para tests ----
 
@@ -155,11 +190,23 @@ class FakeSession:
         latency_total: int = 1500,
         prompt_version: str = "race_analyst_v1",
         generated_at: Optional[datetime] = None,
+        generated_by_user_id: Optional[int] = None,
+        requested_by_user_id: Optional[int] = None,
     ) -> None:
+        """Siembra un insight.
+
+        ``generated_by_user_id`` / ``requested_by_user_id`` alimentan el
+        agregado de gasto por entrenador (``spend_by_user_last_30d``, contrato
+        scope-ai-imports §7.1): el segundo emula la fila de ``agent_runs``
+        enlazada, el primero el respaldo cuando ``agent_run_id`` es NULL.
+        Ambos en ``None`` → el cubo "Sin atribuir".
+        """
         self.insights.append(
             {
                 "athlete_id": athlete_id,
                 "prompt_version": prompt_version,
+                "generated_by_user_id": generated_by_user_id,
+                "requested_by_user_id": requested_by_user_id,
                 "generated_at": generated_at or datetime.now(timezone.utc),
                 "metrics_snapshot_json": json.dumps(
                     {
@@ -181,6 +228,13 @@ class FakeSession:
 
         # Routing por substrings — mantenemos la lista ordenada de
         # match más específico a más general.
+
+        # SELECT athletes.club_id FROM athletes WHERE athletes.id = :id_1
+        # (``_resolve_athlete_club`` / ``_ensure_athlete_club_access``,
+        # T080 H1). Debe matchear ANTES que cualquier bloque genérico de
+        # "FROM athletes" que algún test añada vía monkeypatch propio.
+        if sql.lstrip().startswith("SELECT athletes.club_id"):
+            return FakeScalarResult(self.athlete_club_id)
 
         # INSERT agent_runs
         if "INSERT INTO agent_runs" in sql:
@@ -313,6 +367,37 @@ class FakeSession:
                     pass
             return FakeResult([FakeRow(total=total)])
 
+        # Gasto por entrenador (§7.1): agregado con LEFT JOIN a agent_runs.
+        # Debe ir ANTES del bloque genérico de COUNT — comparte el substring.
+        if "FROM athlete_ai_insights i" in sql and "LEFT JOIN agent_runs ar" in sql:
+            cutoff = params.get("cutoff")
+            filtered = [i for i in self.insights if not cutoff or i["generated_at"] >= cutoff]
+            by_uid: dict[Optional[int], dict] = {}
+            for ins in filtered:
+                uid = ins.get("requested_by_user_id") or ins.get("generated_by_user_id")
+                entry = by_uid.setdefault(uid, {"run_count": 0, "cost": 0.0})
+                entry["run_count"] += 1
+                try:
+                    entry["cost"] += float(
+                        json.loads(ins["metrics_snapshot_json"])
+                        ["aggregate"]["cost_usd_total"]
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            ordered = sorted(by_uid.items(), key=lambda kv: kv[1]["cost"], reverse=True)
+            return FakeResult(
+                [
+                    FakeRow(uid=uid, run_count=v["run_count"], cost=v["cost"])
+                    for uid, v in ordered
+                ]
+            )
+
+        # Resolución de nombres de staff por lote (§4.1) — el FakeSession no
+        # tiene tabla ``users``; los tests que necesiten nombres reales usan
+        # el motor SQLite propio, no este fake.
+        if "FROM users WHERE id IN" in sql:
+            return FakeResult([])
+
         # SELECT COUNT/SUM FROM athlete_ai_insights
         if "FROM athlete_ai_insights" in sql and "COUNT" in sql.upper():
             cutoff = params.get("cutoff")
@@ -439,11 +524,17 @@ async def coach_client(client, fake_db, fake_graph, monkeypatch):
         yield fake_db
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.coach, user_id=10)
+    # club_ids=(FAKE_COACH_CLUB_ID,): ``POST /runs`` exige que el atleta
+    # sea del club del coach que lanza (T080 H1, ``_ensure_athlete_club_access``);
+    # ``FakeSession.athlete_club_id`` (mismo default) es lo que la fake
+    # session responde a ``select(Athlete.club_id)``.
+    app.dependency_overrides[get_current_user] = lambda: make_user(
+        UserRole.coach, user_id=10, club_ids=(FAKE_COACH_CLUB_ID,)
+    )
     # _coach_or_admin y _admin_only son Depends() callables; los
     # overrides funcionan sobre la callable directa.
     app.dependency_overrides[_coach_or_admin] = lambda: make_user(
-        UserRole.coach, user_id=10
+        UserRole.coach, user_id=10, club_ids=(FAKE_COACH_CLUB_ID,)
     )
     yield client
     app.dependency_overrides.clear()

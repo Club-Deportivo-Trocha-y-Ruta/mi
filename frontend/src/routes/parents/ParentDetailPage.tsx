@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Trash2, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -7,6 +7,14 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ParentContactInfo } from "@/components/parents/ParentContactInfo";
 import { ParentAthleteAssignment } from "@/components/parents/ParentAthleteAssignment";
 import { ParentInviteManager } from "@/components/parents/ParentInviteManager";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuditReasonCodes } from "@/hooks/useAuditReasonCodes";
 import { useDeleteParentUser } from "@/hooks/parents/useDeleteParentUser";
 import { useParentAthletes } from "@/hooks/parents/useParentAthletes";
 import { useParentUsers } from "@/hooks/parents/useParentUsers";
@@ -53,18 +61,33 @@ export function ParentDetailPage() {
   const deleteMutation = useDeleteParentUser();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteReasonCode, setDeleteReasonCode] = useState("");
+  // Catálogo cerrado de motivos de eliminación (feature 041 — gobernanza
+  // multi-coach). El backend lo exige como query param obligatorio.
+  const deleteReasonCodesQuery = useAuditReasonCodes("parent_removal", deleteOpen);
+
+  useEffect(() => {
+    if (!deleteOpen) setDeleteReasonCode("");
+  }, [deleteOpen]);
 
   const handleDelete = () => {
+    if (!deleteReasonCode) {
+      setDeleteError("Selecciona el motivo de la eliminación.");
+      return;
+    }
     setDeleteError(null);
-    deleteMutation.mutate(parentId, {
-      onSuccess: () => {
-        setDeleteOpen(false);
-        navigate("/parents");
+    deleteMutation.mutate(
+      { id: parentId, reasonCode: deleteReasonCode },
+      {
+        onSuccess: () => {
+          setDeleteOpen(false);
+          navigate("/parents");
+        },
+        onError: () => {
+          setDeleteError("No se pudo eliminar el padre/acudiente. Intenta de nuevo.");
+        },
       },
-      onError: () => {
-        setDeleteError("No se pudo eliminar el padre/acudiente. Intenta de nuevo.");
-      },
-    });
+    );
   };
 
   // Loading skeleton
@@ -206,7 +229,38 @@ export function ParentDetailPage() {
         errorMessage={deleteError ?? undefined}
         onCancel={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
-      />
+      >
+        <div className="space-y-1">
+          <label
+            htmlFor="delete-parent-reason-code"
+            className="block text-sm font-medium text-charcoal"
+          >
+            Motivo de la eliminación
+            <span className="ml-1 text-red-600" aria-hidden="true">
+              *
+            </span>
+          </label>
+          <Select
+            value={deleteReasonCode}
+            onValueChange={setDeleteReasonCode}
+            disabled={deleteMutation.isPending}
+          >
+            <SelectTrigger id="delete-parent-reason-code" aria-required="true">
+              <SelectValue placeholder="Selecciona un motivo…" />
+            </SelectTrigger>
+            <SelectContent>
+              {(deleteReasonCodesQuery.data?.items ?? []).map((opt) => (
+                <SelectItem key={opt.code} value={opt.code}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-mid-gray">
+            Queda registrado en el historial de auditoría del club.
+          </p>
+        </div>
+      </ConfirmDialog>
     </section>
   );
 }

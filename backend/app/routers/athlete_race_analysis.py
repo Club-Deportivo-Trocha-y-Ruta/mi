@@ -37,7 +37,9 @@ from app.config import settings
 from app.dependencies import get_current_user, get_db, require_role, verify_athlete_access
 from app.models.athlete import Athlete
 from app.models.athlete_ai_insight import AthleteAiInsight
+from app.models.audit_log import AuditAction
 from app.models.user import User, UserRole
+from app.services.audit import AuditEntityType, record_audit
 from app.schemas.athlete_race_analysis import (
     AnswerInsightBody,
     AthleteInsightDetailOut,
@@ -445,6 +447,8 @@ async def answer_insight(
             detail="Insight no encontrado",
         )
 
+    changed_fields: list[str] = []
+
     if body.answer_text is not None:
         from app.services.race.ai.grounding import load_forbidden_names
 
@@ -458,11 +462,29 @@ async def answer_insight(
                 answer_text = answer_text.replace(name, "[nombre omitido]")
         row.coach_answer_text = answer_text
         row.coach_answer_at = _utc_now()
+        row.coach_answer_by_user_id = current_user.id
+        changed_fields.extend(
+            ["coach_answer_text", "coach_answer_at", "coach_answer_by_user_id"]
+        )
 
     if body.rating is not None:
         row.coach_rating = body.rating
+        changed_fields.append("coach_rating")
 
     row.updated_at = _utc_now()
+
+    if changed_fields:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.athlete_ai_insight,
+            entity_id=row.id,
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
+            changed_fields=changed_fields,
+        )
+
     await db.commit()
 
     chain_rows = await get_insight_supersedes_chain(db, insight_id=row.id)
@@ -802,10 +824,7 @@ async def start_athlete_run(
     except BudgetExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                f"Presupuesto mensual de IA excedido: ${exc.current_usd:.4f} "
-                f"de ${exc.budget_usd:.2f}. Reintenta más tarde o contacta al administrador."
-            ),
+            detail=exc.user_message,
         )
 
     run_id = uuid.uuid4().hex
@@ -849,6 +868,23 @@ async def start_athlete_run(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"No se pudo crear el run: {type(exc).__name__}",
+        )
+
+    # Fila de auditoría del lanzamiento (§4.9 audit-recording.md), mismo
+    # patrón que ``routers/race_analysis.py::start_run``: un run NUEVO es
+    # siempre ``create``, sea cual sea el punto de entrada.
+    from app.routers.race_analysis import _load_run  # import diferido
+
+    _new_run_row = await _load_run(db, run_id)
+    if _new_run_row is not None:
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.agent_run,
+            entity_id=int(_new_run_row["id"]),
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
         )
 
     age_decimal = (date.today() - athlete.birth_date).days / 365.25
@@ -1106,10 +1142,7 @@ async def create_season_summary(
     except BudgetExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                f"Presupuesto mensual de IA excedido: ${exc.current_usd:.4f} "
-                f"de ${exc.budget_usd:.2f}. Reintenta más tarde."
-            ),
+            detail=exc.user_message,
         )
 
     # Verificar que existan ≥3 válidas analizadas (insights activos aprobados).
@@ -1184,6 +1217,22 @@ async def create_season_summary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"No se pudo crear el run: {type(exc).__name__}",
+        )
+
+    # Fila de auditoría del lanzamiento (§4.9 audit-recording.md), mismo
+    # patrón que ``start_athlete_run`` / ``routers/race_analysis.py::start_run``.
+    from app.routers.race_analysis import _load_run  # import diferido
+
+    _new_run_row = await _load_run(db, run_id)
+    if _new_run_row is not None:
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.agent_run,
+            entity_id=int(_new_run_row["id"]),
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
         )
 
     # Contexto del atleta (mismo patrón que start_athlete_run / start_run):

@@ -190,6 +190,23 @@ describe("ReportsListPage", () => {
     expect(screen.getByTestId("project-profile-link")).toBeInTheDocument();
   });
 
+  // Feature 041 — gobernanza multi-coach, US7 (SC-009: el resto de esta
+  // página no cambia, solo se agrega este enlace).
+  it("muestra el enlace 'Actividad por entrenador'", () => {
+    vi.mocked(useMonthlyReports).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: [],
+    } as unknown as ReturnType<typeof useMonthlyReports>);
+    renderPage();
+    const link = screen.getByTestId("coach-activity-link");
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute(
+      "href",
+      "/training/reports/actividad-entrenadores",
+    );
+  });
+
   it("conflict 409 muestra mensaje de regeneración en el modal", async () => {
     const axiosError = {
       isAxiosError: true,

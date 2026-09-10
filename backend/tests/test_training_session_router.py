@@ -10,11 +10,27 @@ from __future__ import annotations
 
 import io
 from datetime import date, time
+from unittest.mock import AsyncMock as _AsyncMock
+from unittest.mock import MagicMock as _MagicMock
+from unittest.mock import patch as _patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from app.models.audit_log import AuditAction as _AuditAction
+from app.models.audit_log import AuditActorKind as _AuditActorKind
+from app.models.audit_log import AuditLog as _AuditLog
+from app.models.training_session import AttendanceStatus as _AttendanceStatus
+from app.models.training_session import SessionAttendance as _SessionAttendance
+from app.models.training_session import SessionStatus as _SessionStatus
+from app.models.training_session import TrainingSession as _TrainingSession
+from app.schemas.training_session import AttendanceUpdate as _AttendanceUpdate
+from app.schemas.training_session import TrainingSessionCreate as _TrainingSessionCreate
+from app.services.audit import CancelReasonCode as _CancelReasonCode
+from app.services.request_context import AuditContext as _AuditContext
+from app.services.training import attendance as _attendance_svc
+from app.services.training import sessions as _sessions_svc
 
 
 # ---------------------------------------------------------------------------
@@ -410,8 +426,9 @@ class TestCancelTrainingSession:
         club_id = await _get_club_id(client, headers)
         session = await self._create_session(client, headers, club_id)
 
+        # Desde 041 cancelar exige un motivo del catálogo `cancel_*` (§7.1).
         resp = await client.delete(
-            f"/api/training-sessions/{session['id']}",
+            f"/api/training-sessions/{session['id']}?reason_code=cancel_weather",
             headers=headers,
         )
         assert resp.status_code == 204
@@ -423,7 +440,10 @@ class TestCancelTrainingSession:
         session_id = session["id"]
 
         await client.post(f"/api/training-sessions/{session_id}/execute", headers=headers)
-        resp = await client.delete(f"/api/training-sessions/{session_id}", headers=headers)
+        resp = await client.delete(
+            f"/api/training-sessions/{session_id}?reason_code=cancel_weather",
+            headers=headers,
+        )
         assert resp.status_code == 409
 
     async def test_parent_cannot_cancel_403(self, client: AsyncClient):
@@ -782,3 +802,342 @@ class TestParentIDORFilterByForeignAthleteId:
             assert resp.status_code == 403, (
                 f"Se esperaba 200 (filtrado interno) o 403, pero se recibió {resp.status_code}"
             )
+
+
+# ---------------------------------------------------------------------------
+# T024 — instrumentación de auditoría (feature 041, contracts/audit-recording.md §4.6)
+#
+# Estilo: mismo patrón de AsyncSession mockeada que tests/test_training_session_service.py
+# (no requiere MySQL ni el fixture "client"). Se captura cada objeto pasado a
+# ``db.add`` y se valida el/los ``AuditLog`` encolado(s) por ``record_audit``.
+# ---------------------------------------------------------------------------
+
+
+def _mock_coach(user_id: int = 1) -> _MagicMock:
+    coach = _MagicMock()
+    coach.id = user_id
+    coach.role = "coach"
+    coach.email = "coach@test.local"
+    coach.first_name = "Coach"
+    coach.last_name = "Ficticio"
+    coach.club_memberships = []
+    return coach
+
+
+def _mock_ctx(actor: _MagicMock) -> _AuditContext:
+    return _AuditContext(
+        request_id="a" * 32,
+        actor=actor,
+        actor_kind=_AuditActorKind.user,
+        actor_role=actor.role,
+    )
+
+
+def _mock_training_session(
+    session_id: int = 42,
+    club_id: int = 7,
+    status: _SessionStatus = _SessionStatus.PLANNED,
+) -> _MagicMock:
+    s = _MagicMock(spec=_TrainingSession)
+    s.id = session_id
+    s.club_id = club_id
+    s.status = status
+    s.scheduled_date = date(2030, 8, 15)
+    s.scheduled_start_time = time(17, 0)
+    s.duration_min = 90
+    s.location = "Bosque Municipal"
+    s.technical_focus = "Descenso técnico"
+    s.route_file_path = None
+    s.executed_at = None
+    s.attendances = []
+    return s
+
+
+def _build_mock_db(add_calls: list, *, execute_result: _MagicMock) -> _AsyncMock:
+    db = _AsyncMock()
+    db.add = _MagicMock(side_effect=add_calls.append)
+    db.execute = _AsyncMock(return_value=execute_result)
+
+    async def _refresh(obj, attribute_names=None):
+        return None
+
+    db.refresh = _refresh
+    return db
+
+
+class TestAuditInstrumentationTrainingSessions:
+    """T024 — cada acción del ciclo de vida de una sesión debe encolar un
+    ``AuditLog`` con ``club_id`` propio y el ``request_id`` del contexto,
+    en la misma unidad de trabajo (antes del ``db.commit()``)."""
+
+    async def test_create_session_queues_training_session_audit_row(self):
+        _sessions_svc._recent_dispatches.clear()
+        coach = _mock_coach(1)
+        ctx = _mock_ctx(coach)
+        session_obj = _mock_training_session(session_id=42, club_id=7)
+
+        add_calls: list = []
+        result_mock = _MagicMock()
+        result_mock.first = _MagicMock(return_value=_MagicMock())
+        result_mock.scalar_one_or_none = _MagicMock(return_value=session_obj)
+        scalars_mock = _MagicMock()
+        scalars_mock.all = _MagicMock(return_value=[])
+        result_mock.scalars = _MagicMock(return_value=scalars_mock)
+        db = _build_mock_db(add_calls, execute_result=result_mock)
+
+        async def _flush():
+            # Simula la asignación de PK autoincremental tras el flush.
+            for obj in add_calls:
+                if isinstance(obj, _TrainingSession) and obj.id is None:
+                    obj.id = 42
+
+        db.flush = _flush
+
+        payload = _TrainingSessionCreate(
+            scheduled_date=date(2030, 8, 15),
+            scheduled_start_time=time(17, 0),
+            duration_min=90,
+            location="Bosque Municipal",
+            technical_focus="Descenso técnico",
+            convocados_athlete_ids=[100, 101],
+        )
+
+        # Estas dos pruebas miran la fila de auditoría, no la validación de
+        # entrenadores: esa tiene sus propios casos en test_session_coaches.py
+        # y con un ``db`` simulado no hay filas que consultar.
+        with (
+            _patch.object(_sessions_svc, "_assert_coach_in_club", new=_AsyncMock()),
+            _patch.object(_sessions_svc, "_assert_eligible_coaches", new=_AsyncMock()),
+        ):
+            await _sessions_svc.create_session(
+                db=db, payload=payload, coach=coach, club_id=7, ctx=ctx
+            )
+
+        audit_rows = [c for c in add_calls if isinstance(c, _AuditLog)]
+        assert len(audit_rows) >= 1
+        ts_row = next(
+            r for r in audit_rows if r.entity_type == "training_session"
+        )
+        assert ts_row.action == _AuditAction.create
+        assert ts_row.club_id == 7
+        assert ts_row.actor_user_id == coach.id
+        assert ts_row.request_id == ctx.request_id
+        assert ts_row.meta_json["convocados_count"] == 2
+        # Privacidad: ni nombre ni fecha de nacimiento de un atleta en meta_json.
+        assert "athlete_name" not in (ts_row.meta_json or {})
+
+    async def test_create_session_without_ctx_skips_audit(self):
+        """Los callers directos de servicio (scripts, tests unitarios) que no
+        pasan ``ctx`` no deben producir ninguna fila de auditoría."""
+        _sessions_svc._recent_dispatches.clear()
+        coach = _mock_coach(1)
+        session_obj = _mock_training_session(session_id=42, club_id=7)
+
+        add_calls: list = []
+        result_mock = _MagicMock()
+        result_mock.first = _MagicMock(return_value=_MagicMock())
+        result_mock.scalar_one_or_none = _MagicMock(return_value=session_obj)
+        scalars_mock = _MagicMock()
+        scalars_mock.all = _MagicMock(return_value=[])
+        result_mock.scalars = _MagicMock(return_value=scalars_mock)
+        db = _build_mock_db(add_calls, execute_result=result_mock)
+        db.flush = _AsyncMock()
+
+        payload = _TrainingSessionCreate(
+            scheduled_date=date(2030, 8, 15),
+            scheduled_start_time=time(17, 0),
+            duration_min=90,
+            location="Bosque Municipal",
+            technical_focus="Descenso técnico",
+            convocados_athlete_ids=[100],
+        )
+
+        # Estas dos pruebas miran la fila de auditoría, no la validación de
+        # entrenadores: esa tiene sus propios casos en test_session_coaches.py
+        # y con un ``db`` simulado no hay filas que consultar.
+        with (
+            _patch.object(_sessions_svc, "_assert_coach_in_club", new=_AsyncMock()),
+            _patch.object(_sessions_svc, "_assert_eligible_coaches", new=_AsyncMock()),
+        ):
+            await _sessions_svc.create_session(
+                db=db, payload=payload, coach=coach, club_id=7
+            )
+
+        assert not any(isinstance(c, _AuditLog) for c in add_calls)
+
+    async def test_execute_session_queues_execute_audit_row(self):
+        coach = _mock_coach(1)
+        ctx = _mock_ctx(coach)
+        session_obj = _mock_training_session(status=_SessionStatus.PLANNED)
+
+        add_calls: list = []
+        result_mock = _MagicMock()
+        result_mock.scalar_one_or_none = _MagicMock(return_value=session_obj)
+        scalars_mock = _MagicMock()
+        scalars_mock.all = _MagicMock(return_value=[])
+        result_mock.scalars = _MagicMock(return_value=scalars_mock)
+        db = _build_mock_db(add_calls, execute_result=result_mock)
+
+        await _sessions_svc.execute_session(db, session_id=42, ctx=ctx, actor=coach)
+
+        audit_rows = [c for c in add_calls if isinstance(c, _AuditLog)]
+        assert len(audit_rows) == 1
+        assert audit_rows[0].action == _AuditAction.execute
+        assert audit_rows[0].entity_type == "training_session"
+        assert audit_rows[0].club_id == session_obj.club_id
+
+    async def test_cancel_session_requires_reason_code_for_audit(self):
+        """Sin ``reason_code`` (catálogo cerrado), ``record_audit`` rechaza la
+        fila — REASON_REQUIRED cubre ``(training_session, cancel)``."""
+        coach = _mock_coach(1)
+        ctx = _mock_ctx(coach)
+        session_obj = _mock_training_session(status=_SessionStatus.PLANNED)
+        session_obj.attendances = []
+
+        add_calls: list = []
+        result_mock = _MagicMock()
+        result_mock.scalar_one_or_none = _MagicMock(return_value=session_obj)
+        scalars_mock = _MagicMock()
+        scalars_mock.all = _MagicMock(return_value=[])
+        result_mock.scalars = _MagicMock(return_value=scalars_mock)
+        db = _build_mock_db(add_calls, execute_result=result_mock)
+
+        with pytest.raises(Exception):
+            await _sessions_svc.cancel_session(db, session_id=42, ctx=ctx, actor=coach)
+
+    async def test_cancel_session_with_reason_code_queues_audit_row(self):
+        coach = _mock_coach(1)
+        ctx = _mock_ctx(coach)
+        session_obj = _mock_training_session(status=_SessionStatus.PLANNED)
+        session_obj.attendances = []
+
+        add_calls: list = []
+        result_mock = _MagicMock()
+        result_mock.scalar_one_or_none = _MagicMock(return_value=session_obj)
+        scalars_mock = _MagicMock()
+        scalars_mock.all = _MagicMock(return_value=[])
+        result_mock.scalars = _MagicMock(return_value=scalars_mock)
+        db = _build_mock_db(add_calls, execute_result=result_mock)
+
+        await _sessions_svc.cancel_session(
+            db,
+            session_id=42,
+            ctx=ctx,
+            actor=coach,
+            reason_code=_CancelReasonCode.cancel_weather,
+        )
+
+        audit_rows = [c for c in add_calls if isinstance(c, _AuditLog)]
+        assert len(audit_rows) == 1
+        assert audit_rows[0].action == _AuditAction.cancel
+        assert audit_rows[0].reason_code == "cancel_weather"
+
+    async def test_update_session_no_changes_does_not_queue_audit_row(self):
+        """R7 — un PATCH sin cambios reales no debe fabricar historia."""
+        coach = _mock_coach(1)
+        ctx = _mock_ctx(coach)
+        session_obj = _mock_training_session()
+        session_obj.location = "Bosque Municipal"
+
+        add_calls: list = []
+        result_mock = _MagicMock()
+        result_mock.scalar_one_or_none = _MagicMock(return_value=session_obj)
+        scalars_mock = _MagicMock()
+        scalars_mock.all = _MagicMock(return_value=[])
+        result_mock.scalars = _MagicMock(return_value=scalars_mock)
+        db = _build_mock_db(add_calls, execute_result=result_mock)
+
+        from app.schemas.training_session import TrainingSessionUpdate
+
+        await _sessions_svc.update_session(
+            db,
+            session_id=42,
+            payload=TrainingSessionUpdate(location="Bosque Municipal"),
+            ctx=ctx,
+            actor=coach,
+        )
+
+        assert not any(isinstance(c, _AuditLog) for c in add_calls)
+
+
+class TestAuditInstrumentationAttendance:
+    """T024 — asistencia/convocatoria (attendance.py)."""
+
+    async def test_bulk_upsert_convocatoria_creates_audit_rows_for_new_athletes(self):
+        coach = _mock_coach(1)
+        ctx = _mock_ctx(coach)
+
+        add_calls: list = []
+        existing_result = _MagicMock()
+        scalars_mock = _MagicMock()
+        scalars_mock.all = _MagicMock(return_value=[])
+        existing_result.scalars = _MagicMock(return_value=scalars_mock)
+
+        select_after_result = _MagicMock()
+        select_after_result.scalars = _MagicMock(return_value=scalars_mock)
+
+        db = _AsyncMock()
+        db.add = _MagicMock(side_effect=add_calls.append)
+        db.execute = _AsyncMock(side_effect=[existing_result, select_after_result])
+
+        async def _flush():
+            for obj in add_calls:
+                if isinstance(obj, _SessionAttendance) and obj.id is None:
+                    obj.id = 900 + obj.athlete_id
+
+        db.flush = _flush
+
+        await _attendance_svc.bulk_upsert_convocatoria(
+            db=db,
+            session_id=42,
+            athlete_ids=[100, 101],
+            club_id=7,
+            ctx=ctx,
+            actor=coach,
+        )
+
+        audit_rows = [c for c in add_calls if isinstance(c, _AuditLog)]
+        assert len(audit_rows) == 2
+        assert {r.action for r in audit_rows} == {_AuditAction.create}
+        assert {r.athlete_id for r in audit_rows} == {100, 101}
+        assert all(r.club_id == 7 for r in audit_rows)
+
+    async def test_update_attendance_queues_update_audit_row_with_allowlisted_diff(self):
+        coach = _mock_coach(1)
+        ctx = _mock_ctx(coach)
+
+        attendance_row = _MagicMock(spec=_SessionAttendance)
+        attendance_row.id = 55
+        attendance_row.status = _AttendanceStatus.AUSENTE
+        attendance_row.archived_at = None
+        attendance_row.excuse_reason = None
+        attendance_row.rpe_omni = None
+        attendance_row.rubric_effort = None
+        attendance_row.rubric_attitude = None
+        attendance_row.rubric_technique = None
+        attendance_row.individual_feedback = None
+
+        add_calls: list = []
+        result_mock = _MagicMock()
+        result_mock.scalar_one_or_none = _MagicMock(return_value=attendance_row)
+        db = _build_mock_db(add_calls, execute_result=result_mock)
+
+        await _attendance_svc.update_attendance(
+            db=db,
+            session_id=42,
+            athlete_id=100,
+            payload=_AttendanceUpdate(status=_AttendanceStatus.PRESENTE),
+            club_id=7,
+            ctx=ctx,
+            actor=coach,
+        )
+
+        audit_rows = [c for c in add_calls if isinstance(c, _AuditLog)]
+        assert len(audit_rows) == 1
+        row = audit_rows[0]
+        assert row.action == _AuditAction.update
+        assert row.entity_type == "session_attendance"
+        assert row.athlete_id == 100
+        assert "status" in row.changed_fields
+        # "status" SÍ está en VALUE_ALLOWLIST[session_attendance] → tiene valor.
+        assert row.diff_json is not None and "status" in row.diff_json

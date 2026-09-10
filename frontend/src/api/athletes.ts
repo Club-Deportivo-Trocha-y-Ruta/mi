@@ -14,6 +14,8 @@ import type {
 export async function getAthletes(params?: {
   club_id?: number;
   sort?: "recent_attendance";
+  /** Admin-only (contracts/athlete-archive.md §4); coach → 403. */
+  include_archived?: boolean;
 }): Promise<AthleteListOut> {
   const response = await apiClient.get<AthleteListOut>("/api/athletes", { params });
   return response.data;
@@ -37,8 +39,26 @@ export async function updateAthlete(
   return response.data;
 }
 
-export async function deleteAthlete(id: number): Promise<void> {
-  await apiClient.delete(`/api/athletes/${id}`);
+/**
+ * Archiva (soft delete) un atleta — reemplaza `deleteAthlete`
+ * (contracts/athlete-archive.md §1). `reason_code` es obligatorio; el
+ * backend responde 422 si falta o no pertenece al catálogo
+ * `athlete_archive`.
+ *
+ * Gotcha de axios: `apiClient.delete(url, body)` descarta el payload —
+ * debe ir en `{ data: body }`.
+ */
+export async function archiveAthlete(id: number, reasonCode: string): Promise<void> {
+  await apiClient.delete(`/api/athletes/${id}`, {
+    data: { reason_code: reasonCode },
+  });
+}
+
+/** Restaura un atleta archivado — admin only (contracts/athlete-archive.md §2). */
+export async function restoreAthlete(id: number, reasonCode: string): Promise<void> {
+  await apiClient.post(`/api/athletes/${id}/restore`, {
+    reason_code: reasonCode,
+  });
 }
 
 export async function getAnthropometry(

@@ -36,16 +36,20 @@ class TestCreateUser:
         )
         token = login.json()["access_token"]
         email = f"coach-{uuid4().hex[:8]}@test.com"
+        club_id = await _seed_club_id(client, token)
 
+        # club_id es obligatorio y password NO se envía para role=coach
+        # (contracts/041/staff-admin.md §1.2 filas 4 y 6): la persona
+        # define su contraseña desde el correo de restablecimiento.
         resp = await client.post(
             "/api/users",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "email": email,
-                "password": "Coach2026!",
                 "first_name": "Carlos",
                 "last_name": "Perez",
                 "role": "coach",
+                "club_id": club_id,
             },
         )
         assert resp.status_code == 201
@@ -56,6 +60,16 @@ class TestCreateUser:
         assert body["is_active"] is True
         assert "id" in body
         assert "created_at" in body
+
+        # La membresía del nuevo coach en el club existe con role_in_club=coach.
+        members_resp = await client.get(
+            f"/api/clubs/{club_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        member_roles = {
+            m["user_id"]: m["role_in_club"] for m in members_resp.json()["members"]
+        }
+        assert member_roles.get(body["id"]) == "coach"
 
     async def test_admin_creates_parent(self, client):
         login = await client.post(
@@ -254,18 +268,20 @@ class TestCreateUser:
             json={"email": "admin@trochyruta.com", "password": "Admin2026!"},
         )
         token = login.json()["access_token"]
+        club_id = await _seed_club_id(client, token)
         email = f"dup-{uuid4().hex[:8]}@test.com"
 
-        # Crear usuario por primera vez
+        # Crear usuario por primera vez. Desde 041 el personal exige club y no
+        # recibe contraseña (contracts/staff-admin.md §1.2).
         first = await client.post(
             "/api/users",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "email": email,
-                "password": "Coach2026!",
                 "first_name": "Primero",
                 "last_name": "Usuario",
                 "role": "coach",
+                "club_id": club_id,
             },
         )
         assert first.status_code == 201
@@ -276,10 +292,10 @@ class TestCreateUser:
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "email": email,
-                "password": "Coach2026!",
                 "first_name": "Segundo",
                 "last_name": "Usuario",
                 "role": "coach",
+                "club_id": club_id,
             },
         )
         assert second.status_code == 409
@@ -404,18 +420,19 @@ class TestUpdateUser:
             json={"email": "admin@trochyruta.com", "password": "Admin2026!"},
         )
         token = login.json()["access_token"]
+        club_id = await _seed_club_id(client, token)
 
-        # Crear usuario para editar
+        # Crear usuario para editar (personal: club obligatorio, sin contraseña)
         email = f"edit-me-{uuid4().hex[:8]}@test.com"
         create_resp = await client.post(
             "/api/users",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "email": email,
-                "password": "Coach2026!",
                 "first_name": "Antes",
                 "last_name": "Apellido",
                 "role": "coach",
+                "club_id": club_id,
             },
         )
         assert create_resp.status_code == 201

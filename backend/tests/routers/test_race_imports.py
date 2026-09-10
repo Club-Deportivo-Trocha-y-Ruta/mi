@@ -8,7 +8,7 @@ Cubre los códigos HTTP del contrato (upload-design.md §4):
 - 400 magic bytes / archivo vacío / formato no soportado
 - 401 sin auth (anon)
 - 403 rol parent
-- 403 ownership cross-coach (parse_id de otro coach)
+- 403 coach de otro club (parse_id de un cargue ajeno al club)
 - 404 parse_id inexistente / ya committed
 - 409 sha duplicado (committed previo con mismo sha)
 - 413 archivo > RACE_MAX_PDF_MB
@@ -45,6 +45,7 @@ from app.models import Base
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +53,18 @@ from app.models.user import User, UserRole
 # ---------------------------------------------------------------------------
 
 
-def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
+def _make_user(
+    role: UserRole, user_id: int = 10, club_ids: tuple[int, ...] = (1,)
+) -> SimpleNamespace:
+    """Usuario falso con membresías de coach.
+
+    El acceso a un cargue se decide por club y no por autoría
+    (``contracts/scope-ai-imports.md`` §6.1), y ``coach_club_ids`` lee
+    ``user.club_memberships`` del objeto autenticado — no la tabla. El club 1
+    es el que siembran los tests que crean ``club_members``.
+    """
+    from app.models.club import ClubRole as _ClubRole
+
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
@@ -61,8 +73,32 @@ def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=cid, role_in_club=_ClubRole.coach)
+            for cid in club_ids
+        ],
     )
+
+
+async def _seed_club_membership(
+    db_session_factory, *, user_id: int, club_id: int = 1
+) -> None:
+    """Crea el club y la fila ``club_members`` de un coach.
+
+    ``import_club_ids`` (§1.2) resuelve el club de un cargue leyendo la
+    tabla ``club_members`` de quien lo subió — no el objeto autenticado —,
+    así que sin esta fila el cargue queda sin club y decide el respaldo por
+    autoría, que es justo lo que estas pruebas NO quieren ejercitar.
+    """
+    from app.models.club import Club, ClubMember, ClubRole
+
+    async with db_session_factory() as session:
+        session.add(Club(id=club_id, name=f"Club {club_id}", code=f"C{club_id}"))
+        await session.flush()
+        session.add(
+            ClubMember(club_id=club_id, user_id=user_id, role_in_club=ClubRole.coach)
+        )
+        await session.commit()
 
 
 @pytest_asyncio.fixture
@@ -104,6 +140,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_categories",
             "race_competitors",
             "race_results",
+            *AUDIT_TABLES,
         )
     ]
     async with engine.begin() as conn:
@@ -317,7 +354,7 @@ async def coach_client(
 async def coach2_client(
     sqlite_engine, db_session_factory, seed_test_data, override_storage
 ):
-    """Cliente coach id=20 — usado para tests de ownership cross-coach."""
+    """Cliente coach id=20 — usado para los tests de acceso entre coaches."""
     async def _override_db():
         async with db_session_factory() as session:
             try:
@@ -331,6 +368,37 @@ async def coach2_client(
     from app.dependencies import get_current_user
     app.dependency_overrides[get_current_user] = lambda: _make_user(
         UserRole.coach, user_id=20
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def coach_otro_club_client(
+    sqlite_engine, db_session_factory, seed_test_data, override_storage
+):
+    """Cliente coach id=20 pero con membresía en el club 2.
+
+    Es el reverso de ``coach2_client``: mismo rol, otro club. Con él, el 403
+    prueba la regla de club de ``contracts/scope-ai-imports.md`` §1.4 y no un
+    conjunto de membresías vacío.
+    """
+    async def _override_db():
+        async with db_session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = _override_db
+    from app.dependencies import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: _make_user(
+        UserRole.coach, user_id=20, club_ids=(2,)
     )
 
     transport = ASGITransport(app=app)
@@ -688,18 +756,25 @@ class TestDryRunEndpoint:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_dry_run_403_cross_coach_ownership(
+    async def test_dry_run_200_mismo_club_otro_coach(
         self, coach2_client, db_session_factory
     ):
-        """coach20 intenta hacer dry-run sobre parse_id de coach10 → 403."""
+        """coach20, del mismo club que coach10, sí puede hacer dry-run.
+
+        Es el cambio central de US6 (``contracts/scope-ai-imports.md`` §6.1):
+        el creator-lock desaparece y manda el club. El dry-run en sí falla
+        después por falta de PDF en storage — lo que importa es que NO es 403.
+        """
+        await _seed_club_membership(db_session_factory, user_id=10, club_id=1)
         async with db_session_factory() as session:
             imp = RaceImport(
                 filename="x.pdf", sha256="b" * 64, series_id=1,
                 status=RaceImportStatus.pending, stats_json={},
-                imported_by_user_id=10,  # propiedad de coach10
+                imported_by_user_id=10,  # cargado por coach10
                 imported_at=datetime.now(timezone.utc),
                 kind=RaceImportKind.resultados,
-                parse_meta_json={"header": {}},
+                parse_meta_json={"header": {}, "results_ext": "pdf"},
+                storage_path="/nonexistent/file.pdf",
             )
             session.add(imp)
             await session.commit()
@@ -708,7 +783,32 @@ class TestDryRunEndpoint:
         r = await coach2_client.post(
             f"/api/race-analysis/imports/{pid}/dry-run"
         )
+        assert r.status_code != 403, r.text
+
+    @pytest.mark.asyncio
+    async def test_dry_run_403_coach_de_otro_club(
+        self, coach_otro_club_client, db_session_factory
+    ):
+        """coach20, coach del club 2, sobre un cargue del club 1 → 403."""
+        await _seed_club_membership(db_session_factory, user_id=10, club_id=1)
+        async with db_session_factory() as session:
+            imp = RaceImport(
+                filename="x.pdf", sha256="b" * 64, series_id=1,
+                status=RaceImportStatus.pending, stats_json={},
+                imported_by_user_id=10,  # cargado por coach10 (club 1)
+                imported_at=datetime.now(timezone.utc),
+                kind=RaceImportKind.resultados,
+                parse_meta_json={"header": {}},
+            )
+            session.add(imp)
+            await session.commit()
+            pid = imp.id
+
+        r = await coach_otro_club_client.post(
+            f"/api/race-analysis/imports/{pid}/dry-run"
+        )
         assert r.status_code == 403
+        assert "otro club" in r.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_dry_run_admin_bypasses_ownership(

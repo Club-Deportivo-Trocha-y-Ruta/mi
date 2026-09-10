@@ -50,11 +50,24 @@
     </div>
     <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
       <p style="margin: 0; font-size: 8pt; color: #6b7280;">Gap al P1</p>
-      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('gap_pct') is not none %}+{{ "%.1f"|format(reading.get('gap_pct')) }} %{% else %}—{% endif %}</p>
+      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('gap_pct') is not none %}{{ reading.get('gap_pct') | num_es(1, sign=True) }} %{% else %}—{% endif %}</p>
     </div>
     <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
       <p style="margin: 0; font-size: 8pt; color: #6b7280;">Percentil</p>
-      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('percentile') is not none %}{{ "%.0f"|format(reading.get('percentile')) }}{% else %}—{% endif %}</p>
+      {#
+        El percentil se oculta con parrillas menores a `_MIN_FIELD` porque
+        deja de informar: con 3 corredores solo puede valer 100, 50 o 0, y un
+        "Percentil 0" impreso en un documento familiar por haber sido 3º de 3
+        se lee como un juicio sobre el deportista, no como una medida sin
+        muestra suficiente. Mismo criterio que el guardián de parrilla de las
+        insignias (`badge_evaluator._is_credible_position`, 2026-09-08): en
+        parrillas diminutas la métrica relativa es ruido y es preferible no
+        mostrar nada. La posición y el pelotón siguen visibles al lado, así
+        que no se pierde información real.
+      #}
+      {% set _pct = reading.get('percentile') %}
+      {% set _field = reading.get('field_size') %}
+      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if _pct is not none and _field is not none and _field >= 5 %}{{ "%.0f"|format(_pct) }}{% else %}—{% endif %}</p>
     </div>
   </div>
   {%- endif %}

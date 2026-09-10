@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator
 
 from app.models.user import UserRole
+from app.services.audit import AuditReasonCode, ParentRemovalReasonCode
 
 
 class UserCreate(BaseModel):
@@ -27,6 +28,13 @@ class UserUpdate(BaseModel):
     last_name: str | None = None
     phone: str | None = None
     is_active: bool | None = None
+    # Motivo de la desactivación/reactivación (feature 041,
+    # contracts/staff-admin.md §4). Nunca se persiste en `users` — solo viaja
+    # a `audit_log.reason_code`. Tipado como el catálogo completo porque el
+    # grupo válido es la unión de `account_*` y `parent_*` (un coach que
+    # desactiva una cuenta de familia necesita un motivo veraz); el router
+    # valida la pertenencia al grupo correcto y produce el copy 422 de §4.2.
+    reason_code: AuditReasonCode | None = None
 
 
 class UserOut(BaseModel):
@@ -39,6 +47,7 @@ class UserOut(BaseModel):
     is_active: bool
     can_login: bool
     created_at: datetime
+    created_by_display_name: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -46,3 +55,15 @@ class UserOut(BaseModel):
 class UserListOut(BaseModel):
     items: list[UserOut]
     total: int
+
+
+class UserDeleteIn(BaseModel):
+    """Cuerpo de `DELETE /api/users/{user_id}` (feature 041, T046).
+
+    Simétrico con `AthleteArchiveIn` (contracts/athlete-archive.md §1 y §8.4):
+    el motivo viaja en el cuerpo JSON, nunca en un query param, porque axios
+    (`apiClient.delete(url, { data })`) y FastAPI ya soportan ese formato en
+    el endpoint hermano de archivado de atletas.
+    """
+
+    reason_code: ParentRemovalReasonCode

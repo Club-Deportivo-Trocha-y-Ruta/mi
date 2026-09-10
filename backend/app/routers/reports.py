@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
+    get_current_user,
     get_db,
     get_notification_service,
     get_task_dispatcher,
@@ -35,6 +36,7 @@ from app.schemas.notification import (
     NotificationRequest,
     NotificationTemplate,
 )
+from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
 from app.services.notification.service import NotificationService
 from app.services.notification.task_dispatcher import TaskDispatcher
 
@@ -85,6 +87,7 @@ async def _get_club(athlete: Athlete, db: AsyncSession) -> Club:
 async def download_anthropometry_pdf(
     db: AsyncSession = Depends(get_db),
     athlete: Athlete = Depends(verify_athlete_access),
+    current_user: User = Depends(get_current_user),
     notification_service: NotificationService = Depends(get_notification_service),
 ) -> Response:
     """Genera y retorna el reporte antropométrico del atleta en formato PDF."""
@@ -125,6 +128,19 @@ async def download_anthropometry_pdf(
     )
 
     generated = await notification_service.generate_document_only(doc_request)
+
+    # Fila de exportación (§4.13 audit-recording.md): SOLO el tipo de
+    # documento y el athlete_id, nunca su contenido.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.athlete,
+        entity_id=athlete.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        meta={"document_kind": AuditDocumentKind.growth_pdf.value},
+    )
 
     return Response(
         content=generated.data,
@@ -182,6 +198,19 @@ async def download_medical_clearance_docx(
     )
 
     generated = await notification_service.generate_document_only(doc_request)
+
+    # Fila de exportación (§4.13 audit-recording.md): SOLO el tipo de
+    # documento y el athlete_id, nunca su contenido.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.athlete,
+        entity_id=athlete.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        meta={"document_kind": AuditDocumentKind.clearance_docx.value},
+    )
 
     return Response(
         content=generated.data,
@@ -280,5 +309,18 @@ async def send_monthly_report_email(
     )
 
     await notification_service.send(notification_request, dispatcher=dispatcher)
+
+    # Fila de envío (§4.13 audit-recording.md): SOLO el tipo de documento y
+    # el athlete_id, nunca el correo ni el contenido de la familia.
+    await record_audit(
+        db,
+        action=AuditAction.send,
+        entity_type=AuditEntityType.athlete,
+        entity_id=athlete.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        meta={"document_kind": AuditDocumentKind.growth_pdf.value},
+    )
 
     return {"queued": True, "template": NotificationTemplate.MONTHLY_REPORT}

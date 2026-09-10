@@ -101,6 +101,7 @@ async def fetch_club_insights_by_race(
         .where(
             Athlete.id.in_(race_athlete_ids),
             Athlete.club_id == club_id,
+            Athlete.deleted_at.is_(None),
         )
         .order_by(Athlete.last_name, Athlete.first_name)
         .limit(limit)

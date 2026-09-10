@@ -28,6 +28,8 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from app.services.utils.numbers_es import format_number_es
+
 _TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "templates"
 
 _TEXT_Y_RE = re.compile(r'<text\b[^>]*\by="(-?[\d.]+)"')
@@ -35,10 +37,14 @@ _FORBIDDEN_TAGS = ("<title", "<desc", "<metadata")
 
 
 def _env() -> Environment:
-    return Environment(
+    env = Environment(
         loader=FileSystemLoader(str(_TEMPLATES_ROOT)),
         autoescape=select_autoescape(["html", "svg.jinja"]),
     )
+    # ``gap_pct.svg.jinja`` usa el filtro ``num_es`` (coma decimal es-CO) —
+    # mismo filtro que registra ``DocumentGenerator`` en producción.
+    env.filters["num_es"] = format_number_es
+    return env
 
 
 def _render_macro(macro_file: str, macro_name: str, **kwargs) -> str:

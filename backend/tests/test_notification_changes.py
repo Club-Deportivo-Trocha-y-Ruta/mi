@@ -510,6 +510,27 @@ class TestAnthropometryNotificationLogic:
         user.email = email
         return user
 
+    def _attach_fake_flush(self, db):
+        """Hace que db.add/db.flush simulen la asignación de PK de una AsyncSession real.
+
+        Un AsyncSession real puebla el id autoincremental del objeto durante
+        el flush; MagicMock no lo hace por sí solo, así que aquí lo emulamos
+        para que record_audit reciba un entity_id entero, como en producción.
+        """
+        added_objects: list = []
+
+        def fake_add(obj):
+            added_objects.append(obj)
+
+        async def fake_flush():
+            for index, obj in enumerate(added_objects):
+                if getattr(obj, "id", None) is None:
+                    obj.id = index + 1
+
+        db.add = MagicMock(side_effect=fake_add)
+        db.flush = AsyncMock(side_effect=fake_flush)
+        return db
+
     def _make_phv_result(self, maturity_offset: float = -1.5) -> dict:
         return {
             "leg_length_cm": "82.0",
@@ -596,8 +617,7 @@ class TestAnthropometryNotificationLogic:
 
         db = MagicMock()
         db.execute = fake_execute_seq
-        db.add = MagicMock()
-        db.flush = AsyncMock()
+        self._attach_fake_flush(db)
         return db
 
     def _make_athlete(self):
@@ -685,8 +705,7 @@ class TestAnthropometryNotificationLogic:
         # db.execute no se llegará a llamar para queries de notificación
         db = MagicMock()
         db.execute = AsyncMock()
-        db.add = MagicMock()
-        db.flush = AsyncMock()
+        self._attach_fake_flush(db)
 
         current_user = MagicMock()
         current_user.id = 99
@@ -812,8 +831,7 @@ class TestAnthropometryNotificationLogic:
 
         db = MagicMock()
         db.execute = fake_execute_seq
-        db.add = MagicMock()
-        db.flush = AsyncMock()
+        self._attach_fake_flush(db)
 
         current_user = MagicMock()
         current_user.id = 99

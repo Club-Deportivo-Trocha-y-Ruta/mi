@@ -39,6 +39,7 @@ from app.models.user import UserRole
 from app.services.training.reports import get_conjoint_sessions
 
 from tests.fixtures.race_history_fixtures import create_club, create_user
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 CLUB_ID = 1
 COACH_ID = 10
@@ -54,7 +55,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     )
     tables = [
         Base.metadata.tables[t]
-        for t in ("users", "clubs", "training_sessions", "calendar_events")
+        for t in ("users", "clubs", "training_sessions", "calendar_events", *AUDIT_TABLES)
     ]
     async with eng.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))

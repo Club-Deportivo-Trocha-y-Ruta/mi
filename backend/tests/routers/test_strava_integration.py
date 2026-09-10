@@ -71,15 +71,16 @@ from app.routers import strava_integration
 from app.services.strava import oauth
 from app.services.strava.client import StravaClient
 from app.services.strava.token_store import encrypt_token
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 _TABLES = (
     "users",
     "clubs",
     "athletes",
-    "privacy_policies",  # see LONGTEXT compiler shim above
     "parental_consents",
     "strava_connections",
     "strava_activities",
+    *AUDIT_TABLES,
 )
 
 

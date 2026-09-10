@@ -357,6 +357,13 @@ export function AnalysisRunTimeline({
   const progress = data?.latest.progress_pct ?? 0;
   const eta = data?.latest.estimated_seconds_remaining ?? 0;
   const currentNode = data?.latest.current_node ?? null;
+  // Feature 041 (gobernanza multi-coach, US6, §4.4): quién lanzó / decidió
+  // el run. Campos aditivos y opcionales — un backend que aún no los manda
+  // deja ambos en `undefined` y no se renderiza nada. `"Usuario no
+  // disponible"` es un valor legítimo que se renderiza tal cual (FR-013);
+  // nunca se compone ni se deriva un identificador crudo aquí.
+  const requestedBy = data?.latest.requested_by_display_name ?? null;
+  const decidedBy = data?.latest.decided_by_display_name ?? null;
 
   return (
     <section
@@ -416,6 +423,23 @@ export function AnalysisRunTimeline({
             </p>
           )}
         </div>
+        {(requestedBy || decidedBy) && (
+          <p
+            className="mt-1 flex flex-wrap items-center gap-1 text-xs text-mid-gray"
+            data-testid="timeline-actors"
+          >
+            {requestedBy && (
+              <span data-testid="timeline-actor-requested">
+                Lanzado por {requestedBy}
+              </span>
+            )}
+            {decidedBy && (
+              <span data-testid="timeline-actor-decided">
+                {requestedBy ? " · " : ""}Decidido por {decidedBy}
+              </span>
+            )}
+          </p>
+        )}
         <div className="mt-2 flex items-center gap-3">
           <div
             className="h-1.5 flex-1 overflow-hidden rounded-full bg-light-gray"

@@ -24,8 +24,7 @@ vi.mock("@/components/activities/LinkSessionDialog", () => ({
 }));
 
 import { useUpdateAttendance } from "@/api/trainingSessions";
-import { AttendanceTable } from "./AttendanceTable";
-import type { Attendance } from "@/types/trainingSession.types";
+import { AttendanceTable, type AttendanceWithAttribution } from "./AttendanceTable";
 import type { ActivityOut } from "@/types/strava.types";
 
 const mutate = vi.fn();
@@ -47,7 +46,9 @@ const mutationStub = {
   submittedAt: 0,
 };
 
-function makeAttendance(overrides?: Partial<Attendance>): Attendance {
+function makeAttendance(
+  overrides?: Partial<AttendanceWithAttribution>,
+): AttendanceWithAttribution {
   return {
     id: 1,
     session_id: 10,
@@ -95,7 +96,10 @@ interface RenderTableOptions {
   canLink?: boolean;
 }
 
-function renderTable(attendances: Attendance[], options: RenderTableOptions = {}) {
+function renderTable(
+  attendances: AttendanceWithAttribution[],
+  options: RenderTableOptions = {},
+) {
   const {
     sessionId = 10,
     disabled = false,
@@ -149,6 +153,64 @@ describe("AttendanceTable", () => {
       renderTable([makeAttendance({ status: "presente" })]);
       const selects = screen.getAllByRole("combobox", { name: /Estado de asistencia/i });
       expect(selects[0]).toHaveValue("presente");
+    });
+  });
+
+  describe("atribución de registro (feature 041 — gobernanza multi-coach)", () => {
+    it("muestra 'Registrado por {A} · Editado por {B}' cuando ambos difieren", () => {
+      renderTable([
+        makeAttendance({
+          athlete_id: 1,
+          recorded_by_display_name: "Ana Coach",
+          last_edited_by_display_name: "Bruno Coach",
+        }),
+      ]);
+      const lines = screen.getAllByTestId("attendance-attribution-1");
+      expect(lines.length).toBeGreaterThanOrEqual(1);
+      lines.forEach((line) =>
+        expect(line).toHaveTextContent("Registrado por Ana Coach · Editado por Bruno Coach"),
+      );
+    });
+
+    it("muestra solo 'Registrado por {A}' cuando last_edited_by_display_name es null", () => {
+      renderTable([
+        makeAttendance({
+          athlete_id: 1,
+          recorded_by_display_name: "Ana Coach",
+          last_edited_by_display_name: null,
+        }),
+      ]);
+      const lines = screen.getAllByTestId("attendance-attribution-1");
+      lines.forEach((line) => expect(line).toHaveTextContent("Registrado por Ana Coach"));
+      lines.forEach((line) => expect(line).not.toHaveTextContent("Editado por"));
+    });
+
+    it("muestra solo 'Registrado por {A}' cuando ambos nombres coinciden", () => {
+      renderTable([
+        makeAttendance({
+          athlete_id: 1,
+          recorded_by_display_name: "Ana Coach",
+          last_edited_by_display_name: "Ana Coach",
+        }),
+      ]);
+      const lines = screen.getAllByTestId("attendance-attribution-1");
+      lines.forEach((line) => expect(line).not.toHaveTextContent("Editado por"));
+    });
+
+    it("no renderiza nada cuando ambos campos son null (fila anterior a la feature)", () => {
+      renderTable([
+        makeAttendance({
+          athlete_id: 1,
+          recorded_by_display_name: null,
+          last_edited_by_display_name: null,
+        }),
+      ]);
+      expect(screen.queryByTestId("attendance-attribution-1")).not.toBeInTheDocument();
+    });
+
+    it("no renderiza nada cuando ninguno de los dos campos viene en el payload (pre-041)", () => {
+      renderTable([makeAttendance({ athlete_id: 1 })]);
+      expect(screen.queryByTestId("attendance-attribution-1")).not.toBeInTheDocument();
     });
   });
 

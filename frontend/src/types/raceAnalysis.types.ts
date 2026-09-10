@@ -73,6 +73,17 @@ export interface RunStatusResponse {
   estimated_seconds_remaining: number;
   new_events: RunEvent[];
   last_seq: number;
+  /**
+   * Quién lanzó / decidió el run — feature 041 (gobernanza multi-coach),
+   * contracts/scope-ai-imports.md §4.2. Aditivos y opcionales: el backend
+   * puede no mandarlos todavía. `"Usuario no disponible"` es un valor
+   * legítimo (FR-013) — nunca un `user#{id}` crudo. `null` = sin lanzar /
+   * sin decidir aún. Solo nombres de staff adulto, nunca de un menor.
+   */
+  requested_by_user_id?: number | null;
+  requested_by_display_name?: string | null;
+  decided_by_user_id?: number | null;
+  decided_by_display_name?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +102,9 @@ export interface HITLDecisionResponse {
   run_id: string;
   step_id: string;
   next_state: RunState;
+  /** Aditivo y opcional — contracts/scope-ai-imports.md §4.3. */
+  decided_by_user_id?: number | null;
+  decided_by_display_name?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,4 +242,39 @@ export interface ChatMessage {
   citations?: string[];
   /** Timestamp local ISO. */
   ts: string;
+}
+
+// ---------------------------------------------------------------------------
+// Uso/gasto de IA — GET /admin/ai-usage (feature 041, US6,
+// contracts/scope-ai-imports.md §7.2). Solo montos y nombres de staff
+// adulto, nunca datos de un deportista menor.
+// ---------------------------------------------------------------------------
+
+export interface AIUsageByPromptVersion {
+  prompt_version: string;
+  run_count: number;
+  cost_usd_total: number;
+}
+
+/** Gasto de un entrenador en la ventana. `user_id: null` = "Sin atribuir". */
+export interface AIUsageByCoach {
+  user_id: number | null;
+  display_name: string;
+  run_count: number;
+  cost_usd_total: number;
+}
+
+export interface AIUsageResponse {
+  window_days: number;
+  run_count: number;
+  cost_usd_total: number;
+  latency_ms_p50: number;
+  latency_ms_p95: number;
+  fail_rate: number;
+  by_prompt_version: AIUsageByPromptVersion[];
+  /**
+   * Aditivo y opcional (§7.2): un backend aún no desplegado con esta
+   * feature puede no mandarlo todavía — la página lo trata como `[]`.
+   */
+  by_coach?: AIUsageByCoach[];
 }

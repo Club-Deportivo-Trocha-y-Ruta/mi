@@ -50,7 +50,9 @@ from app.schemas.strava import (
     SessionSuggestionListOut,
     SessionSuggestionOut,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.intervals.match_runner import run_match_deferred
+from app.services.request_context import current_request_id, new_request_id
 from app.services.notification.task_dispatcher import TaskDispatcher
 from app.services.permissions import (
     can_link_activity,
@@ -137,6 +139,13 @@ async def list_athlete_activities(
             status_code=status.HTTP_404_NOT_FOUND, detail="Atleta no encontrado"
         )
 
+    # Un atleta archivado desaparece de la superficie de coach y padre;
+    # el admin conserva acceso (mismo patrón que verify_athlete_access, C3).
+    if athlete.deleted_at is not None and current_user.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Atleta no encontrado"
+        )
+
     if not await can_view_activity(current_user, athlete_id, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -203,7 +212,9 @@ async def list_activities(
             detail="No tiene permiso para revisar actividades",
         )
 
-    filters = []
+    # Un atleta archivado desaparece de la revisión de actividades de Strava
+    # (contracts/athlete-archive.md §5.2).
+    filters = [Athlete.deleted_at.is_(None)]
 
     if current_user.role == UserRole.coach:
         coach_club_ids = {
@@ -329,6 +340,9 @@ async def get_session_suggestions(
             select(SessionAttendance.session_id).where(
                 SessionAttendance.session_id.in_(session_ids),
                 SessionAttendance.athlete_id == activity.athlete_id,
+                # Una fila archivada es una baja del roster que conserva sus
+                # datos para el administrador; no debe contar como asistencia.
+                SessionAttendance.archived_at.is_(None),
             )
         )
         attended_session_ids = set(attendance_result.scalars().all())
@@ -465,6 +479,22 @@ async def link_activity(
             )
 
     await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.unlink if body.training_session_id is None else AuditAction.link,
+        entity_type=AuditEntityType.strava_activity,
+        entity_id=activity.id,
+        actor=current_user,
+        club_id=activity.athlete.club_id,
+        athlete_id=activity.athlete_id,
+        meta=(
+            {"related_entity_id": body.training_session_id}
+            if body.training_session_id is not None
+            else None
+        ),
+        request_id=current_request_id() or new_request_id(),
+    )
 
     return _serialize_activity_out(activity)
 

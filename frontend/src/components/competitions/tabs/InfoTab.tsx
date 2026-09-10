@@ -14,6 +14,7 @@
  *     pre-023 sin nivel resuelto → se asume "Campeonato Departamental"
  *     (fallback conservador, comportamiento previo).
  */
+import { ActorChip } from "@/components/audit/ActorChip";
 import type { RaceEventRead, RaceEventStatus } from "@/types/raceEvents.types";
 import type { RaceSeriesLevel } from "@/types/raceSeries.types";
 import { championshipLabel } from "@/lib/raceSeriesLabels";
@@ -149,10 +150,8 @@ export function InfoTab({ event, seriesLevel }: InfoTabProps) {
             {formatDateTime(event.updated_at)}
           </InfoRow>
 
-          <InfoRow label="Creado por usuario ID">
-            <span className="font-mono text-xs text-mid-gray">
-              {event.created_by_user_id}
-            </span>
+          <InfoRow label="Creado por">
+            <ActorChip userId={event.created_by_user_id} />
           </InfoRow>
         </div>
       </div>

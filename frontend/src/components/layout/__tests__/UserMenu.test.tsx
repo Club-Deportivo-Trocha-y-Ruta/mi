@@ -6,7 +6,8 @@ import { MemoryRouter } from "react-router-dom";
 import { UserMenu, type UserMenuVariant } from "@/components/layout/UserMenu";
 import type { NavRole } from "@/lib/navigation";
 
-// T039 [US4] — item visibility per role (Salud IA admin-only), logout()
+// T039 [US4] — item visibility per role (Salud IA visible a coach + admin
+// since feature 041 US6 §7.3), logout()
 // invoked on "Cerrar sesión", and the focus/roving-tabindex/Escape/
 // focus-return behavior inherited from ui/dropdown-menu.tsx (Radix
 // DropdownMenu). Per contracts/header-actions.md "User menu".
@@ -164,7 +165,7 @@ describe("UserMenu — visibilidad de items por rol", () => {
     }
   });
 
-  it("solo admin ve 'Salud IA' (/admin/ai)", async () => {
+  it("admin ve 'Salud IA' (/admin/ai)", async () => {
     const testUser = userEvent.setup();
     renderUserMenu("admin");
 
@@ -175,9 +176,29 @@ describe("UserMenu — visibilidad de items por rol", () => {
     ).toHaveAttribute("href", "/admin/ai");
   });
 
-  it("coach NO ve 'Salud IA'", async () => {
+  // Feature 041 (gobernanza multi-coach, US6, §7.3): el entrenador también
+  // ve el gasto de IA del club — el RBAC de /admin/ai-usage se amplió a
+  // coach + admin.
+  it("coach también ve 'Salud IA' (/admin/ai)", async () => {
     const testUser = userEvent.setup();
     renderUserMenu("coach");
+
+    await testUser.click(getTrigger());
+
+    expect(
+      screen.getByRole("menuitem", { name: /Salud IA/i }),
+    ).toHaveAttribute("href", "/admin/ai");
+  });
+
+  // US3 AS5: a quien no tiene acceso no se le muestra la entrada de
+  // navegación. `role` está tipado a `NavRole` ("coach" | "admin") porque
+  // `UserMenu` sólo se monta para esos roles por construcción — el cast
+  // aquí es defensivo, para que la condición de rol dentro del componente
+  // (y no solo el montaje externo) sea la que impide filtrar "Salud IA" a
+  // un padre o atleta si esa invariante externa alguna vez se rompe.
+  it("padre no ve 'Salud IA' aunque el componente se monte con ese rol", async () => {
+    const testUser = userEvent.setup();
+    renderUserMenu("parent" as NavRole);
 
     await testUser.click(getTrigger());
 
@@ -353,9 +374,16 @@ describe("UserMenu — foco/roving-tabindex/Escape heredados de Radix DropdownMe
     const first = screen.getByRole("menuitem", { name: /Mi perfil/i });
     expect(first).toHaveFocus();
 
-    // Feature 033, US5: el siguiente item tras "Mi perfil" ahora es el
-    // primer radio item del toggle "Apariencia" (Sistema), insertado antes
-    // de "Cerrar sesión".
+    // Feature 041, US6, §7.3: "Salud IA" ahora es visible también al
+    // entrenador (antes admin-only), así que es el siguiente item tras
+    // "Mi perfil" para el rol coach.
+    await testUser.keyboard("{ArrowDown}");
+    expect(
+      screen.getByRole("menuitem", { name: /Salud IA/i }),
+    ).toHaveFocus();
+
+    // Feature 033, US5: el siguiente item es el primer radio item del
+    // toggle "Apariencia" (Sistema), insertado antes de "Cerrar sesión".
     await testUser.keyboard("{ArrowDown}");
     expect(
       screen.getByRole("menuitemradio", { name: /Sistema/i }),

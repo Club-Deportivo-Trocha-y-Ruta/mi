@@ -61,7 +61,22 @@ export const PERSIST_ALLOWLIST_PREFIXES: readonly (readonly unknown[])[] = [
   // athlete ids/names/session content — data-privacy-guard reviewed
   // (research.md R9).
   ["dashboard", "coach-summary"],
+  // Feature 041 — closed catalogue of audit reason codes/labels only
+  // (no club/athlete/person data), same shape as ["revision-reasons"].
+  ["audit-reason-codes"],
 ] as const;
+
+// Feature 041 — deliberately NOT allow-listed: ["audit", …] (club/athlete
+// audit-log history). Contract audit-log-api.md §11: rows carry
+// `athlete_id` and the actor's (coach/admin) display name — do not add a
+// prefix for it without a fresh privacy ruling.
+
+// Feature 041 — deliberately NOT allow-listed: ["staff", …] and ["clubs", …]
+// (contracts/staff-admin.md §6). Staff rows carry adult names/emails and
+// `created_by_display_name`; the club list is low-sensitivity on its own,
+// but it is only ever fetched to populate the staff-creation sheet, so it
+// stays out too rather than be re-justified per caller. Omission is
+// intentional, not an oversight.
 
 /** True when `key`'s leading elements match `prefix` element-by-element. */
 function keyMatchesPrefix(key: QueryKey, prefix: readonly unknown[]): boolean {

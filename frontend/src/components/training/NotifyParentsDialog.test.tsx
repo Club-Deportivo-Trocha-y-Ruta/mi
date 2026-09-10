@@ -1,11 +1,38 @@
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe, toHaveNoViolations } from "jest-axe";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { NotifyParentsDialog } from "./NotifyParentsDialog";
+import { getAuditReasonCodes } from "@/api/audit";
 
 expect.extend(toHaveNoViolations);
+
+// jsdom no implementa estas APIs de puntero/scroll que Radix Select usa
+// internamente (PointerEvent completo, hasPointerCapture, scrollIntoView).
+// Sin este polyfill, abrir el Select revienta con un TypeError en jsdom.
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+}
+if (!Element.prototype.releasePointerCapture) {
+  Element.prototype.releasePointerCapture = () => {};
+}
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
+// El catálogo cerrado de motivos de cancelación solo se consulta en
+// variante "cancel" (ver `NotifyParentsDialog`). Se mockea la llamada al
+// API en vez de levantar MSW: mantiene el test enfocado en el componente.
+vi.mock("@/api/audit", () => ({
+  getAuditReasonCodes: vi.fn(),
+}));
+
+const CANCEL_REASON_CODES = [
+  { code: "cancel_weather", label: "Clima adverso", group: "cancel" as const },
+  { code: "cancel_rescheduled", label: "Reprogramada", group: "cancel" as const },
+];
 
 const defaultProps = {
   open: true,
@@ -14,9 +41,24 @@ const defaultProps = {
   onCancel: vi.fn(),
 };
 
+function renderWithClient(ui: React.ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return render(
+    <QueryClientProvider client={client}>{ui}</QueryClientProvider>,
+  );
+}
+
+async function selectCancelReason() {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: /Motivo de la cancelación/i }));
+  await user.click(await screen.findByRole("option", { name: "Reprogramada" }));
+}
+
 describe("NotifyParentsDialog", () => {
   it("no renderiza nada cuando open=false", () => {
-    const { container } = render(
+    const { container } = renderWithClient(
       <NotifyParentsDialog {...defaultProps} variant="create" open={false} />,
     );
     expect(container).toBeEmptyDOMElement();
@@ -27,7 +69,7 @@ describe("NotifyParentsDialog", () => {
     const onSkip = vi.fn();
     const onCancel = vi.fn();
 
-    render(
+    renderWithClient(
       <NotifyParentsDialog
         {...defaultProps}
         variant="create"
@@ -48,7 +90,7 @@ describe("NotifyParentsDialog", () => {
   });
 
   it("variante update muestra el diff y deshabilita Enviar si no hay cambios", () => {
-    const { rerender } = render(
+    const { rerender } = renderWithClient(
       <NotifyParentsDialog {...defaultProps} variant="update" changes={[]} />,
     );
     expect(
@@ -56,13 +98,15 @@ describe("NotifyParentsDialog", () => {
     ).toBeDisabled();
 
     rerender(
-      <NotifyParentsDialog
-        {...defaultProps}
-        variant="update"
-        changes={[
-          { field: "location", fieldLabel: "Lugar", oldValue: "A", newValue: "B" },
-        ]}
-      />,
+      <QueryClientProvider client={new QueryClient()}>
+        <NotifyParentsDialog
+          {...defaultProps}
+          variant="update"
+          changes={[
+            { field: "location", fieldLabel: "Lugar", oldValue: "A", newValue: "B" },
+          ]}
+        />
+      </QueryClientProvider>,
     );
     expect(screen.getByText("Lugar:")).toBeInTheDocument();
     expect(screen.getByText("A")).toBeInTheDocument();
@@ -72,26 +116,63 @@ describe("NotifyParentsDialog", () => {
     ).toBeEnabled();
   });
 
-  it("variante cancel permite escribir motivo y lo pasa al callback onSend", () => {
+  it("variante cancel exige elegir motivo del catálogo antes de habilitar Enviar/No enviar", async () => {
+    vi.mocked(getAuditReasonCodes).mockResolvedValue({ items: CANCEL_REASON_CODES });
     const onSend = vi.fn();
-    render(
+    const onSkip = vi.fn();
+    renderWithClient(
       <NotifyParentsDialog
         {...defaultProps}
         variant="cancel"
         parentCount={2}
         onSend={onSend}
+        onSkip={onSkip}
       />,
     );
 
-    fireEvent.change(screen.getByLabelText(/Motivo/i), {
+    expect(
+      screen.getByRole("button", { name: /Enviar notificación/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^No enviar$/i })).toBeDisabled();
+
+    await selectCancelReason();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Enviar notificación/i }),
+      ).toBeEnabled(),
+    );
+
+    fireEvent.change(screen.getByLabelText(/Mensaje para las familias/i), {
       target: { value: "Lluvia intensa" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Enviar notificación/i }));
-    expect(onSend).toHaveBeenCalledWith("Lluvia intensa");
+    expect(onSend).toHaveBeenCalledWith("Lluvia intensa", "cancel_rescheduled");
+  });
+
+  it("variante cancel pasa el reasonCode elegido a 'No enviar'", async () => {
+    vi.mocked(getAuditReasonCodes).mockResolvedValue({ items: CANCEL_REASON_CODES });
+    const onSkip = vi.fn();
+    renderWithClient(
+      <NotifyParentsDialog
+        {...defaultProps}
+        variant="cancel"
+        parentCount={2}
+        onSkip={onSkip}
+      />,
+    );
+
+    await selectCancelReason();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^No enviar$/i })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^No enviar$/i }));
+    expect(onSkip).toHaveBeenCalledWith("cancel_rescheduled");
   });
 
   it("variante attendance lista atletas añadidos y removidos", () => {
-    render(
+    renderWithClient(
       <NotifyParentsDialog
         {...defaultProps}
         variant="attendance"
@@ -108,7 +189,7 @@ describe("NotifyParentsDialog", () => {
   });
 
   it("deshabilita Enviar en variante attendance si no hay atletas añadidos", () => {
-    render(
+    renderWithClient(
       <NotifyParentsDialog
         {...defaultProps}
         variant="attendance"
@@ -136,7 +217,7 @@ describe("NotifyParentsDialog", () => {
 describe("NotifyParentsDialog — Radix Dialog (foco y cierre)", () => {
   it("atrapa el foco: Tab repetido nunca llega a un elemento de fondo", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithClient(
       <>
         <button type="button">Fondo</button>
         <NotifyParentsDialog {...defaultProps} variant="create" parentCount={2} />
@@ -160,7 +241,7 @@ describe("NotifyParentsDialog — Radix Dialog (foco y cierre)", () => {
   it("Escape cierra el diálogo (llama a onCancel)", async () => {
     const user = userEvent.setup();
     const onCancel = vi.fn();
-    render(
+    renderWithClient(
       <NotifyParentsDialog {...defaultProps} variant="create" onCancel={onCancel} />,
     );
 
@@ -170,7 +251,7 @@ describe("NotifyParentsDialog — Radix Dialog (foco y cierre)", () => {
   });
 
   it("sin violaciones de accesibilidad (jest-axe)", async () => {
-    render(
+    renderWithClient(
       <NotifyParentsDialog {...defaultProps} variant="create" parentCount={2} />,
     );
     // Radix porta el contenido del diálogo a document.body (fuera del

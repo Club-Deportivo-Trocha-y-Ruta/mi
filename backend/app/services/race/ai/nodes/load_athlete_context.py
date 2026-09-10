@@ -93,7 +93,12 @@ async def _resolve_reference_date(db: Any, state: dict) -> date:
 
 
 async def _resolve_club_id(db: Any, athlete_id: int) -> int | None:
-    result = await db.execute(select(Athlete.club_id).where(Athlete.id == athlete_id))
+    result = await db.execute(
+        select(Athlete.club_id).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
+    )
     return result.scalar_one_or_none()
 
 

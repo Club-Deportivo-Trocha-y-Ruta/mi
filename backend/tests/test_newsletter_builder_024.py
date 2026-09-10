@@ -63,6 +63,7 @@ from app.services.training.newsletter_builder import (
     _build_race_block,
     _build_technical_block,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # ---------------------------------------------------------------------------
 # Real aiosqlite harness — race tables only (A1, B7)
@@ -77,6 +78,7 @@ _RACE_TABLES = (
     "race_categories",
     "race_competitors",
     "race_results",
+    *AUDIT_TABLES,
 )
 
 

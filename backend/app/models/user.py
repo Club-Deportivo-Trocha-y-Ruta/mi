@@ -8,6 +8,7 @@ from sqlalchemy import String, Boolean, Enum, ForeignKey, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.mixins import ActorTimestampMixin
 
 if TYPE_CHECKING:
     from app.models.club import ClubMember
@@ -21,7 +22,7 @@ class UserRole(str, enum.Enum):
     athlete = "athlete"
 
 
-class User(Base):
+class User(ActorTimestampMixin, Base):
     __tablename__ = "users"
     __table_args__ = (
         # Filtra usuarios por rol (listar coaches, parents, etc.)
@@ -70,3 +71,14 @@ class User(Base):
         foreign_keys="Athlete.user_id",
         uselist=False,
     )
+
+    @property
+    def display_name(self) -> str:
+        """Nombre para mostrar en superficies de atribución (FR-013).
+
+        Reutilizado por ``created_by_display_name`` en ``UserOut``
+        (contracts/staff-admin.md §1.6) y por cualquier otro autor de
+        auditoría que necesite un nombre legible sin exponer datos de un
+        menor.
+        """
+        return f"{self.first_name} {self.last_name}".strip()

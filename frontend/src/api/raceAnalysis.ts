@@ -9,6 +9,7 @@
  */
 import { apiClient } from "@/api/client";
 import type {
+  AIUsageResponse,
   ChatRequestBody,
   ChatResponse,
   HITLDecisionRequest,
@@ -253,6 +254,30 @@ export async function getRaceEventRuns(
       params: opts?.activeOnly !== undefined
         ? { active_only: opts.activeOnly }
         : undefined,
+      signal: options?.signal,
+    },
+  );
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Gasto de IA — feature 041 (gobernanza multi-coach, US6), §7.2. Coach + admin.
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /admin/ai-usage?days=N — métricas agregadas de uso de IA de los
+ * últimos N días, incluido el desglose por entrenador (`by_coach`).
+ * RBAC ampliado a coach + admin (antes solo admin): el entrenador necesita
+ * ver quién consume el presupuesto compartido del club.
+ */
+export async function getAIUsage(
+  params?: { days?: number },
+  options?: { signal?: AbortSignal },
+): Promise<AIUsageResponse> {
+  const response = await apiClient.get<AIUsageResponse>(
+    `${BASE}/admin/ai-usage`,
+    {
+      params: { days: params?.days ?? 30 },
       signal: options?.signal,
     },
   );

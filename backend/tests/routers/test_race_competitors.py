@@ -53,6 +53,7 @@ from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +121,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_competitors",
             "race_results",
             "race_competitor_link_audit",
+            *AUDIT_TABLES,
         )
     ]
     async with eng.begin() as conn:

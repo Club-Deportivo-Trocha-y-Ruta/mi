@@ -26,6 +26,8 @@ from app.main import app
 from app.models.calendar_event import EventStatus, EventType
 from app.models.club import ClubMember, ClubRole
 from app.models.user import UserRole
+from app.services.audit import AuditAction, AuditEntityType, CancelReasonCode
+from app.services.request_context import AuditContext
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +218,45 @@ class TestListParams:
         )
 
         assert resp.status_code == 400
+
+    async def test_parent_con_coach_user_id_retorna_403(self, client: AsyncClient):
+        """T064 (contracts/session-coaches.md §8.2): quién lidera una
+        sesión es información interna — un padre no puede filtrar por ella."""
+        app.dependency_overrides[get_current_user] = _parent_user
+        app.dependency_overrides[get_db] = _override_db()
+
+        with patch(
+            "app.services.permissions.parent_athlete_ids",
+            AsyncMock(return_value=[]),
+        ):
+            resp = await client.get(
+                "/api/calendar/events",
+                params={"from": "2030-09-01", "to": "2030-09-30", "coach_user_id": 5},
+                headers={"Authorization": "Bearer fake"},
+            )
+
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "No tienes permisos para filtrar por entrenador."
+
+    async def test_coach_user_id_se_reenvia_a_list_events_in_range(self, client: AsyncClient):
+        app.dependency_overrides[get_current_user] = _coach_user
+        app.dependency_overrides[get_db] = _override_db()
+
+        captured = {}
+
+        async def _fake_list(*, db, club_id, from_date, to_date, filters, viewer):
+            captured["coach_user_id"] = filters.coach_user_id
+            return []
+
+        with patch("app.services.calendar.events.list_events_in_range", _fake_list):
+            resp = await client.get(
+                "/api/calendar/events",
+                params={"from": "2030-09-01", "to": "2030-09-30", "coach_user_id": 5},
+                headers={"Authorization": "Bearer fake"},
+            )
+
+        assert resp.status_code == 200
+        assert captured["coach_user_id"] == 5
 
 
 # ---------------------------------------------------------------------------
@@ -420,12 +461,38 @@ class TestDeleteEvent:
                 "app.routers.calendar.can_edit_calendar_event",
                 AsyncMock(return_value=False),
             ):
+                resp = await client.request(
+                    "DELETE",
+                    "/api/calendar/events/1",
+                    headers={"Authorization": "Bearer fake"},
+                    json={"reason_code": "cancel_weather"},
+                )
+
+        assert resp.status_code == 403
+
+    async def test_sin_motivo_retorna_422(self, client: AsyncClient):
+        app.dependency_overrides[get_current_user] = _coach_user
+        app.dependency_overrides[get_db] = _override_db()
+        app.dependency_overrides[get_notification_service] = _override_notification_service
+        app.dependency_overrides[get_task_dispatcher] = _override_dispatcher
+
+        event_mock = _make_event_mock()
+
+        with patch(
+            "app.services.calendar.events.get_event",
+            AsyncMock(return_value=event_mock),
+        ):
+            with patch(
+                "app.routers.calendar.can_edit_calendar_event",
+                AsyncMock(return_value=True),
+            ):
                 resp = await client.delete(
                     "/api/calendar/events/1",
                     headers={"Authorization": "Bearer fake"},
                 )
 
-        assert resp.status_code == 403
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "Selecciona un motivo de cancelación."
 
     async def test_coach_puede_cancelar_204(self, client: AsyncClient):
         app.dependency_overrides[get_current_user] = _coach_user
@@ -449,9 +516,11 @@ class TestDeleteEvent:
                     "app.services.calendar.events.cancel_event",
                     AsyncMock(return_value=cancelled),
                 ):
-                    resp = await client.delete(
-                        "/api/calendar/events/1?reason=Lluvia",
+                    resp = await client.request(
+                        "DELETE",
+                        "/api/calendar/events/1",
                         headers={"Authorization": "Bearer fake"},
+                        json={"reason_code": "cancel_weather"},
                     )
 
         assert resp.status_code == 204
@@ -779,3 +848,348 @@ class TestDeleteEventPermanent:
                 )
 
         assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Auditoría (feature 041, T023, contracts/audit-recording.md §4.5)
+#
+# Estos tests llaman directamente a la capa de servicio
+# (`app.services.calendar.events`) en vez de pasar por el router, porque los
+# tests de router de arriba mockean por completo `events_svc.*` y por lo
+# tanto nunca ejercitan las llamadas a `record_audit` agregadas dentro de
+# esas funciones. `record_audit` se parchea para poder aserir con qué
+# argumentos fue invocado, sin depender de una base de datos real.
+# ---------------------------------------------------------------------------
+
+
+def _fake_db():
+    """AsyncSession falsa mínima para ejercitar la capa de servicio."""
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    db.delete = AsyncMock()
+
+    async def _execute(*args, **kwargs):
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=None)
+        return result
+
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
+
+
+class TestCalendarAudit:
+    async def test_create_event_records_calendar_event_create(self):
+        from app.schemas.calendar import EventCreate
+
+        db = _fake_db()
+        user = _coach_user()
+        payload = EventCreate(
+            event_type=EventType.CLUB_EVENT,
+            title="Asamblea anual",
+            start_at=datetime(2030, 9, 1, 18, 0, tzinfo=timezone.utc),
+            end_at=datetime(2030, 9, 1, 20, 0, tzinfo=timezone.utc),
+            event_data={"kind": "meeting"},
+            audiences=[],
+        )
+
+        created_event = _make_event_mock()
+        created_event.id = 42
+        created_event.club_id = 1
+
+        with patch(
+            "app.services.calendar.audiences.set_audiences",
+            AsyncMock(),
+        ), patch(
+            "app.services.calendar.events.get_event",
+            AsyncMock(return_value=created_event),
+        ), patch(
+            "app.services.calendar.events.record_audit",
+            AsyncMock(),
+        ) as mock_audit:
+            from app.services.calendar import events as events_svc
+
+            async def _flush_side_effect():
+                # Simula que la sesión asigna el id al hacer flush.
+                pass
+
+            db.flush.side_effect = _flush_side_effect
+
+            def _fake_add(obj):
+                if not hasattr(obj, "id") or obj.id is None:
+                    obj.id = 42
+
+            db.add.side_effect = _fake_add
+
+            result = await events_svc.create_event(
+                db=db,
+                payload=payload,
+                user=user,
+                club_id=1,
+            )
+
+        assert result is created_event
+        mock_audit.assert_awaited_once()
+        _, kwargs = mock_audit.call_args
+        assert kwargs["action"] == AuditAction.create
+        assert kwargs["entity_type"] == AuditEntityType.calendar_event
+        assert kwargs["actor"] is user
+        assert kwargs["club_id"] == 1
+
+    async def test_update_event_records_calendar_event_update_with_diff(self):
+        from app.schemas.calendar import EventUpdate
+
+        db = _fake_db()
+        user = _coach_user()
+        event = _make_event_mock()
+        event.id = 7
+        event.club_id = 1
+        event.title = "Título viejo"
+        event.status = EventStatus.SCHEDULED
+        event.event_type = EventType.CLUB_EVENT
+
+        payload = EventUpdate(title="Título nuevo")
+
+        with patch(
+            "app.services.calendar.events.get_event",
+            AsyncMock(return_value=event),
+        ), patch(
+            "app.services.calendar.events.record_audit",
+            AsyncMock(),
+        ) as mock_audit:
+            from app.services.calendar import events as events_svc
+
+            await events_svc.update_event(db=db, event=event, payload=payload, user=user)
+
+        mock_audit.assert_awaited_once()
+        _, kwargs = mock_audit.call_args
+        assert kwargs["action"] == AuditAction.update
+        assert kwargs["entity_type"] == AuditEntityType.calendar_event
+        assert kwargs["entity_id"] == 7
+        assert "title" in kwargs["changed_fields"]
+        assert kwargs["diff"]["title"] == ("Título viejo", "Título nuevo")
+
+    async def test_update_event_no_changes_does_not_break(self):
+        """Un PATCH sin cambios efectivos igual encola el llamado; record_audit
+        (parcheado) decide el no-op — aquí solo se verifica que se invoque con
+        listas vacías, sin lanzar excepción."""
+        from app.schemas.calendar import EventUpdate
+
+        db = _fake_db()
+        user = _coach_user()
+        event = _make_event_mock()
+        event.id = 7
+        event.club_id = 1
+        event.event_type = EventType.CLUB_EVENT
+
+        payload = EventUpdate()
+
+        with patch(
+            "app.services.calendar.events.get_event",
+            AsyncMock(return_value=event),
+        ), patch(
+            "app.services.calendar.events.record_audit",
+            AsyncMock(return_value=None),
+        ) as mock_audit:
+            from app.services.calendar import events as events_svc
+
+            await events_svc.update_event(db=db, event=event, payload=payload, user=user)
+
+        mock_audit.assert_awaited_once()
+        _, kwargs = mock_audit.call_args
+        assert kwargs["changed_fields"] == []
+        assert kwargs["diff"] == {}
+
+    async def test_cancel_event_records_calendar_event_cancel_with_reason(self):
+        db = _fake_db()
+        user = _coach_user()
+        ctx = AuditContext.for_user(user, request_id="a" * 32)
+        event = _make_event_mock()
+        event.id = 9
+        event.club_id = 1
+        event.status = EventStatus.SCHEDULED
+        event.event_type = EventType.CLUB_EVENT
+
+        with patch(
+            "app.services.calendar.events.get_event",
+            AsyncMock(return_value=event),
+        ), patch(
+            "app.services.calendar.events.record_audit",
+            AsyncMock(),
+        ) as mock_audit:
+            from app.services.calendar import events as events_svc
+
+            await events_svc.cancel_event(
+                db=db,
+                event=event,
+                reason_code=CancelReasonCode.cancel_weather,
+                ctx=ctx,
+            )
+
+        mock_audit.assert_awaited_once()
+        _, kwargs = mock_audit.call_args
+        assert kwargs["action"] == AuditAction.cancel
+        assert kwargs["entity_type"] == AuditEntityType.calendar_event
+        assert kwargs["entity_id"] == 9
+        assert kwargs["actor"] is user
+        assert kwargs["reason_code"] == CancelReasonCode.cancel_weather
+        assert set(kwargs["changed_fields"]) == {
+            "cancellation_reason_code",
+            "cancelled_at",
+            "cancelled_by_user_id",
+            "status",
+        }
+        assert event.cancelled_by_user_id == user.id
+        assert event.cancellation_reason_code == "cancel_weather"
+
+    async def test_delete_event_permanent_records_calendar_event_delete(self):
+        db = _fake_db()
+        user = _coach_user()
+        ctx = AuditContext.for_user(user, request_id="b" * 32)
+        event = _make_event_mock()
+        event.id = 11
+        event.club_id = 1
+        event.event_type = EventType.CLUB_EVENT
+
+        with patch(
+            "app.services.calendar.events.record_audit",
+            AsyncMock(),
+        ) as mock_audit:
+            from app.services.calendar import events as events_svc
+
+            await events_svc.delete_event_permanent(db=db, event=event, ctx=ctx)
+
+        mock_audit.assert_awaited_once()
+        _, kwargs = mock_audit.call_args
+        assert kwargs["action"] == AuditAction.delete
+        assert kwargs["entity_type"] == AuditEntityType.calendar_event
+        assert kwargs["entity_id"] == 11
+        assert kwargs["actor"] is user
+        assert kwargs["changed_fields"] == ["deleted_at", "deleted_by_user_id"]
+        # T063 §7.3: soft-delete — la fila sigue existiendo, no se llama db.delete().
+        db.delete.assert_not_awaited()
+        assert event.deleted_at is not None
+        assert event.deleted_by_user_id == user.id
+
+    async def test_delete_event_permanent_with_linked_session_records_two_rows(self):
+        """Borrado permanente de un evento TRAINING_SESSION también audita el
+        `training_session` enlazado (`calendar_event`·`delete` + `training_session`·`delete`)."""
+        from app.models.training_session import TrainingSession
+
+        db = _fake_db()
+        user = _coach_user()
+        ctx = AuditContext.for_user(user, request_id="c" * 32)
+        event = _make_event_mock()
+        event.id = 12
+        event.club_id = 1
+        event.event_type = EventType.TRAINING_SESSION
+        event.event_data = {"training_session_id": 99}
+
+        # spec=TrainingSession: refleja el modelo real (sin deleted_at hoy),
+        # así el test no pasa "de gratis" por auto-vivificación de MagicMock.
+        linked_ts = MagicMock(spec=TrainingSession)
+        linked_ts.id = 99
+        db.get = AsyncMock(return_value=linked_ts)
+
+        with patch(
+            "app.services.calendar.events.record_audit",
+            AsyncMock(),
+        ) as mock_audit:
+            from app.services.calendar import events as events_svc
+
+            await events_svc.delete_event_permanent(db=db, event=event, ctx=ctx)
+
+        assert mock_audit.await_count == 2
+        recorded = [call.kwargs for call in mock_audit.await_args_list]
+        entity_types = {r["entity_type"] for r in recorded}
+        assert entity_types == {AuditEntityType.training_session, AuditEntityType.calendar_event}
+        for r in recorded:
+            assert r["action"] == AuditAction.delete
+        # GAP: TrainingSession no tiene deleted_at todavía (ver comentario en
+        # delete_event_permanent) — hasta que se agregue, sigue siendo un
+        # hard-delete de la sesión enlazada.
+        db.delete.assert_awaited_once_with(linked_ts)
+
+    async def test_rsvp_new_records_event_attendance_create(self):
+        """RSVP de un padre sobre un evento (actor puede ser un padre).
+
+        `attendance_svc.rsvp` hace su propio commit (`services/calendar/
+        attendances.py`), así que la fila de auditoría se verifica a nivel
+        de servicio — encolada ANTES de ese commit (§1.3
+        audit-recording.md) — no interceptando `app.routers.calendar.
+        record_audit`, que ya no existe (T030 movió la llamada adentro).
+        """
+        from app.services.calendar import attendances as attendance_svc
+        from app.models.calendar_event import RSVPStatus
+
+        db = _fake_db()  # execute() -> scalar_one_or_none() == None (sin RSVP previo)
+        user = _parent_user()
+
+        event_mock = _make_event_mock()
+        event_mock.id = 5
+        event_mock.club_id = 1
+        event_mock.event_type = EventType.CLUB_EVENT
+
+        with patch(
+            "app.services.calendar.attendances.record_audit",
+            AsyncMock(),
+        ) as mock_audit:
+            attendance = await attendance_svc.rsvp(
+                db=db,
+                event=event_mock,
+                athlete_id=3,
+                status=RSVPStatus.ACCEPTED,
+                by_user=user,
+            )
+
+        assert attendance.athlete_id == 3
+        mock_audit.assert_awaited_once()
+        _, kwargs = mock_audit.call_args
+        assert kwargs["action"] == AuditAction.create
+        assert kwargs["entity_type"] == AuditEntityType.event_attendance
+        assert kwargs["athlete_id"] == 3
+        assert kwargs["entity_id"] == attendance.id
+
+    async def test_rsvp_existing_records_event_attendance_update(self):
+        """Un RSVP repetido sobre el mismo atleta/evento audita `update`, no `create`."""
+        from app.services.calendar import attendances as attendance_svc
+        from app.models.calendar_event import RSVPStatus
+
+        db = _fake_db()
+        user = _parent_user()
+
+        event_mock = _make_event_mock()
+        event_mock.id = 5
+        event_mock.club_id = 1
+        event_mock.event_type = EventType.CLUB_EVENT
+
+        previous = MagicMock()
+        previous.id = 501
+        previous.rsvp_status = RSVPStatus.TENTATIVE
+
+        async def _execute(*args, **kwargs):
+            result = MagicMock()
+            result.scalar_one_or_none = MagicMock(return_value=previous)
+            return result
+
+        db.execute = AsyncMock(side_effect=_execute)
+
+        with patch(
+            "app.services.calendar.attendances.record_audit",
+            AsyncMock(),
+        ) as mock_audit:
+            attendance = await attendance_svc.rsvp(
+                db=db,
+                event=event_mock,
+                athlete_id=3,
+                status=RSVPStatus.ACCEPTED,
+                by_user=user,
+            )
+
+        assert attendance is previous
+        mock_audit.assert_awaited_once()
+        _, kwargs = mock_audit.call_args
+        assert kwargs["action"] == AuditAction.update
+        assert kwargs["entity_type"] == AuditEntityType.event_attendance

@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.mixins import ActorTimestampMixin, UpdatedByMixin
 from app.models.user import User, UserRole
 from app.models.club import Club, ClubMember, ClubRole
 from app.models.athlete import Athlete, ParentAthlete, Sex, FamilyRelationship
@@ -18,6 +19,7 @@ from app.models.training_session import (
     SessionKind,
     SessionStatus,
     TrainingSession,
+    TrainingSessionCoach,
 )
 from app.models.club_project_profile import ClubProjectProfile
 from app.models.session_media import (
@@ -87,8 +89,13 @@ from app.models.strava_activity_lap import (
     StravaActivityLap,
 )
 
+# Feature 041 — Multi-coach governance (audit trail)
+from app.models.audit_log import AuditAction, AuditActorKind, AuditLog
+
 __all__ = [
     "Base",
+    "ActorTimestampMixin",
+    "UpdatedByMixin",
     "User",
     "UserRole",
     "Club",
@@ -114,6 +121,7 @@ __all__ = [
     "AttendanceStatus",
     "SessionKind",
     "TrainingSession",
+    "TrainingSessionCoach",
     "SessionAttendance",
     "MonthlyReport",
     "MonthlyReportStatus",
@@ -182,4 +190,8 @@ __all__ = [
     "StravaActivityLap",
     "IntervalMatchResult",
     "MatchTrigger",
+    # Feature 041 — Multi-coach governance (audit trail)
+    "AuditLog",
+    "AuditAction",
+    "AuditActorKind",
 ]

@@ -19,6 +19,10 @@ vi.mock("@/store/trainingFiltersStore", () => ({
   useTrainingFiltersStore: vi.fn(),
 }));
 
+vi.mock("@/hooks/governance/useClubStaff", () => ({
+  useClubStaff: vi.fn(),
+}));
+
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: vi.fn((sel) => sel({ accessToken: "tok", user: { role: "coach", first_name: "Juan", last_name: "Test" }, isAuthenticated: true })),
 }));
@@ -82,15 +86,17 @@ vi.mock("@/components/training/NotifyParentsDialog", () => ({
     onCancel,
   }: {
     open: boolean;
-    onSend: (reason?: string) => void;
-    onSkip: () => void;
+    onSend: (reason?: string, reasonCode?: string) => void;
+    onSkip: (reasonCode?: string) => void;
     onCancel: () => void;
   }) =>
     open ? (
       <div data-testid="confirm-modal">
         <span>Cancelar sesión</span>
-        <button onClick={() => onSend()}>confirm-ok</button>
-        <button onClick={onSkip}>confirm-skip</button>
+        <button onClick={() => onSend(undefined, "cancel_rescheduled")}>
+          confirm-ok
+        </button>
+        <button onClick={() => onSkip("cancel_rescheduled")}>confirm-skip</button>
         <button onClick={onCancel}>confirm-cancel</button>
       </div>
     ) : null,
@@ -102,6 +108,7 @@ import {
   useCancelTrainingSession,
 } from "@/api/trainingSessions";
 import { useTrainingFiltersStore } from "@/store/trainingFiltersStore";
+import { useClubStaff } from "@/hooks/governance/useClubStaff";
 import { SessionsListPage } from "./SessionsListPage";
 import type { TrainingSession } from "@/types/trainingSession.types";
 
@@ -146,10 +153,19 @@ function renderPage() {
   );
 }
 
+const STAFF_COACHES = [
+  { id: 10, displayName: "Ana Coach" },
+  { id: 11, displayName: "Beto Coach" },
+];
+
 beforeEach(() => {
   vi.mocked(useTrainingFiltersStore).mockReturnValue(defaultFilters);
   vi.mocked(useExecuteTrainingSession).mockReturnValue(mutationStub as unknown as ReturnType<typeof useExecuteTrainingSession>);
   vi.mocked(useCancelTrainingSession).mockReturnValue(mutationStub as unknown as ReturnType<typeof useCancelTrainingSession>);
+  vi.mocked(useClubStaff).mockReturnValue({
+    coaches: STAFF_COACHES,
+    isLoading: false,
+  } as unknown as ReturnType<typeof useClubStaff>);
 });
 
 describe("SessionsListPage", () => {
@@ -258,6 +274,47 @@ describe("SessionsListPage", () => {
     expect(screen.getByRole("tab", { name: "Actividades" })).toBeInTheDocument();
   });
 
+  describe("filtro de entrenador (feature 041)", () => {
+    beforeEach(() => {
+      vi.mocked(useTrainingSessions).mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: [],
+      } as unknown as ReturnType<typeof useTrainingSessions>);
+    });
+
+    it("lista los entrenadores del club en el selector", () => {
+      renderPage();
+      expect(screen.getByRole("option", { name: "Ana Coach" })).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "Beto Coach" })).toBeInTheDocument();
+    });
+
+    it("al elegir un entrenador, agrega coach_user_id a los filtros de la consulta principal", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.selectOptions(screen.getByLabelText("Entrenador"), "11");
+
+      const calls = vi.mocked(useTrainingSessions).mock.calls;
+      expect(
+        calls.some((call) => (call[0] as { coach_user_id?: number })?.coach_user_id === 11),
+      ).toBe(true);
+    });
+
+    it('al volver a "Todos los entrenadores" quita coach_user_id de los filtros', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.selectOptions(screen.getByLabelText("Entrenador"), "11");
+      await user.selectOptions(screen.getByLabelText("Entrenador"), "");
+
+      const lastRenderCalls = vi.mocked(useTrainingSessions).mock.calls.slice(-2);
+      lastRenderCalls.forEach((call) => {
+        expect(call[0]).not.toHaveProperty("coach_user_id");
+      });
+    });
+  });
+
   describe("confirmación de acciones destructivas", () => {
     beforeEach(() => {
       vi.mocked(useTrainingSessions).mockReturnValue({
@@ -323,7 +380,7 @@ describe("SessionsListPage", () => {
       fireEvent.click(screen.getByRole("button", { name: /Cancelar-3/i }));
       fireEvent.click(screen.getByRole("button", { name: /confirm-ok/i }));
       expect(cancelMock.mutate).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 3, notify: true }),
+        expect.objectContaining({ id: 3, notify: true, reasonCode: "cancel_rescheduled" }),
         expect.any(Object),
       );
     });

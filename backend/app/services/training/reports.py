@@ -22,6 +22,7 @@ from app.schemas.training_session import (
     NarrativeBlock,
     ParentMonthlySummary,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.permissions import parent_athlete_ids
 from app.services.training.metrics import compute_monthly_metrics
 
@@ -192,16 +193,56 @@ async def generate_monthly_report(
     now = datetime.now(timezone.utc)
 
     if existing is not None and force_regenerate:
+        # FR-010 / contract concurrency-and-approvals.md §5.4 — "copiar antes
+        # de limpiar": si el reporte tenía una aprobación vigente, su
+        # evidencia (quién y cuándo) se traslada a `previous_approved_*`
+        # ANTES de vaciar `approved_*`. Defecto original que esto corrige:
+        # aprobar como coach A y luego regenerar como coach B borraba todo
+        # rastro de que A lo había aprobado. El guard es sobre
+        # `approved_by_user_id`, no sobre `status`, para no pisar un
+        # `previous_approved_*` ya existente cuando el reporte YA estaba en
+        # borrador (US5 AS4, test 15: regenerar un borrador no debe vaciar
+        # una aprobación previa superada que ya vivía ahí).
+        was_approved = existing.approved_by_user_id is not None
+        if was_approved:
+            existing.previous_approved_by_user_id = existing.approved_by_user_id
+            existing.previous_approved_at = existing.approved_at
+        existing.approved_by_user_id = None
+        existing.approved_at = None
         existing.ai_summary = ai_summary
         existing.metrics_snapshot = metrics_dict
         existing.coach_observations = coach_observations
         existing.generated_by_user_id = generator_user.id
         existing.generated_at = now
+        existing.updated_by_user_id = generator_user.id
+        existing.updated_at = now
         existing.status = MonthlyReportStatus.DRAFT
         if new_narrative_blocks is not None:
             existing.narrative_blocks = new_narrative_blocks
         existing.competition_results = competition_results_json
         await db.flush()
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.monthly_report,
+            entity_id=existing.id,
+            actor=generator_user,
+            club_id=club_id,
+            changed_fields=["status", "year", "month", "generated_by_user_id"],
+            diff={"status": (
+                MonthlyReportStatus.APPROVED.value if was_approved else MonthlyReportStatus.DRAFT.value,
+                MonthlyReportStatus.DRAFT.value,
+            )} if was_approved else None,
+        )
+        if was_approved:
+            await record_audit(
+                db,
+                action=AuditAction.unapprove,
+                entity_type=AuditEntityType.monthly_report,
+                entity_id=existing.id,
+                actor=generator_user,
+                club_id=club_id,
+            )
         try:
             await db.commit()
         except Exception:
@@ -224,6 +265,14 @@ async def generate_monthly_report(
     )
     db.add(report)
     await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.monthly_report,
+        entity_id=report.id,
+        actor=generator_user,
+        club_id=club_id,
+    )
     try:
         await db.commit()
     except Exception:
@@ -254,8 +303,14 @@ async def parent_monthly_summary(
     from app.models.athlete import Athlete
     from app.models.training_session import SessionAttendance, SessionStatus
 
+    # FR-014: resumen mensual de familia — un atleta archivado no se resuelve.
+    # ``parent_athlete_ids`` arriba ya lo excluye; el filtro se repite para que
+    # la consulta sea correcta por sí sola.
     athlete_result = await db.execute(
-        select(Athlete).where(Athlete.id == athlete_id)
+        select(Athlete).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
     )
     athlete = athlete_result.scalar_one_or_none()
     if athlete is None:
@@ -290,6 +345,11 @@ async def parent_monthly_summary(
             select(SessionAttendance).where(
                 SessionAttendance.session_id.in_(session_ids),
                 SessionAttendance.athlete_id == athlete_id,
+                # Una fila archivada es una baja del roster que conserva sus
+                # datos para el administrador; no debe contar en las
+                # métricas del reporte mensual (FR-031: el reporte mantiene
+                # sus métricas sin cambios frente a feature 041).
+                SessionAttendance.archived_at.is_(None),
             )
         )
         attendances = att_result.scalars().all()
@@ -356,6 +416,7 @@ async def _resolve_race_dates(
             .join(Athlete, Athlete.id == RaceResult.athlete_id)
             .where(
                 Athlete.club_id == club_id,
+                Athlete.deleted_at.is_(None),
                 RaceEvent.event_date >= month_start,
                 RaceEvent.event_date <= month_end,
                 RaceResult.deleted_at.is_(None),
@@ -806,6 +867,8 @@ async def update_report_blocks(
             "Usa force_regenerate=true para regenerarlo."
         )
 
+    previous_status = report.status
+
     # Actualizar final_text por clave
     if blocks:
         current_blocks: dict = dict(report.narrative_blocks or {})
@@ -817,8 +880,57 @@ async def update_report_blocks(
 
     if new_status is not None:
         report.status = new_status
+        if (
+            new_status == MonthlyReportStatus.APPROVED
+            and previous_status != MonthlyReportStatus.APPROVED
+            and editor_user is not None
+        ):
+            # FR-010 / contract §5.3 — hasta ahora aprobar solo movía
+            # `status`; no quedaba rastro de QUIÉN aprobó ni CUÁNDO, así que
+            # una regeneración posterior no tenía nada que preservar.
+            approval_now = datetime.now(timezone.utc)
+            report.approved_by_user_id = editor_user.id
+            report.approved_at = approval_now
+            report.updated_by_user_id = editor_user.id
+            report.updated_at = approval_now
 
     await db.flush()
+
+    changed_fields = ["narrative_blocks"] if blocks else []
+    diff: dict[str, tuple] | None = None
+    if new_status is not None and new_status != previous_status:
+        changed_fields.append("status")
+        diff = {"status": (previous_status.value, new_status.value)}
+    if editor_user is not None:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.monthly_report,
+            entity_id=report.id,
+            actor=editor_user,
+            club_id=club_id,
+            changed_fields=changed_fields,
+            diff=diff,
+        )
+        if new_status == MonthlyReportStatus.APPROVED and previous_status != MonthlyReportStatus.APPROVED:
+            await record_audit(
+                db,
+                action=AuditAction.approve,
+                entity_type=AuditEntityType.monthly_report,
+                entity_id=report.id,
+                actor=editor_user,
+                club_id=club_id,
+            )
+        elif new_status == MonthlyReportStatus.DRAFT and previous_status == MonthlyReportStatus.APPROVED:
+            await record_audit(
+                db,
+                action=AuditAction.unapprove,
+                entity_type=AuditEntityType.monthly_report,
+                entity_id=report.id,
+                actor=editor_user,
+                club_id=club_id,
+            )
+
     try:
         await db.commit()
     except Exception:
@@ -842,6 +954,7 @@ async def regenerate_block(
     month: int,
     block_key: str,
     blocks_use_case: "MonthlyReportBlocksUseCase",
+    editor_user: User | None = None,
 ) -> MonthlyReport:
     """Regenera el ``ai_draft`` de un único bloque con la IA.
 
@@ -919,6 +1032,17 @@ async def regenerate_block(
     report.narrative_blocks = current_blocks
 
     await db.flush()
+    if editor_user is not None:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.monthly_report,
+            entity_id=report.id,
+            actor=editor_user,
+            club_id=club_id,
+            changed_fields=["narrative_blocks"],
+            meta={"period": f"{year}-{month:02d}"},
+        )
     try:
         await db.commit()
     except Exception:

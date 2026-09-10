@@ -12,7 +12,7 @@ from app.models import Base
 # Fixtures de escenarios "comparison groups" (feature 039) — registradas como
 # plugin para estar disponibles en toda la suite sin import explícito, igual
 # que cualquier fixture de un conftest.py normal.
-pytest_plugins = ["tests.fixtures.race_groups"]
+pytest_plugins = ["tests.fixtures.race_groups", "tests.fixtures.two_coaches"]
 
 
 @pytest.fixture

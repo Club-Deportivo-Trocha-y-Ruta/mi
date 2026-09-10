@@ -39,6 +39,7 @@ from app.schemas.password_reset import (
     PasswordResetValidate,
 )
 from app.services import password_reset as password_reset_service
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.auth import (
     create_access_token,
     create_refresh_token,
@@ -189,7 +190,8 @@ async def validate_invite_token(
     club_name = athlete.club.name if athlete and athlete.club else ""
 
     is_expired = invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
-    is_valid = not invite.used and not is_expired
+    is_archived = athlete is not None and athlete.deleted_at is not None
+    is_valid = not invite.used and not is_expired and not is_archived
 
     # Pre-llenar datos del padre cuando el coach pre-creó al usuario
     parent_first_name: str | None = None
@@ -261,6 +263,70 @@ async def parent_register(
         ip_address=client_ip,
         user_agent=request.headers.get("user-agent"),
     )
+
+    # -----------------------------------------------------------------
+    # Auditoría (feature 041, contracts/audit-recording.md §4.1)
+    # -----------------------------------------------------------------
+    # Actor: el propio interesado. Esta ruta es pública — no hay sesión
+    # iniciada todavía — y el contrato lo resuelve en §3.2
+    # (`get_public_request_context`): el actor lo resuelve el handler una vez
+    # que la fila `User` existe, y `actor_kind` sigue siendo `user`. Se pasa
+    # `actor=new_user` directamente (mismo idioma que el resto de routers ya
+    # instrumentados, que tampoco inyectan `AuditContext`), de modo que la
+    # regla R3 se cumple: `actor_user_id` nunca queda nulo con `kind=user`.
+    #
+    # Privacidad (Ley 1581): ni la contraseña, ni el token de invitación, ni
+    # el correo del padre, ni el nombre del menor llegan a la fila. Solo
+    # identificadores y nombres de columna.
+    athlete = await db.get(Athlete, invite.athlete_id)
+    club_id = athlete.club_id if athlete is not None else None
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.user,
+        entity_id=new_user.id,
+        actor=new_user,
+        club_id=club_id,
+        changed_fields=[
+            "email",
+            "first_name",
+            "last_name",
+            "phone",
+            "role",
+            "can_login",
+        ],
+    )
+
+    link_stmt = select(ParentAthlete).where(
+        ParentAthlete.parent_id == new_user.id,
+        ParentAthlete.athlete_id == invite.athlete_id,
+    )
+    link = (await db.execute(link_stmt)).scalar_one_or_none()
+    if link is not None:
+        await record_audit(
+            db,
+            action=AuditAction.link,
+            entity_type=AuditEntityType.parent_athlete,
+            entity_id=link.id,
+            actor=new_user,
+            club_id=club_id,
+            athlete_id=invite.athlete_id,
+            changed_fields=["parent_id", "athlete_id", "relationship_type"],
+            meta={"parent_user_id": new_user.id},
+        )
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.parent_invite,
+        entity_id=invite.id,
+        actor=new_user,
+        club_id=club_id,
+        athlete_id=invite.athlete_id,
+        changed_fields=["used", "used_by"],
+    )
+
     return ParentRegisterOut(
         id=new_user.id,
         email=new_user.email or "",
@@ -348,6 +414,23 @@ async def password_reset_confirm(
     """
     user = await password_reset_service.consume_token(
         body.token, body.new_password, db
+    )
+
+    # Auditoría (feature 041, §4.1): `user`·`update` con `club_id=None`, que
+    # está explícitamente permitido por `CLUB_OPTIONAL` para el consumo de un
+    # restablecimiento (§1.7) — es una fila del rastro personal, invisible en
+    # el historial del club (FR-006). El actor es el propio interesado, que
+    # aún no tiene sesión iniciada (§3.2, contexto público). Ni la contraseña
+    # ni el token entran a la fila: solo el NOMBRE de la columna, y
+    # `hashed_password` tampoco está en `VALUE_ALLOWLIST[user]`.
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.user,
+        entity_id=user.id,
+        actor=user,
+        club_id=None,
+        changed_fields=["hashed_password"],
     )
 
     if user.email:

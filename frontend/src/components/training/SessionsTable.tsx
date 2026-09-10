@@ -1,4 +1,4 @@
-import { CalendarDays } from "lucide-react";
+import { AlertTriangle, CalendarDays } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { fetchTrainingSession } from "@/api/trainingSessions";
@@ -39,6 +39,24 @@ function TodayMarker() {
   );
 }
 
+/**
+ * Marcador "Entrenador inactivo" (feature 041 — gobernanza multi-coach,
+ * contracts/session-coaches.md §10.4) — icono + texto (nunca solo color,
+ * constitución III), igual patrón que `TodayMarker`. Se muestra cuando
+ * `has_active_coach === false`: ningún entrenador de la sesión está activo.
+ */
+function InactiveCoachFlag() {
+  return (
+    <span
+      data-testid="session-inactive-coach-flag"
+      className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+    >
+      <AlertTriangle size={12} aria-hidden="true" />
+      Entrenador inactivo
+    </span>
+  );
+}
+
 export function SessionsTable({
   items,
   onExecute,
@@ -75,6 +93,7 @@ export function SessionsTable({
                       {formatDate(session.scheduled_date)} · {formatTime(session.scheduled_start_time)}
                     </span>
                     {isToday(session.scheduled_date) && <TodayMarker />}
+                    {session.has_active_coach === false && <InactiveCoachFlag />}
                   </p>
                   <p className="mt-0.5 truncate text-sm text-mid-gray">{session.location}</p>
                 </div>
@@ -170,6 +189,7 @@ export function SessionsTable({
                   <span className="flex flex-wrap items-center gap-2">
                     <span>{formatDate(session.scheduled_date)}</span>
                     {isToday(session.scheduled_date) && <TodayMarker />}
+                    {session.has_active_coach === false && <InactiveCoachFlag />}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-text-disclaimer">

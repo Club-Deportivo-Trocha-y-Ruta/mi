@@ -1,3 +1,4 @@
+from urllib.parse import quote_plus
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
@@ -431,14 +432,14 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         return (
-            f"mysql+aiomysql://{self.mysql_user}:{self.mysql_pass}"
+            f"mysql+aiomysql://{quote_plus(self.mysql_user)}:{quote_plus(self.mysql_pass)}"
             f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_db}"
         )
 
     @property
     def database_url_sync(self) -> str:
         return (
-            f"mysql+pymysql://{self.mysql_user}:{self.mysql_pass}"
+            f"mysql+pymysql://{quote_plus(self.mysql_user)}:{quote_plus(self.mysql_pass)}"
             f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_db}"
         )
 

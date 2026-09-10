@@ -84,6 +84,7 @@ from app.services.strava import reconcile as reconcile_module
 from app.services.strava.ingest import process_webhook_event, upsert_activity
 from app.services.strava.reconcile import reconcile_all
 from app.services.strava.token_store import encrypt_token
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # NOTE: no module-level ``pytestmark = pytest.mark.asyncio`` — pytest.ini
 # sets ``asyncio_mode = "auto"`` repo-wide (see the same note in
@@ -198,12 +199,12 @@ _TABLES = (
     "clubs",
     "club_members",
     "athletes",
-    "privacy_policies",  # ver shim LONGTEXT arriba
     "parental_consents",
     "strava_connections",
     "strava_activities",
     "training_sessions",
     "session_attendance",
+    *AUDIT_TABLES,
 )
 
 

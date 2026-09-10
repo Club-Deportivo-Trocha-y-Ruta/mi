@@ -23,6 +23,7 @@ from app.models.base import Base
 from app.models.email_change_request import EmailChangeRequest  # noqa: F401 (asegura tabla registrada)
 from app.models.user import User, UserRole
 from app.services.auth import hash_password
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 PWD = "OldPass123"
 
@@ -46,7 +47,7 @@ async def setup(monkeypatch) -> AsyncGenerator[dict, None]:
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
-    tables = [Base.metadata.tables[t] for t in ("users", "email_change_requests")]
+    tables = [Base.metadata.tables[t] for t in ("users", "email_change_requests", *AUDIT_TABLES)]
     async with engine.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
 

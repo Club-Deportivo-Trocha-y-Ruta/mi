@@ -7,6 +7,39 @@ import { ActivityEvidenceStrip } from "./ActivityEvidenceStrip";
 import { RubricSliders } from "./RubricSliders";
 import { useAttendanceForm, ALLOWS_RUBRIC } from "./useAttendanceForm";
 
+/**
+ * Feature 041 — gobernanza multi-coach (T067, contracts/session-coaches.md
+ * §6.1, §10.4). `AttendanceRead` gana `recorded_by_display_name` y
+ * `last_edited_by_display_name` en el backend; no se agregaron a `Attendance`
+ * en `types/trainingSession.types.ts` porque ese archivo pertenece a otra
+ * tarea de esta ola (T066, fuera del alcance de archivos que T067 puede
+ * tocar) — se modela aquí como extensión local aditiva del mismo tipo. Coach/
+ * admin surface únicamente: el padre nunca ve estos campos (§6.1: el backend
+ * los descarta al revalidar hacia `AttendanceReadParent`; `ReadOnlyAttendanceRow`,
+ * usado por `ParentSessionDetailPage`, no importa este tipo).
+ */
+export type AttendanceWithAttribution = Attendance & {
+  recorded_by_display_name?: string | null;
+  last_edited_by_display_name?: string | null;
+};
+
+/**
+ * Línea "Registrado por {A} · Editado por {B}" bajo el nombre del atleta.
+ * `null` cuando no hay nada que mostrar — filas de antes de esta feature no
+ * traen ninguno de los dos campos (data-model.md §6.3: no se hizo backfill),
+ * y el requisito es "renderizar nada antes que adivinar" (nunca inventar un
+ * nombre). Si `recorded_by_display_name` falta pero el de edición sí vino
+ * (caso no documentado por el contrato), se opta por omitir la línea
+ * completa en vez de mostrar un "Editado por" huérfano sin quién registró.
+ */
+function attendanceAttributionLine(a: AttendanceWithAttribution): string | null {
+  const recorded = a.recorded_by_display_name ?? null;
+  const edited = a.last_edited_by_display_name ?? null;
+  if (!recorded) return null;
+  if (!edited || edited === recorded) return `Registrado por ${recorded}`;
+  return `Registrado por ${recorded} · Editado por ${edited}`;
+}
+
 export interface AttendanceFormValues {
   status: AttendanceStatus;
   excuse_reason: string | null;
@@ -34,7 +67,7 @@ const STATUS_KEY_MAP: Record<string, AttendanceStatus> = {
 };
 
 interface AttendanceRowProps {
-  attendance: Attendance;
+  attendance: AttendanceWithAttribution;
   sessionId: number;
   disabled?: boolean;
   linkedActivities: ActivityOut[];
@@ -92,6 +125,7 @@ function AttendanceRow({
 
   const athleteName =
     attendance.athlete_name ?? `Atleta #${attendance.athlete_id}`;
+  const attributionLine = attendanceAttributionLine(attendance);
 
   return (
     <tr
@@ -145,6 +179,14 @@ function AttendanceRow({
             )}
           </span>
         </div>
+        {attributionLine && (
+          <p
+            className="mt-0.5 text-xs text-mid-gray"
+            data-testid={`attendance-attribution-${attendance.athlete_id}`}
+          >
+            {attributionLine}
+          </p>
+        )}
         <div className="mt-1.5">
           <ActivityEvidenceStrip
             athleteId={attendance.athlete_id}
@@ -265,11 +307,22 @@ function AttendanceCard({
   const reasonField = register("excuse_reason");
 
   const athleteName = attendance.athlete_name ?? `Atleta #${attendance.athlete_id}`;
+  const attributionLine = attendanceAttributionLine(attendance);
 
   return (
     <div className="rounded-xl bg-white p-4 space-y-3 shadow-ring">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-charcoal">{athleteName}</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm font-medium text-charcoal">{athleteName}</p>
+          {attributionLine && (
+            <p
+              className="mt-0.5 text-xs text-mid-gray"
+              data-testid={`attendance-attribution-${attendance.athlete_id}`}
+            >
+              {attributionLine}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {savedIndicator === "saved" && (
             <CheckCircle2 size={14} className="text-green-600" aria-label="Guardado" />
@@ -370,7 +423,7 @@ function AttendanceCard({
 
 interface AttendanceTableProps {
   sessionId: number;
-  attendances: Attendance[];
+  attendances: AttendanceWithAttribution[];
   disabled?: boolean;
   linkedActivitiesByAthleteId?: Map<number, ActivityOut[]>;
   unlinkedActivitiesByAthleteId?: Map<number, ActivityOut[]>;

@@ -79,7 +79,7 @@ async def compute_consents_pending(
     respuesta legítima ("cero pendientes"), no un valor de error.
     """
     try:
-        athlete_filters = []
+        athlete_filters = [Athlete.deleted_at.is_(None)]
         if club_ids is not None:
             athlete_filters.append(Athlete.club_id.in_(club_ids))
 
@@ -93,12 +93,14 @@ async def compute_consents_pending(
             ParentalConsent.withdrawn_at.is_(None),
             ParentalConsent.policy_id == active_policy.id,
         ]
+        consent_athlete_filters = [Athlete.deleted_at.is_(None)]
         if club_ids is not None:
-            consent_filters.append(
-                ParentalConsent.athlete_id.in_(
-                    select(Athlete.id).where(Athlete.club_id.in_(club_ids))
-                )
+            consent_athlete_filters.append(Athlete.club_id.in_(club_ids))
+        consent_filters.append(
+            ParentalConsent.athlete_id.in_(
+                select(Athlete.id).where(*consent_athlete_filters)
             )
+        )
 
         consented_athletes = (
             await db.execute(
@@ -139,12 +141,14 @@ async def compute_insights_stale(
             AthleteAiInsight.is_active == 1,
             AgentRun.stale_since.is_not(None),
         ]
+        insight_athlete_filters = [Athlete.deleted_at.is_(None)]
         if club_ids is not None:
-            filters.append(
-                AthleteAiInsight.athlete_id.in_(
-                    select(Athlete.id).where(Athlete.club_id.in_(club_ids))
-                )
+            insight_athlete_filters.append(Athlete.club_id.in_(club_ids))
+        filters.append(
+            AthleteAiInsight.athlete_id.in_(
+                select(Athlete.id).where(*insight_athlete_filters)
             )
+        )
 
         stmt = (
             select(func.count(func.distinct(AthleteAiInsight.athlete_id)))
@@ -191,7 +195,7 @@ async def compute_weekly_load(
         week_start = today_bogota - timedelta(days=today_bogota.weekday())
         week_end = week_start + timedelta(days=6)
 
-        athlete_filters = []
+        athlete_filters = [Athlete.deleted_at.is_(None)]
         if club_ids is not None:
             athlete_filters.append(Athlete.club_id.in_(club_ids))
 

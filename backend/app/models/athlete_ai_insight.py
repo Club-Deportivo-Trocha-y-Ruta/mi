@@ -202,7 +202,13 @@ class AthleteAiInsight(Base):
     coach_edits_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     generated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    approved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    archived_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     # --- Versionado BE-1 ---------------------------------------------------
     deprecated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -222,6 +228,9 @@ class AthleteAiInsight(Base):
     # texto crudo del coach.
     coach_answer_text: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     coach_answer_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    coach_answer_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     # 1 = útil, -1 = no útil. None = sin calificar.
     coach_rating: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 

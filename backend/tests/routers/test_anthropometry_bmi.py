@@ -47,6 +47,7 @@ from app.models.growth import GrowthSource
 from app.models.user import User, UserRole
 from app.routers import anthropometry as anthropometry_router
 from app.seed_growth_data import _parse_who_csv_content, bulk_insert_lms
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # CSV LMS mínimo (formato OMS: ``sex,age_months,L,M,S``) cubriendo la edad/sexo
 # del atleta de prueba (varón ~11 años). Valores sintéticos, no reales — solo
@@ -153,7 +154,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     )
     tables = [
         Base.metadata.tables[t]
-        for t in ("athletes", "anthropometric_records", "growth_reference_lms")
+        for t in ("athletes", "anthropometric_records", "growth_reference_lms", *AUDIT_TABLES)
     ]
     async with eng.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
@@ -232,6 +233,50 @@ async def _latest_record(session_factory) -> AnthropometricRecord:
             select(AnthropometricRecord).order_by(AnthropometricRecord.id.desc())
         )
         return result.scalars().first()
+
+
+async def _audit_rows(session_factory, entity_type, action):
+    from app.models.audit_log import AuditLog
+
+    async with session_factory() as s:
+        result = await s.execute(
+            select(AuditLog)
+            .where(
+                AuditLog.entity_type == entity_type.value,
+                AuditLog.action == action,
+            )
+            .order_by(AuditLog.id)
+        )
+        return list(result.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_create_audit_row_carries_event_date_and_full_sentence(
+    app_client, athlete, session_factory
+) -> None:
+    """Fix del bug reportado: "Juan Diaz registró la medición antropométrica."
+    sin fecha — `meta_json.event_date` no se llenaba en el POST y
+    `render_sentence` degradaba al genérico de §7.4."""
+    from app.services.audit import AuditEntityType, render_sentence
+    from app.services.utils.dates_es import format_date_es
+    from app.models.audit_log import AuditAction
+
+    client, factory = app_client
+    resp = await client.post(f"/api/athletes/{athlete.id}/anthropometry", json=_BODY)
+    assert resp.status_code == 201, resp.text
+
+    rows = await _audit_rows(
+        factory, AuditEntityType.anthropometric_record, AuditAction.create
+    )
+    assert len(rows) == 1
+    assert rows[0].meta_json["event_date"] == "2026-05-01"
+
+    sentence = render_sentence(rows[0], "Coach Ficticio")
+    assert sentence == (
+        "Coach Ficticio registró una medición antropométrica del "
+        f"{format_date_es(date(2026, 5, 1))}."
+    )
+    assert sentence != "Coach Ficticio registró una medición antropométrica."
 
 
 @pytest.mark.asyncio

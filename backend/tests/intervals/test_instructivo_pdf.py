@@ -73,6 +73,7 @@ from app.services.notification.document_generator import (
     _render_markdown,
 )
 from app.services.utils.dates_es import format_date_es
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # ---------------------------------------------------------------------------
 # Router/HTTP layer — in-memory aiosqlite harness (mirrors tests/strength/
@@ -87,6 +88,7 @@ _TABLES = (
     "training_sessions",
     "interval_structures",
     "interval_structure_blocks",
+    *AUDIT_TABLES,
 )
 
 

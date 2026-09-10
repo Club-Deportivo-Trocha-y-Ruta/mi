@@ -30,6 +30,8 @@ from app.services.morphology import calculate_arm_span_metrics
 from app.services.notification.service import NotificationService
 from app.services.notification.task_dispatcher import TaskDispatcher
 from app.services.phv import calculate_mirwald_offset
+from app.models.audit_log import AuditAction
+from app.services.audit import AuditEntityType, record_audit
 
 router = APIRouter()
 
@@ -200,6 +202,17 @@ async def create_anthropometry(
     )
     db.add(record)
     await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.anthropometric_record,
+        entity_id=record.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        meta={"event_date": record.evaluation_date.isoformat()},
+    )
 
     # -----------------------------------------------------------------------
     # Notificación a padres sobre nueva medición (Paso 11)

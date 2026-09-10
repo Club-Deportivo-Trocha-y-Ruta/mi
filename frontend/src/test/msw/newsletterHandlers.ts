@@ -96,6 +96,13 @@ export function makeNewsletter(
     created_at: "2026-05-01T00:00:00Z",
     updated_at: "2026-05-01T00:00:00Z",
     // NOTE: sent_to is intentionally ABSENT — PII, never in API response
+    // -- Feature 041 (concurrencia optimista) — defaults neutros --
+    edit_version: 4,
+    coach_note_author: null,
+    coach_note_updated_at: null,
+    last_edited_by: null,
+    generated_by: null,
+    approved_by: null,
     // -- Feature 038 (bitácora) — default sin stage_log generado aún --
     stage_log: null,
     stage_overrides: null,
@@ -318,6 +325,36 @@ export const attachInsightsInvalidHandler = http.post(
       { status: 400 },
     );
   },
+);
+
+/**
+ * 409 con `current_version` — versión vencida al hacer PATCH (041 §2.5,
+ * T073). Es el único 409 del router que trae esa clave: distingue "recarga
+ * y reintenta" de los 409 terminales (boletín ya enviado, etc.) arriba.
+ */
+export function patchVersionConflictHandler(currentVersion: number) {
+  return http.patch(
+    "*/api/athletes/:athleteId/monthly-newsletters/:id",
+    () =>
+      HttpResponse.json(
+        {
+          detail:
+            "Otro entrenador guardó cambios en este boletín. Recarga para ver la última versión.",
+          current_version: currentVersion,
+        },
+        { status: 409 },
+      ),
+  );
+}
+
+/** 428 — falta la precondición de versión (`If-Match`/`expected_version`), 041 §2.5. */
+export const patchPreconditionRequiredHandler = http.patch(
+  "*/api/athletes/:athleteId/monthly-newsletters/:id",
+  () =>
+    HttpResponse.json(
+      { detail: "Falta la versión del boletín (If-Match). Recarga la bitácora antes de guardar." },
+      { status: 428 },
+    ),
 );
 
 /** Handler que simula 403 en attach-insights (intento de parent) */

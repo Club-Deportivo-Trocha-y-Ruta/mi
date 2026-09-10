@@ -43,6 +43,7 @@ from app.models import Base
 from app.models.race_event import RaceEvent, RaceEventStatus, SurfaceCondition
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +81,7 @@ async def sqlite_engine() -> AsyncEngine:
 
     tables = [
         Base.metadata.tables[t]
-        for t in ("users", "race_series", "race_events")
+        for t in ("users", "race_series", "race_events", *AUDIT_TABLES)
     ]
     async with engine.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))

@@ -43,6 +43,7 @@ from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
 from app.services.race.revision import detect_revision
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +96,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_competitors",
             "race_results",
             "race_result_revisions",
+            *AUDIT_TABLES,
         )
     ]
     async with engine.begin() as conn:

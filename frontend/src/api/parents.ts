@@ -72,8 +72,18 @@ export async function getParentInvites(
 
 // --- Delete parent user (coach) ---
 
-export async function deleteParentUser(id: number): Promise<void> {
-  await apiClient.delete(`/api/users/${id}`);
+/**
+ * Motivo del catálogo cerrado `ParentRemovalReasonCode` (auditoría,
+ * feature 041). Viaja en el **cuerpo JSON**, no como query param: el backend
+ * lo declara en `UserDeleteIn` (`backend/app/schemas/user.py`), simétrico con
+ * el archivado de atletas. Enviarlo como query devolvía 422 en toda
+ * eliminación de padre/acudiente.
+ */
+export async function deleteParentUser(
+  id: number,
+  reasonCode: string,
+): Promise<void> {
+  await apiClient.delete(`/api/users/${id}`, { data: { reason_code: reasonCode } });
 }
 
 // --- Create parent user (coach) ---

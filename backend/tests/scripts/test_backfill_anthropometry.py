@@ -58,6 +58,7 @@ from app.seed_growth_data import _parse_csv_content, _parse_who_csv_content, bul
 from app.services.growth import calculate_growth_percentiles
 from app.models.growth import GrowthSource
 from app.services.category import compute_age_decimal
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # Identificadores ficticios del menor — nunca datos reales de atletas TyR.
 _ATHLETE_FIRST = "Juan"
@@ -89,7 +90,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     )
     tables = [
         Base.metadata.tables[t]
-        for t in ("athletes", "anthropometric_records", "growth_reference_lms")
+        for t in ("athletes", "anthropometric_records", "growth_reference_lms", *AUDIT_TABLES)
     ]
     async with eng.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))

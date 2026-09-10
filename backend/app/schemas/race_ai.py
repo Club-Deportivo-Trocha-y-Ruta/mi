@@ -194,6 +194,27 @@ class RunStatusResponse(BaseModel):
     estimated_seconds_remaining: int = Field(..., ge=0)
     new_events: list[RunEvent] = Field(default_factory=list)
     last_seq: int = Field(..., ge=0, description="Mayor seq emitido hasta ahora.")
+    # FR-028 (contracts/scope-ai-imports.md §4.2) — quién lanzó y quién
+    # decidió el gate HITL. Cuatro campos PLANOS y aditivos: los consumidores
+    # viejos siguen compilando.
+    #
+    # Semántica de los pares (§4.1):
+    #   - FK NULL           → ambos campos en ``null`` (el front no pinta nada)
+    #   - FK sin resolver   → el id + ``"Usuario no disponible"``
+    #   - FK resuelta       → el id + ``"Nombre Apellido"``
+    # ``user#7`` NUNCA es un valor legal de ``*_display_name`` (FR-013).
+    #
+    # Privacidad (Ley 1581): son nombres de staff adulto; ningún menor.
+    requested_by_user_id: Optional[int] = Field(default=None, ge=1)
+    requested_by_display_name: Optional[str] = Field(
+        default=None,
+        description="Nombre del staff que lanzó el análisis. null si no hay solicitante.",
+    )
+    decided_by_user_id: Optional[int] = Field(default=None, ge=1)
+    decided_by_display_name: Optional[str] = Field(
+        default=None,
+        description="Nombre de quien resolvió el último gate HITL. null si aún nadie decidió.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +243,9 @@ class HITLDecisionResponse(BaseModel):
     run_id: str
     step_id: str
     next_state: RunState
+    # §4.3 — aditivos y planos, misma semántica que en ``RunStatusResponse``.
+    decided_by_user_id: Optional[int] = Field(default=None, ge=1)
+    decided_by_display_name: Optional[str] = Field(default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -270,11 +294,30 @@ class AIUsageByPromptVersion(BaseModel):
     cost_usd_total: float = Field(..., ge=0.0)
 
 
+class AIUsageByCoach(BaseModel):
+    """Gasto de IA atribuido a un miembro del staff (FR-029, §7.2).
+
+    ``user_id`` en ``None`` es el cubo sin atribuir (``display_name`` =
+    "Sin atribuir"). Los nombres de campo siguen a ``AIUsageByPromptVersion``
+    para que una misma respuesta no cargue dos estilos de nomenclatura.
+
+    Privacidad (Ley 1581): sólo staff adulto y montos — ningún menor.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: Optional[int] = Field(default=None, ge=1)
+    display_name: str
+    run_count: int = Field(..., ge=0)
+    cost_usd_total: float = Field(..., ge=0.0)
+
+
 class AIUsageResponse(BaseModel):
     """Response de ``GET /admin/ai-usage?days=30``.
 
     Lee desde ``athlete_ai_insights`` (latency_ms y cost_usd
-    persistidos por cada run). Solo admin.
+    persistidos por cada run). Coach + admin (§7.2): el coach necesita ver
+    quién consume el presupuesto compartido.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -286,6 +329,7 @@ class AIUsageResponse(BaseModel):
     latency_ms_p95: int = Field(..., ge=0)
     fail_rate: float = Field(..., ge=0.0, le=1.0)
     by_prompt_version: list[AIUsageByPromptVersion] = Field(default_factory=list)
+    by_coach: list[AIUsageByCoach] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

@@ -444,4 +444,118 @@ describe("AnalysisRunTimeline", () => {
       expect(await axe(container)).toHaveNoViolations();
     });
   });
+
+  // ------------------------------------------------------------------
+  // Feature 041 (gobernanza multi-coach, US6, §4.4) — lanzado por / decidido
+  // por. Campos aditivos y opcionales de RunStatusResponse.
+  // ------------------------------------------------------------------
+
+  describe("lanzado por / decidido por (feature 041, §4.4)", () => {
+    it('muestra "Lanzado por" cuando requested_by_display_name llega', async () => {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state: "running",
+        progress_pct: 10,
+        current_node: null,
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 30,
+        last_seq: 0,
+        new_events: [],
+        requested_by_user_id: 3,
+        requested_by_display_name: "Ana Coach",
+        decided_by_user_id: null,
+        decided_by_display_name: null,
+      });
+      wrap(<AnalysisRunTimeline runId="r1" />);
+
+      expect(
+        await screen.findByTestId("timeline-actor-requested"),
+      ).toHaveTextContent("Lanzado por Ana Coach");
+      expect(screen.queryByTestId("timeline-actor-decided")).not.toBeInTheDocument();
+    });
+
+    it('agrega "· Decidido por" una vez decidido, junto a "Lanzado por"', async () => {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state: "hitl_waiting",
+        progress_pct: 62,
+        current_node: "hitl_gate_review",
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 0,
+        last_seq: 17,
+        new_events: [],
+        requested_by_user_id: 3,
+        requested_by_display_name: "Ana Coach",
+        decided_by_user_id: 7,
+        decided_by_display_name: "Beto Coach",
+      });
+      wrap(<AnalysisRunTimeline runId="r1" />);
+
+      const actors = await screen.findByTestId("timeline-actors");
+      expect(actors).toHaveTextContent("Lanzado por Ana Coach · Decidido por Beto Coach");
+    });
+
+    it('renderiza "Usuario no disponible" verbatim — nunca un id crudo (FR-013)', async () => {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state: "done",
+        progress_pct: 100,
+        current_node: null,
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 0,
+        last_seq: 20,
+        new_events: [],
+        requested_by_user_id: 99,
+        requested_by_display_name: "Usuario no disponible",
+        decided_by_user_id: null,
+        decided_by_display_name: null,
+      });
+      const { container } = wrap(<AnalysisRunTimeline runId="r1" />);
+
+      expect(
+        await screen.findByTestId("timeline-actor-requested"),
+      ).toHaveTextContent("Lanzado por Usuario no disponible");
+      expect(container).not.toHaveTextContent(/user#\d+/);
+    });
+
+    it("no renderiza nada cuando ambos campos son null (backend sin desplegar la feature)", async () => {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state: "running",
+        progress_pct: 10,
+        current_node: null,
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 30,
+        last_seq: 0,
+        new_events: [],
+      });
+      wrap(<AnalysisRunTimeline runId="r1" />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("timeline-headline")).toBeInTheDocument(),
+      );
+      expect(screen.queryByTestId("timeline-actors")).not.toBeInTheDocument();
+    });
+
+    it("sin violaciones de accesibilidad con los chips de actor visibles", async () => {
+      vi.mocked(raceApi.getRunStatus).mockResolvedValue({
+        run_id: "r1",
+        state: "hitl_waiting",
+        progress_pct: 62,
+        current_node: "hitl_gate_review",
+        started_at: "2026-05-20T10:00:00Z",
+        estimated_seconds_remaining: 0,
+        last_seq: 17,
+        new_events: [],
+        requested_by_user_id: 3,
+        requested_by_display_name: "Ana Coach",
+        decided_by_user_id: 7,
+        decided_by_display_name: "Beto Coach",
+      });
+      const { container } = wrap(<AnalysisRunTimeline runId="r1" />);
+
+      await screen.findByTestId("timeline-actors");
+      expect(await axe(container)).toHaveNoViolations();
+    });
+  });
 });

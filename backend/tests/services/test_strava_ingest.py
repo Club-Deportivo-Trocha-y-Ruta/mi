@@ -66,6 +66,7 @@ from app.services.strava.ingest import (
 )
 from app.services.strava.reconcile import _summary_complete, reconcile_all
 from app.services.strava.token_store import decrypt_token, encrypt_token
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # NOTE: no module-level ``pytestmark = pytest.mark.asyncio`` — pytest.ini
 # sets ``asyncio_mode = "auto"`` repo-wide, so async defs are already
@@ -79,6 +80,7 @@ _TABLES = [
     "parental_consents",
     "strava_connections",
     "strava_activities",
+    *AUDIT_TABLES,
 ]
 
 

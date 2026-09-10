@@ -53,6 +53,7 @@ describe("useUpdateStageLog", () => {
         stage_overrides: { stage_title: "Título editado" },
         hidden_blocks: ["photos"],
         coach_note: "Nota del coach",
+        expectedVersion: 4,
       });
     });
 
@@ -70,7 +71,7 @@ describe("useUpdateStageLog", () => {
     });
 
     act(() => {
-      result.current.mutate({ coach_note: "Nota del coach" });
+      result.current.mutate({ coach_note: "Nota del coach", expectedVersion: 4 });
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -102,11 +103,70 @@ describe("useUpdateStageLog", () => {
     });
 
     act(() => {
-      result.current.mutate({ coach_note: "Nota" });
+      result.current.mutate({ coach_note: "Nota", expectedVersion: 4 });
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     const err = result.current.error as { response?: { status: number } };
     expect(err?.response?.status).toBe(409);
+  });
+
+  it("envía expectedVersion como header If-Match (041 §2.2, regresión T073)", async () => {
+    const { http, HttpResponse } = await import("msw");
+    const { makeNewsletter } = await import("@/test/msw/newsletterHandlers");
+    let ifMatch: string | null = null;
+    mswServer.use(
+      http.patch(
+        "*/api/athletes/:athleteId/monthly-newsletters/:id",
+        ({ request }) => {
+          ifMatch = request.headers.get("If-Match");
+          return HttpResponse.json(makeNewsletter({ id: 1, athlete_id: 42 }));
+        },
+      ),
+    );
+
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useUpdateStageLog(42, 1), {
+      wrapper: Wrapper,
+    });
+
+    act(() => {
+      result.current.mutate({ coach_note: "Nota", expectedVersion: 7 });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(ifMatch).toBe('W/"7"');
+  });
+
+  it("no reintenta un 409 de versión vencida (R-16): una sola llamada de red", async () => {
+    const { http, HttpResponse } = await import("msw");
+    let callCount = 0;
+    mswServer.use(
+      http.patch(
+        "*/api/athletes/:athleteId/monthly-newsletters/:id",
+        () => {
+          callCount += 1;
+          return HttpResponse.json(
+            {
+              detail: "Otro entrenador guardó cambios en este boletín.",
+              current_version: 9,
+            },
+            { status: 409 },
+          );
+        },
+      ),
+    );
+
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useUpdateStageLog(42, 1), {
+      wrapper: Wrapper,
+    });
+
+    act(() => {
+      result.current.mutate({ coach_note: "Nota", expectedVersion: 4 });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(callCount).toBe(1);
   });
 });

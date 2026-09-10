@@ -40,8 +40,6 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **"No CLAUDE.md"** — false positive; `/CLAUDE.md` exists and is substantial.
 - **Email-change rate limiting unenforced** — false positive; enforced in
   `backend/app/services/profile.py:149-158`.
-- **`auth-coach.json` committed credential** — benign: an empty Playwright
-  storageState (`{"cookies": [], "origins": []}`).
 - **Parents see z-scores/percentiles (re-identification)** — by design:
   parents view their *own* child's growth data; the AI-prompt exclusion of
   z-scores addresses a different threat model (third-party LLM).

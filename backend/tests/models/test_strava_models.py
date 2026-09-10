@@ -45,6 +45,7 @@ from app.models.strava_activity import (
 )
 from app.models.strava_connection import StravaConnection, StravaConnectionStatus
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 _TABLES = [
     "users",
@@ -53,6 +54,7 @@ _TABLES = [
     "parental_consents",
     "strava_connections",
     "strava_activities",
+    *AUDIT_TABLES,
 ]
 # NOTA: ``privacy_policies`` NO se incluye — usa LONGTEXT, que SQLite no
 # compila (mismo patrón que test_race_import_upload_columns.py). Como

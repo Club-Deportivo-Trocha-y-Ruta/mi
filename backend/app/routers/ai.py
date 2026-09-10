@@ -69,6 +69,7 @@ from app.services.ai.use_cases.anthropometric_record_explainer import (
     AnthropometricRecordExplainerUseCase,
 )
 from app.services.ai.use_cases.phv_explainer import PHVExplainerUseCase
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.privacy import athlete_has_ai_processing_consent
 from app.services.race.ai.budget_guard import _sum_cost_last_30d
 from app.services.race.ai.runner import has_capacity
@@ -145,6 +146,117 @@ async def _ensure_ai_consent(athlete_id: int, db: AsyncSession) -> None:
                 "Solicita a la familia renovar el consentimiento."
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# Auditoría de las explicaciones de IA
+# (T030, contracts/audit-recording.md §4.3 — fila `athlete_ai_explanation`)
+#
+# Privacidad (Ley 1581, menores): estas dos rutas son justo donde es fácil
+# filtrar un dato del menor. La fila de auditoría registra **el hecho y los
+# identificadores** — quién generó una explicación, para qué atleta y sobre
+# qué medición — y NUNCA el contenido: ni el texto narrativo, ni el
+# `age_group`, ni el `maturation_status`, ni ninguna medida antropométrica.
+# La garantía es doble:
+#   1. `AuditEntityType.athlete_ai_explanation` no tiene entrada en
+#      `VALUE_ALLOWLIST`, así que `record_audit` deja `diff_json` en `None`
+#      aunque alguien pase un `diff` por error (§1.2 paso 6, R4).
+#   2. Acá jamás se construye un `diff`: solo viajan NOMBRES de columna en
+#      `changed_fields`, igual que `coach_answer_text` en §4.9.
+# `meta.related_entity_id` lleva el id de la medición: es un identificador,
+# no una medida.
+# ---------------------------------------------------------------------------
+
+
+#: Columnas que el `on_duplicate_key_update` reescribe SIEMPRE en una
+#: regeneración. Se emiten como lista fija (no como diff calculado) a
+#: propósito: comparar el texto anterior con el nuevo exigiría cargar la
+#: narrativa del menor solo para decidir si hubo cambio, y una regeneración
+#: que devolviera texto idéntico caería en la regla R7 (`update` sin cambios
+#: no escribe fila) y perdería el rastro de que el entrenador la pidió.
+_EXPLANATION_REWRITTEN_FIELDS = (
+    "age_group",
+    "generated_at",
+    "generated_by_user_id",
+    "maturation_status",
+    "model",
+    "provider",
+    "text",
+)
+
+
+async def _cached_explanation_id(
+    db: AsyncSession,
+    *,
+    athlete_id: int,
+    anthropometric_record_id: int,
+    use_case: str,
+) -> int | None:
+    """Id de la fila de caché `(athlete_id, record_id, use_case)`, o `None`.
+
+    Pre-SELECT del upsert: decide si la fila de auditoría es `create` o
+    `update` (§4.3) y, cuando ya existía, aporta el `entity_id` sin depender
+    del `lastrowid` de un `INSERT ... ON DUPLICATE KEY UPDATE`.
+    """
+    result = await db.execute(
+        select(AthleteAIExplanation.id).where(
+            AthleteAIExplanation.athlete_id == athlete_id,
+            AthleteAIExplanation.anthropometric_record_id == anthropometric_record_id,
+            AthleteAIExplanation.use_case == use_case,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _record_explanation_audit(
+    db: AsyncSession,
+    *,
+    athlete: Athlete,
+    anthropometric_record_id: int,
+    use_case: str,
+    actor: User,
+    previous_id: int | None,
+) -> None:
+    """Encola la fila de auditoría de una explicación de IA recién generada.
+
+    Debe llamarse DESPUÉS del upsert y ANTES de retornar: comparte la
+    transacción del write de negocio, que comitea `get_db`
+    (`app/dependencies.py:21`) al terminar el handler — la regla
+    transaccional de §1.3 se cumple por construcción en estas dos rutas
+    porque el router no comitea por su cuenta.
+
+    Args:
+        db: sesión async activa, la misma del upsert.
+        athlete: atleta ya resuelto por `verify_athlete_access`; aporta
+            `club_id` (paso 2 de la escalera de §1.6) y `athlete_id`.
+        anthropometric_record_id: medición a la que se ancla la explicación.
+        use_case: clave de caché (`phv_explainer` / `phv_explanation_coach` /
+            el `use_case` por medición).
+        actor: usuario coach/admin autenticado.
+        previous_id: id devuelto por el pre-SELECT; `None` cuando la fila no
+            existía y por tanto la acción es `create`.
+    """
+    entity_id = previous_id
+    if entity_id is None:
+        entity_id = await _cached_explanation_id(
+            db,
+            athlete_id=athlete.id,
+            anthropometric_record_id=anthropometric_record_id,
+            use_case=use_case,
+        )
+    await record_audit(
+        db,
+        action=AuditAction.create if previous_id is None else AuditAction.update,
+        entity_type=AuditEntityType.athlete_ai_explanation,
+        entity_id=entity_id,
+        actor=actor,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        changed_fields=(
+            None if previous_id is None else list(_EXPLANATION_REWRITTEN_FIELDS)
+        ),
+        meta={"related_entity_id": anthropometric_record_id},
+    )
 
 
 async def _latest_record(
@@ -424,11 +536,19 @@ async def phv_explanation(
             detail="Configuración de IA inválida.",
         )
 
+    resolved_use_case = _use_case_for_audience(audience)
+    previous_id = await _cached_explanation_id(
+        db,
+        athlete_id=athlete.id,
+        anthropometric_record_id=history[0].id,
+        use_case=resolved_use_case,
+    )
+
     now = datetime.now(timezone.utc)
     stmt = mysql_insert(AthleteAIExplanation).values(
         athlete_id=athlete.id,
         anthropometric_record_id=history[0].id,
-        use_case=_use_case_for_audience(audience),
+        use_case=resolved_use_case,
         text=explanation.text,
         model=explanation.model,
         provider=explanation.provider,
@@ -450,6 +570,17 @@ async def phv_explanation(
         updated_at=now,
     )
     await db.execute(stmt)
+
+    # §4.3: `athlete_ai_explanation`·`create` cuando el pre-SELECT no encontró
+    # nada, `update` cuando sí. Solo el hecho y los identificadores.
+    await _record_explanation_audit(
+        db,
+        athlete=athlete,
+        anthropometric_record_id=history[0].id,
+        use_case=resolved_use_case,
+        actor=current_user,
+        previous_id=previous_id,
+    )
 
     return PHVExplanationResponse(
         text=explanation.text,
@@ -580,6 +711,13 @@ async def measurement_explanation(
             detail="Configuración de IA inválida.",
         )
 
+    previous_id = await _cached_explanation_id(
+        db,
+        athlete_id=athlete.id,
+        anthropometric_record_id=target.id,
+        use_case=RECORD_USE_CASE,
+    )
+
     now = datetime.now(timezone.utc)
     stmt = mysql_insert(AthleteAIExplanation).values(
         athlete_id=athlete.id,
@@ -606,6 +744,17 @@ async def measurement_explanation(
         updated_at=now,
     )
     await db.execute(stmt)
+
+    # §4.3: mismo criterio create/update que la explicación PHV. Los deltas de
+    # talla y peso que van en el response NUNCA entran a la fila.
+    await _record_explanation_audit(
+        db,
+        athlete=athlete,
+        anthropometric_record_id=target.id,
+        use_case=RECORD_USE_CASE,
+        actor=current_user,
+        previous_id=previous_id,
+    )
 
     return AnthropometricRecordExplanationResponse(
         text=explanation.text,

@@ -6,7 +6,7 @@ from datetime import date
 from typing import Annotated, Union
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +27,8 @@ from app.schemas.session_media import (
     SessionMediaReadParent,
     SessionMediaUpdate,
 )
+from app.services.audit import AuditAction, AuditEntityType, CancelReasonCode, record_audit
+from app.services.request_context import AuditContext, get_request_context
 from app.schemas.training_session import (
     AttendanceBulkSet,
     AttendanceRead,
@@ -34,6 +36,7 @@ from app.schemas.training_session import (
     AttendanceSummary,
     AttendanceUpdate,
     KidAttendance,
+    SessionCoachOut,
     TrainingSessionCreate,
     TrainingSessionRead,
     TrainingSessionReadParent,
@@ -56,14 +59,37 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
+def _loaded_actor_name(attendance, attr: str) -> str | None:
+    """Nombre del actor de atribución (`recorded_by` / `updated_by`) si la
+    relación viene precargada.
+
+    Si no está cargada devuelve ``None`` en vez de disparar un lazy load, que
+    en contexto async explotaría con ``MissingGreenlet``. Usa el resolvedor
+    compartido ``User.display_name`` (contracts/audit-log-api.md §6); no se
+    añade un segundo formateador de nombres.
+    """
+    try:
+        if attr in sa_inspect(attendance).unloaded:
+            return None
+    except Exception:  # pragma: no cover — objeto no-ORM (tests con stubs)
+        return None
+    user = getattr(attendance, attr, None)
+    return user.display_name if user is not None else None
+
+
 def _attendance_to_read(attendance) -> AttendanceRead:
-    """Mapea SessionAttendance a AttendanceRead, incluyendo nombre del atleta."""
+    """Mapea SessionAttendance a AttendanceRead, incluyendo nombre del atleta
+    y la atribución de registro/última edición (041 §6.1)."""
     name: str | None = None
     athlete = getattr(attendance, "athlete", None)
     if athlete is not None:
         name = f"{athlete.first_name} {athlete.last_name}".strip() or None
     data = AttendanceRead.model_validate(attendance).model_dump()
     data["athlete_name"] = name
+    data["recorded_by_display_name"] = _loaded_actor_name(attendance, "recorded_by")
+    data["last_edited_by_display_name"] = _loaded_actor_name(
+        attendance, "updated_by"
+    )
     return AttendanceRead.model_validate(data)
 
 
@@ -99,11 +125,34 @@ def _media_to_read_parent(media: SessionMedia) -> SessionMediaReadParent:
     return SessionMediaReadParent.model_validate(media)
 
 
+def _active_attendances(session) -> list:
+    """Asistencias vigentes de la sesión — las archivadas (041 §6.3) quedan
+    fuera de toda lectura salvo la rama admin ``include_archived``.
+
+    El filtro es explícito en cada consumidor y no un criterio global de
+    carga: ocultar las filas archivadas dentro de la propia relación es
+    justamente lo que convierte un archivado en un borrado (§2, R-10).
+    """
+    return [a for a in (session.attendances or []) if a.archived_at is None]
+
+
 def _session_to_read(session) -> TrainingSessionRead:
     out = TrainingSessionRead.model_validate(session)
-    out.attendance_summary = _build_attendance_summary(session.attendances or [])
+    out.attendance_summary = _build_attendance_summary(_active_attendances(session))
     active_media = [m for m in (session.media or []) if m.deleted_at is None]
     out.media = [_media_to_read(m) for m in active_media]
+    coach_rows = training_svc.sessions._ordered_session_coaches(session)
+    out.coaches = [
+        SessionCoachOut(
+            user_id=row.coach_user_id,
+            display_name=row.coach.display_name if row.coach else "",
+        )
+        for row in coach_rows
+    ]
+    # Derivado por lectura, nunca almacenado: alimenta la señal de listado §8.
+    out.has_active_coach = any(
+        row.coach is not None and row.coach.is_active for row in coach_rows
+    )
     return out
 
 
@@ -115,7 +164,7 @@ def _session_to_read_parent(session, children_ids: set[int]) -> TrainingSessionR
     - Incluye kid_attendances filtradas.
     """
     kid_attendances_raw = [
-        a for a in (session.attendances or []) if a.athlete_id in children_ids
+        a for a in _active_attendances(session) if a.athlete_id in children_ids
     ]
     summary = _build_attendance_summary(kid_attendances_raw)
     kid_att = [
@@ -138,6 +187,14 @@ def _session_to_read_parent(session, children_ids: set[int]) -> TrainingSessionR
             "attendance_summary",
             "kid_attendances",
             "media",
+            # FR-032/§3.1: la familia nunca ve qué entrenador dirige la sesión
+            # en pantalla; los nombres van únicamente en el email (§5).
+            "coaches",
+            "has_active_coach",
+            # T091 privacy audit (041): created_by_user_id es un id interno de
+            # personal — la misma regla de "ningún entrenador en pantalla"
+            # aplica aunque sea un id sin resolver, no solo un nombre.
+            "created_by_user_id",
         }
     )
     data["attendance_summary"] = summary
@@ -147,6 +204,20 @@ def _session_to_read_parent(session, children_ids: set[int]) -> TrainingSessionR
         _media_to_read_parent(m).model_dump() for m in visible_media
     ]
     return TrainingSessionReadParent.model_validate(data)
+
+
+def _assert_coach_user_ids_not_empty(coach_user_ids: list[int] | None) -> None:
+    """V1 de 041 §3.3 — una lista presente pero vacía es un 422 plano.
+
+    El mínimo no se declara como `min_length` de Pydantic porque el contrato
+    fija el cuerpo exacto de la respuesta y una restricción de esquema
+    devolvería el 422 estructurado de FastAPI.
+    """
+    if coach_user_ids is not None and not coach_user_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Una sesión debe tener al menos un entrenador.",
+        )
 
 
 async def _get_session_or_404(db: AsyncSession, session_id: int):
@@ -201,7 +272,13 @@ async def _list_for_parent(
     ids_to_query = [athlete_id] if athlete_id else list(children_ids)
 
     for child_id in ids_to_query:
-        ath_result = await db.execute(select(Athlete).where(Athlete.id == child_id))
+        # Un hijo archivado se salta con el `if ath is None: continue` de abajo
+        # (contracts/athlete-archive.md §5.2).
+        ath_result = await db.execute(
+            select(Athlete).where(
+                Athlete.id == child_id, Athlete.deleted_at.is_(None)
+            )
+        )
         ath = ath_result.scalar_one_or_none()
         if ath is None:
             continue
@@ -232,6 +309,7 @@ async def _list_for_clubs(
     athlete_id: int | None,
     limit: int,
     offset: int,
+    coach_user_id: int | None = None,
 ) -> list[TrainingSessionRead]:
     """Lista sesiones para admin/coach por sus clubs."""
     all_sessions: list[TrainingSessionRead] = []
@@ -244,6 +322,7 @@ async def _list_for_clubs(
             date_from=from_date.isoformat() if from_date else None,
             date_to=to_date.isoformat() if to_date else None,
             athlete_id=athlete_id,
+            coach_user_id=coach_user_id,
             limit=limit,
             offset=offset,
         )
@@ -270,7 +349,9 @@ async def create_training_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     notification_service=Depends(get_notification_service),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> TrainingSessionRead:
+    _assert_coach_user_ids_not_empty(body.coach_user_ids)
     # El club_id se infiere del primer club del coach; si es admin puede especificar.
     # Tomamos el club del coach según sus membresías.
     if current_user.role == UserRole.coach:
@@ -292,6 +373,23 @@ async def create_training_session(
             )
         club_id = next(iter(admin_clubs))
 
+    # Misma regla que la convocatoria de una sesión existente (041
+    # athlete-archive §5): un id archivado o de otro club es 400. Antes la
+    # creación no validaba los convocados.
+    result = await db.execute(
+        select(Athlete.id).where(
+            Athlete.id.in_(body.convocados_athlete_ids),
+            Athlete.club_id == club_id,
+            Athlete.deleted_at.is_(None),
+        )
+    )
+    invalid_ids = set(body.convocados_athlete_ids) - set(result.scalars().all())
+    if invalid_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Los siguientes atletas no pertenecen al club: {sorted(invalid_ids)}",
+        )
+
     from app.services.notification.task_dispatcher import TaskDispatcher
 
     dispatcher = TaskDispatcher(background_tasks)
@@ -304,6 +402,17 @@ async def create_training_session(
             club_id=club_id,
             notification_service=notification_service,
             dispatcher=dispatcher,
+            ctx=ctx,
+        )
+    except training_svc.sessions.SessionCoachValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except training_svc.sessions.SessionCoachConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
         )
     except ValueError as exc:
         raise HTTPException(
@@ -325,6 +434,10 @@ async def list_training_sessions(
     to_date: date | None = Query(default=None, alias="to"),
     session_status: SessionStatus | None = Query(default=None, alias="status"),
     athlete_id: int | None = Query(default=None),
+    coach_user_id: int | None = Query(
+        default=None,
+        description="Filtra por entrenador a cargo (041 §8.1). Solo admin/coach.",
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -332,6 +445,14 @@ async def list_training_sessions(
 ) -> list[Union[TrainingSessionRead, TrainingSessionReadParent]]:
     # Guardia: padre primero (retorno explícito)
     if current_user.role == UserRole.parent:
+        # Qué entrenador dirige una sesión es información interna de gestión
+        # (FR-032): se rechaza explícitamente en vez de ignorar el parámetro
+        # en silencio, para que la decisión quede visible en el código.
+        if coach_user_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes permisos para filtrar por entrenador.",
+            )
         return await _list_for_parent(
             db, current_user, session_status, from_date, to_date, athlete_id, limit, offset
         )
@@ -342,7 +463,15 @@ async def list_training_sessions(
         if not club_ids:
             return []
         return await _list_for_clubs(
-            db, club_ids, session_status, from_date, to_date, athlete_id, limit, offset
+            db,
+            club_ids,
+            session_status,
+            from_date,
+            to_date,
+            athlete_id,
+            limit,
+            offset,
+            coach_user_id=coach_user_id,
         )
 
     raise HTTPException(
@@ -391,7 +520,9 @@ async def update_training_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     notification_service=Depends(get_notification_service),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> TrainingSessionRead:
+    _assert_coach_user_ids_not_empty(body.coach_user_ids)
     session = await _get_session_or_404(db, session_id)
 
     if not await can_edit_session(db, current_user, session):
@@ -409,8 +540,20 @@ async def update_training_session(
             db,
             session_id,
             body,
+            actor=current_user,
             notification_service=notification_service,
             dispatcher=dispatcher,
+            ctx=ctx,
+        )
+    except training_svc.sessions.SessionCoachValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except training_svc.sessions.SessionCoachConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
         )
     except ValueError as exc:
         raise HTTPException(
@@ -431,6 +574,7 @@ async def execute_training_session(
     session_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> TrainingSessionRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -443,7 +587,9 @@ async def execute_training_session(
             )
 
     try:
-        executed = await training_svc.sessions.execute_session(db, session_id)
+        executed = await training_svc.sessions.execute_session(
+            db, session_id, actor=current_user, ctx=ctx
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -463,11 +609,29 @@ async def cancel_training_session(
     session_id: int,
     background_tasks: BackgroundTasks,
     notify: bool = Query(default=False, description="Si True, envía email de cancelación a padres."),
-    reason: str | None = Query(default=None, max_length=300, description="Motivo opcional para el email."),
+    reason_code: str | None = Query(
+        default=None,
+        description="Motivo de cancelación del catálogo cerrado `cancel_*` (041 §7.1).",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     notification_service=Depends(get_notification_service),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> None:
+    # `reason_code` se recibe como texto y se valida a mano para devolver el
+    # 422 plano que pide §7.1 —`{"detail": "Selecciona un motivo de
+    # cancelación."}`— en lugar del cuerpo estructurado de FastAPI, tanto si
+    # falta como si viene fuera del subgrupo `cancel_*`.
+    try:
+        parsed_reason_code = CancelReasonCode(reason_code) if reason_code else None
+    except ValueError:
+        parsed_reason_code = None
+    if parsed_reason_code is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Selecciona un motivo de cancelación.",
+        )
+
     session = await _get_session_or_404(db, session_id)
 
     if current_user.role == UserRole.coach:
@@ -492,10 +656,12 @@ async def cancel_training_session(
         await training_svc.sessions.cancel_session(
             db,
             session_id,
+            actor=current_user,
+            reason_code=parsed_reason_code,
             send_notification=notify,
-            reason=reason,
             notification_service=notification_service,
             dispatcher=dispatcher,
+            ctx=ctx,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -520,6 +686,13 @@ async def cancel_training_session(
 )
 async def list_session_attendance(
     session_id: int,
+    include_archived: bool = Query(
+        default=False,
+        description=(
+            "Solo admin: incluye las filas archivadas por una reducción de "
+            "convocatoria (041 §6.4)."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Union[AttendanceRead, AttendanceReadParent]]:
@@ -529,11 +702,26 @@ async def list_session_attendance(
     - admin/coach (mismo club): todas las filas con individual_feedback.
     - parent: solo las filas de SUS atletas convocados, sin individual_feedback.
     - otros: 403.
+
+    Las filas archivadas quedan fuera salvo en la rama admin
+    ``include_archived=true``, que es la que sostiene US4 AS5 ("un
+    administrador todavía puede leer la entrada archivada") sin un segundo
+    endpoint.
     """
+    if include_archived and current_user.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un administrador puede ver los registros archivados.",
+        )
+
     session = await _get_session_or_404(db, session_id)
 
     if current_user.role == UserRole.admin:
-        attendances = list(session.attendances or [])
+        attendances = (
+            list(session.attendances or [])
+            if include_archived
+            else _active_attendances(session)
+        )
         return [_attendance_to_read(a) for a in attendances]
 
     if current_user.role == UserRole.coach:
@@ -543,13 +731,12 @@ async def list_session_attendance(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No perteneces al club de esta sesión",
             )
-        attendances = list(session.attendances or [])
-        return [_attendance_to_read(a) for a in attendances]
+        return [_attendance_to_read(a) for a in _active_attendances(session)]
 
     if current_user.role == UserRole.parent:
         my_athlete_ids = await parent_athlete_ids(db, current_user.id)
         attendances = [
-            a for a in (session.attendances or []) if a.athlete_id in my_athlete_ids
+            a for a in _active_attendances(session) if a.athlete_id in my_athlete_ids
         ]
         if not attendances:
             raise HTTPException(
@@ -577,6 +764,7 @@ async def bulk_set_convocatoria(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     notification_service=Depends(get_notification_service),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> list[AttendanceRead]:
     # Acepta tanto el formato nuevo (AttendanceBulkSet) como la lista plana
     # legacy `[1, 2, 3]` para no romper consumidores existentes.
@@ -603,6 +791,7 @@ async def bulk_set_convocatoria(
             select(Athlete.id).where(
                 Athlete.id.in_(athlete_ids),
                 Athlete.club_id == session.club_id,
+                Athlete.deleted_at.is_(None),
             )
         )
         valid_ids = set(result.scalars().all())
@@ -621,9 +810,11 @@ async def bulk_set_convocatoria(
         db=db,
         session_id=session_id,
         athlete_ids=athlete_ids,
+        actor=current_user,
         send_notification=send_notification,
         notification_service=notification_service,
         dispatcher=dispatcher,
+        ctx=ctx,
     )
     return [_attendance_to_read(a) for a in attendances]
 
@@ -643,6 +834,7 @@ async def update_attendance(
     body: AttendanceUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> AttendanceRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -660,6 +852,9 @@ async def update_attendance(
             session_id=session_id,
             athlete_id=athlete_id,
             payload=body,
+            actor=current_user,
+            club_id=session.club_id,
+            ctx=ctx,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -693,6 +888,7 @@ async def upload_route_file(
     file: Annotated[UploadFile, File(description="Archivo .gpx o .fit del recorrido (GPX máx 5 MB, FIT máx 1 MB)")],
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> TrainingSessionRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -777,6 +973,20 @@ async def upload_route_file(
 
     # Actualizar route_file_path en la sesión
     session.route_file_path = relative_path
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.training_session,
+        entity_id=session.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=session.club_id,
+        changed_fields=["route_file_path"],
+        meta={"event_date": session.scheduled_date.isoformat()},
+        request_id=ctx.request_id,
+    )
+
     await db.commit()
     await db.refresh(session)
 
@@ -813,6 +1023,9 @@ async def _validate_athlete_ids_for_session(
         select(SessionAttendance.athlete_id).where(
             SessionAttendance.session_id == session_id,
             SessionAttendance.athlete_id.in_(athlete_ids),
+            # 041 §6.4 — un atleta cuya convocatoria fue archivada ya no puede
+            # etiquetarse en una media de la sesión.
+            SessionAttendance.archived_at.is_(None),
         )
     )
     convocados = set(result.scalars().all())
@@ -827,7 +1040,10 @@ async def _validate_athlete_ids_for_session(
         )
 
     ath_result = await db.execute(
-        select(Athlete).where(Athlete.id.in_(athlete_ids))
+        select(Athlete).where(
+            Athlete.id.in_(athlete_ids),
+            Athlete.deleted_at.is_(None),
+        )
     )
     return list(ath_result.scalars().all())
 
@@ -842,6 +1058,7 @@ async def upload_session_media(
     caption: Annotated[str | None, Form(max_length=280)] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> SessionMediaRead:
     session = await _get_session_or_404(db, session_id)
 
@@ -914,6 +1131,19 @@ async def upload_session_media(
     )
     media.athletes = athletes
     db.add(media)
+    await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.session_media,
+        entity_id=media.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=session.club_id,
+        request_id=ctx.request_id,
+    )
+
     await db.commit()
     await db.refresh(media)
     # Recargar la relación athletes
@@ -956,6 +1186,7 @@ async def delete_session_media(
     media_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> None:
     session = await _get_session_or_404(db, session_id)
     if current_user.role == UserRole.coach:
@@ -983,6 +1214,18 @@ async def delete_session_media(
 
     media.deleted_at = datetime.now(timezone.utc)
     storage_path = media.storage_path
+
+    await record_audit(
+        db,
+        action=AuditAction.archive,
+        entity_type=AuditEntityType.session_media,
+        entity_id=media.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=session.club_id,
+        request_id=ctx.request_id,
+    )
+
     await db.commit()
 
     try:
@@ -1000,6 +1243,7 @@ async def update_session_media(
     payload: SessionMediaUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> SessionMediaRead:
     session = await _get_session_or_404(db, session_id)
     if current_user.role == UserRole.coach:
@@ -1025,14 +1269,31 @@ async def update_session_media(
             detail="Media no encontrada.",
         )
 
+    changed_fields: list[str] = []
+
     if payload.caption is not None:
         media.caption = payload.caption
+        changed_fields.append("caption")
 
     if payload.athlete_ids is not None:
         athletes = await _validate_athlete_ids_for_session(
             db, session_id, payload.athlete_ids
         )
         media.athletes = athletes
+        changed_fields.append("athlete_ids")
+
+    if changed_fields:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.session_media,
+            entity_id=media.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=session.club_id,
+            changed_fields=changed_fields,
+            request_id=ctx.request_id,
+        )
 
     await db.commit()
     await db.refresh(media)

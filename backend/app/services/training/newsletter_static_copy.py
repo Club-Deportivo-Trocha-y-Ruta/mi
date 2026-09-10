@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.training.stage_log import FamilyCompass, NextSegment, Observation, Summit, SummitKind
+from app.services.utils.numbers_es import format_number_es
 
 # Placeholder neutro para la narrativa del entrenador cuando no hay IA/consentimiento.
 # (research.md Open Item — default acordado para la valoración legada).
@@ -376,7 +377,10 @@ def static_observations(email_blocks: dict[str, Any], athlete_reference: str) ->
                     f"{athlete_reference.capitalize()} mantuvo un ritmo de "
                     "entrenamiento constante este mes."
                 ),
-                evidence=f"Asistió a {sessions_present} de {sessions_total} sesiones ({attendance_pct:.0f} %).",
+                evidence=(
+                    f"Asistió a {sessions_present} de {sessions_total} sesiones "
+                    f"({format_number_es(attendance_pct, 0)} %)."
+                ),
                 block_ref="attendance",
             )
         )
@@ -387,7 +391,10 @@ def static_observations(email_blocks: dict[str, Any], athlete_reference: str) ->
         observations.append(
             Observation(
                 claim="El trabajo técnico del mes sostuvo una carga de esfuerzo estable.",
-                evidence=f"Esfuerzo percibido promedio de {avg_rpe} en {total_hours} horas de entrenamiento.",
+                evidence=(
+                    f"Esfuerzo percibido promedio de {format_number_es(avg_rpe, 1)} en "
+                    f"{format_number_es(total_hours, 1, trim_zero=True)} horas de entrenamiento."
+                ),
                 block_ref="technical",
             )
         )

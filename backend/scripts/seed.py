@@ -178,6 +178,28 @@ async def seed(session: AsyncSession) -> None:
         )
     )
 
+    # --- Segundo coach de prueba (feature 041 — gobernanza multi-coach) ---
+    coach2 = User(
+        email="entrenador2@trochyruta.com",
+        hashed_password=hash_password("Coach2026!"),
+        first_name="Beto",
+        last_name="Coach",
+        phone="3007654321",
+        role=UserRole.coach,
+        can_login=True,
+        created_by=admin.id,
+    )
+    session.add(coach2)
+    await session.flush()
+
+    session.add(
+        ClubMember(
+            club_id=club.id,
+            user_id=coach2.id,
+            role_in_club=ClubRole.coach,
+        )
+    )
+
     # --- Atletas de ejemplo ---
     athletes_data = [
         {

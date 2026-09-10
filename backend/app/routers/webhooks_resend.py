@@ -45,8 +45,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_db
+from app.models.athlete import Athlete
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter
 from app.models.newsletter_delivery_event import DeliveryEventType, NewsletterDeliveryEvent
+from app.services.audit import AuditAction, AuditEntityType, record_audit
+from app.services.request_context import webhook_context
 
 logger = logging.getLogger(__name__)
 
@@ -160,15 +163,21 @@ async def resend_webhook(
         return {"status": "ignored"}
 
     result = await db.execute(
-        select(NewsletterDeliveryEvent.newsletter_id)
+        select(
+            NewsletterDeliveryEvent.newsletter_id,
+            AthleteMonthlyNewsletter.athlete_id,
+            Athlete.club_id,
+        )
         .join(
             AthleteMonthlyNewsletter,
             AthleteMonthlyNewsletter.id == NewsletterDeliveryEvent.newsletter_id,
         )
+        .join(Athlete, Athlete.id == AthleteMonthlyNewsletter.athlete_id)
         .where(NewsletterDeliveryEvent.provider_message_id == email_id)
         .limit(1)
     )
-    newsletter_id = result.scalar_one_or_none()
+    row = result.first()
+    newsletter_id, newsletter_athlete_id, newsletter_club_id = row if row else (None, None, None)
 
     if newsletter_id is None:
         logger.info("Webhook Resend | email_id sin match | type=%s", mapped_type.value)
@@ -195,6 +204,21 @@ async def resend_webhook(
             mapped_type.value,
         )
         return {"status": "duplicate"}
+
+    ctx = webhook_context(job="resend_webhook")
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.athlete_monthly_newsletter,
+        entity_id=newsletter_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=newsletter_club_id,
+        athlete_id=newsletter_athlete_id,
+        changed_fields=["delivery_status"],
+        meta={"job": "resend_webhook", "event_type": mapped_type.value},
+        request_id=ctx.request_id,
+    )
 
     logger.info(
         "Webhook Resend procesado | type=%s newsletter_id=%d",

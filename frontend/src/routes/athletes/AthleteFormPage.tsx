@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Trash2 } from "lucide-react";
+import { Archive } from "lucide-react";
 
+import { ArchiveAthleteDialog } from "@/components/athletes/ArchiveAthleteDialog";
 import { AthleteForm, type AthleteFormValues } from "@/components/athletes/AthleteForm";
-import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
+import { useArchiveAthlete } from "@/hooks/athletes/useArchiveAthlete";
 import { useCreateAthlete } from "@/hooks/athletes/useCreateAthlete";
-import { useDeleteAthlete } from "@/hooks/athletes/useDeleteAthlete";
 import { useUpdateAthlete } from "@/hooks/athletes/useUpdateAthlete";
+import { extractErrorDetail } from "@/lib/apiError";
 import { useAuthStore } from "@/store/auth.store";
 
 interface AthleteFormPageProps {
@@ -19,29 +20,34 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
   const { id } = useParams();
   const user = useAuthStore((state) => state.user);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   const athleteId = Number(id);
   const isEdit = mode === "edit";
   const athleteQuery = useAthlete(athleteId, isEdit);
   const createMutation = useCreateAthlete();
   const updateMutation = useUpdateAthlete();
-  const deleteMutation = useDeleteAthlete();
+  const archiveMutation = useArchiveAthlete();
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
-  const handleDelete = () => {
-    setDeleteError(null);
-    deleteMutation.mutate(athleteId, {
-      onSuccess: () => {
-        setDeleteOpen(false);
-        navigate("/athletes");
+  const handleArchive = (reasonCode: string) => {
+    setArchiveError(null);
+    archiveMutation.mutate(
+      { id: athleteId, reasonCode },
+      {
+        onSuccess: () => {
+          setArchiveOpen(false);
+          navigate("/athletes");
+        },
+        onError: (err) => {
+          setArchiveError(
+            extractErrorDetail(err, "No se pudo archivar el atleta. Intenta de nuevo."),
+          );
+        },
       },
-      onError: () => {
-        setDeleteError("No se pudo eliminar el atleta. Intenta de nuevo.");
-      },
-    });
+    );
   };
 
   const initialValues = useMemo(() => {
@@ -132,14 +138,15 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
         {isEdit && (
           <button
             type="button"
+            data-testid="archive-athlete-button"
             onClick={() => {
-              setDeleteError(null);
-              setDeleteOpen(true);
+              setArchiveError(null);
+              setArchiveOpen(true);
             }}
-            className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+            className="flex min-h-12 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
           >
-            <Trash2 size={14} />
-            Eliminar atleta
+            <Archive size={14} />
+            Archivar atleta
           </button>
         )}
       </div>
@@ -155,22 +162,13 @@ export function AthleteFormPage({ mode }: AthleteFormPageProps) {
       />
 
       {isEdit && (
-        <ConfirmDialog
-          open={deleteOpen}
-          title="Eliminar atleta"
-          description={
-            <>
-              <span className="font-medium text-charcoal">{athleteFullName}</span>
-              <br />
-              Se eliminarán de forma permanente el perfil del atleta, sus mediciones antropométricas, vínculos con padres/acudientes, invitaciones y consentimientos. Esta acción no se puede deshacer.
-            </>
-          }
-          confirmLabel="Sí, eliminar atleta"
-          tone="danger"
-          isPending={deleteMutation.isPending}
-          errorMessage={deleteError ?? undefined}
-          onCancel={() => setDeleteOpen(false)}
-          onConfirm={handleDelete}
+        <ArchiveAthleteDialog
+          open={archiveOpen}
+          athleteFullName={athleteFullName}
+          isPending={archiveMutation.isPending}
+          errorMessage={archiveError ?? undefined}
+          onCancel={() => setArchiveOpen(false)}
+          onConfirm={handleArchive}
         />
       )}
     </section>

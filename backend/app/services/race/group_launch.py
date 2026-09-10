@@ -46,6 +46,7 @@ from app.models.athlete import Athlete
 from app.models.race_event import RaceEvent
 from app.models.race_result import RaceResult
 from app.models.race_series import RaceSeries
+from app.models.user import User
 from app.schemas.race_ai import (
     GroupRunItem,
     GroupRunLaunchResponse,
@@ -54,6 +55,7 @@ from app.schemas.race_ai import (
     RaceEventRunsResponse,
     RunState,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.race.ai.runner import RunBackpressureError, submit_run
 
 logger = logging.getLogger(__name__)
@@ -184,6 +186,7 @@ async def resolve_group_members(
     db: AsyncSession,
     race_event_id: int,
     athlete_ids: Optional[list[int]],
+    club_ids: Optional[set[int]] = None,
 ) -> list[Member]:
     """Return distinct club athletes with results in the given event.
 
@@ -193,6 +196,16 @@ async def resolve_group_members(
     - ``race_results.athlete_id IS NOT NULL``
     - ``race_results.deleted_at IS NULL``
     - When ``athlete_ids`` is not None: ``athlete_id IN athlete_ids``
+    - When ``club_ids`` is not None: ``athletes.club_id IN club_ids``
+
+    ``club_ids`` acota el resultado a los clubes de quien pregunta y es el
+    arreglo de los hallazgos H1 y H2 de la revisión de seguridad de US6
+    (T080): una carrera es de un tercero y en ella corren menores de varios
+    clubes, así que sin este filtro el listado de corridas de un evento le
+    entregaba a un entrenador de otro club el **nombre completo** de una menor
+    ajena junto con un ``run_id`` válido, y el lanzamiento grupal abría una
+    corrida por cada una de esas menores. ``None`` = sin filtro, que es lo que
+    pasa el administrador.
 
     Display name convention: ``"{first_name} {last_name}"`` — identical to
     ``season_panorama`` (``race_analysis.py`` line 1438) and
@@ -214,6 +227,7 @@ async def resolve_group_members(
             RaceResult.event_id == race_event_id,
             RaceResult.athlete_id.is_not(None),
             RaceResult.deleted_at.is_(None),
+            Athlete.deleted_at.is_(None),
         )
         .distinct()
         .order_by(Athlete.last_name, Athlete.first_name)
@@ -221,6 +235,11 @@ async def resolve_group_members(
 
     if athlete_ids is not None:
         stmt = stmt.where(Athlete.id.in_(athlete_ids))
+
+    if club_ids is not None:
+        # Conjunto vacío → ningún miembro. Es lo correcto: un coach sin club
+        # no tiene deportistas que analizar, y `in_(())` no devuelve filas.
+        stmt = stmt.where(Athlete.club_id.in_(club_ids))
 
     result = await db.execute(stmt)
     rows = result.all()
@@ -406,9 +425,9 @@ async def _insert_agent_run(
             INSERT INTO agent_runs (
                 external_run_id, graph_name, prompt_version, started_at,
                 status, input_json, requested_by_user_id,
-                checkpoint_thread_id, explain_mode
+                checkpoint_thread_id, explain_mode, athlete_id
             ) VALUES (
-                :rid, :gn, :pv, :sa, 'running', :inp, :uid, :tid, :em
+                :rid, :gn, :pv, :sa, 'running', :inp, :uid, :tid, :em, :aid
             )
             """
         ),
@@ -421,6 +440,10 @@ async def _insert_agent_run(
             "uid": requested_by_user_id,
             "tid": run_id,
             "em": 1 if explain_mode else 0,
+            # §1.3: la columna es la fuente preferida para resolver el club
+            # del run; sin ella, cada run de grupo nacía con ``athlete_id``
+            # en NULL.
+            "aid": athlete_id,
         },
     )
 
@@ -436,6 +459,7 @@ async def launch_group(
     athlete_ids: Optional[list[int]],
     explain_mode: bool,
     requested_by_user_id: int,
+    club_ids: Optional[set[int]] = None,
 ) -> GroupRunLaunchResponse:
     """Launch group analysis for all (or a subset of) athletes in an event.
 
@@ -474,7 +498,7 @@ async def launch_group(
         EventHasNoResultsError: no results in event AND athlete_ids is None.
     """
     season, valida_num = await resolve_event_scope(db, race_event_id)
-    members = await resolve_group_members(db, race_event_id, athlete_ids)
+    members = await resolve_group_members(db, race_event_id, athlete_ids, club_ids)
 
     if not members and athlete_ids is None:
         raise EventHasNoResultsError(race_event_id)
@@ -504,8 +528,15 @@ async def launch_group(
         # pattern as start_run in race_analysis.py lines 629-643).
         athlete_age: Optional[int] = None
         try:
+            # FR-014: ``_load_members`` ya excluye archivados; el filtro se
+            # repite aquí (defensa en profundidad) para que un atleta
+            # archivado entre la selección y el lanzamiento no aporte edad
+            # al estado inicial del run.
             _ath_result = await db.execute(
-                select(Athlete).where(Athlete.id == member.athlete_id)
+                select(Athlete).where(
+                    Athlete.id == member.athlete_id,
+                    Athlete.deleted_at.is_(None),
+                )
             )
             _ath = _ath_result.scalar_one_or_none()
             if _ath is not None and _ath.birth_date is not None:
@@ -556,6 +587,27 @@ async def launch_group(
                 )
             )
             continue
+
+        # 3b. Fila de auditoría del lanzamiento (§4.9 audit-recording.md),
+        # mismo patrón que ``routers/race_analysis.py::start_run`` /
+        # ``routers/athlete_race_analysis.py::start_athlete_run``: un run
+        # NUEVO es siempre ``create``, sea cual sea el punto de entrada.
+        _new_run_id_result = await db.execute(
+            text("SELECT id FROM agent_runs WHERE external_run_id = :rid LIMIT 1"),
+            {"rid": run_id},
+        )
+        _new_run_row = _new_run_id_result.first()
+        if _new_run_row is not None:
+            _requested_by_user = await db.get(User, requested_by_user_id)
+            await record_audit(
+                db,
+                action=AuditAction.create,
+                entity_type=AuditEntityType.agent_run,
+                entity_id=int(_new_run_row[0]),
+                actor=_requested_by_user,
+                club_id=_ath.club_id if _ath is not None else None,
+                athlete_id=member.athlete_id,
+            )
 
         # 4. Submit to the runner (backpressure → skip, other errors → error).
         try:
@@ -638,6 +690,7 @@ async def list_event_runs(
     db: AsyncSession,
     race_event_id: int,
     active_only: bool = True,
+    club_ids: Optional[set[int]] = None,
 ) -> RaceEventRunsResponse:
     """List analysis runs associated with the given race event.
 
@@ -664,7 +717,9 @@ async def list_event_runs(
     season, valida_num = await resolve_event_scope(db, race_event_id)
 
     # Resolve athlete_ids with results in the event (for final filtering).
-    members = await resolve_group_members(db, race_event_id, athlete_ids=None)
+    members = await resolve_group_members(
+        db, race_event_id, athlete_ids=None, club_ids=club_ids
+    )
     athlete_id_to_name: dict[int, str] = {m.athlete_id: m.display_name for m in members}
     if not athlete_id_to_name:
         # No results in event → return empty list (not an error for list endpoint).

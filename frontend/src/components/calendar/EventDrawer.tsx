@@ -12,6 +12,7 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { CancelEventDialog } from "./CancelEventDialog";
 import { EventTypeChip } from "./EventTypeChip";
 import {
   useCancelCalendarEvent,
@@ -288,10 +289,10 @@ export function EventDrawer({
     }
   }
 
-  function handleConfirmCancel() {
+  function handleConfirmCancel(reasonCode: string) {
     if (!eventId) return;
     cancelMutation.mutate(
-      { id: eventId },
+      { id: eventId, reasonCode },
       {
         onSuccess: () => {
           setConfirmCancel(false);
@@ -300,6 +301,19 @@ export function EventDrawer({
       },
     );
   }
+
+  /**
+   * Feature 041 — el diálogo de cancelación no cierra ante un error; solo
+   * muestra el mensaje en línea. Un 409 significa que otro entrenador ya
+   * canceló el evento entre que se abrió el diálogo y se confirmó
+   * (contracts/session-coaches.md §7, F-07) — se distingue del resto de
+   * errores para que el usuario entienda que no hay nada que reintentar.
+   */
+  const cancelErrorMessage = cancelMutation.isError
+    ? (cancelMutation.error as { response?: { status?: number } })?.response?.status === 409
+      ? "Este evento ya está cancelado."
+      : "No se pudo cancelar el evento. Intenta de nuevo."
+    : undefined;
 
   function handleConfirmDelete() {
     if (!eventId) return;
@@ -485,14 +499,11 @@ export function EventDrawer({
         </SheetContent>
       </Sheet>
 
-      <ConfirmDialog
+      <CancelEventDialog
         open={confirmCancel}
-        title="Cancelar evento"
-        description="El evento pasará al estado 'cancelado'. Los participantes serán notificados."
-        confirmLabel="Cancelar evento"
-        cancelLabel="No, volver"
-        tone="danger"
+        eventTitle={event?.title}
         isPending={cancelMutation.isPending}
+        errorMessage={cancelErrorMessage}
         onCancel={() => setConfirmCancel(false)}
         onConfirm={handleConfirmCancel}
       />

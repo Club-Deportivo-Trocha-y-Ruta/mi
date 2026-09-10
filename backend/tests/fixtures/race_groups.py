@@ -59,6 +59,7 @@ from tests.fixtures.race_history_fixtures import (
     create_race_series,
     create_user,
 )
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 # ---------------------------------------------------------------------------
 # IDs y datos ficticios del escenario
@@ -454,6 +455,7 @@ _TABLES = (
     "race_categories",
     "race_competitors",
     "race_results",
+    *AUDIT_TABLES,
 )
 
 

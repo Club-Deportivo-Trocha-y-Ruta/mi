@@ -1,0 +1,126 @@
+name: Audit Retention
+
+# Purga de `audit_log` a 24 meses (FR-030 / specs/041-multi-coach-governance).
+# Job 1 (preview) corre siempre — mensual y en cada dispatch — y NO toca datos.
+# Job 2 (apply) sólo corre en dispatch manual con confirm=true, reusando el
+# cutoff que el preview ya publicó.
+# Contrato: specs/041-multi-coach-governance/contracts/retention-purge.md §3.
+# Runbook: docs/19-multi-coach-governance/runbook.md §5.
+#
+# PRECONDICIÓN DE RED (§3.5) — el job agendado queda en SIMULACIÓN ÚNICAMENTE
+# hasta que se confirme una de estas tres opciones (decisión abierta en
+# plan.md). MySQL vive en Hostinger Shared, que filtra clientes por IP
+# (docs/10-race-results/runbook-ops.md §1.2), y los runners de GitHub salen de
+# un rango público rotativo, así que una entrada de allowlist por IP no es
+# viable:
+#   1. Abrir acceso remoto de MySQL desde cualquier host para un usuario
+#      dedicado de retención (hPanel → MySQL Remote), aceptando que la
+#      mitigación es el grant limitado a `audit_log` más una contraseña fuerte.
+#   2. Correr en un runner self-hosted con IP de salida estable y allowlisted.
+#   3. Dejar el schedule deshabilitado y purgar a mano una vez al año desde la
+#      máquina del mantenedor, dejando registro en el runbook.
+# La opción 3 es el default honesto mientras no se conceda la 1. El archivo se
+# publica igual: el job agendado es una simulación inofensiva que, si no hay
+# alcance de red, simplemente falla al conectar sin tocar un solo dato. El job
+# `apply` NUNCA lo dispara el schedule — sólo un dispatch manual con
+# confirm=true y revisor del entorno `production`.
+
+on:
+  schedule:
+    - cron: "0 5 1 * *"        # día 1 de cada mes, 05:00 UTC (00:00 Colombia)
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe exactamente "true" para EJECUTAR la purga. Cualquier otro valor sólo simula.'
+        required: true
+        default: "false"
+        type: string
+
+jobs:
+  preview:
+    name: Preview (dry-run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    outputs:
+      cutoff: ${{ steps.run.outputs.cutoff }}
+      candidates: ${{ steps.run.outputs.candidates }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Preview purge
+        id: run
+        env:
+          # Secreto por NOMBRE. Nunca se imprime ni se interpola en un log:
+          # la CLI sólo reporta `host/base` (contrato §2.2).
+          AUDIT_RETENTION_DATABASE_URL: ${{ secrets.AUDIT_RETENTION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AUDIT_RETENTION_DATABASE_URL:-}" ]; then
+            echo "::error::AUDIT_RETENTION_DATABASE_URL no configurado en secrets del repo."
+            exit 1
+          fi
+          python -m scripts.retention_audit_log --dry-run > preview.json
+          cat preview.json
+          echo "cutoff=$(jq -r .cutoff preview.json)" >> "$GITHUB_OUTPUT"
+          echo "candidates=$(jq -r .candidates preview.json)" >> "$GITHUB_OUTPUT"
+      - name: Summary
+        run: |
+          echo "### Purga de audit_log — simulación" >> "$GITHUB_STEP_SUMMARY"
+          echo "- cutoff: \`${{ steps.run.outputs.cutoff }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- candidatos: **${{ steps.run.outputs.candidates }}**" >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: Apply purge (manual, confirm=true)
+    needs: preview
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production          # OBLIGATORIO: exige revisor en Settings → Environments (§4.1 A3)
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Apply purge
+        env:
+          AUDIT_RETENTION_DATABASE_URL: ${{ secrets.AUDIT_RETENTION_DATABASE_URL }}
+          CUTOFF: ${{ needs.preview.outputs.cutoff }}
+        run: |
+          set -euo pipefail
+          # Segunda barrera, en el shell: el `if:` del job ya filtró, pero un
+          # cambio futuro en la expresión no debe poder borrar datos en silencio.
+          # Mismo estilo de guard in-shell que race-eval.yml:96-99.
+          if [ "${{ github.event.inputs.confirm }}" != "true" ]; then
+            echo "::error::confirm != true — se aborta la purga."
+            exit 1
+          fi
+          if [ -z "${CUTOFF:-}" ]; then
+            echo "::error::El job preview no publicó un cutoff."
+            exit 1
+          fi
+          python -m scripts.retention_audit_log \
+            --apply --cutoff "$CUTOFF" --actor-kind cron > applied.json
+          cat applied.json
+      - name: Summary
+        run: |
+          echo "### Purga de audit_log — aplicada" >> "$GITHUB_STEP_SUMMARY"
+          echo "- cutoff: \`${{ needs.preview.outputs.cutoff }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- candidatos previstos: **${{ needs.preview.outputs.candidates }}**" >> "$GITHUB_STEP_SUMMARY"

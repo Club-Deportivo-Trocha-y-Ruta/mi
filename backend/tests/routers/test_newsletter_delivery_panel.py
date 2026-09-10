@@ -23,6 +23,7 @@ from app.models.athlete import Athlete, FamilyRelationship, ParentAthlete, Sex
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 from app.models.newsletter_delivery_event import DeliveryEventType, NewsletterDeliveryEvent
 from app.models.user import User, UserRole
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 _TABLES = (
     "users",
@@ -32,6 +33,7 @@ _TABLES = (
     "athlete_monthly_newsletters",
     "newsletter_delivery_events",
     "parent_athlete",
+    *AUDIT_TABLES,
 )
 
 _SNAPSHOT = {"email_blocks": {}, "pdf_only_blocks": {}}

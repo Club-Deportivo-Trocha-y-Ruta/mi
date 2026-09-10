@@ -22,6 +22,7 @@ from sqlalchemy.dialects.sqlite import INTEGER as SQLITE_INTEGER
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.mixins import UpdatedByMixin
 
 if TYPE_CHECKING:
     from app.models.athlete import Athlete
@@ -69,7 +70,7 @@ class ActualAttendanceStatus(str, enum.Enum):
     EXCUSED = "excused"
 
 
-class CalendarEvent(Base):
+class CalendarEvent(UpdatedByMixin, Base):
     """Evento del calendario del club. Tabla polimórfica que unifica entrenamientos,
     competencias, eventos del club y días de descanso. El payload específico
     por tipo se almacena en el campo JSON event_data."""
@@ -145,6 +146,17 @@ class CalendarEvent(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
+    )
+    cancelled_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancellation_reason_code: Mapped[str | None] = mapped_column(
+        String(40), nullable=True
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     # Relaciones

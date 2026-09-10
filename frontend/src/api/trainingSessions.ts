@@ -24,14 +24,27 @@ import type {
 
 const BASE = "/api/training-sessions";
 
+/**
+ * Feature 041 — gobernanza multi-coach (T067, contracts/session-coaches.md
+ * §8.1, §10.3). `coach_user_id` no se agregó al `SessionFilters` compartido
+ * en `types/trainingSession.types.ts` porque ese archivo pertenece a T066 en
+ * esta ola (fuera de alcance/tocable por T067) — se modela aquí como una
+ * extensión local, aditiva, del mismo tipo. Un parent que lo envíe recibe
+ * 403 del backend; `fetchParentSessions` (más abajo) nunca lo agrega.
+ */
+export interface SessionFiltersWithCoach extends SessionFilters {
+  coach_user_id?: number | null;
+}
+
 export async function fetchTrainingSessions(
-  filters?: SessionFilters,
+  filters?: SessionFiltersWithCoach,
 ): Promise<TrainingSession[]> {
   const params: Record<string, string> = {};
   if (filters?.from_date) params.from = filters.from_date;
   if (filters?.to_date) params.to = filters.to_date;
   if (filters?.status) params.status = filters.status;
   if (filters?.athlete_id) params.athlete_id = String(filters.athlete_id);
+  if (filters?.coach_user_id != null) params.coach_user_id = String(filters.coach_user_id);
   const response = await apiClient.get<TrainingSession[]>(BASE, { params });
   return response.data;
 }
@@ -64,20 +77,25 @@ export async function executeTrainingSession(id: number): Promise<TrainingSessio
 export interface CancelTrainingSessionOptions {
   notify?: boolean;
   reason?: string;
+  /**
+   * Motivo del catálogo cerrado `CancelReasonCode` (auditoría, feature 041).
+   * El backend lo exige como query param obligatorio.
+   */
+  reasonCode: string;
 }
 
 export async function cancelTrainingSession(
   id: number,
-  opts?: CancelTrainingSessionOptions,
+  opts: CancelTrainingSessionOptions,
 ): Promise<TrainingSession> {
-  const params: Record<string, string> = {};
-  if (opts?.notify !== undefined) params.notify = String(opts.notify);
-  if (opts?.reason) params.reason = opts.reason;
+  const params: Record<string, string> = { reason_code: opts.reasonCode };
+  if (opts.notify !== undefined) params.notify = String(opts.notify);
+  if (opts.reason) params.reason = opts.reason;
   const response = await apiClient.delete<TrainingSession>(`${BASE}/${id}`, { params });
   return response.data;
 }
 
-export function useTrainingSessions(filters?: SessionFilters, enabled = true) {
+export function useTrainingSessions(filters?: SessionFiltersWithCoach, enabled = true) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   // Privacy R2: userId va al inicio del key (después del namespace) para
@@ -151,13 +169,15 @@ export interface CancelTrainingSessionVars {
   id: number;
   notify?: boolean;
   reason?: string;
+  /** Motivo del catálogo cerrado `CancelReasonCode` (auditoría, feature 041). */
+  reasonCode: string;
 }
 
 export function useCancelTrainingSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, notify, reason }: CancelTrainingSessionVars) =>
-      cancelTrainingSession(id, { notify, reason }),
+    mutationFn: ({ id, notify, reason, reasonCode }: CancelTrainingSessionVars) =>
+      cancelTrainingSession(id, { notify, reason, reasonCode }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["training-sessions"] });
       void queryClient.invalidateQueries({ queryKey: ["training-session"] });

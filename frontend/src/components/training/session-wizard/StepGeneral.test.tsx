@@ -8,21 +8,54 @@
  *     this test verifies the rendering path by passing/not-passing the field.)
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { axe, toHaveNoViolations } from "jest-axe";
 
 expect.extend(toHaveNoViolations);
 
+// Feature 041 (T066) — StepGeneral ahora renderiza SessionCoachesField, que
+// usa TanStack Query (useClubCoaches → GET /api/users). Se fija una
+// respuesta estable para no depender de MSW en este archivo (idioma de test
+// ya establecido aquí: mock plano de `@/api/client`).
 vi.mock("@/api/client", () => ({
   apiClient: {
-    get: vi.fn(),
+    get: vi.fn().mockResolvedValue({
+      data: {
+        items: [
+          { id: 7, first_name: "Laura", last_name: "Méndez", is_active: true, role: "coach" },
+          { id: 8, first_name: "Ana", last_name: "Rivera", is_active: true, role: "coach" },
+        ],
+        total: 2,
+      },
+    }),
     post: vi.fn(),
     patch: vi.fn(),
     interceptors: { request: { use: vi.fn() }, response: { use: vi.fn() } },
   },
   registerAuthHandlers: vi.fn(),
+}));
+
+// Entrenador autenticado fijo (id 7) — coincide con `coach_user_ids: [7]` en
+// los defaultValues de abajo, así SessionCoachesField no dispara su efecto
+// de prellenado automático y el resto de estos tests (marcadores IA) no se
+// ve afectado por una carga asíncrona adicional. `accessToken` es
+// obligatorio en el mock: `useClubCoaches` solo dispara la query cuando
+// existe (`enabled: !!accessToken`), igual que el resto de hooks de
+// TanStack Query del proyecto.
+vi.mock("@/store/auth.store", () => ({
+  useAuthStore: (
+    selector: (s: {
+      user: { id: number; first_name: string; last_name: string };
+      accessToken: string;
+    }) => unknown,
+  ) =>
+    selector({
+      user: { id: 7, first_name: "Laura", last_name: "Méndez" },
+      accessToken: "test-token",
+    }),
 }));
 
 import { StepGeneral } from "./StepGeneral";
@@ -32,7 +65,7 @@ import {
 } from "@/schemas/trainingSession.schema";
 
 // ---------------------------------------------------------------------------
-// Wrapper component to provide RHF context
+// Wrapper component to provide RHF + TanStack Query context
 // ---------------------------------------------------------------------------
 
 function StepGeneralWrapper({
@@ -60,15 +93,19 @@ function StepGeneralWrapper({
       strava_url: "",
       coach_notes: "",
       convocados_athlete_ids: [],
+      coach_user_ids: [7],
     },
   });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
-    <StepGeneral
-      register={register}
-      control={control}
-      errors={errors}
-      aiSeededFields={aiSeededFields}
-    />
+    <QueryClientProvider client={queryClient}>
+      <StepGeneral
+        register={register}
+        control={control}
+        errors={errors}
+        aiSeededFields={aiSeededFields}
+      />
+    </QueryClientProvider>
   );
 }
 
@@ -188,6 +225,33 @@ describe("StepGeneral — marcadores IA (T036)", () => {
 
   it("sin violaciones de accesibilidad sin marcadores", async () => {
     const { container } = render(<StepGeneralWrapper />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SessionCoachesField wiring (feature 041, T066)
+// ---------------------------------------------------------------------------
+
+describe("StepGeneral — campo de entrenadores a cargo (T066)", () => {
+  it("renderiza SessionCoachesField con el entrenador autenticado preseleccionado", async () => {
+    render(<StepGeneralWrapper />);
+    expect(await screen.findByText("Laura Méndez")).toBeInTheDocument();
+    expect(screen.getByText("Entrenadores a cargo")).toBeInTheDocument();
+  });
+
+  it("permite agregar a otro entrenador del club desde el paso General", async () => {
+    render(<StepGeneralWrapper />);
+    const checkbox = await screen.findByRole("checkbox", { name: /Agregar a Ana Rivera/i });
+    checkbox.click();
+    const chipList = await screen.findByTestId("selected-coach-chips");
+    expect(within(chipList).getByText("Ana Rivera")).toBeInTheDocument();
+  });
+
+  it("sin violaciones de accesibilidad con el campo de entrenadores cargado", async () => {
+    const { container } = render(<StepGeneralWrapper />);
+    await screen.findByText("Laura Méndez");
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });

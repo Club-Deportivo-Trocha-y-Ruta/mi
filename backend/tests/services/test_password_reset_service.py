@@ -20,6 +20,7 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User, UserRole
 from app.services import password_reset as svc
 from app.services.auth import hash_password, verify_password
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 
 @pytest_asyncio.fixture
@@ -30,7 +31,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
-    tables = [Base.metadata.tables[t] for t in ("users", "password_reset_tokens")]
+    tables = [Base.metadata.tables[t] for t in ("users", "password_reset_tokens", *AUDIT_TABLES)]
     async with eng.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
     yield eng

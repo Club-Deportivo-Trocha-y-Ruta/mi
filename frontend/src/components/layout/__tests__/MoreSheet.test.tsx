@@ -95,17 +95,26 @@ describe("MoreSheet — contenido filtrado por rol (data-model.md §3, R7)", () 
     }
   });
 
-  it("solo admin ve 'Salud IA' (/admin/ai); coach no lo ve", () => {
-    renderMoreSheet("admin");
-    expect(screen.getByRole("link", { name: "Salud IA" })).toHaveAttribute(
-      "href",
-      "/admin/ai",
-    );
+  // Feature 041 (gobernanza multi-coach, US6, §7.3): "Salud IA" pasa a ser
+  // visible también al entrenador — el RBAC de /admin/ai-usage se amplió a
+  // coach + admin.
+  it("admin y coach ven 'Salud IA' (/admin/ai)", () => {
+    for (const role of ["admin", "coach"] as NavRole[]) {
+      const { unmount } = renderMoreSheet(role);
+      expect(screen.getByRole("link", { name: "Salud IA" })).toHaveAttribute(
+        "href",
+        "/admin/ai",
+      );
+      unmount();
+    }
+  });
 
-    const { unmount } = renderMoreSheet("admin"); // dispose first render's tree
-    unmount();
-
-    renderMoreSheet("coach");
+  // US3 AS5: a quien no tiene acceso no se le muestra la entrada de
+  // navegación. `role` está tipado a `NavRole` ("coach" | "admin") porque
+  // `MoreSheet` sólo se monta para esos roles por construcción — el cast
+  // aquí es defensivo, igual que en UserMenu.test.tsx.
+  it("padre no ve 'Salud IA' aunque el componente se monte con ese rol", () => {
+    renderMoreSheet("parent" as NavRole);
     expect(screen.queryByRole("link", { name: "Salud IA" })).not.toBeInTheDocument();
   });
 

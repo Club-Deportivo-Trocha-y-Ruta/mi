@@ -4,6 +4,19 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 
+// jsdom no implementa estas APIs de puntero/scroll que Radix Select usa
+// internamente al abrir el picker de motivo de cancelación (mismo polyfill
+// que CancelEventDialog.test.tsx / NotifyParentsDialog.test.tsx).
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+}
+if (!Element.prototype.releasePointerCapture) {
+  Element.prototype.releasePointerCapture = () => {};
+}
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 vi.mock("@/api/calendar", () => ({
@@ -12,13 +25,26 @@ vi.mock("@/api/calendar", () => ({
   useDeleteCalendarEventPermanent: vi.fn(),
 }));
 
+// El catálogo cerrado de motivos de cancelación (feature 041) se mockea
+// directamente en vez de levantar MSW — mismo patrón que
+// NotifyParentsDialog.test.tsx / CancelEventDialog.test.tsx.
+vi.mock("@/api/audit", () => ({
+  getAuditReasonCodes: vi.fn(),
+}));
+
 import {
   useCalendarEvent,
   useCancelCalendarEvent,
   useDeleteCalendarEventPermanent,
 } from "@/api/calendar";
+import { getAuditReasonCodes } from "@/api/audit";
 import { EventDrawer } from "./EventDrawer";
 import { makeCalendarEventRead } from "@/test/msw/calendarHandlers";
+
+const CANCEL_REASON_CODES = [
+  { code: "cancel_weather", label: "Clima adverso", group: "cancel" as const },
+  { code: "cancel_rescheduled", label: "Reprogramado", group: "cancel" as const },
+];
 
 const cancelMutateAsync = vi.fn();
 const cancelMutationStub = {
@@ -77,6 +103,7 @@ describe("EventDrawer", () => {
   beforeEach(() => {
     cancelMutateAsync.mockClear();
     deletePermanentMutate.mockClear();
+    vi.mocked(getAuditReasonCodes).mockResolvedValue({ items: CANCEL_REASON_CODES });
     vi.mocked(useCancelCalendarEvent).mockReturnValue(
       cancelMutationStub as unknown as ReturnType<typeof useCancelCalendarEvent>,
     );
@@ -206,6 +233,62 @@ describe("EventDrawer", () => {
     await waitFor(() => {
       expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     });
+  });
+
+  it("calls the cancel mutation with { id, reasonCode } once a reason is chosen (feature 041)", async () => {
+    const user = userEvent.setup();
+    const cancelMutate = vi.fn();
+    const event = makeCalendarEventRead({ id: 9, status: "scheduled" });
+
+    vi.mocked(useCalendarEvent).mockReturnValue({
+      data: event,
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useCalendarEvent>);
+    vi.mocked(useCancelCalendarEvent).mockReturnValue({
+      ...cancelMutationStub,
+      mutate: cancelMutate,
+    } as unknown as ReturnType<typeof useCancelCalendarEvent>);
+
+    renderDrawer(9, true);
+
+    await user.click(screen.getAllByText("Cancelar evento")[0]);
+    await waitFor(() => expect(getAuditReasonCodes).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("combobox", { name: /Motivo de la cancelación/i }));
+    await user.click(await screen.findByRole("option", { name: "Reprogramado" }));
+    await user.click(screen.getByTestId("cancel-event-confirm-button"));
+
+    expect(cancelMutate).toHaveBeenCalledWith(
+      { id: 9, reasonCode: "cancel_rescheduled" },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+  });
+
+  it("shows 'Este evento ya está cancelado.' inline without closing when cancelling fails with 409 (feature 041)", async () => {
+    const user = userEvent.setup();
+    const event = makeCalendarEventRead({ id: 9, status: "scheduled" });
+
+    vi.mocked(useCalendarEvent).mockReturnValue({
+      data: event,
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useCalendarEvent>);
+    vi.mocked(useCancelCalendarEvent).mockReturnValue({
+      ...cancelMutationStub,
+      isError: true,
+      error: { response: { status: 409 } },
+    } as unknown as ReturnType<typeof useCancelCalendarEvent>);
+
+    renderDrawer(9, true);
+
+    await user.click(screen.getAllByText("Cancelar evento")[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Este evento ya está cancelado.")).toBeInTheDocument();
+    });
+    // Sigue abierto — el error no cierra el diálogo.
+    expect(screen.getByTestId("cancel-event-dialog")).toBeInTheDocument();
   });
 
   it("disables cancel button when event is already cancelled", async () => {

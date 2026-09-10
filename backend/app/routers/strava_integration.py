@@ -45,6 +45,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.dependencies import get_current_user, get_db, get_task_dispatcher, verify_athlete_access
 from app.models.athlete import Athlete
+from app.models.strava_activity import StravaActivity
 from app.models.strava_connection import StravaConnection, StravaConnectionStatus
 from app.models.user import User
 from app.schemas.strava import (
@@ -53,7 +54,14 @@ from app.schemas.strava import (
     ReconcileResultOut,
     StravaWebhookEvent,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.notification.task_dispatcher import TaskDispatcher
+from app.services.request_context import (
+    cron_context,
+    current_request_id,
+    new_request_id,
+    webhook_context,
+)
 from app.services.strava import oauth
 from app.services.strava.client import StravaClient
 from app.services.strava.ingest import process_webhook_event
@@ -159,6 +167,7 @@ async def start_strava_connect(
 )
 async def disconnect_strava(
     athlete: Athlete = Depends(verify_athlete_access),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Desconexión iniciada por la familia/coach/admin (FR-014).
@@ -186,6 +195,17 @@ async def disconnect_strava(
     connection.status = StravaConnectionStatus.disconnected
     connection.disconnected_at = datetime.now(timezone.utc)
     await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.unlink,
+        entity_type=AuditEntityType.strava_connection,
+        entity_id=connection.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        request_id=current_request_id() or new_request_id(),
+    )
 
     logger.info(
         "strava_connection_disconnected",
@@ -305,6 +325,21 @@ async def strava_oauth_callback(
     connection.last_error = None
 
     await db.flush()
+
+    acting_user = await db.get(User, user_id)
+    athlete_row = await db.get(Athlete, athlete_id)
+    if acting_user is not None and athlete_row is not None:
+        await record_audit(
+            db,
+            action=AuditAction.link,
+            entity_type=AuditEntityType.strava_connection,
+            entity_id=connection.id,
+            actor=acting_user,
+            club_id=athlete_row.club_id,
+            athlete_id=athlete_id,
+            request_id=current_request_id() or new_request_id(),
+        )
+
     logger.info(
         "strava_connection_established",
         extra={"athlete_id": athlete_id},
@@ -344,6 +379,65 @@ async def validate_strava_webhook(
     return {"hub.challenge": hub_challenge}
 
 
+async def _record_webhook_audit(session: AsyncSession, event: StravaWebhookEvent) -> None:
+    """Registra la fila de auditoría del evento de webhook ya procesado
+    (§3.3: la tupla se registra aquí porque el POST del webhook solo hace
+    ACK y está exento — el worker diferido es el único sitio con datos
+    suficientes para resolver ``athlete_id``/``club_id``).
+    """
+    ctx = webhook_context(job="strava_webhook")
+
+    connection = await session.scalar(
+        select(StravaConnection).where(
+            StravaConnection.strava_athlete_id == event.owner_id
+        )
+    )
+    if connection is None:
+        return
+
+    athlete_row = await session.get(Athlete, connection.athlete_id)
+    club_id = athlete_row.club_id if athlete_row is not None else None
+
+    if event.object_type == "athlete":
+        await record_audit(
+            session,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.strava_connection,
+            entity_id=connection.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=club_id,
+            athlete_id=connection.athlete_id,
+            changed_fields=["status"],
+            meta={"job": "strava_webhook"},
+            request_id=ctx.request_id,
+        )
+        return
+
+    activity = await session.scalar(
+        select(StravaActivity).where(
+            StravaActivity.strava_activity_id == event.object_id
+        )
+    )
+    if activity is None:
+        return
+
+    action = AuditAction.create if event.aspect_type == "create" else AuditAction.update
+    await record_audit(
+        session,
+        action=action,
+        entity_type=AuditEntityType.strava_activity,
+        entity_id=activity.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=club_id,
+        athlete_id=connection.athlete_id,
+        changed_fields=None if action == AuditAction.create else ["upstream_state"],
+        meta={"job": "strava_webhook"},
+        request_id=ctx.request_id,
+    )
+
+
 async def _process_webhook_event_deferred(event: StravaWebhookEvent) -> None:
     """Procesamiento diferido de un evento de webhook (ejecuta DESPUÉS del
     ACK ``200 {}``).
@@ -359,6 +453,7 @@ async def _process_webhook_event_deferred(event: StravaWebhookEvent) -> None:
     async with AsyncSessionLocal() as session:
         try:
             await process_webhook_event(event, session)
+            await _record_webhook_audit(session, event)
             await session.commit()
         except Exception:  # noqa: BLE001
             await session.rollback()
@@ -406,6 +501,59 @@ async def receive_strava_webhook_event(
     return {}
 
 
+#: Columnas comparadas para decidir si una fila de ``strava_activities`` fue
+#: modificada por el reconcile (contracts/audit-recording.md §4.12). Nunca se
+#: pasan como ``diff`` a ``record_audit`` — solo los nombres de columna
+#: viajan en ``changed_fields``, jamás los valores (Ley 1581: nombre de la
+#: actividad y frecuencia cardíaca son datos que no deben quedar en
+#: ``audit_log``).
+_ACTIVITY_COMPARE_FIELDS: tuple[str, ...] = (
+    "name",
+    "sport_type",
+    "start_date_utc",
+    "start_date_local",
+    "elapsed_time_s",
+    "moving_time_s",
+    "distance_m",
+    "total_elevation_gain_m",
+    "average_heartrate",
+    "max_heartrate",
+    "is_trainer",
+    "upstream_state",
+    "summary_complete",
+)
+
+
+async def _snapshot_activities(
+    db: AsyncSession, athlete_ids: set[int]
+) -> dict[int, dict[str, object]]:
+    """Copia en memoria de los campos comparados de cada actividad existente.
+
+    Debe ejecutarse ANTES de ``reconcile_all`` — los objetos ORM viven en la
+    misma sesión y ``reconcile_all`` los muta en el lugar, así que solo un
+    dict plano capturado por adelantado sirve como "antes" real.
+    """
+    if not athlete_ids:
+        return {}
+    result = await db.execute(
+        select(StravaActivity).where(StravaActivity.athlete_id.in_(athlete_ids))
+    )
+    return {
+        activity.id: {
+            field: getattr(activity, field) for field in _ACTIVITY_COMPARE_FIELDS
+        }
+        for activity in result.scalars().all()
+    }
+
+
+async def _athlete_club_ids(db: AsyncSession, athlete_ids: set[int]) -> dict[int, int]:
+    """Mapa ``athlete_id -> club_id`` para las conexiones activas del reconcile."""
+    if not athlete_ids:
+        return {}
+    result = await db.execute(select(Athlete).where(Athlete.id.in_(athlete_ids)))
+    return {athlete.id: athlete.club_id for athlete in result.scalars().all()}
+
+
 @router.post(
     "/integrations/strava/reconcile",
     response_model=ReconcileResultOut,
@@ -429,5 +577,61 @@ async def run_strava_reconcile(
             detail="Token de reconciliación inválido.",
         )
 
+    connections_result = await db.execute(
+        select(StravaConnection).where(
+            StravaConnection.status == StravaConnectionStatus.active
+        )
+    )
+    connections_before = {c.id: c for c in connections_result.scalars().all()}
+    athlete_ids = {c.athlete_id for c in connections_before.values()}
+
+    # ``services/strava/reconcile.py`` (fuera del alcance de esta tarea) solo
+    # retorna contadores agregados, sin ids de actividad — así que la
+    # granularidad por-actividad exigida por contracts/audit-recording.md
+    # §4.12 se reconstruye aquí comparando, antes y después de
+    # ``reconcile_all``, el estado de ``strava_activities`` de los atletas
+    # con conexión activa. Una fila que no existía antes es ``create``; una
+    # que existía y cambió algún campo comparado es ``update``; una sin
+    # cambios no genera fila.
+    before_snapshot = await _snapshot_activities(db, athlete_ids)
+
     result = await reconcile_all(db)
+
+    athlete_club_ids = await _athlete_club_ids(db, athlete_ids)
+
+    ctx = cron_context(job="strava_reconcile")
+    if athlete_ids:
+        after_result = await db.execute(
+            select(StravaActivity).where(StravaActivity.athlete_id.in_(athlete_ids))
+        )
+        for activity in after_result.scalars().all():
+            before = before_snapshot.get(activity.id)
+            after_values = {
+                field: getattr(activity, field) for field in _ACTIVITY_COMPARE_FIELDS
+            }
+            if before is None:
+                action = AuditAction.create
+                changed_fields = None
+            else:
+                changed_fields = sorted(
+                    field for field in _ACTIVITY_COMPARE_FIELDS if before[field] != after_values[field]
+                )
+                if not changed_fields:
+                    continue
+                action = AuditAction.update
+
+            await record_audit(
+                db,
+                action=action,
+                entity_type=AuditEntityType.strava_activity,
+                entity_id=activity.id,
+                actor=ctx.actor,
+                actor_kind=ctx.actor_kind,
+                club_id=athlete_club_ids.get(activity.athlete_id),
+                athlete_id=activity.athlete_id,
+                changed_fields=changed_fields,
+                meta={"job": "strava_reconcile"},
+                request_id=ctx.request_id,
+            )
+
     return ReconcileResultOut(**result)

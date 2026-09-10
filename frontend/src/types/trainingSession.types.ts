@@ -1,5 +1,15 @@
 export type SessionStatus = "planned" | "executed" | "cancelled";
 
+/**
+ * Entrenador a cargo de una sesión (feature 041 — gobernanza multi-coach,
+ * contracts/session-coaches.md §3.1). `display_name` viene resuelto por el
+ * backend (actor-name resolver) — nunca se arma en el cliente.
+ */
+export interface SessionCoach {
+  user_id: number;
+  display_name: string;
+}
+
 export type AttendanceStatus =
   | "presente"
   | "ausente"
@@ -31,6 +41,15 @@ export interface TrainingSession {
   media?: SessionMedia[] | SessionMediaParent[];
   session_kind?: SessionKind | null;
   objectives?: string | null;
+  /**
+   * Feature 041 — entrenadores a cargo, orden `added_at` asc (creador
+   * primero). Opcional/aditivo: siempre no-vacío tras la migración del
+   * backend (backfill B1), pero se marca opcional aquí para no romper
+   * fixtures de tests existentes que aún no lo incluyen.
+   */
+  coaches?: SessionCoach[];
+  /** Feature 041 — `false` cuando ningún entrenador de la sesión está activo. */
+  has_active_coach?: boolean;
 }
 
 export type MediaType = "photo" | "video";
@@ -117,6 +136,12 @@ export interface TrainingSessionCreate {
   send_notification?: boolean;
   session_kind?: SessionKind;
   objectives?: string | null;
+  /**
+   * Feature 041 — conjunto COMPLETO de entrenadores a cargo (reemplazo, no
+   * parche). Ausente/`null` → el backend deja solo al creador
+   * (contracts/session-coaches.md §3.2).
+   */
+  coach_user_ids?: number[] | null;
 }
 
 export interface TrainingSessionUpdate {
@@ -133,6 +158,12 @@ export interface TrainingSessionUpdate {
   send_notification?: boolean;
   session_kind?: SessionKind;
   objectives?: string | null;
+  /**
+   * Feature 041 — conjunto COMPLETO de entrenadores a cargo (reemplazo, no
+   * parche). Ausente/`null` → los entrenadores no cambian
+   * (contracts/session-coaches.md §3.2).
+   */
+  coach_user_ids?: number[] | null;
 }
 
 export interface Attendance {
@@ -251,6 +282,18 @@ export type NarrativeBlockKey =
   | "analisis_grupo"
   | "competencia";
 
+/**
+ * Referencia a un actor adulto (coach/admin) del staff — nunca un atleta.
+ * Espejo de `ActorRef` (`backend/app/schemas/audit.py`), reutilizado en
+ * `MonthlyReportRead` (feature 041 — gobernanza multi-coach, T071/T074).
+ * `display_name` es siempre de personal adulto: no aplica la restricción
+ * de privacidad de menores (Ley 1581).
+ */
+export interface MonthlyReportActorRef {
+  user_id: number;
+  display_name: string;
+}
+
 export interface MonthlyReportFull {
   id: number;
   club_id: number;
@@ -267,6 +310,21 @@ export interface MonthlyReportFull {
   status?: MonthlyReportStatus;
   narrative_blocks?: Record<NarrativeBlockKey, NarrativeBlock> | null;
   competition_results?: CompetitionResult[] | null;
+  // Evidencia de aprobación (feature 041 — gobernanza multi-coach, T071/T074).
+  // Cada campo es `null`/ausente cuando se desconoce (informes previos a esta
+  // feature, o campo aún no alcanzado en el ciclo de vida del informe).
+  // `generated_by_user_id` (arriba) se conserva por compatibilidad; estos
+  // objetos `ActorRef` son aditivos — contrato §5.5.
+  generated_by?: MonthlyReportActorRef | null;
+  approved_by?: MonthlyReportActorRef | null;
+  approved_at?: string | null;
+  // Evidencia de una aprobación anterior que una regeneración limpió — no se
+  // destruye, sobrevive para trazabilidad (T071). Contrato §7: solo se
+  // renderiza mientras el informe está en "draft".
+  previous_approved_by?: MonthlyReportActorRef | null;
+  previous_approved_at?: string | null;
+  updated_by?: MonthlyReportActorRef | null;
+  updated_at?: string | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -183,7 +183,9 @@ async def _load_competitor(db: AsyncSession, competitor_id: int) -> RaceCompetit
 async def _load_athlete(db: AsyncSession, athlete_id: int) -> Athlete:
     result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
     athlete = result.scalar_one_or_none()
-    if athlete is None:
+    # Un atleta archivado no puede ser vinculado a un competidor
+    # (contracts/athlete-archive.md §5.2).
+    if athlete is None or athlete.deleted_at is not None:
         raise AthleteNotFoundError(athlete_id)
     return athlete
 
@@ -213,9 +215,10 @@ async def _athletes_for_suggestions(
     """Carga lista de athletes candidatos para el matcher.
 
     Si ``club_id`` se provee, filtra. Si no, devuelve todos los athletes
-    activos (el matcher se encarga del threshold).
+    activos (el matcher se encarga del threshold). Un atleta archivado
+    nunca es candidato (contracts/athlete-archive.md §5.2).
     """
-    stmt = select(Athlete)
+    stmt = select(Athlete).where(Athlete.deleted_at.is_(None))
     if club_id is not None:
         stmt = stmt.where(Athlete.club_id == club_id)
     result = await db.execute(stmt)
