@@ -748,3 +748,113 @@ Orden sugerido:
 Para medir regresiones sin volver a correr `main`, usar
 `checklists/baseline-main-failures.txt`; el comando está en su cabecera. Al
 cerrar esta corrida el diferencial era **cero regresiones**.
+
+---
+
+# Corrida nocturna 2 — 2026-09-10, 00:30 a 03:15 (hora de Colombia)
+
+Segunda de las tres corridas desatendidas. Entorno recreado desde cero: no
+había venv de backend ni `node_modules`, así que lo primero fue instalarlos.
+`pytest` **no está en `requirements.txt`** — hay que instalarlo aparte
+(`pytest pytest-asyncio pytest-cov aiosqlite ruff`); anotarlo aquí para que la
+corrida 3 no lo redescubra.
+
+## 0. Decisión de orden, y por qué me aparté del runbook
+
+El runbook manda arrancar por la primera tarea sin marcar de `tasks.md`, que
+era **T030**. Arranqué en cambio por donde lo dejó dicho la corrida anterior:
+unificar `ActorRef`, luego la fase 8. La razón no es preferencia: `ActorRef`
+era **precondición** de T076, que expone actores en las respuestas de corrida;
+empezar por T030 habría dejado a los dos frentes de US6 chocando contra una
+clase duplicada. T030 se hizo igual, en paralelo, y quedó a una ruta de
+cerrarse.
+
+## 1. Lo que se cerró
+
+| Tarea / brecha | Qué quedó |
+|---|---|
+| **B1** — `ActorRef` duplicado | Definición canónica en `app/schemas/audit.py`, donde el contrato la ubica. Los dos módulos que tenían su copia la reexportan, así que ningún consumidor cambió de import. |
+| **A2** — la otra mitad de FR-009 | La compuerta **dejó de mentir**. Ver §2. |
+| **A7 / F1 + A9** — enumeración de personal | Corregido, con matiz importante. Ver §3. |
+| **A13** — cosméticos de `ruff` | Los dos módulos quedan limpios; 24 pruebas siguen verdes. |
+| **T075–T077** (US6, backend) | Regla de club en corridas e importaciones, atribución en las respuestas, gasto por entrenador y un único formateador del rechazo por presupuesto. |
+| **T079** (US6, frontend) | Rótulos de quién lanzó y decidió, tabla de gasto por entrenador, `/admin/ai` ampliado a coach. |
+| **T081–T082** (US7, backend) | Servicio y endpoint de actividad por entrenador, con la regla de conteo de §2 del contrato y la guarda FR-031 del informe mensual. |
+| **T083–T085** (US7, frontend) | Página de actividad, `ActorChip`, y el fin del crudo "Creado por usuario ID". |
+| **T087–T090** (US8) | Purga de retención a 24 meses: servicio, CLI, workflow y pruebas. |
+| **T030** | 18 de las 19 rutas pendientes instrumentadas. La 19.ª no se cerró **a propósito**: ver §4. |
+
+## 2. La compuerta FR-009 pasó de decorativa a real
+
+`test_audited_route_writes_at_least_one_audit_log_row` hacía `pytest.skip()`
+incondicional sobre las 81 rutas `Audited`. El efecto práctico: 81 pruebas
+"saltadas" que parecían una compuerta y no comprobaban absolutamente nada.
+
+Ahora son dos pruebas:
+
+- **La mitad estática sí corre.** `tests/helpers/audit_reachability.py` recorre
+  el grafo de llamadas del handler dentro del paquete `app` —por nombre, hasta
+  seis saltos— y exige que alguna función alcanzable invoque `record_audit`.
+  Atrapa el modo de falla que nadie vigilaba: una ruta declarada `Audited` que
+  no audita por ningún camino.
+- **La mitad dinámica** queda parametrizada sobre las entradas que declaren un
+  constructor de petición, como pide el contrato §9 T4.4 al pie de la letra.
+  Ninguna lo declara, así que recoge **cero casos**: un hueco reconocido en vez
+  de una compuerta que pasa en falso. Completarla necesita base real.
+
+Los límites de la mitad estática, dichos de frente: resuelve por **nombre**, no
+por tipo, así que dos funciones homónimas se confunden a propósito (preferimos
+un falso negativo a un falso positivo que obligue a exenciones a mano); no
+ejercita la ruta, así que no dice nada del contenido de la fila.
+
+Al cerrar la corrida la compuerta recorre **100 casos verdes**.
+
+## 3. F1: la corrección de la revisión anterior habría roto la feature
+
+La revisión de la fase 5 proponía negarle al coach la lista de coaches y
+admins. **No se puede aplicar tal cual**, y conviene que quede escrito por qué:
+la propia feature 041 la necesita. El filtro "Entrenador" del historial (US1,
+`hooks/governance/useClubStaff.ts`) y el selector de entrenadores a cargo de
+una sesión (US4, `hooks/training/useClubCoaches.ts`) piden
+`GET /api/users?role=coach` **como coach**, y la atribución por nombre es de lo
+que trata la feature entera.
+
+Decisión de esta corrida: **se conserva la lista y se recorta la carga.** De
+sus colegas, un coach ve id, nombre, rol y estado —lo que un selector
+necesita— y nada de contacto. Lo que US3 AS5 exige de verdad (no crear, no
+editar, no desactivar a otro coach o admin, y que la pantalla de gestión le sea
+negada) lo siguen garantizando `update_user`, `delete_user` y el portón de
+`/admin/usuarios`, ahora **con prueba propia**, que era la brecha A9.
+
+El recorte no alcanza a `role=parent`: gestionar a las familias del club es
+parte del trabajo del coach, y `api/parents.ts` consume ese mismo endpoint.
+
+## 4. La única ruta que sigue sin auditar, y no es olvido
+
+`POST /api/race-analysis/imports/{parse_id}/dry-run`. El contrato §4.10 la
+describe como `race_import`·`update` con `status` → `dry_run`, **pero ese
+cambio de estado no ocurre**: `dry_run_import` no asigna nunca
+`RaceImportStatus.dry_run`, y el docstring del propio enum ya lo decía ("existía
+en enum pero código nunca lo emitía"). El ingestor corre en seco y no deja
+escritura persistente.
+
+Registrar ahí un `update` sería anotar una escritura que no sucedió, y la
+decisión 2 del dueño es explícita en que la bitácora **no registra lecturas**.
+Las dos salidas —emitir de verdad el cambio de estado, o convertirla en
+exención genuina de §4.14— cambian el contrato o el comportamiento del
+asistente de importación. Queda marcada como pendiente con la razón escrita en
+el sitio (`app/services/audit.py`), en vez de resolverse sin quien pueda
+decidirlo. **Es la decisión que le queda al dueño, no a la corrida 3.**
+
+## 5. Choque de contratos resuelto en la raíz: el `entity_id` de la purga
+
+`retention-purge.md` §1.4 y `data-model.md` §1.3 fijan `entity_id = 0` para la
+fila de purga —una purga no habla de una fila, habla de un barrido— pero
+`record_audit` exigía `entity_id > 0` y la purga entera reventaba contra esa
+guarda.
+
+Se había resuelto reintentando con `entity_id = 1`. Eso es **peor que el
+error**: 1 es el id de una fila de auditoría real, así que la evidencia del
+barrido quedaba apuntando a un registro ajeno. Ahora la guarda exime
+explícitamente ese único par (`audit_log`·`purge`), el respaldo desapareció y
+la prueba exige el 0 exacto del contrato.
