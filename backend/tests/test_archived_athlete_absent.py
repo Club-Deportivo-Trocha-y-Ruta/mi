@@ -20,7 +20,7 @@ Ley 1581).
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -49,13 +49,11 @@ def _compile_longtext_as_text_on_sqlite(element, compiler, **kw):  # pragma: no 
 
 from app.dependencies import get_current_user, get_db
 from app.main import app
-from tests.helpers.app_routes import api_route_paths
 from app.models import Base
 from app.models.club import ClubRole
 from app.models.parental_consent import ParentalConsent
 from app.models.privacy_policy import PrivacyPolicy
 from app.models.user import User, UserRole
-
 from tests.fixtures.race_history_fixtures import (
     create_athlete,
     create_club,
@@ -63,6 +61,7 @@ from tests.fixtures.race_history_fixtures import (
     link_parent_to_athlete,
     link_user_to_club,
 )
+from tests.helpers.app_routes import api_route_paths
 from tests.helpers.audit_tables import AUDIT_TABLES
 
 # ``asyncio_mode = "auto"`` en pyproject.toml — no se necesita
@@ -156,9 +155,9 @@ async def scenario(session_factory):
         coach = await create_user(session, user_id=COACH_ID, role=UserRole.coach, first_name="Coach", last_name="Ficticio")
         await link_user_to_club(session, user_id=COACH_ID, club_id=CLUB_ID, role_in_club=ClubRole.coach)
 
-        admin = await create_user(session, user_id=ADMIN_ID, role=UserRole.admin, first_name="Admin", last_name="Ficticio")
+        await create_user(session, user_id=ADMIN_ID, role=UserRole.admin, first_name="Admin", last_name="Ficticio")
 
-        parent = await create_user(session, user_id=PARENT_ID, role=UserRole.parent, first_name="Padre", last_name="Ficticio")
+        await create_user(session, user_id=PARENT_ID, role=UserRole.parent, first_name="Padre", last_name="Ficticio")
         await link_user_to_club(session, user_id=PARENT_ID, club_id=CLUB_ID, role_in_club=ClubRole.parent)
 
         archived = await create_athlete(
@@ -171,7 +170,7 @@ async def scenario(session_factory):
             user_id=ARCHIVED_ATHLETE_USER_ID,
             created_by=coach.id,
         )
-        archived.deleted_at = datetime.now(timezone.utc)
+        archived.deleted_at = datetime.now(UTC)
         archived.deleted_by_user_id = coach.id
         archived.deleted_reason_code = "athlete_left_club"
 
@@ -217,7 +216,6 @@ async def scenario(session_factory):
 
         await session.commit()
 
-    return None
 
 
 @pytest_asyncio.fixture

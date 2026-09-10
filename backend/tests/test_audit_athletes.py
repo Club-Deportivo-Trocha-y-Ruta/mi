@@ -19,9 +19,9 @@ Ningún nombre corresponde a una persona real (CLAUDE.md, Ley 1581).
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from collections.abc import AsyncGenerator
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
-from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -44,7 +44,7 @@ from sqlalchemy.pool import StaticPool
 # ``tests/routers/test_strava_integration.py``; solo afecta el DDL de este
 # engine in-memory, no cambia código de producto.
 @compiles(LONGTEXT, "sqlite")
-def _compile_longtext_as_text_on_sqlite(element, compiler, **kw):  # noqa: ANN001
+def _compile_longtext_as_text_on_sqlite(element, compiler, **kw):
     return "TEXT"
 
 from app.dependencies import get_current_user, get_db
@@ -54,7 +54,6 @@ from app.models.audit_log import AuditLog
 from app.models.club import ClubRole
 from app.models.privacy_policy import PrivacyPolicy
 from app.models.user import UserRole
-
 from tests.fixtures.race_history_fixtures import (
     create_athlete,
     create_club,
@@ -80,7 +79,7 @@ _TABLES = (
 
 
 @pytest_asyncio.fixture
-async def engine() -> AsyncGenerator[AsyncEngine, None]:
+async def engine() -> AsyncGenerator[AsyncEngine]:
     eng = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         future=True,
@@ -140,7 +139,7 @@ async def seeded_factory(session_factory) -> async_sessionmaker[AsyncSession]:
             )
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         insight = await create_insight(
             s,
             athlete_id=144,
