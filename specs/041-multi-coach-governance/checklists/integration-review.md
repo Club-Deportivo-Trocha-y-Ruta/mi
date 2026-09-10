@@ -916,3 +916,132 @@ todos están detrás de `_coach_or_admin`.
 | H5 | `user#{id}` sigue vivo en el listado de importaciones, cuando §4.1 dice que nunca es un valor legal para el lector (FR-013) y se eliminó de las respuestas de corrida. Es el contrato contradiciéndose consigo mismo. | `app/routers/race_imports.py` |
 | H6 | `_admin_only` quedó muerto y el prefijo `/admin/ai-usage` ya no significa admin. Un prefijo que miente sobre su RBAC es lo que hace que la próxima revisión no mire el endpoint. | `app/routers/race_analysis.py` |
 | H7 | Un cargue creado por el **administrador** queda inalcanzable para los coaches del club: `import_club_ids` resuelve solo por membresías con `role_in_club='coach'`, así que el conjunto sale vacío y el respaldo por autoría lo deja solo para él. Falla cerrado, no es riesgo — pero en producción aparece como "no puedo continuar el cargue". | `app/services/permissions.py` (`import_club_ids`) |
+
+## 7. La suite, medida de verdad
+
+Última corrida completa de la ventana, desde `backend/` con
+`./.venv/bin/python -m pytest -q`:
+
+```
+211 failed, 4443 passed, 40 skipped, 13 xfailed, 6 xpassed, 9 errors  (4:37)
+→ 220 identificadores únicos FAILED/ERROR
+```
+
+Diferencial contra `checklists/baseline-main-failures.txt` (224 identificadores):
+
+- **Regresiones: cero.** Ni un solo identificador en rojo que no estuviera ya
+  rojo en `main`.
+- **Cuatro identificadores desaparecieron**: pruebas que estaban rojas en la
+  línea base y esta corrida dejó verdes.
+- Los 220 restantes son **todos** el fixture `client` de `tests/conftest.py`,
+  que levanta la aplicación contra la base real. Ambiental: no hay MySQL ni
+  Docker en este entorno.
+
+Advertencia honesta sobre el camino, no sobre el destino: durante la ventana
+hubo hasta seis agentes escribiendo y corriendo `pytest` a la vez, y varias
+mediciones intermedias se contaminaron entre sí (fallos que aparecían y
+desaparecían solos según el orden de módulos). Los números de arriba son de
+una corrida **posterior** a todo eso, con el árbol quieto. Las intermedias no
+se reportan.
+
+Frontend: `tsc --noEmit` limpio. `npm test` completo dio **4105 de 4106**; el
+único rojo es `src/hooks/ai/useRaceRun.test.ts`, un caso de temporizadores que
+pasa en verde al correrlo solo — un flake preexistente, no de esta corrida.
+Es, de paso, otro ejemplar de la brecha A6 (fragilidad por reloj de pared).
+
+`ruff` sigue sin estar limpio en `main` (~1976 hallazgos), así que no es hoy
+una compuerta que pase. Lo que sí se cuidó: no empeorar. Los hallazgos que
+esta corrida suma son del estilo que ya domina cada archivo (`Optional[X]`,
+`timezone.utc`), y los dos módulos de la brecha A13 quedaron limpios del todo.
+
+## 8. Lo que la corrida NO pudo hacer, y por qué
+
+- **T092 (Playwright), T095 (compuertas completas), T096 (quickstart)**:
+  necesitan levantar la pila con base de datos. No hay MySQL ni Docker.
+- **T097 (humo posdespliegue)**: necesita credenciales de producción que no
+  están en este entorno. Queda sin marcar **a propósito**, como dice el
+  runbook.
+- **La vía `pytest -m mysql`**: no corre. Las pruebas que la necesitan están
+  **escritas y marcadas**, sin ejecutar — entre ellas las dos de la purga
+  (T090) y la de concurrencia real de la bitácora (B4).
+- **T093 quedó a medias y T094 sin empezar**: la sesión agotó su cuota de
+  API a mitad de la escritura. Sobrevivió `docs/19-multi-coach-governance/design.md`
+  (412 líneas); faltan `runbook.md`, `qa.md` y el borrador de política v1.3.
+- **T078 quedó a medias**: alcanzó a arreglar los arneses de
+  `tests/routers/conftest.py` antes de quedarse sin cuota. Lo terminé yo (ver
+  §9). Sus tres archivos de prueba nuevos —`test_race_analysis_club_scope.py`,
+  `test_race_imports_club_scope.py`, `test_spend_by_user.py`— **sí** quedaron
+  escritos y verdes.
+
+Una nota de entorno para la corrida siguiente: **`pytest` no está en
+`requirements.txt`**. Hay que instalarlo aparte
+(`pytest pytest-asyncio pytest-cov aiosqlite ruff`) o la primera corrida se va
+en descubrirlo.
+
+## 9. Un tropiezo propio, contado como fue
+
+El arreglo de H1/H2 se empujó con 13 pruebas en rojo en dos módulos que **no
+había corrido antes de empujar** (`test_race_event_runs.py` y
+`test_race_analysis_athlete_sex.py`). El diferencial de la suite completa las
+destapó después. Están arregladas y la suite cierra en cero regresiones, pero
+el orden correcto era al revés: medir el radio de impacto y después empujar.
+
+Las dos causas, que son la misma con dos caras, valen para quien toque esto:
+
+1. Varios arneses fabricaban entrenadores con `club_memberships=[]`. En cuanto
+   una regla mira el club, todo camino feliz se vuelve 403. En
+   `test_race_event_runs.py` había además una trampa: el `user_id` de
+   `_seed_base` es un espacio de claves primarias, **no** una identidad de
+   club.
+2. Dos arneses enrutaban la consulta de `athletes.club_id` con un `in sql`, y
+   un `select(Athlete)` completo también renderiza esa columna entre las suyas.
+   El ramal se tragaba la consulta entera y devolvía una fila donde el código
+   esperaba un escalar (`'int' object has no attribute 'birth_date'`). El
+   match tiene que ser sobre la **proyección**.
+
+## 10. La auditoría de privacidad (T091) pasó, con dos avisos serios
+
+`checklists/privacy-audit.md`, 515 líneas. El titular: **ninguna fuga
+confirmada de datos de un menor** en las superficies nuevas.
+
+Pero sus dos hallazgos altos son de la misma familia que la brecha A2 de esta
+misma corrida, y por eso hay que tomarlos en serio: **son pruebas de
+privacidad que no prueban nada.**
+
+| Severidad | Qué | Dónde |
+|---|---|---|
+| ALTO | La revisión de filas reales **no revisa ninguna fila**. | `tests/test_audit_privacy.py:498-530` |
+| ALTO | El detector de fechas de nacimiento **no dispara nunca**. | `tests/test_audit_privacy.py:205,344` |
+| MEDIO | `TrainingSessionReadParent` expone `created_by_user_id`: atribución de personal en un esquema de **padres**. Es un id, no un nombre, y es **preexistente** a 041 — pero contradice el punto de T091 de que los esquemas de familia no lleven atribución. Quitarlo toca el tipo del frontend y varias pruebas, así que se deja decidido por quien pueda verificarlo. | `app/schemas/training_session.py:217` |
+| MEDIO | `meta_json.step_id` es texto libre sin validar. | `app/routers/race_analysis.py:1008,1096` |
+| MEDIO | Fixture de menor sin marca explícita de ficción. | `tests/fixtures/race_history_fixtures.py:115-118` |
+| BAJO | `changed_fields` sin catálogo cerrado. | `app/services/audit.py:654` |
+| BAJO | La resolución de nombres del gasto no filtra por rol. Hoy es inalcanzable, pero haría que la garantía dependa de la consulta y no de la RBAC de otros cuatro archivos. | `budget_guard.py:208-210` |
+| BAJO | Punto ciego del escaneo append-only: solo recorre `backend/app/`, no `backend/scripts/`. | `tests/test_audit_append_only.py:51,149` |
+
+## 11. Dónde empezar la corrida siguiente
+
+Estado: **fases 8, 9 y 10 completas** (US6, US7, US8). T030 cerrada salvo una
+ruta, con su razón escrita. Todo commiteado y empujado; no queda nada sin
+guardar.
+
+Orden sugerido, de mayor a menor riesgo de descubrirlo tarde:
+
+1. **Los dos hallazgos altos de la auditoría de privacidad** (§10). Una prueba
+   de privacidad que recorre cero filas es exactamente el patrón que esta
+   corrida acaba de desmontar en la compuerta FR-009: parece cobertura y no lo
+   es. Empezar por ahí.
+2. **Terminar T093 y T094**: falta `runbook.md` (su §5 es el procedimiento de
+   purga), `qa.md`, el borrador de política v1.3, y las entradas de
+   `docs/technical-notes.md` e `implementation-status.md`.
+3. **H3 a H7 de la revisión de seguridad** (§6). Ninguno toca datos de un
+   menor, pero H3 y H4 contradicen la regla que la propia feature establece, y
+   **H7 va a aparecer en producción** como "no puedo continuar el cargue"
+   cuando el cargue lo cree el administrador.
+4. **T098** (descripción del PR) y **T086/T096** en cuanto haya una pila que
+   levantar.
+
+El patrón que la corrida anterior señaló —*una tarea se marca `[X]` cuando el
+archivo existe, no cuando cumple lo que el contrato pedía*— se confirmó dos
+veces más en esta: T030 y T018. Ya van seis. Conviene revisar con esa lupa las
+tareas cerradas de US1 antes de dar la feature por lista.
