@@ -358,10 +358,17 @@ class EventAttendanceRead(BaseModel):
     id: int
     event_id: int
     athlete_id: int
-    rsvp_status: RSVPStatus
+    # Nulos cuando esta fila en realidad viene de `session_attendance`
+    # (evento tipo training_session redirigido, `routers/calendar.py`
+    # ~565-596): esa tabla no tiene concepto de RSVP ni de asistencia real
+    # "unknown/attended/...", solo su propio `AttendanceStatus`. Bug
+    # preexistente detectado al agregar el filtro `archived_at IS NULL` de
+    # T063 (contracts/session-coaches.md §6.4): antes nunca se ejercitaba
+    # este mapeo con validación real de Pydantic.
+    rsvp_status: RSVPStatus | None
     rsvp_at: datetime | None
     rsvp_by_user_id: int | None
-    actual_status: ActualAttendanceStatus
+    actual_status: ActualAttendanceStatus | None
     notes: str | None
     created_at: datetime
     updated_at: datetime
@@ -396,6 +403,12 @@ class EventListQuery(BaseModel):
     athlete_id: int | None = None
     category: str | None = None
     mine_only: bool = False
+    # T064 (contracts/session-coaches.md §8.2, FR-026): filtra por el coach
+    # asignado. Para calendar_event de tipo training_session la coincidencia
+    # es por el bridge training_session_coaches, no por el creador — ver
+    # `list_events_in_range`. Solo coach/admin pueden usarlo (el router
+    # rechaza con 403 a un padre que lo envíe).
+    coach_user_id: int | None = None
 
     @model_validator(mode="after")
     def _validate_date_range(self) -> "EventListQuery":

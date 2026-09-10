@@ -202,6 +202,10 @@ async def load_training_window(
             TrainingSession.club_id == club_id,
             TrainingSession.scheduled_date >= date_from,
             TrainingSession.scheduled_date <= date_to,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe alimentar el contexto
+            # de entrenamiento que ve el analista de IA.
+            SessionAttendance.archived_at.is_(None),
         )
         .options(
             selectinload(SessionAttendance.session).selectinload(

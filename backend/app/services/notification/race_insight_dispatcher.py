@@ -99,6 +99,9 @@ class NotificationDecision(str, enum.Enum):
     SKIPPED_NO_EVENT = "skipped_no_event"     # insight sin event_id
     SKIPPED_NOT_APPROVED = "skipped_not_approved"
     SKIPPED_NO_PARENTS = "skipped_no_parents"
+    # FR-014 (feature 041): el atleta fue archivado entre la aprobación del
+    # insight y el despacho — ningún correo ni notificación in-app debe salir.
+    SKIPPED_ARCHIVED_ATHLETE = "skipped_archived_athlete"
     ERROR = "error"
 
 
@@ -465,7 +468,10 @@ async def _resolve_club_name(db: AsyncSession, athlete_id: int) -> str:
         select(Club.name)
         .join(ClubMember, ClubMember.club_id == Club.id)
         .join(Athlete, Athlete.user_id == ClubMember.user_id)
-        .where(Athlete.id == athlete_id)
+        # FR-014: defensa en profundidad — la compuerta real está en
+        # ``dispatch_insight_notification``; aquí un atleta archivado
+        # simplemente no resuelve club y cae al nombre genérico.
+        .where(Athlete.id == athlete_id, Athlete.deleted_at.is_(None))
         .limit(1)
     )
     res = await db.execute(stmt)
@@ -783,6 +789,28 @@ async def dispatch_insight_notification(
         )
 
     tier = get_race_tier(event, series=event.series)
+
+    # 2.b Compuerta de archivado (FR-014, contract athlete-archive.md §5.2).
+    # Un insight aprobado puede despacharse minutos u horas después; si el
+    # atleta se archivó en ese intervalo, ni el correo ni la notificación
+    # in-app deben salir. Se evalúa antes de cargar padres para no tocar
+    # siquiera la lista de destinatarios.
+    # ``getattr`` con default: el resto del módulo ya tolera atletas "stub"
+    # (sin el atributo) en pruebas y en objetos cargados parcialmente; un
+    # ORM real siempre trae ``deleted_at``.
+    archived_athlete = fresh.athlete
+    if archived_athlete is None or getattr(archived_athlete, "deleted_at", None) is not None:
+        logger.info(
+            "race_insight_dispatcher: insight_id=%s con atleta archivado o "
+            "inexistente — skip notificación (athlete_hash=%s)",
+            insight.id,
+            _hash_id(fresh.athlete_id),
+        )
+        return NotificationResult(
+            decision=NotificationDecision.SKIPPED_ARCHIVED_ATHLETE,
+            tier=tier,
+            reason="athlete archived (deleted_at IS NOT NULL)",
+        )
 
     # 3. Padres del atleta.
     parents = await _load_parents(db, fresh.athlete_id)

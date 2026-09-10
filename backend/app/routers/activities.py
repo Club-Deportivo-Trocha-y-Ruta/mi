@@ -340,6 +340,9 @@ async def get_session_suggestions(
             select(SessionAttendance.session_id).where(
                 SessionAttendance.session_id.in_(session_ids),
                 SessionAttendance.athlete_id == activity.athlete_id,
+                # Una fila archivada es una baja del roster que conserva sus
+                # datos para el administrador; no debe contar como asistencia.
+                SessionAttendance.archived_at.is_(None),
             )
         )
         attended_session_ids = set(attendance_result.scalars().all())

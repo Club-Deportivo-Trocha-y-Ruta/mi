@@ -3,7 +3,8 @@
 {#
   Notificación a padres/acudientes cuando una sesión convocada es cancelada.
   Variables requeridas: parent_name, athlete_name, session_date, session_time,
-                        location, coach_name, club_name, reason.
+                        location, club_name, reason,
+                        acting_coach_name, coach_names, coaches_text.
 #}
 
 {% block title %}Cancelado: entrenamiento {{ session_date }} — {{ club_name }}{% endblock %}
@@ -14,10 +15,13 @@
 <p>Hola {{ parent_name }},</p>
 
 <p>
-  El entrenador <strong>{{ coach_name }}</strong> del <strong>{{ club_name }}</strong>
+  El entrenador <strong>{{ acting_coach_name }}</strong> del <strong>{{ club_name }}</strong>
   ha <strong>cancelado</strong> la sesión a la que <strong>{{ athlete_name }}</strong>
   estaba convocado/a.
 </p>
+{% if coach_names|length > 1 %}
+<p>La sesión estaba a cargo de <strong>{{ coaches_text }}</strong>.</p>
+{% endif %}
 
 <div class="highlight-box" style="border-left-color: #e05050;">
   <table cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -71,6 +75,6 @@
 
 <p>
   Saludos,<br>
-  <strong>{{ coach_name }} — {{ club_name }}</strong>
+  <strong>{{ coaches_text }} — {{ club_name }}</strong>
 </p>
 {% endblock %}

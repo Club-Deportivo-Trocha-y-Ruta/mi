@@ -286,8 +286,14 @@ async def parent_monthly_summary(
     from app.models.athlete import Athlete
     from app.models.training_session import SessionAttendance, SessionStatus
 
+    # FR-014: resumen mensual de familia — un atleta archivado no se resuelve.
+    # ``parent_athlete_ids`` arriba ya lo excluye; el filtro se repite para que
+    # la consulta sea correcta por sí sola.
     athlete_result = await db.execute(
-        select(Athlete).where(Athlete.id == athlete_id)
+        select(Athlete).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
     )
     athlete = athlete_result.scalar_one_or_none()
     if athlete is None:
@@ -322,6 +328,11 @@ async def parent_monthly_summary(
             select(SessionAttendance).where(
                 SessionAttendance.session_id.in_(session_ids),
                 SessionAttendance.athlete_id == athlete_id,
+                # Una fila archivada es una baja del roster que conserva sus
+                # datos para el administrador; no debe contar en las
+                # métricas del reporte mensual (FR-031: el reporte mantiene
+                # sus métricas sin cambios frente a feature 041).
+                SessionAttendance.archived_at.is_(None),
             )
         )
         attendances = att_result.scalars().all()

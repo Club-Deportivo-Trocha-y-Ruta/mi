@@ -2,8 +2,11 @@ Sesión de entrenamiento actualizada — {{ club_name }}
 
 Hola {{ parent_name }},
 
-El entrenador {{ coach_name }} del {{ club_name }} ha modificado la sesión a la
+El entrenador {{ acting_coach_name }} del {{ club_name }} ha modificado la sesión a la
 que {{ athlete_name }} está convocado/a.
+{% if coach_names|length > 1 %}
+La sesión está a cargo de {{ coaches_text }}.
+{% endif %}
 
 CAMBIOS APLICADOS
 -----------------
@@ -27,4 +30,4 @@ Esta notificación fue generada automáticamente porque {{ athlete_name }} está
 convocado/a a esta sesión.
 
 Saludos,
-{{ coach_name }} — {{ club_name }}
+{{ coaches_text }} — {{ club_name }}

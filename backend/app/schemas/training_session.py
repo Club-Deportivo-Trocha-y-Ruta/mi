@@ -35,6 +35,19 @@ ALLOWED_BLOCK_KEYS: frozenset[str] = frozenset({
 # ---------------------------------------------------------------------------
 
 
+class SessionCoachOut(BaseModel):
+    """Entrenador a cargo de una sesión, tal como se expone en la API (041 §3.1).
+
+    ``display_name`` se resuelve con el resolvedor compartido de nombres de
+    actor (``User.display_name``, contracts/audit-log-api.md §6). No se exponen
+    ``added_by_user_id`` ni ``added_at``: son datos de procedencia que ya
+    responde ``audit_log``.
+    """
+
+    user_id: int
+    display_name: str
+
+
 class TrainingSessionCreate(BaseModel):
     """Payload para crear una sesión planificada."""
 
@@ -53,6 +66,19 @@ class TrainingSessionCreate(BaseModel):
     strava_url: HttpUrl | None = None
     coach_notes: str | None = Field(default=None, max_length=2000)
     convocados_athlete_ids: list[int] = Field(min_length=1)
+    # Decisión: el mínimo de 1 NO se declara como `min_length` de Pydantic.
+    # V1 de §3.3 exige un cuerpo 422 plano
+    # (`{"detail": "Una sesión debe tener al menos un entrenador."}`) y una
+    # restricción de Pydantic devuelve el cuerpo estructurado de FastAPI. El
+    # mínimo se valida en el router (422 plano) y en el servicio (409 cuando
+    # el conjunto resultante quedaría vacío, V6).
+    coach_user_ids: list[int] | None = Field(
+        default=None,
+        description=(
+            "Entrenadores a cargo de la sesión. Si se omite al crear, "
+            "queda el creador como único entrenador. Mínimo uno."
+        ),
+    )
     send_notification: bool = Field(
         default=False,
         description="Si True, envía email a los padres de los convocados.",
@@ -86,6 +112,16 @@ class TrainingSessionUpdate(BaseModel):
     route_text: str | None = Field(default=None, max_length=500)
     strava_url: HttpUrl | None = None
     coach_notes: str | None = Field(default=None, max_length=2000)
+    # Mismo criterio que en `TrainingSessionCreate`: el mínimo de 1 se valida
+    # en el router para poder devolver el 422 plano de V1 (§3.3).
+    coach_user_ids: list[int] | None = Field(
+        default=None,
+        description=(
+            "Entrenadores a cargo de la sesión. Es un conjunto de reemplazo "
+            "completo, nunca un parche: si se omite, los entrenadores no "
+            "cambian. Mínimo uno."
+        ),
+    )
     send_notification: bool = Field(
         default=False,
         description="Si True, envía email a los padres avisando del cambio.",
@@ -160,6 +196,11 @@ class TrainingSessionRead(BaseModel):
     attendance_summary: AttendanceSummary | None = None
     kid_attendances: list[KidAttendance] | None = None
     media: list[SessionMediaRead] = Field(default_factory=list)
+    # 041 §3.1 — entrenadores a cargo, en orden de `added_at` ascendente.
+    coaches: list[SessionCoachOut] = Field(default_factory=list)
+    # Derivado en cada lectura (nunca almacenado): False cuando NINGÚN
+    # entrenador de la sesión tiene `users.is_active = true`.
+    has_active_coach: bool = True
 
     model_config = {"from_attributes": True}
 
@@ -271,6 +312,13 @@ class AttendanceRead(BaseModel):
     individual_feedback: str | None
     created_at: datetime
     updated_at: datetime
+    # 041 §6.1 — atribución. Ambos quedan en None para filas anteriores a la
+    # feature: NULL significa "no tenemos registro" y la UI no muestra nada.
+    recorded_by_display_name: str | None = None
+    last_edited_by_display_name: str | None = None
+    # Solo se llena en la rama admin `include_archived=true` (§6.4); en toda
+    # lectura activa es None porque las filas archivadas quedan filtradas.
+    archived_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

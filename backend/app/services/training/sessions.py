@@ -8,7 +8,7 @@ import logging
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,13 +18,16 @@ from app.models.training_session import (
     SessionAttendance,
     SessionStatus,
     TrainingSession,
+    TrainingSessionCoach,
 )
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.training_session import TrainingSessionCreate, TrainingSessionUpdate
 from app.services.audit import (
+    AUDIT_REASON_LABELS,
     VALUE_ALLOWLIST,
     AuditAction,
     AuditEntityType,
+    AuditReasonCode,
     CancelReasonCode,
     compute_changed_fields,
     record_audit,
@@ -111,6 +114,304 @@ async def _assert_coach_in_club(
         raise ValueError("El usuario no pertenece al club especificado")
 
 
+# ---------------------------------------------------------------------------
+# Entrenadores a cargo de la sesión (feature 041, contracts/session-coaches.md
+# §3). El conjunto es de REEMPLAZO completo: nunca un parche.
+# ---------------------------------------------------------------------------
+
+
+class SessionCoachValidationError(ValueError):
+    """Payload de entrenadores inválido — el router lo traduce a 422 (V1-V4)."""
+
+
+class SessionCoachConflictError(ValueError):
+    """La sesión quedaría sin ningún entrenador — el router lo traduce a 409 (V6)."""
+
+
+#: Roles que pueden figurar como entrenador de una sesión (V2). Se acepta
+#: `admin` además de `coach` porque el router ya permite a un administrador
+#: crear y editar sesiones, y el backfill B1 de la migración copia
+#: `created_by_user_id`, que en filas anteriores a 041 puede ser un admin.
+#: El selector de la UI sigue listando solo `role=coach` (FR-024).
+_COACH_ELIGIBLE_ROLES = frozenset({UserRole.coach, UserRole.admin})
+
+
+def _dedupe_preserving_order(ids: list[int]) -> list[int]:
+    """Quita duplicados conservando la primera aparición (§3.2)."""
+    seen: set[int] = set()
+    ordered: list[int] = []
+    for value in ids:
+        if value not in seen:
+            seen.add(value)
+            ordered.append(value)
+    return ordered
+
+
+def _join_names_es(names: list[str]) -> str:
+    """Une nombres en español: "Ana", "Ana y Bruno", "Ana, Bruno y Carla"."""
+    clean = [n for n in names if n]
+    if not clean:
+        return ""
+    if len(clean) == 1:
+        return clean[0]
+    return f"{', '.join(clean[:-1])} y {clean[-1]}"
+
+
+async def _assert_eligible_coaches(
+    db: AsyncSession,
+    club_id: int,
+    candidate_ids: list[int],
+    newly_added_ids: set[int],
+) -> None:
+    """Aplica las reglas V2, V3 y V4 de §3.3.
+
+    - V2: el id existe y su ``users.role`` está en {coach, admin}.
+    - V3: el id tiene membresía en el club de la sesión. Comparte el mensaje
+      de V2 a propósito: el entrenador no debe poder deducir si un id existe
+      en otro club.
+    - V4: un id **recién agregado** no puede estar inactivo. Los que ya
+      estaban asignados y ahora están inactivos se aceptan (V5): no se
+      reescribe la historia por una desactivación posterior.
+    """
+    if not candidate_ids:
+        return
+
+    rows = await db.execute(
+        select(User.id, User.is_active)
+        .join(ClubMember, ClubMember.user_id == User.id)
+        .where(
+            User.id.in_(candidate_ids),
+            User.role.in_(_COACH_ELIGIBLE_ROLES),
+            ClubMember.club_id == club_id,
+        )
+    )
+    eligible = {user_id: is_active for user_id, is_active in rows.all()}
+
+    not_coaches = sorted(set(candidate_ids) - set(eligible))
+    if not_coaches:
+        raise SessionCoachValidationError(
+            f"Los siguientes usuarios no son entrenadores del club: {not_coaches}"
+        )
+
+    inactive_new = sorted(
+        user_id
+        for user_id in newly_added_ids
+        if not eligible.get(user_id, False)
+    )
+    if inactive_new:
+        raise SessionCoachValidationError(
+            f"No puedes asignar a un entrenador inactivo: {inactive_new}"
+        )
+
+
+async def _current_coach_ids_locked(db: AsyncSession, session_id: int) -> set[int]:
+    """Lee los entrenadores actuales bloqueando las filas (``FOR UPDATE``).
+
+    El bloqueo (research R-18) hace que dos reemplazos concurrentes se
+    serialicen en un conjunto coherente en vez de intercalarse. En SQLite el
+    dialecto omite ``FOR UPDATE``, que es inocuo para la vía de test offline.
+    """
+    result = await db.execute(
+        select(TrainingSessionCoach.coach_user_id)
+        .where(TrainingSessionCoach.session_id == session_id)
+        .with_for_update()
+    )
+    return set(result.scalars().all())
+
+
+async def _record_coach_audit(
+    db: AsyncSession,
+    *,
+    session: TrainingSession,
+    coach_user_id: int,
+    action: AuditAction,
+    ctx: AuditContext | None,
+) -> None:
+    """Fila de auditoría por entrenador agregado o quitado (§9).
+
+    ``entity_id`` es el id de la sesión: el puente tiene clave primaria
+    compuesta y no un id propio.
+    """
+    if ctx is None:
+        return
+    before, after = (
+        (None, coach_user_id)
+        if action == AuditAction.create
+        else (coach_user_id, None)
+    )
+    await record_audit(
+        db,
+        action=action,
+        entity_type=AuditEntityType.training_session_coach,
+        entity_id=session.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=session.club_id,
+        changed_fields=["coach_user_id"],
+        diff={"coach_user_id": (before, after)},
+        request_id=ctx.request_id,
+    )
+
+
+async def _replace_session_coaches(
+    db: AsyncSession,
+    session: TrainingSession,
+    coach_user_ids: list[int],
+    *,
+    added_by_user_id: int,
+    ctx: AuditContext | None = None,
+) -> None:
+    """Deja el conjunto de entrenadores de la sesión EXACTAMENTE en
+    ``coach_user_ids`` (§3.2), auditando cada alta y cada baja (§9).
+
+    No hace commit: la mutación y sus filas de auditoría comparten la
+    transacción del llamador (FR-001).
+    """
+    new_ids_ordered = _dedupe_preserving_order(coach_user_ids)
+    new_ids = set(new_ids_ordered)
+
+    if not new_ids:  # V1/V6 a nivel de servicio
+        raise SessionCoachConflictError(
+            "Una sesión debe tener al menos un entrenador."
+        )
+
+    current_ids = await _current_coach_ids_locked(db, session.id)
+    to_add = [uid for uid in new_ids_ordered if uid not in current_ids]
+    to_remove = sorted(current_ids - new_ids)
+
+    # V4 solo sobre `new_ids - current_ids`; V5 deja pasar a los ya asignados.
+    await _assert_eligible_coaches(
+        db, session.club_id, new_ids_ordered, set(to_add)
+    )
+
+    # Defensa en profundidad (V6): con semántica de reemplazo un payload no
+    # vacío nunca puede llegar a cero, pero el conteo se verifica igual.
+    if len(current_ids - set(to_remove)) + len(to_add) == 0:  # pragma: no cover
+        raise SessionCoachConflictError(
+            "Una sesión debe tener al menos un entrenador."
+        )
+
+    # Se muta la COLECCIÓN de la relación (que tiene delete-orphan) en vez de
+    # emitir DELETE/INSERT sueltos: así la sesión en memoria queda coherente y
+    # la relectura posterior no devuelve el conjunto viejo. La colección se
+    # carga explícitamente si hace falta: un lazy load en contexto async
+    # reventaría con MissingGreenlet.
+    if "session_coaches" in sa_inspect(session).unloaded:
+        await db.refresh(session, attribute_names=["session_coaches"])
+    loaded_rows = {row.coach_user_id: row for row in (session.session_coaches or [])}
+    for coach_user_id in to_remove:
+        row = loaded_rows.get(coach_user_id)
+        if row is not None:
+            session.session_coaches.remove(row)
+        else:  # pragma: no cover — fila creada por otra transacción
+            await db.execute(
+                delete(TrainingSessionCoach).where(
+                    TrainingSessionCoach.session_id == session.id,
+                    TrainingSessionCoach.coach_user_id == coach_user_id,
+                )
+            )
+        await _record_coach_audit(
+            db,
+            session=session,
+            coach_user_id=coach_user_id,
+            action=AuditAction.delete,
+            ctx=ctx,
+        )
+
+    # `added_at` se fija con un desplazamiento creciente para que el orden de
+    # inserción quede reflejado en el orden de lectura. En MySQL la columna es
+    # DATETIME sin fracción de segundo, así que los microsegundos pueden
+    # colapsar en un empate; por eso la lectura desempata por `coach_user_id`
+    # (ver `_ordered_session_coaches`).
+    base_now = datetime.now(timezone.utc)
+    for offset, coach_user_id in enumerate(to_add):
+        session.session_coaches.append(
+            TrainingSessionCoach(
+                session_id=session.id,
+                coach_user_id=coach_user_id,
+                added_by_user_id=added_by_user_id,
+                added_at=base_now + timedelta(microseconds=offset),
+            )
+        )
+        await _record_coach_audit(
+            db,
+            session=session,
+            coach_user_id=coach_user_id,
+            action=AuditAction.create,
+            ctx=ctx,
+        )
+
+
+def _ordered_session_coaches(
+    session: TrainingSession,
+) -> list[TrainingSessionCoach]:
+    """Filas del puente ordenadas por ``added_at`` y, ante empate, por
+    ``coach_user_id`` (ver la nota de precisión en ``_replace_session_coaches``).
+    """
+    def _key(row: TrainingSessionCoach) -> tuple[datetime, int]:
+        # Las filas recién agregadas en memoria traen `added_at` con zona
+        # horaria y las releídas de la base vienen sin ella (la columna es
+        # DATETIME sin zona): se normaliza a naive-UTC para poder ordenarlas
+        # juntas sin un TypeError.
+        added_at = row.added_at
+        if added_at.tzinfo is not None:
+            added_at = added_at.astimezone(timezone.utc).replace(tzinfo=None)
+        return (added_at, row.coach_user_id)
+
+    return sorted(session.session_coaches or [], key=_key)
+
+
+async def _load_session_coaches(
+    db: AsyncSession, session: TrainingSession
+) -> list[User]:
+    """Carga los entrenadores a cargo de la sesión, en orden de ``added_at``.
+
+    Reemplaza al viejo ``_load_session_coach``, que resolvía el "entrenador"
+    del email a partir de ``created_by_user_id`` y por eso le decía a las
+    familias que había cancelado quien creó la sesión, no quien la canceló
+    (el bug de US4).
+    """
+    result = await db.execute(
+        select(User)
+        .join(
+            TrainingSessionCoach,
+            TrainingSessionCoach.coach_user_id == User.id,
+        )
+        .where(TrainingSessionCoach.session_id == session.id)
+        .order_by(
+            TrainingSessionCoach.added_at.asc(),
+            TrainingSessionCoach.coach_user_id.asc(),
+        )
+    )
+    return list(result.scalars().all())
+
+
+def _actor_display_name(actor: User) -> str:
+    """Nombre legible del actor para el contexto de los emails."""
+    name = actor.display_name if hasattr(actor, "display_name") else ""
+    if not name:
+        name = f"{actor.first_name} {actor.last_name}".strip()
+    if not name:
+        name = actor.email.split("@")[0] if actor.email else "Entrenador"
+    return name
+
+
+async def _coach_names_context(
+    db: AsyncSession, session: TrainingSession, actor: User
+) -> tuple[str, list[str], str]:
+    """Devuelve ``(acting_coach_name, coach_names, coaches_text)`` de §5.1.
+
+    El cuerpo del email nombra a QUIEN ACTUÓ; la firma nombra a QUIEN DIRIGE.
+    """
+    coaches = await _load_session_coaches(db, session)
+    coach_names = [_actor_display_name(c) for c in coaches]
+    if not coach_names:
+        # Sesión sin filas de puente (dato previo al backfill): se cae al
+        # actor para no dejar la firma vacía en el email.
+        coach_names = [_actor_display_name(actor)]
+    return _actor_display_name(actor), coach_names, _join_names_es(coach_names)
+
+
 async def create_session(
     db: AsyncSession,
     payload: TrainingSessionCreate,
@@ -150,6 +451,16 @@ async def create_session(
         session.session_kind = payload.session_kind
     db.add(session)
     await db.flush()  # obtener session.id antes de crear asistencias
+
+    # 041 §3.2 — si el payload no trae `coach_user_ids`, el creador queda como
+    # único entrenador; si los trae, reemplazan por completo esa membresía.
+    await _replace_session_coaches(
+        db,
+        session,
+        payload.coach_user_ids or [coach.id],
+        added_by_user_id=coach.id,
+        ctx=ctx,
+    )
 
     for athlete_id in payload.convocados_athlete_ids:
         db.add(
@@ -205,7 +516,7 @@ async def create_session(
         await _notify_parents(
             db=db,
             session=refreshed,
-            coach=coach,
+            actor=coach,
             club_id=club_id,
             convocados_athlete_ids=payload.convocados_athlete_ids,
             notification_service=notification_service,
@@ -218,7 +529,7 @@ async def create_session(
 async def _notify_parents(
     db: AsyncSession,
     session: TrainingSession,
-    coach: User,
+    actor: User,
     club_id: int,
     convocados_athlete_ids: list[int],
     notification_service: "NotificationService",
@@ -233,9 +544,9 @@ async def _notify_parents(
     club = club_result.scalar_one_or_none()
     club_name = club.name if club else "Club Trocha y Ruta"
 
-    # Nombre del coach
-    coach_name = f"{coach.first_name} {coach.last_name}".strip() or (
-        coach.email.split("@")[0] if coach.email else "Entrenador"
+    # 041 §5.1 — quién actuó (cuerpo) y quiénes dirigen la sesión (firma)
+    acting_coach_name, coach_names, coaches_text = await _coach_names_context(
+        db, session, actor
     )
 
     # Formato legible de fecha y hora
@@ -253,7 +564,13 @@ async def _notify_parents(
         select(ParentAthlete, Athlete)
         .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
         .join(User, User.id == ParentAthlete.parent_id)
-        .where(ParentAthlete.athlete_id.in_(convocados_athlete_ids))
+        # Último portón antes de que salga un correo a la familia: un atleta
+        # archivado ya no recibe convocatorias, avisos de cambio ni de
+        # cancelación (contracts/athlete-archive.md §5.2).
+        .where(
+            ParentAthlete.athlete_id.in_(convocados_athlete_ids),
+            Athlete.deleted_at.is_(None),
+        )
         .options(selectinload(ParentAthlete.parent))
     )
     rows = await db.execute(stmt)
@@ -276,7 +593,9 @@ async def _notify_parents(
                 session=session,
                 session_date=session_date,
                 session_time=session_time,
-                coach_name=coach_name,
+                acting_coach_name=acting_coach_name,
+                coach_names=coach_names,
+                coaches_text=coaches_text,
                 club_name=club_name,
             )
         except Exception as exc:
@@ -297,7 +616,9 @@ async def _dispatch_invitation(
     session: TrainingSession,
     session_date: str,
     session_time: str,
-    coach_name: str,
+    acting_coach_name: str,
+    coach_names: list[str],
+    coaches_text: str,
     club_name: str,
 ) -> None:
     """Despacha la invitación a un padre/acudiente, respetando el throttle."""
@@ -331,7 +652,9 @@ async def _dispatch_invitation(
             "location": session.location or "Por definir",
             "technical_focus": session.technical_focus or "General",
             "duration_min": session.duration_min,
-            "coach_name": coach_name,
+            "acting_coach_name": acting_coach_name,
+            "coach_names": coach_names,
+            "coaches_text": coaches_text,
             "club_name": club_name,
         },
         send_async=True,
@@ -350,7 +673,7 @@ async def _dispatch_invitation(
 async def _notify_parents_update(
     db: AsyncSession,
     session: TrainingSession,
-    coach: User,
+    actor: User,
     club_id: int,
     convocados_athlete_ids: list[int],
     changes: list[dict[str, str]],
@@ -365,8 +688,8 @@ async def _notify_parents_update(
     club = club_result.scalar_one_or_none()
     club_name = club.name if club else "Club Trocha y Ruta"
 
-    coach_name = f"{coach.first_name} {coach.last_name}".strip() or (
-        coach.email.split("@")[0] if coach.email else "Entrenador"
+    acting_coach_name, coach_names, coaches_text = await _coach_names_context(
+        db, session, actor
     )
 
     session_date = (
@@ -386,7 +709,13 @@ async def _notify_parents_update(
         select(ParentAthlete, Athlete)
         .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
         .join(User, User.id == ParentAthlete.parent_id)
-        .where(ParentAthlete.athlete_id.in_(convocados_athlete_ids))
+        # Último portón antes de que salga un correo a la familia: un atleta
+        # archivado ya no recibe convocatorias, avisos de cambio ni de
+        # cancelación (contracts/athlete-archive.md §5.2).
+        .where(
+            ParentAthlete.athlete_id.in_(convocados_athlete_ids),
+            Athlete.deleted_at.is_(None),
+        )
         .options(selectinload(ParentAthlete.parent))
     )
     rows = await db.execute(stmt)
@@ -408,7 +737,9 @@ async def _notify_parents_update(
                 session=session,
                 session_date=session_date,
                 session_time=session_time,
-                coach_name=coach_name,
+                acting_coach_name=acting_coach_name,
+                coach_names=coach_names,
+                coaches_text=coaches_text,
                 club_name=club_name,
                 changes=changes,
             )
@@ -430,7 +761,9 @@ async def _dispatch_update(
     session: TrainingSession,
     session_date: str,
     session_time: str,
-    coach_name: str,
+    acting_coach_name: str,
+    coach_names: list[str],
+    coaches_text: str,
     club_name: str,
     changes: list[dict[str, str]],
 ) -> None:
@@ -466,7 +799,9 @@ async def _dispatch_update(
             "location": session.location or "Por definir",
             "technical_focus": session.technical_focus or "General",
             "duration_min": session.duration_min,
-            "coach_name": coach_name,
+            "acting_coach_name": acting_coach_name,
+            "coach_names": coach_names,
+            "coaches_text": coaches_text,
             "club_name": club_name,
             "changes": changes,
         },
@@ -486,14 +821,18 @@ async def _dispatch_update(
 async def _notify_parents_cancel(
     db: AsyncSession,
     session: TrainingSession,
-    coach: User,
+    actor: User,
     club_id: int,
     convocados_athlete_ids: list[int],
-    reason: str | None,
+    reason: str,
     notification_service: "NotificationService",
     dispatcher: "TaskDispatcher | None",
 ) -> None:
-    """Despacha emails `training_session_cancelled` a los padres de los convocados."""
+    """Despacha emails `training_session_cancelled` a los padres de los convocados.
+
+    ``reason`` es la ETIQUETA en español del código de motivo (§7.1); nunca
+    texto libre escrito por un entrenador (FR-003).
+    """
     if not convocados_athlete_ids:
         return
 
@@ -501,8 +840,8 @@ async def _notify_parents_cancel(
     club = club_result.scalar_one_or_none()
     club_name = club.name if club else "Club Trocha y Ruta"
 
-    coach_name = f"{coach.first_name} {coach.last_name}".strip() or (
-        coach.email.split("@")[0] if coach.email else "Entrenador"
+    acting_coach_name, coach_names, coaches_text = await _coach_names_context(
+        db, session, actor
     )
 
     session_date = (
@@ -522,7 +861,13 @@ async def _notify_parents_cancel(
         select(ParentAthlete, Athlete)
         .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
         .join(User, User.id == ParentAthlete.parent_id)
-        .where(ParentAthlete.athlete_id.in_(convocados_athlete_ids))
+        # Último portón antes de que salga un correo a la familia: un atleta
+        # archivado ya no recibe convocatorias, avisos de cambio ni de
+        # cancelación (contracts/athlete-archive.md §5.2).
+        .where(
+            ParentAthlete.athlete_id.in_(convocados_athlete_ids),
+            Athlete.deleted_at.is_(None),
+        )
         .options(selectinload(ParentAthlete.parent))
     )
     rows = await db.execute(stmt)
@@ -544,9 +889,11 @@ async def _notify_parents_cancel(
                 session=session,
                 session_date=session_date,
                 session_time=session_time,
-                coach_name=coach_name,
+                acting_coach_name=acting_coach_name,
+                coach_names=coach_names,
+                coaches_text=coaches_text,
                 club_name=club_name,
-                reason=reason or "",
+                reason=reason,
             )
         except Exception as exc:
             logger.warning(
@@ -566,7 +913,9 @@ async def _dispatch_cancel(
     session: TrainingSession,
     session_date: str,
     session_time: str,
-    coach_name: str,
+    acting_coach_name: str,
+    coach_names: list[str],
+    coaches_text: str,
     club_name: str,
     reason: str,
 ) -> None:
@@ -600,7 +949,9 @@ async def _dispatch_cancel(
             "session_date": session_date,
             "session_time": session_time,
             "location": session.location or "Por definir",
-            "coach_name": coach_name,
+            "acting_coach_name": acting_coach_name,
+            "coach_names": coach_names,
+            "coaches_text": coaches_text,
             "club_name": club_name,
             "reason": reason,
         },
@@ -713,11 +1064,16 @@ async def update_session(
     session_id: int,
     payload: TrainingSessionUpdate,
     *,
+    actor: User,
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
     ctx: AuditContext | None = None,
 ) -> TrainingSession:
     """Actualiza campos editables de una sesión planificada.
+
+    ``actor`` es de solo-palabra-clave y NO tiene valor por defecto: un
+    default dejaría que un futuro llamador registre a la persona equivocada
+    en silencio, que es justo la falla que esta feature elimina (§4).
 
     Si `payload.send_notification` y se provee `notification_service`, despacha
     `training_session_updated` a los padres de los atletas convocados, incluyendo
@@ -725,7 +1081,19 @@ async def update_session(
     """
     session = await _get_session_or_raise(db, session_id)
 
-    update_data = payload.model_dump(exclude_unset=True, exclude={"send_notification"})
+    update_data = payload.model_dump(
+        exclude_unset=True, exclude={"send_notification", "coach_user_ids"}
+    )
+    # `coach_user_ids` no es una columna de `training_sessions`: se aplica
+    # aparte, como conjunto de reemplazo sobre el puente (§3.2).
+    if payload.coach_user_ids is not None:
+        await _replace_session_coaches(
+            db,
+            session,
+            payload.coach_user_ids,
+            added_by_user_id=actor.id,
+            ctx=ctx,
+        )
     if "strava_url" in update_data and update_data["strava_url"] is not None:
         update_data["strava_url"] = str(update_data["strava_url"])
 
@@ -781,12 +1149,15 @@ async def update_session(
         and refreshed.status == SessionStatus.PLANNED
         and is_future
     ):
-        convocados = [a.athlete_id for a in (refreshed.attendances or [])]
-        coach = await _load_session_coach(db, refreshed)
+        convocados = [
+            a.athlete_id
+            for a in (refreshed.attendances or [])
+            if a.archived_at is None
+        ]
         await _notify_parents_update(
             db=db,
             session=refreshed,
-            coach=coach,
+            actor=actor,
             club_id=refreshed.club_id,
             convocados_athlete_ids=convocados,
             changes=changes,
@@ -798,11 +1169,19 @@ async def update_session(
 
 
 async def execute_session(
-    db: AsyncSession, session_id: int, *, ctx: AuditContext | None = None
+    db: AsyncSession,
+    session_id: int,
+    *,
+    actor: User,
+    ctx: AuditContext | None = None,
 ) -> TrainingSession:
     """
     Marca la sesión como ejecutada y registra el timestamp.
     Lanza ValueError si ya fue ejecutada o cancelada.
+
+    ``actor`` es de solo-palabra-clave y sin default (§4): quién ejecutó la
+    sesión vive únicamente en ``audit_log`` (§1, estrechamiento de FR-010),
+    así que la única forma de responderlo es que el llamador lo pase.
     """
     session = await _get_session_or_raise(db, session_id)
 
@@ -811,6 +1190,7 @@ async def execute_session(
             f"No se puede ejecutar una sesión en estado '{session.status.value}'"
         )
 
+    previous_status = session.status
     session.status = SessionStatus.EXECUTED
     session.executed_at = datetime.now(timezone.utc)
 
@@ -823,6 +1203,10 @@ async def execute_session(
             actor=ctx.actor,
             actor_kind=ctx.actor_kind,
             club_id=session.club_id,
+            changed_fields=["status"],
+            diff={
+                "status": (previous_status.value, SessionStatus.EXECUTED.value)
+            },
             request_id=ctx.request_id,
         )
 
@@ -836,14 +1220,20 @@ async def cancel_session(
     db: AsyncSession,
     session_id: int,
     *,
+    actor: User,
+    reason_code: CancelReasonCode,
     send_notification: bool = False,
-    reason: str | None = None,
-    reason_code: CancelReasonCode | None = None,
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
     ctx: AuditContext | None = None,
 ) -> TrainingSession:
     """Soft delete: cambia el estado a CANCELLED sin borrar registros.
+
+    ``reason_code`` es obligatorio y pertenece al subgrupo ``cancel_*`` del
+    catálogo cerrado (§7.1): el texto libre dejó de llegar a las familias y
+    dejó de ser un lugar donde un entrenador pudiera escribir el nombre de un
+    menor (FR-003). La etiqueta en español se resuelve al despachar el email y
+    nunca se persiste.
 
     Si `send_notification` y la sesión era futura PLANNED, despacha
     `training_session_cancelled` a los padres de los convocados.
@@ -857,8 +1247,13 @@ async def cancel_session(
         session.status == SessionStatus.PLANNED
         and session.scheduled_date >= date.today()
     )
-    convocados_snapshot = [a.athlete_id for a in (session.attendances or [])]
+    convocados_snapshot = [
+        a.athlete_id
+        for a in (session.attendances or [])
+        if a.archived_at is None
+    ]
 
+    previous_status = session.status
     session.status = SessionStatus.CANCELLED
 
     if ctx is not None:
@@ -870,7 +1265,11 @@ async def cancel_session(
             actor=ctx.actor,
             actor_kind=ctx.actor_kind,
             club_id=session.club_id,
-            reason_code=reason_code,
+            changed_fields=["status"],
+            diff={
+                "status": (previous_status.value, SessionStatus.CANCELLED.value)
+            },
+            reason_code=AuditReasonCode(reason_code.value),
             request_id=ctx.request_id,
         )
 
@@ -884,14 +1283,15 @@ async def cancel_session(
         and was_future_planned
         and convocados_snapshot
     ):
-        coach = await _load_session_coach(db, refreshed)
         await _notify_parents_cancel(
             db=db,
             session=refreshed,
-            coach=coach,
+            actor=actor,
             club_id=refreshed.club_id,
             convocados_athlete_ids=convocados_snapshot,
-            reason=reason,
+            reason=AUDIT_REASON_LABELS.get(
+                AuditReasonCode(reason_code.value), ""
+            ),
             notification_service=notification_service,
             dispatcher=dispatcher,
         )
@@ -904,6 +1304,7 @@ async def update_convocatoria(
     session_id: int,
     athlete_ids: list[int],
     *,
+    actor: User,
     send_notification: bool = False,
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
@@ -913,17 +1314,25 @@ async def update_convocatoria(
     convocados con `training_session_invite`.
 
     Delega la mutación a `attendance.bulk_upsert_convocatoria` y orquesta el
-    envío de emails comparando contra los convocados previos.
+    envío de emails comparando contra los convocados previos. ``actor`` es
+    quien invita: es el nombre que va en el cuerpo del email (§5.1).
     """
     from app.services.training import attendance as attendance_svc
 
     session = await _get_session_or_raise(db, session_id)
-    previous_ids = {a.athlete_id for a in (session.attendances or [])}
+    # Solo los convocados ACTIVOS cuentan como "previos": un atleta con la
+    # fila archivada debe volver a recibir invitación al ser re-convocado.
+    previous_ids = {
+        a.athlete_id
+        for a in (session.attendances or [])
+        if a.archived_at is None
+    }
 
     attendances = await attendance_svc.bulk_upsert_convocatoria(
         db=db,
         session_id=session_id,
         athlete_ids=athlete_ids,
+        actor=actor,
         club_id=session.club_id,
         ctx=ctx,
     )
@@ -941,11 +1350,10 @@ async def update_convocatoria(
         # Recargar sesión con atletas para tener datos frescos en el email
         refreshed = await get_session(db, session_id)
         assert refreshed is not None
-        coach = await _load_session_coach(db, refreshed)
         await _notify_parents(
             db=db,
             session=refreshed,
-            coach=coach,
+            actor=actor,
             club_id=refreshed.club_id,
             convocados_athlete_ids=added_ids,
             notification_service=notification_service,
@@ -953,21 +1361,6 @@ async def update_convocatoria(
         )
 
     return attendances
-
-
-async def _load_session_coach(db: AsyncSession, session: TrainingSession) -> User:
-    """Carga el usuario creador de la sesión (coach) — se usa para el contexto
-    de los emails de update/cancel/update_convocatoria.
-    """
-    result = await db.execute(
-        select(User).where(User.id == session.created_by_user_id)
-    )
-    coach = result.scalar_one_or_none()
-    if coach is None:  # pragma: no cover — invariante de FK NOT NULL
-        raise ValueError(
-            f"Coach con id={session.created_by_user_id} no encontrado"
-        )
-    return coach
 
 
 async def list_sessions(
@@ -978,10 +1371,16 @@ async def list_sessions(
     date_from: str | None = None,
     date_to: str | None = None,
     athlete_id: int | None = None,
+    coach_user_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[TrainingSession]:
-    """Lista sesiones del club con filtros opcionales."""
+    """Lista sesiones del club con filtros opcionales.
+
+    ``coach_user_id`` (§8.1) restringe el listado a las sesiones donde ese
+    usuario figura en el puente ``training_session_coaches``; se apoya en el
+    índice ``ix_tsc_coach_user_id``.
+    """
     from datetime import date
 
     stmt = select(TrainingSession).where(TrainingSession.club_id == club_id)
@@ -1000,9 +1399,16 @@ async def list_sessions(
         stmt = stmt.where(
             TrainingSession.id.in_(
                 select(SessionAttendance.session_id).where(
-                    SessionAttendance.athlete_id == athlete_id
+                    SessionAttendance.athlete_id == athlete_id,
+                    SessionAttendance.archived_at.is_(None),
                 )
             )
+        )
+    if coach_user_id:
+        stmt = stmt.join(
+            TrainingSessionCoach,
+            (TrainingSessionCoach.session_id == TrainingSession.id)
+            & (TrainingSessionCoach.coach_user_id == coach_user_id),
         )
 
     from app.models.session_media import SessionMedia
@@ -1017,6 +1423,9 @@ async def list_sessions(
         .offset(offset)
         .options(
             selectinload(TrainingSession.attendances),
+            selectinload(TrainingSession.session_coaches).selectinload(
+                TrainingSessionCoach.coach
+            ),
             selectinload(TrainingSession.media).selectinload(SessionMedia.athletes),
         )
     )
@@ -1035,6 +1444,17 @@ async def get_session(db: AsyncSession, session_id: int) -> TrainingSession | No
         .options(
             selectinload(TrainingSession.attendances).selectinload(
                 SessionAttendance.athlete
+            ),
+            # 041 §6.1 — atribución de asistencia precargada para que un
+            # roster de 20 filas siga costando un número constante de queries.
+            selectinload(TrainingSession.attendances).selectinload(
+                SessionAttendance.recorded_by
+            ),
+            selectinload(TrainingSession.attendances).selectinload(
+                SessionAttendance.updated_by
+            ),
+            selectinload(TrainingSession.session_coaches).selectinload(
+                TrainingSessionCoach.coach
             ),
             selectinload(TrainingSession.media).selectinload(SessionMedia.athletes),
         )

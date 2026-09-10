@@ -507,8 +507,15 @@ async def launch_group(
         # pattern as start_run in race_analysis.py lines 629-643).
         athlete_age: Optional[int] = None
         try:
+            # FR-014: ``_load_members`` ya excluye archivados; el filtro se
+            # repite aquí (defensa en profundidad) para que un atleta
+            # archivado entre la selección y el lanzamiento no aporte edad
+            # al estado inicial del run.
             _ath_result = await db.execute(
-                select(Athlete).where(Athlete.id == member.athlete_id)
+                select(Athlete).where(
+                    Athlete.id == member.athlete_id,
+                    Athlete.deleted_at.is_(None),
+                )
             )
             _ath = _ath_result.scalar_one_or_none()
             if _ath is not None and _ath.birth_date is not None:

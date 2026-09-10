@@ -18,8 +18,9 @@ from app.models.calendar_event import (
     AudienceType,
 )
 from app.schemas.calendar import AudienceCreate, EventCreate, EventUpdate
+from app.services.audit import CancelReasonCode
 from app.services.calendar import events as events_svc
-from app.services.request_context import request_id_scope
+from app.services.request_context import AuditContext, request_id_scope
 
 
 @pytest.fixture(autouse=True)
@@ -391,26 +392,37 @@ class TestUpdateEvent:
 class TestCancelEvent:
     async def test_cancel_cambia_status(self):
         user = _make_user()
+        ctx = AuditContext.for_user(user)
         event = _make_event(status=EventStatus.SCHEDULED)
         refreshed = _make_event(status=EventStatus.CANCELLED)
 
         db = _make_db()
         with patch.object(events_svc, "get_event", AsyncMock(return_value=refreshed)):
-            result = await events_svc.cancel_event(db, event, "Lluvia", user)
+            await events_svc.cancel_event(
+                db, event, CancelReasonCode.cancel_weather, ctx
+            )
 
         assert event.status == EventStatus.CANCELLED
+        assert event.cancelled_by_user_id == user.id
+        assert event.cancellation_reason_code == "cancel_weather"
         db.commit.assert_awaited()
 
     async def test_cancel_ya_cancelado_lanza_error(self):
         user = _make_user()
+        ctx = AuditContext.for_user(user)
         event = _make_event(status=EventStatus.CANCELLED)
         db = _make_db()
 
         with pytest.raises(ValueError, match="ya está cancelado"):
-            await events_svc.cancel_event(db, event, "", user)
+            await events_svc.cancel_event(
+                db, event, CancelReasonCode.cancel_weather, ctx
+            )
 
     async def test_cancel_propaga_a_training_session(self):
+        from app.models.training_session import SessionStatus
+
         user = _make_user()
+        ctx = AuditContext.for_user(user)
         event = _make_event(
             event_type=EventType.TRAINING_SESSION,
             status=EventStatus.SCHEDULED,
@@ -421,23 +433,25 @@ class TestCancelEvent:
             status=EventStatus.CANCELLED,
         )
 
+        linked_ts = MagicMock()
+        linked_ts.id = 3
+        linked_ts.status = SessionStatus.PLANNED
+
         db = _make_db()
-        execute_calls = []
-
-        async def mock_execute(stmt):
-            execute_calls.append(stmt)
-            return MagicMock()
-
-        db.execute = mock_execute
+        db.get = AsyncMock(return_value=linked_ts)
 
         with patch.object(events_svc, "get_event", AsyncMock(return_value=refreshed)):
-            await events_svc.cancel_event(db, event, "Cancelado", user)
+            await events_svc.cancel_event(
+                db, event, CancelReasonCode.cancel_rescheduled, ctx
+            )
 
-        # Verificar que se ejecutó alguna update en training_sessions
-        assert len(execute_calls) > 0, "Debió ejecutarse UPDATE en training_sessions"
+        assert linked_ts.status == SessionStatus.CANCELLED
 
     async def test_cancel_despacha_notificacion(self):
+        from app.services.audit import AUDIT_REASON_LABELS
+
         user = _make_user()
+        ctx = AuditContext.for_user(user)
         event = _make_event(status=EventStatus.SCHEDULED)
         refreshed = _make_event(status=EventStatus.CANCELLED)
 
@@ -456,12 +470,12 @@ class TestCancelEvent:
                 mock_notify,
             ):
                 await events_svc.cancel_event(
-                    db, event, "Lluvia intensa", user,
+                    db, event, CancelReasonCode.cancel_weather, ctx,
                     notification_service=notification_service,
                     dispatcher=dispatcher,
                 )
 
-        assert "Lluvia intensa" in notify_calls
+        assert notify_calls == [AUDIT_REASON_LABELS[CancelReasonCode.cancel_weather]]
 
 
 # ---------------------------------------------------------------------------

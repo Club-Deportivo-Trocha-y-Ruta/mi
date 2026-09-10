@@ -268,10 +268,14 @@ async def can_view_calendar_event(
         # El padre los ve si tiene al menos un atleta en el club del evento.
         if event.event_type == EventType.BIRTHDAY:  # type: ignore[attr-defined]
             from app.models.athlete import Athlete  # late import
+            # FR-014: un atleta archivado no da visibilidad de eventos al padre.
+            # ``parent_athlete_ids`` ya excluye archivados, pero el filtro se
+            # repite aquí porque esta consulta es la que decide la visibilidad.
             result = await db.execute(
                 select(Athlete.id).where(
                     Athlete.id.in_(athlete_ids),
                     Athlete.club_id == event.club_id,  # type: ignore[attr-defined]
+                    Athlete.deleted_at.is_(None),
                 )
             )
             return result.first() is not None
@@ -357,8 +361,13 @@ async def can_view_activity(
         return True
 
     if user.role == UserRole.coach:
+        # FR-014: para el coach, un atleta archivado no resuelve club y la
+        # autorización cae a False (el admin sí conserva el acceso, arriba).
         result = await db.execute(
-            select(Athlete.club_id).where(Athlete.id == athlete_id)
+            select(Athlete.club_id).where(
+                Athlete.id == athlete_id,
+                Athlete.deleted_at.is_(None),
+            )
         )
         club_id = result.scalar_one_or_none()
         if club_id is None:
@@ -392,8 +401,13 @@ async def can_link_activity(
         return True
 
     if user.role == UserRole.coach:
+        # FR-014: no se puede vincular ni desvincular actividad de un atleta
+        # archivado — la consulta no lo resuelve y la autorización cae a False.
         result = await db.execute(
-            select(Athlete.club_id).where(Athlete.id == activity.athlete_id)
+            select(Athlete.club_id).where(
+                Athlete.id == activity.athlete_id,
+                Athlete.deleted_at.is_(None),
+            )
         )
         club_id = result.scalar_one_or_none()
         if club_id is None:

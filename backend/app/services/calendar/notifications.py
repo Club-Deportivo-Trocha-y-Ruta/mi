@@ -98,7 +98,13 @@ async def _resolve_parents_for_event(
     stmt = (
         select(ParentAthlete, Athlete)
         .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
-        .where(ParentAthlete.athlete_id.in_(athlete_ids))
+        # Último portón antes de que salga un correo a la familia: la familia de
+        # un atleta archivado no recibe avisos de eventos
+        # (contracts/athlete-archive.md §5.2).
+        .where(
+            ParentAthlete.athlete_id.in_(athlete_ids),
+            Athlete.deleted_at.is_(None),
+        )
         .options(selectinload(ParentAthlete.parent))
     )
     rows = await db.execute(stmt)
@@ -311,7 +317,12 @@ async def notify_event_cancelled(
                     "athlete_name": athlete_name,
                     "event_title": event.title,
                     "original_date": original_date,
-                    "reason": reason or "Sin motivo especificado",
+                    # T063 (contracts/session-coaches.md §7.2): reason_code
+                    # es obligatorio en el origen (EventCancelIn), así que el
+                    # llamador siempre resuelve una etiqueta no vacía vía
+                    # AUDIT_REASON_LABELS — el fallback "Sin motivo
+                    # especificado" quedó inalcanzable y se retira.
+                    "reason": reason,
                     "club_name": club_name,
                 },
                 send_async=True,

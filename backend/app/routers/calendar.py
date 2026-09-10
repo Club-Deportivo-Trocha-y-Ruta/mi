@@ -33,7 +33,6 @@ from app.schemas.calendar import (
     EventUpdate,
     RSVPUpdate,
 )
-from app.services.audit import AUDIT_REASON_LABELS
 from app.services.request_context import AuditContext, get_request_context
 from app.services.calendar import attendances as attendance_svc
 from app.services.calendar import events as events_svc
@@ -218,12 +217,22 @@ async def list_calendar_events(
     athlete_id: int | None = Query(default=None),
     category: str | None = Query(default=None),
     mine_only: bool = Query(default=False),
+    coach_user_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[EventListItem]:
     # Padres siempre con mine_only=True (forzado en servidor)
     if current_user.role == UserRole.parent:
         mine_only = True
+
+    # T064 (contracts/session-coaches.md §8.2): qué coach lidera una sesión
+    # es información de gestión interna (FR-032) — un padre no puede
+    # filtrar por ella, igual que en el endpoint de sesiones (§8.1).
+    if coach_user_id is not None and current_user.role == UserRole.parent:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para filtrar por entrenador.",
+        )
 
     # Determinar club_id del usuario
     if current_user.role == UserRole.parent:
@@ -237,7 +246,12 @@ async def list_calendar_events(
             return []
 
         result = await db.execute(
-            select(Athlete.club_id).where(Athlete.id.in_(my_athlete_ids)).limit(1)
+            # Defensa en profundidad: `parent_athlete_ids` ya excluye archivados,
+            # pero el club no debe resolverse nunca a través de uno
+            # (contracts/athlete-archive.md §5.2).
+            select(Athlete.club_id)
+            .where(Athlete.id.in_(my_athlete_ids), Athlete.deleted_at.is_(None))
+            .limit(1)
         )
         club_id_row = result.scalar_one_or_none()
         if club_id_row is None:
@@ -263,6 +277,7 @@ async def list_calendar_events(
         athlete_id=athlete_id,
         category=category,
         mine_only=mine_only,
+        coach_user_id=coach_user_id,
     )
 
     events = await events_svc.list_events_in_range(
@@ -437,11 +452,10 @@ async def cancel_calendar_event(
         await events_svc.cancel_event(
             db=db,
             event=event,
-            reason=AUDIT_REASON_LABELS[body.reason_code],
-            user=current_user,
+            reason_code=body.reason_code,
+            ctx=ctx,
             notification_service=notification_service,
             dispatcher=dispatcher,
-            reason_code=body.reason_code,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -460,6 +474,7 @@ async def delete_calendar_event_permanent(
     event_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> None:
     event = await _get_event_or_404(db, event_id)
 
@@ -475,7 +490,7 @@ async def delete_calendar_event_permanent(
             detail="No tienes permisos para borrar este evento permanentemente",
         )
 
-    await events_svc.delete_event_permanent(db, event, user=current_user)
+    await events_svc.delete_event_permanent(db, event, ctx=ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -561,8 +576,14 @@ async def list_event_attendances(
         from sqlalchemy import select as sa_select
         from app.models.training_session import SessionAttendance
 
+        # §6.4 de session-coaches.md: toda lectura de session_attendance debe
+        # filtrar archived_at IS NULL — esta vista no tiene rama admin con
+        # include_archived, así que se filtra siempre.
         result = await db.execute(
-            sa_select(SessionAttendance).where(SessionAttendance.session_id == ts_id)
+            sa_select(SessionAttendance).where(
+                SessionAttendance.session_id == ts_id,
+                SessionAttendance.archived_at.is_(None),
+            )
         )
         sa_records = list(result.scalars().all())
 

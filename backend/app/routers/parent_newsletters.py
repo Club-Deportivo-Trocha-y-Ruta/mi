@@ -193,7 +193,16 @@ async def download_parent_newsletter_pdf(
     await _verify_parent_athlete_link(db, current_user, athlete_id)
     nl = await _get_sent_bitacora_or_404(db, athlete_id, newsletter_id)
 
-    athlete_result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    # FR-014: el PDF de la bitácora es superficie de familia — un atleta
+    # archivado ya no se descarga (``_verify_parent_athlete_link`` arriba ya
+    # lo excluye vía ``parent_athlete_ids``; el filtro se repite aquí para
+    # que la consulta sea correcta por sí sola).
+    athlete_result = await db.execute(
+        select(Athlete).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
+    )
     athlete = athlete_result.scalar_one_or_none()
     if athlete is None:
         raise HTTPException(

@@ -3,8 +3,9 @@
 {#
   Notificación a padres/acudientes cuando una sesión convocada es modificada.
   Variables requeridas: parent_name, athlete_name, session_date, session_time,
-                        location, technical_focus, duration_min, coach_name,
-                        club_name, changes (list de dicts con field_label, old, new).
+                        location, technical_focus, duration_min, club_name,
+                        acting_coach_name, coach_names, coaches_text,
+                        changes (list de dicts con field_label, old, new).
 #}
 
 {% block title %}Cambios en entrenamiento {{ session_date }} — {{ club_name }}{% endblock %}
@@ -15,9 +16,12 @@
 <p>Hola {{ parent_name }},</p>
 
 <p>
-  El entrenador <strong>{{ coach_name }}</strong> del <strong>{{ club_name }}</strong>
+  El entrenador <strong>{{ acting_coach_name }}</strong> del <strong>{{ club_name }}</strong>
   ha modificado la sesión a la que <strong>{{ athlete_name }}</strong> está convocado/a.
 </p>
+{% if coach_names|length > 1 %}
+<p>La sesión está a cargo de <strong>{{ coaches_text }}</strong>.</p>
+{% endif %}
 
 <div class="highlight-box" style="border-left-color: #f0a020;">
   <table cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -106,6 +110,6 @@
 
 <p>
   Saludos,<br>
-  <strong>{{ coach_name }} — {{ club_name }}</strong>
+  <strong>{{ coaches_text }} — {{ club_name }}</strong>
 </p>
 {% endblock %}

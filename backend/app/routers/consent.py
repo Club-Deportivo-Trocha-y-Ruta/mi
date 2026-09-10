@@ -40,6 +40,38 @@ consent_router = APIRouter()
 _only_parent = require_role([UserRole.parent])
 
 
+async def _active_athlete_or_404(db: AsyncSession, athlete_id: int) -> Athlete:
+    """Retorna el atleta activo, o 404 si no existe o está archivado.
+
+    FR-014 (feature 041): un atleta archivado desaparece de toda superficie
+    de familia. Sin esta compuerta, un padre con un enlace o un modal viejo
+    todavía podría renovar consentimiento para un atleta que ya salió del
+    club — justo el escenario que el contrato ``athlete-archive.md`` §5.2
+    marca como inaceptable.
+
+    Decisión (041/G15): la revocación también se bloquea con 404, por
+    coherencia con la compuerta C3 (``verify_athlete_access``: coach y padre
+    reciben 404 ante un atleta archivado). El consentimiento archivado se
+    conserva intacto como evidencia (``athlete_scope.archive_athlete`` no
+    toca ningún registro hijo) y cualquier petición de la familia sobre un
+    atleta ya archivado se atiende por la vía administrativa, que sí ve el
+    archivo.
+    """
+    result = await db.execute(
+        select(Athlete).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
+    )
+    athlete = result.scalar_one_or_none()
+    if athlete is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Atleta no encontrado.",
+        )
+    return athlete
+
+
 # ---------------------------------------------------------------------------
 # Endpoint público
 # ---------------------------------------------------------------------------
@@ -104,14 +136,14 @@ async def renew_my_consent(
     Errores posibles:
     - 400 si la versión de política no existe.
     - 403 si el padre no está vinculado al atleta.
+    - 404 si el atleta no existe o está archivado (FR-014).
     """
     # Capturar IP y user-agent para trazabilidad (Ley 1581, Art. 26)
     ip_address: str | None = request.client.host if request.client else None
     user_agent: str | None = request.headers.get("user-agent")
 
-    athlete_result = await db.execute(select(Athlete).where(Athlete.id == body.athlete_id))
-    athlete = athlete_result.scalar_one_or_none()
-    club_id = athlete.club_id if athlete is not None else None
+    athlete = await _active_athlete_or_404(db, body.athlete_id)
+    club_id = athlete.club_id
 
     previous = await get_current_consent_for_athlete(current_user.id, body.athlete_id, db)
 
@@ -170,17 +202,19 @@ async def withdraw_my_consent(
     Errores posibles:
     - 403 si el padre no está vinculado al atleta.
     - 404 si no hay consentimiento vigente para revocar.
+    - 404 si el atleta no existe o está archivado (FR-014).
     """
+    # La compuerta de archivado va ANTES de la mutación: si el atleta está
+    # archivado no se debe revocar nada y luego responder 404.
+    athlete = await _active_athlete_or_404(db, body.athlete_id)
+    club_id = athlete.club_id
+
     consent = await withdraw_consent(
         parent_user_id=current_user.id,
         athlete_id=body.athlete_id,
         reason=body.reason,
         db=db,
     )
-
-    athlete_result = await db.execute(select(Athlete).where(Athlete.id == body.athlete_id))
-    athlete = athlete_result.scalar_one_or_none()
-    club_id = athlete.club_id if athlete is not None else None
 
     await record_audit(
         db,

@@ -19,6 +19,7 @@ from app.models.calendar_event import (
     EventType,
 )
 from app.services.audit import (
+    AUDIT_REASON_LABELS,
     AuditAction,
     AuditEntityType,
     CancelReasonCode,
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from app.schemas.calendar import AudienceCreate, EventCreate, EventListQuery, EventUpdate
     from app.services.notification.service import NotificationService
     from app.services.notification.task_dispatcher import TaskDispatcher
+    from app.services.request_context import AuditContext
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,10 @@ async def get_event(
 
     Si `event_id` es negativo, intenta reconstruir un cumpleaños virtual
     desde `athlete.birth_date` (ver `services/calendar/birthdays.py`).
+
+    T063 (contracts/session-coaches.md §7.3): un evento con `deleted_at`
+    no ``NULL`` es un borrado permanente (soft-delete) y no debe ser
+    visible por ningún lector — se filtra igual que un 404.
     """
     if event_id < 0:
         from app.services.calendar.birthdays import (
@@ -69,7 +75,10 @@ async def get_event(
             return await get_birthday_event(db, event_id)
         return None
 
-    stmt = select(CalendarEvent).where(CalendarEvent.id == event_id)
+    stmt = select(CalendarEvent).where(
+        CalendarEvent.id == event_id,
+        CalendarEvent.deleted_at.is_(None),
+    )
     if eager:
         for opt in _eager_options():
             stmt = stmt.options(opt)
@@ -296,6 +305,9 @@ async def list_events_in_range(
 
     - coach/admin: todos los eventos del club.
     - parent: solo eventos donde alguno de sus atletas está en audiencia.
+    - `filters.coach_user_id` (T064, §8.2): solo eventos cuyo creador es ese
+      coach, o cuyo TrainingSession enlazado lo tiene asignado en
+      `training_session_coaches`.
     """
     from datetime import datetime as dt
 
@@ -311,6 +323,9 @@ async def list_events_in_range(
             CalendarEvent.club_id == club_id,
             CalendarEvent.start_at <= to_dt,
             CalendarEvent.end_at >= from_dt,
+            # T063 §7.3: un borrado permanente es un soft-delete — nunca
+            # debe reaparecer en la lista del calendario.
+            CalendarEvent.deleted_at.is_(None),
         )
     )
 
@@ -321,6 +336,27 @@ async def list_events_in_range(
     # Filtrar por tipos de evento
     if filters.event_types:
         stmt = stmt.where(CalendarEvent.event_type.in_(filters.event_types))
+
+    # T064 §8.2: coincide por creador directo, o por el bridge N:M de
+    # coaches de la sesión de entrenamiento enlazada (FR-026 — "session
+    # coaches for sessions; creator for other events").
+    if filters.coach_user_id is not None:
+        from sqlalchemy import exists as sa_exists
+
+        from app.models.training_session import TrainingSession, TrainingSessionCoach
+
+        coach_id = filters.coach_user_id
+        coach_bridge_exists = (
+            sa_exists()
+            .where(
+                TrainingSession.calendar_event_id == CalendarEvent.id,
+                TrainingSessionCoach.session_id == TrainingSession.id,
+                TrainingSessionCoach.coach_user_id == coach_id,
+            )
+        )
+        stmt = stmt.where(
+            (CalendarEvent.created_by_user_id == coach_id) | coach_bridge_exists
+        )
 
     # Eager load
     stmt = stmt.options(*_eager_options()).order_by(CalendarEvent.start_at.asc())
@@ -359,9 +395,12 @@ async def list_events_in_range(
 
     # Cumpleaños virtuales: todos los miembros del club ven todos los cumples.
     # Si el filtro de event_types se pasó y no incluye birthday, omitir.
+    # T064 §8.2: también se excluyen siempre que haya `coach_user_id` — son
+    # sintéticos (sin `created_by_user_id` ni sesión enlazada) y contarlos
+    # ahí desalinearía el calendario general con la vista por coach (SC-008).
     include_birthdays = (
-        not filters.event_types
-        or EventType.BIRTHDAY in filters.event_types
+        filters.coach_user_id is None
+        and (not filters.event_types or EventType.BIRTHDAY in filters.event_types)
     )
     if include_birthdays:
         from app.services.calendar.birthdays import list_birthday_events_in_range
@@ -517,53 +556,84 @@ async def _propagate_to_training_session(
 async def cancel_event(
     db: AsyncSession,
     event: CalendarEvent,
-    reason: str,
-    user: "User",
+    reason_code: "CancelReasonCode",
+    ctx: "AuditContext",
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
-    *,
-    reason_code: "CancelReasonCode | None" = None,
 ) -> CalendarEvent:
-    """Soft-cancel de un evento. Propaga a TrainingSession si aplica."""
+    """Soft-cancel de un evento (T063, contracts/session-coaches.md §7.2).
+
+    Persiste `status`, `cancelled_by_user_id`, `cancelled_at` y
+    `cancellation_reason_code` en la misma unidad de trabajo que la fila de
+    auditoría. Propaga la cancelación al `TrainingSession` enlazado cuando
+    aplica, con su propia fila `training_session`·`cancel` bajo el mismo
+    `request_id` (FR-002, US1 AS5) — así el revisor ve una sola operación.
+    El actor se recibe siempre vía `ctx` (nunca re-derivado, §4 del
+    contrato de auditoría).
+    """
     if event.status == EventStatus.CANCELLED:
         raise ValueError("El evento ya está cancelado")
 
+    now = datetime.now(timezone.utc)
+    actor_id = ctx.actor.id if ctx.actor is not None else None
+
     previous_status = event.status
     event.status = EventStatus.CANCELLED
+    event.cancelled_by_user_id = actor_id
+    event.cancelled_at = now
+    event.cancellation_reason_code = reason_code.value
 
-    # Propagar a TrainingSession
+    # Propagar a TrainingSession — misma transacción, mismo request_id.
     if event.event_type == EventType.TRAINING_SESSION:
         ts_id = (event.event_data or {}).get("training_session_id")
         if ts_id:
             from app.models.training_session import SessionStatus, TrainingSession
-            from sqlalchemy import update as sa_update
-            await db.execute(
-                sa_update(TrainingSession)
-                .where(TrainingSession.id == ts_id)
-                .values(status=SessionStatus.CANCELLED)
-            )
 
-    # NOTA (T023): `cancel_event` ya acepta `reason_code` tipado
-    # (`CancelReasonCode`) y lo usa cuando el llamador lo provee, en vez de
-    # afirmar siempre el mismo motivo fijo en la fila de auditoría. El
-    # router (`backend/app/routers/calendar.py:399-439`) todavía envía solo
-    # `reason` como texto libre por query param — T063
-    # (`contracts/session-coaches.md` §7.2) debe reemplazarlo por el body
-    # `EventCancelIn.reason_code` (grupo `event_cancel`, 422 "Selecciona un
-    # motivo de cancelación." cuando falta) para que el valor realmente
-    # elegido por quien cancela llegue hasta aquí; hasta entonces se
-    # conserva el valor cerrado por defecto solo como resguardo, no como el
-    # motivo real de la cancelación.
+            ts = await db.get(TrainingSession, ts_id)
+            if ts is not None:
+                previous_ts_status = ts.status
+                ts.status = SessionStatus.CANCELLED
+                await record_audit(
+                    db,
+                    action=AuditAction.cancel,
+                    entity_type=AuditEntityType.training_session,
+                    entity_id=ts.id,
+                    actor=ctx.actor,
+                    actor_kind=ctx.actor_kind,
+                    club_id=event.club_id,
+                    changed_fields=["status"],
+                    diff={
+                        "status": (
+                            previous_ts_status.value,
+                            SessionStatus.CANCELLED.value,
+                        )
+                    },
+                    reason_code=reason_code,
+                    request_id=ctx.request_id,
+                )
+
     await record_audit(
         db,
         action=AuditAction.cancel,
         entity_type=AuditEntityType.calendar_event,
         entity_id=event.id,
-        actor=user,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
         club_id=event.club_id,
-        changed_fields=["status"],
-        diff={"status": (previous_status.value, EventStatus.CANCELLED.value)},
-        reason_code=reason_code or CancelReasonCode.cancel_organizer_cancelled,
+        changed_fields=[
+            "status",
+            "cancelled_at",
+            "cancelled_by_user_id",
+            "cancellation_reason_code",
+        ],
+        # Solo "status" y "cancellation_reason_code" están en VALUE_ALLOWLIST
+        # para calendar_event (record_audit descarta el resto del diff).
+        diff={
+            "status": (previous_status.value, EventStatus.CANCELLED.value),
+            "cancellation_reason_code": (None, reason_code.value),
+        },
+        reason_code=reason_code,
+        request_id=ctx.request_id,
     )
 
     await db.commit()
@@ -572,8 +642,12 @@ async def cancel_event(
 
     if notification_service is not None and dispatcher is not None:
         try:
+            # Las familias siempre leen la etiqueta en español, nunca el
+            # código — se resuelve acá, al momento del despacho, y no se
+            # persiste (contracts/session-coaches.md §7.2).
+            reason_label = AUDIT_REASON_LABELS[reason_code]
             await _notif_module.notify_event_cancelled(
-                db, refreshed, reason, notification_service, dispatcher
+                db, refreshed, reason_label, notification_service, dispatcher
             )
         except Exception as exc:
             logger.warning(
@@ -614,24 +688,31 @@ async def reschedule_event(
 
 
 # ---------------------------------------------------------------------------
-# HARD DELETE
+# SOFT DELETE (borrado permanente = borrado blando, T063 §7.3)
 # ---------------------------------------------------------------------------
 
 
 async def delete_event_permanent(
     db: AsyncSession,
     event: CalendarEvent,
-    user: "User",
+    ctx: "AuditContext",
 ) -> None:
-    """Borra permanentemente un CalendarEvent de la base de datos.
+    """"Borrado permanente" de un CalendarEvent — en realidad un soft-delete
+    (`deleted_at`/`deleted_by_user_id`), no un `DELETE` de fila
+    (contracts/session-coaches.md §7.3): así `entity_id` en la fila de
+    auditoría sigue resolviendo a una fila legible. `event_audiences` y
+    `event_attendances` ya no se limpian por `ON DELETE CASCADE` — dejan de
+    ser alcanzables simplemente porque todo lector filtra `deleted_at IS
+    NULL` (`get_event`, `list_events_in_range`, `_get_event_or_404` del
+    router).
 
-    Si el evento es de tipo TRAINING_SESSION y tiene una sesión enlazada
-    via event_data.training_session_id, la elimina también antes de borrar
-    el evento. Las tablas event_audiences y event_attendances se limpian
-    automáticamente via FK ON DELETE CASCADE.
+    Sin `reason_code`: `("calendar_event", delete)` no está en
+    `REASON_REQUIRED` — el diálogo de confirmación del frontend no cambia.
     """
     event_id = event.id
     club_id = event.club_id
+    now = datetime.now(timezone.utc)
+    actor_id = ctx.actor.id if ctx.actor is not None else None
 
     if event.event_type == EventType.TRAINING_SESSION:
         from app.models.training_session import TrainingSession
@@ -639,27 +720,55 @@ async def delete_event_permanent(
         ts_id = (event.event_data or {}).get("training_session_id")
         if ts_id:
             ts = await db.get(TrainingSession, ts_id)
-            if ts:
+            if ts is not None:
+                # GAP fuera del alcance de este agente (T063 solo es dueño
+                # de backend/app/services/calendar/*): `TrainingSession`
+                # (`app/models/training_session.py`) todavía no tiene
+                # columnas `deleted_at`/`deleted_by_user_id`, así que no se
+                # le puede aplicar el mismo soft-delete que a CalendarEvent.
+                # Defensivo: en cuanto ese modelo las incorpore (con su
+                # migración), esta rama empieza a usarlas sin más cambios
+                # acá; mientras tanto se conserva el hard-delete previo para
+                # no dejar una sesión huérfana sin ningún rastro.
+                ts_changed_fields: list[str] | None
+                if hasattr(TrainingSession, "deleted_at"):
+                    ts.deleted_at = now
+                    if hasattr(TrainingSession, "deleted_by_user_id"):
+                        ts.deleted_by_user_id = actor_id
+                        ts_changed_fields = ["deleted_at", "deleted_by_user_id"]
+                    else:
+                        ts_changed_fields = ["deleted_at"]
+                else:
+                    await db.delete(ts)
+                    ts_changed_fields = None
+
                 await record_audit(
                     db,
                     action=AuditAction.delete,
                     entity_type=AuditEntityType.training_session,
                     entity_id=ts.id,
-                    actor=user,
+                    actor=ctx.actor,
+                    actor_kind=ctx.actor_kind,
                     club_id=club_id,
+                    changed_fields=ts_changed_fields,
+                    request_id=ctx.request_id,
                 )
-                await db.delete(ts)
+
+    event.deleted_at = now
+    event.deleted_by_user_id = actor_id
 
     await record_audit(
         db,
         action=AuditAction.delete,
         entity_type=AuditEntityType.calendar_event,
         entity_id=event_id,
-        actor=user,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
         club_id=club_id,
+        changed_fields=["deleted_at", "deleted_by_user_id"],
+        request_id=ctx.request_id,
     )
 
-    await db.delete(event)
     await db.commit()
 
 

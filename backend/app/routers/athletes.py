@@ -236,6 +236,10 @@ async def list_athletes(
             .where(
                 TrainingSession.scheduled_date >= cutoff,
                 SessionAttendance.status.in_(_ATTENDED_STATUSES),
+                # Una fila archivada es una baja del roster que conserva sus
+                # datos para el administrador; no debe contar en el contador
+                # de asistencia reciente.
+                SessionAttendance.archived_at.is_(None),
             )
             .group_by(SessionAttendance.athlete_id)
             .subquery()

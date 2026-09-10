@@ -25,6 +25,7 @@ from app.schemas.training_session import (
     TrainingSessionCreate,
     TrainingSessionUpdate,
 )
+from app.services.audit import CancelReasonCode
 from app.services.training import attendance as attendance_svc
 from app.services.training import sessions as sessions_svc
 from app.services.training import metrics as metrics_svc
@@ -158,7 +159,16 @@ class TestCreateSession:
 
         payload = _make_session_payload(convocados_athlete_ids=[100, 101])
 
-        with patch.object(sessions_svc, "_assert_coach_in_club", new=AsyncMock()):
+        # 041: create_session valida elegibilidad de entrenadores contra el
+        # club (_assert_eligible_coaches) antes de dejar el conjunto en el
+        # puente. Ese chequeo ya tiene cobertura exhaustiva y aislada en
+        # test_session_coaches.py (B-01…B-07); aquí se neutraliza como el
+        # doble de _assert_coach_in_club, porque el `db` de este test es un
+        # AsyncMock cuyo `execute()` no modela filas de `users`/`club_members`.
+        with (
+            patch.object(sessions_svc, "_assert_coach_in_club", new=AsyncMock()),
+            patch.object(sessions_svc, "_assert_eligible_coaches", new=AsyncMock()),
+        ):
             result = await sessions_svc.create_session(
                 db=db,
                 payload=payload,
@@ -202,7 +212,10 @@ class TestCreateSession:
 
         payload = _make_session_payload(convocados_athlete_ids=[200])
 
-        with patch.object(sessions_svc, "_assert_coach_in_club", new=AsyncMock()):
+        with (
+            patch.object(sessions_svc, "_assert_coach_in_club", new=AsyncMock()),
+            patch.object(sessions_svc, "_assert_eligible_coaches", new=AsyncMock()),
+        ):
             await sessions_svc.create_session(
                 db=db, payload=payload, coach=coach, club_id=1
             )
@@ -234,7 +247,10 @@ class TestCreateSession:
         db.execute = AsyncMock(return_value=member_result)
 
         payload = _make_session_payload()
-        with patch.object(sessions_svc, "_assert_coach_in_club", new=AsyncMock()):
+        with (
+            patch.object(sessions_svc, "_assert_coach_in_club", new=AsyncMock()),
+            patch.object(sessions_svc, "_assert_eligible_coaches", new=AsyncMock()),
+        ):
             await sessions_svc.create_session(
                 db=db, payload=payload, coach=coach, club_id=1
             )

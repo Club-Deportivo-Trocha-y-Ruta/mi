@@ -89,10 +89,40 @@ ARCHIVE_SCOPE_EXEMPT: dict[tuple[str, str], str] = {
     ): "mismo guardrail de redacción, para el scrubbing de análisis de "
     "carreras — 'NUNCA se pasa al LLM, solo alimenta scrubbing/guardrails'",
     (
+        "services/training/reports.py",
+        "regenerate_block",
+    ): "mismo guardrail de redacción, para el reporte mensual (tercer sitio "
+    "— ``real_names`` alimenta ``build_context_from_metrics``, igual que en "
+    "``generate_monthly_report``)",
+    (
         "routers/athletes.py",
         "list_athletes",
     ): "GET /api/athletes?include_archived=true — la vista admin del "
     "archivo (US2 AS2) necesita ver al atleta archivado a propósito",
+    (
+        "routers/race_analysis.py",
+        "_resolve_athlete_club",
+    ): "resolutor de ``club_id`` exclusivo del rastro de auditoría "
+    "(``record_audit(club_id=...)``, escalera §1.6 de audit-recording.md). "
+    "Filtrarlo dejaría sin club las filas de auditoría de un atleta "
+    "archivado — borra evidencia, no la protege (§5.3). La compuerta real "
+    "de 'no lanzar un run para un atleta archivado' vive en el endpoint de "
+    "arranque, no aquí",
+    (
+        "routers/strava_integration.py",
+        "_athlete_club_ids",
+    ): "mismo caso: mapa ``athlete_id -> club_id`` que solo alimenta "
+    "``record_audit(club_id=...)`` del cron de reconcile. El filtro real "
+    "del feed de terceros está en ``services/strava/reconcile.py``, que ya "
+    "aplica ``Athlete.deleted_at.is_(None)``",
+    (
+        "routers/webhooks_resend.py",
+        "resend_webhook",
+    ): "webhook de Resend sobre un correo YA enviado: solo registra el "
+    "evento de entrega (delivered/bounced/opened) de una bitácora del "
+    "pasado. §5.3 'cualquier consulta que reconstruye un período cerrado' "
+    "— filtrar aquí descartaría silenciosamente la evidencia de entrega de "
+    "un atleta archivado después del envío. No dispara ningún correo nuevo",
 }
 
 
@@ -264,10 +294,16 @@ def test_archive_scope_exempt_matches_contract_section_5_3():
         "services/training/session_assistant_context.py",
         "services/race/ai/athlete_context.py",
         "routers/athletes.py",
+        # Añadidos en G15 (feature 041): resolutores de ``club_id`` que solo
+        # alimentan el rastro de auditoría, y el webhook de entrega de un
+        # correo ya enviado. Ver la razón de cada uno arriba.
+        "routers/race_analysis.py",
+        "routers/strava_integration.py",
+        "routers/webhooks_resend.py",
     }
     actual_files = {relative_path for relative_path, _ in ARCHIVE_SCOPE_EXEMPT}
     assert actual_files == expected_files
-    assert len(ARCHIVE_SCOPE_EXEMPT) == 6
+    assert len(ARCHIVE_SCOPE_EXEMPT) == 10
 
 
 def test_gate_actually_detects_an_unfiltered_query(tmp_path, monkeypatch):

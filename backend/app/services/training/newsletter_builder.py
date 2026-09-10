@@ -168,8 +168,14 @@ async def build_newsletter_metrics(
     """
     from app.models.athlete import Athlete
 
+    # FR-014 (contract athlete-archive.md §5.2): no se construyen métricas de
+    # boletín para un atleta archivado — el boletín es superficie de familia y
+    # un archivado no debe generar contenido nuevo.
     athlete_result = await db.execute(
-        select(Athlete).where(Athlete.id == athlete_id)
+        select(Athlete).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
     )
     athlete = athlete_result.scalar_one_or_none()
     if athlete is None:
@@ -364,6 +370,10 @@ async def _build_attendance_block(
         select(SessionAttendance).where(
             SessionAttendance.session_id.in_(session_ids),
             SessionAttendance.athlete_id == athlete.id,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
     )
     attendances = att_result.scalars().all()
@@ -437,6 +447,10 @@ async def _get_prev_month_attendance(
         select(SessionAttendance).where(
             SessionAttendance.session_id.in_(session_ids),
             SessionAttendance.athlete_id == athlete.id,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
     )
     attendances = att_result.scalars().all()
@@ -503,6 +517,10 @@ async def _build_technical_block(
         select(SessionAttendance).where(
             SessionAttendance.session_id.in_(session_ids),
             SessionAttendance.athlete_id == athlete.id,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
     )
     attendances = att_result.scalars().all()
@@ -1013,6 +1031,10 @@ async def _get_athlete_first_session_date(db: AsyncSession, athlete: Any) -> str
             SessionAttendance.athlete_id == athlete.id,
             SessionAttendance.status.in_([AttendanceStatus.PRESENTE, AttendanceStatus.TARDE]),
             TrainingSession.status == SessionStatus.EXECUTED,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
         .order_by(TrainingSession.scheduled_date.asc())
         .limit(1)
@@ -1059,6 +1081,10 @@ async def _build_weekly_block(
         select(SessionAttendance).where(
             SessionAttendance.session_id.in_(session_ids),
             SessionAttendance.athlete_id == athlete.id,
+            # Una fila archivada es una baja del roster que conserva sus
+            # datos para el administrador; no debe contar en las métricas
+            # de la bitácora familiar.
+            SessionAttendance.archived_at.is_(None),
         )
     )
     attendance_by_session = {a.session_id: a for a in att_result.scalars().all()}

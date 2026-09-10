@@ -146,8 +146,10 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
                 "location",
                 "technical_focus",
                 "duration_min",
-                "coach_name",
                 "club_name",
+                "acting_coach_name",
+                "coach_names",
+                "coaches_text",
             }
         ),
         description=(
@@ -168,9 +170,11 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
                 "location",
                 "technical_focus",
                 "duration_min",
-                "coach_name",
                 "club_name",
                 "changes",
+                "acting_coach_name",
+                "coach_names",
+                "coaches_text",
             }
         ),
         description=(
@@ -189,9 +193,11 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
                 "session_date",
                 "session_time",
                 "location",
-                "coach_name",
                 "club_name",
                 "reason",
+                "acting_coach_name",
+                "coach_names",
+                "coaches_text",
             }
         ),
         description=(
