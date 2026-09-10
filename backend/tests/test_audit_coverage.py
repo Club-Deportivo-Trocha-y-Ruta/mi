@@ -25,6 +25,7 @@ import pytest
 
 from app.config import settings
 from app.main import app
+from tests.helpers.app_routes import iter_api_routes
 from app.services.audit import (
     AUDITED_ROUTES,
     MUTATING_GETS,
@@ -73,9 +74,9 @@ _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 def _mounted_mutating_routes() -> set[tuple[str, str]]:
     routes: set[tuple[str, str]] = set()
-    for route in app.routes:
-        methods = getattr(route, "methods", None)
-        path = getattr(route, "path", None)
+    for route in iter_api_routes(app):
+        methods = route.methods
+        path = route.path
         if not methods or path is None:
             continue
         for method in methods:
@@ -87,9 +88,9 @@ def _mounted_mutating_routes() -> set[tuple[str, str]]:
 def _mounted_paths() -> set[tuple[str, str]]:
     """Every ``(method, path)`` FastAPI actually exposes, any method."""
     mounted: set[tuple[str, str]] = set()
-    for route in app.routes:
-        methods = getattr(route, "methods", None)
-        path = getattr(route, "path", None)
+    for route in iter_api_routes(app):
+        methods = route.methods
+        path = route.path
         if not methods or path is None:
             continue
         for method in methods:

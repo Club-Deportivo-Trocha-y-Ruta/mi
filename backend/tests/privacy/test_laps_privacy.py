@@ -259,7 +259,6 @@ _TABLES = (
     "clubs",
     "club_members",
     "athletes",
-    "privacy_policies",  # ver shim LONGTEXT arriba
     "parental_consents",
     "strava_connections",
     "strava_activities",

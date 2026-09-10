@@ -126,6 +126,17 @@ async def scenario(archive_session_factory):
         await link_user_to_club(session, user_id=COACH_ID, club_id=CLUB_ID, role_in_club=ClubRole.coach)
         await link_user_to_club(session, user_id=OTHER_COACH_ID, club_id=OTHER_CLUB_ID, role_in_club=ClubRole.coach)
 
+        # Cuenta-espejo del atleta (sin inicio de sesión). El caso 4 de §12.1
+        # comprueba que archivar no la destruye, así que el sembrado tiene que
+        # crearla: sin esta fila la aserción miraba un usuario inexistente.
+        await create_user(
+            session,
+            user_id=ATHLETE_USER_ID,
+            role=UserRole.athlete,
+            first_name="Atleta Ficticia",
+            last_name="Uno",
+            can_login=False,
+        )
         athlete = await create_athlete(
             session,
             athlete_id=ATHLETE_ID,

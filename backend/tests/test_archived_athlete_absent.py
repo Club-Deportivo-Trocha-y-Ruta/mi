@@ -51,6 +51,7 @@ def _compile_longtext_as_text_on_sqlite(element, compiler, **kw):  # pragma: no 
 
 from app.dependencies import get_current_user, get_db
 from app.main import app
+from tests.helpers.app_routes import api_route_paths
 from app.models import Base
 from app.models.athlete import FamilyRelationship, Sex
 from app.models.club import ClubRole
@@ -91,7 +92,6 @@ _TABLES = [
     "athletes",
     "parent_athlete",
     "parental_consents",
-    "privacy_policies",
     "athlete_monthly_newsletters",
     "anthropometric_records",
     *AUDIT_TABLES,
@@ -122,7 +122,7 @@ def test_expected_routes_exist_in_app():
     """Guarda contra deriva: si una de estas rutas cambia de path, este test
     debe fallar aquí primero, no disfrazarse de "atleta ausente" más abajo.
     """
-    actual_paths = {getattr(r, "path", None) for r in app.routes}
+    actual_paths = api_route_paths(app)
     missing = EXPECTED_ROUTE_PATHS - actual_paths
     assert not missing, f"Rutas del contrato que ya no existen en app.routes: {missing}"
 
@@ -342,7 +342,17 @@ async def test_dashboard_consents_pending_excludes_archived(scenario, client_fac
     assert resp.json()["consents_pending"] == 0
 
 
-async def test_ai_run_launch_404_for_archived_athlete(scenario, client_factory):
+async def test_ai_run_launch_404_for_archived_athlete(
+    scenario, client_factory, monkeypatch
+):
+    # La aserción es sobre el atleta archivado, no sobre el interruptor de IA:
+    # ``start_run`` responde 503 en cuanto ``AI_ENABLED`` está apagado, antes de
+    # mirar el atleta. Sin fijar la bandera aquí, la prueba dependía del orden de
+    # ejecución de la suite (pasaba aislada, fallaba con 503 en la corrida
+    # completa). Ver brecha G23 de checklists/integration-review.md.
+    from app.config import settings as _settings
+
+    monkeypatch.setattr(_settings, "ai_enabled", True, raising=False)
     async with client_factory(COACH_ID) as client:
         resp = await client.post(
             "/api/race-analysis/runs",

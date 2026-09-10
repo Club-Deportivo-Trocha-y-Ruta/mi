@@ -131,6 +131,15 @@ class TrainingSession(Base):
         back_populates="session",
         cascade="all, delete-orphan",
     )
+    # Feature 041 — entrenadores a cargo de la sesión (puente N:M). Se llama
+    # `session_coaches` y no `coaches` para que nunca se confunda con el campo
+    # `coaches` de la respuesta de la API, que se arma a partir de esta relación.
+    session_coaches: Mapped[list[TrainingSessionCoach]] = relationship(
+        "TrainingSessionCoach",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="TrainingSessionCoach.added_at",
+    )
     media: Mapped[list[SessionMedia]] = relationship(
         "SessionMedia",
         back_populates="session",
@@ -219,6 +228,17 @@ class SessionAttendance(UpdatedByMixin, Base):
         "Athlete",
         foreign_keys="[SessionAttendance.athlete_id]",
     )
+    # Feature 041 — atribución: quién registró por primera vez datos en la fila y
+    # quién la editó por última vez. Ambas quedan en NULL para filas anteriores a
+    # esta feature: NULL significa "no tenemos registro", nunca se rellena a la fuerza.
+    recorded_by: Mapped[User | None] = relationship(
+        "User",
+        foreign_keys="[SessionAttendance.recorded_by_user_id]",
+    )
+    updated_by: Mapped[User | None] = relationship(
+        "User",
+        foreign_keys="[SessionAttendance.updated_by_user_id]",
+    )
 
 
 class MonthlyReport(ActorTimestampMixin, Base):
@@ -299,6 +319,7 @@ class TrainingSessionCoach(Base):
     # Relaciones
     session: Mapped[TrainingSession] = relationship(
         "TrainingSession",
+        back_populates="session_coaches",
         foreign_keys="[TrainingSessionCoach.session_id]",
     )
     coach: Mapped[User] = relationship(

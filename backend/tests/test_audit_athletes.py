@@ -72,11 +72,9 @@ _TABLES = (
     "athletes",
     "parent_athlete",
     "anthropometric_records",
-    "privacy_policies",
     "parental_consents",
     "athlete_ai_insights",
     "athlete_ai_explanations",
-    "parent_invites",
     *AUDIT_TABLES,
 )
 
@@ -292,7 +290,9 @@ async def test_delete_athlete_as_admin_records_audit_row(client_factory, seeded_
         )
     assert resp.status_code == 204
 
-    row = await _last_audit_row(seeded_factory, entity_type="athlete", action="delete")
+    # T040 convirtió el borrado en archivado: la acción registrada es ``archive``
+    # (contracts/athlete-archive.md §1), no ``delete``.
+    row = await _last_audit_row(seeded_factory, entity_type="athlete", action="archive")
     assert row is not None
     assert row.entity_id == 144
     assert row.athlete_id == 144
@@ -300,10 +300,16 @@ async def test_delete_athlete_as_admin_records_audit_row(client_factory, seeded_
 
 
 @pytest.mark.asyncio
-async def test_delete_athlete_as_coach_is_forbidden_no_audit_row(
+async def test_archive_athlete_as_coach_records_audit_row_with_coach_actor(
     client_factory, seeded_factory
 ):
-    """Guard interino (T002): coach no puede borrar — no debe quedar fila."""
+    """El coach archiva y queda atribuido.
+
+    El guard interino de T002 (coach → 403) fue retirado por T040: archivar ya
+    no destruye evidencia, y la decisión 1 del dueño es que ambos coaches ven y
+    editan todo el club. Lo que la feature exige ahora no es prohibir, sino
+    dejar el nombre del coach en la fila de auditoría.
+    """
     coach = _make_user(10, UserRole.coach, club_id=1)
     async with client_factory(user=coach) as ac:
         resp = await ac.request(
@@ -312,10 +318,13 @@ async def test_delete_athlete_as_coach_is_forbidden_no_audit_row(
             json={"reason_code": "athlete_left_club"},
             headers={"Authorization": "Bearer fake"},
         )
-    assert resp.status_code == 403
+    assert resp.status_code == 204
 
-    row = await _last_audit_row(seeded_factory, entity_type="athlete", action="delete")
-    assert row is None
+    row = await _last_audit_row(seeded_factory, entity_type="athlete", action="archive")
+    assert row is not None
+    assert row.entity_id == 144
+    assert row.athlete_id == 144
+    assert row.actor_user_id == 10
 
 
 # ---------------------------------------------------------------------------

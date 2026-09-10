@@ -77,7 +77,6 @@ _TABLES = (
     "users",
     "clubs",
     "athletes",
-    "privacy_policies",  # see LONGTEXT compiler shim above
     "parental_consents",
     "strava_connections",
     "strava_activities",

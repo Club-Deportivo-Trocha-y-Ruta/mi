@@ -29,7 +29,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db, require_role, verify_athlete_access
+from app.dependencies import (
+    get_current_user,
+    get_db,
+    require_role,
+    verify_athlete_access_allow_archived,
+)
 from app.models.athlete import Athlete
 from app.models.audit_log import AuditAction, AuditActorKind, AuditLog
 from app.models.user import User, UserRole
@@ -328,7 +333,7 @@ async def list_athlete_audit_log(
     request_id: str | None = Query(default=None),
     limit: int = Query(default=15, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
-    athlete: Athlete = Depends(verify_athlete_access),
+    athlete: Athlete = Depends(verify_athlete_access_allow_archived),
     db: AsyncSession = Depends(get_db),
 ) -> AuditListOut:
     """FR-007/US7 AS6: panel de historial del deportista.

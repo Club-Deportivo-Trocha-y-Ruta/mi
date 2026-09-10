@@ -56,7 +56,6 @@ _TABLES = [
     "athletes",
     "parent_athlete",
     "parental_consents",
-    "privacy_policies",
     "athlete_monthly_newsletters",
     *AUDIT_TABLES,
 ]
@@ -184,21 +183,14 @@ async def test_consent_status_empty(scenario, parent_client):
 
 
 async def test_parent_cannot_read_own_archived_athlete(scenario, parent_client):
-    """contracts/athlete-archive.md §7: se documenta como ``403`` ("No tienes
-    acceso a este atleta"). Si este assert falla con ``404`` en su lugar, es
-    un hallazgo real: ``verify_athlete_access``
-    (``app/dependencies.py``) evalúa el gate global "atleta archivado -> 404"
-    para *cualquier* rol no-admin antes de llegar a la rama específica de
-    ``parent``, así que hoy un padre recibe ``404`` en vez del ``403``
-    prometido por el contrato — no revela más que a un coach, pero no es el
-    texto contratado.
+    """contracts/athlete-archive.md §7: un padre sobre su propio atleta
+    archivado recibe ``403`` con el texto de siempre, no ``404``.
+
+    La familia ve exactamente la misma respuesta que ante cualquier atleta
+    ajeno, así que la ficha archivada no se delata. Antes ``verify_athlete_access``
+    evaluaba "archivado -> 404" para todo rol no-admin antes de separar padre de
+    coach; ahora cada rama decide (``app/dependencies.py``).
     """
     resp = await parent_client.get(f"/api/athletes/{ATHLETE_ID}")
-    assert resp.status_code in (403, 404)
-    if resp.status_code == 404:
-        pytest.xfail(
-            "contracts/athlete-archive.md §7 documenta 403 para un padre "
-            "sobre su propio atleta archivado; verify_athlete_access hoy "
-            "devuelve 404 para todo rol no-admin antes de distinguir "
-            "parent de coach (app/dependencies.py)."
-        )
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "No tienes acceso a este atleta"

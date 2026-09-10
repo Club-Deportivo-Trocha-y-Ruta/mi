@@ -6,6 +6,12 @@ tables, since audited writes, multi-coach session assignment, athlete
 archiving (soft-delete) and user deactivation/deletion now touch them
 regardless of the domain under test. See
 specs/041-multi-coach-governance/contracts/audit-recording.md §8.
+
+Trampa conocida: ``Base.metadata.create_all(..., tables=[...])`` no deduplica la
+lista que recibe, así que un nombre repetido produce ``OperationalError: table
+<x> already exists`` y tumba el módulo de pruebas entero. Por eso ningún archivo
+debe listar de forma literal un nombre que ya venga en ``AUDIT_TABLES``: se
+incluye la constante con ``*AUDIT_TABLES`` y nada más.
 """
 
 AUDIT_TABLES = [

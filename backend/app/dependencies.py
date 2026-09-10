@@ -85,16 +85,21 @@ def require_role(allowed_roles: list[UserRole]) -> Callable:
     return _check
 
 
-async def verify_athlete_access(
+async def _verify_athlete_access(
     athlete_id: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    current_user: User,
+    db: AsyncSession,
+    *,
+    allow_archived: bool = False,
 ) -> "Athlete":
     """
     Dependencia de ownership: verifica que el usuario tiene acceso al atleta.
-    - Admin: acceso total
-    - Coach: solo atletas de sus clubes
-    - Parent: solo sus atletas vinculados via parent_athlete
+    - Admin: acceso total, incluidos los archivados
+    - Coach: solo atletas de sus clubes; archivado → 404 salvo ``allow_archived``
+    - Parent: solo sus atletas vinculados via parent_athlete; archivado → 403
+
+    ``allow_archived`` solo lo activan las rutas de historial, donde el punto es
+    justamente poder leer quién archivó al atleta y con qué motivo.
     """
     from app.models.athlete import Athlete, ParentAthlete
     from app.models.club import ClubMember, ClubRole
@@ -112,14 +117,6 @@ async def verify_athlete_access(
     if current_user.role == UserRole.admin:
         return athlete
 
-    # Un atleta archivado desaparece de toda superficie de coach y padre;
-    # el administrador conserva acceso para revisar el archivo (US2 AS2).
-    if athlete.deleted_at is not None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Atleta no encontrado",
-        )
-
     if current_user.role == UserRole.coach:
         coach_clubs = {
             m.club_id for m in current_user.club_memberships
@@ -129,6 +126,15 @@ async def verify_athlete_access(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes acceso a este atleta",
+            )
+        # Un atleta archivado desaparece de toda superficie viva del coach, pero
+        # el historial sí debe seguir siendo legible: es donde consta quién lo
+        # archivó y por qué (US2 AS2/AS3). Por eso el permiso es explícito por
+        # ruta, vía ``verify_athlete_access_allow_archived``.
+        if athlete.deleted_at is not None and not allow_archived:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Atleta no encontrado",
             )
         return athlete
 
@@ -149,11 +155,46 @@ async def verify_athlete_access(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes acceso a este atleta",
             )
+        # Un atleta archivado no vuelve a la vista de la familia. El contrato
+        # (athlete-archive.md §7) pide 403 con el texto de siempre, no 404: la
+        # familia ve la misma respuesta que ante cualquier atleta ajeno y no se
+        # entera de que la ficha existió y fue archivada.
+        if athlete.deleted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes acceso a este atleta",
+            )
         return athlete
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="No tienes permisos para esta acción",
+    )
+
+
+async def verify_athlete_access(
+    athlete_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> "Athlete":
+    """Acceso al atleta para las superficies vivas: el archivado no existe."""
+    return await _verify_athlete_access(athlete_id, current_user, db)
+
+
+async def verify_athlete_access_allow_archived(
+    athlete_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> "Athlete":
+    """Igual que ``verify_athlete_access``, pero el coach sí ve al archivado.
+
+    Solo para las rutas de historial (``GET /api/athletes/{id}/audit-log``):
+    US2 AS2/AS3 exigen que las entradas de archivado y restauración sigan
+    siendo legibles por el coach y el administrador. La familia sigue recibiendo
+    ``403``.
+    """
+    return await _verify_athlete_access(
+        athlete_id, current_user, db, allow_archived=True
     )
 
 

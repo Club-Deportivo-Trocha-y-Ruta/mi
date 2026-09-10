@@ -84,7 +84,6 @@ _TABLES = (
     "clubs",
     "club_members",
     "athletes",
-    "privacy_policies",
     "parental_consents",
     "agent_runs",
     "athlete_ai_insights",
