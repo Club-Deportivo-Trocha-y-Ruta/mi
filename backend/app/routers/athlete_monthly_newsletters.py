@@ -31,11 +31,13 @@ Privacidad:
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, select
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -61,6 +63,7 @@ from app.schemas.athlete_newsletter import (
     AttachInsightsRequest,
     AttachInsightsResponse,
     DeliveryRow,
+    NewsletterActorRef,
     NewsletterStatusSummary,
     NewsletterStatusSummaryItem,
     RegenerateBlockRequest,
@@ -230,6 +233,173 @@ async def _get_newsletter_or_404(
             detail=f"Boletín {newsletter_id} no encontrado para el atleta {athlete_id}.",
         )
     return nl
+
+
+# ---------------------------------------------------------------------------
+# Feature 041 — atribución y concurrencia optimista
+# ---------------------------------------------------------------------------
+
+
+async def _actor_map(
+    db: AsyncSession,
+    newsletters: Sequence[AthleteMonthlyNewsletter],
+) -> dict[int, NewsletterActorRef]:
+    """Resuelve ``user_id -> NewsletterActorRef`` para todos los boletines dados.
+
+    Contrato 041 §1.2: "nunca una consulta por actor". Se junta el conjunto de
+    ids de las cuatro FKs de atribución (``generated_by``, ``approved_by``,
+    ``coach_note_author``, ``last_edited_by``) y se resuelve con UN solo
+    ``select``.
+
+    Se usa una consulta explícita en vez de ``selectinload`` sobre relaciones
+    del modelo porque ``AthleteMonthlyNewsletter`` no declara relación para
+    ``coach_note_author_id`` ni ``last_edited_by_user_id`` y el modelo no es
+    de este frente de trabajo (041 T069); el costo es el mismo (una consulta)
+    y evita cargas perezosas en sesión async.
+
+    FR-013: ``User.display_name`` resuelve también para cuentas desactivadas —
+    no se filtra por ``is_active``.
+    """
+    ids: set[int] = set()
+    for nl in newsletters:
+        for value in (
+            nl.generated_by_user_id,
+            nl.approved_by_user_id,
+            getattr(nl, "coach_note_author_id", None),
+            getattr(nl, "last_edited_by_user_id", None),
+        ):
+            if value is not None:
+                ids.add(value)
+    if not ids:
+        return {}
+
+    result = await db.execute(select(User).where(User.id.in_(ids)))
+    return {
+        user.id: NewsletterActorRef(user_id=user.id, display_name=user.display_name)
+        for user in result.scalars().all()
+    }
+
+
+def _etag(newsletter: AthleteMonthlyNewsletter) -> str:
+    """Token de versión en formato ETag débil (041 §1.2): ``W/"4"``."""
+    return f'W/"{getattr(newsletter, "edit_version", None) or 1}"'
+
+
+_PRECONDITION_REQUIRED_DETAIL = (
+    "Falta la versión del boletín (If-Match). Recarga la bitácora antes de guardar."
+)
+_PRECONDITION_INVALID_DETAIL = "Precondición inválida."
+_STALE_VERSION_DETAIL = (
+    "Otro entrenador guardó cambios en este boletín. "
+    "Recarga para ver la última versión."
+)
+
+
+def _parse_if_match(raw: str) -> int:
+    """Extrae el entero de un header ``If-Match`` fuerte o débil (041 §2.2).
+
+    Acepta ``"4"`` y ``W/"4"`` — se comparan solo por valor numérico. El
+    comodín ``*`` y cualquier otra forma son inválidos: este endpoint no tiene
+    modo "crear si no existe".
+    """
+    token = raw.strip()
+    if token.startswith(("W/", "w/")):
+        token = token[2:].strip()
+    if len(token) >= 2 and token[0] == '"' and token[-1] == '"':
+        token = token[1:-1]
+    if not token.isdigit() or int(token) < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_PRECONDITION_INVALID_DETAIL,
+        )
+    return int(token)
+
+
+def _resolve_expected_version(
+    if_match: str | None,
+    expected_version: int | None,
+    newsletter: AthleteMonthlyNewsletter,
+) -> int:
+    """Resuelve el token de precondición del PATCH (041 §2.2).
+
+    Tabla del contrato: ninguno → 428 (con ``ETag`` para que el cliente se
+    recupere sin un GET extra); ``*``, malformado o header≠body → 400; header
+    y body coincidentes → ese valor.
+    """
+    header_version: int | None = None
+    if if_match is not None and if_match.strip() != "":
+        if if_match.strip() == "*":
+            # El comodín se rechaza a propósito: significaría "escribe sea
+            # cual sea la versión", justo lo que US5 viene a impedir.
+            raise HTTPException(
+                status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                detail=_PRECONDITION_REQUIRED_DETAIL,
+                headers={"ETag": _etag(newsletter)},
+            )
+        header_version = _parse_if_match(if_match)
+
+    if header_version is None and expected_version is None:
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail=_PRECONDITION_REQUIRED_DETAIL,
+            headers={"ETag": _etag(newsletter)},
+        )
+
+    if (
+        header_version is not None
+        and expected_version is not None
+        and header_version != expected_version
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_PRECONDITION_INVALID_DETAIL,
+        )
+
+    return header_version if header_version is not None else int(expected_version)
+
+
+async def _claim_version(
+    db: AsyncSession,
+    newsletter: AthleteMonthlyNewsletter,
+    expected_version: int,
+    actor_id: int,
+    now: datetime,
+) -> bool:
+    """UPDATE guardado que reclama la versión del boletín (041 §2.3).
+
+    ``UPDATE ... SET edit_version = edit_version + 1 ... WHERE id = :id AND
+    edit_version = :expected``; ``rowcount == 0`` ⇒ conflicto. Nunca se
+    re-lee y compara en Python: eso reintroduce la carrera que US5 arregla.
+
+    Decisión de implementación (041 T069): la reclamación se ejecuta ANTES de
+    aplicar el contenido, no después como sugiere el orden narrativo de §2.3.
+    El efecto observable es idéntico — todo corre en la misma transacción y un
+    422 posterior hace rollback — pero así el UPDATE guardado toma el candado
+    de fila antes de cualquier escritura, y las columnas de contenido las
+    sigue escribiendo el ORM en el mismo flush, sin duplicar el mapeo de
+    campos a mano.
+    """
+    result = await db.execute(
+        update(AthleteMonthlyNewsletter)
+        .where(
+            AthleteMonthlyNewsletter.id == newsletter.id,
+            AthleteMonthlyNewsletter.edit_version == expected_version,
+        )
+        .values(
+            edit_version=AthleteMonthlyNewsletter.edit_version + 1,
+            last_edited_by_user_id=actor_id,
+            updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 0:
+        return False
+
+    # La sentencia anterior no pasa por el identity map: se refleja a mano
+    # para que la respuesta y el ETag lleven ya la versión nueva.
+    newsletter.edit_version = expected_version + 1
+    newsletter.last_edited_by_user_id = actor_id
+    return True
 
 
 async def _build_forbidden_names(db: AsyncSession, club_id: int) -> frozenset[str]:
@@ -736,7 +906,8 @@ async def create_newsletter(
             detail="Error al generar el boletín.",
         ) from exc
 
-    return AthleteNewsletterRead.from_orm_model(nl)
+    actors = await _actor_map(db, [nl])
+    return AthleteNewsletterRead.from_orm_model(nl, actors=actors)
 
 
 # ---------------------------------------------------------------------------
@@ -770,7 +941,13 @@ async def list_newsletters(
         .offset(offset)
     )
     newsletters = result.scalars().all()
-    return [AthleteNewsletterRead.from_orm_model(nl) for nl in newsletters]
+    # 041 §1.2: edit_version viaja también en la lista para que el estudio
+    # pueda mandar el PATCH sin un GET extra; los actores se resuelven con
+    # una sola consulta para toda la página.
+    actors = await _actor_map(db, newsletters)
+    return [
+        AthleteNewsletterRead.from_orm_model(nl, actors=actors) for nl in newsletters
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -786,14 +963,22 @@ async def list_newsletters(
 async def get_newsletter(
     athlete_id: int,
     newsletter_id: int,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> AthleteNewsletterRead:
-    """Detalle de un boletín."""
+    """Detalle de un boletín.
+
+    Devuelve además el header ``ETag: W/"<edit_version>"`` (041 §1.2): es el
+    token que el cliente reenvía en ``If-Match`` al guardar. El header viaja al
+    navegador gracias a ``expose_headers`` en el CORS de ``app/main.py``.
+    """
     await _verify_coach_athlete_access(db, current_user, athlete_id)
     nl = await _get_newsletter_or_404(db, newsletter_id, athlete_id)
     delivery = await _build_delivery_rows(db, nl.id)
-    return AthleteNewsletterRead.from_orm_model(nl, delivery=delivery)
+    actors = await _actor_map(db, [nl])
+    response.headers["ETag"] = _etag(nl)
+    return AthleteNewsletterRead.from_orm_model(nl, delivery=delivery, actors=actors)
 
 
 # ---------------------------------------------------------------------------
@@ -1048,10 +1233,12 @@ async def patch_newsletter(
     athlete_id: int,
     newsletter_id: int,
     body: AthleteNewsletterPatch,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
-) -> AthleteNewsletterRead:
-    """Edita el contenido de la bitácora (feature 038).
+) -> AthleteNewsletterRead | JSONResponse:
+    """Edita el contenido de la bitácora (feature 038 + concurrencia 041).
 
     - Se acepta con status ``draft`` o ``approved``; si estaba ``approved``
       y el PATCH cambió algo, vuelve a ``draft`` (una edición invalida la
@@ -1070,6 +1257,24 @@ async def patch_newsletter(
     - Cualquier PATCH que cambie contenido invalida el PDF ya generado
       (``pdf_sha256 = None``) para que "Descargar PDF" regenere en la
       próxima descarga (lógica ya existente, reutilizada acá).
+
+    Concurrencia optimista (041 §2, US5). El cliente debe mandar la versión
+    que cargó, como header ``If-Match: W/"4"`` o como campo
+    ``expected_version`` del body — exactamente uno de los dos:
+
+    - 428 si no llega ninguno (la respuesta trae ``ETag`` para recuperarse
+      sin un GET extra).
+    - 400 si el token está malformado, es ``*``, o header y body discrepan.
+    - 409 con ``current_version`` si otro entrenador ya guardó (el guard es
+      un UPDATE condicionado, no una comparación en Python).
+    - 409 sin ``current_version`` si el boletín está en un estado terminal
+      (``sent``/``failed``/``outdated``): ese conflicto no se resuelve
+      recargando. El guard de estado corre ANTES del de versión.
+    - 200 con ``edit_version`` ya incrementado, ``last_edited_by`` = quien
+      guardó, y el header ``ETag`` refrescado.
+
+    ``expected_version`` es precondición, nunca payload: no se escribe a
+    ninguna columna.
     """
     athlete = await _verify_coach_athlete_access(db, current_user, athlete_id)
     nl = await _get_newsletter_or_404(db, newsletter_id, athlete_id)
@@ -1081,6 +1286,44 @@ async def patch_newsletter(
                 "Solo se puede editar un boletín en estado 'draft' o "
                 f"'approved'. Estado actual: '{nl.status.value}'."
             ),
+        )
+
+    # 041 §2.2 — precondición de versión. Corre después del guard de estado:
+    # un boletín ya enviado es inmutable y recargar no ayudaría.
+    expected_version = _resolve_expected_version(if_match, body.expected_version, nl)
+
+    # El UPDATE guardado de §2.3 no está condicionado a que el body traiga
+    # cambios: un PATCH vacío pero con precondición válida igual mueve la
+    # versión. Es lo que dice el SQL del contrato y es el comportamiento
+    # conservador — el cliente pidió escribir, así que cualquier otro
+    # entrenador con un borrador cargado debe recargar.
+
+    now = datetime.now(timezone.utc)
+    if not await _claim_version(db, nl, expected_version, current_user.id, now):
+        # rowcount == 0: otro entrenador movió la versión. Se lee el valor
+        # vigente en la misma transacción antes de deshacerla.
+        current_version = await db.scalar(
+            select(AthleteMonthlyNewsletter.edit_version).where(
+                AthleteMonthlyNewsletter.id == nl.id
+            )
+        )
+        await db.rollback()
+        logger.info(
+            "Conflicto de versión en PATCH de boletín | newsletter_id=%d "
+            "expected=%d current=%s",
+            newsletter_id, expected_version, current_version,
+        )
+        # JSONResponse (no HTTPException) porque el contrato pide
+        # ``current_version`` como clave hermana de ``detail``, y el handler
+        # por defecto de FastAPI solo sabe serializar ``detail``. Es un
+        # entero, sin dato alguno de un menor.
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": _STALE_VERSION_DETAIL,
+                "current_version": current_version,
+            },
+            headers={"ETag": f'W/"{current_version or 1}"'},
         )
 
     content_changed = False
@@ -1097,11 +1340,21 @@ async def patch_newsletter(
         content_changed = True
         changed_fields.append("hidden_blocks")
 
-    if body.coach_note is not None:
+    # 041 §3.1 / FR-012: se usa ``model_fields_set`` en vez de ``is not None``
+    # porque ``coach_note: null`` (el coach borra la nota) TAMBIÉN es una
+    # edición con autor — "quién la borró" tiene que quedar respondido.
+    if "coach_note" in body.model_fields_set:
         from app.services.ai.use_cases.monthly_report import _redact_names
 
-        forbidden_names = await _build_forbidden_names(db, athlete.club_id)
-        nl.coach_note = _redact_names(body.coach_note, forbidden_names) or None
+        if body.coach_note is None:
+            nl.coach_note = None
+        else:
+            forbidden_names = await _build_forbidden_names(db, athlete.club_id)
+            nl.coach_note = _redact_names(body.coach_note, forbidden_names) or None
+        # El autor es siempre el último que tocó la nota, incluso al borrarla.
+        # Coach-only: jamás sale en el DTO del padre, el PDF ni el correo.
+        nl.coach_note_author_id = current_user.id
+        nl.coach_note_updated_at = now
         content_changed = True
         changed_fields.append("coach_note")
 
@@ -1132,7 +1385,7 @@ async def patch_newsletter(
         nl.pdf_sha256 = None
         await _rederive_stage_log(db, nl, athlete)
 
-    nl.updated_at = datetime.now(timezone.utc)
+    nl.updated_at = now
     await db.flush()
 
     if content_changed:
@@ -1160,7 +1413,9 @@ async def patch_newsletter(
 
     await db.commit()
 
-    return AthleteNewsletterRead.from_orm_model(nl)
+    actors = await _actor_map(db, [nl])
+    response.headers["ETag"] = _etag(nl)
+    return AthleteNewsletterRead.from_orm_model(nl, actors=actors)
 
 
 # ---------------------------------------------------------------------------
@@ -1292,13 +1547,21 @@ async def regenerate_newsletter_block(
         overrides.pop(body.block, None)
         nl.stage_overrides = overrides or None
 
+    became_unapproved = False
     if nl.status == NewsletterStatus.approved:
         nl.status = NewsletterStatus.draft
         nl.approved_by_user_id = None
         nl.approved_at = None
+        became_unapproved = True
 
     nl.pdf_sha256 = None
     await _rederive_stage_log(db, nl, athlete)
+    # 041 §2.6: toda escritura mutante mueve el contador, así una regeneración
+    # de bloque por el entrenador B invalida el borrador que tenía cargado A.
+    # No exige precondición: es una acción única y explícita, ya protegida por
+    # su propio guard de estado (R-13).
+    nl.edit_version = (getattr(nl, "edit_version", None) or 1) + 1
+    nl.last_edited_by_user_id = current_user.id
     nl.updated_at = datetime.now(timezone.utc)
     await db.flush()
     await record_audit(
@@ -1312,9 +1575,24 @@ async def regenerate_newsletter_block(
         changed_fields=["ai_narrative"],
         meta={"block": body.block},
     )
+    if became_unapproved:
+        # 041 §4: la desaprobación deja par de filas (update + unapprove) con
+        # un mismo request_id — al limpiarse las columnas, quién revocó la
+        # aprobación solo sobrevive en audit_log.
+        await record_audit(
+            db,
+            action=AuditAction.unapprove,
+            entity_type=AuditEntityType.athlete_monthly_newsletter,
+            entity_id=nl.id,
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
+            meta={"block": body.block},
+        )
     await db.commit()
 
-    return AthleteNewsletterRead.from_orm_model(nl)
+    actors = await _actor_map(db, [nl])
+    return AthleteNewsletterRead.from_orm_model(nl, actors=actors)
 
 
 # ---------------------------------------------------------------------------
@@ -1347,6 +1625,9 @@ async def approve_newsletter(
     nl.status = NewsletterStatus.approved
     nl.approved_by_user_id = current_user.id
     nl.approved_at = now
+    # 041 §2.6: aprobar mueve el contador — un PATCH que aún sostenga el token
+    # previo a la aprobación queda correctamente rechazado con 409.
+    nl.edit_version = (getattr(nl, "edit_version", None) or 1) + 1
     nl.updated_at = now
     await db.flush()
     await record_audit(
@@ -1360,7 +1641,8 @@ async def approve_newsletter(
     )
     await db.commit()
 
-    return AthleteNewsletterRead.from_orm_model(nl)
+    actors = await _actor_map(db, [nl])
+    return AthleteNewsletterRead.from_orm_model(nl, actors=actors)
 
 
 # ---------------------------------------------------------------------------
@@ -1551,6 +1833,12 @@ async def attach_insights(
         existing_set = set(existing_ids)
         new_ids = [iid for iid in body.insight_ids if iid not in existing_set]
         nl.selected_race_insight_ids = existing_ids + new_ids
+        if new_ids:
+            # 041 §2.6: solo cuenta como escritura si algo cambió — adjuntar
+            # los mismos insights dos veces es idempotente y no debe invalidar
+            # el borrador que otro entrenador tenga cargado.
+            nl.edit_version = (getattr(nl, "edit_version", None) or 1) + 1
+            nl.last_edited_by_user_id = current_user.id
         nl.updated_at = now_utc
         await db.flush()
         if new_ids:
@@ -1566,12 +1854,20 @@ async def attach_insights(
             )
     else:
         # Crear newsletter mínimo con status draft
+        # 041 §2.6, camino de creación: la fila nace en edit_version = 1 (el
+        # default de la columna se explicita acá para que el ETag de la
+        # primera lectura sea determinista incluso antes de un refresh) y ya
+        # con autoría, para que el estudio pueda hacer PATCH con If-Match
+        # sin un GET intermedio.
         nl = AthleteMonthlyNewsletter(
             athlete_id=athlete_id,
             year=year,
             month=month,
             status=NewsletterStatus.draft,
             selected_race_insight_ids=list(body.insight_ids),
+            edit_version=1,
+            generated_by_user_id=current_user.id,
+            last_edited_by_user_id=current_user.id,
             created_at=now_utc,
             updated_at=now_utc,
         )

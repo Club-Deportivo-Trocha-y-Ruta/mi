@@ -415,6 +415,10 @@ async def _dispatch_email(
     for nl in newsletters:
         nl.status = NewsletterStatus.sent
         nl.sent_at = now
+        # 041 §2.6: enviar es una escritura mutante y mueve el contador de
+        # versión, así un PATCH que todavía sostenga el token anterior se
+        # rechaza con 409 en vez de intentar editar algo ya enviado.
+        nl.edit_version = (getattr(nl, "edit_version", None) or 1) + 1
         # Guardar emails como referencia (PII — solo en DB, nunca en logs)
         nl.sent_to = [parent.email]
         db.add(

@@ -505,9 +505,14 @@ class TestGetMonthlyReportAthleteNames:
         report_res.scalar_one_or_none.return_value = report
         athletes_res = MagicMock()
         athletes_res.scalars.return_value.all.return_value = [athlete]
+        # T071: `get_monthly_report` ahora resuelve los ActorRef
+        # (generated_by/approved_by/previous_approved_by/updated_by) con un
+        # tercer SELECT sobre `users` (`_attach_actor_refs`).
+        actors_res = MagicMock()
+        actors_res.scalars.return_value.all.return_value = []
 
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[report_res, athletes_res])
+        db.execute = AsyncMock(side_effect=[report_res, athletes_res, actors_res])
 
         coach = _make_user(1)
         coach.role = UserRole.coach
@@ -533,9 +538,14 @@ class TestGetMonthlyReportAthleteNames:
 
         report_res = MagicMock()
         report_res.scalar_one_or_none.return_value = report
+        # T071: `_attach_actor_refs` corre para todo rol (coach y padre) —
+        # un padre no consulta atletas, pero sí resuelve ActorRef (y luego
+        # el router vuelve a limpiar previous_approved_* para él).
+        actors_res = MagicMock()
+        actors_res.scalars.return_value.all.return_value = []
 
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[report_res])
+        db.execute = AsyncMock(side_effect=[report_res, actors_res])
 
         parent = _make_user(2)
         parent.role = UserRole.parent
@@ -551,8 +561,12 @@ class TestGetMonthlyReportAthleteNames:
         # Padre NUNCA recibe nombres de menores ni observaciones del coach.
         assert out.athlete_names == {}
         assert out.coach_observations is None
-        # Solo hubo 1 query (reporte); no se consultaron atletas.
-        assert db.execute.await_count == 1
+        # Padre nunca recibe evidencia de una aprobación superada (T071 §5.4).
+        assert out.previous_approved_by is None
+        assert out.previous_approved_at is None
+        # 2 queries: reporte + resolución de ActorRef; no se consultaron
+        # atletas (esa rama está gateada por `not is_parent`).
+        assert db.execute.await_count == 2
 
 
 # ---------------------------------------------------------------------------

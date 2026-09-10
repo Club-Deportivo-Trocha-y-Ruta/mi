@@ -1273,7 +1273,9 @@ class TestPatchStageLogV2:
         }
         async with client as c:
             resp = await c.patch(
-                f"/api/athletes/5/monthly-newsletters/{nl.id}", json=body
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json=body,
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text
@@ -1296,7 +1298,9 @@ class TestPatchStageLogV2:
         body = {"coach_note": "Gran mes para Atleta Ficticio, sigue asi."}
         async with client as c:
             resp = await c.patch(
-                f"/api/athletes/5/monthly-newsletters/{nl.id}", json=body
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json=body,
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text
@@ -1316,6 +1320,7 @@ class TestPatchStageLogV2:
             resp = await c.patch(
                 f"/api/athletes/5/monthly-newsletters/{nl.id}",
                 json={"selected_race_insight_ids": [10, 20, 30]},
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 422
@@ -1333,6 +1338,7 @@ class TestPatchStageLogV2:
             resp = await c.patch(
                 f"/api/athletes/5/monthly-newsletters/{nl.id}",
                 json={"selected_race_insight_ids": [20, 10]},
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text
@@ -1359,6 +1365,7 @@ class TestPatchStageLogV2:
             resp = await c.patch(
                 f"/api/athletes/5/monthly-newsletters/{nl.id}",
                 json={"coach_note": "Nota corta de prueba para el mes."},
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text
@@ -1381,7 +1388,9 @@ class TestPatchStageLogV2:
         body = {"coach_note": "Buen esfuerzo este mes en cada sesion de pista."}
         async with client as c:
             resp = await c.patch(
-                f"/api/athletes/5/monthly-newsletters/{nl.id}", json=body
+                f"/api/athletes/5/monthly-newsletters/{nl.id}",
+                json=body,
+                headers={"If-Match": f'W/"{nl.edit_version}"'},
             )
 
         assert resp.status_code == 200, resp.text

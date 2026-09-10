@@ -193,12 +193,29 @@ async def generate_monthly_report(
     now = datetime.now(timezone.utc)
 
     if existing is not None and force_regenerate:
-        was_approved = existing.status == MonthlyReportStatus.APPROVED
+        # FR-010 / contract concurrency-and-approvals.md §5.4 — "copiar antes
+        # de limpiar": si el reporte tenía una aprobación vigente, su
+        # evidencia (quién y cuándo) se traslada a `previous_approved_*`
+        # ANTES de vaciar `approved_*`. Defecto original que esto corrige:
+        # aprobar como coach A y luego regenerar como coach B borraba todo
+        # rastro de que A lo había aprobado. El guard es sobre
+        # `approved_by_user_id`, no sobre `status`, para no pisar un
+        # `previous_approved_*` ya existente cuando el reporte YA estaba en
+        # borrador (US5 AS4, test 15: regenerar un borrador no debe vaciar
+        # una aprobación previa superada que ya vivía ahí).
+        was_approved = existing.approved_by_user_id is not None
+        if was_approved:
+            existing.previous_approved_by_user_id = existing.approved_by_user_id
+            existing.previous_approved_at = existing.approved_at
+        existing.approved_by_user_id = None
+        existing.approved_at = None
         existing.ai_summary = ai_summary
         existing.metrics_snapshot = metrics_dict
         existing.coach_observations = coach_observations
         existing.generated_by_user_id = generator_user.id
         existing.generated_at = now
+        existing.updated_by_user_id = generator_user.id
+        existing.updated_at = now
         existing.status = MonthlyReportStatus.DRAFT
         if new_narrative_blocks is not None:
             existing.narrative_blocks = new_narrative_blocks
@@ -211,7 +228,7 @@ async def generate_monthly_report(
             entity_id=existing.id,
             actor=generator_user,
             club_id=club_id,
-            changed_fields=["status", "year", "month"],
+            changed_fields=["status", "year", "month", "generated_by_user_id"],
             diff={"status": (
                 MonthlyReportStatus.APPROVED.value if was_approved else MonthlyReportStatus.DRAFT.value,
                 MonthlyReportStatus.DRAFT.value,
@@ -863,6 +880,19 @@ async def update_report_blocks(
 
     if new_status is not None:
         report.status = new_status
+        if (
+            new_status == MonthlyReportStatus.APPROVED
+            and previous_status != MonthlyReportStatus.APPROVED
+            and editor_user is not None
+        ):
+            # FR-010 / contract §5.3 — hasta ahora aprobar solo movía
+            # `status`; no quedaba rastro de QUIÉN aprobó ni CUÁNDO, así que
+            # una regeneración posterior no tenía nada que preservar.
+            approval_now = datetime.now(timezone.utc)
+            report.approved_by_user_id = editor_user.id
+            report.approved_at = approval_now
+            report.updated_by_user_id = editor_user.id
+            report.updated_at = approval_now
 
     await db.flush()
 

@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
+from fastapi import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -364,7 +365,8 @@ class TestNewsletterPatchAudit:
         await db.flush()
         await db.commit()
 
-        body = AthleteNewsletterPatch(hidden_blocks=["photos"])
+        # T069: el PATCH exige la versión esperada; la fila recién sembrada nace en 1.
+        body = AthleteNewsletterPatch(hidden_blocks=["photos"], expected_version=1)
         with request_id_scope():
             with patch(
                 "app.routers.athlete_monthly_newsletters._rederive_stage_log",
@@ -374,6 +376,10 @@ class TestNewsletterPatchAudit:
                     athlete_id=ATHLETE_ID,
                     newsletter_id=nl.id,
                     body=body,
+                    response=Response(),
+                    # Llamada directa al handler: FastAPI no resuelve el
+                    # `Header(...)`, así que la precondición viaja en el cuerpo.
+                    if_match=None,
                     db=db,
                     current_user=coach,
                 )
@@ -400,7 +406,10 @@ class TestNewsletterPatchAudit:
         await db.flush()
         await db.commit()
 
-        body = AthleteNewsletterPatch(coach_note="Buen mes de entrenamiento.")
+        # T069: el PATCH exige la versión esperada; la fila recién sembrada nace en 1.
+        body = AthleteNewsletterPatch(
+            coach_note="Buen mes de entrenamiento.", expected_version=1
+        )
         with request_id_scope():
             with patch(
                 "app.routers.athlete_monthly_newsletters._rederive_stage_log",
@@ -410,6 +419,10 @@ class TestNewsletterPatchAudit:
                     athlete_id=ATHLETE_ID,
                     newsletter_id=nl.id,
                     body=body,
+                    response=Response(),
+                    # Llamada directa al handler: FastAPI no resuelve el
+                    # `Header(...)`, así que la precondición viaja en el cuerpo.
+                    if_match=None,
                     db=db,
                     current_user=coach,
                 )

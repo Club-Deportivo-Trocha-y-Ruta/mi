@@ -417,6 +417,26 @@ class CompetitionResultItem(BaseModel):
     awards_points: bool = True
 
 
+class ActorRef(BaseModel):
+    """Referencia mínima a un actor humano adulto: id + nombre para mostrar.
+
+    Espejo de ``ActorRef = { user_id, display_name }``
+    (contracts/concurrency-and-approvals.md §2), que el contrato ubica
+    canónicamente en ``app/schemas/audit.py``. T071 no tiene ese archivo entre
+    los suyos (ver README de la tarea), así que se declara aquí — igual de
+    additive, mismo shape — en vez de bloquear esta entrega en una
+    reconciliación de dueños de archivo. Si ``app/schemas/audit.py`` termina
+    definiendo su propio ``ActorRef``, este debería fusionarse con aquel.
+
+    Nunca lleva datos de un menor: el único actor que viaja aquí es un adulto
+    (coach o admin) — un atleta jamás aparece como ``generated_by``/
+    ``approved_by``/``updated_by`` de un reporte mensual.
+    """
+
+    user_id: int
+    display_name: str
+
+
 class MonthlyReportRead(BaseModel):
     """Respuesta de un reporte mensual.
 
@@ -428,6 +448,10 @@ class MonthlyReportRead(BaseModel):
       para ``parent``.
     - ``athlete_names``: solo se rellena para coach/admin en el endpoint de
       detalle; siempre ``{}`` para padres (privacidad de menores ajenos).
+    - ``previous_approved_by``/``previous_approved_at`` (FR-010, §5.4): evidencia
+      de una aprobación superada por una regeneración posterior. El router
+      también los limpia a ``None`` para ``parent`` — son datos de gobernanza
+      interna del club, no del progreso del atleta.
     """
 
     id: int
@@ -446,6 +470,21 @@ class MonthlyReportRead(BaseModel):
     # Mapa id_atleta (str) -> "Nombre Apellido". Solo para coach/admin.
     athlete_names: dict[str, str] = Field(default_factory=dict)
 
+    # --- Evidencia de aprobación (FR-010, §5.2/§5.5) ---
+    # Los *_user_id no viven como columna simple accesible por
+    # `model_validate(report)`: `generated_by`/`approved_by`/
+    # `previous_approved_by`/`updated_by` los rellena el router a mano (mismo
+    # patrón que `athlete_names` arriba y que `SessionCoachOut` en
+    # `_session_to_read`), resolviendo el `User` correspondiente a un
+    # `ActorRef`. Quedan `None` hasta que el router los complete.
+    generated_by: ActorRef | None = None
+    approved_by: ActorRef | None = None
+    approved_at: datetime | None = None
+    previous_approved_by: ActorRef | None = None
+    previous_approved_at: datetime | None = None
+    updated_by: ActorRef | None = None
+    updated_at: datetime | None = None
+
     model_config = {"from_attributes": True}
 
     @field_validator("narrative_blocks", mode="before")
@@ -461,6 +500,30 @@ class MonthlyReportRead(BaseModel):
     def _coerce_competition_results(cls, v: Any) -> Any:
         """Acepta list o None; cualquier otro tipo → None."""
         if v is None or isinstance(v, list):
+            return v
+        return None
+
+    @field_validator(
+        "approved_at", "previous_approved_at", "updated_at", mode="before"
+    )
+    @classmethod
+    def _coerce_optional_datetime(cls, v: Any) -> Any:
+        """Acepta datetime o None; cualquier otro tipo (MagicMock en tests
+        legacy que no setean estos campos nuevos) → None."""
+        if v is None or isinstance(v, datetime):
+            return v
+        return None
+
+    @field_validator(
+        "generated_by", "approved_by", "previous_approved_by", "updated_by",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_actor_ref(cls, v: Any) -> Any:
+        """Acepta ActorRef, dict o None; cualquier otro tipo → None (el
+        router es quien construye estos valores explícitamente; nunca vienen
+        de un atributo homónimo en el ORM)."""
+        if v is None or isinstance(v, (ActorRef, dict)):
             return v
         return None
 

@@ -13,6 +13,7 @@ Contrato de API:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Literal
 
@@ -121,6 +122,14 @@ class AthleteNewsletterPatch(BaseModel):
             "usa POST .../attach-insights."
         ),
     )
+    expected_version: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Versión que el cliente cargó (athlete_monthly_newsletters.edit_version). "
+            "Alternativa al header If-Match; exactamente uno de los dos es obligatorio."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_coach_note_word_limit(self) -> "AthleteNewsletterPatch":
@@ -207,11 +216,40 @@ class DeliveryRow(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class NewsletterActorRef(BaseModel):
+    """Referencia a un miembro del staff en una superficie de atribución (041 §1.2).
+
+    Forma idéntica al ``ActorRef`` que ``contracts/concurrency-and-approvals.md``
+    §1.2 ubica en ``app/schemas/audit.py``. Decisión (041 T069): ese módulo
+    compartido todavía no existe y lo está tocando otro frente de la feature,
+    así que se declara acá — igual que ``SessionCoachOut`` en
+    ``app/schemas/training_session.py`` — para no crear un conflicto de
+    edición. Consolidar en un único ``ActorRef`` cuando ese schema aterrice.
+
+    ``display_name`` es ``User.display_name`` (``first_name last_name``) y debe
+    resolver también para cuentas desactivadas (FR-013); el objeto entero es
+    ``None`` solo cuando la FK es ``NULL``.
+
+    Privacidad (Ley 1581): esto es SIEMPRE staff adulto — nunca un menor — y
+    solo viaja en superficies coach/admin.
+    """
+
+    user_id: int
+    display_name: str
+
+    model_config = {"from_attributes": True}
+
+
 class AthleteNewsletterRead(BaseModel):
     """Respuesta de lectura de un boletín (bitácora de etapa, StageLog v2).
 
     NUNCA incluye pdf_only_blocks (antropometría) — esos datos van solo en el PDF.
     sent_to NO se serializa: es PII y solo se almacena en DB.
+
+    Superficie exclusiva de coach/admin: acá — y solo acá — se expone
+    ``coach_note_author`` (041 §3.2, FR-012). La vista de la familia
+    (``ParentNewsletterOut``, PDF y correo) muestra la nota con la voz
+    institucional del club, nunca el nombre de quien la escribió.
     """
 
     id: int
@@ -291,6 +329,39 @@ class AthleteNewsletterRead(BaseModel):
     approved_at: datetime | None = None
     sent_at: datetime | None = None
 
+    # ── Feature 041 (gobernanza multi-entrenador) ────────────────────────
+    edit_version: int = Field(
+        default=1,
+        description=(
+            "Token de concurrencia optimista (041 §1). Se devuelve también en "
+            "el header ETag como W/\"<edit_version>\" y se envía de vuelta en "
+            "el PATCH vía If-Match o expected_version."
+        ),
+    )
+    coach_note_author: NewsletterActorRef | None = Field(
+        default=None,
+        description=(
+            "Quién escribió (o borró) la nota del entrenador. SOLO coach/admin "
+            "— nunca se expone a la familia (041 §3.2, FR-012)."
+        ),
+    )
+    coach_note_updated_at: datetime | None = Field(
+        default=None,
+        description="Cuándo se tocó por última vez la nota del entrenador (solo coach/admin).",
+    )
+    last_edited_by: NewsletterActorRef | None = Field(
+        default=None,
+        description="Último entrenador que guardó cambios de contenido.",
+    )
+    generated_by: NewsletterActorRef | None = Field(
+        default=None,
+        description="Entrenador que generó el boletín (versión legible de generated_by_user_id).",
+    )
+    approved_by: NewsletterActorRef | None = Field(
+        default=None,
+        description="Entrenador que aprobó el boletín (versión legible de approved_by_user_id).",
+    )
+
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -303,6 +374,7 @@ class AthleteNewsletterRead(BaseModel):
         obj: Any,
         *,
         delivery: list[DeliveryRow] | None = None,
+        actors: "Mapping[int, NewsletterActorRef] | None" = None,
     ) -> "AthleteNewsletterRead":
         """Construye el schema extrayendo solo email_blocks del metrics_snapshot.
 
@@ -310,9 +382,19 @@ class AthleteNewsletterRead(BaseModel):
         población real (JOIN a newsletter_delivery_events + parent_athletes,
         masking de email) requiere una sesión de DB y queda para el router
         que la consuma en el studio (T202/T203/T401).
+
+        ``actors`` (041 §1.2) mapea ``user_id -> NewsletterActorRef`` y lo
+        arma el router con UNA sola consulta para todos los boletines de la
+        respuesta — nunca una consulta por actor. Si falta un id, el campo
+        correspondiente queda en ``None`` en vez de disparar una carga
+        perezosa (que en sesión async explotaría).
         """
         snapshot = obj.metrics_snapshot or {}
         email_blocks = snapshot.get("email_blocks") if snapshot else None
+        actor_map = actors or {}
+
+        def _actor(user_id: int | None) -> "NewsletterActorRef | None":
+            return actor_map.get(user_id) if user_id is not None else None
 
         return cls(
             id=obj.id,
@@ -336,6 +418,12 @@ class AthleteNewsletterRead(BaseModel):
             approved_by_user_id=obj.approved_by_user_id,
             approved_at=obj.approved_at,
             sent_at=obj.sent_at,
+            edit_version=getattr(obj, "edit_version", None) or 1,
+            coach_note_author=_actor(getattr(obj, "coach_note_author_id", None)),
+            coach_note_updated_at=getattr(obj, "coach_note_updated_at", None),
+            last_edited_by=_actor(getattr(obj, "last_edited_by_user_id", None)),
+            generated_by=_actor(obj.generated_by_user_id),
+            approved_by=_actor(obj.approved_by_user_id),
             error_message=obj.error_message,
             created_at=obj.created_at,
             updated_at=obj.updated_at,

@@ -251,6 +251,16 @@
 <!-- ============================================================
      NOTA DEL ENTRENADOR
 ============================================================ -->
+{#
+  Privacidad / feature 041 §3.2 (FR-012): el encabezado es genérico a
+  propósito. El AUTOR de la nota (`coach_note_author_id` /
+  `coach_note_updated_at`) es visible SOLO en la superficie de coach/admin —
+  nunca acá. La familia lee la nota con la voz institucional del club, no con
+  el nombre de una persona. No agregar `coach_note_author` a esta plantilla:
+  `stage_log` llega proyectado con `to_parent_dto` (allow-list) y esas
+  columnas ni siquiera entran a `StageLog`, así que hay dos barreras — no
+  romper ninguna de las dos.
+#}
 {% if coach_note %}
 <div style="break-inside: avoid; margin-bottom: 10pt; background: #f0fdf4; border: 1pt solid #86efac; padding: 10pt 14pt; border-radius: 4pt;">
   <h3 style="margin-top: 0; break-after: avoid;">Nota del entrenador</h3>
