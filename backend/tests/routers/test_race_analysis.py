@@ -650,3 +650,50 @@ class TestBudgetGuard:
             json={"athlete_id": 1, "season": 2026},
         )
         assert resp.status_code == 201
+
+
+class TestLanzamientoAcotadoPorClub:
+    """Hallazgo H1 de la revisión de seguridad de US6 (T080).
+
+    La matriz de `contracts/scope-ai-imports.md` §1.4 cubre **operar** una
+    corrida que ya existe, pero no **crearla**. Por ese hueco un entrenador de
+    otro club podía lanzar un análisis sobre una menor ajena: su nombre entraba
+    en `forbidden_names` y salía hacia el proveedor de IA, y se le persistía un
+    insight en la ficha. La corrida nacía además inalcanzable para quien la
+    lanzó, porque el chequeo de club sí actúa al leerla.
+    """
+
+    async def test_coach_de_otro_club_no_puede_lanzar_analisis(
+        self, other_club_coach_client, ai_enabled
+    ):
+        resp = await other_club_coach_client.post(
+            "/api/race-analysis/runs",
+            json={"athlete_id": 1, "season": 2026, "valida_nums": [1]},
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_el_403_no_dice_si_el_atleta_existe(
+        self, other_club_coach_client, ai_enabled, fake_db
+    ):
+        """El chequeo de club corre **antes** que el de archivado.
+
+        Si corriera después, la diferencia entre 404 y 403 le confirmaría a un
+        entrenador ajeno que ese id existe y está archivado.
+        """
+        fake_db.athlete_club_id = None
+        resp = await other_club_coach_client.post(
+            "/api/race-analysis/runs",
+            json={"athlete_id": 4242, "season": 2026},
+        )
+        assert resp.status_code == 403, resp.text
+        assert "atleta" in resp.json()["detail"].lower()
+
+    async def test_el_coach_del_club_sigue_pudiendo_lanzar(
+        self, coach_client, ai_enabled
+    ):
+        """La otra mitad del arreglo: no romper el camino legítimo."""
+        resp = await coach_client.post(
+            "/api/race-analysis/runs",
+            json={"athlete_id": 1, "season": 2026, "valida_nums": [1]},
+        )
+        assert resp.status_code == 201, resp.text

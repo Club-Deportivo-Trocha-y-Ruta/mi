@@ -36,16 +36,43 @@ from app.routers.race_analysis import (
 # ---------------------------------------------------------------------------
 
 
-def make_user(role: UserRole, user_id: int = 1) -> SimpleNamespace:
+#: Club del atleta que devuelve :class:`FakeSession`. Los coaches de estos
+#: arneses son miembros de él por defecto: desde el hallazgo H1 de la revisión
+#: de seguridad de US6 (T080), ``POST /runs`` exige que el atleta a analizar
+#: sea de un club del entrenador (``_ensure_athlete_club_access``), así que un
+#: doble sin membresías convierte todo camino feliz en 403.
+ATHLETE_CLUB_ID = 1
+
+#: Club ajeno — para los caminos denegados "entrenador de otro club".
+OTHER_CLUB_ID = 2
+
+
+def make_user(
+    role: UserRole,
+    user_id: int = 1,
+    club_ids: tuple[int, ...] = (ATHLETE_CLUB_ID,),
+) -> SimpleNamespace:
+    """Doble del actor autenticado.
+
+    ``coach_club_ids`` (``app/services/permissions.py``) lee
+    ``user.club_memberships`` del objeto autenticado, no la tabla: el doble
+    tiene que traer las membresías puestas o el alcance por club rechaza.
+    """
+    from app.models.club import ClubRole
+
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
         last_name="User",
+        display_name="Test User",
         email=f"{role.value}@test.local",
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=cid, role_in_club=ClubRole.coach)
+            for cid in club_ids
+        ],
     )
 
 
@@ -99,6 +126,10 @@ class FakeSession:
         self.executed: list[tuple[str, dict]] = []
         self._next_run_db_id = 1
         self._next_event_id = 1
+        #: ``athletes.club_id`` del atleta que consultan
+        #: ``_resolve_athlete_club`` y ``permissions.run_club_ids``. Un test
+        #: que quiera simular "el atleta no existe" lo pone en ``None``.
+        self.athlete_club_id: Optional[int] = ATHLETE_CLUB_ID
 
     # ---- helpers para tests ----
 
@@ -193,6 +224,24 @@ class FakeSession:
 
         # Routing por substrings — mantenemos la lista ordenada de
         # match más específico a más general.
+
+        # SELECT athletes.club_id FROM athletes WHERE athletes.id = :id
+        # Lo consultan ``_resolve_athlete_club`` (club de la fila de auditoría),
+        # ``_ensure_athlete_club_access`` (hallazgo H1 de T080, corre ANTES del
+        # chequeo de archivado) y ``permissions.run_club_ids``. Va primero
+        # porque el SELECT de ``athletes.deleted_at`` comparte la tabla.
+        # Ojo: el match tiene que ser sobre la **proyección**, no sobre el
+        # texto suelto. Un `select(Athlete)` completo también renderiza
+        # `athletes.club_id` entre sus columnas, y con un `in sql` este ramal
+        # se lo tragaba y devolvía un entero donde el código esperaba una fila
+        # de `Athlete` (`AttributeError: 'int' object has no attribute
+        # 'birth_date'`).
+        if sql.lstrip().startswith("SELECT athletes.club_id"):
+            if self.athlete_club_id is None:
+                return FakeResult([])
+            # Escalar pelado: los tres consumidores usan
+            # ``scalar_one_or_none()``, no ``_mapping``.
+            return FakeResult([self.athlete_club_id])
 
         # INSERT agent_runs
         if "INSERT INTO agent_runs" in sql:
@@ -465,6 +514,37 @@ def ai_enabled(monkeypatch):
 
     monkeypatch.setattr(settings, "ai_enabled", True)
     return settings
+
+
+@pytest_asyncio.fixture
+async def other_club_coach_client(client, fake_db, fake_graph, monkeypatch):
+    """Entrenador de **otro** club, para los caminos denegados de T080 (H1).
+
+    Idéntico a ``coach_client`` salvo por la membresía: este coach pertenece a
+    ``OTHER_CLUB_ID`` y el atleta que devuelve ``FakeSession`` es de
+    ``ATHLETE_CLUB_ID``.
+    """
+    from app.services.race.ai import runner as runner_mod
+
+    async def _graph_factory():
+        return fake_graph
+
+    runner_mod.set_graph_factory(_graph_factory)
+    await runner_mod._reset_for_tests()
+
+    async def _override_db():
+        yield fake_db
+
+    def _ajeno():
+        return make_user(UserRole.coach, user_id=99, club_ids=(OTHER_CLUB_ID,))
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_current_user] = _ajeno
+    app.dependency_overrides[_coach_or_admin] = _ajeno
+    yield client
+    app.dependency_overrides.clear()
+    runner_mod.set_graph_factory(None)
+    await runner_mod._reset_for_tests()
 
 
 @pytest_asyncio.fixture
