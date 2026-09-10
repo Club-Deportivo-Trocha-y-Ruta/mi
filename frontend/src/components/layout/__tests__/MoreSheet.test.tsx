@@ -109,6 +109,15 @@ describe("MoreSheet — contenido filtrado por rol (data-model.md §3, R7)", () 
     }
   });
 
+  // US3 AS5: a quien no tiene acceso no se le muestra la entrada de
+  // navegación. `role` está tipado a `NavRole` ("coach" | "admin") porque
+  // `MoreSheet` sólo se monta para esos roles por construcción — el cast
+  // aquí es defensivo, igual que en UserMenu.test.tsx.
+  it("padre no ve 'Salud IA' aunque el componente se monte con ese rol", () => {
+    renderMoreSheet("parent" as NavRole);
+    expect(screen.queryByRole("link", { name: "Salud IA" })).not.toBeInTheDocument();
+  });
+
   it("'Cerrar sesión' invoca logout del auth store", async () => {
     const user = userEvent.setup();
     renderMoreSheet("coach");

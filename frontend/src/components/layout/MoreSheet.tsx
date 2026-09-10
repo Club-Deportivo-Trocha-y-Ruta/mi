@@ -30,7 +30,8 @@ const rowClass =
 /**
  * "Más" bottom sheet (feature 030, US3) — the 5th bottom-bar slot's target.
  * Lists the role-visible NavAreas not already promoted to the bottom bar,
- * then account actions (Mi perfil / Salud IA admin-only / Cerrar sesión).
+ * then account actions (Mi perfil / Salud IA — coach + admin since feature
+ * 041 US6 §7.3 / Cerrar sesión).
  * Built on the existing ui/sheet.tsx primitive (Radix Dialog under the
  * hood) — focus trap, Escape-to-close, and focus return to the trigger are
  * inherited, no bespoke a11y logic here. Every row wraps in `SheetClose`
