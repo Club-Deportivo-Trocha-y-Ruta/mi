@@ -967,8 +967,11 @@ Tareas nuevas cerradas después de eso:
   tuya (las familias mantienen la voz institucional). Veredicto: aprobado
   para publicar, con la salvedad de que nada se validó contra base real.
 - **T098** — descripción del PR escrita en `pr-description.md`.
-- **T093 / T094** — documentación de la feature y borrador de la política de
-  privacidad v1.3. Ver §6 para el estado exacto al cierre.
+- **T093 / T094** — **cerradas**: `docs/19-multi-coach-governance/`
+  (diseño, runbook con el procedimiento de purga, y qa), las entradas
+  fechadas en `docs/technical-notes.md`, la tabla de fases en
+  `docs/implementation-status.md`, y el borrador de la política de privacidad
+  v1.3, que queda **sin publicar** en esta feature, como pide FR-033.
 - **T078** — **parcial**: dos de los tres archivos de prueba pedidos
   (`test_spend_by_user.py`, 7 casos verdes; `test_race_imports_club_scope.py`,
   7 casos verdes). Falta `test_race_analysis_club_scope.py`.
@@ -1104,6 +1107,8 @@ Ordenado por lo que costaría descubrirlo tarde.
    nunca quiso decir "no filtrado por club".
 4. **T078 parcial** — falta `test_race_analysis_club_scope.py`.
 5. **T092, T095 (mitad), T086, T096, T097** — bloqueadas por entorno (§5).
+   Son las cinco tareas que siguen sin marcar, junto con T078 (parcial): todo
+   lo demás de las once fases quedó cerrado.
 6. `frontend/src/types/trainingSession.types.ts` declara `created_by_user_id`
    como obligatorio; el backend ya no lo manda a las familias. No rompe nada en
    ejecución —es un tipo que miente, no una validación Zod— pero conviene
