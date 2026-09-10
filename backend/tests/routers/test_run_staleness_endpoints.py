@@ -20,10 +20,23 @@ from app.models.user import UserRole
 
 
 class _FakeResult:
-    """Resultado mínimo para el SELECT de ``_resolve_athlete_club``."""
+    """Resultado mínimo para los SELECT que este arnés atraviesa.
+
+    ``scalar_one_or_none`` cubre ``_resolve_athlete_club`` y el paso 3 de la
+    resolución de club; ``scalars().all()`` cubre el paso 4
+    (``club_members`` del solicitante, ``contracts/scope-ai-imports.md``
+    §1.1). Ambos vacíos: acá no hay atleta ni membresías reales, así que el
+    run queda sin club resoluble y decide el respaldo por autoría de §1.4.
+    """
 
     def scalar_one_or_none(self):
         return None
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return []
 
 
 class _FakeSession:

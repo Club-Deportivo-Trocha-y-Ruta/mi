@@ -226,7 +226,7 @@ def _row_get(row: object, name: str, idx: int) -> object:
 
 async def spend_by_user_last_30d(
     db: AsyncSession, *, days: int = 30
-) -> list["UserSpend"]:
+) -> list[UserSpend]:
     """Gasto de IA de la ventana móvil, agrupado por quien lanzó el análisis.
 
     Dos queries fijas — la agregación y una resolución de nombres por lote —

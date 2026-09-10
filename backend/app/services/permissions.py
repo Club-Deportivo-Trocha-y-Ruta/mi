@@ -172,7 +172,7 @@ async def run_club_ids(db: AsyncSession, run: dict[str, Any]) -> set[int]:
     return await _coach_membership_club_ids(db, run.get("requested_by_user_id"))
 
 
-async def import_club_ids(db: AsyncSession, imp: "RaceImport") -> set[int]:
+async def import_club_ids(db: AsyncSession, imp: RaceImport) -> set[int]:
     """Clubes a los que pertenece un cargue de resultados (§1.2).
 
     ``race_imports`` / ``race_series`` / ``race_events`` no tienen
@@ -214,7 +214,7 @@ async def ensure_run_club_access(
 
 
 async def ensure_import_club_access(
-    db: AsyncSession, imp: "RaceImport", user: User
+    db: AsyncSession, imp: RaceImport, user: User
 ) -> None:
     """Lanza 403 si ``user`` no es coach de ningún club del cargue (§6.1)."""
     if user.role == UserRole.admin:

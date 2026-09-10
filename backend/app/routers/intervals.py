@@ -39,6 +39,7 @@ standalone listing — see ``schemas/intervals.py`` module docstring.
 """
 from __future__ import annotations
 
+from enum import Enum
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -49,7 +50,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, get_document_generator, get_task_dispatcher, require_role
 from app.models.club import Club, ClubMember
-from app.models.interval_structure import IntervalStructure, IntervalTemplate
+from app.models.interval_structure import (
+    IntervalStructure,
+    IntervalStructureBlock,
+    IntervalTemplate,
+    IntervalTemplateBlock,
+)
 from app.models.strava_activity import StravaActivity
 from app.models.strava_activity_lap import IntervalMatchResult, MatchTrigger
 from app.models.interval_structure import AgeBand
@@ -266,29 +272,128 @@ _TEMPLATE_AUDIT_FIELDS = (
     "competition_proximity",
 )
 
+#: Columnas que definen la huella de un bloque, en el mismo orden para
+#: estructuras y plantillas (ambos modelos las declaran con estos nombres).
+_BLOCK_SIGNATURE_COLUMNS = (
+    "position",
+    "block_type",
+    "duration_type",
+    "duration_s",
+    "target_zone",
+    "target_cadence_rpm",
+    "repeat_group",
+    "repeat_count",
+)
+
 
 def _blocks_signature(blocks) -> list[tuple]:
     """Huella comparable del set de bloques de una estructura o plantilla.
 
+    Acepta tanto filas ORM como ``Row`` de un SELECT de columnas: lee los
+    mismos nombres por ``getattr`` y aplana los enums a su ``.value`` para
+    que ambos lados se comparen igual.
+
     Se usa SOLO para decidir si el nombre ``blocks`` entra en
     ``changed_fields``; nunca se almacena (``VALUE_ALLOWLIST`` no tiene
     entrada para estas dos entidades, así que ``diff_json`` queda en
-    ``None``). Debe materializarse ANTES de llamar al servicio: el objeto ORM
-    de "antes" es la misma instancia que el servicio muta.
+    ``None``).
     """
     return [
-        (
-            b.position,
-            b.block_type.value,
-            b.duration_type.value,
-            b.duration_s,
-            b.target_zone.value,
-            b.target_cadence_rpm,
-            b.repeat_group,
-            b.repeat_count,
+        tuple(
+            value.value if isinstance(value, Enum) else value
+            for value in (getattr(block, name) for name in _BLOCK_SIGNATURE_COLUMNS)
         )
-        for b in blocks
+        for block in blocks
     ]
+
+
+async def _structure_audit_before(
+    db: AsyncSession, *, structure_id: int, club_id: int
+) -> dict | None:
+    """Foto previa de una estructura para ``compute_changed_fields``.
+
+    Usa SELECT de columnas a propósito, NO ``structures_svc.get_structure``:
+    ese devuelve objetos ORM con ``blocks`` ya cargados y los deja en el
+    identity map de la sesión, con lo cual el ``_reload_structure`` posterior
+    del servicio reutilizaría la colección vieja y el PUT respondería con los
+    bloques anteriores. Un SELECT de columnas no puebla el identity map.
+
+    Devuelve ``None`` cuando la estructura no existe o es de otro club — el
+    mismo criterio de club (join a ``TrainingSession``) que el servicio.
+    """
+    header = (
+        await db.execute(
+            select(
+                IntervalStructure.target_age_band,
+                IntervalStructure.age_gate_confirmed,
+            )
+            .join(
+                TrainingSession,
+                TrainingSession.id == IntervalStructure.training_session_id,
+            )
+            .where(
+                IntervalStructure.id == structure_id,
+                TrainingSession.club_id == club_id,
+            )
+        )
+    ).first()
+    if header is None:
+        return None
+    blocks = (
+        await db.execute(
+            select(
+                *(
+                    getattr(IntervalStructureBlock, name)
+                    for name in _BLOCK_SIGNATURE_COLUMNS
+                )
+            )
+            .where(IntervalStructureBlock.structure_id == structure_id)
+            .order_by(IntervalStructureBlock.position)
+        )
+    ).all()
+    return {
+        "target_age_band": header.target_age_band,
+        "age_gate_confirmed": header.age_gate_confirmed,
+        "blocks": _blocks_signature(blocks),
+    }
+
+
+async def _template_audit_before(
+    db: AsyncSession, *, template_id: int, club_id: int
+) -> dict | None:
+    """Foto previa de una plantilla. Misma razón que
+    ``_structure_audit_before`` para no usar ``templates_svc.get_template``.
+    """
+    header = (
+        await db.execute(
+            select(
+                *(
+                    getattr(IntervalTemplate, name)
+                    for name in _TEMPLATE_AUDIT_FIELDS
+                )
+            ).where(
+                IntervalTemplate.id == template_id,
+                IntervalTemplate.club_id == club_id,
+            )
+        )
+    ).first()
+    if header is None:
+        return None
+    blocks = (
+        await db.execute(
+            select(
+                *(
+                    getattr(IntervalTemplateBlock, name)
+                    for name in _BLOCK_SIGNATURE_COLUMNS
+                )
+            )
+            .where(IntervalTemplateBlock.template_id == template_id)
+            .order_by(IntervalTemplateBlock.position)
+        )
+    ).all()
+    before = {name: getattr(header, name) for name in _TEMPLATE_AUDIT_FIELDS}
+    before["blocks"] = _blocks_signature(blocks)
+    return before
 
 
 # ---------------------------------------------------------------------------
@@ -406,18 +511,10 @@ async def update_structure(
 ) -> StructureOut:
     """Full replace of a structure's band + blocks."""
     club_id = await _coach_club_id(db, current_user)
-    # Foto previa para `compute_changed_fields` (§2.1): hay que materializar
-    # los valores ANTES de que el servicio mute la misma instancia ORM.
-    previous = await structures_svc.get_structure(
+    # Foto previa para `compute_changed_fields` (§2.1): los valores hay que
+    # materializarlos ANTES de que el servicio mute la estructura.
+    before = await _structure_audit_before(
         db, structure_id=structure_id, club_id=club_id
-    )
-    before = (
-        {
-            **snapshot(previous, *_STRUCTURE_AUDIT_FIELDS),
-            "blocks": _blocks_signature(previous.blocks),
-        }
-        if previous is not None
-        else None
     )
 
     structure = await structures_svc.update_structure(
@@ -487,12 +584,16 @@ async def delete_structure(
 ) -> None:
     """Delete a structure (cascades blocks + match results; laps preserved)."""
     club_id = await _coach_club_id(db, current_user)
-    # La sesión padre hay que leerla ANTES del borrado: después la instancia
-    # ORM ya no existe y `related_entity_id` se perdería.
-    doomed = await structures_svc.get_structure(
-        db, structure_id=structure_id, club_id=club_id
-    )
-    training_session_id = doomed.training_session_id if doomed is not None else None
+    # La sesión padre hay que leerla ANTES del borrado: después la fila ya no
+    # existe y `related_entity_id` se perdería. SELECT de columna, no ORM, para
+    # no meter la estructura condenada en el identity map de la sesión.
+    training_session_id = (
+        await db.execute(
+            select(IntervalStructure.training_session_id).where(
+                IntervalStructure.id == structure_id
+            )
+        )
+    ).scalar_one_or_none()
 
     deleted = await structures_svc.delete_structure(
         db, structure_id=structure_id, club_id=club_id
@@ -625,17 +726,9 @@ async def update_template(
 ) -> TemplateOut:
     """Full replace of a template's fields and blocks."""
     club_id = await _coach_club_id(db, current_user)
-    # Foto previa antes de que el servicio mute la instancia ORM (§2.1).
-    previous = await templates_svc.get_template(
+    # Foto previa antes de que el servicio mute la plantilla (§2.1).
+    before = await _template_audit_before(
         db, template_id=template_id, club_id=club_id
-    )
-    before = (
-        {
-            **snapshot(previous, *_TEMPLATE_AUDIT_FIELDS),
-            "blocks": _blocks_signature(previous.blocks),
-        }
-        if previous is not None
-        else None
     )
 
     template = await templates_svc.update_template(
@@ -706,13 +799,18 @@ async def archive_template(
 ) -> TemplateOut:
     """Toggle a template's archived state."""
     club_id = await _coach_club_id(db, current_user)
-    previous = await templates_svc.get_template(
-        db, template_id=template_id, club_id=club_id
-    )
+    # Estado previo por SELECT de columna (mismo motivo de identity map que
+    # `_template_audit_before`).
+    was_archived = (
+        await db.execute(
+            select(IntervalTemplate.is_archived).where(
+                IntervalTemplate.id == template_id,
+                IntervalTemplate.club_id == club_id,
+            )
+        )
+    ).scalar_one_or_none()
     previous_status = (
-        ("archived" if previous.is_archived else "active")
-        if previous is not None
-        else None
+        None if was_archived is None else ("archived" if was_archived else "active")
     )
 
     template = await templates_svc.archive_template(

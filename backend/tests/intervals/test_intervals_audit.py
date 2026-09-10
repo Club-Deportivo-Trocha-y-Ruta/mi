@@ -216,14 +216,20 @@ async def test_update_structure_cambia_banda_registra_ese_nombre(session):
         structure_id = created.json()["id"]
         resp = await client.put(
             f"{BASE}/structures/{structure_id}",
-            json=_structure_put_payload(band="10-12"),
+            json={
+                "target_age_band": "10-12",
+                # La banda 10-12 exige confirmación explícita del age gate
+                # (FR-007), así que también cambia ese campo.
+                "age_gate_confirmed": True,
+                "blocks": _blocks(),
+            },
         )
     assert resp.status_code == 200, resp.text
 
     rows = await _audit_rows(session, AuditEntityType.interval_structure)
     update_row = rows[-1]
     assert update_row.action == AuditAction.update
-    assert update_row.changed_fields == ["target_age_band"]
+    assert update_row.changed_fields == ["age_gate_confirmed", "target_age_band"]
     assert update_row.diff_json is None
 
 
@@ -383,10 +389,12 @@ async def test_attach_template_registra_link_sobre_la_plantilla(session):
     assert link_row.club_id == CLUB_ID
     assert link_row.diff_json is None
 
-    # `attach` delega en `create_structure`, así que también deja la fila de
-    # creación de la estructura clonada (R1: una fila por entidad × acción).
+    # La matriz §4.11 pide UNA fila para esta ruta: `interval_template`·`link`.
+    # `attach` delega en `structures.create_structure`, pero la instrumentación
+    # de `interval_structure`·`create` vive en el handler de POST /structures,
+    # así que adjuntar no duplica una fila de creación de estructura.
     structure_rows = await _audit_rows(session, AuditEntityType.interval_structure)
-    assert [r.action for r in structure_rows] == [AuditAction.create]
+    assert structure_rows == []
 
 
 # ===========================================================================

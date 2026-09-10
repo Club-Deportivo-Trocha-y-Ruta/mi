@@ -8,7 +8,7 @@ Cubre los códigos HTTP del contrato (upload-design.md §4):
 - 400 magic bytes / archivo vacío / formato no soportado
 - 401 sin auth (anon)
 - 403 rol parent
-- 403 ownership cross-coach (parse_id de otro coach)
+- 403 coach de otro club (parse_id de un cargue ajeno al club)
 - 404 parse_id inexistente / ya committed
 - 409 sha duplicado (committed previo con mismo sha)
 - 413 archivo > RACE_MAX_PDF_MB
@@ -53,7 +53,18 @@ from tests.helpers.audit_tables import AUDIT_TABLES
 # ---------------------------------------------------------------------------
 
 
-def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
+def _make_user(
+    role: UserRole, user_id: int = 10, club_ids: tuple[int, ...] = (1,)
+) -> SimpleNamespace:
+    """Usuario falso con membresías de coach.
+
+    El acceso a un cargue se decide por club y no por autoría
+    (``contracts/scope-ai-imports.md`` §6.1), y ``coach_club_ids`` lee
+    ``user.club_memberships`` del objeto autenticado — no la tabla. El club 1
+    es el que siembran los tests que crean ``club_members``.
+    """
+    from app.models.club import ClubRole as _ClubRole
+
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
@@ -62,7 +73,10 @@ def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=cid, role_in_club=_ClubRole.coach)
+            for cid in club_ids
+        ],
     )
 
 

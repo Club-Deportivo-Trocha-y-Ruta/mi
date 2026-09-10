@@ -3,8 +3,10 @@
 Ver ``specs/041-multi-coach-governance/contracts/audit-log-api.md``. Tres
 ``APIRouter`` en un solo módulo:
 
-- ``clubs_router`` — ``GET /{club_id}/audit-log`` (§2), montado en
-  ``app/main.py`` con ``prefix="/api/clubs"``.
+- ``clubs_router`` — ``GET /{club_id}/audit-log`` (§2) y
+  ``GET /{club_id}/coach-activity``
+  (``contracts/coach-activity-report.md`` §1), montado en ``app/main.py``
+  con ``prefix="/api/clubs"``.
 - ``athletes_router`` — ``GET /{athlete_id}/audit-log`` (§3), montado con
   ``prefix="/api/athletes"``.
 - ``catalog_router`` — ``GET /reason-codes`` (§14), ya lleva su propio
@@ -57,6 +59,13 @@ from app.services.audit import (
     AuditReasonCode,
     AuditReasonGroup,
     render_sentence,
+)
+from app.schemas.coach_activity import CoachActivityOut
+from app.services.coach_activity import (
+    ClubNotFoundError,
+    CoachNotInClubError,
+    InvalidPeriodError,
+    compute_coach_activity,
 )
 from app.services.permissions import can_view_audit
 
@@ -311,6 +320,83 @@ async def list_club_audit_log(
     )
 
     return await _paginated_audit_log(db, filters, limit, offset)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/clubs/{club_id}/coach-activity
+# (contracts/coach-activity-report.md §1; T081)
+# ---------------------------------------------------------------------------
+
+
+@clubs_router.get(
+    "/{club_id}/coach-activity",
+    response_model=CoachActivityOut,
+    tags=["audit"],
+)
+async def get_coach_activity(
+    club_id: int,
+    period_from: date = Query(alias="from"),
+    period_to: date = Query(alias="to"),
+    coach_user_id: int | None = Query(default=None, ge=1),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CoachActivityOut:
+    """FR-013/FR-032/US7: actividad por entrenador de un club y período.
+
+    Superficie interna de gestión: solo admin y entrenadores del propio club
+    (§4). Un padre o un deportista recibe `403`, igual que un entrenador de
+    otro club; nunca se renderiza bajo ``routes/parents/`` ni viaja en un
+    correo, PDF o boletín de familia.
+
+    ``from``/``to`` son obligatorios a propósito (§1.1): un "mes actual"
+    implícito ataría la reconciliación de SC-008 al reloj del servidor.
+    ``coach_user_id`` recorta ``coaches``; ``club_totals`` jamás se recorta.
+
+    Se reutiliza ``can_view_audit`` en lugar del ``can_view_coach_activity``
+    que nombra el contrato: la tabla de RBAC del §4 es idéntica a la del
+    historial (admin siempre, coach solo su club, el resto `403`) y
+    ``app/services/permissions.py`` pertenece a otra tarea de esta oleada.
+
+    Privacidad (Ley 1581): el payload son nombres de personal adulto y
+    enteros. El log de error solo lleva ``club_id`` y la ventana.
+    """
+    if not can_view_audit(current_user, club_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para ver la actividad de este club.",
+        )
+
+    try:
+        return await compute_coach_activity(
+            db,
+            club_id=club_id,
+            period_from=period_from,
+            period_to=period_to,
+            coach_user_id=coach_user_id,
+        )
+    except InvalidPeriodError:
+        logger.info(
+            "coach_activity: periodo inválido club_id=%s from=%s to=%s",
+            club_id,
+            period_from,
+            period_to,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "El periodo debe empezar antes de terminar y no superar 366 días."
+            ),
+        ) from None
+    except ClubNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Club no encontrado",
+        ) from None
+    except CoachNotInClubError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entrenador no encontrado en este club",
+        ) from None
 
 
 # ---------------------------------------------------------------------------

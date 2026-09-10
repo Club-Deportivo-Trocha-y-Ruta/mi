@@ -165,6 +165,24 @@ async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], 
     await engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _stub_resume_run(monkeypatch):
+    """Neutraliza la reanudación del grafo en los casos HITL.
+
+    ``submit_hitl_decision`` llama a ``resume_run``, que arranca LangGraph de
+    verdad y se queda esperando al proveedor. Este arnés sólo mira lo que el
+    endpoint escribe en ``agent_runs`` y en ``audit_log``, así que el grafo se
+    reemplaza por una corrutina vacía. (Antes de que el chequeo por club
+    dejara pasar a estos coaches, el 403 tapaba el bloqueo.)
+    """
+    import app.routers.race_analysis as ra
+
+    async def _noop(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(ra, "resume_run", _noop)
+
+
 @pytest_asyncio.fixture
 async def client_factory(session_factory):
     async def _make(user_id: int, role: UserRole) -> AsyncClient:

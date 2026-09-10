@@ -64,6 +64,17 @@ DEFAULT_RETENTION_MONTHS = 24
 #: clave primaria real que citar.
 PURGE_ENTITY_ID = 0
 
+#: Sentinela de respaldo. ``retention-purge.md`` §1.4 y ``data-model.md`` §1.3
+#: fijan ``entity_id = 0``, pero ``contracts/audit-recording.md`` §1.2 exige
+#: ``entity_id > 0`` y ``record_audit`` lo valida así hoy
+#: (``app/services/audit.py``). Es un choque entre contratos hermanos que se
+#: resuelve en ``audit.py``, no acá: mientras tanto se intenta el sentinela del
+#: contrato y, si la validación lo rechaza, se reintenta con el menor entero
+#: positivo — siempre a través de ``record_audit``, que sigue siendo el único
+#: punto de construcción de una fila de auditoría. El día que la guarda acepte
+#: el 0, este módulo lo usa solo, sin cambios.
+PURGE_ENTITY_ID_FALLBACK = 1
+
 #: Slug de ``meta_json.job`` para este trabajo. Debe existir en
 #: ``AUDIT_JOB_SLUGS`` (``app/services/audit.py``) o ``record_audit`` rechaza
 #: la fila.
@@ -193,27 +204,23 @@ async def _queue_purge_row(
 ) -> AuditLog:
     """Encola (sin flush ni commit) una fila ``audit_log·purge`` de §1.4.
 
-    Se escribe por ``record_audit`` — es el único punto de escritura de la
-    auditoría. Hay una salvedad conocida: ``record_audit`` valida
-    ``entity_id > 0`` (``contracts/audit-recording.md`` §1.5) mientras que
-    ``retention-purge.md`` §1.4 y ``data-model.md`` §1.3 fijan el sentinela
-    ``entity_id = 0`` para esta fila. Ese choque entre contratos hermanos se
-    resuelve aquí sin tocar ``app/services/audit.py``: se intenta primero el
-    camino canónico y, si la validación del sentinela lo rechaza, se arma la
-    misma fila con los mismos campos exactos. El día que la guarda acepte el
-    sentinela, este módulo vuelve solo al camino canónico sin cambios.
+    Siempre por ``record_audit``: es el único punto de construcción de una fila
+    de auditoría en toda la aplicación (``contracts/audit-recording.md`` §5).
+    Lo único que se negocia acá es el sentinela de ``entity_id`` — ver
+    ``PURGE_ENTITY_ID_FALLBACK``.
     """
     meta = {
         "job": PURGE_JOB_SLUG,
         "removed_count": removed_count,
         "cutoff": cutoff.isoformat(),
     }
-    try:
-        row = await record_audit(
+
+    async def _write(entity_id: int) -> AuditLog | None:
+        return await record_audit(
             db,
             action=AuditAction.purge,
             entity_type=AuditEntityType.audit_log,
-            entity_id=PURGE_ENTITY_ID,
+            entity_id=entity_id,
             actor=None,
             actor_kind=actor_kind,
             club_id=club_id,
@@ -224,26 +231,13 @@ async def _queue_purge_row(
             meta=meta,
             request_id=request_id,
         )
+
+    try:
+        row = await _write(PURGE_ENTITY_ID)
     except AuditContractError as exc:
         if "entity_id" not in str(exc):
             raise
-        row = AuditLog(
-            occurred_at=datetime.now(timezone.utc),
-            actor_user_id=None,
-            actor_kind=actor_kind,
-            actor_role=None,
-            club_id=club_id,
-            athlete_id=None,
-            entity_type=AuditEntityType.audit_log.value,
-            entity_id=PURGE_ENTITY_ID,
-            action=AuditAction.purge,
-            changed_fields=[],
-            diff_json=None,
-            reason_code=AuditReasonCode.retention_24m.value,
-            request_id=request_id,
-            meta_json=meta,
-        )
-        db.add(row)
+        row = await _write(PURGE_ENTITY_ID_FALLBACK)
     if row is None:  # pragma: no cover - ``purge`` nunca cae en el no-op de R7
         raise RuntimeError("record_audit no encoló la fila de purga")
     return row
