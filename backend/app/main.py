@@ -18,6 +18,7 @@ from app.routers.monthly_reports import router as monthly_reports_router, parent
 from app.routers.athlete_monthly_newsletters import router as athlete_newsletters_router, clubs_router as newsletter_clubs_router, training_router as newsletter_training_router
 from app.routers.parent_newsletters import router as parent_newsletters_router
 from app.routers.webhooks_resend import router as webhooks_resend_router
+from app.services.race import observability
 from app.services.request_context import RequestIdMiddleware
 
 class RequestIdLogFilter(logging.Filter):
@@ -110,6 +111,7 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 — el arranque nunca debe caer por esto.
         logger.exception("lifespan: reconcile_orphan_runs falló al arrancar")
     yield
+    observability.shutdown()
     await engine.dispose()
 
 

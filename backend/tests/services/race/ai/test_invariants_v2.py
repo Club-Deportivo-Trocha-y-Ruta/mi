@@ -178,8 +178,8 @@ def test_resolve_age_logs_warning_when_missing(caplog):
 
     Por qué: en la regresión original el grafo recibía el atleta sin edad,
     asumía 12 sin avisar al equipo, y el LLM emitía recomendaciones para
-    bambino sobre un juvenil. Hoy el warning permite detectarlo en
-    Langfuse/Render logs.
+    bambino sobre un juvenil. Hoy el warning permite detectarlo en los
+    logs de Render.
     """
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger="app.services.race.ai.nodes.analyst_agent"):

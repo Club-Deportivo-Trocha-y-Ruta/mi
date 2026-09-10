@@ -57,7 +57,7 @@ All sections also apply global guardrails: no real names (use pseudonym `forbidd
 | CA-4 | 0 occurrences of real name in any section | Regex against dynamic `forbidden_names` loaded from DB at run time |
 | CA-5 | "Where they're heading" contains ≥1 actionable verb (prioritize/reduce/maintain/incorporate/adjust/consolidate) and ≥1 reference to the theoretical framework (`docs/01-marco-teorico.md`) | Post-generation lint |
 | CA-6 | "Journey so far" references ≥N-1 prior rounds when N≥2 | Count of explicit mentions of "Round I/II/III/..." |
-| CA-7 | p95 analysis time ≤25s in Render Free (4 rounds, 1 athlete) | Metric in Langfuse + runbook dashboard |
+| CA-7 | p95 analysis time ≤25s in Render Free (4 rounds, 1 athlete) | `agent_runs.latency_ms` p95 query (see `runbook-ops.md` §2); local-only Langfuse tracing (`runbook-ops.md` §8) is an optional cross-check, not available in production |
 | CA-8 | Head Coach guardrails approved (sample 5 analyses) | Sign-off documented by `head-coach` in `project_race_analysis_v2_spec.md` |
 | CA-9 | Privacy policy approved by Data Platform (180d scrubbing, `pii_scrubbed_at`) | Sign-off documented by `data-platform` |
 | CA-10 | Coach validates sample of 5 analyses pre-GA rollout | Checklist signed by Juan Diego before Stage 3 |
@@ -110,7 +110,7 @@ v2 deploys as always-on (no feature flag). Emergency rollback: redeploy of the p
 
 - Parent email: triggered only for **A** rounds in the 2026 calendar (IV Cali 17-May, CD Ginebra 12-Jun, VI Roldanillo 12-Sep).
 - Label visible to parent: **"Coach Analysis"** (never "AI Analysis", never the `prompt_version` badge).
-- Any internal identifier (`prompt_version=race_analyst_v2`, Langfuse run IDs) is kept out of parent role payloads.
+- Any internal identifier (`prompt_version=race_analyst_v2`, `agent_runs.langfuse_trace_id` — internal-only, populated only when local Langfuse tracing is enabled, never in production) is kept out of parent role payloads.
 
 ## 12. Cross-references
 

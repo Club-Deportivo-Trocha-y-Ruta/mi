@@ -148,6 +148,58 @@ async def test_anonymize_scrubs_training_window_coach_feedback(
 
 
 @pytest.mark.asyncio
+async def test_anonymize_scrubs_training_window_session_descriptions(
+    configure_db_factory, fake_session
+):
+    """session_descriptions (feature 037 T103, ampliado al retirar el catálogo
+    de fuerza) se scrubea con el mismo superset club_forbidden_names que
+    coach_feedback: la descripción libre de la sesión puede mencionar
+    compañeros de equipo."""
+    configure_db_factory(fake_session)
+    state = {
+        "athlete_id": 7,
+        "competitor_id": 22,
+        "run_id": "abc",
+        "raw_data": [{"athlete_id": 7, "competitor_id": 22}],
+        "club_forbidden_names": ["Juan Pérez Ficticio", "Ana Gómez Ficticio"],
+        "training_window": {
+            "window_days": 28,
+            "session_descriptions": [
+                "Trabajo de fuerza funcional sobre la bici con Juan Pérez Ficticio.",
+                "Salida larga en terreno mixto, ritmo controlado.",
+            ],
+        },
+    }
+    update = await anonymize(state)
+
+    scrubbed = update["training_window"]["session_descriptions"]
+    assert "Juan Pérez Ficticio" not in scrubbed[0]
+    assert scrubbed[1] == "Salida larga en terreno mixto, ritmo controlado."
+    assert update["training_window"]["window_days"] == 28
+
+
+@pytest.mark.asyncio
+async def test_anonymize_scrubs_session_descriptions_without_coach_feedback(
+    configure_db_factory, fake_session
+):
+    """session_descriptions sola (sin coach_feedback) también dispara el scrub."""
+    configure_db_factory(fake_session)
+    state = {
+        "athlete_id": 7,
+        "competitor_id": 22,
+        "run_id": "abc",
+        "raw_data": [{"athlete_id": 7, "competitor_id": 22}],
+        "forbidden_names": ["Juan Pérez Ficticio"],
+        "training_window": {
+            "coach_feedback": [],
+            "session_descriptions": ["Sesión con Juan Pérez Ficticio en el pelotón."],
+        },
+    }
+    update = await anonymize(state)
+    assert "Juan Pérez Ficticio" not in update["training_window"]["session_descriptions"][0]
+
+
+@pytest.mark.asyncio
 async def test_anonymize_falls_back_to_forbidden_names_without_club_superset(
     configure_db_factory, fake_session
 ):

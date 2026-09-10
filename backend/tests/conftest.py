@@ -1,5 +1,9 @@
 import os
 
+# Antes de importar la app: un .env local con LANGFUSE_ENABLED=true no debe
+# mandar trazas desde la suite.
+os.environ["LANGFUSE_ENABLED"] = "false"
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient

@@ -30,6 +30,10 @@ _PRICING_USD_PER_1M: dict[str, tuple[float, float]] = {
     # budget guard no lo detectará; aceptable porque el uso objetivo de
     # este provider hoy es Ollama local, no OpenAI real.
     "openai": (0.0, 0.0),
+    # Claude Code CLI vía suscripción del desarrollador — uso local, costo
+    # marginal 0 (mismo precedente que Ollama arriba). El budget guard
+    # (RACE_AI_BUDGET_USD_30D) no aplica a este proveedor.
+    "claude-cli": (0.0, 0.0),
 }
 
 # (input_usd_per_1m, output_usd_per_1m) por modelo — feature 037 (T101).
@@ -44,8 +48,9 @@ _PRICING_USD_PER_1M_BY_MODEL: dict[str, tuple[float, float]] = {
 }
 
 # Prompt version registry — mantener en sincronía con archivos en prompts/.
-# Sirve a auditoría / Langfuse / golden eval para correlacionar outputs con
-# versión exacta del prompt. SIEMPRE bump al editar un prompt.
+# Sirve a auditoría / golden eval (y como tag de las trazas locales de
+# Langfuse) para correlacionar outputs con versión exacta del prompt.
+# SIEMPRE bump al editar un prompt.
 PROMPT_VERSION_ANALYST = "race_analyst_v1"
 PROMPT_VERSION_ANALYST_V2 = "race_analyst_v2"
 PROMPT_VERSION_CRITIC = "race_critic_v1"
@@ -61,9 +66,10 @@ def compute_cost_usd(
     Args:
         tokens_in: tokens del prompt enviado al modelo.
         tokens_out: tokens generados por el modelo.
-        provider: ``"anthropic"`` | ``"google"`` | ``"openai"`` — tarifa de
-            fallback usada cuando ``model`` es ``None`` o no tiene entrada
-            propia en :data:`_PRICING_USD_PER_1M_BY_MODEL`.
+        provider: ``"anthropic"`` | ``"google"`` | ``"openai"`` |
+            ``"claude-cli"`` — tarifa de fallback usada cuando ``model`` es
+            ``None`` o no tiene entrada propia en
+            :data:`_PRICING_USD_PER_1M_BY_MODEL`.
         model: model_id exacto (ej. ``"gemini-3.8-flash"``). Si tiene tarifa
             registrada por-modelo, esta gana sobre la tarifa por-proveedor
             (feature 037, T101 — modelos por rol con costo distinto al

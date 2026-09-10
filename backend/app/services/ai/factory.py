@@ -64,11 +64,25 @@ def _build_google(s: "Settings") -> LLMProvider:
     )
 
 
+def _build_claude_cli(s: "Settings") -> LLMProvider:
+    from app.services.ai.providers.claude_cli_provider import ClaudeCliProvider
+
+    return ClaudeCliProvider(
+        api_key=s.ai_api_key,
+        model=s.ai_model,
+        timeout=s.ai_timeout_seconds,
+        max_tokens=s.ai_max_tokens,
+        temperature=s.ai_temperature,
+        base_url=s.ai_base_url,
+    )
+
+
 _PROVIDERS: dict[str, Callable[["Settings"], LLMProvider]] = {
     "anthropic": _build_anthropic,
     "openai": _build_openai,
     "google": _build_google,
     "fake": _build_fake,
+    "claude-cli": _build_claude_cli,
 }
 
 

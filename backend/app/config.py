@@ -96,11 +96,17 @@ class Settings(BaseSettings):
     # Anthropic/OpenAI siguen soportados como alternativa explícita, pero ya
     # no son el default de código (antes decía "anthropic" mientras todo
     # despliegue real corría en Gemini, la deriva que 036/US2 corrigió).
+    # "claude-cli" = Claude Code CLI vía suscripción del desarrollador, SOLO
+    # uso local (los términos de consumo de Anthropic no permiten usarlo
+    # para servir a usuarios finales); requiere `pip install
+    # langchain-claude-cli` y que `claude` esté logueado en la máquina.
+    # ``race_ai_provider`` hereda este valor cuando está vacío (ver abajo),
+    # así que basta con cambiar AI_PROVIDER en un solo lugar en local.
     ai_provider: str = "google"
     # ID de modelo del proveedor. Debe ser consistente con ai_provider de
     # arriba — este stack no tiene un default por-proveedor como
     # race/agents/_llm.py::DEFAULT_MODEL_BY_PROVIDER, así que ambos campos
-    # se mantienen a mano en sync.
+    # se mantienen a mano en sync (ej. claude-cli → AI_MODEL=claude-sonnet-5).
     ai_model: str = "gemini-3.1-flash-lite"
     # API key del proveedor — vacío en repo, validator exige valor en producción.
     ai_api_key: str = ""
@@ -118,16 +124,18 @@ class Settings(BaseSettings):
     # -----------------------------------------------------------------------
     # Race AI — proveedor/modelo dedicado (specs/010-competitions-ai-insights y sig.)
     # -----------------------------------------------------------------------
-    # El pipeline agéntico de race/agents/ (analyst, critic, chat) usa su
-    # propio proveedor/modelo/API key — independiente de AI_PROVIDER/AI_MODEL
-    # (capa app/services/ai/) para poder cambiar uno sin romper el otro.
+    # El pipeline agéntico de race/agents/ (analyst, critic, chat) puede correr
+    # con un proveedor/modelo/API key distinto de AI_PROVIDER/AI_MODEL (capa
+    # app/services/ai/) — por ejemplo si en el futuro conviene un modelo más
+    # barato para el volumen del análisis de carreras. En la práctica hoy
+    # coinciden (los dos corren en Gemini en prod); por eso, vacío hereda
+    # AI_PROVIDER en vez de tener su propio default fijo — así no hay que
+    # tocar dos variables para cambiar de proveedor en local.
     # Factory + Strategy en app/services/race/agents/_llm.py::build_chat_llm.
-    # Proveedor: "anthropic" | "google" | "openai".
-    # Default "google" (feature 036, T051): antes decía "anthropic" pese a
-    # que backend/.env — lo que corre de verdad — siempre configuró Gemini,
-    # y el golden eval en CI también corre contra Gemini. El coach depende
-    # de la cuota gratis de Gemini; no hay plan de migrar a Anthropic.
-    race_ai_provider: str = "google"
+    # Proveedor: "" (hereda AI_PROVIDER) | "anthropic" | "google" | "openai" |
+    # "claude-cli". El golden eval en CI fija RACE_AI_PROVIDER=google
+    # explícito, así que no depende de este default.
+    race_ai_provider: str = ""
     # Vacío → default por proveedor en _llm.py (claude-sonnet-5 | gemini-3.1-flash-lite | gpt-4o-mini).
     race_ai_model: str = ""
     # Vacío → si race_ai_provider == ai_provider, cae a AI_API_KEY (mismo proveedor).
@@ -171,7 +179,8 @@ class Settings(BaseSettings):
     #
     # Calibración verificada para Gemini (feature 036, T062) — el valor NO
     # cambia, esto sólo documenta que sigue siendo generoso con el proveedor
-    # que realmente corre hoy (``race_ai_provider="google"`` arriba):
+    # que realmente corre hoy en producción (``google``, vía CI/Render con
+    # RACE_AI_PROVIDER explícito — ver .github/workflows/race-eval.yml):
     #   tarifa Gemini 3.1 Flash Lite (pricing.py): $0.25/1M in, $1.50/1M out.
     #   ~4K tokens in + ~1K out por llamada LLM ⇒ ~$0.0025/llamada.
     #   hasta 5 llamadas por análisis de UNA válida (1 analyst + 1 critic
@@ -205,6 +214,20 @@ class Settings(BaseSettings):
     # default 30 min.
     # Ver: app/services/race/ai/run_reconciliation.py
     race_ai_orphan_run_threshold_minutes: int = 30
+
+    # -----------------------------------------------------------------------
+    # Langfuse — trazas de las llamadas LLM del pipeline race (SOLO local)
+    # -----------------------------------------------------------------------
+    # Observador opcional para ver tokens por llamada en un Langfuse
+    # self-hosted (docker-compose.langfuse.yml). Prohibido en producción. La
+    # fuente de verdad de costos sigue siendo pricing.py + budget guard.
+    # input/output/metadata viajan SIEMPRE como "[redacted]" (sin opción de
+    # capturar contenido: los prompts llevan cuasi-identificadores de menores).
+    # Ver: app/services/race/observability.py
+    langfuse_enabled: bool = False
+    langfuse_base_url: str = "http://localhost:3001"
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
 
     # -----------------------------------------------------------------------
     # Media de sesiones (fotos/videos vía SFTP a Hostinger)
@@ -330,7 +353,7 @@ class Settings(BaseSettings):
     @field_validator("ai_provider")
     @classmethod
     def validate_ai_provider(cls, v: str, info) -> str:
-        allowed = {"anthropic", "openai", "google", "fake"}
+        allowed = {"anthropic", "openai", "google", "fake", "claude-cli"}
         normalized = v.lower().strip()
         if normalized not in allowed:
             raise ValueError(
@@ -341,11 +364,14 @@ class Settings(BaseSettings):
     @field_validator("race_ai_provider")
     @classmethod
     def validate_race_ai_provider(cls, v: str, info) -> str:
-        allowed = {"anthropic", "google", "openai"}
+        allowed = {"anthropic", "google", "openai", "claude-cli"}
         normalized = v.lower().strip()
-        if normalized not in allowed:
+        # "" = hereda AI_PROVIDER (ver comentario del campo); los lectores
+        # (_llm.py, analyst.py) ya resuelven ``race_ai_provider or ai_provider``.
+        if normalized and normalized not in allowed:
             raise ValueError(
-                f"RACE_AI_PROVIDER='{v}' inválido. Permitidos: {sorted(allowed)}."
+                f"RACE_AI_PROVIDER='{v}' inválido. Permitidos: '' (hereda "
+                f"AI_PROVIDER) o {sorted(allowed)}."
             )
         return normalized
 
@@ -381,6 +407,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "AI_LOG_PROMPTS=true PROHIBIDO en producción "
                 "(privacidad de menores)."
+            )
+        return v
+
+    @field_validator("langfuse_enabled")
+    @classmethod
+    def forbid_langfuse_in_prod(cls, v: bool, info) -> bool:
+        env = info.data.get("app_env", "development")
+        if env == "production" and v:
+            raise ValueError(
+                "LANGFUSE_ENABLED=true PROHIBIDO en producción "
+                "(trazas solo en desarrollo local; privacidad de menores)."
             )
         return v
 

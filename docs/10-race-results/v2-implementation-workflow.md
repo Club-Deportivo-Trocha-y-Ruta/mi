@@ -107,7 +107,7 @@ graph TD
     F5 --> F6[Phase 6: Frontend<br/>SPA components]
     F4 --> F7[Phase 7: Eval<br/>golden + LLM judge]
     F5 --> F7
-    F7 --> F8[Phase 8: Production<br/>CI + Langfuse optional]
+    F7 --> F8[Phase 8: Production<br/>CI + local tracing optional]
     F6 --> F8
 
     style F0 fill:#e1f5fe
@@ -140,9 +140,9 @@ graph TD
 
 | # | Task | Agent | Command | Deliverable |
 |---|---|---|---|---|
-| 0.1 | Add deps to `backend/requirements.txt` | devops-architect | `/sc:implement` | langgraph>=1.2.0, langchain-google-genai>=2.0.0, langgraph-checkpoint-sqlite>=2.0.5, chromadb>=0.5.20, langfuse>=3.0.0 (present but stack off until optional F8B), jinja2 (already), hypothesis (test). |
-| 0.2 | Create Alembic migration `7a8b9c0d1e2f` with 4 new tables | backend-architect | `/sc:implement` | `backend/alembic/versions/7a8b9c0d1e2f_*.py` with athlete_ai_insights, agent_runs, agent_run_events, anonymization_mappings. Column `langfuse_trace_id` remains NULL until F8. |
-| 0.3 | `docker-compose.langfuse.yml` + `docker-compose.langfuse.env.example` created (NOT started in F0) | devops-architect | `/sc:implement` | YAML + 6 services ready for F8B startup. Stack off in F0–F7. Primary audit via columns `athlete_ai_insights.cost_usd`, `latency_ms`, `tokens_in/out`. |
+| 0.1 | Add deps to `backend/requirements.txt` | devops-architect | `/sc:implement` | langgraph>=1.2.0, langchain-google-genai>=2.0.0, langgraph-checkpoint-sqlite>=2.0.5, chromadb>=0.5.20, jinja2 (already), hypothesis (test). `langfuse` was added later (2026-09-10, local-only optional tracing — see Phase 8 below), not in this batch. |
+| 0.2 | Create Alembic migration `7a8b9c0d1e2f` with 4 new tables | backend-architect | `/sc:implement` | `backend/alembic/versions/7a8b9c0d1e2f_*.py` with athlete_ai_insights, agent_runs, agent_run_events, anonymization_mappings. Column `langfuse_trace_id` remains NULL unless local tracing is enabled (`LANGFUSE_ENABLED=true`, dev only). |
+| 0.3 | `docker-compose.langfuse.yml` + `docker-compose.langfuse.env.example` created (NOT started in F0) | devops-architect | `/sc:implement` | Superseded 2026-09-10 — the actual compose (created then, not in F0) is Langfuse v4, 5 services (Postgres, ClickHouse, Redis, MinIO, worker+web). Stack off by default; local-only, never in production. Primary audit via columns `athlete_ai_insights.cost_usd`, `latency_ms`, `tokens_in/out`. |
 | 0.4 | Create folder structure `services/race/{ai,agents,rag,prompts}` | backend-architect | manual | empty tree with `__init__.py` |
 | 0.5 | Update AI_MAX_TOKENS=8192 in .env and .env.example | devops-architect | manual | + document in CLAUDE.md variables section |
 | 0.6 | Current race suite still green post-changes | quality-engineer | `pytest tests/services/race/` | 339/339 |
@@ -456,9 +456,9 @@ Two paths:
 | Option | Infra cost | Setup | When |
 |---|---|---|---|
 | **8A — Audit-only DB (default MVP)** | 0 | 0.5 day | Default. Sufficient with <10 analyses/week, 1 coach. |
-| **8B — Langfuse self-hosted (optional)** | ~$5/month VPS + ~2 GB RAM | +1 day | Only if: real Gemini cost >$10/month, or coach asks for visual dashboard, or serious prompt A/B testing planned. |
+| **8B — Local-only Langfuse tracing (optional)** | 0 (dev machine only, no production deployment) | +1 day | Dev-time drill-down on token/latency per LLM call. Never deployed to production — see `runbook-ops.md` §8. |
 
-**Recommendation:** start with 8A. Migrate to 8B only when one of the above conditions is met.
+**Recommendation:** start with 8A. 8B was implemented 2026-09-10 as a local-only dev tool — it complements 8A, it does not replace it in production.
 
 ### Atomic tasks — Option 8A (default)
 
@@ -476,32 +476,30 @@ Two paths:
 - Budget guard tested (mock row >$20)
 - Runbook documented
 
-### Atomic tasks — Option 8B (optional, only if activated)
+### Atomic tasks — Option 8B (optional, local-only)
 
-| # | Task | Agent | Command | Deliverable |
-|---|---|---|---|---|
-| 8B.1 | Confirm `langfuse>=3.0.0` already in requirements.txt (added in F0.1) | devops-architect | manual | Verify |
-| 8B.2 | Generate 3 openssl secrets + start `docker-compose.langfuse.yml` (created in F0.3) | devops-architect | `cp env.example env && openssl rand` × 3 + `docker compose -f docker-compose.langfuse.yml --env-file docker-compose.langfuse.env up -d` | Starts on :3001. NEXTAUTH_SECRET, SALT, ENCRYPTION_KEY. |
-| 8B.3 | Implement `app/observability/langfuse.py` with FakeLangfuse fallback | backend-architect | `/sc:implement` | If `LANGFUSE_ENABLED=false` → total no-op |
-| 8B.4 | Conditional `@observe` decorators on nodes | backend-architect | `/sc:implement` | Tags: athlete_id, season, prompt_version, coach_id |
-| 8B.5 | Deploy Langfuse server (Hetzner VPS ~$5/month or coach's machine) | devops-architect | manual | LANGFUSE_HOST pointing there |
-| 8B.6 | Langfuse variables in production .env Render | devops-architect | manual | `LANGFUSE_ENABLED=true` + HOST + keys |
-| 8B.7 | Budget alert UI Langfuse $5/month | devops-architect | manual | Email coach + admin |
-| 8B.8 | Backfill `langfuse_trace_id` in `athlete_ai_insights` going forward | — | automatic | Set via SDK |
+> **Implemented 2026-09-10** as local-only dev tracing — see `runbook-ops.md`
+> §8 and `app/services/race/observability.py` for the actual design
+> (`observability.llm_tracing()` wraps `race-analysis`, `race-chat` and
+> `race-eval-judge` with a LangChain `CallbackHandler`, `langfuse>=4.6,<5`).
+> No production deployment; no UI budget alerts were wired — the 30-day
+> budget guard stays log-only per `budget_guard.py`. The task table below
+> (8B.1–8B.8) described the original plan and is superseded by that
+> implementation.
 
-**Success criterion 8B (if activated):**
-- Langfuse UI shows traces of all new runs
-- Disabling Langfuse (`LANGFUSE_ENABLED=false`) → agent still works, DB audit still complete
+**Success criterion 8B (met):**
+- Langfuse UI shows traces of `race-analysis` / `race-chat` / `race-eval-judge` runs locally when `LANGFUSE_ENABLED=true`.
+- Disabling Langfuse (`LANGFUSE_ENABLED=false`, the default) → agent still works, DB audit still complete.
 
 ### Rollback
 
 - **8A:** revert commits, no migration needed (DB columns already exist from F0).
-- **8B:** `LANGFUSE_ENABLED=false`, `docker compose -f docker-compose.langfuse.yml down -v`, revert commits.
+- **8B:** `LANGFUSE_ENABLED=false`, `docker compose -f docker-compose.langfuse.yml down -v`, revert commits. No production rollback needed — 8B never runs there.
 
 ### Default `.env`
 
 ```
-LANGFUSE_ENABLED=false   # default — activate only in option 8B
+LANGFUSE_ENABLED=false   # default — local dev opt-in only, forbidden in production
 ```
 
 ### Primary agent: **devops-architect** + backend-architect (8A.3 budget guard)
@@ -520,7 +518,7 @@ LANGFUSE_ENABLED=false   # default — activate only in option 8B
 | LangGraph state corruption after crash | F4 | Low | High | SQLite checkpointing + retry tests; states >1h auto-cancel |
 | Polling overhead under load | F5, F6 | Low | Low | ~15 req/30s per run × N concurrent. Mitigation: max 10 runs; ETag/304 if state unchanged |
 | Irrelevant RAG retrieval | F2, F3 | Medium | Medium | Specific retrieval tests; chunking + top_k tuning |
-| LLM cost spikes | F8 | Low | Medium | DB budget guard (8A) blocks if `SUM(cost_usd) 30d > $20`; Langfuse alert optional (8B) |
+| LLM cost spikes | F8 | Low | Medium | DB budget guard (8A) blocks if `SUM(cost_usd) 30d > $20` (log-only overrun notice today, no email yet — see `budget_guard.py`); local Langfuse (8B) is a dev-only token/latency observer, not an alerting channel |
 | Golden dataset insufficient | F7 | Medium | High | Iterate: start with 5 cases, grow to 20 in first 2 prod weeks |
 
 ---
@@ -548,7 +546,7 @@ LANGFUSE_ENABLED=false   # default — activate only in option 8B
 | Ex2 — Add HITL gate (interrupt) | During F1 | `interrupt()` + Command(resume) | 1h | F1 |
 | Ex3 — In-memory memory (MemorySaver) | During F2 | Checkpointing patterns | 1.5h | F2 |
 | Ex4 — RAG with ChromaDB | During F2 (reinforces) | Embeddings + retrieval | 2h | F2 |
-| Ex5 — Langfuse tracing (decorator @observe) | **OPTIONAL** — only if 8B is activated | Observability | 1.5h | F8B |
+| Ex5 — Langfuse tracing | **OPTIONAL, already implemented** — see `runbook-ops.md` §8 for the real mechanism (`observability.llm_tracing()` context manager + LangChain `CallbackHandler`, not `@observe`) | Observability | — | F8B |
 | Ex6 — Multi-agent supervisor | During F4 | Coordination patterns | 2-3h | F4 |
 | Ex7 — Eval framework | During F7 (reinforces) | LLM-as-judge | 2h | F7 |
 | Ex8 — TanStack Query polling pattern | During F5 | refetchInterval + incremental events | 1h | F5 |
@@ -613,7 +611,7 @@ graph LR
 ### Performance
 
 - [ ] p50 latency analysis <30s
-- [ ] Cost per analysis <$0.01 (verified via `athlete_ai_insights.cost_usd`; Langfuse if 8B active)
+- [ ] Cost per analysis <$0.01 (verified via `athlete_ai_insights.cost_usd`; local Langfuse trace optional cross-check, see 8B)
 - [ ] Max 10 concurrent runs (backpressure active)
 - [ ] Stable polling during 10 concurrent runs without degradation >500ms p95
 
@@ -624,11 +622,11 @@ graph LR
 - [ ] DB budget guard active (blocks if >$20/30d)
 - [ ] Ops runbook written
 
-### Observability (optional 8B — only if activated)
+### Observability (optional 8B — local-only, met 2026-09-10)
 
-- [ ] Langfuse self-hosted UP on :3001
-- [ ] Traces of all runs visible
-- [ ] Budget alert UI configured
+- [ ] Local Langfuse stack (`docker-compose.langfuse.yml`) UP on :3001
+- [ ] Traces of `race-analysis` / `race-chat` / `race-eval-judge` visible when `LANGFUSE_ENABLED=true`
+- [ ] No UI budget alert (not wired — budget guard remains log-only, see `budget_guard.py`)
 
 ### Documentation
 
@@ -681,7 +679,8 @@ Day 14:   F8 + prod smoke
 
 ```
 /sc:implement Phase 0 race-results-v2: add deps requirements.txt
-(without langfuse, deferred to optional F8), create Alembic migration
+(langfuse added later, 2026-09-10, as a local-only optional dep — see
+Phase 8 below), create Alembic migration
 7a8b9c0d1e2f with 4 tables (athlete_ai_insights, agent_runs,
 agent_run_events, anonymization_mappings) per
 docs/10-race-results/v2-agentic-design.md §3. Verify the
@@ -700,7 +699,7 @@ In parallel: start Ex1 (hello-world LangGraph) in `backend/sandbox/learning/ej1/
 | New code coverage | `pytest --cov=app.services.race.ai --cov=app.services.race.agents` | End of each phase |
 | Real vs estimated implementation time | Manual tracking per phase | End of phase |
 | Eval score | `pytest --golden` | Each prompt change |
-| Accumulated LLM cost | `SUM(cost_usd) FROM athlete_ai_insights` (default) or Langfuse dashboard if 8B | Daily post F8 |
+| Accumulated LLM cost | `SUM(cost_usd) FROM athlete_ai_insights` (default; source of truth) — local Langfuse dashboard optional cross-check, cost figures there are approximate | Daily post F8 |
 
 ---
 
@@ -709,7 +708,7 @@ In parallel: start Ex1 (hello-world LangGraph) in `backend/sandbox/learning/ej1/
 | # | Assumption | Validate with | Risk if fails |
 |---|---|---|---|
 | A1 | Raising AI_MAX_TOKENS to 8192 is accepted by Gemini Flash Lite | Integration test F3 | Adjust prompt length |
-| A2 | ~~Langfuse self-hosted doesn't saturate resources~~ — **Decision 2026-05-20:** Langfuse deferred to optional F8. Primary audit in DB. | n/a default; smoke F8B if activated | n/a default |
+| A2 | ~~Langfuse self-hosted doesn't saturate resources~~ — **Decision 2026-05-20:** Langfuse deferred to optional F8. Primary audit in DB. **Superseded 2026-09-10:** local-only tracing implemented, see `runbook-ops.md` §8. | n/a default; smoke F8B if activated | n/a default |
 | A3 | Coach accepts inline HITL UX (cards) vs modal | UX test F6 with coach | Redesign flow |
 | A4 | gemini-embedding-001 multilingual Spanish quality sufficient | F2 tests with docs/01 | Fallback local sentence-transformers |
 | A5 | 10 golden cases sufficient for baseline | F7 eval | Expand to 20 |

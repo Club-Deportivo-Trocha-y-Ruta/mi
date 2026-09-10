@@ -27,6 +27,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from app.services.race import observability
 from app.services.race.agents._llm import call_llm
 from app.services.race.schemas import AnalysisOutput
 
@@ -236,7 +237,12 @@ async def llm_judge_score(
         llm = llm_factory()
 
     try:
-        call = await call_llm(llm, prompt)
+        with observability.llm_tracing(
+            trace_name="race-eval-judge",
+            session_id=str(case.get("case_id", "unknown")),
+            tags=["judge-v1"],
+        ) as tracing:
+            call = await call_llm(llm, prompt, config=tracing)
     except Exception as exc:
         logger.warning("llm_judge: llamada al LLM falló (%s) — neutral 0.5", exc)
         return JudgeResult(score=_NEUTRAL_SCORE, reasoning="llm_error", parse_ok=False)
@@ -344,7 +350,12 @@ async def llm_judge_score_v3(
         llm = llm_factory()
 
     try:
-        call = await call_llm(llm, prompt)
+        with observability.llm_tracing(
+            trace_name="race-eval-judge",
+            session_id=str(case.get("case_id", "unknown")),
+            tags=["judge-v2"],
+        ) as tracing:
+            call = await call_llm(llm, prompt, config=tracing)
     except Exception as exc:  # noqa: BLE001
         logger.warning("llm_judge_v3: llamada al LLM falló (%s) — neutral 0.5", exc)
         return JudgeResult(score=_NEUTRAL_SCORE, reasoning="llm_error", parse_ok=False)

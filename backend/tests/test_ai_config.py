@@ -62,7 +62,7 @@ def test_ai_defaults_disabled(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("provider", ["anthropic", "openai", "google", "fake"])
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "google", "fake", "claude-cli"])
 def test_ai_provider_allowed(provider):
     s = Settings(_env_file=None, ai_provider=provider)
     assert s.ai_provider == provider
@@ -133,16 +133,18 @@ def test_ai_log_prompts_allowed_in_dev():
 
 
 def test_ai_and_race_ai_defaults_point_to_gemini(monkeypatch):
-    """Ambos stacks de IA (AI_* y RACE_AI_*) corren sobre Gemini en
-    backend/.env real; el default de código debe coincidir en vez de
-    apuntar a Anthropic, que no es lo que el club usa hoy.
+    """Sin ``RACE_AI_PROVIDER`` fijado, hereda ``AI_PROVIDER`` (que por
+    default es Gemini) — un solo lugar para cambiar de proveedor en local,
+    en vez de tener que fijar las dos variables en sync a mano.
     """
     for key in ["AI_PROVIDER", "AI_MODEL", "RACE_AI_PROVIDER", "RACE_AI_MODEL"]:
         monkeypatch.delenv(key, raising=False)
     s = Settings(_env_file=None)
     assert s.ai_provider == "google"
     assert s.ai_model == "gemini-3.1-flash-lite"
-    assert s.race_ai_provider == "google"
+    # "" = hereda AI_PROVIDER — ver _llm.py::build_chat_llm y demás lectores
+    # (``race_ai_provider or ai_provider``), no un default propio fijo.
+    assert s.race_ai_provider == ""
     # race_ai_model se deja vacío a propósito: cae al default por proveedor
     # en _llm.py::DEFAULT_MODEL_BY_PROVIDER (única fuente de verdad, T061).
     assert s.race_ai_model == ""

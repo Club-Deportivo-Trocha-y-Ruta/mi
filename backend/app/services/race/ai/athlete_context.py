@@ -41,6 +41,8 @@ _ABSENT_STATUSES = {"ausente"}
 _STALE_MEASUREMENT_DAYS = 120
 _MAX_COACH_FEEDBACK_ITEMS = 3
 _COACH_FEEDBACK_MAX_CHARS = 200
+_MAX_SESSION_DESCRIPTIONS = 3
+_SESSION_DESCRIPTION_MAX_CHARS = 200
 _MAX_TECHNICAL_FOCI = 6
 
 
@@ -231,6 +233,7 @@ async def load_training_window(
     interval_sessions = 0
     scheduled_dates: list[date] = []
     feedback_candidates: list[tuple[date, str]] = []
+    description_candidates: list[tuple[date, str]] = []
 
     last7_cutoff = date_to - _days_delta(7)
 
@@ -270,6 +273,14 @@ async def load_training_window(
         if row.individual_feedback and session.scheduled_date is not None:
             feedback_candidates.append((session.scheduled_date, row.individual_feedback))
 
+        # El catálogo de fuerza se retiró (migración d0e1f2a3b4c5); ya no hay
+        # conteo estructurado de sesiones de fuerza. Mientras no exista un
+        # reemplazo estructurado, la descripción libre de la sesión (donde el
+        # coach anota qué se hizo, incluido trabajo de fuerza) es la única
+        # señal disponible — se agrega al contexto igual que coach_feedback.
+        if session.description and session.scheduled_date is not None:
+            description_candidates.append((session.scheduled_date, session.description))
+
     sessions_in_window = len(rows)
     attendance_pct = (
         round(attended / sessions_in_window * 100, 1) if sessions_in_window else None
@@ -290,6 +301,12 @@ async def load_training_window(
     coach_feedback = [
         text[:_COACH_FEEDBACK_MAX_CHARS]
         for _d, text in feedback_candidates[:_MAX_COACH_FEEDBACK_ITEMS]
+    ]
+
+    description_candidates.sort(key=lambda item: item[0], reverse=True)
+    session_descriptions = [
+        text[:_SESSION_DESCRIPTION_MAX_CHARS]
+        for _d, text in description_candidates[:_MAX_SESSION_DESCRIPTIONS]
     ]
 
     return {
@@ -313,6 +330,7 @@ async def load_training_window(
         "days_since_last_session": days_since_last_session,
         "days_since_previous_race": None,  # reserva — la puebla el nodo (necesita fechas de carrera)
         "coach_feedback": coach_feedback,
+        "session_descriptions": session_descriptions,
         "strava_load": None,  # reserva (fuera de alcance — spec.md §Out of scope)
     }
 

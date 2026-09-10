@@ -70,6 +70,7 @@ from app.schemas.race_ai import (
     StartRunRequest,
     StartRunResponse,
 )
+from app.services.race import observability
 from app.services.race.ai.budget_guard import (
     BudgetExceededError,
     check_budget,
@@ -663,6 +664,13 @@ async def _finalize_run(
         logger.error("_finalize_run: run %s no existe", external_run_id)
         return
     run_db_id = int(run["id"])
+
+    trace_id = observability.trace_id_for(external_run_id)
+    if trace_id is not None:
+        await db.execute(
+            text("UPDATE agent_runs SET langfuse_trace_id = :tid WHERE id = :id"),
+            {"tid": trace_id, "id": run_db_id},
+        )
 
     events = list((result_state or {}).get("events") or [])
 
@@ -1614,7 +1622,8 @@ async def admin_ai_usage(
     """Métricas agregadas de uso de IA en ventana ``days``.
 
     Lee desde ``athlete_ai_insights`` — fuente de verdad para
-    cost/latency en MVP (Langfuse diferido a F8B).
+    cost/latency. Langfuse es solo un observador local opcional
+    (``services/race/observability.py``), no fuente de estas métricas.
 
     RBAC ampliado a coach (§7.2, US6 AC4): a diferencia de
     ``GET /api/ai/status``, acá el entrenador SÍ ve montos en dólares —

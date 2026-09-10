@@ -229,3 +229,33 @@ async def test_finalize_maps_node_error_to_db_error_enum(fake_db) -> None:
         f"node_error in-memory debe mapearse a ENUM 'error' en DB, fue {types}"
     )
     assert fake_db.runs[rid]["status"] == "failed"
+
+
+def _langfuse_updates(fake_db) -> list[tuple[str, dict]]:
+    return [(sql, p) for sql, p in fake_db.executed if "langfuse_trace_id" in sql]
+
+
+@pytest.mark.asyncio
+async def test_finalize_persists_langfuse_trace_id_when_tracing_enabled(
+    fake_db, monkeypatch
+) -> None:
+    from app.services.race import observability
+
+    rid = "run-langfuse-005"
+    fake_db.seed_run(rid, status_="running")
+    monkeypatch.setattr(observability, "trace_id_for", lambda seed: "ab" * 16)
+
+    await _finalize_run(fake_db, rid, exc=RuntimeError("boom"), result_state=None)
+
+    (update,) = _langfuse_updates(fake_db)
+    assert update[1] == {"tid": "ab" * 16, "id": fake_db.runs[rid]["id"]}
+
+
+@pytest.mark.asyncio
+async def test_finalize_skips_langfuse_trace_id_when_tracing_disabled(fake_db) -> None:
+    rid = "run-langfuse-006"
+    fake_db.seed_run(rid, status_="running")
+
+    await _finalize_run(fake_db, rid, exc=RuntimeError("boom"), result_state=None)
+
+    assert _langfuse_updates(fake_db) == []

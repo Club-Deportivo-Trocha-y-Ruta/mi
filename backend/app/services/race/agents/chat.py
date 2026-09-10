@@ -30,6 +30,8 @@ from typing import Any, Callable, Optional, Tuple
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.services.race import observability
 from app.services.race.agents._llm import build_chat_llm, extract_text
 from app.services.race.agents.pricing import PROMPT_VERSION_CHAT
 from app.services.race.ai.athlete_context import load_training_window
@@ -852,43 +854,54 @@ class RaceChatAgent:
         citations: list[str] = []
         final_text = ""
 
-        for _ in range(MAX_TOOL_ITERATIONS):
-            response = await bound_llm.ainvoke(history)
-            history.append(response)
-
-            tool_calls = getattr(response, "tool_calls", None) or []
-            if not tool_calls:
-                final_text = extract_text(response)
-                break
-
-            for tc in tool_calls:
-                # tc puede ser dict (LangChain >=0.2) o un objeto.
-                name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
-                args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
-                call_id = (
-                    tc.get("id")
-                    if isinstance(tc, dict)
-                    else getattr(tc, "id", None) or "call_0"
+        # Los tool outputs llevan nombres reales: las tools se invocan sin
+        # config, así que no generan spans.
+        with observability.llm_tracing(
+            trace_name="race-chat",
+            session_id=observability.anonymous_session_id(session_id),
+            tags=[f"provider:{settings.race_ai_provider or settings.ai_provider}", PROMPT_VERSION_CHAT],
+        ) as tracing:
+            for _ in range(MAX_TOOL_ITERATIONS):
+                response = await (
+                    bound_llm.ainvoke(history, config=tracing)
+                    if tracing
+                    else bound_llm.ainvoke(history)
                 )
-                if not name or name not in effective_tools_by_name:
-                    tool_output = f"(tool desconocida: {name})"
-                else:
-                    tools_called.append(name)
-                    try:
-                        tool = effective_tools_by_name[name]
-                        result = await tool.ainvoke(args or {})
-                        tool_output = str(result)
-                    except Exception as exc:
-                        logger.warning("Tool '%s' falló: %s", name, exc)
-                        tool_output = f"(error ejecutando {name}: {type(exc).__name__})"
-                history.append(ToolMessage(content=tool_output, tool_call_id=call_id))
-        else:
-            # No alcanzamos sin tool_calls — usamos el último AIMessage como fallback.
-            last_ai = next(
-                (m for m in reversed(history) if isinstance(m, AIMessage)),
-                None,
-            )
-            final_text = extract_text(last_ai) if last_ai else "(sin respuesta del modelo)"
+                history.append(response)
+
+                tool_calls = getattr(response, "tool_calls", None) or []
+                if not tool_calls:
+                    final_text = extract_text(response)
+                    break
+
+                for tc in tool_calls:
+                    # tc puede ser dict (LangChain >=0.2) o un objeto.
+                    name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+                    args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
+                    call_id = (
+                        tc.get("id")
+                        if isinstance(tc, dict)
+                        else getattr(tc, "id", None) or "call_0"
+                    )
+                    if not name or name not in effective_tools_by_name:
+                        tool_output = f"(tool desconocida: {name})"
+                    else:
+                        tools_called.append(name)
+                        try:
+                            tool = effective_tools_by_name[name]
+                            result = await tool.ainvoke(args or {})
+                            tool_output = str(result)
+                        except Exception as exc:
+                            logger.warning("Tool '%s' falló: %s", name, exc)
+                            tool_output = f"(error ejecutando {name}: {type(exc).__name__})"
+                    history.append(ToolMessage(content=tool_output, tool_call_id=call_id))
+            else:
+                # No alcanzamos sin tool_calls — usamos el último AIMessage como fallback.
+                last_ai = next(
+                    (m for m in reversed(history) if isinstance(m, AIMessage)),
+                    None,
+                )
+                final_text = extract_text(last_ai) if last_ai else "(sin respuesta del modelo)"
 
         # Recolectar citas referenciadas en el output final.
         if final_text:

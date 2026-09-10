@@ -169,6 +169,106 @@ def test_build_chat_llm_google_default_model_is_gemini_3_1_flash_lite(monkeypatc
     assert llm.model == "gemini-3.1-flash-lite"
 
 
+def test_build_chat_llm_constructs_claude_cli_instance_without_calling_api():
+    """build_chat_llm(provider='claude-cli') no debe hacer red ni llamar al
+    CLI — solo instanciar ``ChatClaudeCli``. ``temperature`` y
+    ``max_output_tokens`` se ignoran a propósito (ver docstring de
+    ``_build_claude_cli_llm``): claude-sonnet-5 (familia 4.6+) rechaza con
+    400 cualquier sampling distinto del default, y la truncación
+    client-side de ``max_tokens`` rompería el JSON estructurado del
+    analista."""
+    llm = build_chat_llm(
+        provider="claude-cli",
+        model="claude-sonnet-5",
+        max_output_tokens=4096,
+        temperature=0.2,
+    )
+    from langchain_claude_cli import ChatClaudeCli
+
+    assert isinstance(llm, ChatClaudeCli)
+    assert llm.model == "claude-sonnet-5"
+    assert llm.max_tokens is None
+    temperature_attr = getattr(llm, "temperature", None)
+    assert temperature_attr != 0.2
+
+
+def test_build_chat_llm_claude_cli_default_model_is_claude_sonnet_5(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "claude-cli")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    monkeypatch.setattr(settings, "race_ai_analyst_model", "")
+    assert resolve_configured_model(provider="claude-cli") == "claude-sonnet-5"
+
+
+def test_build_chat_llm_claude_cli_raises_clear_error_when_package_missing(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "langchain_claude_cli", None)
+    with pytest.raises(ImportError, match="pip install langchain-claude-cli"):
+        build_chat_llm(provider="claude-cli")
+
+
+def test_compute_cost_usd_claude_cli_is_zero():
+    """Claude Code CLI vía suscripción del desarrollador — costo marginal 0
+    (mismo precedente que Ollama sobre 'openai'), con y sin model_id."""
+    assert compute_cost_usd(4000, 1000, provider="claude-cli") == 0.0
+    assert (
+        compute_cost_usd(4000, 1000, provider="claude-cli", model="claude-sonnet-5")
+        == 0.0
+    )
+
+
+# ---------------------------------------------------------------------------
+# Settings.race_ai_provider — allowlist "claude-cli"
+# ---------------------------------------------------------------------------
+
+
+def test_settings_race_ai_provider_validator_accepts_claude_cli():
+    """El validator de ``Settings.race_ai_provider`` acepta 'claude-cli' sin
+    lanzar ``ValidationError`` (proveedor solo-local vía Claude Code CLI)."""
+    from app.config import Settings
+
+    s = Settings(race_ai_provider="claude-cli")
+    assert s.race_ai_provider == "claude-cli"
+
+    # También normaliza mayúsculas/espacios como los demás proveedores.
+    s_upper = Settings(race_ai_provider="CLAUDE-CLI ")
+    assert s_upper.race_ai_provider == "claude-cli"
+
+
+def test_settings_race_ai_provider_accepts_empty_string():
+    """"" (vacío) es válido — significa "hereda AI_PROVIDER", no un error."""
+    from app.config import Settings
+
+    s = Settings(race_ai_provider="")
+    assert s.race_ai_provider == ""
+
+
+def test_build_chat_llm_race_ai_provider_empty_inherits_ai_provider(monkeypatch):
+    """Un solo lugar para cambiar de proveedor en local: sin RACE_AI_PROVIDER
+    fijado, el factory de race hereda AI_PROVIDER en vez de caer siempre en
+    Anthropic — evita el bug real de specs/036 T051 (RACE_AI_PROVIDER sin
+    definir cayendo a un default desalineado con lo que corre de verdad)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    monkeypatch.setattr(settings, "ai_provider", "claude-cli")
+    assert resolve_configured_model(provider=None) == "claude-sonnet-5"
+
+
+def test_build_chat_llm_race_ai_provider_explicit_wins_over_ai_provider(monkeypatch):
+    """RACE_AI_PROVIDER explícito sigue ganando sobre AI_PROVIDER — la
+    herencia es solo el fallback cuando queda vacío."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "race_ai_provider", "google")
+    monkeypatch.setattr(settings, "race_ai_model", "")
+    monkeypatch.setattr(settings, "ai_provider", "claude-cli")
+    assert resolve_configured_model(provider=None) == "gemini-3.1-flash-lite"
+
+
 # ---------------------------------------------------------------------------
 # resolve_configured_model (feature 036, T060)
 # ---------------------------------------------------------------------------

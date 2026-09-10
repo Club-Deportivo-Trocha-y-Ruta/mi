@@ -6,9 +6,11 @@ patchean :func:`build_chat_llm` y se ahorran instanciar la SDK real.
 Decisiones:
 - ``build_chat_llm`` es una **factory** (Strategy + Factory, mismo patrón
   que ``app/services/ai/factory.py``): despacha por ``RACE_AI_PROVIDER``
-  (``anthropic`` | ``google`` | ``openai``) hacia el builder concreto — agregar un
-  proveedor nuevo implica solo sumar una entrada a ``_LLM_BUILDERS``. Los
-  agentes (analyst/critic/chat/judge) consumen el chat model resultante
+  (``anthropic`` | ``google`` | ``openai`` | ``claude-cli``) hacia el builder
+  concreto — agregar un proveedor nuevo implica solo sumar una entrada a
+  ``_LLM_BUILDERS``. ``claude-cli`` es un proveedor SOLO local (Claude Code
+  CLI vía suscripción del desarrollador) — ver ``_build_claude_cli_llm``.
+  Los agentes (analyst/critic/chat/judge) consumen el chat model resultante
   vía la interfaz genérica de LangChain (``ainvoke``/``bind_tools``); no
   conocen el proveedor concreto.
 - Lee de :data:`app.config.settings` por default; los agentes pueden
@@ -42,6 +44,9 @@ DEFAULT_MODEL_BY_PROVIDER: dict[str, str] = {
     # Default genérico para OpenAI real; en uso local con Ollama la config
     # (RACE_AI_MODEL) elige el modelo instalado, ej. "qwen3.5:latest".
     "openai": "gpt-4o-mini",
+    # Claude Code CLI vía suscripción del desarrollador (langchain-claude-cli) —
+    # SOLO uso local, ver ``_build_claude_cli_llm``.
+    "claude-cli": "claude-sonnet-5",
 }
 
 
@@ -111,10 +116,52 @@ def _build_openai_llm(
     )
 
 
+def _build_claude_cli_llm(
+    *, model: str, temperature: Optional[float], max_output_tokens: int,
+    api_key: Optional[str], timeout: float, base_url: Optional[str] = None,
+):
+    """``ChatClaudeCli`` — import lazy (no es dependencia dura del proyecto).
+
+    Proveedor SOLO local: envuelve el Claude Code CLI vía ``claude-agent-sdk``
+    y reutiliza el login OAuth de la suscripción del desarrollador (Keychain
+    de macOS) — no requiere API key. Producción (Render) no debe instalar
+    este paquete; por eso NO está en requirements.txt, solo documentado ahí.
+
+    Parámetros ignorados a propósito (mismo criterio que
+    ``_build_anthropic_llm``, documentado aquí porque las razones difieren
+    caso por caso):
+    - ``temperature``: claude-sonnet-5 (familia 4.6+) rechaza con 400
+      cualquier valor de sampling distinto del default — idéntica razón que
+      el builder de Anthropic.
+    - ``max_output_tokens``: el paquete lo implementa como truncación
+      client-side a ``max_tokens*4`` caracteres, lo que rompería a mitad de
+      camino el JSON estructurado que espera el analista v3.
+    - ``api_key`` / ``base_url``: el paquete neutraliza cualquier
+      ``ANTHROPIC_API_KEY`` heredada del entorno y usa el login OAuth del
+      CLI — no hay endpoint que sobreescribir.
+
+    ``timeout`` en ``ChatClaudeCli`` aborta la corrida completa del CLI
+    (arranque del subproceso incluido), no un request HTTP: los 30 s de
+    ``AI_TIMEOUT_SECONDS`` matarían al analista v3 antes de los 120 s con
+    los que ``_generate_v3`` lo envuelve, así que se toma el mayor de ambos.
+    """
+    try:
+        from langchain_claude_cli import ChatClaudeCli
+    except ImportError as exc:
+        raise ImportError(
+            "RACE_AI_PROVIDER='claude-cli' requiere `pip install langchain-claude-cli` "
+            "(solo uso local; no es dependencia del proyecto)."
+        ) from exc
+
+    run_timeout = max(timeout, float(settings.race_ai_v3_timeout_seconds))
+    return ChatClaudeCli(model=model, timeout=run_timeout)
+
+
 _LLM_BUILDERS: dict[str, Callable[..., Any]] = {
     "anthropic": _build_anthropic_llm,
     "google": _build_google_llm,
     "openai": _build_openai_llm,
+    "claude-cli": _build_claude_cli_llm,
 }
 
 
@@ -178,7 +225,8 @@ def build_chat_llm(
 
     Args:
         provider: override explícito (``"anthropic"`` | ``"google"`` |
-            ``"openai"``). Si ``None``, usa ``Settings.race_ai_provider``.
+            ``"openai"`` | ``"claude-cli"``). Si ``None``, usa
+            ``Settings.race_ai_provider``.
         model: override explícito. Si ``None``, se resuelve por ``role``
             (ver :func:`resolve_configured_model`).
         base_url: override explícito del endpoint. Si ``None``, usa
@@ -199,7 +247,9 @@ def build_chat_llm(
             validator de ``Settings.race_ai_provider`` ya lo bloquea salvo
             que se pase ``provider=`` explícito inválido).
     """
-    resolved_provider = (provider or settings.race_ai_provider or "anthropic").lower()
+    resolved_provider = (
+        provider or settings.race_ai_provider or settings.ai_provider or "anthropic"
+    ).lower()
     builder = _LLM_BUILDERS.get(resolved_provider)
     if builder is None:
         raise ValueError(
@@ -253,7 +303,9 @@ def resolve_configured_model(
     persistir — la validación real de proveedores soportados vive en
     ``Settings.race_ai_provider`` y en ``build_chat_llm``.
     """
-    resolved_provider = (provider or settings.race_ai_provider or "anthropic").lower()
+    resolved_provider = (
+        provider or settings.race_ai_provider or settings.ai_provider or "anthropic"
+    ).lower()
     default_model = DEFAULT_MODEL_BY_PROVIDER.get(
         resolved_provider, DEFAULT_MODEL_BY_PROVIDER["anthropic"]
     )
@@ -316,6 +368,7 @@ async def call_llm(
     *,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    config: Optional[dict[str, Any]] = None,
 ) -> LLMCallResult:
     """Invoca el LLM con un único mensaje y mide métricas.
 
@@ -332,13 +385,19 @@ async def call_llm(
         model: model_id exacto usado para la tarifa por-modelo (feature 037,
             T101). Opcional — cuando no se pasa, cae a la tarifa por
             proveedor como antes.
+        config: ``RunnableConfig`` opcional (callbacks de Langfuse). Solo lo
+            pasan callers fuera del grafo (juez); dentro del grafo los
+            callbacks ya se heredan del config de la corrida.
     """
     from langchain_core.messages import HumanMessage
 
-    resolved_provider = (provider or settings.race_ai_provider or "anthropic").lower()
+    resolved_provider = (
+        provider or settings.race_ai_provider or settings.ai_provider or "anthropic"
+    ).lower()
 
+    messages = [HumanMessage(content=prompt)]
     start = time.monotonic()
-    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    response = await (llm.ainvoke(messages, config=config) if config else llm.ainvoke(messages))
     latency_ms = int((time.monotonic() - start) * 1000)
 
     text = extract_text(response)

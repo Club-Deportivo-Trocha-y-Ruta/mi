@@ -274,6 +274,7 @@ async def test_load_training_window_respects_boundaries_and_aggregates(session: 
         duration_min=90,
         location="Pista ficticia",
         technical_focus="Curvas cerradas y frenado",
+        description="Bloque de fuerza funcional sobre la bici: 3x8 sentadillas con carga corporal.",
         session_kind=SessionKind.ENTRENAMIENTO,
     )
     # Fuera de la ventana (antes de date_from).
@@ -325,6 +326,44 @@ async def test_load_training_window_respects_boundaries_and_aggregates(session: 
     assert result["rpe_mean"] == 6.0
     assert result["coach_feedback"] == ["Buen manejo en curvas cerradas de la pista ficticia."]
     assert result["technical_foci"]
+    # El catálogo de fuerza se retiró (migración d0e1f2a3b4c5): no hay campo
+    # "strength_sessions" — la descripción libre de la sesión es la señal.
+    assert "strength_sessions" not in result
+    assert result["session_descriptions"] == [
+        "Bloque de fuerza funcional sobre la bici: 3x8 sentadillas con carga corporal."
+    ]
+
+
+async def test_load_training_window_session_descriptions_empty_without_text(
+    session: AsyncSession,
+):
+    """Sesiones sin ``description`` no aportan entradas a session_descriptions
+    (no se fabrica contexto — FR-009)."""
+    await _seed_club_and_athlete(session)
+    no_description = TrainingSession(
+        id=3,
+        club_id=1,
+        created_by_user_id=100,
+        status=SessionStatus.EXECUTED,
+        scheduled_date=date(2026, 5, 15),
+        scheduled_start_time=datetime(2026, 5, 15, 16, 0).time(),
+        duration_min=60,
+        location="Pista ficticia",
+        technical_focus="Arranques",
+        session_kind=SessionKind.ENTRENAMIENTO,
+    )
+    session.add(no_description)
+    await session.flush()
+    session.add(
+        SessionAttendance(session_id=3, athlete_id=1, status=AttendanceStatus.PRESENTE)
+    )
+    await session.flush()
+
+    result = await mod.load_training_window(
+        session, athlete_id=1, club_id=1, date_from=date(2026, 5, 1), date_to=date(2026, 5, 28)
+    )
+    assert result is not None
+    assert result["session_descriptions"] == []
 
 
 # ---------------------------------------------------------------------------

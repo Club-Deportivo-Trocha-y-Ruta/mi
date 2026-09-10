@@ -4,7 +4,7 @@
 > **Scope**: agentic race-results v2 module (LangGraph + Gemini) in production.
 > **Default MVP**: observability via audit DB (`athlete_ai_insights`, `agent_runs`,
 > `agent_run_events`) + admin endpoint `/api/race-analysis/admin/ai-usage`.
-> Langfuse self-hosted is deferred to optional F8B.
+> Local-only Langfuse tracing is available as an optional dev tool — see §8.
 
 ---
 
@@ -316,12 +316,172 @@ For full `--help`: `python -m scripts.smoke_test_prod --help`.
 
 ---
 
-## 7. Quick glossary
+## 8. Local LLM tracing (Langfuse)
+
+> Optional, dev-only observer for per-call token/latency detail on race-AI
+> LLM calls (`app/services/race/observability.py`). It never runs in
+> production — `Settings.forbid_langfuse_in_prod` raises at startup if
+> `LANGFUSE_ENABLED=true` and `APP_ENV=production`. It does not replace the
+> audit trail of record (§2); it only adds a drill-down view for local
+> debugging.
+
+### 8.1 Prerequisites
+
+- Docker Desktop running.
+- Backend running locally, either host `uvicorn` or `docker compose up`.
+
+### 8.2 One-time setup
+
+1. `cp docker-compose.langfuse.env.example docker-compose.langfuse.env`
+2. Generate the secrets and replace the placeholders in that file:
+   - `NEXTAUTH_SECRET`, `SALT`: `openssl rand -base64 32`
+   - `ENCRYPTION_KEY`: `openssl rand -hex 32`
+   - `LANGFUSE_INIT_PROJECT_PUBLIC_KEY`: `pk-lf-` + `openssl rand -hex 16`
+   - `LANGFUSE_INIT_PROJECT_SECRET_KEY`: `sk-lf-` + `openssl rand -hex 24`
+3. Copy that same public/secret key pair into the backend's own `.env` as
+   `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, and set
+   `LANGFUSE_ENABLED=true`. The backend authenticates against the project
+   that Langfuse bootstraps headlessly on first boot (`LANGFUSE_INIT_*`
+   vars) — no need to open the UI to generate keys.
+
+### 8.3 Bring up / verify
+
+```bash
+docker compose -f docker-compose.langfuse.yml --env-file docker-compose.langfuse.env up -d
+curl http://localhost:3001/api/public/health
+```
+
+UI: <http://localhost:3001> (login with `LANGFUSE_INIT_USER_EMAIL` /
+`LANGFUSE_INIT_USER_PASSWORD` from `docker-compose.langfuse.env`). Restart
+the backend after flipping `LANGFUSE_ENABLED` — env vars are read at
+process start, not hot-reloaded.
+
+### 8.4 Backend env vars
+
+| Var | Host `uvicorn` | Docker backend |
+|---|---|---|
+| `LANGFUSE_BASE_URL` | `http://localhost:3001` (default) | set via `LANGFUSE_BASE_URL_DOCKER` in the shell before `docker compose up` → mapped to `http://host.docker.internal:3001` in `docker-compose.yml` |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | from `.env` | same pair, passed through `docker-compose.yml` |
+
+There is no content-capture toggle — see §8.6.
+
+### 8.5 What is traced
+
+Traced via `observability.llm_tracing(...)` — grep the codebase for
+`llm_tracing(` to get the current, authoritative list of entry points:
+
+| Trace name | Entry point | Content |
+|---|---|---|
+| `race-analysis` | `app/services/race/ai/runner.py` — graph start and HITL resume share one trace (deterministic trace id derived from the external run id) | always redacted |
+| `race-chat` | `app/services/race/agents/chat.py` | always redacted — the chat prompt carries real athlete names |
+| `race-eval-judge` | `app/services/race/eval/judge.py` (both v1 and v2 judges) | always redacted |
+
+Not traced: the monthly-report and newsletter AI paths run on the separate
+`app/services/ai/` stack, which has no `llm_tracing` call — they have no
+Langfuse visibility.
+
+Only Langfuse-SDK spans are exported to the collector — a `should_export_span`
+filter drops any third-party OpenTelemetry span (e.g. MCP/`gen_ai` spans
+emitted by the local `claude-cli` provider) so Langfuse only ever shows the
+spans this integration explicitly created, never an incidental trace from
+whatever the LLM SDK instruments on its own.
+
+### 8.6 Privacy / redaction semantics
+
+There is no content-capture toggle. Inputs, outputs and metadata of every
+observation are **always** sent as `"[redacted]"` — this is not
+configurable, on any trace, at any time.
+
+- **Why**: even the pseudonymized analyst/critic prompt still carries
+  quasi-identifiers of a minor (birth date, category, race position,
+  times, age, maturity/PHV data) that could re-identify the athlete on
+  their own; and rehydrated conversational memory in the chat path can
+  contain real names. Redact-always removes the judgment call of which
+  fields are "safe enough" to send.
+- **What is still stored locally**: run UUIDs (`race-analysis` session id),
+  a SHA-256-truncated hash of the chat session id
+  (`observability.anonymous_session_id`), trace tags (provider, prompt
+  version, analysis kind), and token counts (`usageDetails`: input/output/
+  total). None of this is athlete-identifying on its own.
+- **Where it lives / retention**: traces persist in the local Docker
+  volumes (`langfuse_postgres_data`, `langfuse_clickhouse_data`, …) with no
+  retention policy configured — they accumulate until purged. Purge with
+  `docker compose -f docker-compose.langfuse.yml down -v` (§8.10).
+- `LANGFUSE_ENABLED=true` in production is a hard startup failure — never
+  set it on Render.
+
+### 8.7 Reading token usage
+
+In the UI, open a trace and expand a `generation` node — it shows tokens
+in/out, total, model, and latency per LLM call, alongside the `[redacted]`
+input/output. Sessions correspond to the run id (`race-analysis`/
+`race-chat`) or the eval `case_id` (`race-eval-judge`). Verified live on
+2026-09-10 against a local Langfuse v4 instance: a traced call showed
+`usageDetails` (input/output/total tokens) populated while `input`/`output`
+read `[redacted]`, as expected.
+
+As an API alternative to the UI, the Langfuse v2 observations API requires
+the query param `fields=core,basic,usage,io,model` to return the usage and
+model fields at all — without it, a bare request omits them.
+
+### 8.8 Drill-down from a DB run
+
+`agent_runs.langfuse_trace_id` is populated by
+`routers/race_analysis.py::_finalize_run` whenever tracing is enabled.
+Given a trace id, open:
+
+```text
+http://localhost:3001/project/<LANGFUSE_INIT_PROJECT_ID>/traces/<trace_id>
+```
+
+(`LANGFUSE_INIT_PROJECT_ID` defaults to `race-analyst-dev`, set in
+`docker-compose.langfuse.env`).
+
+### 8.9 Cost caveat
+
+Langfuse infers USD cost from its own model price list and may not
+recognize project-specific model ids (`gemini-3.8-flash`,
+`claude-cli` at $0 local-subscription cost) — treat any cost figure shown
+in its UI as approximate. The source of truth for cost and for the 30-day
+budget guard remains `agents/pricing.py` +
+`athlete_ai_insights.metrics_snapshot_json` (§2).
+
+### 8.10 Stop / reset
+
+```bash
+docker compose -f docker-compose.langfuse.yml down       # stop, keep data
+docker compose -f docker-compose.langfuse.yml down -v     # reset, wipes volumes
+```
+
+### 8.11 Troubleshooting
+
+- **`langfuse-web` healthy, `langfuse-worker` still starting right after
+  boot**: expected — `langfuse-web` does not `depends_on` the worker
+  (only `langfuse-web` runs the Prisma migrations on first start; waiting
+  on the worker would deadlock, since the worker never turns healthy until
+  that schema exists).
+- **Healthcheck fails with "connection refused" when inspected via
+  `docker exec`**: the Next.js server binds to the container's interface
+  IP, not loopback — the compose healthchecks target the service name
+  (`http://langfuse-web:3000/...`, `http://langfuse-worker:3030/...`), not
+  `localhost`; don't "fix" this by editing them to `localhost`.
+- **Backend log `LANGFUSE_ENABLED=true sin LANGFUSE_PUBLIC_KEY/
+  LANGFUSE_SECRET_KEY — trazas deshabilitadas`**: keys missing or stale —
+  re-copy the pair from `docker-compose.langfuse.env`.
+- **No traces show up in the UI**: confirm `LANGFUSE_BASE_URL` actually
+  reaches the container from where the backend runs (docker backend needs
+  `host.docker.internal`, not `localhost`) and that
+  `docker compose -f docker-compose.langfuse.yml ps` shows every service
+  healthy.
+
+---
+
+## 9. Quick glossary
 
 - **F8A**: phase 8 option A — audit-only observability via DB
-  (default MVP).
-- **F8B**: phase 8 option B — Langfuse self-hosted (deferred,
-  optional, see `v2-agentic-design.md`).
+  (default, in production).
+- **Local Langfuse tracing**: optional dev-only observer, see §8. Never
+  runs in production.
 - **Budget guard**: module `app/services/race/ai/budget_guard.py` that
   blocks new runs if 30d spending >= `RACE_AI_BUDGET_USD_30D`.
 - **HITL**: Human-In-The-Loop — `hitl_gate_review` node that pauses the

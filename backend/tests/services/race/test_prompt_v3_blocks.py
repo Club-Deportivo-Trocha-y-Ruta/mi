@@ -92,6 +92,7 @@ TRAINING_WINDOW = {
     "days_since_last_session": 3,
     "days_since_previous_race": 21,
     "coach_feedback": ["Buena actitud en el circuito técnico."],
+    "session_descriptions": ["Bloque de fuerza funcional sobre la bici: 3x8 sentadillas."],
     "strava_load": None,
 }
 
@@ -189,6 +190,17 @@ def test_analyst_prompt_includes_all_data_blocks():
     assert "`8` Rodaje ondulado" in text  # catálogo
     assert "El coach respondió: Estuvo en semana de exámenes." in text  # diálogo
     assert "Válida III: gap 8.4%" in text  # memoria
+
+
+def test_analyst_prompt_uses_session_description_not_strength_field():
+    """El catálogo de fuerza se retiró (migración d0e1f2a3b4c5): el prompt ya
+    no lleva un campo "Sesiones de fuerza" (siempre vacío/inventado) y en su
+    lugar usa la descripción libre de la sesión como señal de qué se hizo."""
+    text = render(full_input(), PROMPT_VERSION_ANALYST_V3)
+    assert "Sesiones de fuerza" not in text
+    assert "- Sesiones con intervalos: 0" in text
+    assert "Descripción de sesiones recientes" in text
+    assert "Bloque de fuerza funcional sobre la bici: 3x8 sentadillas." in text
 
 
 def test_analyst_prompt_flags_missing_blocks_explicitly():

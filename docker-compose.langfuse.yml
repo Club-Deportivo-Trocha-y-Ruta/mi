@@ -1,5 +1,5 @@
 # =============================================================================
-# Langfuse v3 self-hosted - SOLO DESARROLLO LOCAL
+# Langfuse v4 self-hosted - SOLO DESARROLLO LOCAL
 # =============================================================================
 # Stack de observabilidad para LLM (race-analyst dev) aislado del stack principal.
 #
@@ -10,6 +10,12 @@
 #
 # UI:         http://localhost:3001
 # MinIO UI:   http://localhost:9091  (user/pass desde MINIO_ROOT_USER/PASSWORD)
+#
+# Bootstrap headless (LANGFUSE_INIT_*): el org/proyecto/usuario y el par de
+# llaves API del proyecto se crean solos al primer arranque (DB vacía). El
+# mismo par LANGFUSE_INIT_PROJECT_PUBLIC_KEY/SECRET_KEY va en las variables
+# LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY que lee el backend — no hace falta
+# entrar a la UI a generarlas.
 #
 # NOTA: este compose NO comparte network ni volúmenes con docker-compose.yml
 # del backend. Si el backend FastAPI corre en su propio compose, debe acceder
@@ -41,10 +47,10 @@ volumes:
 services:
 
   # ---------------------------------------------------------------------------
-  # PostgreSQL 15 - metadata de Langfuse (orgs, proyectos, usuarios, prompts).
+  # PostgreSQL 16 - metadata de Langfuse (orgs, proyectos, usuarios, prompts).
   # ---------------------------------------------------------------------------
   langfuse-db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: langfuse-db
     restart: unless-stopped
     networks:
@@ -69,10 +75,10 @@ services:
       start_period: 5s
 
   # ---------------------------------------------------------------------------
-  # ClickHouse 24 - storage de eventos/traces de alta volumetría.
+  # ClickHouse 26.4 - storage de eventos/traces de alta volumetría (v4 exige >= 25.12).
   # ---------------------------------------------------------------------------
   langfuse-clickhouse:
-    image: clickhouse/clickhouse-server:24.3-alpine
+    image: clickhouse/clickhouse-server:26.4
     container_name: langfuse-clickhouse
     restart: unless-stopped
     networks:
@@ -98,10 +104,10 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------------
-  # Redis 7 - cola entre langfuse-web y langfuse-worker.
+  # Redis 7.2 - cola entre langfuse-web y langfuse-worker.
   # ---------------------------------------------------------------------------
   langfuse-redis:
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     container_name: langfuse-redis
     restart: unless-stopped
     networks:
@@ -151,7 +157,7 @@ services:
   # Langfuse Worker - background jobs (ingesta async, evals, batch exports).
   # ---------------------------------------------------------------------------
   langfuse-worker:
-    image: langfuse/langfuse-worker:3
+    image: langfuse/langfuse-worker:4
     container_name: langfuse-worker
     restart: unless-stopped
     networks:
@@ -165,6 +171,8 @@ services:
         condition: service_healthy
       langfuse-minio:
         condition: service_healthy
+    ports:
+      - "127.0.0.1:3030:3030"   # /api/health del worker (nuevo en v4)
     # Anchor de env compartido entre worker y web.
     environment: &langfuse-common-env
       # ----- Núcleo -----
@@ -196,7 +204,8 @@ services:
       LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
       LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
       LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
-      # ----- S3 / MinIO: media uploads -----
+      # ----- S3 / MinIO: media uploads (endpoint interno; el web lo sobrescribe
+      # con uno accesible desde el browser, ver abajo) -----
       LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
       LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
       LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
@@ -207,12 +216,22 @@ services:
       # ----- Azure / OCI: explícitamente desactivados -----
       LANGFUSE_USE_AZURE_BLOB: "false"
       LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: "false"
+    healthcheck:
+      # El server de Next.js solo escucha en la IP de la interfaz del
+      # contenedor, no en loopback -> localhost/127.0.0.1 dan "connection
+      # refused" en un check ejecutado con docker exec. Usamos el nombre del
+      # servicio, resuelto por el DNS interno de Docker a esa misma IP.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://langfuse-worker:3030/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   # ---------------------------------------------------------------------------
   # Langfuse Web - UI + API REST + OpenTelemetry receiver.
   # ---------------------------------------------------------------------------
   langfuse-web:
-    image: langfuse/langfuse:3
+    image: langfuse/langfuse:4
     container_name: langfuse-web
     restart: unless-stopped
     networks:
@@ -226,24 +245,36 @@ services:
         condition: service_healthy
       langfuse-minio:
         condition: service_healthy
-      langfuse-worker:
-        condition: service_started
+    # NOTA: no depende de langfuse-worker. Solo langfuse-web ejecuta las
+    # migraciones Prisma al arrancar; si web esperara al worker sano se
+    # produciría un deadlock (el worker no sana hasta que el esquema exista).
     ports:
-      # 3001 host -> 3000 contenedor. El 3000 lo usa otra cosa local.
-      - "3001:3000"
+      # Loopback: el backend del monolito llega por host.docker.internal:3001.
+      - "127.0.0.1:3001:3000"
     environment:
       # Hereda todo del worker (auth, DB, ClickHouse, Redis, S3).
       <<: *langfuse-common-env
       # NextAuth secret específico de la UI.
       NEXTAUTH_SECRET: "${NEXTAUTH_SECRET:?Falta NEXTAUTH_SECRET - generar con openssl rand -base64 32}"
-      # ----- Bootstrap inicial (solo aplica si la DB está vacía) -----
+      # El browser necesita el endpoint S3 público (MinIO en el host); el
+      # worker (server-side) sigue usando el endpoint interno de la red Docker.
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9090
+      LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT: http://langfuse-minio:9000
+      # ----- Bootstrap headless (solo aplica si la DB está vacía; v4 exige
+      # también los *_ID además de *_NAME, y el par de llaves API) -----
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-trocha-y-ruta}
       LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-Trocha y Ruta}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-race-analyst-dev}
       LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-race-analyst-dev}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?Falta LANGFUSE_INIT_PROJECT_PUBLIC_KEY - ver docker-compose.langfuse.env.example}"
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: "${LANGFUSE_INIT_PROJECT_SECRET_KEY:?Falta LANGFUSE_INIT_PROJECT_SECRET_KEY - ver docker-compose.langfuse.env.example}"
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-coach@trochayruta.local}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Coach Dev}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-ChangeMe2026!}
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/public/health"]
+      # Mismo motivo que el worker: usar el nombre del servicio en vez de
+      # localhost/127.0.0.1 (ver comentario en langfuse-worker).
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://langfuse-web:3000/api/public/health"]
       interval: 10s
       timeout: 5s
       retries: 10

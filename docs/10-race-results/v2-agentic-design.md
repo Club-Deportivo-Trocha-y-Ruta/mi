@@ -22,7 +22,7 @@ The v1 of race-results (Phase 1.7) delivers a deterministic pipeline that ingest
 - **Deterministic layer (intact):** parsing, normalization, matching, ingest, analytics queries. The 339 green tests are preserved.
 - **Agentic layer (new):** a **LangGraph** workflow orchestrates the qualitative steps — anonymization, retrieval from theoretical framework, LLM call with per-athlete memory, HITL gates for coach review, insight persistence and notification. The output is a rendered markdown dashboard + downloadable PDF + consultative chat.
 - **New UI:** route `/coach/race-analysis` in the existing React 19 SPA. Polling every 2 seconds via **TanStack Query**.
-- **Observability:** Primary audit in MySQL — columns `cost_usd`, `tokens_in/out`, `latency_ms`, `prompt_version` in `athlete_ai_insights`. **Langfuse self-hosted optional, deferred to Phase 8** (activate only if Gemini cost >$10/month real, or coach asks for visual dashboard).
+- **Observability:** Primary audit in MySQL — columns `cost_usd`, `tokens_in/out`, `latency_ms`, `prompt_version` in `athlete_ai_insights`. **Local-only Langfuse tracing** (implemented 2026-09-10, forbidden in production) is available as an optional dev drill-down — see `runbook-ops.md` §8.
 - **Eval:** versioned golden dataset + LLM-as-judge, blocking in CI before promoting prompt changes.
 
 ### 1.3 Closed decisions (summary)
@@ -30,7 +30,7 @@ The v1 of race-results (Phase 1.7) delivers a deterministic pipeline that ingest
 | # | Decision | Value |
 |---|---|---|
 | 1 | Mode | Hybrid: deterministic for ETL, agentic for analysis |
-| 2 | Agent framework | LangGraph 1.2.x. Langfuse self-hosted **optional**, deferred to F8 |
+| 2 | Agent framework | LangGraph 1.2.x. Local-only Langfuse tracing (dev tool, see `runbook-ops.md` §8) |
 | 3 | LLM | Google Gemini 2.5 Flash Lite via `langchain-google-genai` |
 | 4 | UI | React 19 + shadcn inside current SPA, route `/coach/race-analysis` |
 | 5 | Streaming | HTTP polling every 2s → TanStack Query with refetchInterval |
@@ -53,7 +53,7 @@ Assumption: the coach today invests ~45-60 min per round (4-5 athletes × 10 min
 |---|---|---|---|
 | Time per athlete qualitative analysis | 10-12 min | 1-2 min (HITL review) | -85% |
 | Time per round (5 athletes) | 50-60 min | 8-12 min | -80% |
-| Decision traceability | none | `athlete_ai_insights` (cost, tokens, prompt_version, full output). Langfuse optional F8 | +∞ |
+| Decision traceability | none | `athlete_ai_insights` (cost, tokens, prompt_version, full output). Local-only Langfuse tracing optional, see `runbook-ops.md` §8 | +∞ |
 | Context reuse between rounds | manual | automatic (memory) | +∞ |
 | Pedagogical quality for coach | depends | integrated `explain` mode | new |
 | Risk of LTAD principle violation | medium (coach's mind) | low (guardrails + RAG) | ↓ |
@@ -80,7 +80,7 @@ flowchart LR
     end
     subgraph "Observability (default DB)"
         AUDIT["athlete_ai_insights<br/>cost_usd, tokens, latency_ms"]
-        LF["Langfuse self-hosted<br/>(optional, F8)"]
+        LF["Langfuse<br/>(optional, local-only dev tracer)"]
     end
     subgraph "Storage"
         DB[(MySQL Hostinger)]
@@ -168,10 +168,10 @@ flowchart TB
     end
 
     subgraph OBS ["Observability"]
-        AUDIT_DB["athlete_ai_insights / agent_runs<br/>(cost_usd, tokens, latency_ms — default 8A)"]:::obs
-        LF_HOST["Langfuse server<br/>(:3001 — optional F8B)"]:::obs
-        LF_PG[(Langfuse Postgres — optional F8B)]:::obs
-        LF_CH[(ClickHouse — optional F8B)]:::obs
+        AUDIT_DB["athlete_ai_insights / agent_runs<br/>(cost_usd, tokens, latency_ms — default, works in prod)"]:::obs
+        LF_HOST["Langfuse server<br/>(:3001 — optional, local-only dev tracer)"]:::obs
+        LF_PG[(Langfuse Postgres — local-only)]:::obs
+        LF_CH[(ClickHouse — local-only)]:::obs
     end
 
     DASH --> EP_POST
@@ -199,7 +199,7 @@ flowchart TB
     N5 --> RAG_SVC
     N6 --> MEM_SVC
     N7 --> AUDIT_DB
-    N7 -.optional F8B.-> LF_HOST
+    N7 -.optional, local-only.-> LF_HOST
     N10 --> MEM_SVC
     N12 --> PDF_REND
     N13 --> EMAIL
@@ -224,9 +224,9 @@ flowchart TB
 | **Checkpointer** | `langgraph-checkpoint-sqlite` | `>=2.0.5` | For state machine between HITL gates; SQLite local in `./data/langgraph/checkpoints.sqlite` |
 | **LLM client** | `langchain-google-genai` | `>=2.0.0` | Supports `gemini-2.5-flash-lite`, `thinking_budget`, structured output. Assumption: already in deps after this PR |
 | **LangChain core** | `langchain-core` | `>=0.3.40` | Required by langgraph 1.x; already transitive |
-| **Observability (default)** | native MySQL | — | Columns in `athlete_ai_insights` cover cost, tokens, latency, prompt_version |
-| **Observability (optional F8B)** | `langfuse` | `>=3.0.0` | Only if F8B is activated. SDK 3.x uses `@observe` and separate `CallbackHandler` |
-| **Langfuse server (optional F8B)** | `langfuse/langfuse:3` | Docker image tag `3` | Self-hosted compose: server + Postgres 16 + ClickHouse 24 (~2 GB RAM) |
+| **Observability (default, prod)** | native MySQL | — | Columns in `athlete_ai_insights` cover cost, tokens, latency, prompt_version |
+| **Observability (optional, local-only)** | `langfuse` | `>=4.6,<5` | Implemented 2026-09-10 — OpenTelemetry-based `langfuse.langchain.CallbackHandler`, forbidden in production. See `runbook-ops.md` §8 |
+| **Langfuse server (optional, local-only)** | `langfuse/langfuse:4` | Docker image tag `4` | Self-hosted compose (`docker-compose.langfuse.yml`): web + worker, Postgres 16, ClickHouse 26.4, Redis 7.2, MinIO |
 | **Vector store** | `chromadb` | `>=0.5.20` | Stable `PersistentClient`; volume `./data/chroma/` |
 | **Embeddings** | `sentence-transformers` | `>=3.0.0` | Model `paraphrase-multilingual-MiniLM-L12-v2` (Spanish, 384 dims, ~120 MB) — see §6 Assumption |
 | **PDF render** | `weasyprint` | `>=62.3` | already in deps |
@@ -326,10 +326,10 @@ backend/
 │   │           ├── ingest.py           # chunking + theoretical framework indexing
 │   │           ├── retriever.py        # consultar_marco_teorico API
 │   │           └── citations.py        # Citation dataclass
-│   ├── observability/                  # NEW (F8B optional)
-│   │   ├── __init__.py
-│   │   └── langfuse.py                 # client init + FakeLangfuse no-op (default disabled)
-│   └── config.py                       # MODIFIED — ChromaDB settings; Langfuse (F8B optional)
+│   ├── services/race/
+│   │   └── observability.py            # ACTUAL (2026-09-10) — local-only Langfuse tracer,
+│   │                                    # degrades to [] callbacks when disabled/misconfigured
+│   └── config.py                       # MODIFIED — ChromaDB settings; Langfuse (local-only, optional)
 ├── alembic/versions/
 │   └── 7a8b9c0d1e2f_add_agentic_race_tables.py  # NEW — revision 7a8b9c0d1e2f
 │                                                  # down_revision: 64c263edd07f
@@ -387,8 +387,8 @@ frontend/
 │   └── store/
 │       └── explainMode.ts              # zustand toggle
 
-docker-compose.yml                      # MODIFIED — adds chroma volume (does NOT touch langfuse)
-docker-compose.langfuse.yml             # NEW — dedicated OPTIONAL compose, create only in F8B
+docker-compose.yml                      # MODIFIED — adds chroma volume + LANGFUSE_* passthrough for docker backend
+docker-compose.langfuse.yml             # ACTUAL (2026-09-10) — dedicated, optional, local-only compose (v4)
 .env.example                            # MODIFIED — ChromaDB vars + Langfuse (default disabled)
 
 docs/10-race-results/
@@ -432,13 +432,13 @@ docs/10-race-results/
 **Indexes:**
 - `ix_insights_athlete_season (athlete_id, season DESC, valida_num DESC)` — for `recall_recent_insights(athlete_id, n=3)`
 - `ix_insights_event (event_id)` — analysis by round
-- `ix_insights_use_case (use_case, generated_at DESC)` — cross-athlete metrics (endpoint `/admin/ai-usage`; also usable by Langfuse if F8B active)
+- `ix_insights_use_case (use_case, generated_at DESC)` — cross-athlete metrics (endpoint `/admin/ai-usage`; not consumed by Langfuse, which is a local per-call tracer, not a metrics store)
 
 **Column justification:**
 - `competitor_id` separate from `athlete_id`: an athlete can have multiple historical competitor_ids due to re-matching.
 - `recommendations_json` with `principle_refs`: each recommendation cites the RAG source → auditability.
 - `metrics_snapshot_json`: if the LLM changes, we can re-run with same inputs and compare.
-- `prompt_version`: needed for comparable A/B via SQL (`GROUP BY prompt_version`); Langfuse uses it as a tag if F8B active.
+- `prompt_version`: needed for comparable A/B via SQL (`GROUP BY prompt_version`); also propagated as a Langfuse trace tag locally (`race-analysis` trace, see `runbook-ops.md` §8).
 - `coach_approved` + `coach_edits_count`: feedback loop — high edit count in one prompt version → signal of degradation.
 - `archived_at`: soft-delete (GDPR/Ley 1581 — a parent can request deletion).
 
@@ -456,11 +456,11 @@ docs/10-race-results/
 | `input_json` | JSON | input parameters (athlete_id, season, valida_nums) |
 | `final_output_json` | JSON NULL | state snapshot at `END` (includes insight_id if committed) |
 | `error_message` | text NULL | if `status=failed` |
-| `langfuse_trace_id` | varchar(128) NULL | link to Langfuse trace for drill-down (NULL until F8B active) |
+| `langfuse_trace_id` | varchar(128) NULL | link to Langfuse trace for drill-down (populated by `_finalize_run` only when local-only tracing is enabled; NULL in production) |
 | `requested_by_user_id` | int FK→`users.id` | coach who triggered |
 | `checkpoint_thread_id` | varchar(64) | thread_id passed to LangGraph SqliteSaver |
 | `explain_mode` | bool default false | if learning mode was active |
-| `cost_usd` | decimal(8,5) NULL | calculated after each `LLM.ainvoke` from `usage_metadata` + local pricing table. Primary cost tracking source (optional Langfuse reflects the same if F8B active) |
+| `cost_usd` | decimal(8,5) NULL | calculated after each `LLM.ainvoke` from `usage_metadata` + local pricing table (`agents/pricing.py`). Primary cost tracking source — Langfuse's own cost estimate is approximate (it may not recognize project-specific model ids) and only visible locally |
 | `created_at`, `updated_at` | datetime | |
 
 **Indexes:**
@@ -675,7 +675,7 @@ class RaceAnalystState(TypedDict, total=False):
 | Persist insight FK violation | rollback, status=`failed`, Sentry alert | `persist_insight` |
 | PDF render fails (weasyprint) | continue with markdown only + warning; coach downloads PDF later | `render_outputs` |
 
-**Dead-letter:** if a run stays `failed` >7 days, it is archived with full `error_message` and the coach is notified via email with link to run detail (`/admin/ai-usage/runs/{external_run_id}` from `agent_runs` + `agent_run_events`). If F8B active, the email also includes the `langfuse_trace_id`.
+**Dead-letter:** if a run stays `failed` >7 days, it is archived with full `error_message` and the coach is notified via email with link to run detail (`/admin/ai-usage/runs/{external_run_id}` from `agent_runs` + `agent_run_events`). `langfuse_trace_id` is a local-dev drill-down aid only — never surfaced in production email, since Langfuse itself never runs there.
 
 ---
 
@@ -913,7 +913,7 @@ Additional:
 
 - FastAPI middleware on endpoint `/api/race-analysis/runs` logs in structured log: `{run_id, anonymized=True, mapping_count=N}`.
 - Logs NEVER include the mapping or real names (only counts).
-- Langfuse (if F8B active): prompt and completion are sent with pseudonyms. Self-hosted on a VPS controlled by the club — does not externalize PII. If Langfuse is never activated, the deterministic pre-LLM anonymization remains the primary defense.
+- Langfuse (optional, local-only, see `runbook-ops.md` §8): content is always redacted — there is no capture toggle. Even pseudonymized prompts still carry quasi-identifiers of a minor (birth date, category, times, maturity data), so Langfuse only ever receives token counts, model, latency and trace/session structure, never prompt or response text. Runs on the developer's own machine, never deployed — never externalizes PII. The deterministic pre-LLM anonymization remains the primary defense regardless.
 
 ---
 
@@ -1163,11 +1163,11 @@ function useRunStatus(runId: string) {
 
 ---
 
-## 11. Observability — default DB + optional Langfuse (F8)
+## 11. Observability — default DB + optional local-only Langfuse
 
 ### 11.0 Default — MySQL Audit (no extra infra)
 
-For MVP (F0–F7 and F8 option 8A) the complete audit lives in columns of `athlete_ai_insights` and `agent_runs`:
+In production, and as the audit trail of record everywhere, the complete audit lives in columns of `athlete_ai_insights` and `agent_runs`:
 
 | Metric | Column | Source |
 |---|---|---|
@@ -1182,101 +1182,55 @@ For MVP (F0–F7 and F8 option 8A) the complete audit lives in columns of `athle
 
 **Budget guard:** function `_check_budget()` before each run queries `SUM(cost_usd) last 30d`; if >$20 blocks + coach email.
 
-`langfuse_trace_id` remains NULL until F8B is activated.
+`langfuse_trace_id` stays NULL unless the developer running the backend locally has opted into tracing; it is always NULL in production.
 
-### 11.1 Docker Compose setup — **OPTIONAL (F8B)**
+### 11.1 Local-only Langfuse tracing — **implemented 2026-09-10**
 
-Activate only if one of these conditions is met post-MVP:
-- Real Gemini cost >$10/month (justifies Hetzner VPS ~$5/month)
-- Coach asks for visual trace dashboard
-- Serious prompt A/B testing is planned
+Full setup, env vars, what's traced, redaction semantics, and troubleshooting now live in `runbook-ops.md` §8 — this section only summarizes the design intent so it isn't duplicated here.
 
-New services in `docker-compose.langfuse.yml` (optional profile, create only in F8B):
+Activated by a developer locally when one of these applies:
+- Debugging a specific `race-analysis`/`race-chat`/`race-eval-judge` run's per-call token/latency breakdown.
+- Iterating on prompts and wanting a visual trace instead of reading `agent_run_events` rows.
 
-```yaml
-services:
-  langfuse-postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: langfuse
-      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASS}
-      POSTGRES_DB: langfuse
-    volumes: [langfuse_pg_data:/var/lib/postgresql/data]
-    networks: [backend]
+Infra: `docker-compose.langfuse.yml`, a dedicated compose (Langfuse v4: web + worker, Postgres 16, ClickHouse 26.4, Redis 7.2, MinIO), isolated network and volumes from the main backend stack. **Never deployed** — `Settings.forbid_langfuse_in_prod` raises at startup if `LANGFUSE_ENABLED=true` and `APP_ENV=production`; Render never runs it.
 
-  langfuse-clickhouse:
-    image: clickhouse/clickhouse-server:24.8-alpine
-    environment:
-      CLICKHOUSE_DB: langfuse
-      CLICKHOUSE_USER: langfuse
-      CLICKHOUSE_PASSWORD: ${LANGFUSE_CH_PASS}
-    volumes: [langfuse_ch_data:/var/lib/clickhouse]
-    networks: [backend]
+### 11.2 Backend initialization (actual)
 
-  langfuse-server:
-    image: langfuse/langfuse:3
-    depends_on: [langfuse-postgres, langfuse-clickhouse]
-    ports: ["3001:3000"]
-    environment:
-      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASS}@langfuse-postgres:5432/langfuse
-      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
-      CLICKHOUSE_USER: langfuse
-      CLICKHOUSE_PASSWORD: ${LANGFUSE_CH_PASS}
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
-      SALT: ${LANGFUSE_SALT}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
-      NEXTAUTH_URL: http://localhost:3001
-    networks: [backend]
+`app/services/race/observability.py` (not the originally planned `app/observability/langfuse.py`):
+- Lazy client creation, cached, gated on `settings.langfuse_enabled`.
+- Reads `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
+- **Default `LANGFUSE_ENABLED=false`** → every tracing call degrades to `[]` callbacks (no separate Fake client class — any failure to create the client or handler is caught and logged, tracing just doesn't happen). The agentic stack works identically without it.
+- `shutdown()` flushes and closes the client if one was created; called at process teardown.
 
-volumes:
-  langfuse_pg_data:
-  langfuse_ch_data:
-```
+### 11.3 Instrumentation (actual)
 
-**Estimated RAM:** ~2 GB total (Postgres 200 MB, ClickHouse 700 MB, Server 800 MB, headroom 300 MB).
+- **`langfuse.langchain.CallbackHandler`** (SDK v4, OpenTelemetry-based — not the SDK 3.x `@observe` decorator originally planned), passed via `config={"callbacks": [...]}` to the graph's `ainvoke` and to direct chat/judge LLM calls.
+- Trace ID = deterministic hash of `external_run_id` (`Langfuse.create_trace_id(seed=...)`) — start and HITL resume of the same run share one trace.
+- Trace/session attributes propagate via `propagate_attributes(...)`, not `metadata`, because chat and the judge invoke the LLM directly (no chain root for Langfuse to read metadata from).
 
-**Production:** same compose deployable on VPS (not Render free tier, can't handle it). For MVP self-hosted on coach's machine or small droplet.
-
-### 11.2 Backend initialization
-
-`app/observability/langfuse.py`:
-- `init_langfuse()` lazy singleton.
-- Reads env vars: `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
-- **Default `LANGFUSE_ENABLED=false`** → no-op (FakeLangfuse). Agentic stack works identically without Langfuse.
-- FastAPI lifespan hook: `flush()` on shutdown (no-op if disabled).
-
-### 11.3 Instrumentation
-
-- **Decorator `@observe(as_type="agent", name="<node_name>")`** on each LangGraph node.
-- **`CallbackHandler`** passed to each `ChatGoogleGenerativeAI.ainvoke(..., config={"callbacks": [handler]})`.
-- Trace ID = `external_run_id` (same as the run), for cross-system correlation.
-
-### 11.4 Tags per trace
+### 11.4 Tags per trace (actual)
 
 | Tag | Source | Use |
 |---|---|---|
-| `valida_num` | input | filter runs by round |
-| `athlete_id` | input (no name) | drill-down without PII |
-| `prompt_version` | config | A/B and regression |
-| `coach_id` | request user | attribution |
-| `use_case` | input | compare cost by analysis type |
-| `explain_mode` | input | latency with/without |
-| `critic_enabled` | feature flag | critic quality impact |
+| `provider:<name>` | `race_ai_provider` / `ai_provider` | which LLM provider served the run |
+| `prompt:<version>` | `initial_state.prompt_version` | A/B and regression (analysis trace only) |
+| `kind:<analysis_kind>` | `initial_state.analysis_kind` | compare cost/quality by analysis type (analysis trace only) |
+| `hitl-resume` | added on resume | distinguishes the resume leg within the shared trace |
+| `judge-v1` / `judge-v2` | fixed | which judge prompt produced the eval trace |
 
 ### 11.5 Cost tracking
 
-**Default (without Langfuse):** after each `LLM.ainvoke` the code reads `usage_metadata` from `langchain-google-genai`, multiplies by local pricing table (`PRICING_PER_1M = {"gemini-2.5-flash-lite": {"in": 0.075, "out": 0.30}}` — May 2026) and persists in `athlete_ai_insights.cost_usd`.
+**Always (production and local):** after each `LLM.ainvoke` the code reads `usage_metadata`, multiplies by the local pricing table in `agents/pricing.py`, and persists in `athlete_ai_insights.cost_usd`. This is the source of truth.
 
-**If F8B active:** Langfuse 3.x captures tokens automatically from the same `usage_metadata` and calculates cost against a pricing table updatable in its UI. Both sources coincide by construction.
+**With local Langfuse enabled:** Langfuse also infers a cost figure from its own model price list, but it may not recognize project-specific model ids (`gemini-3.8-flash`, `claude-cli`) — treat it as an approximate, local-only cross-check, not a second source of truth.
 
 ### 11.6 Alerts
 
-**Default (8A):**
-- Runtime budget guard: if `SUM(cost_usd) 30d > $20` → blocks new runs + coach email.
+- Runtime budget guard: if `SUM(cost_usd) 30d > RACE_AI_BUDGET_USD_30D` → blocks new runs (503). The overrun notification path is **log-only today** (`race_ai_budget_exceeded` at ERROR, 1h cooldown) — email to coach + admin is a documented TODO in `budget_guard.py`, not wired.
 - Latency: daily cron reads p95 `agent_runs.latency_ms` last 7d; if >60s → DevOps email.
 - Eval score drop: if `judge_score_last_5_runs < 0.70` → blocks next deploys (CI integration).
 
-**If F8B active:** same alerts configurable in Langfuse UI as visual complement.
+Langfuse provides no alerting — it is a local per-call debug view, not a monitoring tool, and it never runs where an alert could be observed in production.
 
 ---
 
@@ -1394,8 +1348,8 @@ Workflow:
 
 **Changes:**
 - `requirements.txt` += `langgraph`, `langgraph-checkpoint-sqlite`, `langchain-google-genai`, `chromadb`, `sentence-transformers` (if fallback), `langfuse` (SDK present but stack off by default).
-- `alembic/versions/7a8b9c0d1e2f_add_agentic_race_tables.py` with the 4 tables (§3). Column `langfuse_trace_id` remains NULL until F8B.
-- `data/chroma`, `data/langgraph` added to `.gitignore`. `docker-compose.langfuse.yml` **NOT created in F0** — deferred to optional F8B.
+- `alembic/versions/7a8b9c0d1e2f_add_agentic_race_tables.py` with the 4 tables (§3). Column `langfuse_trace_id` remains NULL unless local-only tracing is enabled (never in production).
+- `data/chroma`, `data/langgraph` added to `.gitignore`. `docker-compose.langfuse.yml` **NOT created in F0** — created 2026-09-10 as local-only dev tooling, see §11.1 / `runbook-ops.md` §8.
 - `.env.example` adds Chroma vars + AI_MAX_TOKENS=8192 + `LANGFUSE_ENABLED=false` (default).
 - `app/config.py` new fields `chroma_path`, `race_agent_*`. Fields `langfuse_*` present but `langfuse_enabled` default `False`.
 
@@ -1479,21 +1433,20 @@ Workflow:
 
 ### Phase 8 — Production + observability (0.5–1.5 day)
 
-> Option **8A default** (DB audit, 0.5 day) vs option **8B optional** (Langfuse self-hosted, +1 day). See `v2-implementation-workflow.md` §"Phase 8" decision table.
+> DB audit (option 8A) is the only observability that runs in production. Local-only Langfuse tracing (implemented 2026-09-10, see §11.1 / `runbook-ops.md` §8) is a separate dev-machine tool, not a production deployment option — there is no "8B deploy Langfuse to a VPS" path.
 
-**Changes option 8A (default):**
+**Changes option 8A (default, production):**
 - Endpoint `/admin/ai-usage` aggregating metrics from `athlete_ai_insights`.
 - Runtime budget guard: blocks if `SUM(cost_usd) 30d > $20`.
 - Basic ops runbook.
 
-**Changes option 8B (optional, only if activated):**
-- Deploy Langfuse server (coach VPS or Hetzner droplet).
-- Configure `LANGFUSE_HOST` pointing to the server, flip `LANGFUSE_ENABLED=true`.
-- Alerts configured in Langfuse UI.
+**Local-only Langfuse tracing (developer machine, not a production phase):**
+- `cp docker-compose.langfuse.env.example docker-compose.langfuse.env`, generate secrets, `docker compose -f docker-compose.langfuse.yml --env-file docker-compose.langfuse.env up -d`.
+- Set `LANGFUSE_ENABLED=true` + matching `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` in the developer's own `.env` — never in Render.
 
 **Success criterion 8A:** first run in staging generates row in `athlete_ai_insights` with cost_usd, tokens, latency_ms. Admin endpoint returns aggregates.
 
-**Success criterion 8B (if activated):** first run in staging generates visible trace in Langfuse, cost reported correctly.
+**Success criterion (local Langfuse, if a developer enables it):** first local run generates a visible trace in the Langfuse UI at `localhost:3001`, tokens shown per generation.
 
 ### Summary timeline
 
@@ -1507,8 +1460,8 @@ Workflow:
 | 5 — Endpoints + polling | 0.5 days | 7 |
 | 6 — Frontend | 3.5 days | 10.5 |
 | 7 — Eval | 2 days | 12.5 |
-| 8 — Prod (8A default DB / 8B Langfuse optional) | 0.5–1.5 day | 13–14 |
-| **Total** | **~14 dev-days** (3 weeks part-time) | |
+| 8 — Prod (8A default DB audit; local-only Langfuse tracing is separate dev tooling, not part of this phase) | 0.5 day | 13 |
+| **Total** | **~13 dev-days** (3 weeks part-time) | |
 
 Assumption: solo dev, ~5h/day. Coach reviews at end of each phase.
 
@@ -1546,14 +1499,11 @@ Assumption: solo dev, ~5h/day. Coach reviews at end of each phase.
 
 **Criterion:** understand chunking, embeddings, vector search, idempotency.
 
-### Ex5 — Langfuse tracing (1.5h) — **OPTIONAL, only if F8B activated**
+### Ex5 — Langfuse tracing — **superseded, see `runbook-ops.md` §8**
 
-**Prompt:**
-> Take the graph from Ex4. Add `@observe` decorator to each function. Initialize Langfuse client pointing to `http://localhost:3001` (start Langfuse self-hosted with `docker compose -f docker-compose.langfuse.yml up`). Run 3 different queries, open Langfuse UI, identify the trace for each and screenshot.
+Local-only Langfuse tracing was implemented 2026-09-10 using the actual SDK v4 `langfuse.langchain.CallbackHandler` (not the `@observe` decorator this exercise originally proposed). This learning exercise is no longer needed — to see it in practice, follow `runbook-ops.md` §8 ("Local LLM tracing (Langfuse)") against the real `race-analysis`/`race-chat`/`race-eval-judge` traces instead of a throwaway Ex4 graph.
 
-**Criterion:** understand tracing, cost tracking, observability.
-
-**Note:** skippable if F8B is not activated. Cost tracking and primary observability live in `athlete_ai_insights` (default 8A). Do this exercise only when deciding to activate Langfuse.
+**Note:** cost tracking and primary observability remain `athlete_ai_insights` / `agent_runs` (production default); Langfuse is a local per-call debug view only.
 
 ### Ex6 — Multi-agent supervisor (2-3h)
 
@@ -1586,10 +1536,10 @@ Assumption: solo dev, ~5h/day. Coach reviews at end of each phase.
 
 | # | Risk | Probability | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | LLM cost explodes (infinite loop, retries) | Medium | High | Cap `retry_count <= 2` in state; runtime budget guard DB blocks if `SUM(cost_usd) 30d > $20`; hard limit on `max_tokens`. Langfuse alert optional (F8B) reinforces. |
+| R1 | LLM cost explodes (infinite loop, retries) | Medium | High | Cap `retry_count <= 2` in state; runtime budget guard DB blocks if `SUM(cost_usd) 30d > $20`; hard limit on `max_tokens`. Overrun notification is log-only today (TODO in `budget_guard.py`); local-only Langfuse has no alerting. |
 | R2 | Gemini rate limits (Tier 1 free) | High | Medium | Exponential backoff 4x; fallback `gemini-2.0-flash`; client-side run queue (max 10 concurrent) |
 | R3 | LangGraph state corruption | Low | High | SQLite checkpointing; property tests on state invariants; rollback in `persist_insight` |
-| R4 | Privacy leak (real name in Gemini log) | Low | Critical | Sentinel test in CI (`test_anonymizer_zero_leak`); request body intercept middleware; **deterministic pre-LLM anonymization is the primary defense — does not depend on Langfuse**. If F8B active, self-hosted Langfuse reinforces (does not externalize PII). |
+| R4 | Privacy leak (real name in Gemini log) | Low | Critical | Sentinel test in CI (`test_anonymizer_zero_leak`); request body intercept middleware; **deterministic pre-LLM anonymization is the primary defense — does not depend on Langfuse**. Local Langfuse tracing has no content-capture toggle — it always redacts input/output/metadata, on the developer's own machine only, never deployed. |
 | R5 | Coach doesn't understand agent output | Medium | High | Learning mode + onboarding; first guided run; UI with citation tooltips |
 | R6 | Gemini vendor lock-in | Medium | Medium | LangChain abstraction layer → change provider 1 line; same `ChatModel` API for Anthropic/OpenAI |
 | R7 | Polling overhead under load | Low | Low | ~15 requests/30s per run × N concurrent runs. Mitigation: max 10 concurrent runs; ETag/304 if state unchanged |
@@ -1597,10 +1547,10 @@ Assumption: solo dev, ~5h/day. Coach reviews at end of each phase.
 | R9 | LLM hallucinates numbers | Medium | High | `analyst_agent` receives deterministically pre-calculated metrics; `critic_agent` checks there are no invented numbers |
 | R10 | Coach drastically corrects each time | Medium | Medium | `coach_edits_count` metric; if >2 average → revisit prompt; eval improves prompt before redeploy |
 | R11 | ChromaDB index corrupted | Low | Low | `scripts/rag_reindex.py` rebuilds in <30s; docker volume backup |
-| R12 | Langfuse server goes down | Low | Low (non-blocking) | Langfuse SDK fails silently if server unreachable; graph continues executing |
+| R12 | Local Langfuse server goes down (dev machine only, never in production) | Low | Low (non-blocking) | Langfuse SDK fails silently if server unreachable; graph continues executing |
 | R13 | Alembic migration FK violation with existing data | Low | High | Migration only creates new tables (doesn't touch existing ones); migration up/down test in CI |
 | R14 | Coach waits too long for result (>60s) | Medium | Medium | Polling timeline gives feedback every 2s; `estimated_seconds_remaining` in each response; fallback "I'll notify you by email" |
-| R15 | Gemini changes pricing | High | Medium | DB cost monitoring (`athlete_ai_insights.cost_usd`) + budget guard; local pricing table versioned in code; abstraction allows swap. Langfuse optional (F8B) reflects the same. |
+| R15 | Gemini changes pricing | High | Medium | DB cost monitoring (`athlete_ai_insights.cost_usd`) + budget guard; local pricing table versioned in code (`agents/pricing.py`); abstraction allows swap. Local Langfuse's own cost estimate is approximate, not a second source of truth (§11.5). |
 
 ---
 
@@ -1610,8 +1560,8 @@ Assumption: solo dev, ~5h/day. Coach reviews at end of each phase.
 
 | Metric | Target | Verification |
 |---|---|---|
-| p50 latency 1 athlete analysis (1 use_case) | <30 s | `agent_runs.latency_ms` query p50 (Langfuse if 8B) |
-| p95 latency | <60 s | `agent_runs.latency_ms` query p95 (Langfuse if 8B) |
+| p50 latency 1 athlete analysis (1 use_case) | <30 s | `agent_runs.latency_ms` query p50 (also visible per-trace in local Langfuse, see `runbook-ops.md` §8) |
+| p95 latency | <60 s | `agent_runs.latency_ms` query p95 (also visible per-trace in local Langfuse) |
 | Coverage new code (`services/race/ai/`, `services/race/rag/`, `routers/race_analysis.py`) | >=90% | `pytest --cov` |
 | Golden dataset eval avg score | >=0.80 | `scripts/eval_race_analyst.py` |
 | 0 PII leaks | 100% | `test_anonymizer_zero_leak` 1000 green inputs |
@@ -1627,7 +1577,7 @@ Assumption: solo dev, ~5h/day. Coach reviews at end of each phase.
 | % `completed` runs (vs `rejected/failed`) | >=80% | `agent_runs.status` |
 | Avg `coach_edits_count` per insight | <=1.5 | mean of `athlete_ai_insights.coach_edits_count` |
 | Average coach time per analysis | <12 min | UI tracking or self-report |
-| Total LLM cost | <$5/month | `SUM(athlete_ai_insights.cost_usd) last 30d` (Langfuse dashboard if 8B) |
+| Total LLM cost | <$5/month | `SUM(athlete_ai_insights.cost_usd) last 30d` — source of truth, always DB (Langfuse's own cost estimate, local-only, is approximate, see §11.5) |
 
 ### 17.3 Functional validation (end-to-end)
 
@@ -1651,10 +1601,10 @@ Complete coach checklist without touching terminal:
 - [ ] Budget guard active (blocks if >$20/30d)
 - [ ] Eval CI blocks PR with score <0.75
 
-**Optional (8B) — Langfuse activated:**
-- [ ] Langfuse shows trace of each run with all nodes
-- [ ] Cost per trace reported correctly
-- [ ] Tags `valida_num`, `prompt_version`, `coach_id` filterable
+**Optional, local-only — Langfuse (`runbook-ops.md` §8):**
+- [ ] Langfuse shows one `race-analysis` trace per run (start + HITL resume merged)
+- [ ] Generation panel reports tokens in/out and latency per LLM call
+- [ ] Tags `provider:<name>`, `prompt:<version>`, `kind:<analysis_kind>` filterable
 
 ---
 
@@ -1670,7 +1620,7 @@ Complete coach checklist without touching terminal:
    - §7.4 — physical insight deletion vs archive (proposal: archive)
    - §13.3 — interactive onboarding tour (proposal: phase 2)
 3. **Reserve Gemini API key** with adequate quota (Tier 1 free → 15 RPM Flash Lite is sufficient for MVP).
-4. **Langfuse:** **NOT required** for MVP. Deferred to optional F8B post-launch. Decide host (Hetzner VPS ~$5/month vs coach's machine) only if one of these conditions is met: real Gemini cost >$10/month, coach asks for visual dashboard, or serious prompt A/B testing.
+4. **Langfuse:** **NOT required** for MVP or production — DB audit (§11.0) is the source of truth there. Local-only tracing was implemented 2026-09-10 for developer debugging, see `runbook-ops.md` §8; it is never deployed.
 5. **Approve 14-day timeline** or adjust priorities (e.g. skip critic_agent → -2 additional days).
 
 ### 18.2 Implementation kickoff
@@ -1691,7 +1641,7 @@ This will generate the structured step-by-step plan, spawn specialized agents (b
 | H3: Polling working with real Gemini | End Phase 5 | demo `watch -n 2 curl http://localhost:8000/api/race-analysis/runs/<id>/status` sees state updating every 2s |
 | H4: Complete UI | End Phase 6 | demo coach does full analysis without terminal |
 | H5: Baseline eval established | End Phase 7 | golden scores table, 0.75 threshold agreed |
-| H6: Production ready | End Phase 8 | `athlete_ai_insights` being populated + `/admin/ai-usage` active + budget guard (Langfuse optional 8B) |
+| H6: Production ready | End Phase 8 | `athlete_ai_insights` being populated + `/admin/ai-usage` active + budget guard (local-only Langfuse tracing is a separate dev tool, not a production gate) |
 
 ### 18.4 Metrics to monitor post-launch
 
@@ -1712,7 +1662,7 @@ langchain-core>=0.3.40
 langchain-google-genai>=2.0.0
 chromadb>=0.5.20
 sentence-transformers>=3.0.0   # optional, only if local embeddings
-langfuse>=3.0.0       # present in SDK but stack off by default (LANGFUSE_ENABLED=false); flip to true only in optional F8B
+langfuse>=4.6,<5      # local-only dev tracer, stack off by default (LANGFUSE_ENABLED=false); see runbook-ops.md §8
 
 # Existing (no changes)
 fastapi>=0.115
@@ -1739,16 +1689,16 @@ AI_MODEL=gemini-2.5-flash-lite
 AI_MAX_TOKENS=8192       # ↑ from 1024 for narrative
 AI_TEMPERATURE=0.3       # ↓ from 0.4 for reproducibility
 
-# === Langfuse ===
-LANGFUSE_ENABLED=false   # default — flip to true only if F8B is activated (optional Langfuse)
-LANGFUSE_HOST=http://localhost:3001
+# === Langfuse — local-only dev tracer, see runbook-ops.md §8 ===
+# Backend .env (never set LANGFUSE_ENABLED=true in Render — Settings rejects it):
+LANGFUSE_ENABLED=false
+LANGFUSE_BASE_URL=http://localhost:3001
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_DB_PASS=changeme
-LANGFUSE_CH_PASS=changeme
-LANGFUSE_NEXTAUTH_SECRET=<openssl rand -hex 32>
-LANGFUSE_SALT=<openssl rand -hex 32>
-LANGFUSE_ENCRYPTION_KEY=<openssl rand -hex 32>
+# No content-capture toggle — input/output/metadata are always redacted.
+# Langfuse server secrets (docker-compose.langfuse.env, NOT the backend .env):
+# NEXTAUTH_SECRET / SALT / ENCRYPTION_KEY / POSTGRES_PASSWORD / CLICKHOUSE_PASSWORD /
+# REDIS_AUTH / MINIO_ROOT_PASSWORD — see docker-compose.langfuse.env.example
 
 # === ChromaDB ===
 CHROMA_PERSIST_PATH=./data/chroma
@@ -1769,7 +1719,7 @@ RAG_TOP_K=3
 - **A5** Indefinite archive of insights (no physical deletion) complies with Ley 1581 unless parent requests.
 - **A6** SqliteSaver is sufficient for <100 runs/month (does not require Postgres).
 - **A7** Coach does not need shell access — all interaction via web UI.
-- **A8** ~~Langfuse self-hosted on small VPS~~ — **2026-05-20:** deferred to optional F8B. Primary audit in DB columns. Langfuse activatable only if real cost >$10/month, coach asks for UI, or serious A/B testing.
+- **A8** ~~Langfuse self-hosted on small VPS~~ — **2026-05-20:** deferred to optional F8B. Primary audit in DB columns. Langfuse activatable only if real cost >$10/month, coach asks for UI, or serious A/B testing. **Superseded 2026-09-10:** local-only tracing implemented (never deployed to a VPS) — see `runbook-ops.md` §8.
 - **A9** 1 solo dev-teacher, 5h/day → 14 days = ~3 calendar weeks.
 - **A10** ~~TanStack Query not needed for SSE~~ — **Decision 2026-05-20:** TanStack Query `refetchInterval` used for polling. No EventSource. Accepted trade-off: ~2s lag vs eliminated SSE complexity.
 - **A11** Theoretical framework changes <1 time/month (no periodic automatic reindex needed).

@@ -34,6 +34,9 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable, Optional
 
+from app.config import settings
+from app.services.race import observability
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -164,6 +167,11 @@ async def submit_run(
         raise
 
 
+def _trace_tags(*extra: str) -> list[str]:
+    provider = settings.race_ai_provider or settings.ai_provider
+    return [f"provider:{provider}", *(t for t in extra if not t.endswith(":"))]
+
+
 async def _run_graph(
     run_id: str,
     initial_state: dict[str, Any],
@@ -176,8 +184,18 @@ async def _run_graph(
     result_state: Optional[dict[str, Any]] = None
     try:
         graph = await _get_graph()
-        config = {"configurable": {"thread_id": run_id}}
-        result_state = await graph.ainvoke(initial_state, config=config)
+        tags = _trace_tags(
+            f"prompt:{initial_state.get('prompt_version') or ''}",
+            f"kind:{initial_state.get('analysis_kind') or ''}",
+        )
+        with observability.llm_tracing(
+            trace_name="race-analysis",
+            session_id=run_id,
+            tags=tags,
+            trace_seed=run_id,
+        ) as tracing:
+            config = {"configurable": {"thread_id": run_id}, **tracing}
+            result_state = await graph.ainvoke(initial_state, config=config)
     except BaseException as e:  # noqa: BLE001
         exc = e
         logger.exception("race run %s falló: %s", run_id, type(e).__name__)
@@ -254,8 +272,14 @@ async def _resume_graph(
     result_state: Optional[dict[str, Any]] = None
     try:
         graph = await _get_graph()
-        config = {"configurable": {"thread_id": run_id}}
-        result_state = await graph.ainvoke(command, config=config)
+        with observability.llm_tracing(
+            trace_name="race-analysis",
+            session_id=run_id,
+            tags=_trace_tags("hitl-resume"),
+            trace_seed=run_id,
+        ) as tracing:
+            config = {"configurable": {"thread_id": run_id}, **tracing}
+            result_state = await graph.ainvoke(command, config=config)
     except BaseException as e:  # noqa: BLE001
         exc = e
         logger.exception("race resume %s falló: %s", run_id, type(e).__name__)

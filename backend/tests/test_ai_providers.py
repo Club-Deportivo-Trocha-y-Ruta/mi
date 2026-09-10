@@ -139,3 +139,126 @@ async def test_anthropic_provider_maps_timeout(monkeypatch):
     provider = ap.AnthropicProvider(api_key="x", model="m")
     with pytest.raises(LLMTimeoutError):
         await provider.complete(_request())
+
+
+# ---------------------------------------------------------------------------
+# ClaudeCliProvider — SOLO local, sin red
+# ---------------------------------------------------------------------------
+
+
+def test_claude_cli_provider_raises_when_package_missing(monkeypatch):
+    """Si `langchain-claude-cli` no está instalado, falla limpio (SOLO local,
+    no es dependencia dura del proyecto — ver requirements.txt)."""
+    import sys
+
+    from app.services.ai.providers import claude_cli_provider as ccp
+
+    monkeypatch.setitem(sys.modules, "langchain_claude_cli", None)
+    with pytest.raises(LLMUnavailableError, match="langchain-claude-cli"):
+        ccp.ClaudeCliProvider(api_key="", model="claude-sonnet-5")
+
+
+def test_claude_cli_provider_constructs_client(monkeypatch):
+    """Verifica que el provider arma ``ChatClaudeCli`` con model/timeout y
+    NO reenvía api_key/base_url (el CLI usa el login OAuth, no un endpoint)."""
+    import sys
+
+    from app.services.ai.providers import claude_cli_provider as ccp
+
+    captured = {}
+
+    class FakeChatClaudeCli:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    fake_module = MagicMock()
+    fake_module.ChatClaudeCli = FakeChatClaudeCli
+    monkeypatch.setitem(sys.modules, "langchain_claude_cli", fake_module)
+
+    provider = ccp.ClaudeCliProvider(
+        api_key="ignorada", model="claude-sonnet-5", timeout=10.0
+    )
+    assert captured == {"model": "claude-sonnet-5", "timeout": 10.0}
+    assert provider.model == "claude-sonnet-5"
+    assert provider.name == "claude-cli"
+
+
+async def test_claude_cli_provider_complete_maps_response(monkeypatch):
+    import sys
+
+    from app.services.ai.providers import claude_cli_provider as ccp
+
+    class FakeAIMessage:
+        content = "Hola desde Claude"
+        usage_metadata = {"input_tokens": 12, "output_tokens": 4}
+
+    class FakeChatClaudeCli:
+        def __init__(self, **kwargs):
+            pass
+
+        async def ainvoke(self, messages):
+            return FakeAIMessage()
+
+    fake_module = MagicMock()
+    fake_module.ChatClaudeCli = FakeChatClaudeCli
+    monkeypatch.setitem(sys.modules, "langchain_claude_cli", fake_module)
+
+    provider = ccp.ClaudeCliProvider(api_key="", model="claude-sonnet-5")
+    resp = await provider.complete(_request())
+    assert resp.text == "Hola desde Claude"
+    assert resp.provider == "claude-cli"
+    assert resp.usage.input_tokens == 12
+    assert resp.usage.output_tokens == 4
+
+
+async def test_claude_cli_provider_complete_maps_unavailable_error(monkeypatch):
+    """Errores del paquete (``ClaudeCliError`` y derivados) se mapean a
+    ``LLMUnavailableError`` — mismo contrato que el resto de providers."""
+    import sys
+
+    from app.services.ai.providers import claude_cli_provider as ccp
+
+    class FakeChatClaudeCli:
+        def __init__(self, **kwargs):
+            pass
+
+        async def ainvoke(self, messages):
+            raise RuntimeError("cli crashed")
+
+    fake_module = MagicMock()
+    fake_module.ChatClaudeCli = FakeChatClaudeCli
+    monkeypatch.setitem(sys.modules, "langchain_claude_cli", fake_module)
+
+    provider = ccp.ClaudeCliProvider(api_key="", model="claude-sonnet-5")
+    with pytest.raises(LLMUnavailableError):
+        await provider.complete(_request())
+
+
+async def test_claude_cli_provider_complete_json_parses_json_text(monkeypatch):
+    """``complete_json`` usa la misma estrategia por-prompt que el resto de
+    providers del stack (ver AnthropicProvider/OpenAIProvider) — no el
+    structured-output nativo del CLI."""
+    import sys
+
+    from app.services.ai.providers import claude_cli_provider as ccp
+
+    class FakeAIMessage:
+        content = '{"answer": "ok"}'
+        usage_metadata = {"input_tokens": 5, "output_tokens": 3}
+
+    class FakeChatClaudeCli:
+        def __init__(self, **kwargs):
+            pass
+
+        async def ainvoke(self, messages):
+            return FakeAIMessage()
+
+    fake_module = MagicMock()
+    fake_module.ChatClaudeCli = FakeChatClaudeCli
+    monkeypatch.setitem(sys.modules, "langchain_claude_cli", fake_module)
+
+    provider = ccp.ClaudeCliProvider(api_key="", model="claude-sonnet-5")
+    result = await provider.complete_json(
+        _request(), schema={"type": "object", "properties": {"answer": {"type": "string"}}}
+    )
+    assert result == {"answer": "ok"}

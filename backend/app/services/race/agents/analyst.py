@@ -774,8 +774,7 @@ def _v3_training_block(window: dict[str, Any] | None) -> str | None:
         f"- Rúbricas — esfuerzo {_fmt_number(tw.get('rubric_effort_mean'))}, "
         f"actitud {_fmt_number(tw.get('rubric_attitude_mean'))}, "
         f"técnica {_fmt_number(tw.get('rubric_technique_mean'))}",
-        f"- Sesiones de fuerza: {_fmt_number(tw.get('strength_sessions'))} · "
-        f"con intervalos: {_fmt_number(tw.get('interval_sessions'))}",
+        f"- Sesiones con intervalos: {_fmt_number(tw.get('interval_sessions'))}",
         f"- Días desde la última sesión: {_fmt_number(tw.get('days_since_last_session'))}",
     ]
     foci = tw.get("technical_foci") or []
@@ -788,6 +787,10 @@ def _v3_training_block(window: dict[str, Any] | None) -> str | None:
     if feedback:
         lines.append("- Notas del coach en sesiones (ya anonimizadas):")
         lines.extend(f"  - {str(f)}" for f in feedback[:3])
+    descriptions = tw.get("session_descriptions") or []
+    if descriptions:
+        lines.append("- Descripción de sesiones recientes (ya anonimizada):")
+        lines.extend(f"  - {str(d)}" for d in descriptions[:3])
     return "\n".join(lines)
 
 
@@ -1422,7 +1425,7 @@ class RaceAnalystAgent:
         from app.config import settings
 
         model_id = resolve_configured_model(role="analyst")
-        provider = (settings.race_ai_provider or "anthropic").lower()
+        provider = (settings.race_ai_provider or settings.ai_provider or "anthropic").lower()
 
         tokens_in = tokens_out = latency_ms = 0
         cost_usd = 0.0

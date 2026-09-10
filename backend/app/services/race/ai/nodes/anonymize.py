@@ -136,16 +136,28 @@ async def anonymize(state: dict) -> dict[str, Any]:
             )
         update["coach_notes_by_valida"] = scrubbed_notes
 
-    # Feature 037 (T103) — scrub training_window.coach_feedback con el
-    # superset club_forbidden_names (todo el club, no solo el atleta+padres):
-    # el feedback de sesión puede mencionar a compañeros de equipo.
+    # Feature 037 (T103) — scrub training_window.coach_feedback y
+    # session_descriptions con el superset club_forbidden_names (todo el
+    # club, no solo el atleta+padres): ambos son texto libre de sesión y
+    # pueden mencionar a compañeros de equipo. session_descriptions se
+    # agregó cuando se retiró el catálogo de fuerza (migración
+    # d0e1f2a3b4c5) — la descripción de la sesión es ahora la única señal
+    # de qué trabajo se hizo, y pasa por el mismo scrub que coach_feedback.
     training_window = state.get("training_window")
-    if training_window and training_window.get("coach_feedback"):
+    if training_window and (
+        training_window.get("coach_feedback") or training_window.get("session_descriptions")
+    ):
         club_names = state.get("club_forbidden_names") or forbidden_names
         scrubbed_window = dict(training_window)
-        scrubbed_window["coach_feedback"] = [
-            _scrub_note(item, club_names) for item in training_window["coach_feedback"]
-        ]
+        if training_window.get("coach_feedback"):
+            scrubbed_window["coach_feedback"] = [
+                _scrub_note(item, club_names) for item in training_window["coach_feedback"]
+            ]
+        if training_window.get("session_descriptions"):
+            scrubbed_window["session_descriptions"] = [
+                _scrub_note(item, club_names)
+                for item in training_window["session_descriptions"]
+            ]
         update["training_window"] = scrubbed_window
 
     return update
