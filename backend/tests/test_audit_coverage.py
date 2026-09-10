@@ -1,9 +1,8 @@
 """Route-registry audit coverage (FR-009), T018.
 
-`contracts/audit-recording.md` §7/§9 T4. This wave (T017/T018) instruments
-no route yet — `AUDITED_ROUTES` is 110 keys, every one of them `Exempt`
-(`app/services/audit.py`). This test file therefore only carries the static
-tests that must hold from day one:
+`contracts/audit-recording.md` §7/§9 T4. Estado real del registro a hoy:
+`AUDITED_ROUTES` tiene 111 claves, 81 de ellas `Audited` y el resto `Exempt`
+(`app/services/audit.py`). Lo que se comprueba aquí:
 
   T4.1 — registry completeness: every mutating route (POST/PUT/PATCH/DELETE)
          plus every `MUTATING_GETS` member (§4.13) has a registry entry.
@@ -13,10 +12,21 @@ tests that must hold from day one:
   T4.3 — exemptions are justified: every `Exempt` reason is >= 20 chars and
          the *exempt* subset of the registry equals the eleven §4.14 keys
          exactly, once instrumentation starts moving entries to `Audited`.
+  T4.4a — mitad estática de FR-009: para cada ruta `Audited` montada, el
+         grafo de llamadas de su handler alcanza `record_audit`. Es la red
+         que evita que una ruta entre al registro como auditada sin que
+         ningún camino escriba una fila.
 
-The dynamic smoke test (T4.4) is parametrised over `Audited` entries that
-declare a factory; there are none yet, so it collects zero cases and is a
-no-op until Phase 3 lands the first `Audited(...)` entry.
+La mitad **dinámica** de T4.4 (ejercitar la ruta y contar filas en
+`audit_log`) sigue pendiente: necesita levantar la aplicación contra una base
+real y un constructor de petición por ruta, y el contrato la limita a las
+entradas "que declaren un factory", de las que todavía no hay ninguna. Esa
+prueba recoge por eso cero casos — antes recogía las 81 rutas y las saltaba
+una por una, que es lo que hacía parecer que la compuerta existía.
+
+Aviso a quien edite este archivo: este docstring afirmó durante dos oleadas
+que "every route is still `Exempt`" mucho después de dejar de ser cierto. Si
+cambias el registro, cambia también lo que dice acá.
 """
 
 from __future__ import annotations
@@ -25,13 +35,14 @@ import pytest
 
 from app.config import settings
 from app.main import app
-from tests.helpers.app_routes import iter_api_routes
 from app.services.audit import (
     AUDITED_ROUTES,
     MUTATING_GETS,
     Audited,
     Exempt,
 )
+from tests.helpers.app_routes import iter_api_routes
+from tests.helpers.audit_reachability import reaches_record_audit
 
 #: The exact eleven §4.14 exemptions — the only ones with a genuine,
 #: reviewed reason. Every other `Exempt` entry in the registry today carries
@@ -190,26 +201,86 @@ def _audited_entries() -> list[tuple[tuple[str, str], Audited]]:
     ]
 
 
-@pytest.mark.parametrize("key,policy", _audited_entries())
+def _audited_entries_with_a_mounted_route() -> list[tuple[tuple[str, str], Audited]]:
+    """Las entradas `Audited` cuya ruta está montada en esta configuración.
+
+    Las cuatro rutas de Strava desaparecen del router cuando
+    `settings.strava_enabled` está en falso; T4.2 ya vigila que la clave del
+    registro no quede huérfana, así que aquí simplemente no se recorren.
+    """
+    mounted = _mounted_route_endpoints()
+    return [(key, policy) for key, policy in _audited_entries() if key in mounted]
+
+
+def _mounted_route_endpoints() -> dict[tuple[str, str], object]:
+    endpoints: dict[tuple[str, str], object] = {}
+    for route in iter_api_routes(app):
+        for method in route.methods or set():
+            endpoints[(method, route.path)] = route.endpoint
+    return endpoints
+
+
+@pytest.mark.parametrize(
+    "key,policy",
+    _audited_entries_with_a_mounted_route(),
+    ids=lambda value: f"{value[0]} {value[1]}" if isinstance(value, tuple) else "",
+)
+def test_audited_route_handler_reaches_record_audit(
+    key: tuple[str, str], policy: Audited
+) -> None:
+    """FR-009, mitad estática: el handler declarado `Audited` sí audita.
+
+    Recorre el grafo de llamadas del handler (por nombre, dentro del paquete
+    `app`) y exige que alguna función alcanzable invoque `record_audit`. Es la
+    red genérica que faltaba: sin ella, una ruta puede entrar al registro como
+    `Audited` sin que ningún camino escriba una fila, y nadie se entera hasta
+    que alguien confía en el historial.
+
+    Lo que esta prueba **no** hace, dicho de frente: no ejercita la ruta, así
+    que no comprueba ni el contenido de la fila ni que se escriba en tiempo de
+    ejecución. Eso es el humo dinámico de `contracts/audit-recording.md` §9
+    T4.4, que necesita levantar la aplicación contra una base real y sigue
+    pendiente (ver `test_audited_route_writes_at_least_one_audit_log_row`).
+    """
+    endpoint = _mounted_route_endpoints()[key]
+    assert reaches_record_audit(endpoint), (
+        f"{key[0]} {key[1]} está en AUDITED_ROUTES como Audited"
+        f"(entities={sorted(e.value for e in policy.entities)}) pero ningún "
+        f"camino desde su handler `{getattr(endpoint, '__name__', endpoint)}` "
+        f"llega a `record_audit`. O se instrumenta la ruta, o pasa a "
+        f"`Exempt` con la razón de §4.14."
+    )
+
+
+#: Entradas `Audited` que declaran un constructor de petición para el humo
+#: dinámico de §9 T4.4. Hoy `Audited` no tiene ese campo y ninguna entrada lo
+#: declara, así que la parametrización de abajo recoge **cero** casos: es un
+#: hueco reconocido, no una compuerta que pase en falso.
+def _audited_entries_with_a_request_factory() -> list[tuple[tuple[str, str], Audited]]:
+    return [
+        (key, policy)
+        for key, policy in _audited_entries()
+        if getattr(policy, "request_factory", None) is not None
+    ]
+
+
+@pytest.mark.parametrize("key,policy", _audited_entries_with_a_request_factory())
 def test_audited_route_writes_at_least_one_audit_log_row(
     key: tuple[str, str], policy: Audited
 ) -> None:
-    """T4.4 dynamic smoke, parametrised over `Audited` entries.
+    """T4.4, humo dinámico — parametrizado sobre las entradas que declaran un
+    constructor de petición, como pide el contrato (§9 T4.4: "parametrised
+    over the `Audited` entries that declare a factory").
 
-    ATENCIÓN — este gancho **no comprueba nada todavía**: hace `skip` para
-    todas las rutas, así que la mitad de FR-009 que exige "toda ruta auditada
-    que la suite ejercita escribió al menos una fila" (contracts/audit-recording.md
-    §9) no está implementada. Su docstring anterior decía "zero `Audited`
-    entries — every route is still `Exempt`", lo cual dejó de ser cierto: hoy
-    el registro tiene 91 rutas `Audited` y las 81 que llegan aquí se saltan
-    una por una.
+    Ninguna lo declara todavía, así que esta prueba recoge cero casos. Antes
+    recogía las 81 rutas y las saltaba una por una, lo que hacía parecer que
+    la compuerta existía. La mitad estática de FR-009 sí está cubierta, por
+    `test_audited_route_handler_reaches_record_audit`.
 
-    Cada ruta instrumentada sí tiene su prueba de integración dedicada junto a
-    su handler; lo que falta es esta red genérica, que es la que evitaría que
-    una ruta futura se quede sin fila sin que nadie se entere. Ver la brecha
-    correspondiente en checklists/integration-review.md.
+    Para completarla hace falta una base real (el fixture `client` levanta la
+    aplicación contra MySQL) y sintetizar una petición válida por ruta.
     """
-    pytest.skip(
-        f"{key}: dynamic smoke test not yet wired for this route "
-        f"(entities={sorted(e.value for e in policy.entities)})"
+    raise AssertionError(  # pragma: no cover - hoy no se recoge ningún caso
+        f"{key}: llegó un caso con factory pero el humo dinámico no está "
+        f"implementado (entities={sorted(e.value for e in policy.entities)})."
     )
