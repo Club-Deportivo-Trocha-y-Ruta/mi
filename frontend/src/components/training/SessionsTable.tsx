@@ -25,6 +25,11 @@ function formatTime(timeStr: string): string {
   return timeStr.slice(0, 5);
 }
 
+function formatCoaches(session: TrainingSession): string {
+  if (!session.coaches || session.coaches.length === 0) return "—";
+  return session.coaches.map((coach) => coach.display_name).join(", ");
+}
+
 /**
  * Marcador "Hoy" — icono + texto (nunca solo color) para no depender de la
  * percepción de color al distinguir la fila/card del día actual (feature 032,
@@ -96,6 +101,7 @@ export function SessionsTable({
                     {session.has_active_coach === false && <InactiveCoachFlag />}
                   </p>
                   <p className="mt-0.5 truncate text-sm text-mid-gray">{session.location}</p>
+                  <p className="mt-0.5 truncate text-sm text-mid-gray">{formatCoaches(session)}</p>
                 </div>
                 <SessionStatusBadge status={session.status} />
               </div>
@@ -167,6 +173,9 @@ export function SessionsTable({
                 Lugar
               </th>
               <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+                Entrenadores a cargo
+              </th>
+              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Estado
               </th>
               <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
@@ -200,6 +209,9 @@ export function SessionsTable({
                 </td>
                 <td className="max-w-[160px] truncate px-4 py-3 text-mid-gray">
                   {session.location}
+                </td>
+                <td className="max-w-[180px] truncate px-4 py-3 text-mid-gray">
+                  {formatCoaches(session)}
                 </td>
                 <td className="px-4 py-3">
                   <SessionStatusBadge status={session.status as SessionStatus} />

@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from enum import Enum
 
@@ -47,6 +47,11 @@ def test_worked_example_from_contract_section_2_3() -> None:
         (
             {"day": date(2026, 1, 1)},
             {"day": date(2026, 1, 2)},
+            True,
+        ),
+        (
+            {"scheduled_start_time": time(15, 0)},
+            {"scheduled_start_time": time(16, 30)},
             True,
         ),
         (

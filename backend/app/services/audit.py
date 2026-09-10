@@ -32,7 +32,7 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from enum import Enum, StrEnum
 from typing import Any
@@ -484,6 +484,8 @@ def _normalise(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, time):
         return value.isoformat()
     if isinstance(value, Decimal):
         return str(value)

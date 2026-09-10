@@ -6,12 +6,9 @@ services:
         INSTALL_CLAUDE_CLI: ${INSTALL_CLAUDE_CLI:-false}
     ports:
       - "8000:8000"
-    depends_on:
-      mysql:
-        condition: service_healthy
     environment:
-      - MYSQL_HOST=mysql
-      - MYSQL_PORT=3306
+      - MYSQL_HOST=${MYSQL_HOST:-mysql}
+      - MYSQL_PORT=${MYSQL_PORT:-3306}
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASS=${MYSQL_PASS}
       - MYSQL_DB=${MYSQL_DB}

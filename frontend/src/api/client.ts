@@ -9,6 +9,12 @@ export const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  // `indexes: null` serializa arrays como `role=coach&role=admin` (repetición
+  // de la clave) en lugar del default `role[]=coach` — FastAPI's `Query()`
+  // sobre `list[...]` solo reconoce el primer formato; con brackets el
+  // parámetro llega como `None` y los routers que filtran por lista
+  // (`/api/users?role=`, `/api/calendar?event_types=`) devuelven sin filtrar.
+  paramsSerializer: { indexes: null },
 });
 
 // Feature 012, US2: pre-calienta el backend (Render Free duerme tras ~15 min).
