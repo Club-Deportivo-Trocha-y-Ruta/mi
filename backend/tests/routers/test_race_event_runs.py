@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     checkpoint_thread_id TEXT NOT NULL,
     explain_mode    INTEGER NOT NULL DEFAULT 0,
     stale_since     TEXT,
+    decided_by_user_id INTEGER,
+    decided_at      TEXT,
     created_at      TEXT,
     updated_at      TEXT
 )

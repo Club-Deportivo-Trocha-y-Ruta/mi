@@ -89,6 +89,7 @@ from app.schemas.race_imports import (
     UploadUserRef,
 )
 from app.services.audit import AuditEntityType, record_audit
+from app.services.permissions import ensure_import_club_access
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
 from app.services.race.revision import detect_revision
@@ -704,7 +705,14 @@ async def _load_pending_import(
     *,
     for_update: bool = False,
 ) -> RaceImport:
-    """Carga un RaceImport pending por id + verifica ownership (admin bypass)."""
+    """Carga un RaceImport pending por id + verifica alcance por club.
+
+    El chequeo de club (``ensure_import_club_access``, contrato
+    scope-ai-imports §6.1) reemplazó al viejo creator-lock: cualquier coach
+    del club puede continuar el cargue que empezó otro coach del mismo club.
+    Las dos ramas 404 de arriba (id desconocido, estado ya no ``pending``) se
+    evalúan primero y no cambian.
+    """
     stmt = select(RaceImport).where(RaceImport.id == parse_id)
     if for_update:
         # Serializa commits concurrentes del mismo parse_id (MySQL InnoDB).
@@ -725,15 +733,7 @@ async def _load_pending_import(
                 f"(actual: {imp.status.value}). No se puede dry-run/commit."
             ),
         )
-    # Ownership: admin bypass; coach solo sobre sus propios parses.
-    if (
-        current_user.role != UserRole.admin
-        and imp.imported_by_user_id != current_user.id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes acceso a este parse_id (ownership cross-coach).",
-        )
+    await ensure_import_club_access(db, imp, current_user)
     return imp
 
 

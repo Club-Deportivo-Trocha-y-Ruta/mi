@@ -442,7 +442,7 @@ export default function App() {
         <Route
           path="/admin/ai"
           element={
-            <ProtectedRoute allowedRoles={[UserRole.admin]}>
+            <ProtectedRoute allowedRoles={[UserRole.admin, UserRole.coach]}>
               <Suspense fallback={<RouteFallback label="Cargando estado de IA..." />}>
                 <AIHealthPage />
               </Suspense>

@@ -34,6 +34,13 @@ from app.schemas.parent_athlete import (
     ParentAthleteOut,
 )
 from app.schemas.parent_invite import ParentInviteCreate, ParentInviteCreatedOut, ParentInviteOut
+from app.services.audit import (
+    AuditAction,
+    AuditEntityType,
+    compute_changed_fields,
+    record_audit,
+    snapshot,
+)
 from app.services.category import compute_age_decimal, get_category
 from app.services.invitations import create_invite
 
@@ -155,7 +162,26 @@ async def link_parent_athlete(
             detail="Ya existe esta vinculación",
         )
 
-    # 6. Recargar con relaciones para serializar
+    # 6. Auditoría (feature 041, contracts/audit-recording.md §4.4): una fila
+    # `parent_athlete`·`link` por vínculo creado. Ley 1581 — la fila lleva
+    # identificadores y nombres de columna, nunca el nombre del atleta ni el
+    # correo del padre: `athlete_id` va en su columna propia y el padre viaja
+    # como `meta_json.parent_user_id` (clave permitida por §1.7 para filas de
+    # puente). `club_id` se resuelve por el paso 2 de la escalera §1.6 (el
+    # club del atleta); `parent_athlete` no tiene columna de club.
+    await record_audit(
+        db,
+        action=AuditAction.link,
+        entity_type=AuditEntityType.parent_athlete,
+        entity_id=relation.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        changed_fields=["parent_id", "athlete_id", "relationship_type"],
+        meta={"parent_user_id": parent.id},
+    )
+
+    # 7. Recargar con relaciones para serializar
     result = await db.execute(
         select(ParentAthlete)
         .options(selectinload(ParentAthlete.parent), selectinload(ParentAthlete.athlete))
@@ -311,8 +337,45 @@ async def generate_invite(
             except ValueError:
                 desired_rel = FamilyRelationship.acudiente
             if pa_existing.relationship_type != desired_rel:
+                # Auditoría (§4.4): la matriz solo pide `parent_invite`·`create`
+                # para esta ruta, pero aquí se muta de verdad un vínculo
+                # familiar ya existente. Dejarlo sin fila sería la escritura no
+                # atribuida que FR-001 quiere cerrar, así que se registra un
+                # `parent_athlete`·`update` bajo el mismo `request_id`. Solo el
+                # NOMBRE de la columna llega a la fila: `relationship_type` no
+                # está en `VALUE_ALLOWLIST[parent_athlete]`, así que su valor
+                # nunca se almacena.
                 pa_existing.relationship_type = desired_rel
+                await record_audit(
+                    db,
+                    action=AuditAction.update,
+                    entity_type=AuditEntityType.parent_athlete,
+                    entity_id=pa_existing.id,
+                    actor=current_user,
+                    club_id=athlete.club_id,
+                    athlete_id=body.athlete_id,
+                    changed_fields=["relationship_type"],
+                    meta={"parent_user_id": parent_user_id},
+                )
                 await db.flush()
+
+    # `create_invite` reutiliza una invitación vigente en vez de duplicarla, de
+    # modo que la acción registrada depende de lo que de verdad ocurrió en la
+    # base: `create` cuando nace una fila, `update` cuando solo se re-apunta
+    # `parent_user_id` de una vigente, y nada cuando se devolvió intacta
+    # (regla R7 de §1.4: un no-op no fabrica historia). Esta consulta previa es
+    # la misma condición que usa el servicio, para poder distinguir los casos.
+    reuse_stmt = select(ParentInvite).where(
+        ParentInvite.athlete_id == body.athlete_id,
+        ParentInvite.email == body.email,
+        ParentInvite.used.is_(False),
+        ParentInvite.expires_at > datetime.now(timezone.utc),
+    )
+    reusable = (await db.execute(reuse_stmt)).scalar_one_or_none()
+    reusable_id = reusable.id if reusable is not None else None
+    invite_before = (
+        snapshot(reusable, "parent_user_id") if reusable is not None else None
+    )
 
     invite = await create_invite(
         athlete_id=body.athlete_id,
@@ -321,6 +384,41 @@ async def generate_invite(
         db=db,
         parent_user_id=parent_user_id,
     )
+
+    # Auditoría (feature 041, §4.4). Ley 1581 y §1.7: el token de invitación
+    # NUNCA llega a la fila, ni en `diff_json` ni en `meta_json`, ni siquiera
+    # hasheado; `email` aparece únicamente como nombre de columna en
+    # `changed_fields` (`parent_invite` no está en `VALUE_ALLOWLIST`, así que
+    # ningún valor se almacena). `club_id` = club del atleta (§1.6, paso 2).
+    if invite.id != reusable_id:
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.parent_invite,
+            entity_id=invite.id,
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=body.athlete_id,
+            changed_fields=["athlete_id", "email", "expires_at"],
+            meta={"parent_user_id": parent_user_id} if parent_user_id is not None else None,
+        )
+    else:
+        invite_changed, _ = compute_changed_fields(
+            invite_before or {},
+            snapshot(invite, "parent_user_id"),
+            frozenset(),
+        )
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.parent_invite,
+            entity_id=invite.id,
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=body.athlete_id,
+            changed_fields=invite_changed,
+            meta={"parent_user_id": parent_user_id} if parent_user_id is not None else None,
+        )
 
     # Enviar email de invitación en background
     invite_url = f"{settings.frontend_base_url}/onboarding?token={invite.token}"
@@ -447,5 +545,23 @@ async def unlink_parent_athlete(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes permisos para eliminar esta vinculación",
             )
+
+    # Auditoría (feature 041, §4.4): la fila se encola ANTES del borrado, con
+    # los identificadores ya leídos, para que comparta la misma unidad de
+    # trabajo (§1.3) y no dependa de un objeto ya expirado. Mismo formato que
+    # las filas de desvinculación en cascada de `DELETE /api/users/{id}`
+    # (§4.2): identificadores y nombres de columna, nunca el nombre del menor
+    # ni el correo del padre.
+    await record_audit(
+        db,
+        action=AuditAction.unlink,
+        entity_type=AuditEntityType.parent_athlete,
+        entity_id=relation.id,
+        actor=current_user,
+        club_id=relation.athlete.club_id,
+        athlete_id=relation.athlete_id,
+        changed_fields=["parent_id", "athlete_id"],
+        meta={"parent_user_id": relation.parent_id},
+    )
 
     await db.delete(relation)

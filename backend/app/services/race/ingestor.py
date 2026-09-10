@@ -414,6 +414,11 @@ class RaceIngestor:
             # posterior (mismo sha256) lo pueda promover (F-UP2/F-UP3 wizard).
             if race_import is not None and not dry_run:
                 race_import.status = RaceImportStatus.committed
+                # US6 AS2 (contrato scope-ai-imports §6.2): el commit registra
+                # al coach que confirmó, mientras ``imported_by_user_id``
+                # conserva a quien hizo el parse. Nunca se sobrescribe.
+                race_import.committed_by_user_id = ingested_by_user_id
+                race_import.committed_at = datetime.now(timezone.utc)
                 race_import.stats_json = {
                     "competitors_created": competitors_created,
                     "competitors_updated": competitors_updated,

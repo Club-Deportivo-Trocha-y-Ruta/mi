@@ -284,6 +284,30 @@ async def mark_parent_newsletter_read(
     if nl.read_at is None:
         nl.read_at = datetime.now(timezone.utc)
         nl.read_by_user_id = current_user.id
+
+        # Auditoría (feature 041, contracts/audit-recording.md §4.8): la
+        # marca de lectura la escribe la familia — `actor_kind=user`,
+        # `actor_role=parent`. Que el padre no pueda leer el historial
+        # (FR-006) no exime su escritura. La fila se encola ANTES del flush
+        # para compartir la unidad de trabajo (§1.3); `club_id` sale del club
+        # del atleta (§1.6, paso 3: la bitácora no tiene columna de club).
+        # Solo NOMBRES de columna: `read_at` y `read_by_user_id` no están en
+        # `VALUE_ALLOWLIST[athlete_monthly_newsletter]`, y ningún texto
+        # narrativo de la bitácora toca la fila.
+        club_id = (
+            await db.execute(select(Athlete.club_id).where(Athlete.id == athlete_id))
+        ).scalar_one_or_none()
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.athlete_monthly_newsletter,
+            entity_id=nl.id,
+            actor=current_user,
+            club_id=club_id,
+            athlete_id=athlete_id,
+            changed_fields=["read_at", "read_by_user_id"],
+        )
+
         await db.flush()
 
         try:

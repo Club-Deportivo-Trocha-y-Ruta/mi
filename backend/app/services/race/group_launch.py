@@ -409,9 +409,9 @@ async def _insert_agent_run(
             INSERT INTO agent_runs (
                 external_run_id, graph_name, prompt_version, started_at,
                 status, input_json, requested_by_user_id,
-                checkpoint_thread_id, explain_mode
+                checkpoint_thread_id, explain_mode, athlete_id
             ) VALUES (
-                :rid, :gn, :pv, :sa, 'running', :inp, :uid, :tid, :em
+                :rid, :gn, :pv, :sa, 'running', :inp, :uid, :tid, :em, :aid
             )
             """
         ),
@@ -424,6 +424,10 @@ async def _insert_agent_run(
             "uid": requested_by_user_id,
             "tid": run_id,
             "em": 1 if explain_mode else 0,
+            # §1.3: la columna es la fuente preferida para resolver el club
+            # del run; sin ella, cada run de grupo nacía con ``athlete_id``
+            # en NULL.
+            "aid": athlete_id,
         },
     )
 

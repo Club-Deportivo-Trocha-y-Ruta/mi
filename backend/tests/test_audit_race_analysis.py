@@ -37,6 +37,7 @@ from sqlalchemy.pool import StaticPool
 from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
+from app.models.club import ClubRole
 from app.models.user import UserRole
 
 pytestmark = pytest.mark.asyncio
@@ -90,6 +91,12 @@ def _utc_now() -> datetime:
 
 
 def _make_user(role: UserRole, user_id: int) -> SimpleNamespace:
+    """Coach del club sembrado.
+
+    El acceso al run se decide por club (``contracts/scope-ai-imports.md``
+    §1.4), así que el coach de estos casos debe pertenecer a ``CLUB_ID``:
+    con la lista vacía el endpoint respondería 403 antes de auditar nada.
+    """
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
@@ -98,7 +105,9 @@ def _make_user(role: UserRole, user_id: int) -> SimpleNamespace:
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=CLUB_ID, role_in_club=ClubRole.coach)
+        ],
     )
 
 

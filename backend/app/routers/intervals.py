@@ -73,7 +73,15 @@ from app.schemas.intervals import (
     TemplateOut,
     TemplateUpdate,
 )
-from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
+from app.services.audit import (
+    VALUE_ALLOWLIST,
+    AuditAction,
+    AuditDocumentKind,
+    AuditEntityType,
+    compute_changed_fields,
+    record_audit,
+    snapshot,
+)
 from app.services.intervals import match_runner
 from app.services.request_context import current_request_id, new_request_id
 from app.services.intervals import structures as structures_svc
@@ -226,6 +234,64 @@ async def _dispatch_match_for_linked_activities(
 
 
 # ---------------------------------------------------------------------------
+# Auditoría (T030, contracts/audit-recording.md §4.11)
+#
+# Regla transaccional (§1.3): la matriz sitúa el `record_audit` de estas siete
+# rutas DENTRO de `services/intervals/structures.py` y
+# `services/intervals/templates.py`, por encima del `db.commit()` que esas
+# funciones son dueñas de emitir. Esta oleada no puede editar esos servicios
+# (aislamiento de archivos), así que la fila se encola en el router
+# inmediatamente después de que el servicio retorna con éxito y la comitea
+# `get_db` (`app/dependencies.py:21`) al terminar el handler. Riesgo residual
+# aceptado y declarado: la fila queda en una transacción POSTERIOR a la del
+# write de negocio, de modo que un fallo del router entre ambas pierde la
+# fila de auditoría (nunca al revés — jamás se inventa historia sobre un
+# write que se revirtió). Mover la llamada al servicio cierra la brecha.
+#
+# Privacidad (Ley 1581): ninguna de estas filas lleva nombre, fecha de
+# nacimiento ni medida de un menor. `interval_structure` e `interval_template`
+# no tienen entrada en `VALUE_ALLOWLIST`, así que `diff_json` siempre queda en
+# `None`: solo viajan NOMBRES de columna en `changed_fields`.
+# ---------------------------------------------------------------------------
+
+
+#: Campos escalares comparados en el PUT de una estructura (§2.1 `snapshot`).
+_STRUCTURE_AUDIT_FIELDS = ("target_age_band", "age_gate_confirmed")
+
+#: Campos escalares comparados en el PUT de una plantilla.
+_TEMPLATE_AUDIT_FIELDS = (
+    "name",
+    "target_age_band",
+    "mesocycle_phase",
+    "competition_proximity",
+)
+
+
+def _blocks_signature(blocks) -> list[tuple]:
+    """Huella comparable del set de bloques de una estructura o plantilla.
+
+    Se usa SOLO para decidir si el nombre ``blocks`` entra en
+    ``changed_fields``; nunca se almacena (``VALUE_ALLOWLIST`` no tiene
+    entrada para estas dos entidades, así que ``diff_json`` queda en
+    ``None``). Debe materializarse ANTES de llamar al servicio: el objeto ORM
+    de "antes" es la misma instancia que el servicio muta.
+    """
+    return [
+        (
+            b.position,
+            b.block_type.value,
+            b.duration_type.value,
+            b.duration_s,
+            b.target_zone.value,
+            b.target_cadence_rpm,
+            b.repeat_group,
+            b.repeat_count,
+        )
+        for b in blocks
+    ]
+
+
+# ---------------------------------------------------------------------------
 # POST /api/intervals/structures — create (US1)
 # ---------------------------------------------------------------------------
 
@@ -260,6 +326,18 @@ async def create_structure(
         blocks=payload.blocks,
         club_id=club_id,
         created_by_user_id=current_user.id,
+    )
+    # §4.11: `interval_structure`·`create`. `club_id` sale del paso 3 de la
+    # escalera de §1.6 (la sesión padre) — el servicio ya filtró la sesión por
+    # este mismo club, así que es exacto, no una conjetura.
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.interval_structure,
+        entity_id=structure.id,
+        actor=current_user,
+        club_id=club_id,
+        meta={"related_entity_id": structure.training_session_id},
     )
     await _dispatch_match_for_linked_activities(
         db,
@@ -328,6 +406,20 @@ async def update_structure(
 ) -> StructureOut:
     """Full replace of a structure's band + blocks."""
     club_id = await _coach_club_id(db, current_user)
+    # Foto previa para `compute_changed_fields` (§2.1): hay que materializar
+    # los valores ANTES de que el servicio mute la misma instancia ORM.
+    previous = await structures_svc.get_structure(
+        db, structure_id=structure_id, club_id=club_id
+    )
+    before = (
+        {
+            **snapshot(previous, *_STRUCTURE_AUDIT_FIELDS),
+            "blocks": _blocks_signature(previous.blocks),
+        }
+        if previous is not None
+        else None
+    )
+
     structure = await structures_svc.update_structure(
         db,
         structure_id=structure_id,
@@ -340,6 +432,28 @@ async def update_structure(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Estructura de intervalos {structure_id} no encontrada.",
+        )
+    # §4.11: `interval_structure`·`update`. Un PUT que no cambia nada no
+    # escribe fila (regla R7 de §1.4): un reemplazo idéntico no fabrica
+    # historia. `diff` va vacío a propósito — esta entidad no está en
+    # `VALUE_ALLOWLIST`, así que solo viajan nombres de columna.
+    if before is not None:
+        after = {
+            **snapshot(structure, *_STRUCTURE_AUDIT_FIELDS),
+            "blocks": _blocks_signature(structure.blocks),
+        }
+        changed, _diff = compute_changed_fields(
+            before, after, VALUE_ALLOWLIST.get(AuditEntityType.interval_structure, frozenset())
+        )
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.interval_structure,
+            entity_id=structure.id,
+            actor=current_user,
+            club_id=club_id,
+            changed_fields=changed,
+            meta={"related_entity_id": structure.training_session_id},
         )
     await _dispatch_match_for_linked_activities(
         db,
@@ -373,6 +487,13 @@ async def delete_structure(
 ) -> None:
     """Delete a structure (cascades blocks + match results; laps preserved)."""
     club_id = await _coach_club_id(db, current_user)
+    # La sesión padre hay que leerla ANTES del borrado: después la instancia
+    # ORM ya no existe y `related_entity_id` se perdería.
+    doomed = await structures_svc.get_structure(
+        db, structure_id=structure_id, club_id=club_id
+    )
+    training_session_id = doomed.training_session_id if doomed is not None else None
+
     deleted = await structures_svc.delete_structure(
         db, structure_id=structure_id, club_id=club_id
     )
@@ -381,6 +502,20 @@ async def delete_structure(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Estructura de intervalos {structure_id} no encontrada.",
         )
+    # §4.11: `interval_structure`·`delete`.
+    await record_audit(
+        db,
+        action=AuditAction.delete,
+        entity_type=AuditEntityType.interval_structure,
+        entity_id=structure_id,
+        actor=current_user,
+        club_id=club_id,
+        meta=(
+            {"related_entity_id": training_session_id}
+            if training_session_id is not None
+            else None
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +550,16 @@ async def create_template(
         blocks=payload.blocks,
         club_id=club_id,
         created_by_user_id=current_user.id,
+    )
+    # §4.11: `interval_template`·`create`. `interval_templates` sí tiene
+    # columna `club_id` propia (paso 1 de la escalera de §1.6).
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.interval_template,
+        entity_id=template.id,
+        actor=current_user,
+        club_id=club_id,
     )
     return _serialize_template_out(template)
 
@@ -480,6 +625,19 @@ async def update_template(
 ) -> TemplateOut:
     """Full replace of a template's fields and blocks."""
     club_id = await _coach_club_id(db, current_user)
+    # Foto previa antes de que el servicio mute la instancia ORM (§2.1).
+    previous = await templates_svc.get_template(
+        db, template_id=template_id, club_id=club_id
+    )
+    before = (
+        {
+            **snapshot(previous, *_TEMPLATE_AUDIT_FIELDS),
+            "blocks": _blocks_signature(previous.blocks),
+        }
+        if previous is not None
+        else None
+    )
+
     template = await templates_svc.update_template(
         db,
         template_id=template_id,
@@ -494,6 +652,27 @@ async def update_template(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Plantilla de intervalos {template_id} no encontrada.",
+        )
+    # §4.11: `interval_template`·`update`. Igual que en la estructura, un PUT
+    # idéntico no escribe fila (R7). `name` viaja como NOMBRE de columna en
+    # `changed_fields`; su valor no se almacena (entidad fuera de
+    # `VALUE_ALLOWLIST`).
+    if before is not None:
+        after = {
+            **snapshot(template, *_TEMPLATE_AUDIT_FIELDS),
+            "blocks": _blocks_signature(template.blocks),
+        }
+        changed, _diff = compute_changed_fields(
+            before, after, VALUE_ALLOWLIST.get(AuditEntityType.interval_template, frozenset())
+        )
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.interval_template,
+            entity_id=template.id,
+            actor=current_user,
+            club_id=club_id,
+            changed_fields=changed,
         )
     return _serialize_template_out(template)
 
@@ -527,6 +706,15 @@ async def archive_template(
 ) -> TemplateOut:
     """Toggle a template's archived state."""
     club_id = await _coach_club_id(db, current_user)
+    previous = await templates_svc.get_template(
+        db, template_id=template_id, club_id=club_id
+    )
+    previous_status = (
+        ("archived" if previous.is_archived else "active")
+        if previous is not None
+        else None
+    )
+
     template = await templates_svc.archive_template(
         db, template_id=template_id, club_id=club_id, is_archived=payload.is_archived
     )
@@ -535,6 +723,23 @@ async def archive_template(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Plantilla de intervalos {template_id} no encontrada.",
         )
+    # §4.11: `interval_template`·`archive` para las DOS direcciones de la ruta
+    # (archivar y desarchivar), tal como fija la matriz. `previous_status` /
+    # `new_status` (§1.7) llevan el código de catálogo `active`/`archived`
+    # para que el desarchivado no se lea como un archivado.
+    await record_audit(
+        db,
+        action=AuditAction.archive,
+        entity_type=AuditEntityType.interval_template,
+        entity_id=template.id,
+        actor=current_user,
+        club_id=club_id,
+        changed_fields=["is_archived"],
+        meta={
+            "previous_status": previous_status,
+            "new_status": "archived" if template.is_archived else "active",
+        },
+    )
     return _serialize_template_out(template)
 
 
@@ -573,6 +778,17 @@ async def attach_template(
         club_id=club_id,
         age_gate_confirmed=payload.age_gate_confirmed,
         attached_by_user_id=current_user.id,
+    )
+    # §4.11: `interval_template`·`link` sobre la PLANTILLA (no sobre la
+    # estructura clonada), con la sesión destino en `related_entity_id`.
+    await record_audit(
+        db,
+        action=AuditAction.link,
+        entity_type=AuditEntityType.interval_template,
+        entity_id=template_id,
+        actor=current_user,
+        club_id=club_id,
+        meta={"related_entity_id": structure.training_session_id},
     )
     await _dispatch_match_for_linked_activities(
         db,

@@ -74,7 +74,9 @@ export function MoreSheet({ role, open, onOpenChange }: MoreSheetProps) {
               </Link>
             </SheetClose>
 
-            {role === "admin" && (
+            {/* Feature 041 (gobernanza multi-coach, US6, §7.3): visible
+                también al entrenador, no solo al admin. */}
+            {(role === "admin" || role === "coach") && (
               <SheetClose asChild>
                 <Link to="/admin/ai" className={rowClass}>
                   <Activity className="h-4 w-4 shrink-0" aria-hidden="true" />

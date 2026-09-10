@@ -45,6 +45,7 @@ from app.dependencies import get_db, require_role
 from app.models.athlete import Athlete
 from app.models.user import User, UserRole
 from app.schemas.race_ai import (
+    AIUsageByCoach,
     AIUsageByPromptVersion,
     AIUsageResponse,
     ChatRequest,
@@ -64,6 +65,7 @@ from app.schemas.race_ai import (
 from app.services.race.ai.budget_guard import (
     BudgetExceededError,
     check_budget,
+    spend_by_user_last_30d,
 )
 from app.services.race.ai.runner import (
     RunBackpressureError,
@@ -75,7 +77,7 @@ from app.schemas.season_panorama import (
     SeasonPanoramaAthleteItem,
     SeasonPanoramaResponse,
 )
-from app.services.permissions import user_club_role
+from app.services.permissions import ensure_run_club_access, user_club_role
 from app.services.race.season_panorama import fetch_season_panorama
 from app.services.race.run_staleness import mark_run_stale
 from app.services.privacy import athlete_has_ai_processing_consent
@@ -147,15 +149,34 @@ def _utc_now() -> datetime:
 
 
 async def _load_run(db: AsyncSession, external_run_id: str) -> Optional[dict[str, Any]]:
-    """Carga la fila de ``agent_runs`` por external_run_id."""
+    """Carga la fila de ``agent_runs`` por external_run_id.
+
+    Las columnas nuevas se AGREGAN al final (contrato scope-ai-imports §4.1):
+    ``_g`` cae a acceso posicional para filas tipo tupla, así que los índices
+    0-10 deben quedar intactos.
+
+    Los dos ``LEFT JOIN`` sobre ``users`` (PK de una tabla de pocas filas)
+    resuelven en la MISMA ida y vuelta los nombres de quien lanzó y de quien
+    decidió: el poll de 2 s no gana una query extra. Se traen ``first_name`` /
+    ``last_name`` por separado en vez de concatenar en SQL para no depender de
+    ``CONCAT`` en el motor SQLite del carril offline; el formato final es el
+    mismo resolutor compartido de ``contracts/audit-log-api.md`` §6.2.
+    """
     result = await db.execute(
         text(
             """
-            SELECT id, external_run_id, status, started_at, finished_at,
-                   input_json, final_output_json, error_message,
-                   requested_by_user_id, explain_mode, athlete_id
-            FROM agent_runs
-            WHERE external_run_id = :rid
+            SELECT r.id, r.external_run_id, r.status, r.started_at, r.finished_at,
+                   r.input_json, r.final_output_json, r.error_message,
+                   r.requested_by_user_id, r.explain_mode, r.athlete_id,
+                   r.decided_by_user_id, r.decided_at,
+                   u_req.first_name AS requested_by_first_name,
+                   u_req.last_name AS requested_by_last_name,
+                   u_dec.first_name AS decided_by_first_name,
+                   u_dec.last_name AS decided_by_last_name
+            FROM agent_runs r
+            LEFT JOIN users u_req ON u_req.id = r.requested_by_user_id
+            LEFT JOIN users u_dec ON u_dec.id = r.decided_by_user_id
+            WHERE r.external_run_id = :rid
             LIMIT 1
             """
         ),
@@ -196,7 +217,44 @@ async def _load_run(db: AsyncSession, external_run_id: str) -> Optional[dict[str
         "requested_by_user_id": _g("requested_by_user_id", 8),
         "explain_mode": _g("explain_mode", 9),
         "athlete_id": _g("athlete_id", 10),
+        "decided_by_user_id": _g("decided_by_user_id", 11),
+        "decided_at": _g("decided_at", 12),
+        "requested_by_display_name": _display_name(
+            _g("requested_by_first_name", 13), _g("requested_by_last_name", 14)
+        ),
+        "decided_by_display_name": _display_name(
+            _g("decided_by_first_name", 15), _g("decided_by_last_name", 16)
+        ),
     }
+
+
+def _display_name(first_name: Any, last_name: Any) -> str:
+    """Nombre visible de un miembro del staff (``audit-log-api.md`` §6.2).
+
+    Cuando la FK está puesta pero el JOIN no trae un nombre usable (fila
+    borrada o editada a mano) se devuelve ``"Usuario no disponible"``: FR-013
+    prohíbe que un identificador crudo tipo ``user#7`` llegue al lector. El
+    caso "la FK es NULL" NO se distingue aquí — lo resuelve
+    :func:`_actor_ref`, que devuelve ``None`` para el objeto entero.
+
+    Privacidad (Ley 1581): esto siempre es un adulto (coach o admin); jamás
+    viaja por acá el nombre de un menor.
+    """
+    parts = [str(p).strip() for p in (first_name, last_name) if p]
+    joined = " ".join(p for p in parts if p).strip()
+    return joined or "Usuario no disponible"
+
+
+def _actor_fields(user_id: Any, display_name: Any) -> tuple[Optional[int], Optional[str]]:
+    """Par plano ``(user_id, display_name)`` para las respuestas de §4.2/§4.3.
+
+    ``(None, None)`` cuando la FK es NULL — "sin lanzar / sin decidir aún",
+    y el frontend no pinta nada. Con la FK puesta siempre sale una cadena
+    legible; ``user#7`` jamás es un valor legal (FR-013).
+    """
+    if user_id is None:
+        return None, None
+    return int(user_id), str(display_name or "Usuario no disponible")
 
 
 async def _resolve_athlete_club(db: AsyncSession, athlete_id: Optional[int]) -> Optional[int]:
@@ -576,17 +634,6 @@ async def _finalize_run(
     )
 
 
-def _ensure_run_owner(run: dict[str, Any], user: User) -> None:
-    """Solo el owner o admin pueden acceder al run."""
-    if user.role == UserRole.admin:
-        return
-    if run.get("requested_by_user_id") != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes acceso a este run",
-        )
-
-
 # ---------------------------------------------------------------------------
 # Endpoint 1: POST /runs
 # ---------------------------------------------------------------------------
@@ -657,11 +704,7 @@ async def start_run(
     except BudgetExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                f"Presupuesto mensual de IA excedido: "
-                f"${exc.current_usd:.4f} de ${exc.budget_usd:.2f}. "
-                "Reintenta más tarde o contacta al administrador."
-            ),
+            detail=exc.user_message,
         )
 
     run_id = uuid.uuid4().hex
@@ -685,9 +728,9 @@ async def start_run(
                 INSERT INTO agent_runs (
                     external_run_id, graph_name, prompt_version, started_at,
                     status, input_json, requested_by_user_id,
-                    checkpoint_thread_id, explain_mode
+                    checkpoint_thread_id, explain_mode, athlete_id
                 ) VALUES (
-                    :rid, :gn, :pv, :sa, 'running', :inp, :uid, :tid, :em
+                    :rid, :gn, :pv, :sa, 'running', :inp, :uid, :tid, :em, :aid
                 )
                 """
             ),
@@ -700,6 +743,10 @@ async def start_run(
                 "uid": current_user.id,
                 "tid": run_id,  # estable durante el lifecycle.
                 "em": 1 if body.explain_mode else 0,
+                # §1.3: sin esta columna el club del run sólo se podía
+                # resolver leyendo ``input_json``. Se persiste igual en el
+                # JSON, que sigue siendo el respaldo de las filas históricas.
+                "aid": body.athlete_id,
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -849,7 +896,7 @@ async def start_run(
     responses={
         200: {"model": RunStatusResponse},
         304: {"description": "Sin cambios desde el último poll (ETag match)."},
-        403: {"description": "No eres el owner del run."},
+        403: {"description": "Coach de otro club."},
         404: {"description": "Run no existe."},
     },
 )
@@ -872,7 +919,7 @@ async def get_run_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Run no encontrado",
         )
-    _ensure_run_owner(run, current_user)
+    await ensure_run_club_access(db, run, current_user)
 
     last_seq = await _last_seq(db, int(run["id"]))
 
@@ -906,6 +953,13 @@ async def get_run_status(
     else:
         eta = 0
 
+    requested_by_user_id, requested_by_display_name = _actor_fields(
+        run.get("requested_by_user_id"), run.get("requested_by_display_name")
+    )
+    decided_by_user_id, decided_by_display_name = _actor_fields(
+        run.get("decided_by_user_id"), run.get("decided_by_display_name")
+    )
+
     return RunStatusResponse(
         run_id=run_id,
         state=state,
@@ -915,6 +969,10 @@ async def get_run_status(
         estimated_seconds_remaining=eta,
         new_events=new_events,
         last_seq=last_seq,
+        requested_by_user_id=requested_by_user_id,
+        requested_by_display_name=requested_by_display_name,
+        decided_by_user_id=decided_by_user_id,
+        decided_by_display_name=decided_by_display_name,
     )
 
 
@@ -939,7 +997,7 @@ def _aware(dt: Any) -> datetime:
     response_model=HITLDecisionResponse,
     responses={
         200: {"model": HITLDecisionResponse},
-        403: {"description": "No eres el owner del run."},
+        403: {"description": "Coach de otro club."},
         404: {"description": "Run no existe."},
         409: {"description": "Run no está en estado awaiting_hitl."},
         429: {"description": "Backpressure: reintenta en breve."},
@@ -964,7 +1022,7 @@ async def submit_hitl_decision(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Run no encontrado",
         )
-    _ensure_run_owner(run, current_user)
+    await ensure_run_club_access(db, run, current_user)
 
     # Validación de estado: debe estar awaiting_hitl o running (si el
     # status no se actualizó aún por el grafo). Mantenemos permisivo:
@@ -1114,6 +1172,13 @@ async def submit_hitl_decision(
         run_id=run_id,
         step_id=step_id,
         next_state=RunState.RUNNING,
+        # Quien decide es el usuario de esta petición: la fila se acaba de
+        # actualizar arriba, así que no hace falta releer ``agent_runs``.
+        decided_by_user_id=current_user.id,
+        decided_by_display_name=_display_name(
+            getattr(current_user, "first_name", None),
+            getattr(current_user, "last_name", None),
+        ),
     )
 
 
@@ -1126,7 +1191,7 @@ async def submit_hitl_decision(
     "/runs/{run_id}/result",
     responses={
         200: {"description": "AnalysisOutput JSON."},
-        403: {"description": "No eres el owner."},
+        403: {"description": "Coach de otro club."},
         404: {"description": "Run aún no terminado o no existe."},
         409: {"description": "Run en estado failed."},
     },
@@ -1143,7 +1208,7 @@ async def get_run_result(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Run no encontrado",
         )
-    _ensure_run_owner(run, current_user)
+    await ensure_run_club_access(db, run, current_user)
 
     db_status = str(run["status"])
     if db_status == "failed":
@@ -1201,7 +1266,7 @@ async def get_run_pdf(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Run no encontrado",
         )
-    _ensure_run_owner(run, current_user)
+    await ensure_run_club_access(db, run, current_user)
 
     if str(run["status"]) not in {"completed", "rejected"}:
         raise HTTPException(
@@ -1438,18 +1503,24 @@ async def chat(
     response_model=AIUsageResponse,
     responses={
         200: {"model": AIUsageResponse},
-        403: {"description": "Solo admin."},
+        403: {"description": "Solo coach/admin."},
     },
 )
 async def admin_ai_usage(
     days: int = Query(default=30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(_admin_only),
+    current_user: User = Depends(_coach_or_admin),
 ) -> AIUsageResponse:
     """Métricas agregadas de uso de IA en ventana ``days``.
 
     Lee desde ``athlete_ai_insights`` — fuente de verdad para
     cost/latency en MVP (Langfuse diferido a F8B).
+
+    RBAC ampliado a coach (§7.2, US6 AC4): a diferencia de
+    ``GET /api/ai/status``, acá el entrenador SÍ ve montos en dólares —
+    necesita saber quién está consumiendo el presupuesto compartido del
+    club. No hay datos de menores en esta superficie: sólo nombres de staff
+    adulto y dinero.
     """
     cutoff = _utc_now() - timedelta(days=days)
 
@@ -1592,6 +1663,18 @@ async def admin_ai_usage(
             )
         )
 
+    # Gasto por entrenador (§7.2) — aditivo; el servicio ya resuelve nombres
+    # por lote, así que son dos queries más, nunca N+1.
+    by_coach = [
+        AIUsageByCoach(
+            user_id=s.user_id,
+            display_name=s.display_name,
+            run_count=s.run_count,
+            cost_usd_total=s.cost_usd_total,
+        )
+        for s in await spend_by_user_last_30d(db, days=days)
+    ]
+
     return AIUsageResponse(
         window_days=days,
         run_count=n_insights,
@@ -1600,6 +1683,7 @@ async def admin_ai_usage(
         latency_ms_p95=p95,
         fail_rate=round(fail_rate, 4),
         by_prompt_version=by_pv,
+        by_coach=by_coach,
     )
 
 
@@ -1724,11 +1808,11 @@ class RunCancelResponse(_BaseModel):
     description=(
         "Marca el run como 'análisis desactualizado'. Idempotente. "
         "Usado tras una re-ingesta que cambió los resultados. NO re-ejecuta "
-        "nada (D5: el re-trigger es manual). RBAC coach/admin + owner."
+        "nada (D5: el re-trigger es manual). RBAC coach/admin del club."
     ),
     responses={
         200: {"model": RunInvalidateResponse},
-        403: {"description": "No eres owner del run."},
+        403: {"description": "Coach de otro club."},
         404: {"description": "Run no existe."},
     },
 )
@@ -1741,7 +1825,7 @@ async def invalidate_run(
     run = await _load_run(db, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run no encontrado")
-    _ensure_run_owner(run, current_user)
+    await ensure_run_club_access(db, run, current_user)
     await mark_run_stale(db, int(run["id"]))
     await record_audit(
         db,
@@ -1769,11 +1853,11 @@ async def invalidate_run(
         "que en una instancia viva un run pendiente no expira nunca. Tras "
         "cancelar, ``find_active_run`` deja de verlo y el coach puede volver "
         "a lanzar el análisis (desaparece el 409 de 'ya hay un run activo'). "
-        "RBAC coach/admin + owner."
+        "RBAC coach/admin del club."
     ),
     responses={
         200: {"model": RunCancelResponse},
-        403: {"description": "No eres owner del run."},
+        403: {"description": "Coach de otro club."},
         404: {"description": "Run no existe."},
         409: {"description": "Run ya está en estado terminal."},
     },
@@ -1787,7 +1871,7 @@ async def cancel_run(
     run = await _load_run(db, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run no encontrado")
-    _ensure_run_owner(run, current_user)
+    await ensure_run_club_access(db, run, current_user)
 
     db_status = str(run["status"])
     if db_status in _TERMINAL_DB_STATUSES:
@@ -1861,11 +1945,11 @@ async def cancel_run(
     description=(
         "Lanza un NUEVO run agéntico reutilizando los parámetros del run "
         "original (athlete, temporada, válidas). Acción MANUAL del coach con "
-        "confirmación — NO hay cron ni auto-trigger (D5). RBAC coach/admin + owner."
+        "confirmación — NO hay cron ni auto-trigger (D5). RBAC coach/admin del club."
     ),
     responses={
         200: {"model": StartRunResponse},
-        403: {"description": "No eres owner del run."},
+        403: {"description": "Coach de otro club."},
         404: {"description": "Run no existe."},
         503: {"description": "AI deshabilitada o presupuesto excedido."},
     },
@@ -1879,7 +1963,7 @@ async def re_execute_run(
     run = await _load_run(db, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run no encontrado")
-    _ensure_run_owner(run, current_user)
+    await ensure_run_club_access(db, run, current_user)
 
     # Reconstruir los parámetros originales desde input_json.
     import json as _json
@@ -1981,11 +2065,7 @@ async def launch_race_event_group(
     except BudgetExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                f"Presupuesto mensual de IA excedido: "
-                f"${exc.current_usd:.4f} de ${exc.budget_usd:.2f}. "
-                "Reintenta más tarde o contacta al administrador."
-            ),
+            detail=exc.user_message,
         )
 
     from app.services.race.group_launch import (

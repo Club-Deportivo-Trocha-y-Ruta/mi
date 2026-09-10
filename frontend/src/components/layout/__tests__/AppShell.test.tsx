@@ -520,7 +520,9 @@ describe("AppShell", () => {
       expect(within(bar).getByRole("button", { name: /Más/ })).toBeInTheDocument();
     });
 
-    it("coach: 'Más' lista las áreas restantes (Familias) más Mi perfil y Cerrar sesión — sin Salud IA", async () => {
+    // Feature 041 (gobernanza multi-coach, US6, §7.3): "Salud IA" pasa a ser
+    // visible también al entrenador (antes admin-only).
+    it("coach: 'Más' lista las áreas restantes (Familias) más Mi perfil, Salud IA y Cerrar sesión", async () => {
       const user = userEvent.setup();
       renderShell(UserRole.coach);
 
@@ -535,9 +537,10 @@ describe("AppShell", () => {
       expect(
         within(dialog).getByRole("button", { name: "Cerrar sesión" }),
       ).toBeInTheDocument();
-      expect(
-        within(dialog).queryByRole("link", { name: "Salud IA" }),
-      ).not.toBeInTheDocument();
+      expect(within(dialog).getByRole("link", { name: "Salud IA" })).toHaveAttribute(
+        "href",
+        "/admin/ai",
+      );
       // Las áreas ya promovidas a la barra no se repiten dentro del sheet.
       expect(within(dialog).queryByRole("link", { name: "Atletas" })).not.toBeInTheDocument();
     });
@@ -569,7 +572,9 @@ describe("AppShell", () => {
   // Acciones de header — UserMenu + QuickCreate (feature 030, US4, T037)
   // -------------------------------------------------------------------------
   describe("acciones de header — UserMenu + QuickCreate (coach/admin)", () => {
-    it("coach: el trigger del user menu muestra el nombre completo y al abrir revela 'Mi perfil' y 'Cerrar sesión' (sin 'Salud IA')", async () => {
+    // Feature 041 (gobernanza multi-coach, US6, §7.3): "Salud IA" pasa a ser
+    // visible también al entrenador (antes admin-only).
+    it("coach: el trigger del user menu muestra el nombre completo y al abrir revela 'Mi perfil', 'Salud IA' y 'Cerrar sesión'", async () => {
       const user = userEvent.setup();
       renderShell(UserRole.coach);
 
@@ -585,8 +590,8 @@ describe("AppShell", () => {
         screen.getByRole("menuitem", { name: /Cerrar sesión/i }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("menuitem", { name: /Salud IA/i }),
-      ).not.toBeInTheDocument();
+        screen.getByRole("menuitem", { name: /Salud IA/i }),
+      ).toHaveAttribute("href", "/admin/ai");
     });
 
     it("admin: el user menu revela 'Mi perfil', 'Salud IA' (/admin/ai) y 'Cerrar sesión'", async () => {

@@ -155,11 +155,23 @@ class FakeSession:
         latency_total: int = 1500,
         prompt_version: str = "race_analyst_v1",
         generated_at: Optional[datetime] = None,
+        generated_by_user_id: Optional[int] = None,
+        requested_by_user_id: Optional[int] = None,
     ) -> None:
+        """Siembra un insight.
+
+        ``generated_by_user_id`` / ``requested_by_user_id`` alimentan el
+        agregado de gasto por entrenador (``spend_by_user_last_30d``, contrato
+        scope-ai-imports §7.1): el segundo emula la fila de ``agent_runs``
+        enlazada, el primero el respaldo cuando ``agent_run_id`` es NULL.
+        Ambos en ``None`` → el cubo "Sin atribuir".
+        """
         self.insights.append(
             {
                 "athlete_id": athlete_id,
                 "prompt_version": prompt_version,
+                "generated_by_user_id": generated_by_user_id,
+                "requested_by_user_id": requested_by_user_id,
                 "generated_at": generated_at or datetime.now(timezone.utc),
                 "metrics_snapshot_json": json.dumps(
                     {
@@ -312,6 +324,37 @@ class FakeSession:
                 except Exception:  # noqa: BLE001
                     pass
             return FakeResult([FakeRow(total=total)])
+
+        # Gasto por entrenador (§7.1): agregado con LEFT JOIN a agent_runs.
+        # Debe ir ANTES del bloque genérico de COUNT — comparte el substring.
+        if "FROM athlete_ai_insights i" in sql and "LEFT JOIN agent_runs ar" in sql:
+            cutoff = params.get("cutoff")
+            filtered = [i for i in self.insights if not cutoff or i["generated_at"] >= cutoff]
+            by_uid: dict[Optional[int], dict] = {}
+            for ins in filtered:
+                uid = ins.get("requested_by_user_id") or ins.get("generated_by_user_id")
+                entry = by_uid.setdefault(uid, {"run_count": 0, "cost": 0.0})
+                entry["run_count"] += 1
+                try:
+                    entry["cost"] += float(
+                        json.loads(ins["metrics_snapshot_json"])
+                        ["aggregate"]["cost_usd_total"]
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            ordered = sorted(by_uid.items(), key=lambda kv: kv[1]["cost"], reverse=True)
+            return FakeResult(
+                [
+                    FakeRow(uid=uid, run_count=v["run_count"], cost=v["cost"])
+                    for uid, v in ordered
+                ]
+            )
+
+        # Resolución de nombres de staff por lote (§4.1) — el FakeSession no
+        # tiene tabla ``users``; los tests que necesiten nombres reales usan
+        # el motor SQLite propio, no este fake.
+        if "FROM users WHERE id IN" in sql:
+            return FakeResult([])
 
         # SELECT COUNT/SUM FROM athlete_ai_insights
         if "FROM athlete_ai_insights" in sql and "COUNT" in sql.upper():

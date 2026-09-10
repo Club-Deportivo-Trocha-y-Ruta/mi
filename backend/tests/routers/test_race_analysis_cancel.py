@@ -41,6 +41,7 @@ from sqlalchemy.pool import StaticPool
 from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
+from app.models.club import ClubRole
 from app.models.user import UserRole
 from app.services.race.group_launch import find_active_run
 from tests.helpers.audit_tables import AUDIT_TABLES
@@ -67,6 +68,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     checkpoint_thread_id TEXT NOT NULL,
     explain_mode    INTEGER NOT NULL DEFAULT 0,
     stale_since     TEXT,
+    decided_by_user_id INTEGER,
+    decided_at      TEXT,
     created_at      TEXT,
     updated_at      TEXT
 )
@@ -89,7 +92,16 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _make_user(role: UserRole, user_id: int) -> SimpleNamespace:
+def _make_user(
+    role: UserRole, user_id: int, club_ids: tuple[int, ...] = (1,)
+) -> SimpleNamespace:
+    """Usuario falso con membresías de coach.
+
+    El alcance de un run ya no es la autoría sino el club
+    (``contracts/scope-ai-imports.md`` §1.4), así que el arnés tiene que
+    poder decir en qué club está cada coach. El atleta sembrado vive en el
+    club 1, que es el default.
+    """
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
@@ -98,7 +110,10 @@ def _make_user(role: UserRole, user_id: int) -> SimpleNamespace:
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=cid, role_in_club=ClubRole.coach)
+            for cid in club_ids
+        ],
     )
 
 
@@ -206,7 +221,9 @@ async def client_factory(session_factory):
     perdería al cerrar la sesión y el test no vería el cambio.
     """
 
-    async def _make(user_id: int, role: UserRole) -> AsyncClient:
+    async def _make(
+        user_id: int, role: UserRole, club_ids: tuple[int, ...] = (1,)
+    ) -> AsyncClient:
         async def _override_db() -> AsyncGenerator[AsyncSession, None]:
             async with session_factory() as session:
                 try:
@@ -217,7 +234,9 @@ async def client_factory(session_factory):
                     raise
 
         app.dependency_overrides[get_db] = _override_db
-        app.dependency_overrides[get_current_user] = lambda: _make_user(role, user_id)
+        app.dependency_overrides[get_current_user] = lambda: _make_user(
+            role, user_id, club_ids
+        )
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     yield _make
@@ -303,11 +322,12 @@ async def test_parent_no_puede_cancelar_403(client_factory, session_factory):
     assert (await _fetch_run(session_factory, "run-hitl"))["status"] == "awaiting_hitl"
 
 
-async def test_coach_no_owner_403(client_factory, session_factory):
+async def test_coach_otro_club_403(client_factory, session_factory):
     await _seed_run(session_factory)
 
-    # coach 99 no es el dueño (owner = 10).
-    async with await client_factory(99, UserRole.coach) as client:
+    # El coach 99 es coach del club 2; el run es del club 1 (§1.4). El 403
+    # prueba la regla de club, no una lista de membresías vacía.
+    async with await client_factory(99, UserRole.coach, (2,)) as client:
         resp = await client.post("/api/race-analysis/runs/run-hitl/cancel")
 
     assert resp.status_code == 403

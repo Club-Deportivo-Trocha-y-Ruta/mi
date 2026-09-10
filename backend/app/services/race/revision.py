@@ -784,6 +784,10 @@ async def commit_revision(
 
     # Promover parse_import → committed con linaje
     parse_import.status = RaceImportStatus.committed
+    # §6.2: mismo par que en el camino vivo del ingestor — quien confirma
+    # queda registrado aparte de quien cargó el archivo.
+    parse_import.committed_by_user_id = changed_by_user_id
+    parse_import.committed_at = datetime.now(timezone.utc)
     parse_import.parent_import_id = revision_context.parent_import_id
     parse_import.revision_reason = revision_reason
     parse_import.event_id = event.id

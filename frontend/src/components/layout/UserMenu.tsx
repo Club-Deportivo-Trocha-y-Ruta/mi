@@ -17,7 +17,8 @@
  *                       `md:hidden`.
  *
  * Items (idénticos en las tres variantes): Mi perfil (todos los roles) →
- * separador + Salud IA (sólo admin, reubicada fuera del sidebar) →
+ * separador + Salud IA (coach + admin desde feature 041 US6 §7.3; antes
+ * sólo admin — reubicada fuera del sidebar) →
  * separador → Apariencia (feature 033, US5 / FR-008 — Sistema/Claro/Oscuro)
  * → separador → Atajos de teclado (feature 033, US5 / FR-009) → separador →
  * Cerrar sesión. Cada sección es su propio bloque
@@ -230,7 +231,11 @@ export function UserMenu({
           </Link>
         </DropdownMenuItem>
 
-        {role === "admin" && (
+        {/* Feature 041 (gobernanza multi-coach, US6, §7.3): el entrenador
+            también ve el gasto de IA del club, no solo el admin — pero
+            sigue oculto para cualquier otro rol (US3 AS5: a quien no tiene
+            acceso no se le muestra la entrada de navegación). */}
+        {(role === "admin" || role === "coach") && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild data-testid="user-menu-ai-health" className="min-h-12">

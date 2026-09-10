@@ -824,10 +824,7 @@ async def start_athlete_run(
     except BudgetExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                f"Presupuesto mensual de IA excedido: ${exc.current_usd:.4f} "
-                f"de ${exc.budget_usd:.2f}. Reintenta más tarde o contacta al administrador."
-            ),
+            detail=exc.user_message,
         )
 
     run_id = uuid.uuid4().hex
@@ -1145,10 +1142,7 @@ async def create_season_summary(
     except BudgetExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                f"Presupuesto mensual de IA excedido: ${exc.current_usd:.4f} "
-                f"de ${exc.budget_usd:.2f}. Reintenta más tarde."
-            ),
+            detail=exc.user_message,
         )
 
     # Verificar que existan ≥3 válidas analizadas (insights activos aprobados).

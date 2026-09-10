@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     # estatico — evita el import en tiempo de ejecucion mientras el modulo
     # aun no existe (`from __future__ import annotations` difiere la
     # evaluacion de anotaciones).
+    from app.models.race_import import RaceImport
     from app.models.strava_activity import StravaActivity
 
 
@@ -94,6 +96,138 @@ async def user_club_role(
         )
     )
     return result.scalar_one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Alcance por club para runs agénticos e importaciones de resultados
+# (contracts/scope-ai-imports.md §1). Regla única que reemplaza el
+# creator-lock: *cualquier cosa del club la puede operar cualquier coach del
+# club; el admin siempre; el coach de otro club nunca.*
+# ---------------------------------------------------------------------------
+
+
+async def _coach_membership_club_ids(db: AsyncSession, user_id: int) -> set[int]:
+    """Clubes donde ``user_id`` figura como coach en ``club_members``.
+
+    Se consulta contra la tabla (no contra ``user.club_memberships``) porque
+    el usuario en cuestión es el *autor* de la fila, no quien hace la
+    petición: su relación no está cargada en esta sesión.
+    """
+    if user_id is None:
+        return set()
+    result = await db.execute(
+        select(ClubMember.club_id).where(
+            ClubMember.user_id == user_id,
+            ClubMember.role_in_club == ClubRole.coach,
+        )
+    )
+    return {int(cid) for cid in result.scalars().all() if cid is not None}
+
+
+def _athlete_id_from_input_json(raw: Any) -> int | None:
+    """``input_json['athlete_id']`` — respaldo permanente de §1.1 paso 2.
+
+    Las filas históricas de ``agent_runs`` quedaron con ``athlete_id`` en
+    NULL (§1.3): el backfill B7 sólo alcanza a las que traen el id dentro
+    del JSON, así que la lectura del JSON se mantiene para siempre.
+    """
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(raw, dict):
+        return None
+    value = raw.get("athlete_id")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+async def run_club_ids(db: AsyncSession, run: dict[str, Any]) -> set[int]:
+    """Clubes a los que pertenece un run agéntico (§1.1).
+
+    Escalera: ``agent_runs.athlete_id`` → ``input_json['athlete_id']`` →
+    ``athletes.club_id`` → clubes donde el solicitante es coach → ``set()``.
+
+    ``deleted_at`` NO se filtra: un run sobre un deportista archivado sigue
+    siendo abrible (data-model §8.1).
+    """
+    athlete_id = run.get("athlete_id")
+    if athlete_id is None:
+        athlete_id = _athlete_id_from_input_json(run.get("input_json"))
+
+    if athlete_id is not None:
+        result = await db.execute(
+            select(Athlete.club_id).where(Athlete.id == int(athlete_id))
+        )
+        club_id = result.scalar_one_or_none()
+        if club_id is not None:
+            return {int(club_id)}
+
+    # Paso 4 — sólo cuando los pasos 1-3 no resolvieron nada.
+    return await _coach_membership_club_ids(db, run.get("requested_by_user_id"))
+
+
+async def import_club_ids(db: AsyncSession, imp: "RaceImport") -> set[int]:
+    """Clubes a los que pertenece un cargue de resultados (§1.2).
+
+    ``race_imports`` / ``race_series`` / ``race_events`` no tienen
+    ``club_id``: las carreras son competencias de terceros, no filas del
+    club. El único vínculo veraz es la membresía de quien cargó el archivo.
+    """
+    return await _coach_membership_club_ids(db, getattr(imp, "imported_by_user_id", None))
+
+
+def _has_club_access(
+    club_ids: set[int], user: User, *, legacy_owner_id: int | None
+) -> bool:
+    """Matriz de decisión de §1.4 (el admin ya salió antes de llamar aquí).
+
+    El respaldo por autoría sólo aplica cuando el club es irresoluble: nunca
+    ensancha el acceso, sólo evita que una fila sin club quede inalcanzable
+    para quien la creó.
+    """
+    if club_ids:
+        return bool(coach_club_ids(user) & club_ids)
+    return legacy_owner_id is not None and legacy_owner_id == user.id
+
+
+async def ensure_run_club_access(
+    db: AsyncSession, run: dict[str, Any], user: User
+) -> None:
+    """Lanza 403 si ``user`` no es coach de ningún club del run (§1.4, §2)."""
+    if user.role == UserRole.admin:
+        return
+    club_ids = await run_club_ids(db, run)
+    if _has_club_access(
+        club_ids, user, legacy_owner_id=run.get("requested_by_user_id")
+    ):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No tienes acceso a este run",
+    )
+
+
+async def ensure_import_club_access(
+    db: AsyncSession, imp: "RaceImport", user: User
+) -> None:
+    """Lanza 403 si ``user`` no es coach de ningún club del cargue (§6.1)."""
+    if user.role == UserRole.admin:
+        return
+    club_ids = await import_club_ids(db, imp)
+    if _has_club_access(
+        club_ids, user, legacy_owner_id=getattr(imp, "imported_by_user_id", None)
+    ):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No tienes acceso a este cargue de resultados: pertenece a otro club.",
+    )
 
 
 # ---------------------------------------------------------------------------
