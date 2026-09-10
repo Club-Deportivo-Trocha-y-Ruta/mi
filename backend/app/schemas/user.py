@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator
 
 from app.models.user import UserRole
-from app.services.audit import AccountStateReasonCode
+from app.services.audit import AccountStateReasonCode, ParentRemovalReasonCode
 
 
 class UserCreate(BaseModel):
@@ -53,3 +53,15 @@ class UserOut(BaseModel):
 class UserListOut(BaseModel):
     items: list[UserOut]
     total: int
+
+
+class UserDeleteIn(BaseModel):
+    """Cuerpo de `DELETE /api/users/{user_id}` (feature 041, T046).
+
+    Simétrico con `AthleteArchiveIn` (contracts/athlete-archive.md §1 y §8.4):
+    el motivo viaja en el cuerpo JSON, nunca en un query param, porque axios
+    (`apiClient.delete(url, { data })`) y FastAPI ya soportan ese formato en
+    el endpoint hermano de archivado de atletas.
+    """
+
+    reason_code: ParentRemovalReasonCode

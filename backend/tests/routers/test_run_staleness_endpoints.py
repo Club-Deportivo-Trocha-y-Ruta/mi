@@ -19,12 +19,27 @@ from app.main import app
 from app.models.user import UserRole
 
 
-class _FakeSession:
-    """Sesión mínima — los endpoints PR5 no la usan directamente (todo va por
-    helpers monkeypatcheados)."""
+class _FakeResult:
+    """Resultado mínimo para el SELECT de ``_resolve_athlete_club``."""
 
-    async def execute(self, *a, **k):  # pragma: no cover - no debería llamarse
-        raise AssertionError("execute no debería llamarse en estos tests")
+    def scalar_one_or_none(self):
+        return None
+
+
+class _FakeSession:
+    """Sesión mínima — los endpoints PR5 no usan la sesión para el flujo de
+    negocio propiamente dicho (todo va por helpers monkeypatcheados), pero
+    ``record_audit``/``_resolve_athlete_club`` (feature 041) sí la tocan
+    directamente: ``execute`` responde el SELECT de club_id (resuelve a
+    ``None``, no hay atleta real en este arnés) y ``add`` encola la fila de
+    auditoría sin persistirla — ninguna prueba de este archivo verifica el
+    contenido de ``audit_log``."""
+
+    async def execute(self, *a, **k):
+        return _FakeResult()
+
+    def add(self, *a, **k):
+        return None
 
 
 def _user(user_id: int, role: UserRole):

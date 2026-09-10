@@ -258,9 +258,9 @@ export function SessionDetailPage() {
   );
 
   const handleCancelConfirm = useCallback(
-    (notify: boolean, reason?: string) => {
+    (notify: boolean, reason: string | undefined, reasonCode: string) => {
       cancelMutation.mutate(
-        { id: sessionId, notify, reason },
+        { id: sessionId, notify, reason, reasonCode },
         {
           onSuccess: () => {
             setShowCancelModal(false);
@@ -622,8 +622,12 @@ export function SessionDetailPage() {
             ? "No se pudo cancelar la sesión. Intenta de nuevo."
             : null
         }
-        onSend={(reason) => handleCancelConfirm(true, reason)}
-        onSkip={() => handleCancelConfirm(false)}
+        onSend={(reason, reasonCode) => {
+          if (reasonCode) handleCancelConfirm(true, reason, reasonCode);
+        }}
+        onSkip={(reasonCode) => {
+          if (reasonCode) handleCancelConfirm(false, undefined, reasonCode);
+        }}
         onCancel={() => setShowCancelModal(false)}
       />
     </section>

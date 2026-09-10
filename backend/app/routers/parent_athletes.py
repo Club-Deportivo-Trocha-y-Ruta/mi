@@ -99,7 +99,7 @@ async def link_parent_athlete(
         select(Athlete).where(Athlete.id == body.athlete_id)
     )
     athlete = athlete_result.scalar_one_or_none()
-    if athlete is None:
+    if athlete is None or athlete.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Atleta no encontrado",
@@ -176,8 +176,12 @@ async def my_athletes(
     # Cargar todas las relaciones del padre con sus atletas
     stmt = (
         select(ParentAthlete)
+        .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
         .options(selectinload(ParentAthlete.athlete))
-        .where(ParentAthlete.parent_id == current_user.id)
+        .where(
+            ParentAthlete.parent_id == current_user.id,
+            Athlete.deleted_at.is_(None),
+        )
     )
     relations_result = await db.execute(stmt)
     relations = relations_result.scalars().all()
@@ -249,7 +253,7 @@ async def generate_invite(
         select(Athlete).where(Athlete.id == body.athlete_id)
     )
     athlete = athlete_result.scalar_one_or_none()
-    if athlete is None:
+    if athlete is None or athlete.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Atleta no encontrado",
@@ -352,7 +356,7 @@ async def list_invites(
         select(Athlete).where(Athlete.id == athlete_id)
     )
     athlete = athlete_result.scalar_one_or_none()
-    if athlete is None:
+    if athlete is None or athlete.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Atleta no encontrado",
@@ -389,7 +393,9 @@ async def list_parent_athletes(
 ) -> ParentAthleteListOut:
     stmt = (
         select(ParentAthlete)
+        .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
         .options(selectinload(ParentAthlete.parent), selectinload(ParentAthlete.athlete))
+        .where(Athlete.deleted_at.is_(None))
     )
 
     if athlete_id is not None:
@@ -402,9 +408,7 @@ async def list_parent_athletes(
         if not coach_clubs:
             return ParentAthleteListOut(items=[], total=0)
         # Solo relaciones donde el atleta pertenece a un club del coach
-        stmt = stmt.join(Athlete, Athlete.id == ParentAthlete.athlete_id).where(
-            Athlete.club_id.in_(coach_clubs)
-        )
+        stmt = stmt.where(Athlete.club_id.in_(coach_clubs))
 
     result = await db.execute(stmt)
     relations = result.scalars().all()

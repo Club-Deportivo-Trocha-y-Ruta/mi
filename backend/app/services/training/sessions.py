@@ -177,8 +177,14 @@ async def create_session(
             request_id=ctx.request_id,
         )
 
-    # Crear CalendarEvent paralelo en la misma transacción
-    await _create_parallel_calendar_event(db, session, payload, coach, club_id, ctx)
+    # Crear CalendarEvent paralelo en la misma transacción.
+    # ctx solo se reenvía cuando existe: mantiene compatible la firma de 5
+    # posicionales que consumen los tests preexistentes de integración
+    # calendario-entrenamiento (que parchean la función sin parámetro ctx).
+    if ctx is not None:
+        await _create_parallel_calendar_event(db, session, payload, coach, club_id, ctx=ctx)
+    else:
+        await _create_parallel_calendar_event(db, session, payload, coach, club_id)
 
     await db.commit()
 

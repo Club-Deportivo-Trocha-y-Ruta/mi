@@ -1016,62 +1016,53 @@ class TestCalendarAudit:
         for r in recorded:
             assert r["action"] == AuditAction.delete
 
-    async def test_rsvp_new_records_event_attendance_create(self, client: AsyncClient):
-        """RSVP de un padre sobre un evento (actor puede ser un padre)."""
-        app.dependency_overrides[get_current_user] = _parent_user
-        app.dependency_overrides[get_db] = _override_db()
+    async def test_rsvp_new_records_event_attendance_create(self):
+        """RSVP de un padre sobre un evento (actor puede ser un padre).
+
+        `attendance_svc.rsvp` hace su propio commit (`services/calendar/
+        attendances.py`), así que la fila de auditoría se verifica a nivel
+        de servicio — encolada ANTES de ese commit (§1.3
+        audit-recording.md) — no interceptando `app.routers.calendar.
+        record_audit`, que ya no existe (T030 movió la llamada adentro).
+        """
+        from app.services.calendar import attendances as attendance_svc
+        from app.models.calendar_event import RSVPStatus
+
+        db = _fake_db()  # execute() -> scalar_one_or_none() == None (sin RSVP previo)
+        user = _parent_user()
 
         event_mock = _make_event_mock()
         event_mock.id = 5
         event_mock.club_id = 1
         event_mock.event_type = EventType.CLUB_EVENT
 
-        attendance_mock = MagicMock()
-        attendance_mock.id = 501
-        attendance_mock.event_id = 5
-        attendance_mock.athlete_id = 3
-        attendance_mock.rsvp_status = "accepted"
-        attendance_mock.rsvp_at = datetime.now(timezone.utc)
-        attendance_mock.rsvp_by_user_id = 3
-        attendance_mock.actual_status = "unknown"
-        attendance_mock.notes = None
-        attendance_mock.created_at = datetime.now(timezone.utc)
-        attendance_mock.updated_at = datetime.now(timezone.utc)
-
         with patch(
-            "app.services.calendar.events.get_event",
-            AsyncMock(return_value=event_mock),
-        ), patch(
-            "app.routers.calendar.can_rsvp_event",
-            AsyncMock(return_value=True),
-        ), patch(
-            "app.routers.calendar._get_existing_attendance",
-            AsyncMock(return_value=None),
-        ), patch(
-            "app.services.calendar.attendances.rsvp",
-            AsyncMock(return_value=attendance_mock),
-        ), patch(
-            "app.routers.calendar.record_audit",
+            "app.services.calendar.attendances.record_audit",
             AsyncMock(),
         ) as mock_audit:
-            resp = await client.post(
-                "/api/calendar/events/5/rsvp",
-                json={"athlete_id": 3, "rsvp_status": "accepted"},
-                headers={"Authorization": "Bearer fake"},
+            attendance = await attendance_svc.rsvp(
+                db=db,
+                event=event_mock,
+                athlete_id=3,
+                status=RSVPStatus.ACCEPTED,
+                by_user=user,
             )
 
-        assert resp.status_code == 200
+        assert attendance.athlete_id == 3
         mock_audit.assert_awaited_once()
         _, kwargs = mock_audit.call_args
         assert kwargs["action"] == AuditAction.create
         assert kwargs["entity_type"] == AuditEntityType.event_attendance
         assert kwargs["athlete_id"] == 3
-        assert kwargs["entity_id"] == 501
+        assert kwargs["entity_id"] == attendance.id
 
-    async def test_rsvp_existing_records_event_attendance_update(self, client: AsyncClient):
+    async def test_rsvp_existing_records_event_attendance_update(self):
         """Un RSVP repetido sobre el mismo atleta/evento audita `update`, no `create`."""
-        app.dependency_overrides[get_current_user] = _parent_user
-        app.dependency_overrides[get_db] = _override_db()
+        from app.services.calendar import attendances as attendance_svc
+        from app.models.calendar_event import RSVPStatus
+
+        db = _fake_db()
+        user = _parent_user()
 
         event_mock = _make_event_mock()
         event_mock.id = 5
@@ -1079,43 +1070,29 @@ class TestCalendarAudit:
         event_mock.event_type = EventType.CLUB_EVENT
 
         previous = MagicMock()
-        previous.rsvp_status = MagicMock(value="tentative")
+        previous.id = 501
+        previous.rsvp_status = RSVPStatus.TENTATIVE
 
-        attendance_mock = MagicMock()
-        attendance_mock.id = 501
-        attendance_mock.event_id = 5
-        attendance_mock.athlete_id = 3
-        attendance_mock.rsvp_status = "accepted"
-        attendance_mock.rsvp_at = datetime.now(timezone.utc)
-        attendance_mock.rsvp_by_user_id = 3
-        attendance_mock.actual_status = "unknown"
-        attendance_mock.notes = None
-        attendance_mock.created_at = datetime.now(timezone.utc)
-        attendance_mock.updated_at = datetime.now(timezone.utc)
+        async def _execute(*args, **kwargs):
+            result = MagicMock()
+            result.scalar_one_or_none = MagicMock(return_value=previous)
+            return result
+
+        db.execute = AsyncMock(side_effect=_execute)
 
         with patch(
-            "app.services.calendar.events.get_event",
-            AsyncMock(return_value=event_mock),
-        ), patch(
-            "app.routers.calendar.can_rsvp_event",
-            AsyncMock(return_value=True),
-        ), patch(
-            "app.routers.calendar._get_existing_attendance",
-            AsyncMock(return_value=previous),
-        ), patch(
-            "app.services.calendar.attendances.rsvp",
-            AsyncMock(return_value=attendance_mock),
-        ), patch(
-            "app.routers.calendar.record_audit",
+            "app.services.calendar.attendances.record_audit",
             AsyncMock(),
         ) as mock_audit:
-            resp = await client.post(
-                "/api/calendar/events/5/rsvp",
-                json={"athlete_id": 3, "rsvp_status": "accepted"},
-                headers={"Authorization": "Bearer fake"},
+            attendance = await attendance_svc.rsvp(
+                db=db,
+                event=event_mock,
+                athlete_id=3,
+                status=RSVPStatus.ACCEPTED,
+                by_user=user,
             )
 
-        assert resp.status_code == 200
+        assert attendance is previous
         mock_audit.assert_awaited_once()
         _, kwargs = mock_audit.call_args
         assert kwargs["action"] == AuditAction.update

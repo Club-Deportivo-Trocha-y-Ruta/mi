@@ -73,6 +73,12 @@ CREATE TABLE calendar_events (
     created_by_user_id INTEGER NOT NULL,
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_by_user_id INTEGER NULL,
+    cancelled_by_user_id INTEGER NULL,
+    cancelled_at DATETIME NULL,
+    cancellation_reason_code VARCHAR(40) NULL,
+    deleted_at DATETIME NULL,
+    deleted_by_user_id INTEGER NULL,
     CHECK (end_at >= start_at),
     CHECK (event_type != 'competition' OR race_event_id IS NOT NULL)
 )

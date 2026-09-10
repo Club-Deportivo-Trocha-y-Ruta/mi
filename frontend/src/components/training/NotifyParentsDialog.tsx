@@ -11,6 +11,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuditReasonCodes } from "@/hooks/useAuditReasonCodes";
 
 const btnPrimaryStyle: React.CSSProperties = {
   boxShadow:
@@ -36,10 +44,16 @@ export interface NotifyParentsDialogProps {
   removedAthletes?: AthleteEntry[];
   isPending?: boolean;
   errorMessage?: string | null;
-  /** "Enviar notificación". Recibe `reason` opcional solo en variante `cancel`. */
-  onSend: (reason?: string) => void;
-  /** "No enviar" — guardar el cambio pero sin email. */
-  onSkip: () => void;
+  /**
+   * "Enviar notificación". Recibe `reason` (texto libre para el email) y
+   * `reasonCode` (catálogo cerrado de auditoría) solo en variante `cancel`.
+   */
+  onSend: (reason?: string, reasonCode?: string) => void;
+  /**
+   * "No enviar" — guardar el cambio pero sin email. Recibe `reasonCode`
+   * (catálogo cerrado de auditoría) solo en variante `cancel`.
+   */
+  onSkip: (reasonCode?: string) => void;
   /** "Cancelar" — cerrar diálogo sin guardar. */
   onCancel: () => void;
 }
@@ -102,20 +116,40 @@ export function NotifyParentsDialog({
   onCancel,
 }: NotifyParentsDialogProps) {
   const [reason, setReason] = useState("");
+  const [reasonCode, setReasonCode] = useState("");
+
+  // Catálogo cerrado de motivos de cancelación (feature 041 — gobernanza
+  // multi-coach). Solo se consulta en variante `cancel`, que es la única
+  // que dispara un DELETE con reason_code obligatorio.
+  const reasonCodesQuery = useAuditReasonCodes(
+    variant === "cancel" ? "cancel" : undefined,
+    variant === "cancel",
+  );
 
   useEffect(() => {
-    if (!open) setReason("");
+    if (!open) {
+      setReason("");
+      setReasonCode("");
+    }
   }, [open]);
 
   const copy = variantCopy(variant, parentCount);
+  const reasonCodeMissing = variant === "cancel" && reasonCode === "";
   const sendDisabled =
     isPending ||
+    reasonCodeMissing ||
     (variant === "update" && changes.length === 0) ||
     (variant === "attendance" && addedAthletes.length === 0);
+  const skipDisabled = isPending || reasonCodeMissing;
 
   function handleSend() {
-    if (variant === "cancel") onSend(reason.trim() || undefined);
+    if (variant === "cancel") onSend(reason.trim() || undefined, reasonCode);
     else onSend();
+  }
+
+  function handleSkip() {
+    if (variant === "cancel") onSkip(reasonCode);
+    else onSkip();
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -215,12 +249,45 @@ export function NotifyParentsDialog({
           )}
 
           {variant === "cancel" && (
+            <div className="space-y-1">
+              <label
+                htmlFor="cancel-reason-code"
+                className="block text-sm font-medium text-charcoal"
+              >
+                Motivo de la cancelación
+                <span className="ml-1 text-red-600" aria-hidden="true">
+                  *
+                </span>
+              </label>
+              <Select
+                value={reasonCode}
+                onValueChange={setReasonCode}
+                disabled={isPending}
+              >
+                <SelectTrigger id="cancel-reason-code" aria-required="true">
+                  <SelectValue placeholder="Selecciona un motivo…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(reasonCodesQuery.data?.items ?? []).map((opt) => (
+                    <SelectItem key={opt.code} value={opt.code}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-mid-gray">
+                Queda registrado en el historial de auditoría del club.
+              </p>
+            </div>
+          )}
+
+          {variant === "cancel" && (
             <div>
               <label
                 htmlFor="cancel-reason"
                 className="block text-sm font-medium text-charcoal"
               >
-                Motivo (opcional)
+                Mensaje para las familias (opcional)
               </label>
               <textarea
                 id="cancel-reason"
@@ -258,8 +325,8 @@ export function NotifyParentsDialog({
           </button>
           <button
             type="button"
-            onClick={onSkip}
-            disabled={isPending}
+            onClick={handleSkip}
+            disabled={skipDisabled}
             className="flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-80 disabled:opacity-50"
             style={btnSecondaryStyle}
           >

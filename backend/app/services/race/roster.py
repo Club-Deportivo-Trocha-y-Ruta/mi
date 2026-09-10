@@ -246,7 +246,7 @@ async def add_roster_entry(
         select(Athlete).where(Athlete.id == payload.athlete_id)
     )
     athlete: Optional[Athlete] = athlete_result.scalar_one_or_none()
-    if athlete is None:
+    if athlete is None or athlete.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Atleta con id={payload.athlete_id} no existe o no pertenece a ningún club.",

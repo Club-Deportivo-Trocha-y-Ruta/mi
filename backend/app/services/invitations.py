@@ -87,6 +87,17 @@ async def get_valid_invite(token: str, db: AsyncSession) -> ParentInvite:
             detail="El token de invitación ha expirado",
         )
 
+    # Un atleta archivado no puede recibir una nueva vinculación familiar
+    # (contracts/athlete-archive.md §5.2).
+    athlete = (
+        await db.execute(select(Athlete).where(Athlete.id == invite.athlete_id))
+    ).scalar_one_or_none()
+    if athlete is None or athlete.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Atleta no encontrado",
+        )
+
     return invite
 
 

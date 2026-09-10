@@ -155,7 +155,18 @@ async def evaluate_badges_for_period(
     Idempotente: usa INSERT IGNORE semántico (try/except IntegrityError).
     Retorna la lista de insignias NUEVAS persistidas en esta llamada.
     Las ya existentes se omiten silenciosamente.
+
+    Un atleta archivado no acumula nuevas insignias
+    (contracts/athlete-archive.md §5.2).
     """
+    from app.models.athlete import Athlete
+
+    athlete_row = (
+        await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    ).scalar_one_or_none()
+    if athlete_row is None or athlete_row.deleted_at is not None:
+        return []
+
     new_badges: list[AthleteBadge] = []
 
     # --- Insignias de asistencia ---
@@ -254,7 +265,8 @@ async def _evaluate_attendance_badges(
         select(Athlete).where(Athlete.id == athlete_id)
     )
     athlete = athlete_result.scalar_one_or_none()
-    if athlete is None:
+    # Un atleta archivado no acumula nuevas insignias (§5.2).
+    if athlete is None or athlete.deleted_at is not None:
         return []
 
     sessions_result = await db.execute(

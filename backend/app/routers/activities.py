@@ -139,6 +139,13 @@ async def list_athlete_activities(
             status_code=status.HTTP_404_NOT_FOUND, detail="Atleta no encontrado"
         )
 
+    # Un atleta archivado desaparece de la superficie de coach y padre;
+    # el admin conserva acceso (mismo patrón que verify_athlete_access, C3).
+    if athlete.deleted_at is not None and current_user.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Atleta no encontrado"
+        )
+
     if not await can_view_activity(current_user, athlete_id, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -205,7 +212,9 @@ async def list_activities(
             detail="No tiene permiso para revisar actividades",
         )
 
-    filters = []
+    # Un atleta archivado desaparece de la revisión de actividades de Strava
+    # (contracts/athlete-archive.md §5.2).
+    filters = [Athlete.deleted_at.is_(None)]
 
     if current_user.role == UserRole.coach:
         coach_club_ids = {

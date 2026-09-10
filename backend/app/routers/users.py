@@ -6,15 +6,15 @@ from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_current_user, get_db, require_role
 from app.models.athlete import Athlete, ParentAthlete
+from app.models.audit_log import AuditLog
 from app.models.club import ClubMember, ClubRole
 from app.models.parent_invite import ParentInvite
 from app.models.parental_consent import ParentalConsent
 from app.models.user import User, UserRole
-from app.schemas.user import UserCreate, UserListOut, UserOut, UserUpdate
+from app.schemas.user import UserCreate, UserDeleteIn, UserListOut, UserOut, UserUpdate
 from app.services.audit import (
     AuditAction,
     AuditEntityType,
-    ParentRemovalReasonCode,
     VALUE_ALLOWLIST,
     compute_changed_fields,
     record_audit,
@@ -37,6 +37,38 @@ _ALLOWED_CREATIONS: dict[UserRole, set[UserRole]] = {
 # IDs de clubes donde el usuario es coach
 def _coach_club_ids(user: User) -> set[int]:
     return {m.club_id for m in user.club_memberships if m.role_in_club == ClubRole.coach}
+
+
+async def _has_recorded_activity(db: AsyncSession, user_id: int) -> bool:
+    """Sondas de actividad de una cuenta (feature 041, T046, §8.1).
+
+    Regla 6 de `DELETE /api/users/{user_id}`: role-agnóstica — protege tanto
+    cuentas de personal como de padres. Tres existencias indexadas, no un
+    escaneo cruzado:
+
+    1. `audit_log.actor_user_id` — cualquier acción registrada post-041.
+    2. `users.created_by` — atribución pre-041 (columna legada corta).
+    3. `parental_consents.parent_user_id` — evidencia de consentimiento
+       Ley 1581 pre-041.
+    """
+    audit_probe = await db.execute(
+        select(AuditLog.id).where(AuditLog.actor_user_id == user_id).limit(1)
+    )
+    if audit_probe.first() is not None:
+        return True
+
+    created_probe = await db.execute(
+        select(User.id).where(User.created_by == user_id).limit(1)
+    )
+    if created_probe.first() is not None:
+        return True
+
+    consent_probe = await db.execute(
+        select(ParentalConsent.id)
+        .where(ParentalConsent.parent_user_id == user_id)
+        .limit(1)
+    )
+    return consent_probe.first() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +386,7 @@ async def update_user(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: int,
-    reason_code: ParentRemovalReasonCode = Query(
-        ..., description="Motivo de la eliminación (feature 041, audit-recording.md §1.5)"
-    ),
+    body: UserDeleteIn,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> None:
@@ -365,7 +395,14 @@ async def delete_user(
     Coach: solo puede borrar padres de sus clubes.
     No se permite borrar admin/coach por este endpoint, ni autoborrado.
     Atletas se gestionan vía DELETE /api/athletes/{id}.
+
+    Se rechaza (409) cuando la cuenta tiene actividad registrada (feature 041,
+    T046, contracts/athlete-archive.md §8): desactivar en su lugar preserva la
+    atribución (`users.created_by`) y la evidencia de consentimiento
+    (Ley 1581) en vez de destruirlas.
     """
+    reason_code = body.reason_code
+
     if user_id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -391,12 +428,8 @@ async def delete_user(
             detail="Los atletas se eliminan vía DELETE /api/athletes/{id}",
         )
 
-    if target.role in (UserRole.admin, UserRole.coach):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No puedes eliminar usuarios con rol admin o coach",
-        )
-
+    # Regla 4 (§8, evaluada antes que la regla 5): un coach no puede ni
+    # siquiera sondear actividad de un usuario fuera de sus clubes.
     if current_user.role == UserRole.coach:
         coach_clubs = _coach_club_ids(current_user)
         target_clubs = {m.club_id for m in target.club_memberships}
@@ -406,19 +439,32 @@ async def delete_user(
                 detail="Este usuario no pertenece a ninguno de tus clubes",
             )
 
+    # Regla 5 (§8, contracts/staff-admin.md §5): incondicional para todo
+    # llamador, no solo para coach.
+    if target.role in (UserRole.admin, UserRole.coach):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No puedes eliminar usuarios con rol admin o coach",
+        )
+
+    # Regla 6 (§8.1): la cuenta con actividad registrada no se elimina, se
+    # desactiva. Rol-agnóstica — protege también a un padre con consentimiento
+    # otorgado, RSVP o lectura de bitácora.
+    if await _has_recorded_activity(db, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Este usuario tiene actividad registrada y no se puede eliminar. "
+                "Desactívalo para impedir que inicie sesión; su nombre seguirá "
+                "visible en el historial."
+            ),
+        )
+
     # Capturar, ANTES de borrar, lo que la cascada va a eliminar — se necesita
     # para escribir una fila de auditoría por cada registro removido
-    # (contracts/audit-recording.md §4.2).
-    # Select de columnas (no de la entidad completa): `ParentalConsent.policy`
-    # es `lazy="joined"`, y un select de entidad forzaría un JOIN a
-    # `privacy_policies` que no hace falta solo para leer id/athlete_id.
-    consents_result = await db.execute(
-        select(ParentalConsent.id, ParentalConsent.athlete_id).where(
-            ParentalConsent.parent_user_id == user_id
-        )
-    )
-    consents = list(consents_result.all())
-
+    # (contracts/audit-recording.md §4.2). Las sondas de §8.1 ya descartaron
+    # que existan `parental_consents` para este usuario (regla 7, §8.2): esa
+    # tabla ya no participa en esta cascada.
     links_result = await db.execute(
         select(ParentAthlete).where(ParentAthlete.parent_id == user_id)
     )
@@ -433,9 +479,9 @@ async def delete_user(
     # membresía, o None si es un usuario club-less).
     primary_club_id = club_members[0].club_id if club_members else None
 
-    # club_id de cada atleta involucrado, para las filas `parent_athlete` y
-    # `parental_consent` (escalera de resolución §1.6 paso 2).
-    athlete_ids = {link.athlete_id for link in links} | {c.athlete_id for c in consents}
+    # club_id de cada atleta involucrado, para las filas `parent_athlete`
+    # (escalera de resolución §1.6 paso 2).
+    athlete_ids = {link.athlete_id for link in links}
     athlete_club_map: dict[int, int] = {}
     if athlete_ids:
         athletes_result = await db.execute(
@@ -444,7 +490,6 @@ async def delete_user(
         athlete_club_map = dict(athletes_result.all())
 
     # Cascada manual: limpiar referencias antes de eliminar el user.
-    await db.execute(delete(ParentalConsent).where(ParentalConsent.parent_user_id == user_id))
     await db.execute(delete(ParentAthlete).where(ParentAthlete.parent_id == user_id))
     await db.execute(delete(ClubMember).where(ClubMember.user_id == user_id))
     await db.execute(
@@ -456,20 +501,24 @@ async def delete_user(
     )
     # NOTA (feature 041, contracts/audit-recording.md §10, defecto preexistente
     # corregido): NO se anula `created_by` de lo que este usuario creó —
-    # borrar un padre no debe borrar la autoría de sus registros.
-    await db.execute(delete(User).where(User.id == user_id))
-    await db.flush()
-
-    for consent in consents:
-        await record_audit(
-            db,
-            action=AuditAction.delete,
-            entity_type=AuditEntityType.parental_consent,
-            entity_id=consent.id,
-            actor=current_user,
-            club_id=athlete_club_map.get(consent.athlete_id, primary_club_id),
-            athlete_id=consent.athlete_id,
-            changed_fields=["parent_user_id", "athlete_id"],
+    # borrar un padre no debe borrar la autoría de sus registros. La regla 6
+    # ya refuerza esto: un usuario que sí creó algo tiene actividad registrada
+    # (probe 2, §8.1) y este punto del código es inalcanzable para él.
+    try:
+        await db.execute(delete(User).where(User.id == user_id))
+        await db.flush()
+    except IntegrityError:
+        # RESTRICT FK preexistente (`training_sessions.created_by_user_id`,
+        # `race_results.created_by_user_id`, §8.1) para actividad anterior a
+        # 041 que ninguna de las tres sondas cubre.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Este usuario tiene actividad registrada y no se puede eliminar. "
+                "Desactívalo para impedir que inicie sesión; su nombre seguirá "
+                "visible en el historial."
+            ),
         )
 
     for link in links:

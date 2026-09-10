@@ -388,6 +388,7 @@ async def _resolve_race_dates(
             .join(Athlete, Athlete.id == RaceResult.athlete_id)
             .where(
                 Athlete.club_id == club_id,
+                Athlete.deleted_at.is_(None),
                 RaceEvent.event_date >= month_start,
                 RaceEvent.event_date <= month_end,
                 RaceResult.deleted_at.is_(None),

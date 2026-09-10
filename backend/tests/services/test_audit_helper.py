@@ -167,19 +167,26 @@ async def test_unknown_entity_type_raises(session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_request_id_in_scope_and_none_passed_raises(session: AsyncSession) -> None:
-    # No request_id_scope() active (request_context.py is out of scope for
-    # T010) and no explicit request_id passed either.
-    with pytest.raises(AuditContractError):
-        await record_audit(
-            session,
-            action=AuditAction.create,
-            entity_type=AuditEntityType.athlete,
-            entity_id=1,
-            actor=None,
-            actor_kind=AuditActorKind.system,
-            club_id=7,
-        )
+async def test_no_request_id_in_scope_and_none_passed_mints_reserve_id(
+    session: AsyncSession,
+) -> None:
+    # No request_id_scope() active and no explicit request_id passed either.
+    # record_audit degrades rather than raising (see its docstring): it
+    # mints its own reserve id instead of failing a legitimate write coming
+    # from a caller with no bound context (e.g. a direct service call, or a
+    # router-level test harness that never registers RequestIdMiddleware).
+    row = await record_audit(
+        session,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.athlete,
+        entity_id=1,
+        actor=None,
+        actor_kind=AuditActorKind.system,
+        club_id=7,
+    )
+    assert row is not None
+    assert row.request_id is not None
+    assert len(row.request_id) == 32
 
 
 @pytest.mark.asyncio

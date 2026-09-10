@@ -46,6 +46,7 @@ from app.models.athlete import Athlete
 from app.models.race_event import RaceEvent
 from app.models.race_result import RaceResult
 from app.models.race_series import RaceSeries
+from app.models.user import User
 from app.schemas.race_ai import (
     GroupRunItem,
     GroupRunLaunchResponse,
@@ -54,6 +55,7 @@ from app.schemas.race_ai import (
     RaceEventRunsResponse,
     RunState,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.race.ai.runner import RunBackpressureError, submit_run
 
 logger = logging.getLogger(__name__)
@@ -214,6 +216,7 @@ async def resolve_group_members(
             RaceResult.event_id == race_event_id,
             RaceResult.athlete_id.is_not(None),
             RaceResult.deleted_at.is_(None),
+            Athlete.deleted_at.is_(None),
         )
         .distinct()
         .order_by(Athlete.last_name, Athlete.first_name)
@@ -556,6 +559,27 @@ async def launch_group(
                 )
             )
             continue
+
+        # 3b. Fila de auditoría del lanzamiento (§4.9 audit-recording.md),
+        # mismo patrón que ``routers/race_analysis.py::start_run`` /
+        # ``routers/athlete_race_analysis.py::start_athlete_run``: un run
+        # NUEVO es siempre ``create``, sea cual sea el punto de entrada.
+        _new_run_id_result = await db.execute(
+            text("SELECT id FROM agent_runs WHERE external_run_id = :rid LIMIT 1"),
+            {"rid": run_id},
+        )
+        _new_run_row = _new_run_id_result.first()
+        if _new_run_row is not None:
+            _requested_by_user = await db.get(User, requested_by_user_id)
+            await record_audit(
+                db,
+                action=AuditAction.create,
+                entity_type=AuditEntityType.agent_run,
+                entity_id=int(_new_run_row[0]),
+                actor=_requested_by_user,
+                club_id=_ath.club_id if _ath is not None else None,
+                athlete_id=member.athlete_id,
+            )
 
         # 4. Submit to the runner (backpressure → skip, other errors → error).
         try:

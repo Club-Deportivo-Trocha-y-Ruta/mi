@@ -69,6 +69,7 @@ from app.models.strava_activity import (
     StravaIngestSource,
     StravaUpstreamState,
 )
+from app.models.athlete import Athlete
 from app.models.strava_connection import StravaConnection, StravaConnectionStatus
 from app.services.strava.client import (
     StravaAPIError,
@@ -264,9 +265,14 @@ async def reconcile_all(db: "AsyncSession") -> dict[str, int]:
     connections_broken = 0
     now = datetime.now(timezone.utc)
 
+    # Un atleta archivado deja de arrastrar el feed de terceros de Strava
+    # (contracts/athlete-archive.md §5.2) — se filtra por join.
     result = await db.execute(
-        select(StravaConnection).where(
-            StravaConnection.status == StravaConnectionStatus.active
+        select(StravaConnection)
+        .join(Athlete, Athlete.id == StravaConnection.athlete_id)
+        .where(
+            StravaConnection.status == StravaConnectionStatus.active,
+            Athlete.deleted_at.is_(None),
         )
     )
     connections = result.scalars().all()

@@ -16,6 +16,7 @@ from app.models.calendar_event import (
     EventType,
     RSVPStatus,
 )
+from app.services.audit import AuditAction, AuditEntityType, record_audit
 
 if TYPE_CHECKING:
     from app.models.calendar_event import CalendarEvent
@@ -53,6 +54,9 @@ async def rsvp(
 
     now = datetime.now(timezone.utc)
 
+    previous_status = attendance.rsvp_status if attendance is not None else None
+    was_existing = attendance is not None
+
     if attendance is None:
         attendance = EventAttendance(
             event_id=event.id,
@@ -66,6 +70,29 @@ async def rsvp(
         attendance.rsvp_status = status
         attendance.rsvp_at = now
         attendance.rsvp_by_user_id = by_user.id
+
+    await db.flush()
+
+    # Fila de auditoría en la MISMA transacción de negocio (§1.3
+    # audit-recording.md): este servicio hace su propio commit, así que
+    # record_audit debe encolarse ANTES de ese commit, no después en el
+    # router.
+    await record_audit(
+        db,
+        action=AuditAction.update if was_existing else AuditAction.create,
+        entity_type=AuditEntityType.event_attendance,
+        entity_id=attendance.id,
+        actor=by_user,
+        club_id=event.club_id,
+        athlete_id=athlete_id,
+        changed_fields=["rsvp_status"],
+        diff={
+            "rsvp_status": (
+                previous_status.value if previous_status else None,
+                status.value,
+            )
+        },
+    )
 
     await db.commit()
     await db.refresh(attendance)

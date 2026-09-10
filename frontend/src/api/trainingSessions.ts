@@ -64,15 +64,20 @@ export async function executeTrainingSession(id: number): Promise<TrainingSessio
 export interface CancelTrainingSessionOptions {
   notify?: boolean;
   reason?: string;
+  /**
+   * Motivo del catálogo cerrado `CancelReasonCode` (auditoría, feature 041).
+   * El backend lo exige como query param obligatorio.
+   */
+  reasonCode: string;
 }
 
 export async function cancelTrainingSession(
   id: number,
-  opts?: CancelTrainingSessionOptions,
+  opts: CancelTrainingSessionOptions,
 ): Promise<TrainingSession> {
-  const params: Record<string, string> = {};
-  if (opts?.notify !== undefined) params.notify = String(opts.notify);
-  if (opts?.reason) params.reason = opts.reason;
+  const params: Record<string, string> = { reason_code: opts.reasonCode };
+  if (opts.notify !== undefined) params.notify = String(opts.notify);
+  if (opts.reason) params.reason = opts.reason;
   const response = await apiClient.delete<TrainingSession>(`${BASE}/${id}`, { params });
   return response.data;
 }
@@ -151,13 +156,15 @@ export interface CancelTrainingSessionVars {
   id: number;
   notify?: boolean;
   reason?: string;
+  /** Motivo del catálogo cerrado `CancelReasonCode` (auditoría, feature 041). */
+  reasonCode: string;
 }
 
 export function useCancelTrainingSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, notify, reason }: CancelTrainingSessionVars) =>
-      cancelTrainingSession(id, { notify, reason }),
+    mutationFn: ({ id, notify, reason, reasonCode }: CancelTrainingSessionVars) =>
+      cancelTrainingSession(id, { notify, reason, reasonCode }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["training-sessions"] });
       void queryClient.invalidateQueries({ queryKey: ["training-session"] });

@@ -157,6 +157,26 @@ describe("ParentDashboardPage (Wave 4)", () => {
       renderPage();
       expect(screen.getByText(/No tienes atletas vinculados/i)).toBeInTheDocument();
     });
+
+    it("muestra el estado vacío tranquilo cuando el padre solo tiene atletas archivados (feature 041)", () => {
+      // El backend excluye a los atletas archivados de `my-athletes` por
+      // completo (contracts/athlete-archive.md §7) — desde el frontend este
+      // caso es indistinguible de "no tiene atletas": mismo arreglo vacío,
+      // mismo copy calmado, sin mención del archivado.
+      mockAthletes([]);
+      mockConsent({
+        active_policy: {
+          id: 1,
+          version: "1.1",
+          effective_date: "2026-04-01",
+          title: "x",
+          changelog: null,
+        },
+        consents_per_athlete: [],
+      });
+      renderPage();
+      expect(screen.getByText(/No tienes atletas vinculados/i)).toBeInTheDocument();
+    });
   });
 
   describe("orden vertical de Wave 4", () => {

@@ -96,6 +96,7 @@ async def build_competition_results(
             .outerjoin(RaceSeries, RaceSeries.id == RaceEvent.series_id)
             .where(
                 Athlete.club_id == club_id,
+                Athlete.deleted_at.is_(None),
                 RaceEvent.event_date >= month_start,
                 RaceEvent.event_date <= month_end,
                 RaceResult.deleted_at.is_(None),

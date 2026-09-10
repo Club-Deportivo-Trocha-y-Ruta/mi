@@ -521,6 +521,8 @@ async def cancel_event(
     user: "User",
     notification_service: "NotificationService | None" = None,
     dispatcher: "TaskDispatcher | None" = None,
+    *,
+    reason_code: "CancelReasonCode | None" = None,
 ) -> CalendarEvent:
     """Soft-cancel de un evento. Propaga a TrainingSession si aplica."""
     if event.status == EventStatus.CANCELLED:
@@ -541,14 +543,17 @@ async def cancel_event(
                 .values(status=SessionStatus.CANCELLED)
             )
 
-    # NOTA (T023): `cancel_event` todavía recibe `reason` como texto libre
-    # (backend/app/routers/calendar.py:402); `contracts/audit-recording.md`
-    # exige un `reason_code` del catálogo cerrado `CancelReasonCode` para
-    # (calendar_event, cancel) (REASON_REQUIRED). T063
-    # (`contracts/session-coaches.md` §7.2) reemplaza este parámetro por
-    # `EventCancelIn.reason_code` tipado y persistido en
-    # `cancellation_reason_code`; hasta entonces se usa un valor cerrado por
-    # defecto para no bloquear la cancelación ni inventar un código nuevo.
+    # NOTA (T023): `cancel_event` ya acepta `reason_code` tipado
+    # (`CancelReasonCode`) y lo usa cuando el llamador lo provee, en vez de
+    # afirmar siempre el mismo motivo fijo en la fila de auditoría. El
+    # router (`backend/app/routers/calendar.py:399-439`) todavía envía solo
+    # `reason` como texto libre por query param — T063
+    # (`contracts/session-coaches.md` §7.2) debe reemplazarlo por el body
+    # `EventCancelIn.reason_code` (grupo `event_cancel`, 422 "Selecciona un
+    # motivo de cancelación." cuando falta) para que el valor realmente
+    # elegido por quien cancela llegue hasta aquí; hasta entonces se
+    # conserva el valor cerrado por defecto solo como resguardo, no como el
+    # motivo real de la cancelación.
     await record_audit(
         db,
         action=AuditAction.cancel,
@@ -558,7 +563,7 @@ async def cancel_event(
         club_id=event.club_id,
         changed_fields=["status"],
         diff={"status": (previous_status.value, EventStatus.CANCELLED.value)},
-        reason_code=CancelReasonCode.cancel_organizer_cancelled,
+        reason_code=reason_code or CancelReasonCode.cancel_organizer_cancelled,
     )
 
     await db.commit()

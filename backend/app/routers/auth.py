@@ -189,7 +189,8 @@ async def validate_invite_token(
     club_name = athlete.club.name if athlete and athlete.club else ""
 
     is_expired = invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
-    is_valid = not invite.used and not is_expired
+    is_archived = athlete is not None and athlete.deleted_at is not None
+    is_valid = not invite.used and not is_expired and not is_archived
 
     # Pre-llenar datos del padre cuando el coach pre-creó al usuario
     parent_first_name: str | None = None

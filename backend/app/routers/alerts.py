@@ -39,7 +39,9 @@ async def get_measurement_alerts(
     """Retorna alertas de medición antropométrica para los atletas del coach/admin."""
 
     # 1. Filtro de acceso
-    filters = []
+    # Un atleta archivado deja de generar alertas de crecimiento
+    # (contracts/athlete-archive.md §5.2).
+    filters = [Athlete.deleted_at.is_(None)]
     if current_user.role == UserRole.admin:
         if club_id is not None:
             filters.append(Athlete.club_id == club_id)

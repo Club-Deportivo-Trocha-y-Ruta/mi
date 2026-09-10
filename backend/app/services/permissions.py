@@ -61,9 +61,19 @@ def require_role(user_role: UserRole, allowed_roles: list[UserRole]) -> None:
 
 
 async def parent_athlete_ids(db: AsyncSession, user_id: int) -> list[int]:
-    """Retorna los IDs de atletas vinculados a un usuario padre."""
+    """Retorna los IDs de atletas vinculados a un usuario padre.
+
+    Un atleta archivado desaparece de toda superficie de padre (FR-014):
+    se excluye aquí para que los ~20 sitios que consumen este helper hereden
+    el filtro sin duplicar la condición.
+    """
     result = await db.execute(
-        select(ParentAthlete.athlete_id).where(ParentAthlete.parent_id == user_id)
+        select(ParentAthlete.athlete_id)
+        .join(Athlete, Athlete.id == ParentAthlete.athlete_id)
+        .where(
+            ParentAthlete.parent_id == user_id,
+            Athlete.deleted_at.is_(None),
+        )
     )
     return list(result.scalars().all())
 
@@ -433,22 +443,22 @@ async def athlete_activity_scope(
 
 
 # ---------------------------------------------------------------------------
-# Permisos del historial de auditoria (feature 041)
+# Permisos del historial de auditoría (feature 041)
 # ---------------------------------------------------------------------------
 
 
 def can_view_audit(user: User, club_id: int) -> bool:
     """FR-006/FR-007: solo admin y coaches del propio club leen el historial.
 
-    Sincrona a proposito: ``get_current_user`` ya trae ``club_memberships``
-    con ``selectinload`` (``app/dependencies.py``), asi que resolver la
-    membresia en memoria evita el SELECT extra que si paga
+    Síncrona a propósito: ``get_current_user`` ya trae ``club_memberships``
+    con ``selectinload`` (``app/dependencies.py``), así que resolver la
+    membresía en memoria evita el SELECT extra que sí paga
     ``user_club_role`` y deja el endpoint del club en 2 queries
     (contracts/audit-log-api.md §4.2).
 
-    No confundir con ``can_view_monthly_report``: esa funcion retorna
+    No confundir con ``can_view_monthly_report``: esa función retorna
     ``True`` para cualquier padre en la vista agregada, comportamiento que
-    FR-006 prohibe explicitamente para el historial de auditoria.
+    FR-006 prohíbe explícitamente para el historial de auditoría.
     """
     if user.role == UserRole.admin:
         return True
@@ -458,11 +468,11 @@ def can_view_audit(user: User, club_id: int) -> bool:
 
 
 # NOTA (contracts/audit-log-api.md §4.3): no existe un
-# ``can_view_athlete_audit`` separado en este modulo. El endpoint
+# ``can_view_athlete_audit`` separado en este módulo. El endpoint
 # ``GET /api/athletes/{athlete_id}/audit-log`` combina, en este orden,
 # ``require_role([UserRole.admin, UserRole.coach])`` (rechaza parent/athlete
 # antes de tocar la base de datos) y ``verify_athlete_access``
 # (``app/dependencies.py``), que ya resuelve el 404 de atleta desconocido y
-# el 403 de coach de otro club. Duplicar esa logica aqui reintroduciria el
-# error de copy-paste que el contrato senala explicitamente para
+# el 403 de coach de otro club. Duplicar esa lógica aquí reintroduciría el
+# error de copy-paste que el contrato señala explícitamente para
 # ``can_view_monthly_report``.

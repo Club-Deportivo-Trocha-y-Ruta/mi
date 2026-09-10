@@ -931,7 +931,10 @@ async def dry_run_import(
     )
     athletes: list[Athlete] = []
     if coach_club_ids:
-        athletes_stmt = select(Athlete).where(Athlete.club_id.in_(coach_club_ids))
+        athletes_stmt = select(Athlete).where(
+            Athlete.club_id.in_(coach_club_ids),
+            Athlete.deleted_at.is_(None),
+        )
         athletes = list((await db.execute(athletes_stmt)).scalars().all())
 
     # Pre-cargar RaceCategory por code para el boost por edad del matcher.

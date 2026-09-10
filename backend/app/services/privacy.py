@@ -161,7 +161,9 @@ async def get_consent_status(
 
     for pa in parent_athlete_rows:
         athlete = pa.athlete
-        if athlete is None:
+        # Un atleta archivado no debe pedir renovación de consentimiento
+        # a la familia (contracts/athlete-archive.md §5.2).
+        if athlete is None or athlete.deleted_at is not None:
             continue
 
         consent = await get_current_consent_for_athlete(

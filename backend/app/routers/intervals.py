@@ -73,7 +73,7 @@ from app.schemas.intervals import (
     TemplateOut,
     TemplateUpdate,
 )
-from app.services.audit import AuditAction, AuditEntityType, record_audit
+from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
 from app.services.intervals import match_runner
 from app.services.request_context import current_request_id, new_request_id
 from app.services.intervals import structures as structures_svc
@@ -899,6 +899,18 @@ async def download_instructivo_pdf(
         training_session=session_obj,
         brand=brand,
         club_name=club.name,
+    )
+
+    # Fila de exportación (§4.13 audit-recording.md): SOLO el tipo de
+    # documento, nunca su contenido.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.training_session,
+        entity_id=session_obj.id,
+        actor=current_user,
+        club_id=club_id,
+        meta={"document_kind": AuditDocumentKind.session_instructivo_pdf.value},
     )
 
     return Response(

@@ -225,6 +225,7 @@ async def build_aggregate_context(
             select(Athlete.birth_date).where(
                 Athlete.id.in_(selected_athlete_ids),
                 Athlete.club_id == club_id,
+                Athlete.deleted_at.is_(None),
             )
         )
         birth_dates = list(result.scalars().all())

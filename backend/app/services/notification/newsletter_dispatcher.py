@@ -36,6 +36,7 @@ from app.services.notification.email_client import (
     OutboundEmail,
     ResendEmailClient,
 )
+from app.models.audit_log import AuditActorKind
 from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.notification.template_registry import TemplateRegistry
 from app.services.training.stage_log import StageLog, to_parent_dto
@@ -270,6 +271,7 @@ async def _send_v2_email(
     has_account = bool(getattr(parent, "hashed_password", None))
 
     children_data: list[dict[str, Any]] = []
+    club_by_athlete: dict[int, int | None] = {}
     for nl in newsletters:
         if not nl.stage_log_json:
             # Sin stage_log_json no hay nada family-safe que enviar (debería
@@ -285,8 +287,11 @@ async def _send_v2_email(
             select(Athlete).where(Athlete.id == nl.athlete_id)
         )
         athlete = athlete_result.scalar_one_or_none()
-        if athlete is None:
+        # Último portón antes de que salga un correo familiar: un atleta
+        # archivado no debe seguir generando envíos (§5.2).
+        if athlete is None or athlete.deleted_at is not None:
             continue
+        club_by_athlete[nl.athlete_id] = getattr(athlete, "club_id", None)
 
         stage_log = StageLog.model_validate(nl.stage_log_json)
         parent_dto = to_parent_dto(stage_log, nl.hidden_blocks)
@@ -346,6 +351,7 @@ async def _send_v2_email(
         template_ref="athlete_stage_log",
         result=result,
         actor=actor,
+        club_by_athlete=club_by_athlete,
     )
 
 
@@ -358,6 +364,7 @@ async def _dispatch_email(
     template_ref: str,
     result: DispatchResult,
     actor: User | None = None,
+    club_by_athlete: dict[int, int | None] | None = None,
 ) -> list[int]:
     """Envía ``msg`` y, si tiene éxito, marca ``newsletters`` como enviados y
     registra un evento ``sent`` por destinatario en ``newsletter_delivery_events``
@@ -399,11 +406,10 @@ async def _dispatch_email(
         send_result.message_id if isinstance(email_client, ResendEmailClient) else None
     )
 
-    athlete_ids = [nl.athlete_id for nl in newsletters]
-    athletes_result = await db.execute(
-        select(Athlete.id, Athlete.club_id).where(Athlete.id.in_(athlete_ids))
-    )
-    club_by_athlete = dict(athletes_result.all())
+    # `club_by_athlete` llega ya resuelto desde el caller (que ya cargó los
+    # atletas para armar el email) — evitar una consulta extra por envío en
+    # este bucle, que corre una vez por lote de newsletters.
+    club_by_athlete = club_by_athlete or {}
 
     sent_ids = []
     for nl in newsletters:
@@ -421,20 +427,26 @@ async def _dispatch_email(
             )
         )
         await db.flush()
-        if actor is not None:
-            await record_audit(
-                db,
-                action=AuditAction.send,
-                entity_type=AuditEntityType.athlete_monthly_newsletter,
-                entity_id=nl.id,
-                actor=actor,
-                club_id=club_by_athlete.get(nl.athlete_id),
-                athlete_id=nl.athlete_id,
-                meta={
-                    "document_kind": "newsletter_email",
-                    "recipients_count": len(nl.sent_to or []),
-                },
-            )
+        # Un envío automático (sin actor humano, p. ej. cron/reconciliación)
+        # se atribuye a un actor de sistema en vez de omitirse — contracts/
+        # audit-recording.md §3.3 (todo envío de boletín debe quedar
+        # registrado, tenga o no un coach/admin detrás).
+        await record_audit(
+            db,
+            action=AuditAction.send,
+            entity_type=AuditEntityType.athlete_monthly_newsletter,
+            entity_id=nl.id,
+            actor=actor,
+            actor_kind=(
+                AuditActorKind.user if actor is not None else AuditActorKind.system
+            ),
+            club_id=club_by_athlete.get(nl.athlete_id),
+            athlete_id=nl.athlete_id,
+            meta={
+                "document_kind": "newsletter_email",
+                "recipients_count": len(nl.sent_to or []),
+            },
+        )
         result.newsletters_sent.append(nl.id)
         sent_ids.append(nl.id)
         logger.info(

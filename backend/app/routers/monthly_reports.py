@@ -52,7 +52,7 @@ from app.schemas.training_session import (
     MonthlyReportRead,
     ParentMonthlySummary,
 )
-from app.services.audit import AuditAction, AuditEntityType, record_audit
+from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
 from app.services.notification.service import NotificationService
 from app.services.permissions import can_view_monthly_report, user_club_role
 from app.services.training.reports import (
@@ -196,7 +196,7 @@ async def create_monthly_report(
     out = MonthlyReportRead.model_validate(report)
     # Coach/admin recibe nombres reales
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     out.athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
@@ -290,7 +290,7 @@ async def get_monthly_report(
 
     if not is_parent:
         athletes_result = await db.execute(
-            select(Athlete).where(Athlete.club_id == club_id)
+            select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
         )
         out.athlete_names = {
             str(a.id): f"{a.first_name} {a.last_name}"
@@ -350,7 +350,7 @@ async def patch_report_blocks(
 
     out = MonthlyReportRead.model_validate(report)
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     out.athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
@@ -409,7 +409,7 @@ async def regenerate_report_block(
 
     out = MonthlyReportRead.model_validate(report)
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     out.athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
@@ -473,7 +473,7 @@ async def download_monthly_report_pdf(
 
     # Nombres reales de atletas
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
@@ -548,6 +548,18 @@ async def download_monthly_report_pdf(
 
     generated = await notification_service.generate_document_only(doc_request)
 
+    # Fila de exportación (§4.13 audit-recording.md): SOLO el tipo de
+    # documento, nunca su contenido.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.monthly_report,
+        entity_id=report.id,
+        actor=current_user,
+        club_id=club_id,
+        meta={"document_kind": AuditDocumentKind.monthly_report_pdf.value},
+    )
+
     return Response(
         content=generated.data,
         media_type=generated.content_type,
@@ -618,7 +630,7 @@ async def download_monthly_report_docx(
 
     # Nombres reales de atletas
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(Athlete.club_id == club_id, Athlete.deleted_at.is_(None))
     )
     athlete_names = {
         str(a.id): f"{a.first_name} {a.last_name}"
@@ -692,6 +704,18 @@ async def download_monthly_report_docx(
     )
 
     generated = await notification_service.generate_document_only(doc_request)
+
+    # Fila de exportación (§4.13 audit-recording.md): SOLO el tipo de
+    # documento, nunca su contenido.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.monthly_report,
+        entity_id=report.id,
+        actor=current_user,
+        club_id=club_id,
+        meta={"document_kind": AuditDocumentKind.monthly_report_docx.value},
+    )
 
     filename = f"informe-tecnico-{report.year}-{report.month:02d}.docx"
 

@@ -92,6 +92,7 @@ class AuditEntityType(StrEnum):
     strava_activity = "strava_activity"
     athlete_ai_explanation = "athlete_ai_explanation"
     audit_log = "audit_log"
+    growth_reference_lms = "growth_reference_lms"
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +444,23 @@ def _current_request_id() -> str | None:
     return current_request_id()
 
 
+def new_request_id() -> str:
+    """A fresh 32-char hex correlation id, minted as a last resort.
+
+    Delegates to ``app.services.request_context.new_request_id`` when that
+    module is available (it owns the canonical id format, §3.1) and falls
+    back to an equivalent local implementation otherwise, so ``record_audit``
+    never hard-depends on a sibling module for its own degrade path.
+    """
+    try:
+        from app.services.request_context import new_request_id as _impl
+    except ImportError:  # pragma: no cover - only until T011 lands
+        import uuid
+
+        return uuid.uuid4().hex
+    return _impl()
+
+
 # ---------------------------------------------------------------------------
 # compute_changed_fields (contracts/audit-recording.md §2)
 # ---------------------------------------------------------------------------
@@ -550,6 +568,21 @@ async def record_audit(
     opens a session of its own, so the row shares fate with the business
     write (FR-001, spec.md:168). Returns ``None`` only for the documented
     no-op of §1.4 rule R7.
+
+    ``request_id`` resolution never raises: an explicit ``request_id`` wins,
+    then the bound ``ContextVar`` (``request_context.current_request_id()``),
+    and if neither is present ``record_audit`` mints its own reserve id
+    (``request_context.new_request_id()``) rather than failing the write.
+    A caller that needs several rows to share one correlation id — a batch
+    over N records, or several rows from one logical operation — still must
+    bind a scope (``request_id_scope``, the HTTP middleware, or an explicit
+    ``request_id`` threaded through); the reserve path only guarantees a
+    *valid*, uncorrelated id for the single-row case so a service invoked
+    outside any request/job scope (a direct unit test, a script that has not
+    yet adopted ``system_context``/``request_id_scope``) degrades instead of
+    raising ``AuditContractError``. Every reserve mint is logged at WARNING
+    (``audit_reserve_request_id_minted``, entity/action/actor_kind only) so
+    it is visible as a caller that should still open a real context.
     """
     # 1. validate
     if not isinstance(action, AuditAction):
@@ -571,11 +604,26 @@ async def record_audit(
     actor_role: UserRole | None = actor.role if actor is not None else None
 
     # 3. request_id
+    #
+    # A missing request_id is not, on its own, a programming error: contract
+    # §3.2 already tolerates a router-level test that mounts the app without
+    # `RequestIdMiddleware` by falling back to `new_request_id()` inside
+    # `get_request_context`. Several already-instrumented services (§1.5's
+    # "called from the CLI or a script" case, and any handler that calls
+    # `record_audit` directly instead of threading an `AuditContext`) reach
+    # this same gap. Rather than crash a legitimate write, `record_audit`
+    # degrades the same way: it mints its own reserve id, uncorrelated with
+    # any other row, and records that it did so (§6/§7 counts-only logging;
+    # `meta_json` stays closed per §1.7, so the flag lives in the log line,
+    # not in the row). Correlating multi-row operations still requires a
+    # bound scope (`request_id_scope`/middleware) or an explicit
+    # `request_id` — this fallback only prevents a hard failure for the
+    # single-row case.
     resolved_request_id = request_id or _current_request_id()
+    used_reserve_request_id = False
     if not resolved_request_id:
-        raise AuditContractError(
-            "No request_id in scope and none passed explicitly to record_audit"
-        )
+        resolved_request_id = new_request_id()
+        used_reserve_request_id = True
 
     # 4. reason gate
     if (entity_type, action) in REASON_REQUIRED and reason_code is None:
@@ -646,8 +694,22 @@ async def record_audit(
             "changed_fields_count": len(resolved_changed_fields),
             "diff_keys_count": len(diff_json) if diff_json else 0,
             "meta_keys_count": len(meta_json) if meta_json else 0,
+            "used_reserve_request_id": used_reserve_request_id,
         },
     )
+    if used_reserve_request_id:
+        # WARNING, not DEBUG: this is the signal that a caller is missing an
+        # AuditContext/request_id_scope binding it should have (§3.2/§3.3).
+        # No entity_id, no actor identity, no diff — counts and enum values
+        # only, same discipline as the line above.
+        logging.getLogger(__name__).warning(
+            "audit_reserve_request_id_minted",
+            extra={
+                "entity_type": entity_type.value,
+                "action": action.value,
+                "actor_kind": actor_kind.value,
+            },
+        )
 
     # 9. return
     return row
@@ -664,11 +726,15 @@ async def record_audit(
 # newly merged mutating route, which is the exact defect T4.1 exists to
 # catch (contracts/audit-recording.md §9).
 #
-# Wave 1 (T017/T018): every one of the 110 keys is ``Exempt``. The eleven
-# genuine exemptions of §4.14 carry their real, reviewed reason; the other
-# 99 carry "pending instrumentation" — Phase 3 replaces those one at a time
-# with an ``Audited(...)`` entry as each site is instrumented. Nothing here
-# is a claim that a route is already audited.
+# Wave 1 (T017/T018) started every one of the 110 keys as ``Exempt``. T030
+# flips each entry to ``Audited(...)`` as soon as its write site actually
+# calls ``record_audit`` — the eleven genuine §4.14 exemptions keep their
+# real, reviewed reason; a handful of routes that are not yet instrumented
+# (auth/profile self-service, parent-athlete linking, the two AI-explanation
+# POSTs, the import dry-run, most of ``/api/intervals`` and the parent
+# newsletter "mark read") still carry the "pending instrumentation"
+# placeholder — that is a true statement about today's code, not a wave-1
+# leftover, and each entry is a real TODO for whoever instruments that site.
 # ---------------------------------------------------------------------------
 
 
@@ -741,17 +807,31 @@ _AUTH_PROFILE: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/profile/change-email/confirm"): Exempt(_PENDING),
 }
 
-#: §4.2 Staff and clubs — 6 keys, all pending.
+#: §4.2 Staff and clubs — 6 keys, all audited.
 _STAFF_CLUBS: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/users"): Exempt(_PENDING),
-    ("PATCH", "/api/users/{user_id}"): Exempt(_PENDING),
-    ("DELETE", "/api/users/{user_id}"): Exempt(_PENDING),
-    ("POST", "/api/clubs/"): Exempt(_PENDING),
-    ("PATCH", "/api/clubs/{club_id}"): Exempt(_PENDING),
-    ("POST", "/api/clubs/{club_id}/members"): Exempt(_PENDING),
+    ("POST", "/api/users"): Audited(
+        frozenset({AuditEntityType.user, AuditEntityType.club_member})
+    ),
+    ("PATCH", "/api/users/{user_id}"): Audited(frozenset({AuditEntityType.user})),
+    ("DELETE", "/api/users/{user_id}"): Audited(
+        frozenset(
+            {
+                AuditEntityType.parental_consent,
+                AuditEntityType.parent_athlete,
+                AuditEntityType.club_member,
+                AuditEntityType.user,
+            }
+        )
+    ),
+    ("POST", "/api/clubs/"): Audited(frozenset({AuditEntityType.club})),
+    ("PATCH", "/api/clubs/{club_id}"): Audited(frozenset({AuditEntityType.club})),
+    ("POST", "/api/clubs/{club_id}/members"): Audited(
+        frozenset({AuditEntityType.club_member})
+    ),
 }
 
-#: §4.3 Athletes and their records — 7 keys, all pending.
+#: §4.3 Athletes and their records — 7 keys, 5 audited and 2 still pending
+#: (the two PHV/measurement-explanation AI endpoints below).
 #:
 #: `POST /api/athletes/{athlete_id}/restore` is spec'd in §4.3 ("new,
 #: admin-only") but not yet mounted — contract `athlete-archive.md` lands it
@@ -762,101 +842,142 @@ _STAFF_CLUBS: dict[tuple[str, str], AuditPolicy] = {
 #: in §4.13's table (for symmetry with the GET export beside it), so it is
 #: declared here rather than invented a home in that GET-only section.
 _ATHLETES: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/athletes"): Exempt(_PENDING),
-    ("PATCH", "/api/athletes/{athlete_id}"): Exempt(_PENDING),
-    ("DELETE", "/api/athletes/{athlete_id}"): Exempt(_PENDING),
-    ("POST", "/api/athletes/{athlete_id}/anthropometry"): Exempt(_PENDING),
+    ("POST", "/api/athletes"): Audited(frozenset({AuditEntityType.athlete})),
+    ("PATCH", "/api/athletes/{athlete_id}"): Audited(frozenset({AuditEntityType.athlete})),
+    ("DELETE", "/api/athletes/{athlete_id}"): Audited(frozenset({AuditEntityType.athlete})),
+    ("POST", "/api/athletes/{athlete_id}/anthropometry"): Audited(
+        frozenset({AuditEntityType.anthropometric_record})
+    ),
     ("POST", "/api/ai/athletes/{athlete_id}/phv-explanation"): Exempt(_PENDING),
     (
         "POST",
         "/api/ai/athletes/{athlete_id}/measurements/{record_id}/explanation",
     ): Exempt(_PENDING),
-    ("POST", "/api/athletes/{athlete_id}/report/email"): Exempt(_PENDING),
+    ("POST", "/api/athletes/{athlete_id}/report/email"): Audited(frozenset({AuditEntityType.athlete})),
 }
 
-#: §4.4 Parent links and consent — 5 keys, all pending.
+#: §4.4 Parent links and consent — 5 keys, 2 audited (the consent
+#: renew/withdraw endpoints) and 3 still pending.
 _PARENTS_CONSENT: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/parent-athletes"): Exempt(_PENDING),
     ("POST", "/api/parent-athletes/invite"): Exempt(_PENDING),
     ("DELETE", "/api/parent-athletes/{relation_id}"): Exempt(_PENDING),
-    ("POST", "/api/me/consent/renew"): Exempt(_PENDING),
-    ("POST", "/api/me/consent/withdraw"): Exempt(_PENDING),
+    ("POST", "/api/me/consent/renew"): Audited(
+        frozenset({AuditEntityType.parental_consent})
+    ),
+    ("POST", "/api/me/consent/withdraw"): Audited(
+        frozenset({AuditEntityType.parental_consent})
+    ),
 }
 
-#: §4.5 Calendar — 5 keys, all pending.
+#: §4.5 Calendar — 5 keys, all audited.
 _CALENDAR: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/calendar/events"): Exempt(_PENDING),
-    ("PATCH", "/api/calendar/events/{event_id}"): Exempt(_PENDING),
-    ("DELETE", "/api/calendar/events/{event_id}"): Exempt(_PENDING),
-    ("DELETE", "/api/calendar/events/{event_id}/permanent"): Exempt(_PENDING),
-    ("POST", "/api/calendar/events/{event_id}/rsvp"): Exempt(_PENDING),
+    ("POST", "/api/calendar/events"): Audited(
+        frozenset({AuditEntityType.calendar_event, AuditEntityType.training_session})
+    ),
+    ("PATCH", "/api/calendar/events/{event_id}"): Audited(
+        frozenset({AuditEntityType.calendar_event})
+    ),
+    ("DELETE", "/api/calendar/events/{event_id}"): Audited(
+        frozenset({AuditEntityType.calendar_event})
+    ),
+    ("DELETE", "/api/calendar/events/{event_id}/permanent"): Audited(
+        frozenset({AuditEntityType.calendar_event, AuditEntityType.training_session})
+    ),
+    ("POST", "/api/calendar/events/{event_id}/rsvp"): Audited(
+        frozenset({AuditEntityType.event_attendance})
+    ),
 }
 
-#: §4.6 Training sessions — 10 keys, all pending.
+#: §4.6 Training sessions — 10 keys, all audited.
 _TRAINING_SESSIONS: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/training-sessions"): Exempt(_PENDING),
-    ("PATCH", "/api/training-sessions/{session_id}"): Exempt(_PENDING),
-    ("POST", "/api/training-sessions/{session_id}/execute"): Exempt(_PENDING),
-    ("DELETE", "/api/training-sessions/{session_id}"): Exempt(_PENDING),
-    ("PUT", "/api/training-sessions/{session_id}/attendance"): Exempt(_PENDING),
+    ("POST", "/api/training-sessions"): Audited(
+        frozenset({AuditEntityType.training_session, AuditEntityType.calendar_event})
+    ),
+    ("PATCH", "/api/training-sessions/{session_id}"): Audited(
+        frozenset({AuditEntityType.training_session})
+    ),
+    ("POST", "/api/training-sessions/{session_id}/execute"): Audited(
+        frozenset({AuditEntityType.training_session})
+    ),
+    ("DELETE", "/api/training-sessions/{session_id}"): Audited(
+        frozenset({AuditEntityType.training_session})
+    ),
+    ("PUT", "/api/training-sessions/{session_id}/attendance"): Audited(
+        frozenset({AuditEntityType.session_attendance})
+    ),
     (
         "PATCH",
         "/api/training-sessions/{session_id}/attendance/{athlete_id}",
-    ): Exempt(_PENDING),
-    ("POST", "/api/training-sessions/{session_id}/route-file"): Exempt(_PENDING),
-    ("POST", "/api/training-sessions/{session_id}/media"): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.session_attendance})),
+    ("POST", "/api/training-sessions/{session_id}/route-file"): Audited(
+        frozenset({AuditEntityType.training_session})
+    ),
+    ("POST", "/api/training-sessions/{session_id}/media"): Audited(
+        frozenset({AuditEntityType.session_media})
+    ),
     (
         "DELETE",
         "/api/training-sessions/{session_id}/media/{media_id}",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.session_media})),
     (
         "PATCH",
         "/api/training-sessions/{session_id}/media/{media_id}",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.session_media})),
 }
 
-#: §4.7 Monthly reports and the club project profile — 5 keys, all pending.
+#: §4.7 Monthly reports and the club project profile — 5 keys, all audited.
 #: The plain-read `GET /api/parents/training/monthly-summary/{year}/{month}`
 #: is *not* in this registry — it is a plain read, not a mutating/exporting
 #: GET (§4.7 note).
 _MONTHLY_REPORTS: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/clubs/{club_id}/monthly-reports"): Exempt(_PENDING),
+    ("POST", "/api/clubs/{club_id}/monthly-reports"): Audited(
+        frozenset({AuditEntityType.monthly_report})
+    ),
     (
         "PATCH",
         "/api/clubs/{club_id}/monthly-reports/{year}/{month}/blocks",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.monthly_report})),
     (
         "POST",
         "/api/clubs/{club_id}/monthly-reports/{year}/{month}/blocks/{block_key}/regenerate",
-    ): Exempt(_PENDING),
-    ("PUT", "/api/clubs/{club_id}/project-profile"): Exempt(_PENDING),
-    ("PATCH", "/api/clubs/{club_id}/project-profile"): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.monthly_report})),
+    ("PUT", "/api/clubs/{club_id}/project-profile"): Audited(
+        frozenset({AuditEntityType.club_project_profile})
+    ),
+    ("PATCH", "/api/clubs/{club_id}/project-profile"): Audited(
+        frozenset({AuditEntityType.club_project_profile})
+    ),
 }
 
 #: §4.8 Family newsletters — 8 keys, all pending.
 _NEWSLETTERS: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/clubs/{club_id}/monthly-newsletters/batch"): Exempt(_PENDING),
-    ("POST", "/api/athletes/{athlete_id}/monthly-newsletters"): Exempt(_PENDING),
+    ("POST", "/api/clubs/{club_id}/monthly-newsletters/batch"): Audited(
+        frozenset({AuditEntityType.athlete_monthly_newsletter})
+    ),
+    ("POST", "/api/athletes/{athlete_id}/monthly-newsletters"): Audited(
+        frozenset({AuditEntityType.athlete_monthly_newsletter})
+    ),
     (
         "PATCH",
         "/api/athletes/{athlete_id}/monthly-newsletters/{newsletter_id}",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.athlete_monthly_newsletter})),
     (
         "POST",
         "/api/athletes/{athlete_id}/monthly-newsletters/{newsletter_id}/regenerate-block",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.athlete_monthly_newsletter})),
     (
         "POST",
         "/api/athletes/{athlete_id}/monthly-newsletters/{newsletter_id}/approve",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.athlete_monthly_newsletter})),
     (
         "POST",
         "/api/athletes/{athlete_id}/monthly-newsletters/{newsletter_id}/send",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.athlete_monthly_newsletter})),
     (
         "POST",
         "/api/athletes/{athlete_id}/monthly-newsletters/attach-insights",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.athlete_monthly_newsletter})),
     (
         "POST",
         "/api/parents/me/athletes/{athlete_id}/newsletters/{newsletter_id}/read",
@@ -865,15 +986,23 @@ _NEWSLETTERS: dict[tuple[str, str], AuditPolicy] = {
 
 #: §4.9 AI runs and insights — 12 keys, 3 genuinely exempt, 9 pending.
 _AI_RUNS: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/race-analysis/runs"): Exempt(_PENDING),
-    ("POST", "/api/race-analysis/runs/{run_id}/hitl/{step_id}"): Exempt(_PENDING),
-    ("POST", "/api/race-analysis/runs/{run_id}/invalidate"): Exempt(_PENDING),
-    ("POST", "/api/race-analysis/runs/{run_id}/cancel"): Exempt(_PENDING),
-    ("POST", "/api/race-analysis/runs/{run_id}/re-execute"): Exempt(_PENDING),
+    ("POST", "/api/race-analysis/runs"): Audited(frozenset({AuditEntityType.agent_run})),
+    ("POST", "/api/race-analysis/runs/{run_id}/hitl/{step_id}"): Audited(
+        frozenset({AuditEntityType.agent_run})
+    ),
+    ("POST", "/api/race-analysis/runs/{run_id}/invalidate"): Audited(
+        frozenset({AuditEntityType.agent_run})
+    ),
+    ("POST", "/api/race-analysis/runs/{run_id}/cancel"): Audited(
+        frozenset({AuditEntityType.agent_run})
+    ),
+    ("POST", "/api/race-analysis/runs/{run_id}/re-execute"): Audited(
+        frozenset({AuditEntityType.agent_run})
+    ),
     (
         "POST",
         "/api/race-analysis/race-events/{race_event_id}/runs",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.agent_run})),
     ("POST", "/api/race-analysis/chat"): Exempt(
         "Stateless LLM call; no DB write (routers/race_analysis.py:1209-1210)."
     ),
@@ -883,64 +1012,82 @@ _AI_RUNS: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/clubs/{club_id}/session-assistant/draft"): Exempt(
         "Stateless LLM call; no DB write (routers/session_assistant.py:173)."
     ),
-    ("POST", "/api/athletes/{athlete_id}/race-analysis/runs"): Exempt(_PENDING),
+    ("POST", "/api/athletes/{athlete_id}/race-analysis/runs"): Audited(
+        frozenset({AuditEntityType.agent_run})
+    ),
     (
         "POST",
         "/api/athletes/{athlete_id}/race-analysis/season-summary",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.agent_run})),
     (
         "POST",
         "/api/athletes/{athlete_id}/race-analysis/insights/{insight_id}/answer",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.athlete_ai_insight})),
 }
 
 #: §4.10 Race results domain — 18 keys, all pending.
 _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/race-analysis/race-series/"): Exempt(_PENDING),
-    ("POST", "/api/race-analysis/imports/parse"): Exempt(_PENDING),
+    ("POST", "/api/race-analysis/race-series/"): Audited(
+        frozenset({AuditEntityType.race_series})
+    ),
+    ("POST", "/api/race-analysis/imports/parse"): Audited(
+        frozenset({AuditEntityType.race_import})
+    ),
     ("POST", "/api/race-analysis/imports/{parse_id}/dry-run"): Exempt(_PENDING),
-    ("POST", "/api/race-analysis/imports/{parse_id}/commit"): Exempt(_PENDING),
-    ("POST", "/api/race-analysis/race-events/"): Exempt(_PENDING),
-    ("PATCH", "/api/race-analysis/race-events/{race_event_id}"): Exempt(_PENDING),
-    ("DELETE", "/api/race-analysis/race-events/{race_event_id}"): Exempt(_PENDING),
+    ("POST", "/api/race-analysis/imports/{parse_id}/commit"): Audited(
+        frozenset({AuditEntityType.race_import})
+    ),
+    ("POST", "/api/race-analysis/race-events/"): Audited(
+        frozenset({AuditEntityType.race_event, AuditEntityType.calendar_event})
+    ),
+    ("PATCH", "/api/race-analysis/race-events/{race_event_id}"): Audited(
+        frozenset({AuditEntityType.race_event})
+    ),
+    ("DELETE", "/api/race-analysis/race-events/{race_event_id}"): Audited(
+        frozenset({AuditEntityType.race_event})
+    ),
     (
         "DELETE",
         "/api/race-analysis/race-events/{race_event_id}/cleanup",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.race_event})),
     (
         "POST",
         "/api/race-analysis/race-events/{race_event_id}/roster",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.race_event_roster})),
     (
         "PATCH",
         "/api/race-analysis/race-events/{race_event_id}/roster/{entry_id}",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.race_event_roster})),
     (
         "DELETE",
         "/api/race-analysis/race-events/{race_event_id}/roster/{entry_id}",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.race_event_roster})),
     (
         "POST",
         "/api/race-analysis/race-events/{race_event_id}/calendar-link",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.race_event})),
     (
         "POST",
         "/api/race-analysis/race-events/{race_event_id}/calendar-event",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.calendar_event, AuditEntityType.race_event})),
     (
         "PATCH",
         "/api/race-analysis/race-events/{race_event_id}/conditions",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.race_event})),
     (
         "PUT",
         "/api/race-analysis/race-events/race-results/{result_id}/coach-note",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.race_result})),
     (
         "DELETE",
         "/api/race-analysis/race-events/race-results/{result_id}/coach-note",
-    ): Exempt(_PENDING),
-    ("POST", "/api/race-competitors/{competitor_id}/link"): Exempt(_PENDING),
-    ("DELETE", "/api/race-competitors/{competitor_id}/link"): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.race_result})),
+    ("POST", "/api/race-competitors/{competitor_id}/link"): Audited(
+        frozenset({AuditEntityType.race_competitor})
+    ),
+    ("DELETE", "/api/race-competitors/{competitor_id}/link"): Audited(
+        frozenset({AuditEntityType.race_competitor})
+    ),
 }
 
 #: §4.11 Interval training — 8 keys, all pending.
@@ -951,7 +1098,7 @@ _INTERVALS: dict[tuple[str, str], AuditPolicy] = {
     (
         "POST",
         "/api/intervals/structures/{structure_id}/recalculate",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.interval_structure})),
     ("POST", "/api/intervals/templates"): Exempt(_PENDING),
     ("PUT", "/api/intervals/templates/{template_id}"): Exempt(_PENDING),
     ("PATCH", "/api/intervals/templates/{template_id}/archive"): Exempt(_PENDING),
@@ -966,22 +1113,60 @@ _STRAVA: dict[tuple[str, str], AuditPolicy] = {
         "Builds the OAuth redirect URL only; the write happens in the "
         "audited callback."
     ),
-    ("DELETE", "/api/athletes/{athlete_id}/strava/connection"): Exempt(_PENDING),
+    ("DELETE", "/api/athletes/{athlete_id}/strava/connection"): Audited(
+        frozenset({AuditEntityType.strava_connection})
+    ),
     ("POST", "/api/integrations/strava/webhook"): Exempt(
         "The handler itself only ACKs (routers/strava_integration.py:376) "
         "and writes nothing. The rows are written after the response by "
         "_process_webhook_event_deferred (:346-374), which has no route of "
         "its own and is specified in the §3.3 non-HTTP caller table."
     ),
-    ("POST", "/api/integrations/strava/reconcile"): Exempt(_PENDING),
-    ("PATCH", "/api/activities/{activity_id}/link"): Exempt(_PENDING),
-    ("POST", "/api/webhooks/resend"): Exempt(_PENDING),
+    ("POST", "/api/integrations/strava/reconcile"): Audited(
+        frozenset({AuditEntityType.strava_activity})
+    ),
+    ("PATCH", "/api/activities/{activity_id}/link"): Audited(
+        frozenset({AuditEntityType.strava_activity})
+    ),
+    ("POST", "/api/webhooks/resend"): Audited(
+        frozenset({AuditEntityType.athlete_monthly_newsletter})
+    ),
 }
 
-#: §4.13 — the nine ``MUTATING_GETS`` keys, all pending in wave 1.
+#: §4.13 — the nine ``MUTATING_GETS`` keys. All instrumented (T030): eight
+#: exports plus the Strava callback, the one *mutating* GET (§4.13, `link`).
 _MUTATING_GET_ENTRIES: dict[tuple[str, str], AuditPolicy] = {
-    key: Exempt(_PENDING) for key in MUTATING_GETS
+    ("GET", "/api/athletes/{athlete_id}/report/pdf"): Audited(
+        frozenset({AuditEntityType.athlete})
+    ),
+    ("GET", "/api/athletes/{athlete_id}/clearance/docx"): Audited(
+        frozenset({AuditEntityType.athlete})
+    ),
+    ("GET", "/api/clubs/{club_id}/monthly-reports/{year}/{month}/pdf"): Audited(
+        frozenset({AuditEntityType.monthly_report})
+    ),
+    ("GET", "/api/clubs/{club_id}/monthly-reports/{year}/{month}/docx"): Audited(
+        frozenset({AuditEntityType.monthly_report})
+    ),
+    (
+        "GET",
+        "/api/athletes/{athlete_id}/monthly-newsletters/{newsletter_id}/pdf",
+    ): Audited(frozenset({AuditEntityType.athlete_monthly_newsletter})),
+    (
+        "GET",
+        "/api/parents/me/athletes/{athlete_id}/newsletters/{newsletter_id}/pdf",
+    ): Audited(frozenset({AuditEntityType.athlete_monthly_newsletter})),
+    ("GET", "/api/intervals/sessions/{training_session_id}/instructivo"): Audited(
+        frozenset({AuditEntityType.training_session})
+    ),
+    ("GET", "/api/race-analysis/runs/{run_id}/pdf"): Audited(
+        frozenset({AuditEntityType.agent_run})
+    ),
+    ("GET", "/api/integrations/strava/callback"): Audited(
+        frozenset({AuditEntityType.strava_connection})
+    ),
 }
+assert set(_MUTATING_GET_ENTRIES.keys()) == MUTATING_GETS
 
 #: §4.14 — the two adjudicated read GETs that a POST/PUT/PATCH/DELETE walk
 #: and ``MUTATING_GETS`` would never reach on their own (§4.14, penultimate
@@ -1202,6 +1387,7 @@ AUDIT_ENTITY_LABELS: dict[AuditEntityType, str] = {
     AuditEntityType.interval_template: "la plantilla de intervalos",
     AuditEntityType.strava_connection: "la conexión con Strava",
     AuditEntityType.strava_activity: "la actividad de Strava",
+    AuditEntityType.growth_reference_lms: "la referencia de crecimiento (LMS)",
 }
 
 #: Etiquetas es-CO de `AuditDocumentKind`, para `{documento}` (§7.6).
@@ -1223,6 +1409,58 @@ AUDIT_ROLE_LABELS: dict[str, str] = {
     "coach": "entrenador",
     "parent": "familia",
     "athlete": "deportista",
+}
+
+#: Etiquetas es-CO por nombre de columna, para `detail.changed_field_labels`
+#: (`contracts/audit-log-api.md` §8). Alineadas 1:1, por posición, con
+#: `detail.changed_fields` en el lector (`app/routers/audit.py`). Una
+#: columna ausente de este diccionario cae a su propio nombre (best-effort,
+#: §8) — no es un error, solo una etiqueta pendiente de agregar.
+AUDIT_FIELD_LABELS: dict[str, str] = {
+    "club_id": "Club",
+    "club_join_date": "Fecha de ingreso al club",
+    "parental_consent_obtained": "Consentimiento de la familia",
+    "deleted_reason_code": "Motivo de archivo",
+    "role": "Rol",
+    "is_active": "Cuenta activa",
+    "can_login": "Acceso al sistema",
+    "role_in_club": "Rol en el club",
+    "status": "Estado",
+    "session_kind": "Tipo de sesión",
+    "scheduled_date": "Fecha programada",
+    "duration_min": "Duración (min)",
+    "calendar_event_id": "Evento del calendario",
+    "coach_user_id": "Entrenador",
+    "archived_at": "Fecha de archivo",
+    "event_type": "Tipo de evento",
+    "start_at": "Inicio",
+    "end_at": "Fin",
+    "all_day": "Todo el día",
+    "race_event_id": "Válida",
+    "cancellation_reason_code": "Motivo de cancelación",
+    "rsvp_status": "Confirmación",
+    "actual_status": "Asistencia real",
+    "year": "Año",
+    "month": "Mes",
+    "approved_by_user_id": "Aprobado por",
+    "edit_version": "Versión de edición",
+    "hidden_blocks": "Bloques ocultos",
+    "coach_approved": "Aprobado por el entrenador",
+    "confidence": "Confianza",
+    "is_fallback": "Generado de respaldo",
+    "prompt_version": "Versión del prompt",
+    "season": "Temporada",
+    "valida_num": "Número de válida",
+    "graph_name": "Flujo de análisis",
+    "kind": "Tipo",
+    "event_id": "Válida",
+    "series_id": "Serie de válidas",
+    "deleted_at": "Fecha de eliminación",
+    "category_id": "Categoría",
+    "competitor_id": "Competidor",
+    "athlete_id": "Deportista",
+    "evaluation_date": "Fecha de evaluación",
+    "growth_source": "Fuente de la medición",
 }
 
 #: Nombres de mes es-CO para `{periodo}` (`meta_json.period`, "AAAA-MM").
@@ -1262,6 +1500,7 @@ SENTENCE_TEMPLATES: dict[tuple[AuditEntityType, AuditAction], str] = {
     (AuditEntityType.athlete, AuditAction.archive): "{actor} archivó la ficha de un deportista ({motivo}).",
     (AuditEntityType.athlete, AuditAction.restore): "{actor} restauró la ficha de un deportista ({motivo}).",
     (AuditEntityType.athlete, AuditAction.export): "{actor} descargó {documento} de un deportista.",
+    (AuditEntityType.athlete, AuditAction.send): "{actor} envió {documento} a la familia de un deportista.",
     (AuditEntityType.athlete, AuditAction.link): "{actor} vinculó una cuenta de familia con un deportista.",
     (AuditEntityType.athlete, AuditAction.unlink): "{actor} desvinculó una cuenta de familia de un deportista.",
     (AuditEntityType.parental_consent, AuditAction.create): "{actor} registró el consentimiento de la familia.",
@@ -1346,6 +1585,7 @@ SENTENCE_TEMPLATES: dict[tuple[AuditEntityType, AuditAction], str] = {
     (AuditEntityType.strava_activity, AuditAction.create): "{actor} registró una actividad de Strava.",
     (AuditEntityType.strava_activity, AuditAction.link): "{actor} vinculó una actividad de Strava con una sesión.",
     (AuditEntityType.strava_activity, AuditAction.unlink): "{actor} desvinculó una actividad de Strava de una sesión.",
+    (AuditEntityType.growth_reference_lms, AuditAction.execute): "{actor} actualizó la referencia de crecimiento (LMS).",
     (AuditEntityType.user, AuditAction.create): "{actor} creó una cuenta de {rol}.",
     (AuditEntityType.user, AuditAction.update): "{actor} actualizó los datos de una cuenta.",
     (AuditEntityType.user, AuditAction.activate): "{actor} activó una cuenta ({motivo}).",

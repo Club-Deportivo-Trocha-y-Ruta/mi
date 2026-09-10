@@ -72,8 +72,15 @@ export async function getParentInvites(
 
 // --- Delete parent user (coach) ---
 
-export async function deleteParentUser(id: number): Promise<void> {
-  await apiClient.delete(`/api/users/${id}`);
+/**
+ * Motivo del catálogo cerrado `ParentRemovalReasonCode` (auditoría,
+ * feature 041). El backend lo exige como query param obligatorio.
+ */
+export async function deleteParentUser(
+  id: number,
+  reasonCode: string,
+): Promise<void> {
+  await apiClient.delete(`/api/users/${id}`, { params: { reason_code: reasonCode } });
 }
 
 // --- Create parent user (coach) ---

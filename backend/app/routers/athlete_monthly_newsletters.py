@@ -66,7 +66,7 @@ from app.schemas.athlete_newsletter import (
     RegenerateBlockRequest,
 )
 from app.models.newsletter_delivery_event import DeliveryEventType, NewsletterDeliveryEvent
-from app.services.audit import AuditAction, AuditEntityType, record_audit
+from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
 from app.services.permissions import user_club_role
 
 logger = logging.getLogger(__name__)
@@ -193,7 +193,7 @@ async def _verify_coach_athlete_access(
         select(Athlete).where(Athlete.id == athlete_id)
     )
     athlete = athlete_result.scalar_one_or_none()
-    if athlete is None:
+    if athlete is None or athlete.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Atleta {athlete_id} no encontrado.",
@@ -613,7 +613,10 @@ async def batch_create_newsletters(
 
     # Obtener atletas activos del club
     athletes_result = await db.execute(
-        select(Athlete).where(Athlete.club_id == club_id)
+        select(Athlete).where(
+            Athlete.club_id == club_id,
+            Athlete.deleted_at.is_(None),
+        )
     )
     athletes = athletes_result.scalars().all()
 
@@ -853,6 +856,21 @@ async def download_newsletter_pdf(
         nl.pdf_generated_at = datetime.now(timezone.utc)
         await db.flush()
         await db.commit()
+
+    # Fila de exportación en CADA descarga (§4.13 audit-recording.md,
+    # peligro #1): no solo cuando el hash cambió. Como el bloque de arriba
+    # ya hizo su propio commit, esta fila viaja en el commit implícito del
+    # request (`app/dependencies.py`) cuando no hubo cambio de hash.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.athlete_monthly_newsletter,
+        entity_id=nl.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        meta={"document_kind": AuditDocumentKind.newsletter_pdf.value},
+    )
 
     return Response(
         content=doc.data,
@@ -1658,6 +1676,7 @@ async def get_newsletter_status_summary(
                 AthleteMonthlyNewsletter.month == month,
             ),
         )
+        .where(Athlete.deleted_at.is_(None))
         .order_by(Athlete.id)
     )
     if club_filter is not None:

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { CalendarDays, Home, Trophy, Users, UsersRound } from "lucide-react";
+import { CalendarDays, History, Home, Trophy, Users, UsersRound } from "lucide-react";
 
 import { currentSeason } from "@/lib/datetime";
 
@@ -194,6 +194,28 @@ export const NAV_AREAS: NavArea[] = [
         id: "families.reports",
         label: "Informes del club",
         to: "/training/reports",
+        roles: ["coach", "admin"],
+      },
+      {
+        id: "families.archivedAthletes",
+        label: "Atletas archivados",
+        to: "/admin/atletas-archivados",
+        roles: ["admin"],
+      },
+    ],
+  },
+  {
+    id: "gobierno",
+    label: "Gobierno",
+    icon: History,
+    group: "club",
+    roles: ["coach", "admin"],
+    matchPrefixes: ["/club"],
+    items: [
+      {
+        id: "gobierno.history",
+        label: "Historial del club",
+        to: "/club/historial",
         roles: ["coach", "admin"],
       },
     ],

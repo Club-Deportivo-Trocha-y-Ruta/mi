@@ -23,17 +23,18 @@ function findArea(id: string) {
 
 // T007 — NAV_AREAS shape + full role-visibility matrix (data-model.md §3).
 describe("NAV_AREAS", () => {
-  it("tiene exactamente 5 áreas", () => {
-    expect(NAV_AREAS).toHaveLength(5);
+  it("tiene exactamente 6 áreas", () => {
+    expect(NAV_AREAS).toHaveLength(6);
   });
 
-  it("usa los 5 ids esperados, en orden", () => {
+  it("usa los 6 ids esperados, en orden", () => {
     expect(NAV_AREAS.map((a) => a.id)).toEqual([
       "home",
       "training",
       "competitions",
       "athletes",
       "families",
+      "gobierno",
     ]);
   });
 
@@ -61,16 +62,17 @@ describe("grupos de navegación (feature 035)", () => {
     }
   });
 
-  it("Inicio, Entrenamiento, Competencias y Atletas son «Operación»; Familias es «Club»", () => {
+  it("Inicio, Entrenamiento, Competencias y Atletas son «Operación»; Familias y Gobierno son «Club»", () => {
     const groupOf = (id: string) => findArea(id).group;
     expect(groupOf("home")).toBe("operacion");
     expect(groupOf("training")).toBe("operacion");
     expect(groupOf("competitions")).toBe("operacion");
     expect(groupOf("athletes")).toBe("operacion");
     expect(groupOf("families")).toBe("club");
+    expect(groupOf("gobierno")).toBe("club");
   });
 
-  it("getGroupedAreas('coach') reparte las 5 áreas: 4 en Operación, 1 en Club", () => {
+  it("getGroupedAreas('coach') reparte las 6 áreas: 4 en Operación, 2 en Club", () => {
     const groups = getGroupedAreas("coach");
     expect(groups.map((g) => g.label)).toEqual(["Operación", "Club"]);
     expect(groups[0].areas.map((a) => a.id)).toEqual([
@@ -79,7 +81,7 @@ describe("grupos de navegación (feature 035)", () => {
       "competitions",
       "athletes",
     ]);
-    expect(groups[1].areas.map((a) => a.id)).toEqual(["families"]);
+    expect(groups[1].areas.map((a) => a.id)).toEqual(["families", "gobierno"]);
   });
 
   it("getGroupedAreas('admin') omite Atletas dentro de Operación", () => {
@@ -89,7 +91,7 @@ describe("grupos de navegación (feature 035)", () => {
       "training",
       "competitions",
     ]);
-    expect(groups[1].areas.map((a) => a.id)).toEqual(["families"]);
+    expect(groups[1].areas.map((a) => a.id)).toEqual(["families", "gobierno"]);
   });
 
   it.each(ROLES)(
@@ -132,9 +134,16 @@ describe("matriz de visibilidad por rol (data-model.md §3)", () => {
     );
   });
 
-  it("coach ve las 5 áreas; admin ve 4 (sin Atletas)", () => {
-    expect(getVisibleAreas("coach")).toHaveLength(5);
-    expect(getVisibleAreas("admin")).toHaveLength(4);
+  it("coach ve las 6 áreas; admin ve 5 (sin Atletas)", () => {
+    expect(getVisibleAreas("coach")).toHaveLength(6);
+    expect(getVisibleAreas("admin")).toHaveLength(5);
+  });
+
+  it("coach y admin ven Gobierno (Historial del club)", () => {
+    expect(getVisibleAreas("coach").map((a) => a.id)).toContain("gobierno");
+    expect(getVisibleAreas("admin").map((a) => a.id)).toContain("gobierno");
+    const gobierno = findArea("gobierno");
+    expect(gobierno.items.map((i) => i.id)).toEqual(["gobierno.history"]);
   });
 
   it("Familias sigue visible para admin (Boletines/Informes del club)", () => {
@@ -146,7 +155,17 @@ describe("matriz de visibilidad por rol (data-model.md §3)", () => {
     expect(adminVisibleItems.map((i) => i.id)).toEqual([
       "families.newsletters",
       "families.reports",
+      "families.archivedAthletes",
     ]);
+  });
+
+  it("Atletas archivados es solo visible para admin (feature 041)", () => {
+    const families = findArea("families");
+    const archivedItem = families.items.find(
+      (i) => i.id === "families.archivedAthletes",
+    );
+    expect(archivedItem?.roles).toEqual(["admin"]);
+    expect(archivedItem?.to).toBe("/admin/atletas-archivados");
   });
 });
 
@@ -180,6 +199,12 @@ describe("resolveAreaDefaultTo", () => {
     const athletes = findArea("athletes");
     expect(resolveAreaDefaultTo(athletes, "coach")).toBe("/athletes");
   });
+
+  it("coach y admin en Gobierno resuelven a Historial del club", () => {
+    const gobierno = findArea("gobierno");
+    expect(resolveAreaDefaultTo(gobierno, "coach")).toBe("/club/historial");
+    expect(resolveAreaDefaultTo(gobierno, "admin")).toBe("/club/historial");
+  });
 });
 
 // T009 — isAreaActive longest-prefix matching.
@@ -201,6 +226,10 @@ describe("isAreaActive", () => {
 
   it("no coincide con rutas fuera de sus matchPrefixes", () => {
     expect(isAreaActive(findArea("athletes"), "/parents")).toBe(false);
+  });
+
+  it("/club/historial activa el área gobierno", () => {
+    expect(isAreaActive(findArea("gobierno"), "/club/historial")).toBe(true);
   });
 
   it("/competitions/insights/season/2026 activa el área competitions", () => {

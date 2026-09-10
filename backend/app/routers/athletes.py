@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, select, func
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,19 +14,19 @@ from app.dependencies import (
     verify_athlete_access,
 )
 from app.models.athlete import Athlete
-from app.models.ai_explanation import AthleteAIExplanation
 from app.models.anthropometry import AnthropometricRecord
 from app.models.club import Club, ClubMember, ClubRole
-from app.models.parent_invite import ParentInvite
-from app.models.parental_consent import ParentalConsent
 from app.models.training_session import AttendanceStatus, SessionAttendance, TrainingSession
 from app.models.user import User, UserRole
 from app.models.athlete import ParentAthlete
 from app.schemas.athlete import (
+    AthleteArchiveIn,
     AthleteCreate,
+    AthleteDeletedByOut,
     AthleteDetailOut,
     AthleteListOut,
     AthleteOut,
+    AthleteRestoreIn,
     AthleteUpdate,
     AthleteParentView,
     AnthropometryParentView,
@@ -35,6 +35,7 @@ from app.schemas.anthropometry import AnthropometryOut
 from app.schemas.notification import NotificationRecipient, NotificationRequest, NotificationTemplate
 from app.schemas.training_session import AttendanceRead
 from app.services import training as training_svc
+from app.services.athlete_scope import archive_athlete, restore_athlete
 from app.services.category import compute_age_decimal, compute_years_in_club, get_category
 from app.services.notification.service import NotificationService
 from app.services.notification.task_dispatcher import TaskDispatcher
@@ -53,13 +54,29 @@ ATTENDANCE_SORT_WINDOW_DAYS = 90
 _ATTENDED_STATUSES = (AttendanceStatus.PRESENTE, AttendanceStatus.TARDE)
 
 
-def _enrich_athlete(athlete: Athlete) -> AthleteOut:
-    """Agrega campos calculados (age_decimal, category, years_in_club) al response."""
+def _enrich_athlete(
+    athlete: Athlete,
+    *,
+    deleted_by_user: User | None = None,
+) -> AthleteOut:
+    """Agrega campos calculados (age_decimal, category, years_in_club) al response.
+
+    ``deleted_by_user`` solo se pasa desde el listado admin con
+    ``include_archived=true`` (contracts/athlete-archive.md §4) — nunca desde
+    las vistas de coach/padre.
+    """
     out = AthleteOut.model_validate(athlete)
     out.age_decimal = compute_age_decimal(athlete.birth_date)
     out.category = get_category(athlete.birth_date.year, athlete.sex.value)
     if athlete.club_join_date is not None:
         out.years_in_club = compute_years_in_club(athlete.club_join_date)
+    if deleted_by_user is not None:
+        out.deleted_by = AthleteDeletedByOut(
+            user_id=deleted_by_user.id,
+            display_name=f"{deleted_by_user.first_name} {deleted_by_user.last_name}",
+        )
+    else:
+        out.deleted_by = None
     return out
 
 
@@ -174,9 +191,16 @@ async def create_athlete(
 async def list_athletes(
     club_id: int | None = Query(default=None),
     sort: str | None = Query(default=None),
+    include_archived: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> AthleteListOut:
+    if include_archived and current_user.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un administrador puede ver atletas archivados",
+        )
+
     if current_user.role == UserRole.admin:
         scope_clubs = {club_id} if club_id else None
     else:
@@ -196,6 +220,10 @@ async def list_athletes(
     filters = []
     if scope_clubs is not None:
         filters.append(Athlete.club_id.in_(scope_clubs))
+    # Un coach nunca ve atletas archivados; el admin solo los ve si pide
+    # include_archived=true explícitamente (contracts/athlete-archive.md §4).
+    if not include_archived:
+        filters.append(Athlete.deleted_at.is_(None))
 
     if sort == "recent_attendance":
         cutoff = date.today() - timedelta(days=ATTENDANCE_SORT_WINDOW_DAYS)
@@ -232,8 +260,22 @@ async def list_athletes(
     count_result = await db.execute(count_query)
     total = count_result.scalar_one()
 
+    # Resolver el autor del archivado (display_name, nunca un id crudo — FR-013)
+    # solo cuando el admin pidió el listado archivado.
+    deleted_by_users: dict[int, User] = {}
+    if include_archived:
+        deleted_by_ids = {
+            a.deleted_by_user_id for a in athletes if a.deleted_by_user_id is not None
+        }
+        if deleted_by_ids:
+            users_result = await db.execute(select(User).where(User.id.in_(deleted_by_ids)))
+            deleted_by_users = {u.id: u for u in users_result.scalars().all()}
+
     return AthleteListOut(
-        items=[_enrich_athlete(a) for a in athletes],
+        items=[
+            _enrich_athlete(a, deleted_by_user=deleted_by_users.get(a.deleted_by_user_id))
+            for a in athletes
+        ],
         total=total,
     )
 
@@ -353,14 +395,15 @@ async def update_athlete(
 @router.delete("/{athlete_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_athlete(
     athlete_id: int,
+    body: AthleteArchiveIn,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> None:
-    """Elimina un atleta y toda su información asociada.
+    """Archiva un atleta (soft delete) — contracts/athlete-archive.md §1.
 
-    Cascada manual: consents, AI explanations, parent invites, anthropometric
-    records, parent_athlete links, club_members del user stub, athlete row,
-    user stub (role=athlete).
+    Ya no hay cascada de DELETE: la evidencia de consentimiento parental
+    (Ley 1581), la antropometría y los vínculos familiares se conservan
+    intactos. Escribe una única UPDATE sobre ``athletes``.
     """
     result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
     athlete = result.scalar_one_or_none()
@@ -377,40 +420,58 @@ async def delete_athlete(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes acceso a este atleta",
             )
-        # Guard interino (T002): hasta que T040 reemplace el borrado por
-        # archivado, solo un admin puede eliminar un atleta.
+        if athlete.deleted_at is not None:
+            # Un coach ya no ve un atleta archivado — no puede confirmar su
+            # existencia (contracts/athlete-archive.md §1).
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Atleta no encontrado",
+            )
+    elif athlete.deleted_at is not None:
+        # Admin: estado preciso — ya está archivado.
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo un administrador puede eliminar un atleta por ahora.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El atleta ya está archivado",
         )
 
-    user_id = athlete.user_id
+    await archive_athlete(db, athlete, current_user, body.reason_code)
 
-    # NOTA (T022, alcance): el archivado formal por columnas
-    # (deleted_at/deleted_by_user_id/deleted_reason_code) descrito en
-    # contracts/athlete-archive.md es un rediseño de este endpoint que no
-    # corresponde a la instrumentación de auditoría — se deja fuera de esta
-    # oleada (ver blockers del reporte de T022). Mientras tanto se registra
-    # con action=delete, reflejando fielmente el borrado físico actual.
-    await record_audit(
-        db,
-        action=AuditAction.delete,
-        entity_type=AuditEntityType.athlete,
-        entity_id=athlete.id,
-        actor=current_user,
-        club_id=athlete.club_id,
-        athlete_id=athlete.id,
-    )
 
-    await db.execute(delete(ParentalConsent).where(ParentalConsent.athlete_id == athlete_id))
-    await db.execute(delete(AthleteAIExplanation).where(AthleteAIExplanation.athlete_id == athlete_id))
-    await db.execute(delete(ParentInvite).where(ParentInvite.athlete_id == athlete_id))
-    await db.execute(delete(AnthropometricRecord).where(AnthropometricRecord.athlete_id == athlete_id))
-    await db.execute(delete(ParentAthlete).where(ParentAthlete.athlete_id == athlete_id))
-    await db.execute(delete(ClubMember).where(ClubMember.user_id == user_id))
-    await db.execute(delete(Athlete).where(Athlete.id == athlete_id))
-    await db.execute(delete(User).where(User.id == user_id, User.role == UserRole.athlete))
-    await db.flush()
+# ---------------------------------------------------------------------------
+# POST /api/athletes/{athlete_id}/restore
+# ---------------------------------------------------------------------------
+@router.post("/{athlete_id}/restore", response_model=AthleteOut)
+async def restore_athlete_endpoint(
+    athlete_id: int,
+    body: AthleteRestoreIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AthleteOut:
+    """Restaura un atleta archivado — solo admin (contracts/athlete-archive.md §2)."""
+    if current_user.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un administrador puede restaurar atletas",
+        )
+
+    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    athlete = result.scalar_one_or_none()
+
+    if athlete is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Atleta no encontrado",
+        )
+
+    if athlete.deleted_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El atleta no está archivado",
+        )
+
+    await restore_athlete(db, athlete, current_user, body.reason_code)
+
+    return _enrich_athlete(athlete)
 
 
 # ---------------------------------------------------------------------------

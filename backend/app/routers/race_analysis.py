@@ -80,7 +80,7 @@ from app.services.race.season_panorama import fetch_season_panorama
 from app.services.race.run_staleness import mark_run_stale
 from app.services.privacy import athlete_has_ai_processing_consent
 from app.models.club import ClubMember
-from app.services.audit import AuditAction, AuditEntityType, record_audit
+from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
 from app.services.request_context import current_request_id, system_context
 from pydantic import BaseModel as _BaseModel
 
@@ -622,6 +622,19 @@ async def start_run(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Cap v2: máximo 4 válidas por lanzamiento. Usa resumen temporada para visión global.",
         )
+
+    # No se puede lanzar un análisis IA para un atleta archivado
+    # (contracts/athlete-archive.md §5.2).
+    if body.athlete_id is not None:
+        _archived_check = await db.execute(
+            select(Athlete.deleted_at).where(Athlete.id == body.athlete_id)
+        )
+        _deleted_at = _archived_check.scalar_one_or_none()
+        if _deleted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Atleta no encontrado",
+            )
 
     # Consentimiento parental para procesamiento con IA (Ley 1581 art. 9).
     # Mismo contrato que ``routers/ai.py::_ensure_ai_consent`` (feature 037,
@@ -1270,6 +1283,19 @@ async def get_run_pdf(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error renderizando PDF: {type(exc).__name__}",
         )
+
+    # Fila de exportación (§4.13 audit-recording.md): SOLO el tipo de
+    # documento, nunca su contenido.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.agent_run,
+        entity_id=int(run["id"]),
+        actor=current_user,
+        club_id=await _resolve_athlete_club(db, run.get("athlete_id")),
+        athlete_id=run.get("athlete_id"),
+        meta={"document_kind": AuditDocumentKind.race_analysis_pdf.value},
+    )
 
     return Response(
         content=pdf_bytes,

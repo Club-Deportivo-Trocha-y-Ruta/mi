@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Bike,
   ExternalLink,
+  History,
   Info,
   Link2,
   Loader2,
@@ -65,13 +66,22 @@ const GrowthTab = lazy(() =>
   })),
 );
 
+// T038 (feature 041, US7): tab "Historial" — no es la pestaña por defecto,
+// mismo patrón lazy-load que Insights IA / Crecimiento.
+const AthleteHistoryPanel = lazy(() =>
+  import("@/components/athletes/AthleteHistoryPanel").then((m) => ({
+    default: m.AthleteHistoryPanel,
+  })),
+);
+
 type Tab =
   | "info"
   | "anthropometry"
   | "growth"
   | "ai_analysis"
   | "newsletters"
-  | "activities";
+  | "activities"
+  | "history";
 
 const VALID_TABS: readonly Tab[] = [
   "info",
@@ -80,6 +90,7 @@ const VALID_TABS: readonly Tab[] = [
   "ai_analysis",
   "newsletters",
   "activities",
+  "history",
 ] as const;
 
 function parseTabParam(raw: string | null): Tab | null {
@@ -443,7 +454,9 @@ export function AthleteDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTabFromUrl = parseTabParam(searchParams.get("tab"));
   const tabFromUrl =
-    rawTabFromUrl === "newsletters" && isParent ? null : rawTabFromUrl;
+    isParent && (rawTabFromUrl === "newsletters" || rawTabFromUrl === "history")
+      ? null
+      : rawTabFromUrl;
   const [activeTab, setActiveTab] = useState<Tab>(tabFromUrl ?? "info");
   const [showForm, setShowForm] = useState(false);
   const [reportSent, setReportSent] = useState(false);
@@ -466,7 +479,10 @@ export function AthleteDetailPage() {
   // Si el rol es parent y pide "newsletters" → fallback silencioso a "info".
   useEffect(() => {
     const rawUrlTab = parseTabParam(searchParams.get("tab"));
-    const urlTab = rawUrlTab === "newsletters" && isParent ? null : rawUrlTab;
+    const urlTab =
+      isParent && (rawUrlTab === "newsletters" || rawUrlTab === "history")
+        ? null
+        : rawUrlTab;
     if (urlTab && urlTab !== activeTab) {
       setActiveTab(urlTab);
     }
@@ -642,6 +658,18 @@ export function AthleteDetailPage() {
           >
             <Mail size={14} />
             Boletines
+          </button>
+        )}
+
+        {!isParent && (
+          <button
+            type="button"
+            className={tabClasses("history")}
+            onClick={() => updateTab("history")}
+            data-testid="athlete-tab-history"
+          >
+            <History size={14} />
+            Historial
           </button>
         )}
 
@@ -826,6 +854,23 @@ export function AthleteDetailPage() {
       {/* Tab content — Boletines (solo coach/admin) */}
       {activeTab === "newsletters" && !isParent && (
         <AthleteNewslettersTabPanel athleteId={athleteId} />
+      )}
+
+      {/* Tab content — Historial (solo coach/admin) */}
+      {activeTab === "history" && !isParent && role && (
+        <Suspense
+          fallback={
+            <div
+              className="h-14 animate-pulse rounded-lg bg-light-gray"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="sr-only">Cargando historial…</span>
+            </div>
+          }
+        >
+          <AthleteHistoryPanel athleteId={athleteId} role={role} />
+        </Suspense>
       )}
 
       {/* Tab content — Actividades (Strava) */}

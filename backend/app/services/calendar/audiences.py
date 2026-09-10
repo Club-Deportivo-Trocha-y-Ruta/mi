@@ -75,7 +75,10 @@ async def _resolve_single_audience(
 
     if atype == AudienceType.ALL_CLUB:
         result = await db.execute(
-            select(Athlete).where(Athlete.club_id == club_id)
+            select(Athlete).where(
+                Athlete.club_id == club_id,
+                Athlete.deleted_at.is_(None),
+            )
         )
         return list(result.scalars().all())
 
@@ -83,7 +86,10 @@ async def _resolve_single_audience(
         target_category = avalue.get("category", "")
         # Cargamos todos los atletas del club y filtramos por categoría FCC
         result = await db.execute(
-            select(Athlete).where(Athlete.club_id == club_id)
+            select(Athlete).where(
+                Athlete.club_id == club_id,
+                Athlete.deleted_at.is_(None),
+            )
         )
         all_athletes = list(result.scalars().all())
         return [
@@ -99,6 +105,7 @@ async def _resolve_single_audience(
             select(Athlete).where(
                 Athlete.id.in_(ids),
                 Athlete.club_id == club_id,
+                Athlete.deleted_at.is_(None),
             )
         )
         return list(result.scalars().all())
@@ -111,6 +118,7 @@ async def _resolve_single_audience(
             select(Athlete).where(
                 Athlete.id == athlete_id,
                 Athlete.club_id == club_id,
+                Athlete.deleted_at.is_(None),
             )
         )
         ath = result.scalar_one_or_none()

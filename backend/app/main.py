@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine
-from app.routers import ai, alerts, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, training_sessions
+from app.routers import ai, alerts, audit, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_imports, race_series, reports, training_sessions
 from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
@@ -64,10 +64,19 @@ logging.config.dictConfig(
             },
         },
         "loggers": {
+            # propagate=True (a diferencia del ejemplo original del contrato,
+            # que usaba False): con el logger raíz sin handlers propios (el
+            # LOGGING_CONFIG de uvicorn nunca lo toca), dejar que "app"
+            # propague no duplica salida en producción, pero es justo lo que
+            # necesita el hook de captura de logs de pytest ("caplog"), que
+            # se cuelga del logger raíz — con propagate=False los registros
+            # nunca llegaban ahí y decenas de pruebas (incluidas las de
+            # privacidad que verifican que los logs no filtren datos de un
+            # menor) veían caplog vacío. Ver tests/test_logging_config.py.
             "app": {
                 "handlers": ["app_console"],
                 "level": "INFO",
-                "propagate": False,
+                "propagate": True,
             },
         },
     }
@@ -173,6 +182,9 @@ app.include_router(club_race_insights_router, prefix="/api/races", tags=["club-r
 app.include_router(session_assistant_router, prefix="/api/clubs", tags=["session-assistant"])
 app.include_router(intervals.router, prefix="/api/intervals", tags=["intervals"])
 app.include_router(webhooks_resend_router, prefix="/api/webhooks", tags=["webhooks"])
+app.include_router(audit.clubs_router, prefix="/api/clubs", tags=["audit"])
+app.include_router(audit.athletes_router, prefix="/api/athletes", tags=["audit"])
+app.include_router(audit.catalog_router)
 
 if settings.strava_enabled:
     from app.routers import activities as activities_router_module

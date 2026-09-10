@@ -119,6 +119,16 @@ const AIHealthPage = lazy(() =>
     default: m.AIHealthPage,
   })),
 );
+const ArchivedAthletesPage = lazy(() =>
+  import("@/routes/admin/ArchivedAthletesPage").then((m) => ({
+    default: m.ArchivedAthletesPage,
+  })),
+);
+const ClubHistoryPage = lazy(() =>
+  import("@/routes/admin/ClubHistoryPage").then((m) => ({
+    default: m.ClubHistoryPage,
+  })),
+);
 
 // Entrenamiento (coach/admin) — lazy.
 const SessionsListPage = lazy(() =>
@@ -430,6 +440,26 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando estado de IA..." />}>
                 <AIHealthPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/atletas-archivados"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando atletas archivados..." />}>
+                <ArchivedAthletesPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/club/historial"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando historial del club..." />}>
+                <ClubHistoryPage />
               </Suspense>
             </ProtectedRoute>
           }

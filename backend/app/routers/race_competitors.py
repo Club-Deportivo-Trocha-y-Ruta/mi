@@ -118,7 +118,7 @@ async def _ensure_athlete_in_coach_clubs(
 
     result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
     athlete = result.scalar_one_or_none()
-    if athlete is None:
+    if athlete is None or athlete.deleted_at is not None:
         raise AthleteNotFoundError(athlete_id)
     coach_clubs = _coach_club_ids(current_user)
     if athlete.club_id not in coach_clubs:

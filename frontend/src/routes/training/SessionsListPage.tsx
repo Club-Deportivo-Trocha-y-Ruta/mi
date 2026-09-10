@@ -221,18 +221,18 @@ export function SessionsListPage() {
             ? "No se pudo cancelar la sesión. Intenta de nuevo."
             : null
         }
-        onSend={(reason) => {
-          if (cancelTarget) {
+        onSend={(reason, reasonCode) => {
+          if (cancelTarget && reasonCode) {
             cancelMutation.mutate(
-              { id: cancelTarget.id, notify: true, reason },
+              { id: cancelTarget.id, notify: true, reason, reasonCode },
               { onSettled: () => setCancelTarget(null) },
             );
           }
         }}
-        onSkip={() => {
-          if (cancelTarget) {
+        onSkip={(reasonCode) => {
+          if (cancelTarget && reasonCode) {
             cancelMutation.mutate(
-              { id: cancelTarget.id, notify: false },
+              { id: cancelTarget.id, notify: false, reasonCode },
               { onSettled: () => setCancelTarget(null) },
             );
           }

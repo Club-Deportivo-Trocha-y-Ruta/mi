@@ -23,7 +23,7 @@ RBAC (caminos denegados obligatorios):
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator
 
@@ -40,8 +40,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.dependencies import get_current_user, get_db
 from app.main import app
+from app.models import Base
 from app.models.user import UserRole
 from app.services.race.group_launch import find_active_run
+from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
@@ -102,19 +104,97 @@ def _make_user(role: UserRole, user_id: int) -> SimpleNamespace:
 
 @pytest_asyncio.fixture
 async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    # _resolve_athlete_club (app/routers/race_analysis.py) hace un SELECT
+    # ORM sobre Athlete.club_id para poblar audit_log.club_id, y record_audit
+    # escribe en audit_log — ambos tocan tablas reales que este arnés no
+    # creaba. Se registran los modelos y se crean vía Base.metadata igual
+    # que en test_race_event_runs.py.
+    from app.models.user import User as _U  # noqa: F401
+    from app.models.club import Club as _Cl, ClubMember as _CM  # noqa: F401
+    from app.models.athlete import Athlete as _A  # noqa: F401
+
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         future=True,
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
+
+    table_names = ["users", "clubs", "club_members", "athletes", *AUDIT_TABLES]
+    tables = [Base.metadata.tables[t] for t in table_names]
+
     async with engine.begin() as conn:
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
         await conn.execute(text(_AGENT_RUNS_DDL))
         await conn.execute(text(_AGENT_RUN_EVENTS_DDL))
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        await _seed_athlete(session)
+        await session.commit()
+
     yield factory
     await engine.dispose()
+
+
+async def _seed_athlete(session: AsyncSession) -> None:
+    """Fila mínima para que ``_resolve_athlete_club`` resuelva club_id=1."""
+    from app.models.athlete import Athlete, Sex
+    from app.models.club import Club
+    from app.models.user import User
+
+    club_user = User(
+        id=1,
+        email="coach-club@test.local",
+        hashed_password="x",
+        first_name="Coach",
+        last_name="Club",
+        role=UserRole.coach,
+        is_active=True,
+        can_login=True,
+        created_at=_utc_now(),
+    )
+    session.add(club_user)
+    await session.flush()
+
+    club = Club(
+        id=1,
+        name="Club Test",
+        code="CLT",
+        created_at=_utc_now(),
+        is_active=True,
+    )
+    session.add(club)
+    await session.flush()
+
+    athlete_user = User(
+        id=144,
+        email="atleta144@test.local",
+        hashed_password="x",
+        first_name="Atleta",
+        last_name="Test",
+        role=UserRole.coach,
+        is_active=True,
+        can_login=True,
+        created_at=_utc_now(),
+    )
+    session.add(athlete_user)
+    await session.flush()
+
+    session.add(
+        Athlete(
+            id=144,
+            user_id=144,
+            club_id=1,
+            first_name="Atleta",
+            last_name="Ficticio",
+            birth_date=date(2013, 1, 1),
+            sex=Sex.M,
+            created_by=1,
+            created_at=_utc_now(),
+        )
+    )
+    await session.flush()
 
 
 @pytest_asyncio.fixture

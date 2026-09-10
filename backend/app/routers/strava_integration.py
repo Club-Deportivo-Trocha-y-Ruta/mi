@@ -501,6 +501,59 @@ async def receive_strava_webhook_event(
     return {}
 
 
+#: Columnas comparadas para decidir si una fila de ``strava_activities`` fue
+#: modificada por el reconcile (contracts/audit-recording.md §4.12). Nunca se
+#: pasan como ``diff`` a ``record_audit`` — solo los nombres de columna
+#: viajan en ``changed_fields``, jamás los valores (Ley 1581: nombre de la
+#: actividad y frecuencia cardíaca son datos que no deben quedar en
+#: ``audit_log``).
+_ACTIVITY_COMPARE_FIELDS: tuple[str, ...] = (
+    "name",
+    "sport_type",
+    "start_date_utc",
+    "start_date_local",
+    "elapsed_time_s",
+    "moving_time_s",
+    "distance_m",
+    "total_elevation_gain_m",
+    "average_heartrate",
+    "max_heartrate",
+    "is_trainer",
+    "upstream_state",
+    "summary_complete",
+)
+
+
+async def _snapshot_activities(
+    db: AsyncSession, athlete_ids: set[int]
+) -> dict[int, dict[str, object]]:
+    """Copia en memoria de los campos comparados de cada actividad existente.
+
+    Debe ejecutarse ANTES de ``reconcile_all`` — los objetos ORM viven en la
+    misma sesión y ``reconcile_all`` los muta en el lugar, así que solo un
+    dict plano capturado por adelantado sirve como "antes" real.
+    """
+    if not athlete_ids:
+        return {}
+    result = await db.execute(
+        select(StravaActivity).where(StravaActivity.athlete_id.in_(athlete_ids))
+    )
+    return {
+        activity.id: {
+            field: getattr(activity, field) for field in _ACTIVITY_COMPARE_FIELDS
+        }
+        for activity in result.scalars().all()
+    }
+
+
+async def _athlete_club_ids(db: AsyncSession, athlete_ids: set[int]) -> dict[int, int]:
+    """Mapa ``athlete_id -> club_id`` para las conexiones activas del reconcile."""
+    if not athlete_ids:
+        return {}
+    result = await db.execute(select(Athlete).where(Athlete.id.in_(athlete_ids)))
+    return {athlete.id: athlete.club_id for athlete in result.scalars().all()}
+
+
 @router.post(
     "/integrations/strava/reconcile",
     response_model=ReconcileResultOut,
@@ -530,30 +583,55 @@ async def run_strava_reconcile(
         )
     )
     connections_before = {c.id: c for c in connections_result.scalars().all()}
+    athlete_ids = {c.athlete_id for c in connections_before.values()}
+
+    # ``services/strava/reconcile.py`` (fuera del alcance de esta tarea) solo
+    # retorna contadores agregados, sin ids de actividad — así que la
+    # granularidad por-actividad exigida por contracts/audit-recording.md
+    # §4.12 se reconstruye aquí comparando, antes y después de
+    # ``reconcile_all``, el estado de ``strava_activities`` de los atletas
+    # con conexión activa. Una fila que no existía antes es ``create``; una
+    # que existía y cambió algún campo comparado es ``update``; una sin
+    # cambios no genera fila.
+    before_snapshot = await _snapshot_activities(db, athlete_ids)
 
     result = await reconcile_all(db)
 
-    # services/strava/reconcile.py (fuera del alcance de esta tarea) solo
-    # retorna contadores agregados, sin ids de actividad — así que la
-    # granularidad auditable disponible aquí es por conexión procesada, no
-    # por strava_activity individual (contracts/audit-recording.md §4.12
-    # pide lo segundo; ver nota de la tarea T029).
+    athlete_club_ids = await _athlete_club_ids(db, athlete_ids)
+
     ctx = cron_context(job="strava_reconcile")
-    for connection_id, connection in connections_before.items():
-        await db.refresh(connection)
-        athlete_row = await db.get(Athlete, connection.athlete_id)
-        club_id = athlete_row.club_id if athlete_row is not None else None
-        await record_audit(
-            db,
-            action=AuditAction.execute,
-            entity_type=AuditEntityType.strava_connection,
-            entity_id=connection_id,
-            actor=ctx.actor,
-            actor_kind=ctx.actor_kind,
-            club_id=club_id,
-            athlete_id=connection.athlete_id,
-            meta={"job": "strava_reconcile"},
-            request_id=ctx.request_id,
+    if athlete_ids:
+        after_result = await db.execute(
+            select(StravaActivity).where(StravaActivity.athlete_id.in_(athlete_ids))
         )
+        for activity in after_result.scalars().all():
+            before = before_snapshot.get(activity.id)
+            after_values = {
+                field: getattr(activity, field) for field in _ACTIVITY_COMPARE_FIELDS
+            }
+            if before is None:
+                action = AuditAction.create
+                changed_fields = None
+            else:
+                changed_fields = sorted(
+                    field for field in _ACTIVITY_COMPARE_FIELDS if before[field] != after_values[field]
+                )
+                if not changed_fields:
+                    continue
+                action = AuditAction.update
+
+            await record_audit(
+                db,
+                action=action,
+                entity_type=AuditEntityType.strava_activity,
+                entity_id=activity.id,
+                actor=ctx.actor,
+                actor_kind=ctx.actor_kind,
+                club_id=athlete_club_ids.get(activity.athlete_id),
+                athlete_id=activity.athlete_id,
+                changed_fields=changed_fields,
+                meta={"job": "strava_reconcile"},
+                request_id=ctx.request_id,
+            )
 
     return ReconcileResultOut(**result)

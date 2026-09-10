@@ -112,6 +112,14 @@ async def verify_athlete_access(
     if current_user.role == UserRole.admin:
         return athlete
 
+    # Un atleta archivado desaparece de toda superficie de coach y padre;
+    # el administrador conserva acceso para revisar el archivo (US2 AS2).
+    if athlete.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Atleta no encontrado",
+        )
+
     if current_user.role == UserRole.coach:
         coach_clubs = {
             m.club_id for m in current_user.club_memberships

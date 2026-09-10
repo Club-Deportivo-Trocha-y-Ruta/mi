@@ -46,6 +46,7 @@ from app.models.athlete import Athlete
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 from app.models.user import User, UserRole
 from app.schemas.parent_newsletter import ParentNewsletterListItem, ParentNewsletterOut
+from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
 from app.services.permissions import parent_athlete_ids
 from app.services.training.stage_log import StageLog, to_parent_dto
 
@@ -232,6 +233,19 @@ async def download_parent_newsletter_pdf(
         nl.pdf_generated_at = datetime.now(timezone.utc)
         await db.flush()
         await db.commit()
+
+    # Fila de exportación en CADA descarga (§4.13 audit-recording.md,
+    # peligro #1): no solo cuando el hash cambió.
+    await record_audit(
+        db,
+        action=AuditAction.export,
+        entity_type=AuditEntityType.athlete_monthly_newsletter,
+        entity_id=nl.id,
+        actor=current_user,
+        club_id=athlete.club_id,
+        athlete_id=athlete.id,
+        meta={"document_kind": AuditDocumentKind.newsletter_pdf.value},
+    )
 
     return Response(
         content=doc.data,

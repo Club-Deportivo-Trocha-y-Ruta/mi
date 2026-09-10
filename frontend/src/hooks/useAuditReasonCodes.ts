@@ -17,10 +17,11 @@ import type { AuditReasonGroup } from "@/types/audit.types";
 export const auditReasonCodesQueryKey = (group?: AuditReasonGroup) =>
   ["audit-reason-codes", group ?? null] as const;
 
-export function useAuditReasonCodes(group?: AuditReasonGroup) {
+export function useAuditReasonCodes(group?: AuditReasonGroup, enabled = true) {
   return useQuery({
     queryKey: auditReasonCodesQueryKey(group),
     queryFn: ({ signal }) => getAuditReasonCodes(group, { signal }),
     staleTime: 60 * 60_000,
+    enabled,
   });
 }

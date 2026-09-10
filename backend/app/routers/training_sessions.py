@@ -615,6 +615,7 @@ async def bulk_set_convocatoria(
             select(Athlete.id).where(
                 Athlete.id.in_(athlete_ids),
                 Athlete.club_id == session.club_id,
+                Athlete.deleted_at.is_(None),
             )
         )
         valid_ids = set(result.scalars().all())
@@ -857,7 +858,10 @@ async def _validate_athlete_ids_for_session(
         )
 
     ath_result = await db.execute(
-        select(Athlete).where(Athlete.id.in_(athlete_ids))
+        select(Athlete).where(
+            Athlete.id.in_(athlete_ids),
+            Athlete.deleted_at.is_(None),
+        )
     )
     return list(ath_result.scalars().all())
 

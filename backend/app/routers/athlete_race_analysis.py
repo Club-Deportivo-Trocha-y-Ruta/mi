@@ -873,6 +873,23 @@ async def start_athlete_run(
             detail=f"No se pudo crear el run: {type(exc).__name__}",
         )
 
+    # Fila de auditoría del lanzamiento (§4.9 audit-recording.md), mismo
+    # patrón que ``routers/race_analysis.py::start_run``: un run NUEVO es
+    # siempre ``create``, sea cual sea el punto de entrada.
+    from app.routers.race_analysis import _load_run  # import diferido
+
+    _new_run_row = await _load_run(db, run_id)
+    if _new_run_row is not None:
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.agent_run,
+            entity_id=int(_new_run_row["id"]),
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
+        )
+
     age_decimal = (date.today() - athlete.birth_date).days / 365.25
     athlete_age = int(age_decimal)
 
@@ -1206,6 +1223,22 @@ async def create_season_summary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"No se pudo crear el run: {type(exc).__name__}",
+        )
+
+    # Fila de auditoría del lanzamiento (§4.9 audit-recording.md), mismo
+    # patrón que ``start_athlete_run`` / ``routers/race_analysis.py::start_run``.
+    from app.routers.race_analysis import _load_run  # import diferido
+
+    _new_run_row = await _load_run(db, run_id)
+    if _new_run_row is not None:
+        await record_audit(
+            db,
+            action=AuditAction.create,
+            entity_type=AuditEntityType.agent_run,
+            entity_id=int(_new_run_row["id"]),
+            actor=current_user,
+            club_id=athlete.club_id,
+            athlete_id=athlete.id,
         )
 
     # Contexto del atleta (mismo patrón que start_athlete_run / start_run):

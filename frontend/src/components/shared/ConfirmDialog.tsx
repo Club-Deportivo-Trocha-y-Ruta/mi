@@ -34,6 +34,12 @@ export interface ConfirmDialogProps {
   isPending?: boolean;
   /** Falla inline, sin cerrar el diálogo. */
   errorMessage?: string;
+  /**
+   * Contenido adicional (ej. un Select de motivo) renderizado después de
+   * `description` y fuera de él — `description` es un `<p>` de Radix y no
+   * admite bloques ni controles interactivos anidados.
+   */
+  children?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -47,6 +53,7 @@ export function ConfirmDialog({
   tone = "default",
   isPending = false,
   errorMessage,
+  children,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -104,6 +111,8 @@ export function ConfirmDialog({
             {description}
           </AlertDialogDescription>
         </AlertDialogHeader>
+
+        {children}
 
         {errorMessage && (
           <p role="alert" className="text-sm text-danger">
