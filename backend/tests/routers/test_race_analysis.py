@@ -594,6 +594,8 @@ class TestAdminMetrics:
         assert body["cost_usd_total"] == 0.0
         assert body["fail_rate"] == 0.0
         assert body["window_days"] == 7
+        # §11.1-17: ventana vacía → lista vacía, no una fila de ceros.
+        assert body["by_coach"] == []
 
 
 # ===========================================================================
@@ -626,6 +628,10 @@ class TestBudgetGuard:
         detail = resp.json()["detail"]
         assert "Presupuesto" in detail
         assert "0.005" in detail or "0.0050" in detail
+        # §11.1-19: la copia dice el periodo real (ventana móvil, no "mensual")
+        # y que lo que ya está corriendo no se corta.
+        assert "últimos 30 días" in detail
+        assert "en curso terminan" in detail
 
     async def test_201_si_bajo_presupuesto(
         self, coach_client, fake_db, ai_enabled, monkeypatch

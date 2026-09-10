@@ -151,8 +151,11 @@ _ACTORS: dict[str, tuple[int, UserRole, tuple[int, ...], str, str]] = {
 
 @pytest_asyncio.fixture
 async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    # Importes sólo para registrar los modelos en ``Base.metadata`` antes de
+    # crear el subconjunto de tablas.
     from app.models.athlete import Athlete as _A  # noqa: F401
-    from app.models.club import Club as _Cl, ClubMember as _CM  # noqa: F401
+    from app.models.club import Club as _Cl  # noqa: F401
+    from app.models.club import ClubMember as _CM  # noqa: F401
     from app.models.user import User as _U  # noqa: F401
 
     engine = create_async_engine(
@@ -373,7 +376,7 @@ def stub_resume(monkeypatch):
     """Evita LangGraph: ``resume_run`` sólo registra la llamada."""
     calls: list[tuple[str, dict]] = []
 
-    async def _fake_resume(run_id, resume_value, on_complete=None):  # noqa: ANN001
+    async def _fake_resume(run_id, resume_value, on_complete=None):
         calls.append((run_id, resume_value))
 
     monkeypatch.setattr(ra, "resume_run", _fake_resume)
@@ -385,7 +388,7 @@ def stub_start_run(monkeypatch):
     """Evita el lanzador real en ``re-execute`` (AI, presupuesto, backpressure)."""
     calls: list[dict[str, Any]] = []
 
-    async def _fake_start_run(*, body, db, current_user):  # noqa: ANN001
+    async def _fake_start_run(*, body, db, current_user):
         from app.schemas.race_ai import RunState, StartRunResponse
 
         calls.append({"athlete_id": body.athlete_id, "actor_id": current_user.id})

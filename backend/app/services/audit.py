@@ -1074,6 +1074,21 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/race-analysis/imports/parse"): Audited(
         frozenset({AuditEntityType.race_import})
     ),
+    # Única ruta que sigue pendiente, y **no** por olvido: el contrato §4.10 la
+    # describe como `race_import`·`update` con `status` → `dry_run`, pero ese
+    # cambio de estado no ocurre. `dry_run_import`
+    # (`app/routers/race_imports.py`) no asigna `RaceImportStatus.dry_run` en
+    # ningún punto, y el propio docstring del enum
+    # (`app/models/race_import.py`) lo dice: el valor "existía en enum pero
+    # código nunca lo emitía". El ingestor corre con `dry_run=True` y no deja
+    # escritura persistente.
+    #
+    # Registrar aquí un `update` sería anotar una escritura que no sucedió, y
+    # la decisión 2 del dueño es explícita en que la bitácora no registra
+    # lecturas. Las dos salidas —emitir de verdad el cambio de estado, o
+    # convertirla en exención genuina de §4.14— cambian el contrato o el
+    # comportamiento del asistente de importación, así que se deja marcada
+    # como pendiente en vez de resolverla sin quien pueda decidirlo.
     ("POST", "/api/race-analysis/imports/{parse_id}/dry-run"): Exempt(_PENDING),
     ("POST", "/api/race-analysis/imports/{parse_id}/commit"): Audited(
         frozenset({AuditEntityType.race_import})

@@ -102,12 +102,15 @@ def _make_user(actor: str) -> SimpleNamespace:
 
 @pytest_asyncio.fixture
 async def sqlite_engine() -> AsyncGenerator[AsyncEngine, None]:
+    # Importes sólo para registrar los modelos en ``Base.metadata`` antes de
+    # crear el subconjunto de tablas.
     from app.models.athlete import Athlete as _A  # noqa: F401
-    from app.models.club import Club as _Cl, ClubMember as _CM  # noqa: F401
+    from app.models.club import Club as _Cl  # noqa: F401
+    from app.models.club import ClubMember as _CM  # noqa: F401
     from app.models.race_category import RaceCategory as _C  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
     from app.models.race_event import RaceEvent as _E  # noqa: F401
-    from app.models.race_import import RaceImport as _I  # noqa: F401
+    from app.models.race_import import RaceImport as _I2  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
     from app.models.race_series import RaceSeries as _S  # noqa: F401
     from app.models.user import User as _U  # noqa: F401
@@ -241,7 +244,7 @@ def stub_parsers(monkeypatch):
     from app.routers import race_imports as router_mod
     from app.services.race.pdf_parser import ResultsRow
 
-    async def _fake_results(path, ext):  # noqa: ARG001
+    async def _fake_results(path, ext):
         return {
             CATEGORY_CODE: [
                 ResultsRow(
@@ -265,7 +268,7 @@ def stub_parsers(monkeypatch):
             ]
         }
 
-    async def _fake_general(path):  # noqa: ARG001
+    async def _fake_general(path):
         return {}
 
     monkeypatch.setattr(router_mod, "_parse_results_with_timeout", _fake_results)
