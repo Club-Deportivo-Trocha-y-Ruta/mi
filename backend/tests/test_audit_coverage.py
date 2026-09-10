@@ -196,11 +196,18 @@ def test_audited_route_writes_at_least_one_audit_log_row(
 ) -> None:
     """T4.4 dynamic smoke, parametrised over `Audited` entries.
 
-    No-op today (zero `Audited` entries — every route is still `Exempt`).
-    Phase 3 gives each instrumented route its own dedicated integration
-    test alongside its handler; this generic hook exists so the coverage
-    file itself has a place to grow the assertion once entries appear,
-    without every future PR having to remember to add it.
+    ATENCIÓN — este gancho **no comprueba nada todavía**: hace `skip` para
+    todas las rutas, así que la mitad de FR-009 que exige "toda ruta auditada
+    que la suite ejercita escribió al menos una fila" (contracts/audit-recording.md
+    §9) no está implementada. Su docstring anterior decía "zero `Audited`
+    entries — every route is still `Exempt`", lo cual dejó de ser cierto: hoy
+    el registro tiene 91 rutas `Audited` y las 81 que llegan aquí se saltan
+    una por una.
+
+    Cada ruta instrumentada sí tiene su prueba de integración dedicada junto a
+    su handler; lo que falta es esta red genérica, que es la que evitaría que
+    una ruta futura se quede sin fila sin que nadie se entere. Ver la brecha
+    correspondiente en checklists/integration-review.md.
     """
     pytest.skip(
         f"{key}: dynamic smoke test not yet wired for this route "

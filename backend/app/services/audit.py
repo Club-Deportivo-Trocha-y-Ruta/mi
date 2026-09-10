@@ -948,7 +948,8 @@ _MONTHLY_REPORTS: dict[tuple[str, str], AuditPolicy] = {
     ),
 }
 
-#: §4.8 Family newsletters — 8 keys, all pending.
+#: §4.8 Family newsletters — 8 keys, 7 instrumentadas y 1 pendiente
+#: (`POST …/newsletters/{id}/read`, marca de lectura de la familia).
 _NEWSLETTERS: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/clubs/{club_id}/monthly-newsletters/batch"): Audited(
         frozenset({AuditEntityType.athlete_monthly_newsletter})
@@ -1023,7 +1024,8 @@ _AI_RUNS: dict[tuple[str, str], AuditPolicy] = {
     ): Audited(frozenset({AuditEntityType.athlete_ai_insight})),
 }
 
-#: §4.10 Race results domain — 18 keys, all pending.
+#: §4.10 Race results domain — 18 keys, 17 instrumentadas y 1 pendiente
+#: (`POST …/imports/{parse_id}/dry-run`).
 _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/race-analysis/race-series/"): Audited(
         frozenset({AuditEntityType.race_series})
@@ -1088,7 +1090,7 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
     ),
 }
 
-#: §4.11 Interval training — 8 keys, all pending.
+#: §4.11 Interval training — 8 keys, 7 aún pendientes de instrumentar (T030).
 _INTERVALS: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/intervals/structures"): Exempt(_PENDING),
     ("PUT", "/api/intervals/structures/{structure_id}"): Exempt(_PENDING),

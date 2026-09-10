@@ -423,3 +423,124 @@ alcance de esta tarea, no por el trabajo de US3.
 | G20/G-nuevo | `test_delete_parent_with_audit_activity_409` tiene un assert roto (`"desacti"` vs "Desactívalo"); `test_delete_parent_with_training_session_maps_to_409` no puede pasar en sqlite porque el harness no aplica `ON DELETE RESTRICT`. | `backend/tests/test_users_delete_deactivate.py:270` y módulo completo |
 | — | 8 regresiones de `.regresiones-oleada4.txt` (listadas en §5) siguen abiertas; ninguna toca US3. | ver §5 |
 | — | 99 fallos ambientales nuevos no rastreados (WeasyPrint sin librería nativa, plantilla `circuit_diagram.svg.jinja` ausente) — no corregir aquí, pero documentar para que la oleada 6 no los confunda con regresiones de código. | ver §5 |
+
+---
+
+# Revisión de integración — T050 rehecha + fase 6 (US4), feature 041
+
+**Tareas**: T050 (rehecha), T059–T064. **Fecha**: 2026-09-10.
+**Rama**: `feat/041-multi-coach-governance` (parte de `e9c6ef7`).
+**Corrida**: primera de las tres de la noche (21:30 hora de Colombia).
+
+**Método**: sin Docker, sin MySQL y sin stack en ejecución, igual que las fases 3 a 5,
+así que los escenarios de `quickstart.md` no se ejecutaron en vivo. Es una revisión
+estática contra `spec.md`, `contracts/athlete-archive.md` y `contracts/session-coaches.md`,
+con ejecución real de la suite y comparación diferencial contra un *worktree* de `main`
+(`/tmp/base041`, `main` = `86e0208`). El entorno se levantó desde cero en esta corrida:
+`python3.13 -m venv`, `pip install -r requirements.txt` más `pytest`/`pytest-asyncio`
+(que no están en `requirements.txt`; van en el extra `dev` de `pyproject.toml`).
+
+## 0. La brecha bloqueante G14 está cerrada
+
+`./.venv/bin/python -c "from app.main import app"` importa limpio y la suite recolecta.
+El contenido que la revisión de la fase 4 encontró únicamente dentro de `stash@{0}`
+(`AUDIT_FIELD_LABELS`, `record_audit`) está commiteado desde `c596622`/`0644f71`. Nada
+de esta revisión tocó ningún *stash*.
+
+## 1. Tres hallazgos sobre la compuerta de cobertura FR-009
+
+Los tres se refuerzan entre sí y explican por qué US1 se dio por cerrada con más
+confianza de la que los números aguantaban.
+
+### 1.1 La compuerta recorría cero rutas (corregido)
+
+`requirements.txt` fija `fastapi>=0.115` sin techo, así que este entorno instaló
+**FastAPI 0.141.1**, donde `include_router` ya no aplana las rutas dentro de
+`app.routes`: guarda un `_IncludedRouter` perezoso por cada router y las rutas
+efectivas solo se resuelven al atender la petición. Consecuencia: los recorridos de
+`app.routes` veían **6 rutas** en vez de 139 y
+
+- `tests/test_audit_coverage.py::test_registry_completeness_covers_every_mutating_and_mutating_get_route`
+  **pasaba en falso** (el conjunto `required` quedaba vacío), y
+- `tests/test_archived_athlete_absent.py::test_expected_routes_exist_in_app` fallaba.
+
+La aplicación sirve las 139 rutas con normalidad (verificado vía `app.openapi()`); es
+solo introspección. Corregido con `backend/tests/helpers/app_routes.py`, tolerante a
+las dos generaciones de FastAPI, y las dos pruebas pasan a usarlo. **Esto es un riesgo
+vivo de producción**: Render instala sin techo igual que aquí, así que la compuerta se
+volvería inerte en CI en cuanto se reconstruya el entorno.
+
+### 1.2 Quedan 20 de 111 rutas del registro como `Exempt("pending instrumentation")`
+
+T030 ("vacía las exenciones pendientes") estaba marcada `[X]` y no lo está. La prueba
+`test_genuine_exemption_set_matches_section_4_14_exactly` tolera el marcador a
+propósito, así que nada falla. **T030 queda reabierta en `tasks.md`.** Las 20:
+
+```
+DELETE /api/intervals/structures/{structure_id}      POST /api/intervals/templates/{template_id}/attach
+DELETE /api/parent-athletes/{relation_id}            POST /api/parent-athletes
+PATCH  /api/intervals/templates/{template_id}/archive POST /api/parent-athletes/invite
+PATCH  /api/profile/basic                            POST /api/parents/me/athletes/{athlete_id}/newsletters/{newsletter_id}/read
+POST   /api/ai/athletes/{id}/measurements/{rid}/explanation  POST /api/profile/change-email/confirm
+POST   /api/ai/athletes/{athlete_id}/phv-explanation POST /api/profile/change-email/request
+POST   /api/auth/parent-register                     POST /api/profile/change-password
+POST   /api/auth/password-reset/confirm              POST /api/race-analysis/imports/{parse_id}/dry-run
+POST   /api/intervals/structures                     PUT  /api/intervals/structures/{structure_id}
+POST   /api/intervals/templates                      PUT  /api/intervals/templates/{template_id}
+```
+
+Las de `parent-athletes` y `auth/parent-register` son vínculos familiares: son
+exactamente las escrituras que FR-001 quiere atribuidas.
+
+### 1.3 La otra mitad de FR-009 nunca se implementó
+
+`test_audited_route_writes_at_least_one_audit_log_row` hace `pytest.skip()`
+**incondicional** para las 81 rutas que le llegan. Su docstring afirmaba "zero
+`Audited` entries — every route is still `Exempt`", que dejó de ser cierto hace dos
+oleadas. Es decir: la exigencia de `contracts/audit-recording.md` §9 ("toda ruta
+auditada que la suite ejercita escribió al menos una fila") **no tiene red**. T018
+está marcada `[X]`. No se corrigió aquí — sintetizar una petición válida por ruta es
+trabajo de una tarea propia — pero el docstring ya dice la verdad.
+
+## 2. El arnés de sqlite mataba ~61 pruebas que se contaban como "ambientales"
+
+`Base.metadata.create_all(..., tables=[...])` **no deduplica** su lista. Siete archivos
+repetían un nombre que ya venía en `AUDIT_TABLES`, y el módulo entero moría con
+`OperationalError: table privacy_policies already exists`:
+
+| Archivo | Antes | Después |
+|---|---|---|
+| `tests/privacy/test_laps_privacy.py` | 22 fallos | verde |
+| `tests/routers/test_strava_integration.py` | 22 fallos | verde |
+| `tests/routers/test_dashboard_summary.py` | 10 fallos | verde |
+| `tests/privacy/test_strava_privacy.py` | 7 fallos | verde |
+| `tests/test_archived_athlete_absent.py` | 12 errores | verde |
+| `tests/test_audit_athletes.py` | 9 errores | verde |
+| `tests/test_parent_archived_only.py` | 3 errores | verde |
+
+La revisión de la fase 5 los había clasificado como "ruido ambiental, verificado a mano"
+(§5, cubo de 99). **No lo eran.** La trampa queda documentada en
+`tests/helpers/audit_tables.py`: ningún archivo debe repetir un nombre que ya venga en
+`AUDIT_TABLES`.
+
+## 3. Estado de las brechas abiertas de las fases 3 a 5
+
+| Brecha | Estado | Nota |
+|---|---|---|
+| G4 — cancelación de calendario con motivo fijo | **Cerrada** | `cancel_event` recibe `reason_code` y resuelve la etiqueta vía `AUDIT_REASON_LABELS` (T063). |
+| G8 — el envío del boletín se saltaba la fila si `actor is None` | **Cerrada** | Ya commiteada; `actor_kind=system` de respaldo. |
+| G11 — comentarios "all pending" sobre bloques ya instrumentados | **Cerrada** | `audit.py`: §4.8 y §4.10 corregidos con la cuenta real; §4.11 sí sigue pendiente (7 de 8) y ahora lo dice. |
+| G12 — docstrings de `can_view_audit` sin tildes | **Cerrada** | Ya estaba corregido en el árbol commiteado. |
+| G14 — el backend no importaba | **Cerrada** | §0. |
+| G15 — 20 consultas de atletas sin filtrar ni exentar | **Parcial** | Ver §5. |
+| G16 — `POST /api/athletes/{id}/restore` sin entrada en `AUDITED_ROUTES` | **Cerrada** | La compuerta pasa (y ahora sí recorre rutas de verdad, §1.1). |
+| G17 — historial de un atleta archivado daba 404 al coach | **Cerrada** | `verify_athlete_access_allow_archived`; el coach y el admin leen el archivado, la familia no. |
+| G18 — la familia recibía 404 en vez del 403 contratado | **Cerrada** | `athlete-archive.md` §7; la prueba ya exige 403 estricto en vez de aceptar ambos. |
+| G19 — la prueba de preservación de evidencia estaba roja | **Cerrada** | Doble causa: el arnés (§2) y un sembrado que no creaba la cuenta-espejo del atleta. AS2 ya tiene prueba verde. |
+| G20 — assert sin tilde + `ON DELETE RESTRICT` en sqlite | **Cerrada** | El assert busca "desactívalo"; la de RESTRICT queda `xfail` documentada (activar `PRAGMA foreign_keys=ON` rompe el sembrado porque el arnés crea un subconjunto de tablas). |
+| G21 — dos pruebas llamaban al borrado con expectativas viejas | **Cerrada** | La acción registrada es `archive`, no `delete`, y el guard interino de coach lo retiró T040: la prueba ahora exige que el coach archive **y quede atribuido**. |
+| G22 — 22 dobles `SimpleNamespace` sin `deleted_at` | **Cerrada** | Ninguna de las tres familias aparece ya en la corrida. |
+| G23 — flake dependiente del orden en el lanzamiento de IA | **Cerrada** | La prueba fija `ai_enabled`; el 503 venía del interruptor de IA, evaluado antes que el atleta. |
+| F1 — un coach puede enumerar personal vía `GET /api/users` | **Abierta** | `backend/app/routers/users.py:306,354-386`. Fuera del alcance de esta corrida. |
+| F2 — `GET /api/clubs/{id}` expone miembros a cualquier autenticado | **Abierta** | Preexistente a 041. `backend/app/routers/clubs.py:72-104`. |
+| F3 — sin pruebas denegadas para F1, autodesactivación de admin, padre en `users.py` | **Abierta** | `backend/tests/test_staff_admin.py`. |

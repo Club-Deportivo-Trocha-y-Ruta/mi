@@ -38,13 +38,13 @@ function createWrapper() {
 // ---------------------------------------------------------------------------
 
 describe("deleteParentUser", () => {
-  it("envía reason_code como query param al DELETE /api/users/{id}", async () => {
+  it("envía reason_code en el cuerpo JSON del DELETE /api/users/{id}", async () => {
     mockApi.delete.mockResolvedValueOnce({});
 
     await deleteParentUser(7, "parent_family_request");
 
     expect(mockApi.delete).toHaveBeenCalledWith("/api/users/7", {
-      params: { reason_code: "parent_family_request" },
+      data: { reason_code: "parent_family_request" },
     });
   });
 });
@@ -62,7 +62,7 @@ describe("useDeleteParentUser", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockApi.delete).toHaveBeenCalledWith("/api/users/9", {
-      params: { reason_code: "parent_duplicate_account" },
+      data: { reason_code: "parent_duplicate_account" },
     });
   });
 });
