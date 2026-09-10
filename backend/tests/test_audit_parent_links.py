@@ -19,9 +19,9 @@ estas rutas tocan (idioma de ``tests/routers/test_audit_log_api.py`` +
 """
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import date
-from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -44,7 +44,6 @@ from app.models.audit_log import AuditAction, AuditActorKind, AuditLog
 from app.models.club import ClubRole
 from app.models.parent_invite import ParentInvite
 from app.models.user import User, UserRole
-
 from tests.fixtures.race_history_fixtures import (
     create_athlete,
     create_club,
@@ -74,7 +73,7 @@ _TABLES = (
 
 
 @pytest_asyncio.fixture
-async def links_engine() -> AsyncGenerator[AsyncEngine, None]:
+async def links_engine() -> AsyncGenerator[AsyncEngine]:
     """Motor sqlite con solo las tablas que tocan estas rutas."""
     eng = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -99,7 +98,7 @@ async def links_session_factory(
 @pytest_asyncio.fixture
 async def links_scenario(
     links_session_factory: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
     """Club con un coach, un padre (miembro del mismo club) y un atleta."""
     async with links_session_factory() as session:
         await create_club(session, club_id=CLUB_ID, name="Club Ficticio", code="cf-041")

@@ -28,9 +28,9 @@ no usa el fixture ``client`` de ``tests/conftest.py``, que exige la base real.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta, timezone
-from typing import AsyncGenerator
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -57,7 +57,6 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.privacy_policy import PrivacyPolicy
 from app.models.user import User, UserRole
 from app.services.auth import hash_password
-
 from tests.fixtures.race_history_fixtures import (
     create_athlete,
     create_club,
@@ -124,7 +123,7 @@ def _assert_no_secrets(row: AuditLog) -> None:
 
 
 @pytest_asyncio.fixture
-async def auth_engine() -> AsyncGenerator[AsyncEngine, None]:
+async def auth_engine() -> AsyncGenerator[AsyncEngine]:
     eng = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         future=True,
@@ -148,9 +147,9 @@ async def auth_session_factory(
 @pytest_asyncio.fixture
 async def auth_scenario(
     auth_session_factory: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
     """Club con coach, un padre con contraseña conocida, atleta e invitación."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     async with auth_session_factory() as session:
         await create_club(session, club_id=CLUB_ID, name="Club Ficticio", code="cf-041b")
         await create_user(

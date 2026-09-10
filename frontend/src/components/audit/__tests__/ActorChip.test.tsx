@@ -6,7 +6,7 @@
  * de forma determinista los tres estados del directorio: cargando,
  * resuelto, y "no aparece".
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 import { UserRole } from "@/types/enums";
@@ -36,6 +36,10 @@ function makeStaffUser(overrides?: Partial<UserOut>): UserOut {
 }
 
 describe("ActorChip", () => {
+  beforeEach(() => {
+    useStaffMock.mockClear();
+  });
+
   it("usa el nombre ya resuelto cuando llega displayName", () => {
     useStaffMock.mockReturnValue({ data: undefined, isLoading: false });
     render(<ActorChip userId={7} displayName="Ana Coach" />);

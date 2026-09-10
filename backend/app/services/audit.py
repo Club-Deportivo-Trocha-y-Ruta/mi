@@ -729,12 +729,18 @@ async def record_audit(
 # Wave 1 (T017/T018) started every one of the 110 keys as ``Exempt``. T030
 # flips each entry to ``Audited(...)`` as soon as its write site actually
 # calls ``record_audit`` — the eleven genuine §4.14 exemptions keep their
-# real, reviewed reason; a handful of routes that are not yet instrumented
-# (auth/profile self-service, parent-athlete linking, the two AI-explanation
-# POSTs, the import dry-run, most of ``/api/intervals`` and the parent
-# newsletter "mark read") still carry the "pending instrumentation"
-# placeholder — that is a true statement about today's code, not a wave-1
-# leftover, and each entry is a real TODO for whoever instruments that site.
+# real, reviewed reason.
+#
+# Este párrafo enumera las rutas que siguen con el marcador "pending
+# instrumentation". **Actualízalo cada vez que voltees una entrada**: durante
+# dos oleadas afirmó que ninguna ruta estaba instrumentada mucho después de
+# dejar de ser cierto, y eso fue justo lo que dejó pasar T030 como cerrada
+# sin estarlo. Hoy quedan diez, todas de auto-servicio de la persona o de
+# vínculos familiares: `auth/parent-register`, `auth/password-reset/confirm`,
+# `profile/basic`, `profile/change-password`, `profile/change-email/confirm`,
+# las tres de `parent-athletes`, el "marcar leído" del boletín de familia y
+# el dry-run de importación. Cada una es un TODO real de quien instrumente
+# ese sitio.
 # ---------------------------------------------------------------------------
 
 
@@ -846,11 +852,13 @@ _ATHLETES: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/athletes/{athlete_id}/anthropometry"): Audited(
         frozenset({AuditEntityType.anthropometric_record})
     ),
-    ("POST", "/api/ai/athletes/{athlete_id}/phv-explanation"): Exempt(_PENDING),
+    ("POST", "/api/ai/athletes/{athlete_id}/phv-explanation"): Audited(
+        frozenset({AuditEntityType.athlete_ai_explanation})
+    ),
     (
         "POST",
         "/api/ai/athletes/{athlete_id}/measurements/{record_id}/explanation",
-    ): Exempt(_PENDING),
+    ): Audited(frozenset({AuditEntityType.athlete_ai_explanation})),
     ("POST", "/api/athletes/{athlete_id}/report/email"): Audited(frozenset({AuditEntityType.athlete})),
 }
 
@@ -1090,19 +1098,33 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
     ),
 }
 
-#: §4.11 Interval training — 8 keys, 7 aún pendientes de instrumentar (T030).
+#: §4.11 Interval training — 8 keys, las 8 instrumentadas (T030).
 _INTERVALS: dict[tuple[str, str], AuditPolicy] = {
-    ("POST", "/api/intervals/structures"): Exempt(_PENDING),
-    ("PUT", "/api/intervals/structures/{structure_id}"): Exempt(_PENDING),
-    ("DELETE", "/api/intervals/structures/{structure_id}"): Exempt(_PENDING),
+    ("POST", "/api/intervals/structures"): Audited(
+        frozenset({AuditEntityType.interval_structure})
+    ),
+    ("PUT", "/api/intervals/structures/{structure_id}"): Audited(
+        frozenset({AuditEntityType.interval_structure})
+    ),
+    ("DELETE", "/api/intervals/structures/{structure_id}"): Audited(
+        frozenset({AuditEntityType.interval_structure})
+    ),
     (
         "POST",
         "/api/intervals/structures/{structure_id}/recalculate",
     ): Audited(frozenset({AuditEntityType.interval_structure})),
-    ("POST", "/api/intervals/templates"): Exempt(_PENDING),
-    ("PUT", "/api/intervals/templates/{template_id}"): Exempt(_PENDING),
-    ("PATCH", "/api/intervals/templates/{template_id}/archive"): Exempt(_PENDING),
-    ("POST", "/api/intervals/templates/{template_id}/attach"): Exempt(_PENDING),
+    ("POST", "/api/intervals/templates"): Audited(
+        frozenset({AuditEntityType.interval_template})
+    ),
+    ("PUT", "/api/intervals/templates/{template_id}"): Audited(
+        frozenset({AuditEntityType.interval_template})
+    ),
+    ("PATCH", "/api/intervals/templates/{template_id}/archive"): Audited(
+        frozenset({AuditEntityType.interval_template})
+    ),
+    ("POST", "/api/intervals/templates/{template_id}/attach"): Audited(
+        frozenset({AuditEntityType.interval_template})
+    ),
 }
 
 #: §4.12 Strava, activities and webhooks — 6 keys, 2 genuinely exempt,
