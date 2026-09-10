@@ -272,3 +272,64 @@ class TestJsonSerializable:
 
         out = _call(dataset)
         json.dumps(out)  # no debe lanzar (sin numpy types)
+
+
+@pytest.fixture()
+def dataset_minus_laps():
+    """1 válida: atleta FINISHED 2º, un tercero MINUS_LAPS y otro FINISHED."""
+    series = [_series(1, kind=RaceSeriesKind.cup, name="Copa Valle")]
+    events = [_event(1, 1, 1, date(2026, 2, 1))]
+    categories = [_category()]
+
+    results = [
+        _result(1, 1, ATHLETE_COMPETITOR_ID, 2, 3_120_000, status=ResultStatus.FINISHED),
+        _result(2, 1, 2, 1, 3_000_000, status=ResultStatus.FINISHED),
+        _result(3, 1, 3, 3, 3_600_000, status=ResultStatus.MINUS_LAPS),
+    ]
+    return {"results": results, "events": events, "series": series, "categories": categories}
+
+
+@pytest.fixture()
+def dataset_athlete_minus_laps():
+    """1 válida: el propio atleta termina con MINUS_LAPS (posición 3 de 3)."""
+    series = [_series(1, kind=RaceSeriesKind.cup, name="Copa Valle")]
+    events = [_event(1, 1, 1, date(2026, 2, 1))]
+    categories = [_category()]
+
+    results = [
+        _result(1, 1, 2, 1, 3_000_000, status=ResultStatus.FINISHED),
+        _result(2, 1, 3, 2, 3_100_000, status=ResultStatus.FINISHED),
+        _result(3, 1, ATHLETE_COMPETITOR_ID, 3, 3_600_000, status=ResultStatus.MINUS_LAPS),
+    ]
+    return {"results": results, "events": events, "series": series, "categories": categories}
+
+
+class TestMinusLapsCountsAsFieldMember:
+    def test_third_party_minus_laps_counts_in_field_size(self, dataset_minus_laps):
+        out = _call(dataset_minus_laps)
+        # 3 corredores terminaron (2 FINISHED + 1 MINUS_LAPS) -> pelotón de 3, no 2.
+        assert out[1]["field_size"] == 3
+        assert out[1]["position"] == 2
+        # n=3, pos=2 -> 100*(1-(2-1)/(3-1)) = 50.0
+        assert out[1]["percentile"] == pytest.approx(50.0, abs=0.05)
+
+    def test_third_party_minus_laps_time_excluded_from_gap_and_median(self, dataset_minus_laps):
+        out = _call(dataset_minus_laps)
+        entry = out[1]
+        # gap/mediana solo entre FINISHED (atleta 3_120_000 vs líder 3_000_000),
+        # el tiempo 3_600_000 del MINUS_LAPS nunca entra en la comparación.
+        assert entry["gap_to_p1_ms"] == 120_000
+        assert entry["gap_pct"] == pytest.approx(4.0, abs=0.01)
+        assert entry["category_median_time_ms"] == 3_060_000
+
+    def test_athlete_with_minus_laps_has_position_but_no_time_fields(self, dataset_athlete_minus_laps):
+        out = _call(dataset_athlete_minus_laps)
+        entry = out[1]
+        assert entry["field_size"] == 3
+        assert entry["position"] == 3
+        assert entry["percentile"] is not None
+        # El tiempo propio no es comparable (recorrió menos vueltas) -> None.
+        assert entry["race_time_ms"] is None
+        assert entry["gap_to_p1_ms"] is None
+        assert entry["gap_pct"] is None
+        assert entry["gap_to_median_pct"] is None

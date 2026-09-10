@@ -12,8 +12,12 @@ sobre listas de objetos ORM ya en memoria — sigue el patrón de
 
 Salida: ``dict[int, dict]`` keyed por ``event_id`` — una entrada por cada
 válida de la temporada en la que ``competitor_id`` tiene un ``RaceResult``
-(cualquier estado; los campos derivados de tiempo/posición quedan en
-``None`` cuando el estado no es ``finished``). Cada valor es un dict
+(cualquier estado). ``field_size``/``position``/``percentile`` cuentan a
+todo el que terminó (``FINISHED`` o ``MINUS_LAPS``); los campos derivados
+de TIEMPO (``race_time_ms``, ``gap_to_p1_ms``, ``gap_pct``,
+``gap_to_p3_ms``, ``gap_to_median_pct``) quedan en ``None`` salvo que el
+estado sea ``FINISHED`` estricto, porque el tiempo de un ``MINUS_LAPS`` no
+es comparable (recorrió menos vueltas). Cada valor es un dict
 JSON-serializable con las claves de ``FieldMetrics`` del data-model,
 redondeadas a 1 decimal, sin exponer ids de otros corredores.
 
@@ -34,6 +38,14 @@ from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries
 
 __all__ = ["compute_field_metrics"]
+
+# ``MINUS_LAPS`` significa que el corredor terminó la carrera (con vueltas de
+# menos), no que abandonó — cuenta para tamaño de pelotón, posición y
+# percentil igual que ``FINISHED``. Los tiempos (gap, mediana, histórico) NO
+# se comparan entre sí porque un ``MINUS_LAPS`` recorrió menos distancia que
+# quien completó todas las vueltas: esas comparaciones siguen restringidas a
+# ``FINISHED`` estricto más abajo.
+_FIELD_MEMBER_STATUSES = (ResultStatus.FINISHED, ResultStatus.MINUS_LAPS)
 
 
 def _round1(value: Optional[float]) -> Optional[float]:
@@ -82,24 +94,29 @@ def compute_field_metrics(
     if not season_event_ids:
         return {}
 
-    # --- Agrupa resultados FINISHED de la temporada por (event_id, category_id) ---
-    finished_in_season = [
+    # --- Agrupa quienes terminaron (FINISHED o MINUS_LAPS) por (event_id, category_id) ---
+    # Define el pelotón real: tamaño, posición y percentil cuentan a todo el
+    # que cruzó meta, aunque haya perdido vueltas.
+    completed_in_season = [
         r
         for r in live_results
-        if r.event_id in season_event_ids and r.status == ResultStatus.FINISHED
+        if r.event_id in season_event_ids and r.status in _FIELD_MEMBER_STATUSES
     ]
     by_event_category: dict[tuple[int, int], list[RaceResult]] = defaultdict(list)
-    for r in finished_in_season:
+    for r in completed_in_season:
         by_event_category[(r.event_id, r.category_id)].append(r)
 
     # --- gap_pct por resultado, relativo al ganador (position==1) de su (evento, categoría) ---
+    # Solo entre FINISHED estricto: el tiempo de un MINUS_LAPS no es comparable
+    # (recorrió menos vueltas), así que nunca entra en un gap ni en la mediana.
     gap_pct_by_result: dict[int, float] = {}
     for (_eid, _cid), rows in by_event_category.items():
-        winner = next((r for r in rows if r.position == 1), None)
+        timed_rows = [x for x in rows if x.status == ResultStatus.FINISHED]
+        winner = next((r for r in timed_rows if r.position == 1), None)
         if winner is None or winner.race_time_ms in (None, 0):
             continue
         wt = winner.race_time_ms
-        for r in rows:
+        for r in timed_rows:
             if r.race_time_ms is not None:
                 gap_pct_by_result[r.id] = 100.0 * (r.race_time_ms - wt) / wt
 
@@ -133,35 +150,42 @@ def compute_field_metrics(
         s = series_by_id.get(event.series_id)
         rows = by_event_category.get((r.event_id, r.category_id), [])
         n = len(rows)
+        timed_rows = [x for x in rows if x.status == ResultStatus.FINISHED]
 
+        is_field_member = r.status in _FIELD_MEMBER_STATUSES
         is_finished = r.status == ResultStatus.FINISHED
-        position = r.position if is_finished else None
+        position = r.position if is_field_member else None
 
         percentile: Optional[float] = None
         if position is not None:
             percentile = 100.0 if n <= 1 else 100.0 * (1 - (position - 1) / (n - 1))
             percentile = _round1(percentile)
 
-        winner_row = next((x for x in rows if x.position == 1), None)
-        p3_row = next((x for x in rows if x.position == 3), None)
+        winner_row = next((x for x in timed_rows if x.position == 1), None)
+        p3_row = next((x for x in timed_rows if x.position == 3), None)
 
         gap_to_p1_ms: Optional[int] = None
         gap_pct: Optional[float] = None
-        if winner_row is not None and r.race_time_ms is not None and winner_row.race_time_ms is not None:
+        if (
+            is_finished
+            and winner_row is not None
+            and r.race_time_ms is not None
+            and winner_row.race_time_ms is not None
+        ):
             gap_to_p1_ms = r.race_time_ms - winner_row.race_time_ms
             gap_pct = _round1(gap_pct_by_result.get(r.id))
 
         gap_to_p3_ms: Optional[int] = None
-        if p3_row is not None and r.race_time_ms is not None and p3_row.race_time_ms is not None:
+        if is_finished and p3_row is not None and r.race_time_ms is not None and p3_row.race_time_ms is not None:
             gap_to_p3_ms = r.race_time_ms - p3_row.race_time_ms
 
-        times = [x.race_time_ms for x in rows if x.race_time_ms is not None]
+        times = [x.race_time_ms for x in timed_rows if x.race_time_ms is not None]
         category_median_time_ms: Optional[int] = None
         gap_to_median_pct: Optional[float] = None
         if times:
             med = median(times)
             category_median_time_ms = int(round(med))
-            if r.race_time_ms is not None and med:
+            if is_finished and r.race_time_ms is not None and med:
                 gap_to_median_pct = _round1(100.0 * (r.race_time_ms - med) / med)
 
         # --- prior_index / expected_position / delta / field_strength ---

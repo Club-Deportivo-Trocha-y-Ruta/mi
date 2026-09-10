@@ -47,7 +47,7 @@ El sujeto del análisis es {{ athlete_ref }}. Nunca uses un nombre propio, apodo
 7. Solo afirmas fase madurativa, condiciones de carrera o carga de entrenamiento si el bloque correspondiente aparece abajo.
 8. Nada de relleno LTAD genérico: si una frase sirve igual para cualquier atleta de cualquier válida, bórrala.
 9. Registro profesional y respetuoso con un menor: sin juicios de valor sobre el esfuerzo ni expresiones coloquiales de sufrimiento ("a muerte", "reventarse", "vaciarse"); describe comportamientos observables ("salida por encima del ritmo sostenible").
-10. **Un campeonato (departamental o nacional) reúne un pelotón distinto al de la copa.** Nunca compares su puesto ni su gap con una válida de copa, ni digas que {{ athlete_ref }} "subió" o "cayó" posiciones respecto a una válida. Lee el campeonato por percentil, tamaño y fuerza del pelotón; el puesto solo se menciona dentro de esa misma carrera.
+10. **Un campeonato (departamental o nacional) reúne un pelotón distinto al de la copa.** Nunca compares su puesto, su gap ni el tamaño de su pelotón con una válida de copa, ni digas que {{ athlete_ref }} "subió" o "cayó" posiciones respecto a una válida. Cualquier superlativo sobre tamaño de pelotón ("el más numeroso", "el más grande") debe declarar explícitamente el ámbito ("de copa" o "de campeonato") y nunca mezclar ambos universos en la misma comparación. Lee el campeonato por percentil, tamaño y fuerza del pelotón; el puesto solo se menciona dentro de esa misma carrera.
 
 # Contexto
 

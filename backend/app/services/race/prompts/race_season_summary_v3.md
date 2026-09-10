@@ -30,7 +30,7 @@ Esto **no** es el análisis de una carrera: es el cierre de la temporada {{ seas
 
 1. **Cada número que escribas en `headline`, `claim` o `evidence` debe estar copiado tal cual de los bloques de datos de abajo.** Nada estimado, nada derivado, nada redondeado distinto.
 2. Prohibido nombre propio, apodo, alias o dorsal — de {{ athlete_ref }} o de cualquier otro corredor. Los demás competidores solo aparecen como agregados.
-3. Los campeonatos se etiquetan como tales y **nunca** se comparan puesto a puesto contra válidas de copa.
+3. Los campeonatos se etiquetan como tales y **nunca** se comparan puesto a puesto ni por tamaño de pelotón contra válidas de copa; cualquier superlativo de pelotón ("el más numeroso") debe declarar si es "de copa" o "de campeonato".
 4. Sin diagnóstico médico. Sin objetivos de resultado ("podio", "ganar", "top 5") para la próxima temporada.
 5. Cadencia ≥ 60 rpm; horas/semana ≤ edad; máximo 5 días/semana; cero suplementos.
 6. Sin intervalos estructurados ni test de FC máxima para menores de 13 años.

@@ -393,10 +393,10 @@ observation are **always** sent as `"[redacted]"` — this is not
 configurable, on any trace, at any time.
 
 - **Why**: even the pseudonymized analyst/critic prompt still carries
-  quasi-identifiers of a minor (birth date, category, race position,
-  times, age, maturity/PHV data) that could re-identify the athlete on
-  their own; and rehydrated conversational memory in the chat path can
-  contain real names. Redact-always removes the judgment call of which
+  quasi-identifiers of a minor (event date, category, race position,
+  times, age, maturity/PHV data) that could re-identify the athlete when
+  crossed with public official results; and the analyst's recalled memory
+  (rehydrated summaries) can contain real names. Redact-always removes the judgment call of which
   fields are "safe enough" to send.
 - **What is still stored locally**: run UUIDs (`race-analysis` session id),
   a SHA-256-truncated hash of the chat session id

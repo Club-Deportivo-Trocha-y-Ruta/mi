@@ -913,7 +913,7 @@ Additional:
 
 - FastAPI middleware on endpoint `/api/race-analysis/runs` logs in structured log: `{run_id, anonymized=True, mapping_count=N}`.
 - Logs NEVER include the mapping or real names (only counts).
-- Langfuse (optional, local-only, see `runbook-ops.md` §8): content is always redacted — there is no capture toggle. Even pseudonymized prompts still carry quasi-identifiers of a minor (birth date, category, times, maturity data), so Langfuse only ever receives token counts, model, latency and trace/session structure, never prompt or response text. Runs on the developer's own machine, never deployed — never externalizes PII. The deterministic pre-LLM anonymization remains the primary defense regardless.
+- Langfuse (optional, local-only, see `runbook-ops.md` §8): content is always redacted — there is no capture toggle. Even pseudonymized prompts still carry quasi-identifiers of a minor (event date, category, times, maturity data), so Langfuse only ever receives token counts, model, latency and trace/session structure, never prompt or response text. Runs on the developer's own machine, never deployed — never externalizes PII. The deterministic pre-LLM anonymization remains the primary defense regardless.
 
 ---
 

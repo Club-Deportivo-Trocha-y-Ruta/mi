@@ -8,10 +8,12 @@ prueba son sintéticos — ningún dato real de menores.
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
 import logging
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, TypedDict
 
 import pytest
@@ -38,6 +40,11 @@ class _FakeChatModel(GenericFakeChatModel):
         return self
 
 
+class _FailingChatModel(_FakeChatModel):
+    def _generate(self, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError(f"proveedor rechazó el prompt de {NAME_SENTINEL}")
+
+
 def _llm(*contents: str) -> _FakeChatModel:
     return _FakeChatModel(
         messages=iter(
@@ -51,40 +58,56 @@ def _llm(*contents: str) -> _FakeChatModel:
 
 
 @pytest.fixture
-def exporter(monkeypatch):
+def langfuse_otel(monkeypatch):
     from langfuse._client.resource_manager import LangfuseResourceManager
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-    span_exporter = InMemorySpanExporter()
+    otel = SimpleNamespace(exporter=InMemorySpanExporter(), tracer_provider=TracerProvider())
     create_client = observability._create_client
     monkeypatch.setattr(settings, "langfuse_enabled", True)
     monkeypatch.setattr(settings, "langfuse_public_key", "pk-lf-test")
     monkeypatch.setattr(settings, "langfuse_secret_key", "sk-lf-test")
     monkeypatch.setattr(settings, "langfuse_base_url", "http://127.0.0.1:9")
-    monkeypatch.setattr(settings, "langfuse_capture_content", False)
     monkeypatch.setattr(observability, "_client", None)
     monkeypatch.setattr(
         observability,
         "_create_client",
-        lambda: create_client(tracer_provider=TracerProvider(), span_exporter=span_exporter),
+        lambda: create_client(tracer_provider=otel.tracer_provider, span_exporter=otel.exporter),
     )
     LangfuseResourceManager.reset()
-    yield span_exporter
+    yield otel
     LangfuseResourceManager.reset()
 
 
-def _finished_spans(span_exporter) -> list[Any]:
+def _finished_spans(otel) -> list[Any]:
     observability._client.flush()
-    return list(span_exporter.get_finished_spans())
+    return list(otel.exporter.get_finished_spans())
 
 
 def _generations(spans: list[Any]) -> list[Any]:
     return [s for s in spans if s.attributes.get("langfuse.observation.type") == "generation"]
 
 
-def _all_attribute_text(spans: list[Any]) -> str:
-    return " ".join(f"{s.status.description} {dict(s.attributes)}" for s in spans)
+def _exported_text(spans: list[Any]) -> str:
+    parts = []
+    for s in spans:
+        parts.append(f"{s.name} {s.status.description} {dict(s.attributes)}")
+        parts.extend(f"{e.name} {dict(e.attributes or {})}" for e in s.events)
+    return " ".join(parts)
+
+
+def _assert_redacted_with_usage(generation: Any) -> None:
+    attrs = generation.attributes
+    assert attrs["langfuse.observation.input"] == REDACTED
+    assert attrs["langfuse.observation.output"] == REDACTED
+    assert attrs["langfuse.observation.metadata"] == REDACTED
+    assert attrs["langfuse.observation.model.name"] == "fake-race-model"
+    assert json.loads(attrs["langfuse.observation.usage_details"]) == {
+        "input": 11,
+        "output": 7,
+        "total": 18,
+    }
 
 
 class _State(TypedDict, total=False):
@@ -209,11 +232,10 @@ def test_default_test_lane_forces_tracing_off():
     assert Settings().langfuse_enabled is False
 
 
-def test_mask_redacts_everything_unless_generation_content_allowed(monkeypatch):
-    monkeypatch.setattr(settings, "langfuse_capture_content", True)
-
+def test_mask_always_redacts_content():
     assert observability._mask(data=None) is None
     assert observability._mask(data={"prompt": NAME_SENTINEL}) == REDACTED
+    assert observability._mask(data=NAME_SENTINEL) == REDACTED
 
 
 # ---------------------------------------------------------------------------
@@ -221,70 +243,94 @@ def test_mask_redacts_everything_unless_generation_content_allowed(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-async def test_one_generation_per_call_with_usage_and_model_redacted_by_default(exporter):
-    llm = _llm("Atleta A mejoró su vuelta")
+async def test_one_generation_per_call_with_usage_and_model_but_redacted(langfuse_otel):
+    llm = _llm(f"{NAME_SENTINEL} mejoró su vuelta")
 
     with observability.llm_tracing(
         trace_name="race-eval-judge", session_id="case_001", tags=["judge-v2"]
     ) as tracing:
-        result = await call_llm(llm, "prompt de prueba de Atleta A", config=tracing)
+        result = await call_llm(llm, f"prompt de prueba de {NAME_SENTINEL}", config=tracing)
 
     assert (result.tokens_in, result.tokens_out) == (11, 7)
-    (generation,) = _generations(_finished_spans(exporter))
-    attrs = generation.attributes
-    assert attrs["langfuse.observation.model.name"] == "fake-race-model"
-    assert json.loads(attrs["langfuse.observation.usage_details"]) == {
-        "input": 11,
-        "output": 7,
-        "total": 18,
-    }
-    assert attrs["langfuse.observation.input"] == REDACTED
-    assert attrs["langfuse.observation.output"] == REDACTED
-    assert attrs["langfuse.observation.metadata"] == REDACTED
-    assert attrs["langfuse.trace.name"] == "race-eval-judge"
-    assert attrs["session.id"] == "case_001"
+    spans = _finished_spans(langfuse_otel)
+    (generation,) = _generations(spans)
+    _assert_redacted_with_usage(generation)
+    assert generation.attributes["langfuse.trace.name"] == "race-eval-judge"
+    assert generation.attributes["session.id"] == "case_001"
+    assert NAME_SENTINEL not in _exported_text(spans)
 
 
-async def test_graph_run_traces_nested_llm_once_under_pinned_trace_across_resume(exporter):
+async def test_graph_run_traces_nested_llm_once_under_pinned_trace_across_resume(langfuse_otel):
     run_id = "5b0c7a3e-0000-4000-8000-000000000001"
 
-    errors = await _start_and_resume(run_id, _llm("salida seudonimizada"))
+    errors = await _start_and_resume(run_id, _llm(f"salida sobre {NAME_SENTINEL}"))
 
     assert errors == [None, None]
-    spans = _finished_spans(exporter)
-    assert len(_generations(spans)) == 1
+    spans = _finished_spans(langfuse_otel)
+    (generation,) = _generations(spans)
+    _assert_redacted_with_usage(generation)
     expected_trace_id = observability.trace_id_for(run_id)
     assert {format(s.context.trace_id, "032x") for s in spans} == {expected_trace_id}
     tags = {tag for s in spans for tag in s.attributes.get("langfuse.trace.tags", ())}
     assert {"prompt:race_analyst_v3", "kind:valida", "hitl-resume"} <= tags
     assert {s.attributes.get("session.id") for s in spans} == {run_id}
-    text = _all_attribute_text(spans)
+    text = _exported_text(spans)
     assert NAME_SENTINEL not in text
     assert HITL_SENTINEL not in text
 
 
-async def test_capture_content_shows_pseudonymized_generation_but_never_graph_state(
-    exporter, monkeypatch
-):
-    monkeypatch.setattr(settings, "langfuse_capture_content", True)
+async def test_llm_error_exports_only_exception_type(langfuse_otel):
+    llm = _FailingChatModel(messages=iter([]))
 
-    await _start_and_resume("5b0c7a3e-0000-4000-8000-000000000002", _llm("salida Atleta A"))
+    with pytest.raises(RuntimeError):
+        with observability.llm_tracing(trace_name="race-eval-judge", session_id="case_003") as tracing:
+            await call_llm(llm, "prompt", config=tracing)
 
-    spans = _finished_spans(exporter)
+    spans = _finished_spans(langfuse_otel)
     (generation,) = _generations(spans)
-    assert "Atleta A" in generation.attributes["langfuse.observation.input"]
-    assert "Atleta A" in generation.attributes["langfuse.observation.output"]
-    chains = [s for s in spans if s.attributes.get("langfuse.observation.type") == "chain"]
-    assert chains
-    assert all(s.attributes.get("langfuse.observation.input") in (None, REDACTED) for s in chains)
-    text = _all_attribute_text(spans)
-    assert NAME_SENTINEL not in text
-    assert HITL_SENTINEL not in text
+    assert generation.attributes["langfuse.observation.status_message"] == "RuntimeError"
+    assert NAME_SENTINEL not in _exported_text(spans)
 
 
-async def test_chat_trace_stays_redacted_even_with_capture_content(exporter, monkeypatch):
-    monkeypatch.setattr(settings, "langfuse_capture_content", True)
+async def test_foreign_otel_spans_are_never_exported(langfuse_otel):
+    from langfuse.span_filter import is_default_export_span
 
+    with observability.llm_tracing(trace_name="race-chat", session_id="s-foreign") as tracing:
+        assert tracing
+        with langfuse_otel.tracer_provider.get_tracer("mcp").start_as_current_span(
+            "tools/call"
+        ) as foreign:
+            foreign.set_attribute("gen_ai.operation.name", "execute_tool")
+            foreign.set_attribute("gen_ai.tool.call.result", NAME_SENTINEL)
+            foreign.record_exception(RuntimeError(NAME_SENTINEL))
+
+    # Sin el filtro del cliente, el filtro default de Langfuse sí lo exportaría.
+    assert is_default_export_span(foreign)
+    spans = _finished_spans(langfuse_otel)
+    assert all(s.name != "tools/call" for s in spans)
+    assert NAME_SENTINEL not in _exported_text(spans)
+
+
+async def test_concurrent_scopes_each_redacted_with_own_usage(langfuse_otel):
+    async def judge(case_id: str) -> None:
+        with observability.llm_tracing(trace_name="race-eval-judge", session_id=case_id) as tracing:
+            await call_llm(_llm(f"veredicto {NAME_SENTINEL}"), "prompt", config=tracing)
+
+    await asyncio.gather(judge("case_a"), judge("case_b"))
+
+    spans = _finished_spans(langfuse_otel)
+    generations = _generations(spans)
+    assert len(generations) == 2
+    for generation in generations:
+        _assert_redacted_with_usage(generation)
+    sessions_by_trace = {
+        format(g.context.trace_id, "032x"): g.attributes["session.id"] for g in generations
+    }
+    assert sorted(sessions_by_trace.values()) == ["case_a", "case_b"]
+    assert NAME_SENTINEL not in _exported_text(spans)
+
+
+async def test_chat_trace_is_redacted_and_uses_anonymous_session(langfuse_otel):
     @tool
     def stub_tool() -> str:
         """Herramienta de prueba."""
@@ -298,19 +344,17 @@ async def test_chat_trace_stays_redacted_even_with_capture_content(exporter, mon
     response = await agent.chat(session_id="chat-session-1", query=f"¿Cómo va {NAME_SENTINEL}?")
 
     assert NAME_SENTINEL in response.answer
-    spans = _finished_spans(exporter)
+    spans = _finished_spans(langfuse_otel)
     (generation,) = _generations(spans)
+    _assert_redacted_with_usage(generation)
     assert generation.attributes["langfuse.trace.name"] == "race-chat"
     assert generation.attributes["session.id"] == observability.anonymous_session_id(
         "chat-session-1"
     )
-    assert generation.attributes["langfuse.observation.input"] == REDACTED
-    assert generation.attributes["langfuse.observation.output"] == REDACTED
-    assert json.loads(generation.attributes["langfuse.observation.usage_details"])["input"] == 11
-    assert NAME_SENTINEL not in _all_attribute_text(spans)
+    assert NAME_SENTINEL not in _exported_text(spans)
 
 
-async def test_handler_creation_failure_degrades_to_untraced_run(exporter, monkeypatch):
+async def test_handler_creation_failure_degrades_to_untraced_run(langfuse_otel, monkeypatch):
     def broken_handler_class():
         raise RuntimeError("handler roto")
 
@@ -322,4 +366,4 @@ async def test_handler_creation_failure_degrades_to_untraced_run(exporter, monke
         result = await call_llm(_llm("ok"), "prompt", config=tracing)
 
     assert result.text == "ok"
-    assert _generations(_finished_spans(exporter)) == []
+    assert _generations(_finished_spans(langfuse_otel)) == []
