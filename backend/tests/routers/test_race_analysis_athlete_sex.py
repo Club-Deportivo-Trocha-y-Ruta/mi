@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import asyncio
 
+from tests.routers.conftest import ATHLETE_CLUB_ID
+
 import pytest
 
 pytestmark = pytest.mark.asyncio
@@ -71,6 +73,14 @@ def _patch_athlete_select(fake_db, athlete_row):
         if sql.lstrip().startswith("SELECT athletes.deleted_at"):
             deleted_at = athlete_row.deleted_at if athlete_row is not None else None
             return _ScalarValueResult(deleted_at)
+        # ``select(Athlete.club_id)`` — lo consultan
+        # ``_ensure_athlete_club_access`` (hallazgo H1 de T080, corre antes que
+        # el filtro de archivado) y ``_resolve_athlete_club``. Mismo criterio
+        # que arriba: se distingue por el inicio del SELECT, porque
+        # ``select(Athlete)`` también lleva "athletes.club_id" entre sus
+        # columnas y el ramal genérico se lo tragaría.
+        if sql.lstrip().startswith("SELECT athletes.club_id"):
+            return _ScalarValueResult(ATHLETE_CLUB_ID)
         if "FROM athletes" in sql:
             return athlete_row if athlete_row is not None else _EmptyAthleteResult()
         return await original_execute(stmt, params)

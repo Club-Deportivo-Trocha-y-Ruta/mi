@@ -69,16 +69,50 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
+#: Espacios de PK que usan las llamadas a `_seed_base` de este módulo. El
+#: `user_id` de la siembra es un truco para no chocar claves primarias entre
+#: pruebas, **no** una identidad de club distinta: es siempre el mismo
+#: entrenador actuando. Desde el hallazgo H1 (T080) el listado y el
+#: lanzamiento se acotan por club, así que el actor autenticado tiene que ser
+#: miembro de todos esos clubes o su propia siembra le queda invisible.
+_SEEDED_USER_NAMESPACES = (10, 11, 12, 13, 14, 20)
+_SEEDED_CLUB_IDS = tuple(uid * 1000 + 1 for uid in _SEEDED_USER_NAMESPACES)
+
+
+def _make_user(
+    role: UserRole,
+    user_id: int = 10,
+    club_ids: tuple[int, ...] | None = None,
+) -> SimpleNamespace:
+    """Doble del actor autenticado.
+
+    Desde el hallazgo H1 de la revisión de seguridad de US6 (T080), el
+    lanzamiento y el listado de corridas de un evento se acotan por club:
+    `resolve_group_members` filtra `athletes.club_id IN (...)` con los clubes
+    de quien pregunta. Un doble sin membresías deja el evento sin miembros y
+    la ruta responde "La competencia no tiene resultados importados".
+
+    Por defecto se usa el club que siembra `_seed_base`, que es
+    `user_id * 1000 + 1`. Pasar un `club_ids` distinto es la manera de
+    construir el caso "entrenador de otro club".
+    """
+    from app.models.club import ClubRole
+
+    if club_ids is None:
+        club_ids = (user_id * 1000 + 1,)
     return SimpleNamespace(
         id=user_id,
         first_name="Test",
         last_name="User",
+        display_name="Test User",
         email=f"{role.value}@test.local",
         role=role,
         can_login=True,
         is_active=True,
-        club_memberships=[],
+        club_memberships=[
+            SimpleNamespace(club_id=cid, role_in_club=ClubRole.coach)
+            for cid in club_ids
+        ],
     )
 
 
@@ -395,7 +429,9 @@ async def http_client(session_factory):
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[_coach_or_admin] = lambda: _make_user(UserRole.coach, 10)
+    app.dependency_overrides[_coach_or_admin] = lambda: _make_user(
+        UserRole.coach, 10, club_ids=_SEEDED_CLUB_IDS
+    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
