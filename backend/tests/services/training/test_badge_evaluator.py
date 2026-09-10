@@ -42,13 +42,14 @@ def make_scalars_result(items: list) -> Any:
     return result
 
 
-def make_athlete(id_=1, club_id=10) -> Any:
+def make_athlete(id_=1, club_id=10, deleted_at=None) -> Any:
     return SimpleNamespace(
         id=id_,
         club_id=club_id,
         first_name="Atleta",
         last_name="Test",
         birth_date=date(2012, 3, 15),
+        deleted_at=deleted_at,
     )
 
 

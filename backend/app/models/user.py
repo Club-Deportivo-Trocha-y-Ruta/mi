@@ -71,3 +71,14 @@ class User(ActorTimestampMixin, Base):
         foreign_keys="Athlete.user_id",
         uselist=False,
     )
+
+    @property
+    def display_name(self) -> str:
+        """Nombre para mostrar en superficies de atribución (FR-013).
+
+        Reutilizado por ``created_by_display_name`` en ``UserOut``
+        (contracts/staff-admin.md §1.6) y por cualquier otro autor de
+        auditoría que necesite un nombre legible sin exponer datos de un
+        menor.
+        """
+        return f"{self.first_name} {self.last_name}".strip()

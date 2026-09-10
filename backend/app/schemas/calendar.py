@@ -21,6 +21,7 @@ from app.models.calendar_event import (
     EventType,
     RSVPStatus,
 )
+from app.services.audit import CancelReasonCode
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +367,12 @@ class EventAttendanceRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EventCancelIn(BaseModel):
+    """Motivo obligatorio para cancelar un evento del calendario."""
+
+    reason_code: CancelReasonCode
 
 
 class RSVPUpdate(BaseModel):

@@ -263,6 +263,34 @@ describe("SidebarNav — auto-expand del área activa en deep link", () => {
   });
 });
 
+describe("SidebarNav — Gobierno: Personal del club es admin-only (feature 041)", () => {
+  it("admin ve 'Personal del club' al expandir Gobierno", () => {
+    renderSidebar("admin", { initialPath: "/admin/usuarios" });
+
+    const chevron = screen.getByRole("button", { name: /Gobierno/ });
+    expect(chevron).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("link", { name: "Personal del club" }),
+    ).toBeInTheDocument();
+  });
+
+  it("coach NO ve 'Personal del club' (Gobierno le queda con un solo item visible: Historial)", () => {
+    renderSidebar("coach", { initialPath: "/club/historial" });
+
+    // Con un único item visible para "coach" (gobierno.staff es admin-only),
+    // el área se renderiza como link plano — mismo comportamiento que Inicio.
+    expect(
+      screen.queryByRole("button", { name: /Gobierno/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Gobierno" }),
+    ).toHaveAttribute("href", "/club/historial");
+    expect(
+      screen.queryByRole("link", { name: "Personal del club" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("SidebarNav — separación label (navega) vs. chevron (solo disclosure)", () => {
   it("hacer click en la etiqueta del área navega a su ruta por defecto resuelta", async () => {
     const user = userEvent.setup();
@@ -416,6 +444,7 @@ describe("SidebarNav — modo riel (72px)", () => {
       "Competencias",
       "Atletas",
       "Familias",
+      "Gobierno",
     ]);
   });
 

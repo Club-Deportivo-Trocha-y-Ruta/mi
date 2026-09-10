@@ -13,13 +13,21 @@ pytestmark = pytest.mark.asyncio
 class _FakeAthleteRow:
     """Row-like que imita ``select(Athlete)`` con ``sex`` como enum-like."""
 
-    def __init__(self, athlete_id: int, sex_value: str | None, birth_date=None):
+    def __init__(
+        self,
+        athlete_id: int,
+        sex_value: str | None,
+        birth_date=None,
+        deleted_at=None,
+    ):
         from types import SimpleNamespace
 
         self.id = athlete_id
         self.birth_date = birth_date
         self.nickname = None
         self.sex = SimpleNamespace(value=sex_value) if sex_value else None
+        # Atleta activo por defecto (US2 — filtro de archivado).
+        self.deleted_at = deleted_at
 
     def scalar_one_or_none(self):
         return self
@@ -30,6 +38,16 @@ class _EmptyAthleteResult:
         return None
 
 
+class _ScalarValueResult:
+    """Row-like para consultas de una sola columna, p. ej. ``Athlete.deleted_at``."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+
 def _patch_athlete_select(fake_db, athlete_row):
     """Enseña a ``FakeSession.execute`` a responder ``select(Athlete)...``.
 
@@ -37,11 +55,22 @@ def _patch_athlete_select(fake_db, athlete_row):
     SQL — no tiene entrada para ``athletes`` porque el módulo no lo
     necesitaba antes de T101. Envolvemos ``execute`` para interceptar SOLO
     esa consulta y delegar el resto al comportamiento original.
+
+    Desde US2 (multi-coach-governance), ``start_run`` también dispara un
+    ``select(Athlete.deleted_at)`` para el filtro de archivado — esa
+    consulta de una sola columna debe responder con el valor escalar de
+    ``deleted_at``, no con la fila completa.
     """
     original_execute = fake_db.execute
 
     async def _patched_execute(stmt, params=None):
         sql = getattr(stmt, "text", None) or str(stmt)
+        # ``select(Athlete.deleted_at)`` (columna única) vs. ``select(Athlete)``
+        # (entidad completa, que también incluye "athletes.deleted_at" en su
+        # lista de columnas) — se distinguen por el inicio del SELECT.
+        if sql.lstrip().startswith("SELECT athletes.deleted_at"):
+            deleted_at = athlete_row.deleted_at if athlete_row is not None else None
+            return _ScalarValueResult(deleted_at)
         if "FROM athletes" in sql:
             return athlete_row if athlete_row is not None else _EmptyAthleteResult()
         return await original_execute(stmt, params)

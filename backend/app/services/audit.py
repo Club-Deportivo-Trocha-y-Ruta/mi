@@ -830,14 +830,11 @@ _STAFF_CLUBS: dict[tuple[str, str], AuditPolicy] = {
     ),
 }
 
-#: §4.3 Athletes and their records — 7 keys, 5 audited and 2 still pending
+#: §4.3 Athletes and their records — 8 keys, 6 audited and 2 still pending
 #: (the two PHV/measurement-explanation AI endpoints below).
 #:
-#: `POST /api/athletes/{athlete_id}/restore` is spec'd in §4.3 ("new,
-#: admin-only") but not yet mounted — contract `athlete-archive.md` lands it
-#: in a later task. It is intentionally NOT in this registry today; adding
-#: an entry for a route that does not exist would fail T4.2 ("every
-#: registry key resolves to a mounted route"). `POST
+#: `POST /api/athletes/{athlete_id}/restore` (contracts/athlete-archive.md
+#: §2) is admin-only and mounted in `app/routers/athletes.py`. `POST
 #: /api/athletes/{athlete_id}/report/email` is real today and is listed only
 #: in §4.13's table (for symmetry with the GET export beside it), so it is
 #: declared here rather than invented a home in that GET-only section.
@@ -845,6 +842,7 @@ _ATHLETES: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/athletes"): Audited(frozenset({AuditEntityType.athlete})),
     ("PATCH", "/api/athletes/{athlete_id}"): Audited(frozenset({AuditEntityType.athlete})),
     ("DELETE", "/api/athletes/{athlete_id}"): Audited(frozenset({AuditEntityType.athlete})),
+    ("POST", "/api/athletes/{athlete_id}/restore"): Audited(frozenset({AuditEntityType.athlete})),
     ("POST", "/api/athletes/{athlete_id}/anthropometry"): Audited(
         frozenset({AuditEntityType.anthropometric_record})
     ),

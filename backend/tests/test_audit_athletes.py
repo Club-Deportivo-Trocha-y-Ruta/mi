@@ -284,8 +284,10 @@ async def test_update_athlete_records_changed_fields_names_only(
 async def test_delete_athlete_as_admin_records_audit_row(client_factory, seeded_factory):
     admin = _make_user(900, UserRole.admin, club_id=1)
     async with client_factory(user=admin) as ac:
-        resp = await ac.delete(
+        resp = await ac.request(
+            "DELETE",
             "/api/athletes/144",
+            json={"reason_code": "athlete_left_club"},
             headers={"Authorization": "Bearer fake"},
         )
     assert resp.status_code == 204
@@ -304,8 +306,10 @@ async def test_delete_athlete_as_coach_is_forbidden_no_audit_row(
     """Guard interino (T002): coach no puede borrar — no debe quedar fila."""
     coach = _make_user(10, UserRole.coach, club_id=1)
     async with client_factory(user=coach) as ac:
-        resp = await ac.delete(
+        resp = await ac.request(
+            "DELETE",
             "/api/athletes/144",
+            json={"reason_code": "athlete_left_club"},
             headers={"Authorization": "Bearer fake"},
         )
     assert resp.status_code == 403

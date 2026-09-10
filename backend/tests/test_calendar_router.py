@@ -421,12 +421,38 @@ class TestDeleteEvent:
                 "app.routers.calendar.can_edit_calendar_event",
                 AsyncMock(return_value=False),
             ):
+                resp = await client.request(
+                    "DELETE",
+                    "/api/calendar/events/1",
+                    headers={"Authorization": "Bearer fake"},
+                    json={"reason_code": "cancel_weather"},
+                )
+
+        assert resp.status_code == 403
+
+    async def test_sin_motivo_retorna_422(self, client: AsyncClient):
+        app.dependency_overrides[get_current_user] = _coach_user
+        app.dependency_overrides[get_db] = _override_db()
+        app.dependency_overrides[get_notification_service] = _override_notification_service
+        app.dependency_overrides[get_task_dispatcher] = _override_dispatcher
+
+        event_mock = _make_event_mock()
+
+        with patch(
+            "app.services.calendar.events.get_event",
+            AsyncMock(return_value=event_mock),
+        ):
+            with patch(
+                "app.routers.calendar.can_edit_calendar_event",
+                AsyncMock(return_value=True),
+            ):
                 resp = await client.delete(
                     "/api/calendar/events/1",
                     headers={"Authorization": "Bearer fake"},
                 )
 
-        assert resp.status_code == 403
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "Selecciona un motivo de cancelación."
 
     async def test_coach_puede_cancelar_204(self, client: AsyncClient):
         app.dependency_overrides[get_current_user] = _coach_user
@@ -450,9 +476,11 @@ class TestDeleteEvent:
                     "app.services.calendar.events.cancel_event",
                     AsyncMock(return_value=cancelled),
                 ):
-                    resp = await client.delete(
-                        "/api/calendar/events/1?reason=Lluvia",
+                    resp = await client.request(
+                        "DELETE",
+                        "/api/calendar/events/1",
                         headers={"Authorization": "Bearer fake"},
+                        json={"reason_code": "cancel_weather"},
                     )
 
         assert resp.status_code == 204

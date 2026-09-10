@@ -111,3 +111,10 @@ describe("persistAllowList — shouldDehydrateQuery", () => {
     expect(shouldDehydrateQuery(fakeQuery(["anthropometry", 7]))).toBe(false);
   });
 });
+
+describe("persistAllowList — feature 041 staff admin", () => {
+  it("DENIES the staff list and the clubs catalogue (adult names/emails)", () => {
+    expect(isPersistableKey(["staff", "list", { isActive: null }])).toBe(false);
+    expect(isPersistableKey(["clubs", "list"])).toBe(false);
+  });
+});

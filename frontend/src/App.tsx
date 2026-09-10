@@ -124,6 +124,11 @@ const ArchivedAthletesPage = lazy(() =>
     default: m.ArchivedAthletesPage,
   })),
 );
+const StaffPage = lazy(() =>
+  import("@/routes/admin/StaffPage").then((m) => ({
+    default: m.StaffPage,
+  })),
+);
 const ClubHistoryPage = lazy(() =>
   import("@/routes/admin/ClubHistoryPage").then((m) => ({
     default: m.ClubHistoryPage,
@@ -450,6 +455,16 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando atletas archivados..." />}>
                 <ArchivedAthletesPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/usuarios"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando personal..." />}>
+                <StaffPage />
               </Suspense>
             </ProtectedRoute>
           }

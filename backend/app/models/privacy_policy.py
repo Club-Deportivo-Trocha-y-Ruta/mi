@@ -32,7 +32,7 @@ class PrivacyPolicy(Base):
     deprecated_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     title: Mapped[str] = mapped_column(String(255))
     # Texto completo entregable al titular (conservado según Ley 1581 Art. 26)
-    content_html: Mapped[str] = mapped_column(LONGTEXT)
+    content_html: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT(), "mysql"))
     # SHA-256 hex del content_html para verificar integridad
     content_hash: Mapped[str] = mapped_column(String(64))
     changelog: Mapped[str | None] = mapped_column(Text, nullable=True)

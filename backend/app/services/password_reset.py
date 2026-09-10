@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.password_reset_token import PasswordResetToken
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.services.auth import hash_password
 
 logger = logging.getLogger(__name__)
@@ -73,11 +73,20 @@ async def request_reset(
     ).scalar_one_or_none()
 
     # Cuenta inexistente o que no puede iniciar sesión: no se genera nada.
+    # `hashed_password` ausente se acota por rol (feature 041,
+    # contracts/staff-admin.md §1.4): una cuenta de personal recién creada
+    # llega sin contraseña por diseño (FR-023) y debe poder fijarla por este
+    # mismo camino — tanto en el correo inicial como si el primer enlace
+    # expira. Padre/atleta sin contraseña siguen sin acceso aquí; el padre
+    # pasa por `parent_invites`.
     if (
         user is None
         or not user.is_active
         or not user.can_login
-        or not user.hashed_password
+        or (
+            not user.hashed_password
+            and user.role not in (UserRole.coach, UserRole.admin)
+        )
     ):
         logger.info("password_reset: solicitud sin cuenta elegible")
         return None

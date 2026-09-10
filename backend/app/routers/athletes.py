@@ -343,10 +343,17 @@ async def update_athlete(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
 ) -> AthleteOut:
-    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    result = await db.execute(
+        select(Athlete).where(
+            Athlete.id == athlete_id,
+            Athlete.deleted_at.is_(None),
+        )
+    )
     athlete = result.scalar_one_or_none()
 
     if athlete is None:
+        # Un atleta archivado no es editable — mismo 404 que "no existe"
+        # (contracts/athlete-archive.md §5.2).
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Atleta no encontrado",
@@ -505,7 +512,12 @@ async def get_athlete_attendance(
 
     # Coach: verificar que el atleta pertenece a su club
     if current_user.role == UserRole.coach:
-        result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+        result = await db.execute(
+            select(Athlete).where(
+                Athlete.id == athlete_id,
+                Athlete.deleted_at.is_(None),
+            )
+        )
         athlete = result.scalar_one_or_none()
         if athlete is None:
             raise HTTPException(

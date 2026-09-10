@@ -326,3 +326,100 @@ G1, G2, G3, G10 and G13 were out of scope for this task. G3 is observably closed
 | G22 | 22 unit tests break on `SimpleNamespace` doubles that lack the new `deleted_at` attribute — the largest single regression cluster, and the reason the count went 23 → 48. | `tests/routers/test_athlete_monthly_newsletters_router.py` (11), `tests/services/training/test_badge_evaluator.py` (7), `tests/services/notification/test_stage_log_email.py` (4) |
 | G23 | Order-dependent flake: `test_ai_run_launch_404_for_archived_athlete` returns `503` (budget guard) instead of `404` in a full-suite run, but passes in isolation — the archived-athlete check runs after the spend guard. | `backend/tests/test_archived_athlete_absent.py:351`; guard at `backend/app/services/race/ai/budget_guard.py` |
 | G24 | Regressions grew from 23 to 48 and none of the 21 surviving wave-3 regressions was repaired in this wave. | `.regresiones-oleada3.txt` vs `/tmp` differential of this review |
+
+---
+
+# Integration review — Phase 5 (US3), feature 041
+
+**Task**: T058. **Date**: 2026-09-09. **Branch**: `feat/041-multi-coach-governance`
+(HEAD `1217c22`, uncommitted changes still in the tree from parallel agents — `git status`
+shows `clubs.py`, `athletes.py`, `calendar.py`, `models/user.py`, `models/privacy_policy.py`
+modified).
+
+**Method**: static RBAC review of `backend/app/routers/users.py`, `backend/app/routers/clubs.py`
+and `frontend/src/routes/admin/StaffPage.tsx` against `spec.md` US3 AS1–AS7 and
+`contracts/staff-admin.md`, plus a full `pytest` run from `backend/` and `npm run
+typecheck` / `npm test` from `frontend/`. No Docker, no MySQL, no live stack — same
+constraint as phases 3 and 4.
+
+## 1. AS1–AS5 verdicts (as scoped by the briefing)
+
+| # | Acceptance scenario (US3) | Verdict | Evidence |
+|---|---|---|---|
+| AS1/AS2 | A coach cannot create, edit or deactivate personnel | **Cumple** | `create_user`: `_ALLOWED_CREATIONS[UserRole.coach] = {parent, athlete}` excludes `coach`/`admin` (`backend/app/routers/users.py:48-51`), enforced at `:132-138`; a coach creating a coach is `403` (`tests/test_staff_admin.py::test_coach_creating_coach_is_403`, green). `update_user`: a coach targeting `admin`/`coach` is `403` at `:440-444`. `delete_user`: rule 5 blocks deleting `admin`/`coach` **unconditionally**, not just for a coach caller (`:590-594`). |
+| AS3 (listing) | A coach cannot list personnel | **No cumple — hallazgo F1** | `list_users`'s coach branch (`:354-386`) filters only by `ClubMember.club_id.in_(scope_clubs)` and the shared `base_filters = [User.role != UserRole.athlete]` (`:306`); nothing excludes `coach`/`admin`. A coach calling `GET /api/users?role=coach` (or with no `role` filter at all) receives every coach's and admin's name, email, active state and `created_by_display_name` for their own club. The frontend never exposes this (`/admin/usuarios` is admin-only in `App.tsx:463-469`), so the gap is API-only, but nothing stops a direct call. `tests/test_staff_admin.py::TestListUsersFilters` only exercises `admin_client`; there is no denied-path test for a coach caller. |
+| AS4 | Admin cannot self-deactivate | **Cumple** | `target.id == current_user.id and body.is_active is False` → `403`, checked unconditionally for any role (`backend/app/routers/users.py:458-462`), not nested inside the coach branch. `DELETE` has the symmetric `user_id == current_user.id` guard at `:552-556`. No test exists for this path (`admin_client` self-deactivate), but the code is role-agnostic and correct. |
+| AS5 | Parent gets 403 everywhere | **Cumple** | All three mutating endpoints in `users.py` require `require_role([admin, coach])` (`:129`, `:302`, `:421`, `:537`); `clubs.py` mutations require `require_role([admin])` (`create_club:38`, `update_club:115`, `add_member:164`). No test asserts the parent-403 path explicitly, but `require_role` is a shared, previously-audited dependency. |
+| — | No privilege escalation via `role`/`club_id` | **Cumple** | `UserUpdate` (`backend/app/schemas/user.py:26-35`) has no `role` or `club_id` field — `PATCH /api/users/{id}` cannot change either. `POST /api/clubs/{id}/members` (admin-only) rejects a `role_in_club` that doesn't match the target's account role (`clubs.py:185-197`, `role_in_club_for`). `create_user`'s coach path restricts `club_id` to `_coach_club_ids(current_user)` (`:141-152`). No other router mutates `ClubMember.role_in_club` or `User.role`. |
+
+## 2. Hallazgo F1 — un coach puede enumerar personal (Media, CWE-284/CWE-639)
+
+- **Dónde**: `backend/app/routers/users.py:354-386` (rama `else: # Coach: solo usuarios de sus clubes` de `list_users`).
+- **Qué**: la única exclusión de rol es `User.role != UserRole.athlete` (línea 306, compartida con la rama admin). Un coach autenticado que llame `GET /api/users` (sin filtro) o `GET /api/users?role=coach` o `?role=admin` recibe nombre, correo, teléfono, estado activo y `created_by_display_name` de **todo el personal de su propio club**, algo que la spec (US3, "A coach cannot create, edit or deactivate another coach or an administrator" y AS5 "access is refused and the navigation entry is not shown") y el contrato `staff-admin.md` reservan al admin.
+- **Explotación**: coach autenticado con un token válido, sin necesitar el frontend — una petición HTTP directa basta. No requiere pertenecer a un rol distinto ni manipular ningún campo, solo omitir el filtro `role` que sí aplica el frontend.
+- **Impacto**: fuga de PII de personal (no de menores) entre compañeros de club; bajo impacto porque los datos no son de un menor y ambos coaches ya comparten club, pero contradice explícitamente el requisito de la historia de usuario y no tiene ninguna prueba que lo cubra.
+- **Corrección sugerida**: añadir `User.role.notin_([UserRole.coach, UserRole.admin])` (o equivalente) a la rama de coach de `list_users`, o exigir `require_role([UserRole.admin])` para cualquier combinación de `role` que incluya `coach`/`admin` cuando el llamador es coach.
+
+## 3. Hallazgo F2 — `GET /api/clubs/{id}` expone la lista de miembros a cualquier autenticado (preexistente, fuera del diff de 041)
+
+- **Dónde**: `backend/app/routers/clubs.py:85-104` (`get_club`) y `:72-79` (`list_clubs`) — dependen de `get_current_user`, no de `require_role`.
+- **Qué**: cualquier usuario autenticado, incluido un padre o un atleta, puede pedir `GET /api/clubs/{club_id}` y recibir `ClubDetailOut.members`, con nombre y apellido de **todos** los miembros del club (personal y otras familias), vía `ClubMemberOut` (`backend/app/schemas/club.py:33-58`).
+- **Verificado como preexistente**: `git show main:backend/app/routers/clubs.py` es byte-idéntico en estos dos endpoints; 041 solo añadió las llamadas a `record_audit` en `create_club`/`update_club`/`add_member`, no tocó `get_club`/`list_clubs`. No es una regresión de esta oleada, pero contradice el principio de CLAUDE.md ("un padre solo ve los datos de sus propios atletas") y queda fuera del alcance de archivos que esta tarea puede tocar — se reporta para la oleada 6, no se corrige aquí.
+
+## 4. Cobertura de pruebas — brechas sin explotar (no bloqueantes)
+
+No hay prueba denegada para: un coach listando personal (F1), un admin intentando autodesactivarse, ni un padre golpeando cualquiera de los tres endpoints de `users.py`. Los tres caminos están bien implementados en el código pero ninguno tiene un test que impida una futura regresión silenciosa.
+
+## 5. Suite completa — `./.venv/bin/python -m pytest -q` desde `backend/`
+
+**237 failed, 3987 passed, 117 skipped, 12 xfailed, 6 xpassed, 87 errors** en 165 s (324 tests
+en problemas, frente a los 273 reportados al abrir esta oleada). El árbol estaba siendo editado
+por otros agentes en paralelo durante la corrida (`git status` no limpio en archivos fuera del
+alcance de esta tarea), así que esto es una foto, no un número estable.
+
+| Bucket | Cuenta | Nota |
+|---|---|---|
+| Ambiental (fixture `client` → MySQL real) | ~188 | `test_auth.py`, `test_athletes.py`, `test_clubs.py`, `test_users.py`, `test_consent_endpoints.py`, `test_onboarding_consent.py`, `test_parent_athletes.py`, `test_parent_register.py`, `test_privacy.py`, `test_security.py`, `test_training_session_router.py`, `test_training_session_fields.py`, `test_calendar_birthdays.py`, `test_ai_consent_enablement.py` — mismo problema preexistente en `main` (225 en la cifra original de la oleada). |
+| Regresiones de `.regresiones-oleada4.txt` **aún abiertas** | **8** (de 48) | Ver lista abajo — **ninguna** toca `users.py`, `clubs.py` ni `StaffPage.tsx`; todas son de US1/US2 (auditoría/archivado). |
+| Regresiones de `.regresiones-oleada4.txt` **cerradas en esta foto** | **40** | Confirmado por `comm` contra la lista del archivo — mejora real desde que se abrió la oleada. |
+| Ruido nuevo, no relacionado con US3, no rastreado en `.regresiones-oleada4.txt` | **99** | `tests/privacy/test_laps_privacy.py` (22), `tests/routers/test_strava_integration.py` (22), `tests/routers/test_dashboard_summary.py` (10), `tests/services/notification/test_stage_log_pdf.py` (13, `ImportError` real de WeasyPrint — falta una librería nativa del sistema en esta máquina), `tests/test_circuit_diagram_partial.py` (18, `TemplateNotFound`: falta físicamente `documents/pdf/charts/circuit_diagram.svg.jinja` en el árbol de trabajo), `tests/privacy/test_strava_privacy.py` (7), `tests/test_training_session_notifications.py` (4), `tests/test_ai_factory.py` (1), `tests/test_calendar_audiences.py` (1), `tests/test_calendar_models.py` (1). Ninguno de estos archivos aparece en `.regresiones-oleada4.txt`; ninguno tiene relación con `users.py`/`clubs.py`. Verificado a mano que son ambientales (falta de librería nativa, falta de archivo de plantilla), no efecto de esta tarea. |
+| Fallos adicionales en archivos nuevos de 041 (US1/US2, no en el alcance de esta tarea) | **29** | Resto de `test_athlete_archive.py`, `test_audit_log_api.py`, `test_archive_scope_gate.py`, `test_archived_athlete_absent.py`, `test_audit_actors.py`, `test_audit_athletes.py`, `test_parent_archived_only.py`, `test_users_delete_deactivate.py` más allá de las 8 ya contadas — mayormente errores de fixture (`privacy_policies` ausente en el harness sqlite, ya documentado como G19) y no algo introducido por US3. |
+
+**Las 8 regresiones de `.regresiones-oleada4.txt` que siguen abiertas**:
+`tests/routers/test_athlete_archive.py::test_archive_preserves_child_evidence`,
+`tests/routers/test_audit_log_api.py::test_athlete_audit_log_still_visible_after_archive`,
+`tests/test_archive_scope_gate.py::test_every_athlete_query_filters_or_is_exempt`,
+`tests/test_audit_actors.py::TestDeleteUserAudit::test_delete_parent_records_rows_and_preserves_created_by`,
+`tests/test_audit_athletes.py::test_delete_athlete_as_admin_records_audit_row`,
+`tests/test_audit_athletes.py::test_delete_athlete_as_coach_is_forbidden_no_audit_row`,
+`tests/test_users_delete_deactivate.py::test_delete_parent_with_audit_activity_409` (bug del
+propio test: busca `"desacti"` en un texto acentuado "Desactívalo", ya documentado como G20),
+`tests/test_users_delete_deactivate.py::test_delete_parent_with_training_session_maps_to_409`
+(sqlite no aplica `ON DELETE RESTRICT`, así que la sonda de FK del código — correcta contra
+MySQL real — no puede observarse en este harness; ya documentado en el comentario de
+`users.py:662-666`).
+
+**Conclusión de seguridad sobre la suite**: cero regresiones nuevas encontradas en
+`users.py`, `clubs.py` o `StaffPage.tsx`. El aumento de 273 a 324 fallos totales se explica
+por ruido ambiental (WeasyPrint, plantilla faltante) y por archivos de US1/US2 fuera del
+alcance de esta tarea, no por el trabajo de US3.
+
+## 6. Frontend — `npm run typecheck` y `npm test`
+
+- `npm run typecheck`: **0 errores**.
+- `npm test` (vitest): **1 failed, 4036 passed** de 4037 (342 archivos, 341 verdes). El único
+  fallo es `src/lib/__tests__/datetime.test.ts::currentSeason > usa el año en CLUB_TIMEZONE
+  (Bogotá) y no el año naive de new Date().getFullYear()` — archivo de la feature 031
+  (`git log` confirma que no lo toca 041), depende de la fecha real del sistema
+  (`2026-09-09`) frente a un `vi.setSystemTime` de control; no relacionado con US3.
+
+## 7. Brechas abiertas para la oleada 6
+
+| # | Brecha | Archivo · línea |
+|---|---|---|
+| F1 | Un coach puede listar coaches/admins de su propio club vía `GET /api/users` (sin filtro de rol excluyendo personal) — contradice US3 AS5 y `staff-admin.md`. | `backend/app/routers/users.py:306,354-386` |
+| F2 | `GET /api/clubs/{id}` y `GET /api/clubs` exponen nombre/apellido de todos los miembros (personal y familias) a cualquier autenticado, incluido un padre o atleta. Preexistente a 041, no corregido en esta tarea por estar fuera del alcance de archivos permitido. | `backend/app/routers/clubs.py:72-104` |
+| F3 | Sin prueba denegada para: coach listando personal (F1), admin autodesactivándose, padre golpeando `users.py`. El código es correcto pero no hay barrera de regresión. | `backend/tests/test_staff_admin.py` |
+| G20/G-nuevo | `test_delete_parent_with_audit_activity_409` tiene un assert roto (`"desacti"` vs "Desactívalo"); `test_delete_parent_with_training_session_maps_to_409` no puede pasar en sqlite porque el harness no aplica `ON DELETE RESTRICT`. | `backend/tests/test_users_delete_deactivate.py:270` y módulo completo |
+| — | 8 regresiones de `.regresiones-oleada4.txt` (listadas en §5) siguen abiertas; ninguna toca US3. | ver §5 |
+| — | 99 fallos ambientales nuevos no rastreados (WeasyPrint sin librería nativa, plantilla `circuit_diagram.svg.jinja` ausente) — no corregir aquí, pero documentar para que la oleada 6 no los confunda con regresiones de código. | ver §5 |

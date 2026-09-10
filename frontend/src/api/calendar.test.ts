@@ -138,10 +138,10 @@ describe("cancelCalendarEvent", () => {
   it("calls DELETE /api/calendar/events/:id", async () => {
     const cancelled = makeCalendarEventRead({ id: 1, status: "cancelled" });
     mockApi.delete.mockResolvedValue({ data: cancelled });
-    const result = await cancelCalendarEvent(1, "prueba");
+    const result = await cancelCalendarEvent(1, "cancel_weather");
     expect(mockApi.delete).toHaveBeenCalledWith(
       "/api/calendar/events/1",
-      expect.objectContaining({ params: { reason: "prueba" } }),
+      expect.objectContaining({ data: { reason_code: "cancel_weather" } }),
     );
     expect(result.status).toBe("cancelled");
   });
@@ -242,7 +242,7 @@ describe("useCancelCalendarEvent", () => {
     const { result } = renderHook(() => useCancelCalendarEvent(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync({ id: 2 });
+      await result.current.mutateAsync({ id: 2, reasonCode: "cancel_weather" });
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith(

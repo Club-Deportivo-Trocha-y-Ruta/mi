@@ -57,7 +57,7 @@ def make_scalars_result(items: list) -> Any:
     return result
 
 
-def make_athlete(id_: int = 1, club_id: int = 10) -> Any:
+def make_athlete(id_: int = 1, club_id: int = 10, deleted_at=None) -> Any:
     from datetime import date
     return SimpleNamespace(
         id=id_,
@@ -66,6 +66,7 @@ def make_athlete(id_: int = 1, club_id: int = 10) -> Any:
         last_name="Test",
         birth_date=date(2012, 3, 15),
         height_cm=152.0,
+        deleted_at=deleted_at,
     )
 
 

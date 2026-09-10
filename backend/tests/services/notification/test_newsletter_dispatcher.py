@@ -105,8 +105,14 @@ def make_user(id_: int, email: str = "padre@test.com", first_name: str = "Padre"
     return SimpleNamespace(id=id_, email=email, first_name=first_name)
 
 
-def make_athlete(id_: int, first_name: str = "Atleta") -> Any:
-    return SimpleNamespace(id=id_, first_name=first_name, last_name="Test", club_id=1)
+def make_athlete(id_: int, first_name: str = "Atleta", deleted_at: Any = None) -> Any:
+    return SimpleNamespace(
+        id=id_,
+        first_name=first_name,
+        last_name="Test",
+        club_id=1,
+        deleted_at=deleted_at,
+    )
 
 
 def make_email_client(success: bool = True) -> Any:

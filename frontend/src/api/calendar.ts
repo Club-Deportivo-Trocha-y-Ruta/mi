@@ -81,11 +81,11 @@ export async function updateCalendarEvent(
 
 export async function cancelCalendarEvent(
   id: number,
-  reason?: string,
+  reasonCode: string,
 ): Promise<CalendarEventRead> {
-  const params: Record<string, string> = {};
-  if (reason) params.reason = reason;
-  const response = await apiClient.delete<CalendarEventRead>(`${BASE}/${id}`, { params });
+  const response = await apiClient.delete<CalendarEventRead>(`${BASE}/${id}`, {
+    data: { reason_code: reasonCode },
+  });
   return response.data;
 }
 
@@ -197,8 +197,8 @@ export function useUpdateCalendarEvent() {
 export function useCancelCalendarEvent() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
-      cancelCalendarEvent(id, reason),
+    mutationFn: ({ id, reasonCode }: { id: number; reasonCode: string }) =>
+      cancelCalendarEvent(id, reasonCode),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
       void queryClient.invalidateQueries({

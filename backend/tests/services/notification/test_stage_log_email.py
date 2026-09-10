@@ -236,8 +236,15 @@ def _make_parent(has_account: bool) -> Any:
     )
 
 
-def _make_athlete(id_: int, first_name: str = "Atleta") -> Any:
-    return SimpleNamespace(id=id_, first_name=first_name, last_name="Test", club_id=1, sex="M")
+def _make_athlete(id_: int, first_name: str = "Atleta", deleted_at: Any = None) -> Any:
+    return SimpleNamespace(
+        id=id_,
+        first_name=first_name,
+        last_name="Test",
+        club_id=1,
+        sex="M",
+        deleted_at=deleted_at,
+    )
 
 
 def _make_db_for_send(parent: Any, athlete_by_id: dict[int, Any]) -> Any:

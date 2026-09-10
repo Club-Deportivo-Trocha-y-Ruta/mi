@@ -24,6 +24,7 @@ from app.models.user import User, UserRole
 from app.schemas.calendar import (
     AudienceCreate,
     EventAttendanceRead,
+    EventCancelIn,
     EventCreate,
     EventListItem,
     EventListQuery,
@@ -32,6 +33,8 @@ from app.schemas.calendar import (
     EventUpdate,
     RSVPUpdate,
 )
+from app.services.audit import AUDIT_REASON_LABELS
+from app.services.request_context import AuditContext, get_request_context
 from app.services.calendar import attendances as attendance_svc
 from app.services.calendar import events as events_svc
 from app.services.permissions import (
@@ -399,12 +402,19 @@ async def update_calendar_event(
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_calendar_event(
     event_id: int,
-    reason: str = Query(default=""),
+    body: EventCancelIn | None = None,
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     notification_service=Depends(get_notification_service),
+    ctx: AuditContext = Depends(get_request_context),
 ) -> None:
+    if body is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Selecciona un motivo de cancelación.",
+        )
+
     event = await _get_event_or_404(db, event_id)
 
     if event.event_type == EventType.BIRTHDAY:
@@ -427,10 +437,11 @@ async def cancel_calendar_event(
         await events_svc.cancel_event(
             db=db,
             event=event,
-            reason=reason,
+            reason=AUDIT_REASON_LABELS[body.reason_code],
             user=current_user,
             notification_service=notification_service,
             dispatcher=dispatcher,
+            reason_code=body.reason_code,
         )
     except ValueError as exc:
         raise HTTPException(

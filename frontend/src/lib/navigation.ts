@@ -210,13 +210,19 @@ export const NAV_AREAS: NavArea[] = [
     icon: History,
     group: "club",
     roles: ["coach", "admin"],
-    matchPrefixes: ["/club"],
+    matchPrefixes: ["/club", "/admin/usuarios"],
     items: [
       {
         id: "gobierno.history",
         label: "Historial del club",
         to: "/club/historial",
         roles: ["coach", "admin"],
+      },
+      {
+        id: "gobierno.staff",
+        label: "Personal del club",
+        to: "/admin/usuarios",
+        roles: ["admin"],
       },
     ],
   },

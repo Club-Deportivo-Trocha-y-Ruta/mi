@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.dependencies import get_current_user, get_db, require_role
 from app.models.club import Club, ClubMember
 from app.models.user import User, UserRole
+from app.routers.users import role_in_club_for
 from app.schemas.club import (
     ClubCreate,
     ClubDetailOut,
@@ -179,6 +180,20 @@ async def add_member(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuario no encontrado",
+        )
+
+    # Coherencia de rol (FR-022, contracts/staff-admin.md §2): el rol en el
+    # club nunca puede contradecir el rol de la cuenta — hoy un padre podía
+    # quedar archivado como `coach` en un club porque `role_in_club` se
+    # escribía verbatim.
+    expected_role = role_in_club_for(target_user.role)
+    if body.role_in_club != expected_role:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "El rol en el club debe coincidir con el rol de la cuenta "
+                f"(se esperaba '{expected_role.value}')"
+            ),
         )
 
     member = ClubMember(

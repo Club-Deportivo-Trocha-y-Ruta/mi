@@ -12,6 +12,7 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { CancelEventDialog } from "./CancelEventDialog";
 import { EventTypeChip } from "./EventTypeChip";
 import {
   useCancelCalendarEvent,
@@ -288,10 +289,10 @@ export function EventDrawer({
     }
   }
 
-  function handleConfirmCancel() {
+  function handleConfirmCancel(reasonCode: string) {
     if (!eventId) return;
     cancelMutation.mutate(
-      { id: eventId },
+      { id: eventId, reasonCode },
       {
         onSuccess: () => {
           setConfirmCancel(false);
@@ -485,13 +486,9 @@ export function EventDrawer({
         </SheetContent>
       </Sheet>
 
-      <ConfirmDialog
+      <CancelEventDialog
         open={confirmCancel}
-        title="Cancelar evento"
-        description="El evento pasará al estado 'cancelado'. Los participantes serán notificados."
-        confirmLabel="Cancelar evento"
-        cancelLabel="No, volver"
-        tone="danger"
+        eventTitle={event?.title}
         isPending={cancelMutation.isPending}
         onCancel={() => setConfirmCancel(false)}
         onConfirm={handleConfirmCancel}

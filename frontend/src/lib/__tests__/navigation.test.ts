@@ -143,7 +143,27 @@ describe("matriz de visibilidad por rol (data-model.md §3)", () => {
     expect(getVisibleAreas("coach").map((a) => a.id)).toContain("gobierno");
     expect(getVisibleAreas("admin").map((a) => a.id)).toContain("gobierno");
     const gobierno = findArea("gobierno");
-    expect(gobierno.items.map((i) => i.id)).toEqual(["gobierno.history"]);
+    expect(gobierno.items.map((i) => i.id)).toEqual([
+      "gobierno.history",
+      "gobierno.staff",
+    ]);
+  });
+
+  it("gobierno.staff (Personal del club) es solo para admin", () => {
+    const gobierno = findArea("gobierno");
+    const staffItem = gobierno.items.find((i) => i.id === "gobierno.staff");
+    expect(staffItem).toBeDefined();
+    expect(staffItem?.roles).toEqual(["admin"]);
+
+    const adminVisibleIds = gobierno.items
+      .filter((i) => i.roles.includes("admin"))
+      .map((i) => i.id);
+    expect(adminVisibleIds).toContain("gobierno.staff");
+
+    const coachVisibleIds = gobierno.items
+      .filter((i) => i.roles.includes("coach"))
+      .map((i) => i.id);
+    expect(coachVisibleIds).not.toContain("gobierno.staff");
   });
 
   it("Familias sigue visible para admin (Boletines/Informes del club)", () => {

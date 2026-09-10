@@ -65,13 +65,14 @@ def make_user(
     )
 
 
-def make_athlete(id_: int = 5, club_id: int = 1) -> Any:
+def make_athlete(id_: int = 5, club_id: int = 1, deleted_at: Any = None) -> Any:
     return SimpleNamespace(
         id=id_,
         club_id=club_id,
         first_name="Atleta",
         last_name="Test",
         birth_date=date(2012, 3, 15),
+        deleted_at=deleted_at,
     )
 
 
