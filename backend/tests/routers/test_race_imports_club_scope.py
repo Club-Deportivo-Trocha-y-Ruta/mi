@@ -459,9 +459,10 @@ async def test_admin_no_recibe_403(client_factory, stub_parsers):
 # ===========================================================================
 
 
-async def test_listado_identico_para_los_tres_coaches(client_factory, stub_parsers):
-    """§11.1-14 / §6.3: ``GET /imports/`` nunca estuvo filtrado por autor y
-    sigue sin estarlo — el coach de otro club ve el mismo histórico.
+async def test_listado_filtrado_por_club_no_por_autor(client_factory, stub_parsers):
+    """§11.1-14 / §6.3: ``GET /imports/`` nunca estuvo filtrado por autor —
+    coach A y coach B (mismo club) siguen viendo el mismo histórico — pero el
+    alcance por club (H4) sí lo filtra: el coach de otro club no lo ve.
     """
     async with await client_factory("coach_a") as client_a:
         parse_id = await _parse_as(client_a)
@@ -473,13 +474,16 @@ async def test_listado_identico_para_los_tres_coaches(client_factory, stub_parse
             assert resp.status_code == 200, resp.text
             cuerpos[actor] = resp.json()
 
-    assert cuerpos["coach_a"] == cuerpos["coach_b"] == cuerpos["coach_c"]
+    assert cuerpos["coach_a"] == cuerpos["coach_b"]
     assert cuerpos["coach_a"]["total"] == 1
     item = cuerpos["coach_a"]["items"][0]
     assert item["id"] == parse_id
     # El nombre del cargador ya lo resolvía el listado antes de esta feature.
     assert item["uploaded_by"]["id"] == COACH_A_ID
     assert item["uploaded_by"]["full_name"] == "Ana Ficticia Coach"
+    # El coach de otro club no ve el import: alcance por club, no por autor.
+    assert cuerpos["coach_c"]["total"] == 0
+    assert cuerpos["coach_c"]["items"] == []
 
 
 async def test_listado_muestra_al_cargador_no_al_que_commitea(
