@@ -143,7 +143,16 @@ class TestCreateSession:
         add_calls: list = []
         db.add.side_effect = add_calls.append
 
-        async def _refresh(obj):
+        async def _refresh(obj, **kwargs):
+            # 041: _replace_session_coaches también invoca
+            # db.refresh(session, attribute_names=["session_coaches"]) — el
+            # doble debe aceptar ese kwarg. No hace falta simular la carga:
+            # `session` sigue siendo un TrainingSession() transitorio (nunca
+            # pasó por un Session real), y SQLAlchemy inicializa sola una
+            # colección vacía la primera vez que se lee una relación no
+            # cargada de un objeto transitorio.
+            if "attribute_names" in kwargs:
+                return
             obj.id = 42
             obj.status = SessionStatus.PLANNED
             obj.attendances = []
@@ -196,7 +205,9 @@ class TestCreateSession:
         db = AsyncMock()
         db.add = MagicMock(side_effect=add_calls.append)
 
-        async def _refresh(obj):
+        async def _refresh(obj, **kwargs):
+            if "attribute_names" in kwargs:
+                return
             obj.id = 1
             obj.status = SessionStatus.PLANNED
             obj.attendances = []
@@ -232,7 +243,9 @@ class TestCreateSession:
         db = AsyncMock()
         db.add = MagicMock(side_effect=add_calls.append)
 
-        async def _refresh(obj):
+        async def _refresh(obj, **kwargs):
+            if "attribute_names" in kwargs:
+                return
             obj.id = 1
             obj.status = SessionStatus.PLANNED
             obj.attendances = []
@@ -268,6 +281,7 @@ class TestCreateSession:
 class TestExecuteSession:
     async def test_execute_planned_session_success(self):
         session = _make_session(status=SessionStatus.PLANNED)
+        actor = _make_user(1)
 
         db = AsyncMock()
         async def _refresh(obj):
@@ -281,13 +295,14 @@ class TestExecuteSession:
         result_mock.scalars = MagicMock(return_value=scalars_mock)
         db.execute = AsyncMock(return_value=result_mock)
 
-        result = await sessions_svc.execute_session(db, session_id=1)
+        result = await sessions_svc.execute_session(db, session_id=1, actor=actor)
         assert result.status == SessionStatus.EXECUTED
         assert result.executed_at is not None
 
     async def test_execute_already_executed_raises(self):
         session = _make_session(status=SessionStatus.EXECUTED)
         session.executed_at = datetime.now(timezone.utc)
+        actor = _make_user(1)
 
         db = AsyncMock()
         async def _refresh(obj):
@@ -302,11 +317,12 @@ class TestExecuteSession:
         db.execute = AsyncMock(return_value=result_mock)
 
         with pytest.raises(ValueError) as exc:
-            await sessions_svc.execute_session(db, session_id=1)
+            await sessions_svc.execute_session(db, session_id=1, actor=actor)
         assert "ejecutar" in str(exc.value).lower() or "estado" in str(exc.value).lower()
 
     async def test_execute_cancelled_session_raises(self):
         session = _make_session(status=SessionStatus.CANCELLED)
+        actor = _make_user(1)
 
         db = AsyncMock()
         async def _refresh(obj):
@@ -321,9 +337,10 @@ class TestExecuteSession:
         db.execute = AsyncMock(return_value=result_mock)
 
         with pytest.raises(ValueError):
-            await sessions_svc.execute_session(db, session_id=1)
+            await sessions_svc.execute_session(db, session_id=1, actor=actor)
 
     async def test_execute_nonexistent_raises(self):
+        actor = _make_user(1)
         db = AsyncMock()
         async def _refresh(obj):
             pass
@@ -337,11 +354,12 @@ class TestExecuteSession:
         db.execute = AsyncMock(return_value=result_mock)
 
         with pytest.raises(ValueError) as exc:
-            await sessions_svc.execute_session(db, session_id=9999)
+            await sessions_svc.execute_session(db, session_id=9999, actor=actor)
         assert "no encontrada" in str(exc.value)
 
     async def test_execute_sets_executed_at_timestamp(self):
         session = _make_session(status=SessionStatus.PLANNED)
+        actor = _make_user(1)
         before = datetime.now(timezone.utc)
 
         db = AsyncMock()
@@ -356,7 +374,7 @@ class TestExecuteSession:
         result_mock.scalars = MagicMock(return_value=scalars_mock)
         db.execute = AsyncMock(return_value=result_mock)
 
-        result = await sessions_svc.execute_session(db, session_id=1)
+        result = await sessions_svc.execute_session(db, session_id=1, actor=actor)
         assert result.executed_at >= before
 
 
@@ -368,6 +386,7 @@ class TestExecuteSession:
 class TestCancelSession:
     async def test_cancel_planned_session_success(self):
         session = _make_session(status=SessionStatus.PLANNED)
+        actor = _make_user(1)
 
         db = AsyncMock()
         async def _refresh(obj):
@@ -381,11 +400,17 @@ class TestCancelSession:
         result_mock.scalars = MagicMock(return_value=scalars_mock)
         db.execute = AsyncMock(return_value=result_mock)
 
-        result = await sessions_svc.cancel_session(db, session_id=1)
+        result = await sessions_svc.cancel_session(
+            db,
+            session_id=1,
+            actor=actor,
+            reason_code=CancelReasonCode.cancel_weather,
+        )
         assert result.status == SessionStatus.CANCELLED
 
     async def test_cancel_already_cancelled_raises(self):
         session = _make_session(status=SessionStatus.CANCELLED)
+        actor = _make_user(1)
 
         db = AsyncMock()
         async def _refresh(obj):
@@ -400,8 +425,75 @@ class TestCancelSession:
         db.execute = AsyncMock(return_value=result_mock)
 
         with pytest.raises(ValueError) as exc:
-            await sessions_svc.cancel_session(db, session_id=1)
+            await sessions_svc.cancel_session(
+                db,
+                session_id=1,
+                actor=actor,
+                reason_code=CancelReasonCode.cancel_weather,
+            )
         assert "cancelada" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# 3b. contracts/session-coaches.md §4 — `actor` sin default y `reason_code`
+# reemplazando el `reason` de texto libre. Regresión de contrato: estos
+# TypeError deben seguir levantándose aunque alguien intente reintroducir un
+# valor por defecto o resucitar el parámetro `reason` (§7.1, FR-003 — el
+# texto libre era un lugar donde un entrenador podía escribir el nombre de
+# un menor).
+# ---------------------------------------------------------------------------
+
+
+class TestActorAndReasonCodeContract:
+    async def test_execute_session_actor_is_required_keyword(self):
+        with pytest.raises(TypeError):
+            await sessions_svc.execute_session(AsyncMock(), session_id=1)
+
+    async def test_cancel_session_actor_is_required_keyword(self):
+        with pytest.raises(TypeError):
+            await sessions_svc.cancel_session(
+                AsyncMock(),
+                session_id=1,
+                reason_code=CancelReasonCode.cancel_weather,
+            )
+
+    async def test_cancel_session_reason_code_is_required_keyword(self):
+        with pytest.raises(TypeError):
+            await sessions_svc.cancel_session(
+                AsyncMock(), session_id=1, actor=_make_user(1)
+            )
+
+    async def test_cancel_session_no_longer_accepts_free_text_reason(self):
+        """El viejo parámetro `reason` (texto libre, FR-003) desapareció del
+        todo — no es que quedara opcional, dejó de existir en la firma."""
+        with pytest.raises(TypeError):
+            await sessions_svc.cancel_session(
+                AsyncMock(),
+                session_id=1,
+                actor=_make_user(1),
+                reason="Lluvia intensa",
+            )
+
+    async def test_update_session_actor_is_required_keyword(self):
+        with pytest.raises(TypeError):
+            await sessions_svc.update_session(
+                AsyncMock(), session_id=1, payload=TrainingSessionUpdate()
+            )
+
+    async def test_bulk_upsert_convocatoria_actor_is_required_keyword(self):
+        with pytest.raises(TypeError):
+            await attendance_svc.bulk_upsert_convocatoria(
+                db=AsyncMock(), session_id=1, athlete_ids=[100]
+            )
+
+    async def test_update_attendance_actor_is_required_keyword(self):
+        with pytest.raises(TypeError):
+            await attendance_svc.update_attendance(
+                db=AsyncMock(),
+                session_id=1,
+                athlete_id=100,
+                payload=AttendanceUpdate(status=AttendanceStatus.PRESENTE),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +505,7 @@ class TestUpdateSession:
     async def test_update_planned_session(self):
         session = _make_session(status=SessionStatus.PLANNED)
         session.location = "Lugar viejo"
+        actor = _make_user(1)
 
         db = AsyncMock()
         async def _refresh(obj):
@@ -426,11 +519,19 @@ class TestUpdateSession:
         result_mock.scalars = MagicMock(return_value=scalars_mock)
         db.execute = AsyncMock(return_value=result_mock)
 
+        # `coach_user_ids` no viene en este payload (queda None): el update
+        # NO toca el puente de entrenadores, así que _assert_eligible_coaches
+        # no se invoca y no hace falta neutralizarlo aquí (a diferencia de
+        # TestCreateSession, donde `create_session` siempre reemplaza el
+        # conjunto — con el creador como default).
         payload = TrainingSessionUpdate(location="Lugar nuevo")
-        result = await sessions_svc.update_session(db, session_id=1, payload=payload)
+        result = await sessions_svc.update_session(
+            db, session_id=1, payload=payload, actor=actor
+        )
         assert result.location == "Lugar nuevo"
 
     async def test_update_nonexistent_raises(self):
+        actor = _make_user(1)
         db = AsyncMock()
         async def _refresh(obj):
             pass
@@ -445,7 +546,10 @@ class TestUpdateSession:
 
         with pytest.raises(ValueError):
             await sessions_svc.update_session(
-                db, session_id=9999, payload=TrainingSessionUpdate(location="X")
+                db,
+                session_id=9999,
+                payload=TrainingSessionUpdate(location="X"),
+                actor=actor,
             )
 
 
@@ -517,8 +621,9 @@ class TestBulkUpsertConvocatoria:
 
         db.execute = AsyncMock(side_effect=execute_side_effect)
 
+        actor = _make_user(1)
         result = await attendance_svc.bulk_upsert_convocatoria(
-            db=db, session_id=1, athlete_ids=[100, 200]
+            db=db, session_id=1, athlete_ids=[100, 200], actor=actor
         )
 
         # athlete 200 debe haber sido añadido
@@ -554,8 +659,9 @@ class TestBulkUpsertConvocatoria:
 
         db.execute = AsyncMock(side_effect=execute_side_effect)
 
+        actor = _make_user(1)
         result = await attendance_svc.bulk_upsert_convocatoria(
-            db=db, session_id=1, athlete_ids=[100]
+            db=db, session_id=1, athlete_ids=[100], actor=actor
         )
         # el delete debe haberse ejecutado (call_count >= 2 incluye el delete)
         assert call_count >= 2
@@ -586,13 +692,15 @@ class TestUpdateAttendance:
             rpe_omni=7,
             rubric_effort=4,
         )
+        actor = _make_user(1)
         result = await attendance_svc.update_attendance(
-            db=db, session_id=1, athlete_id=100, payload=payload
+            db=db, session_id=1, athlete_id=100, payload=payload, actor=actor
         )
         assert result.status == AttendanceStatus.PRESENTE
         assert result.rpe_omni == 7
 
     async def test_update_nonexistent_attendance_raises(self):
+        actor = _make_user(1)
         db = AsyncMock()
         result_mock = MagicMock()
         result_mock.scalar_one_or_none = MagicMock(return_value=None)
@@ -601,7 +709,7 @@ class TestUpdateAttendance:
         payload = AttendanceUpdate(status=AttendanceStatus.PRESENTE)
         with pytest.raises(ValueError) as exc:
             await attendance_svc.update_attendance(
-                db=db, session_id=99, athlete_id=999, payload=payload
+                db=db, session_id=99, athlete_id=999, payload=payload, actor=actor
             )
         assert "no existe" in str(exc.value).lower()
 

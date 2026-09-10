@@ -214,28 +214,44 @@ class TestCreateSessionIntegration:
         db.add = MagicMock()
         db.flush = AsyncMock()
         db.commit = AsyncMock()
+        # 041 — _replace_session_coaches (invocada siempre por create_session)
+        # llama a `db.execute(...).scalars().all()` en
+        # _current_coach_ids_locked. Un `AsyncMock()` sin configurar hace que
+        # CUALQUIER atributo/llamada anidada (incluido `.scalars()`, que en
+        # el `Result` real de SQLAlchemy es síncrono) se vuelva otro
+        # AsyncMock — al llamarlo devuelve una coroutine sin awaitear, y
+        # `.all()` sobre esa coroutine revienta con AttributeError. Se fija
+        # un `Result` de mentira cuyo `.scalars()` SÍ es síncrono.
+        execute_result = MagicMock()
+        execute_result.scalars = MagicMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]))
+        )
+        db.execute = AsyncMock(return_value=execute_result)
 
-        with patch.object(
-            sessions_svc,
-            "_assert_coach_in_club",
-            AsyncMock(),
-        ):
-            with patch.object(
+        with (
+            patch.object(sessions_svc, "_assert_coach_in_club", AsyncMock()),
+            # La elegibilidad de entrenadores (§3.3) ya tiene su propia
+            # batería en test_session_coaches.py con DB real; aquí se
+            # neutraliza para no tener que modelar `users`/`club_members`
+            # sobre este mismo `execute_result` genérico.
+            patch.object(sessions_svc, "_assert_eligible_coaches", AsyncMock()),
+            patch.object(
                 sessions_svc,
                 "get_session",
                 AsyncMock(return_value=session_with_event),
-            ):
-                with patch.object(
-                    sessions_svc,
-                    "_create_parallel_calendar_event",
-                    mock_parallel,
-                ):
-                    result = await sessions_svc.create_session(
-                        db=db,
-                        payload=payload,
-                        coach=coach,
-                        club_id=1,
-                    )
+            ),
+            patch.object(
+                sessions_svc,
+                "_create_parallel_calendar_event",
+                mock_parallel,
+            ),
+        ):
+            result = await sessions_svc.create_session(
+                db=db,
+                payload=payload,
+                coach=coach,
+                club_id=1,
+            )
 
         assert parallel_calls, "Debió llamarse _create_parallel_calendar_event"
         assert result.calendar_event_id == 99
@@ -251,25 +267,36 @@ class TestCreateSessionIntegration:
         db.add = MagicMock()
         db.flush = AsyncMock()
         db.commit = AsyncMock()
+        # Ver el comentario equivalente en el test anterior: `.scalars()`
+        # de un `AsyncMock()` sin configurar es asíncrono, y
+        # _current_coach_ids_locked necesita que sea síncrono.
+        execute_result = MagicMock()
+        execute_result.scalars = MagicMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]))
+        )
+        db.execute = AsyncMock(return_value=execute_result)
 
         async def mock_parallel(db, session, payload, coach, club_id):
             session.calendar_event_id = 42
 
-        with patch.object(sessions_svc, "_assert_coach_in_club", AsyncMock()):
-            with patch.object(
+        with (
+            patch.object(sessions_svc, "_assert_coach_in_club", AsyncMock()),
+            patch.object(sessions_svc, "_assert_eligible_coaches", AsyncMock()),
+            patch.object(
                 sessions_svc, "get_session", AsyncMock(return_value=session_with_event)
-            ):
-                with patch.object(
-                    sessions_svc,
-                    "_create_parallel_calendar_event",
-                    mock_parallel,
-                ):
-                    result = await sessions_svc.create_session(
-                        db=db,
-                        payload=payload,
-                        coach=coach,
-                        club_id=1,
-                    )
+            ),
+            patch.object(
+                sessions_svc,
+                "_create_parallel_calendar_event",
+                mock_parallel,
+            ),
+        ):
+            result = await sessions_svc.create_session(
+                db=db,
+                payload=payload,
+                coach=coach,
+                club_id=1,
+            )
 
         assert result.calendar_event_id is not None
         assert result.calendar_event_id == 42
